@@ -53,6 +53,7 @@ class ServerClock:
         self._last_tick_msc: int | None = None
         self._lock = threading.Lock()
         self.evidence = OffsetEvidence()
+        self.changes: list[dict] = []  # history of verified offset changes (DST / server switch)
 
     def reset(self) -> None:
         with self._lock:
@@ -70,7 +71,11 @@ class ServerClock:
         """Feed a tick. Only *new* ticks (time_msc changed) are used as samples."""
         with self._lock:
             if self._last_tick_msc is not None and tick_time_msc <= self._last_tick_msc:
-                return self.evidence
+                if self._last_tick_msc - tick_time_msc < 30 * 60 * 1000:
+                    return self.evidence  # same/older tick: not a new sample
+                # raw time jumped back >30 min: server clock change (DST/server switch) -> re-measure
+                self._deltas.clear()
+                self.evidence.reasons = ["RAW_TIME_JUMPED_BACK_REMEASURING"]
             self._last_tick_msc = tick_time_msc
             delta = tick_time_msc / 1000.0 - received_utc.timestamp()
             self.evidence.last_raw_delta_seconds = round(delta, 3)
@@ -96,6 +101,8 @@ class ServerClock:
             if ok:
                 if prev is not None and prev != candidate:
                     reasons.append(f"OFFSET_CHANGED_{prev}_TO_{candidate}_DST_OR_SERVER_CHANGE")
+                    self.changes.append({"from": prev, "to": int(candidate), "at": iso(received_utc)})
+                    self.changes = self.changes[-10:]
                 self.evidence = OffsetEvidence(offset_seconds=int(candidate), status="VERIFIED", samples=len(self._deltas),
                                                residual_seconds=round(residual, 3), measured_at=received_utc,
                                                last_raw_delta_seconds=round(delta, 3), reasons=reasons)

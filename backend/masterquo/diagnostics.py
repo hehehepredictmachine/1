@@ -12,6 +12,7 @@ import struct
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import paths
 from .timeutil import TIMEFRAMES, iso
@@ -184,4 +185,96 @@ def set_key() -> int:
     v = getpass.getpass("ANTHROPIC_API_KEY: ").strip()
     SecretStore().set("ANTHROPIC_API_KEY", v or None)
     print("Zapisano lokalnie (Windows DPAPI)." if v else "Usunięto zapisany klucz.")
+    return 0
+
+
+def export_history(from_utc: str, to_utc: str, out_dir: str) -> int:
+    """Six-timeframe export in the M06R CSV format with *UTC* times (raw - measured offset).
+
+    The broker offset is measured now from fresh ticks (or taken from the last verified value
+    stored for this server). It is applied uniformly: historical DST changes of the broker are not
+    reconstructed - this limitation is written into the manifest.
+    """
+    import csv
+    import hashlib
+    from datetime import timedelta
+    from .config import ConfigStore
+    from .db.database import Database
+    from .mt5.clock import ServerClock
+    from .timeutil import TF_SECONDS, parse_iso
+    cfg = ConfigStore().get()
+    sym = cfg.mt5.symbol
+    start, end = parse_iso(from_utc), parse_iso(to_utc)
+    if not start or not end or end <= start or (end - start).days > 500:
+        print("[BLAD] Zakres: --from-utc < --to-utc, maks. 500 dni, format 2026-01-01T00:00:00Z")
+        return 2
+    import MetaTrader5 as mt5
+    ok = mt5.initialize(path=cfg.mt5.terminal_path) if cfg.mt5.terminal_path else mt5.initialize()
+    if not ok:
+        print("[BLAD] initialize():", mt5.last_error())
+        return 3
+    try:
+        if not mt5.symbol_select(sym, True):
+            print(f"[BLAD] Symbol {sym} niedostępny")
+            return 4
+        sc = ServerClock()
+        t_end = time.monotonic() + 15
+        while time.monotonic() < t_end and not sc.verified:
+            tk = mt5.symbol_info_tick(sym)
+            if tk is not None:
+                sc.observe_tick(int(tk.time_msc), datetime.now(timezone.utc))
+            time.sleep(0.3)
+        offset, basis = sc.offset, "MEASURED_NOW"
+        if not sc.verified:
+            a = mt5.account_info()
+            row = Database().one("SELECT offset_seconds, measured_at FROM clock_offsets WHERE server=?", (getattr(a, "server", ""),))
+            if not row:
+                print("[BLAD] Nie można zmierzyć offsetu czasu serwera (rynek zamknięty?) i brak zapisanego pomiaru. Uruchom przy otwartym rynku.")
+                return 5
+            offset, basis = row["offset_seconds"], f"STORED_{row['measured_at']}"
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        files = {}
+        now = datetime.now(timezone.utc)
+        for tf in ("D1", "H4", "H1", "M15", "M5", "M1"):
+            rows = []
+            cur = start
+            while cur < end:
+                nxt = min(end, cur + timedelta(days=7 if tf in ("M1", "M5") else 120))
+                r = mt5.copy_rates_range(sym, getattr(mt5, "TIMEFRAME_" + tf), datetime.fromtimestamp(cur.timestamp() + offset, timezone.utc),
+                                         datetime.fromtimestamp(nxt.timestamp() + offset, timezone.utc))
+                if r is not None:
+                    rows += [x for x in r]
+                cur = nxt
+            uniq = {}
+            for x in rows:
+                uniq[int(x["time"])] = x
+            ts = sorted(uniq)
+            path = out / f"{tf}.csv"
+            n = 0
+            with path.open("w", encoding="utf-8", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(["symbol", "time_utc", "open", "high", "low", "close", "tick_volume", "real_volume", "spread_points", "bar_state", "available_at_utc"])
+                for i, t in enumerate(ts):
+                    op = datetime.fromtimestamp(t - offset, timezone.utc)
+                    if op < start or op >= end or op + timedelta(seconds=TF_SECONDS[tf]) > now:
+                        continue
+                    nxt_open = datetime.fromtimestamp(ts[i + 1] - offset, timezone.utc) if i + 1 < len(ts) else None
+                    if nxt_open is None or nxt_open > now:
+                        continue  # not confirmed by an observed next bar
+                    x = uniq[t]
+                    w.writerow([sym, iso(op), float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"]), int(x["tick_volume"]),
+                                int(x["real_volume"]), int(x["spread"]), "CLOSED", iso(max(nxt_open, op + timedelta(seconds=TF_SECONDS[tf])))])
+                    n += 1
+            files[tf] = {"bars": n, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            print(f"[OK] {tf}: {n} zamkniętych świec")
+        manifest = {"module_id": "MQAI_MT5_EXPORT_UTC", "symbol": sym, "from_utc": iso(start), "to_utc": iso(end), "created_at": iso(now),
+                    "server_offset_seconds": offset, "offset_basis": basis, "files": files, "execution_permission": "BLOCKED",
+                    "limitations": ["Offset czasu serwera zastosowany jednolicie; historyczne zmiany DST brokera nie są rekonstruowane",
+                                    "available_at = otwarcie następnej świecy (oszacowanie historyczne, nie obserwacja live)",
+                                    "Świece BID z wykresu, nie historyczne ticki Bid/Ask"]}
+        (out / "MT5_EXPORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        print("Manifest:", out / "MT5_EXPORT_MANIFEST.json")
+    finally:
+        mt5.shutdown()
     return 0

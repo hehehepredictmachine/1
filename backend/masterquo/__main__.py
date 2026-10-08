@@ -178,6 +178,20 @@ def cmd_stop(args) -> int:
     return 4
 
 
+def _load_dotenv() -> None:
+    """Optional <root>/.env with ANTHROPIC_API_KEY / ANTHROPIC_MODEL / MASTERQUO_DATA_DIR (never packaged)."""
+    f = paths.ROOT_DIR / ".env"
+    if not f.exists():
+        return
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = (x.strip() for x in line.split("=", 1))
+        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
+            os.environ[k] = v.strip('"')
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -188,7 +202,12 @@ def main(argv=None) -> int:
     sub.add_parser("doctor")
     sub.add_parser("clock")
     sub.add_parser("set-key")
+    e = sub.add_parser("export", help="eksport 6 TF w formacie M06R z czasem UTC")
+    e.add_argument("--from-utc", required=True)
+    e.add_argument("--to-utc", required=True)
+    e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_six_tf"))
     a = ap.parse_args(argv)
+    _load_dotenv()
     if a.cmd == "serve":
         return cmd_serve(a)
     if a.cmd == "stop":
@@ -200,6 +219,8 @@ def main(argv=None) -> int:
         return diagnostics.clock()
     if a.cmd == "set-key":
         return diagnostics.set_key()
+    if a.cmd == "export":
+        return diagnostics.export_history(a.from_utc, a.to_utc, a.out)
     return 1
 
 

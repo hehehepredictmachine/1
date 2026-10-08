@@ -1,0 +1,710 @@
+{
+ "note": "Silniki MasterQUO skopiowane bez zmian z paczki MasterQUO_ALL_IN_ONE_XAUUSD_MINUS_FUTURE_CANDLE_TIME_FIX_V3_READONLY (pliki .bat pomini\u0119te). Testy weryfikuj\u0105 brak modyfikacji.",
+ "files": {
+  "backend/vendor/legacy_core/AUDIT_CHANGELOG_TEST_REPORT.md": {
+   "sha256": "c74c0e663633b62d9bdaca1950acda424a2950e0e719adad1d4f946b116a1371",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/AUDIT_CHANGELOG_TEST_REPORT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/AUDIT_M10A_M15.md": {
+   "sha256": "d9f0e3e68fb5f09496be044a5743100997384a98996bb5ebd0ada4cad15a8a6f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/AUDIT_M10A_M15.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/AUDIT_M10_AUTO_TRIGGER.md": {
+   "sha256": "33329f3b40cb2ca3c2f2880f0c7f433e90eb1b6e01b3aedfc5d0a5cda871bc96",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/AUDIT_M10_AUTO_TRIGGER.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/BRIDGE_SETTINGS.example.json": {
+   "sha256": "8e123c2cb2773437bd187937070f728d690cd64d79bda1dc01c744dac563998d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/BRIDGE_SETTINGS.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/BRIDGE_TESTS.py": {
+   "sha256": "fc81e7925340fb489fc79d57d3d5edcfc1399467fa59c5a1ca33f5beeabeeb4c",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/BRIDGE_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/INTEGRATION_CONTRACT.md": {
+   "sha256": "97f053533f25468da7bcc0fd61d4ddfedf474652c5e3cf019a79606bda353a28",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/INTEGRATION_MODULE_SPEC_v1.0.0_CANDIDATE.txt": {
+   "sha256": "f51aca2f82a11b6c28666e4a27c8aaf55a7b819506c02c2d76de92ea63cf618b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/INTEGRATION_MODULE_SPEC_v1.0.0_CANDIDATE.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/INTEGRATION_OUTPUT_SCHEMA.json": {
+   "sha256": "75c4b6e368d50b949d0c984c4a7ff3f78fa31fdffaf378fbe9c0589fe0d21fd2",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/INTEGRATION_OUTPUT_SCHEMA.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/INTEGRATION_TESTS.py": {
+   "sha256": "cac18b662d6efa540fd377e38888b1dc658635a72c47d368638e7e429fe54751",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/INTEGRATION_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/LIFECYCLE_RULES.example.json": {
+   "sha256": "6021486efd314355b9620faee25a31e3d9f317ce148f8c60cc34a579489bc13b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/LIFECYCLE_RULES.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M01_AUDIT.py": {
+   "sha256": "4ce36de32d70ba6f1a8f1a5825e9adbcddd2309350505d58078232cda4d64d45",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M01_AUDIT.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M02I_M01_M02_LIVE_BRIDGE.py": {
+   "sha256": "1d259ce8e42d8a02eba33c7e2a3e64fe42d083d38e78467001563f240293aed1",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M02I_M01_M02_LIVE_BRIDGE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M02I_M03_M09_M14_ADAPTER.py": {
+   "sha256": "332cba868deee8fda6e0cc24f48af4735aa93477f53361485b8c7529d8ecb751",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M02I_M03_M09_M14_ADAPTER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M02I_MONITOR_VIEWER.py": {
+   "sha256": "b64b6dedeabf7e65919ca017bde28a588b1b03efe3566849db311407950beba3",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M02I_MONITOR_VIEWER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M03E_M10_PIPELINE.py": {
+   "sha256": "cb08dc2c3ec344452b5645fb59b842ea439108da0407cb0879945b4e4faa9a05",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M03E_M10_PIPELINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M03_PROFILE.example.json": {
+   "sha256": "e61bcec21af389920ced962864d5970f7c6838485812e93ac1eba68ef59ed1b8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M03_PROFILE.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M04N_MACRO_AUDIT.md": {
+   "sha256": "bbeb68ddb827fa6990f78272370c79d913dfc7b99cb9b52845030be15b4568aa",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M04N_MACRO_AUDIT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M04N_MACRO_GUARD.py": {
+   "sha256": "e0d218a54abceef78b3d0426d95e306c08db6105c59eedb52ddd2b252d447e10",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M04N_MACRO_GUARD.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M04N_MACRO_GUARD_TESTS.py": {
+   "sha256": "e25aa27dddaf9f4f65592fe404bd1d6137dd58a57e8f6da5a58040033d3a757d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M04N_MACRO_GUARD_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M04N_MACRO_INTEGRATION_CONTRACT.md": {
+   "sha256": "4e0c26148073c77e6518d7e08606d8129263baadaec00bac97894599de81e1ab",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M04N_MACRO_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M04N_MACRO_VIEWER.py": {
+   "sha256": "e3cd59321c9b4023822646d3e522bc0af8a237813698a3615efe9aab08bb832c",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M04N_MACRO_VIEWER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_AUDIT_CHANGELOG_TEST_REPORT.md": {
+   "sha256": "e456885ac6353b5ff03c060407cdc174e2d68db3fef17b0a7589d8e8d6402c70",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_AUDIT_CHANGELOG_TEST_REPORT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_INTEGRATION_CONTRACT.md": {
+   "sha256": "1a475eb88cb448a322b38ae152982a205415497f9384c57f4a307d98ef280f47",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_OPERATIONAL_SPEC_v1.0.0_CANDIDATE.txt": {
+   "sha256": "4ef75bfe4fd538c9f745c6a987304e7fec0a5a13475dbd10ae26cfa9fdd2ac43",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_OPERATIONAL_SPEC_v1.0.0_CANDIDATE.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_PROFILE_DETECTOR.py": {
+   "sha256": "54f190356a3b5b13444706f421e1ff2f48ccbd810586708c6cc21f5eb0b251e2",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_PROFILE_DETECTOR.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_PROFILE_RUNTIME.py": {
+   "sha256": "a81ee97b4effa5dcd89065f85e00ebdd12d565434a9a8da389d28664b0f4673c",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_PROFILE_RUNTIME.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_PROFILE_TESTS.py": {
+   "sha256": "84f33b12bbf20c7f03221df364c7c3e4308731c1a96288557978ebe5ca91beed",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_PROFILE_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M07_M03E_RUNTIME_TESTS.py": {
+   "sha256": "1e6bb0f3dd2ecc37da793d992459f5b0b972b372e7d11d3fec389c5f309b4fce",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M07_M03E_RUNTIME_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10A_M15_ADAPTER.py": {
+   "sha256": "b1de9d28f3046f060eb5aedd3505fa12c4d169b4ccc9c316ec663355cab73685",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10A_M15_ADAPTER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10A_M15_CANDIDATE_SPEC.txt": {
+   "sha256": "9e1003311b14845f20de355b81ee7d5e07fb21e24def68f64a3603c4cde430c3",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10A_M15_CANDIDATE_SPEC.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10A_M15_INTEGRATION_CONTRACT.md": {
+   "sha256": "337e0665f892880b330f1dcb538854acb499c67a9e5250198635fe154ac03e4d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10A_M15_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10A_M15_TESTS.py": {
+   "sha256": "51bad1a6b5333a0787f2fed70e58ff114982d65a7dbaafd8120a47514e89ad5d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10A_M15_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10_AUTO_TRIGGER_CONFIRM.py": {
+   "sha256": "e3fa802f7789289782afb58768163f1fba299e3d72f1659c1ea64cd3c8ad8111",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10_AUTO_TRIGGER_CONFIRM.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10_AUTO_TRIGGER_CONFIRM_v1.1.0_CANDIDATE.txt": {
+   "sha256": "41f9139ef8fa4dc7f34a652bcf46dafc8fa5c193aabe863ce8e4cefd996525d9",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10_AUTO_TRIGGER_CONFIRM_v1.1.0_CANDIDATE.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10_AUTO_TRIGGER_INTEGRATION_CONTRACT.md": {
+   "sha256": "94d606fe55191240765b8e768fe00a4aef5e296c10e35df705dff2af44c22c6c",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10_AUTO_TRIGGER_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10_AUTO_TRIGGER_TESTS.py": {
+   "sha256": "a5a05e02b486d85664a5f19c12c17bbf674f438d0f977614adf372bcc0e6735b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10_AUTO_TRIGGER_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M10_TESTS.py": {
+   "sha256": "a1fc981d5068c32c8ffc0ef2699663b98ca0f040ea4ae450bdfa723730ae0627",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M10_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/M15_SIGNAL_VIEWER.py": {
+   "sha256": "4d5b2f6c1a8746205e74f6840d794ffd695c3b16f64a6cb28ed62a5fa774adbe",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/M15_SIGNAL_VIEWER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/OPERATIONAL_PROFILES_v1.json": {
+   "sha256": "29e296db1bf72803f1f33ea0f9bd2c4662215b053fe8ee015a01c83cd2eedad8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/OPERATIONAL_PROFILES_v1.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README.md": {
+   "sha256": "528e5b54d47d0a6126110a1544860f5c13c548739cb96f16a5c925ca61bfad9b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_M04N_MACRO_GUARD_PL.md": {
+   "sha256": "528e5b54d47d0a6126110a1544860f5c13c548739cb96f16a5c925ca61bfad9b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_M04N_MACRO_GUARD_PL.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_M10A_M15.md": {
+   "sha256": "be13146a96fa9df0d535c7a4dc81c4deed486d4c05e2b94750ad40a0489c2694",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_M10A_M15.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_M10_AUTO.md": {
+   "sha256": "13b1d5aedcda96858d665f8bc81a0c5c7ebb4448cd293dcee062c08efb7756ae",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_M10_AUTO.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_OPERATIONAL_PROFILES.md": {
+   "sha256": "1db365123a46736c8064089b5d0d0fa13987fb06e106e1cc5de63e43a619a201",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_OPERATIONAL_PROFILES.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_PREVIOUS_M10A_M15.md": {
+   "sha256": "c2ca146a1d97671a06cde8bfea4c46d5b2ee34cdc3662009ad7cd0730c023800",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_PREVIOUS_M10A_M15.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/README_PREVIOUS_OPERATIONAL_PROFILES.md": {
+   "sha256": "6659ac000f8b2aa4f45ccc15b716d0fdea259b52051b03ca8dba4875e6638da1",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/README_PREVIOUS_OPERATIONAL_PROFILES.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_ALL_M10A_M15_TESTS.py": {
+   "sha256": "9dfa171d95b8ac3750bd8eba77af689a9ed1a08e0f140f9a4eccf04944a0e78f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_ALL_M10A_M15_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_ALL_OFFLINE_TESTS.py": {
+   "sha256": "3055b0b0427111a851458fd02ffa89880d105230913e877169f9aa5b24db54a5",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_ALL_OFFLINE_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_ALL_OPERATIONAL_PROFILE_TESTS.py": {
+   "sha256": "6b1b608659ddddc42b32c01689ca0d7ab48b5ef9c91f9f1474e694ed73a6ce0f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_ALL_OPERATIONAL_PROFILE_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_MACRO_GUARD_ALL_TESTS.py": {
+   "sha256": "4793314d4f573ab68443e570d65295f8d94ee9d8655aa6bb286419e9d6d4829f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_MACRO_GUARD_ALL_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_MT5_AUTOMATIC_TRIGGER_READONLY.py": {
+   "sha256": "23c88083aed1e5c68e83f772051b4b2f7e0a40c569cea3e38c7370edac9024d2",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_MT5_AUTOMATIC_TRIGGER_READONLY.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_MT5_M10A_M15_READONLY.py": {
+   "sha256": "63dcaf0c87b71f76553615bfd67ece1405981a7201f56649495dcf1388fb39d8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_MT5_M10A_M15_READONLY.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_MT5_OPERATIONAL_PROFILES_READONLY.py": {
+   "sha256": "d46fdded334c6b4089b0e97e8c25b3bc45faa2af0b2e3635d9faf62b5b569f91",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_MT5_OPERATIONAL_PROFILES_READONLY.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/RUN_MT5_READONLY_SIGNAL_LIFECYCLE.py": {
+   "sha256": "b51fb5f04ef95e4659430dff5952e6c4c31bd102679f6ba69b4ca1c23d811fc6",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/RUN_MT5_READONLY_SIGNAL_LIFECYCLE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/SHA256SUMS.txt": {
+   "sha256": "7da69a7b55a88673cd9e8c3ce51f95d3b43553843b083d41b5f1b7d6fc7f27c7",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/SHA256SUMS.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/STRATEGY_PLAN.example.json": {
+   "sha256": "d29aa797434b27cede5de1690e1cc0611fd3e455020488492f1338f59ddfe679",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/STRATEGY_PLAN.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/SYNTHETIC_EXAMPLE_SUMMARY.json": {
+   "sha256": "5e86693813d22db4163bf597bbc5cd2ef8a775c63667ce7d023ac32275debda5",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/SYNTHETIC_EXAMPLE_SUMMARY.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/SYNTHETIC_OPERATIONAL_PROFILE_SAMPLE.json": {
+   "sha256": "48cc3537cda4c3b3075e088a9e5fd3203c72a6b5fd561696677ae606e80b1148",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/SYNTHETIC_OPERATIONAL_PROFILE_SAMPLE.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/SYNTHETIC_READ_ONLY_SAMPLE.json": {
+   "sha256": "6f60ea24c9bbd222f7b0cbdbe338f6a1324d24e56450b5c7e39231c8c3d5c596",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/SYNTHETIC_READ_ONLY_SAMPLE.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/SYNTHETIC_TRIGGER_DEMO.json": {
+   "sha256": "ad9d77ad30e9567c7d6bb08cdfd94303401c5550f1442bea1c1db3891d7f77ad",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/SYNTHETIC_TRIGGER_DEMO.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_AUDIT_CHANGELOG_TEST_REPORT.md": {
+   "sha256": "8286cc706ccdc50d7dd7029f78f24c07dc9937d2195da5b08c1889a61903f093",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_AUDIT_CHANGELOG_TEST_REPORT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_CONFIG.json": {
+   "sha256": "ea88972c8329c4a0d8076d2d1ba5c45e01c86e4e31eb3638cf239cd354ba5652",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_CONFIG.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_DEMO_OFFLINE.py": {
+   "sha256": "85a36d4d6bbbf0f62418460ffc0bd556cba2728d5d7b5a0ffefb1598029738be",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_DEMO_OFFLINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_ENGINE.py": {
+   "sha256": "9d42503ac22f1933647b22ff715c4c67f1ecb57d835e4142e4ddbb8574d985e1",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_FAIR_ECONOMY_CHANGELOG.md": {
+   "sha256": "2246fddbf2f5f44ed2d97462eefd84fc47aeab15b0d3bbdfaea7c329793082b8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_FAIR_ECONOMY_CHANGELOG.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_FAIR_ECONOMY_TESTS.py": {
+   "sha256": "885b894771778ed0ccfdd9c81b8f4a480e6e11bea0a7e871a15c5431f124f216",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_FAIR_ECONOMY_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_INTEGRATION_CONTRACT.md": {
+   "sha256": "c8302f87b6454a9bdeab49c1d11801a5c131d9471d17976e902c9bd5f295046e",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_M04_CONTRACT_TESTS.py": {
+   "sha256": "2863bf0c507d37e6dc0b2d4107febe8820b95d75acf7f7b6dc5bf724cd5c81c1",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_M04_CONTRACT_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_OUTPUT_SCHEMA.json": {
+   "sha256": "ec2d638e1041a0369e0004e6ac8e0467e644e3e1e685339bf16b13d6abe18522",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_OUTPUT_SCHEMA.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_SOURCE_REGISTER.md": {
+   "sha256": "50971cb52e806c073f8ef3ae96a698a95c1d5caaa51aed79285c5c36c7ce4a4f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_SOURCE_REGISTER.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_TESTS.py": {
+   "sha256": "e7064e2a68488f38704d9da2540c1796f7f76189ec18098fcad1847708ccb6f4",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/M04N_VIEWER.py": {
+   "sha256": "d73913f3737ffda283ec7fb663dac676bc0ccb80395c45b3799c5f1379377732",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/M04N_VIEWER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/README.md": {
+   "sha256": "57f0310f2ff7e343190dfe4ef244d9d4a549bd2684f27b42d1baee24248df400",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/README.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/requirements.txt": {
+   "sha256": "0b878964fe4aeffa55eba77b5271ba11082bc562d6f9c2131b815401ea3eea03",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/requirements.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/macro_sources/vendor/M04_REFERENCE_ENGINE.py": {
+   "sha256": "b032968659e0a16dd4ae985c9c74033eb476bd00585f7d4dcfec955dbcdcf38d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/macro_sources/vendor/M04_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_CONTINUOUS_MT5_OBSERVER_REFERENCE.py": {
+   "sha256": "852a4b38f7f5b71751711ac80546267f5e39e9838240568b9abde0ed2a304f5f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_CONTINUOUS_MT5_OBSERVER_REFERENCE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_CONTINUOUS_OBSERVER_TESTS.py": {
+   "sha256": "3ee1b4ec4643f97b0e5d88ec8eee00b3ffe7c0007be0db1b9bcfcf922312f0fa",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_CONTINUOUS_OBSERVER_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_CONTRACT_TESTS.py": {
+   "sha256": "3c67910a88a97a6def866368bfc662ee2ac3daa6d0431ac706b4bb1b5d47037b",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_CONTRACT_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_DATA_INTELLIGENCE_v4.2.1_CANDIDATE.txt": {
+   "sha256": "e5d8c52d6e9613375b208f3081ad019dadf5814f0b0ce4b3e1cb2b98bdf77795",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_DATA_INTELLIGENCE_v4.2.1_CANDIDATE.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_DATA_SNAPSHOT_SCHEMA_v2_0_EXTENSION.json": {
+   "sha256": "286c16133eca00fbb16de4b84da97659e9bb3638a5ff67881b5fe569acad6f1c",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_DATA_SNAPSHOT_SCHEMA_v2_0_EXTENSION.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M01/M01_SYNTHETIC_EXAMPLE.json": {
+   "sha256": "6ee69bbd9e64f686af02b24efb2bfa85c2cc3e9f7093e09096cb78aafa72c457",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M01/M01_SYNTHETIC_EXAMPLE.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02/M02_PROFILE.example.json": {
+   "sha256": "0f6ee3df0cc7c3cd5f34520802afb940ba9ce179595d4a56e150ccae1157941f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02/M02_PROFILE.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02/M02_REFERENCE_ENGINE.py": {
+   "sha256": "b6b7bd0eb11e81edbedcecb5e90475adb90dfa175722a0f80fa8e575ba857e06",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02/M02_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02/M02_TESTS.py": {
+   "sha256": "9f4108953bf1df0e442d8cf7e8ec51515647cb118a0115dbbbaedd4f7591feba",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02/M02_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_INDICATOR_ENGINE.py": {
+   "sha256": "e20a268c808162226f36c2e01190a25f0ca8d1eb7b0359419a646e8e83d5b4d7",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_INDICATOR_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_MT5_READONLY_PREVIEW.py": {
+   "sha256": "f588c0c3e8779ef7f39218714b43b617192c81d5ab7016be8dcebeab739d59ad",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_MT5_READONLY_PREVIEW.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_OUTPUT_SCHEMA.json": {
+   "sha256": "8d848c16f250225955f9c1c182d8c08e9032e37e2fc9213f0b124e5247b39f20",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_OUTPUT_SCHEMA.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_PROFILE.example.json": {
+   "sha256": "fb24e5cdc3539973ce5c2c49a7e01ee75f7fce58e1e1c2435c0a12430027e452",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_PROFILE.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_PROFILE_MT5_TIMEFRAMES_v1.1.json": {
+   "sha256": "61af142850cc49ffbff2447f5cfa277009d24970e748b697229ae94880883ac5",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_PROFILE_MT5_TIMEFRAMES_v1.1.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_SYNTHETIC_INPUT.jsonl": {
+   "sha256": "ace8093f16a549f9f77021d628decb56598bfc4670864b90c0015840bbf0c4ba",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_SYNTHETIC_INPUT.jsonl",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_TESTS.py": {
+   "sha256": "e9b889accc862f95f6fd1d1db955ebb6f42fe74dc5630acde2c4c88bacb888f8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/M02I_TIMEFRAME_PROFILE_TESTS.py": {
+   "sha256": "be5c79116611d24edc9a9b182bd6a8f81637644451e8a2f427adf3031ad40906",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/M02I_TIMEFRAME_PROFILE_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/compatibility/M01_SYNTHETIC_EXAMPLE.json": {
+   "sha256": "6ee69bbd9e64f686af02b24efb2bfa85c2cc3e9f7093e09096cb78aafa72c457",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/compatibility/M01_SYNTHETIC_EXAMPLE.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/compatibility/M02_PROFILE.example.json": {
+   "sha256": "0f6ee3df0cc7c3cd5f34520802afb940ba9ce179595d4a56e150ccae1157941f",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/compatibility/M02_PROFILE.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M02I/compatibility/M02_REFERENCE_ENGINE.py": {
+   "sha256": "b6b7bd0eb11e81edbedcecb5e90475adb90dfa175722a0f80fa8e575ba857e06",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M02I/compatibility/M02_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M03/M03_PROFILE.example.json": {
+   "sha256": "e61bcec21af389920ced962864d5970f7c6838485812e93ac1eba68ef59ed1b8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M03/M03_PROFILE.example.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M03/M03_REFERENCE_ENGINE.py": {
+   "sha256": "9d322204947ee98fe3ac47542a132b406bf0ce2f251ab0be7850dfd677098682",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M03/M03_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M03/M03_TESTS.py": {
+   "sha256": "ba81d8872de97d5ccb41a870d3036ee650712b9798e95fef5be774b55adfd425",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M03/M03_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M04/M04_REFERENCE_ENGINE.py": {
+   "sha256": "b032968659e0a16dd4ae985c9c74033eb476bd00585f7d4dcfec955dbcdcf38d",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M04/M04_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M09/M09_REFERENCE_ROUTER.py": {
+   "sha256": "6e0e2d52951fc24ee23cb236bff573ac099cd107f34002a8641f35eb86b88ab5",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M09/M09_REFERENCE_ROUTER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M09/M09_TESTS.py": {
+   "sha256": "623f554e64037e1dd9ab1cb18a4618937109211e8583883765639487334e4895",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M09/M09_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M10_REFERENCE_ENGINE.py": {
+   "sha256": "8cb7e43b2be335ed1b7b5fbe9f29ac2cffec518117da8bbea32d78bcadfcbbce",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M10_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M11/M11_REFERENCE_ENGINE.py": {
+   "sha256": "806f43ccbe48731cd3decc68370738511df7b18927008c032a5ea385117d8dd1",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M11/M11_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M14/M14_REFERENCE_DECISION_ENGINE.py": {
+   "sha256": "5f80b960e44bec4c7b0a28fb5a9cb0564a04d7a0aede8fa400fc03f26a403836",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M14/M14_REFERENCE_DECISION_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M14/M14_TESTS.py": {
+   "sha256": "deffcb23bc8825146fa4f991d7dd4a4e965ff7538b944ccadcf0efd6c16909cf",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M14/M14_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M14_REFERENCE_SYNTHETIC_OUTPUT.json": {
+   "sha256": "610a02f296b682248d275abb5c726e1471b62c74a414ff856c1e3da318b997e8",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M14_REFERENCE_SYNTHETIC_OUTPUT.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_INTEGRATION_CONTRACT.md": {
+   "sha256": "2a008d9818a221f0970289378620007afea54802c2d293e27c787d2610e6bd76",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_OUTPUT_MACHINE_EXPORT_SIGNAL_COMMUNICATION_v1.0.0_CANDIDATE.txt": {
+   "sha256": "d98701220c45e443c62694c3389e27f50e4c806bbf515d7804bc411cb497daaa",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_OUTPUT_MACHINE_EXPORT_SIGNAL_COMMUNICATION_v1.0.0_CANDIDATE.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_REFERENCE_COMMUNICATION_ENGINE.py": {
+   "sha256": "b378799e66978dbcae4ac4a5ba8321bfc8d11f028ab97623fad99377e3f56f57",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_REFERENCE_COMMUNICATION_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_RESULT_SCHEMA_v2_0_EXTENSION.json": {
+   "sha256": "faa63ff014cdcb8216319684d9d1d2eaa97cb161522280ea6bee81c0d33c1e85",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_RESULT_SCHEMA_v2_0_EXTENSION.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_SYNTHETIC_CONTEXT.json": {
+   "sha256": "cc3b9820cabb827c3dfa1ae5bf223e4f2baf68476c6d93a5b64f90abf0c12a18",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_SYNTHETIC_CONTEXT.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/legacy_core/vendor/M15/M15_TESTS.py": {
+   "sha256": "7c7fc80632810f440649e5d31edf51152693ce3a9aeaeecfb2532d9e8a7dacb4",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/legacy_core/vendor/M15/M15_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/__init__.py": {
+   "sha256": "cd2016af6fb61e05a9859f2098d1e3e94a6fa903cec76509c9f1baa66099cc74",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/__init__.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/common.py": {
+   "sha256": "8d62e15551af3a43f3425d645fcc6dfb27e1510aa5ab90c531749235ac7981c6",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/common.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u02_regime.py": {
+   "sha256": "68c143a336b18abefca3889b38e376cbffee44af5f7f3aef1d70d3c124133bf2",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u02_regime.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u03_execution.py": {
+   "sha256": "2b93d97c22342cc3d7b8990153cee9fc9bde0c0f58889ed2845307fbdc23cb16",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u03_execution.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u04_oos.py": {
+   "sha256": "5b000032a6b920bb96a65adc4fd0f39e5f1c5d087e6f5ea0e9d8fe0bb440d4d7",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u04_oos.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u05_calibration.py": {
+   "sha256": "312264788595db2a3d5dc32f3047f9f6fa6519c2bd46c266d2f20f29791ceb05",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u05_calibration.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u06_liquidity.py": {
+   "sha256": "cd107470d06f8b011c1d0eef9068b27718c284af33307c82397ae2aefd471822",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u06_liquidity.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u07_crossmarket.py": {
+   "sha256": "a1fc2f6853029ecc2781af328cdc0a626ddddeceb2e6be662f585cb91a252098",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u07_crossmarket.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u08_surprise.py": {
+   "sha256": "5b41ddf22685d7ee4a5b1015614a7f65e2a7c525125d45d594b516bb70c2d2eb",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u08_surprise.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u09_learning.py": {
+   "sha256": "69a41de0a9d1a6e2896914f1d4c51092ad6664fd2c653f5342b814278f4f6e82",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u09_learning.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/mq_upgrades/u10_explain.py": {
+   "sha256": "acd0017a2e751b3874cf3728f7a8f24de541956c87df07fc1c486396eb8400ff",
+   "source_in_original_zip": "01_PROGRAM_GLOWNY_10_ULEPSZEN/mq_upgrades/u10_explain.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_AUDIT_CHANGELOG_TEST_REPORT.md": {
+   "sha256": "8286cc706ccdc50d7dd7029f78f24c07dc9937d2195da5b08c1889a61903f093",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_AUDIT_CHANGELOG_TEST_REPORT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_CONFIG.json": {
+   "sha256": "ea88972c8329c4a0d8076d2d1ba5c45e01c86e4e31eb3638cf239cd354ba5652",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_CONFIG.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_DEMO_OFFLINE.py": {
+   "sha256": "85a36d4d6bbbf0f62418460ffc0bd556cba2728d5d7b5a0ffefb1598029738be",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_DEMO_OFFLINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_ENGINE.py": {
+   "sha256": "9d42503ac22f1933647b22ff715c4c67f1ecb57d835e4142e4ddbb8574d985e1",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_ENGINE.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_FAIR_ECONOMY_CHANGELOG.md": {
+   "sha256": "2246fddbf2f5f44ed2d97462eefd84fc47aeab15b0d3bbdfaea7c329793082b8",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_FAIR_ECONOMY_CHANGELOG.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_FAIR_ECONOMY_TESTS.py": {
+   "sha256": "885b894771778ed0ccfdd9c81b8f4a480e6e11bea0a7e871a15c5431f124f216",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_FAIR_ECONOMY_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_INTEGRATION_CONTRACT.md": {
+   "sha256": "c8302f87b6454a9bdeab49c1d11801a5c131d9471d17976e902c9bd5f295046e",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_INTEGRATION_CONTRACT.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_M04_CONTRACT_TESTS.py": {
+   "sha256": "2863bf0c507d37e6dc0b2d4107febe8820b95d75acf7f7b6dc5bf724cd5c81c1",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_M04_CONTRACT_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_OUTPUT_SCHEMA.json": {
+   "sha256": "ec2d638e1041a0369e0004e6ac8e0467e644e3e1e685339bf16b13d6abe18522",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_OUTPUT_SCHEMA.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_SOURCE_REGISTER.md": {
+   "sha256": "50971cb52e806c073f8ef3ae96a698a95c1d5caaa51aed79285c5c36c7ce4a4f",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_SOURCE_REGISTER.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_TESTS.py": {
+   "sha256": "e7064e2a68488f38704d9da2540c1796f7f76189ec18098fcad1847708ccb6f4",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_TESTS.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/M04N_VIEWER.py": {
+   "sha256": "d73913f3737ffda283ec7fb663dac676bc0ccb80395c45b3799c5f1379377732",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/M04N_VIEWER.py",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/README.md": {
+   "sha256": "57f0310f2ff7e343190dfe4ef244d9d4a549bd2684f27b42d1baee24248df400",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/README.md",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/SHA256SUMS.txt": {
+   "sha256": "5f85dc08d117a019189ec0369fe7528a53b52ad1b55fcc142003ff31e762c2e4",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/SHA256SUMS.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/demo_synthetic_only/M04N_SYNTHETIC.json": {
+   "sha256": "e125bf467b26a3dbe97ab9053c99e8d473a65441dc65fc61dc6f6e0ee391564e",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/demo_synthetic_only/M04N_SYNTHETIC.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/demo_synthetic_only/M04_CONTEXT_SYNTHETIC.json": {
+   "sha256": "dc09381c735f8330822ae59933bad12a3d619013e8b74da7902846a945b3e9d9",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/demo_synthetic_only/M04_CONTEXT_SYNTHETIC.json",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/requirements.txt": {
+   "sha256": "0b878964fe4aeffa55eba77b5271ba11082bc562d6f9c2131b815401ea3eea03",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/requirements.txt",
+   "identical_to_source": true
+  },
+  "backend/vendor/m04n/vendor/M04_REFERENCE_ENGINE.py": {
+   "sha256": "b032968659e0a16dd4ae985c9c74033eb476bd00585f7d4dcfec955dbcdcf38d",
+   "source_in_original_zip": "02_ZRODLA_NEWS_M04N/vendor/M04_REFERENCE_ENGINE.py",
+   "identical_to_source": true
+  }
+ }
+}
