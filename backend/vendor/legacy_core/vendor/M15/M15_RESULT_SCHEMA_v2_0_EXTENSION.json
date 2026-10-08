@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/masterquo/M15_RESULT_SCHEMA_v2.0.0_EXTENSION.json",
+  "title": "MasterQUO M15 Result - schema 2.0 extension",
+  "type": "object",
+  "required": [
+    "module_id",
+    "schema_version",
+    "module_version",
+    "analysis_id",
+    "as_of",
+    "decision_scope",
+    "decision",
+    "intended_direction",
+    "signal_tier",
+    "signal_validity",
+    "execution_permission",
+    "execution_eligible",
+    "live_execution_allowed",
+    "submitted_order_id",
+    "broker_order_sent",
+    "order_actions",
+    "screenshot_capture_enabled",
+    "data_source_policy",
+    "synthetic_example",
+    "gates"
+  ],
+  "properties": {
+    "module_id": {
+      "const": "M15"
+    },
+    "schema_version": {
+      "const": "2.0.0"
+    },
+    "module_version": {
+      "type": "string"
+    },
+    "analysis_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decision_scope": {
+      "const": "ANALYSIS"
+    },
+    "decision": {
+      "enum": [
+        "LONG",
+        "SHORT",
+        "EARLY_SETUP",
+        "CONDITIONAL_SETUP",
+        "WAIT",
+        "NO_TRADE"
+      ]
+    },
+    "intended_direction": {
+      "enum": [
+        "LONG",
+        "SHORT",
+        "NEUTRAL",
+        "UNKNOWN"
+      ]
+    },
+    "signal_validity": {
+      "type": "string"
+    },
+    "signal_tier": {
+      "enum": [
+        "NONE",
+        "EARLY",
+        "CONDITIONAL",
+        "CONFIRMED",
+        "A_PLUS"
+      ]
+    },
+    "execution_permission": {
+      "const": "BLOCKED"
+    },
+    "execution_eligible": {
+      "const": false
+    },
+    "live_execution_allowed": {
+      "const": false
+    },
+    "submitted_order_id": {
+      "type": "null"
+    },
+    "broker_order_sent": {
+      "const": false
+    },
+    "order_actions": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "screenshot_capture_enabled": {
+      "const": false
+    },
+    "data_source_policy": {
+      "const": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS"
+    },
+    "run_status": {
+      "enum": [
+        "COMPLETED",
+        "NOT_RUN",
+        "FAILED",
+        "RUNNING"
+      ]
+    },
+    "synthetic_example": {
+      "type": "boolean"
+    },
+    "instrument_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "account_type": {
+      "enum": [
+        "ZERO_SPREAD",
+        null
+      ]
+    },
+    "quote": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "source",
+            "as_of",
+            "bid",
+            "ask",
+            "spread"
+          ],
+          "properties": {
+            "source": {
+              "const": "MT5_PRIMARY"
+            },
+            "as_of": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "bid": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "ask": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "spread": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "probabilities": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "setup_score": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "top_setup_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "horizon_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "execution_blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gates": {
+      "type": "array"
+    },
+    "active_setups": {
+      "type": "array"
+    },
+    "early_setups": {
+      "type": "array"
+    },
+    "conditional_setups": {
+      "type": "array"
+    },
+    "confirmed_setups": {
+      "type": "array"
+    },
+    "invalidated_setups": {
+      "type": "array"
+    },
+    "signal_change_log": {
+      "type": "array"
+    },
+    "original_m14": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "LONG",
+              "SHORT"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "properties": {
+          "signal_tier": {
+            "enum": [
+              "CONFIRMED",
+              "A_PLUS"
+            ]
+          },
+          "entry_trigger": {
+            "const": "CONFIRMED"
+          },
+          "signal_validity": {
+            "const": "VALID_CONFIRMED_SETUP"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "synthetic_example": {
+            "const": true
+          }
+        },
+        "required": [
+          "synthetic_example"
+        ]
+      },
+      "then": {
+        "description": "No real alert delivery for synthetic fixtures is enforced in executable code."
+      }
+    }
+  ]
+}

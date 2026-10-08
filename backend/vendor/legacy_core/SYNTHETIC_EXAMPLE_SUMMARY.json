@@ -1,0 +1,37 @@
+{
+  "schema_version": "2.0.0",
+  "prompt_version": "4.1.0",
+  "module_id": "M01_M03E_M10_READONLY_INTEGRATION",
+  "module_version": "1.0.0-CANDIDATE",
+  "snapshot_id": "M01-M02-M02I:SYNTHETIC:1",
+  "as_of": "2026-10-08T14:30:00+00:00",
+  "account_profile": "ZERO_SPREAD_DECLARED_UNVERIFIED",
+  "data_gate": "PASS_WITH_LIMITATIONS",
+  "strategy_setup_id": null,
+  "setup_state": null,
+  "analysis_decision": "WAIT",
+  "intended_direction": "UNKNOWN",
+  "execution_permission": "BLOCKED",
+  "execution_eligible": false,
+  "live_execution_allowed": false,
+  "broker_order_sent": false,
+  "submitted_order_id": null,
+  "reason_codes": [
+    "NO_MARKET_EVIDENCE",
+    "STRATEGY_PLAN_REQUIRED"
+  ],
+  "research_only": true,
+  "data_audit": {
+    "status": "PASS_WITH_LIMITATIONS",
+    "timeframes": {
+      "M1": "PASS",
+      "M5": "PASS",
+      "M15": "PASS",
+      "H1": "PASS",
+      "H4": "PASS",
+      "D1": "PASS"
+    }
+  },
+  "synthetic_example_only": true,
+  "screen_capture_count": 0
+}

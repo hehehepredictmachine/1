@@ -1,0 +1,59 @@
+MASTERQUO — OPERATIONAL STRATEGY PROFILES / M07-M03E RESEARCH DETECTOR
+VERSION: 1.0.0-CANDIDATE
+SCHEMA_VERSION: 2.0.0 (UNCHANGED)
+PROMPT_VERSION: 4.1.0 (UNCHANGED)
+STATUS: CANDIDATE / PENDING APPROVAL
+MT5_ACCOUNT: ZERO_SPREAD_DECLARED_COSTS_UNVERIFIED
+ENVIRONMENT: ANALYSIS_ONLY / MT5_READONLY / ORDERS_DISABLED
+
+PURPOSE:
+Programmatically select testable, deterministic XAUUSD research setup hypotheses
+from already observed, source-backed M01/M02/M03 market evidence. Remove manual
+entry of arbitrary liquidity/POI event IDs for the limited supported families.
+
+PRECONDITIONS:
+1. M01 analysis gate PASS or PASS_WITH_LIMITATIONS and coherent source timestamps;
+2. same snapshot_id/as_of through M02/M03, valid closed MT5 BID bars on setup TF;
+3. M02 structural direction BULLISH or BEARISH and available H1/H4 evidence;
+4. actual M03 geometric FVG, with recorded formed_at and mitigation, located
+   near currently observed closed price and not broken on a closed bar;
+5. directional liquidity M03:LEVEL (or directionally matching SWEEP for SMC);
+6. independently checkable development_path and invalidation and all five M03E CORE;
+7. provisional M07 template version and exact executable numeric rules frozen
+   in persistent M10A policy ledger. No 'visual certainty' or fake probability.
+
+MODE MVP: XAU-S01 Trend Pullback / M15 / aligned FVG+liquidity. MVP is a
+new provisional playbook; no prior hidden MVP rules are implied.
+MODE SMC: XAU-S14 Sweep+FVG Continuation / M15 / aligned pre-FVG sweep.
+MODE SCALPING: XAU-S06 Displacement Momentum Continuation / M5 / earlier
+confirmed displacement BOS or MSS + FVG.
+MODE AUTO: priority SMC > MVP > SCALPING, research-only; NOT a learned
+expected-return ranking. If no valid pattern exists, WAIT/NO_TRADE.
+
+PRICE RULES:
+Four distinct monotonic threshold conditions for closed bars, expressed
+relative to as-of reference price/FVG and ATR computed without future bars.
+Qualification and confirmation use CLOSE; arming and trigger use HIGH for LONG
+or LOW for SHORT; same setup phase can advance at most once per new closed
+bar. Invalidation always uses CLOSE, prioritized before advancement. Bound
+levels are frozen under a separate plan hash in SQLite; all numerical
+parameters are not yet tuned or independently validated.
+
+PROHIBITED:
+Never create a setup from only EMA/RSI/MACD; never treat six TF as
+six statistically independent votes. Never substitute TradingView prices
+for MT5 execution quotes. Never treat a zero-spread account as cost-free.
+Never invent volume delta/CVD, proven historical edge, live fills,
+entry tolerance, size, TP/SL or RR where not computed. Never invoke order_send.
+No automated M08 promotion, no live approval, no automatic rule mutation.
+
+OUTPUT: OP_DISCOVERY record with selected profile, strategy ID, frozen plan
+hash, evidence IDs, reason codes, and status RESEARCH_HYPOTHESIS or NONE.
+Handoff: original M03E -> M09 -> M10A -> M14 -> M15; all live_execution_allowed
+false, order_actions empty and execution_permission=BLOCKED.
+
+VALIDATION: Offline source/time/identity and rule-consistency tests, synthetic
+bar replay tests, existing module regression. M06 OOS, cost simulation,
+walk-forward, forward DEMO and real broker connectivity validation: NOT_RUN.
+
+MODIFIED MODULES: NONE. New integration layer only.

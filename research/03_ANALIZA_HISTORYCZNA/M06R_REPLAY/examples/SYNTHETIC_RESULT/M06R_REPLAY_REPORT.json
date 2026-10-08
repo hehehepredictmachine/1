@@ -1,0 +1,87 @@
+{
+  "module_id": "M06R_HISTORICAL_STRATEGY_REPLAY",
+  "module_version": "1.0.0-CANDIDATE",
+  "schema_version": "2.0.0",
+  "prompt_version": "4.1.0",
+  "status": "REPLAY_RESEARCH_COMPLETE",
+  "symbol": "XAUUSD",
+  "mode": "AUTO",
+  "step_timeframe": "M5",
+  "input_trust": "UNVERIFIED_MT5_CSV_OR_SYNTHETIC",
+  "historical_data_certified": false,
+  "bars_count": {
+    "D1": 260,
+    "H4": 260,
+    "H1": 260,
+    "M15": 260,
+    "M5": 260,
+    "M1": 260
+  },
+  "steps_analyzed": 3,
+  "steps_attempted": 3,
+  "warmup_skipped": 253,
+  "replay_from_utc": "2026-09-01T11:30:00Z",
+  "replay_to_utc": "2026-09-01T11:40:00Z",
+  "window_filtered_from": null,
+  "window_filtered_to": null,
+  "truncated_by_step_limit": true,
+  "reason_counts": {
+    "STRUCTURAL_DIRECTION_UNRESOLVED": 3
+  },
+  "research_setups_seen": 0,
+  "stage_transitions": [],
+  "confirmed_signals": [],
+  "signal_count": 0,
+  "sample_snapshots": [
+    {
+      "as_of": "2026-09-01T11:30:00Z",
+      "snapshot_id": "M06R:b46153da26e21ca8dc33204d",
+      "m02": "PASS",
+      "m03": "PASS",
+      "m02i": "PASS",
+      "mode": "AUTO",
+      "chosen_profile": "NONE"
+    },
+    {
+      "as_of": "2026-09-01T11:35:00Z",
+      "snapshot_id": "M06R:d98f149dc5b5db6f901782ac",
+      "m02": "PASS",
+      "m03": "PASS",
+      "m02i": "PASS",
+      "mode": "AUTO",
+      "chosen_profile": "NONE"
+    },
+    {
+      "as_of": "2026-09-01T11:40:00Z",
+      "snapshot_id": "M06R:b3f54b790acbf49aa8037791",
+      "m02": "PASS",
+      "m03": "PASS",
+      "m02i": "PASS",
+      "mode": "AUTO",
+      "chosen_profile": "NONE"
+    }
+  ],
+  "strategy_net_performance": {
+    "status": "NOT_RUN",
+    "reason": "REQUIRES_REAL_BROKER_BID_ASK_TICKS_AND_M06_COST_MODEL"
+  },
+  "execution_permission": "BLOCKED",
+  "live_execution_allowed": false,
+  "broker_order_sent": false,
+  "screen_capture_count": 0,
+  "research_only": true,
+  "limitations": [
+    "M07_PROVISIONAL_NOT_OOS_APPROVED",
+    "REPLAY_ONLY_NOT_M01_LIVE_AUDIT",
+    "M10A_RULE_SEMANTICS_REPLAY_NOT_LIVE_M10_SQLITE_EXECUTION",
+    "USER_CSV_PROVENANCE_NOT_AUTHENTICATED",
+    "NO_HISTORICAL_TICK_FILLS",
+    "NO_GUARANTEED_EDGE",
+    "NO_AUTO_ORDER_EXECUTION"
+  ],
+  "macro_overlay": {
+    "status": "NOT_RUN",
+    "reason": "NO_PIT_MACRO_EVENT_ARCHIVE",
+    "execution_permission": "BLOCKED"
+  }
+}

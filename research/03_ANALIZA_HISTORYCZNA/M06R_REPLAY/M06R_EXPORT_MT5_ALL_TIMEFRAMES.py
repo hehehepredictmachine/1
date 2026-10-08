@@ -1,0 +1,108 @@
+"""Windows MetaTrader5 historical six-timeframe exporter. Read-only, no order API."""
+from __future__ import annotations
+import argparse,csv,hashlib,json,math,os
+from datetime import datetime,timedelta,timezone
+from pathlib import Path
+import tempfile
+from M06R_HISTORICAL_REPLAY import TF, ORDER, ReplayError, parse_time, stamp, check
+
+MAP={'M1':'TIMEFRAME_M1','M5':'TIMEFRAME_M5','M15':'TIMEFRAME_M15',
+     'H1':'TIMEFRAME_H1','H4':'TIMEFRAME_H4','D1':'TIMEFRAME_D1'}
+COLUMNS=['symbol','time_utc','open','high','low','close','tick_volume','real_volume','spread_points','bar_state','available_at_utc']
+
+def export(mt5,symbol,start,end,output_dir,now=None,max_rows=1000000):
+    now=now or datetime.now(timezone.utc)
+    check(start<end<=now,'INVALID_FUTURE_OR_EMPTY_EXPORT_RANGE')
+    check((end-start)<=timedelta(days=500),'MAX_500_DAYS_PER_EXPORT')
+    check(isinstance(max_rows,int) and max_rows>0,'INVALID_MAX_ROWS')
+    check(mt5.symbol_select(symbol,True),'BROKER_SYMBOL_NOT_FOUND')
+    d=Path(output_dir);d.mkdir(parents=True,exist_ok=True)
+    temp_paths=[];out_meta={}
+    try:
+        for tf in ORDER:
+            fd,name=tempfile.mkstemp(prefix='.m06r_'+tf+'_',suffix='.tmp',dir=str(d))
+            temp_paths.append(name)
+            count=0;last=None;pending=None
+            with os.fdopen(fd,'w',newline='',encoding='utf-8') as f:
+                wr=csv.DictWriter(f,fieldnames=COLUMNS)
+                wr.writeheader()
+                cursor=start
+                while cursor<end:
+                    cap=min(end,cursor+timedelta(days=7))
+                    # Use end-exclusive logic locally. MT5 can return inclusive end.
+                    data=mt5.copy_rates_range(symbol,getattr(mt5,MAP[tf]),cursor,cap)
+                    if data is None:
+                        raise ReplayError('MT5_RATES_FAILED_'+tf+':'+str(mt5.last_error()))
+                    for b in data:
+                        op=datetime.fromtimestamp(int(b['time']),timezone.utc)
+                        if op<start or op>=end or op+timedelta(seconds=TF[tf])>now:
+                            continue
+                        if last is not None:
+                            if op==last:continue # overlap at 7-day chunk boundary
+                            check(op>last,'MT5_NONMONOTONIC_'+tf)
+                        o,h,l,c=(float(b[k]) for k in ('open','high','low','close'))
+                        check(all(math.isfinite(x) and x>0 for x in (o,h,l,c)) and l<=min(o,c)<=max(o,c)<=h,'MT5_BAD_BAR_'+tf)
+                        check(int(b['tick_volume'])>=0,'MT5_BAD_VOLUME_'+tf)
+                        if pending is not None:
+                            # Conservative no-lookahead rule: previous candle is visible
+                            # no earlier than the opening of the following broker candle.
+                            # This handles 23/25-hour broker D1 DST boundaries and market gaps.
+                            prev=parse_time(pending['time_utc'])
+                            pending['available_at_utc']=stamp(max(prev+timedelta(seconds=TF[tf]),op))
+                            wr.writerow(pending)
+                            count+=1
+                            check(count<=max_rows,'MT5_MAX_ROWS_EXCEEDED_'+tf)
+                        pending={'symbol':symbol,'time_utc':stamp(op),'open':o,'high':h,'low':l,'close':c,
+                            'tick_volume':int(b['tick_volume']),'real_volume':int(b['real_volume']),
+                            'spread_points':int(b['spread']),'bar_state':'CLOSED'}
+                        last=op
+                    cursor=cap
+                if pending is not None:
+                    # No successor observed: defer last bar until entire export horizon.
+                    prev=parse_time(pending['time_utc'])
+                    pending['available_at_utc']=stamp(max(prev+timedelta(seconds=TF[tf]),end))
+                    wr.writerow(pending)
+                    count+=1
+                    check(count<=max_rows,'MT5_MAX_ROWS_EXCEEDED_'+tf)
+            check(count>0,'MT5_EMPTY_TIMEFRAME_'+tf)
+            out_meta[tf]={'bars':count,'first':None,'last':stamp(last)}
+        for tf,p in zip(ORDER,temp_paths):
+            os.replace(p,d/(tf+'.csv'))
+        manifest={'module_id':'M06R_MT5_ALL_TIMEFRAMES_EXPORTER','symbol':symbol,
+            'from_utc':stamp(start),'to_utc':stamp(end),'created_at':stamp(now),
+            'files':{},'limitations':['Terminal chart-history availability differs by broker',
+                                     'Export does not prove earlier server-side data revision history',
+                                     'Historical candle availability is conservatively deferred to next broker open, last to export horizon',
+                                     'These are closed chart BID bars; not historical executable bid/ask ticks',
+                                     'Broker H4/D1 opens are preserved; never generated by resampling M1'],
+            'execution_permission':'BLOCKED'}
+        for tf in ORDER:
+            path=d/(tf+'.csv');manifest['files'][tf]={**out_meta[tf],
+                'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+        (d/'MT5_EXPORT_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        return manifest
+    finally:
+        for p in temp_paths:
+            try:Path(p).unlink(missing_ok=True)
+            except OSError:pass
+
+def main():
+    p=argparse.ArgumentParser(description='Read-only MetaTrader5 six-timeframe export for MasterQUO historical replay')
+    p.add_argument('--symbol',default='XAUUSD');p.add_argument('--from-utc',required=True)
+    p.add_argument('--to-utc',required=True);p.add_argument('--output-dir',default='data_mt5_six_tf')
+    p.add_argument('--max-rows',type=int,default=1000000)
+    a=p.parse_args()
+    try:
+        start,end=parse_time(a.from_utc),parse_time(a.to_utc)
+        try:import MetaTrader5 as mt5
+        except ImportError as e:raise ReplayError('INSTALL_MetaTrader5_ON_WINDOWS') from e
+        check(mt5.initialize(),'MT5_CONNECT_FAILED_'+str(mt5.last_error()))
+        try:result=export(mt5,a.symbol,start,end,a.output_dir,max_rows=a.max_rows)
+        finally:mt5.shutdown()
+        print(json.dumps({'status':'EXPORTED_READONLY','files':result['files'],
+                          'execution_permission':'BLOCKED'},ensure_ascii=False))
+        return 0
+    except (ReplayError,ValueError,KeyError,TypeError,OSError) as e:
+        print(json.dumps({'status':'FAIL','reason':str(e),'execution_permission':'BLOCKED'},ensure_ascii=False))
+        return 2
+if __name__=='__main__':raise SystemExit(main())

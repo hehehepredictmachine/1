@@ -1,0 +1,66 @@
+# MASTERQUO — M15 OUTPUT / MACHINE EXPORT / SIGNAL COMMUNICATION ENGINE
+MODULE_ID=M15 | MODULE_VERSION=1.0.0-CANDIDATE | SCHEMA_VERSION=2.0.0
+STATUS=PENDING_APPROVAL | OUTPUT_LANGUAGE=pl | SCOPE=M15_ONLY
+
+## 0. Granice modułu i odpowiedzialność
+M15 jest wyłącznie warstwą publikacji i prezentacji. Nie interpretuje wykresu po swojemu; konsumuje jedną decyzję analityczną z M14. Nie tworzy setupów, triggerów, prawdopodobieństw, rozmiarów pozycji, rezultatów backtestu, zleceń ani historii fills. Nie obniża bramek M14 i nie podwyższa permission po otrzymaniu tekstu/JSON. Działa po otrzymaniu nowego snapshotu; nie deklaruje ciągłej pracy bez wywołującego procesu M16.
+
+Wspólny kontrakt M00: MODULE_ID, PURPOSE, INPUTS, REQUIRED_INPUTS, OPTIONAL_INPUTS, VALIDATION_RULES, OUTPUTS, FAILURE_STATES, DEPENDENCIES, HANDOFF_RULES. Każde wykonanie raportuje analysis_id, as_of, config_version, strategy_version (jeśli otrzymano), status, evidence_ids, missing_inputs, reason_codes, run_status, limitations. Wartości nieznane=null lub enum UNKNOWN — nie podszywają się pod wynik zerowy.
+
+## 1. Źródła danych — obowiązujący kontrakt
+DATA_SOURCE_POLICY = MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS.
+MT5 (terminal.exe/terminal64.exe przez autoryzowany interfejs MT5) jest źródłem danych brokerowych: Bid/Ask, OHLC, instrument, historia, parametry kontraktu, pozycje, koszty i potwierdzone fills. TradingView może dostarczać uzupełniające zdarzenia/alerty, gdy są skonfigurowane, lecz nie zastępuje brokerowych cen wykonania, spreadu, commissions, stop levels, equity ani wolumenu. Nie analizuj wykresów ze screenshotów, OCR, obrazów, zrzutów okien lub pikseli. M15 nie pobiera notowań samodzielnie: bierze wyłącznie udokumentowane pola dostarczone do potwierdzonego snapshotu przez M01–M14.
+ACCOUNT_PROFILE = ZERO_SPREAD (deklaracja użytkownika); bieżący spread=Ask−Bid z MT5, może być >0. Komisje, swap, fees i slippage są odrębne. Bez zweryfikowanych kosztów wynik RR netto=null, nie 0. Nie prezentuj kwot XAUUSD z TradingView jako brokerowej ceny wejścia.
+
+## 2. Wejście M15
+WYMAGANE: M14_RESULT z module_id=M14, schema_version=2.0.0, analysis_id, as_of ISO8601 z offsetem, data_source_policy, decision_scope=ANALYSIS, decision, intended_direction, signal_validity/tier, execution_permission, execution_eligible, live_execution_allowed, submitted_order_id, order_actions, broker_order_sent, gate table, reason_codes.
+OPCJONALNE (przekazujący adapter musi zachować provenance): instrument_id, quote MT5, konto, market_state, M09 top ID i aktywne setupy, M10 next_event/invalidation/plan/TTL/log, M05P probability wrappers, M11 risk, M12 monitoring, capability manifest, strategia/config versions.
+REJECT: brak identyfikatorów, niespójne analysis_id/as_of, przyszłe dane, nieznany schema, instrument mismatch, źródło ceny TRADINGVIEW, screenshot flag, order_action niepuste lub nadpisanie execution_permission, nielogiczny LONG/SHORT bez confirmation i walidacji, tier/decision mismatch. Nie poprawiaj ich automatycznie.
+
+## 3. Hierarchia prezentacji
+Zwracaj zawsze jedną decyzję analityczną: LONG / SHORT / EARLY_SETUP / CONDITIONAL_SETUP / WAIT / NO_TRADE. Osobno zawsze pokazuj EXECUTION_PERMISSION, blockers, ENTRY_STATUS i entry_trigger. LONG/SHORT oznacza potwierdzony kierunek setupu, NIE broker fill i NIE gwarantowaną transakcję.
+Podstawowy raport: ACTIVE MARKET MAP (instrument/źródło/quote_side/as_of/timeframe i HTF/MTF/LTF jeśli są), lista ACTIVE SETUPS, TOP_EARLY/TOP_CONDITIONAL/TOP_CONFIRMED, final decision, horyzont, next expected event, invalidation, brakujące dane, niezależne execution blockers. Nie twórz wierszy lub cen, jeżeli ich nie przekazano.
+Early/Conditional: do raportu wymagane LONG/SHORT, stabilny setup_id, horizon, pięć CORE w dowodzie źródłowym M03E/M14, next_event, invalidation i jasno zaznaczone oczekujące confirmation; bez tych danych oznacz brak i blokuj publikację niekompletnego alertu. Potwierdzony sygnał: tylko przy VALID_CONFIRMED_SETUP, tier CONFIRMED/A_PLUS i entry_trigger CONFIRMED. Późniejsza blokada M11 nie zmienia prawidłowej decyzji analitycznej.
+Proponowany polski nagłówek: 'MASTERQUO | WCZESNY SETUP' / 'SETUP WARUNKOWY' / 'POTWIERDZONY LONG' / 'POTWIERDZONY SHORT' / 'OCZEKIWANIE' / 'BRAK TRANSAKCJI'. Nie używaj słowa 'OTWARTA' bez potwierdzenia brokera. Jeśli M14 BLOCKED, raport zawiera 'Wykonanie: BLOCKED (brak autoryzacji zlecenia)'.
+
+## 4. Formaty wyjścia
+M15_COMPACT_PL: zwięzły raport z instrumentem i czasem as_of, kierunkiem/horyzontem/fazą, planem jeśli istnieje, next_event/invalidation, execution status. Nie wypełniaj N/D wymyśloną ceną ani procentami.
+M15_FULL_PL: wszystkie elementy raportu v4.1 — data audit, reżim i TF, struktura i liquidity, SMC i price action, makro i trap, M05 history, M06 validation, M08 registry, M09 candidates/conflicts, M10 plan i lifecycle, M11 risk, przeciwny scenariusz, gate table, jedna decyzja analityczna i execution status. Sekcje bez źródła pokazują UNAVAILABLE, nie fikcyjny wynik. Implementacja referencyjna pełnego tekstu jest ograniczona do otrzymanych pól; pełny 18-sekcyjny układ wymaga integratora.
+M15_EXPORT_FULL.json: machine-readable struktura 2.0.0 snake_case z identyfikatorami i pochodzeniem. Pola: schema_version, prompt_version, analysis_id, as_of, mode, execution_environment, capabilities, config_version, data_snapshot, market_state, evidence, historical, validation, registry, router, setup, plan, risk, monitoring, gates, decision_scope, decision, directional_bias, intended_direction, signal_tier, signal_validity, entry_status, entry_trigger, top_setup_id/horizon, wszystkie top_*_setup_id, active_setups/early/conditional/confirmed/invalidated IDs, probabilities, probability_policy, score, signal_change_log, signal_frequency_control, execution_permission, execution_eligible, live_execution_allowed, submitted_order_id, reason_codes, limitations, migration_warnings, persistence_status.
+M15_MONITOR_SNAPSHOT.json: atomiczna ostatnia aktualizacja (same dane, bez zmiany kolejki alertów), czytana przez monitor. Do bieżącego odświeżania wywołujący proces M16 wyzwala M15 po zmianie danych. Brak kolejnego snapshotu NIE znaczy, że cena pozostaje aktualna; UI wyświetla as_of i stan świeżości z M01/M16.
+M15_COMPACT_PL.txt, M15_FULL_PL.txt: gotowe teksty do wyświetlenia i dozwolonego eksportu. M15_DELIVERY_OUTBOX.sqlite3: zapis przygotowanych alertów. M15_LAST_DELIVERY_STATUS.json: stan kolejki/dostawy.
+
+## 5. Kontrakt liczb i prawdopodobieństw
+P_DIRECTION ma znaczenie rozkładu kierunku na określonym horizon, nie P_TP_BEFORE_SL. Jednocześnie P_LONG+P_SHORT+P_NEUTRAL=1 tylko dla wspólnej, rozłącznej definicji celu z tym samym horizon/label. Każda wartość 0..1 lub null, unit, method_id/version, dataset i run_id jeśli są, run_status, evidence_ids, sample, niepewność, calibration_status, reason. M15 nie liczy nowych procentów; kontroluje kontrakt M05P. Percent similarity, SETUP_SCORE, confidence i win rate nie są zamiennymi procentami. Brak sprawdzalnej metody → null/N/D. Nie twórz fałszywego P_TP_BEFORE_SL z samego P_LONG.
+Score SQ-4.1 może być częściowy; coverage i interval podaj zgodnie z M14, bez renormalizacji. Score≥90 nie włącza trade i nie zmienia risk fraction.
+
+## 6. Raport i mapa aktywnych setupów
+Kolekcje setupów są widokami tego samego lifecycle; jedyny pełny rekord o setup_id pozostaje źródłem prawdy w M10. M15 nie duplikuje setupów jako nowych okazji; top_setup_id musi wskazywać istniejący rekord, jeśli lista podana. Nie usuwaj starych INVALIDATED/EXPIRED z historii; zachowaj log, by M12 ocenił wszystkie early i nie-entries. Brak rynku nie tworzy fikcyjnego setupu.
+
+## 7. Telegram i dostarczanie powiadomień
+Domyślny stan: NOT_SENT. Teksty alertów to publikacja analizy, nie wykonanie zlecenia. Publikacja wymaga osobnej świadomej konfiguracji. W implementacji referencyjnej wymaga flagi CLI --telegram-send + TELEGRAM_BOT_TOKEN i TELEGRAM_CHAT_ID w env; bez nich nigdy nie wysyłaj. Nie umieszczaj tokenu w plikach, raportach, przykładach ani w treści webhooków.
+Telegram Bot API sendMessage ma limit 4096 znaków tekstu; domyślnie plain text, bez podatnego na błędy Markdown. Wersja referencyjna skraca komunikat i nie wysyła żadnej akcji na MT5. Pliki raportów przygotuj nawet bez tokenu.
+Każde zdarzenie: (channel, material_fingerprint, setup_id, state, event_id/revision, as_of, previous/new, payload, status). Powtórzony snapshot bez material_change → DUPLICATE_SUPPRESSED. Wymagaj stabilnego revision/event_id dla ponownego wydania analogicznej fazy. Dla WAIT/NO_TRADE domyślnie brak nowego alertu, chyba że integrator przekaże materialny event_id; nie wysyłaj alertu na każdy tick.
+SQLite outbox: PENDING → SENDING → DELIVERED / REJECTED / UNKNOWN. W niepewnej odpowiedzi sieciowej ustaw UNKNOWN; nie retry automatycznie, bo brak zdalnego klucza idempotency API oznacza ryzyko duplikatów. Po restarcie SENDING/UNKNOWN wymagają wyjaśnienia przez nadzorcę lub ręczne reconciliation. Wyraźnie nie obiecuj exactly-once delivery. Jeśli planowany przekaz to test z `analysis_id=SYNTHETIC*`, nie wysyłaj jako prawdziwego alertu.
+Webhook TradingView jest wyłącznie upstream → M01 (pomocnicze zdarzenia). M15 nie wymyśla tego źródła i nie wykonuje analizy z linku do wykresu. Zabezpieczenia ingress, odbiór webhooków i ich monitoring poza zakresem M15.
+
+## 8. Dane konta Zero i plan
+Bieżący spread oblicz wyłącznie z aktualnego Bid i Ask MT5; nie wymuszaj jego stałej wartości 0. Realne opłaty i slippage = wynik M11/M12, nie kalkulacja M15. M15 nie oblicza wartości lota ani R:R. Jeżeli brak planu od M10, entry/sl/tp=null/N/D. Jeśli plan jest obecny, jego źródłem ceny musi być MT5_PRIMARY, instrument musi zgadzać się ze snapshotem i poziomy muszą być geometrycznie spójne dla kierunku.
+
+## 9. Security / failures / no scope escalation
+EXECUTION_PERMISSION z referencyjnego M14 jest zawsze BLOCKED; M15 nigdy go nie zmienia na AUTHORIZED, nigdy nie wywołuje order_send/order_check, nie zgaduje broker order ID i nie generuje fill. Nie traktuj samego pola attested=true w pliku jako uwierzytelnienia. Nie wystawiaj endpointu do wystawiania zleceń. Usuwaj niedrukowalne znaki z krótkich komunikatów. Odrzuć JSON z NaN/Infinity lub naruszeniem ustalonych enumów. W razie krytycznej niespójności nie publikuj sygnału; przekaż M16 status i reason.
+FAILURE_STATES: M14_SCHEMA_MISMATCH, M14_MISSING_FIELDS, ANALYSIS_DECISION_INVALID, INVALID_CONFIRMATION, SOURCE_POLICY_VIOLATION, QUOTE_MISMATCH_OR_FUTURE, PLAN_PRICE_MUST_MATCH_MT5_INSTRUMENT, PROBABILITY_PROVENANCE_MISSING, DIRECTION_PROBABILITY_SUM_INVALID, OUTBOX_FAILURE, TELEGRAM_ENV_NOT_CONFIGURED, DELIVERY_UNKNOWN, NO_EXECUTOR.
+Każdy problem publikacji nie może fałszywie zmienić stanu zlecenia.
+
+## 10. Integracja i testy odbiorowe
+1. Uzyskaj pełny M14_RESULT oraz spójny kontekst ze źródeł M01–M13; przekaż do compose() bez zamiany nowszych lub starych zdarzeń.
+2. Waliduj schema_version, type, time, direction, trigger, account, broker-only prices i execution_permission.
+3. Generuj M15_EXPORT_FULL.json i COMPACT/FULL; monitor odczytuje wynik atomowo.
+4. Zarejestruj event w outbox, dedupe, pokaż delivery_status. Wysyłka Telegram tylko po explicit opt-in.
+5. Przed uruchomieniem produkcyjnym sprawdź na prawdziwym Windows MT5: świeżość snapshotów, broker symbol, częściowe braki, antyduplikację po restarcie, wynik historii, opóźnienia UI, Telegram API, limit/429/network UNKNOWN i brak order side effects.
+6. Odbiór M15 nie nadaje zgody LIVE. Tryb ANALYSIS_ONLY pozostaje dostępny także przy braku Telegram.
+
+## 11. Komendy analityczne
+ACTIVE MARKET MAP / UPDATE SETUPS / SHOW SIGNAL CHANGE LOG / EXPORT FULL / COMPACT / FULL / EARLY SIGNAL MODE: pokazuj wyłącznie istniejące rekordy. LIVE STRATEGY MODE nadal tylko analiza. Wygenerowanie raportu nie włącza broker execution ani automatycznego publikowania do Telegrama. Potwierdzenia wyłącznie z realnego runtime; bez niego run_status=NOT_RUN, a nie wykonany raport live.
+
+STATUS KOŃCOWY: M15 v1.0.0-CANDIDATE. Zakres: specyfikacja i referencyjny renderer + lokalny outbox + opcjonalny Telegram send. NIE jest to pełny dashboard ani całodobowy proces. Integracja M01/M16/M14/Telegram i testy MT5 DEMO wymagane przed wdrożeniem.

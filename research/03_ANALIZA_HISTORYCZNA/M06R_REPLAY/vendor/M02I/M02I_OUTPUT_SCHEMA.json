@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MasterQUO M02I v1.1.0-CANDIDATE read-only result with per-TF profiles",
+  "type": "object",
+  "required": [
+    "module_id",
+    "module_version",
+    "schema_version",
+    "prompt_version",
+    "analysis_id",
+    "snapshot_id",
+    "as_of",
+    "status",
+    "run_status",
+    "timeframes",
+    "analysis_gate",
+    "execution_context_gate",
+    "execution_permission",
+    "live_execution_allowed",
+    "submitted_order_id",
+    "visual_capture_enabled",
+    "account_profile"
+  ],
+  "properties": {
+    "module_id": {
+      "const": "M02I"
+    },
+    "schema_version": {
+      "const": "2.0.0"
+    },
+    "prompt_version": {
+      "const": "4.1.0"
+    },
+    "as_of": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "PASS_WITH_LIMITATIONS",
+        "PENDING",
+        "FAIL"
+      ]
+    },
+    "run_status": {
+      "const": "COMPLETED"
+    },
+    "timeframes": {
+      "type": "object",
+      "properties": {
+        "M1": {
+          "$ref": "#/$defs/timeframe"
+        },
+        "M5": {
+          "$ref": "#/$defs/timeframe"
+        },
+        "M15": {
+          "$ref": "#/$defs/timeframe"
+        },
+        "H1": {
+          "$ref": "#/$defs/timeframe"
+        },
+        "H4": {
+          "$ref": "#/$defs/timeframe"
+        },
+        "D1": {
+          "$ref": "#/$defs/timeframe"
+        }
+      }
+    },
+    "analysis_gate": {
+      "type": "object",
+      "required": [
+        "status"
+      ]
+    },
+    "execution_context_gate": {
+      "type": "object",
+      "required": [
+        "status"
+      ]
+    },
+    "execution_permission": {
+      "const": "BLOCKED"
+    },
+    "live_execution_allowed": {
+      "const": false
+    },
+    "submitted_order_id": {
+      "type": "null"
+    },
+    "visual_capture_enabled": {
+      "const": false
+    },
+    "probability_status": {
+      "const": "NOT_AVAILABLE"
+    },
+    "auxiliary_instruments": {
+      "type": "object",
+      "properties": {
+        "DXY": {
+          "type": "object",
+          "required": [
+            "status",
+            "required_for_xau_direction",
+            "timeframe",
+            "indicators",
+            "interpretation"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "UNAVAILABLE",
+                "PENDING",
+                "FAIL"
+              ]
+            },
+            "required_for_xau_direction": {
+              "const": false
+            },
+            "timeframe": {
+              "const": "H1"
+            },
+            "indicators": {
+              "type": "object"
+            },
+            "interpretation": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "required": [
+        "value",
+        "unit",
+        "status",
+        "reason",
+        "evidence_type"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "AVAILABLE",
+            "UNAVAILABLE"
+          ]
+        }
+      }
+    },
+    "timeframe": {
+      "type": "object",
+      "required": [
+        "status",
+        "closed_bars",
+        "last_closed_at",
+        "indicators",
+        "interpretation",
+        "reason_codes",
+        "price_basis",
+        "evidence_ids"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "PASS_WITH_LIMITATIONS",
+            "PENDING",
+            "FAIL"
+          ]
+        },
+        "closed_bars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "indicators": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/metric"
+          }
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "profile_role": {
+          "type": "string"
+        },
+        "enabled_indicators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

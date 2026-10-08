@@ -1,0 +1,144 @@
+{
+  "profile_id": "M02I-XAUUSD-TF-ROLES-MT5-ZERO-1.1",
+  "config_version": "M02I-1.1.0-CANDIDATE",
+  "feature_spec_id": "M02I-TF-MT5-CLOSED-WILDER-MACD-SMA-1.1",
+  "research_only": true,
+  "timeframes": [
+    "D1",
+    "H4",
+    "H1",
+    "M15",
+    "M5",
+    "M1"
+  ],
+  "min_closed_bars": 200,
+  "price_basis_allowed": "BID",
+  "ema_fast": 20,
+  "ema_mid": 50,
+  "ema_slow": 200,
+  "rsi_period": 14,
+  "rsi_oversold": 30.0,
+  "rsi_overbought": 70.0,
+  "atr_period": 14,
+  "atr_baseline_bars": 20,
+  "atr_low_ratio": 0.75,
+  "atr_high_ratio": 1.35,
+  "ema_extension_atr_threshold": 3.0,
+  "adx_period": 14,
+  "adx_trend_min": 25.0,
+  "macd_fast": 12,
+  "macd_slow": 26,
+  "macd_signal": 9,
+  "bb_period": 20,
+  "bb_std_mult": 2.0,
+  "pivot_left": 2,
+  "pivot_right": 2,
+  "allow_tick_vwap_proxy": false,
+  "note": "Preset from user-selected chart indicators, research-only. No evidence of uplift; MT5 ZERO does not imply zero commission/slippage.",
+  "timeframe_profiles": {
+    "D1": {
+      "role": "PRIMARY_TREND",
+      "min_closed_bars": 230,
+      "enabled": {
+        "ema": [
+          50,
+          200
+        ],
+        "adx_wilder": 14,
+        "atr": 14
+      }
+    },
+    "H4": {
+      "role": "HTF_STRUCTURE",
+      "min_closed_bars": 90,
+      "enabled": {
+        "ema": [
+          20,
+          50
+        ],
+        "adx_wilder": 14,
+        "rsi": 14,
+        "atr": 14
+      }
+    },
+    "H1": {
+      "role": "STRATEGY_FILTER",
+      "min_closed_bars": 90,
+      "enabled": {
+        "ema": [
+          20,
+          50
+        ],
+        "macd": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9,
+          "signal_ma": "SMA"
+        },
+        "adx_wilder": 14,
+        "atr": 14
+      }
+    },
+    "M15": {
+      "role": "SETUP_DEVELOPMENT",
+      "min_closed_bars": 70,
+      "enabled": {
+        "ema": [
+          20
+        ],
+        "bollinger": {
+          "period": 20,
+          "std_mult": 2.0
+        },
+        "rsi": 14,
+        "atr": 14,
+        "tick_volumes": true
+      }
+    },
+    "M5": {
+      "role": "TRIGGER_CONTEXT",
+      "min_closed_bars": 70,
+      "enabled": {
+        "ema": [
+          9,
+          21
+        ],
+        "rsi": 9,
+        "atr": 14,
+        "tick_volumes": true
+      }
+    },
+    "M1": {
+      "role": "ENTRY_TIMING_CONTEXT",
+      "min_closed_bars": 50,
+      "enabled": {
+        "ema": [
+          9,
+          20
+        ],
+        "atr": 14,
+        "tick_volumes": true
+      }
+    }
+  },
+  "auxiliary_instruments": {
+    "DXY": {
+      "enabled": true,
+      "timeframe": "H1",
+      "indicators": {
+        "ema": [
+          50,
+          200
+        ],
+        "rsi": 14
+      },
+      "required_for_xau_direction": false,
+      "source": "OPTIONAL_MT5_BROKER_SYMBOL",
+      "not_execution_quote": true
+    }
+  },
+  "optional_research_indicators": {
+    "session_vwap": "disabled_until_verified_M04_anchor",
+    "fractals": "disabled_until_strategy_requires"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "CURATED_HISTORICAL_EVENTS",
+  "data_provenance": "SYNTHETIC",
+  "events": [
+    {
+      "event_id": "CPI_SYNTHETIC",
+      "name": "CPI SYNTHETIC TEST",
+      "scheduled_at": "2025-01-04T12:05:00Z",
+      "known_at": "2025-01-04T11:00:00Z",
+      "impact": "HIGH",
+      "type": "CALENDAR"
+    }
+  ]
+}

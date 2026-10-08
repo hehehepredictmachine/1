@@ -1,0 +1,425 @@
+{
+  "schema_version": "2.0.0",
+  "module_id": "M06H",
+  "module_version": "1.0.0-CANDIDATE",
+  "status": "RESEARCH_ONLY",
+  "data_origin": "CURATED_SYNTHETIC_UNVERIFIED",
+  "broker_symbol": "XAUUSD",
+  "as_of": "2026-10-08T16:14:38.645287Z",
+  "protocol_hash": "878befa36699983245f27b970459f8255d6701a0b9d45ab35e159209c89b8863",
+  "observed_bar_count": 1260,
+  "unique_events": 2,
+  "strategy_profiles": [
+    "MVP",
+    "SMC",
+    "SCALPING"
+  ],
+  "event_study": {
+    "status": "COMPLETED",
+    "event_rows": [
+      {
+        "event_id": "SYN_CPI_1",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-02T13:30:00Z",
+        "known_at": "2025-01-01T13:00:00Z",
+        "fold_id": "dev",
+        "fold_role": "DEVELOPMENT",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 5,
+        "directional_bp": 25.02514512,
+        "absolute_bp": 25.02514512,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": true,
+        "synthetic": true,
+        "control_at": "2025-01-01T13:30:00Z",
+        "control_abs_bp": 0.02999868,
+        "excess_abs_bp": 24.99514644
+      },
+      {
+        "event_id": "SYN_CPI_1",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-02T13:30:00Z",
+        "known_at": "2025-01-01T13:00:00Z",
+        "fold_id": "dev",
+        "fold_role": "DEVELOPMENT",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 15,
+        "directional_bp": 25.07513542,
+        "absolute_bp": 25.07513542,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": false,
+        "synthetic": true
+      },
+      {
+        "event_id": "SYN_CPI_1",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-02T13:30:00Z",
+        "known_at": "2025-01-01T13:00:00Z",
+        "fold_id": "dev",
+        "fold_role": "DEVELOPMENT",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 60,
+        "directional_bp": 25.30009178,
+        "absolute_bp": 25.30009178,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": false,
+        "synthetic": true
+      },
+      {
+        "event_id": "SYN_CPI_2",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-04T13:30:00Z",
+        "known_at": "2025-01-03T13:00:00Z",
+        "fold_id": "oos",
+        "fold_role": "FINAL_OOS",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 5,
+        "directional_bp": 25.01764129,
+        "absolute_bp": 25.01764129,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": true,
+        "synthetic": true,
+        "control_at": "2025-01-03T13:30:00Z",
+        "control_abs_bp": 0.02998968,
+        "excess_abs_bp": 24.98765161
+      },
+      {
+        "event_id": "SYN_CPI_2",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-04T13:30:00Z",
+        "known_at": "2025-01-03T13:00:00Z",
+        "fold_id": "oos",
+        "fold_role": "FINAL_OOS",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 15,
+        "directional_bp": 25.0676166,
+        "absolute_bp": 25.0676166,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": true,
+        "synthetic": true,
+        "control_at": "2025-01-05T13:30:00Z",
+        "control_abs_bp": 0.07994851,
+        "excess_abs_bp": 24.98766809
+      },
+      {
+        "event_id": "SYN_CPI_2",
+        "event_name": "Consumer Price Index (SYNTHETIC)",
+        "scheduled_at": "2025-01-04T13:30:00Z",
+        "known_at": "2025-01-03T13:00:00Z",
+        "fold_id": "oos",
+        "fold_role": "FINAL_OOS",
+        "impact": "HIGH",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "horizon_minutes": 60,
+        "directional_bp": 25.2925055,
+        "absolute_bp": 25.2925055,
+        "research_price_type": "MT5_M1_CLOSE_BID_PROXY_NOT_EXECUTABLE",
+        "point_in_time_calendar_known_before_event": true,
+        "matched_control": true,
+        "synthetic": true,
+        "control_at": "2025-01-06T13:30:00Z",
+        "control_abs_bp": 0.30475802,
+        "excess_abs_bp": 24.98774748
+      }
+    ],
+    "aggregates": [
+      {
+        "fold_id": "dev",
+        "role": "DEVELOPMENT",
+        "horizon_minutes": 5,
+        "events": 1,
+        "median_absolute_move_bp": 25.025145,
+        "mean_directional_move_bp": 25.025145,
+        "matched_pairs": 1,
+        "median_control_abs_bp": 0.029999,
+        "mean_excess_abs_bp": 24.995146,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      },
+      {
+        "fold_id": "dev",
+        "role": "DEVELOPMENT",
+        "horizon_minutes": 15,
+        "events": 1,
+        "median_absolute_move_bp": 25.075135,
+        "mean_directional_move_bp": 25.075135,
+        "matched_pairs": 0,
+        "median_control_abs_bp": null,
+        "mean_excess_abs_bp": null,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      },
+      {
+        "fold_id": "dev",
+        "role": "DEVELOPMENT",
+        "horizon_minutes": 60,
+        "events": 1,
+        "median_absolute_move_bp": 25.300092,
+        "mean_directional_move_bp": 25.300092,
+        "matched_pairs": 0,
+        "median_control_abs_bp": null,
+        "mean_excess_abs_bp": null,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      },
+      {
+        "fold_id": "oos",
+        "role": "FINAL_OOS",
+        "horizon_minutes": 5,
+        "events": 1,
+        "median_absolute_move_bp": 25.017641,
+        "mean_directional_move_bp": 25.017641,
+        "matched_pairs": 1,
+        "median_control_abs_bp": 0.02999,
+        "mean_excess_abs_bp": 24.987652,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      },
+      {
+        "fold_id": "oos",
+        "role": "FINAL_OOS",
+        "horizon_minutes": 15,
+        "events": 1,
+        "median_absolute_move_bp": 25.067617,
+        "mean_directional_move_bp": 25.067617,
+        "matched_pairs": 1,
+        "median_control_abs_bp": 0.079949,
+        "mean_excess_abs_bp": 24.987668,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      },
+      {
+        "fold_id": "oos",
+        "role": "FINAL_OOS",
+        "horizon_minutes": 60,
+        "events": 1,
+        "median_absolute_move_bp": 25.292506,
+        "mean_directional_move_bp": 25.292506,
+        "matched_pairs": 1,
+        "median_control_abs_bp": 0.304758,
+        "mean_excess_abs_bp": 24.987747,
+        "bootstrap": {
+          "status": "NOT_RUN",
+          "reason": "FEWER_THAN_THREE_INDEPENDENT_EVENT_DAYS"
+        },
+        "causal_inference_supported": false
+      }
+    ],
+    "excluded_reasons": {},
+    "studied_high_impact_events": 2,
+    "limitations": [
+      "Retrospective M1 bar-close moves are descriptive not executable bid/ask PnL",
+      "Matched controls do not establish causality or cancel macro confounders",
+      "Historical FX/CFD bid-close feed may contain broker-specific gaps and sessions"
+    ]
+  },
+  "strategy_validation": {
+    "status": "SYNTHETIC_DEMONSTRATION_ONLY",
+    "original_m06_validation": {
+      "evidence_source": "SYNTHETIC_OR_USER_PROVIDED",
+      "approval_status": "RESEARCH_ONLY",
+      "executive_live_eligible": false,
+      "reason_codes": [
+        "COST_OR_CONVERSION_SCENARIO_ONLY",
+        "NO_CONFIDENCE_INTERVAL",
+        "FORWARD_DEMO_NOT_RUN"
+      ]
+    },
+    "account_profile": {
+      "type": "ZERO_SPREAD",
+      "verified_spread_zero": false,
+      "commission_source": "SCENARIO_ONLY",
+      "conversion_source": "SCENARIO_ONLY"
+    },
+    "m06_cost_stress_scenarios": [
+      {
+        "cost_multiplier": 1.0,
+        "mean_projected_pnl": 117.2,
+        "scope": "COMMISSION_AND_SLIPPAGE_ONLY",
+        "spread_stress": "NOT_MODELED"
+      },
+      {
+        "cost_multiplier": 1.25,
+        "mean_projected_pnl": 117.0,
+        "scope": "COMMISSION_AND_SLIPPAGE_ONLY",
+        "spread_stress": "NOT_MODELED"
+      },
+      {
+        "cost_multiplier": 1.5,
+        "mean_projected_pnl": 116.8,
+        "scope": "COMMISSION_AND_SLIPPAGE_ONLY",
+        "spread_stress": "NOT_MODELED"
+      },
+      {
+        "cost_multiplier": 2.0,
+        "mean_projected_pnl": 116.4,
+        "scope": "COMMISSION_AND_SLIPPAGE_ONLY",
+        "spread_stress": "NOT_MODELED"
+      }
+    ],
+    "fold_comparison": [
+      {
+        "fold_id": "dev",
+        "role": "DEVELOPMENT",
+        "completed_baseline": 0,
+        "completed_after_filter": 0,
+        "removed_completed_trades": 0,
+        "baseline": {
+          "trades": 0,
+          "mean_net_r": null,
+          "mean_net_pnl": null,
+          "profit_factor": null,
+          "max_drawdown_money": null,
+          "win_rate": null
+        },
+        "filtered": {
+          "trades": 0,
+          "mean_net_r": null,
+          "mean_net_pnl": null,
+          "profit_factor": null,
+          "max_drawdown_money": null,
+          "win_rate": null
+        },
+        "window_policy_frozen": true
+      },
+      {
+        "fold_id": "oos",
+        "role": "FINAL_OOS",
+        "completed_baseline": 1,
+        "completed_after_filter": 1,
+        "removed_completed_trades": 0,
+        "baseline": {
+          "trades": 1,
+          "mean_net_r": 1.14118793,
+          "mean_net_pnl": 117.2,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "filtered": {
+          "trades": 1,
+          "mean_net_r": 1.14118793,
+          "mean_net_pnl": 117.2,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "window_policy_frozen": true
+      }
+    ],
+    "by_strategy_by_fold": [
+      {
+        "strategy_version": "XAU-S01@0.0.1",
+        "fold_id": "dev",
+        "role": "DEVELOPMENT",
+        "baseline": {
+          "trades": 0,
+          "mean_net_r": null,
+          "mean_net_pnl": null,
+          "profit_factor": null,
+          "max_drawdown_money": null,
+          "win_rate": null
+        },
+        "guarded": {
+          "trades": 0,
+          "mean_net_r": null,
+          "mean_net_pnl": null,
+          "profit_factor": null,
+          "max_drawdown_money": null,
+          "win_rate": null
+        },
+        "oos_minimum_met": false
+      },
+      {
+        "strategy_version": "XAU-S01@0.0.1",
+        "fold_id": "oos",
+        "role": "FINAL_OOS",
+        "baseline": {
+          "trades": 1,
+          "mean_net_r": 1.14118793,
+          "mean_net_pnl": 117.2,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "guarded": {
+          "trades": 1,
+          "mean_net_r": 1.14118793,
+          "mean_net_pnl": 117.2,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "oos_minimum_met": true
+      }
+    ],
+    "signal_decisions": [
+      {
+        "signal_id": "s1",
+        "strategy_version": "XAU-S01@0.0.1",
+        "fold_id": "oos",
+        "fold_role": "FINAL_OOS",
+        "replay_status": "COMPLETED",
+        "blocked": false,
+        "reason": "NO_MATCHING_KNOWN_EVENT_PARTIAL_CALENDAR_NOT_CLEARANCE",
+        "event_id": null
+      }
+    ],
+    "reason_codes": [
+      "NO_FORWARD_DEMO",
+      "PARTIAL_EVENT_CALENDAR_COVERAGE",
+      "NO_LIVE_AUTHORIZATION",
+      "SYNTHETIC_QUOTES_NOT_MARKET_EVIDENCE",
+      "COSTS_SCENARIO_ONLY"
+    ],
+    "validation_approved": false,
+    "limitations": [
+      "Quote replay delegated to original unchanged M06 reference engine",
+      "No fills can be inferred from M1 candle closes",
+      "Removed trades are excluded; no reallocation of capital or signal timing modeled",
+      "Averaging returns after filtering is subject to selection bias"
+    ]
+  },
+  "reason_codes": [
+    "INSUFFICIENT_FINAL_OOS_EVENTS",
+    "SYNTHETIC_EVENTS_EXCLUDED_FROM_IMPACT_STUDY",
+    "GLOBAL_CALENDAR_COVERAGE_PARTIAL",
+    "BAR_PROVENANCE_EXTERNAL_NOT_CRYPTOGRAPHICALLY_CERTIFIED"
+  ],
+  "contains_synthetic_events": true,
+  "approval_status": "PENDING_APPROVAL",
+  "execution_permission": "BLOCKED",
+  "live_execution_allowed": false,
+  "orders_sent": 0,
+  "visual_capture_enabled": false,
+  "audit_note": "Research data must be retained with broker/source metadata; OOS and DEMO are mandatory before considering any promotion."
+}

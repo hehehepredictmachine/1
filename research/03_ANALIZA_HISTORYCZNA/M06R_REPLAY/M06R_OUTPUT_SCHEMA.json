@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MasterQUO M06R Historical Strategy Replay Report",
+  "type": "object",
+  "required": ["module_id", "module_version", "schema_version", "status", "symbol", "mode", "steps_analyzed", "stage_transitions", "confirmed_signals", "strategy_net_performance", "execution_permission", "live_execution_allowed", "historical_data_certified"],
+  "properties": {
+    "module_id": {"const": "M06R_HISTORICAL_STRATEGY_REPLAY"},
+    "module_version": {"type": "string"},
+    "schema_version": {"const": "2.0.0"},
+    "status": {"enum": ["REPLAY_RESEARCH_COMPLETE", "ANALYSIS_PENDING", "INSUFFICIENT_HISTORY"]},
+    "symbol": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["AUTO", "MVP", "SMC", "SCALPING"]},
+    "steps_analyzed": {"type": "integer", "minimum": 0},
+    "steps_attempted": {"type": "integer", "minimum": 0},
+    "research_setups_seen": {"type": "integer", "minimum": 0},
+    "signal_count": {"type": "integer", "minimum": 0},
+    "stage_transitions": {"type": "array", "items": {"type": "object", "required": ["setup_id", "event_type", "available_at", "execution_permission"], "properties": {"execution_permission": {"const": "BLOCKED"}}}},
+    "confirmed_signals": {"type": "array", "items": {"type": "object", "required": ["signal_id", "available_at", "entry", "fill_status", "execution_permission"], "properties": {"entry": {"type": "null"}, "fill_status": {"const": "NOT_RUN"}, "execution_permission": {"const": "BLOCKED"}}}},
+    "historical_data_certified": {"const": false},
+    "execution_permission": {"const": "BLOCKED"},
+    "live_execution_allowed": {"const": false},
+    "broker_order_sent": {"const": false},
+    "strategy_net_performance": {"type": "object", "required": ["status", "reason"], "properties": {"status": {"const": "NOT_RUN"}}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

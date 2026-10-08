@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"MasterQUO M06T Tick Settlement Research Report",
+  "type":"object",
+  "required":["module_id","status","execution_permission","live_eligible"],
+  "properties":{
+    "module_id":{"const":"M06T"},
+    "schema_version":{"const":"2.0.0"},
+    "status":{"enum":["RESEARCH_ONLY","NOT_RUN","FAIL"]},
+    "execution_permission":{"const":"BLOCKED"},
+    "live_eligible":{"const":false},
+    "input_signals":{"type":"integer","minimum":0},
+    "eligible_signals":{"type":"integer","minimum":0},
+    "metrics":{"type":"object"},
+    "macro_comparison":{"type":"object"},
+    "trades":{"type":"array","items":{"type":"object"}},
+    "warnings":{"type":"array","items":{"type":"string"}}
+  }
+}

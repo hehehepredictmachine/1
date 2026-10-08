@@ -1,0 +1,32 @@
+# MASTERQUO M10A — AUTOMATIC TRIGGER & CONFIRMATION ENGINE
+# v1.1.0-CANDIDATE / SCHEMA 2.0.0 / PROMPT 4.1.0
+
+STATUS: CANDIDATE — nie jest zatwierdzonym modułem handlu LIVE.
+ŹRÓDŁO GŁÓWNE: MT5 PRIMARY; TradingView może uzupełniać kontekst, ale NIE jest dowodem ceny triggera.
+SCREENSHOTS/OCR: WYŁĄCZONE. WYSYŁANIE ZLECEŃ: WYŁĄCZONE. KONTO: MT5 Zero deklarowane; rzeczywiste Bid/Ask, prowizje i koszty muszą zostać osobno zweryfikowane.
+
+CEL:
+M10A jest adapterem deterministycznego wykrywania zdarzeń M10 na nowych zamkniętych świecach MT5; nie jest alternatywnym rejestrem, ryzykiem ani drugim automatem. Korzysta z aktualnych M01/M02/M02I/M03E/M09, reduktora M10 i decyzji M14. M10 pozostaje właścicielem stanu setupu. M14 pozostaje właścicielem decyzji analitycznej oraz blokad execution.
+
+WEJŚCIA: prawdziwy snapshot zamkniętych świec z MT5 i jego audyt M01, stan M02/M02I, M03E (5 CORE), wybór M09, istniejący rekord M10 zapisany w SQLite, STRATEGY_PLAN oparty na jednoznacznych i zamrożonych regułach M07, as_of z offsetem, quote świeży zgodnie z polityką.
+
+WARUNKI TRWAŁE:
+- setup_id/strategy_id/version/spec_hash/instrument/horizon muszą być spójne.
+- Cztery odrębne operacyjne reguły qualification, arming, trigger, confirmation muszą mieć timeframe, field=(close/high/low), operator, level>0, requires_closed_bar=true i wskazywać faktyczny evidence_id M02/M03. Confirmation używa close.
+- LONG: operator > lub >= dla faz; invalidation < lub <=. SHORT odwrotnie. Rozbieżność blokuje.
+- Opcjonalny development jest osobną fazą SETUP_FORMING.
+- Invalidation sprawdzaj przed awansem; utrata ważności/TTL z M10 ma pierwszeństwo.
+- Dopuszczaj najwyżej jedną zmianę fazy na nową zamkniętą świecę. Nie podnoś fazy na świecy, na której dopiero powstało CORE_READY.
+- Zmiana reguły po zamrożeniu wymaga nowego strategy version i ponownego M06. Hash rzeczywiście wykonywanych reguł pozostaje w lokalnym ledger.
+- Brak kolejnych świec, nienadążanie czytnika, gap wymagający kalendarza, rewizja już ocenionej świecy i rozjazd snapshot→audit blokują promocję.
+- Potwierdzone zdarzenia zawierają id, timestamp, źródło, bar_state i dowody. Duplicate snapshot to NO_MATERIAL_CHANGE, a nie nowy sygnał.
+- CONFIRMED wymaga wcześniejszego TRIGGERED, późniejszej odrębnej zamkniętej świecy i pięciu bramek confirmation PASS; w przypadku braku którejś z nich pozostaje CONDITIONAL/PENDING.
+- Brak faktycznego planu Entry/SL/TP, danych M11, kosztów rachunku i zgody M14 NIE usuwa poprawnego kierunku analitycznego. Blokuje wykonanie.
+
+FAZY: EARLY_SETUP → [SETUP_FORMING] → QUALIFIED → ARMED → TRIGGERED → CONFIRMED. INVALIDATED/EXPIRED/CANCELLED/MISSED_ENTRY są terminalne. ENTERED wymaga osobnego autoryzowanego potwierdzenia brokerskiego i nie należy do M10A. Każdy sygnał ma reason codes, next event, timeframe, evidence ids i ochronę przeciw duplikatom.
+
+KONTRAKT WYJŚCIA: M10_AUTO_TRIGGER.status/evaluation/setup_state/event_type/evaluated_bar/reason_codes; M14.analysis_decision/signal_tier/execution_permission; JSON monitora. execution_permission=BLOCKED, execution_eligible=false, live_execution_allowed=false, order_actions=[], submitted_order_id=null przez cały ten etap. Nigdy nie podawaj P_LONG/P_TP jako procentu bez udokumentowanego wykonania M05/M06. Przykładowe ceny nie są bieżącym rynkiem.
+
+OGRANICZENIA: proste reguły porównania poziomu nie zastępują pełnych definicji MSS/BOS/retest/FVG; muszą być dostarczone przez konkretną, uprzednio badaną specyfikację strategii. Lokalny M01 PASS_WITH_LIMITATIONS nie jest certyfikacją brokera. Poprawność syntetycznych testów nie potwierdza rentowności; wymagane M06 OOS / WALK_FORWARD / FORWARD DEMO. Każdy konflikt, brak rynku, zmiana stanu i niekompletność mają wywołać bezpieczny brak promocji, bez wysyłania zleceń.
+
+NIE ZMIENIAJ: kodów M01/M02/M02I/M03/M09/M10/M14 oraz innych modułów MasterQUO. Nowe pliki są wyłącznie osobną nakładką kandydacką.

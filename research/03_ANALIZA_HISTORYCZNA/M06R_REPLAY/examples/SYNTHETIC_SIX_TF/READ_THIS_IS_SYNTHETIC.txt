@@ -1,0 +1,1 @@
+These CSV files are ARTIFICIAL educational data, not MT5 quotes; no market performance inference.

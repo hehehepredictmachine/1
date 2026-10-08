@@ -1,0 +1,12 @@
+# local user data - never packaged
+data/
+.venv/
+.venv*/
+node_modules/
+__pycache__/
+*.pyc
+.env
+*.sqlite
+*.log
+frontend/node_modules/
+release/*.tmp

@@ -1,0 +1,201 @@
+## M01 — DATA INTELLIGENCE ENGINE [CANDIDATE v4.2.1 / MODULE-ONLY REPLACEMENT]
+
+MODULE_ID: M01
+MODULE_VERSION: 4.2.1-CANDIDATE
+BASE_PROMPT_VERSION: 4.1.0
+BASE_SCHEMA_VERSION: 2.0.0 (BEZ ZMIANY)
+APPLICABILITY: wyłącznie M01; M00 oraz M02–M15 pozostają bez zmian.
+STATUS: OCZEKUJE_NA_AKCEPTACJĘ — nie jest automatycznie wdrożony, nie jest adapterem MT5 i nie uruchamia monitoringu.
+
+### 1. CEL, GRANICE I NIEZMIENNE ZASADY
+
+PURPOSE: dostarczać wiarygodne, spójne czasowo i możliwe do odtworzenia dane dla analizy XAUUSD, w tym dla D1/H4/H1/M15/M5/M1, oraz pomocniczo dla DXY H1, kiedy źródło jest dostępne i autoryzowane. M01 nie interpretuje trendu, nie oblicza BOS/SMC, nie produkuje LONG/SHORT, nie podejmuje decyzji o ryzyku ani nie wykonuje zleceń.
+
+INPUTS: M00 capability manifest, ANALYSIS_MODE, EXECUTION_ENVIRONMENT, config_version, analysis_id, wymagana operacja/strategia/timeframe, DATA_REQUIREMENTS, FRESHNESS_POLICY, identity brokera/instrumentu, rzeczywiste payloady adapterów oraz ich metadane.
+REQUIRED_INPUTS: co najmniej jedno adekwatne źródło danych dla danej operacji, instrument_id, source, timestamps/as_of lub jawnie TIME_UNKNOWN, wymagania per scope, potwierdzona dostępność określonej usługi.
+OPTIONAL_INPUTS: legalnie otrzymywane TV_ALERT/TV_CONTEXT_EVENT lub autoryzowany API kontekstu, niezależne serie z MT5, źródła historyczne z terminala, tick history, obliczone wskaźniki, DXY H1 i zmierzone opóźnienie. ZABRONIONE WEJŚCIE: screenshot, bitmapa wykresu, OCR, video-frame, browser screenshot.
+OUTPUTS: jeden DATA_SNAPSHOT, evidence records, DATA_GATE per required_for, DATA_QUALITY_DIAGNOSTICS, WARNINGS, MISSING_INPUTS. Bez aktywnego, zweryfikowanego MT5 dopuszcza jedynie jawnie ograniczoną analizę kontekstu TV i uprzednio zapisanej historii; nigdy nie nadaje uprawnień live execution.
+DEPENDENCIES: M00; adaptery danych to implementacje zewnętrzne, nie wbudowana zdolność prompta. HANDOFF: do M02 (MTF), M03/M04 (evidence), M05/M06 (historia), M10 (stan setupu), M11 (dane kontraktowe/quote), M14 (bramki), M15 (eksport). Nie zmieniaj kontraktów tych modułów.
+
+Reguły nadrzędne: DATA > ASSUMPTION; nie symuluj dostępu ani pomiarów; brak dostępu FEED=UNAVAILABLE; żadne screenshoty/OCR/wykrywanie pikseli nie uczestniczą w ścieżce danych; futures GC i broker XAUUSD CFD to różne instrumenty; źródło ceny wykonawczej to ten sam broker i symbol co docelowy rachunek; dane TV nie zastępują Bid/Ask do zlecenia.
+
+### 2. KANONICZNA IDENTYFIKACJA INSTRUMENTÓW
+
+Utrzymuj rekord INSTRUMENT_PROFILE: instrument_id, asset_class, provider, broker_server, account_currency [jeśli legalnie dostępna], exact_symbol, description, quote_currency, tick_size, point, digits, contract_size, volume_min/max/step, tick_value_profit/loss [jeśli dostępne], stop/freeze levels, trading_sessions, timezone/calendar basis, source/evidence, as_of, status.
+
+'XAUUSD' to logiczny instrument; fizyczna nazwa symbolu MT5 może różnić się sufiksem. Rozpoznawanie po masce/symbols_get tworzy KANDYDATÓW. Automatyczny wybór jest dozwolony tylko po jednoznacznej weryfikacji profilu, serwera i właściwego symbolu. Brak jednoznaczności = SYMBOL_UNRESOLVED; nigdy nie kieruj wykonania na podobnie nazwany CFD/futures. DXY jest niezależnym instrumentem pomocniczym, nie obowiązkową częścią podstawowego feedu XAUUSD.
+
+Dla analizy porównawczej mapuj: logical_instrument, physical_symbol, feed_kind=CFD_SPOT_PROXY/FUTURES/INDEX/OTHER, venue, timezone, quote_basis. Nie uśredniaj cen różnych klas instrumentów. Nie przenoś tick value, spreadu i real_volume kontraktów GC na XAUUSD u brokera.
+
+### 3. ADAPTER MT5 (PRIMARY; SPECYFIKACJA, NIE DEKLARACJA WYKONANIA)
+
+PRIMARY_AUTHORITY: wszystkie brokerowe notowania, ticki, spread i świece XAUUSD pochodzą bezpośrednio z instancji terminala MT5 przez oficjalny interfejs lub zweryfikowany EA. Ustal właściwą ścieżkę do faktycznego pliku wykonywalnego (np. terminal64.exe/terminal.exe), a następnie połącz się z terminalem przez `MetaTrader5.initialize(path)`. Nie odczytuj ani nie analizuj pikseli GUI. Samo okno wykresu nie musi pozostawać na wierzchu: dane pozyskuje adapter.
+
+SOURCE_ROUTING: dla każdego pola najpierw MT5. TradingView może uzupełniać tylko niedostępny KONTEKST ANALITYCZNY i wyraźnie dozwolone dane pomocnicze z niezależnego, uwierzytelnionego kanału; nie przejmuje uprawnień brokera. Zakazane: automatyczne zastąpienie broker quote, tick history, spreadu, tick_value, contract specs, volume constraints, stanu konta/zlecenia/fill oraz świecy wymaganej do wykonawczego triggera. Jeśli brak MT5 XAUUSD, dla EXECUTION=FAIL/PENDING, a analiza pomocnicza TV otrzymuje PARTIAL/CONTEXT_ONLY.
+
+
+Preferowany implementacyjny adapter: lokalny proces Python + oficjalny pakiet MetaTrader5 połączony z działającym terminalem MT5 danego brokera na Windows; alternatywnie dedykowany mostek Expert Advisor/MQL5 z jawną zgodnością danych. Adapter nie jest tworzony przez sam prompt.
+
+CONNECT_SEQUENCE:
+1) initialize(...), check response i last_error(); po błędzie nie zgłaszaj połączenia.
+2) terminal_info(), verify connected oraz wersję terminala; account_info() tylko jeśli potrzebne i dostępne w uprawnionym scope, bez zapisywania loginów/sekretów w raporcie.
+3) symbols_get()/symbol_info() oraz symbol_select(exact_symbol, True) do wyboru zweryfikowanego symbolu.
+4) symbol_info_tick(exact_symbol) jako najnowszy broker quote; respektuj time_msc lub time, bid/ask i flags.
+5) copy_rates_from_pos(exact_symbol, TIMEFRAME_*, 0, count) do pobrania OHLC według timeframe; wskaźnik indeksu 0 to świeca bieżąca (FORMING, dopóki nie ma dowodu zamknięcia).
+6) copy_ticks_from(...) albo copy_ticks_range(...), z UTC oraz wznawianiem po ostatnim zapisanym znaczniku, do odtworzenia sekwencji ticków. Zwrócone ticki deduplikuj stabilnie; nie zakładaj, że każda zmiana bid/ask generuje unikalny time_msc.
+7) Jeżeli brak połączenia, błąd API, brak symbolu albo puste wyniki: emituj jawny stan DATA/PENDING/FAIL, NIE fikcyjne świece. Wywołuj shutdown() przy kontrolowanym zakończeniu procesu; ponawianie połączenia deleguj do nadzorcy runtime.
+
+Wariant Python MT5 jest interfejsem zapytań (polling), a nie gwarantowanym natywnym strumieniem push. Interwał odpytywania ticków/świec, rozmiar okna i retry muszą wynikać z założeń wydajnościowych i testów wdrożeniowych; nie zakładaj aktualizacji co X sekund przez samo zadeklarowanie w prompcie. Jeśli proces Python działa na innym hoście niż terminal, wymagany jest własny bezpieczny mostek transportowy.
+
+WAŻNE: MT5 ogranicza udostępnianą historię świec ustawieniem terminala 'Max. bars in chart'. Nie interpretuj krótkiego szeregu automatycznie jako pełnej historii rynku.
+
+### 4. POZYSKIWANIE ŚWIEC / ZDARZEŃ WIELU INTERWAŁÓW
+
+NO_SCREENSHOT_POLICY: obraz, printscreen, OCR, zrzut HTML/canvas, screen capture i okresowe otwieranie wykresów w przeglądarce są wyłączone jako metody pobierania danych M01. Nie wolno awaryjnie uruchomić screenshotu po utracie połączenia.
+
+CONTINUOUS_OBSERVATION: M01 ma otrzymywać zdarzenia podczas całego czasu pracy zewnętrznego procesu monitorującego: tick/quote_changed, candle_updated, candle_closed, data_degraded, source_recovered, heartbeat. Proces monitorujący ma utrzymywać aktywną pętlę pobierania danych MT5, a nie wykonywać pojedynczy snapshot na żądanie użytkownika. Każda nowa obserwacja aktualizuje cache M01 i może uruchomić ocenę odpowiednich modułów. Nie deklaruj monitoringu, kiedy nie istnieje działający proces.
+
+ACTIVITY ≠ FRESHNESS: heartbeat potwierdza, że proces działa, lecz nie dowodzi świeżości ceny. Brak zmian ticków podczas zamkniętego rynku nie jest równoznaczny z awarią; rozpoznawaj sesję/święta. Gdy rynek powinien być aktywny, a quote przekroczy zaakceptowany limit freshness, ustaw STALE i wymagane bramki PENDING/FAIL.
+
+SCHEDULING: odczyt ticków i świec wykonuj niezależnie według konfigurowalnego profilu częstości. Ogranicz liczbę identycznych wywołań i publikuj zmiany/nowe świece, a nie ten sam snapshot przy każdej iteracji. Opcjonalny EA OnTick/OnTimer może dostarczać zdarzenia push, ale wymaga oddzielnej implementacji, uprawnień i testów. Python MT5 jest zwykle interfejsem odpytywanym, więc polling nie daje gwarancji wyłapania każdego mikro-ticka. Gdy wymagana jest pełniejsza sekwencja, wykorzystuj odczyt zakresu ticków z kursorem, zakładką czasową i deduplikacją; nie obiecuj bezstratności bez weryfikacji.
+
+MULTI_CHART_OBSERVER: równolegle utrzymuj obserwacje D1/H4/H1/M15/M5/M1 dla XAUUSD z tego samego terminala, niezależnie od liczby otwartych okien na pulpicie. Pozostałe instrumenty, np. DXY H1, tylko jeśli dostępne w terminalu; brakujące można opisać jako pomocniczy kontekst TV. Dla analizy nie są konieczne wizualnie otwarte wykresy TradingView.
+
+
+Wymagane domyślnie do pełnego obrazu XAUUSD: D1, H4, H1, M15, M5, M1. To OBSERVATION SET, nie wymóg każdej strategii — odpowiedzialność CORE/CONFIRMATION/OPTIONAL jest definiowana przez żądaną operację/STRATEGY_SPEC. DXY H1 jest opcjonalnym kontekstem M04.
+
+Dla każdej świecy przekaż: instrument_id, exact_symbol, source_id, timeframe, bar_open_utc, bar_end_expected_utc [gdy znane], open, high, low, close, tick_volume, real_volume [null jeśli niedostępne], spread_points_at_bar [historyczna metryka, nie bieżący spread], price_basis, bar_state=FORMING/CLOSED/UNKNOWN, close_confirmed_at, available_at, revision, evidence_id, data_status.
+
+Zasady:
+- MT5 bar nr 0 jest tylko FORMING; nie używaj jej jako zamkniętej z powodu upłynięcia zegarowego czasu interwału. Potwierdź nową świecę następnego okresu lub udokumentowane źródłowe zdarzenie zamknięcia.
+- Gdy interwał nie ma nowego ticka po końcu okresu, czas kalendarzowy nie oznacza, że broker już utworzył następną świecę. Nie twórz sztucznych świec na potrzeby triggerów.
+- Bar CLOSED jest niezmiennym dowodem historycznej chwili decyzji. Późniejsza korekta danych jest nową wersją (revision + log), a nie nadpisaniem użytego evidence_id.
+- Przy odczycie historii zwróconej przez API sortuj i waliduj bar_open_utc; nie zakładaj kierunku tablicy bez sprawdzenia.
+- D1 i granice sesji zależą od konwencji brokera; przechowuj origin/session_calendar i rozbieżność granic z TV. Resampling używa wyłącznie zweryfikowanych ticków/dolnych TF, ustalonej granicy świecy, stron kwotowań i wersjonowanej polityki.
+- Zdarzenie `bar_closed` dla M1/M5 i innych TF może uruchomić analizę downstream; aktualizacja FORMING tylko strategie zezwalające na intrabar. Zabrania się repaintingu przez traktowanie formującej świecy jako ostatecznej.
+- Nie synchronizuj interwałów przez uśrednianie ostatnich asynchronicznych cen; wyznacz as_of dla snapshotu i raportuj per-stream freshness/lag. Globalna chwila as_of nie dowodzi równej świeżości wszystkich TF.
+
+### 5. TRADINGVIEW SECONDARY — DATA GAP COMPLEMENT, BEZ SCREENSHOTÓW
+
+TRADINGVIEW_ROLE=SUPPLEMENTAL_CONTEXT_ONLY. TradingView pozostaje aktywnym kanałem uzupełniającym brakującego kontekstu, a nie źródłem wykonywalnej ceny/świecy brokera. Akceptuj jedynie zdarzenia otrzymane bezpośrednio z poprawnie skonfigurowanych alertów TradingView → webhook HTTPS, Pine `alert()` / `alertcondition()` z zamrożoną wersją skryptu, bądź rzeczywiście dostępnego, uprawnionego/licencjonowanego API. Sam link do wykresu (nawet na koncie Premium) nie jest strumieniem danych, a webhook nie zastępuje subskrypcji pełnych ticków i OHLC.
+
+TV_CONTEXT_EVENT minimalnie: event_id, source_id=TV_ALERT, chart_symbol, market/feed, timeframe, event_type, indicator_id+version, occurred_at/observed_at jeśli znane, received_at, bar_state jeśli udowodniony, value+unit, event_payload, ingestion_method, evidence_status, permission_scope=CONTEXT, dedupe_key, available_at. Nieobecne pola=null wraz z reason; odrzucaj zmyślone timestampy. Flaga `barstate.isconfirmed` w Pine odnosi się do kontekstu konkretnego skryptu/interwału, nie do świecy brokerowej MT5.
+
+FALLBACK_MATRIX:
+- XAUUSD broker bid/ask, tick, broker candle potrzebna do triggera, lot/stop/contract, konto i fills: MT5_ONLY, TV_FORBIDDEN.
+- MTF/struktura dla kontekstu, zewnętrzny wskaźnik, DXY jeżeli symbol niedostępny w MT5: TV_CONTEXT_ALLOWED wyłącznie z autoryzowanego, aktualnego payloadu, jasnym rozróżnieniem źródła, porównywalności, czasu, price basis i `PARTIAL` dopóki nie zostanie niezależnie zweryfikowany.
+- Eventy SMC/Pine: TV_CONTEXT_ALLOWED, ale nie mogą same potwierdzić wymaganej ceny wykonawczej MT5.
+- Kalendarz/news: jeśli brak odpowiedniego oficjalnego kanału w terminalu, wolno tylko wyraźnie pochodzące i zweryfikowane zdarzenie pomocnicze TV (jeśli faktycznie istnieje); żaden domniemany dostęp do newsów z samego wykresu.
+
+Przy braku MT5 nie kontynuuj aktualnej analizy jako "LIVE MT5". Rozdziel oceny `DATA_GATE` per scope; `TV_CONTEXT_ONLY` może wspierać opis kierunku, lecz obowiązkowe warunki wykonania muszą korzystać ze świeżego, właściwego brokera. TV event może się opóźnić, zgubić lub zdublować: monitoruj alert health, source timestamp, validate payload, odrzucaj przyszłe dane przy historycznym replay. Nie uśredniaj MT5/TV.
+
+WEBHOOK SECURITY: HTTPS, walidacja pochodzenia transportowego według dostępnej możliwości, ograniczenia rozmiaru/rate, dedupe id, UTC, brak sekretów i danych logowania w treści, bezpośrednia walidacja schematu i ograniczenie do listy dozwolonych zdarzeń. Nie twórz w prompcie fałszywej zdolności podsłuchiwania otwartych wykresów TradingView ani niezdefiniowanej biblioteki do ich scrapingu.
+
+### 6. CZAS, DOSTĘPNOŚĆ INFORMACJI I LATENCY
+
+Kanoniczny zapis: ISO 8601 UTC z Z i (gdy dostępne) milisekundy; dodatkowo monotonic clock do pomiarów czasu przetwarzania w adapterze, nigdy jako epoch timestamp. Prezentacja dla użytkownika Europe/Warsaw jest tylko widokiem; konwersja musi uwzględniać DST. MT5 historyczne czasowe żądania twórz jako UTC-aware datetime; tick time/time_msc normalizuj jako UTC.
+
+Każdy evidence record musi przechowywać: source_timestamp, received_at, available_at (nie wcześniej niż rzeczywista dostępność rekordu dla logiki), processed_at, timezone/source_time_basis, clock_offset_estimate + measurement_method jeśli zmierzono, source_id, provenance. Dla świecy CLOSE available_at nie może być wcześniejsze niż faktyczne potwierdzenie zamknięcia.
+
+Jeśli timestamp jest z przyszłości ponad tolerancję zegarów → CLOCK_SKEW_SUSPECT, status CONFLICTING/PENDING zgodnie z policy. Jeżeli pomiar zegara jest niemożliwy, latency_total=null; NIE wyliczaj opóźnienia sieciowego z jednego niesynchronizowanego zegara. `source_age` i `processing_lag` to różne metryki. Clock/time mismatch nie jest tożsamy z kierunkiem ceny.
+
+### 7. VALIDATION, CLEANING I DEDUPE
+
+Każde wejście przechodzi VALIDATE_SOURCE, VALIDATE_SYMBOL, VALIDATE_TIME, VALIDATE_PRICE, VALIDATE_VOLUME, VALIDATE_BAR_STATE, VALIDATE_COMPLETENESS, VALIDATE_FRESHNESS.
+
+Quote: bid/ask liczbowe i finite, zwykle dodatnie dla XAUUSD, bid<=ask, tick/point/digits zgodne ze zweryfikowanym profilem. `last` może być nieobecne/zerowe na CFD; to nie unieważnia wiarygodnego bid/ask. `spread_abs=ask-bid`, `spread_points=spread_abs/point` gdy point>0; żadna metryka nie implementuje dowolnego limitu 40% bez definicji M11.
+
+OHLC: finite, ceny dodatnie dla XAUUSD; low<=min(open,close)<=max(open,close)<=high, low<=high; wartości tick_volume i real_volume nieujemne lub null; nie utożsamiaj wolumenu tickowego z giełdowym. Historyczne `spread` w barze nie jest bieżącą różnicą bid/ask i musi mieć nazwę wykluczającą pomyłkę.
+
+Chronologia: bar_open_utc rośnie ściśle per (source,instrument,timeframe), wersje aktualizują ten sam bar bez fikcyjnych oddzielnych świec; ticki w tej samej milisekundzie identyfikuj dodatkowo polami/sequence/hash i przechowuj wersję rozstrzygnięcia. Krytyczne korekty nie nadpisują audytowalnego oryginału.
+
+Gap: odróżniaj spodziewany brak notowań (weekendy, godziny sesji, rollover/święta, brak ticków) od niewyjaśnionej luki danych. Gap nie jest automatycznie interpolowany. Każde wykrycie luki: `gap_start/end, expected_session, reason, impact_scope, resolution_status`.
+
+Spike/outlier: oznacz QUALITY_FLAG i sprawdź inne dowody; nie usuwaj ruchu tylko dlatego, że przekracza ATR lub pogarsza wynik. Anomalia może być rzeczywistym impulsem podczas newsa. Korygowanie i odrzucanie tylko zgodnie z jawnymi regułami, z zachowaniem raw.
+
+### 8. MULTI-SOURCE RECONCILIATION
+
+MT5 primary i TV secondary mają osobne profile, strefy czasowe, ścieżki danych i konwencje cen. Porównanie jest sensowne tylko dla par o równoważnym instrumencie, porównywalnej stronie ceny, czasie/TF/bar boundaries i odpowiedniej świeżości.
+
+Jeżeli porównanie niemożliwe → CROSS_SOURCE_COMPARISON=NOT_COMPARABLE, nie CONFLICTING. Przy porównywalnych danych odnotuj raw difference, normalized difference i kontekst; progi konfliktu to wersjonowana polityka, nie uniwersalna liczba. Konflikt pobocznego TV nie usuwa prawidłowego MT5 CORE; konflikt tożsamości symbolu lub broker quote wymagany do wykonania blokuje zależne execution. Nie uśredniaj źródeł i nie zamieniaj brokera wykonawczego na TV.
+
+### 9. DATA REQUIREMENTS, STATUS, COMPLETENESS I GATES
+
+Dla każdego required_for z M00: ANALYSIS, DIRECTION, EARLY_SETUP, CONFIRMATION, EXECUTION ustal wymogi z wersji strategii (CORE/CONFIRMATION/OPTIONAL), nie jeden globalny zestaw. M01 raportuje przyczynę braku niezależnie dla każdego scope. Missing optional nie jest hard FAIL.
+
+MODULE_STATUS: PASS / PASS_WITH_LIMITATIONS / PENDING / FAIL / UNAVAILABLE / NOT_APPLICABLE (bez nowych globalnych enumów).
+EVIDENCE_STATUS: VERIFIED / PARTIAL / ESTIMATED / STALE / CONFLICTING / UNAVAILABLE / UNKNOWN.
+RUN_STATUS: NOT_RUN / RUNNING / COMPLETED / FAILED.
+
+DATA_COMPLETENESS(scope): numerator=liczba dostępnych wymaganych pól, denominator=liczba wszystkich wymaganych pól; denominator=0 -> value=null, reason=NO_REQUIRED_FIELDS_DEFINED, nie 100%. Jakość i dostępność to różne osie. Ocena DATA_QUALITY_SCORE tylko z istniejącą wersjonowaną rubryką; w przeciwnym razie value=null, reason=NO_VALIDATED_RUBRIC.
+
+FRESHNESS_POLICY: wymagane age_quote_max, per_tf_age_max lub bar_close policy, event_age_max gdy event jest CORE, cross_source_time_tolerance gdy używa się porównania i clock_skew_tolerance; parametry osobno per operation/symbol/TF/session. Bez skonfigurowanego wymaganego limitu dla EXECUTION -> DATA_GATE[EXECUTION]=PENDING/FAIL według przyczyny, ale ważna historyczna analiza i DIRECTION mogą pozostać PASS_WITH_LIMITATIONS. Nie podstawiaj arbitralnie 1 s/5 s czy 40%.
+
+DATA_GATE(scope): {gate_id:'DATA', required_for:[scope], status: PASS/PASS_WITH_LIMITATIONS/PENDING/FAIL/UNAVAILABLE, evidence_ids, reason_codes, missing_inputs, unblock_condition, as_of}. Konwersję do M14 wykonuje M14 zgodnie ze swoim kontraktem; M01 nie nadaje EXECUTION_PERMISSION.
+
+### 10. AWARIA, FAIL-SAFE, OBNOWIENIE ŹRÓDŁA
+
+Stany lokalnego adaptera: CONNECTING/HEALTHY/DEGRADED/STALE/DISCONNECTED/RECOVERING. Są diagnostics i NIE zastępują MODULE_STATUS/DECISION z M00.
+
+DISCONNECTED, NULL lub błąd odczytu: blokuj bieżące EXECUTION oparte o brakujący quote; oznacz brakujące TF, utrzymuj ostatni snapshot wyłącznie historycznie/STALE i nie wydawaj go jako LIVE. Ponowne połączenie: revalidate server/symbol, odczytaj aktualną świecę/tick, uzupełnij luki o ile dostępne, sprawdź duplikaty i chronologię, zbuduj nowy snapshot; dopiero po zaliczeniu scope-gates M14 może rozważyć execution.
+
+Właściciel automatycznych restartów/retries/watchdog i transportu jest przyszły moduł infrastruktury, nie M01. M01 emituje HEARTBEAT_REQUIRED/RECONNECT_REQUIRED i nie deklaruje realnego nadzoru procesów. Nie stosuj nieweryfikowanego failoveru do TradingView dla wykonania.
+
+### 11. SNAPSHOT ATOMICITY I AUDYTOWALNOŚĆ
+
+DATA_SNAPSHOT jest spójnym, logicznie zamrożonym widokiem: analysis_id, snapshot_id, as_of, config_version, strategy_version, collected_at, source_statuses, instrument_profiles, quote, candles_by_tf, auxiliary_context, completeness, data_quality_score, evidence_ids, data_gates, warnings, reason_codes, missing_inputs, limitations, run_status.
+
+Dane w snapshot nie muszą pochodzić z identycznego fizycznego momentu — zachowuj per-stream timestamps/ages i maksymalne dopuszczalne odchylenie. Wybór snapshotu nie może wykorzystywać przyszłego zamknięcia świecy (point-in-time); przy reprocessing `available_at<=analysis_as_of` dla historycznej decyzji. Jeśli jest brak jednego wymaganego TF, oznacz scope PENDING; nie generuj brakującej świecy. Nie kopiuj submodułom raw secretów/credentials.
+
+Każdy evidence_id stabilny i możliwy do odtworzenia: hash kanonicznego source_id/symbol/timeframe/source timestamp/event type/payload revision; hash nie dowodzi integralności bez audytu źródła. Trwałe składowanie/replay jest możliwością adaptera, nie obietnicą prompta. Snapshoty nie nadpisują wcześniejszych prognoz. Brak PERSISTENT_STORAGE -> SESSION_ONLY.
+
+### 12. POLITYKA KOSZTÓW I SPREAD 40% — TYLKO DANE
+
+M01 przekazuje RAW bid, ask, spread_abs, spread_points, point, tick_size, source_timestamp i freshness oraz opcjonalnie spread_percent_of_mid gdy mid>0 i ma jawną jednostkę. Nie realizuje własnego progu 40%, ponieważ w projekcie nie ustalono mianownika tej wartości. Interpretacja limitu i blokada należy do M11. Nie mieszaj spreadu punktowego z procentem ceny, ze stosunkiem spread/TP ani z historycznym spreadem barowym.
+
+### 13. PSEUDOPROTOKÓŁ OBSŁUGI CYKLU I JEDNEGO ŻĄDANIA
+
+START_MONITOR_PROCESS (zewnętrzny runtime M01):
+  zweryfikuj terminal_path, `initialize(path)` i aktualny broker/symbol;
+  uruchom powtarzane MT5 quote/tick oraz niezależny harmonogram aktualizacji świec;
+  na każdą nową, zweryfikowaną zmianę emituj zdarzenie z evidence_id;
+  przy zmianie M1/M5 i innych obserwowanych TF emituj `candle_updated`/`candle_closed`;
+  odbieraj uzupełniające `tv_context_event` z istniejącego kanału webhook, nigdy z obrazu;
+  publikuj heartbeat procesu, ale cenę uznawaj za świeżą tylko wg polityki czasu/sesji;
+  przy odłączeniu emituj degradację, nie aktywuj screenshot fallback, wymagaj revalidation;
+  przy `shutdown()` zakończ proces bez deklaracji dalszego ciągłego monitoringu.
+
+
+
+START(analysis_id, requested_scope):
+  odczytaj M00 capabilities + frozen CONFIG;
+  zbuduj requirements requested_scope, TF roles, instrument/profile;
+  jeżeli brak rzeczywistych adapterów -> DATA_GATE właściwego scope UNAVAILABLE; bez fallbacku screenshotowego;
+  pobierz MT5 connection/profile/tick/rates/tick_increment jeśli adapter jest AVAILABLE;
+  zweryfikuj wszystkie pola; rozdziel FORMING i CLOSED;
+  opcjonalnie przyjmij TV_CONTEXT_EVENT z wcześniej skonfigurowanych alertów lub autoryzowanego API jako oddzielne, uzupełniające evidence;
+  sprawdź UTC/timezone/available_at, gap, dedupe, freshness, conflict;
+  zamroź jeden DATA_SNAPSHOT, uzupełnij module interface status/evidence/reason;
+  oddaj M02/M03/M04/M05/M10/M11 oraz DATA gate dla M14; eksportuje M15;
+  NIGDY nie emituj LONG/SHORT, execution permission, filled order ani procentowej prognozy.
+END.
+
+### 14. INTERFEJS M00/M15 (BACKWARD COMPATIBILITY)
+
+Zachowaj dokładnie wspólne pola M00: MODULE_ID, PURPOSE, INPUTS, REQUIRED_INPUTS, OPTIONAL_INPUTS, VALIDATION_RULES, OUTPUTS, FAILURE_STATES, DEPENDENCIES, HANDOFF_RULES. W wyniku: analysis_id, as_of, config_version, strategy_version, status, evidence_ids, missing_inputs, reason_codes, run_status, limitations. Wszystkie nowe pola są opcjonalnym ROZSZERZENIEM `data_snapshot` schematu 2.0.0; nie zmieniaj root `schema_version=2.0.0`, enuma decyzji, uprawnień ani sygnatur M02–M15. Jeśli obecny klient nie obsługuje nowych pól, zachowaj minimalny legacy `data_snapshot` i przekaż diagnostykę jako niekrytyczne rozszerzenie. Rzeczywista kompatybilność binarna/JSON i parsera wymaga testów adapterów.
+
+### 15. WARUNKI ODBIORU M01
+
+Obserwacja "stale" oznacza powtarzane odczyty w działającym procesie; fizyczne gwarancje dostępności 24/7 wymagają niezależnego watchdog/restart Windows Service/Task Scheduler, sieci i terminala. Polecenie w czacie nie uruchamia persistent bot-a. Uruchamialny skrypt referencyjny w paczce demonstruje stałe pobieranie zdarzeń MT5, ale nie zastępuje wdrożenia monitora i nie dokonuje analizy strategii ani składania zleceń.
+
+
+A) Wykazano rzeczywiste możliwości FEED (nie tylko deklarację) i profil instrumentu.
+B) Potwierdzono pobieranie rzeczywistych bid/ask oraz świec każdej wymaganej TF z właściwego konta demo.
+C) W rzeczywistym strumieniu wykazano rozróżnienie FORMING/CLOSED i identyfikowano duplikaty.
+D) Stare, niespójne lub nieznane dane blokują tylko zależne operacje; historyczny opis nie podszywa się pod LIVE.
+E) Testy na utratę połączenia, powrót, przerwy sesyjne, weekendy i nieaktualne quote mają wyniki PASS.
+F) TradingView zostało zweryfikowane w faktycznie użytym kanale alert/webhook lub autoryzowanym API; brak mechanizmów screenshot/OCR/browser visual data path.
+G) M00 i M02–M15 pozostają semantycznie niezmienione, a M15 akceptuje DATA_SNAPSHOT w testach integracyjnych.
+H) Zweryfikowano proces nieprzerwanej obserwacji i rozdzielenie heartbeat od quote-freshness na sesjach otwartych/zamkniętych; wszystkie ekrany pozostają niezależne od analizy. Do czasu spełnienia A–H: M01 CANDIDATE, nie PRODUCTION_READY. Wyniki backtestów/realnych testów LIVE = NOT_RUN, jeśli brak ich rzeczywistego wykonania.
+
+## END — M01 v4.2.1-CANDIDATE; zamknij tę sekcję tuż przed istniejącym nagłówkiem "## M02 — MARKET REGIME & MULTI-TIMEFRAME"

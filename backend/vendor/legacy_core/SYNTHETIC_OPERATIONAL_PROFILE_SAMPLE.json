@@ -1,0 +1,18 @@
+{
+  "synthetic_example_only": true,
+  "not_live_market_data": true,
+  "source_type": "SYNTHETIC_MOCK_M03",
+  "mode": "AUTO",
+  "selected_profile": "SMC",
+  "strategy_id": "XAU-S14",
+  "setup_tf": "M15",
+  "direction": "LONG",
+  "m03_location_evidence_id": "M03:FVG:M15:2026-10-09T03:30:00+00:00:BULLISH",
+  "m03_liquidity_evidence_id": "M03:SWEEP:M15:2026-10-09T02:30:00+00:00:SSL",
+  "current_price_value": null,
+  "broker_order_sent": false,
+  "execution_permission": "BLOCKED",
+  "oos_validated": false,
+  "probability": null,
+  "entry_sl_tp_certified": false
+}

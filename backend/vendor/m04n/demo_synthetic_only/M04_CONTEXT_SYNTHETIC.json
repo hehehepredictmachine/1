@@ -1,0 +1,128 @@
+{
+  "module_id": "M04N",
+  "module_version": "1.1.0",
+  "as_of": "2026-10-08T15:39:14.696215Z",
+  "source_status": "SYNTHETIC_TEST_ONLY",
+  "context_inputs": {
+    "macro_events": [
+      {
+        "event_id": "CAL_MERGED:0d8d4b9fdb5cdd658d27",
+        "name": "Consumer Price Index (synthetic)",
+        "impact": "HIGH",
+        "scheduled_at": "2026-10-08T16:09:14Z",
+        "source_id": "BLS_CALENDAR",
+        "available_at": "2026-10-08T15:39:14.696215Z",
+        "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR",
+        "actual": null,
+        "forecast": null,
+        "provider_sources": [
+          "BLS_CALENDAR"
+        ],
+        "provider_occurrences": [
+          {
+            "source_id": "BLS_CALENDAR",
+            "event_id": "CAL:0d9fd138ed2e5c8bbdff",
+            "actual": null,
+            "forecast": null,
+            "previous": null,
+            "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR"
+          }
+        ]
+      }
+    ],
+    "calendar_coverage": {
+      "status": "PARTIAL",
+      "source_id": "BLS_CALENDAR",
+      "verified_at": "2026-10-08T15:39:14.696215Z",
+      "data_complete": false,
+      "window_from": null,
+      "window_to": null,
+      "scope": "BLS_OFFICIAL_AND_FAIR_ECONOMY_WEEKLY_PARTIAL"
+    },
+    "macro_news_context": {
+      "as_of": "2026-10-08T15:39:14.696215Z",
+      "fresh_items": [
+        {
+          "event_id": "NEWS:cc0f2e34f37d1106a320",
+          "headline": "Federal Reserve interest rate decision (synthetic test)",
+          "summary": "",
+          "url": "https://www.federalreserve.gov/newsevents/synthetic-demonstration",
+          "source_id": "FED_MONETARY",
+          "origin_domain": "www.federalreserve.gov",
+          "authority": "OFFICIAL",
+          "published_at": "2026-10-08T15:39:14Z",
+          "first_seen_at": "2026-10-08T15:39:14.696215Z",
+          "time_quality": "PUBLISHED",
+          "categories": [
+            "FED"
+          ],
+          "impact": "HIGH",
+          "potential_gold_direction": "UNKNOWN",
+          "potential_usd_direction": "UNKNOWN",
+          "impact_not_prediction": true,
+          "risk_context_only": true
+        }
+      ],
+      "source_health": {
+        "FED_MONETARY": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "FED_SPEECHES": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "BLS_CPI": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "BLS_EMPLOYMENT": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "BLS_PPI": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "BLS_CALENDAR": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "GOLD_MARKET": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "USD_RATES": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "GEOPOLITICAL": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        },
+        "PHYSICAL_GOLD": {
+          "state": "HEALTHY",
+          "last_success": "2026-10-08T15:39:14.696215Z",
+          "last_error": null
+        }
+      },
+      "news_coverage_complete": false
+    },
+    "fred_observations": []
+  },
+  "advisory": {
+    "risk": "ELEVATED",
+    "execution_permission": "BLOCKED",
+    "does_not_override_m04_m11_m14": true
+  },
+  "synthetic": true
+}

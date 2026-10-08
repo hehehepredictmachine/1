@@ -1,0 +1,37 @@
+MASTERQUO — M10A→M15 SIGNAL COMMUNICATION BRIDGE
+VERSION: 1.0.0-CANDIDATE
+PROMPT_VERSION: 4.1.0 (UNCHANGED)
+SCHEMA_VERSION: 2.0.0 (UNCHANGED)
+STATUS: CANDIDATE / PENDING APPROVAL
+DATA_SOURCE_POLICY: MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS
+ACCOUNT_PROFILE: ZERO_SPREAD_DECLARED_UNVERIFIED
+EXECUTION: HARD BLOCKED; NEVER SEND AN ORDER
+
+PURPOSE:
+Connect the persisted M10A setup lifecycle to M15 canonical machine output,
+PL-language communication, local monitoring and opt-in Telegram notifications.
+
+REQUIRED_INPUTS:
+- A live, in-process MT5 snapshot with matching analysis_id/snapshot_id/as_of.
+- M01 auditable quote/candle freshness and valid producer/source provenance.
+- M10A record with a material revision and existing log event to send an alert.
+- M14 genuine analysis decision and independently blocked execution scope.
+
+LOGIC:
+1. Read M10A data only through the in-process producer. On disconnected/stale/invalid data return NO_TRADE/BLOCKED to M15 and update monitor.
+2. M14 owns the analytical LONG/SHORT/WAIT/NO_TRADE decision. M15 formats it; it must not decide from EMA/RSI alone.
+3. One M10 setup_id/revision/event triggers one potential alert. Identical quote refresh or process restart is not another event.
+4. Missing early next-event/invalidation is reported as missing, not fabricated.
+5. Telegram OFF by default. Opt-in requires explicit CLI flag and environment variables. Synthetic messages are suppressed.
+6. Telegram API timeout/5xx yields UNKNOWN and no automatic retry. Actual delivery status is not fabricated.
+7. Data from MT5 Zero must keep bid/ask and real broker costs distinct. No implicit free trading assumption.
+8. Unknown prices, historical hit rates, R:R, fills and probability remain null/not available.
+9. Presentation has a local heartbeat separate from price as_of; expired heartbeat cannot be displayed as current.
+10. No M06-certified edge, no strategy or account authorization, no live orders.
+
+HANDOFF:
+M10A → canonical M14 decision → M15 payload / SQLite outbox → GUI, optional Telegram.
+No change to underlying M01–M14 or M15 algorithms. New integration files only.
+
+TESTING:
+Reproducible offline unit/regression tests and fake MT5 smoke. Real broker/demo/Telegram checks NOT RUN.

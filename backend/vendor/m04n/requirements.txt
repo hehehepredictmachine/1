@@ -1,0 +1,2 @@
+# Engine uses Python standard library. On Windows, ZoneInfo needs a timezone DB.
+tzdata>=2025.2; platform_system == "Windows"

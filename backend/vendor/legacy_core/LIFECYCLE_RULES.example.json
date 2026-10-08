@@ -1,0 +1,30 @@
+{
+  "example_only": true,
+  "purpose": "DOCUMENTATION_ONLY_NOT_LIVE_OR_DEMO_SIGNAL",
+  "strategy_id": "XAU-S14",
+  "version": "REPLACE_WITH_M07_FROZEN_VERSION",
+  "spec_hash": "REPLACE_WITH_ACTUAL_M07_SHA256",
+  "horizon_id": "M5",
+  "setup_tf": "M5",
+  "created_event_id": "REPLACE_WITH_ACTUAL_M03_EVENT_ID",
+  "intended_direction": "LONG",
+  "structural_evidence_id": "REPLACE_WITH_OBSERVED_M02_STRUCTURE_ID",
+  "location_evidence_id": "REPLACE_WITH_OBSERVED_M03_LOCATION_ID",
+  "liquidity_evidence_id": "REPLACE_WITH_OBSERVED_M03_LIQUIDITY_ID",
+  "next_expected_event": {
+    "timeframe": "M5",
+    "condition": {"timeframe":"M5", "field":"close", "operator":">", "level":2740.0, "requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"},
+    "failure_condition": "CLOSED_BAR_BELOW_DEFINED_INVALIDATION"
+  },
+  "invalidation": {
+    "timeframe": "M5", "rule":"CLOSED_BAR",
+    "condition": {"timeframe":"M5","field":"close","operator":"<","level":2700.0,"requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"}
+  },
+  "lifecycle_rules": {
+    "qualification": {"timeframe":"M5","field":"close","operator":">","level":2742.0,"requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"},
+    "arming": {"timeframe":"M5","field":"high","operator":">","level":2745.0,"requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"},
+    "trigger": {"timeframe":"M5","field":"high","operator":">","level":2748.0,"requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"},
+    "confirmation": {"timeframe":"M5","field":"close","operator":">","level":2750.0,"requires_closed_bar":true,"reference_evidence_id":"REPLACE_WITH_OBSERVED_M03_LOCATION_ID"}
+  },
+  "notes": "All prices are synthetic examples, not current XAUUSD prices. Delete example_only ONLY after binding real M02/M03 evidence and a frozen, tested versioned M07 spec. No orders are implemented."
+}

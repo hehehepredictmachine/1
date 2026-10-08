@@ -1,0 +1,13 @@
+{
+  "data_source_policy": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS",
+  "account_profile": "ZERO_SPREAD_DECLARED_UNVERIFIED",
+  "enable_orders": false,
+  "screenshots_enabled": false,
+  "quote_poll_seconds": 0.5,
+  "bar_poll_seconds": 5.0,
+  "heartbeat_seconds": 10.0,
+  "history_closed_bars": 260,
+  "max_quote_age_seconds": 15.0,
+  "notes": "Tylko podgląd i obliczenia zamkniętych świec. M01_FULL_PRODUCTION_AUDIT=PENDING; trading BLOCKED.",
+  "full_refresh_seconds": 60.0
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": "2.0.0",
+  "research_only": true,
+  "frozen": true,
+  "symbol": "XAUUSD",
+  "account": {
+    "account_type": "ZERO_SPREAD",
+    "symbol": "XAUUSD",
+    "account_id_hash": "DEMO_SYNTHETIC_NO_REAL_ACCOUNT",
+    "currency": "USD",
+    "commission_source": "SCENARIO_ONLY",
+    "commission_per_lot_side": 2.5,
+    "conversion_source": "SCENARIO_ONLY",
+    "money_per_price_unit_per_lot": 100.0,
+    "slippage_price": 0.02,
+    "swap_per_lot_per_overnight": 0
+  },
+  "settings": {
+    "max_entry_wait_seconds": 10.0,
+    "max_reference_age_seconds": 30.0,
+    "max_tick_gap_seconds": 120.0,
+    "min_oos_trades": 10,
+    "bootstrap_iterations": 30,
+    "bootstrap_seed": 7
+  },
+  "folds": [
+    {
+      "id": "DEV",
+      "role": "DEVELOPMENT",
+      "start": "2025-01-01T00:00:00Z",
+      "end": "2025-01-03T00:00:00Z"
+    },
+    {
+      "id": "OOS",
+      "role": "FINAL_OOS",
+      "start": "2025-01-03T00:00:00Z",
+      "end": "2025-01-06T00:00:00Z"
+    }
+  ],
+  "profiles": {
+    "MVP": {
+      "strategy_id": "XAU-S01",
+      "strategy_version": "MVP-EXPERIMENT-v1",
+      "spec_hash": "frozen-hash-MVP",
+      "frozen_at": "2025-01-01T00:00:00Z",
+      "entry_type": "MARKET_NEXT_AVAILABLE_TICK",
+      "reference": "LAST_KNOWN_MT5_MID_QUOTE",
+      "stop_distance": 1.0,
+      "target_distance": 1.5,
+      "lots": 0.1,
+      "max_hold_seconds": 60.0
+    },
+    "SMC": {
+      "strategy_id": "XAU-S14",
+      "strategy_version": "SMC-EXPERIMENT-v1",
+      "spec_hash": "frozen-hash-SMC",
+      "frozen_at": "2025-01-01T00:00:00Z",
+      "entry_type": "MARKET_NEXT_AVAILABLE_TICK",
+      "reference": "LAST_KNOWN_MT5_MID_QUOTE",
+      "stop_distance": 1.0,
+      "target_distance": 1.5,
+      "lots": 0.1,
+      "max_hold_seconds": 60.0
+    },
+    "SCALPING": {
+      "strategy_id": "XAU-S06",
+      "strategy_version": "SCALP-EXPERIMENT-v1",
+      "spec_hash": "frozen-hash-SCALPING",
+      "frozen_at": "2025-01-01T00:00:00Z",
+      "entry_type": "MARKET_NEXT_AVAILABLE_TICK",
+      "reference": "LAST_KNOWN_MT5_MID_QUOTE",
+      "stop_distance": 1.0,
+      "target_distance": 1.5,
+      "lots": 0.1,
+      "max_hold_seconds": 60.0
+    }
+  },
+  "macro_windows": {
+    "HIGH": {
+      "pre": 30,
+      "post": 15
+    },
+    "EXTREME": {
+      "pre": 60,
+      "post": 30
+    }
+  }
+}

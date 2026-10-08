@@ -1,0 +1,321 @@
+{
+  "module_id": "M14",
+  "module_version": "1.0.0-CANDIDATE",
+  "schema_version": "2.0.0",
+  "analysis_id": "SYNTHETIC_DEMO_NO_REAL_TRADES",
+  "as_of": "2026-10-08T10:00:00+00:00",
+  "run_status": "COMPLETED",
+  "status": "PASS_WITH_LIMITATIONS",
+  "data_source_policy": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS",
+  "screenshot_capture_enabled": false,
+  "decision_scope": "ANALYSIS",
+  "decision": "LONG",
+  "intended_direction": "LONG",
+  "top_setup_id": "a",
+  "horizon_id": "M5:10",
+  "signal_validity": "VALID_CONFIRMED_SETUP",
+  "signal_tier": "CONFIRMED",
+  "entry_status": "READY",
+  "entry_trigger": "CONFIRMED",
+  "setup_score": {
+    "value": null,
+    "unit": "score",
+    "score_status": "UNAVAILABLE",
+    "method_id": "SQ-4.1",
+    "known_points": 0.0,
+    "coverage": 0.0,
+    "score_interval": [
+      0.0,
+      100.0
+    ],
+    "components": {
+      "structure": {
+        "weight": 15,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "liquidity": {
+        "weight": 15,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "displacement_structure": {
+        "weight": 15,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "poi_location": {
+        "weight": 10,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "htf_mtf_alignment": {
+        "weight": 10,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "price_action": {
+        "weight": 10,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "order_flow": {
+        "weight": 5,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "usd_macro_event": {
+        "weight": 5,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "session_regime_volatility": {
+        "weight": 5,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "trap_filter": {
+        "weight": 5,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      },
+      "risk_invalidation_rr": {
+        "weight": 5,
+        "q": null,
+        "reason": "UNKNOWN_OR_DEPENDENT"
+      }
+    },
+    "reason_codes": [],
+    "quality_band": "UNKNOWN"
+  },
+  "probabilities": null,
+  "execution_environment": "DEMO",
+  "preliminary_execution_readiness": "READY",
+  "execution_permission": "BLOCKED",
+  "execution_eligible": false,
+  "live_execution_allowed": false,
+  "submitted_order_id": null,
+  "order_actions": [],
+  "broker_order_sent": false,
+  "execution_blockers": [
+    "TRUSTED_AUTHORIZATION_AND_EXECUTOR_ABSENT"
+  ],
+  "reason_codes": [],
+  "gates": [
+    {
+      "gate_id": "CONTRACT",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "AS_OF",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M01_ANALYSIS",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M09_ANALYSIS",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M03E_CORE",
+      "required_for": [
+        "EARLY_SETUP"
+      ],
+      "status": "PASS",
+      "evidence_ids": [
+        "ev_structural_advantage",
+        "ev_meaningful_location",
+        "ev_liquidity_context",
+        "ev_development_path",
+        "ev_known_invalidation"
+      ],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "DIRECTION_HORIZON",
+      "required_for": [
+        "DIRECTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "HORIZON_CONFLICT",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "SETUP_VALIDITY",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "ANALYTICAL_CONFIRMATION",
+      "required_for": [
+        "CONFIRMATION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [
+        "t1"
+      ],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "ENVIRONMENT",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M01_EXECUTION",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M16_RUNTIME",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "BROKER_QUOTE",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M08_STRATEGY",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "ACCOUNT_PROFILE",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M10_CONFIRMED",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "PLAN_COSTS",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "M11_RISK",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "EVENT_TRAP",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "PORTFOLIO",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PASS",
+      "evidence_ids": [],
+      "reason_codes": [],
+      "unblock_condition": null
+    }
+  ],
+  "limitations": [
+    "UNTRUSTED_JSON_INPUT",
+    "NO_TRUSTED_AUTHORITY",
+    "NO_BROKER_ADAPTER",
+    "NO_EXECUTION_SUBMISSION",
+    "REAL_MT5_INTEGRATION_NOT_TESTED"
+  ]
+}

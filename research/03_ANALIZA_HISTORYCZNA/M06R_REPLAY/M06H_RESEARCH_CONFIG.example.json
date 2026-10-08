@@ -1,0 +1,21 @@
+{
+  "schema_version": "2.0.0",
+  "module_id": "M06H",
+  "profile_version": "1.0.0-CANDIDATE",
+  "symbol": "XAUUSD",
+  "research_only": true,
+  "frozen": true,
+  "bar_period_seconds": 60,
+  "horizons_minutes": [5, 15, 60],
+  "guard_windows_minutes": {"HIGH": {"pre": 30, "post": 15}, "EXTREME": {"pre": 60, "post": 30}},
+  "control_blackout_minutes": 120,
+  "bootstrap_iterations": 300,
+  "bootstrap_seed": 20261008,
+  "min_final_oos_events": 8,
+  "min_final_oos_trades": 30,
+  "folds": [
+    {"id": "TRAIN_2025_Q1", "role": "DEVELOPMENT", "start": "2025-01-01T00:00:00Z", "end": "2025-04-01T00:00:00Z"},
+    {"id": "VALID_2025_Q2", "role": "VALIDATION", "start": "2025-04-01T00:00:00Z", "end": "2025-07-01T00:00:00Z"},
+    {"id": "OOS_2025_H2", "role": "FINAL_OOS", "start": "2025-07-01T00:00:00Z", "end": "2026-01-01T00:00:00Z"}
+  ]
+}

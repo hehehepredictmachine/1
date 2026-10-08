@@ -1,0 +1,36 @@
+{
+  "module_id": "M07_M03E_OPERATIONAL_PROFILES",
+  "module_version": "1.0.0-CANDIDATE",
+  "schema_version": "2.0.0",
+  "research_only": true,
+  "execution_enabled": false,
+  "profiles": {
+    "MVP": {
+      "strategy_id": "XAU-S01", "family": "TREND_PULLBACK", "setup_tf": "M15",
+      "requires_sweep": false, "requires_displacement_break": false,
+      "max_fvg_age_bars": 12, "max_mitigation_fraction": 0.65,
+      "max_distance_atr": 2.0, "min_atr": 0.00001,
+      "entry_stage_atr": [0.15, 0.30, 0.45, 0.60], "invalidation_buffer_atr": 0.20
+    },
+    "SMC": {
+      "strategy_id": "XAU-S14", "family": "SMC_FVG_SWEEP_CONTINUATION", "setup_tf": "M15",
+      "requires_sweep": true, "requires_displacement_break": false,
+      "max_sweep_age_bars": 18, "max_fvg_age_bars": 12,
+      "max_mitigation_fraction": 0.65, "max_distance_atr": 2.0, "min_atr": 0.00001,
+      "entry_stage_atr": [0.15, 0.30, 0.45, 0.60], "invalidation_buffer_atr": 0.20
+    },
+    "SCALPING": {
+      "strategy_id": "XAU-S06", "family": "MOMENTUM_DISPLACEMENT_CONTINUATION", "setup_tf": "M5",
+      "requires_sweep": false, "requires_displacement_break": true,
+      "max_break_age_bars": 12, "max_fvg_age_bars": 8,
+      "max_mitigation_fraction": 0.55, "max_distance_atr": 1.5, "min_atr": 0.00001,
+      "entry_stage_atr": [0.20, 0.40, 0.60, 0.80], "invalidation_buffer_atr": 0.25
+    }
+  },
+  "AUTO_priority": ["SMC", "MVP", "SCALPING"],
+  "limitations": [
+    "PROVISIONAL_NOT_OPTIMIZED", "MVP_IS_NEW_RESEARCH_DEFINITION",
+    "M06_OOS_AND_FORWARD_NOT_RUN", "NO_PORTFOLIO_POSITION_SIZING",
+    "NO_LIVE_TRADE_PERMISSION", "PRICE_LEVELS_DERIVED_FROM_ASOF_MT5_HISTORY"
+  ]
+}

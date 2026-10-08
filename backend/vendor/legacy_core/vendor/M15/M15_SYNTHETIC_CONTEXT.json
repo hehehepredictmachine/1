@@ -1,0 +1,10 @@
+{
+  "analysis_id": "SYNTHETIC_DEMO_NO_REAL_TRADES",
+  "snapshot_as_of": "2026-10-08T10:00:00+00:00",
+  "instrument_id": "XAUUSD",
+  "account_type": "ZERO_SPREAD",
+  "quote": {"source":"MT5_PRIMARY", "instrument_id":"XAUUSD", "as_of":"2026-10-08T10:00:00+00:00", "bid":2650.0, "ask":2650.0},
+  "plan": {"price_source":"MT5_PRIMARY", "instrument_id":"XAUUSD", "as_of":"2026-10-08T10:00:00+00:00", "entry":2650.0, "sl":2645.0, "tp1":2660.0, "tp2":2670.0, "tp3":null, "plan_status":"ILLUSTRATIVE"},
+  "data_limitations":["PRZYKLAD SYNTETYCZNY: zadne z podanych notowan nie sa realnymi danymi uzytkownika."],
+  "limitations":["NO_REAL_MT5_ADAPTER","NO_REAL_TELEGRAM_DELIVERY"]
+}

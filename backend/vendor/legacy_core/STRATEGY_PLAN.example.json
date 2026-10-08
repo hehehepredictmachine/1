@@ -1,0 +1,35 @@
+{
+  "intended_direction": "LONG",
+  "strategy_id": "XAU-S14",
+  "version": "1.0.0-RESEARCH",
+  "spec_hash": "REPLACE_WITH_FROZEN_M07_SPEC_HASH",
+  "horizon_id": "M5",
+  "setup_tf": "M5",
+  "created_event_id": "REPLACE_WITH_ACTUAL_M03_EVENT_ID",
+  "structural_evidence_id": "REPLACE_WITH_M02_OR_M03_EVIDENCE_ID",
+  "location_evidence_id": "REPLACE_WITH_ACTUAL_M03_FVG_EVENT_ID",
+  "liquidity_evidence_id": "REPLACE_WITH_ACTUAL_M03_LEVEL_EVENT_ID",
+  "next_expected_event": {
+    "timeframe": "M5",
+    "condition": {
+      "field": "close",
+      "operator": ">",
+      "level": 0,
+      "requires_closed_bar": true,
+      "reference_evidence_id": "REPLACE_WITH_ACTUAL_M03_EVENT_ID"
+    },
+    "failure_condition": "REPLACE_WITH_PRECISE_FAILURE_CONDITION"
+  },
+  "invalidation": {
+    "timeframe": "M5",
+    "condition": {
+      "field": "close",
+      "operator": "<",
+      "level": 0,
+      "requires_closed_bar": true,
+      "reference_evidence_id": "REPLACE_WITH_ACTUAL_M03_EVENT_ID"
+    },
+    "rule": "CLOSED_BAR"
+  },
+  "notes": "PLACEHOLDERS: will NOT produce a valid M03E setup. Research-only; no order execution."
+}

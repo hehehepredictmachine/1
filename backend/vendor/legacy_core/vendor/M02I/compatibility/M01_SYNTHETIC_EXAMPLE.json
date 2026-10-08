@@ -1,0 +1,147 @@
+{
+  "_fixture_only": true,
+  "_warning": "DANE SYNTETYCZNE — NIE SĄ NOTOWANIAMI LIVE ANI DEMO",
+  "analysis_id": "SYNTHETIC-M01-001",
+  "snapshot_id": "SYNTH-SNAPSHOT-1",
+  "as_of": "2026-10-08T08:28:00Z",
+  "collected_at": "2026-10-08T08:28:00Z",
+  "config_version": "M01-CANDIDATE-4.2.1",
+  "strategy_version": null,
+  "source_statuses": [
+    {
+      "source_id": "MT5-SYNTHETIC",
+      "status": "HEALTHY",
+      "observed_at": "2026-10-08T08:28:00Z"
+    }
+  ],
+  "instrument_profiles": [
+    {
+      "instrument_id": "XAUUSD",
+      "source_id": "MT5-SYNTHETIC",
+      "exact_symbol": "XAUUSD",
+      "feed_kind": "CFD_SPOT_PROXY",
+      "status": "VERIFIED",
+      "point": 0.01,
+      "tick_size": 0.01
+    }
+  ],
+  "quote": {
+    "instrument_id": "XAUUSD",
+    "source_id": "MT5-SYNTHETIC",
+    "bid": 3000.1,
+    "ask": 3000.4,
+    "source_timestamp": "2026-10-08T08:27:59.900Z",
+    "received_at": "2026-10-08T08:28:00Z",
+    "available_at": "2026-10-08T08:28:00Z",
+    "quote_side": "BID_ASK",
+    "evidence_id": "tick-fixture-1",
+    "evidence_status": "VERIFIED",
+    "spread_abs": 0.3,
+    "spread_points": 30
+  },
+  "candles_by_tf": {
+    "M1": [
+      {
+        "instrument_id": "XAUUSD",
+        "source_id": "MT5-SYNTHETIC",
+        "timeframe": "M1",
+        "bar_open_utc": "2026-10-08T08:27:00Z",
+        "open": 2999.9,
+        "high": 3000.5,
+        "low": 2999.8,
+        "close": 3000.2,
+        "tick_volume": 100,
+        "real_volume": null,
+        "spread_points_at_bar": 30,
+        "bar_state": "CLOSED",
+        "close_confirmed_at": "2026-10-08T08:28:00Z",
+        "available_at": "2026-10-08T08:28:00Z",
+        "revision": 0,
+        "evidence_id": "m1-fixture-1",
+        "price_basis": "BID"
+      }
+    ]
+  },
+  "auxiliary_context": {},
+  "completeness": {
+    "ANALYSIS": {
+      "numerator": 2,
+      "denominator": 2,
+      "value": 1.0,
+      "reason": null
+    },
+    "EXECUTION": {
+      "numerator": 2,
+      "denominator": 3,
+      "value": 0.6666666666666666,
+      "reason": "NO_FRESHNESS_POLICY"
+    }
+  },
+  "data_quality_score": {
+    "value": null,
+    "reason": "NO_VALIDATED_RUBRIC",
+    "rubric_version": null
+  },
+  "evidence_ids": [
+    "tick-fixture-1",
+    "m1-fixture-1"
+  ],
+  "data_gates": [
+    {
+      "gate_id": "DATA",
+      "required_for": [
+        "ANALYSIS"
+      ],
+      "status": "PASS",
+      "evidence_ids": [
+        "tick-fixture-1",
+        "m1-fixture-1"
+      ],
+      "reason_codes": [],
+      "missing_inputs": [],
+      "unblock_condition": null
+    },
+    {
+      "gate_id": "DATA",
+      "required_for": [
+        "EXECUTION"
+      ],
+      "status": "PENDING",
+      "evidence_ids": [
+        "tick-fixture-1"
+      ],
+      "reason_codes": [
+        "NO_FRESHNESS_POLICY"
+      ],
+      "missing_inputs": [
+        "freshness_policy.age_quote_max"
+      ],
+      "unblock_condition": "Zatwierdzona polityka aktualności i świeży quote"
+    }
+  ],
+  "warnings": [
+    "SYNTHETIC_ONLY"
+  ],
+  "reason_codes": [
+    "NO_FRESHNESS_POLICY"
+  ],
+  "missing_inputs": [
+    "freshness_policy.age_quote_max"
+  ],
+  "limitations": [
+    "NOT_CONNECTED_TO_BROKER",
+    "NOT_FOR_TRADING"
+  ],
+  "run_status": "COMPLETED",
+  "data_source_policy": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS",
+  "observation_mode": "CONTINUOUS_FEED",
+  "visual_capture_enabled": false,
+  "observer_health": {
+    "process_alive": true,
+    "last_heartbeat_at": "2026-10-08T08:28:00Z",
+    "last_quote_at": "2026-10-08T08:28:00Z",
+    "last_candle_event_at": "2026-10-08T08:28:00Z",
+    "monitoring_started_at": "2026-10-08T08:27:58Z",
+    "monitoring_status": "HEALTHY"
+  }
+}

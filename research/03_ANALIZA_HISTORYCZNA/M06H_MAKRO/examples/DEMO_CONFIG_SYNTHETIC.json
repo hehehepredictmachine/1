@@ -1,0 +1,41 @@
+{
+  "schema_version": "2.0.0",
+  "symbol": "XAUUSD",
+  "frozen": true,
+  "research_only": true,
+  "bar_period_seconds": 60,
+  "horizons_minutes": [
+    5,
+    15,
+    60
+  ],
+  "guard_windows_minutes": {
+    "HIGH": {
+      "pre": 30,
+      "post": 15
+    },
+    "EXTREME": {
+      "pre": 60,
+      "post": 30
+    }
+  },
+  "control_blackout_minutes": 120,
+  "bootstrap_iterations": 100,
+  "bootstrap_seed": 4,
+  "min_final_oos_events": 8,
+  "min_final_oos_trades": 1,
+  "folds": [
+    {
+      "id": "dev",
+      "role": "DEVELOPMENT",
+      "start": "2025-01-01T00:00:00Z",
+      "end": "2025-01-03T00:00:00Z"
+    },
+    {
+      "id": "oos",
+      "role": "FINAL_OOS",
+      "start": "2025-01-03T00:00:00Z",
+      "end": "2025-01-07T00:00:00Z"
+    }
+  ]
+}

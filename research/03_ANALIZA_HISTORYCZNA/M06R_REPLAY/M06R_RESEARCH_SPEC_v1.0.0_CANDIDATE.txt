@@ -1,0 +1,9 @@
+MASTERQUO REPLAY: M06R v1.0.0-CANDIDATE
+CEL: historyczne odtworzenie profili MVP, SMC, Scalping, AUTO na zamknietych świecach MT5 bez future leak.
+START: zawsze od danych, ktore byly dostepne na dany historyczny moment (bar available_at <= as_of).
+ANALIZA: oryginalne silniki M02, M02I, M03 + M07/M03E, sprawdzalne reguly M10A.
+FAZY: EARLY_SETUP -> SETUP_FORMING -> QUALIFIED -> ARMED -> TRIGGERED -> CONFIRMED, invalidated i expired, DATA_GAP fail closed.
+KLUCZ: brak M06H/M06 quote ledger powoduje NOT_RUN w performance. Wazny jest broker Bid/Ask, prowizja, posklizg, OOS.
+STOP: nie akceptuj niezamyknietych barow, duplikatow, przestarzalych danych, niespojnego symbolu i niezweryfikowanego kontekstu.
+ZAKAZY: brak skladania zlecen, brak przedstawiania szacowanych cen jako rzeczywiste wypelnienia, brak automatycznego LIVE, brak screenshot i OCR.
+STATUS: CANDIDATE / PENDING APPROVAL. Oryginalne wersje sa oddzielne i niezmienione.

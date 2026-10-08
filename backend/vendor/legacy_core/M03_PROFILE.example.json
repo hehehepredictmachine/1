@@ -1,0 +1,28 @@
+{
+  "profile_id": "M03-1.0.0-RESEARCH-PROVISIONAL",
+  "research_only": true,
+  "timeframes": [
+    "D1",
+    "H4",
+    "H1",
+    "M15",
+    "M5",
+    "M1"
+  ],
+  "required_timeframes": [
+    "H4",
+    "H1",
+    "M15",
+    "M5",
+    "M1"
+  ],
+  "min_closed_bars": 5,
+  "break_buffer_abs": 0.01,
+  "sweep_min_penetration_abs": 0.01,
+  "fvg_min_size_abs": 0.01,
+  "displacement_body_ratio_min": 0.65,
+  "displacement_range_atr_min": 1.2,
+  "ob_lookback_bars": 8,
+  "note": "Wszystkie wartości liczbowe są przykładowe, niezwalidowane OOS, nie do automatycznego handlu. Dla produkcji: profil per broker/strategia, M06 OOS/WFA/forward i bramki M14.",
+  "atr_period": 14
+}

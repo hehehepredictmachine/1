@@ -1,0 +1,100 @@
+{
+  "schema_version": "2.0.0",
+  "run_id": "synthetic-only",
+  "data_snapshot": {
+    "snapshot_id": "test1",
+    "dataset_id": "synthetic-1",
+    "as_of": "2025-01-07T23:59:00Z",
+    "data_source_policy": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS",
+    "visual_capture_enabled": false,
+    "analysis_gate": {
+      "status": "PASS"
+    }
+  },
+  "market_state": {
+    "snapshot_id": "test1",
+    "as_of": "2025-01-07T23:59:00Z",
+    "analysis_gate": {
+      "status": "PASS"
+    }
+  },
+  "account": {
+    "account_type": "ZERO_SPREAD",
+    "symbol": "XAUUSD",
+    "broker": "SYNTHETIC",
+    "account_id_hash": "synthetic",
+    "currency": "USD",
+    "commission_source": "SCENARIO_ONLY",
+    "commission_per_lot_side": 3.0,
+    "conversion_source": "SCENARIO_ONLY",
+    "money_per_price_unit_per_lot": 100.0,
+    "slippage_price": 0.01
+  },
+  "validation_profile": {
+    "folds": [
+      {
+        "id": "dev",
+        "role": "DEVELOPMENT",
+        "start": "2025-01-01T00:00:00Z",
+        "end": "2025-01-03T00:00:00Z"
+      },
+      {
+        "id": "oos",
+        "role": "FINAL_OOS",
+        "start": "2025-01-03T00:00:00Z",
+        "end": "2025-01-07T00:00:00Z"
+      }
+    ],
+    "acceptance_criteria_frozen": true,
+    "forward_demo_required": true,
+    "max_entry_wait_seconds": 60,
+    "bootstrap_iterations": 100,
+    "bootstrap_seed": 5,
+    "min_completed_oos_trades": 1
+  },
+  "trial_ledger": [
+    {
+      "id": "trial1",
+      "spec_hash": "abc"
+    }
+  ],
+  "signals": [
+    {
+      "signal_id": "s1",
+      "strategy_version": "XAU-S01@0.0.1",
+      "spec_hash": "abc",
+      "source": "MT5_DERIVED",
+      "symbol": "XAUUSD",
+      "bar_state": "CLOSED",
+      "signal_at": "2025-01-04T13:30:00Z",
+      "available_at": "2025-01-04T13:30:00Z",
+      "feature_available_at": [
+        "2025-01-04T13:29:00Z"
+      ],
+      "side": "LONG",
+      "entry_type": "MARKET_NEXT_AVAILABLE_TICK",
+      "stop": 1990.0,
+      "target": 2010.0,
+      "lots": 0.1,
+      "max_hold_seconds": 600
+    }
+  ],
+  "ticks": [
+    {
+      "symbol": "XAUUSD",
+      "source_id": "MT5_SYNTHETIC",
+      "time": "2025-01-04T13:30:01Z",
+      "available_at": "2025-01-04T13:30:01Z",
+      "bid": 2000,
+      "ask": 2000.2
+    },
+    {
+      "symbol": "XAUUSD",
+      "source_id": "MT5_SYNTHETIC",
+      "time": "2025-01-04T13:31:00Z",
+      "available_at": "2025-01-04T13:31:00Z",
+      "bid": 2012,
+      "ask": 2012.2
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "module_id": "M06T",
+  "module_version": "1.0.0-CANDIDATE",
+  "schema_version": "2.0.0",
+  "status": "RESEARCH_ONLY",
+  "protocol_hash": "9820d21f800d6cb03e3e1ed68b9c6e77cec7f296488c9acf431148fa2a2d2bb4",
+  "tick_count": 9,
+  "input_signals": 2,
+  "eligible_signals": 2,
+  "excluded": [],
+  "metrics": {
+    "all": {
+      "trades": 2,
+      "mean_net_r": -0.03571428,
+      "mean_net_pnl": -0.4,
+      "profit_factor": 0.95266272,
+      "profit_factor_status": "DEFINED",
+      "max_drawdown_money": 16.9,
+      "win_rate": 0.5
+    },
+    "by_strategy": {
+      "MVP": {
+        "all": {
+          "trades": 1,
+          "mean_net_r": 1.4375,
+          "mean_net_pnl": 16.1,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "development": {
+          "trades": 1,
+          "mean_net_r": 1.4375,
+          "mean_net_pnl": 16.1,
+          "profit_factor": null,
+          "profit_factor_status": "UNDEFINED_NO_LOSSES",
+          "max_drawdown_money": 0,
+          "win_rate": 1.0
+        },
+        "final_oos": {
+          "trades": 0,
+          "mean_net_pnl": null,
+          "mean_net_r": null,
+          "win_rate": null,
+          "profit_factor": null,
+          "max_drawdown_money": null
+        },
+        "statuses": {
+          "COMPLETED": 1
+        }
+      },
+      "SMC": {
+        "all": {
+          "trades": 1,
+          "mean_net_r": -1.50892857,
+          "mean_net_pnl": -16.9,
+          "profit_factor": 0.0,
+          "profit_factor_status": "DEFINED",
+          "max_drawdown_money": 16.9,
+          "win_rate": 0.0
+        },
+        "development": {
+          "trades": 0,
+          "mean_net_pnl": null,
+          "mean_net_r": null,
+          "win_rate": null,
+          "profit_factor": null,
+          "max_drawdown_money": null
+        },
+        "final_oos": {
+          "trades": 1,
+          "mean_net_r": -1.50892857,
+          "mean_net_pnl": -16.9,
+          "profit_factor": 0.0,
+          "profit_factor_status": "DEFINED",
+          "max_drawdown_money": 16.9,
+          "win_rate": 0.0
+        },
+        "statuses": {
+          "COMPLETED": 1
+        }
+      },
+      "SCALPING": {
+        "all": {
+          "trades": 0,
+          "mean_net_pnl": null,
+          "mean_net_r": null,
+          "win_rate": null,
+          "profit_factor": null,
+          "max_drawdown_money": null
+        },
+        "development": {
+          "trades": 0,
+          "mean_net_pnl": null,
+          "mean_net_r": null,
+          "win_rate": null,
+          "profit_factor": null,
+          "max_drawdown_money": null
+        },
+        "final_oos": {
+          "trades": 0,
+          "mean_net_pnl": null,
+          "mean_net_r": null,
+          "win_rate": null,
+          "profit_factor": null,
+          "max_drawdown_money": null
+        },
+        "statuses": {}
+      }
+    },
+    "by_fold": {
+      "DEV": {
+        "trades": 1,
+        "mean_net_r": 1.4375,
+        "mean_net_pnl": 16.1,
+        "profit_factor": null,
+        "profit_factor_status": "UNDEFINED_NO_LOSSES",
+        "max_drawdown_money": 0,
+        "win_rate": 1.0
+      },
+      "OOS": {
+        "trades": 1,
+        "mean_net_r": -1.50892857,
+        "mean_net_pnl": -16.9,
+        "profit_factor": 0.0,
+        "profit_factor_status": "DEFINED",
+        "max_drawdown_money": 16.9,
+        "win_rate": 0.0
+      }
+    }
+  },
+  "macro_coverage": "CURATED_SYNTHETIC_UNVERIFIED",
+  "macro_comparison": {
+    "status": "NOT_RUN",
+    "reason": "ONLY_SYNTHETIC_OR_EMPTY_MACRO_EVENTS",
+    "macro_archive_type": "CURATED_SYNTHETIC_UNVERIFIED"
+  },
+  "cost_sensitivity": [
+    {
+      "commission_slippage_multiplier": 1.0,
+      "average_projected_net_pnl": -0.4,
+      "spread_stress": "NOT_MODELED",
+      "method": "SENSITIVITY_NOT_NEW_BROKER_QUOTES"
+    },
+    {
+      "commission_slippage_multiplier": 1.25,
+      "average_projected_net_pnl": -0.625,
+      "spread_stress": "NOT_MODELED",
+      "method": "SENSITIVITY_NOT_NEW_BROKER_QUOTES"
+    },
+    {
+      "commission_slippage_multiplier": 1.5,
+      "average_projected_net_pnl": -0.85,
+      "spread_stress": "NOT_MODELED",
+      "method": "SENSITIVITY_NOT_NEW_BROKER_QUOTES"
+    },
+    {
+      "commission_slippage_multiplier": 2.0,
+      "average_projected_net_pnl": -1.3,
+      "spread_stress": "NOT_MODELED",
+      "method": "SENSITIVITY_NOT_NEW_BROKER_QUOTES"
+    }
+  ],
+  "trades": [
+    {
+      "signal_id": "M06R:SIGNAL-0",
+      "side": "LONG",
+      "signal_at": "2025-01-02T12:00:00Z",
+      "status": "COMPLETED",
+      "reason_codes": [],
+      "execution_permission": "BLOCKED",
+      "fold_id": "DEV",
+      "fold_role": "DEVELOPMENT",
+      "entry_at": "2025-01-02T12:00:01+00:00",
+      "entry_price": 100.11999999999999,
+      "exit_at": "2025-01-02T12:00:03+00:00",
+      "exit_price": 101.78,
+      "exit_reason": "TP",
+      "gross_pnl": 16.6,
+      "commission": 0.5,
+      "swap": 0.0,
+      "net_pnl": 16.1,
+      "initial_risk": 11.2,
+      "net_r": 1.4375,
+      "spread_entry": 0.1,
+      "spread_exit": 0.1,
+      "quote_entry": {
+        "bid": 100.0,
+        "ask": 100.1
+      },
+      "quote_exit": {
+        "bid": 101.8,
+        "ask": 101.9
+      },
+      "slip_price_each_side": 0.02,
+      "macro_status": "NO_KNOWN_WINDOW_PARTIAL_COVERAGE",
+      "macro_event_ids": [],
+      "profile_name": "MVP",
+      "simulation_only": true
+    },
+    {
+      "signal_id": "M06R:SIGNAL-1",
+      "side": "SHORT",
+      "signal_at": "2025-01-04T12:00:00Z",
+      "status": "COMPLETED",
+      "reason_codes": [],
+      "execution_permission": "BLOCKED",
+      "fold_id": "OOS",
+      "fold_role": "FINAL_OOS",
+      "entry_at": "2025-01-04T12:00:01+00:00",
+      "entry_price": 99.98,
+      "exit_at": "2025-01-04T12:00:03+00:00",
+      "exit_price": 101.61999999999999,
+      "exit_reason": "SL",
+      "gross_pnl": -16.4,
+      "commission": 0.5,
+      "swap": 0.0,
+      "net_pnl": -16.9,
+      "initial_risk": 11.2,
+      "net_r": -1.50892857,
+      "spread_entry": 0.1,
+      "spread_exit": 0.1,
+      "quote_entry": {
+        "bid": 100.0,
+        "ask": 100.1
+      },
+      "quote_exit": {
+        "bid": 101.5,
+        "ask": 101.6
+      },
+      "slip_price_each_side": 0.02,
+      "macro_status": "NO_KNOWN_WINDOW_PARTIAL_COVERAGE",
+      "macro_event_ids": [],
+      "profile_name": "SMC",
+      "simulation_only": true
+    }
+  ],
+  "warnings": [
+    "SIMULATED_QUOTES_NOT_BROKER_FILLS",
+    "TICK_EXPORT_UNCERTIFIED_SOURCE",
+    "BROKER_QUOTE_TIMESTAMP_DOES_NOT_PROVE_LOCAL_RECEIPT",
+    "NO_LIVE_EXECUTION",
+    "NO_FORWARD_DEMO",
+    "INDEPENDENT_TRADES_NOT_PORTFOLIO_EQUITY",
+    "EX_ANTE_PROTOCOL_TIMESTAMP_USER_DECLARED_NOT_CRYPTOGRAPHICALLY_PROVEN",
+    "COSTS_ARE_SCENARIOS_NOT_VERIFIED",
+    "MACRO_STUDY_NOT_RUN",
+    "INSUFFICIENT_FINAL_OOS_SAMPLE"
+  ],
+  "oos_approved": false,
+  "execution_permission": "BLOCKED",
+  "live_eligible": false,
+  "input_sha256": [
+    {
+      "filename": "SIGNALS_SYNTHETIC.jsonl",
+      "sha256": "0a9a93f981f7d33bc32ea2c4c4b3757b17f7463e00958e972e23aacd32878565"
+    },
+    {
+      "filename": "STAGES_SYNTHETIC.jsonl",
+      "sha256": "520a87073f73f10793b939286e07ee272c40a81d27137f677b8f3e5ba4a1f501"
+    },
+    {
+      "filename": "PROTOCOL_SYNTHETIC.json",
+      "sha256": "fdc1bce57778940fc1543aa524bb9d2028f2b305948b2d3ddfaa081bc721e059"
+    },
+    {
+      "filename": "TICKS_SYNTHETIC.csv",
+      "sha256": "41fa7c6c3b56059de6159d8d6c5cb9c7fc9719dc1b384124f117e71ef5243ee6"
+    },
+    {
+      "filename": "MACRO_SYNTHETIC.json",
+      "sha256": "7f728d040b1a01b8fc6ebfaff66a5048713ca2a6c956486e8a5a66084403b090"
+    },
+    {
+      "filename": "M06R_REPORT_SYNTHETIC.json",
+      "sha256": "8809f524f8ca87971cb11edfae3bb94a45586f154b2a27fe020954241d303926"
+    }
+  ],
+  "data_sources_unverified": true
+}

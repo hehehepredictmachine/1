@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"MasterQUO M06H Historical Macro Validation Candidate",
+  "type":"object",
+  "required":["schema_version","module_id","module_version","status","data_origin","broker_symbol","event_study","strategy_validation","approval_status","execution_permission","live_execution_allowed","orders_sent","reason_codes"],
+  "properties":{
+    "schema_version":{"const":"2.0.0"},
+    "module_id":{"const":"M06H"},
+    "module_version":{"type":"string"},
+    "status":{"const":"RESEARCH_ONLY"},
+    "broker_symbol":{"type":"string","minLength":1},
+    "data_origin":{"type":"string"},
+    "protocol_hash":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "event_study":{"type":"object","required":["status","event_rows","aggregates","excluded_reasons"],"properties":{"event_rows":{"type":"array"},"aggregates":{"type":"array"},"excluded_reasons":{"type":"object"}}},
+    "strategy_validation":{"type":"object","required":["status","validation_approved"],"properties":{"status":{"enum":["NOT_RUN","PENDING","RESEARCH_COMPLETE_WITH_LIMITATIONS","SYNTHETIC_DEMONSTRATION_ONLY"]},"validation_approved":{"const":false}}},
+    "approval_status":{"const":"PENDING_APPROVAL"},
+    "execution_permission":{"const":"BLOCKED"},
+    "live_execution_allowed":{"const":false},
+    "orders_sent":{"const":0},
+    "visual_capture_enabled":{"const":false},
+    "reason_codes":{"type":"array","items":{"type":"string"}}
+  }
+}

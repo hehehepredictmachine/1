@@ -1,0 +1,13 @@
+{
+  "example_only": true,
+  "source": "SYNTHETIC_TEST",
+  "note": "Example only, not an actual price/market signal",
+  "schema_version": "2.0.0",
+  "m10a_state": "CONFIRMED",
+  "m14_analysis_decision": "LONG",
+  "m15_execution_permission": "BLOCKED",
+  "broker_order_sent": false,
+  "submitted_order_id": null,
+  "telegram_default": "DISABLED",
+  "cost_status": "MT5_ZERO_DECLARED_COSTS_UNVERIFIED"
+}

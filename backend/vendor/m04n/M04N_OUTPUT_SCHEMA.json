@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MasterQUO M04N Intelligence Report v1.1.0",
+  "type": "object",
+  "required": [
+    "module_id",
+    "module_version",
+    "as_of",
+    "status",
+    "integrity",
+    "news",
+    "calendar",
+    "macro_observations",
+    "interpretation",
+    "execution_permission",
+    "visual_capture_enabled",
+    "research_only"
+  ],
+  "properties": {
+    "module_id": {
+      "const": "M04N"
+    },
+    "module_version": {
+      "const": "1.1.0"
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "HEALTHY",
+        "PARTIAL",
+        "UNAVAILABLE",
+        "SYNTHETIC_TEST_ONLY"
+      ]
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "source_health",
+        "complete_global_news_coverage",
+        "failed_or_stale_sources"
+      ],
+      "properties": {
+        "source_health": {
+          "type": "object"
+        },
+        "complete_global_news_coverage": {
+          "const": false
+        },
+        "failed_or_stale_sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "news": {
+      "type": "object",
+      "required": [
+        "new_count_this_poll",
+        "initial_backfill_count",
+        "recent",
+        "new_events"
+      ],
+      "properties": {
+        "new_count_this_poll": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "initial_backfill_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_events": {
+          "type": "array"
+        },
+        "recent": {
+          "type": "array"
+        }
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "required": [
+        "status",
+        "events",
+        "risk"
+      ],
+      "properties": {
+        "events": {
+          "type": "array"
+        },
+        "risk": {
+          "type": "object"
+        },
+        "individual_source_counts": {
+          "type": "object"
+        }
+      }
+    },
+    "macro_observations": {
+      "type": "object",
+      "required": [
+        "series"
+      ],
+      "properties": {
+        "series": {
+          "type": "array"
+        }
+      }
+    },
+    "interpretation": {
+      "type": "object",
+      "required": [
+        "gold_direction",
+        "usd_direction",
+        "risk_advisory",
+        "no_inferred_trade_signal"
+      ],
+      "properties": {
+        "gold_direction": {
+          "const": "UNKNOWN"
+        },
+        "usd_direction": {
+          "const": "UNKNOWN"
+        },
+        "no_inferred_trade_signal": {
+          "const": true
+        }
+      }
+    },
+    "execution_permission": {
+      "const": "BLOCKED"
+    },
+    "visual_capture_enabled": {
+      "const": false
+    },
+    "research_only": {
+      "const": true
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "source_directory": {
+      "type": "object",
+      "required": [
+        "forexfactory",
+        "metalsmine"
+      ]
+    }
+  }
+}

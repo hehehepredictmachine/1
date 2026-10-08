@@ -1,0 +1,42 @@
+{
+  "example_only": true,
+  "source": "SYNTHETIC_NOT_REAL_MT5",
+  "schema_version": "2.0.0",
+  "module_version": "1.1.0-CANDIDATE",
+  "timeframe": "M5",
+  "example_states": [
+    {
+      "synthetic_bar": 0,
+      "setup_state": "QUALIFIED",
+      "event_type": "QUALIFY",
+      "evaluation": "EVENT_APPLIED",
+      "execution_permission": "BLOCKED"
+    },
+    {
+      "synthetic_bar": 1,
+      "setup_state": "ARMED",
+      "event_type": "ARM",
+      "evaluation": "EVENT_APPLIED",
+      "execution_permission": "BLOCKED"
+    },
+    {
+      "synthetic_bar": 2,
+      "setup_state": "TRIGGERED",
+      "event_type": "TRIGGER",
+      "evaluation": "EVENT_APPLIED",
+      "execution_permission": "BLOCKED"
+    },
+    {
+      "synthetic_bar": 3,
+      "setup_state": "CONFIRMED",
+      "event_type": "CONFIRM",
+      "evaluation": "EVENT_APPLIED",
+      "execution_permission": "BLOCKED"
+    }
+  ],
+  "m14_analysis_decision": "LONG",
+  "m14_execution_permission": "BLOCKED",
+  "order_actions": [],
+  "verified_market_edge": false,
+  "disclaimer": "synthetic, not live signals or verified profitability"
+}

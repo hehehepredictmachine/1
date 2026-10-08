@@ -1,0 +1,36 @@
+{
+  "schema_version":"2.0.0",
+  "research_only":true,
+  "frozen":false,
+  "symbol":"XAUUSD",
+  "account":{
+    "account_type":"ZERO_SPREAD",
+    "symbol":"XAUUSD",
+    "account_id_hash":"REPLACE_WITH_HASH_NOT_ACCOUNT_NUMBER",
+    "currency":"USD",
+    "commission_source":"SCENARIO_ONLY",
+    "commission_per_lot_side":2.5,
+    "conversion_source":"SCENARIO_ONLY",
+    "money_per_price_unit_per_lot":100.0,
+    "slippage_price":0.03,
+    "swap_per_lot_per_overnight":null
+  },
+  "settings":{
+    "max_entry_wait_seconds":30,
+    "max_reference_age_seconds":5,
+    "max_tick_gap_seconds":120,
+    "min_oos_trades":50,
+    "bootstrap_iterations":500,
+    "bootstrap_seed":20261008
+  },
+  "folds":[
+    {"id":"DEV","role":"DEVELOPMENT","start":"2025-01-01T00:00:00Z","end":"2025-07-01T00:00:00Z"},
+    {"id":"OOS","role":"FINAL_OOS","start":"2025-08-01T00:00:00Z","end":"2026-10-01T00:00:00Z"}
+  ],
+  "profiles":{
+    "MVP":{"strategy_id":"XAU-S01","strategy_version":"REPLACE_M06R_STRATEGY_VERSION","spec_hash":"REPLACE_VERIFIED_SPEC_HASH","frozen_at":"2024-12-31T00:00:00Z","entry_type":"MARKET_NEXT_AVAILABLE_TICK","reference":"LAST_KNOWN_MT5_MID_QUOTE","stop_distance":3.0,"target_distance":6.0,"lots":0.01,"max_hold_seconds":1800},
+    "SMC":{"strategy_id":"XAU-S14","strategy_version":"REPLACE_M06R_STRATEGY_VERSION","spec_hash":"REPLACE_VERIFIED_SPEC_HASH","frozen_at":"2024-12-31T00:00:00Z","entry_type":"MARKET_NEXT_AVAILABLE_TICK","reference":"LAST_KNOWN_MT5_MID_QUOTE","stop_distance":3.0,"target_distance":6.0,"lots":0.01,"max_hold_seconds":1800},
+    "SCALPING":{"strategy_id":"XAU-S06","strategy_version":"REPLACE_M06R_STRATEGY_VERSION","spec_hash":"REPLACE_VERIFIED_SPEC_HASH","frozen_at":"2024-12-31T00:00:00Z","entry_type":"MARKET_NEXT_AVAILABLE_TICK","reference":"LAST_KNOWN_MT5_MID_QUOTE","stop_distance":2.0,"target_distance":3.0,"lots":0.01,"max_hold_seconds":900}
+  },
+  "macro_windows":{"HIGH":{"pre":30,"post":15},"EXTREME":{"pre":60,"post":30}}
+}

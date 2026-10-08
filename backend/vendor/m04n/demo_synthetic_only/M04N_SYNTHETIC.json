@@ -1,0 +1,240 @@
+{
+  "module_id": "M04N",
+  "module_version": "1.1.0",
+  "schema_version": "2.0.0",
+  "prompt_version": "4.1.0",
+  "as_of": "2026-10-08T15:39:14.696215Z",
+  "feed_scope": "PUBLIC_INFORMATION_ONLY",
+  "market_data_source_policy": "MT5_PRIMARY_INFORMATION_SUPPLEMENTAL",
+  "visual_capture_enabled": false,
+  "status": "SYNTHETIC_TEST_ONLY",
+  "integrity": {
+    "expected_sources": [
+      "FED_MONETARY",
+      "FED_SPEECHES",
+      "BLS_CPI",
+      "BLS_EMPLOYMENT",
+      "BLS_PPI",
+      "BLS_CALENDAR",
+      "GOLD_MARKET",
+      "USD_RATES",
+      "GEOPOLITICAL",
+      "PHYSICAL_GOLD"
+    ],
+    "source_health": {
+      "FED_MONETARY": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "FED_SPEECHES": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "BLS_CPI": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "BLS_EMPLOYMENT": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "BLS_PPI": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "BLS_CALENDAR": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "GOLD_MARKET": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "USD_RATES": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "GEOPOLITICAL": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      },
+      "PHYSICAL_GOLD": {
+        "state": "HEALTHY",
+        "last_success": "2026-10-08T15:39:14.696215Z",
+        "last_error": null
+      }
+    },
+    "failed_or_stale_sources": [],
+    "errors_this_poll": [],
+    "sources_updated_this_poll": [
+      "FED_MONETARY",
+      "FED_SPEECHES",
+      "BLS_CPI",
+      "BLS_EMPLOYMENT",
+      "BLS_PPI",
+      "BLS_CALENDAR",
+      "GOLD_MARKET",
+      "USD_RATES",
+      "GEOPOLITICAL",
+      "PHYSICAL_GOLD"
+    ],
+    "optional_skipped": [],
+    "complete_global_news_coverage": false,
+    "calendar_completeness": "MULTISOURCE_PARTIAL_NEVER_GLOBAL_COMPLETE",
+    "fair_economy_is_single_source_family": true,
+    "report_is_live_feed_check": true
+  },
+  "source_directory": {
+    "forexfactory": {
+      "calendar": "https://www.forexfactory.com/calendar",
+      "news": "https://www.forexfactory.com/news",
+      "calendar_auto_import": true,
+      "news_page_auto_import": false
+    },
+    "metalsmine": {
+      "calendar": "https://www.metalsmine.com/calendar",
+      "news": "https://www.metalsmine.com/news",
+      "calendar_auto_import": true,
+      "news_page_auto_import": false
+    }
+  },
+  "news": {
+    "new_count_this_poll": 0,
+    "initial_backfill_count": 1,
+    "initial_backfill_suppresses_new_alerts": true,
+    "new_high_impact_count": 0,
+    "new_unverified_high_impact_count": 0,
+    "new_events": [],
+    "recent": [
+      {
+        "event_id": "NEWS:cc0f2e34f37d1106a320",
+        "headline": "Federal Reserve interest rate decision (synthetic test)",
+        "summary": "",
+        "url": "https://www.federalreserve.gov/newsevents/synthetic-demonstration",
+        "source_id": "FED_MONETARY",
+        "origin_domain": "www.federalreserve.gov",
+        "authority": "OFFICIAL",
+        "published_at": "2026-10-08T15:39:14Z",
+        "first_seen_at": "2026-10-08T15:39:14.696215Z",
+        "time_quality": "PUBLISHED",
+        "categories": [
+          "FED"
+        ],
+        "impact": "HIGH",
+        "potential_gold_direction": "UNKNOWN",
+        "potential_usd_direction": "UNKNOWN",
+        "impact_not_prediction": true,
+        "risk_context_only": true
+      }
+    ]
+  },
+  "calendar": {
+    "source": "MULTISOURCE_PARTIAL",
+    "status": "PARTIAL",
+    "events": [
+      {
+        "event_id": "CAL_MERGED:0d8d4b9fdb5cdd658d27",
+        "name": "Consumer Price Index (synthetic)",
+        "impact": "HIGH",
+        "scheduled_at": "2026-10-08T16:09:14Z",
+        "source_id": "BLS_CALENDAR",
+        "available_at": "2026-10-08T15:39:14.696215Z",
+        "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR",
+        "actual": null,
+        "forecast": null,
+        "risk_context_only": true,
+        "provider_sources": [
+          "BLS_CALENDAR"
+        ],
+        "provider_occurrences": [
+          {
+            "source_id": "BLS_CALENDAR",
+            "event_id": "CAL:0d9fd138ed2e5c8bbdff",
+            "actual": null,
+            "forecast": null,
+            "previous": null,
+            "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR"
+          }
+        ]
+      }
+    ],
+    "risk": {
+      "level": "HIGH",
+      "events": [
+        {
+          "event_id": "CAL_MERGED:0d8d4b9fdb5cdd658d27",
+          "name": "Consumer Price Index (synthetic)",
+          "impact": "HIGH",
+          "scheduled_at": "2026-10-08T16:09:14Z",
+          "source_id": "BLS_CALENDAR",
+          "available_at": "2026-10-08T15:39:14.696215Z",
+          "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR",
+          "actual": null,
+          "forecast": null,
+          "risk_context_only": true,
+          "provider_sources": [
+            "BLS_CALENDAR"
+          ],
+          "provider_occurrences": [
+            {
+              "source_id": "BLS_CALENDAR",
+              "event_id": "CAL:0d9fd138ed2e5c8bbdff",
+              "actual": null,
+              "forecast": null,
+              "previous": null,
+              "event_time_quality": "SCHEDULED_FROM_OFFICIAL_CALENDAR"
+            }
+          ]
+        }
+      ],
+      "status": "PARTIAL_COVERAGE",
+      "action": "REVIEW_RISK_GATES"
+    },
+    "coverage": "BLS_PLUS_FF_MM_WEEKLY_SUBSET_NEVER_COMPLETE",
+    "individual_source_counts": {
+      "BLS_CALENDAR": 1,
+      "FF_CALENDAR": 0,
+      "MM_CALENDAR": 0
+    },
+    "source_urls": {
+      "FF_CALENDAR": "https://www.forexfactory.com/calendar",
+      "MM_CALENDAR": "https://www.metalsmine.com/calendar"
+    }
+  },
+  "macro_observations": {
+    "source": "FRED_OPTIONAL",
+    "series": [],
+    "no_intraday_release_timing": true
+  },
+  "interpretation": {
+    "detected_topics": [
+      "FED"
+    ],
+    "gold_direction": "UNKNOWN",
+    "usd_direction": "UNKNOWN",
+    "no_inferred_trade_signal": true,
+    "risk_advisory": "ELEVATED",
+    "no_trade_permission_granted": true
+  },
+  "execution_permission": "BLOCKED",
+  "research_only": true,
+  "limitations": [
+    "News is not guaranteed exhaustive or instantaneous; aggregation may lag publication.",
+    "Headlines and calendars are context, not entry confirmations.",
+    "FRED values are low frequency historical observations; no forecast or actual release-surprise data are inferred.",
+    "BLS/Forex Factory/Metals Mine calendar coverage is insufficient to assert an absence of FOMC/BEA/geopolitical risk.",
+    "Forex Factory and Metals Mine are correlated Fair Economy sources; not independent corroboration; exports can be unavailable or revised.",
+    "Third-party actual/forecast strings are unverified; no numerical surprise or trading signal inferred.",
+    "Weekly calendars exclude dates outside this-week export; historical backfills are not contemporaneous observations."
+  ],
+  "synthetic": true
+}

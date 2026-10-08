@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MasterQUO M01/M03E/M10 Read-Only Output 1.0 Candidate",
+  "type": "object",
+  "required": ["schema_version", "module_id", "analysis_decision", "execution_permission", "live_execution_allowed", "broker_order_sent", "submitted_order_id", "reason_codes"],
+  "properties": {
+    "schema_version": {"const": "2.0.0"},
+    "module_id": {"const": "M01_M03E_M10_READONLY_INTEGRATION"},
+    "analysis_decision": {"enum": ["NO_TRADE", "WAIT", "EARLY_SETUP", "CONDITIONAL_SETUP", "LONG", "SHORT"]},
+    "intended_direction": {"enum": ["UNKNOWN", "NEUTRAL", "LONG", "SHORT"]},
+    "execution_permission": {"const": "BLOCKED"},
+    "execution_eligible": {"const": false},
+    "live_execution_allowed": {"const": false},
+    "broker_order_sent": {"const": false},
+    "submitted_order_id": {"type": "null"},
+    "data_gate": {"enum": ["PASS_WITH_LIMITATIONS", "PENDING", "FAIL"]},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "strategy_setup_id": {"type": ["string", "null"]},
+    "setup_state": {"type": ["string", "null"]},
+    "account_profile": {"const": "ZERO_SPREAD_DECLARED_UNVERIFIED"},
+    "research_only": {"const": true},
+    "screen_capture_count": {"const": 0}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,579 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:masterquo:m01:data-snapshot:4.2.1-candidate",
+  "title": "MasterQUO M01 DATA_SNAPSHOT additive contract (root schema remains 2.0.0)",
+  "description": "M01 4.2.1 continuous no-screenshot additive data_snapshot; root schema stays 2.0.0. TV only supplementary analytical context.",
+  "type": "object",
+  "required": [
+    "analysis_id",
+    "snapshot_id",
+    "as_of",
+    "config_version",
+    "collected_at",
+    "source_statuses",
+    "instrument_profiles",
+    "quote",
+    "candles_by_tf",
+    "auxiliary_context",
+    "completeness",
+    "data_quality_score",
+    "evidence_ids",
+    "data_gates",
+    "warnings",
+    "reason_codes",
+    "missing_inputs",
+    "limitations",
+    "run_status"
+  ],
+  "properties": {
+    "analysis_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "as_of": {
+      "$ref": "#/$defs/timeOrNull"
+    },
+    "collected_at": {
+      "$ref": "#/$defs/timeOrNull"
+    },
+    "config_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strategy_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_statuses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "status"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CONNECTING",
+              "HEALTHY",
+              "DEGRADED",
+              "STALE",
+              "DISCONNECTED",
+              "RECOVERING",
+              "UNAVAILABLE"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/$defs/timeOrNull"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "instrument_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "instrument_id",
+          "source_id",
+          "exact_symbol",
+          "feed_kind",
+          "status"
+        ],
+        "properties": {
+          "instrument_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "exact_symbol": {
+            "type": "string"
+          },
+          "feed_kind": {
+            "type": "string",
+            "enum": [
+              "CFD_SPOT_PROXY",
+              "FUTURES",
+              "INDEX",
+              "OTHER"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "point": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "tick_size": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "quote": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "instrument_id",
+            "source_id",
+            "bid",
+            "ask",
+            "source_timestamp",
+            "received_at",
+            "available_at",
+            "quote_side",
+            "evidence_id",
+            "evidence_status"
+          ],
+          "properties": {
+            "instrument_id": {
+              "type": "string"
+            },
+            "source_id": {
+              "type": "string"
+            },
+            "bid": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "ask": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "source_timestamp": {
+              "$ref": "#/$defs/timeOrNull"
+            },
+            "received_at": {
+              "$ref": "#/$defs/timeOrNull"
+            },
+            "available_at": {
+              "$ref": "#/$defs/timeOrNull"
+            },
+            "quote_side": {
+              "enum": [
+                "BID_ASK"
+              ]
+            },
+            "evidence_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_status": {
+              "$ref": "#/$defs/evidenceStatus"
+            },
+            "spread_abs": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "spread_points": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "candles_by_tf": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/candle"
+        }
+      }
+    },
+    "auxiliary_context": {
+      "type": "object"
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "numerator",
+          "denominator",
+          "value"
+        ],
+        "properties": {
+          "numerator": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "denominator": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "data_quality_score": {
+      "type": "object",
+      "required": [
+        "value",
+        "reason"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rubric_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "data_gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "gate_id",
+          "required_for",
+          "status",
+          "evidence_ids",
+          "reason_codes",
+          "missing_inputs",
+          "unblock_condition"
+        ],
+        "properties": {
+          "gate_id": {
+            "const": "DATA"
+          },
+          "required_for": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "ANALYSIS",
+                "DIRECTION",
+                "EARLY_SETUP",
+                "CONFIRMATION",
+                "EXECUTION"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "PASS_WITH_LIMITATIONS",
+              "PENDING",
+              "FAIL",
+              "UNAVAILABLE",
+              "NOT_APPLICABLE"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unblock_condition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "run_status": {
+      "type": "string",
+      "enum": [
+        "NOT_RUN",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "observation_mode": {
+      "type": "string",
+      "enum": [
+        "CONTINUOUS_FEED",
+        "HISTORICAL_REPLAY",
+        "UNAVAILABLE"
+      ]
+    },
+    "visual_capture_enabled": {
+      "const": false
+    },
+    "data_source_policy": {
+      "type": "string",
+      "const": "MT5_PRIMARY_TV_SUPPLEMENTAL_NO_SCREENSHOTS"
+    },
+    "observer_health": {
+      "type": "object",
+      "properties": {
+        "process_alive": {
+          "type": "boolean"
+        },
+        "last_heartbeat_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "last_quote_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "last_candle_event_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "monitoring_started_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "monitoring_status": {
+          "enum": [
+            "CONNECTING",
+            "HEALTHY",
+            "DEGRADED",
+            "STALE",
+            "DISCONNECTED",
+            "RECOVERING",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "timeOrNull": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidenceStatus": {
+      "enum": [
+        "VERIFIED",
+        "PARTIAL",
+        "ESTIMATED",
+        "STALE",
+        "CONFLICTING",
+        "UNAVAILABLE",
+        "UNKNOWN"
+      ]
+    },
+    "candle": {
+      "type": "object",
+      "required": [
+        "instrument_id",
+        "source_id",
+        "timeframe",
+        "bar_open_utc",
+        "open",
+        "high",
+        "low",
+        "close",
+        "tick_volume",
+        "real_volume",
+        "bar_state",
+        "available_at",
+        "revision",
+        "evidence_id"
+      ],
+      "properties": {
+        "instrument_id": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "timeframe": {
+          "enum": [
+            "D1",
+            "H4",
+            "H1",
+            "M15",
+            "M5",
+            "M1",
+            "W1",
+            "M30",
+            "M3"
+          ]
+        },
+        "bar_open_utc": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "open": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "high": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "low": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "close": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "tick_volume": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "real_volume": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "spread_points_at_bar": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "bar_state": {
+          "enum": [
+            "FORMING",
+            "CLOSED",
+            "UNKNOWN"
+          ]
+        },
+        "close_confirmed_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "available_at": {
+          "$ref": "#/$defs/timeOrNull"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "price_basis": {
+          "enum": [
+            "BID",
+            "ASK",
+            "MID",
+            "LAST",
+            "UNKNOWN"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
