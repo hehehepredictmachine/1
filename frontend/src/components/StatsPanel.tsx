@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AreaSeries, ColorType, createChart, type IChartApi, type ISeriesApi, type Time } from "lightweight-charts";
 import { useStore } from "../store";
+import { parseColor, toHex, useTheme } from "../theme";
 import { cls, epochSec, fmtNum } from "../util";
 
 const MODES = [["PAPER", "PAPER"], ["AUTO_DEMO", "DEMO"], ["AUTO_LIVE", "LIVE"]] as const;
@@ -10,6 +11,7 @@ export default function StatsPanel({ index, stats, mode, setMode }: { index: num
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const area = useRef<ISeriesApi<"Area"> | null>(null);
+  const { effective: tk } = useTheme();
   useEffect(() => {
     if (!box.current) return;
     const c = createChart(box.current, {
@@ -25,6 +27,12 @@ export default function StatsPanel({ index, stats, mode, setMode }: { index: num
     area.current = c.addSeries(AreaSeries, { lineColor: "#2bff88", topColor: "rgba(43,255,136,0.35)", bottomColor: "rgba(43,255,136,0.02)", lineWidth: 2 });
     return () => c.remove();
   }, []);
+  useEffect(() => {
+    const acc = parseColor(String(tk.accent)) ?? { r: 43, g: 255, b: 136, a: 1 };
+    chart.current?.applyOptions({ layout: { textColor: String(tk.chartLabels) }, grid: { horzLines: { color: String(tk.chartGrid) } },
+      rightPriceScale: { borderColor: String(tk.chartAxis) }, timeScale: { borderColor: String(tk.chartAxis) } });
+    area.current?.applyOptions({ lineColor: String(tk.accent), topColor: toHex({ ...acc, a: 0.35 }), bottomColor: toHex({ ...acc, a: 0.02 }) });
+  }, [tk]);
   useEffect(() => {
     const pts = stats?.equity?.points || [];
     const shift = -new Date().getTimezoneOffset() * 60;

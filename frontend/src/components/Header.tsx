@@ -14,11 +14,12 @@ function Chip({ label, value, t, title }: { label: string; value: string; t: str
   );
 }
 
-export default function Header({ onAgent, onSettings, onPower, onMode, botStats }: {
+export default function Header({ onAgent, onSettings, onPower, onMode, onLook, botStats }: {
   onAgent: () => void;
   onSettings: () => void;
   onPower: () => void;
   onMode: () => void;
+  onLook: () => void;
   botStats: any;
 }) {
   const { s, refresh } = useStore();
@@ -54,7 +55,7 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
   return (
     <header className="topbar">
       <div className="brand">
-        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#062716" stroke="#22ff88" /><path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="#2bff88" strokeWidth="2.6" strokeLinecap="round" /></svg>
+        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--panel)" stroke="var(--neon)" /><path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="var(--neon)" strokeWidth="2.6" strokeLinecap="round" /></svg>
         <span>MasterQUO <em>AI</em></span>
       </div>
       <div className="chips">
@@ -101,6 +102,7 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
       </div>
       <div className="hdr-buttons">
         <button className="icon big" title="Agent Claude" onClick={onAgent}>✦</button>
+        <button className="icon big" title="Wygląd – kolory i motywy" onClick={onLook}>🎨</button>
         <button className="icon big" title="Ustawienia" onClick={onSettings}>⚙</button>
         <button className="icon big danger" title="Zatrzymanie: nowe wejścia / pozycje / aplikacja" onClick={onPower}>⏻</button>
       </div>

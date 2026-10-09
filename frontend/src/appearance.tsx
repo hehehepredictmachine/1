@@ -7,6 +7,7 @@
 // decoded in the browser with ImageDecoder / canvas for a user-uploaded GIF) - CSS cannot stop GIF frames.
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet } from "./api";
+import { useTheme } from "./theme";
 
 export type AnimMode = "FULL" | "LIGHT" | "OFF";
 type Assets = Record<string, { animated_available: boolean; source: string; animated_url: string; static_url: string; gif: any }>;
@@ -137,11 +138,12 @@ export function useAppearance(): Ctx {
 /** Fixed layer under the whole UI: no pointer events, no layout shift, no extra scroll. */
 export const BackgroundLayer = React.memo(function BackgroundLayer() {
   const { bgSrc, prefs } = useAppearance();
+  const { effective: t } = useTheme();
   if (!bgSrc) return null;
   return (
     <div className="mq-bg" aria-hidden="true">
-      <img src={bgSrc} alt="" style={{ objectPosition: `${prefs.posX}% ${prefs.posY}%` }} data-anim={bgSrc.includes("/media/") ? "1" : "0"} />
-      <div className="mq-bg-dim" style={{ opacity: prefs.dim }} />
+      <img src={bgSrc} alt="" style={{ objectPosition: `${prefs.posX}% ${prefs.posY}%`, opacity: Number(t.gifOpacity ?? 1) }} data-anim={bgSrc.includes("/media/") ? "1" : "0"} />
+      <div className="mq-bg-dim" style={{ opacity: Number(t.overlayDim ?? prefs.dim) }} />
     </div>
   );
 });
@@ -149,9 +151,10 @@ export const BackgroundLayer = React.memo(function BackgroundLayer() {
 /** Second GIF: dancing frog next to BALANCE (fixed box -> numbers never jump while loading). */
 export const Frog = React.memo(function Frog() {
   const { frogSrc, frogAnimated } = useAppearance();
+  const { effective: t } = useTheme();
   return (
     <span className="mq-frog" aria-hidden="true" title={frogAnimated ? "" : "animacja wyłączona – kadr statyczny"}>
-      {frogSrc && <img src={frogSrc} alt="" data-anim={frogAnimated ? "1" : "0"} />}
+      {frogSrc && <img src={frogSrc} alt="" data-anim={frogAnimated ? "1" : "0"} style={{ opacity: Number(t.frogOpacity ?? 1) }} />}
     </span>
   );
 });

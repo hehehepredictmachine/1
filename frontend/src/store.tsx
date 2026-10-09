@@ -52,6 +52,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, analysisSeq: s.analysisSeq + 1 };
     case "auto":
       return { ...s, auto: d };
+    case "ml":
+      return { ...s, ml: { ...(s.ml || {}), ...d } };
     case "engine_error":
       return { ...s, engine: { ...(s.engine || {}), last_error: d.error } };
     default:
@@ -97,6 +99,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sock.current?.stop();
     };
   }, []);
+  (window as any).__mqRefresh = refresh;          // used by UI tests to force a full data refresh
   const value = useMemo(() => ({ s, refresh }), [s]);
   if (error)
     return (

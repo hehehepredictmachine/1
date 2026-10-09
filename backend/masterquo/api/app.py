@@ -61,6 +61,10 @@ class MLModeReq(BaseModel):
     mode: str = Field(pattern="^(OFF|SHADOW|ASSIST)$")
 
 
+class MLBackfillReq(BaseModel):
+    days: int = Field(30, ge=5, le=180)
+
+
 class MLFlagReq(BaseModel):
     on: bool
 
@@ -388,6 +392,10 @@ def create_app(rt, port: int) -> FastAPI:
         res = rt.ml.start_training("USER", force=True)
         rt.bus.publish("ml", rt.ml.status(compact=True))
         return res
+
+    @app.post("/api/v1/ml/backfill")
+    def ml_backfill(req: MLBackfillReq):
+        return rt.ml.start_backfill(req.days)
 
     @app.post("/api/v1/ml/cancel")
     def ml_cancel():

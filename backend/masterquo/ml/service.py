@@ -373,6 +373,34 @@ class MLService:
             self._proc, self._job = proc, dict(job, file=str(f), started=time.monotonic())
         return {"started": True, "job_id": j["job_id"], "resumed": True}
 
+    # ------------------------------------------------------------ backfill from history (separate, APPROX quality)
+    backfill_state: dict = {"status": "IDLE"}
+
+    def start_backfill(self, days: int) -> dict:
+        if self.backfill_state.get("status") == "RUNNING":
+            return {"started": False, "reason": "BACKFILL_ALREADY_RUNNING"}
+        days = max(5, min(int(days), 180))
+        self.backfill_state = {"status": "RUNNING", "days": days, "started_at": iso(utcnow())}
+
+        def work():
+            from . import backfill
+            try:
+                if self.synthetic:
+                    data, feed = backfill.synthetic_data(days + 30), "SYNTHETIC"
+                else:
+                    per_day = {"M1": 1440, "M5": 288, "M15": 96, "H1": 24, "H4": 6, "D1": 1}
+                    data = backfill.bridge_data(self.bridge, {tf: min(99000, (days + 30) * n + 50) for tf, n in per_day.items()})
+                    feed = "MT5"
+                res = backfill.run(self.db, data, feed=feed, synthetic=self.synthetic, cost=dict(self._cost(), point=(self.bridge.symbol_info or {}).get("point") or 0.01),
+                                   warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p), should_stop=self._stop.is_set)
+                self.backfill_state = {"status": "DONE", "result": res, "finished_at": iso(utcnow())}
+                self.log.info("ML", "BACKFILL_DONE", f"Backfill {feed}: {res['created']} próbek (jakość APPROX, domyślnie poza treningiem)", res)
+            except Exception as exc:
+                self.backfill_state = {"status": "FAILED", "reason": f"{type(exc).__name__}: {exc}"[:300]}
+                self.log.warn("ML", "BACKFILL_FAILED", f"Backfill nieudany: {exc}")
+        threading.Thread(target=work, name="ml-backfill", daemon=True).start()
+        return {"started": True, "days": days}
+
     # ------------------------------------------------------------ settings
     def set_mode(self, mode: str) -> dict:
         if mode not in ("OFF", "SHADOW", "ASSIST"):
@@ -591,7 +619,7 @@ class MLService:
                "champion": self.registry.champion_id, "champion_family": champ.family if champ else None,
                "challengers": list(self.registry.challengers), "drift": self.drift, "last_error": self.last_error,
                "last_label_run": self.last_label_run, "last_check": self.last_check, "synthetic": self.synthetic,
-               "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks),
+               "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks), "backfill": self.backfill_state,
                "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą."}
         if not compact:
             out["models"] = self.registry.models()

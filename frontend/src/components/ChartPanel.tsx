@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+// One chart panel. Root cause of the old "shared zoom" (fixed here):
+//  1) every full analysis (global analysisSeq) reloaded ALL charts and the render step re-created the indicator
+//     series and removed/re-added panes -> Lightweight Charts reset the time scale of every chart at once;
+//  2) the "sync" option broadcast the visible range of any chart to all others, and the crosshair handler kept a stale
+//     copy of the options.
+// Now: series are created once and only updated; the visible range is saved before and restored after every data
+// refresh (anchored on time, so older candles loaded on the left do not move the view); each chart keeps its own
+// view state (chart_id + symbol + TF) changed only by user actions; range sync is off by default and works only
+// inside an explicitly chosen group; crosshair sync is a separate switch.
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -16,25 +25,28 @@ import {
   type Time,
 } from "lightweight-charts";
 import { apiGet } from "../api";
+import { loadView, saveView, SYNC, viewKey, type ChartView, type SyncGroup, type SyncMsg } from "../chartview";
 import { useStore } from "../store";
+import { parseColor, toHex, useTheme, type Tokens } from "../theme";
 import { chartShift, cls, epochSec, fmtNum, type TimeZoneMode } from "../util";
 import { ZonesPrimitive } from "../zones";
-
-const LINE_COLORS = ["#f5d76e", "#4dd0ff", "#c792ea", "#ff9f43", "#9cff57", "#ff6b9a"];
-const UP = "#16e07a";
-const DOWN = "#ff4d5e";
-
-// cross-chart synchronisation (crosshair & visible range by *time*)
-type SyncMsg = { src: string; kind: "crosshair" | "range"; time?: number | null; from?: number; to?: number };
-const SYNC = new EventTarget();
 
 export interface ChartOpts {
   showRsi: boolean;
   showMacd: boolean;
   showStructure: boolean;
   showZones: boolean;
-  sync: boolean;
+  syncCrosshair: boolean;
   tz: TimeZoneMode;
+}
+
+const withAlpha = (c: string, a: number) => {
+  const p = parseColor(c);
+  return p ? toHex({ ...p, a }) : c;
+};
+
+declare global {
+  interface Window { __mqCharts?: Record<string, any> }
 }
 
 export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }: {
@@ -45,106 +57,184 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
   fullscreen: boolean;
 }) {
   const { s } = useStore();
+  const theme = useTheme();
+  const chartId = `panel${index}`;
+  const symbol = s.symbol?.symbol ?? "XAUUSD-";
+  const vkey = viewKey(chartId, symbol, tf);
+  const tk: Tokens = theme.chartTokens(chartId);
+  const tkRef = useRef(tk);
+  tkRef.current = tk;
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volume = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const lines = useRef<ISeriesApi<"Line">[]>([]);
+  const lines = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const rsi = useRef<ISeriesApi<"Line"> | null>(null);
+  const rsiLevels = useRef<IPriceLine[]>([]);
   const macd = useRef<{ line: ISeriesApi<"Line">; sig: ISeriesApi<"Line">; hist: ISeriesApi<"Histogram"> } | null>(null);
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef<ZonesPrimitive | null>(null);
   const priceLines = useRef<IPriceLine[]>([]);
-  const lastBarTime = useRef<number>(0);
+  const times = useRef<number[]>([]);                 // chart times of the candles currently in the series
+  const initialized = useRef(false);
+  const userUntil = useRef(0);                         // range changes before this moment come from the user
+  const view = useRef<ChartView>(loadView(vkey));
+  const [viewUi, setViewUi] = useState<ChartView>(view.current);
   const [data, setData] = useState<any>(null);
   const [legend, setLegend] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
-  const id = useMemo(() => `${tf}-${index}`, [tf, index]);
   const offset = s.connection?.clock?.offset_seconds ?? null;
   const shift = chartShift(opts.tz, offset);
+  const shiftRef = useRef(shift);
+  shiftRef.current = shift;
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
   const T = (iso: string) => (epochSec(iso) + shift) as Time;
 
-  // ---------------------------------------------------------------- create chart
+  const setView = useCallback((patch: Partial<ChartView>) => {
+    view.current = { ...view.current, ...patch };
+    saveView(vkey, view.current);
+    setViewUi(view.current);
+  }, [vkey]);
+  const markUser = () => { userUntil.current = performance.now() + 450; };
+
+  // ---------------------------------------------------------------- create chart (once per panel + TF)
   useEffect(() => {
     if (!box.current) return;
+    view.current = loadView(vkey);
+    setViewUi(view.current);
+    initialized.current = false;
     const c = createChart(box.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#8fd8ad", fontSize: 10,
-        attributionLogo: true, panes: { separatorColor: "#0f3d24", separatorHoverColor: "#1f7a46" } },
-      grid: { vertLines: { color: "rgba(40,255,140,0.05)" }, horzLines: { color: "rgba(40,255,140,0.06)" } },
-      rightPriceScale: { borderColor: "#124d2c" },
-      timeScale: { borderColor: "#124d2c", timeVisible: true, secondsVisible: false, rightOffset: 6 },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, fontSize: 10, attributionLogo: true },
+      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 6, shiftVisibleRangeOnNewBar: true },
       crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { autoScale: view.current.autoScale },
     });
     chart.current = c;
-    candles.current = c.addSeries(CandlestickSeries, { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN,
-      wickUpColor: UP, wickDownColor: DOWN, priceLineColor: "#7dffb6" });
+    candles.current = c.addSeries(CandlestickSeries, {});
     volume.current = c.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
     c.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
     c.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.12 } });
     zones.current = new ZonesPrimitive();
     candles.current.attachPrimitive(zones.current);
     markers.current = createSeriesMarkers(candles.current, []);
+    const el = box.current;
+    const onUser = () => markUser();
+    const onMove = (e: PointerEvent) => { if (e.buttons) markUser(); };
+    el.addEventListener("wheel", onUser, { passive: true });
+    el.addEventListener("pointerdown", onUser);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("touchstart", onUser, { passive: true });
+    el.addEventListener("touchmove", onUser, { passive: true });
+    el.addEventListener("dblclick", onUser);
     c.subscribeCrosshairMove((p) => {
-      if (!p.time || !candles.current) {
-        setLegend(null);
-      } else {
+      if (!p.time || !candles.current) setLegend(null);
+      else {
         const b: any = p.seriesData.get(candles.current);
         setLegend(b ? { o: b.open, h: b.high, l: b.low, c: b.close } : null);
       }
-      if (opts.sync && p.sourceEvent) SYNC.dispatchEvent(new CustomEvent("sync", { detail: { src: id, kind: "crosshair", time: (p.time as number) ?? null } as SyncMsg }));
+      if (optsRef.current.syncCrosshair && p.sourceEvent)
+        SYNC.dispatchEvent(new CustomEvent("sync", { detail: { src: chartId, kind: "crosshair", time: (p.time as number) ?? null } as SyncMsg }));
     });
-    c.timeScale().subscribeVisibleTimeRangeChange((r) => {
-      if (!r || !syncing.current.allow) return;
-      if (optsRef.current.sync)
-        SYNC.dispatchEvent(new CustomEvent("sync", { detail: { src: id, kind: "range", from: r.from as number, to: r.to as number } as SyncMsg }));
+    c.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      if (!r || !initialized.current || performance.now() > userUntil.current) return;   // only the user's own actions
+      const n = times.current.length;
+      const follow = n > 0 && r.to >= n - 1;
+      const tr = c.timeScale().getVisibleRange();
+      view.current = { ...view.current, follow, width: r.to - r.from, rightGap: Math.max(0, r.to - (n - 1)),
+        from: tr ? (tr.from as number) : undefined, to: tr ? (tr.to as number) : undefined };
+      saveView(vkey, view.current);
+      setViewUi(view.current);
+      if (view.current.group && tr)
+        SYNC.dispatchEvent(new CustomEvent("sync", { detail: { src: chartId, kind: "range", group: view.current.group, from: tr.from as number, to: tr.to as number } as SyncMsg }));
     });
+    window.__mqCharts = window.__mqCharts || {};
+    window.__mqCharts[chartId] = {
+      tf, key: vkey, chart: c,
+      logical: () => c.timeScale().getVisibleLogicalRange(),
+      range: () => c.timeScale().getVisibleRange(),
+      view: () => ({ ...view.current }),
+      bars: () => times.current.length,
+      creations: (window.__mqCharts?.[chartId]?.creations ?? 0) + 1,
+    };
     return () => {
+      el.removeEventListener("wheel", onUser);
+      el.removeEventListener("pointerdown", onUser);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("touchstart", onUser);
+      el.removeEventListener("touchmove", onUser);
+      el.removeEventListener("dblclick", onUser);
       c.remove();
       chart.current = null;
-      lines.current = [];
+      lines.current = new Map();
       rsi.current = null;
+      rsiLevels.current = [];
       macd.current = null;
+      priceLines.current = [];
+      times.current = [];
+      if (window.__mqCharts?.[chartId]?.chart === c) delete window.__mqCharts[chartId];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tf]);
+  }, [tf, vkey]);
 
-  const optsRef = useRef(opts);
-  optsRef.current = opts;
-  const syncing = useRef({ allow: true });
+  // ---------------------------------------------------------------- theme -> applyOptions (no re-creation, view kept)
+  useEffect(() => {
+    const c = chart.current;
+    if (!c || !candles.current) return;
+    c.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: String(tk.chartBg) }, textColor: String(tk.chartLabels),
+        panes: { separatorColor: String(tk.chartSeparator), separatorHoverColor: String(tk.chartAxis) } },
+      grid: { vertLines: { color: String(tk.chartGrid) }, horzLines: { color: String(tk.chartGrid) } },
+      rightPriceScale: { borderColor: String(tk.chartAxis) },
+      timeScale: { borderColor: String(tk.chartAxis) },
+      crosshair: { vertLine: { color: String(tk.chartCrosshair), labelBackgroundColor: String(tk.chartAxis) },
+        horzLine: { color: String(tk.chartCrosshair), labelBackgroundColor: String(tk.chartAxis) } },
+    });
+    candles.current.applyOptions({ upColor: String(tk.upBody), downColor: String(tk.downBody), borderUpColor: String(tk.upBorder),
+      borderDownColor: String(tk.downBorder), wickUpColor: String(tk.upWick), wickDownColor: String(tk.downWick), priceLineColor: String(tk.chartCrosshair) });
+    let i = 0;
+    lines.current.forEach((l) => l.applyOptions({ color: String(tk[`ind${(i++ % 6) + 1}`]) }));
+    rsi.current?.applyOptions({ color: String(tk.rsi) });
+    rsiLevels.current.forEach((pl) => pl.applyOptions({ color: String(tk.rsiLevels) }));
+    macd.current?.line.applyOptions({ color: String(tk.macd) });
+    macd.current?.sig.applyOptions({ color: String(tk.macdSignal) });
+    if (data) paint(data, false);              // per-point colours (volume, histogram, forming candle), view preserved
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(tk)]);
 
-  // receive sync messages
+  // ---------------------------------------------------------------- receive sync messages (no re-broadcast -> no loops)
   useEffect(() => {
     const h = (e: Event) => {
       const m = (e as CustomEvent).detail as SyncMsg;
-      if (m.src === id || !optsRef.current.sync || !chart.current || !candles.current) return;
+      const c = chart.current;
+      if (m.src === chartId || !c || !candles.current) return;
       if (m.kind === "crosshair") {
-        if (m.time == null) chart.current.clearCrosshairPosition();
-        else {
-          const bars = data?.bars || [];
-          // nearest bar at or before the time
-          let best: any = null;
-          for (let i = bars.length - 1; i >= 0; i--) {
-            if (epochSec(bars[i].open_utc) + shift <= m.time) { best = bars[i]; break; }
-          }
-          if (best) chart.current.setCrosshairPosition(best.c, T(best.open_utc), candles.current);
-        }
-      } else if (m.kind === "range" && m.from && m.to) {
-        syncing.current.allow = false;
+        if (!optsRef.current.syncCrosshair) return;
+        if (m.time == null) { c.clearCrosshairPosition(); return; }
+        const ts = times.current;
+        let k = -1;
+        for (let i = ts.length - 1; i >= 0; i--) if (ts[i] <= m.time) { k = i; break; }
+        const bars = data?.bars || [];
+        const b = bars.filter((x: any) => x.open_utc)[k];
+        if (b) c.setCrosshairPosition(b.c, ts[k] as Time, candles.current);
+      } else if (m.kind === "range" && m.group && m.group === view.current.group && m.from && m.to) {
         try {
-          chart.current.timeScale().setVisibleRange({ from: m.from as Time, to: m.to as Time });
+          c.timeScale().setVisibleRange({ from: m.from as Time, to: m.to as Time });
+          const n = times.current.length;
+          const r = c.timeScale().getVisibleLogicalRange();
+          view.current = { ...view.current, from: m.from, to: m.to, follow: !!r && r.to >= n - 1, width: r ? r.to - r.from : view.current.width };
+          saveView(vkey, view.current);
         } catch {
-          /* range outside data */
+          /* range outside this chart's data */
         }
-        setTimeout(() => (syncing.current.allow = true), 50);
       }
     };
     SYNC.addEventListener("sync", h);
     return () => SYNC.removeEventListener("sync", h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, data, shift]);
+  }, [chartId, data, vkey]);
 
-  // ---------------------------------------------------------------- data load
+  // ---------------------------------------------------------------- data load (own TF; global analysis refresh only re-reads data)
   useEffect(() => {
     let alive = true;
     const t = setTimeout(() => {
@@ -158,86 +248,135 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     };
   }, [tf, s.analysisSeq, index]);
 
-  // ---------------------------------------------------------------- render data
-  useEffect(() => {
-    const c = chart.current;
-    if (!c || !data || !candles.current || !volume.current) return;
-    const bars = (data.bars || []).filter((b: any) => b.open_utc);
-    candles.current.setData(bars.map((b: any) => ({ time: T(b.open_utc), open: b.o, high: b.h, low: b.l, close: b.c,
-      ...(b.closed ? {} : { color: b.c >= b.o ? "rgba(22,224,122,0.45)" : "rgba(255,77,94,0.45)" }) })));
-    volume.current.setData(bars.map((b: any) => ({ time: T(b.open_utc), value: b.tv, color: b.c >= b.o ? "rgba(22,224,122,0.28)" : "rgba(255,77,94,0.28)" })));
-    lastBarTime.current = bars.length ? (T(bars[bars.length - 1].open_utc) as number) : 0;
-    // indicator lines
-    lines.current.forEach((l) => c.removeSeries(l));
-    lines.current = [];
-    (data.indicators?.lines || []).forEach((ln: any, i: number) => {
-      const ser = c.addSeries(LineSeries, { color: LINE_COLORS[i % LINE_COLORS.length], lineWidth: 1, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false, title: ln.label });
-      ser.setData(ln.points.map((p: any) => ({ time: T(p.time), value: p.value })));
-      lines.current.push(ser);
-    });
-    // RSI / MACD panes
-    if (rsi.current) { c.removeSeries(rsi.current); rsi.current = null; }
-    if (macd.current) { c.removeSeries(macd.current.line); c.removeSeries(macd.current.sig); c.removeSeries(macd.current.hist); macd.current = null; }
-    let pane = 1;
-    if (opts.showRsi && data.indicators?.panels?.rsi) {
-      const r = data.indicators.panels.rsi;
-      rsi.current = c.addSeries(LineSeries, { color: "#c792ea", lineWidth: 1, priceLineVisible: false, title: `RSI(${r.period})${r.visual_only ? "*" : ""}` }, pane);
-      rsi.current.setData(r.points.map((p: any) => ({ time: T(p.time), value: p.value })));
-      rsi.current.createPriceLine({ price: 70, color: "#3b6b50", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "" });
-      rsi.current.createPriceLine({ price: 30, color: "#3b6b50", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "" });
-      pane++;
+  /** Restore the user's view after new data: follow mode keeps zoom at the right edge; otherwise anchor on the first visible candle's time. */
+  const restoreView = (prevTimes: number[], prevLogical: { from: number; to: number } | null, newTimes: number[]) => {
+    const c = chart.current!;
+    const ts = c.timeScale();
+    const n = newTimes.length;
+    if (!n) return;
+    const v = view.current;
+    if (!initialized.current) {
+      initialized.current = true;
+      if (!v.follow && v.from && v.to && v.to > newTimes[0]) {
+        try { ts.setVisibleRange({ from: v.from as Time, to: v.to as Time }); return; } catch { /* fall back to follow */ }
+      }
+      const w = v.width ?? 150;
+      ts.setVisibleLogicalRange({ from: n - 1 - w + (v.rightGap ?? 6), to: n - 1 + (v.rightGap ?? 6) });
+      return;
     }
-    if (opts.showMacd && data.indicators?.panels?.macd) {
-      const m = data.indicators.panels.macd;
-      const hist = c.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, pane);
-      hist.setData(m.histogram.map((p: any) => ({ time: T(p.time), value: p.value, color: p.value >= 0 ? "rgba(22,224,122,0.6)" : "rgba(255,77,94,0.6)" })));
-      const line = c.addSeries(LineSeries, { color: "#4dd0ff", lineWidth: 1, priceLineVisible: false, title: `MACD(${m.params.fast},${m.params.slow},${m.params.signal} ${m.signal_ma})${m.visual_only ? "*" : ""}` }, pane);
-      line.setData(m.line.map((p: any) => ({ time: T(p.time), value: p.value })));
-      const sig = c.addSeries(LineSeries, { color: "#ff9f43", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane);
-      sig.setData(m.signal.map((p: any) => ({ time: T(p.time), value: p.value })));
-      macd.current = { line, sig, hist };
-      pane++;
+    if (!prevLogical) return;
+    if (v.follow) {
+      const gapR = prevLogical.to - (prevTimes.length - 1);
+      const w = prevLogical.to - prevLogical.from;
+      ts.setVisibleLogicalRange({ from: n - 1 + gapR - w, to: n - 1 + gapR });
+      return;
+    }
+    const i0 = Math.max(0, Math.min(prevTimes.length - 1, Math.round(prevLogical.from)));
+    const anchor = prevTimes[i0];
+    let j = newTimes.indexOf(anchor);
+    if (j < 0) {                                         // anchor candle gone: nearest later candle
+      j = newTimes.findIndex((x) => x >= anchor);
+      if (j < 0) j = n - 1;
+    }
+    const d = j - i0;
+    ts.setVisibleLogicalRange({ from: prevLogical.from + d, to: prevLogical.to + d });
+  };
+
+  // ---------------------------------------------------------------- paint data into the existing series
+  const paint = (d: any, isNewData: boolean) => {
+    const c = chart.current;
+    if (!c || !candles.current || !volume.current) return;
+    const t = tkRef.current;
+    const sh = shiftRef.current;
+    const TT = (iso: string) => (epochSec(iso) + sh) as Time;
+    const ts = c.timeScale();
+    const prevTimes = times.current;
+    const prevLogical = ts.getVisibleLogicalRange();
+    const bars = (d.bars || []).filter((b: any) => b.open_utc);
+    const newTimes = bars.map((b: any) => TT(b.open_utc) as number);
+    candles.current.setData(bars.map((b: any) => ({ time: TT(b.open_utc), open: b.o, high: b.h, low: b.l, close: b.c,
+      ...(b.closed ? {} : { color: String(b.c >= b.o ? t.formingUp : t.formingDown) }) })));
+    volume.current.setData(bars.map((b: any) => ({ time: TT(b.open_utc), value: b.tv, color: String(b.c >= b.o ? t.volUp : t.volDown) })));
+    times.current = newTimes;
+    // indicator lines: update in place; create/remove only when the set of lines changes
+    const want = (d.indicators?.lines || []) as any[];
+    const labels = new Set(want.map((l) => l.label));
+    lines.current.forEach((ser, label) => { if (!labels.has(label)) { c.removeSeries(ser); lines.current.delete(label); } });
+    want.forEach((ln, i) => {
+      let ser = lines.current.get(ln.label);
+      if (!ser) {
+        ser = c.addSeries(LineSeries, { color: String(t[`ind${(i % 6) + 1}`]), lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+          crosshairMarkerVisible: false, title: ln.label });
+        lines.current.set(ln.label, ser);
+      }
+      ser.setData(ln.points.map((p: any) => ({ time: TT(p.time), value: p.value })));
+    });
+    // RSI / MACD panes: created when switched on, removed only when switched off
+    const o = optsRef.current;
+    const r = d.indicators?.panels?.rsi;
+    if (o.showRsi && r) {
+      if (!rsi.current) {
+        rsi.current = c.addSeries(LineSeries, { color: String(t.rsi), lineWidth: 1, priceLineVisible: false, title: `RSI(${r.period})${r.visual_only ? "*" : ""}` }, 1);
+        rsiLevels.current = [70, 30].map((price) => rsi.current!.createPriceLine({ price, color: String(t.rsiLevels), lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "" }));
+      }
+      rsi.current.setData(r.points.map((p: any) => ({ time: TT(p.time), value: p.value })));
+    } else if (rsi.current) {
+      c.removeSeries(rsi.current);
+      rsi.current = null;
+      rsiLevels.current = [];
+    }
+    const m = d.indicators?.panels?.macd;
+    if (o.showMacd && m) {
+      if (!macd.current) {
+        const pane = rsi.current ? 2 : 1;
+        const hist = c.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, pane);
+        const line = c.addSeries(LineSeries, { color: String(t.macd), lineWidth: 1, priceLineVisible: false,
+          title: `MACD(${m.params.fast},${m.params.slow},${m.params.signal} ${m.signal_ma})${m.visual_only ? "*" : ""}` }, pane);
+        const sig = c.addSeries(LineSeries, { color: String(t.macdSignal), lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane);
+        macd.current = { line, sig, hist };
+      }
+      macd.current.hist.setData(m.histogram.map((p: any) => ({ time: TT(p.time), value: p.value, color: String(p.value >= 0 ? t.macdUp : t.macdDown) })));
+      macd.current.line.setData(m.line.map((p: any) => ({ time: TT(p.time), value: p.value })));
+      macd.current.sig.setData(m.signal.map((p: any) => ({ time: TT(p.time), value: p.value })));
+    } else if (macd.current) {
+      c.removeSeries(macd.current.line);
+      c.removeSeries(macd.current.sig);
+      c.removeSeries(macd.current.hist);
+      macd.current = null;
     }
     const panes = c.panes();
-    for (let i = panes.length - 1; i >= pane; i--) c.removePane(i);
-    // proportional pane heights (independent of the container size at render time)
+    for (let i = panes.length - 1; i >= 1; i--) if (panes[i].getSeries().length === 0) c.removePane(i);
     c.panes().forEach((p, i) => p.setStretchFactor(i === 0 ? 3.2 : 1));
     // structure overlays
-    const ov = data.overlays || {};
+    const ov = d.overlays || {};
     const mk: SeriesMarker<Time>[] = [];
-    if (opts.showStructure) {
+    if (o.showStructure) {
       for (const b of ov.breaks || []) {
-        mk.push({ time: T(b.bar_open_utc), position: b.direction === "BULLISH" ? "belowBar" : "aboveBar",
-          shape: b.direction === "BULLISH" ? "arrowUp" : "arrowDown", color: b.kind === "BOS" ? "#7dffb6" : "#ffcc4d",
+        mk.push({ time: TT(b.bar_open_utc), position: b.direction === "BULLISH" ? "belowBar" : "aboveBar",
+          shape: b.direction === "BULLISH" ? "arrowUp" : "arrowDown", color: String(b.kind === "BOS" ? t.bos : t.choch),
           text: b.kind === "STRUCTURE_BREAK_UNCLASSIFIED" ? "BRK" : b.kind, size: 0.6 });
       }
-      for (const w of ov.sweeps || []) {
-        mk.push({ time: T(w.observed_at), position: w.side === "BSL" ? "aboveBar" : "belowBar", shape: "circle", color: "#c792ea", text: "SWP", size: 0.5 });
-      }
+      for (const w of ov.sweeps || []) mk.push({ time: TT(w.observed_at), position: w.side === "BSL" ? "aboveBar" : "belowBar", shape: "circle", color: String(t.sweep), text: "SWP", size: 0.5 });
     }
-    const sel = s.decision?.setup;
-    if (sel && sel.setup_tf === tf) {
-      for (const ch of sel.change_log || []) {
-        if (ch.bar_open_utc && ["QUALIFICATION", "ARMING", "TRIGGER", "CONFIRMATION", "INVALIDATE"].includes(ch.event)) {
-          mk.push({ time: T(ch.bar_open_utc), position: sel.direction === "LONG" ? "belowBar" : "aboveBar", shape: "square",
-            color: ch.event === "INVALIDATE" ? DOWN : "#ffffff", text: ch.event.slice(0, 4), size: 0.5 });
-        }
-      }
-    }
-    const firstTime = bars.length ? (T(bars[0].open_utc) as number) : 0;
-    markers.current?.setMarkers(mk.filter((m) => (m.time as number) >= firstTime).sort((a, b) => (a.time as number) - (b.time as number)));
-    zones.current?.setZones(opts.showZones ? [
-      ...(ov.fvgs || []).slice(-6).map((f: any) => ({ from: T(f.formed_at) as number, low: f.low, high: f.high,
-        color: f.direction === "BULLISH" ? "rgba(22,224,122,0.10)" : "rgba(255,77,94,0.10)",
-        border: f.direction === "BULLISH" ? "rgba(22,224,122,0.55)" : "rgba(255,77,94,0.55)", label: `FVG ${f.status === "PARTIAL" ? Math.round(f.mitigated * 100) + "%" : ""}` })),
-      ...(ov.order_blocks || []).slice(-3).map((o: any) => ({ from: T(o.confirmed_at) as number, low: o.low, high: o.high,
-        color: "rgba(77,208,255,0.07)", border: "rgba(77,208,255,0.5)", label: "OB?" })),
+    const first = newTimes.length ? newTimes[0] : 0;
+    markers.current?.setMarkers(mk.filter((x) => (x.time as number) >= first).sort((a, b) => (a.time as number) - (b.time as number)));
+    zones.current?.setZones(o.showZones ? [
+      ...(ov.fvgs || []).slice(-6).map((f: any) => {
+        const col = String(f.direction === "BULLISH" ? t.fvgBull : t.fvgBear);
+        return { from: TT(f.formed_at) as number, low: f.low, high: f.high, color: col, border: withAlpha(col, 0.55), label: `FVG ${f.status === "PARTIAL" ? Math.round(f.mitigated * 100) + "%" : ""}` };
+      }),
+      ...(ov.order_blocks || []).slice(-3).map((ob: any) => ({ from: TT(ob.confirmed_at) as number, low: ob.low, high: ob.high, color: String(t.ob), border: withAlpha(String(t.ob), 0.5), label: "OB?" })),
     ] : []);
+    if (isNewData || !initialized.current) restoreView(prevTimes, prevLogical, newTimes);
+    else if (prevLogical) ts.setVisibleLogicalRange(prevLogical);
+  };
+
+  useEffect(() => {
+    if (data) paint(data, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, opts.showRsi, opts.showMacd, opts.showStructure, opts.showZones, shift]);
 
-  // ---------------------------------------------------------------- execution levels (only computed, existing values)
+  // ---------------------------------------------------------------- execution levels (existing values only; never touches the scale)
   useEffect(() => {
     const ser = candles.current;
     if (!ser) return;
@@ -246,30 +385,63 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     const d = s.decision;
     const lv = d?.levels;
     const st = d?.setup;
-    if (!lv || !st || !["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"].includes(st.state)) return;
+    if (!lv || !st || !["EARLY_SETUP", "EARLY", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"].includes(st.state)) return;
     const add = (price: number, color: string, title: string, style = LineStyle.Dashed) =>
-      priceLines.current.push(ser.createPriceLine({ price, color, title, lineStyle: style, lineWidth: 1, axisLabelVisible: true }));
-    add(lv.stop_loss, DOWN, "SL");
-    (lv.targets || []).forEach((t: any, i: number) => add(t.price, "#16e07a", `TP${i + 1}${st.state !== "CONFIRMED" ? " (scen.)" : ""}`));
+      price != null && priceLines.current.push(ser.createPriceLine({ price, color, title, lineStyle: style, lineWidth: 1, axisLabelVisible: true }));
+    add(lv.stop_loss, String(tk.sl), "SL");
+    (lv.targets || []).forEach((t: any, i: number) => add(t.price, String(tk.tp), `TP${i + 1}${st.state !== "CONFIRMED" ? " (scen.)" : ""}`));
     if (lv.entry_zone) {
-      add(lv.entry_zone.high, "#d8ff7a", "strefa wejścia", LineStyle.Dotted);
-      add(lv.entry_zone.low, "#d8ff7a", "", LineStyle.Dotted);
+      add(lv.entry_zone.high, String(tk.entry), "strefa wejścia", LineStyle.Dotted);
+      add(lv.entry_zone.low, String(tk.entry), "", LineStyle.Dotted);
     }
-  }, [s.decision?.levels, s.decision?.setup?.state, data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.decision?.levels, s.decision?.setup?.state, data, tk.sl, tk.tp, tk.entry]);
 
-  // ---------------------------------------------------------------- live bar updates
+  // ---------------------------------------------------------------- live ticks: update() only (LWC shifts only when the last bar is visible)
   useEffect(() => {
     const tick = s.barTick?.[tf];
     if (!tick || !candles.current || !volume.current || !tick.bar.open_utc) return;
     const b = tick.bar;
     const t = T(b.open_utc) as number;
-    if (t < lastBarTime.current) return;
-    lastBarTime.current = t;
+    const ts = times.current;
+    if (ts.length && t < ts[ts.length - 1]) return;
+    if (!ts.length || t > ts[ts.length - 1]) times.current = [...ts, t];
     candles.current.update({ time: t as Time, open: b.o, high: b.h, low: b.l, close: b.c,
-      ...(b.closed ? {} : { color: b.c >= b.o ? "rgba(22,224,122,0.45)" : "rgba(255,77,94,0.45)" }) });
-    volume.current.update({ time: t as Time, value: b.tv, color: b.c >= b.o ? "rgba(22,224,122,0.28)" : "rgba(255,77,94,0.28)" });
+      ...(b.closed ? {} : { color: String(b.c >= b.o ? tk.formingUp : tk.formingDown) }) });
+    volume.current.update({ time: t as Time, value: b.tv, color: String(b.c >= b.o ? tk.volUp : tk.volDown) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.barTick?.[tf]]);
+
+  // ---------------------------------------------------------------- per-panel controls
+  const zoom = (factor: number) => {
+    const c = chart.current;
+    const r = c?.timeScale().getVisibleLogicalRange();
+    if (!c || !r) return;
+    markUser();
+    const w = Math.max(10, (r.to - r.from) * factor);
+    if (view.current.follow) c.timeScale().setVisibleLogicalRange({ from: r.to - w, to: r.to });
+    else {
+      const mid = (r.from + r.to) / 2;
+      c.timeScale().setVisibleLogicalRange({ from: mid - w / 2, to: mid + w / 2 });
+    }
+  };
+  const fit = () => { markUser(); chart.current?.timeScale().fitContent(); };
+  const latest = () => {
+    const c = chart.current;
+    if (!c) return;
+    markUser();
+    const n = times.current.length;
+    const r = c.timeScale().getVisibleLogicalRange();
+    const w = r ? r.to - r.from : 150;
+    c.timeScale().setVisibleLogicalRange({ from: n - 1 - w + 6, to: n - 1 + 6 });
+    setView({ follow: true });
+  };
+  const toggleAuto = () => {
+    const v = !view.current.autoScale;
+    chart.current?.priceScale("right").applyOptions({ autoScale: v });
+    setView({ autoScale: v });
+  };
+  const setGroup = (g: SyncGroup) => setView({ group: g });
 
   const q = data?.quality;
   const qStatus = q?.status;
@@ -277,10 +449,10 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
   const last = data?.bars?.length ? data.bars[data.bars.length - 1] : null;
   const role = data?.indicators?.role;
   return (
-    <div className={cls("panel chart-panel", fullscreen && "fullscreen")}>
+    <div className={cls("panel chart-panel", fullscreen && "fullscreen")} data-chart-id={chartId} data-tf={tf}>
       <div className="panel-head">
         <span className="pnum">{index}</span>
-        <span className="ptitle">{s.symbol?.symbol ?? "XAUUSD-"}</span>
+        <span className="ptitle">{symbol}</span>
         <span className="ptf">{tf}</span>
         <span className="psub">MT5{role ? ` · ${role}` : ""}</span>
         <span className={cls("badge", qStatus === "OK" ? "ok" : qStatus ? "warn" : "muted")} title={(q?.reasons || []).join(", ") || ""}>
@@ -291,6 +463,18 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
         <span className="legend">
           {legend ? `O ${fmtNum(legend.o)} H ${fmtNum(legend.h)} L ${fmtNum(legend.l)} C ${fmtNum(legend.c)}` : last ? `${fmtNum(last.c)}` : ""}
         </span>
+      </div>
+      <div className="chart-tools" role="toolbar" aria-label={`Sterowanie wykresem ${index}`}>
+        <button className="icon" data-act="zoom-in" title="Przybliż (tylko ten wykres)" onClick={() => zoom(0.75)}>+</button>
+        <button className="icon" data-act="zoom-out" title="Oddal (tylko ten wykres)" onClick={() => zoom(1.35)}>−</button>
+        <button className="icon" data-act="fit" title="Dopasuj – pokaż wszystkie świece" onClick={fit}>Dopasuj</button>
+        <button className={cls("icon", viewUi.follow && "on")} data-act="latest" title="Do najnowszej świecy (wznawia śledzenie)" onClick={latest}>⇥ Najnowsza</button>
+        <button className={cls("icon", viewUi.autoScale && "on")} data-act="autoscale" title="Automatyczna skala ceny (oś Y)" onClick={toggleAuto}>A</button>
+        <select value={viewUi.group} onChange={(e) => setGroup(e.target.value as SyncGroup)} title="Synchronizacja zakresu czasu tylko w wybranej grupie (domyślnie brak)">
+          <option value="">bez sync</option><option value="A">grupa A</option><option value="B">grupa B</option>
+        </select>
+        <span className="spacer" />
+        {!viewUi.follow && <span className="badge muted" title="Widok ręczny – nowe świece nie przesuwają wykresu">widok ręczny</span>}
         <button className="icon" title={fullscreen ? "Zamknij pełny ekran" : "Pełny ekran"} onClick={onFullscreen}>{fullscreen ? "✕" : "⤢"}</button>
       </div>
       <div className="chart-box" ref={box} />

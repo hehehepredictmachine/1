@@ -6,6 +6,7 @@ import { AutoPanel, LiveSetupsPanel, StrategiesPanel, useAutoFull } from "./comp
 import { BotLog, NewsPanel, RiskPanel } from "./components/BottomPanels";
 import ChartPanel, { type ChartOpts } from "./components/ChartPanel";
 import { ModeDialog, PowerDialog, SettingsModal } from "./components/Dialogs";
+import { ThemeDialog } from "./components/ThemeDialog";
 import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
@@ -36,12 +37,14 @@ export default function App() {
   const { s } = useStore();
   const [layout, setLayout] = usePersisted<"STD" | "SIX">("layout", "STD");
   const [p4, setP4] = usePersisted<string>("panel4tf", "H1");
-  const [opts, setOpts] = usePersisted<ChartOpts>("chartopts", { showRsi: true, showMacd: true, showStructure: true, showZones: true, sync: false, tz: "LOCAL" });
+  const [optsRaw, setOpts] = usePersisted<ChartOpts>("chartopts.v2", { showRsi: true, showMacd: true, showStructure: true, showZones: true, syncCrosshair: false, tz: "LOCAL" });
+  const opts: ChartOpts = optsRaw;
   const [full, setFull] = useState<string | null>(null);
   const [agent, setAgent] = useState(false);
   const [settings, setSettings] = useState(false);
   const [mode, setMode] = useState(false);
   const [power, setPower] = useState(false);
+  const [look, setLook] = useState(false);
   const [statsModeRaw, setStatsMode] = usePersisted<string>("statsmode", "PAPER");
   const statsMode = ["PAPER", "AUTO_DEMO", "AUTO_LIVE"].includes(statsModeRaw) ? statsModeRaw : "PAPER";   // 1.2 names migrated
   const [stats, setStats] = useState<any>(null);
@@ -69,7 +72,7 @@ export default function App() {
     <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
       <BackgroundLayer />
       {s.synthetic && <div className="synthetic-banner">DANE SYNTETYCZNE – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
-      <Header onAgent={() => setAgent(!agent)} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} botStats={stats} />
+      <Header onAgent={() => setAgent(!agent)} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)} botStats={stats} />
       <div className="toolbar">
         <div className="tabs small">
           <button className={cls(layout === "STD" && "on")} onClick={() => setLayout("STD")}>Układ standardowy</button>
@@ -78,14 +81,14 @@ export default function App() {
         {layout === "STD" && <div className="tabs small"><span className="lbl">Panel 4:</span>
           {["H1", "H4", "D1"].map((t) => <button key={t} className={cls(p4 === t && "on")} onClick={() => setP4(t)}>{t}</button>)}</div>}
         <div className="toggles">
-          {([["showRsi", "RSI"], ["showMacd", "MACD"], ["showStructure", "BOS/CHoCH"], ["showZones", "FVG/OB"], ["sync", "Synchronizacja"]] as const).map(([k, l]) => (
+          {([["showRsi", "RSI"], ["showMacd", "MACD"], ["showStructure", "BOS/CHoCH"], ["showZones", "FVG/OB"], ["syncCrosshair", "Wspólny celownik"]] as const).map(([k, l]) => (
             <label key={k}><input type="checkbox" checked={!!opts[k]} onChange={(e) => o(k, e.target.checked)} />{l}</label>
           ))}
           <select value={opts.tz} onChange={(e) => o("tz", e.target.value as TimeZoneMode)} title="Strefa czasu na wykresach (dane zawsze w UTC)">
             <option value="LOCAL">Czas lokalny</option><option value="UTC">UTC</option><option value="SERVER">Czas serwera</option>
           </select>
         </div>
-        <span className="toolbar-note">* panel oznaczony gwiazdką = wskaźnik tylko wizualny (nie wchodzi do reguł)</span>
+        <span className="toolbar-note">Każdy wykres ma własny zoom i przyciski. Synchronizacja zakresu – tylko w wybranej grupie (A/B). * = wskaźnik tylko wizualny</span>
       </div>
       <main className={cls("grid", layout === "SIX" ? "six" : "std")}>
         {layout === "STD" ? (
@@ -119,6 +122,7 @@ export default function App() {
       {settings && <SettingsModal onClose={() => setSettings(false)} />}
       {mode && <ModeDialog onClose={() => setMode(false)} />}
       {power && <PowerDialog onClose={() => setPower(false)} />}
+      {look && <ThemeDialog onClose={() => setLook(false)} />}
       <footer className="footer">
         MasterQUO AI {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
         Narzędzie analityczne – nie gwarantuje zysków.

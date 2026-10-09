@@ -310,8 +310,7 @@ function LookTab() {
           <option value="LIGHT">LIGHT – statyczne tło, żaba animowana</option>
           <option value="OFF">OFF – statyczne kadry obu grafik</option>
         </select></label>
-      <label className="field"><span>Przyciemnienie tła <small>{Math.round(prefs.dim * 100)}%</small></span>
-        <input type="range" min={0} max={0.9} step={0.05} value={prefs.dim} onChange={(e) => setPrefs({ dim: Number(e.target.value) })} /></label>
+      <div className="note">Kolor i siłę przyciemnienia tła, widoczność GIF-ów oraz wszystkie kolory interfejsu i wykresów ustawisz w oknie <b>🎨 Wygląd</b> (nagłówek).</div>
       <label className="field"><span>Kadrowanie tła – poziomo <small>{prefs.posX}%</small></span>
         <input type="range" min={0} max={100} step={1} value={prefs.posX} onChange={(e) => setPrefs({ posX: Number(e.target.value) })} /></label>
       <label className="field"><span>Kadrowanie tła – pionowo <small>{prefs.posY}%</small></span>
