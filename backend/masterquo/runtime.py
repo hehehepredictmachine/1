@@ -18,6 +18,9 @@ from .execution.gateway import ExecutionGateway
 from .execution.manager import PositionManager
 from .execution.modes import ModeManager
 from .execution.paper import PaperBroker
+from .licensing.connector import Connector
+from .licensing.enforce import cancel_bot_opening_orders
+from .licensing.service import LicenseService
 from .ml.service import MLService
 from .mt5.bridge import MarketBridge
 from .mt5.worker import MT5Worker
@@ -69,6 +72,17 @@ class Runtime:
         self.ml = MLService(self.cfg, self.db, self.bridge, self.bus, self.log)
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
+        # ---- licensing: one LicenseGuard shared by every protected path (engine, setups, ML, agent, execution, API, WS, CLI)
+        self.license = LicenseService(self.cfg, self.secrets, paths.data_dir(), self.bus, self.log)
+        g = self.license.guard
+        self.engine.guard = g
+        self.engine.active.guard = g
+        self.ml.guard = g
+        self.agent.guard = g
+        self.gateway.license = self.license
+        self.connector = Connector(self.license, self.bridge, self.cfg)
+        self.license.on_lost.append(self._license_lost)
+        self.license.on_restored.append(lambda: self.engine.mark_dirty())
         self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
@@ -78,6 +92,13 @@ class Runtime:
     def request_shutdown(self) -> None:
         if self.shutdown_hook:
             self.shutdown_hook()
+
+    def _license_lost(self, reason: str) -> None:
+        """New functions stop; data and models stay; bot positions keep their limited protection (PositionManager)."""
+        self.ml.license_lost(reason)
+        if self.bridge.state == "CONNECTED":
+            cancel_bot_opening_orders(self.bridge, self.cfg, self.log, self.manager)
+        self.engine.licensed()
 
     def _on_event(self, ev: dict) -> None:
         if ev["type"] == "decision":
@@ -96,6 +117,8 @@ class Runtime:
         self.engine.start()
         self.manager.start()
         self.ml.start()
+        self.license.start()
+        self.connector.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
 
     def _clock_loop(self) -> None:
@@ -110,6 +133,8 @@ class Runtime:
         self._stop.set()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
         self.ml.stop()
+        self.license.stop()
+        self.connector.stop()
         self.engine.stop()
         self.manager.stop()
         self.news.stop()

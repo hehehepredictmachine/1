@@ -67,6 +67,7 @@ class MLService:
         self.readiness: dict = {"ready": False, "reasons": ["NOT_CHECKED_YET"]}
         self.last_error: str | None = None
         self._threads: list[threading.Thread] = []
+        self.guard = None                      # LicenseGuard (set by runtime); None = no labelling/training
         self._recover_jobs()
 
     @property
@@ -162,7 +163,12 @@ class MLService:
                 log.exception("ml labeller")
                 self.last_error = f"LABELER:{type(exc).__name__}:{exc}"[:200]
 
+    def _licensed(self, scope: str) -> bool:
+        return self.guard is not None and self.guard.allows(scope)
+
     def label_once(self, bars: list[dict] | None = None, now=None) -> dict:
+        if not self._licensed("analysis"):
+            return {}
         now = now or utcnow()
         if bars is None:
             bars = [b for b in self.bridge.bars("M1", include_forming=False) if b.get("open_utc")]
@@ -198,9 +204,11 @@ class MLService:
 
     def check_once(self) -> dict:
         self.last_check = iso(utcnow())
+        if self._job is not None and not self._licensed("ml_train"):
+            self.license_lost("LICENSE_NOT_VALID")
         self._poll_job()
         self.readiness = self._readiness()
-        if self.readiness["ready"] and not self.cfg.training_paused and self._job is None:
+        if self.readiness["ready"] and not self.cfg.training_paused and self._job is None and self._licensed("ml_train"):
             self.start_training("SCHEDULER")
         self._monitor()
         self.bus.publish("ml", self.status(compact=True))
@@ -234,7 +242,22 @@ class MLService:
                 "note": "Gotowość do nauki oznacza tylko spełnione progi danych - nie wytrenowany model."}
 
     # ------------------------------------------------------------ training jobs
+    def license_lost(self, reason: str) -> None:
+        """Running training stops at a controlled point: the trainer process only writes files, so stopping it cannot
+        corrupt the database; the job is INTERRUPTED (resumable on the same immutable snapshot) and its results are
+        NOT registered or promoted."""
+        with self._lock:
+            proc = self._proc
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            self._finish_job("INTERRUPTED", {"reason": "LICENSE_" + reason})
+
     def start_training(self, initiated_by: str, *, force: bool = False) -> dict:
+        if not self._licensed("ml_train"):
+            return {"started": False, "reason": "LICENSE_REQUIRED"}
         if not self._job_lock.acquire(blocking=False):
             return {"started": False, "reason": "JOB_LOCKED"}
         try:
@@ -310,6 +333,9 @@ class MLService:
 
     def _handle_result(self, job: dict, res: dict) -> None:
         st = res.get("status")
+        if st == "DONE" and not self._licensed("ml_train"):
+            self._finish_job("INTERRUPTED", {"reason": "LICENSE_NOT_VALID_RESULTS_NOT_PUBLISHED"})
+            return
         if st == "DONE":
             try:
                 decisions = self.registry.register(res, job["snapshot_id"], job["cfg"]["promotion"])
@@ -377,6 +403,8 @@ class MLService:
     backfill_state: dict = {"status": "IDLE"}
 
     def start_backfill(self, days: int) -> dict:
+        if not self._licensed("analysis"):
+            return {"started": False, "reason": "LICENSE_REQUIRED"}
         if self.backfill_state.get("status") == "RUNNING":
             return {"started": False, "reason": "BACKFILL_ALREADY_RUNNING"}
         days = max(5, min(int(days), 180))
@@ -392,7 +420,8 @@ class MLService:
                     data = backfill.bridge_data(self.bridge, {tf: min(99000, (days + 30) * n + 50) for tf, n in per_day.items()})
                     feed = "MT5"
                 res = backfill.run(self.db, data, feed=feed, synthetic=self.synthetic, cost=dict(self._cost(), point=(self.bridge.symbol_info or {}).get("point") or 0.01),
-                                   warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p), should_stop=self._stop.is_set)
+                                   warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p),
+                                   should_stop=lambda: self._stop.is_set() or not self._licensed("analysis"))
                 self.backfill_state = {"status": "DONE", "result": res, "finished_at": iso(utcnow())}
                 self.log.info("ML", "BACKFILL_DONE", f"Backfill {feed}: {res['created']} próbek (jakość APPROX, domyślnie poza treningiem)", res)
             except Exception as exc:

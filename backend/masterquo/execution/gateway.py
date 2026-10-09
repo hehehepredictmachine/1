@@ -17,6 +17,7 @@ import threading
 import uuid
 
 from ..db.database import dumps
+from ..licensing.guard import LicenseRequired
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from ..timeutil import iso, parse_iso, utcnow
 
@@ -51,6 +52,7 @@ class ExecutionGateway:
         self.engine = engine
         self.paper = paper
         self.manager = None
+        self.license = None        # LicenseService (set by runtime); None = no new opening orders
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ validation
@@ -102,6 +104,21 @@ class ExecutionGateway:
             risk = d["risk"]
             side = "BUY" if d["analysis_direction"] == "LONG" else "SELL"
             entry_key = f"{mode}:{self.bridge.account_key}:{setup['setup_id']}"
+            # ---- license: a valid lease for every new opening; real orders additionally need a fresh online
+            #      authorization bound to THIS intent and activation (single use, short validity)
+            grant = None
+            try:
+                if self.license is None:
+                    raise LicenseRequired("NO_LICENSE_SERVICE")
+                self.license.guard.require("trade_open")
+                if mode != "PAPER":
+                    if self.db.one("SELECT 1 AS x FROM order_attempts WHERE entry_key=?", (entry_key,)):
+                        return {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP"}
+                    grant = self.license.authorize_open(entry_key, {"symbol": d["symbol"], "side": side, "volume": risk["lots"], "mode": mode})
+            except LicenseRequired as exc:
+                if initiated_by == "USER":
+                    self.log.warn("EXECUTION", "BLOCKED_LICENSE", f"Nowe otwarcie zablokowane – licencja: {exc.reason}")
+                return {"status": "BLOCKED", "reason": "LICENSE_" + exc.reason}
             attempt_id = "MQO-" + uuid.uuid4().hex[:16]
             targets = risk["targets"]
             tp_final = targets[-1]["price"]
@@ -120,7 +137,7 @@ class ExecutionGateway:
             if mode == "PAPER":
                 res = self.paper.open(attempt_id=attempt_id, decision=d, side=side, lots=risk["lots"], sl=risk["stop_loss"], targets=targets)
             else:
-                res = self._send(attempt_id, d, side, risk, tp_final)
+                res = self._send(attempt_id, d, side, risk, tp_final, grant)
             if res.get("status") in ("FILLED", "PARTIAL"):
                 self.engine.mark_entered(setup["setup_id"], f"{mode}_{res['status']}")
             self.bus.publish("orders", self.recent_attempts(10))
@@ -131,7 +148,7 @@ class ExecutionGateway:
         cols = ", ".join(f"{k}=?" for k in fields)
         self.db.execute(f"UPDATE order_attempts SET {cols} WHERE attempt_id=?", (*fields.values(), attempt_id))
 
-    def _send(self, attempt_id: str, d: dict, side: str, risk: dict, tp_final: float) -> dict:
+    def _send(self, attempt_id: str, d: dict, side: str, risk: dict, tp_final: float, grant=None) -> dict:
         b = self.bridge
         cfg = self.cfg_store.get()
         info = b.symbol_info or {}
@@ -159,7 +176,16 @@ class ExecutionGateway:
                       request_json=dumps(req))
             self.log.warn("EXECUTION", "ORDER_CHECK_REJECTED", f"order_check odrzucił zlecenie: {RETCODES.get(rc, rc)} {getattr(chk, 'comment', '')}")
             return {"status": "REJECTED", "reason": "ORDER_CHECK", "retcode": rc}
-        self._set(attempt_id, state="SENDING", request_json=dumps(req), price_requested=req["price"])
+        # authorization checked IMMEDIATELY before sending; broker response / fill may come later (separate time)
+        try:
+            if self.license is None or grant is None:
+                raise LicenseRequired("NO_OPERATION_AUTHORIZATION")
+            self.license.consume(grant)
+        except LicenseRequired as exc:
+            self._set(attempt_id, state="REJECTED", retcode_text="LICENSE_" + exc.reason, request_json=dumps(req))
+            self.log.warn("EXECUTION", "BLOCKED_LICENSE", f"Zlecenie nie wysłane – autoryzacja licencji: {exc.reason}")
+            return {"status": "BLOCKED", "reason": "LICENSE_" + exc.reason}
+        self._set(attempt_id, state="SENDING", request_json=dumps(req), price_requested=req["price"], authorized_at=iso(utcnow()))
         try:
             res = b.raw_call(lambda m: m.order_send(req), PRIO_TRADE, timeout=cfg.execution.order_timeout_seconds)
         except MT5CallTimeout:

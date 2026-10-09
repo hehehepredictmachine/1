@@ -269,8 +269,26 @@ class ActiveConfig(_Strict):
         return v
 
 
+class ConnectorConfig(_Strict):
+    """Telemetry to the central server. OFF until the user explicitly consents for ONE chosen terminal account."""
+    enabled: bool = False
+    server: str | None = None             # broker server of the consented account
+    login: str | None = None              # login of the consented account
+    snapshot_seconds: int = Field(15, ge=5, le=600)
+    deals_seconds: int = Field(60, ge=15, le=3600)
+    initial_history_days: int = Field(365, ge=7, le=3650)
+
+
+class CentralConfig(_Strict):
+    """Central account / license server (licenses are a separate permission check, not an execution mode)."""
+    url: str = ""                         # https://licencje.twojadomena.pl
+    allow_insecure_localhost: bool = False   # http://127.0.0.1 only - local development and tests
+    heartbeat_seconds: int = Field(30, ge=10, le=55)
+    connector: ConnectorConfig = Field(default_factory=ConnectorConfig)
+
+
 class AppConfig(_Strict):
-    config_version: int = 3
+    config_version: int = 4
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -283,6 +301,7 @@ class AppConfig(_Strict):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     active: ActiveConfig = Field(default_factory=ActiveConfig)
     ml: MLConfig = Field(default_factory=MLConfig)
+    central: CentralConfig = Field(default_factory=CentralConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -348,10 +367,14 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 3:
+    if v >= 4:
         return False
+    if v == 3:
+        raw["config_version"] = 4           # v4 (1.4): central account/license server section (defaults)
+        return True
     if v == 2:
         _to_v3(raw)
+        raw["config_version"] = 4
         return True
     for (sec, key), old, new in _V2_CHANGES:
         part = raw.get(sec)
@@ -361,6 +384,7 @@ def migrate(raw: dict) -> bool:
     if isinstance(agent, dict) and "gate_policy" not in agent:
         agent["gate_policy"] = "ADVISORY" if agent.get("required_for_entry") is False else "VETO"
     _to_v3(raw)
+    raw["config_version"] = 4
     return True
 
 

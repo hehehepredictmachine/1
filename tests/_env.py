@@ -78,3 +78,41 @@ def bar(t_open: datetime, o, h, l, c, closed=True, available=None, tv=100):
     return {"t_raw": int(t_open.timestamp()), "open_utc": iso(t_open), "o": o, "h": h, "l": l, "c": c, "tv": tv, "rv": 0,
             "spread": 10, "closed": closed, "close_confirmed_utc": iso(conf) if closed else None,
             "available_at": iso(available or conf) if closed else None, "basis": "OBSERVED", "revision": 0}
+
+
+# ----------------------------------------------------------------------------- licensing test doubles (tests only)
+def granted_guard(seconds: float = 3600.0, scopes=None):
+    """A REAL LicenseGuard holding a test lease (as if a heartbeat succeeded). Never shipped as a bypass."""
+    import time as _t
+    from masterquo.licensing.guard import SCOPES, LicenseGuard
+    g = LicenseGuard()
+    g.install({"scope": list(scopes or SCOPES), "sub": "TEST", "jti": "TEST"}, _t.monotonic() + seconds)
+    return g
+
+
+class FakeLicense:
+    """Gateway-facing double: real guard + locally issued single-use operation grants (central server not involved)."""
+
+    def __init__(self, guard=None):
+        self.guard = guard or granted_guard()
+        self.authorized: list[str] = []
+        self._used: set = set()
+
+    def authorize_open(self, intent_id, detail):
+        import time as _t
+        import uuid as _u
+        from masterquo.licensing.service import OpGrant
+        self.guard.require("trade_open")
+        self.authorized.append(intent_id)
+        return OpGrant({"jti": _u.uuid4().hex, "intent": intent_id, "op": "OPEN"}, _t.monotonic() + 20)
+
+    def consume(self, grant):
+        import time as _t
+        from masterquo.licensing.guard import LicenseRequired
+        if grant.used or grant.claims["jti"] in self._used:
+            raise LicenseRequired("OP_TOKEN_REUSED")
+        if _t.monotonic() >= grant.deadline:
+            raise LicenseRequired("OP_TOKEN_EXPIRED")
+        self.guard.require("trade_open")
+        grant.used = True
+        self._used.add(grant.claims["jti"])

@@ -30,8 +30,13 @@ class TestActivePipeline(unittest.TestCase):
         self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
         self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True)
         self.engine = EngineService(cfg, b, db, bus, log, self.modes, NewsService(cfg, SecretStore(), bus, log), PCClockCheck(None, 30))
+        from _env import FakeLicense, granted_guard
+        self.guard = granted_guard()
+        self.engine.guard = self.guard
+        self.engine.active.guard = self.guard
         self.paper = PaperBroker(cfg, b, db, bus, log)
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
+        self.gw.license = FakeLicense(self.guard)
         self.mgr = PositionManager(cfg, b, db, bus, log, self.modes, self.paper)
         self.gw.manager = self.mgr
         self.engine.gateway = self.gw

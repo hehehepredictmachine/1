@@ -16,6 +16,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import paths, stats
 from ..execution.modes import ModeError
+from ..licensing.central_client import CentralClient, CentralError
+from ..licensing.guard import LicenseRequired
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION
@@ -57,6 +59,39 @@ class SecretReq(BaseModel):
     value: str | None = None
 
 
+class LicLoginReq(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=256)
+    totp: str | None = Field(default=None, max_length=40)
+
+
+class LicRegisterReq(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=256)
+    display_name: str | None = Field(default=None, max_length=80)
+
+
+class LicEmailReq(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class LicPasswordReq(BaseModel):
+    current_password: str = Field(max_length=256)
+    new_password: str = Field(max_length=256)
+
+
+class LicActivateReq(BaseModel):
+    key: str = Field(max_length=120)
+
+
+class LicServerReq(BaseModel):
+    url: str = Field(max_length=300)
+
+
+class LicConsentReq(BaseModel):
+    enabled: bool
+
+
 class MLModeReq(BaseModel):
     mode: str = Field(pattern="^(OFF|SHADOW|ASSIST)$")
 
@@ -92,9 +127,21 @@ class MemoryReq(BaseModel):
     status: str
 
 
+# routes available without a license: login/activation/status, application stop, and limited protection of existing positions
+LIC_OPEN = {"/api/v1/health", "/api/v1/session", "/api/v1/state", "/api/v1/admin/shutdown", "/api/v1/ws"}
+WS_ANON_TYPES = {"license", "license_locked", "license_warning"}
+WS_LOCKED_TYPES = {"license", "license_locked", "license_warning", "connection", "positions", "log", "mode"}
+LIC_LOGGED_IN = {"/api/v1/positions/close", "/api/v1/kill", "/api/v1/mt5/reconnect", "/api/v1/diagnostics", "/api/v1/logs"}
+
+
 def create_app(rt, port: int) -> FastAPI:
     sec = LocalSecurity(port)
     rt.security = sec
+
+    def unlocked() -> bool:
+        """Product UI/API only for the logged-in owner of this installation's activation with a valid lease."""
+        lic = rt.license
+        return lic.logged_in() and lic.device.state().get("owner_user_id") == (lic.user or {}).get("id") and lic.guard.allows("analysis")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -117,6 +164,13 @@ def create_app(rt, port: int) -> FastAPI:
                     return JSONResponse({"error": "CSRF_OR_SESSION_INVALID"}, status_code=403)
             elif path.startswith("/api/v1/") and path not in ("/api/v1/health",) and not sec.csrf_for(request.cookies.get(SESSION_COOKIE)):
                 return JSONResponse({"error": "SESSION_REQUIRED_OPEN_MONITOR_PAGE"}, status_code=401)
+            # ---- licensing (server-side enforcement; hiding UI is not the protection)
+            if path.startswith("/api/v1/") and path not in LIC_OPEN and not path.startswith("/api/v1/license/"):
+                lic = rt.license
+                if not lic.logged_in():
+                    return JSONResponse({"error": "LOGIN_REQUIRED"}, status_code=401)
+                if path not in LIC_LOGGED_IN and not unlocked():
+                    return JSONResponse({"error": "LICENSE_REQUIRED", "reason": lic.guard.reason}, status_code=403)
             resp: Response = await call_next(request)
             resp.headers["X-Content-Type-Options"] = "nosniff"
             resp.headers["Referrer-Policy"] = "no-referrer"
@@ -172,7 +226,25 @@ def create_app(rt, port: int) -> FastAPI:
         return {"csrf": sec.csrf_for(sid), "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id, "port": port}
 
     # ------------------------------------------------------------ state
+    def locked_state() -> dict:
+        """Without a valid license: login/activation info, MT5 connection and (for the logged-in user) the limited
+        protection view of existing bot positions - no analysis, checklist, setups, ML or statistics."""
+        b = rt.bridge
+        out = {"contract": API_CONTRACT_VERSION, "app_version": APP_VERSION, "seq": rt.bus.seq, "boot_id": rt.bus.boot_id, "locked": True,
+               "synthetic": rt.demo or b.synthetic, "server_time": iso(utcnow()), "license": rt.license.status(),
+               "connection": b.connection_status(), "symbol": {"symbol": b.cfg.symbol, "status": b.symbol_status}}
+        if rt.license.logged_in():
+            magic = rt.cfg.get().mt5.magic_number
+            out["account"] = b.account_status()
+            out["positions"] = {"positions": [p for p in b.positions if p.get("magic") == magic], "orders": []}
+            out["managed"] = rt.db.query("SELECT * FROM managed_positions WHERE state='OPEN'")
+            out["mode"] = rt.modes.status()
+            out["connector"] = rt.connector.status()
+        return out
+
     def full_state() -> dict:
+        if not unlocked():
+            return locked_state()
         b = rt.bridge
         cfg = rt.cfg.get()
         acct = b.account_status()
@@ -191,7 +263,7 @@ def create_app(rt, port: int) -> FastAPI:
                                                                                      "last_error": rt.manager.last_error},
                 "first_run_completed": cfg.first_run_completed,
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
-                "ml": rt.ml.status(compact=True)}
+                "ml": rt.ml.status(compact=True), "license": rt.license.status(), "connector": rt.connector.status(), "locked": False}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -431,6 +503,70 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(404, "UNKNOWN_SETUP")
         return rt.ml.predict(row, rt.engine.active.view)
 
+    # ------------------------------------------------------------ account & license (proxy to the central server)
+    def lic_call(fn):
+        try:
+            return fn()
+        except CentralError as e:
+            raise HTTPException(e.status if e.status >= 400 else 503, detail={"error": e.code, **({"detail": e.detail} if e.detail else {})}) from None
+        except LicenseRequired as e:
+            raise HTTPException(403, detail={"error": "LICENSE_" + e.reason}) from None
+
+    @app.get("/api/v1/license/status")
+    def lic_status():
+        return rt.license.status() | {"connector": rt.connector.status() if rt.license.logged_in() else None}
+
+    @app.post("/api/v1/license/server")
+    def lic_server(req: LicServerReq):
+        if rt.license.logged_in():
+            raise HTTPException(409, detail={"error": "LOGOUT_FIRST"})
+        url = req.url.strip().rstrip("/")
+        try:
+            CentralClient(url, allow_insecure_localhost=rt.cfg.get().central.allow_insecure_localhost)
+        except CentralError as e:
+            raise HTTPException(400, detail={"error": e.code}) from None
+        rt.cfg.update({"central": {"url": url}})
+        rt.log.info("LICENSE", "SERVER", f"Adres serwera kont: {url}")
+        return rt.license.status()
+
+    @app.post("/api/v1/license/login")
+    def lic_login(req: LicLoginReq):
+        return lic_call(lambda: rt.license.login(req.email, req.password, req.totp))
+
+    @app.post("/api/v1/license/logout")
+    def lic_logout():
+        return rt.license.logout()
+
+    @app.post("/api/v1/license/register")
+    def lic_register(req: LicRegisterReq):
+        return lic_call(lambda: rt.license.client().register(req.email, req.password, req.display_name))
+
+    @app.post("/api/v1/license/forgot")
+    def lic_forgot(req: LicEmailReq):
+        return lic_call(lambda: rt.license.client().forgot(req.email))
+
+    @app.post("/api/v1/license/password")
+    def lic_password(req: LicPasswordReq):
+        return lic_call(lambda: rt.license.client().change_password(rt.license.token(), req.current_password, req.new_password))
+
+    @app.post("/api/v1/license/activate")
+    def lic_activate(req: LicActivateReq):
+        return lic_call(lambda: rt.license.activate(req.key))
+
+    @app.post("/api/v1/license/refresh")
+    def lic_refresh():
+        rt.license.heartbeat_now()
+        return rt.license.status()
+
+    @app.post("/api/v1/license/connector")
+    def lic_connector(req: LicConsentReq):
+        if not rt.license.logged_in():
+            raise HTTPException(401, detail={"error": "LOGIN_REQUIRED"})
+        r = lic_call(lambda: rt.connector.set_consent(req.enabled))
+        rt.log.info("LICENSE", "CONNECTOR", ("Włączono" if req.enabled else "Wyłączono") + " przesyłanie danych rachunku do serwera MasterQUO "
+                    f"({r.get('server')} {r.get('login')}).")
+        return r
+
     @app.post("/api/v1/strategy/toggle")
     def strategy_toggle(req: StrategyToggleReq):
         cur = rt.cfg.get().active.strategies.get(req.strategy_id)
@@ -595,6 +731,11 @@ def create_app(rt, port: int) -> FastAPI:
                     await websocket.send_text(json.dumps(ev, default=str))
             while True:
                 ev = await queue.get()
+                if ev.get("type") == "session_reset":
+                    await websocket.send_text(json.dumps(ev, default=str))
+                    break                                       # user changed / logged out: drop this subscription
+                if not unlocked() and ev.get("type") not in (WS_LOCKED_TYPES if rt.license.logged_in() else WS_ANON_TYPES):
+                    continue                                    # no product data without a valid license
                 if ev.get("type") == "__overflow__":
                     while not queue.empty():
                         queue.get_nowait()

@@ -50,6 +50,7 @@ def load_prompt() -> tuple[str, str]:
 
 class ClaudeAgent:
     def __init__(self, cfg_store, secrets, db, bus, applog, context_provider):
+        self.guard = None                                 # LicenseGuard (set by runtime); None = agent disabled
         self.cfg_store = cfg_store
         self.secrets = secrets
         self.db = db
@@ -127,6 +128,8 @@ class ClaudeAgent:
                 question: str | None = None) -> str | None:
         if self.loop is None or self.queue is None:
             return None
+        if self.guard is None or not self.guard.allows("agent"):
+            return None                                   # no Claude calls without a valid license
         key = f"{trigger}:{setup_id}:{setup_state}:{question or ''}"
         if key in self.pending:
             return self.pending[key]["request_id"]
@@ -157,6 +160,8 @@ class ClaudeAgent:
 
     # ------------------------------------------------------------ gates
     def _preflight(self, req: dict) -> str | None:
+        if self.guard is None or not self.guard.allows("agent"):
+            return "LICENSE_REQUIRED"
         if not self.cfg.enabled:
             return "AGENT_DISABLED"
         if self.secrets.get("ANTHROPIC_API_KEY") is None:

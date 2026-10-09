@@ -235,6 +235,14 @@ def main(argv=None) -> int:
     if a.cmd == "set-key":
         return diagnostics.set_key()
     if a.cmd == "export":
+        # product function: requires a fresh online lease (same LicenseGuard as the app); doctor/clock/stop stay available
+        from .config import ConfigStore
+        from .licensing.service import LicenseService
+        from .secrets_store import SecretStore
+        lic = LicenseService(ConfigStore(), SecretStore(), paths.data_dir())
+        if not lic.heartbeat_now() or not lic.guard.allows("analysis"):
+            print(f"Eksport wymaga ważnej licencji (online): {lic.guard.reason}")
+            return 3
         return diagnostics.export_history(a.from_utc, a.to_utc, a.out)
     if a.cmd == "profile":
         return cmd_profile(a.name)
