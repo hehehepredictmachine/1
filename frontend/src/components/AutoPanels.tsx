@@ -33,7 +33,7 @@ export function useAutoFull() {
 }
 
 function Dir({ d }: { d?: string }) {
-  return <b className={d === "LONG" ? "pos" : d === "SHORT" ? "neg" : ""}>{d ?? "—"}</b>;
+  return <b>{d === "LONG" ? "scen. wzrostowy" : d === "SHORT" ? "scen. spadkowy" : "—"}</b>;
 }
 
 function Points({ score }: { score: any }) {
@@ -90,7 +90,7 @@ export function AutoPanel({ full }: { full: any }) {
         ) : <div className="note">Brak wybranej strategii – {(a.selection_reason_codes || []).map(reasonPl).join(", ") || "skanowanie"}. Bot nie wymusza wyboru.</div>}
         <div className="auto-row"><label>Wykonanie</label><small className={d?.execution_permission === "ALLOWED" ? "pos" : "neg"}>
           {d?.execution_permission ?? "—"}{blockers.length ? " – " + blockers.slice(0, 4).join(" · ") : ""}</small></div>
-        {a.alternative && <div className="auto-row"><label>Alternatywa</label><small>{a.alternative.strategy_id} {a.alternative.direction} {a.alternative.stage} – {a.alternative.needs}</small></div>}
+        {a.alternative && <div className="auto-row"><label>Alternatywa</label><small>{a.alternative.strategy_id} <Dir d={a.alternative.direction} /> {a.alternative.stage} – {a.alternative.needs}</small></div>}
         {a.last_change && <div className="auto-row"><label>Ostatnia zmiana</label><small>{fmtTime(a.last_change.at)}: {a.last_change.previous_strategy ?? "brak"} → {a.last_change.selected_strategy ?? "brak"} ({a.last_change.reason})</small></div>}
         <div className="auto-rank">
           <label>Najlepsze kandydatury (ranking = 0,35·dopasowanie + 0,65·wynik + etap)</label>

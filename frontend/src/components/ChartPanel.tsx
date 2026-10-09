@@ -353,7 +353,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     if (o.showStructure) {
       for (const b of ov.breaks || []) {
         mk.push({ time: TT(b.bar_open_utc), position: b.direction === "BULLISH" ? "belowBar" : "aboveBar",
-          shape: b.direction === "BULLISH" ? "arrowUp" : "arrowDown", color: String(b.kind === "BOS" ? t.bos : t.choch),
+          shape: "circle", color: String(b.kind === "BOS" ? t.bos : t.choch),
           text: b.kind === "STRUCTURE_BREAK_UNCLASSIFIED" ? "BRK" : b.kind, size: 0.6 });
       }
       for (const w of ov.sweeps || []) mk.push({ time: TT(w.observed_at), position: w.side === "BSL" ? "aboveBar" : "belowBar", shape: "circle", color: String(t.sweep), text: "SWP", size: 0.5 });

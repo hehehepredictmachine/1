@@ -10,6 +10,7 @@ import { ThemeDialog } from "./components/ThemeDialog";
 import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
+import MLPanel from "./components/MLPanel";
 import { useStore } from "./store";
 import { cls, type TimeZoneMode } from "./util";
 
@@ -112,6 +113,7 @@ export default function App() {
           <LiveSetupsPanel full={autoFull} />
           <StrategiesPanel full={autoFull} reload={() => { reloadAuto(); }} />
         </div>
+        <div className="ml-row"><MLPanel index={layout === "SIX" ? 9 : 7} /></div>
         <div className="bottom-row">
           <NewsPanel />
           <RiskPanel onSettings={() => setSettings(true)} />

@@ -283,6 +283,12 @@ class EngineService:
                                dq=dq, legacy=legacy_out, setup=setup, levels=levels, risk=risk, agent_gate=agent_gate, mode_gate=mode_gate,
                                macro=macro, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status=self.bridge.dxy_status,
                                synthetic=self.bridge.synthetic, active=active_ctx, ml_gate=self._ml_gate(setup))
+        if active_ctx is not None:
+            try:
+                from . import checklist as checklist_mod
+                d["checklist"] = checklist_mod.build(d, self.active.selected_row(), no_setup_reasons=self.active.why_no_setup())
+            except Exception as exc:                 # presentation only - never blocks the decision
+                d["checklist"] = {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"[:200]}
         with self._lock:
             self.dq = dq
             self.decision = d

@@ -343,3 +343,28 @@ small.muted { color: var(--muted); }
 .chart-tools .icon.on { border-color: var(--neon); color: var(--neon); }
 .chart-tools select { padding: 0 4px; font-size: 10.5px; }
 .mq-bg, .mq-frog { pointer-events: none; }
+
+/* ---------------- checklist (12A) & ML panel (12B) */
+.checklist { border-top: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--bg) 70%, transparent); max-height: 340px; overflow: auto; }
+.cl-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+.cl-grid section h5, .ml-body h5 { margin: 2px 0 4px; font-size: 11px; color: var(--neon); letter-spacing: 0.4px; }
+.cl-grid ul, .cl-gates, .cl-why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cl-grid li, .cl-gates li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 0 4px; font-size: 11px; }
+.cl-grid li em, .cl-gates li em { grid-column: 2; font-style: normal; color: var(--text-dim); font-size: 10.5px; }
+.cl-grid li i, .cl-gates li i { font-style: normal; font-weight: 800; }
+.cl-met i { color: var(--check-met); }
+.cl-missing i { color: var(--check-missing); }
+.cl-nodata i, .cl-pending i { color: var(--check-nodata); }
+.cl-why li { font-size: 10.5px; color: var(--text-dim); }
+.cl-grid dl { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; margin: 0; font-size: 11px; }
+.cl-grid dt { color: var(--muted); }
+.cl-grid dd { margin: 0; color: var(--number); }
+.cl-grid p { margin: 0 0 4px; font-size: 11px; }
+.ml-row { grid-column: 1 / -1; }
+.ml-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ml-cols { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; }
+.ml-cols .kv { grid-template-columns: 1fr; gap: 3px; }
+.ml-progress { height: 6px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; margin: 6px 0 3px; }
+.ml-progress i { display: block; height: 100%; background: var(--neon); }
+@media (max-width: 1200px) { .ml-cols, .cl-grid { grid-template-columns: 1fr; } }

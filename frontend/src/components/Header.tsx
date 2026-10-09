@@ -61,7 +61,11 @@ export default function Header({ onAgent, onSettings, onPower, onMode, onLook, b
       <div className="chips">
         <Chip label="MT5" value={con.state === "CONNECTED" ? (a ? `${a.trade_mode} ${a.server ?? ""}` : "") : con.state ?? "…"}
           t={tone(con.state)} title={con.reason || con.module_error || ""} />
-        <Chip label="BRIDGE" value={s.ws === "OPEN" ? (con.worker_wedged_seconds > 5 ? "TERMINAL WOLNY" : "LIVE") : s.ws}
+        <Chip label="INSTRUMENT" value={`${s.symbol?.symbol ?? "?"} ${s.symbol?.status ?? ""}`} t={s.symbol?.status === "OK" ? "ok" : "warn"}
+          title="Dokładny symbol brokera i jego status handlu" />
+        <Chip label="DANE" value={s.quote?.age_seconds != null ? `tick ${Math.round(s.quote.age_seconds)} s` : "brak"}
+          t={s.quote?.age_seconds != null && s.quote.age_seconds < 30 ? "ok" : "warn"} title="Wiek ostatniego ticka z terminala" />
+        <Chip label="BACKEND" value={s.ws === "OPEN" ? (con.worker_wedged_seconds > 5 ? "TERMINAL WOLNY" : "LIVE") : s.ws}
           t={s.ws === "OPEN" && con.worker_wedged_seconds <= 5 ? "ok" : "warn"} />
         <Chip label="CZAS" value={clock.status === "VERIFIED" ? `UTC${clock.offset_hours >= 0 ? "+" : ""}${clock.offset_hours}` : clock.status ?? "?"}
           t={clock.status === "VERIFIED" ? "ok" : clock.status === "UNKNOWN" ? "bad" : "warn"} title="Offset czasu serwera brokera zmierzony z ticków" />
