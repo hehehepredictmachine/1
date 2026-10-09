@@ -18,6 +18,7 @@ from .execution.gateway import ExecutionGateway
 from .execution.manager import PositionManager
 from .execution.modes import ModeManager
 from .execution.paper import PaperBroker
+from .ml.service import MLService
 from .mt5.bridge import MarketBridge
 from .mt5.worker import MT5Worker
 from .news.service import NewsService
@@ -65,6 +66,9 @@ class Runtime:
         self.engine.gateway = self.gateway
         self.agent = ClaudeAgent(self.cfg, self.secrets, self.db, self.bus, self.log, self.engine.context)
         self.engine.agent = self.agent
+        self.ml = MLService(self.cfg, self.db, self.bridge, self.bus, self.log)
+        self.engine.ml = self.ml
+        self.engine.active.ml = self.ml
         self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
@@ -91,6 +95,7 @@ class Runtime:
         self.news.start()
         self.engine.start()
         self.manager.start()
+        self.ml.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
 
     def _clock_loop(self) -> None:
@@ -104,6 +109,7 @@ class Runtime:
     def stop(self) -> None:
         self._stop.set()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
+        self.ml.stop()
         self.engine.stop()
         self.manager.stop()
         self.news.stop()

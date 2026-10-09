@@ -60,7 +60,9 @@ class StrategyAutoSelector:
         self.state = {"system_state": "SCANNING", "selected": None, "ranking": [], "reason_codes": [reason]}
 
     def select(self, rows: list[dict], *, cfg, regime: dict, data_ok: bool, new_data: bool, now: datetime, snapshot_id: str | None,
-               account_key: str | None, per_strategy: dict) -> dict:
+               account_key: str | None, per_strategy: dict, ml_bonus=None) -> dict:
+        """`ml_bonus(row) -> float` (ml_mode ASSIST only): re-orders candidates by the calibrated model probability;
+        the setup score itself is not changed (no double counting)."""
         now_s = iso(now)
         mode = cfg.strategy_mode
         manual = cfg.manual_strategy_id if mode == "MANUAL" else None
@@ -78,6 +80,13 @@ class StrategyAutoSelector:
                            "strategy_fit_score": c.get("strategy_fit_score"), "countertrend": c.get("countertrend"), "event_id": c.get("event_id"),
                            "rank_score": 0.0, "score_points": (c.get("score") or {}).get("points"), "grouped_with": []})
             ranked[-1]["rank_score"] = rank_score({**c, "stage": r["stage"]})
+            if ml_bonus is not None:
+                try:
+                    b = float(ml_bonus(r) or 0.0)
+                except Exception:
+                    b = 0.0
+                ranked[-1]["ml_rank_adjust"] = b
+                ranked[-1]["rank_score"] = round(ranked[-1]["rank_score"] + b, 2)
         ranked.sort(key=lambda x: (-x["rank_score"], x["strategy_id"], x["setup_id"]))
         # group by event_id
         by_event: dict[str, dict] = {}

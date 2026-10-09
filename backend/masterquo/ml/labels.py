@@ -13,7 +13,7 @@ Policy (stored in every sample's entry_json):
 * costs: spread at fill, slippage on fill and stop exits, commission per side (price units per unit volume);
 * if one M1 bar touches the stop AND a target, the recorded quotes of that minute decide the order;
   without quotes the sample becomes AMBIGUOUS (never silently a loss);
-* a data gap of 15-90 minutes inside the window -> MISSING_DATA; longer gaps are treated as session breaks;
+* a data gap of 15-50 minutes inside the window -> MISSING_DATA; >= 50 min is a session break (daily maintenance, weekend) and the trade is held through it;
 * the label is known only when the exit bar has closed (`label_known_utc` >= `label_end_utc`).
 State is persisted after every step, so a restart continues where it stopped and never labels twice.
 """
@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 LABEL_POLICY_VERSION = "MQ-LABEL-1.0.0"
 COST_MODEL_VERSION = "MQ-COST-1.0.0"
 UTC = timezone.utc
-GAP_MISSING_MIN, GAP_SESSION_MIN = 15, 90
+GAP_MISSING_MIN, GAP_SESSION_MIN = 15, 50
 
 
 def _p(s: str) -> datetime:

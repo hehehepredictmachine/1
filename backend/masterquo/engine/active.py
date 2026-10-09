@@ -42,6 +42,7 @@ class ActiveEngine:
         self.funnel = collections.defaultdict(collections.Counter)
         self.scans = 0
         self._startup_reset_done = False
+        self.ml = None                           # MLService (collector + ASSIST ranking), set by the runtime
 
     # ------------------------------------------------------------ helpers
     def _data_status(self, dq: dict, quote: dict | None) -> str:
@@ -95,11 +96,14 @@ class ActiveEngine:
             scanned = {sid for sid, ps in res["per_strategy"].items() if ps["status"] == "OK"}
             events = self.tracker.update(res["candidates"], view=view, symbol=sym, account_key=account_key, data_ok=data_ok,
                                          new_data=new_data, now=now, cfg=ac, scanned=scanned if data_ok else set(registry.STRATEGIES))
+            if self.ml is not None:
+                self.ml.on_setup_events(events, view, now)
             self.selector.configure(ac)
             rows = self.tracker.active(sym, account_key)
             prev_sel = (self.selector.selected or {}).get("setup_id")
             self.selector.select(rows, cfg=ac, regime=view.regime, data_ok=data_ok, new_data=new_data, now=now, snapshot_id=snapshot_id,
-                                 account_key=account_key, per_strategy=res["per_strategy"])
+                                 account_key=account_key, per_strategy=res["per_strategy"],
+                                 ml_bonus=(lambda r: self.ml.rank_adjust(r, view)) if self.ml is not None and self.ml.cfg.mode == "ASSIST" else None)
             cur_sel = (self.selector.selected or {}).get("setup_id")
             if cur_sel != prev_sel:
                 events.append(("SELECTION_CHANGED", self.tracker.get(cur_sel) if cur_sel else {"setup_id": None}))

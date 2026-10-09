@@ -27,7 +27,8 @@ class TestActivePipeline(unittest.TestCase):
         from masterquo.execution.paper import PaperBroker
         from masterquo.news.service import NewsService
         from masterquo.secrets_store import SecretStore
-        self.modes = ModeManager(cfg, db, bus, log)
+        self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
+        self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True)
         self.engine = EngineService(cfg, b, db, bus, log, self.modes, NewsService(cfg, SecretStore(), bus, log), PCClockCheck(None, 30))
         self.paper = PaperBroker(cfg, b, db, bus, log)
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
@@ -60,7 +61,7 @@ class TestActivePipeline(unittest.TestCase):
         self.cfg.update({"active": {"strategy_mode": "AUTO", "manual_strategy_id": None}})
         self.engine.full_cycle()
         ms = self.modes.status()
-        self.assertEqual((ms["mode"], ms["auto_trading"]), ("READ_ONLY", False))
+        self.assertEqual((ms["mode"], ms["auto_trading"]), ("SIGNALS", False))
         self.assertEqual(self.db.query("SELECT * FROM order_attempts"), [])
 
     def test_stale_after_mt5_loss_then_reconnect(self):
@@ -108,7 +109,6 @@ class TestActivePipeline(unittest.TestCase):
         self.engine.light_cycle()
         self.assertEqual(self.engine.current_decision()["execution_permission"], "BLOCKED")
         self.cfg.update({"active": {"strategies": {"S01": {"scan": True, "trade": True}}}})
-        self.modes.set_auto(True)
         self.engine.light_cycle()
         self.engine.light_cycle()
         att = self.db.query("SELECT * FROM order_attempts")

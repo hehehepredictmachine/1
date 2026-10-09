@@ -57,6 +57,14 @@ class SecretReq(BaseModel):
     value: str | None = None
 
 
+class MLModeReq(BaseModel):
+    mode: str = Field(pattern="^(OFF|SHADOW|ASSIST)$")
+
+
+class MLFlagReq(BaseModel):
+    on: bool
+
+
 class StrategyModeReq(BaseModel):
     strategy_mode: str = Field(pattern="^(AUTO|MANUAL)$")
     manual_strategy_id: str | None = Field(default=None, max_length=4)
@@ -178,7 +186,8 @@ def create_app(rt, port: int) -> FastAPI:
                 "logs": logs_list(60), "pc_clock": rt.pcclock.snapshot(), "manager": {"reconciled_epoch": rt.manager.reconciled_epoch,
                                                                                      "last_error": rt.manager.last_error},
                 "first_run_completed": cfg.first_run_completed,
-                "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json")}
+                "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
+                "ml": rt.ml.status(compact=True)}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -350,6 +359,69 @@ def create_app(rt, port: int) -> FastAPI:
                     + ". Tryb wykonywania zleceń bez zmian.")
         rt.engine.mark_dirty()
         return rt.engine.active.status(compact=True)
+
+    # ------------------------------------------------------------ ML (Decision Tree + XGBoost)
+    @app.get("/api/v1/ml/status")
+    def ml_status():
+        return rt.ml.status()
+
+    @app.post("/api/v1/ml/mode")
+    def ml_mode(req: MLModeReq):
+        try:
+            return rt.ml.set_mode(req.mode)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/v1/ml/collect")
+    def ml_collect(req: MLFlagReq):
+        return rt.ml.set_collect(req.on)
+
+    @app.post("/api/v1/ml/pause")
+    def ml_pause(req: MLFlagReq):
+        return rt.ml.set_paused(req.on)
+
+    @app.post("/api/v1/ml/train")
+    def ml_train():
+        """'Trenuj teraz': skips the waiting time/new-label threshold but never the data minimums of the validation blocks."""
+        if rt.cfg.get().ml.training_paused:
+            raise HTTPException(409, "TRAINING_PAUSED")
+        res = rt.ml.start_training("USER", force=True)
+        rt.bus.publish("ml", rt.ml.status(compact=True))
+        return res
+
+    @app.post("/api/v1/ml/cancel")
+    def ml_cancel():
+        return rt.ml.cancel()
+
+    @app.post("/api/v1/ml/resume")
+    def ml_resume():
+        return rt.ml.resume_interrupted()
+
+    @app.post("/api/v1/ml/rollback")
+    def ml_rollback():
+        try:
+            return rt.ml.rollback()
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/v1/ml/models")
+    def ml_models():
+        return {"models": rt.ml.registry.models(50), "events": rt.ml.registry.events(50)}
+
+    @app.get("/api/v1/ml/report")
+    def ml_report():
+        return rt.ml.last_report() or {"available": False, "reason": "NO_COMPLETED_TRAINING"}
+
+    @app.get("/api/v1/ml/explain")
+    def ml_explain(setup_id: str = Query(...), version: int = Query(...)):
+        return rt.ml.explain(setup_id, version)
+
+    @app.get("/api/v1/ml/predict")
+    def ml_predict(setup_id: str = Query(...)):
+        row = rt.engine.active.tracker.get(setup_id)
+        if not row:
+            raise HTTPException(404, "UNKNOWN_SETUP")
+        return rt.ml.predict(row, rt.engine.active.view)
 
     @app.post("/api/v1/strategy/toggle")
     def strategy_toggle(req: StrategyToggleReq):

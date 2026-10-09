@@ -118,7 +118,7 @@ class TestDecisionSeparation(unittest.TestCase):
         return decision.build(snapshot_id="S", as_of="2026-10-08T12:00:00Z", symbol="XAUUSD-", account_key="a", session_epoch=1, dq=dq,
                               legacy={"m02": {"structural_direction": "BEARISH", "timeframes": {"D1": {"direction": "BULLISH"}}}},
                               setup=setup, levels={}, risk={"risk_gate": risk_gate, "reason_codes": []}, agent_gate={"status": ai, "reason_codes": []},
-                              mode_gate={"mode": "DEMO_EXECUTION" if mode_allowed else "READ_ONLY", "allowed": mode_allowed, "reason_codes": []},
+                              mode_gate={"mode": "AUTO_DEMO" if mode_allowed else "SIGNALS", "allowed": mode_allowed, "reason_codes": []},
                               macro={"status": "PARTIAL", "risk_level": "NONE"}, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status="NOT_CONFIGURED", synthetic=True)
 
     def test_early_is_not_execution(self):
@@ -169,7 +169,8 @@ class TestExecution(unittest.TestCase):
         from masterquo.execution.manager import PositionManager
         from masterquo.execution.modes import ModeManager
         from masterquo.execution.paper import PaperBroker
-        self.modes = ModeManager(cfg, db, bus, log)
+        self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
+        self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True)
         self.engine = StubEngine(LifecycleStore(db))
         self.paper = PaperBroker(cfg, b, db, bus, log)
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
@@ -191,27 +192,39 @@ class TestExecution(unittest.TestCase):
                 "risk": {"risk_gate": "PASS", "lots": 0.05, "entry": e, "stop_loss": round(e + 8, 2),
                          "targets": [{"price": round(e - 6, 2), "weight": 0.5}, {"price": round(e - 12, 2), "weight": 0.5}], "modeled_loss": 41.0}}
 
-    def test_read_only_blocks_real_orders(self):
+    def test_signals_mode_blocks_real_orders(self):
         self.engine.decision = self.decision()
         calls = []
         orig = self.fake.order_send
         self.fake.order_send = lambda r: calls.append(r) or orig(r)
         r = self.gw.execute("MQD-1")
         self.assertEqual(r["status"], "BLOCKED")
-        self.assertIn("READ_ONLY_MODE", r["reason"])
+        self.assertIn("EXECUTION_MODE_SIGNALS", r["reason"])
         self.assertEqual(calls, [])
 
     def test_mode_requires_confirmation_and_limits(self):
         from masterquo.execution.modes import ModeError
         acct = self.b.account_status()
         with self.assertRaises(ModeError):
-            self.modes.set_mode("DEMO_EXECUTION", confirm="wrong", account=acct, account_key=self.b.account_key, synthetic=True)
+            self.modes.set_mode("AUTO_DEMO", confirm="wrong", account=acct, account_key=self.b.account_key, synthetic=True)
         with self.assertRaises(ModeError):
-            self.modes.set_mode("LIVE_EXECUTION", confirm=f"LIVE {acct['login']}", account=acct, account_key=self.b.account_key, synthetic=True)
-        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
-        self.assertFalse(self.modes.status()["auto_trading"])
+            self.modes.set_mode("AUTO_LIVE", confirm=f"LIVE {acct['login']}", account=acct, account_key=self.b.account_key, synthetic=True)
+        st = self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        self.assertTrue(st["auto_trading"])                               # AUTO: no per-trade confirmation
+        self.assertTrue(self.modes.gate(self.b.account_key)["allowed"])
+        # account switch: mode is kept, orders are blocked with an exact reason until the confirmed account is back
         self.modes.reset("ACCOUNT_CHANGED")
-        self.assertEqual(self.modes.status()["mode"], "READ_ONLY")
+        self.assertEqual(self.modes.status()["mode"], "AUTO_DEMO")
+        g = self.modes.gate("other:account")
+        self.assertFalse(g["allowed"])
+        self.assertTrue(any(c.startswith("ACCOUNT_DIFFERS_FROM_CONFIRMED") for c in g["reason_codes"]))
+        # a REAL account under AUTO_DEMO is rejected
+        g = self.modes.gate(self.b.account_key, account=dict(acct, trade_mode="REAL"), synthetic=True)
+        self.assertIn("AUTO_DEMO_BUT_ACCOUNT_IS_REAL", g["reason_codes"])
+        # STOP blocks only new entries
+        self.modes.set_kill(True, "TEST")
+        self.assertIn("NEW_ENTRIES_STOPPED", self.modes.gate(self.b.account_key)["reason_codes"])
+        self.assertEqual(self.modes.status()["mode"], "AUTO_DEMO")
 
     def test_paper_never_calls_order_send_and_is_idempotent(self):
         self.modes.set_mode("PAPER", confirm="PAPER", account=self.b.account_status(), account_key=self.b.account_key, synthetic=True)
@@ -228,7 +241,7 @@ class TestExecution(unittest.TestCase):
 
     def test_demo_execution_once_with_sl_tp_and_restart(self):
         acct = self.b.account_status()
-        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
         self.engine.decision = self.decision()
         r = self.gw.execute("MQD-1")
         self.assertEqual(r["status"], "FILLED", r)
@@ -245,7 +258,7 @@ class TestExecution(unittest.TestCase):
 
     def test_timeout_unknown_no_resend_then_reconciled(self):
         acct = self.b.account_status()
-        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
         self.engine.decision = self.decision(setup_id="MQS-T2")
         orig = self.fake.order_send
         sent = []
@@ -268,21 +281,21 @@ class TestExecution(unittest.TestCase):
 
     def test_tp1_partial_and_breakeven_demo_and_paper(self):
         acct = self.b.account_status()
-        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
         d = self.decision(setup_id="MQS-TP")
         d["risk"]["lots"] = 0.10
         self.engine.decision = d
         self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
         q = self.b.quote_status()
         # put TP1 just above the market for the SHORT so it is "reached" now
-        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='DEMO_EXECUTION'", (q["ask"] + 1.0,))
+        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='AUTO_DEMO'", (q["ask"] + 1.0,))
         self.b._t_account = 0
         self.assertTrue(wait_for(lambda: bool(self.b.positions), 10))
         self.mgr.tick()
         self.b._t_account = 0
         self.assertTrue(wait_for(lambda: self.b.positions and abs(self.b.positions[0]["volume"] - 0.05) < 1e-9, 10))
         self.mgr.tick()
-        mp = self.db.one("SELECT * FROM managed_positions WHERE mode='DEMO_EXECUTION'")
+        mp = self.db.one("SELECT * FROM managed_positions WHERE mode='AUTO_DEMO'")
         self.assertEqual(mp["tp1_done"], 1)
         self.assertEqual(mp["be_done"], 1)
         self.assertAlmostEqual(self.fake.positions_get()[0].sl, mp["entry_price"])
@@ -304,7 +317,7 @@ class TestExecution(unittest.TestCase):
 
     def test_broker_rejection_recorded(self):
         acct = self.b.account_status()
-        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
         self.engine.decision = self.decision(setup_id="MQS-T3")
         self.fake.fail_next_order = 10019
         r = self.gw.execute("MQD-1")
@@ -352,7 +365,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001", "0002"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())

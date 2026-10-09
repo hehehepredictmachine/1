@@ -43,6 +43,7 @@ class EngineService:
         self.pcclock = pcclock
         self.agent = None          # set by runtime
         self.gateway = None        # set by runtime
+        self.ml = None             # MLService, set by runtime
         self.legacy = LegacyEngines(paths.data_dir() / "legacy_m07_plan_lock.sqlite")
         self.required = self.legacy.profiles.required_closed_bars()
         self.lifecycle = lifecycle.LifecycleStore(db)
@@ -281,7 +282,7 @@ class EngineService:
         d = decision_mod.build(snapshot_id=full["snapshot_id"], as_of=now_iso, symbol=sym, account_key=account_key, session_epoch=epoch,
                                dq=dq, legacy=legacy_out, setup=setup, levels=levels, risk=risk, agent_gate=agent_gate, mode_gate=mode_gate,
                                macro=macro, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status=self.bridge.dxy_status,
-                               synthetic=self.bridge.synthetic, active=active_ctx)
+                               synthetic=self.bridge.synthetic, active=active_ctx, ml_gate=self._ml_gate(setup))
         with self._lock:
             self.dq = dq
             self.decision = d
@@ -305,6 +306,15 @@ class EngineService:
                 self.gateway.execute(d["decision_id"], initiated_by="AUTO")
             except Exception as exc:
                 self.log.error("EXECUTION", "AUTO_EXECUTE_FAILED", f"Automatyczne wykonanie nieudane: {exc}")
+
+    def _ml_gate(self, setup: dict | None) -> dict | None:
+        if self.ml is None or self.cfg_store.get().active.profile != "ACTIVE":
+            return None
+        try:
+            row = self.active.tracker.get(setup["setup_id"]) if setup else None
+            return self.ml.gate(row, self.active.view)
+        except Exception as exc:                     # the model never freezes the bot: fall back to strategies only
+            return {"status": "PASS", "mode": self.ml.cfg.mode, "codes": [f"ML_ERROR_FALLBACK_{type(exc).__name__}"], "prediction": None}
 
     def _risk(self, direction: str, levels: dict, quote: dict | None, live: bool, hypo_level: float | None) -> dict:
         cfg = self.cfg_store.get()

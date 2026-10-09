@@ -41,7 +41,8 @@ class TestPipeline(unittest.TestCase):
         from masterquo.execution.paper import PaperBroker
         from masterquo.news.service import NewsService
         from masterquo.secrets_store import SecretStore
-        self.modes = ModeManager(cfg, db, bus, log)
+        self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
+        self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True)
         news = NewsService(cfg, SecretStore(), bus, log)
         self.engine = EngineService(cfg, b, db, bus, log, self.modes, news, PCClockCheck(None, 30))
         self.paper = PaperBroker(cfg, b, db, bus, log)
@@ -81,8 +82,8 @@ class TestPipeline(unittest.TestCase):
         self.engine.full_cycle()
         d = self.engine.current_decision()
         self.assertEqual(d["signal_stage"], "CONFIRMED")
-        self.assertEqual(d["execution_permission"], "BLOCKED")          # no AI yet, READ_ONLY
-        self.assertIn("READ_ONLY_MODE", d["reason_codes"])
+        self.assertEqual(d["execution_permission"], "BLOCKED")          # no AI yet, mode SIGNALS ("Analiza warunków")
+        self.assertIn("EXECUTION_MODE_SIGNALS", d["reason_codes"])
         self.assertIn(self.engine.current_decision()["decision_tree"][2]["node"], "STRATEGY")
         # synthetic random walk: force the M02 structural context to match the frozen SHORT setup
         self.engine.last_full["legacy"]["m02"]["structural_direction"] = "BEARISH"
@@ -93,8 +94,7 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(d["decision"], "SELL", json.dumps(d["decision_tree"], default=str)[:2000])
         self.assertEqual(d["execution_permission"], "ALLOWED")
         self.assertGreater(d["risk"]["lots"], 0)
-        self.modes.set_auto(True)
-        self.engine.light_cycle()                                        # AUTO -> gateway
+        self.engine.light_cycle()                                        # PAPER = automatic simulated execution -> gateway
         att = self.db.query("SELECT * FROM order_attempts")
         self.assertEqual(len(att), 1)
         self.assertEqual(att[0]["mode"], "PAPER")

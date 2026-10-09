@@ -81,15 +81,21 @@ class TestAppProcess(unittest.TestCase):
         self.assertEqual(req("/api/v1/mode", "POST", {"mode": "PAPER"}, opener=self.op)[0], 403)  # no origin/csrf
         self.assertEqual(req("/api/v1/mode", "POST", {"mode": "PAPER"}, {"Origin": "http://evil.example", "X-MQ-CSRF": self.csrf}, self.op)[0], 403)
         self.assertEqual(req("/api/v1/mode", "POST", {"mode": "PAPER"}, {"Origin": BASE, "X-MQ-CSRF": "bad"}, self.op)[0], 403)
-        st, body = req("/api/v1/mode", "POST", {"mode": "PAPER", "confirm": "PAPER"}, self.H(), self.op)
-        self.assertEqual(st, 400)                                                          # authorised, but limits missing
-        self.assertIn("RISK_LIMITS_NOT_CONFIGURED", body)
+        st, body = req("/api/v1/mode", "POST", {"mode": "PAPER"}, self.H(), self.op)
+        self.assertEqual(st, 200, body)                                                    # authorised; PAPER needs no confirmation
+        self.assertEqual(json.loads(body)["mode"], "PAPER")
+        st, body = req("/api/v1/mode", "POST", {"mode": "AUTO_LIVE", "confirm": "LIVE 1"}, self.H(), self.op)
+        self.assertEqual(st, 400, body)                                                    # never LIVE on synthetic data
+        st, body = req("/api/v1/mode", "POST", {"mode": "READ_ONLY"}, self.H(), self.op)  # legacy name maps to SIGNALS
+        self.assertEqual((st, json.loads(body)["mode"]), (200, "SIGNALS"))
 
     def test_03_state_and_charts(self):
         self.assertTrue(wait_for(lambda: json.loads(req("/api/v1/state", opener=self.op)[1]).get("decision") is not None, 90, 1))
         s = json.loads(req("/api/v1/state", opener=self.op)[1])
-        self.assertEqual(s["mode"]["mode"], "READ_ONLY")
+        self.assertEqual(s["mode"]["mode"], "SIGNALS")
         self.assertFalse(s["mode"]["auto_trading"])
+        self.assertIn(s["ml"]["status"], ("COLLECTING", "WAITING_FOR_LABELS"))
+        self.assertEqual(s["ml"]["mode"], "SHADOW")
         self.assertEqual(s["symbol"]["symbol"], "XAUUSD-")
         self.assertEqual(s["agent"]["state"], "AI_UNAVAILABLE_NO_KEY")
         self.assertEqual(s["decision"]["execution_permission"], "BLOCKED")
@@ -155,7 +161,7 @@ class TestAppProcess(unittest.TestCase):
         self.assertEqual((cfg["strategy_mode"], cfg["manual_strategy_id"], cfg["strategies"]["S07"]["trade"], cfg["strategies"]["S07"]["scan"]),
                          ("MANUAL", "S03", False, True))
         s = json.loads(req("/api/v1/state", opener=self.op)[1])
-        self.assertEqual((s["mode"]["mode"], s["mode"]["auto_trading"]), ("READ_ONLY", False))   # AUTO strategy selection != order execution
+        self.assertEqual((s["mode"]["mode"], s["mode"]["auto_trading"]), ("SIGNALS", False))   # AUTO strategy selection != order execution
         self.assertEqual(req("/api/v1/strategy/mode", "POST", {"strategy_mode": "AUTO"}, self.H(), self.op)[0], 200)
         self.assertEqual(json.loads(req("/api/v1/playbook", opener=self.op)[1]).keys() >= {"cards", "note"}, True)
 
