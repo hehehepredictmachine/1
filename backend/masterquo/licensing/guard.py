@@ -49,7 +49,10 @@ class LicenseGuard:
             self._drop_locked("CLOCK_DISCONTINUITY_REVALIDATE_ONLINE")
             return False
         if self.mono() >= self._deadline:
-            self._drop_locked("LEASE_EXPIRED_NO_FRESH_SERVER_CONFIRMATION")
+            c = self._claims
+            # the lease was capped by the license end -> the license itself is over (not a network problem)
+            ended = c.get("lic_exp") is not None and int(c.get("exp", 0)) >= int(c["lic_exp"])
+            self._drop_locked("LICENSE_EXPIRED" if ended else "LEASE_EXPIRED_NO_FRESH_SERVER_CONFIRMATION")
             return False
         return True
 

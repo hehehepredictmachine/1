@@ -277,7 +277,9 @@ class LicenseService:
     def status(self) -> dict:
         st = self.device.state()
         valid = self.guard.allows("analysis")
-        lic = self.license or {}
+        lic = dict(self.license or {})
+        if self.guard.reason in ("LICENSE_EXPIRED", "LICENSE_REVOKED") and lic.get("status") == "ACTIVE":
+            lic["status"], lic["remaining_s"] = self.guard.reason.replace("LICENSE_", ""), 0
         same_user = bool(self.user) and st.get("owner_user_id") == (self.user or {}).get("id")
         return {"configured": bool(self.cfg.url), "central_url": self.cfg.url, "logged_in": self.logged_in(),
                 "user": {k: (self.user or {}).get(k) for k in ("id", "email", "display_name", "status", "role")} if self.user else None,

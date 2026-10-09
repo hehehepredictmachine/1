@@ -728,6 +728,8 @@ def create_app(rt, port: int) -> FastAPI:
                 await websocket.send_text(json.dumps({"type": "resync", "seq": rt.bus.seq, "boot_id": rt.bus.boot_id, "state": full_state()}, default=str))
             else:
                 for ev in replay:
+                    if not unlocked() and ev.get("type") not in (WS_LOCKED_TYPES if rt.license.logged_in() else WS_ANON_TYPES):
+                        continue                                # replay obeys the same license filter as live events
                     await websocket.send_text(json.dumps(ev, default=str))
             while True:
                 ev = await queue.get()

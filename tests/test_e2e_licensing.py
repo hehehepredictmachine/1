@@ -213,3 +213,30 @@ class TestEndToEndLicensing(unittest.TestCase):
         self.assertNotIn("BALANCE", body)
         self.assertNotIn(USER, body)
         self.assertEqual(json.loads(m.evaluate("() => fetch('/api/v1/state').then(r => r.json()).then(j => JSON.stringify(j.account === undefined))")), True)
+        # ---- 10. WebSocket after logout: replay from seq 0 and live stream carry no product data
+        import asyncio
+        import websockets
+        sid = next(c["value"] for c in self.user_ctx.cookies() if c["name"] == "mq_sid")
+        sess = json.loads(m.evaluate("() => fetch('/api/v1/session').then(r => r.text())"))
+
+        async def ws_check():
+            hdr = {"Origin": self.bot, "Cookie": f"mq_sid={sid}"}
+            async with websockets.connect(self.bot.replace("http", "ws") + "/api/v1/ws", additional_headers=hdr) as ws:
+                await ws.send(json.dumps({"csrf": sess["csrf"], "last_seq": 0, "boot_id": sess["boot_id"]}))
+                seen = set()
+                try:
+                    while True:
+                        ev = json.loads(await asyncio.wait_for(ws.recv(), 6))
+                        seen.add(ev["type"])
+                        if ev["type"] == "resync":
+                            self.assertTrue(ev["state"]["locked"])
+                except asyncio.TimeoutError:
+                    pass
+                return seen
+        out = {}
+        import threading
+        th = threading.Thread(target=lambda: out.update(seen=asyncio.run(ws_check())))       # Playwright owns this thread's loop
+        th.start()
+        th.join(30)
+        seen = out["seen"]
+        self.assertFalse(seen & {"decision", "analysis", "auto", "ml", "bar", "bar_closed", "quote", "account", "positions", "log"}, seen)

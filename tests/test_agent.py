@@ -78,6 +78,8 @@ class TestAgent(unittest.TestCase):
         bus = EventBus()
         self.db = db
         self.agent = ClaudeAgent(self.cfg, SecretStore(), db, bus, AppLog(db, bus), lambda sid: CTX)
+        from _env import granted_guard
+        self.agent.guard = granted_guard()
 
     def tearDown(self):
         os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -88,6 +90,13 @@ class TestAgent(unittest.TestCase):
         self.agent._client_get = lambda: client
         req = {"trigger": trigger, "snapshot_id": "SNP-1", "setup_id": "MQS-1", "setup_state": "CONFIRMED", "question": None, "key": "k"}
         return asyncio.run(self.agent.run_once(req, ctx)), client
+
+    def test_no_license_no_agent(self):
+        from masterquo.licensing.guard import LicenseGuard
+        self.agent.guard = LicenseGuard()                      # no lease
+        self.assertEqual(self.agent._preflight({"trigger": "MANUAL"}), "LICENSE_REQUIRED")
+        self.agent.guard = None
+        self.assertEqual(self.agent._preflight({"trigger": "MANUAL"}), "LICENSE_REQUIRED")
 
     def test_tool_loop_and_structured_answer(self):
         r, c = self.run_with([msg([tool("get_market_snapshot", {"snapshot_id": "SNP-1"}), tool("get_macro_context", {}, "tu_2")], "tool_use"),
