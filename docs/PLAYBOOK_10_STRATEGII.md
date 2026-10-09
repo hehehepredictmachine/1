@@ -30,7 +30,8 @@ Wspólne dla wszystkich (kontrakt MQ-STRATEGY-CONTRACT-1.0.0):
 S01 TREND_PULLBACK - continuation of an existing trend after a measured correction.
 
 LONG rules (SHORT = mirrored prices), setup TF in p["tfs"] (M5, M15), context H1:
-  necessary  trend: EMA20 > EMA50, EMA50 slope (10 bars) >= min_slope ATR/bar, ER(20) >= min_er
+  necessary  trend: EMA20 > EMA50, EMA50 slope (10 bars) >= min_slope ATR/bar, ER(20) >= 0.6 x min_er
+             (ER below min_er is reported as missing confirmation TREND_EFFICIENCY_WEAK and lowers the score)
              swing: the highest high of the last `swing_lookback` bars (impulse extreme) is >= 2 bars old
              correction: depth from that high to the lowest low since = min_depth..max_depth ATR,
                          no close below EMA50 - deep_close_atr x ATR (that would be a trend failure)

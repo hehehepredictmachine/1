@@ -1,6 +1,6 @@
 # Zestawienie zmienionych filtrów (profil ACTIVE)
 
-Przepływ: dane → wskaźniki → strategia → kandydat → filtr → trigger → AI → wyświetlenie → wykonanie. Liczby odrzuceń z replay (SYNTHETIC, 30.0 h): `drafts` = rozpoznane struktury (warunki konieczne spełnione), `below_watch` = odrzucone przez próg WATCH, `published_*` = opublikowane odczyty w danym etapie (sumowane po krokach).
+Przepływ: dane → wskaźniki → strategia → kandydat → filtr → trigger → AI → wyświetlenie → wykonanie. Liczby odrzuceń z replay (SYNTHETIC, 575.0 h): `drafts` = rozpoznane struktury (warunki konieczne spełnione), `below_watch` = odrzucone przez próg WATCH, `published_*` = opublikowane odczyty w danym etapie (sumowane po krokach).
 
 | Filtr | Cel | Zakres | Decyzja |
 |---|---|---|---|
@@ -23,16 +23,16 @@ Przepływ: dane → wskaźniki → strategia → kandydat → filtr → trigger 
 
 | Strategia | Struktury (drafts) | Odrzucone progiem WATCH | WATCH | EARLY | CONFIRMED | Unikalne setupy |
 |---|---|---|---|---|---|---|
-| S01 | 61 | 6 | 43 | 11 | 1 | 19 |
-| S02 | 36 | 1 | 15 | 10 | 10 | 11 |
-| S03 | 74 | 0 | 13 | 45 | 16 | 66 |
-| S04 | 14 | 1 | 11 | 1 | 1 | 6 |
-| S05 | 3 | 0 | 3 | 0 | 0 | 2 |
-| S06 | 82 | 3 | 31 | 31 | 17 | 27 |
-| S07 | 81 | 7 | 51 | 10 | 13 | 54 |
-| S08 | 29 | 0 | 17 | 8 | 4 | 13 |
-| S09 | 47 | 22 | 11 | 6 | 8 | 18 |
-| S10 | 163 | 0 | 159 | 3 | 1 | 69 |
+| S01 | 1023 | 67 | 776 | 137 | 43 | 410 |
+| S02 | 901 | 149 | 357 | 243 | 152 | 130 |
+| S03 | 1574 | 3 | 400 | 737 | 434 | 1369 |
+| S04 | 310 | 13 | 197 | 43 | 57 | 140 |
+| S05 | 154 | 0 | 141 | 2 | 11 | 76 |
+| S06 | 1566 | 33 | 793 | 541 | 199 | 578 |
+| S07 | 1624 | 220 | 1136 | 92 | 176 | 1044 |
+| S08 | 775 | 22 | 455 | 204 | 94 | 418 |
+| S09 | 699 | 289 | 238 | 96 | 76 | 275 |
+| S10 | 2898 | 35 | 2755 | 64 | 44 | 1308 |
 
 Dalsze filtry wykonania (ryzyko, tryb, AI, makro) nie są symulowane w replay – działają w aplikacji i ich przyczyny są widoczne w drzewie decyzji.
 Progi nie zostały obniżone „bo dawno nie było sygnału”; zmiana progów prezentacji nie zmienia progów wykonania ani limitów ryzyka.

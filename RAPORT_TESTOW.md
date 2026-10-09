@@ -84,6 +84,10 @@ Komenda: `python tools/run_tests.py` → **Ran 101 tests … OK** (Linux, Python
 | Opóźnienie aktualizacji (WebSocket, lokalnie) | quote: mediana 1,6 ms, maks 28,6 ms; auto: mediana 3,6 ms | PASS |
 | Czas skanu 10 strategii (backend, symulator) | ~85–120 ms na skan, skan co ≥ 2 s tylko przy nowych danych | PASS |
 
+### Replay (SYNTHETIC)
+`python tools/replay_strategies.py --synthetic 20 --compare-original` – 2300 kroków M15 (575 h), 0 błędów, wynik w `docs/replay/` i
+`docs/POROWNANIE_ORIGINAL_ACTIVE.md`, lejek filtrów w `docs/TABELA_FILTROW.md`. Status: FUNCTIONAL_REPLAY_SYNTHETIC (nie OOS na danych brokera).
+
 ### NOT_RUN (1.2)
 * Replay i OOS na danych Twojego brokera – brak eksportu CSV z Twojego MT5 w tym środowisku (narzędzie: `tools/replay_strategies.py --csv-dir data\export_mt5_six_tf`).
 * Forward test DEMO – wymaga Twojego terminala i czasu.
