@@ -178,7 +178,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Wysyłaj sygnały na Telegram", "telegram.send_signals", "bool")}
         {field("Saldo startowe PAPER", "execution.paper_starting_balance", "num")}
         {field("Odchylenie ceny [punkty]", "execution.deviation_points", "num")}
-        <div className="note">LIVE wymaga dodatkowo ręcznego ustawienia <code>execution.allow_live_execution: true</code> w pliku data\config.json.</div>
+        <div className="note">Tryb wykonania (Analiza warunków / PAPER / AUTO DEMO / AUTO LIVE) zmieniasz przyciskiem TRYB w nagłówku.</div>
       </div>}
       <div className="row end">
         {msg && <span className="small">{msg}</span>}
@@ -191,40 +191,53 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
 // ------------------------------------------------------------------ mode
 export function ModeDialog({ onClose }: { onClose: () => void }) {
-  const { s } = useStore();
-  const [mode, setMode] = useState(s.mode?.mode ?? "READ_ONLY");
+  const { s, refresh } = useStore();
+  const [mode, setMode] = useState(s.mode?.mode ?? "PAPER");
   const [confirm, setConfirm] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const a = s.account;
-  const need = mode === "PAPER" ? "PAPER" : mode === "DEMO_EXECUTION" ? String(a?.login ?? "") : mode === "LIVE_EXECUTION" ? `LIVE ${a?.login ?? ""}` : "";
-  const apply = async () => {
+  const need = mode === "AUTO_DEMO" ? String(a?.login ?? "") : mode === "AUTO_LIVE" ? `LIVE ${a?.login ?? ""}` : "";
+  const run = async (fn: () => Promise<any>, ok: string) => {
+    setMsg(null);
     try {
-      await apiSend("POST", "/api/v1/mode", { mode, confirm });
-      setMsg("Tryb zmieniony.");
+      await fn();
+      setMsg(ok);
+      await refresh();
     } catch (e: any) {
       setMsg("Odmowa: " + (e.message || e));
     }
   };
-  const auto = async (on: boolean) => {
-    try {
-      await apiSend("POST", "/api/v1/auto", { on });
-    } catch (e: any) {
-      setMsg("Odmowa: " + (e.message || e));
-    }
-  };
+  const strategyMode = s.auto?.strategy_mode ?? s.active_config?.strategy_mode ?? "AUTO";
+  const mlMode = s.ml?.mode ?? s.mode?.ml_mode ?? "SHADOW";
   return (
-    <Modal title="Tryb pracy" onClose={onClose}>
-      <div className="note">Rachunek: {a ? `${a.login} · ${a.server} · ${a.trade_mode} · ${a.currency}` : "brak połączenia"}. Po restarcie lub zmianie rachunku aplikacja zawsze wraca do READ_ONLY i AUTO OFF.</div>
+    <Modal title="Tryby pracy" onClose={onClose}>
+      <div className="note">Rachunek wg terminala: {a ? `${a.login} · ${a.server} · ${a.trade_mode} · ${a.currency}` : "brak połączenia"}.
+        Trzy niezależne ustawienia – zmiana jednego nie zmienia pozostałych. Wybór jest zapisywany i odtwarzany po restarcie.</div>
+      <b>1. Wybór strategii</b>
+      <div className="row">
+        {["AUTO", "MANUAL"].map((m) => <button key={m} className={cls("btn", strategyMode === m ? "" : "ghost")}
+          onClick={() => run(() => apiSend("POST", "/api/v1/strategy/mode", m === "AUTO" ? { strategy_mode: "AUTO" } : { strategy_mode: "MANUAL", manual_strategy_id: s.auto?.selected_strategy_id || "S01" }), `Wybór strategii: ${m}`)}>{m}</button>)}
+      </div>
+      <b>2. Rola modeli ML</b>
+      <div className="row">
+        {[["OFF", "wyłączone"], ["SHADOW", "oceniają w tle, bez wpływu"], ["ASSIST", "zatwierdzony model wpływa na ranking i bramkę"]].map(([m, d]) => (
+          <button key={m} title={d} className={cls("btn", mlMode === m ? "" : "ghost")} onClick={() => run(() => apiSend("POST", "/api/v1/ml/mode", { mode: m }), `Tryb ML: ${m}`)}>{m}</button>))}
+      </div>
+      <b>3. Wykonanie</b>
       <div className="modes">
-        {[["READ_ONLY", "Tylko analiza, bez zleceń"], ["PAPER", "Symulacja lokalna (nie konto demo MT5)"], ["DEMO_EXECUTION", "Zlecenia na rachunku DEMO MT5"], ["LIVE_EXECUTION", "Zlecenia na rachunku REAL – wymaga allow_live_execution"]].map(([m, d]) => (
-          <label key={m} className={cls("mode-opt", mode === m && "on", m === "LIVE_EXECUTION" && "danger")}>
-            <input type="radio" checked={mode === m} onChange={() => { setMode(m); setConfirm(""); }} /> <b>{m}</b> <small>{d}</small>
+        {[["SIGNALS", "Analiza warunków", "checklista warunków, bez zleceń"], ["PAPER", "PAPER", "automatyczna symulacja lokalna – nigdy nie wysyła zleceń do brokera"],
+          ["AUTO_DEMO", "AUTO DEMO", "automatyczne zlecenia tylko na rachunku DEMO (typ odczytany z terminala)"],
+          ["AUTO_LIVE", "AUTO LIVE", "automatyczne zlecenia na rachunku REAL – prawdziwe pieniądze"]].map(([m, l, d]) => (
+          <label key={m} className={cls("mode-opt", mode === m && "on", m === "AUTO_LIVE" && "danger")}>
+            <input type="radio" checked={mode === m} onChange={() => { setMode(m); setConfirm(""); }} /> <b>{l}</b> <small>{d}</small>
           </label>
         ))}
       </div>
-      {need && <label className="field"><span>Potwierdź wpisując: <code>{need}</code></span><input value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>}
-      <div className="row"><button className="btn" onClick={apply}>Zastosuj tryb</button>
-        <button className={cls("btn", s.mode?.auto_trading ? "danger" : "ghost")} onClick={() => auto(!s.mode?.auto_trading)}>AUTO TRADING: {s.mode?.auto_trading ? "WYŁĄCZ" : "WŁĄCZ"}</button></div>
+      {need && <label className="field"><span>Jednorazowe potwierdzenie przełączenia (nie każdej transakcji) – wpisz: <code>{need}</code></span>
+        <input value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>}
+      <div className="row"><button className="btn" onClick={() => run(() => apiSend("POST", "/api/v1/mode", { mode, confirm }), "Tryb wykonania zmieniony.")}>Zastosuj tryb wykonania</button></div>
+      {(s.decision?.mode_gate?.reason_codes || []).length > 0 && <div className="note warn">Wysyłka zleceń teraz niedozwolona: {(s.decision.mode_gate.reason_codes || []).join(", ")}</div>}
+      <div className="note">STOP (przycisk ⏻) zatrzymuje tylko nowe wejścia; zamykanie pozycji to osobna operacja w tym samym oknie.</div>
       {msg && <div className="note">{msg}</div>}
     </Modal>
   );

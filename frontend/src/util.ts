@@ -43,7 +43,9 @@ export function tone(status?: string | null): "ok" | "warn" | "bad" | "muted" {
 }
 
 export const REASON_PL: Record<string, string> = {
-  READ_ONLY_MODE: "Tryb READ_ONLY – zlecenia wyłączone",
+  EXECUTION_MODE_SIGNALS: "Tryb „Analiza warunków” – bez zleceń",
+  NO_MT5_ACCOUNT: "Brak rachunku MT5",
+  ML_BELOW_THRESHOLD: "Model ML (ASSIST): ocena poniżej zwalidowanego progu",
   RISK_LIMITS_NOT_CONFIGURED: "Limity ryzyka nieustawione (Ustawienia → Ryzyko)",
   AI_UNAVAILABLE_NO_KEY: "Brak klucza Claude API",
   MODEL_NOT_CONFIGURED: "Nie wybrano modelu Claude",

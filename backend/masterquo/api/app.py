@@ -214,7 +214,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/stats")
     def get_stats(mode: str = "PAPER"):
-        if mode not in ("PAPER", "DEMO_EXECUTION", "LIVE_EXECUTION"):
+        if mode not in ("PAPER", "AUTO_DEMO", "AUTO_LIVE"):
             raise HTTPException(400, "INVALID_MODE")
         b = rt.bridge
         with b._lock:
@@ -253,8 +253,8 @@ def create_app(rt, port: int) -> FastAPI:
             rt.modes.reset("MT5_CONFIG_CHANGED")
             rt.bridge.state = "RECONNECTING"
             rt.bridge.next_retry = 0
-        if old.risk != new.risk and rt.modes.status()["mode"] != "READ_ONLY":
-            rt.modes.reset("RISK_LIMITS_CHANGED_RECONFIRM_MODE")
+        if old.risk != new.risk:
+            rt.log.info("CONFIG", "RISK_LIMITS_CHANGED", "Zmieniono limity ryzyka – obowiązują od następnej decyzji.")
         rt.engine.mark_dirty()
         return get_config()
 

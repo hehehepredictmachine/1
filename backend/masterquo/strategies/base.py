@@ -39,6 +39,7 @@ class TFView:
         self.h = [float(b["h"]) for b in closed]
         self.l = [float(b["l"]) for b in closed]
         self.c = [float(b["c"]) for b in closed]
+        self.tv = [float(b.get("tv") or 0.0) for b in closed]     # broker tick count (CFD activity proxy, not exchange volume)
         fb = next((b for b in reversed(bars) if not b.get("closed")), None)
         self.forming = {"open_utc": fb["open_utc"], "o": float(fb["o"]), "h": float(fb["h"]), "l": float(fb["l"]), "c": float(fb["c"])} if fb else None
         self._cache: dict = {}
@@ -180,7 +181,8 @@ _MIRROR_DIR = {"UP": "DOWN", "DOWN": "UP"}
 
 
 def _mirror_tf(v: TFView, k: float) -> TFView:
-    bars = [{"open_utc": t, "o": k - o, "h": k - lo, "l": k - h, "c": k - c, "closed": True} for t, o, h, lo, c in zip(v.t, v.o, v.h, v.l, v.c)]
+    bars = [{"open_utc": t, "o": k - o, "h": k - lo, "l": k - h, "c": k - c, "tv": tv, "closed": True}
+            for t, o, h, lo, c, tv in zip(v.t, v.o, v.h, v.l, v.c, v.tv)]
     if v.forming:
         f = v.forming
         bars.append({"open_utc": f["open_utc"], "o": k - f["o"], "h": k - f["l"], "l": k - f["h"], "c": k - f["c"], "closed": False})

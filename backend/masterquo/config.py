@@ -8,7 +8,8 @@ Rules enforced here:
 * risk limits default to ``None`` = "not configured" -> execution is blocked until set;
 * the 40% spread setting has no established denominator in the sources -> it is
   exposed as ``REQUIRES_DEFINITION`` and never used as an execution filter;
-* the operating mode is *never* restored from disk: every start is READ_ONLY, AUTO OFF.
+* there is no READ_ONLY/research-only switch: the execution mode chosen by the user (SIGNALS/PAPER/AUTO_DEMO/
+  AUTO_LIVE) is stored here and restored; default PAPER. Account type is always re-checked against the terminal.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from . import paths
 
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.#\-+]{2,32}$")
 
-OperatingMode = Literal["READ_ONLY", "PAPER", "DEMO_EXECUTION", "LIVE_EXECUTION"]
+OperatingMode = Literal["SIGNALS", "PAPER", "AUTO_DEMO", "AUTO_LIVE"]
 StrategyMode = Literal["AUTO", "MVP", "SMC", "SCALPING"]
 
 
@@ -176,11 +177,52 @@ class ServerConfig(_Strict):
 
 
 class ExecutionConfig(_Strict):
-    # LIVE execution additionally requires this explicit local opt-in (see execution/modes.py).
-    allow_live_execution: bool = False
+    # SIGNALS = "Analiza warunków" (no orders), PAPER = automatic simulation, AUTO_DEMO / AUTO_LIVE = automatic orders.
+    mode: OperatingMode = "PAPER"
+    bound_account: str | None = None      # account key confirmed for AUTO_DEMO / AUTO_LIVE (server:login)
+    allow_live_execution: bool = False    # legacy 1.x field, no longer required (kept for config compatibility)
     deviation_points: int = Field(20, ge=0, le=1000)
     order_timeout_seconds: float = Field(10.0, ge=2, le=60)
     paper_starting_balance: float = Field(10000.0, gt=0)
+
+
+class MLPromotion(_Strict):
+    """Champion/challenger rules, fixed BEFORE an evaluation (stored with every evaluation)."""
+    min_test_samples: int = Field(150, ge=20)
+    min_test_per_class: int = Field(30, ge=5)
+    max_brier_vs_baseline: float = Field(0.0, description="challenger Brier minus base-rate Brier must be <= this (negative = better)")
+    min_net_r_vs_no_ml: float = Field(0.0, description="net R per trade of the ML policy minus all-trades policy on the test block")
+    max_drawdown_increase_r: float = Field(2.0, ge=0)
+    max_calibration_error: float = Field(0.10, ge=0, le=1)
+    must_beat_champion_brier: bool = True
+
+
+class MLConfig(_Strict):
+    """Decision Tree + XGBoost pipeline (MQ-ML-1.0.0). Start values are working parameters, not guarantees."""
+    mode: Literal["OFF", "SHADOW", "ASSIST"] = "SHADOW"
+    collect: bool = True                          # build samples/labels from live setups
+    training_paused: bool = False
+    check_interval_seconds: int = Field(60, ge=10, le=3600)
+    min_labeled_setups: int = Field(1000, ge=50)
+    min_per_class: int = Field(100, ge=10)
+    retrain_after_new_labels: int = Field(250, ge=10)
+    min_hours_between_trainings: float = Field(6.0, ge=0)
+    min_block_samples: int = Field(60, ge=10)     # per validation block (fit / tune / calibrate / test)
+    min_block_per_class: int = Field(10, ge=2)
+    embargo_minutes: int = Field(120, ge=0)
+    use_backfill_approx: bool = False             # include OHLC-approximate backfill labels in training (off by default)
+    dt_tuning_budget: int = Field(24, ge=4, le=200)
+    xgb_tuning_budget: int = Field(8, ge=1, le=50)
+    xgb_max_trees: int = Field(400, ge=20, le=5000)
+    xgb_threads: int = Field(2, ge=1, le=32)
+    xgb_device: Literal["cpu", "cuda"] = "cpu"
+    train_timeout_minutes: int = Field(30, ge=1, le=600)
+    random_state: int = 42
+    assist_rank_weight: float = Field(10.0, ge=0, le=50)   # ASSIST: rank += weight x (calibrated p - base rate) x 10
+    drift_psi_warn: float = Field(0.2, gt=0)
+    drift_psi_degraded: float = Field(0.35, gt=0)
+    degrade_brier_increase: float = Field(0.05, ge=0)      # mature-label Brier above validation Brier by more -> DEGRADED
+    promotion: MLPromotion = Field(default_factory=MLPromotion)
 
 
 class StrategyToggle(_Strict):
@@ -228,7 +270,7 @@ class ActiveConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 2
+    config_version: int = 3
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -240,6 +282,7 @@ class AppConfig(_Strict):
     server: ServerConfig = Field(default_factory=ServerConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     active: ActiveConfig = Field(default_factory=ActiveConfig)
+    ml: MLConfig = Field(default_factory=MLConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -304,8 +347,12 @@ _V2_CHANGES = [
 
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
-    if int(raw.get("config_version", 1)) >= 2:
+    v = int(raw.get("config_version", 1))
+    if v >= 3:
         return False
+    if v == 2:
+        _to_v3(raw)
+        return True
     for (sec, key), old, new in _V2_CHANGES:
         part = raw.get(sec)
         if isinstance(part, dict) and part.get(key, old) == old:
@@ -313,8 +360,18 @@ def migrate(raw: dict) -> bool:
     agent = raw.get("agent")
     if isinstance(agent, dict) and "gate_policy" not in agent:
         agent["gate_policy"] = "ADVISORY" if agent.get("required_for_entry") is False else "VETO"
-    raw["config_version"] = 2
+    _to_v3(raw)
     return True
+
+
+def _to_v3(raw: dict) -> None:
+    """v2 -> v3 (1.3): READ_ONLY removed. The mode was never stored before, so the default PAPER applies;
+    a stored legacy mode name (if any) is translated."""
+    ex = raw.setdefault("execution", {})
+    legacy = {"READ_ONLY": "SIGNALS", "DEMO_EXECUTION": "AUTO_DEMO", "LIVE_EXECUTION": "AUTO_LIVE"}
+    if ex.get("mode") in legacy:
+        ex["mode"] = legacy[ex["mode"]]
+    raw["config_version"] = 3
 
 
 def _deep_merge(base: dict, patch: dict) -> dict:

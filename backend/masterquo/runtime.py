@@ -54,7 +54,8 @@ class Runtime:
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         c = self.cfg.get().clock
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
-        self.modes = ModeManager(self.cfg, self.db, self.bus, self.log)
+        self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,
+                                 account_provider=lambda: (self.bridge.account_status(), self.bridge.account_key, self.bridge.synthetic))
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
         self.engine = EngineService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.news, self.pcclock)
         self.paper = PaperBroker(self.cfg, self.bridge, self.db, self.bus, self.log)
@@ -84,7 +85,7 @@ class Runtime:
                                      f"{s['strategy_id']} etap {s['state']} | decyzja {d['decision']} | wykonanie {d['execution_permission']}")
 
     def start(self) -> None:
-        self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb READ_ONLY, AUTO TRADING OFF")
+        self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
         self.worker.start()
         self.bridge.start()
         self.news.start()
@@ -103,7 +104,6 @@ class Runtime:
     def stop(self) -> None:
         self._stop.set()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
-        self.modes.reset("APP_STOP")
         self.engine.stop()
         self.manager.stop()
         self.news.stop()

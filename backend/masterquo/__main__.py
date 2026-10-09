@@ -98,7 +98,7 @@ def cmd_serve(args) -> int:
     def opener():
         for _ in range(120):
             if _health(port, 1.0):
-                print(f"[MasterQUO] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb READ_ONLY, AUTO TRADING OFF'})")
+                print(f"[MasterQUO] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb wykonania wg ustawień'})")
                 if not args.no_browser and rt.cfg.get().server.open_browser:
                     webbrowser.open(url)
                 return

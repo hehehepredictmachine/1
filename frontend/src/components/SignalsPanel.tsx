@@ -140,7 +140,7 @@ export default function SignalsPanel({ index }: { index: number }) {
             title={allowed ? "Wyślij zlecenie przez gateway" : `Zablokowane: ${(d?.reason_codes || []).join(", ")}`}>
             EXECUTE TRADE
           </button>
-          <div className="exec-note">{allowed ? `Tryb ${d?.mode_gate?.mode}` : d?.mode_gate?.mode === "READ_ONLY" ? "READ_ONLY: wykonywanie wyłączone" : "Wykonanie zablokowane"}</div>
+          <div className="exec-note">{allowed ? `Tryb ${d?.mode_gate?.mode}` : d?.mode_gate?.mode === "SIGNALS" ? "Analiza warunków: bez zleceń" : "Wykonanie zablokowane"}</div>
           <div className="quality-note">Ocena jakości ≠ prawdopodobieństwo wygranej. Brak skalibrowanego prawdopodobieństwa.</div>
           {msg && <div className="exec-msg">{msg}</div>}
         </div>

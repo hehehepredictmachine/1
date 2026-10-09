@@ -1,6 +1,6 @@
 """Statistics from settled, stored events only - no demo numbers.
 
-* bot statistics per mode (PAPER / DEMO_EXECUTION / LIVE_EXECUTION) from `trades`
+* bot statistics per mode (PAPER / AUTO_DEMO / AUTO_LIVE) from `trades`
   (one row per position; partial fills grouped; commission, swap, fee included);
 * account statistics from MT5 deal history: trading result separated from balance operations
   (deposits/withdrawals are not strategy profit);

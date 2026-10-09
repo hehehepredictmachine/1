@@ -466,7 +466,7 @@ class MarketBridge:
                 self.account, self.account_key = a, key
                 self.session_epoch += 1
             self._record_account(a)
-            self.log.warn("MT5", "ACCOUNT_CHANGED", f"Zmieniono rachunek w terminalu: {prev} -> {key}. Decyzje wygaszone, tryb READ_ONLY.")
+            self.log.warn("MT5", "ACCOUNT_CHANGED", f"Zmieniono rachunek w terminalu: {prev} -> {key}. Decyzje wygaszone; wysyłka zleceń zablokowana do zgodności rachunku z trybem.")
             self.clock.reset()
             self._load_stored_offset(a["server"])
             self._load_all_history()

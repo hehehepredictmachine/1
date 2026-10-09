@@ -49,7 +49,7 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
       setBusy(false);
     }
   };
-  const execOn = !!mode.auto_trading && mode.mode !== "READ_ONLY";
+  const execOn = mode.mode && mode.mode !== "SIGNALS" && !mode.kill_switch;
   const autoTone = auto.system_state === "STALE" || auto.data_status !== "OK" ? "warn" : auto.system_state === "CONFIRMED" ? "ok" : "muted";
   return (
     <header className="topbar">
@@ -66,17 +66,22 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
           t={clock.status === "VERIFIED" ? "ok" : clock.status === "UNKNOWN" ? "bad" : "warn"} title="Offset czasu serwera brokera zmierzony z ticków" />
         <Chip label="AGENT CLAUDE" value={ag.state ?? "?"} t={tone(ag.state === "IDLE" || ag.state === "OK" ? "OK" : ag.state)} title={ag.detail || ""} />
         <Chip label="BOT" value={engineOk ? (dq ?? "…") : "BŁĄD"} t={engineOk ? tone(dq) : "bad"} title={s.engine?.last_error || ""} />
-        <button className={cls("chip mode", mode.mode === "LIVE_EXECUTION" ? "bad" : mode.mode === "READ_ONLY" ? "muted" : "warn")} onClick={onMode}>
-          TRYB <b>{mode.mode ?? "READ_ONLY"}</b>
+        <button className={cls("chip mode", mode.mode === "AUTO_LIVE" ? "bad" : mode.mode === "SIGNALS" ? "muted" : "warn")} onClick={onMode}
+          title="Tryb wykonania – kliknij, aby zmienić (osobno od wyboru strategii i trybu ML)">
+          WYKONANIE <b>{mode.mode_label ?? mode.mode ?? "…"}</b>
         </button>
         <button className={cls("chip auto-sel", autoTone)} onClick={toggleStrategyMode} disabled={busy || auto.profile === "ORIGINAL"}
           title={(autoErr ? "Błąd: " + autoErr + "\n" : "") + "Wybór strategii (nie składa zleceń). Kliknij, aby przełączyć AUTO / MANUAL. Stan potwierdzony przez backend."}>
           <i className="dot" />{auto.profile === "ORIGINAL" ? "PROFIL ORIGINAL" : <>AUTO — wybór strategii <b>{auto.strategy_mode ?? "…"}</b></>}
           {auto.profile !== "ORIGINAL" && <b className="sub">{auto.selected_strategy_id ?? "brak"} · {auto.system_state ?? "…"}</b>}
         </button>
-        <span className={cls("chip", execOn ? (mode.mode === "LIVE_EXECUTION" ? "bad" : "ok") : "muted")}
-          title="Automatyczne składanie zleceń – osobne ustawienie, niezależne od wyboru strategii">
-          <i className="dot" />Wykonywanie zleceń <b>{execOn ? `AUTO ${mode.mode}` : mode.auto_trading ? "AUTO (READ_ONLY)" : "WYŁ."}</b>
+        <span className={cls("chip", (s.decision?.mode_gate?.allowed ? (mode.mode === "AUTO_LIVE" ? "bad" : "ok") : execOn ? "warn" : "muted"))}
+          title={(s.decision?.mode_gate?.reason_codes || []).join(", ") || "Zlecenia dopuszczone przez tryb – pozostałe bramki w checkliście"}>
+          <i className="dot" />Zlecenia <b>{mode.mode === "SIGNALS" ? "brak (analiza)" : mode.kill_switch ? "STOP" : s.decision?.mode_gate?.allowed ? "dozwolone" : "wstrzymane"}</b>
+        </span>
+        <span className={cls("chip", (s.ml?.status === "ACTIVE" || s.ml?.status === "SHADOW") ? "ok" : s.ml?.status === "ERROR" || s.ml?.status === "DEGRADED" ? "bad" : "muted")}
+          title={s.ml?.reason || ""}>
+          <i className="dot" />ML <b>{s.ml?.mode ?? "…"} · {s.ml?.status ?? "…"}</b>
         </span>
         {autoErr && <span className="chip bad" title={autoErr}><i className="dot" />AUTO: błąd zapisu</span>}
         {mode.kill_switch && <span className="chip bad"><i className="dot" />NOWE WEJŚCIA ZATRZYMANE</span>}

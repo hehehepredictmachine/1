@@ -76,7 +76,7 @@ class PositionManager:
 
     # ------------------------------------------------------------ unknown attempts
     def _resolve_unknown(self) -> None:
-        rows = self.db.query("SELECT * FROM order_attempts WHERE state IN ('SENDING','UNKNOWN') AND mode IN ('DEMO_EXECUTION','LIVE_EXECUTION') AND account_key=?",
+        rows = self.db.query("SELECT * FROM order_attempts WHERE state IN ('SENDING','UNKNOWN') AND mode IN ('AUTO_DEMO','AUTO_LIVE') AND account_key=?",
                              (self.bridge.account_key,))
         if not rows:
             return
@@ -116,7 +116,7 @@ class PositionManager:
     # ------------------------------------------------------------ MT5 positions
     def _manage_mt5_positions(self) -> None:
         b = self.bridge
-        rows = self.db.query("SELECT * FROM managed_positions WHERE state='OPEN' AND mode IN ('DEMO_EXECUTION','LIVE_EXECUTION') AND account_key=?",
+        rows = self.db.query("SELECT * FROM managed_positions WHERE state='OPEN' AND mode IN ('AUTO_DEMO','AUTO_LIVE') AND account_key=?",
                              (b.account_key,))
         if not rows:
             return
@@ -316,7 +316,7 @@ class PositionManager:
             return {"ok": False, "error": "POSITION_NOT_FOUND"}
         key = f"ADOPTED:{b.account_key}:{ticket}"
         mode = self.modes.gate(b.account_key)["mode"]
-        if mode not in ("DEMO_EXECUTION", "LIVE_EXECUTION"):
+        if mode not in ("AUTO_DEMO", "AUTO_LIVE"):
             return {"ok": False, "error": "ADOPTION_REQUIRES_EXECUTION_MODE"}
         self.db.execute("""INSERT OR IGNORE INTO managed_positions(position_key, mode, account_key, position_ticket, symbol, side, volume_initial, volume_open,
                            entry_price, sl, tp2, state, adopted, opened_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",

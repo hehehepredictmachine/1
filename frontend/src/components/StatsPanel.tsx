@@ -3,7 +3,7 @@ import { AreaSeries, ColorType, createChart, type IChartApi, type ISeriesApi, ty
 import { useStore } from "../store";
 import { cls, epochSec, fmtNum } from "../util";
 
-const MODES = [["PAPER", "PAPER"], ["DEMO_EXECUTION", "DEMO"], ["LIVE_EXECUTION", "LIVE"]] as const;
+const MODES = [["PAPER", "PAPER"], ["AUTO_DEMO", "DEMO"], ["AUTO_LIVE", "LIVE"]] as const;
 
 export default function StatsPanel({ index, stats, mode, setMode }: { index: number; stats: any; mode: string; setMode: (m: string) => void }) {
   const { s } = useStore();
@@ -50,7 +50,7 @@ export default function StatsPanel({ index, stats, mode, setMode }: { index: num
       </div>
       <div className="stats-grid">
         <div className="stats-main">
-          <label>WYNIK NETTO BOTA ({mode === "PAPER" ? "PAPER" : mode === "DEMO_EXECUTION" ? "DEMO" : "LIVE"})</label>
+          <label>WYNIK NETTO BOTA ({mode === "PAPER" ? "PAPER" : mode === "AUTO_DEMO" ? "DEMO" : "LIVE"})</label>
           <b className={cls("big", (all?.net ?? 0) >= 0 ? "pos" : "neg")}>{all?.trades ? `${fmtNum(all.net)} ${cur}` : "brak danych"}</b>
           <div className="eq-label">{stats?.equity?.label ?? ""}</div>
           <div className={cls("eq-box", stats?.equity?.status !== "OK" && "empty")} ref={box} />

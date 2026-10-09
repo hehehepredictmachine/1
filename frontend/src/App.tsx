@@ -42,7 +42,8 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   const [mode, setMode] = useState(false);
   const [power, setPower] = useState(false);
-  const [statsMode, setStatsMode] = usePersisted<string>("statsmode", "PAPER");
+  const [statsModeRaw, setStatsMode] = usePersisted<string>("statsmode", "PAPER");
+  const statsMode = ["PAPER", "AUTO_DEMO", "AUTO_LIVE"].includes(statsModeRaw) ? statsModeRaw : "PAPER";   // 1.2 names migrated
   const [stats, setStats] = useState<any>(null);
   const [autoFull, reloadAuto] = useAutoFull();
   const { prefs } = useAppearance();
