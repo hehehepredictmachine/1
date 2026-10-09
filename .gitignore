@@ -1,5 +1,5 @@
 # local user data - never packaged
-data/
+/data/
 .venv/
 .venv*/
 node_modules/

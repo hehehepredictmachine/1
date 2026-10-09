@@ -249,6 +249,42 @@ class TestExecution(unittest.TestCase):
         st = self.db.one("SELECT state FROM order_attempts WHERE setup_id='MQS-T2'")["state"]
         self.assertEqual(st, "FILLED")
 
+    def test_tp1_partial_and_breakeven_demo_and_paper(self):
+        acct = self.b.account_status()
+        self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+        d = self.decision(setup_id="MQS-TP")
+        d["risk"]["lots"] = 0.10
+        self.engine.decision = d
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        q = self.b.quote_status()
+        # put TP1 just above the market for the SHORT so it is "reached" now
+        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='DEMO_EXECUTION'", (q["ask"] + 1.0,))
+        self.b._t_account = 0
+        self.assertTrue(wait_for(lambda: bool(self.b.positions), 10))
+        self.mgr.tick()
+        self.b._t_account = 0
+        self.assertTrue(wait_for(lambda: self.b.positions and abs(self.b.positions[0]["volume"] - 0.05) < 1e-9, 10))
+        self.mgr.tick()
+        mp = self.db.one("SELECT * FROM managed_positions WHERE mode='DEMO_EXECUTION'")
+        self.assertEqual(mp["tp1_done"], 1)
+        self.assertEqual(mp["be_done"], 1)
+        self.assertAlmostEqual(self.fake.positions_get()[0].sl, mp["entry_price"])
+        # PAPER (commission configured explicitly; unknown commission is blocked earlier by the risk gate)
+        self.cfg.update({"costs": {"commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.5}})
+        self.modes.set_mode("PAPER", confirm="PAPER", account=acct, account_key=self.b.account_key, synthetic=True)
+        d = self.decision(setup_id="MQS-TP-P")
+        d["risk"]["lots"] = 0.10
+        self.engine.decision = d
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='PAPER'", (self.b.quote_status()["ask"] + 1.0,))
+        self.mgr.tick()
+        mp = self.db.one("SELECT * FROM managed_positions WHERE mode='PAPER'")
+        self.assertAlmostEqual(mp["volume_open"], 0.05)
+        self.assertEqual(mp["sl"], mp["entry_price"])
+        t = self.db.one("SELECT * FROM trades WHERE mode='PAPER'")
+        self.assertIsNotNone(t)
+        self.assertLess(t["commission"], 0)  # commission included, entry side once
+
     def test_broker_rejection_recorded(self):
         acct = self.b.account_status()
         self.modes.set_mode("DEMO_EXECUTION", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
