@@ -1,4 +1,4 @@
-# Raport testów – MasterQUO AI 1.1.0
+# Raport testów – MasterQUO AI 1.2.0
 
 Środowisko wykonania testów: **Linux, Python 3.13.16**, kontener budowy (nie Windows, nie Twój terminal).
 Data przebiegu: 2026-10-09 (wersja 1.1 – łagodniejsze bramki). Komenda: `python tools/run_tests.py --legacy` (na Windows: `05_TESTY_OFFLINE.bat --legacy`).
@@ -59,3 +59,34 @@ Statusy: **PASS** – uruchomione i przeszło; **FAIL** – uruchomione i nie pr
 
 Znaleziony i naprawiony przy tej kontroli błąd: wzorzec `data/` w `.gitignore` wykluczał też pakiet źródłowy `backend/masterquo/data/`
 (moduł jakości danych) – pierwsza próba testów z rozpakowanej paczki dała 10 błędów importu. Wzorzec zakotwiczono jako `/data/`.
+
+
+## 6. Wersja 1.2 – ACTIVE, 10 strategii, AUTO, animowany monitor (2026-10-09)
+Komenda: `python tools/run_tests.py` → **Ran 101 tests … OK** (Linux, Python 3.13.16, symulator terminala, atrapa Claude).
+
+| Plik | Testy | Zakres | Status |
+|---|---|---|---|
+| `tests/test_strategies.py` | 16 (pętle po 10 strategiach) | dokładnie 10 strategii w rejestrze; dla KAŻDEJ: LONG i SHORT (ceny odbite) z SL/celami po właściwej stronie i symetrią ryzyka, near-miss (płaska świeca – brak triggera), trigger na świecy niezamkniętej nigdy nie potwierdza, warm-up, brak wymaganych danych (reszta skanera działa), determinizm; punktacja (CONFIRMED wymaga triggera, 0 pkt za nieznane składniki), przyczynowość wskaźników (brak look-ahead), Donchian bez bieżącej świecy, pivot dostępny po prawych świecach; tracker dla KAŻDEJ strategii: deduplikacja, odtworzenie po restarcie, natychmiastowe unieważnienie, wygaśnięcie; STALE nie tworzy setupów; histereza obniżenia etapu; selektor: trend → range → ekspansja, brak przełączania przy identycznych danych i małej różnicy, konflikt LONG/SHORT, grupowanie event_id, MANUAL z niedopasowaniem, STALE; decyzja ACTIVE: obserwacja ≠ uprawnienie, „Dopuść do handlu” | PASS (SYNTETYCZNE scenariusze) |
+| `tests/test_active_pipeline.py` | 3 | symulator MT5: AUTO działa bez klucza Claude i bez DXY, zmiana AUTO/MANUAL nie włącza zleceń; utrata MT5 → STALE/brak wyboru, reconnect → OK; wybrany CONFIRMED setup → jedno zlecenie PAPER, setup ENTERED, wyłączenie handlu strategii blokuje, zmiana wyboru nie modyfikuje otwartej pozycji | PASS |
+| `tests/test_app_process.py` | +3 (razem 9) | prawdziwy proces: kontrakt AUTO, CSRF/Origin, MANUAL/toggle zapisane w backendzie, tryb READ_ONLY i wykonywanie zleceń bez zmian; backend skanuje bez otwartej przeglądarki; GIF żaby 336×468/22 klatki/przezroczystość, upload GIF (403 bez CSRF, 400 dla nie-GIF, 200 + serwowanie) | PASS |
+| pozostałe (1.0/1.1) | 79 | bez zmian merytorycznych; testy ścieżki oryginalnej jawnie w profilu ORIGINAL | PASS |
+
+### Monitor (Playwright, Chromium, DANE SYNTETYCZNE)
+| Sprawdzenie | Wynik | Status |
+|---|---|---|
+| Żaba animowana (FULL): dwa zrzuty elementu w odstępie 430 ms | różne (hash) | PASS |
+| OFF: dwa zrzuty w odstępie 430 ms; `src` = `frog-dance-static.png` | identyczne | PASS |
+| Tło: warstwa `pointer-events: none`, pod interfejsem | tak | PASS |
+| Tło animowane | otrzymany plik jest statyczny (1 klatka) – animacja po wgraniu oryginału; ścieżkę uploadu i serwowania sprawdza test_08 (wgranym GIF-em testowym) | NOT_RUN dla oryginalnego GIF-a tła |
+| Nakładanie żaby i BALANCE, poziomy scroll – 1920×1080, 1366×768, 420×900 | brak / brak | PASS |
+| Błędy konsoli | brak | PASS |
+| Obciążenie UI 10 s @1920×1080: FULL vs OFF | FULL 59 fps, 0 long tasks; OFF 60 fps, 0 long tasks; sterta JS 17–18 MB | PASS |
+| Opóźnienie aktualizacji (WebSocket, lokalnie) | quote: mediana 1,6 ms, maks 28,6 ms; auto: mediana 3,6 ms | PASS |
+| Czas skanu 10 strategii (backend, symulator) | ~85–120 ms na skan, skan co ≥ 2 s tylko przy nowych danych | PASS |
+
+### NOT_RUN (1.2)
+* Replay i OOS na danych Twojego brokera – brak eksportu CSV z Twojego MT5 w tym środowisku (narzędzie: `tools/replay_strategies.py --csv-dir data\export_mt5_six_tf`).
+* Forward test DEMO – wymaga Twojego terminala i czasu.
+* Animacja oryginalnego GIF-a tła – plik nie dotarł w postaci animowanej.
+* Weryfikacja źródeł książkowych – serwisy wydawców niedostępne (DNS), patrz `docs/ZRODLA_I_ADAPTACJE.md`.
+* Windows/MT5/Claude API – jak w sekcji 4.

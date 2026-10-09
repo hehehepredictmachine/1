@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP_NAME = "MasterQUO_CLAUDE_MT5_BROWSER_FULL.zip"
+ZIP_NAME = "MasterQUO_AUTO_STRATEGY_ANIMATED_MONITOR.zip"
 TOP = "MasterQUO_AI/"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 
