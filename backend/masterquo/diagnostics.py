@@ -47,12 +47,26 @@ def doctor() -> int:
     chk("Python", OK if sys.version_info[:2] in ((3, 12), (3, 13)) and bits == 64 else (WARN if bits == 64 else FAIL),
         f"{sys.version.split()[0]} {bits}-bit ({sys.executable})")
     chk("System", OK if sys.platform == "win32" else WARN, platform.platform())
-    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets"):
+    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets", "scipy", "sklearn", "xgboost", "joblib"):
         try:
             m = importlib.import_module(mod)
             chk(f"Pakiet {mod}", OK, getattr(m, "__version__", "?"))
         except Exception as exc:
             chk(f"Pakiet {mod}", FAIL, f"{type(exc).__name__}: {exc}")
+    # ML smoke test: both model families really fit and predict on this machine (tiny synthetic arrays, CPU, 1 thread)
+    try:
+        import numpy as np
+        from sklearn.tree import DecisionTreeClassifier
+        import xgboost as xgb
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(80, 3))
+        X[::7, 1] = np.nan
+        y = (X[:, 0] > 0).astype(int)
+        DecisionTreeClassifier(max_depth=2, random_state=0).fit(X, y).predict_proba(X)
+        xgb.XGBClassifier(n_estimators=5, max_depth=2, n_jobs=1, tree_method="hist").fit(X, y).predict_proba(X)
+        chk("ML: Decision Tree + XGBoost (test działania)", OK, "trening i predykcja na danych testowych OK (to nie jest model handlowy)")
+    except Exception as exc:
+        chk("ML: Decision Tree + XGBoost (test działania)", FAIL, f"{type(exc).__name__}: {exc}")
     cfg = ConfigStore().get()
     chk("Symbol brokera (config)", OK, cfg.mt5.symbol)
     dist = paths.FRONTEND_DIST / "index.html"

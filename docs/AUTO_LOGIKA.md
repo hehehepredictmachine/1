@@ -3,7 +3,7 @@
 ## Definicje
 * `strategy_mode = AUTO` – bot ocenia rynek, skanuje wszystkie strategie z włączonym skanowaniem, wybiera główną i aktualizuje wybór.
 * `strategy_mode = MANUAL` – rozważana jest tylko wskazana strategia; nadal obowiązują jej warunki, dane i unieważnienia; niedopasowanie do reżimu jest pokazywane.
-* **AUTO nie składa zleceń.** Wykonanie zależy od osobnych ustawień: tryb (READ_ONLY/PAPER/DEMO/LIVE), przełącznik „Wykonywanie zleceń”,
+* **AUTO nie składa zleceń.** Wykonanie zależy od osobnych ustawień: tryb wykonania (SIGNALS/PAPER/AUTO_DEMO/AUTO_LIVE), STOP nowych wejść,
   limity ryzyka, bramka AI, zgoda strategii na handel („Dopuść do handlu”). Zmiana AUTO/MANUAL nie zmienia żadnego z nich (test `test_06_auto_strategy_api_separate_from_execution`).
 * Profil `ACTIVE` (domyślny) = S01–S10 + AUTO. Profil `ORIGINAL` = wyłącznie dotychczasowy M07/M10A (jak w 1.1).
 

@@ -46,3 +46,13 @@
 * **Tło**: animowanego oryginału (20 klatek) nie otrzymałem – w paczce jest statyczny kadr; animację włącza wgranie oryginalnego GIF-a.
 * Kadr statyczny wgranego GIF-a liczy przeglądarka (ImageDecoder; zapas: canvas) – starsze przeglądarki bez ImageDecoder pokażą pierwszy
   zdekodowany kadr.
+
+## 1.3 – ML, wykresy, kolory
+* Modele DT/XGBoost nie mają jeszcze danych z Twojego rachunku – do ~1000 potwierdzonych setupów z etykietą bot działa bez ML (SHADOW/fallback).
+  Przy obecnej częstości setupów zebranie danych zajmie tygodnie; backfill z MT5 jest jakości APPROX i domyślnie poza treningiem.
+* Bufor kwotowań (do rozstrzygania SL i TP w jednej minucie) istnieje tylko w pamięci od startu aplikacji; po restarcie takie przypadki
+  z przerwy stają się AMBIGUOUS (nie są zgadywane).
+* Etykieta jest hipotetyczna (plan setupu, model kosztów MQ-COST-1.0.0). Prowizja nieznana = 0 z flagą COMMISSION_UNKNOWN_ASSUMED_0.
+* Kryteria promocji są ostrożne – na małych danych żaden model nie zostanie championem; to zamierzone.
+* Picker nie zmienia pikseli animacji GIF (tylko przyciemnienie i przezroczystość warstw).
+* Stan widoku wykresów i motyw są zapisane w przeglądarce (localStorage) – inna przeglądarka/profil ma własne ustawienia.
