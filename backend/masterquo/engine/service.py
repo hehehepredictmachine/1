@@ -145,7 +145,7 @@ class EngineService:
         if dq["analysis_allowed"]:
             snap = build_snapshot(snapshot_id=sid, analysis_id=f"MQAI-{self.bus.boot_id}", as_of=as_of, symbol=sym, alias=alias,
                                   closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"])
-            legacy_out = self.legacy.run(snap, cfg.strategy.mode)
+            legacy_out = self.legacy.run(snap, cfg.strategy.mode, cfg.strategy.structure_policy)
         else:
             legacy_out["errors"].append("ANALYSIS_NOT_ALLOWED_BY_DATA_GATE")
         transitions = []
@@ -162,7 +162,7 @@ class EngineService:
         if dq["analysis_allowed"]:
             current_ids = {lifecycle.setup_id_for(plan, account_key)} if plan else set()
             for rec in self.lifecycle.active(account_key, sym):
-                rec, trs = self.lifecycle.evaluate(rec["setup_id"], closed[rec["setup_tf"]])
+                rec, trs = self.lifecycle.evaluate(rec["setup_id"], closed[rec["setup_tf"]], cfg.strategy.confirmed_window_bars)
                 for tr in trs:
                     self.log.info("ENGINE", "SETUP_" + tr["state"], f"Setup {rec['strategy_id']} {rec['direction']}: {tr['from']} → {tr['state']} ({tr['reason']})",
                                   {"setup_id": rec["setup_id"]})

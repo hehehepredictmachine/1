@@ -141,11 +141,32 @@ class TestAgent(unittest.TestCase):
     def test_no_key_means_unavailable_gate(self):
         os.environ.pop("ANTHROPIC_API_KEY")
         g = self.agent.gate_for(CTX["setup"], session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:01:00Z")
+        self.assertEqual(g["status"], "NOT_REQUIRED")                    # default VETO: no key never blocks
+        self.assertIn("AI_NO_VETO_AI_UNAVAILABLE_NO_KEY", g["reason_codes"])
+        self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})
+        g = self.agent.gate_for(CTX["setup"], session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:01:00Z")
         self.assertEqual(g["status"], "UNAVAILABLE")
         self.assertIn("AI_UNAVAILABLE_NO_KEY", g["reason_codes"])
         self.assertEqual(self.agent._preflight({"trigger": "SETUP_CONFIRMED"}), "AI_UNAVAILABLE_NO_KEY")
 
+    def test_veto_policy(self):
+        setup, now = CTX["setup"], "2026-10-08T12:01:00Z"          # confirmed 60 s before `now`
+        g = lambda t=now, **kw: self.agent.gate_for(setup, session_epoch=kw.get("ep", 1), account_key="srv:1", now_iso=t)  # noqa: E731
+        self.assertEqual(g("2026-10-08T11:59:30Z")["status"], "PENDING")      # waits ai_wait_seconds for a possible veto
+        self.assertEqual(g("2026-10-08T12:00:30Z")["status"], "NOT_REQUIRED")  # no answer after the wait -> no veto
+        r, _ = self.run_with([msg([text(json.dumps(answer(proposed_action="WAIT")))], "end_turn")])
+        self.agent.by_setup["MQS-1"] = r
+        self.assertEqual(g()["status"], "DISAGREE")                            # explicit disagreement still blocks
+        self.assertEqual(g(ep=2)["status"], "NOT_REQUIRED")                    # stale assessment is not a veto
+        r, _ = self.run_with([msg([text(json.dumps(answer()))], "end_turn")])
+        self.agent.by_setup["MQS-1"] = r
+        self.assertEqual(g()["status"], "PASS")
+        self.cfg.update({"agent": {"gate_policy": "ADVISORY"}})
+        self.agent.by_setup["MQS-1"] = {"status": "OK", **{k: v for k, v in r.items() if k != "status"}, "record": dict(r["record"], proposed_action="WAIT")}
+        self.assertEqual(g()["status"], "NOT_REQUIRED")                        # advisory never blocks
+
     def test_gate_rules(self):
+        self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})
         r, _ = self.run_with([msg([text(json.dumps(answer()))], "end_turn")])
         self.agent.by_setup["MQS-1"] = r
         now = "2026-10-08T12:01:00Z"

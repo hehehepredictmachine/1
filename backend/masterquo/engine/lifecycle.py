@@ -125,7 +125,7 @@ class LifecycleStore:
         self._save(rec)
         return rec
 
-    def evaluate(self, setup_id: str, closed_bars: list[dict]) -> tuple[dict, list[dict]]:
+    def evaluate(self, setup_id: str, closed_bars: list[dict], confirmed_window_bars: int = CONFIRMED_WINDOW_BARS) -> tuple[dict, list[dict]]:
         """Replay all not-yet-evaluated closed bars of the setup TF. Returns (record, transitions)."""
         rec = self._row(setup_id)
         transitions: list[dict] = []
@@ -159,7 +159,7 @@ class LifecycleStore:
             elif state == "CONFIRMED":
                 conf_bars = sum(1 for x in rec["change_log"] if x.get("event") == "WINDOW_BAR")
                 rec["change_log"].append({"at": bar["available_at"], "event": "WINDOW_BAR", "state": state, "bar_open_utc": bar["open_utc"]})
-                if conf_bars + 1 >= CONFIRMED_WINDOW_BARS:
+                if conf_bars + 1 >= confirmed_window_bars:
                     event, new_state, reason = "EXPIRE", "MISSED_ENTRY", "ENTRY_WINDOW_ELAPSED"
             else:
                 rule_name = NEXT_RULE[state]

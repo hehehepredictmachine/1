@@ -19,7 +19,8 @@
   rekonstruowane w eksporcie historii (offset stosowany jednolicie – zapisane w manifeście).
 * **Model sesji** uczy się przerw z historii H1 (godziny bez świec ≥ 80% dni). Święta i nietypowe sesje mogą być oznaczone jako luka
   niewyjaśniona (bezpieczna strona: blokada wejść na danym TF).
-* **Kalendarz makro jest częściowy** (BLS + FF/MM tygodniowo). Przy domyślnym `macro_block_high_impact=true` brak kalendarza blokuje wejścia.
+* **Kalendarz makro jest częściowy** (BLS + FF/MM tygodniowo). Wejścia blokuje tylko znane okno wydarzenia wysokiego wpływu; brak kalendarza nie blokuje (chyba że włączysz `macro_calendar_required`) – wydarzenie, którego źródła nie podały, nie zatrzyma wejścia.
+* **Łagodniejsze domyślne bramki (od 1.1)** – więcej setupów kosztem selektywności: kierunek z H1 także przeciw H4 (`H1_LEAD`), RR od 1,0 (1,0–1,5 z połową ryzyka), AI tylko jako weto, okno wejścia 3 świece, poślizg 20 pkt w koszcie. Nie ma dowodu, że to poprawia wyniki – porównaj w PAPER z `STRICT_H4_H1` i progami oryginału.
 * **Sentyment rynkowy** nie jest dostępny (brak zweryfikowanego źródła) – panel pokazuje to wprost.
 * **Prowizja** z historii transakcji wymaga ≥ 3 transakcji na symbolu; inaczej trzeba ją wpisać (bez tego wykonanie jest blokowane).
 * **Netting**: istniejąca pozycja na symbolu blokuje nowe wejście (bez dokładania/odwracania).

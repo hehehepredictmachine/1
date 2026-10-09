@@ -85,6 +85,13 @@ class StrategyConfig(_Strict):
     setup_ttl_bars: int = Field(24, ge=3, le=500)
     # D1 is context only; when True a D1 trend opposing the H4/H1 structure blocks entries.
     d1_conflict_blocks_entry: bool = False
+    # How the H4/H1 structural direction is resolved before M07 looks for setups.
+    #   STRICT_H4_H1        original M02 rule: H4 and H1 must agree (fewest setups)
+    #   H1_H4_NOT_OPPOSING  H1 decides when H4 is neutral/unknown; opposite H4 -> no direction
+    #   H1_LEAD             H1 decides; an opposite H4 is reported as STRUCTURE_COUNTER_H4 (most setups)
+    structure_policy: Literal["STRICT_H4_H1", "H1_H4_NOT_OPPOSING", "H1_LEAD"] = "H1_LEAD"
+    # Closed setup-TF bars a CONFIRMED setup stays executable before MISSED_ENTRY.
+    confirmed_window_bars: int = Field(3, ge=1, le=20)
     # DXY is optional. No built-in strategy requires it; listed strategies would block without it.
     strategies_requiring_dxy: list[str] = Field(default_factory=list)
     # Target rule (MasterQUO AI extension, provisional - see docs).
@@ -103,12 +110,17 @@ class RiskLimits(_Strict):
     cooldown_minutes_after_loss: int | None = Field(None, ge=0, le=1440)
     min_free_margin_buffer_pct: float | None = Field(None, ge=0, le=95)
     # RR policy inherited from M11 v4.1 (<1.5 BLOCKED, 1.5..2.0 CONDITIONAL, >=2 PASS).
-    rr_block_below: float = Field(1.5, ge=0.5, le=10)
-    rr_pass_from: float = Field(2.0, ge=0.5, le=20)
+    rr_block_below: float = Field(1.0, ge=0.3, le=10)
+    rr_pass_from: float = Field(1.5, ge=0.3, le=20)
+    # RR between the two thresholds: execute with risk scaled by conditional_risk_factor
+    # (False = original M11 behaviour: CONDITIONAL never executes).
+    conditional_rr_executes: bool = True
+    conditional_risk_factor: float = Field(0.5, gt=0, le=1)
     # Day boundary for the daily loss limit: broker server midnight (documented in docs).
     daily_reset: Literal["BROKER_SERVER_MIDNIGHT", "UTC_MIDNIGHT"] = "BROKER_SERVER_MIDNIGHT"
     max_spread_points: float | None = Field(None, gt=0)
-    macro_block_high_impact: bool = True
+    macro_block_high_impact: bool = True  # blocks only inside a known high-impact event window
+    macro_calendar_required: bool = False  # True: a missing/unavailable calendar blocks entries
 
 
 class CostConfig(_Strict):
@@ -116,7 +128,7 @@ class CostConfig(_Strict):
     account_profile: str = "ZERO_DECLARED_COSTS_UNVERIFIED"
     commission_mode: Literal["UNKNOWN", "CONFIGURED", "FROM_DEAL_HISTORY"] = "FROM_DEAL_HISTORY"
     commission_per_lot_per_side: float | None = Field(None, ge=0)
-    slippage_stress_points: float | None = Field(None, ge=0)
+    slippage_stress_points: float | None = Field(20.0, ge=0)
     # Found in sources (M01 v4.2.1 §12): "spread do 40%" with no denominator. Not used.
     spread_40pct_rule: Literal["REQUIRES_DEFINITION"] = "REQUIRES_DEFINITION"
 
@@ -130,7 +142,13 @@ class AgentConfig(_Strict):
     request_timeout_seconds: float = Field(90.0, ge=10, le=600)
     min_interval_seconds: float = Field(120.0, ge=10, le=86400)
     daily_budget_usd: float = Field(3.0, ge=0.05, le=500)
-    required_for_entry: bool = True
+    required_for_entry: bool = True  # False = ADVISORY regardless of gate_policy
+    # REQUIRED: only a fresh agreeing assessment passes (no key/error/timeout blocks).
+    # VETO:     Claude blocks only by explicitly disagreeing; no key, errors or no answer within
+    #           ai_wait_seconds do not block.
+    # ADVISORY: Claude never blocks; assessments are informational.
+    gate_policy: Literal["REQUIRED", "VETO", "ADVISORY"] = "VETO"
+    ai_wait_seconds: float = Field(60.0, ge=0, le=900)
     decision_ttl_seconds: int = Field(900, ge=60, le=86400)
     use_refusal_fallback: bool = True
     # Price table for *estimates* only (USD per 1M tokens), cached 2026-10-06.
@@ -166,7 +184,7 @@ class ExecutionConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 1
+    config_version: int = 2
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -192,7 +210,11 @@ class ConfigStore:
     def _load(self) -> AppConfig:
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            return AppConfig.model_validate(raw)
+            migrated = migrate(raw)
+            cfg = AppConfig.model_validate(raw)
+            if migrated:
+                self._write(cfg)
+            return cfg
         if paths.DEFAULTS_FILE.exists():
             cfg = AppConfig.model_validate(json.loads(paths.DEFAULTS_FILE.read_text(encoding="utf-8")))
         else:
@@ -224,6 +246,30 @@ class ConfigStore:
     def set_runtime_flag(self, **flags) -> None:
         with self._lock:
             self._cfg = self._cfg.model_copy(update=flags)
+
+
+# v1 -> v2: less restrictive defaults. A value is replaced only when it still equals the old
+# default, so settings the user chose deliberately are kept.
+_V2_CHANGES = [
+    (("risk", "rr_block_below"), 1.5, 1.0),
+    (("risk", "rr_pass_from"), 2.0, 1.5),
+    (("costs", "slippage_stress_points"), None, 20.0),
+]
+
+
+def migrate(raw: dict) -> bool:
+    """In-place upgrade of a stored config dict. Returns True when something changed."""
+    if int(raw.get("config_version", 1)) >= 2:
+        return False
+    for (sec, key), old, new in _V2_CHANGES:
+        part = raw.get(sec)
+        if isinstance(part, dict) and part.get(key, old) == old:
+            part[key] = new
+    agent = raw.get("agent")
+    if isinstance(agent, dict) and "gate_policy" not in agent:
+        agent["gate_policy"] = "ADVISORY" if agent.get("required_for_entry") is False else "VETO"
+    raw["config_version"] = 2
+    return True
 
 
 def _deep_merge(base: dict, patch: dict) -> dict:

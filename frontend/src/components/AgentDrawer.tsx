@@ -52,7 +52,7 @@ export default function AgentDrawer({ onClose }: { onClose: () => void }) {
           <div><label>Model</label><b>{st.model ?? "nie wybrano"}</b></div>
           <div><label>Klucz</label><b>{st.key_source === "MISSING" ? "brak" : `${st.key_source} ${st.key_masked ?? ""}`}</b></div>
           <div><label>Koszt dziś (szac.)</label><b>{fmtNum(st.spent_today_usd_estimate, 3)} / {fmtNum(st.daily_budget_usd)} USD</b></div>
-          <div><label>Wymagany do wejścia</label><b>{st.required_for_entry ? "TAK" : "NIE"}</b></div>
+          <div><label>Rola AI</label><b>{st.gate_policy ?? (st.required_for_entry ? "REQUIRED" : "ADVISORY")}</b></div>
           <div><label>Ostatnia analiza</label><b>{st.last_run ? `${fmtTime(st.last_run.finished_at)} · ${st.last_run.status} · ${st.last_run.latency_ms} ms` : "—"}</b></div>
           <div><label>Tokeny (in/out)</label><b>{st.last_run ? `${st.last_run.input_tokens}/${st.last_run.output_tokens}` : "—"}</b></div>
         </div>

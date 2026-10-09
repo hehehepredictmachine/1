@@ -162,6 +162,15 @@ class TestLifecycle(unittest.TestCase):
         rec, trs = self.store.evaluate(rec["setup_id"], bars)
         self.assertEqual(rec["state"], "MISSED_ENTRY")
 
+    def test_confirmed_window_configurable(self):
+        bars = [self._b(1, 100.2, 100.3, 99.6, 99.8), self._b(2, 99.8, 99.9, 99.4, 99.6), self._b(3, 99.6, 99.6, 98.9, 99.0),
+                self._b(4, 99, 99, 98.0, 98.2), self._b(5, 98.2, 98.4, 98.1, 98.3), self._b(6, 98.3, 98.4, 98.1, 98.2)]
+        rec = self._reg(dict(PLAN, frozen_plan_hash="h-win3"))
+        rec, _ = self.store.evaluate(rec["setup_id"], bars, confirmed_window_bars=3)
+        self.assertEqual(rec["state"], "CONFIRMED")                      # 2 window bars < 3
+        rec, _ = self.store.evaluate(rec["setup_id"], bars + [self._b(7, 98.2, 98.3, 98.1, 98.2)], confirmed_window_bars=3)
+        self.assertEqual(rec["state"], "MISSED_ENTRY")
+
     def test_contradictory_rules_rejected(self):
         bad = json.loads(json.dumps(PLAN))
         bad["frozen_plan_hash"] = "h3"

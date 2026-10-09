@@ -64,3 +64,7 @@ Twojego terminala ani klucza Claude. Do weryfikacji M służą `02_DIAGNOSTYKA.b
 | 56 | Kreator pierwszego uruchomienia (terminal, symbol, klucz, model, test) | §12 | `SettingsModal` | zrzut | T | T | T | NIE |
 | 57 | Tryb demonstracyjny DANE SYNTETYCZNE, osobna baza | §12 | `--demo`, `mt5/fake.py`, baner | zrzuty | T | T | T | — |
 | 58 | Eksport historii 6 TF z czasem UTC | §11 | `diagnostics.export_history` | `test_export_loads_in_m06r` | T | T | T | NIE |
+| 59 | (1.1) Mniej restrykcyjne bramki: polityka struktury H1_LEAD/H1_H4_NOT_OPPOSING/STRICT, kod M02 bez zmian | prośba użytkownika | `engine/legacy.resolve_structure`, `strategy.structure_policy` | `TestStructurePolicy` | T | T | T | NIE |
+| 60 | (1.1) RR warunkowy wykonywany ze zmniejszonym ryzykiem, progi konfigurowalne | prośba użytkownika | `risk/engine.py`, `risk.conditional_*` | `test_rr_thresholds` | T | T | T | NIE |
+| 61 | (1.1) Rola AI: VETO (domyślnie) / REQUIRED / ADVISORY, czekanie na weto | prośba użytkownika | `agent/service.gate_for` | `test_veto_policy`, `test_gate_rules`, `test_no_key_means_unavailable_gate` | T | T | T | NIE |
+| 62 | (1.1) Brak kalendarza makro nie blokuje (okno wydarzenia nadal tak), okno wejścia konfigurowalne, migracja config v1→v2 | prośba użytkownika | `engine/decision.py`, `engine/lifecycle.py`, `config.migrate` | `TestDecisionRelaxed`, `test_confirmed_window_configurable`, `TestConfigMigration` | T | T | T | NIE |

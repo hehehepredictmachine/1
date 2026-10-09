@@ -107,7 +107,7 @@ class ClaudeAgent:
         return {"state": st, "detail": self.state_detail, "model": self.model(), "key_source": key_src,
                 "key_masked": self.secrets.mask("ANTHROPIC_API_KEY"), "effort": self.cfg.effort,
                 "spent_today_usd_estimate": round(self.spent_today(), 4), "daily_budget_usd": self.cfg.daily_budget_usd,
-                "required_for_entry": self.cfg.required_for_entry, "pending": list(self.pending.values()),
+                "required_for_entry": self.policy() == "REQUIRED", "gate_policy": self.policy(), "pending": list(self.pending.values()),
                 "backoff_seconds": max(0, round(self.backoff_until - time.monotonic(), 1)), "last_run": self.last_run_meta,
                 "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura."}
 
@@ -170,10 +170,38 @@ class ClaudeAgent:
             return "MIN_INTERVAL"
         return None
 
+    def policy(self) -> str:
+        return "ADVISORY" if not self.cfg.required_for_entry else self.cfg.gate_policy
+
     def gate_for(self, setup: dict | None, *, session_epoch: int, account_key: str | None, now_iso: str) -> dict:
-        """AI gate for the decision tree. Only a fresh, matching, agreeing assessment passes."""
-        if not self.cfg.required_for_entry:
+        """AI gate for the decision tree, according to agent.gate_policy.
+
+        REQUIRED: only a fresh, matching, agreeing assessment passes.
+        VETO:     only an explicit disagreement blocks; while an assessment is awaited the gate waits
+                  up to ai_wait_seconds after confirmation, then passes (AI_NO_VETO_*).
+        ADVISORY: never blocks.
+        """
+        pol = self.policy()
+        if pol == "ADVISORY":
             return {"status": "NOT_REQUIRED", "reason_codes": ["AI_NOT_REQUIRED_BY_CONFIG"]}
+        g = self._strict_gate(setup, session_epoch=session_epoch, account_key=account_key, now_iso=now_iso)
+        if pol == "REQUIRED" or g["status"] in ("PASS", "DISAGREE"):
+            return g
+        if not setup or setup["state"] != "CONFIRMED":
+            return g
+        codes = g.get("reason_codes") or []
+        waiting = g["status"] == "PENDING" and any(c in ("AI_ASSESSMENT_RUNNING", "AI_ASSESSMENT_MISSING") for c in codes)
+        if waiting:
+            try:
+                age = (parse_iso(now_iso) - parse_iso(setup["state_changed_at"])).total_seconds()
+            except (TypeError, ValueError, KeyError):
+                age = None
+            if age is not None and age < self.cfg.ai_wait_seconds:
+                return {**g, "reason_codes": codes + [f"AI_VETO_WAIT_{int(self.cfg.ai_wait_seconds)}S"]}
+        return {"status": "NOT_REQUIRED", "reason_codes": ["AI_NO_VETO_" + (codes[0] if codes else g["status"])],
+                "agent_decision_id": g.get("agent_decision_id")}
+
+    def _strict_gate(self, setup: dict | None, *, session_epoch: int, account_key: str | None, now_iso: str) -> dict:
         pre = None
         if not self.cfg.enabled:
             pre = "AGENT_DISABLED"

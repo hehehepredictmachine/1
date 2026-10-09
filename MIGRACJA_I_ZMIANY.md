@@ -34,6 +34,20 @@ Testy: `test_mode_requires_confirmation_and_limits`, `test_read_only_blocks_real
 | eksporter M06R (czas serwera jako UTC) | nowe `python -m masterquo export` (UTC, manifest z offsetem) | spójność z kalendarzem makro |
 | M06H/M06R/M06T | bez zmian w `research/` | działające narzędzia badawcze |
 
+## Wersja 1.1 – mniej restrykcyjne domyślne bramki
+| Bramka | 1.0 (oryginał MasterQUO) | 1.1 domyślnie | Gdzie przywrócić |
+|---|---|---|---|
+| Kierunek struktury | H4 i H1 zgodne | `H1_LEAD`: decyduje H1, przeciwny H4 tylko oznaczony | Ustawienia → Strategia → Kierunek struktury = `STRICT_H4_H1` |
+| RR netto | < 1,5 blokada, 1,5–2 bez wykonania | < 1,0 blokada, 1,0–1,5 wejście z ryzykiem × 0,5, ≥ 1,5 pełne | Ustawienia → Ryzyko |
+| Agent Claude | wymagana zgodna ocena | VETO: blokuje tylko jawna niezgoda; czeka max 60 s | Ustawienia → Agent Claude → Rola AI = `REQUIRED` |
+| Kalendarz makro | brak kalendarza = blokada | blokuje tylko okno wydarzenia | „Brak kalendarza makro blokuje wejścia” |
+| Poślizg | nieustawiony = blokada | 20 punktów doliczane do kosztu | Ustawienia → Koszty |
+| Okno wejścia po potwierdzeniu | 2 świece | 3 świece | Ustawienia → Strategia |
+
+Bez zmian (ochrona kapitału): jakość danych i czas, rynek zamknięty, limity ryzyka, dzienny stop, drawdown, min. lot bez zaokrąglania w górę,
+nieznana prowizja, potwierdzenie setupu (CONFIRMED), tryb i rachunek. Plik `data\config.json` z 1.0 jest migrowany automatycznie
+(`config_version` 2): zmieniane są tylko wartości równe staremu domyślnemu – Twoje własne ustawienia zostają.
+
 ## Kod skopiowany bez zmian
 `backend/vendor/legacy_core`, `backend/vendor/mq_upgrades`, `backend/vendor/m04n` (bez plików `.bat`), `research/03_ANALIZA_HISTORYCZNA`.
 Kontrola: `backend/vendor/VENDOR_MANIFEST.json` (141 plików, wszystkie identyczne z paczką) + test `TestVendoredEnginesUnchanged`.

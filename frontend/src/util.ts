@@ -54,6 +54,9 @@ export const REASON_PL: Record<string, string> = {
   M02_STRUCTURE_UNKNOWN: "Struktura M02 nieustalona (H4 i H1 w różnych kierunkach)",
   M02_STRUCTURE_NEUTRAL: "Struktura M02 neutralna (H4 i H1 bez trendu)",
   RISK_EVALUATED: "Ryzyko nieliczone – brak setupu",
+  STRUCTURE_COUNTER_H4: "Setup przeciw kierunkowi H4 (polityka H1_LEAD)",
+  AI_ASSESSMENT_RUNNING: "Czekam na ocenę Claude",
+  AI_ASSESSMENT_MISSING: "Brak oceny Claude",
   SETUP: "Brak setupu MasterQUO",
   FROZEN_M07_SETUP: "Brak zamrożonego setupu M07",
   M10A_CONFIRMED: "Setup niepotwierdzony (M10A)",
@@ -73,7 +76,11 @@ export const REASON_PL: Record<string, string> = {
 export function reasonPl(code: string): string {
   if (REASON_PL[code]) return REASON_PL[code];
   if (code.startsWith("RR_NET_BELOW")) return "RR netto poniżej progu blokady";
+  if (code.startsWith("RR_NET_CONDITIONAL_REDUCED_RISK")) return "RR netto warunkowy – wejście z mniejszym ryzykiem (x" + code.split("_X").pop() + ")";
   if (code.startsWith("RR_NET_CONDITIONAL")) return "RR netto warunkowy – bez wykonania";
+  if (code.startsWith("AI_VETO_WAIT_")) return "Czekam na ewentualne weto Claude";
+  if (code.startsWith("AI_NO_VETO_")) return "Claude nie zgłosił weta – nie blokuje";
+  if (code.startsWith("STRUCTURE_H1_LEADS_")) return "Kierunek z H1 (H4: " + code.split("_").pop() + ")";
   if (code.endsWith("_INSUFFICIENT_HISTORY")) return `${code.split("_")[0]}: za mało historii (WARMING_UP)`;
   if (code.startsWith("SETUP_STATE_")) return "Etap setupu: " + code.slice(12);
   if (code.startsWith("AI_")) return "Agent: " + code.slice(3).replace(/_/g, " ").toLowerCase();

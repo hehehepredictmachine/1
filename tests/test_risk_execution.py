@@ -84,13 +84,27 @@ class TestRisk(unittest.TestCase):
 
     def test_rr_thresholds(self):
         from masterquo.risk import engine as R
-        c = self.cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 0}})
-        lv = {"status": "AVAILABLE", "stop_loss": 2010.0, "targets": [{"price": 1985.0, "weight": 1.0}]}  # RR ~1.49
-        r = R.evaluate(side="SHORT", levels=lv, quote={"bid": 2000.0, "ask": 2000.2}, symbol_info=SYM, account={"equity": 1e4, "free_margin": 1e4},
-                       limits=c.risk, costs_cfg=c.costs, commission={"per_lot_per_side": 0.0}, profit_fn=profit, margin_fn=lambda *a: 1.0,
-                       positions=[], deals=[], day_start_raw=0, equity_peak=1e4, open_risk_info={"open_risk": 0, "positions_without_sl": []},
-                       margin_mode="HEDGING", last_bot_loss_at=None, now=datetime.now(UTC), max_spread_points=None, symbol="XAUUSD-")
-        self.assertEqual(r["risk_gate"], "CONDITIONAL")
+
+        def run(**risk):
+            base = {"rr_block_below": 1.0, "rr_pass_from": 1.5, "conditional_rr_executes": True, "conditional_risk_factor": 0.5}
+            c = self.cfg.update({"risk": {**LIMITS, **base, **risk}, "costs": {"slippage_stress_points": 0}})
+            lv = {"status": "AVAILABLE", "stop_loss": 2010.0, "targets": [{"price": 1988.0, "weight": 1.0}]}  # RR 1.2
+            return R.evaluate(side="SHORT", levels=lv, quote={"bid": 2000.0, "ask": 2000.2}, symbol_info=SYM, account={"equity": 1e4, "free_margin": 1e4},
+                              limits=c.risk, costs_cfg=c.costs, commission={"per_lot_per_side": 0.0}, profit_fn=profit, margin_fn=lambda *a: 1.0,
+                              positions=[], deals=[], day_start_raw=0, equity_peak=1e4, open_risk_info={"open_risk": 0, "positions_without_sl": []},
+                              margin_mode="HEDGING", last_bot_loss_at=None, now=datetime.now(UTC), max_spread_points=None, symbol="XAUUSD-")
+        # default (relaxed): 1.0 <= RR < 1.5 executes with half the risk budget
+        r = run()
+        self.assertTrue(1.0 <= r["rr_net"] < 1.5, r["rr_net"])
+        self.assertEqual(r["risk_gate"], "PASS", r["reason_codes"])
+        self.assertEqual(r["risk_factor"], 0.5)
+        full = run(conditional_risk_factor=1.0)
+        self.assertAlmostEqual(r["lots"], full["lots"] / 2, delta=0.011)
+        # original M11 policy is still available
+        self.assertEqual(run(rr_block_below=1.0, rr_pass_from=2.0, conditional_rr_executes=False)["risk_gate"], "CONDITIONAL")
+        self.assertEqual(run(rr_block_below=1.5, rr_pass_from=2.0)["risk_gate"], "BLOCKED")
+        self.assertEqual(run(rr_block_below=1.0, rr_pass_from=1.1)["risk_factor"], 1.0)        # RR 1.2 >= pass threshold -> full risk
+        self.assertEqual(run(conditional_rr_executes=False)["risk_factor"], 1.0)
 
 
 class TestDecisionSeparation(unittest.TestCase):

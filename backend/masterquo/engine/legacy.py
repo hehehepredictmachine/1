@@ -98,6 +98,40 @@ def build_snapshot(*, snapshot_id: str, analysis_id: str, as_of: str, symbol: st
             "account_profile": "ZERO_SPREAD_DECLARED_UNVERIFIED"}
 
 
+def _tf_direction(market: dict, tf: str) -> str:
+    per = (market.get("timeframes") or {}).get(tf) or {}
+    return per.get("direction", "UNKNOWN") if per.get("status") in ("PASS", "PASS_WITH_LIMITATIONS") else "UNKNOWN"
+
+
+def resolve_structure(market: dict, trading_style: str, policy: str) -> dict:
+    """Apply the configured structure policy on top of the unchanged M02 output.
+
+    M02 resolves a structural direction only when both structural timeframes agree (H4+H1 for
+    SCALP). Relaxed policies let the lower structural TF (H1) lead; the result is passed to
+    M03/M07 instead of M02's own value and the original is kept in `structural_direction_m02`.
+    """
+    orig = market.get("structural_direction")
+    out = dict(market)
+    out["structural_direction_m02"] = orig
+    out["structure_policy"] = policy
+    out["structure_notes"] = []
+    if policy == "STRICT_H4_H1" or orig in ("BULLISH", "BEARISH"):
+        return out
+    higher, lead = ("H4", "H1") if trading_style == "SCALP" else ("D1", "H4")
+    d_lead, d_high = _tf_direction(market, lead), _tf_direction(market, higher)
+    if d_lead not in ("BULLISH", "BEARISH"):
+        return out
+    opposite = {"BULLISH": "BEARISH", "BEARISH": "BULLISH"}[d_lead]
+    if d_high == opposite:
+        if policy != "H1_LEAD":
+            return out
+        out["structure_notes"].append(f"STRUCTURE_COUNTER_{higher}")
+    else:
+        out["structure_notes"].append(f"STRUCTURE_{lead}_LEADS_{higher}_{d_high}")
+    out["structural_direction"] = d_lead
+    return out
+
+
 class LegacyEngines:
     def __init__(self, lock_db: Path):
         self.mods = modules()
@@ -108,7 +142,7 @@ class LegacyEngines:
     def reset_memory(self) -> None:
         self.regime_memory = self.mods["m02"].RegimeMemory(self.profiles.m02["regime_confirmation_bars"])
 
-    def run(self, snapshot: dict, mode: str) -> dict:
+    def run(self, snapshot: dict, mode: str, structure_policy: str = "STRICT_H4_H1") -> dict:
         m = self.mods
         out: dict = {"errors": []}
         try:
@@ -118,6 +152,7 @@ class LegacyEngines:
         except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
             out["errors"].append(f"M02:{type(exc).__name__}:{exc}")
             return out
+        market = resolve_structure(market, self.profiles.m02.get("trading_style", "SCALP"), structure_policy)
         out["m02"] = market
         try:
             out["m02i"] = m["m02i"].analyze({"data_snapshot": snapshot, "market_state": market}, self.profiles.m02i)

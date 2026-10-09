@@ -42,7 +42,7 @@ Identyfikator: `MQ-SPEC-RECON-1.0.0` (backend: `version.SPEC_VERSION`). Prompt a
 | M1 | ENTRY_TIMING_CONTEXT | 50 | EMA 9/20, ATR 14, tick volume |
 
 Źródło: `M02I_PROFILE_MT5_TIMEFRAMES_v1.1.json`. Wymagania M02 (35) i M03 (5) są niższe; aplikacja przyjmuje maksimum (D1 = 230).
-**Rozstrzyganie konfliktu TF (jawna reguła):** kierunek strukturalny = zgodność H4 i H1 (M02, `trading_style=SCALP`); taktyczny = M5;
+**Rozstrzyganie konfliktu TF (jawna reguła):** M02 wylicza kierunek strukturalny jako zgodność H4 i H1 (`trading_style=SCALP`). Od 1.1 adapter stosuje `strategy.structure_policy`: domyślnie `H1_LEAD` (decyduje H1; przeciwny H4 oznaczany `STRUCTURE_COUNTER_H4`), opcje `H1_H4_NOT_OPPOSING` i `STRICT_H4_H1` (oryginał). Kod M02 bez zmian, oryginalna wartość w `structural_direction_m02`; taktyczny = M5;
 D1 = kontekst – konflikt D1 jest opisywany (`D1_OPPOSES_H4_H1_STRUCTURE`), a blokuje wejście tylko przy `strategy.d1_conflict_blocks_entry=true`.
 Sześć TF nie jest sześcioma niezależnymi głosami (M07_M03E spec „PROHIBITED”). Wskaźniki rysowane na TF, na którym profil ich nie włącza (np. MACD na M1), są oznaczone `*` jako wizualne.
 
@@ -84,7 +84,7 @@ Zarządzanie: TP1 zamyka `tp1_weight` (50%) wolumenu, potem SL na BE. **Wymaga w
 
 Budżet = equity × ryzyko%; dostępne = min(budżet, limit dzienny − zużyty, limit portfela − otwarte ryzyko). Kalkulator brokera
 `order_calc_profit` dla 1 lota; koszty = prowizja ×2 + stres poślizgu; lot = floor do kroku, nigdy w górę do minimum.
-RR netto < 1,5 BLOCKED; 1,5–2,0 CONDITIONAL (bez wykonania); ≥ 2,0 PASS (sam RR nie autoryzuje). Kill switch nie zamyka pozycji.
+Oryginał M11: RR netto < 1,5 BLOCKED; 1,5–2,0 CONDITIONAL (bez wykonania); ≥ 2,0 PASS. Domyślnie od 1.1: < 1,0 BLOCKED; 1,0–1,5 wejście z ryzykiem × 0,5; ≥ 1,5 pełne ryzyko (progi i mnożnik w Ustawienia → Ryzyko; sam RR nie autoryzuje). Kill switch nie zamyka pozycji.
 **„Spread do 40%”** (M01 v4.2.1 §12): mianownik nieustalony w źródłach → `REQUIRES_DEFINITION`, nieużywane jako filtr.
 
 ## 9. Makro (M04 / M04N v1.1.0)
@@ -97,4 +97,4 @@ DXY opcjonalny (M02I `required_for_xau_direction=false`); blokuje tylko strategi
 ## 10. Agent AI (nowy element, nie z oryginału)
 
 Claude ocenia kandydatów z silnika; nie ustala lota/SL/TP, nie składa zleceń. AI gate przechodzi tylko dla CONFIRMED setupu, tej samej
-sesji/rachunku/stanu setupu, przed wygaśnięciem i przy zgodnym kierunku. Brak AI → blokada wejść wymagających AI (`agent.required_for_entry`).
+sesji/rachunku/stanu setupu, przed wygaśnięciem i przy zgodnym kierunku. Rola AI (`agent.gate_policy`): domyślnie VETO – blokuje tylko jawna niezgoda Claude; brak klucza, błąd lub brak odpowiedzi w `ai_wait_seconds` (60 s) nie blokuje. REQUIRED = wymagana zgodna ocena (zachowanie 1.0), ADVISORY = tylko opinia.

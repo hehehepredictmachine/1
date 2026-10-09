@@ -42,6 +42,7 @@ AUTO TRADING to osobny przełącznik. Restart, zmiana rachunku lub limitów wrac
 * „Kierunek analizy” (LONG/SHORT/NEUTRAL) ≠ „Decyzja” (BUY/SELL/WAIT/NO_TRADE) ≠ „Uprawnienie” (ALLOWED/BLOCKED).
 * Drzewo decyzji pokazuje 7 bramek: dane, rynek, strategia, wyzwalacz, ryzyko, AI, tryb – przy każdej powód blokady.
 * „Jakość” to ocena punktowa, **nie** prawdopodobieństwo wygranej.
+* Domyślne bramki są łagodne (kierunek z H1, RR od 1,0, Claude tylko jako weto). Wersję ścisłą MasterQUO włączysz w Ustawieniach – szczegóły w `MIGRACJA_I_ZMIANY.md`.
 
 ## Gdy coś nie działa
 * „Brak .venv” → uruchom `01_INSTALUJ.bat`.

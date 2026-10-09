@@ -1,7 +1,7 @@
-# Raport testów – MasterQUO AI 1.0.0
+# Raport testów – MasterQUO AI 1.1.0
 
 Środowisko wykonania testów: **Linux, Python 3.13.16**, kontener budowy (nie Windows, nie Twój terminal).
-Data przebiegu: 2026-10-08. Komenda: `python tools/run_tests.py --legacy` (na Windows: `05_TESTY_OFFLINE.bat --legacy`).
+Data przebiegu: 2026-10-09 (wersja 1.1 – łagodniejsze bramki). Komenda: `python tools/run_tests.py --legacy` (na Windows: `05_TESTY_OFFLINE.bat --legacy`).
 Raport maszynowy zapisuje się w `data/logs/testy_offline_*.json`.
 
 Statusy: **PASS** – uruchomione i przeszło; **FAIL** – uruchomione i nie przeszło; **NOT_RUN** – nie uruchomione (z powodem).
@@ -11,13 +11,14 @@ Statusy: **PASS** – uruchomione i przeszło; **FAIL** – uruchomione i nie pr
 | Plik | Testy | Zakres | Status |
 |---|---|---|---|
 | `tests/test_time_and_data.py` | 16 | offset serwera (pomiar, niewyrównana delta → INCONSISTENT, powtórzony tick nie liczony, zmiana DST, sekundy vs ms), świeca z przyszłości przy złym offsecie blokuje, duplikaty/błędne OHLC, luka niewyjaśniona vs weekend, za krótka historia, nieświeży quote, dokładny symbol `XAUUSD-`, bezpieczne domyślne, wymagania historii z profili, brak błędnego symbolu w aktywnym kodzie | PASS |
-| `tests/test_bridge_engine.py` | 13 | 6 TF z dokładnym symbolem, brak podmiany symbolu, rozłączenie/reconnect/zmiana rachunku, gap-fill po pominiętych odczytach, lifecycle M10A (postęp o 1 etap/świecę, unieważnienie, TTL/MISSED_ENTRY, sprzeczne reguły), pivot dostępny dopiero po prawych świecach, snapshot bez świecy formującej, hash silników vendor, MACD signal = SMA | PASS |
-| `tests/test_risk_execution.py` | 21 | brak podwójnego spreadu + RR netto, min lot nigdy w górę, brak limitów blokuje (RR widoczne), nieznana prowizja/poślizg blokuje, netting, dzienna strata bez operacji salda, progi RR, EARLY ≠ wykonanie, READ_ONLY, bramki AI/ryzyka, tryby i potwierdzenia, PAPER bez `order_send` i idempotentny, DEMO jedno zlecenie z SL/TP i po restarcie, timeout → UNKNOWN bez ponowienia + rekonsyliacja, TP1 częściowe + SL→BE (DEMO symulator i PAPER), odrzucenie brokera, decyzja przeterminowana/zastąpiona, brak liczb demo w statystykach, migracje + kopia | PASS |
-| `tests/test_agent.py` | 10 | pętla narzędzi + odpowiedź strukturalna, zły JSON → jedna naprawa, niezgodny snapshot, walidacja argumentów narzędzi, timeout/429/401/model, brak klucza → bramka UNAVAILABLE, reguły bramki, spóźniona odpowiedź nie nadpisuje nowszej, budżet, model z konfiguracji (nie wymyślony) | PASS |
+| `tests/test_bridge_engine.py` | 14 | okno wejścia konfigurowalne (1.1), 6 TF z dokładnym symbolem, brak podmiany symbolu, rozłączenie/reconnect/zmiana rachunku, gap-fill po pominiętych odczytach, lifecycle M10A (postęp o 1 etap/świecę, unieważnienie, TTL/MISSED_ENTRY, sprzeczne reguły), pivot dostępny dopiero po prawych świecach, snapshot bez świecy formującej, hash silników vendor, MACD signal = SMA | PASS |
+| `tests/test_risk_execution.py` | 21 | brak podwójnego spreadu + RR netto, min lot nigdy w górę, brak limitów blokuje (RR widoczne), nieznana prowizja/poślizg blokuje, netting, dzienna strata bez operacji salda, progi RR (1.1: RR warunkowy = połowa ryzyka; oryginał M11 nadal dostępny), EARLY ≠ wykonanie, READ_ONLY, bramki AI/ryzyka, tryby i potwierdzenia, PAPER bez `order_send` i idempotentny, DEMO jedno zlecenie z SL/TP i po restarcie, timeout → UNKNOWN bez ponowienia + rekonsyliacja, TP1 częściowe + SL→BE (DEMO symulator i PAPER), odrzucenie brokera, decyzja przeterminowana/zastąpiona, brak liczb demo w statystykach, migracje + kopia | PASS |
+| `tests/test_agent.py` | 11 | polityka VETO/REQUIRED/ADVISORY (1.1), pętla narzędzi + odpowiedź strukturalna, zły JSON → jedna naprawa, niezgodny snapshot, walidacja argumentów narzędzi, timeout/429/401/model, brak klucza → bramka UNAVAILABLE, reguły bramki, spóźniona odpowiedź nie nadpisuje nowszej, budżet, model z konfiguracji (nie wymyślony) | PASS |
 | `tests/test_app_process.py` | 6 | prawdziwy proces serwera: health + pojedyncza instancja, bezpieczeństwo (Host/Origin/CSRF/cookie), stan i wykresy, sekret nigdy nie zwracany, WebSocket auth + resync, STOP zatrzymuje tylko ten serwer | PASS |
+| `tests/test_relaxed_gates.py` | 8 | (1.1) polityki struktury H1_LEAD / H1_H4_NOT_OPPOSING / STRICT, wynik M02 niezmieniony, migracja configu v1→v2 (własne wartości zostają), brak kalendarza nie blokuje / okno makro blokuje, przeciwny H4 raportowany | PASS |
 | `tests/test_research_export.py` | 1 | eksport historii w UTC wczytywany przez M06R | PASS |
 | `tests/test_pipeline.py` | 2 | pełny łańcuch snapshot → decyzja → PAPER; brak AI blokuje wejście, ale kierunek analizy widoczny | PASS |
-| **Razem** | **69** | `Ran 69 tests … OK` | **PASS** |
+| **Razem** | **79** | `Ran 79 tests … OK` | **PASS** |
 
 ## 2. Testy oryginalnej paczki (kopie vendor uruchamiane na kopii tymczasowej)
 

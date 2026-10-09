@@ -52,7 +52,8 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         mk_codes.append("MARKET_" + dq["market_state"])
     if risk_cfg.macro_block_high_impact:
         if macro.get("status") not in ("OK", "PARTIAL"):
-            mk_unmet.append("MACRO_CALENDAR_AVAILABLE")
+            if risk_cfg.macro_calendar_required:
+                mk_unmet.append("MACRO_CALENDAR_AVAILABLE")
             mk_codes.append("MACRO_CALENDAR_" + str(macro.get("status")))
         elif macro.get("risk_level") == "HIGH":
             mk_unmet.append("NO_HIGH_IMPACT_EVENT_WINDOW")
@@ -68,6 +69,7 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         st_codes.append("M02_STRUCTURE_" + str((m02 or {}).get("structural_direction")))
     else:
         st_met.append("STRUCTURAL_DIRECTION_" + sdir)
+        st_codes += list((m02 or {}).get("structure_notes") or [])
     d1 = ((m02 or {}).get("timeframes") or {}).get("D1", {}).get("direction")
     d1_conflict = (sdir == "LONG" and d1 == "BEARISH") or (sdir == "SHORT" and d1 == "BULLISH")
     if d1_conflict:

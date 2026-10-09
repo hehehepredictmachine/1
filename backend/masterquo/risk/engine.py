@@ -7,7 +7,8 @@ Independent of the AI agent: it receives only engine levels, broker data and con
   RAW_LOTS = AVAILABLE / (STOP_LOSS_GROSS + COST_STRESS); LOTS = floor_to_step(min(RAW, volume_max))
   LOTS < volume_min -> BLOCKED (never rounded up)
   RR_NET = (sum w_i * profit(entry -> TP_i) - cost) / (|profit(entry -> SL)| + cost)
-  RR_NET < rr_block_below -> BLOCKED; < rr_pass_from -> CONDITIONAL (no execution); else PASS.
+  RR_NET < rr_block_below -> BLOCKED; < rr_pass_from -> CONDITIONAL; else PASS.
+  CONDITIONAL executes with risk x conditional_risk_factor when conditional_rr_executes (else no execution).
 Unknown inputs are null with a reason; a missing required component blocks (never treated as 0).
 """
 from __future__ import annotations
@@ -160,6 +161,10 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         res["risk_gate"] = "BLOCKED"
         return res
     budget = equity * limits.risk_per_trade_pct / 100.0
+    reduced = rr_gate == "CONDITIONAL" and limits.conditional_rr_executes
+    if reduced:
+        budget *= limits.conditional_risk_factor
+        reasons.append(f"RR_NET_CONDITIONAL_REDUCED_RISK_X{limits.conditional_risk_factor:g}")
     # balance at the broker-day start = equity - floating - realized today (documented approximation)
     day_base = equity - daily["floating"] - daily["realized_today"] if daily["status"] == "OK" else None
     daily_cap = day_base * limits.daily_loss_limit_pct / 100.0 if day_base else None
@@ -209,9 +214,10 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
                 reasons.append("INSUFFICIENT_FREE_MARGIN")
             res["sizing_status"] = "SIZED"
     blocking = [r for r in reasons if not r.startswith("RR_NET_CONDITIONAL")]
+    res["risk_factor"] = limits.conditional_risk_factor if reduced else 1.0
     if blocking or rr_gate == "BLOCKED":
         res["risk_gate"] = "BLOCKED"
-    elif rr_gate == "CONDITIONAL":
+    elif rr_gate == "CONDITIONAL" and not reduced:
         res["risk_gate"] = "CONDITIONAL"
     else:
         res["risk_gate"] = "PASS"

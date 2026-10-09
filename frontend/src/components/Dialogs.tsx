@@ -109,7 +109,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Wysiłek (effort)", "agent.effort", "text", "", ["low", "medium", "high", "xhigh", "max"])}
         {field("Dzienny budżet USD (szacunek)", "agent.daily_budget_usd", "num")}
         {field("Min. odstęp analiz automatycznych [s]", "agent.min_interval_seconds", "num")}
-        {field("Ocena AI wymagana do wejścia", "agent.required_for_entry", "bool")}
+        {field("Rola AI w decyzji", "agent.gate_policy", "text", "VETO = blokuje tylko, gdy Claude jawnie się nie zgadza; brak klucza/odpowiedzi nie blokuje · REQUIRED = wymagana zgoda · ADVISORY = tylko opinia", ["VETO", "REQUIRED", "ADVISORY"])}
+        {field("Czekanie na ocenę AI [s]", "agent.ai_wait_seconds", "num", "tylko VETO: po tym czasie brak odpowiedzi nie blokuje")}
+        {field("Ocena AI może wpływać na wejście", "agent.required_for_entry", "bool", "odznaczone = ADVISORY")}
         {field("Agent włączony", "agent.enabled", "bool")}
       </div>}
       {tab === "risk" && <div className="form">
@@ -122,18 +124,25 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Przerwa po stracie [min]", "risk.cooldown_minutes_after_loss", "num")}
         {field("Zapas wolnego marginu [%]", "risk.min_free_margin_buffer_pct", "num")}
         {field("Maks. spread [punkty]", "risk.max_spread_points", "num")}
-        {field("Blokada wejść w oknie makro / bez kalendarza", "risk.macro_block_high_impact", "bool")}
+        {field("RR netto – blokada poniżej", "risk.rr_block_below", "num", "domyślnie 1.0 (oryginał M11: 1.5)")}
+        {field("RR netto – pełne ryzyko od", "risk.rr_pass_from", "num", "domyślnie 1.5 (oryginał M11: 2.0)")}
+        {field("RR pomiędzy progami: wejście z mniejszym ryzykiem", "risk.conditional_rr_executes", "bool")}
+        {field("Mnożnik ryzyka dla RR warunkowego", "risk.conditional_risk_factor", "num", "0.5 = połowa ryzyka na transakcję")}
+        {field("Blokada wejść w oknie wydarzenia makro", "risk.macro_block_high_impact", "bool")}
+        {field("Brak kalendarza makro blokuje wejścia", "risk.macro_calendar_required", "bool", "domyślnie wyłączone")}
       </div>}
       {tab === "costs" && <div className="form">
         <div className="note">Profil „Zero” to deklaracja – nie dowód zerowych kosztów. Spread jest w cenach Bid/Ask (nie odejmujemy go drugi raz).</div>
         {field("Źródło prowizji", "costs.commission_mode", "text", "", ["FROM_DEAL_HISTORY", "CONFIGURED", "UNKNOWN"])}
         {field("Prowizja na lot na stronę [waluta rachunku]", "costs.commission_per_lot_per_side", "num")}
-        {field("Stres poślizgu [punkty]", "costs.slippage_stress_points", "num", "wymagane do wykonania")}
+        {field("Stres poślizgu [punkty]", "costs.slippage_stress_points", "num", "doliczany do kosztu w RR; domyślnie 20")}
         <div className="note">Reguła „spread do 40%”: w źródłach brak mianownika (M01 v4.2.1 §12) – status WYMAGA USTALENIA, nie jest używana jako filtr.</div>
       </div>}
       {tab === "strategy" && <div className="form">
         {field("Tryb strategii", "strategy.mode", "text", "AUTO = SMC > MVP > SCALPING (stała kolejność, nie ranking)", ["AUTO", "MVP", "SMC", "SCALPING"])}
+        {field("Kierunek struktury", "strategy.structure_policy", "text", "H1_LEAD = decyduje H1 (najwięcej setupów) · H1_H4_NOT_OPPOSING = H1, o ile H4 nie jest przeciwny · STRICT_H4_H1 = oryginał MasterQUO (H4 i H1 zgodne)", ["H1_LEAD", "H1_H4_NOT_OPPOSING", "STRICT_H4_H1"])}
         {field("TTL setupu [świece TF setupu]", "strategy.setup_ttl_bars", "num")}
+        {field("Okno wejścia po potwierdzeniu [świece]", "strategy.confirmed_window_bars", "num", "potem setup = MISSED_ENTRY")}
         {field("Konflikt D1 blokuje wejście", "strategy.d1_conflict_blocks_entry", "bool")}
         {field("Waga TP1", "strategy.tp1_weight", "num")}
         {field("Min. odległość celu [ATR]", "strategy.min_target_distance_atr", "num")}
