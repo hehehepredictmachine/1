@@ -50,6 +50,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, barTick: { ...s.barTick, [d.tf]: { bar: d.bar, closed: ev.type === "bar_closed", seq: ev.seq } } };
     case "bars_reloaded":
       return { ...s, analysisSeq: s.analysisSeq + 1 };
+    case "auto":
+      return { ...s, auto: d };
     case "engine_error":
       return { ...s, engine: { ...(s.engine || {}), last_error: d.error } };
     default:
@@ -83,9 +85,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const t = setInterval(() => {
       refresh().catch(() => undefined);
     }, 30000);
+    // after the tab becomes visible again: full resync (the backend kept working meanwhile)
+    const onVis = () => {
+      if (document.visibilityState === "visible") refresh().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
       sock.current?.stop();
     };
   }, []);

@@ -24,6 +24,7 @@ from ..risk import engine as risk_engine
 from ..risk.costs import resolve_commission
 from ..timeutil import TIMEFRAMES, iso, parse_iso, utcnow
 from . import chartdata, decision as decision_mod, lifecycle, targets
+from .active import ActiveEngine
 from .legacy import LegacyEngines, build_snapshot
 
 log = logging.getLogger("masterquo.engine")
@@ -45,6 +46,7 @@ class EngineService:
         self.legacy = LegacyEngines(paths.data_dir() / "legacy_m07_plan_lock.sqlite")
         self.required = self.legacy.profiles.required_closed_bars()
         self.lifecycle = lifecycle.LifecycleStore(db)
+        self.active = ActiveEngine(db, cfg_store, bridge, applog, bus)
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -188,21 +190,42 @@ class EngineService:
         self.full_count += 1
         self._persist_snapshot(sid, as_of, account_key, epoch, sym, dq, legacy_out)
         self.bus.publish("analysis", self.analysis_summary())
+        active_events = self.active.maybe_scan(bars, dq, self.bridge.quote_status(), force=True, snapshot_id=sid)
         self.light_cycle(force_publish=True)
+        self._active_agent_triggers(active_events, sid)
         self.cycle_ms = round((time.monotonic() - t0) * 1000, 1)
         # agent triggers (after the decision/context for this snapshot exists)
-        if self.agent:
+        if self.agent and cfg.active.profile == "ORIGINAL":
             for kind, rec in transitions:
                 trig = {"SETUP_NEW": "SETUP_NEW", "SETUP_TRIGGERED": "SETUP_TRIGGERED", "SETUP_CONFIRMED": "SETUP_CONFIRMED"}.get(kind)
                 if kind in ("SETUP_INVALIDATED", "SETUP_EXPIRED", "SETUP_MISSED_ENTRY"):
                     trig = "SETUP_TERMINAL"
                 if trig:
                     self.agent.request(trig, snapshot_id=sid, setup_id=rec["setup_id"], setup_state=rec["state"])
+        if self.agent:
             if not transitions and time.monotonic() - self._last_h1_agent > 3600 and dq["analysis_allowed"]:
                 self._last_h1_agent = time.monotonic()
-                prim = self._primary_setup(account_key, sym)
-                self.agent.request("CONTEXT_HOURLY", snapshot_id=sid, setup_id=prim["setup_id"] if prim and prim["state"] in lifecycle.ACTIVE else None,
-                                   setup_state=prim["state"] if prim else None)
+                if cfg.active.profile == "ACTIVE":
+                    sel = self.active.selected_row()
+                    self.agent.request("CONTEXT_HOURLY", snapshot_id=sid, setup_id=sel["setup_id"] if sel else None, setup_state=sel["stage"] if sel else None)
+                else:
+                    prim = self._primary_setup(account_key, sym)
+                    self.agent.request("CONTEXT_HOURLY", snapshot_id=sid, setup_id=prim["setup_id"] if prim and prim["state"] in lifecycle.ACTIVE else None,
+                                       setup_state=prim["state"] if prim else None)
+
+    def _active_agent_triggers(self, events: list, sid: str) -> None:
+        """Claude is asked only on significant changes of the SELECTED setup (rate limits apply in the agent)."""
+        if not self.agent or not events:
+            return
+        sel = (self.active.selector.selected or {}).get("setup_id")
+        for kind, r in events:
+            if not r or not r.get("setup_id"):
+                continue
+            if kind == "SELECTION_CHANGED" or (r["setup_id"] == sel and kind in ("NEW_EARLY", "STAGE_EARLY", "NEW_CONFIRMED", "STAGE_CONFIRMED")):
+                trig = "SETUP_CONFIRMED" if r.get("stage") == "CONFIRMED" else "SETUP_NEW"
+                self.agent.request(trig, snapshot_id=sid, setup_id=r["setup_id"], setup_state=r.get("stage"))
+            elif r["setup_id"] == sel and kind in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY", "CANCELLED"):
+                self.agent.request("SETUP_TERMINAL", snapshot_id=sid, setup_id=r["setup_id"], setup_state=kind)
 
     def _persist_snapshot(self, sid, as_of, account_key, epoch, sym, dq, legacy_out) -> None:
         m02 = legacy_out.get("m02") or {}
@@ -230,17 +253,26 @@ class EngineService:
         account_key = self.bridge.account_key
         epoch = self.bridge.session_epoch
         legacy_out = full["legacy"] if full["epoch"] == epoch else {"errors": ["SESSION_CHANGED_REANALYSIS_PENDING"]}
-        rec = self._primary_setup(account_key, sym)
-        setup = lifecycle.public_setup(rec)
         quote = self.bridge.quote_status()
         levels = risk = None
-        if rec and rec["state"] in lifecycle.ACTIVE and legacy_out.get("m03"):
-            atr = ((legacy_out.get("m02") or {}).get("timeframes") or {}).get(rec["setup_tf"], {}).get("atr")
-            live = rec["state"] == "CONFIRMED" and quote is not None
-            entry = (quote["ask"] if rec["direction"] == "LONG" else quote["bid"]) if live else None
-            levels = targets.derive_levels(rec["plan"], legacy_out["m03"], atr, entry=entry, spread=(quote or {}).get("spread"),
-                                           tp1_weight=cfg.strategy.tp1_weight, min_target_distance_atr=cfg.strategy.min_target_distance_atr)
-            risk = self._risk(rec, levels, quote, live)
+        active_ctx = None
+        events: list = []
+        if cfg.active.profile == "ACTIVE":
+            events = self.active.maybe_scan(bars, dq, quote, force=False, snapshot_id=full["snapshot_id"])
+            setup, levels, active_ctx = self.active.decision_inputs()
+            if setup and levels and levels["status"] == "AVAILABLE":
+                live = setup["state"] == "CONFIRMED" and quote is not None
+                risk = self._risk(setup["direction"], levels, quote, live, self.active.hypothetical_entry())
+        else:
+            rec = self._primary_setup(account_key, sym)
+            setup = lifecycle.public_setup(rec)
+            if rec and rec["state"] in lifecycle.ACTIVE and legacy_out.get("m03"):
+                atr = ((legacy_out.get("m02") or {}).get("timeframes") or {}).get(rec["setup_tf"], {}).get("atr")
+                live = rec["state"] == "CONFIRMED" and quote is not None
+                entry = (quote["ask"] if rec["direction"] == "LONG" else quote["bid"]) if live else None
+                levels = targets.derive_levels(rec["plan"], legacy_out["m03"], atr, entry=entry, spread=(quote or {}).get("spread"),
+                                               tp1_weight=cfg.strategy.tp1_weight, min_target_distance_atr=cfg.strategy.min_target_distance_atr)
+                risk = self._risk(rec["direction"], levels, quote, live, float(rec["plan"]["lifecycle_rules"]["confirmation"]["level"]))
         now_iso = iso(utcnow())
         agent_gate = self.agent.gate_for(setup, session_epoch=epoch, account_key=account_key, now_iso=now_iso) if self.agent \
             else {"status": "UNAVAILABLE", "reason_codes": ["AGENT_NOT_RUNNING"]}
@@ -249,7 +281,7 @@ class EngineService:
         d = decision_mod.build(snapshot_id=full["snapshot_id"], as_of=now_iso, symbol=sym, account_key=account_key, session_epoch=epoch,
                                dq=dq, legacy=legacy_out, setup=setup, levels=levels, risk=risk, agent_gate=agent_gate, mode_gate=mode_gate,
                                macro=macro, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status=self.bridge.dxy_status,
-                               synthetic=self.bridge.synthetic)
+                               synthetic=self.bridge.synthetic, active=active_ctx)
         with self._lock:
             self.dq = dq
             self.decision = d
@@ -266,23 +298,27 @@ class EngineService:
             self.bus.publish("decision", d)
         else:
             self.bus.publish("dq", {k: dq[k] for k in ("data_quality", "market_state", "reason_codes", "entries_allowed", "analysis_allowed")})
+        if events:
+            self._active_agent_triggers(events, full["snapshot_id"])
         if (d["execution_permission"] == "ALLOWED" and mode_gate.get("auto_trading") and self.gateway is not None):
             try:
                 self.gateway.execute(d["decision_id"], initiated_by="AUTO")
             except Exception as exc:
                 self.log.error("EXECUTION", "AUTO_EXECUTE_FAILED", f"Automatyczne wykonanie nieudane: {exc}")
 
-    def _risk(self, rec: dict, levels: dict, quote: dict | None, live: bool) -> dict:
+    def _risk(self, direction: str, levels: dict, quote: dict | None, live: bool, hypo_level: float | None) -> dict:
         cfg = self.cfg_store.get()
         b = self.bridge
         q = quote
         basis = "LIVE_QUOTE"
         if not live:
-            lvl = float(rec["plan"]["lifecycle_rules"]["confirmation"]["level"])
+            if hypo_level is None:
+                return {"risk_gate": "PREVIEW", "reason_codes": ["NO_HYPOTHETICAL_ENTRY_LEVEL"], "entry_basis": "NONE"}
+            lvl = float(hypo_level)
             spr = (quote or {}).get("spread") or 0.0
-            q = {"bid": lvl if rec["direction"] == "SHORT" else lvl - spr, "ask": lvl + spr if rec["direction"] == "SHORT" else lvl,
+            q = {"bid": lvl if direction == "SHORT" else lvl - spr, "ask": lvl + spr if direction == "SHORT" else lvl,
                  "spread_points": (quote or {}).get("spread_points")}
-            basis = "HYPOTHETICAL_AT_CONFIRMATION_LEVEL"
+            basis = "HYPOTHETICAL_AT_TRIGGER_LEVEL"
         with b._lock:
             positions = list(b.positions)
             deals = list(b.deals)
@@ -300,7 +336,7 @@ class EngineService:
             orisk = risk_engine.open_risk(positions, pos_risk)
             last_loss = self.db.one("SELECT closed_at FROM trades WHERE source='BOT' AND net_pnl < 0 AND IFNULL(account_key,'')=IFNULL(?, '') ORDER BY closed_at DESC LIMIT 1",
                                     (b.account_key,))
-            res = risk_engine.evaluate(side=rec["direction"], levels=levels, quote=q, symbol_info=b.symbol_info, account=b.account_status(),
+            res = risk_engine.evaluate(side=direction, levels=levels, quote=q, symbol_info=b.symbol_info, account=b.account_status(),
                                        limits=cfg.risk, costs_cfg=cfg.costs, commission=commission,
                                        profit_fn=lambda s, v, o, c: b.calc_profit(s, v, o, c), margin_fn=lambda s, v, p: b.calc_margin(s, v, p),
                                        positions=positions, deals=deals, day_start_raw=day_start_raw,
@@ -327,7 +363,7 @@ class EngineService:
                "dq": dq, "quote": quote, "legacy": full["legacy"], "closed_bars": full["closed"], "setup": setup, "levels": levels,
                "risk": risk, "macro": macro, "headlines": news.get("news", []), "upcoming_events": news.get("calendar", []),
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
-               "lessons": lessons}
+               "lessons": lessons, "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
@@ -368,6 +404,12 @@ class EngineService:
         bars = self.bridge.bars(tf, limit=self.cfg_store.get().mt5.chart_bars)
         return {"tf": tf, "symbol": self.cfg_store.get().mt5.symbol, "bars": bars, **c,
                 "clock": self.bridge.clock.evidence.as_dict(), "synthetic": self.bridge.synthetic}
+
+    def mark_entered(self, setup_id: str, reason: str) -> None:
+        if setup_id.startswith("MQA-"):
+            self.active.mark_entered(setup_id, reason)
+        else:
+            self.lifecycle.terminate(setup_id, "ENTERED", reason)
 
     def current_decision(self) -> dict | None:
         with self._lock:

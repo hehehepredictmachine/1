@@ -1,7 +1,7 @@
 """Single source of version identifiers used across API, DB and agent records."""
 
 APP_NAME = "MasterQUO AI"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 # Backend <-> frontend contract. Bump on any breaking change of /api/v1 or WS payloads.
 API_CONTRACT_VERSION = "1.0.0"
 # Decision record schema produced by the backend (engine + risk + agent).

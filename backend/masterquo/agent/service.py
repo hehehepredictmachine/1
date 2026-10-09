@@ -26,6 +26,11 @@ from pydantic import ValidationError
 
 from ..db.database import dumps
 from ..timeutil import iso, parse_iso, utcnow
+
+
+def _registry_ids() -> set[str]:
+    from ..strategies.registry import STRATEGIES
+    return set(STRATEGIES)
 from .schema import OUTPUT_SCHEMA, AgentAssessment, record
 from .tools import TOOL_DEFS, Toolbox
 
@@ -372,6 +377,10 @@ class ClaudeAgent:
                 final_text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", None) == "text").strip()
                 try:
                     assessment = AgentAssessment.model_validate(json.loads(_extract_json(final_text)))
+                    # a proposed strategy must exist in the registry; it is a suggestion only (never applied automatically)
+                    if assessment.preferred_strategy_id and assessment.preferred_strategy_id not in _registry_ids():
+                        assessment.reason_codes.append("AGENT_PROPOSED_UNKNOWN_STRATEGY_" + assessment.preferred_strategy_id[:12])
+                        assessment.preferred_strategy_id = None
                     status = "OK"
                 except (ValueError, ValidationError) as exc:
                     if repaired:

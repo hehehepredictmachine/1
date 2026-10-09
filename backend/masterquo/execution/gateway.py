@@ -122,7 +122,7 @@ class ExecutionGateway:
             else:
                 res = self._send(attempt_id, d, side, risk, tp_final)
             if res.get("status") in ("FILLED", "PARTIAL"):
-                self.engine.lifecycle.terminate(setup["setup_id"], "ENTERED", f"{mode}_{res['status']}")
+                self.engine.mark_entered(setup["setup_id"], f"{mode}_{res['status']}")
             self.bus.publish("orders", self.recent_attempts(10))
             return res
 

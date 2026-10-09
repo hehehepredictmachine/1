@@ -1,0 +1,4 @@
+{"active": {"profile": "ACTIVE", "strategy_mode": "AUTO", "manual_strategy_id": null,
+            "thresholds": {"watch": 40, "early": 55, "confirmed": 70}, "scan_min_interval_seconds": 2.0,
+            "min_switch_margin": 8.0, "switch_confirm_updates": 2, "min_selection_hold_seconds": 60.0, "conflict_margin": 5.0,
+            "downgrade_confirm_updates": 2, "cancel_after_misses": 3, "confirmed_window_bars": 3}}

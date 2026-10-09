@@ -137,6 +137,60 @@ class TestAppProcess(unittest.TestCase):
                 self.assertEqual(cm.exception.rcvd.code, 4403)
         asyncio.run(run())
 
+    def test_06_auto_strategy_api_separate_from_execution(self):
+        self.assertTrue(wait_for(lambda: json.loads(req("/api/v1/strategy/auto", opener=self.op)[1]).get("scans", 0) >= 1, 90, 1))
+        a = json.loads(req("/api/v1/strategy/auto", opener=self.op)[1])
+        for k in ("contract", "strategy_mode", "system_state", "regime", "selected_strategy_id", "selection_reason_codes", "candidate_ranking",
+                  "last_evaluated_at", "data_status", "strategies", "setups", "why_no_setup"):
+            self.assertIn(k, a)
+        self.assertEqual(len(a["strategies"]), 10)
+        self.assertEqual(req("/api/v1/strategy/mode", "POST", {"strategy_mode": "MANUAL", "manual_strategy_id": "S03"}, opener=self.op)[0], 403)
+        st, body = req("/api/v1/strategy/mode", "POST", {"strategy_mode": "MANUAL", "manual_strategy_id": "S03"}, self.H(), self.op)
+        self.assertEqual(st, 200, body)
+        self.assertEqual(json.loads(body)["strategy_mode"], "MANUAL")
+        self.assertEqual(req("/api/v1/strategy/mode", "POST", {"strategy_mode": "MANUAL", "manual_strategy_id": "S99"}, self.H(), self.op)[0], 400)
+        st, body = req("/api/v1/strategy/toggle", "POST", {"strategy_id": "S07", "trade": False}, self.H(), self.op)
+        self.assertEqual(st, 200, body)
+        cfg = json.loads(req("/api/v1/config", opener=self.op)[1])["config"]["active"]
+        self.assertEqual((cfg["strategy_mode"], cfg["manual_strategy_id"], cfg["strategies"]["S07"]["trade"], cfg["strategies"]["S07"]["scan"]),
+                         ("MANUAL", "S03", False, True))
+        s = json.loads(req("/api/v1/state", opener=self.op)[1])
+        self.assertEqual((s["mode"]["mode"], s["mode"]["auto_trading"]), ("READ_ONLY", False))   # AUTO strategy selection != order execution
+        self.assertEqual(req("/api/v1/strategy/mode", "POST", {"strategy_mode": "AUTO"}, self.H(), self.op)[0], 200)
+        self.assertEqual(json.loads(req("/api/v1/playbook", opener=self.op)[1]).keys() >= {"cards", "note"}, True)
+
+    def test_07_backend_keeps_working_without_browser(self):
+        n1 = json.loads(req("/api/v1/strategy/auto", opener=self.op)[1])["scans"]
+        time.sleep(6)                                         # no WebSocket client connected during this time
+        n2 = json.loads(req("/api/v1/strategy/auto", opener=self.op)[1])["scans"]
+        self.assertGreater(n2, n1)
+
+    def test_08_gif_assets_and_upload(self):
+        a = json.loads(req("/api/v1/appearance/assets", opener=self.op)[1])
+        self.assertEqual(a["frog"]["source"], "BUILT_IN")
+        self.assertEqual((a["frog"]["gif"]["width"], a["frog"]["gif"]["height"], a["frog"]["gif"]["frames"], a["frog"]["gif"]["transparency"]),
+                         (336, 468, 22, True))
+        self.assertFalse(a["background"]["animated_available"])          # the animated original was not delivered - static frame only
+        gif = (_env.ROOT / "frontend" / "public" / "assets" / "masterquo" / "frog-dance.gif").read_bytes()
+
+        def upload(data, headers):
+            r = urllib.request.Request(BASE + "/api/v1/appearance/upload?slot=background", method="POST", data=data,
+                                       headers={"Content-Type": "image/gif", **headers})
+            try:
+                with self.op.open(r, timeout=10) as resp:
+                    return resp.status, resp.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+        self.assertEqual(upload(gif, {})[0], 403)                          # CSRF/Origin required
+        self.assertEqual(upload(b"not a gif", self.H())[0], 400)
+        st, body = upload(gif, self.H())
+        self.assertEqual(st, 200, body)
+        a = json.loads(req("/api/v1/appearance/assets", opener=self.op)[1])
+        self.assertEqual((a["background"]["source"], a["background"]["gif"]["frames"]), ("USER_UPLOAD", 22))
+        with self.op.open(BASE + "/media/masterquo/background", timeout=10) as r:
+            self.assertEqual(r.read(), gif)
+        os.remove(os.path.join(self.td.dir, "assets", "masterquo", "background-matrix.gif"))
+
     def test_99_stop_only_this_server(self):
         out = subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=self.env, cwd=str(_env.ROOT / "backend"),
                              capture_output=True, text=True, timeout=60)

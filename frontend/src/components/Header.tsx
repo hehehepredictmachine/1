@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { apiSend } from "../api";
+import { Frog } from "../appearance";
 import { useStore } from "../store";
 import { cls, fmtMoney, fmtNum, tone } from "../util";
 
@@ -18,7 +21,7 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
   onMode: () => void;
   botStats: any;
 }) {
-  const { s } = useStore();
+  const { s, refresh } = useStore();
   const con = s.connection || {};
   const a = s.account;
   const mode = s.mode || {};
@@ -30,6 +33,24 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
   const daily = botStats?.account?.trading_net_today;
   const wr = botStats?.bot?.all;
   const cur = a?.currency;
+  const auto = s.auto || {};
+  const [autoErr, setAutoErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toggleStrategyMode = async () => {
+    setAutoErr(null);
+    setBusy(true);
+    try {
+      const next = auto.strategy_mode === "MANUAL" ? { strategy_mode: "AUTO" } : { strategy_mode: "MANUAL", manual_strategy_id: auto.selected_strategy_id || "S01" };
+      await apiSend("POST", "/api/v1/strategy/mode", next);
+      await refresh();
+    } catch (e: any) {
+      setAutoErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const execOn = !!mode.auto_trading && mode.mode !== "READ_ONLY";
+  const autoTone = auto.system_state === "STALE" || auto.data_status !== "OK" ? "warn" : auto.system_state === "CONFIRMED" ? "ok" : "muted";
   return (
     <header className="topbar">
       <div className="brand">
@@ -48,17 +69,23 @@ export default function Header({ onAgent, onSettings, onPower, onMode, botStats 
         <button className={cls("chip mode", mode.mode === "LIVE_EXECUTION" ? "bad" : mode.mode === "READ_ONLY" ? "muted" : "warn")} onClick={onMode}>
           TRYB <b>{mode.mode ?? "READ_ONLY"}</b>
         </button>
-        <span className={cls("chip", mode.auto_trading ? "ok" : "muted")}>
-          <i className="dot" />AUTO TRADING <b>{mode.auto_trading ? "ON" : "OFF"}</b>
+        <button className={cls("chip auto-sel", autoTone)} onClick={toggleStrategyMode} disabled={busy || auto.profile === "ORIGINAL"}
+          title={(autoErr ? "Błąd: " + autoErr + "\n" : "") + "Wybór strategii (nie składa zleceń). Kliknij, aby przełączyć AUTO / MANUAL. Stan potwierdzony przez backend."}>
+          <i className="dot" />{auto.profile === "ORIGINAL" ? "PROFIL ORIGINAL" : <>AUTO — wybór strategii <b>{auto.strategy_mode ?? "…"}</b></>}
+          {auto.profile !== "ORIGINAL" && <b className="sub">{auto.selected_strategy_id ?? "brak"} · {auto.system_state ?? "…"}</b>}
+        </button>
+        <span className={cls("chip", execOn ? (mode.mode === "LIVE_EXECUTION" ? "bad" : "ok") : "muted")}
+          title="Automatyczne składanie zleceń – osobne ustawienie, niezależne od wyboru strategii">
+          <i className="dot" />Wykonywanie zleceń <b>{execOn ? `AUTO ${mode.mode}` : mode.auto_trading ? "AUTO (READ_ONLY)" : "WYŁ."}</b>
         </span>
+        {autoErr && <span className="chip bad" title={autoErr}><i className="dot" />AUTO: błąd zapisu</span>}
         {mode.kill_switch && <span className="chip bad"><i className="dot" />NOWE WEJŚCIA ZATRZYMANE</span>}
       </div>
-      <div className="hdr-art" aria-hidden="true">
-        <img src="/static/header_art.webp" alt="" />
-        <div className="hdr-candles">{Array.from({ length: 14 }).map((_, i) => <i key={i} style={{ height: `${18 + ((i * 37) % 42)}px` }} />)}</div>
-      </div>
       <div className="cards">
-        <div className="card"><label>BALANCE</label><b>{fmtMoney(a?.balance, cur)}</b></div>
+        <div className="balance-group">
+          <Frog />
+          <div className="card"><label>BALANCE</label><b>{fmtMoney(a?.balance, cur)}</b><small>{cur ?? ""}</small></div>
+        </div>
         <div className="card"><label>EQUITY</label><b>{fmtMoney(a?.equity, cur)}</b>
           <small className={(a?.profit ?? 0) >= 0 ? "pos" : "neg"}>{a ? `float ${fmtNum(a.profit)}` : ""}</small></div>
         <div className="card"><label>DAILY P/L</label><b className={(daily ?? 0) >= 0 ? "pos" : "neg"}>{daily === null || daily === undefined ? "—" : fmtMoney(daily, cur)}</b>

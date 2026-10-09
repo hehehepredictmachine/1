@@ -152,6 +152,9 @@ class StubEngine:
     def current_decision(self):
         return self.decision
 
+    def mark_entered(self, setup_id, reason):
+        self.lifecycle.terminate(setup_id, "ENTERED", reason)
+
 
 class TestExecution(unittest.TestCase):
     def setUp(self):
@@ -349,7 +352,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())

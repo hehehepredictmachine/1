@@ -27,7 +27,8 @@ OUTPUT_SCHEMA: dict = {
     "additionalProperties": False,
     "required": ["snapshot_id", "setup_id", "analysis_direction", "signal_stage", "proposed_action", "strategy_id",
                  "strategy_version", "entry_zone", "invalidation_level", "proposed_targets", "scenarios", "evidence_refs",
-                 "contradictions", "missing_data", "reason_codes", "explanation_pl", "answer_pl", "lessons", "playbook_proposals"],
+                 "contradictions", "missing_data", "reason_codes", "explanation_pl", "answer_pl", "lessons", "playbook_proposals",
+                 "preferred_strategy_id", "scenario_still_valid"],
     "properties": {
         "snapshot_id": _STR,
         "setup_id": _nullable(_STR),
@@ -35,6 +36,8 @@ OUTPUT_SCHEMA: dict = {
         "signal_stage": {"type": "string", "enum": ["WATCH", "EARLY", "CONFIRMED", "EXPIRED", "INVALIDATED"]},
         "proposed_action": {"type": "string", "enum": ["BUY", "SELL", "WAIT", "NO_TRADE"]},
         "strategy_id": _nullable(_STR),
+        "preferred_strategy_id": _nullable(_STR),
+        "scenario_still_valid": {"type": "boolean"},
         "strategy_version": _nullable(_STR),
         "entry_zone": _nullable({"type": "object", "additionalProperties": False, "required": ["low", "high"],
                                  "properties": {"low": _NUM, "high": _NUM}}),
@@ -104,6 +107,8 @@ class AgentAssessment(_M):
     answer_pl: str | None
     lessons: list[str]
     playbook_proposals: list[PlaybookProposal]
+    preferred_strategy_id: str | None = None
+    scenario_still_valid: bool = True
 
 
 def record(assessment: AgentAssessment, *, decision_id: str, as_of: str, expires_at: str, model_id: str | None,

@@ -183,6 +183,50 @@ class ExecutionConfig(_Strict):
     paper_starting_balance: float = Field(10000.0, gt=0)
 
 
+class StrategyToggle(_Strict):
+    scan: bool = True    # detect and show setups of this strategy
+    trade: bool = True   # may the selected setup of this strategy be executed (all other gates still apply)
+
+
+class ActiveThresholds(_Strict):
+    # ACTIVE score 0-100 (heuristic, not a probability). CONFIRMED additionally needs the strategy's real trigger.
+    watch: float = Field(40, ge=0, le=100)
+    early: float = Field(55, ge=0, le=100)
+    confirmed: float = Field(70, ge=0, le=100)
+
+
+def _default_toggles() -> dict[str, StrategyToggle]:
+    return {f"S{i:02d}": StrategyToggle() for i in range(1, 11)}
+
+
+class ActiveConfig(_Strict):
+    """Profile ACTIVE (S01-S10 scanner + AUTO strategy selection). ORIGINAL = legacy M07 path only."""
+    profile: Literal["ACTIVE", "ORIGINAL"] = "ACTIVE"
+    strategy_mode: Literal["AUTO", "MANUAL"] = "AUTO"       # AUTO = strategy selection only, never order execution
+    manual_strategy_id: str | None = None
+    thresholds: ActiveThresholds = Field(default_factory=ActiveThresholds)
+    scan_min_interval_seconds: float = Field(2.0, ge=0.5, le=60)
+    min_switch_margin: float = Field(8.0, ge=0, le=50)
+    switch_confirm_updates: int = Field(2, ge=1, le=20)
+    min_selection_hold_seconds: float = Field(60.0, ge=0, le=3600)
+    conflict_margin: float = Field(5.0, ge=0, le=50)
+    downgrade_confirm_updates: int = Field(2, ge=1, le=20)
+    cancel_after_misses: int = Field(3, ge=1, le=50)
+    confirmed_window_bars: int = Field(3, ge=1, le=20)
+    strategies: dict[str, StrategyToggle] = Field(default_factory=_default_toggles)
+    params: dict[str, dict] = Field(default_factory=dict)      # per-strategy parameter overrides (validated keys only)
+    regime: dict = Field(default_factory=dict)                 # MarketRegimeEngine overrides
+
+    @field_validator("manual_strategy_id")
+    @classmethod
+    def _manual(cls, v: str | None) -> str | None:
+        if v in (None, ""):
+            return None
+        if not re.fullmatch(r"S(0[1-9]|10)", v):
+            raise ValueError("UNKNOWN_STRATEGY_ID")
+        return v
+
+
 class AppConfig(_Strict):
     config_version: int = 2
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -195,6 +239,7 @@ class AppConfig(_Strict):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    active: ActiveConfig = Field(default_factory=ActiveConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

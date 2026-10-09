@@ -1,0 +1,2 @@
+{"active": {"profile": "ORIGINAL"},
+ "_note": "ORIGINAL = wykrywanie M07/M10A jak w 1.1. Ścisłe reguły 1.0: strategy.structure_policy=STRICT_H4_H1, risk.rr_block_below=1.5, risk.rr_pass_from=2.0, risk.conditional_rr_executes=false, agent.gate_policy=REQUIRED, risk.macro_calendar_required=true"}

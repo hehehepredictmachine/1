@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import paths, stats
 from ..execution.modes import ModeError
+from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION
 from .security import SESSION_COOKIE, LocalSecurity
@@ -54,6 +55,25 @@ class KeyReq(BaseModel):
 class SecretReq(BaseModel):
     name: str
     value: str | None = None
+
+
+class StrategyModeReq(BaseModel):
+    strategy_mode: str = Field(pattern="^(AUTO|MANUAL)$")
+    manual_strategy_id: str | None = Field(default=None, max_length=4)
+
+
+class StrategyToggleReq(BaseModel):
+    strategy_id: str = Field(pattern="^S(0[1-9]|10)$")
+    scan: bool | None = None
+    trade: bool | None = None
+
+
+class ProfileReq(BaseModel):
+    profile: str = Field(pattern="^(ACTIVE|ORIGINAL)$")
+
+
+MEDIA_SLOTS = {"background": ("background-matrix.gif", "background-matrix-static.webp"), "frog": ("frog-dance.gif", "frog-dance-static.png")}
+MAX_GIF_BYTES = 15 * 1024 * 1024
 
 
 class MemoryReq(BaseModel):
@@ -105,7 +125,7 @@ def create_app(rt, port: int) -> FastAPI:
         sid, _ = sec.new_session()
         resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="strict", secure=False, path="/")
         resp.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-                                                   "img-src 'self' data:; connect-src 'self' ws://127.0.0.1:%d ws://localhost:%d; "
+                                                   "img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:%d ws://localhost:%d; "
                                                    "frame-ancestors 'none'; base-uri 'none'" % (port, port))
         return resp
 
@@ -125,7 +145,7 @@ def create_app(rt, port: int) -> FastAPI:
     def static(name: str):
         base = paths.FRONTEND_DIST.resolve()
         f = (base / name).resolve()
-        if base not in f.parents or not f.is_file() or f.suffix not in (".png", ".webp", ".svg", ".ico", ".jpg"):
+        if base not in f.parents or not f.is_file() or f.suffix not in (".png", ".webp", ".svg", ".ico", ".jpg", ".gif"):
             raise HTTPException(404)
         return FileResponse(f)
 
@@ -157,7 +177,8 @@ def create_app(rt, port: int) -> FastAPI:
                 "attempts": rt.gateway.recent_attempts(15), "paper": rt.paper.account() if mode["mode"] == "PAPER" else None,
                 "logs": logs_list(60), "pc_clock": rt.pcclock.snapshot(), "manager": {"reconciled_epoch": rt.manager.reconciled_epoch,
                                                                                      "last_error": rt.manager.last_error},
-                "first_run_completed": cfg.first_run_completed}
+                "first_run_completed": cfg.first_run_completed,
+                "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json")}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -175,7 +196,13 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/signals")
     def signals(limit: int = 30):
         from ..engine.lifecycle import public_setup
-        setups = [public_setup(r) for r in rt.engine.lifecycle.recent(min(limit, 100))]
+        legacy = [public_setup(r) for r in rt.engine.lifecycle.recent(min(limit, 100))]
+        active = [{"setup_id": r["setup_id"], "created_at": r["first_seen_at"], "strategy_id": r["record"]["strategy_id"],
+                   "profile": f"ACTIVE {r['record']['timeframe']}", "direction": r["record"]["direction"],
+                   "state": r["stage"] if r["status"] == "ACTIVE" else r["status"], "invalidation_level": r["record"].get("invalidation_level"),
+                   "terminal_reason": r.get("terminal_reason"), "synthetic": bool(r["record"].get("synthetic"))}
+                  for r in rt.engine.active.tracker.recent(min(limit, 100))]
+        setups = sorted(active + legacy, key=lambda x: x["created_at"] or "", reverse=True)[:limit]
         decs = rt.db.query("SELECT decision_id, created_at, setup_id, analysis_direction, signal_stage, decision, execution_permission FROM decisions "
                            "WHERE decision IN ('BUY','SELL') OR signal_stage IN ('CONFIRMED','INVALIDATED','EXPIRED') ORDER BY created_at DESC LIMIT 50")
         trades = rt.db.query("SELECT * FROM trades ORDER BY closed_at DESC LIMIT 50")
@@ -298,6 +325,108 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, str(exc)) from exc
         finally:
             rt.engine.mark_dirty()
+
+    # ------------------------------------------------------------ AUTO strategy selection (separate from order execution)
+    def media_dir():
+        d = paths.data_dir() / "assets" / "masterquo"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @app.get("/api/v1/strategy/auto")
+    def strategy_auto():
+        return rt.engine.active.status()
+
+    @app.post("/api/v1/strategy/mode")
+    def strategy_mode(req: StrategyModeReq):
+        if req.strategy_mode == "MANUAL" and not req.manual_strategy_id:
+            raise HTTPException(400, "MANUAL_REQUIRES_STRATEGY_ID")
+        try:
+            rt.cfg.update({"active": {"strategy_mode": req.strategy_mode,
+                                      "manual_strategy_id": req.manual_strategy_id if req.strategy_mode == "MANUAL" else None}})
+        except Exception as exc:
+            raise HTTPException(400, f"INVALID: {exc}") from exc
+        rt.engine.active.selector.reset("STRATEGY_MODE_CHANGED")
+        rt.log.info("AUTO", "STRATEGY_MODE", f"Wybór strategii: {req.strategy_mode}" + (f" ({req.manual_strategy_id})" if req.strategy_mode == "MANUAL" else "")
+                    + ". Tryb wykonywania zleceń bez zmian.")
+        rt.engine.mark_dirty()
+        return rt.engine.active.status(compact=True)
+
+    @app.post("/api/v1/strategy/toggle")
+    def strategy_toggle(req: StrategyToggleReq):
+        cur = rt.cfg.get().active.strategies.get(req.strategy_id)
+        patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else True}
+        if req.scan is not None:
+            patch["scan"] = req.scan
+        if req.trade is not None:
+            patch["trade"] = req.trade
+        rt.cfg.update({"active": {"strategies": {req.strategy_id: patch}}})
+        rt.log.info("AUTO", "STRATEGY_TOGGLE", f"{req.strategy_id}: skanuj={'TAK' if patch['scan'] else 'NIE'}, handel={'TAK' if patch['trade'] else 'NIE'}")
+        rt.engine.mark_dirty()
+        return rt.engine.active.status(compact=True)
+
+    @app.post("/api/v1/strategy/profile")
+    def strategy_profile(req: ProfileReq):
+        rt.cfg.update({"active": {"profile": req.profile}})
+        rt.engine.active.selector.reset("PROFILE_CHANGED")
+        rt.log.info("AUTO", "PROFILE", f"Profil wykrywania: {req.profile}")
+        rt.engine.mark_dirty()
+        return rt.engine.active.status(compact=True)
+
+    @app.get("/api/v1/strategy/selection-log")
+    def selection_log(limit: int = 30):
+        return {"log": rt.engine.active.selection_log(max(1, min(limit, 200)))}
+
+    @app.get("/api/v1/playbook")
+    def playbook(limit: int = 100):
+        rows = rt.db.query("SELECT setup_id, strategy_id, strategy_version, direction, timeframe, stage, status, version, score, first_seen_at, first_price, "
+                           "updated_at, terminal_reason, terminal_at, synthetic, record_json, history_json FROM strategy_setups ORDER BY first_seen_at DESC LIMIT ?",
+                           (max(1, min(limit, 500)),))
+        trades = {t["setup_id"]: t for t in rt.db.query("SELECT setup_id, mode, side, net_pnl, gross_pnl, opened_at, closed_at FROM trades WHERE setup_id LIKE 'MQA-%'")}
+        out = []
+        for r in rows:
+            rec = json.loads(r.pop("record_json"))
+            hist = json.loads(r.pop("history_json"))
+            out.append({**r, "context": {"regime": rec.get("regime"), "horizon": rec.get("horizon"), "countertrend": rec.get("countertrend")},
+                        "hypothesis": rec.get("strategy_name"), "plan": {k: rec.get(k) for k in ("entry_plan", "stop_loss", "targets", "invalidation_level", "exit_rules")},
+                        "score": rec.get("score"), "missing": rec.get("missing_confirmations"), "history": hist, "result": trades.get(r["setup_id"]) or "brak danych"})
+        return {"cards": out, "note": "Karty obejmują także setupy anulowane, unieważnione i wygasłe – nie tylko wybrane sukcesy."}
+
+    @app.get("/api/v1/appearance/assets")
+    def appearance_assets():
+        out = {}
+        for slot, (anim, static_name) in MEDIA_SLOTS.items():
+            user = media_dir() / anim
+            built = paths.FRONTEND_DIST / "assets" / "masterquo" / anim
+            info = gif_info(user.read_bytes()) if user.is_file() else (gif_info(built.read_bytes()) if built.is_file() else None)
+            out[slot] = {"animated_available": user.is_file() or built.is_file(), "source": "USER_UPLOAD" if user.is_file() else ("BUILT_IN" if built.is_file() else "NONE"),
+                         "animated_url": f"/media/masterquo/{slot}?v={int(user.stat().st_mtime) if user.is_file() else 0}",
+                         "static_url": f"/static/assets/masterquo/{static_name}", "gif": info}
+        return out
+
+    @app.post("/api/v1/appearance/upload")
+    async def appearance_upload(request: Request, slot: str = Query(..., pattern="^(background|frog)$")):
+        data = await request.body()
+        if len(data) > MAX_GIF_BYTES:
+            raise HTTPException(413, "FILE_TOO_LARGE")
+        info = gif_info(data)
+        if not info:
+            raise HTTPException(400, "NOT_A_GIF")
+        target = media_dir() / MEDIA_SLOTS[slot][0]
+        tmp = target.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(target)
+        rt.log.info("UI", "ASSET_UPLOADED", f"Wgrano GIF ({slot}): {info['width']}×{info['height']}, {info['frames']} klatek, pętla {info['loop_duration_ms']} ms")
+        return {"ok": True, "slot": slot, "gif": info}
+
+    @app.get("/media/masterquo/{slot}")
+    def media(slot: str):
+        if slot not in MEDIA_SLOTS:
+            raise HTTPException(404)
+        name = MEDIA_SLOTS[slot][0]
+        for f in (media_dir() / name, paths.FRONTEND_DIST / "assets" / "masterquo" / name):
+            if f.is_file():
+                return FileResponse(f, media_type="image/gif", headers={"Cache-Control": "no-cache"})
+        raise HTTPException(404)
 
     @app.post("/api/v1/auto")
     def set_auto(req: OnReq):

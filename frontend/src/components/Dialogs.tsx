@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiSend } from "../api";
+import { apiGet, apiSend, apiUpload } from "../api";
+import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
 
@@ -27,14 +28,17 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   useEffect(() => { load(); }, []);
   if (!cfg) return <Modal title="Ustawienia" onClose={onClose}><div>Ładowanie…</div></Modal>;
   const set = (path: string, value: any) => {
-    const [a, b] = path.split(".");
-    setCfg({ ...cfg, [a]: { ...cfg[a], [b]: value } });
+    const keys = path.split(".");
+    const upd = (obj: any, i: number): any => (i === keys.length - 1 ? { ...obj, [keys[i]]: value } : { ...obj, [keys[i]]: upd(obj?.[keys[i]] ?? {}, i + 1) });
+    setCfg(upd(cfg, 0));
   };
   const num = (v: string) => (v === "" ? null : Number(v.replace(",", ".")));
   const save = async (extra: any = {}) => {
     setMsg(null);
     try {
-      const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: cfg.execution, ...extra };
+      const { strategies: _st, ...activeRest } = cfg.active || {};
+      const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: cfg.execution,
+        active: activeRest, ...extra };
       const r = await apiSend("PUT", "/api/v1/config", patch);
       setCfg(r.config);
       setMsg("Zapisano.");
@@ -63,8 +67,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     setMsg(r.ok ? `Połączenie OK: ${r.model}` : `Test nieudany: ${r.error}`);
   };
   const field = (label: string, path: string, type: "text" | "num" | "bool" = "text", hint?: string, opts?: string[]) => {
-    const [a, b] = path.split(".");
-    const v = cfg[a][b];
+    const v = path.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), cfg);
     return (
       <label className="field">
         <span>{label}{hint && <small> – {hint}</small>}</span>
@@ -82,7 +85,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["strategy", "Strategia"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">
@@ -148,6 +151,26 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Min. odległość celu [ATR]", "strategy.min_target_distance_atr", "num")}
         {field("SL na BE po TP1", "strategy.move_sl_to_breakeven_after_tp1", "bool")}
       </div>}
+      {tab === "active" && <div className="form">
+        <div className="note">Profil ACTIVE: 10 strategii S01–S10, etapy WATCH / EARLY / CONFIRMED z punktacją 0–100 (heurystyka, nie prawdopodobieństwo).
+          AUTO wybiera strategię – <b>nie</b> włącza składania zleceń (to osobny przełącznik „Wykonywanie zleceń”). ORIGINAL = wyłącznie dotychczasowy M07.</div>
+        {field("Profil wykrywania", "active.profile", "text", "", ["ACTIVE", "ORIGINAL"])}
+        {field("Wybór strategii", "active.strategy_mode", "text", "AUTO = bot dobiera strategię do rynku", ["AUTO", "MANUAL"])}
+        {field("Strategia w trybie MANUAL", "active.manual_strategy_id", "text", "", ["", "S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10"])}
+        {field("Próg WATCH", "active.thresholds.watch", "num")}
+        {field("Próg EARLY", "active.thresholds.early", "num")}
+        {field("Próg CONFIRMED", "active.thresholds.confirmed", "num", "plus prawdziwy trigger strategii")}
+        {field("Min. odstęp skanów [s]", "active.scan_min_interval_seconds", "num", "tylko przy nowych danych")}
+        {field("Przewaga do przełączenia [pkt rankingu]", "active.min_switch_margin", "num")}
+        {field("Potwierdzenia przewagi [aktualizacje]", "active.switch_confirm_updates", "num", "liczone tylko na nowych danych")}
+        {field("Min. czas utrzymania wyboru [s]", "active.min_selection_hold_seconds", "num")}
+        {field("Margines konfliktu LONG/SHORT", "active.conflict_margin", "num")}
+        {field("Obniżenie etapu po [aktualizacjach]", "active.downgrade_confirm_updates", "num")}
+        {field("Anulowanie po [aktualizacjach bez struktury]", "active.cancel_after_misses", "num")}
+        {field("Okno wejścia po CONFIRMED [świece]", "active.confirmed_window_bars", "num")}
+        <div className="note">Skanowanie i dopuszczenie do handlu każdej strategii ustawiasz w panelu „Strategie (10)”. Powrót do poprzedniej konfiguracji: profil ORIGINAL (instrukcja w ROLLBACK.md).</div>
+      </div>}
+      {tab === "look" && <LookTab />}
       {tab === "other" && <div className="form">
         {field("Newsy/kalendarz M04N", "news.enabled", "bool")}
         {field("Telegram włączony", "telegram.enabled", "bool")}
@@ -241,5 +264,51 @@ export function PowerDialog({ onClose }: { onClose: () => void }) {
       </div>
       {msg && <div className="note">{msg}</div>}
     </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ appearance (presentation only)
+function LookTab() {
+  const { prefs, setPrefs, assets, reloadAssets } = useAppearance();
+  const [msg, setMsg] = useState<string | null>(null);
+  const upload = async (slot: "background" | "frog", f: File | undefined) => {
+    if (!f) return;
+    setMsg(null);
+    try {
+      const r = await apiUpload(`/api/v1/appearance/upload?slot=${slot}`, f);
+      setMsg(`Wgrano: ${r.gif.width}×${r.gif.height}, ${r.gif.frames} klatek, pętla ${r.gif.loop_duration_ms} ms, przezroczystość: ${r.gif.transparency ? "tak" : "nie"}`);
+      reloadAssets();
+    } catch (e: any) {
+      setMsg("Błąd: " + (e?.message || e));
+    }
+  };
+  const info = (slot: string) => {
+    const a = assets?.[slot];
+    if (!a) return "brak informacji";
+    if (!a.animated_available) return "animowany GIF niedostępny – używany kadr statyczny";
+    return `${a.source === "USER_UPLOAD" ? "wgrany przez Ciebie" : "wbudowany"}: ${a.gif?.width}×${a.gif?.height}, ${a.gif?.frames} klatek, ${a.gif?.loop_duration_ms} ms`;
+  };
+  return (
+    <div className="form">
+      <div className="note">Ustawienia wyglądu nie zmieniają danych, wyboru strategii ani zleceń. Zapisywane lokalnie w tej przeglądarce.</div>
+      <label className="field"><span>Animacje</span>
+        <select value={prefs.mode} onChange={(e) => setPrefs({ mode: e.target.value as AnimMode })}>
+          <option value="FULL">FULL – animowane tło i tańcząca żaba</option>
+          <option value="LIGHT">LIGHT – statyczne tło, żaba animowana</option>
+          <option value="OFF">OFF – statyczne kadry obu grafik</option>
+        </select></label>
+      <label className="field"><span>Przyciemnienie tła <small>{Math.round(prefs.dim * 100)}%</small></span>
+        <input type="range" min={0} max={0.9} step={0.05} value={prefs.dim} onChange={(e) => setPrefs({ dim: Number(e.target.value) })} /></label>
+      <label className="field"><span>Kadrowanie tła – poziomo <small>{prefs.posX}%</small></span>
+        <input type="range" min={0} max={100} step={1} value={prefs.posX} onChange={(e) => setPrefs({ posX: Number(e.target.value) })} /></label>
+      <label className="field"><span>Kadrowanie tła – pionowo <small>{prefs.posY}%</small></span>
+        <input type="range" min={0} max={100} step={1} value={prefs.posY} onChange={(e) => setPrefs({ posY: Number(e.target.value) })} /></label>
+      <div className="note">Tło (pierwszy GIF, 4FDC48DF…): {info("background")}.<br />Żaba przy BALANCE (drugi GIF, 2C98C50C…): {info("frog")}.</div>
+      <label className="field"><span>Wgraj oryginalny GIF tła (4FDC48DF-6C65-4AF7-9C88-3AA720BEAEB4.gif)</span>
+        <input type="file" accept="image/gif" onChange={(e) => upload("background", e.target.files?.[0])} /></label>
+      <label className="field"><span>Wgraj GIF żaby (opcjonalnie – wbudowany jest już dołączony)</span>
+        <input type="file" accept="image/gif" onChange={(e) => upload("frog", e.target.files?.[0])} /></label>
+      {msg && <div className="note">{msg}</div>}
+    </div>
   );
 }

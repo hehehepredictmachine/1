@@ -98,3 +98,10 @@ Klucz Claude: Windows DPAPI (`data/secrets.dpapi.json`), nigdy w odpowiedziach A
 * **Brak EA/MQL5** – wszystkie potrzebne dane (świece, ticki, rachunek, kalkulatory, zlecenia) są dostępne przez pakiet Python MetaTrader5;
   aplikacja nie odczytuje niestandardowych wskaźników ani obiektów z wykresów terminala (tego API świec nie umożliwia).
 * **Silniki legacy bez zmian** – zachowana dokładnie metoda obliczeń i definicje; hash każdego pliku kontrolowany testem.
+
+## 8. Profil ACTIVE i AUTO (1.2)
+`engine/active.py` (ActiveEngine) działa wewnątrz EngineService – nie jest osobnym silnikiem:
+`strategies/adapter.py` (MarketView) → `strategies/regime.py` → `strategies/registry.py` (S01–S10, `scan`) → `strategies/tracker.py`
+(tabela `strategy_setups`) → `strategies/selector.py` (StrategyAutoSelector, `strategy_selection_log`) → `engine/decision.py`
+(węzeł STRATEGY ACTIVE) → `risk/engine.py` → bramka AI → `execution/gateway.py`. Ten sam kod reguł obsługuje live i `tools/replay_strategies.py`.
+Szczegóły: `docs/AUTO_LOGIKA.md`. Warstwa wyglądu (`frontend/src/appearance.tsx`) jest wyłącznie prezentacją.

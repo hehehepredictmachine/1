@@ -23,6 +23,16 @@ Lokalna aplikacja Windows: Twój terminal MetaTrader 5 → silnik MasterQUO → 
 6. Zamknięcie przeglądarki **nie** zatrzymuje programu. Zatrzymanie: **`04_STOP_MASTERQUO.bat`** (zatrzymuje tylko MasterQUO,
    nie inne programy Pythona ani terminal MT5).
 
+## Nowe w 1.2 – AUTO, 10 strategii, animowany monitor
+* **AUTO — wybór strategii** (nagłówek): bot sam ocenia rynek (reżim), porównuje 10 strategii S01–S10 i wybiera główną. Kliknięcie
+  przełącza AUTO/MANUAL. **Nie włącza zleceń** – to robi osobny status „Wykonywanie zleceń” (tryb + przełącznik AUTO w oknie trybu).
+* Panele pod wykresami: „AUTO — wybór strategii” (reżim, wybrana strategia, powód, 3 najlepsze kandydatury, alternatywa, blokady),
+  „Setupy na bieżąco” (WATCH/EARLY/CONFIRMED, punktacja, brakujące potwierdzenia, „Dlaczego nie ma setupu?”),
+  „Strategie (10)” – przełączniki **Skanuj** i **Dopuść do handlu** dla każdej strategii.
+* Żaba tańczy obok BALANCE. **Tło**: otrzymałem je jako statyczny obraz – aby było animowane, wgraj oryginalny GIF
+  w ⚙ Ustawienia → **Wygląd** (tam też FULL / LIGHT / OFF i przyciemnienie).
+* Powrót do poprzedniego zachowania: `ROLLBACK.md` (profil ORIGINAL: `08_PROFIL_ORIGINAL.bat`).
+
 ## Pozostałe skróty
 * `05_TESTY_OFFLINE.bat` – testy na symulatorze (nie dotyka Twojego MT5); `05_TESTY_OFFLINE.bat --legacy` dodaje testy oryginalnej paczki.
 * `06_DIAGNOZA_CZASU_MT5.bat` – surowe czasy ticków/świec i zmierzony offset serwera (uruchom przy otwartym rynku).

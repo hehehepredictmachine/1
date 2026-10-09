@@ -29,7 +29,8 @@ class TestPipeline(unittest.TestCase):
         cfg.update({"risk": {"risk_per_trade_pct": 1.0, "max_total_open_risk_pct": 3.0, "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0,
                              "max_open_positions": 3, "macro_block_high_impact": False},
                     "costs": {"slippage_stress_points": 5, "commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.5},
-                    "news": {"enabled": False}, "clock": {"reference_url": None}})
+                    "news": {"enabled": False}, "clock": {"reference_url": None},
+                    "active": {"profile": "ORIGINAL"}})   # this class tests the original M07/M10A path
         b.start()
         self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.clock.verified and b.quote_status(), 40))
         from masterquo.data.pcclock import PCClockCheck

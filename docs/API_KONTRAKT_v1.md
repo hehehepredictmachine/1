@@ -45,3 +45,16 @@ execution_permission (ALLOWED|BLOCKED), system_state, data_quality, market_state
 `schema_version, decision_id, snapshot_id, setup_id, as_of_utc, expires_at_utc, analysis_direction, signal_stage, proposed_action, strategy_id,
 strategy_version, entry_zone, invalidation_level, proposed_targets, scenarios{bullish,bearish,wait}, evidence_refs, contradictions, missing_data,
 reason_codes, explanation_pl, answer_pl, lessons, playbook_proposals, model_id, prompt_version`.
+
+## Dodane w 1.2 (kontrakt AUTO `mq-auto-1.0.0`, zgodny wstecz)
+| Endpoint | Treść |
+|---|---|
+| `GET /api/v1/strategy/auto` | strategy_mode, system_state, regime, selected_strategy_id/version, selected, selection_reason_codes, candidate_ranking, alternative, selected_at, last_evaluated_at, snapshot_id, data_status, last_change, per_strategy, setups, funnel, strategies, why_no_setup |
+| `POST /api/v1/strategy/mode` | `{strategy_mode: AUTO|MANUAL, manual_strategy_id?}` – nie zmienia trybu ani wykonywania zleceń |
+| `POST /api/v1/strategy/toggle` | `{strategy_id, scan?, trade?}` |
+| `POST /api/v1/strategy/profile` | `{profile: ACTIVE|ORIGINAL}` |
+| `GET /api/v1/strategy/selection-log` | historia zmian wyboru (przyczyna, poprzednia/nowa strategia, snapshot) |
+| `GET /api/v1/playbook` | karty setupów ACTIVE (także odwołanych) z historią i wynikiem lub „brak danych” |
+| `GET /api/v1/appearance/assets`, `POST /api/v1/appearance/upload?slot=background|frog` (body: GIF), `GET /media/masterquo/{slot}` | grafiki monitora; upload walidowany (struktura GIF, ≤ 15 MB) |
+`GET /api/v1/state` zawiera dodatkowo `auto` (skrót) i `active_config`. Rekord decyzji ma pole `profile` (ACTIVE/ORIGINAL),
+`direction_basis` może mieć wartość `REGIME_OBSERVATION`. WebSocket: nowe zdarzenie `auto`.

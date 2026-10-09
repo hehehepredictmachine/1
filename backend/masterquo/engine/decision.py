@@ -35,7 +35,9 @@ def structural_direction(m02: dict | None) -> str:
 
 def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None, session_epoch: int, dq: dict,
           legacy: dict, setup: dict | None, levels: dict | None, risk: dict | None, agent_gate: dict, mode_gate: dict,
-          macro: dict, strategy_cfg, risk_cfg, dxy_status: str, synthetic: bool) -> dict:
+          macro: dict, strategy_cfg, risk_cfg, dxy_status: str, synthetic: bool, active: dict | None = None) -> dict:
+    """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes"} - the STRATEGY node then
+    validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule."""
     nodes = []
     m02 = legacy.get("m02")
     # 1 DATA
@@ -62,21 +64,41 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
     # 3 STRATEGY
     sdir = structural_direction(m02)
     st_unmet, st_met, st_codes = [], [], []
-    if legacy.get("errors"):
+    if active is not None:
+        sdir = active.get("bias") or "NEUTRAL"
+        reg = active.get("regime") or {}
+        st_codes.append("REGIME_" + str(reg.get("state")))
+        st_codes += ["TF_CONFLICT_" + c["kind"] for c in reg.get("conflicts") or []]
+        if setup is None:
+            st_unmet.append("SELECTED_STRATEGY_SETUP")
+            st_codes += list(active.get("reason_codes") or [])[:4]
+        else:
+            st_met.append(f"SELECTED_{setup['strategy_id']}_{setup['state']}")
+            if setup.get("countertrend"):
+                st_codes.append("COUNTERTREND_" + str(setup.get("horizon")))
+        d1 = ((m02 or {}).get("timeframes") or {}).get("D1", {}).get("direction")
+        d1_conflict = False
+        nodes.append(_node("STRATEGY", "FAIL" if st_unmet else "PASS", st_met, st_unmet, st_codes))
+    elif legacy.get("errors"):
         st_codes += legacy["errors"]
-    if sdir == "NEUTRAL":
+    if active is not None:
+        pass
+    elif sdir == "NEUTRAL":
         st_unmet.append("STRUCTURAL_DIRECTION_RESOLVED")
         st_codes.append("M02_STRUCTURE_" + str((m02 or {}).get("structural_direction")))
     else:
         st_met.append("STRUCTURAL_DIRECTION_" + sdir)
         st_codes += list((m02 or {}).get("structure_notes") or [])
-    d1 = ((m02 or {}).get("timeframes") or {}).get("D1", {}).get("direction")
-    d1_conflict = (sdir == "LONG" and d1 == "BEARISH") or (sdir == "SHORT" and d1 == "BULLISH")
-    if d1_conflict:
+    if active is None:
+        d1 = ((m02 or {}).get("timeframes") or {}).get("D1", {}).get("direction")
+        d1_conflict = (sdir == "LONG" and d1 == "BEARISH") or (sdir == "SHORT" and d1 == "BULLISH")
+    if active is None and d1_conflict:
         st_codes.append("D1_OPPOSES_H4_H1_STRUCTURE")
         if strategy_cfg.d1_conflict_blocks_entry:
             st_unmet.append("D1_NOT_OPPOSING")
-    if setup is None:
+    if active is not None:
+        pass
+    elif setup is None:
         st_unmet.append("FROZEN_M07_SETUP")
         st_codes += [c for c in ((legacy.get("m07") or {}).get("reason_codes") or [])][:6]
     else:
@@ -84,7 +106,8 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         if setup["strategy_id"] in strategy_cfg.strategies_requiring_dxy and dxy_status != "OK":
             st_unmet.append("DXY_REQUIRED_BY_STRATEGY")
             st_codes.append("DXY_" + dxy_status)
-    nodes.append(_node("STRATEGY", "FAIL" if st_unmet else "PASS", st_met, st_unmet, st_codes))
+    if active is None:
+        nodes.append(_node("STRATEGY", "FAIL" if st_unmet else "PASS", st_met, st_unmet, st_codes))
     # 4 TRIGGER
     stage = setup["signal_stage"] if setup else "WATCH"
     if setup and setup["state"] == "CONFIRMED":
@@ -107,14 +130,20 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
                        unmet=[] if ag in ("PASS", "NOT_REQUIRED") else ["AI_ASSESSMENT_VALID_AND_AGREES"],
                        codes=agent_gate.get("reason_codes", [])))
     # 7 PERMISSION
-    nodes.append(_node("PERMISSION", "PASS" if mode_gate["allowed"] else "FAIL",
-                       met=["MODE_" + mode_gate["mode"]] if mode_gate["allowed"] else [],
-                       unmet=[] if mode_gate["allowed"] else ["EXECUTION_MODE_ALLOWS_ORDERS"], codes=mode_gate.get("reason_codes", [])))
+    perm_ok = mode_gate["allowed"]
+    perm_unmet = [] if mode_gate["allowed"] else ["EXECUTION_MODE_ALLOWS_ORDERS"]
+    perm_codes = list(mode_gate.get("reason_codes", []))
+    if active is not None and setup is not None and not active.get("trade_allowed", True):
+        perm_ok = False
+        perm_unmet.append("STRATEGY_ALLOWED_TO_TRADE")
+        perm_codes.append(f"STRATEGY_TRADE_DISABLED_{setup['strategy_id']}")
+    nodes.append(_node("PERMISSION", "PASS" if perm_ok else "FAIL",
+                       met=["MODE_" + mode_gate["mode"]] if perm_ok else [], unmet=perm_unmet, codes=perm_codes))
 
     by = {n["node"]: n["status"] for n in nodes}
     direction = setup["direction"] if setup and setup["state"] not in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY", "CANCELLED") else sdir
     direction_basis = "SETUP" if setup and direction == setup["direction"] and setup["state"] not in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY", "CANCELLED") \
-        else ("STRUCTURE_OBSERVATION" if sdir != "NEUTRAL" else "NONE")
+        else (("REGIME_OBSERVATION" if active is not None else "STRUCTURE_OBSERVATION") if sdir != "NEUTRAL" else "NONE")
     actionable = (by["DATA"] == "PASS" and by["MARKET"] == "PASS" and by["STRATEGY"] == "PASS" and by["TRIGGER"] == "PASS"
                   and by["RISK"] == "PASS" and by["AI"] == "PASS")
     if actionable:
@@ -153,6 +182,7 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
             "regime_conflict": (m02 or {}).get("regime_conflict"), "d1_direction": d1, "d1_conflict": d1_conflict,
             "conflict_rule": "Kierunek strukturalny = zgodność H4 i H1 (M02 SCALP). D1 tylko kontekst" +
                              (" i blokuje wejścia przy konflikcie." if strategy_cfg.d1_conflict_blocks_entry else "; konflikt D1 opisany, nie blokuje.")},
+        "profile": "ACTIVE" if active is not None else "ORIGINAL",
         "synthetic": synthetic, "observation_note": None if permission == "ALLOWED" else
             ("Kierunek jest obserwacją analityczną, nie zgodą na wejście." if direction != "NEUTRAL" else None),
     }

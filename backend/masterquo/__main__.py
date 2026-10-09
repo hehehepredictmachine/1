@@ -192,6 +192,19 @@ def _load_dotenv() -> None:
             os.environ[k] = v.strip('"')
 
 
+def cmd_profile(name: str) -> int:
+    """Rollback helper. Run with the server stopped (a running server keeps its own copy of the config)."""
+    from .config import ConfigStore
+    store = ConfigStore()
+    if name == "show":
+        a = store.get().active
+        print(f"Profil: {a.profile}, wybór strategii: {a.strategy_mode}{' ' + a.manual_strategy_id if a.manual_strategy_id else ''}")
+        return 0
+    store.update({"active": {"profile": name}})
+    print(f"[OK] Profil wykrywania: {name}. Tryb wykonywania zleceń i limity bez zmian. Uruchom 03_START_MASTERQUO.bat.")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -202,6 +215,8 @@ def main(argv=None) -> int:
     sub.add_parser("doctor")
     sub.add_parser("clock")
     sub.add_parser("set-key")
+    pr = sub.add_parser("profile", help="przełącz profil wykrywania: ACTIVE (S01-S10 + AUTO) albo ORIGINAL (M07 jak w 1.1)")
+    pr.add_argument("name", choices=["ACTIVE", "ORIGINAL", "show"])
     e = sub.add_parser("export", help="eksport 6 TF w formacie M06R z czasem UTC")
     e.add_argument("--from-utc", required=True)
     e.add_argument("--to-utc", required=True)
@@ -221,6 +236,8 @@ def main(argv=None) -> int:
         return diagnostics.set_key()
     if a.cmd == "export":
         return diagnostics.export_history(a.from_utc, a.to_utc, a.out)
+    if a.cmd == "profile":
+        return cmd_profile(a.name)
     return 1
 
 

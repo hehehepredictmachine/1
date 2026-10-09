@@ -32,3 +32,17 @@
 * **DPAPI**: klucz zaszyfrowany dla bieżącego użytkownika Windows; przeniesienie folderu na inny komputer wymaga ponownego wpisania klucza.
 * **Python 3.14** nie jest obsługiwany przez instalator (wybiera 3.13, potem 3.12) – świadomie, bez weryfikacji zgodności pakietów.
 * **Legacy regresja**: 1 test oryginalnego pakietu (`test_40_viewer_has_six_correct_roles`) wymaga `tkinter`, którego nie było w środowisku Linux budowy.
+
+## Wersja 1.2 (ACTIVE, 10 strategii, AUTO, animowany monitor)
+* **Strategie S01–S10 są eksperymentalne**: testy funkcjonalne na syntetycznych scenariuszach przeszły, ale nie ma walidacji OOS ani
+  forward na danych Twojego brokera (status FUNCTIONAL_ONLY_OOS_NOT_RUN). Replay na symulatorze dowodzi działania kodu, nie skuteczności.
+* **Źródła książkowe niezweryfikowane** – serwisy wydawców były niedostępne z mojego środowiska (DNS); reguły są własną formalizacją
+  ogólnych idei, oznaczone SOURCE_UNVERIFIED (docs/ZRODLA_I_ADAPTACJE.md).
+* Godziny sesji S05 (Londyn 08:00, Nowy Jork 08:30) to konfiguracja startowa – wymaga zbadania na feedzie brokera.
+* Komponent „dodatkowe potwierdzenia” (5 pkt) używa DXY, którego obecnie nie dostarczamy → zawsze 0 pkt (maks. 95/100).
+* Klucze identyfikujące setupy S03/S04/S08 opierają się na czasie świecy ekstremum; koszyk poziomu event_id (0,5 ATR M15) to heurystyka grupowania.
+* Replay odtwarza wyłącznie zamknięte świece (bez świecy tworzącej się) – live może pokazać EARLY wcześniej niż replay.
+* Przy jednoczesnym dotknięciu SL i TP w jednej świecy M5 replay przyjmuje SL (konserwatywnie); brak ticków historycznych.
+* **Tło**: animowanego oryginału (20 klatek) nie otrzymałem – w paczce jest statyczny kadr; animację włącza wgranie oryginalnego GIF-a.
+* Kadr statyczny wgranego GIF-a liczy przeglądarka (ImageDecoder; zapas: canvas) – starsze przeglądarki bez ImageDecoder pokażą pierwszy
+  zdekodowany kadr.

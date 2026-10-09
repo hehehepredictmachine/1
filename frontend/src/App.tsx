@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { apiGet } from "./api";
+import { BackgroundLayer, useAppearance } from "./appearance";
 import AgentDrawer from "./components/AgentDrawer";
+import { AutoPanel, LiveSetupsPanel, StrategiesPanel, useAutoFull } from "./components/AutoPanels";
 import { BotLog, NewsPanel, RiskPanel } from "./components/BottomPanels";
 import ChartPanel, { type ChartOpts } from "./components/ChartPanel";
 import { ModeDialog, PowerDialog, SettingsModal } from "./components/Dialogs";
@@ -42,6 +44,8 @@ export default function App() {
   const [power, setPower] = useState(false);
   const [statsMode, setStatsMode] = usePersisted<string>("statsmode", "PAPER");
   const [stats, setStats] = useState<any>(null);
+  const [autoFull, reloadAuto] = useAutoFull();
+  const { prefs } = useAppearance();
 
   useEffect(() => {
     if (s.loaded && s.first_run_completed === false) setSettings(true);
@@ -55,13 +59,14 @@ export default function App() {
     return () => clearInterval(t);
   }, [statsMode, s.loaded, (s.logs || []).filter((l: any) => l.code === "SETTLED" || l.category === "PAPER").length]);
 
-  if (!s.loaded) return <div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div>;
+  if (!s.loaded) return <><BackgroundLayer /><div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div></>;
   const o = (k: keyof ChartOpts, v: any) => setOpts({ ...opts, [k]: v });
   const chart = (tf: string, idx: number) => (
     <ChartPanel key={tf + idx} tf={tf} index={idx} opts={opts} fullscreen={full === tf + idx} onFullscreen={() => setFull(full === tf + idx ? null : tf + idx)} />
   );
   return (
-    <div className={cls("app", s.synthetic && "synthetic")}>
+    <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
+      <BackgroundLayer />
       {s.synthetic && <div className="synthetic-banner">DANE SYNTETYCZNE – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
       <Header onAgent={() => setAgent(!agent)} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} botStats={stats} />
       <div className="toolbar">
@@ -98,6 +103,11 @@ export default function App() {
             <StatsPanel index={8} stats={stats} mode={statsMode} setMode={setStatsMode} />
           </>
         )}
+        <div className="auto-row-grid">
+          <AutoPanel full={autoFull} />
+          <LiveSetupsPanel full={autoFull} />
+          <StrategiesPanel full={autoFull} reload={() => { reloadAuto(); }} />
+        </div>
         <div className="bottom-row">
           <NewsPanel />
           <RiskPanel onSettings={() => setSettings(true)} />

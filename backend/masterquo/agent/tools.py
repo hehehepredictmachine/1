@@ -25,8 +25,9 @@ TOOL_DEFS = [
           {"timeframe": {"type": "string", "enum": TFS}}, ["timeframe"]),
     _tool("get_structure", "Zdarzenia struktury M03 dla interwału: BOS/CHoCH/MSS, sweepy, FVG, kandydaci OB, poziomy płynności, premium/discount.",
           {"timeframe": {"type": "string", "enum": TFS}}, ["timeframe"]),
-    _tool("get_strategy_candidates", "Wynik M07 (MVP/SMC/SCALPING), aktywny setup z zamrożonymi regułami cyklu życia, etap M10A, poziomy SL/TP reguły MQAI-LEVELS.",
-          {}, []),
+    _tool("get_strategy_candidates", "Profil ACTIVE: reżim rynku (MarketRegimeEngine), ranking kandydatów S01–S10 (strategy_fit_score, setup_score 0–100, "
+          "etap WATCH/EARLY/CONFIRMED, brakujące potwierdzenia), wybrana strategia AUTO i powód wyboru. Dodatkowo wynik oryginalnego M07. "
+          "Oceny to heurystyka, nie prawdopodobieństwo.", {}, []),
     _tool("get_risk_state", "Wynik deterministycznego modułu ryzyka (RR netto, koszty, bramka ryzyka, przyczyny blokad). Bez danych identyfikujących rachunek.",
           {}, []),
     _tool("get_macro_context", "Kontekst makro M04N: status kalendarza (częściowy), wydarzenia wysokiego wpływu w oknie, ostatnie nagłówki. "
@@ -129,7 +130,18 @@ class Toolbox:
     def t_get_strategy_candidates(self) -> dict:
         c = self.ctx
         m07 = c["legacy"].get("m07") or {}
-        return {"m07_status": m07.get("candidate_status"), "m07_reason_codes": m07.get("reason_codes"),
+        auto = c.get("auto") or {}
+        reg = auto.get("regime") or {}
+        return {"profile": "ACTIVE" if auto else "ORIGINAL",
+                "auto": None if not auto else {
+                    "strategy_mode": auto.get("strategy_mode"), "system_state": auto.get("system_state"), "data_status": auto.get("data_status"),
+                    "regime": {"state": reg.get("state"), "reason": reg.get("reason"), "conflicts": reg.get("conflicts"), "horizons": reg.get("horizons")},
+                    "selected": auto.get("selected"), "selection_reason_codes": auto.get("selection_reason_codes"),
+                    "ranking": auto.get("candidate_ranking"), "alternative": auto.get("alternative"), "last_change": auto.get("last_change")},
+                "registry": ["S01 TREND_PULLBACK", "S02 ADAPTIVE_TREND", "S03 CHANNEL_BREAKOUT", "S04 VOLATILITY_COMPRESSION_BREAKOUT",
+                             "S05 SESSION_RANGE_BREAKOUT", "S06 BREAKOUT_RETEST", "S07 FAILED_BREAKOUT_RECLAIM", "S08 RANGE_EDGE_REVERSION",
+                             "S09 STATISTICAL_MEAN_REVERSION", "S10 EXHAUSTION_STRUCTURE_REVERSAL"],
+                "m07_status": m07.get("candidate_status"), "m07_reason_codes": m07.get("reason_codes"),
                 "proposals": [{k: v for k, v in p.items() if k != "plan"} for p in (m07.get("proposals") or [])],
                 "active_setup": c.get("setup"), "levels_rule": c.get("levels"),
                 "early_core_check": (c["legacy"].get("m03") or {}).get("early_evidence")}

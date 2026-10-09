@@ -3,7 +3,7 @@ import { apiGet, apiSend } from "../api";
 import { useStore } from "../store";
 import { cls, fmtNum, fmtTime, reasonPl } from "../util";
 
-const ACTIVE = ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"];
+const ACTIVE = ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED", "WATCH", "EARLY"];
 
 export default function SignalsPanel({ index }: { index: number }) {
   const { s } = useStore();
@@ -123,7 +123,7 @@ export default function SignalsPanel({ index }: { index: number }) {
             {s.symbol?.symbol} · <span className={dirCls}>{d?.analysis_direction ?? "—"}</span> ({d?.signal_stage ?? "—"})
             <span className={cls("badge", d?.decision === "BUY" || d?.decision === "SELL" ? "ok" : "muted")}>{d?.decision ?? "—"}</span>
           </div>
-          <div className="sig-sub">{d?.direction_basis === "STRUCTURE_OBSERVATION" ? "Kierunek = obserwacja struktury M02 (to nie sygnał)" : st ? `${st.strategy_id} ${st.profile} · ${st.setup_tf} · etap M10A ${st.state}` : "Brak setupu"}</div>
+          <div className="sig-sub">{d?.direction_basis === "STRUCTURE_OBSERVATION" ? "Kierunek = obserwacja struktury M02 (to nie sygnał)" : d?.direction_basis === "REGIME_OBSERVATION" ? "Kierunek = obserwacja reżimu (to nie sygnał)" : st ? (st.profile === "ACTIVE" ? `${st.strategy_id} ${st.strategy_name ?? ""} · ${st.setup_tf} · etap ${st.state} · wynik ${st.setup_score ?? "—"}` : `${st.strategy_id} ${st.profile} · ${st.setup_tf} · etap M10A ${st.state}`) : "Brak setupu"}</div>
           <div className="levels">
             <div><label>WEJŚCIE</label><b>{risk?.entry ? fmtNum(risk.entry) : lv?.entry_zone ? `${fmtNum(lv.entry_zone.low)}–${fmtNum(lv.entry_zone.high)}` : "—"}</b></div>
             <div><label>SL</label><b className="neg">{fmtNum(lv?.stop_loss)}</b></div>

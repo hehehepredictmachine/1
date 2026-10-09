@@ -111,3 +111,15 @@ export class LiveSocket {
     };
   }
 }
+
+export async function apiUpload<T = any>(path: string, file: Blob): Promise<T> {
+  const r = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": file.type || "application/octet-stream", "X-MQ-CSRF": csrf ?? "" },
+    body: file,
+  });
+  const text = await r.text();
+  if (!r.ok) throw new ApiError(r.status, text);
+  return JSON.parse(text);
+}
