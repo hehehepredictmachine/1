@@ -52,6 +52,12 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, analysisSeq: s.analysisSeq + 1 };
     case "auto":
       return { ...s, auto: d };
+    case "license":
+      return { ...s, license: d };
+    case "license_warning":
+      return { ...s, licenseWarning: d };
+    case "license_locked":
+      return { ...s, decision: null, licenseLocked: d };
     case "ml":
       return { ...s, ml: { ...(s.ml || {}), ...d } };
     case "engine_error":
@@ -78,7 +84,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await initSession();
         await refresh();
         if (!alive) return;
-        sock.current = new LiveSocket((m) => dispatch({ type: "ev", ev: m }), (st) => dispatch({ type: "ws", status: st }));
+        sock.current = new LiveSocket((m) => {
+          // logout / another user: drop EVERYTHING held in memory and start clean (no data of the previous user remains)
+          if (m.type === "session_reset") { sock.current?.stop(); window.location.reload(); return; }
+          dispatch({ type: "ev", ev: m });
+        }, (st) => dispatch({ type: "ws", status: st }));
         sock.current.start();
       } catch (e: any) {
         setError(String(e?.message || e));
@@ -99,7 +109,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sock.current?.stop();
     };
   }, []);
-  (window as any).__mqRefresh = refresh;          // used by UI tests to force a full data refresh
+  (window as any).__mqRefresh = refresh;
+  // license became valid / invalid -> reload the full (or reduced) state from the backend
+  const unlockedNow = !!s.license?.ui_unlocked;
+  useEffect(() => {
+    if (s.loaded && unlockedNow === !!s.locked) refresh().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlockedNow]);          // used by UI tests to force a full data refresh
   const value = useMemo(() => ({ s, refresh }), [s]);
   if (error)
     return (

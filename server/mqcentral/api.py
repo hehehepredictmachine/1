@@ -127,6 +127,15 @@ class GenLicenseReq(Strict):
     note: str | None = Field(default=None, max_length=200)
 
 
+def parse(model, raw: bytes):
+    """Device endpoints read the raw (signed) body: validate it strictly; unknown fields -> 422."""
+    from pydantic import ValidationError
+    try:
+        return model.model_validate_json(raw or b"{}")
+    except ValidationError as e:
+        raise HTTPException(422, detail=[{"msg": x["msg"], "loc": x["loc"]} for x in e.errors()][:5]) from None
+
+
 def create_app(central: Central) -> FastAPI:
     s = central.s
     app = FastAPI(title="MasterQUO Central", docs_url="/api/docs" if s.dev else None, redoc_url=None, openapi_url="/api/openapi.json" if s.dev else None)
@@ -298,12 +307,12 @@ def create_app(central: Central) -> FastAPI:
 
     @app.post("/api/v1/ops/authorize")
     async def authorize(req: Request, ctx=Depends(device)):
-        r = AuthorizeReq.model_validate_json(await req.body())
+        r = parse(AuthorizeReq, await req.body())
         return central.authorize_op(ctx[0], ctx[1], r.intent_id, r.op, r.model_dump())
 
     @app.post("/api/v1/connector/link")
     async def link(req: Request, ctx=Depends(device)):
-        r = LinkReq.model_validate_json(await req.body())
+        r = parse(LinkReq, await req.body())
         return central.link_account(ctx[0], ctx[1], r.model_dump())
 
     @app.post("/api/v1/connector/unlink")
@@ -313,12 +322,12 @@ def create_app(central: Central) -> FastAPI:
 
     @app.post("/api/v1/telemetry/snapshot")
     async def snapshot(req: Request, ctx=Depends(device)):
-        r = SnapshotReq.model_validate_json(await req.body())
+        r = parse(SnapshotReq, await req.body())
         return central.snapshot(ctx[0], ctx[1], r.model_dump())
 
     @app.post("/api/v1/telemetry/deals")
     async def deals(req: Request, ctx=Depends(device)):
-        r = DealsReq.model_validate_json(await req.body())
+        r = parse(DealsReq, await req.body())
         b = r.model_dump(by_alias=True)
         return central.deals(ctx[0], ctx[1], b)
 

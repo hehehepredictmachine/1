@@ -106,11 +106,12 @@ class CentralClient:
                                                                "nonce": ch["nonce"], "signature": sig}, {"Authorization": f"Bearer {token}"})
 
     # ------------------------------------------------------------ device-signed (proof of possession, single-use nonce)
-    def device_call(self, priv: Ed25519PrivateKey, device_id: str, method: str, path: str, body: dict | None = None) -> tuple[dict, float, float]:
+    def device_call(self, priv: Ed25519PrivateKey, device_id: str, method: str, path: str, body: dict | None = None,
+                    mono=time.monotonic) -> tuple[dict, float, float]:
         """Returns (json, t_start_mono, t_end_mono). t_start is taken BEFORE the request that produces the lease."""
         ch = self._req("POST", "/api/v1/device/challenge", {"purpose": "DEVICE", "device_id": device_id})
         raw = b"" if body is None else json.dumps(body).encode()
         sig = base64.b64encode(priv.sign(device_message(method, path, ch["nonce"], raw))).decode()
-        t0 = time.monotonic()
+        t0 = mono()
         out = self._req(method, path, None, {"X-MQ-Device": device_id, "X-MQ-Nonce": ch["nonce"], "X-MQ-Sig": sig}, raw=raw if method != "GET" else None)
-        return out, t0, time.monotonic()
+        return out, t0, mono()

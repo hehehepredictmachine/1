@@ -116,3 +116,27 @@ class FakeLicense:
         self.guard.require("trade_open")
         grant.used = True
         self._used.add(grant.claims["jti"])
+
+
+def start_licensing_world(email: str = "monitor@example.com", password: str = "haslo-uzytkownika-1"):
+    """Real central server over HTTP (in-process, SQLite dev) with a verified user and a fresh 48 h license key.
+    Returns (live, key). TEST FIXTURE ONLY."""
+    from test_licensing_client import Live
+    import time as _t
+    live = Live()
+    live.w.clock.t = _t.time()
+    uid = live.w.user(email, password)
+    return live, live.w.license(uid), uid
+
+
+def login_and_activate(base: str, opener, csrf: str, key: str, email: str = "monitor@example.com", password: str = "haslo-uzytkownika-1") -> dict:
+    import json as _j
+    import urllib.request as _u
+
+    def post(path, body):
+        r = _u.Request(base + path, data=_j.dumps(body).encode(), method="POST",
+                       headers={"Content-Type": "application/json", "Origin": base, "X-MQ-CSRF": csrf})
+        with opener.open(r, timeout=30) as resp:
+            return _j.loads(resp.read())
+    post("/api/v1/license/login", {"email": email, "password": password})
+    return post("/api/v1/license/activate", {"key": key})

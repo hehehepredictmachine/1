@@ -459,14 +459,21 @@ class Central:
 
     # ================================================================= heartbeat -> lease
     def _active_seat(self, device: dict) -> tuple[dict, dict]:
-        a = self.db.one("SELECT * FROM license_activations WHERE device_id=? AND released_at IS NULL ORDER BY created_at DESC LIMIT 1", (device["id"],))
-        if not a:
+        """The device's seat on a currently ACTIVE license (several licenses may have been activated on the same device
+        over time - e.g. a new one after expiry/revocation). If none is active, the most relevant refusal is reported."""
+        acts = self.db.q("SELECT * FROM license_activations WHERE device_id=? AND released_at IS NULL ORDER BY created_at DESC", (device["id"],))
+        if not acts:
             raise Denied("NO_ACTIVE_ACTIVATION", 403)
-        lic = self.db.one("SELECT * FROM licenses WHERE id=?", (a["license_id"],))
-        stt = self.status_of(lic)
-        if stt != "ACTIVE":
-            raise Denied("LICENSE_" + stt, 403, {"expires_at": lic["expires_at"], "license_id": lic["id"]})
-        return a, lic
+        best_bad = None
+        for a in acts:
+            lic = self.db.one("SELECT * FROM licenses WHERE id=?", (a["license_id"],))
+            stt = self.status_of(lic)
+            if stt == "ACTIVE":
+                return a, lic
+            if best_bad is None or (lic["expires_at"] or 0) > (best_bad[1]["expires_at"] or 0):
+                best_bad = (stt, lic)
+        stt, lic = best_bad
+        raise Denied("LICENSE_" + stt, 403, {"expires_at": lic["expires_at"], "license_id": lic["id"]})
 
     def heartbeat(self, device: dict, user: dict) -> dict:
         self._require_clock()

@@ -143,7 +143,9 @@ class Connector:
         a = _row(self._call(lambda m: m.account_info()) or {})
         if not a:
             return None
-        ms = int(time.time() * 1000)
+        # measurement time expressed in SERVER time (offset learned from the signed heartbeat) - a wrong PC clock
+        # neither makes the packet look newer nor gets it rejected
+        ms = int((time.time() + (self.lic.server_offset or 0.0)) * 1000)
         out = self._device_call("POST", "/api/v1/telemetry/snapshot", {
             "account_id": self.account_id, "seq": ms, "measured_ms": ms, "balance": float(a["balance"]), "equity": float(a["equity"]),
             "margin": float(a.get("margin") or 0), "margin_free": float(a.get("margin_free") or 0), "currency": a.get("currency") or ""})

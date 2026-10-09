@@ -185,7 +185,7 @@ class LicenseService:
             self.guard.clear("NOT_ACTIVATED_ON_THIS_COMPUTER" if self.cfg.url else "CENTRAL_URL_NOT_CONFIGURED")
             return False
         try:
-            out, t0, _t1 = self.client().device_call(self.device.private_key(), st["device_id"], "POST", "/api/v1/device/heartbeat", {})
+            out, t0, _t1 = self.client().device_call(self.device.private_key(), st["device_id"], "POST", "/api/v1/device/heartbeat", {}, mono=self.mono)
             claims = self._verify(out["lease"], "masterquo-bot")
             if claims.get("lic_exp") is not None and int(claims["exp"]) > int(claims["lic_exp"]):
                 raise LicenseRequired("LEASE_BEYOND_LICENSE")
@@ -230,7 +230,8 @@ class LicenseService:
         st = self.device.state()
         try:
             out, t0, _ = self.client().device_call(self.device.private_key(), st["device_id"], "POST", "/api/v1/ops/authorize",
-                                                   {"intent_id": intent_id, "op": "OPEN", **{k: detail.get(k) for k in ("symbol", "side", "volume", "mode")}})
+                                                   {"intent_id": intent_id, "op": "OPEN", **{k: detail.get(k) for k in ("symbol", "side", "volume", "mode")}},
+                                                   mono=self.mono)
         except CentralError as e:
             if e.code in FATAL:
                 self.guard.clear(e.code)

@@ -40,7 +40,10 @@ export async function apiSend<T = any>(method: "POST" | "PUT", path: string, bod
   } catch {
     data = text;
   }
-  if (!r.ok) throw new ApiError(r.status, (data && (data.detail || data.error)) || text || `HTTP ${r.status}`);
+  if (!r.ok) {
+    const d = data && (data.detail ?? data.error);
+    throw new ApiError(r.status, (d && typeof d === "object" ? d.error || JSON.stringify(d) : d) || text || `HTTP ${r.status}`);
+  }
   return data as T;
 }
 
