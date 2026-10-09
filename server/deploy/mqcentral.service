@@ -1,0 +1,21 @@
+# systemd unit - /etc/systemd/system/mqcentral.service
+[Unit]
+Description=MasterQUO central account & license server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=mqcentral
+Group=mqcentral
+WorkingDirectory=/opt/mqcentral/server
+EnvironmentFile=/opt/mqcentral/server/.env
+ExecStartPre=/opt/mqcentral/venv/bin/python -m mqcentral migrate
+ExecStart=/opt/mqcentral/venv/bin/python -m mqcentral serve
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mqcentral/backups
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+.env
+dev-data/
+secrets/
+backups/
+*.pem
+*.sqlite

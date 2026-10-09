@@ -42,6 +42,8 @@ class TestMonitorUI(unittest.TestCase):
     def setUpClass(cls):
         if not (_env.ROOT / "frontend" / "dist" / "index.html").exists():
             raise unittest.SkipTest("frontend not built (npm run build)")
+        if _health():
+            raise RuntimeError(f"port {PORT} already serves another MasterQUO instance - stop it first")
         cls.td = TempData()
         cls.live, cls.key, _uid = _env.start_licensing_world()
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
@@ -54,6 +56,14 @@ class TestMonitorUI(unittest.TestCase):
         if not wait_for(_health, 60, 0.5):
             cls.proc.kill()
             raise RuntimeError("server did not start")
+        try:
+            cls._start_browser()
+        except BaseException:
+            cls.tearDownClass()
+            raise
+
+    @classmethod
+    def _start_browser(cls):
         cls.pw = sync_playwright().start()
         kw = {"executable_path": CHROMIUM} if os.path.exists(CHROMIUM) else {}
         try:
@@ -79,8 +89,10 @@ class TestMonitorUI(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         try:
-            cls.browser.close()
-            cls.pw.stop()
+            if getattr(cls, "browser", None):
+                cls.browser.close()
+            if getattr(cls, "pw", None):
+                cls.pw.stop()
         finally:
             subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=cls.env, cwd=str(_env.ROOT / "backend"), timeout=60)
             cls.live.stop()

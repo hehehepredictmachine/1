@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 1.4.0 – konta, panel administratora, licencje 48 h
+* **Serwer centralny** (`server/mqcentral`, PostgreSQL; SQLite tylko dev): rejestracja z weryfikacją e-mail, logowanie, wylogowanie,
+  zmiana i reset hasła (Argon2id, tokeny 256-bit jednorazowe, skróty w bazie), stany kont PENDING/ACTIVE/BLOCKED, role USER/ADMIN
+  nadawane tylko przez serwer/CLI, sesje po stronie serwera (HttpOnly, Secure, SameSite=Strict, CSRF, rotacja po logowaniu i MFA),
+  MFA TOTP administratora z kodami odzyskiwania, limity prób, audyt, kontrola anomalii zegara, kopie zapasowe.
+* **Licencje 48 h**: klucz 256 bit pokazywany raz (w bazie tylko skrót), przypisany do konta; stany ISSUED/ACTIVE/EXPIRED/REVOKED;
+  48 h od pierwszej aktywacji czasem serwera (atomowo, idempotentnie); jedno stanowisko; reset stanowiska bez nowego okresu.
+* **Urządzenia i lease**: para kluczy Ed25519 (klucz prywatny w DPAPI), podpis nonce, lease EdDSA ≤ 60 s ograniczony terminem
+  licencji, liczony zegarem monotonicznym od wysłania żądania; autoryzacja online każdego nowego zlecenia otwierającego.
+* **LicenseGuard w bocie**: silnik, setupy, ML, agent Claude, wykonanie, API, WebSocket, CLI; po utracie licencji ochrona istniejących
+  pozycji i anulowanie własnych zleceń otwierających.
+* **Konektor MT5** (za zgodą, jeden rachunek): balance/equity co 15 s, deale co 60 s z importem historii; win ratio liczone na serwerze
+  z rekonstrukcji cykli (częściowe zamknięcia, odwrócenia nettingowe, koszty, wykluczenia).
+* **MasterQUO License Manager** (`/admin/`): użytkownicy (balance, equity, win ratio, licencja, konektor), szczegóły, zaproszenia,
+  blokady, generowanie/cofanie licencji, reset stanowiska, audyt, system. Strony konta `/account/…`.
+* Monitor: ekran logowania/rejestracji/aktywacji, ekran blokady z ochroną pozycji, pasek licencji, ostrzeżenia 60/10 min,
+  czyszczenie danych przy wylogowaniu. Poprawka: STOP działa przy otwartej karcie monitora (limit zamykania 5 s).
+* Symulator terminala: `MQ_FAKE_MARKET_ALWAYS_OPEN=1` (ustawiane przez testy offline – wynik testów nie zależy od dnia tygodnia).
+
 ## 1.3.0 – kolory, niezależny zoom, Decision Tree + XGBoost, tryby bez READONLY
 * **Tryby**: SIGNALS („Analiza warunków”) / PAPER / AUTO_DEMO / AUTO_LIVE – trwały wybór (config v3, migracja DB 0003), konto z terminala,
   niezgodność blokuje z powodem, brak potwierdzania pojedynczych transakcji w AUTO, STOP tylko dla nowych wejść. Trzy niezależne

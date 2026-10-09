@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# the terminal simulator closes the market at the weekend; offline tests must not depend on the day they are run
+os.environ.setdefault("MQ_FAKE_MARKET_ALWAYS_OPEN", "1")
 sys.path.insert(0, str(ROOT / "backend"))
 
 UTC = timezone.utc

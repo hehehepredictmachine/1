@@ -1,0 +1,12 @@
+# Caddy terminates HTTPS (automatic Let's Encrypt certificate) and forwards to mqcentral on 127.0.0.1:8800.
+licencje.twojadomena.pl {
+	encode gzip
+	request_body {
+		max_size 1MB
+	}
+	# extra coarse limit in front of the app limits (requires the caddy-ratelimit plugin; remove if not installed)
+	# rate_limit { zone api { key {remote_host} events 300 window 1m } }
+	reverse_proxy 127.0.0.1:8800 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
