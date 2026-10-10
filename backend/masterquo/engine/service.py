@@ -23,7 +23,7 @@ from ..db.database import dumps
 from ..risk import engine as risk_engine
 from ..risk.costs import resolve_commission
 from ..timeutil import TIMEFRAMES, iso, parse_iso, utcnow
-from . import chartdata, decision as decision_mod, lifecycle, targets
+from . import chartdata, decision as decision_mod, lifecycle, targets, volzones
 from .active import ActiveEngine
 from .legacy import LegacyEngines, build_snapshot
 
@@ -379,7 +379,7 @@ class EngineService:
                "dq": dq, "quote": quote, "legacy": full["legacy"], "closed_bars": full["closed"], "setup": setup, "levels": levels,
                "risk": risk, "macro": macro, "headlines": news.get("news", []), "upcoming_events": news.get("calendar", []),
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
-               "lessons": lessons, "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None}
+               "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
@@ -418,8 +418,16 @@ class EngineService:
         with self._lock:
             c = self.charts.get(tf) or {}
         bars = self.bridge.bars(tf, limit=self.cfg_store.get().mt5.chart_bars)
-        return {"tf": tf, "symbol": self.cfg_store.get().mt5.symbol, "bars": bars, **c,
+        return {"tf": tf, "symbol": self.cfg_store.get().mt5.symbol, "bars": bars, **c, "volatility": self.volatility(),
                 "clock": self.bridge.clock.evidence.as_dict(), "synthetic": self.bridge.synthetic}
+
+    def volatility(self) -> dict:
+        """Daily volatility levels (HV, 1-day contract pricing, IV walls) from the current D1 bars; read-only."""
+        try:
+            digits = int((self.bridge.symbol_info or {}).get("digits") or 2)
+            return volzones.compute(self.bridge.bars("D1"), self.cfg_store.get().volatility, digits=digits, quote=self.bridge.quote_status())
+        except Exception as exc:  # never break the chart because of the reference levels
+            return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__}
 
     def mark_entered(self, setup_id: str, reason: str) -> None:
         if setup_id.startswith("MQA-"):

@@ -48,6 +48,12 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
   i XGBoost w osobnym procesie, waliduje chronologicznie i promuje model tylko po spełnieniu kryteriów. **„Gotowy do nauki” ≠ wytrenowany.**
   Szczegóły: `docs/ML_DECISION_TREE_XGBOOST.md`.
 
+## Nowe w 1.3.1 – zmienność dzienna i IV walls
+Na wykresach: **Daily Open**, **Daily High/Low** (oczekiwany zakres dnia ±1σ), PDH/PDL, High/Low dnia, progi straddle i **strefy IV walls ±1σ/±2σ**
+(przełącznik „IV walls / Daily”). Panel „Zmienność dzienna · IV walls” pokazuje HV, IV, wycenę opcji 1-dniowych (premia, delta,
+prawdopodobieństwa). MT5 nie ma opcji na złoto, więc IV = zmienność historyczna, chyba że wpiszesz IV w **Ustawienia → Zmienność / IV**.
+To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `docs/IV_WALLS_ZMIENNOSC_DZIENNA.md`.
+
 ## ML – krok po kroku
 1. **Zbieraj dane** jest włączone domyślnie. Każdy potwierdzony setup to próbka; wynik (etykieta) pojawia się po zamknięciu scenariusza.
 2. Opcjonalnie **Backfill z MT5 (30 dni)** – ta sama logika na historii z terminala; jakość APPROX, domyślnie *poza* treningiem.

@@ -269,8 +269,27 @@ class ActiveConfig(_Strict):
         return v
 
 
+class VolatilityConfig(_Strict):
+    """Daily volatility levels: HV, 1-day contract pricing and IV walls (engine/volzones.py)."""
+    enabled: bool = True
+    estimator: Literal["close_to_close", "parkinson"] = "close_to_close"
+    window: int = Field(20, ge=5, le=250)                       # closed D1 bars used for HV
+    trading_days_per_year: int = Field(252, ge=200, le=366)
+    iv_source: Literal["HV", "MANUAL"] = "HV"                    # MT5 has no option chain -> HV is the IV proxy
+    manual_iv_pct: float | None = Field(None, gt=0, le=300)       # annualised %, used when iv_source=MANUAL
+    walls_sigma: list[float] = Field(default_factory=lambda: [1.0, 2.0])
+    wall_band_sigma: float = Field(0.1, ge=0.0, le=0.5)
+
+    @field_validator("walls_sigma")
+    @classmethod
+    def _walls(cls, v: list[float]) -> list[float]:
+        if not 1 <= len(v) <= 4 or any(not 0.25 <= x <= 4.0 for x in v):
+            raise ValueError("WALLS_SIGMA_1_TO_4_VALUES_0.25_TO_4")
+        return sorted(set(round(x, 3) for x in v))
+
+
 class AppConfig(_Strict):
-    config_version: int = 3
+    config_version: int = 5
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -283,6 +302,7 @@ class AppConfig(_Strict):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     active: ActiveConfig = Field(default_factory=ActiveConfig)
     ml: MLConfig = Field(default_factory=MLConfig)
+    volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -348,10 +368,14 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 3:
+    if v >= 5:
         return False
+    if v >= 3:
+        _to_v5(raw)
+        return True
     if v == 2:
         _to_v3(raw)
+        _to_v5(raw)
         return True
     for (sec, key), old, new in _V2_CHANGES:
         part = raw.get(sec)
@@ -361,7 +385,16 @@ def migrate(raw: dict) -> bool:
     if isinstance(agent, dict) and "gate_policy" not in agent:
         agent["gate_policy"] = "ADVISORY" if agent.get("required_for_entry") is False else "VETO"
     _to_v3(raw)
+    _to_v5(raw)
     return True
+
+
+def _to_v5(raw: dict) -> None:
+    """v3/v4 -> v5 (1.3.1): volatility section (defaults). Sections written by the withdrawn 1.4 licensing build
+    (config_version 4: central, connector) are dropped so its config files keep loading."""
+    raw.pop("central", None)
+    raw.pop("connector", None)
+    raw["config_version"] = 5
 
 
 def _to_v3(raw: dict) -> None:

@@ -36,6 +36,7 @@ export interface ChartOpts {
   showMacd: boolean;
   showStructure: boolean;
   showZones: boolean;
+  showVol: boolean;
   syncCrosshair: boolean;
   tz: TimeZoneMode;
 }
@@ -74,6 +75,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
   const macd = useRef<{ line: ISeriesApi<"Line">; sig: ISeriesApi<"Line">; hist: ISeriesApi<"Histogram"> } | null>(null);
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef<ZonesPrimitive | null>(null);
+  const volZones = useRef<ZonesPrimitive | null>(null);
+  const volLines = useRef<IPriceLine[]>([]);
   const priceLines = useRef<IPriceLine[]>([]);
   const times = useRef<number[]>([]);                 // chart times of the candles currently in the series
   const initialized = useRef(false);
@@ -118,6 +121,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     c.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.12 } });
     zones.current = new ZonesPrimitive();
     candles.current.attachPrimitive(zones.current);
+    volZones.current = new ZonesPrimitive();
+    candles.current.attachPrimitive(volZones.current);
     markers.current = createSeriesMarkers(candles.current, []);
     const el = box.current;
     const onUser = () => markUser();
@@ -156,6 +161,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       range: () => c.timeScale().getVisibleRange(),
       view: () => ({ ...view.current }),
       bars: () => times.current.length,
+      volLines: () => volLines.current.map((p) => p.options().title),
       creations: (window.__mqCharts?.[chartId]?.creations ?? 0) + 1,
     };
     return () => {
@@ -172,6 +178,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       rsiLevels.current = [];
       macd.current = null;
       priceLines.current = [];
+      volLines.current = [];
       times.current = [];
       if (window.__mqCharts?.[chartId]?.chart === c) delete window.__mqCharts[chartId];
     };
@@ -367,14 +374,40 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       }),
       ...(ov.order_blocks || []).slice(-3).map((ob: any) => ({ from: TT(ob.confirmed_at) as number, low: ob.low, high: ob.high, color: String(t.ob), border: withAlpha(String(t.ob), 0.5), label: "OB?" })),
     ] : []);
+    paintVol(d.volatility, o.showVol !== false, TT);
     if (isNewData || !initialized.current) restoreView(prevTimes, prevLogical, newTimes);
     else if (prevLogical) ts.setVisibleLogicalRange(prevLogical);
+  };
+
+  /** Daily volatility levels (backend engine/volzones.py): IV wall zones + reference price lines. Never changes the scale. */
+  const paintVol = (v: any, show: boolean, TT: (iso: string) => Time) => {
+    const ser = candles.current;
+    if (!ser) return;
+    const t = tkRef.current;
+    volLines.current.forEach((p) => ser.removePriceLine(p));
+    volLines.current = [];
+    if (!show || !v || v.status !== "OK") { volZones.current?.setZones([]); return; }
+    volZones.current?.setZones((v.zones || []).map((z: any) => {
+      const col = String(z.side === "UP" ? t.ivWallUp : t.ivWallDown);
+      return { from: z.from_utc ? (TT(z.from_utc) as number) : 0, low: z.low, high: z.high, color: col, border: withAlpha(col, 0.7), label: z.label };
+    }));
+    const style: Record<string, [string, LineStyle, number]> = {
+      DAILY_OPEN: ["dailyOpen", LineStyle.Solid, 1], EXPECTED_HIGH: ["expectedHL", LineStyle.Dashed, 2], EXPECTED_LOW: ["expectedHL", LineStyle.Dashed, 2],
+      STRADDLE_BE: ["straddleBe", LineStyle.Dotted, 1], PDH: ["pdhl", LineStyle.SparseDotted, 1], PDL: ["pdhl", LineStyle.SparseDotted, 1],
+      DAY_HIGH: ["dayHL", LineStyle.LargeDashed, 1], DAY_LOW: ["dayHL", LineStyle.LargeDashed, 1],
+    };
+    for (const ln of v.lines || []) {
+      const st = style[ln.kind];
+      if (!st || ln.price == null) continue;
+      volLines.current.push(ser.createPriceLine({ price: ln.price, color: String(t[st[0]]), title: ln.label, lineStyle: st[1], lineWidth: st[2] as 1 | 2,
+        axisLabelVisible: ln.kind !== "STRADDLE_BE" }));
+    }
   };
 
   useEffect(() => {
     if (data) paint(data, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, opts.showRsi, opts.showMacd, opts.showStructure, opts.showZones, shift]);
+  }, [data, opts.showRsi, opts.showMacd, opts.showStructure, opts.showZones, opts.showVol, shift]);
 
   // ---------------------------------------------------------------- execution levels (existing values only; never touches the scale)
   useEffect(() => {

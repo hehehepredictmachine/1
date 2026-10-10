@@ -220,6 +220,30 @@ class TestMonitorUI(unittest.TestCase):
         self.assertNotEqual(st["mode"]["mode"], "AUTO_LIVE")
 
     # ------------------------------------------------------------ 8. checklist instead of BUY/SELL, ML panel
+    def test_09_volatility_levels_and_iv_walls(self):
+        p = self.page
+        v = json.loads(p.evaluate("() => fetch('/api/v1/volatility').then(r => r.text())"))
+        self.assertEqual(v["status"], "OK", v)
+        self.assertEqual(len(v["walls"]), 4)
+        p.wait_for_selector("[data-testid=vol-panel] .vol-walls tbody tr", timeout=30000)
+        self.assertEqual(p.locator("[data-testid=vol-panel] .vol-walls tbody tr").count(), 4)
+        p.wait_for_function("() => window.__mqCharts.panel1.volLines().includes('Daily Open')", timeout=30000)
+        titles = p.evaluate("() => window.__mqCharts.panel1.volLines()")
+        for t in ("Daily Open", "Daily High (IV 1σ)", "Daily Low (IV 1σ)", "PDH", "PDL"):
+            self.assertIn(t, titles)
+        before = p.evaluate("() => window.__mqCharts.panel1.logical()")
+        box = p.locator("label", has_text="IV walls / Daily").locator("input")
+        box.uncheck()
+        p.wait_for_function("() => window.__mqCharts.panel1.volLines().length === 0", timeout=10000)
+        after = p.evaluate("() => window.__mqCharts.panel1.logical()")
+        self.assertAlmostEqual(before["from"], after["from"], delta=1.5)      # toggling levels never moves the view
+        box.check()
+        p.wait_for_function("() => window.__mqCharts.panel1.volLines().length > 5", timeout=10000)
+        if os.environ.get("MQ_SCREENSHOT_DIR"):
+            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "iv_walls_charts.png"))
+            p.locator("[data-testid=vol-panel]").scroll_into_view_if_needed()
+            p.locator("[data-testid=vol-panel]").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "iv_walls_panel.png"))
+
     def test_08_checklist_and_ml_panel(self):
         panel = self.page.locator("[data-testid='entry-checklist']")
         panel.wait_for(timeout=30000)

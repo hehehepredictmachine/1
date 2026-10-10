@@ -17,3 +17,8 @@ zastąpić kopią z `data/backups/` albo usunąć sekcję `active` (1.1 odrzuca 
 
 ## 4. Wygląd
 Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `data/assets/masterquo/`.
+
+## 5. Wersja 1.3.1 → 1.3.0
+* Strefy można wyłączyć bez cofania wersji: przełącznik „IV walls / Daily” albo `"volatility": {"enabled": false}`.
+* Powrót do 1.3.0: 1.3.1 zapisuje `config_version: 5` i sekcję `volatility` – przed uruchomieniem 1.3.0 usuń tę sekcję
+  i ustaw `"config_version": 3` (albo przywróć `data\config.json` z kopii). Baza danych nie została zmieniona.

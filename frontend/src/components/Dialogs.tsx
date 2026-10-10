@@ -38,7 +38,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     try {
       const { strategies: _st, ...activeRest } = cfg.active || {};
       const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: cfg.execution,
-        active: activeRest, ...extra };
+        active: activeRest, volatility: cfg.volatility, ...extra };
       const r = await apiSend("PUT", "/api/v1/config", patch);
       setCfg(r.config);
       setMsg("Zapisano.");
@@ -85,7 +85,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">
@@ -116,6 +116,20 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Czekanie na ocenę AI [s]", "agent.ai_wait_seconds", "num", "tylko VETO: po tym czasie brak odpowiedzi nie blokuje")}
         {field("Ocena AI może wpływać na wejście", "agent.required_for_entry", "bool", "odznaczone = ADVISORY")}
         {field("Agent włączony", "agent.enabled", "bool")}
+      </div>}
+      {tab === "vol" && cfg.volatility && <div className="form">
+        <div className="note">Poziomy dzienne: Daily Open, Daily High/Low (IV ±1σ), PDH/PDL, straddle ATM i IV walls ±kσ. MT5 nie udostępnia opcji na złoto –
+          domyślnie IV = zmienność historyczna z zamkniętych świec D1. Możesz wpisać IV z innego źródła (np. indeks GVZ). To informacja na wykresie – nie zmienia strategii ani zleceń.</div>
+        {field("Pokazuj i licz poziomy", "volatility.enabled", "bool")}
+        {field("Estymator HV", "volatility.estimator", "text", "close_to_close = zwroty zamknięć · parkinson = zakres high/low", ["close_to_close", "parkinson"])}
+        {field("Okno HV [świece D1]", "volatility.window", "num", "5–250, domyślnie 20")}
+        {field("Dni handlowe w roku", "volatility.trading_days_per_year", "num", "domyślnie 252")}
+        {field("Źródło IV do wyceny", "volatility.iv_source", "text", "HV = zmienność historyczna · MANUAL = wpisana niżej", ["HV", "MANUAL"])}
+        {field("IV ręcznie [% rocznie]", "volatility.manual_iv_pct", "num", "np. 18.5 – używane tylko przy MANUAL")}
+        <label className="field"><span>IV walls [σ]<small> – 1–4 wartości oddzielone przecinkiem, ułamki z kropką, np. 1, 1.5, 2</small></span>
+          <input defaultValue={(cfg.volatility.walls_sigma || []).join(", ")} onBlur={(e) => set("volatility.walls_sigma",
+            e.target.value.split(/[;,\s]+/).map((x) => Number(x)).filter((x) => x > 0))} /></label>
+        {field("Szerokość strefy wall [σ, połowa]", "volatility.wall_band_sigma", "num", "domyślnie 0.1")}
       </div>}
       {tab === "risk" && <div className="form">
         <div className="note warn">Wartości ze zdjęcia (1%, 5%, 10%, 6 pozycji) to przykład widoku – nie są ustawieniami Twojego rachunku. Bez limitów tryby wykonawcze są zablokowane.</div>

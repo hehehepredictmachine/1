@@ -368,3 +368,15 @@ small.muted { color: var(--muted); }
 .ml-progress { height: 6px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; margin: 6px 0 3px; }
 .ml-progress i { display: block; height: 100%; background: var(--neon); }
 @media (max-width: 1200px) { .ml-cols, .cl-grid { grid-template-columns: 1fr; } }
+
+/* daily volatility / IV walls panel */
+.vol-row { grid-column: 1 / -1; }
+.vol-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; padding: 6px 8px; }
+.vol-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vol-walls { width: 100%; border-collapse: collapse; font-size: 11px; }
+.vol-walls th, .vol-walls td { text-align: right; padding: 2px 5px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.vol-walls th:first-child, .vol-walls td:first-child { text-align: left; }
+.vol-walls tr.up td:first-child { color: var(--pnl-neg); }
+.vol-walls tr.down td:first-child { color: var(--pnl-pos); }
+.vol-note { grid-column: 1 / -1; }
+@media (max-width: 900px) { .vol-body { grid-template-columns: minmax(0, 1fr); } .vol-walls { display: block; overflow-x: auto; } }

@@ -206,6 +206,10 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "INVALID_TIMEFRAME")
         return rt.engine.chart(tf)
 
+    @app.get("/api/v1/volatility")
+    def volatility():
+        return rt.engine.volatility()
+
     @app.get("/api/v1/signals")
     def signals(limit: int = 30):
         from ..engine.lifecycle import public_setup

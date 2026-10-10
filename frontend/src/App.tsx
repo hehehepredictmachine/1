@@ -10,6 +10,7 @@ import { ThemeDialog } from "./components/ThemeDialog";
 import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
+import VolPanel from "./components/VolPanel";
 import MLPanel from "./components/MLPanel";
 import { useStore } from "./store";
 import { cls, type TimeZoneMode } from "./util";
@@ -38,8 +39,8 @@ export default function App() {
   const { s } = useStore();
   const [layout, setLayout] = usePersisted<"STD" | "SIX">("layout", "STD");
   const [p4, setP4] = usePersisted<string>("panel4tf", "H1");
-  const [optsRaw, setOpts] = usePersisted<ChartOpts>("chartopts.v2", { showRsi: true, showMacd: true, showStructure: true, showZones: true, syncCrosshair: false, tz: "LOCAL" });
-  const opts: ChartOpts = optsRaw;
+  const [optsRaw, setOpts] = usePersisted<ChartOpts>("chartopts.v2", { showRsi: true, showMacd: true, showStructure: true, showZones: true, showVol: true, syncCrosshair: false, tz: "LOCAL" });
+  const opts: ChartOpts = { ...optsRaw, showVol: optsRaw.showVol !== false };   // saved 1.3 options had no showVol -> on
   const [full, setFull] = useState<string | null>(null);
   const [agent, setAgent] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -82,7 +83,7 @@ export default function App() {
         {layout === "STD" && <div className="tabs small"><span className="lbl">Panel 4:</span>
           {["H1", "H4", "D1"].map((t) => <button key={t} className={cls(p4 === t && "on")} onClick={() => setP4(t)}>{t}</button>)}</div>}
         <div className="toggles">
-          {([["showRsi", "RSI"], ["showMacd", "MACD"], ["showStructure", "BOS/CHoCH"], ["showZones", "FVG/OB"], ["syncCrosshair", "Wspólny celownik"]] as const).map(([k, l]) => (
+          {([["showRsi", "RSI"], ["showMacd", "MACD"], ["showStructure", "BOS/CHoCH"], ["showZones", "FVG/OB"], ["showVol", "IV walls / Daily"], ["syncCrosshair", "Wspólny celownik"]] as const).map(([k, l]) => (
             <label key={k}><input type="checkbox" checked={!!opts[k]} onChange={(e) => o(k, e.target.checked)} />{l}</label>
           ))}
           <select value={opts.tz} onChange={(e) => o("tz", e.target.value as TimeZoneMode)} title="Strefa czasu na wykresach (dane zawsze w UTC)">
@@ -113,6 +114,7 @@ export default function App() {
           <LiveSetupsPanel full={autoFull} />
           <StrategiesPanel full={autoFull} reload={() => { reloadAuto(); }} />
         </div>
+        <div className="vol-row"><VolPanel /></div>
         <div className="ml-row"><MLPanel index={layout === "SIX" ? 9 : 7} /></div>
         <div className="bottom-row">
           <NewsPanel />

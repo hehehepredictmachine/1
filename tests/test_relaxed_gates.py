@@ -59,13 +59,13 @@ class TestConfigMigration(unittest.TestCase):
         st, p = self._store({"config_version": 1, "risk": {"rr_block_below": 1.5, "rr_pass_from": 2.5, "risk_per_trade_pct": 1.0},
                              "costs": {"slippage_stress_points": None}, "agent": {"required_for_entry": True}})
         c = st.get()
-        self.assertEqual(c.config_version, 3)
+        self.assertEqual(c.config_version, 5)
         self.assertEqual(c.risk.rr_block_below, 1.0)          # old default -> new default
         self.assertEqual(c.risk.rr_pass_from, 2.5)            # user's own value kept
         self.assertEqual(c.risk.risk_per_trade_pct, 1.0)
         self.assertEqual(c.costs.slippage_stress_points, 20.0)
         self.assertEqual(c.agent.gate_policy, "VETO")
-        self.assertEqual(json.loads(p.read_text(encoding="utf-8"))["config_version"], 3)  # persisted
+        self.assertEqual(json.loads(p.read_text(encoding="utf-8"))["config_version"], 5)  # persisted
 
     def test_v1_ai_not_required_becomes_advisory(self):
         st, _ = self._store({"config_version": 1, "agent": {"required_for_entry": False}})

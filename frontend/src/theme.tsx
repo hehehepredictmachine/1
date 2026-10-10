@@ -54,6 +54,10 @@ export const TOKENS: TokenDef[] = [
   C("entry", "Wejście / strefa", "Poziomy i strefy"), C("sl", "Stop Loss", "Poziomy i strefy"), C("tp", "Take Profit", "Poziomy i strefy"),
   C("bos", "Znacznik BOS", "Poziomy i strefy"), C("choch", "Znacznik CHoCH", "Poziomy i strefy"), C("sweep", "Znacznik sweep", "Poziomy i strefy"),
   C("fvgBull", "FVG wzrostowa", "Poziomy i strefy"), C("fvgBear", "FVG spadkowa", "Poziomy i strefy"), C("ob", "Order block", "Poziomy i strefy"),
+  C("ivWallUp", "IV wall ↑ (strefa)", "Poziomy i strefy"), C("ivWallDown", "IV wall ↓ (strefa)", "Poziomy i strefy"),
+  C("dailyOpen", "Daily Open", "Poziomy i strefy"), C("expectedHL", "Daily High/Low (IV 1σ)", "Poziomy i strefy"),
+  C("straddleBe", "Straddle – próg rentowności", "Poziomy i strefy"), C("pdhl", "PDH / PDL", "Poziomy i strefy"),
+  C("dayHL", "High / Low dnia", "Poziomy i strefy"),
   C("checkMet", "Warunek spełniony", "Checklista", "--check-met"), C("checkMissing", "Warunek brakujący", "Checklista", "--check-missing"),
   C("checkNoData", "Brak danych", "Checklista", "--check-nodata"),
   C("overlay", "Kolor przyciemnienia GIF", "Dekoracje (GIF)", "--overlay-color"),
@@ -78,6 +82,7 @@ const MATRIX: Tokens = {
   ind1: "#f5d76e", ind2: "#4dd0ff", ind3: "#c792ea", ind4: "#ff9f43", ind5: "#9cff57", ind6: "#ff6b9a",
   rsi: "#c792ea", rsiLevels: "#3b6b50", macd: "#4dd0ff", macdSignal: "#ff9f43", macdUp: "#16e07a99", macdDown: "#ff4d5e99",
   entry: "#d8ff7a", sl: "#ff4d5e", tp: "#16e07a", bos: "#7dffb6", choch: "#ffcc4d", sweep: "#c792ea", fvgBull: "#16e07a1a", fvgBear: "#ff4d5e1a", ob: "#4dd0ff12",
+  ivWallUp: "#ff4d5e22", ivWallDown: "#16e07a22", dailyOpen: "#f5d76e", expectedHL: "#4dd0ff", straddleBe: "#c792ea", pdhl: "#ff9f43", dayHL: "#9aa7b0",
   checkMet: "#2bff88", checkMissing: "#ffcc4d", checkNoData: "#8aa39a", overlay: "#000000", overlayDim: 0.55, gifOpacity: 1, frogOpacity: 1,
 };
 const DARK: Tokens = {
@@ -105,6 +110,7 @@ const LIGHT: Tokens = {
   ind1: "#bf8700", ind2: "#0969da", ind3: "#8250df", ind4: "#bc4c00", ind5: "#1a7f37", ind6: "#bf3989", rsi: "#8250df", macd: "#0969da",
   checkMet: "#1a7f37", checkMissing: "#9a6700", checkNoData: "#6e7781", bos: "#0550ae", choch: "#9a6700", sweep: "#8250df",
   fvgBull: "#1a7f371a", fvgBear: "#cf222e1a", ob: "#0969da12", overlay: "#ffffff", overlayDim: 0.85,
+  ivWallUp: "#cf222e1f", ivWallDown: "#1a7f371f", dailyOpen: "#9a6700", expectedHL: "#0550ae", straddleBe: "#8250df", pdhl: "#bc4c00", dayHL: "#57606a",
 };
 const CONTRAST: Tokens = {
   ...MATRIX, bg: "#000000", bgGlow: "#000000", gridLine: "#00000000", panel: "#000000", card: "#000000", header: "#000000", modal: "#000000", input: "#000000",
