@@ -37,10 +37,8 @@ class TestAppProcess(unittest.TestCase):
             raise RuntimeError(f"port {PORT} already serves another MasterQUO instance - stop it first")
         cls.td = TempData()
         os.makedirs(cls.td.dir, exist_ok=True)
-        cls.live, cls.key, _uid = _env.start_licensing_world()
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None},
-                       "central": {"url": cls.live.url, "allow_insecure_localhost": True}}, f)
+            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}}, f)
         env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         env.pop("ANTHROPIC_API_KEY", None)
         cls.env = env
@@ -55,14 +53,10 @@ class TestAppProcess(unittest.TestCase):
         cls.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cls.jar))
         req("/", opener=cls.op)
         cls.csrf = json.loads(req("/api/v1/session", opener=cls.op)[1])["csrf"]
-        # without login + license the product API is closed (checked first), then the real flow unlocks it
-        assert req("/api/v1/signals", opener=cls.op)[0] == 401
-        _env.login_and_activate(BASE, cls.op, cls.csrf, cls.key)
 
     @classmethod
     def tearDownClass(cls):
         subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=cls.env, cwd=str(_env.ROOT / "backend"), timeout=60)
-        cls.live.stop()
         try:
             cls.proc.wait(timeout=30)
         except subprocess.TimeoutExpired:

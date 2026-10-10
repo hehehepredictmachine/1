@@ -176,8 +176,6 @@ class TestExecution(unittest.TestCase):
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
         self.mgr = PositionManager(cfg, b, db, bus, log, self.modes, self.paper)
         self.gw.manager = self.mgr
-        from _env import FakeLicense
-        self.gw.license = FakeLicense()
         self.mgr.reconciled_epoch = b.session_epoch
 
     def tearDown(self):
@@ -255,7 +253,6 @@ class TestExecution(unittest.TestCase):
         from masterquo.execution.gateway import ExecutionGateway
         gw2 = ExecutionGateway(self.cfg, self.b, self.db, self.bus, self.log, self.modes, self.engine, self.paper)
         gw2.manager = self.mgr
-        gw2.license = self.gw.license
         self.assertEqual(gw2.execute("MQD-1")["status"], "DUPLICATE")
         self.assertEqual(len(self.fake.positions_get()), 1)
 
@@ -368,7 +365,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0004"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())

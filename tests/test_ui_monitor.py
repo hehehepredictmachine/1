@@ -42,13 +42,9 @@ class TestMonitorUI(unittest.TestCase):
     def setUpClass(cls):
         if not (_env.ROOT / "frontend" / "dist" / "index.html").exists():
             raise unittest.SkipTest("frontend not built (npm run build)")
-        if _health():
-            raise RuntimeError(f"port {PORT} already serves another MasterQUO instance - stop it first")
         cls.td = TempData()
-        cls.live, cls.key, _uid = _env.start_licensing_world()
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, "first_run_completed": True,
-                       "central": {"url": cls.live.url, "allow_insecure_localhost": True}}, f)
+            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, "first_run_completed": True}, f)
         cls.env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         cls.env.pop("ANTHROPIC_API_KEY", None)
         cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=cls.env, cwd=str(_env.ROOT / "backend"),
@@ -56,14 +52,6 @@ class TestMonitorUI(unittest.TestCase):
         if not wait_for(_health, 60, 0.5):
             cls.proc.kill()
             raise RuntimeError("server did not start")
-        try:
-            cls._start_browser()
-        except BaseException:
-            cls.tearDownClass()
-            raise
-
-    @classmethod
-    def _start_browser(cls):
         cls.pw = sync_playwright().start()
         kw = {"executable_path": CHROMIUM} if os.path.exists(CHROMIUM) else {}
         try:
@@ -75,13 +63,6 @@ class TestMonitorUI(unittest.TestCase):
         cls.ctx = cls.browser.new_context(viewport={"width": 1700, "height": 1000})
         cls.page = cls.ctx.new_page()
         cls.page.goto(BASE + "/")
-        # real flow in the monitor: login screen -> activation screen -> monitor
-        cls.page.locator("input[name=email]").fill("monitor@example.com")
-        cls.page.locator("input[name=password]").fill("haslo-uzytkownika-1")
-        cls.page.get_by_role("button", name="Zaloguj").click()
-        cls.page.locator("input[name=license-key]").fill(cls.key)
-        cls.page.get_by_role("button", name="Aktywuj licencję").click()
-        cls.page.wait_for_selector("[data-testid=license-bar]", timeout=30000)
         cls.page.wait_for_function("() => window.__mqCharts && ['panel1','panel2','panel3','panel4'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)",
                                    timeout=90000)
         time.sleep(1.0)
@@ -89,13 +70,10 @@ class TestMonitorUI(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         try:
-            if getattr(cls, "browser", None):
-                cls.browser.close()
-            if getattr(cls, "pw", None):
-                cls.pw.stop()
+            cls.browser.close()
+            cls.pw.stop()
         finally:
             subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=cls.env, cwd=str(_env.ROOT / "backend"), timeout=60)
-            cls.live.stop()
             try:
                 cls.proc.wait(timeout=30)
             except subprocess.TimeoutExpired:

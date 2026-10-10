@@ -47,7 +47,7 @@ def doctor() -> int:
     chk("Python", OK if sys.version_info[:2] in ((3, 12), (3, 13)) and bits == 64 else (WARN if bits == 64 else FAIL),
         f"{sys.version.split()[0]} {bits}-bit ({sys.executable})")
     chk("System", OK if sys.platform == "win32" else WARN, platform.platform())
-    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets", "scipy", "sklearn", "xgboost", "joblib", "cryptography", "jwt"):
+    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets", "scipy", "sklearn", "xgboost", "joblib"):
         try:
             m = importlib.import_module(mod)
             chk(f"Pakiet {mod}", OK, getattr(m, "__version__", "?"))
@@ -69,17 +69,6 @@ def doctor() -> int:
         chk("ML: Decision Tree + XGBoost (test działania)", FAIL, f"{type(exc).__name__}: {exc}")
     cfg = ConfigStore().get()
     chk("Symbol brokera (config)", OK, cfg.mt5.symbol)
-    # central account / license server (HTTPS, certificate validated)
-    if not cfg.central.url:
-        chk("Serwer kont i licencji", WARN, "adres nie ustawiony – wpisz go w monitorze na ekranie logowania")
-    else:
-        try:
-            from .licensing.central_client import CentralClient
-            h = CentralClient(cfg.central.url, allow_insecure_localhost=cfg.central.allow_insecure_localhost)._req("GET", "/api/v1/health")
-            chk("Serwer kont i licencji", OK if not h.get("clock_anomaly") else WARN,
-                f"{cfg.central.url} odpowiada (czas serwera {h.get('server_time')}){' – ANOMALIA ZEGARA' if h.get('clock_anomaly') else ''}")
-        except Exception as exc:
-            chk("Serwer kont i licencji", FAIL, f"{cfg.central.url}: {getattr(exc, 'code', type(exc).__name__)}")
     dist = paths.FRONTEND_DIST / "index.html"
     chk("Frontend (frontend/dist)", OK if dist.exists() else FAIL, str(dist))
     # MT5

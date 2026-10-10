@@ -10,8 +10,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# the terminal simulator closes the market at the weekend; offline tests must not depend on the day they are run
-os.environ.setdefault("MQ_FAKE_MARKET_ALWAYS_OPEN", "1")
 sys.path.insert(0, str(ROOT / "backend"))
 
 UTC = timezone.utc
@@ -80,65 +78,3 @@ def bar(t_open: datetime, o, h, l, c, closed=True, available=None, tv=100):
     return {"t_raw": int(t_open.timestamp()), "open_utc": iso(t_open), "o": o, "h": h, "l": l, "c": c, "tv": tv, "rv": 0,
             "spread": 10, "closed": closed, "close_confirmed_utc": iso(conf) if closed else None,
             "available_at": iso(available or conf) if closed else None, "basis": "OBSERVED", "revision": 0}
-
-
-# ----------------------------------------------------------------------------- licensing test doubles (tests only)
-def granted_guard(seconds: float = 3600.0, scopes=None):
-    """A REAL LicenseGuard holding a test lease (as if a heartbeat succeeded). Never shipped as a bypass."""
-    import time as _t
-    from masterquo.licensing.guard import SCOPES, LicenseGuard
-    g = LicenseGuard()
-    g.install({"scope": list(scopes or SCOPES), "sub": "TEST", "jti": "TEST"}, _t.monotonic() + seconds)
-    return g
-
-
-class FakeLicense:
-    """Gateway-facing double: real guard + locally issued single-use operation grants (central server not involved)."""
-
-    def __init__(self, guard=None):
-        self.guard = guard or granted_guard()
-        self.authorized: list[str] = []
-        self._used: set = set()
-
-    def authorize_open(self, intent_id, detail):
-        import time as _t
-        import uuid as _u
-        from masterquo.licensing.service import OpGrant
-        self.guard.require("trade_open")
-        self.authorized.append(intent_id)
-        return OpGrant({"jti": _u.uuid4().hex, "intent": intent_id, "op": "OPEN"}, _t.monotonic() + 20)
-
-    def consume(self, grant):
-        import time as _t
-        from masterquo.licensing.guard import LicenseRequired
-        if grant.used or grant.claims["jti"] in self._used:
-            raise LicenseRequired("OP_TOKEN_REUSED")
-        if _t.monotonic() >= grant.deadline:
-            raise LicenseRequired("OP_TOKEN_EXPIRED")
-        self.guard.require("trade_open")
-        grant.used = True
-        self._used.add(grant.claims["jti"])
-
-
-def start_licensing_world(email: str = "monitor@example.com", password: str = "haslo-uzytkownika-1"):
-    """Real central server over HTTP (in-process, SQLite dev) with a verified user and a fresh 48 h license key.
-    Returns (live, key). TEST FIXTURE ONLY."""
-    from test_licensing_client import Live
-    import time as _t
-    live = Live()
-    live.w.clock.t = _t.time()
-    uid = live.w.user(email, password)
-    return live, live.w.license(uid), uid
-
-
-def login_and_activate(base: str, opener, csrf: str, key: str, email: str = "monitor@example.com", password: str = "haslo-uzytkownika-1") -> dict:
-    import json as _j
-    import urllib.request as _u
-
-    def post(path, body):
-        r = _u.Request(base + path, data=_j.dumps(body).encode(), method="POST",
-                       headers={"Content-Type": "application/json", "Origin": base, "X-MQ-CSRF": csrf})
-        with opener.open(r, timeout=30) as resp:
-            return _j.loads(resp.read())
-    post("/api/v1/license/login", {"email": email, "password": password})
-    return post("/api/v1/license/activate", {"key": key})

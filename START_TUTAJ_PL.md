@@ -34,11 +34,6 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
   w ⚙ Ustawienia → **Wygląd** (tam FULL / LIGHT / OFF; przyciemnienie i widoczność GIF-ów – w 🎨).
 * Powrót do poprzedniego zachowania: `ROLLBACK.md` (profil ORIGINAL: `08_PROFIL_ORIGINAL.bat`).
 
-## Nowe w 1.4 – konto i licencja
-Przy starcie monitor prosi o adres serwera kont, logowanie i klucz licencji (`MQL1-…` od administratora). Licencja działa
-48 godzin od pierwszej aktywacji (czas serwera). Szczegóły: `INSTRUKCJA_UZYTKOWNIK.md`; administrator: `INSTRUKCJA_ADMINISTRATOR.md`,
-serwer: `server/README_SERWER_PL.md`. Bez ważnej licencji nowe analizy i wejścia są zatrzymane, a istniejące pozycje bota pozostają chronione.
-
 ## Nowe w 1.3 – kolory, niezależny zoom, Decision Tree + XGBoost
 * **Kolory** (🎨 w nagłówku): każdy kolor interfejsu i wykresów (tła, teksty, liczby, ikony, ramki, przyciski i ich stany, siatka, osie,
   celownik, korpusy/knoty/obrysy świec, wolumen, każda linia wskaźnika, wejście/SL/TP, statusy, checklista, PnL, połączenie). Picker
@@ -63,7 +58,7 @@ serwer: `server/README_SERWER_PL.md`. Bez ważnej licencji nowe analizy i wejśc
    bot wraca do strategii bez ML. **Przywróć poprzedni model** cofa całość (model + preprocessing + kalibrator).
 
 ## Pozostałe skróty
-* `05_TESTY_OFFLINE.bat` – testy na symulatorze (nie dotyka Twojego MT5); `05_TESTY_OFFLINE.bat --legacy` dodaje testy oryginalnej paczki. Plik i testy są tylko w części `3_ROZWOJ_I_TESTY` paczki 1.4 (wymagają serwera licencji).
+* `05_TESTY_OFFLINE.bat` – testy na symulatorze (nie dotyka Twojego MT5); `05_TESTY_OFFLINE.bat --legacy` dodaje testy oryginalnej paczki.
 * `06_DIAGNOZA_CZASU_MT5.bat` – surowe czasy ticków/świec i zmierzony offset serwera (uruchom przy otwartym rynku).
 * `07_START_DEMO_DANE_SYNTETYCZNE.bat` – pokaz na danych z symulatora (wyraźny napis DANE SYNTETYCZNE, osobna baza).
 

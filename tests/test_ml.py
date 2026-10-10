@@ -427,10 +427,7 @@ class TestService(unittest.TestCase):
 
     def svc(self, spawn=None, bridge=None):
         from masterquo.ml.service import MLService
-        from _env import granted_guard
-        ml = MLService(self.cfg, self.db, bridge or _Bridge(), self.bus, self.log, root=Path(self.td.dir) / "ml", spawn=spawn)
-        ml.guard = granted_guard()
-        return ml
+        return MLService(self.cfg, self.db, bridge or _Bridge(), self.bus, self.log, root=Path(self.td.dir) / "ml", spawn=spawn)
 
     def test_no_model_contract_and_fallback(self):
         ml = self.svc()

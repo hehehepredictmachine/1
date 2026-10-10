@@ -44,8 +44,6 @@ class EngineService:
         self.agent = None          # set by runtime
         self.gateway = None        # set by runtime
         self.ml = None             # MLService, set by runtime
-        self.guard = None          # LicenseGuard, set by runtime - None means NO product functions (deny by default)
-        self.locked_reason: str | None = None
         self.legacy = LegacyEngines(paths.data_dir() / "legacy_m07_plan_lock.sqlite")
         self.required = self.legacy.profiles.required_closed_bars()
         self.lifecycle = lifecycle.LifecycleStore(db)
@@ -131,23 +129,7 @@ class EngineService:
         return None
 
     # ------------------------------------------------------------ full cycle
-    def licensed(self) -> bool:
-        """Product analysis allowed only with a valid lease (no guard = no access)."""
-        ok = self.guard is not None and self.guard.allows("analysis")
-        if not ok:
-            reason = getattr(self.guard, "reason", "NO_LICENSE_GUARD")
-            if self.locked_reason != reason or self.decision is not None:
-                self.locked_reason = reason
-                with self._lock:
-                    self.decision = None                 # no stale checklist / decision is shown or executed
-                self.bus.publish("license_locked", {"reason": reason})
-        else:
-            self.locked_reason = None
-        return ok
-
     def full_cycle(self) -> None:
-        if not self.licensed():
-            return
         t0 = time.monotonic()
         cfg = self.cfg_store.get()
         sym, alias = cfg.mt5.symbol, cfg.mt5.analytical_alias
@@ -261,8 +243,6 @@ class EngineService:
 
     # ------------------------------------------------------------ light cycle
     def light_cycle(self, force_publish: bool = False) -> None:
-        if not self.licensed():
-            return
         with self._lock:
             full = self.last_full
         if not full:

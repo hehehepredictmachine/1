@@ -43,7 +43,6 @@ class ActiveEngine:
         self.scans = 0
         self._startup_reset_done = False
         self.ml = None                           # MLService (collector + ASSIST ranking), set by the runtime
-        self.guard = None                        # LicenseGuard, set by the runtime (None = no new setups)
 
     # ------------------------------------------------------------ helpers
     def _data_status(self, dq: dict, quote: dict | None) -> str:
@@ -64,9 +63,6 @@ class ActiveEngine:
         cfg = self.cfg_store.get()
         ac = cfg.active
         if ac.profile != "ACTIVE":
-            return []
-        guard = getattr(self, "guard", None)
-        if guard is None or not guard.allows("setups"):
             return []
         fp = self._fingerprint(bars, quote)
         new_data = fp != self._last_fp

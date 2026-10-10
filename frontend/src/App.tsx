@@ -11,7 +11,6 @@ import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
 import MLPanel from "./components/MLPanel";
-import LicenseGate, { LicenseBar } from "./components/LicenseGate";
 import { useStore } from "./store";
 import { cls, type TimeZoneMode } from "./util";
 
@@ -66,7 +65,6 @@ export default function App() {
   }, [statsMode, s.loaded, (s.logs || []).filter((l: any) => l.code === "SETTLED" || l.category === "PAPER").length]);
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div></>;
-  if (s.locked) return <><BackgroundLayer /><LicenseGate /></>;
   const o = (k: keyof ChartOpts, v: any) => setOpts({ ...opts, [k]: v });
   const chart = (tf: string, idx: number) => (
     <ChartPanel key={tf + idx} tf={tf} index={idx} opts={opts} fullscreen={full === tf + idx} onFullscreen={() => setFull(full === tf + idx ? null : tf + idx)} />
@@ -76,7 +74,6 @@ export default function App() {
       <BackgroundLayer />
       {s.synthetic && <div className="synthetic-banner">DANE SYNTETYCZNE – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
       <Header onAgent={() => setAgent(!agent)} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)} botStats={stats} />
-      <LicenseBar />
       <div className="toolbar">
         <div className="tabs small">
           <button className={cls(layout === "STD" && "on")} onClick={() => setLayout("STD")}>Układ standardowy</button>
