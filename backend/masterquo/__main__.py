@@ -90,7 +90,8 @@ def cmd_serve(args) -> int:
     except OSError:
         pass
     (_rt_dir() / "server.pid").write_text(json.dumps({"pid": os.getpid(), "port": port, "exe": sys.executable}), encoding="utf-8")
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", ws="websockets-sansio", lifespan="on", access_log=False)
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", ws="websockets-sansio", lifespan="on", access_log=False,
+                            timeout_graceful_shutdown=5)   # open monitor tabs (WebSocket) must not block STOP
     server = uvicorn.Server(config)
     rt.shutdown_hook = lambda: setattr(server, "should_exit", True)
     rt.start()

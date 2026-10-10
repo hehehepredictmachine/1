@@ -12,6 +12,7 @@ simulate a hedging (or netting) account with commission.
 from __future__ import annotations
 
 import threading
+import os
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -85,6 +86,8 @@ class FakeMT5:
 
     @staticmethod
     def _is_open(raw_minute: int) -> bool:
+        if os.environ.get("MQ_FAKE_MARKET_ALWAYS_OPEN") == "1":
+            return True  # offline tests only: results must not depend on the weekday the tests are run
         d = datetime.fromtimestamp(raw_minute, UTC)  # server wall clock
         if d.weekday() == 5 or (d.weekday() == 6) or (d.weekday() == 4 and d.hour >= 23):
             return False  # Fri 23:00 .. Mon 00:00 server time closed (weekend)
