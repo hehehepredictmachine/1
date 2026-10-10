@@ -43,6 +43,7 @@ class ActiveEngine:
         self.scans = 0
         self._startup_reset_done = False
         self.ml = None                           # MLService (collector + ASSIST ranking), set by the runtime
+        self.listeners: list = []                # fn(events, view) after each scan (bot signals)
 
     # ------------------------------------------------------------ helpers
     def _data_status(self, dq: dict, quote: dict | None) -> str:
@@ -125,6 +126,12 @@ class ActiveEngine:
             self.scans += 1
             self.last_scan_at = iso(now)
             self.last_scan_ms = round((time.monotonic() - t0) * 1000, 1)
+        for fn in list(self.listeners):
+            try:
+                fn(events, self.view)
+            except Exception:
+                import logging
+                logging.getLogger("masterquo.active").exception("active listener failed")
         for kind, r in events:
             if kind in ("NEW_EARLY", "NEW_CONFIRMED", "STAGE_EARLY", "STAGE_CONFIRMED", "INVALIDATED", "EXPIRED", "MISSED_ENTRY") and r and r.get("record"):
                 rec = r["record"]

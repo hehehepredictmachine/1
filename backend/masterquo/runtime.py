@@ -8,7 +8,6 @@ import threading
 
 from . import paths
 from .agent.service import ClaudeAgent
-from .agent.signals import AISignalService
 from .config import ConfigStore
 from .data.pcclock import PCClockCheck
 from .db.database import Database
@@ -20,6 +19,7 @@ from .execution.manager import PositionManager
 from .execution.modes import ModeManager
 from .execution.paper import PaperBroker
 from .markets.scanner import MarketScanner
+from .markets.signals import BotSignalService
 from .ml.service import MLService
 from .mt5.bridge import MarketBridge
 from .mt5.worker import MT5Worker
@@ -71,11 +71,11 @@ class Runtime:
         self.ml = MLService(self.cfg, self.db, self.bridge, self.bus, self.log)
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
-        self.scanner = MarketScanner(self.cfg, self.bridge, self.bus, self.log)
-        self.signals = AISignalService(self.cfg, self.agent, self.scanner, self.bridge, self.db, self.bus, self.log,
-                                       engine=self.engine, news=self.news)
-        self.scanner.listeners.append(self.signals.on_scan)
         self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db)
+        self.scanner = MarketScanner(self.cfg, self.bridge, self.bus, self.log)
+        self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
+        self.scanner.signals = self.signals
+        self.engine.active.listeners.append(self.signals.on_main_events)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
         self.security = None
@@ -104,7 +104,7 @@ class Runtime:
         self.ml.start()
         self.scanner.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
-        threading.Thread(target=self._signal_track_loop, name="ai-signal-track", daemon=True).start()
+        threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
     def _clock_loop(self) -> None:
         while not self._stop.is_set():
@@ -116,11 +116,10 @@ class Runtime:
             try:
                 self.signals.track()
             except Exception:
-                log.exception("AI signal tracking failed")
+                log.exception("bot signal tracking failed")
 
     def attach_loop(self, loop) -> None:
         self.agent.attach(loop)
-        self.signals.attach(loop)
 
     def stop(self) -> None:
         self._stop.set()

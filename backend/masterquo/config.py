@@ -296,7 +296,7 @@ class MarketsConfig(_Strict):
     exclude: list[str] = Field(default_factory=list)
     include_main: bool = True
     max_symbols: int = Field(30, ge=1, le=200)
-    scan_interval_seconds: int = Field(300, ge=60, le=3600)
+    scan_interval_seconds: int = Field(120, ge=60, le=3600)
 
     @field_validator("symbols", "exclude")
     @classmethod
@@ -311,21 +311,18 @@ class MarketsConfig(_Strict):
         return out[:200]
 
 
-class AISignalsConfig(_Strict):
-    """AI signals (agent/signals.py): Claude proposes BUY/SELL/NO_TRADE with levels; validated and tracked, never executed."""
+class BotSignalsConfig(_Strict):
+    """Signals of the bot (markets/signals.py): CONFIRMED setups of strategies S01-S10 on the main symbol (engine) and on
+    every scanned market (same strategies, thresholds and switches). Validated and tracked; only the main symbol's
+    execution path can trade (unchanged)."""
     enabled: bool = True
-    auto_top_n: int = Field(0, ge=0, le=10)                 # 0 = only on request; >0 = best-ranked scanner symbols
-    auto_interval_minutes: int = Field(120, ge=15, le=1440)
-    default_valid_minutes: int = Field(240, ge=15, le=2880)
-    min_rr: float = Field(1.0, ge=0.3, le=10.0)
-    min_sl_atr_h1: float = Field(0.3, ge=0.05, le=5.0)
-    max_sl_atr_d1: float = Field(3.0, ge=0.2, le=20.0)
-    max_entry_distance_atr_h1: float = Field(4.0, ge=0.1, le=50.0)
+    scan_other_markets: bool = True          # run S01-S10 on the scanner's symbols (not only the main symbol)
     max_hold_hours: int = Field(72, ge=1, le=720)
+    telegram: bool = True                    # notify new signals (only when Telegram is configured)
 
 
 class AppConfig(_Strict):
-    config_version: int = 5
+    config_version: int = 6
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -340,7 +337,7 @@ class AppConfig(_Strict):
     ml: MLConfig = Field(default_factory=MLConfig)
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
-    ai_signals: AISignalsConfig = Field(default_factory=AISignalsConfig)
+    signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -406,7 +403,7 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 5:
+    if v >= 6:
         return False
     if v >= 3:
         _to_v5(raw)
@@ -432,7 +429,9 @@ def _to_v5(raw: dict) -> None:
     (config_version 4: central, connector) are dropped so its config files keep loading."""
     raw.pop("central", None)
     raw.pop("connector", None)
-    raw["config_version"] = 5
+    # v5 -> v6 (1.6): AI signals replaced by the bot's own signals (section `signals`); markets.scan interval default 120 s
+    raw.pop("ai_signals", None)
+    raw["config_version"] = 6
 
 
 def _to_v3(raw: dict) -> None:

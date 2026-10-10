@@ -17,6 +17,7 @@ from . import analysis
 
 log = logging.getLogger("masterquo.markets")
 COUNTS = {"H1": 400, "H4": 400, "D1": 420}
+STRATEGY_COUNTS = {"M5": 400, "M15": 400}          # extra timeframes for the bot strategies S01-S10
 
 
 class MarketScanner:
@@ -35,7 +36,8 @@ class MarketScanner:
         self.last_scan_at: str | None = None
         self.last_duration_ms: float | None = None
         self.symbols_total: int | None = None
-        self.listeners = []          # fn(results) after each scan (AI auto signals)
+        self.listeners = []          # fn(results) after each scan
+        self.signals = None          # BotSignalService (runs S01-S10 on the scanned markets), set by the runtime
 
     @property
     def cfg(self):
@@ -94,8 +96,19 @@ class MarketScanner:
         if meta is None:
             raise ValueError("SYMBOL_NOT_AVAILABLE")
         quote = self.bridge.symbol_quote(name, meta.get("point"))
-        bars = {tf: self.bridge.symbol_bars(name, tf, n) for tf, n in COUNTS.items()}
+        main = name == self.cfg_store.get().mt5.symbol
+        run_bot = self.signals is not None and not main and self.signals.cfg.enabled and self.signals.cfg.scan_other_markets
+        counts = {**COUNTS, **(STRATEGY_COUNTS if run_bot else {})}
+        bars = {tf: self.bridge.symbol_bars(name, tf, n) for tf, n in counts.items()}
         res = analysis.analyze(name, bars, meta, quote, self.cfg_store.get().volatility)
+        if run_bot:
+            try:
+                res["bot"] = self.signals.scan_symbol(name, bars, quote, meta)
+            except Exception as exc:  # a strategy problem on one market never stops the scan
+                log.exception("bot strategies failed on %s", name)
+                res["bot"] = {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"[:160]}
+        elif main:
+            res["bot"] = {"status": "MAIN_ENGINE"}       # the main symbol is handled by the bot's own engine
         res["scanned_at"] = iso(utcnow())
         res["synthetic"] = self.bridge.synthetic
         return res
@@ -137,7 +150,7 @@ class MarketScanner:
         with self._lock:
             items = [{k: r.get(k) for k in ("symbol", "description", "status", "price", "change_d1_pct", "change_5d_pct", "regime", "bias",
                                             "score", "observations", "atr_d1_pct", "spread_atr_h1_pct", "sigma_position", "digits", "synthetic",
-                                            "scanned_at")}
+                                            "scanned_at", "bot")}
                      | {"trend": {tf: (r.get("timeframes") or {}).get(tf, {}).get("trend") for tf in analysis.TFS},
                         "rsi_h1": ((r.get("timeframes") or {}).get("H1") or {}).get("rsi14"),
                         "adx_h4": ((r.get("timeframes") or {}).get("H4") or {}).get("adx14"),

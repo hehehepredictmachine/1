@@ -256,8 +256,7 @@ class TestMonitorUI(unittest.TestCase):
         p.wait_for_selector("[data-testid=market-detail]", timeout=10000)
         p.wait_for_function("() => window.__mqMarketChart && window.__mqMarketChart.bars() > 100", timeout=20000)
         p.wait_for_function("() => window.__mqMarketChart.lines().includes('Daily Open')", timeout=10000)
-        p.locator("[data-act=detail-ai]").click()                      # no API key in this test: honest message, no fake signal
-        p.wait_for_selector("text=AI_UNAVAILABLE_NO_KEY", timeout=10000)
+        self.assertEqual(p.locator("[data-act=detail-ai]").count(), 0)  # no AI-agent signals any more
         if os.environ.get("MQ_SCREENSHOT_DIR"):
             p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "market_detail.png"))
         p.keyboard.press("Escape")
@@ -267,8 +266,14 @@ class TestMonitorUI(unittest.TestCase):
         if os.environ.get("MQ_SCREENSHOT_DIR"):
             p.locator("[data-testid=markets-panel]").scroll_into_view_if_needed()
             p.locator(".markets-row").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "markets_ai.png"))
-        state = json.loads(p.evaluate("() => fetch('/api/v1/ai-signals').then(r => r.text())"))
-        self.assertEqual(state["items"], [])                            # nothing fabricated without a key
+        p.wait_for_selector("[data-testid=bot-signals-panel]", timeout=10000)
+        cells = p.locator("[data-testid=markets-panel] td.bot-setup")
+        self.assertGreaterEqual(cells.count(), 5)
+        texts = [cells.nth(i).inner_text() for i in range(cells.count())]
+        self.assertIn("silnik główny", texts)                         # main symbol handled by the bot's engine
+        self.assertTrue(any(t and t not in ("—", "silnik główny") for t in texts), texts)   # S01-S10 ran on other markets
+        state = json.loads(p.evaluate("() => fetch('/api/v1/bot-signals').then(r => r.text())"))
+        self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] for x in state["items"]))
 
     def test_08_checklist_and_ml_panel(self):
         panel = self.page.locator("[data-testid='entry-checklist']")

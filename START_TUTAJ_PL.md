@@ -48,12 +48,12 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
   i XGBoost w osobnym procesie, waliduje chronologicznie i promuje model tylko po spełnieniu kryteriów. **„Gotowy do nauki” ≠ wytrenowany.**
   Szczegóły: `docs/ML_DECISION_TREE_XGBOOST.md`.
 
-## Nowe w 1.5 – wszystkie rynki i sygnały AI
-Panel **Rynki · skaner** analizuje symbole z okna Market Watch Twojego terminala: trend, zmienność, IV walls i ranking. Kliknij wiersz,
-żeby otworzyć wykres rynku. W **Ustawienia → Rynki / Sygnały AI** wybierzesz własną listę albo wszystkie symbole terminala.
-Przycisk **Sygnał AI** prosi Claude o propozycję BUY / SELL / brak transakcji z wejściem, SL i TP. Każdy sygnał jest sprawdzany
-regułami i rozliczany na kolejnych świecach (win rate, wynik w R) – bot **nie** składa na jego podstawie zleceń. Wymaga klucza Claude API.
-Strategie i zlecenia bota działają nadal tylko na symbolu głównym. Szczegóły: `docs/RYNKI_I_SYGNALY_AI.md`.
+## Nowe w 1.6 – wszystkie rynki i sygnały bota
+Panel **Rynki · skaner** analizuje symbole z okna Market Watch Twojego terminala (trend, zmienność, IV walls) i uruchamia na nich
+**strategie bota S01–S10** – kolumna „Setup bota”. Kliknij wiersz, żeby zobaczyć wykres rynku.
+Panel **Sygnały bota** pokazuje potwierdzone setupy strategii (na XAUUSD- z silnika bota, na innych rynkach z tych samych strategii):
+wejście, SL, TP, R:R; każdy sygnał jest rozliczany (win rate, wynik w R). Zlecenia składa nadal tylko symbol główny zgodnie z trybem wykonania.
+Szczegóły: `docs/RYNKI_I_SYGNALY_BOTA.md`.
 
 ## Nowe w 1.3.1 – zmienność dzienna i IV walls
 Na wykresach: **Daily Open**, **Daily High/Low** (oczekiwany zakres dnia ±1σ), PDH/PDL, High/Low dnia, progi straddle i **strefy IV walls ±1σ/±2σ**

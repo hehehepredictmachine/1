@@ -56,13 +56,11 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, ml: { ...(s.ml || {}), ...d } };
     case "markets":
       return { ...s, markets: d };
-    case "ai_signals_state":
-      return { ...s, ai_signals: { ...(s.ai_signals || {}), ...d } };
-    case "ai_signal": {
+    case "bot_signal": {
       if (!d) return s;
-      const items = (s.ai_signals?.items || []).filter((x: any) => x.signal_id !== d.signal_id);
-      return { ...s, ai_signals: { ...(s.ai_signals || {}), items: [d, ...items].sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 60) },
-        aiSignalSeq: (s.aiSignalSeq || 0) + 1 };
+      const items = (s.bot_signals?.items || []).filter((x: any) => x.signal_id !== d.signal_id);
+      return { ...s, bot_signals: { ...(s.bot_signals || {}), items: [d, ...items].sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 60) },
+        signalSeq: (s.signalSeq || 0) + 1 };
     }
     case "engine_error":
       return { ...s, engine: { ...(s.engine || {}), last_error: d.error } };

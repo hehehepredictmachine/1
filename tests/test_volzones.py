@@ -104,7 +104,7 @@ class TestVolZones(unittest.TestCase):
             raw.update({"config_version": 4, "central": {"url": "https://x"}, "connector": {"enabled": False}})
             p.write_text(json.dumps(raw), encoding="utf-8")
             c = ConfigStore(p).get()
-            self.assertEqual(c.config_version, 5)
+            self.assertEqual(c.config_version, 6)
             self.assertEqual(c.volatility.walls_sigma, [1.0, 2.0])
             stored = json.loads(p.read_text(encoding="utf-8"))
             self.assertNotIn("central", stored)

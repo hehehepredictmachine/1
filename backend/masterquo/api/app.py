@@ -47,11 +47,6 @@ class CloseReq(BaseModel):
 SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
 
 
-class SignalReq(BaseModel):
-    symbol: str = Field(pattern=SYMBOL_RX)
-    note: str | None = Field(None, max_length=1000)
-
-
 class AskReq(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
 
@@ -200,7 +195,7 @@ def create_app(rt, port: int) -> FastAPI:
                 "first_run_completed": cfg.first_run_completed,
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
                 "ml": rt.ml.status(compact=True), "markets": rt.scanner.summary(),
-                "ai_signals": {**rt.signals.status(), **rt.signals.list(limit=30)}}
+                "bot_signals": {**rt.signals.status(), **rt.signals.list(limit=40)}}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -273,22 +268,16 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(404, f"SYMBOL_UNAVAILABLE: {exc}") from exc
         sig = rt.signals.list(symbol=symbol, limit=10)["items"]
         return {"symbol": symbol, "tf": tf, "meta": meta, "bars": data, "volatility": vol,
-                "ai_signals": [x for x in sig if x["status"] in ("PENDING_ENTRY", "OPEN")][:3], "synthetic": rt.bridge.synthetic}
+                "bot_signals": [x for x in sig if x["status"] == "OPEN"][:3], "synthetic": rt.bridge.synthetic}
 
-    @app.get("/api/v1/ai-signals")
-    def ai_signals(symbol: str | None = None, limit: int = Query(50, ge=1, le=500)):
+    @app.get("/api/v1/bot-signals")
+    def bot_signals(symbol: str | None = None, limit: int = Query(50, ge=1, le=500), rejected: bool = True):
         if symbol:
             _sym(symbol)
-        return {**rt.signals.list(symbol=symbol, limit=limit), **rt.signals.status()}
+        return {**rt.signals.list(symbol=symbol, limit=limit, include_rejected=rejected), **rt.signals.status()}
 
-    @app.post("/api/v1/ai-signals")
-    def ai_signal_new(req: SignalReq):
-        if rt.bridge.state != "CONNECTED":
-            raise HTTPException(503, "MT5_NOT_CONNECTED")
-        return rt.signals.request(req.symbol, "USER", req.note)
-
-    @app.get("/api/v1/ai-signals/{signal_id}")
-    def ai_signal_get(signal_id: str):
+    @app.get("/api/v1/bot-signals/{signal_id}")
+    def bot_signal_get(signal_id: str):
         r = rt.signals.get(signal_id)
         if not r:
             raise HTTPException(404, "NOT_FOUND")

@@ -23,7 +23,7 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 * Powrót do 1.3.0: 1.3.1 zapisuje `config_version: 5` i sekcję `volatility` – przed uruchomieniem 1.3.0 usuń tę sekcję
   i ustaw `"config_version": 3` (albo przywróć `data\config.json` z kopii). Baza danych nie została zmieniona.
 
-## 6. Wersja 1.5.0 → 1.3.1
-* Bez cofania wersji: skaner i sygnały AI wyłączysz w **Ustawienia → Rynki / Sygnały AI** (`markets.enabled`, `ai_signals.enabled`).
-* Powrót do 1.3.1: usuń z `data\config.json` sekcje `markets` i `ai_signals`. Tabela `ai_signals` (migracja 0005) w bazie nie przeszkadza
-  wersji 1.3.1; kopia bazy sprzed migracji jest w `data\backups\`.
+## 6. Wersja 1.6.0 → 1.3.1
+* Bez cofania wersji: skaner i sygnały wyłączysz w **Ustawienia → Rynki / Sygnały bota** (`markets.enabled`, `signals.enabled`).
+* Powrót do 1.3.1: usuń z `data\config.json` sekcje `markets` i `signals` i ustaw `"config_version": 5`. Tabela sygnałów (migracje 0005, 0006)
+  nie przeszkadza wersji 1.3.1; kopia bazy sprzed migracji jest w `data\backups\`.

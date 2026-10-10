@@ -11,7 +11,7 @@ import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
 import VolPanel from "./components/VolPanel";
-import { AISignalsPanel, MarketDetail, MarketsPanel } from "./components/MarketsPanel";
+import { BotSignalsPanel, MarketDetail, MarketsPanel } from "./components/MarketsPanel";
 import MLPanel from "./components/MLPanel";
 import { useStore } from "./store";
 import { cls, type TimeZoneMode } from "./util";
@@ -119,7 +119,7 @@ export default function App() {
         <div className="vol-row"><VolPanel /></div>
         <div className="markets-row">
           <MarketsPanel onOpen={setMarket} />
-          <AISignalsPanel onOpen={setMarket} />
+          <BotSignalsPanel onOpen={setMarket} />
         </div>
         <div className="ml-row"><MLPanel index={layout === "SIX" ? 9 : 7} /></div>
         <div className="bottom-row">

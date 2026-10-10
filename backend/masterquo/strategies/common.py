@@ -18,9 +18,13 @@ def level_bucket(view: MarketView, level: float) -> str:
     a = None
     if v is not None and len(v) > 20:
         a = v.atr()[v.last]
-    w = max(0.1, round((a or 2.0) * 0.5, 1))
     real = real_price(view, level)
-    return f"{round(real / w) * w:.1f}"
+    w = round((a or 2.0) * 0.5, 1)
+    if w >= 0.1:
+        return f"{round(real / w) * w:.1f}"
+    # instruments with small prices (FX): same 0.5 x ATR rule without the 0.1 floor
+    w = (a or abs(real) * 0.002) * 0.5
+    return f"{round(real / w) * w:.6g}"
 
 
 def stop_with_spread(direction: str, level: float, buffer: float, spread: float) -> float:
@@ -38,7 +42,7 @@ def valid_targets(direction: str, entry: float, stop: float, cands: list[tuple[f
     ok.sort(key=lambda t: s * (t[0] - entry))
     seen, out = set(), []
     for p, w, b in ok:
-        key = round(p, 2)
+        key = round(p, 8)
         if key in seen:
             continue
         seen.add(key)
