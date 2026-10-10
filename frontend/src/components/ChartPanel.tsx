@@ -418,9 +418,16 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     const d = s.decision;
     const lv = d?.levels;
     const st = d?.setup;
-    if (!lv || !st || !["EARLY_SETUP", "EARLY", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"].includes(st.state)) return;
     const add = (price: number, color: string, title: string, style = LineStyle.Dashed) =>
       price != null && priceLines.current.push(ser.createPriceLine({ price, color, title, lineStyle: style, lineWidth: 1, axisLabelVisible: true }));
+    // active AI signal for the main symbol (proposal of Claude, not an order)
+    const ai = (s.ai_signals?.items || []).find((x: any) => x.symbol === symbol && ["PENDING_ENTRY", "OPEN"].includes(x.status));
+    if (ai) {
+      add(ai.entry_price, String(tk.entry), `AI ${ai.action}`, LineStyle.SparseDotted);
+      add(ai.stop_loss, String(tk.sl), "AI SL", LineStyle.SparseDotted);
+      (ai.take_profits || []).forEach((t: number, i: number) => add(t, String(tk.tp), `AI TP${i + 1}`, LineStyle.SparseDotted));
+    }
+    if (!lv || !st || !["EARLY_SETUP", "EARLY", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"].includes(st.state)) return;
     add(lv.stop_loss, String(tk.sl), "SL");
     (lv.targets || []).forEach((t: any, i: number) => add(t.price, String(tk.tp), `TP${i + 1}${st.state !== "CONFIRMED" ? " (scen.)" : ""}`));
     if (lv.entry_zone) {
@@ -428,7 +435,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       add(lv.entry_zone.low, String(tk.entry), "", LineStyle.Dotted);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.decision?.levels, s.decision?.setup?.state, data, tk.sl, tk.tp, tk.entry]);
+  }, [s.decision?.levels, s.decision?.setup?.state, data, tk.sl, tk.tp, tk.entry, s.aiSignalSeq, s.ai_signals?.items?.length]);
 
   // ---------------------------------------------------------------- live ticks: update() only (LWC shifts only when the last bar is visible)
   useEffect(() => {

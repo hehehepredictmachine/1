@@ -4,7 +4,7 @@ import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
 
-function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={cls("modal", wide && "wide")}>
@@ -38,7 +38,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     try {
       const { strategies: _st, ...activeRest } = cfg.active || {};
       const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: cfg.execution,
-        active: activeRest, volatility: cfg.volatility, ...extra };
+        active: activeRest, volatility: cfg.volatility, markets: cfg.markets, ai_signals: cfg.ai_signals, ...extra };
       const r = await apiSend("PUT", "/api/v1/config", patch);
       setCfg(r.config);
       setMsg("Zapisano.");
@@ -85,7 +85,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały AI"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">
@@ -130,6 +130,29 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           <input defaultValue={(cfg.volatility.walls_sigma || []).join(", ")} onBlur={(e) => set("volatility.walls_sigma",
             e.target.value.split(/[;,\s]+/).map((x) => Number(x)).filter((x) => x > 0))} /></label>
         {field("Szerokość strefy wall [σ, połowa]", "volatility.wall_band_sigma", "num", "domyślnie 0.1")}
+      </div>}
+      {tab === "markets" && cfg.markets && <div className="form">
+        <div className="note">Skaner analizuje inne rynki z Twojego terminala MT5 (tylko odczyt). Strategie S01–S10 i zlecenia bota działają wyłącznie
+          na symbolu głównym. Źródło „ALL” dodaje symbole do okna Market Watch w terminalu.</div>
+        {field("Skaner włączony", "markets.enabled", "bool")}
+        {field("Źródło symboli", "markets.source", "text", "MARKET_WATCH = widoczne w Market Watch · LIST = lista poniżej · ALL = wszystkie symbole terminala", ["MARKET_WATCH", "LIST", "ALL"])}
+        <label className="field"><span>Lista symboli (LIST)<small> – dokładne nazwy brokera, oddzielone przecinkiem</small></span>
+          <input defaultValue={(cfg.markets.symbols || []).join(", ")} onBlur={(e) => set("markets.symbols", e.target.value.split(/[,;\s]+/).filter(Boolean))} /></label>
+        <label className="field"><span>Pomiń symbole<small> – oddzielone przecinkiem</small></span>
+          <input defaultValue={(cfg.markets.exclude || []).join(", ")} onBlur={(e) => set("markets.exclude", e.target.value.split(/[,;\s]+/).filter(Boolean))} /></label>
+        {field("Dołącz symbol główny", "markets.include_main", "bool")}
+        {field("Maks. liczba symboli", "markets.max_symbols", "num", "1–200")}
+        {field("Odstęp skanów [s]", "markets.scan_interval_seconds", "num", "60–3600")}
+        <div className="note">Sygnały AI: Claude proponuje BUY / SELL / NO_TRADE z wejściem, SL i TP. Każdy sygnał przechodzi walidację i jest rozliczany
+          na kolejnych świecach – nie jest wysyłany do terminala. Koszt wlicza się do dziennego budżetu agenta.</div>
+        {field("Sygnały AI włączone", "ai_signals.enabled", "bool")}
+        {field("Automatycznie dla najlepszych N rynków", "ai_signals.auto_top_n", "num", "0 = tylko na żądanie (domyślnie); każdy sygnał to płatne zapytanie do API")}
+        {field("Odstęp automatycznych sygnałów [min]", "ai_signals.auto_interval_minutes", "num")}
+        {field("Min. R:R do TP1", "ai_signals.min_rr", "num")}
+        {field("Min. SL [× ATR H1]", "ai_signals.min_sl_atr_h1", "num")}
+        {field("Maks. SL [× ATR D1]", "ai_signals.max_sl_atr_d1", "num")}
+        {field("Maks. odległość wejścia LIMIT [× ATR H1]", "ai_signals.max_entry_distance_atr_h1", "num")}
+        {field("Maks. czas trwania sygnału [h]", "ai_signals.max_hold_hours", "num")}
       </div>}
       {tab === "risk" && <div className="form">
         <div className="note warn">Wartości ze zdjęcia (1%, 5%, 10%, 6 pozycji) to przykład widoku – nie są ustawieniami Twojego rachunku. Bez limitów tryby wykonawcze są zablokowane.</div>

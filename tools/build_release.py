@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP_NAME = "MasterQUO_IV_WALLS_1_3_1.zip"
+ZIP_NAME = "MasterQUO_MARKETS_AI_SIGNALS_1_5_0.zip"
 TOP = "MasterQUO_AI/"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 
@@ -31,7 +31,7 @@ def main():
         h = hashlib.sha256((ROOT / f).read_bytes()).hexdigest()
         lines.append(f"{h}  {f}")
     (ROOT / "MANIFEST_SHA256.txt").write_text(
-        "# MasterQUO AI 1.3.1 - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
+        "# MasterQUO AI 1.5.0 - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
         encoding="utf-8", newline="\n")
     out = ROOT / "release" / ZIP_NAME
     out.parent.mkdir(exist_ok=True)

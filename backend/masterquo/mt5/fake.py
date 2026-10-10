@@ -51,12 +51,29 @@ OrderCheck = namedtuple("OrderCheck", "retcode balance equity profit margin marg
 RATE_DTYPE = np.dtype([("time", "<i8"), ("open", "<f8"), ("high", "<f8"), ("low", "<f8"), ("close", "<f8"),
                        ("tick_volume", "<u8"), ("spread", "<i4"), ("real_volume", "<u8")])
 
+# Synthetic extra markets (independent random walks, rescaled). Names, prices and paths are illustrative only.
+SYN_MARKETS = {
+    "EURUSD-": dict(base=1.0850, scale=0.00006, digits=5, seed=11, spread=8, visible=True, desc="Euro vs US Dollar (synthetic)",
+                    path="Synthetic\\Forex\\EURUSD-", base_ccy="EUR", profit_ccy="USD", contract=100000.0),
+    "GBPUSD-": dict(base=1.2700, scale=0.00008, digits=5, seed=12, spread=10, visible=True, desc="British Pound vs US Dollar (synthetic)",
+                    path="Synthetic\\Forex\\GBPUSD-", base_ccy="GBP", profit_ccy="USD", contract=100000.0),
+    "USDJPY-": dict(base=149.50, scale=0.012, digits=3, seed=13, spread=9, visible=True, desc="US Dollar vs Japanese Yen (synthetic)",
+                    path="Synthetic\\Forex\\USDJPY-", base_ccy="USD", profit_ccy="JPY", contract=100000.0),
+    "US30-": dict(base=42100.0, scale=3.2, digits=1, seed=15, spread=20, visible=True, desc="Dow Jones 30 CFD (synthetic)",
+                  path="Synthetic\\Indices\\US30-", base_ccy="USD", profit_ccy="USD", contract=1.0),
+    "XAGUSD-": dict(base=31.20, scale=0.0035, digits=3, seed=14, spread=25, visible=False, desc="Silver vs US Dollar (synthetic)",
+                    path="Synthetic\\Metals\\XAGUSD-", base_ccy="XAG", profit_ccy="USD", contract=5000.0),
+    "BTCUSD-": dict(base=64000.0, scale=28.0, digits=2, seed=16, spread=3000, visible=False, desc="Bitcoin vs US Dollar (synthetic)",
+                    path="Synthetic\\Crypto\\BTCUSD-", base_ccy="BTC", profit_ccy="USD", contract=1.0),
+}
+
 
 class FakeMT5:
     def __init__(self, *, symbol: str = "XAUUSD-", server_offset_hours: float = 3.0, seed: int = 7,
                  clock: Callable[[], datetime] | None = None, history_days: int = 430, hedging: bool = True,
                  login: int = 5550001, server: str = "Synthetic-Demo", trade_mode: int = ACCOUNT_TRADE_MODE_DEMO,
-                 commission_per_lot_side: float = 3.5, start_price: float = 2650.0, extra_symbols=("DXY_SYN",)):
+                 commission_per_lot_side: float = 3.5, start_price: float = 2650.0, extra_symbols=("DXY_SYN",),
+                 markets: dict | None = None):
         self.symbol = symbol
         self.offset = int(server_offset_hours * 3600)
         self.clock = clock or (lambda: datetime.now(UTC))
@@ -75,7 +92,9 @@ class FakeMT5:
         self._deals: list[Deal] = []
         self._ticket = 1000
         self._extra = set(extra_symbols)
-        self._visible = {symbol}
+        self._markets = dict(SYN_MARKETS if markets is None else markets)
+        self._series: dict[str, tuple] = {}
+        self._visible = {symbol} | {n for n, m in self._markets.items() if m["visible"]}
         self._start_price = start_price
         self._history_days = history_days
         self._build_history()
@@ -94,10 +113,13 @@ class FakeMT5:
         return d.hour != 23  # daily break 23:00-24:00 server time
 
     def _build_history(self) -> None:
+        self._mins, self._m1 = self._build_series(self.seed, self._history_days)
+
+    def _build_series(self, seed: int, history_days: int):
         now_raw = int(self._raw_now()) // 3600 * 3600
-        start = now_raw - self._history_days * 86400
+        start = now_raw - history_days * 86400
         mins = np.arange(start, now_raw + 86400 * 30, 60, dtype=np.int64)  # 30 days ahead pre-generated
-        rng = np.random.default_rng(self.seed)
+        rng = np.random.default_rng(seed)
         n = len(mins)
         # regime-switching drift + volatility clustering, in price units
         regime = np.repeat(rng.normal(0, 0.035, n // 240 + 1), 240)[:n]
@@ -107,42 +129,59 @@ class FakeMT5:
         price = np.maximum(price, 100.0)
         wick = np.abs(rng.normal(0, 0.18, (n, 2))) * vol[:, None]
         open_mask = np.array([self._is_open(int(m)) for m in mins[::60]]).repeat(60)[:n]
-        self._mins = mins[open_mask]
+        kept = mins[open_mask]
         close = price[open_mask]
         opn = np.concatenate([[close[0]], close[:-1]])
-        self._m1 = {"time": self._mins, "open": opn, "close": close,
-                    "high": np.maximum(opn, close) + wick[open_mask, 0], "low": np.minimum(opn, close) - wick[open_mask, 1],
-                    "tick_volume": (rng.integers(20, 400, len(close))).astype(np.uint64)}
+        m1 = {"time": kept, "open": opn, "close": close,
+              "high": np.maximum(opn, close) + wick[open_mask, 0], "low": np.minimum(opn, close) - wick[open_mask, 1],
+              "tick_volume": (rng.integers(20, 400, len(close))).astype(np.uint64)}
+        return kept, m1
 
-    def _m1_upto(self, raw_now: float):
-        idx = int(np.searchsorted(self._mins, raw_now, side="right"))
+    def _market_series(self, name: str):
+        """Independent random walk per synthetic market (built lazily, shorter history), in the main price units."""
+        if name not in self._series:
+            m = self._markets[name]
+            self._series[name] = self._build_series(m["seed"], min(self._history_days, 160))
+        return self._series[name]
+
+    def _to_market(self, name: str, x):
+        m = self._markets[name]
+        return m["base"] + (x - self._start_price) * m["scale"]
+
+    def _known(self, name: str) -> bool:
+        return name == self.symbol or name in self._extra or name in self._markets
+
+    def _m1_upto(self, raw_now: float, mins=None):
+        idx = int(np.searchsorted(self._mins if mins is None else mins, raw_now, side="right"))
         return idx
 
-    def _price_at(self, raw_now: float) -> float | None:
-        idx = self._m1_upto(raw_now)
+    def _price_at(self, raw_now: float, series=None) -> float | None:
+        mins, m1 = series or (self._mins, self._m1)
+        idx = self._m1_upto(raw_now, mins)
         if idx == 0:
             return None
         i = idx - 1
-        if raw_now - self._mins[i] >= 60:
+        if raw_now - mins[i] >= 60:
             return None  # market closed: no live price
-        frac = (raw_now - self._mins[i]) / 60.0
-        o, c = self._m1["open"][i], self._m1["close"][i]
+        frac = (raw_now - mins[i]) / 60.0
+        o, c = m1["open"][i], m1["close"][i]
         return float(o + (c - o) * frac)
 
-    def _rates(self, tf: int, raw_now: float) -> np.ndarray:
+    def _rates(self, tf: int, raw_now: float, series=None) -> np.ndarray:
+        mins, m1 = series or (self._mins, self._m1)
         sec = _TF_SEC[tf]
-        idx = self._m1_upto(raw_now)
-        t = self._mins[:idx]
+        idx = self._m1_upto(raw_now, mins)
+        t = mins[:idx]
         if idx == 0:
             return np.zeros(0, dtype=RATE_DTYPE)
-        o, h, lo, c, v = (self._m1[k][:idx] for k in ("open", "high", "low", "close", "tick_volume"))
+        o, h, lo, c, v = (m1[k][:idx] for k in ("open", "high", "low", "close", "tick_volume"))
         h = h.copy(); lo = lo.copy(); c = c.copy(); v = v.copy()
         # the forming M1 bar is only partially known
         last_frac = min(1.0, max(0.0, (raw_now - t[-1]) / 60.0))
         if last_frac < 1.0:
             c[-1] = o[-1] + (c[-1] - o[-1]) * last_frac
-            h[-1] = max(o[-1], c[-1]) + (h[-1] - max(o[-1], self._m1["close"][idx - 1])) * last_frac
-            lo[-1] = min(o[-1], c[-1]) - (min(o[-1], self._m1["close"][idx - 1]) - lo[-1]) * last_frac
+            h[-1] = max(o[-1], c[-1]) + (h[-1] - max(o[-1], m1["close"][idx - 1])) * last_frac
+            lo[-1] = min(o[-1], c[-1]) - (min(o[-1], m1["close"][idx - 1]) - lo[-1]) * last_frac
             v[-1] = max(1, int(v[-1] * last_frac))
         bucket = (t // sec) * sec
         uniq, first = np.unique(bucket, return_index=True)
@@ -213,16 +252,19 @@ class FakeMT5:
     def symbol_select(self, name, enable=True):
         if not self._guard():
             return False
-        if name == self.symbol or name in self._extra:
-            self._visible.add(name)
+        if self._known(name):
+            (self._visible.add if enable else self._visible.discard)(name)
             return True
         self._last_error = (-1, "Terminal: Call failed")
         return False
 
+    def symbols_total(self):
+        return len(self.symbols_get() or ())
+
     def symbols_get(self, group=None):
         if not self._guard():
             return None
-        names = [self.symbol, *sorted(self._extra)]
+        names = [self.symbol, *sorted(self._extra), *sorted(self._markets)]
         if group:
             import fnmatch
             pats = [g for g in group.split(",") if g and not g.startswith("!")]
@@ -230,19 +272,41 @@ class FakeMT5:
         return tuple(self.symbol_info(n) for n in names)
 
     def symbol_info(self, name):
-        if not self._guard() or (name != self.symbol and name not in self._extra):
+        if not self._guard() or not self._known(name):
             return None
         t = self.symbol_info_tick(name)
         bid = t.bid if t else 0.0
         ask = t.ask if t else 0.0
+        if name in self._markets:
+            m = self._markets[name]
+            d = m["digits"]
+            pt = 10.0 ** -d
+            return SymbolInfo(name, name in self._visible, name in self._visible, pt, d, pt, 1.0, m.get("contract", 100000.0), 0.01, 100.0, 0.01,
+                              10, 5, SYMBOL_TRADE_MODE_FULL, 3, m.get("base_ccy", "EUR"), m.get("profit_ccy", "USD"), m.get("base_ccy", "EUR"),
+                              m["spread"], True, m["desc"], m["path"], bid, ask, int(t.time) if t else 0)
         return SymbolInfo(name, name in self._visible, name in self._visible, 0.01, 2, 0.01, 1.0, 100.0, 0.01, 100.0, 0.01,
                           10, 5, SYMBOL_TRADE_MODE_FULL, 3, "XAU", "USD", "USD", 12, True, "Gold vs USD (synthetic)",
                           "Synthetic\\Metals", bid, ask, int(t.time) if t else 0)
 
     def symbol_info_tick(self, name):
-        if not self._guard() or (name != self.symbol and name not in self._extra):
+        if not self._guard() or not self._known(name):
             return None
         raw = self._raw_now()
+        if name in self._markets:
+            m = self._markets[name]
+            series = self._market_series(name)
+            px = self._price_at(raw, series)
+            d, pt = m["digits"], 10.0 ** -m["digits"]
+            if px is None:
+                mins, m1 = series
+                idx = self._m1_upto(raw, mins)
+                if idx == 0:
+                    return None
+                last_t = int(mins[idx - 1]) + 59
+                c = round(float(self._to_market(name, m1["close"][idx - 1])), d)
+                return Tick(last_t, c, round(c + m["spread"] * pt, d), 0.0, 0, last_t * 1000, 6, 0.0)
+            bid = round(float(self._to_market(name, px)), d)
+            return Tick(int(raw), bid, round(bid + m["spread"] * pt, d), 0.0, 0, int(raw * 1000), 6, 0.0)
         px = self._price_at(raw)
         if px is None:
             # market closed: last known tick stays (stale)
@@ -260,14 +324,22 @@ class FakeMT5:
         return Tick(int(raw), bid, ask, 0.0, 0, int(raw * 1000), 6, 0.0)
 
     def copy_rates_from_pos(self, symbol, timeframe, start_pos, count):
-        if not self._guard() or (symbol != self.symbol and symbol not in self._extra):
+        if not self._guard() or not self._known(symbol):
             return None
-        r = self._rates(timeframe, self._raw_now())
+        if symbol in self._markets:
+            r = self._rates(timeframe, self._raw_now(), self._market_series(symbol))
+        else:
+            r = self._rates(timeframe, self._raw_now())
         end = len(r) - start_pos
         if end <= 0:
             return np.zeros(0, dtype=RATE_DTYPE)
         out = r[max(0, end - count):end].copy()
-        if symbol != self.symbol:
+        if symbol in self._markets:
+            d = self._markets[symbol]["digits"]
+            for k in ("open", "high", "low", "close"):
+                out[k] = np.round(self._to_market(symbol, out[k]), d)
+            out["spread"] = self._markets[symbol]["spread"]
+        elif symbol != self.symbol:
             for k in ("open", "high", "low", "close"):
                 out[k] = 100.0 + (out[k] - self._start_price) * 0.002
         return out

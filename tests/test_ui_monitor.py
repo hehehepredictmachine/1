@@ -244,6 +244,32 @@ class TestMonitorUI(unittest.TestCase):
             p.locator("[data-testid=vol-panel]").scroll_into_view_if_needed()
             p.locator("[data-testid=vol-panel]").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "iv_walls_panel.png"))
 
+    def test_10_markets_scanner_and_detail_chart(self):
+        p = self.page
+        p.wait_for_selector("[data-testid=markets-panel] tr[data-symbol='EURUSD-']", timeout=60000)
+        rows = p.locator("[data-testid=markets-panel] tbody tr[data-symbol]")
+        self.assertGreaterEqual(rows.count(), 5)
+        names = {rows.nth(i).get_attribute("data-symbol") for i in range(rows.count())}
+        self.assertTrue({"XAUUSD-", "EURUSD-", "GBPUSD-", "USDJPY-", "US30-"} <= names)
+        before = p.evaluate("() => window.__mqCharts.panel1.logical()")
+        p.locator("[data-testid=markets-panel] tr[data-symbol='EURUSD-']").click()
+        p.wait_for_selector("[data-testid=market-detail]", timeout=10000)
+        p.wait_for_function("() => window.__mqMarketChart && window.__mqMarketChart.bars() > 100", timeout=20000)
+        p.wait_for_function("() => window.__mqMarketChart.lines().includes('Daily Open')", timeout=10000)
+        p.locator("[data-act=detail-ai]").click()                      # no API key in this test: honest message, no fake signal
+        p.wait_for_selector("text=AI_UNAVAILABLE_NO_KEY", timeout=10000)
+        if os.environ.get("MQ_SCREENSHOT_DIR"):
+            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "market_detail.png"))
+        p.keyboard.press("Escape")
+        p.locator(".modal-head button.icon").first.click()
+        after = p.evaluate("() => window.__mqCharts.panel1.logical()")
+        self.assertAlmostEqual(before["from"], after["from"], delta=1.5)
+        if os.environ.get("MQ_SCREENSHOT_DIR"):
+            p.locator("[data-testid=markets-panel]").scroll_into_view_if_needed()
+            p.locator(".markets-row").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "markets_ai.png"))
+        state = json.loads(p.evaluate("() => fetch('/api/v1/ai-signals').then(r => r.text())"))
+        self.assertEqual(state["items"], [])                            # nothing fabricated without a key
+
     def test_08_checklist_and_ml_panel(self):
         panel = self.page.locator("[data-testid='entry-checklist']")
         panel.wait_for(timeout=30000)

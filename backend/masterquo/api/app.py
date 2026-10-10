@@ -44,6 +44,14 @@ class CloseReq(BaseModel):
     confirm: str
 
 
+SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
+
+
+class SignalReq(BaseModel):
+    symbol: str = Field(pattern=SYMBOL_RX)
+    note: str | None = Field(None, max_length=1000)
+
+
 class AskReq(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
 
@@ -191,7 +199,8 @@ def create_app(rt, port: int) -> FastAPI:
                                                                                      "last_error": rt.manager.last_error},
                 "first_run_completed": cfg.first_run_completed,
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
-                "ml": rt.ml.status(compact=True)}
+                "ml": rt.ml.status(compact=True), "markets": rt.scanner.summary(),
+                "ai_signals": {**rt.signals.status(), **rt.signals.list(limit=30)}}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -209,6 +218,81 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/volatility")
     def volatility():
         return rt.engine.volatility()
+
+    # ------------------------------------------------------------ markets (scanner) and AI signals
+    import re as _re
+
+    def _sym(symbol: str) -> str:
+        if not _re.fullmatch(SYMBOL_RX, symbol or ""):
+            raise HTTPException(400, "INVALID_SYMBOL")
+        return symbol
+
+    @app.get("/api/v1/markets")
+    def markets():
+        return rt.scanner.summary()
+
+    @app.post("/api/v1/markets/scan")
+    def markets_scan():
+        if rt.bridge.state != "CONNECTED":
+            raise HTTPException(503, "MT5_NOT_CONNECTED")
+        rt.scanner.scan_now()
+        return {"queued": True}
+
+    @app.get("/api/v1/markets/symbols")
+    def markets_symbols(all: bool = False):
+        try:
+            return {"symbols": rt.bridge.list_symbols(visible_only=not all)}
+        except Exception as exc:
+            raise HTTPException(503, f"SYMBOLS_UNAVAILABLE: {exc}") from exc
+
+    @app.get("/api/v1/markets/detail")
+    def markets_detail(symbol: str = Query(...), fresh: bool = False):
+        _sym(symbol)
+        r = None if fresh else rt.scanner.get(symbol)
+        if r is None:
+            try:
+                r = rt.scanner.analyze_symbol(symbol)
+            except Exception as exc:
+                raise HTTPException(404, f"SYMBOL_UNAVAILABLE: {exc}") from exc
+        return r
+
+    @app.get("/api/v1/markets/chart")
+    def markets_chart(symbol: str = Query(...), tf: str = Query("H1"), bars: int = Query(300, ge=50, le=1500)):
+        _sym(symbol)
+        if tf not in TIMEFRAMES:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        try:
+            meta = rt.bridge.symbol_meta(symbol, select=rt.cfg.get().markets.source != "MARKET_WATCH")
+            if meta is None:
+                raise ValueError("SYMBOL_NOT_FOUND")
+            data = rt.bridge.symbol_bars(symbol, tf, bars)
+            from ..engine import volzones
+            vol = volzones.compute(rt.bridge.symbol_bars(symbol, "D1", 420), rt.cfg.get().volatility, digits=int(meta.get("digits") or 5),
+                                   quote=rt.bridge.symbol_quote(symbol, meta.get("point")))
+        except Exception as exc:
+            raise HTTPException(404, f"SYMBOL_UNAVAILABLE: {exc}") from exc
+        sig = rt.signals.list(symbol=symbol, limit=10)["items"]
+        return {"symbol": symbol, "tf": tf, "meta": meta, "bars": data, "volatility": vol,
+                "ai_signals": [x for x in sig if x["status"] in ("PENDING_ENTRY", "OPEN")][:3], "synthetic": rt.bridge.synthetic}
+
+    @app.get("/api/v1/ai-signals")
+    def ai_signals(symbol: str | None = None, limit: int = Query(50, ge=1, le=500)):
+        if symbol:
+            _sym(symbol)
+        return {**rt.signals.list(symbol=symbol, limit=limit), **rt.signals.status()}
+
+    @app.post("/api/v1/ai-signals")
+    def ai_signal_new(req: SignalReq):
+        if rt.bridge.state != "CONNECTED":
+            raise HTTPException(503, "MT5_NOT_CONNECTED")
+        return rt.signals.request(req.symbol, "USER", req.note)
+
+    @app.get("/api/v1/ai-signals/{signal_id}")
+    def ai_signal_get(signal_id: str):
+        r = rt.signals.get(signal_id)
+        if not r:
+            raise HTTPException(404, "NOT_FOUND")
+        return r
 
     @app.get("/api/v1/signals")
     def signals(limit: int = 30):

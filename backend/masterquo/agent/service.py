@@ -447,14 +447,15 @@ class ClaudeAgent:
                                                                        (f" – {error}" if error else "")))
         return result
 
-    async def _create(self, client, model: str, system: str, messages: list, structured: bool):
+    async def _create(self, client, model: str, system: str, messages: list, structured: bool, tools: list | None = None,
+                      schema: dict | None = None):
         import anthropic
         oc: dict = {}
         if model not in self.no_effort:
             oc["effort"] = self.cfg.effort
         if structured:
-            oc["format"] = {"type": "json_schema", "schema": OUTPUT_SCHEMA}
-        kw = dict(model=model, max_tokens=self.cfg.max_tokens, system=system, tools=TOOL_DEFS, messages=messages,
+            oc["format"] = {"type": "json_schema", "schema": schema or OUTPUT_SCHEMA}
+        kw = dict(model=model, max_tokens=self.cfg.max_tokens, system=system, tools=tools or TOOL_DEFS, messages=messages,
                   cache_control={"type": "ephemeral"})
         if oc:
             kw["output_config"] = oc
@@ -473,7 +474,7 @@ class ClaudeAgent:
                 self.no_structured.add(model)
             else:
                 raise
-            return await self._create(client, model, system, messages, structured and model not in self.no_structured)
+            return await self._create(client, model, system, messages, structured and model not in self.no_structured, tools, schema)
 
     # ------------------------------------------------------------ config tests
     async def list_models(self) -> dict:

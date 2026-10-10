@@ -288,6 +288,42 @@ class VolatilityConfig(_Strict):
         return sorted(set(round(x, 3) for x in v))
 
 
+class MarketsConfig(_Strict):
+    """Multi-market scanner (markets/scanner.py): analysis of other symbols of the connected terminal (read-only)."""
+    enabled: bool = True
+    source: Literal["MARKET_WATCH", "LIST", "ALL"] = "MARKET_WATCH"   # ALL adds symbols to Market Watch (symbol_select)
+    symbols: list[str] = Field(default_factory=list)                 # used by LIST (exact broker names)
+    exclude: list[str] = Field(default_factory=list)
+    include_main: bool = True
+    max_symbols: int = Field(30, ge=1, le=200)
+    scan_interval_seconds: int = Field(300, ge=60, le=3600)
+
+    @field_validator("symbols", "exclude")
+    @classmethod
+    def _names(cls, v: list[str]) -> list[str]:
+        out = []
+        for x in v:
+            x = str(x).strip()
+            if not x or len(x) > 40 or any(ch in x for ch in "*?,!"):
+                raise ValueError("SYMBOL_NAMES_MUST_BE_EXACT_BROKER_NAMES")
+            if x not in out:
+                out.append(x)
+        return out[:200]
+
+
+class AISignalsConfig(_Strict):
+    """AI signals (agent/signals.py): Claude proposes BUY/SELL/NO_TRADE with levels; validated and tracked, never executed."""
+    enabled: bool = True
+    auto_top_n: int = Field(0, ge=0, le=10)                 # 0 = only on request; >0 = best-ranked scanner symbols
+    auto_interval_minutes: int = Field(120, ge=15, le=1440)
+    default_valid_minutes: int = Field(240, ge=15, le=2880)
+    min_rr: float = Field(1.0, ge=0.3, le=10.0)
+    min_sl_atr_h1: float = Field(0.3, ge=0.05, le=5.0)
+    max_sl_atr_d1: float = Field(3.0, ge=0.2, le=20.0)
+    max_entry_distance_atr_h1: float = Field(4.0, ge=0.1, le=50.0)
+    max_hold_hours: int = Field(72, ge=1, le=720)
+
+
 class AppConfig(_Strict):
     config_version: int = 5
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -303,6 +339,8 @@ class AppConfig(_Strict):
     active: ActiveConfig = Field(default_factory=ActiveConfig)
     ml: MLConfig = Field(default_factory=MLConfig)
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
+    markets: MarketsConfig = Field(default_factory=MarketsConfig)
+    ai_signals: AISignalsConfig = Field(default_factory=AISignalsConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

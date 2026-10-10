@@ -380,3 +380,29 @@ small.muted { color: var(--muted); }
 .vol-walls tr.down td:first-child { color: var(--pnl-pos); }
 .vol-note { grid-column: 1 / -1; }
 @media (max-width: 900px) { .vol-body { grid-template-columns: minmax(0, 1fr); } .vol-walls { display: block; overflow-x: auto; } }
+
+/* markets scanner + AI signals */
+.markets-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 8px; min-height: 260px; max-height: 460px; }
+.markets-row > .panel { min-height: 0; }
+.markets-panel .search { width: 140px; }
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl tr.clickable { cursor: pointer; }
+.tbl tr.clickable:hover td { background: color-mix(in srgb, var(--neon) 6%, transparent); }
+.tbl td.pos { color: var(--pnl-pos); }
+.tbl td.neg { color: var(--pnl-neg); }
+.tbl td.warn { color: var(--warn-text); }
+.markets-tbl td, .ai-tbl td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.markets-tbl td.obs { white-space: normal; min-width: 160px; font-size: 10.5px; color: var(--muted); }
+.score-bar { position: relative; width: 64px; height: 14px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.score-bar i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--neon) 35%, transparent); }
+.score-bar span { position: relative; display: block; text-align: center; font-size: 10px; line-height: 12px; }
+.ai-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding: 6px 8px; }
+.ai-stats label { display: block; font-size: 9.5px; color: var(--muted); }
+.ai-ask { display: flex; gap: 6px; padding: 0 8px 6px; flex-wrap: wrap; }
+.ai-ask input { flex: 1; min-width: 120px; }
+.market-detail { display: flex; flex-direction: column; gap: 8px; }
+.market-chart { height: 380px; border: 1px solid var(--line); border-radius: 6px; }
+.market-kv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.prewrap { white-space: pre-wrap; margin: 0 0 6px; }
+@media (max-width: 1100px) { .markets-row { grid-template-columns: minmax(0, 1fr); max-height: none; } .markets-row > .panel { max-height: 460px; } }
+@media (max-width: 700px) { .market-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ai-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .market-chart { height: 280px; } }

@@ -11,6 +11,7 @@ import Header from "./components/Header";
 import SignalsPanel from "./components/SignalsPanel";
 import StatsPanel from "./components/StatsPanel";
 import VolPanel from "./components/VolPanel";
+import { AISignalsPanel, MarketDetail, MarketsPanel } from "./components/MarketsPanel";
 import MLPanel from "./components/MLPanel";
 import { useStore } from "./store";
 import { cls, type TimeZoneMode } from "./util";
@@ -47,6 +48,7 @@ export default function App() {
   const [mode, setMode] = useState(false);
   const [power, setPower] = useState(false);
   const [look, setLook] = useState(false);
+  const [market, setMarket] = useState<string | null>(null);
   const [statsModeRaw, setStatsMode] = usePersisted<string>("statsmode", "PAPER");
   const statsMode = ["PAPER", "AUTO_DEMO", "AUTO_LIVE"].includes(statsModeRaw) ? statsModeRaw : "PAPER";   // 1.2 names migrated
   const [stats, setStats] = useState<any>(null);
@@ -115,6 +117,10 @@ export default function App() {
           <StrategiesPanel full={autoFull} reload={() => { reloadAuto(); }} />
         </div>
         <div className="vol-row"><VolPanel /></div>
+        <div className="markets-row">
+          <MarketsPanel onOpen={setMarket} />
+          <AISignalsPanel onOpen={setMarket} />
+        </div>
         <div className="ml-row"><MLPanel index={layout === "SIX" ? 9 : 7} /></div>
         <div className="bottom-row">
           <NewsPanel />
@@ -127,6 +133,7 @@ export default function App() {
       {mode && <ModeDialog onClose={() => setMode(false)} />}
       {power && <PowerDialog onClose={() => setPower(false)} />}
       {look && <ThemeDialog onClose={() => setLook(false)} />}
+      {market && <MarketDetail symbol={market} onClose={() => setMarket(null)} />}
       <footer className="footer">
         MasterQUO AI {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
         Narzędzie analityczne – nie gwarantuje zysków.

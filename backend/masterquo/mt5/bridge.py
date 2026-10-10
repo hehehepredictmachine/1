@@ -332,6 +332,61 @@ class MarketBridge:
         except (BridgeError, MT5CallTimeout) as exc:
             self.dxy_status = "ERROR:" + str(exc)[:80]
 
+    # ---------------------------------------------------------------- other symbols (market scanner, AI signals; read-only)
+    _META_KEYS = ("name", "description", "path", "point", "digits", "trade_mode", "currency_base", "currency_profit",
+                  "trade_contract_size", "visible", "spread")
+
+    def list_symbols(self, visible_only: bool = True) -> list[dict]:
+        """Symbols of the connected terminal. visible_only=True -> Market Watch only (no side effects)."""
+        if self.state != "CONNECTED":
+            raise BridgeError("NOT_CONNECTED")
+        raw = self._call(lambda m: m.symbols_get(), PRIO_HISTORY) or ()
+        out = []
+        for r in raw:
+            d = _row(r)
+            if visible_only and not d.get("visible"):
+                continue
+            out.append({k: d.get(k) for k in self._META_KEYS})
+        out.sort(key=lambda x: str(x.get("name")))
+        return out
+
+    def symbol_meta(self, symbol: str, select: bool = False) -> dict | None:
+        info = self._call(lambda m: m.symbol_info(symbol), PRIO_HISTORY)
+        if info is None:
+            return None
+        d = _row(info)
+        if select and not d.get("visible"):
+            if not self._call(lambda m: m.symbol_select(symbol, True), PRIO_HISTORY):
+                return None
+            d = _row(self._call(lambda m: m.symbol_info(symbol), PRIO_HISTORY))
+        return {k: d.get(k) for k in self._META_KEYS}
+
+    def symbol_quote(self, symbol: str, point: float | None = None) -> dict | None:
+        tick = self._call(lambda m: m.symbol_info_tick(symbol), PRIO_HISTORY)
+        if tick is None:
+            return None
+        t = _row(tick)
+        bid, ask = float(t["bid"]), float(t["ask"])
+        msc = int(t.get("time_msc") or int(t["time"]) * 1000)
+        utc = self.clock.raw_to_utc(msc / 1000.0) if self.clock.offset is not None else None
+        return {"symbol": symbol, "bid": bid, "ask": ask, "spread": round(ask - bid, 10),
+                "spread_points": round((ask - bid) / point, 1) if point else None, "time_utc": iso(utc) if utc else None,
+                "age_seconds": round((self.now() - utc).total_seconds(), 1) if utc else None, "source": "MT5"}
+
+    def symbol_bars(self, symbol: str, tf: str, count: int) -> list[dict]:
+        """Bars of any symbol (oldest first). The newest bar is 'forming' unless its period has already ended
+        by the server clock; without a known server offset it is always treated as forming (conservative)."""
+        bars = self._fetch(symbol, tf, count)
+        off = self.clock.offset
+        raw_now = self.now().timestamp() + off if off is not None else None
+        out = []
+        for i, b in enumerate(bars):
+            last = i == len(bars) - 1
+            closed = not last or (raw_now is not None and b.t_raw + TF_SECONDS[tf] <= raw_now)
+            out.append({"open_utc": iso(from_epoch(b.t_raw - off)) if off is not None else None, "t_raw": b.t_raw,
+                        "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "spread": b.spread, "closed": closed})
+        return out
+
     def _merge_tail(self, st: TFState, tf: str, tail: list[Bar], symbol: str) -> list[Bar]:
         """Merge the newest bars. Returns newly *closed* bars. Fills gaps by refetching."""
         if not tail:
