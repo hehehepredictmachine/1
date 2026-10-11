@@ -136,6 +136,20 @@ class Runtime:
             except Exception:
                 log.exception("bot signal tracking failed")
 
+    def telemetry(self) -> dict:
+        """Aggregates sent to the license server ONLY when license.telemetry_opt_in is on: no login, no server name, no
+        orders, no passwords. Balance/equity come from the terminal; statistics from settled bot trades (net of costs)."""
+        from . import stats
+        from .timeutil import iso, utcnow
+        mode = self.modes.mode
+        smode = mode if mode in ("PAPER", "AUTO_DEMO", "AUTO_LIVE") else "PAPER"
+        a = (stats.bot_stats(self.db, smode, self.bridge.account_key) or {}).get("all") or {}
+        acc = self.bridge.account_status() or {}
+        return {"execution_mode": mode, "symbol": self.cfg.get().mt5.symbol, "trades_closed": a.get("trades"),
+                "winrate_net_pct": a.get("win_rate"), "profit_factor_net": a.get("profit_factor"), "expectancy_r": a.get("expectancy_r"),
+                "balance": acc.get("balance"), "equity": acc.get("equity"), "currency": acc.get("currency"), "period": "ALL",
+                "stats_source": f"bot_stats:{smode}" + (":SYNTHETIC" if self.demo else ""), "stats_as_of": iso(utcnow())}
+
     def attach_loop(self, loop) -> None:
         self.agent.attach(loop)
 

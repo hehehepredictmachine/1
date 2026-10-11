@@ -1,4 +1,48 @@
-# Raport testów – MasterQUO AI 1.2.0
+# Raport testów – MasterQUO AI 1.7.0
+
+## 1.7 – przebieg z 2026-10-11
+
+**Środowisko:** Linux, Python 3.13, kontener budowy z symulatorem terminala, Chromium (Playwright). To nie jest
+Windows ani Twój terminal MT5.
+
+**Komenda:** `python tools/run_tests.py` (Windows: `05_TESTY_OFFLINE.bat`).
+
+**Wynik:** `Ran 212 tests … OK` – 0 błędów, 0 pominiętych. Raport maszynowy: `data/logs/testy_offline_20261011T133310Z.json`.
+
+Testy licencji uruchamiają **prawdziwy** serwer `mqlicense` na 127.0.0.1 z kluczami wygenerowanymi na czas testu.
+Testy procesu aplikacji startują `python -m masterquo serve` dokładnie jak `masterquo_start.bat` i wklejają klucz na
+stdin.
+
+### Obowiązkowe scenariusze 1–12
+
+| # | Scenariusz | Testy | Status |
+|---|---|---|---|
+| 1 | Dotknięcie i potwierdzenie na jednej świecy nie dają wejścia; późniejsze potwierdzenie działa | `test_ema_pullback` (granice FIXED, ta sama świeca, potwierdzenie N+1) | PASS |
+| 2 | Zmiana trendu, limit, ponowne dotknięcia, dokładne granice czasu | `test_ema_pullback` (unieważnienie, wygaśnięcie przed potwierdzeniem, `max_pullback_bars` i 0, pierwsze dotknięcie) | PASS |
+| 3 | Brak danych, warm-up, ATR 0/NaN, zły SL, minimalny lot ponad budżet, margin | `test_ema_pullback.test_3` (brak ATR, ADX, brak H8 → `BRAK_DANYCH_H8`), `test_6_min_lot_and_gap_rejections`, `test_risk_execution` (min lot nigdy w górę, brak limitów, nieznana prowizja; margin liczony kalkulatorem w ocenie ryzyka), `test_time_and_data` (za krótka historia) | PASS (margin bez osobnego testu odmowy) |
+| 4 | M30/H8 w całym potoku: granice świec, świeca otwarta, resampling, DST, as-of | `test_bridge_engine` (natywne H8 wyrównane do 28800, resampling z H1), `test_ema_pullback` (as-of H8, brak lookahead), `test_research_export` (8 TF, DST `NY_CLOSE`), `test_ui_monitor.test_11` (karta M30/H8, 8 wykresów) | PASS |
+| 5 | Reconnect/replay bez duplikatów; spóźniona odpowiedź AI nie nadpisuje nowszej; timeout/zły JSON bez fikcyjnego sygnału | `test_agent` (spóźniona odpowiedź, naprawa JSON, timeout), `test_signal_contract` (AI NIEAKTUALNA, AI_BLAD), `test_markets_signals` (deduplikacja), `test_bridge_engine` (gap-fill, reconnect) | PASS |
+| 6 | Sizing XAUUSD- od straty do SL i kosztów; statystyki z prowizją, swapem, częściowymi zamknięciami, wpłatami | `test_risk_execution` (order_calc_profit, brak podwójnego spreadu, TP1 częściowe, operacje salda), `test_stats_definitions` (winrate netto, BE osobno, PF, ROI Dietza) | PASS |
+| 7 | Każdy start żąda klucza; zły, cofnięty, wygasły lub brak klucza blokuje; dwa starty z tą samą licencją: ponowny prompt, niezmienione `expires_at` | `test_license.test_16`, `test_19`, `test_app_process` (start z kluczem) | PASS |
+| 8 | Zegar kontrolowany: tuż przed 72 h / dokładnie 72 h / po; restart, powtórzona odpowiedź i zapisany token nie przedłużają | `test_license.test_01`, `test_18` (powtórzona lub starsza dzierżawa odrzucona), `test_17` (restart serwera), `test_16` (klucz w zmiennych środowiska ignorowany) | PASS |
+| 9 | Wygaśnięcie lub cofnięcie w trakcie pracy blokuje operacje; utrata sieci nie daje nieograniczonego dostępu; pozycje chronione | `test_license.test_14` (cofnięcie ≤ 1 dzierżawa, brak sieci → LEASE_LAPSED), `test_app_process.test_98` (API → LICENSE_REQUIRED, STOP i health działają) | PASS |
+| 10 | Silnik z pominięciem launchera, API/WS bez sesji, starty ponad limit, panel bez roli | `test_license.test_20` (Runtime bez licencji: brak decyzji, zleceń, agenta), `test_04` (limit sesji), `test_app_process.test_02/05` (sesja, CSRF, WS), `test_license_admin_ui.test_02` (VIEWER → 403) | PASS |
+| 11 | Administrator tworzy, kopiuje, przypisuje, wyszukuje, cofa, kończy sesję; użytkownik nie może; rekordy po restarcie | `test_license_admin_ui.test_01` (przeglądarka), `test_license.test_05/06/09/10/12/17` | PASS |
+| 12 | Klucze i hasła poza logami, argv, eksportami, paczką i repozytorium; ścieżki Windows ze spacjami; komunikat przy braku serwera | `test_license.test_02` (tylko HMAC w bazie), `test_16/19` (klucz nie pojawia się w wyjściu), `test_app_process.test_90` (brak w logach, configu i API), `test_launchers` (cudzysłowy, CRLF, brak klucza w argumentach), skan sekretów w `tools/build_release.py` | PASS (statycznie dla `.bat`) |
+
+### NOT_RUN – czego nie dało się sprawdzić tutaj
+
+| Element | Powód |
+|---|---|
+| Uruchomienie `.bat` na Windows | brak Windows w środowisku budowy (sprawdzone statycznie) |
+| Twój terminal MT5, `XAUUSD-`, `order_calc_profit` brokera | brak terminala – połączenie **nie jest potwierdzone** |
+| Kompilacja Pine (oryginał/FIXED) w TradingView | brak dostępu do TradingView (proxy) – zgodność Pine ↔ Python **niezweryfikowana** |
+| Backtest na historii XAUUSD- | brak eksportu z Twojego terminala – RAPORT_WYNIKOW na danych syntetycznych |
+| Serwer licencji na publicznym hostingu (HTTPS) | wdrożenie nie było wykonane – testowany lokalnie (http://127.0.0.1) |
+| Prawdziwe API Claude | brak klucza – testy z atrapą klienta |
+
+---
+
 
 Środowisko wykonania testów: **Linux, Python 3.13.16**, kontener budowy (nie Windows, nie Twój terminal).
 Data przebiegu: 2026-10-09 (wersja 1.1 – łagodniejsze bramki). Komenda: `python tools/run_tests.py --legacy` (na Windows: `05_TESTY_OFFLINE.bat --legacy`).

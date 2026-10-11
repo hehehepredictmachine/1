@@ -1,0 +1,21 @@
+# systemd unit - /etc/systemd/system/mqlicense.service
+[Unit]
+Description=MasterQUO License Server (72 h licenses, admin panel)
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+User=mqlicense
+Group=mqlicense
+WorkingDirectory=/opt/mqlicense/server
+EnvironmentFile=/opt/mqlicense/server/.env
+ExecStartPre=/opt/mqlicense/venv/bin/python -m mqlicense migrate
+ExecStart=/opt/mqlicense/venv/bin/python -m mqlicense serve
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mqlicense/data /opt/mqlicense/backups
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

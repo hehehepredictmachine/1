@@ -114,6 +114,8 @@ class LicenseClient:
             raise LicenseError("LEASE_INVALID") from None
         if c.get("typ") != "mq-lease" or c.get("boot") != self.boot_id or (self.session_id and c.get("sid") != self.session_id):
             raise LicenseError("LEASE_INVALID")
+        if self.lease_claims and int(c["iat"]) <= int(self.lease_claims["iat"]):
+            raise LicenseError("LEASE_INVALID")            # replayed / older lease never extends access
         ttl = int(c["exp"]) - int(c["iat"])                # server-clock duration; mapped onto the local monotonic clock
         if ttl <= 0 or ttl > 120:
             raise LicenseError("LEASE_INVALID")

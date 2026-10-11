@@ -43,9 +43,13 @@ class LicenseServerFixture:
     def __init__(self, *, clock=None, lease_seconds: int = 30, serve: bool = True):
         import base64
         import secrets as _s
+        import unittest
 
         from cryptography.fernet import Fernet
-        from mqlicense import security as sec
+        try:
+            from mqlicense import security as sec
+        except ImportError:                     # client package: the license server is not shipped -> skipped, never "passed"
+            raise unittest.SkipTest("license server package (server/mqlicense) not present") from None
         from mqlicense.clock import SystemClock
         from mqlicense.config import Settings
         from mqlicense.db import DB

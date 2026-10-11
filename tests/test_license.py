@@ -17,10 +17,13 @@ import _env  # noqa: F401
 from _env import TempData
 from _license import TEST_ADMIN, LicenseServerFixture, free_port  # noqa: E402
 
-import pyotp  # noqa: E402
-from mqlicense import LICENSE_SECONDS  # noqa: E402
-from mqlicense.clock import ControlledClock  # noqa: E402
-from mqlicense.service import Denied  # noqa: E402
+try:
+    import pyotp  # noqa: E402
+    from mqlicense import LICENSE_SECONDS  # noqa: E402
+    from mqlicense.clock import ControlledClock  # noqa: E402
+    from mqlicense.service import Denied  # noqa: E402
+except ImportError:                             # client package without the server: whole module skipped
+    raise unittest.SkipTest("license server package (server/mqlicense) not present") from None
 
 from masterquo.license.client import LicenseClient, LicenseError  # noqa: E402
 from masterquo.license.guard import LicenseGuard, licensed, prompt_key  # noqa: E402
@@ -207,6 +210,32 @@ class TestLicenseService(unittest.TestCase):
         self.assertEqual(self.svc.list_customers()[0]["licenses_active"], 1)
 
 
+class TestPersistenceAndAdminOps(unittest.TestCase):
+    def test_17_records_and_revocations_survive_server_restart(self):
+        clock = ControlledClock(T0)
+        f = LicenseServerFixture(clock=clock, serve=False)
+        try:
+            c = f.svc.create_customer(TEST_ADMIN, "Klient B")
+            lic = f.issue(note="trwała")
+            f.svc.assign_license(TEST_ADMIN, lic["id"], c["id"])
+            f.svc.set_max_sessions(TEST_ADMIN, lic["id"], 2)
+            lic2 = f.issue()
+            f.svc.revoke_license(TEST_ADMIN, lic2["id"], "test")
+            from mqlicense.db import DB
+            from mqlicense.service import LicenseService
+            svc2 = LicenseService(f.settings, DB(f.settings.db_path), clock)      # "restart": new process objects, same database
+            l1, l2 = svc2.get_license(lic["id"]), svc2.get_license(lic2["id"])
+            self.assertEqual((l1["customer_id"], l1["max_sessions"], l1["expires_at"]), (c["id"], 2, T0 + 259200))
+            self.assertEqual(l2["status"], "COFNIETA")
+            with self.assertRaises(Denied):
+                svc2.open_session(lic2["key"], boot_id=BOOT, nonce=nonce())
+            self.assertEqual(len(svc2.list_licenses(q="trwała")), 1)
+            self.assertEqual(len(svc2.list_licenses(limit=1, offset=1)), 1)          # pagination
+            self.assertTrue(any(a["action"] == "LICENSE_REVOKE" for a in svc2.list_audit()))
+        finally:
+            f.close()
+
+
 class TestLicenseHTTPAndClient(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -312,6 +341,26 @@ class TestLicenseHTTPAndClient(unittest.TestCase):
         self.assertEqual(g2.public_state(), "LEASE_LAPSED")
         g2._stop.set()
 
+    def test_18_replayed_lease_never_extends_access(self):
+        lic = self.f.issue()
+        c = self.client()
+        c.open(lic["key"])
+        old = c.lease_claims
+        import jwt as _jwt
+        old_lease = _jwt.encode(old, "x", algorithm="HS256")            # any token not signed by the pinned key
+        with self.assertRaises(LicenseError):
+            c._accept_lease(old_lease, c.mono())
+        time.sleep(1.1)
+        c.renew()
+        newer = c.lease_claims
+        self.assertGreater(newer["iat"], old["iat"])
+        # replay of a genuine but OLDER signed lease (captured earlier) is rejected
+        first = self.f.svc._lease({"id": newer["sub"], "expires_at": newer["lic_exp"], "max_sessions": 1},
+                                  {"id": newer["sid"], "boot_id": c.boot_id}, int(old["iat"]))[0]
+        with self.assertRaises(LicenseError) as e:
+            c._accept_lease(first, c.mono())
+        self.assertEqual(e.exception.code, "LEASE_INVALID")
+
     def test_15_prompt_reads_one_line_from_stdin(self):
         out = io.StringIO()
         self.assertEqual(prompt_key(stdin=io.StringIO("  MQL72-ABC  \nsecond\n"), stdout=out), "MQL72-ABC")
@@ -321,17 +370,78 @@ class TestLicenseHTTPAndClient(unittest.TestCase):
 class TestStartRequiresLicense(unittest.TestCase):
     """masterquo_start (serve) without a valid pasted key does not start the protected program."""
 
-    def _run(self, key: str | None, lic: LicenseServerFixture) -> subprocess.CompletedProcess:
+    def _run(self, key: str | None, lic: LicenseServerFixture, extra_env: dict | None = None) -> subprocess.CompletedProcess:
         td = TempData()
         try:
             port = free_port()
             with open(os.path.join(td.dir, "config.json"), "w", encoding="utf-8") as f:
                 json.dump({"server": {"port": port, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None},
                            **lic.client_config()}, f)
-            env = dict(os.environ, MASTERQUO_DATA_DIR=td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
+            env = dict(os.environ, MASTERQUO_DATA_DIR=td.dir, PYTHONPATH=str(_env.ROOT / "backend"), **(extra_env or {}))
             env.pop("ANTHROPIC_API_KEY", None)
             return subprocess.run([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=env, cwd=str(_env.ROOT / "backend"),
                                   input=(key + "\n") if key is not None else "", capture_output=True, text=True, timeout=60)
+        finally:
+            td.close()
+
+    def test_19_every_start_asks_again_expiry_unchanged(self):
+        """Two consecutive runs with the same license: each run needs the pasted key (no key -> refused), the license
+        expiry stays the same (72 h from generation, never from start)."""
+        lic = LicenseServerFixture()
+        td = TempData()
+        try:
+            info = lic.issue()
+            port = free_port()
+            with open(os.path.join(td.dir, "config.json"), "w", encoding="utf-8") as f:
+                json.dump({"server": {"port": port, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None},
+                           **lic.client_config()}, f)
+            env = dict(os.environ, MASTERQUO_DATA_DIR=td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
+            env.pop("ANTHROPIC_API_KEY", None)
+            for run in range(2):
+                p = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=env, cwd=str(_env.ROOT / "backend"),
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                p.stdin.write(info["key"] + "\n")
+                p.stdin.close()
+                ok = False
+                for _ in range(120):
+                    try:
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=1) as r:
+                            ok = r.status == 200
+                            break
+                    except OSError:
+                        time.sleep(0.5)
+                self.assertTrue(ok, f"run {run} did not start")
+                self.assertEqual(lic.svc.get_license(info["id"])["expires_at"], info["expires_at"])
+                self.assertEqual(lic.svc.get_license(info["id"])["active_sessions"], 1)
+                subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=env, cwd=str(_env.ROOT / "backend"), timeout=60)
+                out = p.communicate(timeout=60)[0]
+                self.assertIn("Wklej licencję", out)                          # asked on THIS run
+                self.assertNotIn(info["key"], out)
+                self.assertEqual(lic.svc.get_license(info["id"])["active_sessions"], 0)   # clean exit frees the slot
+            r = subprocess.run([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=env, cwd=str(_env.ROOT / "backend"),
+                               input="", capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 5)                                 # nothing remembered from the previous runs
+        finally:
+            td.close()
+            lic.close()
+
+    def test_20_runtime_without_launcher_license_stays_blocked(self):
+        """Starting the engine/workers directly (bypassing masterquo_start) gives no analysis, no signals, no orders."""
+        td = TempData()
+        try:
+            from masterquo.runtime import Runtime
+            rt = Runtime(demo=True)
+            self.assertFalse(rt.license.ok())
+            self.assertFalse(licensed(rt.engine) or licensed(rt.scanner) or licensed(rt.gateway) or licensed(rt.agent) or licensed(rt.ml))
+            rt.start()
+            try:
+                time.sleep(6)
+                self.assertIsNone(rt.engine.decision)
+                self.assertEqual(rt.engine.last_error, "LICENSE_REQUIRED")
+                self.assertEqual(rt.gateway.execute("D-any")["reason"], "LICENSE_REQUIRED")
+                self.assertIsNone(rt.agent.request("TEST", snapshot_id=None, setup_id=None, setup_state=None))
+            finally:
+                rt.stop()
         finally:
             td.close()
 
@@ -345,6 +455,9 @@ class TestStartRequiresLicense(unittest.TestCase):
             r = self._run(sec.license_key() + "\n" + sec.license_key() + "\n" + sec.license_key(), lic)
             self.assertEqual(r.returncode, 5)
             self.assertIn("LICENSE_INVALID", r.stderr)
+            good = lic.issue()
+            r = self._run("", lic, {"MASTERQUO_LICENSE_KEY": good["key"], "LICENSE_KEY": good["key"]})   # env is never a key source
+            self.assertEqual(r.returncode, 5)
             info = lic.issue()
             clock.advance(259200)
             r = self._run(info["key"], lic)

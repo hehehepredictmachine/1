@@ -103,15 +103,25 @@ def evaluate(sig: dict, bars: list[dict], now_iso: str, max_hold_hours: int) -> 
 
 
 def stats(rows: list[dict]) -> dict:
+    """Signal outcomes in R measured on bars (gross: no spread/commission). |R| <= 0.05 = breakeven, reported separately."""
     done = [r for r in rows if r["status"] in ("WIN", "LOSS", "TIMEOUT")]
-    wins = [r for r in done if r["status"] == "WIN" or (r["status"] == "TIMEOUT" and (r["outcome_r"] or 0) > 0)]
-    losses = [r for r in done if r["status"] == "LOSS" or (r["status"] == "TIMEOUT" and (r["outcome_r"] or 0) < 0)]
+
+    def oc(r):
+        if r["status"] in ("WIN", "LOSS"):
+            return r["status"]
+        x = r["outcome_r"] or 0.0
+        return "BE" if abs(x) <= 0.05 else ("WIN" if x > 0 else "LOSS")
+    o = [oc(r) for r in done]
+    wins, losses, be = o.count("WIN"), o.count("LOSS"), o.count("BE")
     rs = [r["outcome_r"] for r in done if r["outcome_r"] is not None]
+    pos, neg = sum(x for x in rs if x > 0), -sum(x for x in rs if x < 0)
     return {"signals": len(rows), "rejected": sum(1 for r in rows if r["status"] == "REJECTED"),
-            "open": sum(1 for r in rows if r["status"] in OPEN_STATES), "closed": len(done), "wins": len(wins), "losses": len(losses),
-            "win_rate_pct": round(100 * len(wins) / (len(wins) + len(losses)), 1) if (wins or losses) else None,
-            "avg_r": round(sum(rs) / len(rs), 2) if rs else None, "total_r": round(sum(rs), 2) if rs else None,
-            "note": "Wynik liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata."}
+            "open": sum(1 for r in rows if r["status"] in OPEN_STATES), "closed": len(done), "wins": wins, "losses": losses, "breakeven": be,
+            "win_rate_pct": round(100 * wins / (wins + losses), 1) if (wins + losses) else None,
+            "profit_factor_r": round(pos / neg, 2) if neg > 0 else None,
+            "avg_r": round(sum(rs) / len(rs), 2) if rs else None, "total_r": round(sum(rs), 2) if rs else None, "basis": "BRUTTO_R",
+            "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; "
+                    "|R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE)."}
 
 
 # ---------------------------------------------------------------------------------------------- service

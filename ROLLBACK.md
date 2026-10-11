@@ -27,3 +27,11 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 * Bez cofania wersji: skaner i sygnały wyłączysz w **Ustawienia → Rynki / Sygnały bota** (`markets.enabled`, `signals.enabled`).
 * Powrót do 1.3.1: usuń z `data\config.json` sekcje `markets` i `signals` i ustaw `"config_version": 5`. Tabela sygnałów (migracje 0005, 0006)
   nie przeszkadza wersji 1.3.1; kopia bazy sprzed migracji jest w `data\backups\`.
+
+## 7. Wersja 1.7.0 → 1.6.0
+* Punkt powrotu: przed migracją 0007 program kopiuje bazę do `data\backups\` (jak przy poprzednich migracjach); `data\config.json`
+  z wersji 1.6 – zachowaj kopię przed pierwszym startem 1.7 (1.7 zapisuje `config_version: 8`, dodaje `license` i przełącznik S11).
+* Powrót: rozpakuj ZIP 1.6.0 do osobnego folderu, przywróć `data\config.json` z kopii (albo usuń sekcję `license`, wpis `S11`
+  w `active.strategies` i ustaw `"config_version": 6`). Tabela `signal_history` i kolumna `ai_verdict` (0007) nie przeszkadzają 1.6.
+* Wersja 1.6 nie wymaga licencji – to decyzja administratora, czy wolno do niej wrócić.
+* Serwer licencji jest osobną aplikacją: jego wyłączenie (`systemctl stop mqlicense`) blokuje starty klientów 1.7, nie wpływa na 1.6.

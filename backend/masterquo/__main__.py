@@ -86,7 +86,7 @@ def cmd_serve(args) -> int:
     from .api.app import create_app
     from .runtime import Runtime
     rt = Runtime(demo=args.demo, license_guard=guard)
-    guard.telemetry_fn = lambda: {"app_version": _app_version(), "execution_mode": rt.modes.mode, "symbol": rt.cfg.get().mt5.symbol}
+    guard.telemetry_fn = lambda: {"app_version": _app_version(), **rt.telemetry()}
     app = create_app(rt, port)
     tok = _rt_dir() / "shutdown.token"
     tok.write_text(rt.security.shutdown_token, encoding="utf-8")
@@ -138,8 +138,15 @@ def _license_session(args, stdin=None):
     from .license.client import LicenseClient, LicenseError
     from .license.guard import LicenseGuard, prompt_key
     lc = ConfigStore().get().license
+    url = os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url            # address only - never the key
+    pem = lc.public_key_pem
+    if os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE"):
+        try:
+            pem = Path(os.environ["MASTERQUO_LICENSE_PUBLIC_KEY_FILE"]).read_text(encoding="utf-8")
+        except OSError:
+            pem = ""
     try:
-        client = LicenseClient(lc.server_url, lc.public_key_pem, client_version=_app_version(), timeout=lc.timeout_seconds,
+        client = LicenseClient(url, pem, client_version=_app_version(), timeout=lc.timeout_seconds,
                                telemetry_opt_in=lc.telemetry_opt_in)
     except LicenseError as e:
         print(f"[MasterQUO] Licencja: {e.message}", file=sys.stderr)
@@ -235,7 +242,9 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
+        # whitelist: a license KEY in .env is never read (it must be pasted at every start)
+        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN",
+                 "MASTERQUO_LICENSE_SERVER_URL", "MASTERQUO_LICENSE_PUBLIC_KEY_FILE") and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
@@ -264,10 +273,12 @@ def main(argv=None) -> int:
     sub.add_parser("set-key")
     pr = sub.add_parser("profile", help="przełącz profil wykrywania: ACTIVE (S01-S10 + AUTO) albo ORIGINAL (M07 jak w 1.1)")
     pr.add_argument("name", choices=["ACTIVE", "ORIGINAL", "show"])
-    e = sub.add_parser("export", help="eksport 6 TF w formacie M06R z czasem UTC")
+    e = sub.add_parser("export", help="eksport 8 TF (z M30 i H8) w formacie M06R z czasem UTC")
     e.add_argument("--from-utc", required=True)
     e.add_argument("--to-utc", required=True)
-    e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_six_tf"))
+    e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_utc"))
+    e.add_argument("--dst-model", choices=["UNIFORM", "NY_CLOSE"], default="UNIFORM",
+                   help="UNIFORM = jeden offset (dzisiejszy) dla całego zakresu; NY_CLOSE = offset per świeca (Nowy Jork + 7 h)")
     a = ap.parse_args(argv)
     _load_dotenv()
     if a.cmd == "serve":
@@ -282,7 +293,7 @@ def main(argv=None) -> int:
     if a.cmd == "set-key":
         return diagnostics.set_key()
     if a.cmd == "export":
-        return diagnostics.export_history(a.from_utc, a.to_utc, a.out)
+        return diagnostics.export_history(a.from_utc, a.to_utc, a.out, a.dst_model)
     if a.cmd == "profile":
         return cmd_profile(a.name)
     return 1

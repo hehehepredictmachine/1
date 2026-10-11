@@ -11,7 +11,7 @@ const ERR = {
   SERVER_CLOCK_ANOMALY: "Wykryto anomalię zegara serwera – wydawanie licencji wstrzymane (CLI: clock-ack).",
   PASSWORD_WEAK: "Hasło za słabe (min. 12 znaków).", CUSTOMER_NOT_FOUND: "Nie znaleziono klienta.",
 };
-let csrf = null, me = null, tab = "dash", skew = 0, timer = null;
+let csrf = null, me = null, tab = "dash", skew = 0, timer = null, page = 1, filt = { q: "", status: "" };
 
 async function api(path, body) {
   const opt = { method: body === undefined ? "GET" : "POST", credentials: "same-origin", headers: {} };
@@ -53,7 +53,7 @@ async function boot() {
 function nav() {
   const tabs = [["dash", "Podsumowanie"], ["lic", "Licencje"], ["ses", "Sesje"], ["cus", "Klienci"], ["tel", "Statystyki (opt-in)"], ["aud", "Audyt"], ["acc", "Konto"]];
   return `<nav>${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
-   <button id="lo" style="margin-left:auto">Wyloguj</button></nav><div id="body"></div>`;
+   <button id="lo" class="push">Wyloguj</button></nav><div id="body"></div>`;
 }
 
 async function render() {
@@ -72,31 +72,40 @@ async function dash(el) {
   el.innerHTML = `<div class="grid">${k(s.licenses_active, "licencje aktywne")}${k(s.expiring_6h, "wygasają w ≤ 6 h")}${k(s.sessions_active, "aktywne sesje bota")}
    ${k(s.created_24h, "wygenerowane w 24 h")}${k(s.licenses_expired, "wygasłe")}${k(s.licenses_revoked, "cofnięte")}${k(s.denied_24h, "odmowy w 24 h")}${k(s.customers, "klienci")}</div>
    <div class="card mut">Czas serwera (UTC): ${ts(s.server_time)} · licencja trwa ${s.license_seconds / 3600} h od wygenerowania · dzierżawa sesji ${s.lease_seconds} s ·
-   klucz podpisu: ${esc(s.kid)} ${s.clock_anomaly ? `<b class="err">ANOMALIA ZEGARA: ${esc(s.clock_anomaly)}</b>` : ""}</div>`;
+   klucz podpisu: ${esc(s.kid)} · migracje bazy: ${esc((s.db_migrations || []).join(", "))} ${s.clock_anomaly ? `<b class="err">ANOMALIA ZEGARA: ${esc(s.clock_anomaly)}</b>` : `<span class="st-OK">usługa działa</span>`}</div>
+   <div class="card wrap"><h3>Ostatnie zdarzenia</h3><table><tbody>${(s.recent_events || []).map((a) => `<tr><td>${ts(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td>
+   <td class="${a.result === "OK" ? "st-OK" : "err"}">${esc(a.result)}</td></tr>`).join("") || `<tr><td class="mut">Brak zdarzeń.</td></tr>`}</tbody></table></div>`;
 }
 
 async function lic(el) {
-  const [{ licenses }, { customers }] = await Promise.all([api("/admin/licenses"), api("/admin/customers")]);
+  const listUrl = () => `/admin/licenses?page=${page}&per_page=50&q=${encodeURIComponent(filt.q)}&status=${encodeURIComponent(filt.status)}`;
+  const [first, { customers }] = await Promise.all([api(listUrl()), api("/admin/customers")]);
   const copt = `<option value="">— bez klienta —</option>` + customers.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   el.innerHTML = `${canWrite() ? `<div class="card"><h3>Nowa licencja (72 h od wygenerowania)</h3><form class="row" id="nf">
      <label>Klient<select name="customer_id">${copt}</select></label><label>Notatka<input name="note" maxlength="500"></label>
-     <label>Jednoczesne sesje<input name="max_sessions" type="number" min="1" max="10" value="1" style="width:80px"></label>
+     <label>Jednoczesne sesje<input name="max_sessions" type="number" min="1" max="10" value="1" class="w80"></label>
      <button class="primary" data-testid="gen">Generuj</button></form><div id="newkey"></div></div>` : ""}
-   <div class="card"><form class="row" id="ff"><label>Szukaj<input name="q"></label><label>Status<select name="status"><option value="">wszystkie</option>
-     <option>AKTYWNA</option><option>WYGASLA</option><option>COFNIETA</option></select></label><button>Filtruj</button></form></div>
-   <div class="card wrap"><table data-testid="lic-table"><thead><tr><th>Klucz</th><th>Status</th><th>Pozostało</th><th>Klient / notatka</th><th>Wygenerowana</th><th>Wygasa</th><th>Sesje</th><th></th></tr></thead>
+   <div class="card"><form class="row" id="ff"><label>Szukaj (klient, notatka, końcówka klucza)<input name="q" value="${esc(filt.q)}"></label><label>Status<select name="status"><option value="">wszystkie</option>
+     ${["AKTYWNA", "WYGASLA", "COFNIETA"].map((x) => `<option ${filt.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></label><button>Filtruj</button>
+     <span id="pg" class="mut"></span><button type="button" id="prev">‹</button><button type="button" id="next">›</button></form></div>
+   <div class="card wrap"><table data-testid="lic-table"><thead><tr><th>Klucz</th><th>Status</th><th>Pozostało</th><th>Klient / notatka</th><th>Wygenerowana</th><th>Wygasa</th><th>Pierwsze / ostatnie użycie</th><th>Sesje</th><th></th></tr></thead>
    <tbody id="lt"></tbody></table></div>`;
-  const fill = (rows) => {
+  const fill = (res) => {
+    const rows = res.licenses;
+    $("#pg").textContent = `strona ${res.page} z ${Math.max(1, Math.ceil(res.total / res.per_page))} (${res.total})`;
+    $("#prev").disabled = res.page <= 1; $("#next").disabled = res.page * res.per_page >= res.total;
     $("#lt").innerHTML = rows.map((l) => `<tr data-id="${esc(l.id)}"><td>${esc(l.key_hint)}${l.replaces ? `<br><span class="mut">zastępuje ${esc(l.replaces.slice(0, 8))}</span>` : ""}</td>
       <td class="st-${l.status}">${STL[l.status] || l.status}${l.revoke_reason ? `<br><span class="mut">${esc(l.revoke_reason)}</span>` : ""}</td>
       <td data-exp="${l.status === "AKTYWNA" ? l.expires_at : 0}">${l.status === "AKTYWNA" ? left(l.expires_at - nowS()) : "–"}</td>
-      <td>${esc(l.customer_name || "–")}<br><span class="mut">${esc(l.note || "")}</span></td><td>${ts(l.created_at)}</td><td>${ts(l.expires_at)}</td>
-      <td>${l.active_sessions}/${l.max_sessions}</td><td>${canWrite() && l.status !== "COFNIETA" ? `<button data-act="revoke" class="danger">Cofnij</button> ` : ""}
+      <td>${esc(l.customer_name || "–")}<br><span class="mut">${esc(l.note || "")}</span></td><td>${ts(l.created_at)}</td><td>${ts(l.expires_at)}</td><td>${ts(l.first_used_at)}<br>${ts(l.last_used_at)}</td>
+      <td>${l.active_sessions}/${l.max_sessions}${canWrite() ? ` <button data-act="maxs" title="Zmień limit jednoczesnych sesji">±</button>` : ""}</td><td>${canWrite() && l.status !== "COFNIETA" ? `<button data-act="revoke" class="danger">Cofnij</button> ` : ""}
       ${canWrite() ? `<button data-act="reissue">Wydaj ponownie</button> <select data-act="assign"><option value="">przypisz…</option>${copt}</select>` : ""}</td></tr>`).join("")
-      || `<tr><td colspan="8" class="mut">Brak licencji.</td></tr>`;
+      || `<tr><td colspan="9" class="mut">Brak licencji.</td></tr>`;
   };
-  fill(licenses);
-  $("#ff").onsubmit = async (e) => { e.preventDefault(); const f = new FormData(e.target); fill((await api(`/admin/licenses?q=${encodeURIComponent(f.get("q"))}&status=${encodeURIComponent(f.get("status"))}`)).licenses); };
+  fill(first);
+  $("#ff").onsubmit = async (e) => { e.preventDefault(); const f = new FormData(e.target); filt = { q: f.get("q") || "", status: f.get("status") || "" }; page = 1; fill(await api(listUrl())); };
+  $("#prev").onclick = async () => { page = Math.max(1, page - 1); fill(await api(listUrl())); };
+  $("#next").onclick = async () => { page += 1; fill(await api(listUrl())); };
   if ($("#nf")) $("#nf").onsubmit = async (e) => {
     e.preventDefault(); const f = new FormData(e.target);
     try {
@@ -107,11 +116,17 @@ async function lic(el) {
   $("#lt").onclick = async (e) => {
     const b = e.target.closest("button[data-act]"); if (!b) return;
     const id = b.closest("tr").dataset.id;
+    if (b.dataset.act === "maxs") {
+      const n = Number(prompt("Limit jednoczesnych sesji (1–10):", "1"));
+      if (!n) return;
+      try { await api(`/admin/licenses/${id}/max-sessions`, { max_sessions: n }); fill(await api(listUrl())); } catch (er) { alert(er.message); }
+      return;
+    }
     const reason = prompt(b.dataset.act === "revoke" ? "Powód cofnięcia licencji:" : "Powód ponownego wydania (stary klucz zostanie cofnięty):");
     if (!reason) return;
     try {
       const r = await api(`/admin/licenses/${id}/${b.dataset.act}`, { reason });
-      if (b.dataset.act === "reissue") { showKey(r); fill((await api("/admin/licenses")).licenses); } else render();
+      if (b.dataset.act === "reissue") { showKey(r); fill(await api(listUrl())); } else render();
     } catch (er) { alert(er.message); }
   };
   $("#lt").onchange = async (e) => {
@@ -158,9 +173,10 @@ async function cus(el) {
 async function tel(el) {
   const { telemetry } = await api("/admin/telemetry");
   el.innerHTML = `<div class="card wrap"><p class="mut">Tylko dane wysłane przez bota za zgodą użytkownika (opcja w kliencie) i dla klientów ze zgodą na statystyki. Wartości liczone przez bota po kosztach; serwer ich nie weryfikuje.</p>
-   <table><thead><tr><th>Licencja</th><th>Klient</th><th>Czas</th><th>Tryb</th><th>Transakcje</th><th>Winrate netto %</th><th>PF netto</th><th>E[R]</th></tr></thead><tbody>
-   ${telemetry.map((t) => `<tr><td>${esc(t.key_hint)}</td><td>${esc(t.customer_name || "")}</td><td>${ts(t.at)}</td><td>${esc(t.execution_mode || "")}</td><td>${esc(t.trades_closed ?? "–")}</td>
-   <td>${esc(t.winrate_net_pct ?? "–")}</td><td>${esc(t.profit_factor_net ?? "–")}</td><td>${esc(t.expectancy_r ?? "–")}</td></tr>`).join("") || `<tr><td colspan="8" class="mut">Brak danych.</td></tr>`}</tbody></table></div>`;
+   <table><thead><tr><th>Licencja</th><th>Klient</th><th>Odebrano</th><th>Tryb</th><th>Balance / equity</th><th>Transakcje</th><th>Winrate netto %</th><th>PF netto</th><th>E[R]</th><th>ROI %</th><th>Okres / źródło / stan na</th></tr></thead><tbody>
+   ${telemetry.map((t) => `<tr><td>${esc(t.key_hint)}</td><td>${esc(t.customer_name || "")}</td><td>${ts(t.at)}</td><td>${esc(t.execution_mode || "")}</td><td>${t.balance != null ? `${esc(t.balance)} / ${esc(t.equity ?? "–")} ${esc(t.currency || "")}` : "brak danych"}</td><td>${esc(t.trades_closed ?? "–")}</td>
+   <td>${esc(t.winrate_net_pct ?? "–")}</td><td>${esc(t.profit_factor_net ?? "–")}</td><td>${esc(t.expectancy_r ?? "–")}</td><td>${esc(t.roi_pct ?? "–")}</td>
+   <td>${esc(t.period || "–")} / ${esc(t.stats_source || "–")} / ${esc(t.stats_as_of || "–")}${nowS() - t.at > 120 ? ' <b class="err">nieaktualne</b>' : ""}</td></tr>`).join("") || `<tr><td colspan="11" class="mut">Brak danych (brak połączenia = brak danych, nie zero).</td></tr>`}</tbody></table></div>`;
 }
 
 async function aud(el) {

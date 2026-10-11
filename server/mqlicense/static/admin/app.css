@@ -18,3 +18,4 @@ th{color:var(--mut);font-weight:600}.wrap{overflow-x:auto}
 form.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}form.row label{display:flex;flex-direction:column;gap:3px;color:var(--mut)}
 .login{max-width:360px;margin:40px auto}.login label{display:block;margin-bottom:10px}.login input{width:100%}
 @media (max-width:640px){main{padding:10px 16px}th:nth-child(n+5),td:nth-child(n+5){display:none}}
+.w80{width:80px}.push{margin-left:auto}

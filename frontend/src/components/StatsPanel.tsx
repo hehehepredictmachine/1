@@ -64,8 +64,9 @@ export default function StatsPanel({ index, stats, mode, setMode }: { index: num
           <div className={cls("eq-box", stats?.equity?.status !== "OK" && "empty")} ref={box} />
           {stats?.equity?.status !== "OK" && <div className="chart-msg">Brak zapisanych snapshotów equity (zapis co 60 s od uruchomienia).</div>}
         </div>
-        <div className="stat"><label>WIN RATE</label><b>{val(all?.win_rate, "%")}</b></div>
-        <div className="stat"><label>PROFIT FACTOR</label><b>{val(all?.profit_factor)}</b></div>
+        <div className="stat" title={all?.definitions?.win_rate}><label>WIN RATE (netto)</label><b>{val(all?.win_rate, "%")}</b><small>{all?.trades ? `BE osobno: ${all?.breakeven ?? 0}` : ""}</small></div>
+        <div className="stat" title={all?.definitions?.profit_factor}><label>PROFIT FACTOR</label><b>{all?.profit_factor_note === "BRAK_STRAT" && all?.trades ? "brak strat" : val(all?.profit_factor)}</b>
+          <small>{all?.expectancy_r != null ? `E[R] ${all.expectancy_r > 0 ? "+" : ""}${all.expectancy_r}` : ""}</small></div>
         <div className="stat"><label>TRANSAKCJE</label><b>{all?.trades ?? 0}</b><small>{all?.status === "SMALL_SAMPLE" ? "mała próba" : ""}</small></div>
         <div className="stat"><label>DZIEŃ</label><b className={(b?.day?.net ?? 0) >= 0 ? "pos" : "neg"}>{b?.day?.trades ? fmtNum(b.day.net) : "—"}</b></div>
         <div className="stat"><label>TYDZIEŃ</label><b className={(b?.week?.net ?? 0) >= 0 ? "pos" : "neg"}>{b?.week?.trades ? fmtNum(b.week.net) : "—"}</b></div>

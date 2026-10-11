@@ -65,6 +65,10 @@ class ReasonReq(Strict):
     reason: str = Field(min_length=1, max_length=300)
 
 
+class MaxSessReq(Strict):
+    max_sessions: int = Field(ge=1, le=10)
+
+
 class AssignReq(Strict):
     customer_id: str | None = Field(default=None, max_length=40)
     note: str | None = Field(default=None, max_length=500)
@@ -207,8 +211,12 @@ def create_app(svc: LicenseService) -> FastAPI:
 
     @app.get("/api/v1/admin/licenses")
     def licenses(status: str | None = Query(default=None, max_length=20), q: str | None = Query(default=None, max_length=80),
-                 a: dict = Depends(admin_any)):
-        return {"licenses": svc.list_licenses(status=status, q=q)}
+                 page: int = Query(default=1, ge=1, le=10000), per_page: int = Query(default=50, ge=1, le=200), a: dict = Depends(admin_any)):
+        if status or q:                                   # filters are applied on the full list, then paginated
+            rows = svc.list_licenses(status=status or None, q=q or None, limit=1000)
+            return {"licenses": rows[(page - 1) * per_page: page * per_page], "page": page, "per_page": per_page, "total": len(rows)}
+        total = svc.db.one("SELECT COUNT(*) AS n FROM licenses")["n"]
+        return {"licenses": svc.list_licenses(limit=per_page, offset=(page - 1) * per_page), "page": page, "per_page": per_page, "total": total}
 
     @app.post("/api/v1/admin/licenses")
     def create_license(r: CreateLicReq, req: Request, a: dict = Depends(admin_rw)):
@@ -225,6 +233,10 @@ def create_app(svc: LicenseService) -> FastAPI:
     @app.post("/api/v1/admin/licenses/{lid}/reissue")
     def reissue(lid: str, r: ReasonReq, req: Request, a: dict = Depends(admin_rw)):
         return svc.reissue_license(a, lid, r.reason, ip_of(req))
+
+    @app.post("/api/v1/admin/licenses/{lid}/max-sessions")
+    def max_sessions(lid: str, r: MaxSessReq, req: Request, a: dict = Depends(admin_rw)):
+        return svc.set_max_sessions(a, lid, r.max_sessions, ip_of(req))
 
     @app.post("/api/v1/admin/licenses/{lid}/assign")
     def assign(lid: str, r: AssignReq, req: Request, a: dict = Depends(admin_rw)):
@@ -263,6 +275,10 @@ def create_app(svc: LicenseService) -> FastAPI:
         return {"admins": svc.list_admins()}
 
     # ------------------------------------------------------------ static panel
+    @app.get("/favicon.ico")
+    def favicon():
+        return Response(status_code=204)
+
     @app.get("/")
     def root():
         return RedirectResponse("/admin/")

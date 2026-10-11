@@ -1,17 +1,32 @@
-"""Builds MANIFEST_SHA256.txt and release/MasterQUO_CLAUDE_MT5_BROWSER_FULL.zip from git-tracked files only.
+"""Builds MANIFEST_SHA256.txt and two SEPARATE packages from git-tracked files only:
 
-Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs) can never enter the package.
+  release/MasterQUO_KLIENT_1_7_0.zip            bot for Windows (no license server, no secrets, no admin rights)
+  release/MasterQUO_SERWER_LICENCJI_1_7_0.zip   license server + administrator panel (server/ only, no keys, no database)
+
+Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
+Every packaged text file is scanned for private keys, license keys and secret assignments; a hit aborts the build.
 """
 import hashlib
+import re
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP_NAME = "MasterQUO_MARKETS_BOT_SIGNALS_1_6_0.zip"
-TOP = "MasterQUO_AI/"
-FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
+VERSION = "1.7.0"
+CLIENT_ZIP = "MasterQUO_KLIENT_1_7_0.zip"
+SERVER_ZIP = "MasterQUO_SERWER_LICENCJI_1_7_0.zip"
+FORBIDDEN_PARTS = {".venv", ".venv-server", "node_modules", "__pycache__", ".git"}
+SERVER_DOCS = ["INSTRUKCJA_WINDOWS_PL.md", "AUDYT_MASTERQUO.md", "CHANGELOG.md"]
+# exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
+ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
+SECRET_PATTERNS = [
+    (re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
+    (re.compile(rb"MQL72(?:-[A-HJ-NP-Z2-9]{5}){10}-[A-HJ-NP-Z2-9]{2}"), "LICENSE_KEY"),
+    (re.compile(rb"sk-ant-[A-Za-z0-9_\-]{20,}"), "ANTHROPIC_KEY"),
+    (re.compile(rb"^(MQL_KEY_PEPPER|MQL_DATA_KEY|ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN)=\S+", re.M), "SECRET_ASSIGNMENT"),
+]
 
 
 def tracked():
@@ -20,26 +35,44 @@ def tracked():
     return [f for f in files if not f.startswith("release/") and f != "MANIFEST_SHA256.txt"]
 
 
-def main():
-    files = tracked()
-    bad = [f for f in files if FORBIDDEN_PARTS & set(Path(f).parts) or f.startswith("data/")
-           or f.endswith((".env", ".sqlite", ".log")) or Path(f).name.startswith("secrets.")]
+def scan(files):
+    bad = [f for f in files if FORBIDDEN_PARTS & set(Path(f).parts) or f.startswith(("data/", "server/data/", "server/secrets/"))
+           or f.endswith((".env", ".sqlite", ".sqlite3", ".log", ".pem")) or Path(f).name.startswith("secrets.")]
     if bad:
         sys.exit(f"forbidden paths tracked: {bad}")
-    lines = []
+    hits = []
     for f in files:
-        h = hashlib.sha256((ROOT / f).read_bytes()).hexdigest()
-        lines.append(f"{h}  {f}")
-    (ROOT / "MANIFEST_SHA256.txt").write_text(
-        "# MasterQUO AI 1.6.0 - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
-        encoding="utf-8", newline="\n")
-    out = ROOT / "release" / ZIP_NAME
+        b = (ROOT / f).read_bytes()
+        if b"\0" in b[:4096]:
+            continue
+        for rx, kind in SECRET_PATTERNS:
+            if any(m.group(0) not in ALLOWED_DUMMIES for m in rx.finditer(b)):
+                hits.append((f, kind))
+    if hits:
+        sys.exit(f"secret-like content in packaged files: {hits}")
+
+
+def write_zip(name, top, files):
+    out = ROOT / "release" / name
     out.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for f in files + ["MANIFEST_SHA256.txt"]:
-            z.write(ROOT / f, TOP + f)
-    print(f"{len(files)} files, manifest written, {out} {out.stat().st_size} bytes")
-    print("zip sha256", hashlib.sha256(out.read_bytes()).hexdigest())
+        for f in files:
+            z.write(ROOT / f, top + f)
+    print(f"{name}: {len(files)} files, {out.stat().st_size} bytes, sha256 {hashlib.sha256(out.read_bytes()).hexdigest()}")
+
+
+def main():
+    files = tracked()
+    client = [f for f in files if not f.startswith("server/")]
+    server = [f for f in files if f.startswith("server/")] + [d for d in SERVER_DOCS if d in files]
+    scan(client + server)
+    assert not any("mqlicense" in f for f in client), "client package must not contain the license server"
+    lines = [f"{hashlib.sha256((ROOT / f).read_bytes()).hexdigest()}  {f}" for f in client]
+    (ROOT / "MANIFEST_SHA256.txt").write_text(
+        f"# MasterQUO AI {VERSION} (klient) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
+        encoding="utf-8", newline="\n")
+    write_zip(CLIENT_ZIP, "MasterQUO_AI/", client + ["MANIFEST_SHA256.txt"])
+    write_zip(SERVER_ZIP, "MasterQUO_SERWER_LICENCJI/", server)
 
 
 if __name__ == "__main__":

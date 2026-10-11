@@ -47,10 +47,11 @@ def entry_of(d):
 
 
 class TestRulesPerStrategy(unittest.TestCase):
-    def test_registry_has_exactly_ten_implemented(self):
-        self.assertEqual(sorted(registry.STRATEGIES), ALL)
+    def test_registry_has_ten_plus_s11_implemented(self):
+        self.assertEqual(sorted(registry.STRATEGIES), ALL + ["S11"])          # S11 = EMA20 Pullback 2.5R (1.7), scan-only by default
+        self.assertEqual(registry.DEFAULT_NO_TRADE, {"S11"})
         names = {d["name"] for d in registry.describe()}
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 11)
         self.assertTrue(all(d["implemented"] and d["validation_status"].startswith("FUNCTIONAL_ONLY") for d in registry.describe()))
 
     def test_long_and_short_trigger(self):

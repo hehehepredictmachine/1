@@ -142,9 +142,9 @@ export function BotSignalsPanel({ onOpen }: { onOpen: (symbol: string) => void }
         <span className={cls("badge", a.enabled === false ? "muted" : "ok")}>{a.enabled === false ? "wyłączone" : a.scan_other_markets === false ? "tylko symbol główny" : "wszystkie rynki"}</span>
       </div>
       <div className="ai-stats">
-        <div><label>Win rate</label><b>{st.win_rate_pct == null ? "—" : `${st.win_rate_pct}%`}</b></div>
+        <div title="wygrane / (wygrane + przegrane); wynik brutto w R (bez kosztów); |R| ≤ 0,05 = breakeven"><label>Win rate (brutto R)</label><b>{st.win_rate_pct == null ? "—" : `${st.win_rate_pct}%`}</b></div>
         <div><label>Śr. wynik</label><b>{st.avg_r == null ? "—" : `${st.avg_r > 0 ? "+" : ""}${st.avg_r} R`}</b></div>
-        <div><label>Rozliczone</label><b>{st.closed ?? 0}</b><span className="muted small"> ({st.wins ?? 0}✓/{st.losses ?? 0}✗)</span></div>
+        <div><label>Rozliczone</label><b>{st.closed ?? 0}</b><span className="muted small"> ({st.wins ?? 0}✓/{st.losses ?? 0}✗/{st.breakeven ?? 0} BE)</span></div>
         <div><label>Aktywne</label><b>{st.open ?? 0}</b></div>
         <div><label>Odrzucone</label><b>{st.rejected ?? 0}</b></div>
       </div>

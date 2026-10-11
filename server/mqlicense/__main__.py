@@ -88,7 +88,7 @@ def main(argv=None) -> int:
         except OSError:
             pass
         print(f"Zapisano: {kp}, {env} (dopisz do .env serwera; NIE commituj, NIE kopiuj do klienta).")
-        print("Klucz publiczny (wklej do config klienta: license.public_key):\n" + pub)
+        print("Klucz publiczny (wklej do config klienta: license.public_key_pem):\n" + pub)
         return 0
 
     s = config.load(a.env_file)

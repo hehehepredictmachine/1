@@ -16,18 +16,50 @@ from .timeutil import iso, parse_iso, utcnow
 DEAL_TYPE_BALANCE = 2
 
 
+BE_BAND_R = 0.05          # |R| <= 0.05 after costs = breakeven (reported separately, not a win and not a loss)
+DEFINITIONS = {
+    "win_rate": "wygrane / (wygrane + przegrane), po kosztach (prowizja, swap, opłaty); breakeven osobno",
+    "breakeven": "|wynik| <= 0,05 R po kosztach (bez R: wynik netto = 0)",
+    "profit_factor": "suma zysków netto / |suma strat netto|; brak strat = brak wartości (nie nieskończoność)",
+    "expectancy_r": "średni wynik netto w R (R = ryzyko planowane do SL przy otwarciu)",
+    "roi": "ROI liczone metodą Dietza z uwzględnieniem wpłat/wypłat (roi_modified_dietz); wpłaty nie są zyskiem",
+}
+
+
+def _outcome(r: dict) -> str:
+    rm = r.get("r_multiple")
+    if rm is not None:
+        return "BE" if abs(rm) <= BE_BAND_R else ("WIN" if rm > 0 else "LOSS")
+    return "BE" if r["net_pnl"] == 0 else ("WIN" if r["net_pnl"] > 0 else "LOSS")
+
+
 def _agg(rows: list[dict]) -> dict:
     n = len(rows)
     if n == 0:
-        return {"trades": 0, "net": 0.0, "win_rate": None, "profit_factor": None, "avg_r": None, "status": "NO_DATA"}
-    wins = [r for r in rows if r["net_pnl"] > 0]
-    gp = sum(r["net_pnl"] for r in wins)
+        return {"trades": 0, "net": 0.0, "win_rate": None, "profit_factor": None, "avg_r": None, "expectancy_r": None, "status": "NO_DATA"}
+    oc = [_outcome(r) for r in rows]
+    wins, losses, be = oc.count("WIN"), oc.count("LOSS"), oc.count("BE")
+    gp = sum(r["net_pnl"] for r in rows if r["net_pnl"] > 0)
     gl = -sum(r["net_pnl"] for r in rows if r["net_pnl"] < 0)
     rs = [r["r_multiple"] for r in rows if r.get("r_multiple") is not None]
-    return {"trades": n, "net": round(sum(r["net_pnl"] for r in rows), 2), "win_rate": round(len(wins) / n * 100, 1),
-            "profit_factor": round(gp / gl, 2) if gl > 0 else None, "gross_profit": round(gp, 2), "gross_loss": round(gl, 2),
+    exp_r = round(sum(rs) / len(rs), 3) if rs else None
+    return {"trades": n, "wins": wins, "losses": losses, "breakeven": be, "net": round(sum(r["net_pnl"] for r in rows), 2),
+            "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else None,
+            "profit_factor": round(gp / gl, 2) if gl > 0 else None, "profit_factor_note": None if gl > 0 else "BRAK_STRAT",
+            "gross_profit": round(gp, 2), "gross_loss": round(gl, 2),
             "commission": round(sum(r["commission"] for r in rows), 2), "swap": round(sum(r["swap"] for r in rows), 2),
-            "avg_r": round(sum(rs) / len(rs), 3) if rs else None, "status": "OK" if n >= 30 else "SMALL_SAMPLE"}
+            "avg_r": exp_r, "expectancy_r": exp_r, "status": "OK" if n >= 30 else "SMALL_SAMPLE", "definitions": DEFINITIONS}
+
+
+def roi_modified_dietz(start_equity: float, end_equity: float, flows: list[tuple[float, float]]) -> float | None:
+    """Return over a period with external cash flows (deposits +, withdrawals -). flows = [(amount, weight)] where weight
+    = fraction of the period REMAINING after the flow (0..1). ROI = (E1 - E0 - sum F) / (E0 + sum w*F). Deposits are
+    therefore never counted as profit."""
+    f = sum(a for a, _ in flows)
+    denom = start_equity + sum(a * w for a, w in flows)
+    if denom <= 0:
+        return None
+    return round(100 * (end_equity - start_equity - f) / denom, 3)
 
 
 def bot_stats(db, mode: str, account_key: str | None = None) -> dict:

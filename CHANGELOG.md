@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.7.0 – sygnały z planem wejścia, M30/H8, strategia EMA20 Pullback, licencje 72 h, panel administratora
+* **Sygnał (kontrakt `MQ-SIGNAL-1.0.0`)**: status (OCZEKIWANIE/POTWIERDZONY/ZABLOKOWANY/UNIEWAŻNIONY/WYGASŁY/BRAK_DANYCH) i osobny stan
+  wykonania, ceny (odniesienie, Bid/Ask, planowane wejście, fill dopiero po wykonaniu), SL/TP, ryzyko w pieniądzu i %, wolumen, RR brutto
+  i netto z definicjami, spread vs SL, koszty, flagi danych, warunki spełnione/brakujące, wyzwalacz, unieważnienie, powody blokad,
+  ocena AI (aktualna / nieaktualna / niedostępna), jakość, prawdopodobieństwo tylko z walidowanego modelu. Blok „Sygnał AI / plan wejścia”
+  obok checklisty, zakładka „Historia sygnałów” z filtrami (migracja 0007).
+* **M30 i H8** w całym systemie: rejestr interwałów, natywne TIMEFRAME_M30/H8 z MT5, kontrolowany resampling H8 z H1, jakość danych
+  (kontekst), karta „Kontekst M30/H8”, układ 8 wykresów, eksport (8 TF, model DST `NY_CLOSE`), narzędzia agenta.
+* **Strategia S11 EMA20 Pullback 2.5R**: audyt Pine (14 punktów), poprawiony Pine v6 (nieskompilowany – brak TradingView), port oryginału
+  i wersji naprawionej, backtester (model Pine i MT5, walk-forward, test końcowy, bootstrap), RAPORT_WYNIKOW.md (dane syntetyczne).
+  Domyślnie tylko skanowanie (bez automatycznego handlu).
+* **Statystyki**: winrate netto bez breakeven (BE osobno), PF „brak strat”, oczekiwana wartość w R, ROI Dietza (wpłaty nie są zyskiem),
+  statystyki sygnałów oznaczone jako brutto w R.
+* **Licencje 72 h**: osobny serwer `server/mqlicense` (SQLite, migracje, Ed25519, Argon2id, TOTP, CSRF, audyt, limity) i panel administratora
+  `/admin/`. `masterquo_start.bat` prosi o licencję **przy każdym uruchomieniu**; bez ważnej dzierżawy silnik, skaner, sygnały, ML,
+  agent, nowe zlecenia i API/WS monitora są zablokowane (otwarte pozycje i SL/TP bez zmian). Config v8 (sekcja `license`).
+* Audyt: `AUDYT_MASTERQUO.md`. Instrukcja: `INSTRUKCJA_WINDOWS_PL.md`. Serwer: `server/README_SERWER_PL.md`.
+
 ## 1.6.0 – sygnały bota zamiast sygnałów agenta AI
 * Sygnały tworzy **bot**: potwierdzone (CONFIRMED) setupy strategii S01–S10. Na symbolu głównym pochodzą z silnika bota, na pozostałych
   rynkach skaner uruchamia te same strategie (te same progi, parametry i przełączniki). Generowanie sygnałów przez Claude usunięte.

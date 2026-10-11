@@ -202,12 +202,38 @@ def set_key() -> int:
     return 0
 
 
-def export_history(from_utc: str, to_utc: str, out_dir: str) -> int:
-    """Six-timeframe export in the M06R CSV format with *UTC* times (raw - measured offset).
+EXPORT_TFS = ("D1", "H8", "H4", "H1", "M30", "M15", "M5", "M1")
+DST_MODELS = ("UNIFORM", "NY_CLOSE")
 
-    The broker offset is measured now from fresh ticks (or taken from the last verified value
-    stored for this server). It is applied uniformly: historical DST changes of the broker are not
-    reconstructed - this limitation is written into the manifest.
+
+def ny_close_offset(utc_ts: float) -> int:
+    """Broker time = New York time + 7 h (the common "NY close = 00:00 server" convention: UTC+2 in winter, UTC+3 when
+    the US is on DST). Uses the IANA tz database (zoneinfo)."""
+    from zoneinfo import ZoneInfo
+    ny = datetime.fromtimestamp(utc_ts, timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    return int(ny.utcoffset().total_seconds()) + 7 * 3600
+
+
+def server_to_utc(raw: int, model: str, uniform_offset: int) -> tuple[int, int, bool]:
+    """(utc_ts, offset_used, ambiguous). UNIFORM = one offset for the whole range; NY_CLOSE = per-bar offset from the
+    model; a raw time inside a DST switch hour that matches 0 or 2 candidates is flagged ambiguous."""
+    if model == "UNIFORM":
+        return raw - uniform_offset, uniform_offset, False
+    hits = [off for off in (7200, 10800) if ny_close_offset(raw - off) == off]
+    if len(hits) == 1:
+        return raw - hits[0], hits[0], False
+    off = ny_close_offset(raw - 7200)
+    return raw - off, off, True
+
+
+def export_history(from_utc: str, to_utc: str, out_dir: str, dst_model: str = "UNIFORM") -> int:
+    """Eight-timeframe export (D1, H8, H4, H1, M30, M15, M5, M1) in the M06R CSV format with *UTC* times.
+
+    UNIFORM: the server offset measured NOW (or the last verified stored value) is applied to the whole range - correct
+    only when the broker did not change its offset inside the range. NY_CLOSE: per-bar offset from the "New York + 7 h"
+    model (DST-aware); it is accepted only when it agrees with the offset measured now. Every row carries the raw server
+    time and the offset used, the manifest says which model was applied. H8 comes from MT5 (TIMEFRAME_H8) or, when the
+    terminal returns nothing, is resampled from H1 by server-day buckets (manifest: source=resampled).
     """
     import csv
     import hashlib
@@ -216,6 +242,9 @@ def export_history(from_utc: str, to_utc: str, out_dir: str) -> int:
     from .db.database import Database
     from .mt5.clock import ServerClock
     from .timeutil import TF_SECONDS, parse_iso
+    if dst_model not in DST_MODELS:
+        print(f"[BLAD] --dst-model: {', '.join(DST_MODELS)}")
+        return 2
     cfg = ConfigStore().get()
     sym = cfg.mt5.symbol
     start, end = parse_iso(from_utc), parse_iso(to_utc)
@@ -246,49 +275,99 @@ def export_history(from_utc: str, to_utc: str, out_dir: str) -> int:
                 print("[BLAD] Nie można zmierzyć offsetu czasu serwera (rynek zamknięty?) i brak zapisanego pomiaru. Uruchom przy otwartym rynku.")
                 return 5
             offset, basis = row["offset_seconds"], f"STORED_{row['measured_at']}"
+        now = datetime.now(timezone.utc)
+        if dst_model == "NY_CLOSE" and ny_close_offset(now.timestamp()) != int(offset):
+            print(f"[BLAD] Model NY_CLOSE daje dziś offset {ny_close_offset(now.timestamp()) / 3600:g} h, a zmierzony to {offset / 3600:g} h - "
+                  "broker nie stosuje tej konwencji. Użyj --dst-model UNIFORM (z ograniczeniem opisanym w manifeście).")
+            return 6
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         files = {}
-        now = datetime.now(timezone.utc)
-        for tf in ("D1", "H4", "H1", "M15", "M5", "M1"):
-            rows = []
-            cur = start
-            while cur < end:
-                nxt = min(end, cur + timedelta(days=7 if tf in ("M1", "M5") else 120))
-                r = mt5.copy_rates_range(sym, getattr(mt5, "TIMEFRAME_" + tf), datetime.fromtimestamp(cur.timestamp() + offset, timezone.utc),
-                                         datetime.fromtimestamp(nxt.timestamp() + offset, timezone.utc))
-                if r is not None:
-                    rows += [x for x in r]
-                cur = nxt
-            uniq = {}
-            for x in rows:
-                uniq[int(x["time"])] = x
+        margin = timedelta(hours=4)                       # covers any offset in the model (+2/+3 h) when querying in server time
+        for tf in EXPORT_TFS:
+            src_tf, source = tf, "native"
+            rows = _fetch_range(mt5, sym, tf, start - margin, end + margin, offset)
+            if not rows and tf == "H8":
+                h1 = _fetch_range(mt5, sym, "H1", start - margin - timedelta(hours=8), end + margin, offset)
+                rows, source, src_tf = _resample_rows(h1, 28800), "resampled", "H1"
+            uniq = {int(x["time"]): x for x in rows}
             ts = sorted(uniq)
             path = out / f"{tf}.csv"
-            n = 0
+            n = amb = 0
             with path.open("w", encoding="utf-8", newline="") as fh:
                 w = csv.writer(fh)
-                w.writerow(["symbol", "time_utc", "open", "high", "low", "close", "tick_volume", "real_volume", "spread_points", "bar_state", "available_at_utc"])
+                w.writerow(["symbol", "time_utc", "open", "high", "low", "close", "tick_volume", "real_volume", "spread_points", "bar_state",
+                            "available_at_utc", "time_server_raw", "offset_seconds", "time_flags"])
                 for i, t in enumerate(ts):
-                    op = datetime.fromtimestamp(t - offset, timezone.utc)
+                    u, off, ambiguous = server_to_utc(t, dst_model, int(offset))
+                    op = datetime.fromtimestamp(u, timezone.utc)
                     if op < start or op >= end or op + timedelta(seconds=TF_SECONDS[tf]) > now:
                         continue
-                    nxt_open = datetime.fromtimestamp(ts[i + 1] - offset, timezone.utc) if i + 1 < len(ts) else None
-                    if nxt_open is None or nxt_open > now:
+                    if i + 1 >= len(ts):
                         continue  # not confirmed by an observed next bar
+                    nxt_open = datetime.fromtimestamp(server_to_utc(ts[i + 1], dst_model, int(offset))[0], timezone.utc)
+                    if nxt_open > now:
+                        continue
                     x = uniq[t]
+                    amb += ambiguous
                     w.writerow([sym, iso(op), float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"]), int(x["tick_volume"]),
-                                int(x["real_volume"]), int(x["spread"]), "CLOSED", iso(max(nxt_open, op + timedelta(seconds=TF_SECONDS[tf])))])
+                                int(x["real_volume"]), int(x["spread"]), "CLOSED", iso(max(nxt_open, op + timedelta(seconds=TF_SECONDS[tf]))),
+                                t, off, "DST_AMBIGUOUS" if ambiguous else ""])
                     n += 1
-            files[tf] = {"bars": n, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-            print(f"[OK] {tf}: {n} zamkniętych świec")
-        manifest = {"module_id": "MQAI_MT5_EXPORT_UTC", "symbol": sym, "from_utc": iso(start), "to_utc": iso(end), "created_at": iso(now),
-                    "server_offset_seconds": offset, "offset_basis": basis, "files": files, "execution_permission": "BLOCKED",
-                    "limitations": ["Offset czasu serwera zastosowany jednolicie; historyczne zmiany DST brokera nie są rekonstruowane",
-                                    "available_at = otwarcie następnej świecy (oszacowanie historyczne, nie obserwacja live)",
-                                    "Świece BID z wykresu, nie historyczne ticki Bid/Ask"]}
+            files[tf] = {"bars": n, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "source": source, "source_tf": src_tf,
+                         "dst_ambiguous_rows": amb}
+            print(f"[OK] {tf}: {n} zamkniętych świec ({source}{', DST niejednoznaczne: ' + str(amb) if amb else ''})")
+        limits = ["available_at = otwarcie następnej świecy (oszacowanie historyczne, nie obserwacja live)",
+                  "Świece BID z wykresu, nie historyczne ticki Bid/Ask"]
+        limits.insert(0, "Offset czasu serwera zastosowany jednolicie (UNIFORM); historyczne zmiany DST brokera NIE są rekonstruowane - "
+                         "dla zakresu obejmującego zmianę czasu użyj --dst-model NY_CLOSE (jeśli broker stosuje tę konwencję)"
+                      if dst_model == "UNIFORM" else
+                      "Offset per świeca z modelu NY_CLOSE (Nowy Jork + 7 h, tz database); model zgodny z offsetem zmierzonym dziś - "
+                      "zgodność w przeszłości nie jest dowodem, sprawdź w terminalu świece wokół dat zmiany czasu")
+        manifest = {"module_id": "MQAI_MT5_EXPORT_UTC", "version": 2, "symbol": sym, "from_utc": iso(start), "to_utc": iso(end), "created_at": iso(now),
+                    "server_offset_seconds_now": offset, "offset_basis": basis, "dst_model": dst_model, "timeframes": list(EXPORT_TFS),
+                    # `files` = the six M06R timeframes (the unchanged M06R loader requires exactly these); M30/H8 separately
+                    "files": {k: v for k, v in files.items() if k not in ("M30", "H8")},
+                    "context_files": {k: v for k, v in files.items() if k in ("M30", "H8")},
+                    "execution_permission": "BLOCKED", "limitations": limits}
         (out / "MT5_EXPORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         print("Manifest:", out / "MT5_EXPORT_MANIFEST.json")
     finally:
         mt5.shutdown()
     return 0
+
+
+def _fetch_range(mt5, sym: str, tf: str, start, end, offset: float) -> list:
+    from datetime import timedelta
+    rows, cur = [], start
+    const = getattr(mt5, "TIMEFRAME_" + tf, None)
+    if const is None:
+        return rows
+    while cur < end:
+        nxt = min(end, cur + timedelta(days=7 if tf in ("M1", "M5") else 120))
+        r = mt5.copy_rates_range(sym, const, datetime.fromtimestamp(cur.timestamp() + offset, timezone.utc),
+                                 datetime.fromtimestamp(nxt.timestamp() + offset, timezone.utc))
+        if r is not None:
+            rows += [x for x in r]
+        cur = nxt
+    return rows
+
+
+def _resample_rows(rows: list, sec: int) -> list[dict]:
+    """H1 -> H8 by server-day buckets (t - t % 28800): first open, max high, min low, last close, summed volumes."""
+    out: dict[int, dict] = {}
+    for x in sorted(rows, key=lambda r: int(r["time"])):
+        t = int(x["time"])
+        k = t - t % sec
+        b = out.get(k)
+        if b is None:
+            out[k] = {"time": k, "open": float(x["open"]), "high": float(x["high"]), "low": float(x["low"]), "close": float(x["close"]),
+                      "tick_volume": int(x["tick_volume"]), "real_volume": int(x["real_volume"]), "spread": int(x["spread"])}
+        else:
+            b["high"] = max(b["high"], float(x["high"]))
+            b["low"] = min(b["low"], float(x["low"]))
+            b["close"] = float(x["close"])
+            b["tick_volume"] += int(x["tick_volume"])
+            b["real_volume"] += int(x["real_volume"])
+            b["spread"] = max(b["spread"], int(x["spread"]))
+    return list(out.values())

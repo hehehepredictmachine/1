@@ -23,7 +23,8 @@ from .ratelimit import LIMITS, RateLimiter
 log = logging.getLogger("mqlicense")
 
 TELEMETRY_KEYS = {"app_version", "execution_mode", "symbol", "signals_confirmed", "signals_blocked", "trades_closed",
-                  "winrate_net_pct", "profit_factor_net", "expectancy_r", "data_quality", "uptime_s"}
+                  "winrate_net_pct", "profit_factor_net", "expectancy_r", "roi_pct", "balance", "equity", "currency", "period",
+                  "stats_source", "stats_as_of", "data_quality", "uptime_s"}
 
 
 class Denied(Exception):
@@ -133,8 +134,8 @@ class LicenseService:
             lic["customer_name"] = (c or {}).get("name")
         return lic
 
-    def list_licenses(self, *, status: str | None = None, q: str | None = None, limit: int = 200) -> list[dict]:
-        rows = self.db.all("SELECT * FROM licenses ORDER BY created_at DESC LIMIT ?", (min(int(limit), 1000),))
+    def list_licenses(self, *, status: str | None = None, q: str | None = None, limit: int = 200, offset: int = 0) -> list[dict]:
+        rows = self.db.all("SELECT * FROM licenses ORDER BY created_at DESC LIMIT ? OFFSET ?", (min(int(limit), 1000), max(0, int(offset))))
         out = [self._view(r) for r in rows]
         if status:
             out = [r for r in out if r["status"] == status]
@@ -184,6 +185,17 @@ class LicenseService:
                 raise Denied("CUSTOMER_NOT_FOUND", 404)
             t.execute("UPDATE licenses SET customer_id=?, note=COALESCE(?, note) WHERE id=?", (customer_id, note, lid))
             self.audit(t, actor=actor["email"], action="LICENSE_ASSIGN", ttype="license", tid=lid, detail={"customer_id": customer_id}, ip=ip)
+        return self.get_license(lid)
+
+    def set_max_sessions(self, actor: dict, lid: str, max_sessions: int, ip: str | None = None) -> dict:
+        self._require(actor, "ADMIN")
+        if not 1 <= int(max_sessions) <= 10:
+            raise Denied("MAX_SESSIONS_OUT_OF_RANGE", 400)
+        with self.db.tx() as t:
+            if not t.execute("SELECT 1 FROM licenses WHERE id=?", (lid,)).fetchone():
+                raise Denied("LICENSE_NOT_FOUND", 404)
+            t.execute("UPDATE licenses SET max_sessions=? WHERE id=?", (int(max_sessions), lid))
+            self.audit(t, actor=actor["email"], action="LICENSE_MAX_SESSIONS", ttype="license", tid=lid, detail={"max_sessions": int(max_sessions)}, ip=ip)
         return self.get_license(lid)
 
     # ================================================================= customers
@@ -374,7 +386,7 @@ class LicenseService:
                 "sessions_active": self.db.one("SELECT COUNT(*) AS n FROM license_sessions WHERE ended_at IS NULL AND lease_expires_at>?", (now,))["n"],
                 "denied_24h": self.db.one("SELECT COUNT(*) AS n FROM audit WHERE action='SESSION_OPEN' AND result<>'OK' AND at>=?", (now - 86400,))["n"],
                 "customers": self.db.one("SELECT COUNT(*) AS n FROM customers")["n"], "clock_anomaly": getattr(self.clock, "anomaly", None),
-                "kid": self.kid}
+                "kid": self.kid, "db_migrations": self.db.versions(), "recent_events": self.list_audit(limit=10)}
 
     def list_audit(self, *, limit: int = 300, action: str | None = None) -> list[dict]:
         if action:

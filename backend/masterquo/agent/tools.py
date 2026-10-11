@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 
-TFS = ["M1", "M5", "M15", "H1", "H4", "D1"]
+from ..timeutil import TIMEFRAMES
+TFS = list(TIMEFRAMES)                 # registry (timeutil.TF_REGISTRY): M1 M5 M15 M30 H1 H4 H8 D1
 
 
 def _tool(name: str, description: str, props: dict, required: list[str]) -> dict:
