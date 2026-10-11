@@ -87,6 +87,17 @@ class ExecutionGateway:
         px = q["ask"] if d["analysis_direction"] == "LONG" else q["bid"]
         if point and abs(px - risk["entry"]) > cfg.execution.deviation_points * point:
             raise ExecutionError("PRICE_MOVED_SINCE_RISK_CHECK_WAIT_FOR_RECALC")
+        # settings / account / limits re-check right before sending (never use a stale calculation)
+        prefs = getattr(self.engine, "prefs", None)
+        if prefs is not None and risk.get("settings_version") != prefs.settings_version():
+            raise ExecutionError("SETTINGS_CHANGED_RECALC")
+        recheck = getattr(self.engine, "recheck_risk", None)
+        if recheck is not None:
+            fresh = recheck(d)
+            if fresh.get("risk_gate") != "PASS" or not fresh.get("lots"):
+                raise ExecutionError("RISK_RECHECK_FAILED:" + ",".join((fresh.get("reason_codes") or [])[:6]))
+            if fresh["lots"] + 1e-9 < float(risk["lots"]):
+                raise ExecutionError("LIMITS_CHANGED_SIZE_SMALLER_RECALC")
         return d
 
     # ------------------------------------------------------------ public

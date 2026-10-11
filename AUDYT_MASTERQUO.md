@@ -96,7 +96,7 @@ raporcie i w `INSTRUKCJA_WINDOWS_PL.md`.
 | Winrate bota liczony jako wygrane / wszystkie, więc breakeven obniżał winrate | NAPRAWIONE: wygrane / (wygrane + przegrane) po kosztach. BE (\|R\| ≤ 0,05) osobno |
 | PF przy braku strat = puste pole bez wyjaśnienia | NAPRAWIONE: `BRAK_STRAT` (nie nieskończoność) |
 | Brak oczekiwanej wartości w R | NAPRAWIONE: `expectancy_r` |
-| ROI a wpłaty/wypłaty | Operacje balance są wykazywane osobno (nie są zyskiem). Dodano `roi_modified_dietz`. OTWARTE: ROI rachunku MT5 nie jest pokazywany, bo nie ma zapisanej equity początkowej okresu z historią wpłat |
+| ROI a wpłaty/wypłaty | Operacje balance są wykazywane osobno (nie są zyskiem). NAPRAWIONE w 1.8: ROI rachunku MT5 metodą Dietza z zapisanych snapshotów equity (`stats.account_roi`), wpłaty/wypłaty jako przepływy; bez danych – „brak danych” |
 | Statystyki sygnałów (wszystkie rynki) | ZMIENIONE: oznaczone jako BRUTTO w R (bez spreadu i prowizji), BE osobno, PF w R |
 | Backtester EMA | Te same definicje. Bootstrap blokowy (90% CI). Liczba testowanych wariantów jest jawna (ryzyko przeuczenia) |
 

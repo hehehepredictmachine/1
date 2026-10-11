@@ -52,6 +52,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, analysisSeq: s.analysisSeq + 1 };
     case "auto":
       return { ...s, auto: d };
+    case "prefs":
+      return { ...s, prefs: d };
     case "ml":
       return { ...s, ml: { ...(s.ml || {}), ...d } };
     case "markets":

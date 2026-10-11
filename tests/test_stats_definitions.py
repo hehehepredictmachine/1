@@ -31,6 +31,29 @@ class TestStatsDefinitions(unittest.TestCase):
         self.assertEqual(stats.roi_modified_dietz(10000, 10500, []), 5.0)
         self.assertEqual(stats.roi_modified_dietz(10000, 9000, [(-2000, 1.0)]), 12.5)   # withdrawal at start is not a loss
 
+    def test_account_roi_from_snapshots_excludes_deposits(self):
+        from datetime import timedelta
+
+        from masterquo.db.database import Database
+        from masterquo.timeutil import iso, utcnow
+        td = _env.TempData()
+        try:
+            db = Database()
+            now = utcnow()
+            for i, eq in enumerate((10000.0, 10200.0, 15500.0)):
+                db.execute("INSERT INTO equity_snapshots(ts, mode, account_key, balance, equity, margin, free_margin, currency) VALUES (?,?,?,?,?,?,?,?)",
+                           (iso(now - timedelta(hours=2 - i)), "ACCOUNT", "S:1", eq, eq, 0, eq, "USD"))
+            off = 7200.0
+            dep = {"type": 2, "profit": 5000.0, "time": (now - timedelta(hours=1)).timestamp() + off}   # deposit in the middle
+            r = stats.account_roi(db, "S:1", [dep], off)
+            self.assertEqual(r["status"], "OK")
+            self.assertEqual(r["net_flows"], 5000.0)
+            self.assertEqual(r["roi_pct"], stats.roi_modified_dietz(10000, 15500, [(5000, 0.5)]))        # 4%, not 55%
+            self.assertEqual(stats.account_roi(db, "S:1", [dep], None)["status"], "NO_DATA")            # no offset -> no guess
+            self.assertEqual(stats.account_roi(db, "OTHER:2", [], off)["status"], "NO_DATA")
+        finally:
+            td.close()
+
     def test_signal_stats_breakeven_band(self):
         rows = [{"status": "WIN", "outcome_r": 2.5}, {"status": "LOSS", "outcome_r": -1.0}, {"status": "TIMEOUT", "outcome_r": 0.03},
                 {"status": "TIMEOUT", "outcome_r": 0.6}]

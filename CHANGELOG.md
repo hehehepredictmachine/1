@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 1.8.0 – wybór setupu, szczegóły scenariusza, dźwignia / limit ekspozycji
+* **Setup: AUTO / WYBRANY SETUP / WSZYSTKIE** (pasek nad kartą sygnału). AUTO = dotychczasowy wybór silnika; WYBRANY SETUP = silnik
+  analizuje i wybiera tylko wskazaną strategię z rejestru (nic nie jest wymuszane – setup musi zostać wykryty i przejść wszystkie bramki);
+  WSZYSTKIE = lista scenariuszy (stabilny identyfikator, symbol, kierunek, TF, czas powstania) z przyciskiem „Szczegóły”. Wybór zapisuje się
+  w bazie **per rachunek MT5 (serwer:login)** i wraca po odświeżeniu i restarcie; odświeżanie go nie zmienia.
+* **Szczegóły setupu**: strategia, symbol, kierunek scenariusza (oddzielony od zgody na wejście), interwały, status scenariusza
+  (OCZEKIWANIE / WARUNKI SPEŁNIONE / UNIEWAŻNIONY / BRAK DANYCH), możliwość wejścia (DOSTĘPNE / ZABLOKOWANE + przyczyny), kontekst i uzasadnienie,
+  checklista (warunek, próg, wartość, status, powód; warunki świecowe dopiero po zamknięciu), strefa wejścia, trigger, SL, TP, unieważnienie,
+  R brutto/netto, wolumen, szacowana strata przy SL, wynik przy TP, margin i wolny margin po wejściu, wiek i aktualizacja, źródło danych,
+  zgodność/konflikt interwałów strategii (w tym M30/H8), wynik ACTIVE z opisem (nie prawdopodobieństwo), historia tylko z rozliczonych transakcji.
+* **Dźwignia / limit ekspozycji** (Ustawienia → Ryzyko): AUTO (dźwignia rachunku z MT5) albo RĘCZNIE (1:1…1:500, nie więcej niż dźwignia
+  rachunku). Pokazywane osobno: dźwignia rachunku, limit użytkownika, efektywna ekspozycja (nominał / equity). To limit planowania bota –
+  nie zmienia dźwigni u brokera; margin zawsze z `order_calc_margin`.
+* **Wielkość pozycji** = największy wolumen spełniający jednocześnie: budżet ryzyka do SL, wolny margin z buforem i rezerwą zleceń
+  oczekujących, limit ekspozycji (pozycje + zlecenia oczekujące), maks./min./krok wolumenu; zaokrąglenie w dół i ponowna weryfikacja
+  kalkulatorami brokera. Nominał z `order_calc_profit` (bez założonej wielkości kontraktu). Minimalny lot ponad limit → blokada z powodem.
+  Wyższa dźwignia nie zwiększa budżetu ryzyka i nie przesuwa SL/TP. Zlecenia oczekujące liczą się do ryzyka, marginu, ekspozycji i liczby pozycji.
+* **Spójność**: wersja ustawień w każdej kalkulacji; przed wysłaniem zlecenia bramka sprawdza wersję ustawień i przelicza ryzyko na bieżącej
+  cenie i danych rachunku (`order_check` jak dotąd) – zmiana ustawień lub mniejszy dopuszczalny wolumen blokuje wysyłkę. Istniejące pozycje
+  i zlecenia nie są modyfikowane. Tryby wykonania bez zmian.
+* **ROI rachunku MT5** (statystyki): metodą Dietza z zapisanych snapshotów equity, wpłaty/wypłaty jako przepływy – brak danych = „brak danych”.
+* Migracja bazy 0008 (`account_prefs`).
+
 ## 1.7.1 – czytelny monitor: BUY / SELL, karta sygnału, prosta checklista
 * **Karta sygnału na górze monitora**: duże BUY (zielone) / SELL (czerwone) tylko dla aktualnego, potwierdzonego sygnału otwarcia,
   który przeszedł reguły strategii i decyzji; OCZEKIWANIE (bursztynowe) z „Plan: BUY/SELL”; BRAK SYGNAŁU, BLOKADA (z powodem),

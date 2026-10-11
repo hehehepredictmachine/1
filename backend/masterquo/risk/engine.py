@@ -6,6 +6,15 @@ Independent of the AI agent: it receives only engine levels, broker data and con
   per 1.0 lot: STOP_LOSS_GROSS = |broker_profit(entry -> SL)|, COST_STRESS = 2*commission + slippage stress
   RAW_LOTS = AVAILABLE / (STOP_LOSS_GROSS + COST_STRESS); LOTS = floor_to_step(min(RAW, volume_max))
   LOTS < volume_min -> BLOCKED (never rounded up)
+  1.8 - the volume is the LARGEST one that satisfies ALL limits at once:
+    risk      AVAILABLE / (STOP_LOSS_GROSS + COST_STRESS)                      (budget never grows with leverage)
+    margin    (free_margin - margin of pending orders) x (1 - buffer) / margin(1 lot)   [order_calc_margin]
+    exposure  (limit x equity - notional of open positions - notional of pending orders) / notional(1 lot)
+              notional(1 lot) in ACCOUNT currency = |order_calc_profit(1 lot, entry -> entry x 1.01)| x 100
+              (no assumed contract size / point value; the broker calculator converts currencies)
+    broker    volume_max
+  floored to volume_step, then re-checked with the broker calculators (loss, margin, notional); stepped down while any
+  limit is violated. Open positions AND pending orders count in the open risk, margin and exposure.
   RR_NET = (sum w_i * profit(entry -> TP_i) - cost) / (|profit(entry -> SL)| + cost)
   RR_NET < rr_block_below -> BLOCKED; < rr_pass_from -> CONDITIONAL; else PASS.
   CONDITIONAL executes with risk x conditional_risk_factor when conditional_rr_executes (else no execution).
@@ -75,10 +84,12 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
              limits, costs_cfg, commission: dict, profit_fn: ProfitFn, margin_fn: MarginFn,
              positions: list[dict], deals: list[dict], day_start_raw: float | None, equity_peak: float | None,
              open_risk_info: dict, margin_mode: str | None, last_bot_loss_at: datetime | None, now: datetime,
-             max_spread_points: float | None, symbol: str) -> dict:
+             max_spread_points: float | None, symbol: str, exposure: dict | None = None, portfolio: dict | None = None,
+             settings_version: str | None = None) -> dict:
     reasons: list[str] = []
-    res: dict = {"engine": "M11-PORT-1.0.0", "side": side, "risk_gate": "BLOCKED", "sizing_status": "NO_SIZING",
-                 "limits_missing": limits_configured(limits), "commission": commission}
+    res: dict = {"engine": "M11-PORT-1.1.0", "side": side, "risk_gate": "BLOCKED", "sizing_status": "NO_SIZING",
+                 "limits_missing": limits_configured(limits), "commission": commission, "settings_version": settings_version}
+    portfolio = portfolio or {}
     order_side = "BUY" if side == "LONG" else "SELL"
     if not quote or not symbol_info or not account:
         res["reason_codes"] = ["QUOTE_OR_SYMBOL_OR_ACCOUNT_UNAVAILABLE"]
@@ -130,6 +141,7 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         res["reason_codes"] = sorted(set(reasons + ["STOP_RISK_NOT_POSITIVE"]))
         return res
     rr = (reward_1 - cost_1) / (stop_gross_1 + cost_1)
+    res["rr_gross"] = round(reward_1 / stop_gross_1, 3)
     res["per_lot"] = {"stop_loss_gross": round(stop_gross_1, 2), "commission_roundtrip": comm_rt_1,
                       "slippage_stress": None if slip_1 is None else round(slip_1, 2), "weighted_reward_gross": round(reward_1, 2),
                       "total_loss_stress": round(stop_gross_1 + cost_1, 2)}
@@ -147,12 +159,18 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
     currency = account.get("currency")
     equity = float(account.get("equity") or 0)
     free_margin = float(account.get("free_margin") or 0)
+    if equity <= 0:
+        reasons.append("EQUITY_NOT_POSITIVE")
     floating = sum(float(p.get("profit") or 0) + float(p.get("swap") or 0) for p in positions)
     daily = daily_loss_used(deals, day_start_raw, floating)
     res.update(currency=currency, equity=equity, free_margin=free_margin, daily=daily, open_risk=open_risk_info,
                positions_count=len(positions), margin_mode=margin_mode)
     if open_risk_info.get("positions_without_sl"):
         reasons.append("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED")
+    pend_risk = float(portfolio.get("pending_risk") or 0.0)
+    if portfolio.get("pending_without_sl"):
+        reasons.append("PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED")
+    total_open_risk = open_risk_info["open_risk"] + pend_risk
     if margin_mode == "NETTING" and any(p.get("symbol") == symbol for p in positions):
         reasons.append("NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL")
     if res["limits_missing"]:
@@ -169,7 +187,7 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
     day_base = equity - daily["floating"] - daily["realized_today"] if daily["status"] == "OK" else None
     daily_cap = day_base * limits.daily_loss_limit_pct / 100.0 if day_base else None
     portfolio_cap = equity * limits.max_total_open_risk_pct / 100.0
-    avail = [budget, portfolio_cap - open_risk_info["open_risk"]]
+    avail = [budget, portfolio_cap - total_open_risk]
     if daily_cap is None:
         reasons.append("DAILY_LOSS_STATE_UNKNOWN")
     else:
@@ -181,38 +199,22 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         res["drawdown_pct"] = round(dd, 2)
         if dd >= limits.max_drawdown_pct:
             reasons.append("DRAWDOWN_BREACH")
-    if len(positions) >= limits.max_open_positions:
+    if len(positions) + int(portfolio.get("pending_count") or 0) >= limits.max_open_positions:
         reasons.append("MAX_OPEN_POSITIONS")
     if limits.cooldown_minutes_after_loss and last_bot_loss_at and now - last_bot_loss_at < timedelta(minutes=limits.cooldown_minutes_after_loss):
         reasons.append("COOLDOWN_AFTER_LOSS")
     available = min(avail)
     res.update(trade_budget=round(budget, 2), daily_cap=None if daily_cap is None else round(daily_cap, 2),
-               portfolio_cap=round(portfolio_cap, 2), available_budget=round(available, 2))
+               portfolio_cap=round(portfolio_cap, 2), available_budget=round(available, 2), pending_risk=round(pend_risk, 2),
+               total_open_risk=round(total_open_risk, 2))
     if available <= 0:
         reasons.append("NO_RISK_BUDGET_AVAILABLE")
     vmin, vmax, step = float(symbol_info["volume_min"]), float(symbol_info["volume_max"]), float(symbol_info["volume_step"])
-    raw = available / (stop_gross_1 + cost_1) if available > 0 else 0.0
-    lots = floor_to_step(min(raw, vmax), step, vmin)
-    res.update(raw_lots=round(raw, 6), lots=lots, volume_min=vmin, volume_step=step)
-    if lots <= 0:
-        reasons.append("SIZE_BELOW_BROKER_MIN_LOT")
-    else:
-        loss_full = profit_fn(order_side, lots, entry, sl)
-        gains_full = [profit_fn(order_side, lots, entry, t["price"]) for t in targets]
-        margin = margin_fn(order_side, lots, entry)
-        cost_full = cost_1 * lots
-        if loss_full is None or margin is None or any(g is None for g in gains_full):
-            reasons.append("BROKER_CALC_UNAVAILABLE_AFTER_ROUNDING")
-        else:
-            res.update(modeled_loss=round(abs(loss_full) + cost_full, 2),
-                       modeled_reward=round(sum(t["weight"] * g for t, g in zip(targets, gains_full)) - cost_full, 2),
-                       margin_required=round(margin, 2))
-            if abs(loss_full) + cost_full > available + 1e-6:
-                reasons.append("ROUNDED_SIZE_EXCEEDS_BUDGET")
-            buf = (limits.min_free_margin_buffer_pct or 0) / 100.0
-            if margin > free_margin * (1 - buf):
-                reasons.append("INSUFFICIENT_FREE_MARGIN")
-            res["sizing_status"] = "SIZED"
+    sized = size_volume(order_side=order_side, entry=entry, sl=sl, targets=targets, available=available, cost_1=cost_1,
+                        stop_gross_1=stop_gross_1, equity=equity, free_margin=free_margin, limits=limits, exposure=exposure,
+                        portfolio=portfolio, profit_fn=profit_fn, margin_fn=margin_fn, vmin=vmin, vmax=vmax, step=step)
+    reasons += sized.pop("reasons")
+    res.update(sized)
     blocking = [r for r in reasons if not r.startswith("RR_NET_CONDITIONAL")]
     res["risk_factor"] = limits.conditional_risk_factor if reduced else 1.0
     if blocking or rr_gate == "BLOCKED":
@@ -223,3 +225,103 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         res["risk_gate"] = "PASS"
     res["reason_codes"] = sorted(set(reasons))
     return res
+
+
+def notional_per_lot(profit_fn: ProfitFn, order_side: str, price: float) -> float | None:
+    """Nominal value of 1 lot in ACCOUNT currency from the broker calculator: a 1% price move x 100."""
+    v = profit_fn(order_side, 1.0, price, price * 1.01 if order_side == "BUY" else price * 0.99)
+    return None if v is None else abs(v) * 100.0
+
+
+def size_volume(*, order_side, entry, sl, targets, available, cost_1, stop_gross_1, equity, free_margin, limits, exposure, portfolio,
+                profit_fn, margin_fn, vmin, vmax, step) -> dict:
+    """Largest volume satisfying risk budget, margin (with buffer and pending orders), exposure limit and broker volume
+    limits; floored to the step and re-verified with the broker calculators. Never rounds up, never raises the risk."""
+    reasons: list[str] = []
+    out: dict = {"volume_min": vmin, "volume_step": step, "volume_max": vmax, "lots": 0.0}
+    buf = (limits.min_free_margin_buffer_pct or 0) / 100.0
+    pend_margin = float(portfolio.get("pending_margin") or 0.0)
+    usable_margin = max(0.0, (free_margin - pend_margin) * (1 - buf))
+    margin_1 = margin_fn(order_side, 1.0, entry)
+    notional_1 = notional_per_lot(profit_fn, order_side, entry)
+    lim = (exposure or {}).get("limit")
+    pos_notional = portfolio.get("positions_notional")
+    pend_notional = float(portfolio.get("pending_notional") or 0.0)
+    caps = {"risk": available / (stop_gross_1 + cost_1) if available > 0 else 0.0, "volume_max": vmax}
+    if margin_1 is None or margin_1 <= 0:
+        reasons.append("BROKER_MARGIN_CALC_UNAVAILABLE")
+        caps["margin"] = 0.0
+    else:
+        caps["margin"] = usable_margin / margin_1
+    if lim:
+        if notional_1 is None or notional_1 <= 0 or pos_notional is None:
+            reasons.append("EXPOSURE_NOT_COMPUTABLE")
+            caps["exposure"] = 0.0
+        else:
+            room = lim * equity - pos_notional - pend_notional
+            caps["exposure"] = max(0.0, room) / notional_1
+            if room <= 0:
+                reasons.append("EXPOSURE_LIMIT_ALREADY_USED")
+    binding = min(caps, key=lambda k: caps[k])
+    raw = max(0.0, min(caps.values()))
+    lots = floor_to_step(raw, step, vmin)
+    out.update(raw_lots=round(caps["risk"], 6), max_lots_by={k: round(v, 6) for k, v in caps.items()}, binding_constraint=binding,
+               margin_per_lot=None if margin_1 is None else round(margin_1, 2), notional_per_lot=None if notional_1 is None else round(notional_1, 2),
+               usable_free_margin=round(usable_margin, 2), pending_margin=round(pend_margin, 2))
+    # re-verify after rounding with the broker calculators; step down while anything is violated
+    checked = None
+    for _ in range(200):
+        if lots <= 0:
+            break
+        loss = profit_fn(order_side, lots, entry, sl)
+        gains = [profit_fn(order_side, lots, entry, t["price"]) for t in targets]
+        margin = margin_fn(order_side, lots, entry)
+        if loss is None or margin is None or any(g is None for g in gains):
+            reasons.append("BROKER_CALC_UNAVAILABLE_AFTER_ROUNDING")
+            lots = 0.0
+            break
+        nominal = notional_1 * lots if notional_1 else None
+        bad = []
+        if abs(loss) + cost_1 * lots > available + 1e-6:
+            bad.append("risk")
+        if margin > usable_margin + 1e-6:
+            bad.append("margin")
+        if lim and nominal is not None and pos_notional is not None and pos_notional + pend_notional + nominal > lim * equity + 1e-6:
+            bad.append("exposure")
+        if not bad:
+            checked = (loss, gains, margin, nominal)
+            break
+        binding = bad[0]
+        lots = round(lots - step, 8)
+        if lots < vmin - 1e-12:
+            lots = 0.0
+    out["binding_constraint"] = binding
+    if lots <= 0 or checked is None:
+        out["lots"] = 0.0
+        reasons.append({"risk": "MIN_LOT_EXCEEDS_RISK_BUDGET", "margin": "MIN_LOT_EXCEEDS_FREE_MARGIN", "exposure": "MIN_LOT_EXCEEDS_EXPOSURE_LIMIT",
+                        "volume_max": "SIZE_BELOW_BROKER_MIN_LOT"}.get(binding, "SIZE_BELOW_BROKER_MIN_LOT"))
+        if available <= 0 or caps["risk"] < vmin:
+            reasons.append("SIZE_BELOW_BROKER_MIN_LOT")
+        out["leverage"] = _lev_block(exposure, equity, pos_notional, pend_notional, None, notional_1, margin_1)
+        return {**out, "reasons": reasons}
+    loss, gains, margin, nominal = checked
+    cost_full = cost_1 * lots
+    out.update(lots=lots, modeled_loss=round(abs(loss) + cost_full, 2),
+               modeled_reward=round(sum(t["weight"] * g for t, g in zip(targets, gains)) - cost_full, 2),
+               margin_required=round(margin, 2), free_margin_after=round(free_margin - pend_margin - margin, 2), sizing_status="SIZED",
+               loss_note="szacowana strata przy SL (kalkulator brokera + prowizja + stres poślizgu) – nie jest gwarantowanym maksimum (luki, poślizg)")
+    out["leverage"] = _lev_block(exposure, equity, pos_notional, pend_notional, nominal, notional_1, margin_1)
+    return {**out, "reasons": reasons}
+
+
+def _lev_block(exposure, equity, pos_notional, pend_notional, nominal, notional_1, margin_1) -> dict:
+    e = exposure or {}
+    def x(v):
+        return None if v is None or not equity or equity <= 0 else round(v / equity, 2)
+    return {"account_leverage": e.get("account_leverage"), "user_limit": e.get("user_limit"), "limit_mode": e.get("mode"),
+            "exposure_limit": e.get("limit"), "note": e.get("note"),
+            "position_notional": None if nominal is None else round(nominal, 2),
+            "effective_exposure_position": x(nominal),
+            "effective_exposure_total": x(None if nominal is None or pos_notional is None else pos_notional + pend_notional + nominal),
+            "effective_exposure_existing": x(None if pos_notional is None else pos_notional + pend_notional),
+            "instrument_margin_leverage": round(notional_1 / margin_1, 1) if notional_1 and margin_1 else None}

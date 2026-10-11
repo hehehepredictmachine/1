@@ -668,6 +668,13 @@ class MarketBridge:
         sym = self.cfg.symbol
         return self._call(lambda m: m.order_calc_margin(m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL, sym, volume, price))
 
+    def calc_profit_sym(self, symbol: str, side: str, volume: float, price_open: float, price_close: float) -> float | None:
+        """Broker profit calculator for ANY symbol (open positions / pending orders on other instruments)."""
+        return self._call(lambda m: m.order_calc_profit(m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL, symbol, volume, price_open, price_close))
+
+    def calc_margin_sym(self, symbol: str, side: str, volume: float, price: float) -> float | None:
+        return self._call(lambda m: m.order_calc_margin(m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL, symbol, volume, price))
+
     def raw_call(self, fn, prio=PRIO_QUOTE, timeout: float | None = None) -> Any:
         return self.worker.call(fn, priority=prio, timeout=timeout or self.cfg.call_timeout_seconds)
 

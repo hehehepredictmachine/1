@@ -1,4 +1,25 @@
-# Raport testów – MasterQUO AI 1.7.1
+# Raport testów – MasterQUO AI 1.8.0
+
+## 1.8.0 – wybór setupu, szczegóły, dźwignia (2026-10-11)
+Pełny przebieg `python tools/run_tests.py`: **250 testów, 249 OK, 1 FAIL** – `test_ui_signal_card.test_09` (błędy 404 w konsoli: panel szczegółów
+pobierał setup z podstawionej w teście decyzji). Poprawka: panel używa wyłącznie identyfikatora scenariusza z trackera silnika; ponowny przebieg
+testów UI (`test_ui_signal_card`, `test_ui_setup_panel`, `test_ui_monitor`): 24/24 OK.
+Nowe testy:
+* `test_leverage_sizing.py` (11): niższy limit dźwigni → mniejszy wolumen; wyższy limit nie zwiększa budżetu ryzyka ani nie przesuwa SL/TP;
+  margin i bufor; brak marginu; zaokrąglenia i minimalny lot za duży (ryzyko / margin / ekspozycja); ponowna weryfikacja po zaokrągleniu
+  (nieliniowy margin); otwarte pozycje i zlecenia oczekujące (ekspozycja, ryzyko, margin, liczba, brak SL); zerowe equity; brak danych;
+  utrata połączenia (kalkulator brokera = None); preferencje per rachunek (serwer:login), walidacja limitu ≤ dźwignia rachunku, trwałość po
+  restarcie; tryb SELECTED nie tworzy setupu; bramka wykonania: zmiana ustawień / mniejszy wolumen / nieudane przeliczenie blokują wysyłkę,
+  poprawna ścieżka order_check + order_send działa (symulator, tryb AUTO_DEMO na rachunku syntetycznym).
+* `test_setup_details.py` (4, silnik + symulator MT5): lista scenariuszy (id, symbol `XAUUSD-`, kierunek, TF, czas), szczegóły BUY/SELL,
+  statusy, warunek świecy dopiero po zamknięciu, brak fikcyjnej historii, trzy wartości dźwigni, wpływ limitu 1:1 na wolumen, wybrana strategia
+  bez wymuszania i bez zleceń, trwałość po restarcie, utrata MT5 → BRAK DANYCH + ZABLOKOWANE.
+* `test_ui_setup_panel.py` (4, prawdziwy monitor w Chromium): AUTO → WSZYSTKIE → „Szczegóły”, odświeżenie zachowuje wybór, WYBRANY SETUP S03
+  bez zleceń, ustawienie dźwigni 1:10 (trzy wartości, opcje powyżej dźwigni rachunku niedostępne), **restart programu zachowuje wybory**.
+* `test_stats_definitions.test_account_roi…`: ROI rachunku metodą Dietza (wpłata nie jest zyskiem; brak offsetu → brak danych).
+NOT_RUN: Twój terminal MT5 / rachunek demo u brokera (`order_calc_margin`, dźwignia i margin `XAUUSD-`, zlecenia oczekujące) – środowisko
+budowy ma tylko symulator.
+
 
 ## 1.7.1 – karta sygnału (2026-10-11)
 Pełny przebieg `python tools/run_tests.py`: 230 testów; 5 testów wykresów (`test_ui_monitor` 01/02/04/05/06) nie przeszło, bo karta

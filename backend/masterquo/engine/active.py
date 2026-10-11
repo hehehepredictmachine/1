@@ -44,6 +44,18 @@ class ActiveEngine:
         self._startup_reset_done = False
         self.ml = None                           # MLService (collector + ASSIST ranking), set by the runtime
         self.listeners: list = []                # fn(events, view) after each scan (bot signals)
+        self.prefs = None                        # AccountPrefs: setup view (AUTO / SELECTED / ALL) per account, set by the runtime
+
+    def selection_cfg(self, ac):
+        """Selector configuration from the per-account setup view (one source for engine and monitor). SELECTED = only
+        that strategy is considered (MANUAL); AUTO and ALL keep the automatic selection. Nothing is forced: the setup must
+        still be detected and pass every gate."""
+        if self.prefs is None:
+            return ac
+        sv = self.prefs.get("setup_view")
+        if sv["mode"] == "SELECTED" and sv.get("strategy_id"):
+            return ac.model_copy(update={"strategy_mode": "MANUAL", "manual_strategy_id": sv["strategy_id"]})
+        return ac.model_copy(update={"strategy_mode": "AUTO", "manual_strategy_id": None})
 
     # ------------------------------------------------------------ helpers
     def _data_status(self, dq: dict, quote: dict | None) -> str:
@@ -99,10 +111,13 @@ class ActiveEngine:
                                          new_data=new_data, now=now, cfg=ac, scanned=scanned if data_ok else set(registry.STRATEGIES))
             if self.ml is not None:
                 self.ml.on_setup_events(events, view, now)
-            self.selector.configure(ac)
+            sel_cfg = self.selection_cfg(ac)
+            self.selector.configure(sel_cfg)
             rows = self.tracker.active(sym, account_key)
             prev_sel = (self.selector.selected or {}).get("setup_id")
-            self.selector.select(rows, cfg=ac, regime=view.regime, data_ok=data_ok, new_data=new_data, now=now, snapshot_id=snapshot_id,
+            if prev_sel and sel_cfg.strategy_mode == "MANUAL" and (self.selector.selected or {}).get("strategy_id") != sel_cfg.manual_strategy_id:
+                self.selector.reset("USER_SELECTED_OTHER_STRATEGY")   # user's choice applies at once (no hysteresis)
+            self.selector.select(rows, cfg=sel_cfg, regime=view.regime, data_ok=data_ok, new_data=new_data, now=now, snapshot_id=snapshot_id,
                                  account_key=account_key, per_strategy=res["per_strategy"],
                                  ml_bonus=(lambda r: self.ml.rank_adjust(r, view)) if self.ml is not None and self.ml.cfg.mode == "ASSIST" else None)
             cur_sel = (self.selector.selected or {}).get("setup_id")
@@ -165,10 +180,7 @@ class ActiveEngine:
                  "setup_score": rec.get("setup_score"), "horizon": rec.get("horizon"), "countertrend": rec.get("countertrend"),
                  "invalidation_level": rec.get("invalidation_level"), "missing_confirmations": rec.get("missing_confirmations"),
                  "entry_plan": rec.get("entry_plan"), "event_id": rec.get("event_id"), "synthetic": rec.get("synthetic")}
-        levels = {"rule_version": f"{rec['strategy_id']}-{rec['strategy_version']}", "status": "AVAILABLE" if rec.get("targets") and rec.get("stop_loss") else "UNAVAILABLE",
-                  "side": rec["direction"], "stop_loss": rec.get("stop_loss"), "invalidation_level": rec.get("invalidation_level"),
-                  "entry_zone": (rec.get("entry_plan") or {}).get("zone"), "targets": rec.get("targets") or [], "exit_rules": rec.get("exit_rules"),
-                  "reasons": [] if rec.get("targets") else ["NO_VALID_TARGET"]}
+        levels = levels_for(rec)
         toggle = cfg.strategies.get(rec["strategy_id"])
         default_trade = rec["strategy_id"] not in registry.DEFAULT_NO_TRADE
         return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": default_trade if toggle is None else toggle.trade,
@@ -191,7 +203,9 @@ class ActiveEngine:
         st = dict(self.selector.state)
         sel = st.get("selected")
         sel_row = self.tracker.get(sel["setup_id"]) if sel else None
-        out = {"contract": CONTRACT, "profile": ac.profile, "strategy_mode": ac.strategy_mode, "manual_strategy_id": ac.manual_strategy_id,
+        sc = self.selection_cfg(ac)
+        out = {"contract": CONTRACT, "profile": ac.profile, "strategy_mode": sc.strategy_mode, "manual_strategy_id": sc.manual_strategy_id,
+               "setup_view": self.prefs.get("setup_view") if self.prefs is not None else None,
                "system_state": st.get("system_state") if ac.profile == "ACTIVE" else "DISABLED_PROFILE_ORIGINAL",
                "regime": st.get("regime"), "selected_strategy_id": (sel or {}).get("strategy_id"),
                "selected_strategy_version": (sel or {}).get("strategy_version"), "selected": public(sel_row),
@@ -231,3 +245,11 @@ class ActiveEngine:
     def selection_log(self, limit: int = 30) -> list[dict]:
         return self.db.query("SELECT id, at, strategy_mode, previous_strategy, selected_strategy, selected_setup, reason, snapshot_id FROM strategy_selection_log ORDER BY id DESC LIMIT ?",
                              (limit,))
+
+
+def levels_for(rec: dict) -> dict:
+    """Technical levels of a scenario exactly as the strategy produced them (never changed by sizing or leverage)."""
+    return {"rule_version": f"{rec['strategy_id']}-{rec['strategy_version']}", "status": "AVAILABLE" if rec.get("targets") and rec.get("stop_loss") else "UNAVAILABLE",
+            "side": rec["direction"], "stop_loss": rec.get("stop_loss"), "invalidation_level": rec.get("invalidation_level"),
+            "entry_zone": (rec.get("entry_plan") or {}).get("zone"), "targets": rec.get("targets") or [], "exit_rules": rec.get("exit_rules"),
+            "reasons": [] if rec.get("targets") else ["NO_VALID_TARGET"]}

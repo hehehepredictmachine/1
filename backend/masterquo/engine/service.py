@@ -67,6 +67,7 @@ class EngineService:
         self._last_decision_hash: str | None = None
         self._last_full_mono = 0.0
         self._last_h1_agent = 0.0
+        self.prefs = None                 # AccountPrefs (runtime) - leverage / exposure limit and settings version
         bridge.add_listener(self._on_bridge)
 
     # ------------------------------------------------------------ lifecycle
@@ -427,6 +428,7 @@ class EngineService:
         with b._lock:
             positions = list(b.positions)
             deals = list(b.deals)
+            orders = list(getattr(b, "orders", []) or [])
         commission = resolve_commission(cfg.costs, deals, cfg.mt5.symbol)
         day_start = b.server_day_start_utc()
         day_start_raw = (day_start.timestamp() + b.clock.offset) if (day_start and b.clock.offset is not None) else None
@@ -438,6 +440,11 @@ class EngineService:
             except Exception:
                 return None
         try:
+            portfolio = self.portfolio_snapshot(positions, orders)
+        except Exception:                            # terminal call failed -> exposure unknown (blocks when a limit is set)
+            portfolio = {"positions_notional": None, "pending_count": 0, "error": "PORTFOLIO_SNAPSHOT_FAILED"}
+        exposure = self.prefs.exposure_limit() if self.prefs is not None else None
+        try:
             orisk = risk_engine.open_risk(positions, pos_risk)
             last_loss = self.db.one("SELECT closed_at FROM trades WHERE source='BOT' AND net_pnl < 0 AND IFNULL(account_key,'')=IFNULL(?, '') ORDER BY closed_at DESC LIMIT 1",
                                     (b.account_key,))
@@ -447,13 +454,59 @@ class EngineService:
                                        positions=positions, deals=deals, day_start_raw=day_start_raw,
                                        equity_peak=(peak or {}).get("p"), open_risk_info=orisk, margin_mode=(b.account or {}).get("margin_mode"),
                                        last_bot_loss_at=parse_iso(last_loss["closed_at"]) if last_loss else None, now=utcnow(),
-                                       max_spread_points=cfg.risk.max_spread_points, symbol=cfg.mt5.symbol)
+                                       max_spread_points=cfg.risk.max_spread_points, symbol=cfg.mt5.symbol, exposure=exposure,
+                                       portfolio=portfolio, settings_version=self.prefs.settings_version() if self.prefs is not None else None)
         except Exception as exc:  # terminal call failure etc. -> blocked, never guessed
             res = {"risk_gate": "BLOCKED", "reason_codes": ["RISK_EVALUATION_FAILED:" + type(exc).__name__]}
         res["entry_basis"] = basis
         if not live:
             res["risk_gate"] = "BLOCKED" if res.get("risk_gate") == "BLOCKED" else "PREVIEW"
         return res
+
+    PENDING_BUY = (2, 4, 6)          # ORDER_TYPE_BUY_LIMIT, BUY_STOP, BUY_STOP_LIMIT
+    PENDING_SELL = (3, 5, 7)
+
+    def portfolio_snapshot(self, positions: list[dict], orders: list[dict]) -> dict:
+        """Notional of open positions and pending orders (account currency, broker calculator), margin and risk of pending
+        orders. order_calc_margin is per order - the portfolio view (positions + pending + netting/hedging mode) is built here.
+        Any failed calculation makes the notional unknown (the exposure limit then blocks instead of guessing)."""
+        b = self.bridge
+        pos_notional: float | None = 0.0
+        for p in positions:
+            side = "BUY" if p.get("side") in ("BUY", "LONG") else "SELL"
+            px = float(p.get("price_current") or p.get("price_open") or 0)
+            v = b.calc_profit_sym(p.get("symbol"), side, float(p.get("volume") or 0), px, px * 1.01 if side == "BUY" else px * 0.99) if px else None
+            if v is None:
+                pos_notional = None
+                break
+            pos_notional += abs(v) * 100.0
+        pend_notional = pend_margin = pend_risk = 0.0
+        without_sl, count = [], 0
+        for o in orders:
+            t = o.get("type")
+            if t not in self.PENDING_BUY and t not in self.PENDING_SELL:
+                continue
+            count += 1
+            side = "BUY" if t in self.PENDING_BUY else "SELL"
+            vol, px, sym = float(o.get("volume_current") or 0), float(o.get("price_open") or 0), o.get("symbol")
+            m = b.calc_margin_sym(sym, side, vol, px) if px else None
+            n = b.calc_profit_sym(sym, side, vol, px, px * 1.01 if side == "BUY" else px * 0.99) if px else None
+            pend_margin += m or 0.0
+            pend_notional += abs(n or 0.0) * 100.0
+            if o.get("sl"):
+                r = b.calc_profit_sym(sym, side, vol, px, float(o["sl"]))
+                pend_risk += max(0.0, -(r or 0.0))
+            else:
+                without_sl.append(o.get("ticket"))
+        return {"positions_notional": None if pos_notional is None else round(pos_notional, 2), "pending_notional": round(pend_notional, 2),
+                "pending_margin": round(pend_margin, 2), "pending_risk": round(pend_risk, 2), "pending_count": count,
+                "pending_without_sl": without_sl, "margin_mode": (b.account or {}).get("margin_mode")}
+
+    def recheck_risk(self, d: dict) -> dict:
+        """Fresh risk evaluation for an existing decision (gateway, right before sending): current price, account,
+        positions, pending orders, settings version and every limit."""
+        setup = d.get("setup") or {}
+        return self._risk(setup.get("direction") or d.get("analysis_direction"), d.get("levels") or {}, self.bridge.quote_status(), True, None)
 
     # ------------------------------------------------------------ contexts for the agent
     def _store_context(self, full, dq, setup, levels, risk, quote, macro) -> None:

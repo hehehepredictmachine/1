@@ -14,6 +14,7 @@ from .db.database import Database
 from .engine.legacy import Profiles
 from .engine.service import EngineService
 from .events import AppLog, EventBus
+from .prefs import AccountPrefs
 from .license.guard import LicenseGuard, licensed
 from .execution.gateway import ExecutionGateway
 from .execution.manager import PositionManager
@@ -80,6 +81,12 @@ class Runtime:
         self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
         self.scanner.signals = self.signals
         self.engine.active.listeners.append(self.signals.on_main_events)
+        self.prefs = AccountPrefs(self.db, self.bridge, self.cfg)          # per account (server:login): setup view + leverage limit
+        self.engine.prefs = self.prefs
+        self.engine.active.prefs = self.prefs
+        self.prefs.listeners.append(lambda name, v: (self.engine.mark_dirty(), self._publish_prefs()))
+        # another account (server:login) = its own preferences; broker parameters are re-read by the bridge
+        self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)
         for comp in (self.engine, self.gateway, self.agent, self.ml, self.scanner, self.signals):
             comp.license = self.license
         self.license.on_change = lambda st: self.bus.publish("license", st)
@@ -87,6 +94,12 @@ class Runtime:
         self._stop = threading.Event()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+
+    def _publish_prefs(self) -> None:
+        try:
+            self.bus.publish("prefs", {**self.prefs.all(), "exposure": self.prefs.exposure_limit()})
+        except Exception:
+            log.exception("prefs publish failed")
 
     def request_shutdown(self) -> None:
         if self.shutdown_hook:

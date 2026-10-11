@@ -74,6 +74,9 @@ export default function StatsPanel({ index, stats, mode, setMode }: { index: num
         <div className="stat wide"><label>RACHUNEK MT5 (wszystkie operacje, 30 dni)</label>
           <b>{stats?.account ? `${fmtNum(stats.account.trading_net_all_symbols)} ${s.account?.currency ?? ""}` : "—"}</b>
           <small>wpłaty/wypłaty osobno: {stats?.account ? fmtNum(stats.account.balance_operations) : "—"}</small></div>
+        <div className="stat wide" title={stats?.account_roi?.method ?? stats?.account_roi?.note}><label>ROI RACHUNKU (z equity, bez wpłat/wypłat)</label>
+          <b data-testid="account-roi">{stats?.account_roi?.status === "OK" ? `${fmtNum(stats.account_roi.roi_pct, 2)}%` : "brak danych"}</b>
+          <small>{stats?.account_roi?.status === "OK" ? `${new Date(stats.account_roi.period_from).toLocaleDateString("pl-PL")} – ${new Date(stats.account_roi.period_to).toLocaleDateString("pl-PL")}, przepływy ${fmtNum(stats.account_roi.net_flows)} (${stats.account_roi.flows_count})` : stats?.account_roi?.note ?? ""}</small></div>
       </div>
     </div>
   );

@@ -91,6 +91,17 @@ MEDIA_SLOTS = {"background": ("background-matrix.gif", "background-matrix-static
 MAX_GIF_BYTES = 15 * 1024 * 1024
 
 
+class SetupViewReq(BaseModel):
+    mode: str = Field(pattern="^(AUTO|SELECTED|ALL)$")
+    strategy_id: str | None = Field(default=None, max_length=4)
+    focus_setup_id: str | None = Field(default=None, max_length=120)
+
+
+class LeverageReq(BaseModel):
+    mode: str = Field(pattern="^(AUTO|MANUAL)$")
+    limit: int | None = Field(default=None, ge=1, le=1000)
+
+
 class MemoryReq(BaseModel):
     status: str
 
@@ -194,6 +205,7 @@ def create_app(rt, port: int) -> FastAPI:
                 "synthetic": rt.demo or b.synthetic, "server_time": iso(utcnow()),
                 "connection": b.connection_status(), "account": acct, "symbol": b.symbol_status_dict(), "quote": b.quote_status(),
                 "tf_meta": b.tf_meta(), "analysis": rt.engine.analysis_summary(), "decision": rt.engine.current_decision(),
+                "prefs": {**rt.prefs.all(), "exposure": rt.prefs.exposure_limit()},
                 "engine": {"last_error": rt.engine.last_error, "cycle_ms": rt.engine.cycle_ms, "full_cycles": rt.engine.full_count},
                 "agent": rt.agent.status(), "agent_last": rt.agent.public_result(rt.agent.last_result), "mode": mode,
                 "risk_config": cfg.risk.model_dump(), "costs_config": cfg.costs.model_dump(), "strategy_config": cfg.strategy.model_dump(),
@@ -337,7 +349,8 @@ def create_app(rt, port: int) -> FastAPI:
         ds = b.server_day_start_utc()
         ds_raw = ds.timestamp() + b.clock.offset if ds and b.clock.offset is not None else None
         return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
-                "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None}
+                "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None,
+                "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset)}
 
     @app.get("/api/v1/news")
     def news():
@@ -460,11 +473,58 @@ def create_app(rt, port: int) -> FastAPI:
                                       "manual_strategy_id": req.manual_strategy_id if req.strategy_mode == "MANUAL" else None}})
         except Exception as exc:
             raise HTTPException(400, f"INVALID: {exc}") from exc
+        # legacy switch -> the same per-account setup view the engine uses (one source)
+        rt.prefs.set("setup_view", {"mode": "SELECTED" if req.strategy_mode == "MANUAL" else "AUTO", "strategy_id": req.manual_strategy_id})
         rt.engine.active.selector.reset("STRATEGY_MODE_CHANGED")
         rt.log.info("AUTO", "STRATEGY_MODE", f"Wybór strategii: {req.strategy_mode}" + (f" ({req.manual_strategy_id})" if req.strategy_mode == "MANUAL" else "")
                     + ". Tryb wykonywania zleceń bez zmian.")
         rt.engine.mark_dirty()
         return rt.engine.active.status(compact=True)
+
+    # ------------------------------------------------------------ setup view + leverage (per account) and scenario details
+    @app.get("/api/v1/prefs")
+    def prefs_get():
+        from ..prefs import LEVERAGE_CHOICES
+        return {**rt.prefs.all(), "exposure": rt.prefs.exposure_limit(), "leverage_choices": list(LEVERAGE_CHOICES)}
+
+    @app.post("/api/v1/prefs/setup-view")
+    def prefs_setup_view(req: SetupViewReq):
+        from ..prefs import PrefsError
+        try:
+            v = rt.prefs.set("setup_view", req.model_dump())
+        except PrefsError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if v["mode"] != "ALL":
+            rt.engine.active.selector.reset("SETUP_VIEW_CHANGED")
+        rt.log.info("AUTO", "SETUP_VIEW", f"Wybór setupu: {v['mode']}" + (f" {v['strategy_id']}" if v["mode"] == "SELECTED" else "")
+                    + " (nie wymusza sygnału ani zlecenia; wszystkie filtry obowiązują).")
+        return prefs_get()
+
+    @app.post("/api/v1/prefs/leverage")
+    def prefs_leverage(req: LeverageReq):
+        from ..prefs import PrefsError
+        try:
+            v = rt.prefs.set("leverage", req.model_dump())
+        except PrefsError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        rt.log.info("RISK", "LEVERAGE_LIMIT", ("Limit ekspozycji: AUTO (dźwignia rachunku z MT5)" if v["mode"] == "AUTO" else f"Limit ekspozycji ustawiony w bocie: 1:{v['limit']}")
+                    + " – nie zmienia dźwigni u brokera; dotyczy przyszłych decyzji, istniejące pozycje bez zmian.")
+        return prefs_get()
+
+    @app.get("/api/v1/setups")
+    def setups_list(include_terminal: bool = True):
+        from ..engine import setup_details
+        return setup_details.scenarios(rt.engine, include_terminal=include_terminal)
+
+    @app.get("/api/v1/setups/{setup_id}/details")
+    def setup_detail(setup_id: str):
+        from ..engine import setup_details
+        if len(setup_id) > 120:
+            raise HTTPException(400, "SETUP_ID_INVALID")
+        out = setup_details.details(rt.engine, setup_id)
+        if out is None:
+            raise HTTPException(404, "SETUP_NOT_FOUND")
+        return out
 
     # ------------------------------------------------------------ ML (Decision Tree + XGBoost)
     @app.get("/api/v1/ml/status")

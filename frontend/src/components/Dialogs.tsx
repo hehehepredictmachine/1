@@ -3,6 +3,7 @@ import { apiGet, apiSend, apiUpload } from "../api";
 import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
+import { LeverageSettings } from "./SetupPanel";
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -167,6 +168,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Mnożnik ryzyka dla RR warunkowego", "risk.conditional_risk_factor", "num", "0.5 = połowa ryzyka na transakcję")}
         {field("Blokada wejść w oknie wydarzenia makro", "risk.macro_block_high_impact", "bool")}
         {field("Brak kalendarza makro blokuje wejścia", "risk.macro_calendar_required", "bool", "domyślnie wyłączone")}
+        <LeverageSettings />
       </div>}
       {tab === "costs" && <div className="form">
         <div className="note">Profil „Zero” to deklaracja – nie dowód zerowych kosztów. Spread jest w cenach Bid/Ask (nie odejmujemy go drugi raz).</div>

@@ -110,3 +110,31 @@ def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -
             "balance_operations": round(sum(float(d.get("profit") or 0) for d in balance_ops), 2),
             "balance_operations_count": len(balance_ops), "deals": len(trading),
             "note": "Wpłaty/wypłaty (operacje balance) są wykazane osobno i nie są zyskiem strategii."}
+
+
+def account_roi(db, account_key: str | None, deals: list[dict], server_offset: float | None, days: int = 30) -> dict:
+    """ROI of the MT5 account over the stored equity history (equity snapshots every 60 s while the program runs),
+    modified Dietz: deposits / withdrawals (balance deals) are external flows, never profit. Without at least two
+    snapshots, or without the server time offset (deal times are server time), there is no ROI - never a guess."""
+    if not account_key:
+        return {"status": "NO_ACCOUNT"}
+    frm = iso(utcnow() - timedelta(days=days))
+    rows = db.query("SELECT ts, equity FROM equity_snapshots WHERE mode='ACCOUNT' AND account_key=? AND ts>=? ORDER BY ts", (account_key, frm))
+    if len(rows) < 2:
+        return {"status": "NO_DATA", "note": "za mało zapisanych snapshotów equity (zapis co 60 s podczas pracy programu)"}
+    if server_offset is None:
+        return {"status": "NO_DATA", "note": "nieznany offset czasu serwera – nie można przypisać wpłat/wypłat do okresu"}
+    t0, t1 = parse_iso(rows[0]["ts"]).timestamp(), parse_iso(rows[-1]["ts"]).timestamp()
+    span = max(1.0, t1 - t0)
+    flows = []
+    for d in deals:
+        if d.get("type") != DEAL_TYPE_BALANCE:
+            continue
+        t = float(d.get("time") or 0) - server_offset
+        if t0 < t <= t1:
+            flows.append((float(d.get("profit") or 0), (t1 - t) / span))
+    e0, e1 = float(rows[0]["equity"]), float(rows[-1]["equity"])
+    roi = roi_modified_dietz(e0, e1, flows)
+    return {"status": "OK" if roi is not None else "NO_DATA", "roi_pct": roi, "period_from": rows[0]["ts"], "period_to": rows[-1]["ts"],
+            "start_equity": round(e0, 2), "end_equity": round(e1, 2), "net_flows": round(sum(a for a, _ in flows), 2), "flows_count": len(flows),
+            "method": "modified Dietz – wpłaty/wypłaty jako przepływy zewnętrzne, nie zysk", "snapshots": len(rows)}
