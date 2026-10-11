@@ -33,6 +33,8 @@ from . import features as fe
 from .dataset import SampleStore
 from .registry import Registry
 
+from ..license.guard import licensed
+
 log = logging.getLogger("masterquo.ml")
 PRED_CONTRACT = "MQ-ML-PRED-1.0.0"
 STATUSES = ("COLLECTING", "WAITING_FOR_LABELS", "TRAINING", "VALIDATING", "SHADOW", "ACTIVE", "DEGRADED", "ERROR")
@@ -156,6 +158,8 @@ class MLService:
     # ------------------------------------------------------------ labeller
     def _label_loop(self) -> None:
         while not self._stop.wait(30):
+            if not licensed(self):
+                continue
             try:
                 self.label_once()
             except Exception as exc:
@@ -189,6 +193,9 @@ class MLService:
     # ------------------------------------------------------------ scheduler
     def _sched_loop(self) -> None:
         while not self._stop.is_set():
+            if not licensed(self):
+                self._stop.wait(5)
+                continue
             try:
                 self.check_once()
             except Exception as exc:

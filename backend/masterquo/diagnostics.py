@@ -47,7 +47,7 @@ def doctor() -> int:
     chk("Python", OK if sys.version_info[:2] in ((3, 12), (3, 13)) and bits == 64 else (WARN if bits == 64 else FAIL),
         f"{sys.version.split()[0]} {bits}-bit ({sys.executable})")
     chk("System", OK if sys.platform == "win32" else WARN, platform.platform())
-    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets", "scipy", "sklearn", "xgboost", "joblib"):
+    for mod in ("fastapi", "uvicorn", "pydantic", "anthropic", "numpy", "websockets", "scipy", "sklearn", "xgboost", "joblib", "cryptography", "jwt"):
         try:
             m = importlib.import_module(mod)
             chk(f"Pakiet {mod}", OK, getattr(m, "__version__", "?"))

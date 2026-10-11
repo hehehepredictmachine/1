@@ -1,0 +1,20 @@
+:root{--bg:#0e1116;--panel:#171b22;--line:#2a313c;--fg:#e6e9ee;--mut:#94a0b0;--ok:#2ecc71;--bad:#ff5c5c;--warn:#f5b642;--acc:#4ea1ff}
+@media (prefers-color-scheme: light){:root{--bg:#f4f6f9;--panel:#fff;--line:#d7dce3;--fg:#141a22;--mut:#5c6878;--acc:#1767d1}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,Arial,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header #who{margin-left:auto;color:var(--mut)}header #clock{color:var(--mut);font-variant-numeric:tabular-nums}
+main{padding:16px;max-width:1300px;margin:0 auto}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+button{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.danger{border-color:var(--bad);color:var(--bad)}button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+input,select,textarea{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.kpi b{display:block;font-size:24px}.kpi span{color:var(--mut)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600}.wrap{overflow-x:auto}
+.st-AKTYWNA,.st-OK{color:var(--ok)}.st-WYGASLA,.st-WYGASLA_DZIERZAWA{color:var(--warn)}.st-COFNIETA,.st-ZAKONCZONA,.err{color:var(--bad)}
+.mut{color:var(--mut)}.key{font-family:Consolas,monospace;font-size:15px;word-break:break-all;background:var(--bg);padding:10px;border-radius:6px;border:1px dashed var(--acc)}
+form.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}form.row label{display:flex;flex-direction:column;gap:3px;color:var(--mut)}
+.login{max-width:360px;margin:40px auto}.login label{display:block;margin-bottom:10px}.login input{width:100%}
+@media (max-width:640px){main{padding:10px 16px}th:nth-child(n+5),td:nth-child(n+5){display:none}}

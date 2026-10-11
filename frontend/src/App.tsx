@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LicenseBadge, LicenseBlocker, useLicense } from "./components/License";
 import { apiGet } from "./api";
 import { BackgroundLayer, useAppearance } from "./appearance";
 import AgentDrawer from "./components/AgentDrawer";
@@ -54,6 +55,7 @@ export default function App() {
   const [stats, setStats] = useState<any>(null);
   const [autoFull, reloadAuto] = useAutoFull();
   const { prefs } = useAppearance();
+  const lic = useLicense();
 
   useEffect(() => {
     if (s.loaded && s.first_run_completed === false) setSettings(true);
@@ -67,7 +69,7 @@ export default function App() {
     return () => clearInterval(t);
   }, [statsMode, s.loaded, (s.logs || []).filter((l: any) => l.code === "SETTLED" || l.category === "PAPER").length]);
 
-  if (!s.loaded) return <><BackgroundLayer /><div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div></>;
+  if (!s.loaded) return <><BackgroundLayer /><LicenseBlocker lic={lic} /><div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div></>;
   const o = (k: keyof ChartOpts, v: any) => setOpts({ ...opts, [k]: v });
   const chart = (tf: string, idx: number) => (
     <ChartPanel key={tf + idx} tf={tf} index={idx} opts={opts} fullscreen={full === tf + idx} onFullscreen={() => setFull(full === tf + idx ? null : tf + idx)} />
@@ -75,6 +77,7 @@ export default function App() {
   return (
     <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
       <BackgroundLayer />
+      <LicenseBlocker lic={lic} />
       {s.synthetic && <div className="synthetic-banner">DANE SYNTETYCZNE – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
       <Header onAgent={() => setAgent(!agent)} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)} botStats={stats} />
       <div className="toolbar">
@@ -92,6 +95,7 @@ export default function App() {
             <option value="LOCAL">Czas lokalny</option><option value="UTC">UTC</option><option value="SERVER">Czas serwera</option>
           </select>
         </div>
+        <LicenseBadge lic={lic} />
         <span className="toolbar-note">Każdy wykres ma własny zoom i przyciski. Synchronizacja zakresu – tylko w wybranej grupie (A/B). * = wskaźnik tylko wizualny</span>
       </div>
       <main className={cls("grid", layout === "SIX" ? "six" : "std")}>

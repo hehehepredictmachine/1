@@ -14,6 +14,7 @@ from .db.database import Database
 from .engine.legacy import Profiles
 from .engine.service import EngineService
 from .events import AppLog, EventBus
+from .license.guard import LicenseGuard, licensed
 from .execution.gateway import ExecutionGateway
 from .execution.manager import PositionManager
 from .execution.modes import ModeManager
@@ -36,8 +37,11 @@ def real_mt5_factory():
 
 
 class Runtime:
-    def __init__(self, *, demo: bool = False, mt5_factory=None):
+    def __init__(self, *, demo: bool = False, mt5_factory=None, license_guard=None):
         self.demo = demo
+        # License of THIS run (created by masterquo_start after the key was pasted). Without it every protected module
+        # stays blocked - there is no default "allow" guard in the product code.
+        self.license = license_guard if license_guard is not None else LicenseGuard(None)
         self.cfg = ConfigStore()
         if demo:
             self.cfg.set_runtime_flag(synthetic_demo=True)
@@ -76,6 +80,9 @@ class Runtime:
         self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
         self.scanner.signals = self.signals
         self.engine.active.listeners.append(self.signals.on_main_events)
+        for comp in (self.engine, self.gateway, self.agent, self.ml, self.scanner, self.signals):
+            comp.license = self.license
+        self.license.on_change = lambda st: self.bus.publish("license", st)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
         self.security = None
@@ -104,6 +111,7 @@ class Runtime:
 
     def start(self) -> None:
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
+        self.license.start()
         self.worker.start()
         self.bridge.start()
         self.news.start()
@@ -121,6 +129,8 @@ class Runtime:
 
     def _signal_track_loop(self) -> None:
         while not self._stop.wait(60):
+            if not licensed(self):
+                continue
             try:
                 self.signals.track()
             except Exception:
@@ -139,6 +149,7 @@ class Runtime:
         self.news.stop()
         self.bridge.stop()
         self.worker.stop()
+        self.license.stop()               # ends the server session (frees the slot at once)
 
 
 def platform_info() -> dict:

@@ -14,6 +14,7 @@ import time
 import unittest
 
 import _env
+from _license import LicenseServerFixture  # noqa: E402
 from _env import TempData, wait_for
 
 PORT = 8797
@@ -44,11 +45,15 @@ class TestMonitorUI(unittest.TestCase):
             raise unittest.SkipTest("frontend not built (npm run build)")
         cls.td = TempData()
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, "first_run_completed": True}, f)
+            cls.lic = LicenseServerFixture()
+            cls.lic_info = cls.lic.issue(note="test")
+            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, **cls.lic.client_config(), "first_run_completed": True}, f)
         cls.env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         cls.env.pop("ANTHROPIC_API_KEY", None)
-        cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=cls.env, cwd=str(_env.ROOT / "backend"),
+        cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=cls.env, cwd=str(_env.ROOT / "backend"), stdin=subprocess.PIPE,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cls.proc.stdin.write((cls.lic_info["key"] + "\n").encode())
+        cls.proc.stdin.close()               # key pasted once, like a user at masterquo_start
         if not wait_for(_health, 60, 0.5):
             cls.proc.kill()
             raise RuntimeError("server did not start")
@@ -79,6 +84,7 @@ class TestMonitorUI(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 cls.proc.kill()
             cls.td.close()
+        cls.lic.close()
 
     # ------------------------------------------------------------ helpers
     def logical(self, cid):

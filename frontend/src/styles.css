@@ -420,3 +420,10 @@ small.muted { color: var(--muted); }
 .sp-ai { border-top: 1px dashed var(--line); padding-top: 4px; }
 .context-tf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 8px 8px; }
 @media (max-width: 900px) { .plan-row, .context-tf { grid-template-columns: minmax(0, 1fr); } .sp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---- license (1.7) */
+.lic-badge { padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border, #333); font-size: 12px; white-space: nowrap; }
+.lic-badge.warn { border-color: #f5b642; color: #f5b642; }
+.lic-block { position: fixed; inset: 0; z-index: 9999; background: rgba(0, 0, 0, 0.82); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.lic-card { max-width: 560px; background: var(--panel, #171b22); color: var(--text, #e6e9ee); border: 1px solid #ff5c5c; border-radius: 10px; padding: 20px; }
+.lic-card h2 { margin-top: 0; color: #ff5c5c; }

@@ -34,6 +34,8 @@ def _registry_ids() -> set[str]:
 from .schema import OUTPUT_SCHEMA, AgentAssessment, record
 from .tools import TOOL_DEFS, Toolbox
 
+from ..license.guard import licensed
+
 log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
@@ -126,6 +128,9 @@ class ClaudeAgent:
     def request(self, trigger: str, *, snapshot_id: str | None, setup_id: str | None, setup_state: str | None,
                 question: str | None = None) -> str | None:
         if self.loop is None or self.queue is None:
+            return None
+        if not licensed(self):
+            self.last_error = "LICENSE_REQUIRED"
             return None
         key = f"{trigger}:{setup_id}:{setup_state}:{question or ''}"
         if key in self.pending:

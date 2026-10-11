@@ -17,6 +17,7 @@ import threading
 import uuid
 
 from ..db.database import dumps
+from ..license.guard import licensed
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from ..timeutil import iso, parse_iso, utcnow
 
@@ -90,6 +91,9 @@ class ExecutionGateway:
 
     # ------------------------------------------------------------ public
     def execute(self, decision_id: str, initiated_by: str = "USER") -> dict:
+        if not licensed(self):                       # NEW orders only; PositionManager keeps protecting open positions
+            self.log.warn("EXECUTION", "BLOCKED", "Wykonanie zablokowane: brak ważnej licencji (LICENSE_REQUIRED)")
+            return {"status": "BLOCKED", "reason": "LICENSE_REQUIRED"}
         with self._lock:
             try:
                 d = self._validate(decision_id)

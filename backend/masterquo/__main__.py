@@ -1,6 +1,7 @@
 """Command line entry point (used by the Windows launchers).
 
-  python -m masterquo serve [--demo] [--no-browser]   start (or open the already running monitor)
+  python -m masterquo serve [--demo] [--no-browser]   start (or open the already running monitor); asks for the
+                                                      license key at every start (masterquo_start.bat)
   python -m masterquo stop                              stop only this project's server
   python -m masterquo doctor                            environment + MT5 + Claude diagnostics
   python -m masterquo clock                             raw MT5 time diagnostics (no trading)
@@ -78,10 +79,14 @@ def cmd_serve(args) -> int:
     if lock is None:
         print("[MasterQUO] Inna instancja MasterQUO już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
+    guard = _license_session(args)
+    if guard is None:
+        return 5
     import uvicorn
     from .api.app import create_app
     from .runtime import Runtime
-    rt = Runtime(demo=args.demo)
+    rt = Runtime(demo=args.demo, license_guard=guard)
+    guard.telemetry_fn = lambda: {"app_version": _app_version(), "execution_mode": rt.modes.mode, "symbol": rt.cfg.get().mt5.symbol}
     app = create_app(rt, port)
     tok = _rt_dir() / "shutdown.token"
     tok.write_text(rt.security.shutdown_token, encoding="utf-8")
@@ -116,6 +121,47 @@ def cmd_serve(args) -> int:
                 pass
         print("[MasterQUO] Zatrzymano.")
     return 0
+
+
+def _app_version() -> str:
+    try:
+        from .version import APP_VERSION
+        return APP_VERSION
+    except Exception:
+        return "?"
+
+
+def _license_session(args, stdin=None):
+    """masterquo_start: asks for the license key at EVERY run (no "remember", no reading from file / env / registry /
+    keyring), opens the server session of this run and returns the guard. Up to 3 attempts; nothing is stored."""
+    from .config import ConfigStore
+    from .license.client import LicenseClient, LicenseError
+    from .license.guard import LicenseGuard, prompt_key
+    lc = ConfigStore().get().license
+    try:
+        client = LicenseClient(lc.server_url, lc.public_key_pem, client_version=_app_version(), timeout=lc.timeout_seconds,
+                               telemetry_opt_in=lc.telemetry_opt_in)
+    except LicenseError as e:
+        print(f"[MasterQUO] Licencja: {e.message}", file=sys.stderr)
+        return None
+    for attempt in range(3):
+        key = prompt_key(stdin=stdin)
+        if not key:
+            print("[MasterQUO] Nie wklejono licencji – program nie uruchamia modułów chronionych.", file=sys.stderr)
+            return None
+        try:
+            st = client.open(key)
+        except LicenseError as e:
+            print(f"[MasterQUO] Licencja odrzucona: {e.message} [{e.code}]", file=sys.stderr)
+            if e.code in ("SERVER_UNREACHABLE", "RATE_LIMITED", "SERVER_CLOCK_ANOMALY", "LICENSE_EXPIRED", "LICENSE_REVOKED") or attempt == 2:
+                return None
+            continue
+        finally:
+            key = None                                     # drop the only reference to the key
+        left = st.get("license_seconds_left") or 0
+        print(f"[MasterQUO] Licencja aktywna – pozostało {left // 3600} h {(left % 3600) // 60} min (wg zegara serwera licencji).")
+        return LicenseGuard(client)
+    return None
 
 
 def _port_busy(port: int) -> bool:

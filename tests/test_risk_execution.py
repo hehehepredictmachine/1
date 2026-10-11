@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timedelta
 
 import _env  # noqa: F401
+from _license import AllowGuard  # noqa: E402
 from _env import UTC, TempData, core, wait_for
 
 LIMITS = {"risk_per_trade_pct": 1.0, "max_total_open_risk_pct": 3.0, "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0, "max_open_positions": 3}
@@ -174,6 +175,7 @@ class TestExecution(unittest.TestCase):
         self.engine = StubEngine(LifecycleStore(db))
         self.paper = PaperBroker(cfg, b, db, bus, log)
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
+        self.gw.license = AllowGuard()
         self.mgr = PositionManager(cfg, b, db, bus, log, self.modes, self.paper)
         self.gw.manager = self.mgr
         self.mgr.reconciled_epoch = b.session_epoch
@@ -252,6 +254,7 @@ class TestExecution(unittest.TestCase):
         # a new gateway instance over the same DB (= restart) refuses the same setup again
         from masterquo.execution.gateway import ExecutionGateway
         gw2 = ExecutionGateway(self.cfg, self.b, self.db, self.bus, self.log, self.modes, self.engine, self.paper)
+        gw2.license = AllowGuard()
         gw2.manager = self.mgr
         self.assertEqual(gw2.execute("MQD-1")["status"], "DUPLICATE")
         self.assertEqual(len(self.fake.positions_get()), 1)
