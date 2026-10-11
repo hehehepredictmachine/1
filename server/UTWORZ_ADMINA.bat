@@ -1,16 +1,27 @@
 @echo off
 setlocal
 rem Tworzy konto administratora panelu licencji (haslo + kod TOTP). Bez domyslnego hasla - wpisujesz je sam.
-cd /d "%~dp0"
-set "PY=%~dp0..\.venv-server\Scripts\python.exe"
+rem Folder serwera = ten, w ktorym jest pakiet mqlicense (dziala z MasterQUO_SERWER_LICENCJI\ albo z jego podfolderu server\)
+set "SRV="
+if exist "%~dp0mqlicense\__init__.py" set "SRV=%~dp0"
+if not defined SRV if exist "%~dp0server\mqlicense\__init__.py" set "SRV=%~dp0server\"
+if not defined SRV (
+  echo [BLAD] Nie znaleziono folderu serwera ^(mqlicense^) obok tego pliku ani w podfolderze server\.
+  echo        Rozpakuj CALA paczke MasterQUO_SERWER_LICENCJI_*.zip i uruchom plik z folderu server\.
+  pause
+  exit /b 1
+)
+cd /d "%SRV%"
+set "VENV=%SRV%..\.venv-server"
+set "PY=%VENV%\Scripts\python.exe"
 if not exist "%PY%" (
   echo [BLAD] Brak .venv-server - uruchom najpierw INSTALUJ_SERWER.bat
   pause
   exit /b 1
 )
 set "ENVF="
-if exist "%~dp0.env" set "ENVF=%~dp0.env"
-if exist "%~dp0data\dev\dev.env" set "ENVF=%~dp0data\dev\dev.env"
+if exist "%SRV%.env" set "ENVF=%SRV%.env"
+if exist "%SRV%data\dev\dev.env" set "ENVF=%SRV%data\dev\dev.env"
 if not defined ENVF (
   echo [BLAD] Serwer nie jest jeszcze skonfigurowany. Uruchom raz start_dev_server.bat ^(test lokalny^) albo przygotuj .env ^(produkcja^).
   pause

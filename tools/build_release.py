@@ -52,12 +52,14 @@ def scan(files):
         sys.exit(f"secret-like content in packaged files: {hits}")
 
 
-def write_zip(name, top, files):
+def write_zip(name, top, files, extra=None):
     out = ROOT / "release" / name
     out.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in files:
             z.write(ROOT / f, top + f)
+        for src, dst in (extra or {}).items():          # convenience copies (e.g. server launchers also at the package root)
+            z.write(ROOT / src, top + dst)
     print(f"{name}: {len(files)} files, {out.stat().st_size} bytes, sha256 {hashlib.sha256(out.read_bytes()).hexdigest()}")
 
 
@@ -72,7 +74,9 @@ def main():
         f"# MasterQUO AI {VERSION} (klient) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
         encoding="utf-8", newline="\n")
     write_zip(CLIENT_ZIP, "MasterQUO_AI/", client + ["MANIFEST_SHA256.txt"])
-    write_zip(SERVER_ZIP, "MasterQUO_SERWER_LICENCJI/", server)
+    # the server .bat files find the server folder themselves, so they also work from the package root
+    launchers = {f: Path(f).name for f in server if f.startswith("server/") and f.count("/") == 1 and f.endswith(".bat")}
+    write_zip(SERVER_ZIP, "MasterQUO_SERWER_LICENCJI/", server, launchers)
 
 
 if __name__ == "__main__":
