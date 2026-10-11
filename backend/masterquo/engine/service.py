@@ -23,7 +23,7 @@ from ..db.database import dumps
 from ..risk import engine as risk_engine
 from ..risk.costs import resolve_commission
 from ..timeutil import TIMEFRAMES, iso, parse_iso, utcnow
-from . import chartdata, context_tf, decision as decision_mod, lifecycle, signal_contract, targets, volzones
+from . import chartdata, context_tf, decision as decision_mod, lifecycle, signal_contract, signal_view, targets, volzones
 from .active import ActiveEngine
 from .legacy import LegacyEngines, build_snapshot
 
@@ -317,11 +317,26 @@ class EngineService:
                 self._record_signal(d["signal"])
         except Exception as exc:                     # presentation/contract only - never blocks the decision
             d["signal"] = {"status": "BRAK_DANYCH", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        try:                                         # one presentation model from THIS decision (same snapshot / signal id)
+            digits = int((self.bridge.symbol_info or {}).get("digits") or 2)
+            d["signal_view"] = signal_view.present(d, d.get("signal"), symbol=sym, digits=digits, execution_mode=self.modes.mode)
+            d["tf_overview"] = signal_view.tf_overview(bars, dq.get("timeframes"), entry_tf=(d.get("signal") or {}).get("entry_tf"),
+                                                       plan_side=d["signal_view"].get("plan_side"),
+                                                       h8_filter=bool((cfg.active.params.get("S11") or {}).get("h8_trend_filter")))
+        except Exception as exc:
+            d["signal_view"] = {"view_schema": signal_view.VIEW_SCHEMA, "state": "BRAK_DANYCH", "reason": f"Błąd prezentacji: {type(exc).__name__}",
+                                "checklist": [], "missing_summary": ""}
         with self._lock:
             self.dq = dq
             self.decision = d
         self._store_context(full, dq, setup, levels, risk, quote, macro)
-        if d["content_hash"] != self._last_decision_hash or force_publish:
+        sv = d.get("signal_view") or {}
+        view_key = (sv.get("state"), sv.get("signal_id"), sv.get("signal_status"), sv.get("execution_state"), sv.get("valid_until"),
+                    sv.get("missing_summary"), tuple(sv.get("block_reasons") or []), (sv.get("ai") or {}).get("status"), (sv.get("ai") or {}).get("verdict"),
+                    tuple((x["tf"], x["direction"], x["data"], x["last_closed_utc"], x["conflict"]) for x in d.get("tf_overview") or []))
+        view_changed = view_key != getattr(self, "_last_view_key", None)    # card state changes (TTL, AI, blocks) are pushed at once
+        self._last_view_key = view_key
+        if d["content_hash"] != self._last_decision_hash or force_publish or view_changed:
             changed = d["content_hash"] != self._last_decision_hash
             self._last_decision_hash = d["content_hash"]
             if changed:

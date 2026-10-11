@@ -97,7 +97,9 @@ class TestMonitorUI(unittest.TestCase):
         return self.page.evaluate(f"() => window.__mqCharts['{cid}'].view()")
 
     def wheel(self, cid, dy, times=4):
-        box = self.page.locator(f"[data-chart-id='{cid}'] .chart-box").bounding_box()
+        loc = self.page.locator(f"[data-chart-id='{cid}'] .chart-box")
+        loc.scroll_into_view_if_needed()                   # 1.7.1: the signal card is above the charts
+        box = loc.bounding_box()
         self.page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.4)
         for _ in range(times):
             self.page.mouse.wheel(0, dy)
@@ -116,6 +118,7 @@ class TestMonitorUI(unittest.TestCase):
         for c in ("panel1", "panel3", "panel4"):
             self.assertAlmostEqual(self.width(after[c]), self.width(before[c]), delta=0.5, msg=c)
         # drag the zoomed chart to the left (manual view, no longer following)
+        self.page.locator("[data-chart-id='panel2'] .chart-box").scroll_into_view_if_needed()
         box = self.page.locator("[data-chart-id='panel2'] .chart-box").bounding_box()
         self.page.mouse.move(box["x"] + box["width"] * 0.4, box["y"] + box["height"] * 0.4)
         self.page.mouse.down()

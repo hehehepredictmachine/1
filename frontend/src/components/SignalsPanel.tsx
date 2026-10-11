@@ -4,6 +4,9 @@ import { useStore } from "../store";
 import { cls, fmtNum, fmtTime } from "../util";
 import Checklist from "./Checklist";
 import SignalPlan, { ContextTF } from "./SignalPlan";
+import { planText } from "./SignalTop";
+
+const SIDE: Record<string, string> = { LONG: "BUY", SHORT: "SELL" };
 
 const ACTIVE = ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED", "WATCH", "EARLY"];
 
@@ -49,11 +52,14 @@ export default function SignalsPanel({ index }: { index: number }) {
                 {["M1", "M5", "M15", "M30", "H1", "H4", "H8"].map((x) => <option key={x}>{x}</option>)}</select>
             </div>
             <table className="tbl">
-              <thead><tr><th>Czas</th><th>Strategia</th><th>TF</th><th>Kierunek</th><th>Status</th><th>Wykonanie</th><th>Źródło</th><th>Wejście</th><th>SL</th><th>TP</th><th>AI</th></tr></thead>
-              <tbody>{hist.map((x: any) => <tr key={x.signal_id}><td>{fmtTime(x.generated_at, true)}</td><td>{x.strategy_id}</td><td>{x.entry_tf}</td><td>{x.side}</td>
+              <thead><tr><th>Czas</th><th>Strategia</th><th>TF</th><th>Kierunek</th><th>Status</th><th>Wykonanie</th><th>Źródło</th><th>Wejście</th><th>SL</th><th>TP</th><th>AI</th><th></th></tr></thead>
+              <tbody>{hist.map((x: any) => <tr key={x.signal_id}><td>{fmtTime(x.generated_at, true)}</td><td>{x.strategy_id}</td><td>{x.entry_tf}</td><td title={x.side}>{SIDE[x.side] ?? x.side}</td>
                 <td>{x.status}</td><td>{x.execution_state}</td><td>{x.decision_source}</td><td>{x.entry_price ?? "—"}</td><td>{x.stop_loss ?? "—"}</td>
-                <td>{(x.targets || []).map((t: any) => t.price).join(" / ")}</td><td>{x.ai?.verdict ?? (x.ai?.status === "AI_NIEDOSTEPNE" ? "AI niedostępne" : "—")}</td></tr>)}
-                {!hist.length && <tr><td colSpan={11} className="muted">Brak sygnałów dla wybranych filtrów.</td></tr>}</tbody>
+                <td>{(x.targets || []).map((t: any) => t.price).join(" / ")}</td><td>{x.ai?.verdict ?? (x.ai?.status === "AI_NIEDOSTEPNE" ? "AI niedostępne" : "—")}</td>
+                <td><button className="small" title="Kopiuj plan: kierunek, symbol, wejście, SL, TP, RR, ważność" onClick={() => navigator.clipboard?.writeText(planText({
+                  side: SIDE[x.side], symbol: x.symbol, entry: x.entry_price ?? x.trigger_level, sl: x.stop_loss, tp: (x.targets || []).map((t: any) => t.price),
+                  rr: x.rr_net ?? x.rr_gross, validUntil: x.valid_until, digits: d?.signal_view?.digits ?? 2, waiting: x.status !== "POTWIERDZONY", signalId: x.signal_id }))}>Kopiuj</button></td></tr>)}
+                {!hist.length && <tr><td colSpan={12} className="muted">Brak sygnałów dla wybranych filtrów.</td></tr>}</tbody>
             </table>
           </div>
         )}

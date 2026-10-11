@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import SignalTop from "./components/SignalTop";
 import { LicenseBadge, LicenseBlocker, useLicense } from "./components/License";
 import { apiGet } from "./api";
 import { BackgroundLayer, useAppearance } from "./appearance";
@@ -98,6 +99,7 @@ export default function App() {
         <LicenseBadge lic={lic} />
         <span className="toolbar-note">Każdy wykres ma własny zoom i przyciski. Synchronizacja zakresu – tylko w wybranej grupie (A/B). * = wskaźnik tylko wizualny</span>
       </div>
+      <SignalTop />
       <main className={cls("grid", layout === "SIX" ? "six" : "std")}>
         {layout === "STD" ? (
           <>

@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.7.1 – czytelny monitor: BUY / SELL, karta sygnału, prosta checklista
+* **Karta sygnału na górze monitora**: duże BUY (zielone) / SELL (czerwone) tylko dla aktualnego, potwierdzonego sygnału otwarcia,
+  który przeszedł reguły strategii i decyzji; OCZEKIWANIE (bursztynowe) z „Plan: BUY/SELL”; BRAK SYGNAŁU, BLOKADA (z powodem),
+  NIEAKTUALNY, BRAK DANYCH. Każdy stan ma napis (nie tylko kolor). Wejście / SL / TP / RR dużą czcionką z podpowiedziami skrótów,
+  ryzyko i wolumen, czas wygenerowania i ważności z odliczaniem, aktualność danych, jedno zdanie „dlaczego”, trigger, unieważnienie,
+  źródło (STRATEGIA / STRATEGIA + AI), widoczne „AI NIEDOSTĘPNE”, rozdzielone: cena odniesienia / planowane wejście / wykonanie.
+  „Kopiuj plan” kopiuje dokładnie wartości z karty. Długie uzasadnienia, identyfikatory i diagnostyka – w „Szczegóły”.
+* **Prosta checklista** obok karty: spełnione ✓ / niespełnione ✗ / brak danych ?, z opisem i podsumowaniem „Do potwierdzenia brakuje: …”;
+  tylko warunki wybranej strategii i bramek decyzji (tryb wykonania nie jest warunkiem potwierdzenia – osobna informacja na karcie).
+* **Kontekst interwałów** (M1…D1, w tym M30 i H8): kierunek, rola, ostatnia zamknięta świeca, tworząca się świeca, dostępność danych,
+  konflikt z planowanym kierunkiem i jego realny wpływ na kwalifikację.
+* **Spójność**: backend buduje jeden model prezentacji (`engine/signal_view.py`, `MQ-SIGNAL-VIEW-1.0.0`) z tej samej decyzji
+  (snapshot / decyzja / sygnał); zmiana stanu karty (TTL, blokada, ocena AI) jest wysyłana od razu. Monitor tylko obniża stan:
+  po upływie ważności → NIEAKTUALNY, bez połączenia lub przy decyzji starszej niż 2 min → BRAK DANYCH; po ponownym połączeniu karta
+  pochodzi z bieżącej decyzji silnika (stara karta nie wraca jako BUY/SELL). Spóźniona odpowiedź AI nie zmienia stanu ani źródła.
+* Historia sygnałów: BUY/SELL zamiast LONG/SHORT, przycisk „Kopiuj” w każdym wierszu.
+* Bez zmian: logika strategii, progi wejścia, risk engine, tryby wykonania, M30/H8, licencje.
+
 ## 1.7.0 – sygnały z planem wejścia, M30/H8, strategia EMA20 Pullback, licencje 72 h, panel administratora
 * **Sygnał (kontrakt `MQ-SIGNAL-1.0.0`)**: status (OCZEKIWANIE/POTWIERDZONY/ZABLOKOWANY/UNIEWAŻNIONY/WYGASŁY/BRAK_DANYCH) i osobny stan
   wykonania, ceny (odniesienie, Bid/Ask, planowane wejście, fill dopiero po wykonaniu), SL/TP, ryzyko w pieniądzu i %, wolumen, RR brutto

@@ -1,7 +1,7 @@
 """Builds MANIFEST_SHA256.txt and two SEPARATE packages from git-tracked files only:
 
-  release/MasterQUO_KLIENT_1_7_0.zip            bot for Windows (no license server, no secrets, no admin rights)
-  release/MasterQUO_SERWER_LICENCJI_1_7_0.zip   license server + administrator panel (server/ only, no keys, no database)
+  release/MasterQUO_KLIENT_1_7_1.zip            bot for Windows (no license server, no secrets, no admin rights)
+  release/MasterQUO_SERWER_LICENCJI_1_7_1.zip   license server + administrator panel (server/ only, no keys, no database)
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys, license keys and secret assignments; a hit aborts the build.
@@ -14,9 +14,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.7.0"
-CLIENT_ZIP = "MasterQUO_KLIENT_1_7_0.zip"
-SERVER_ZIP = "MasterQUO_SERWER_LICENCJI_1_7_0.zip"
+VERSION = "1.7.1"
+CLIENT_ZIP = "MasterQUO_KLIENT_1_7_1.zip"
+SERVER_ZIP = "MasterQUO_SERWER_LICENCJI_1_7_1.zip"
 FORBIDDEN_PARTS = {".venv", ".venv-server", "node_modules", "__pycache__", ".git"}
 SERVER_DOCS = ["INSTRUKCJA_WINDOWS_PL.md", "AUDYT_MASTERQUO.md", "CHANGELOG.md"]
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)

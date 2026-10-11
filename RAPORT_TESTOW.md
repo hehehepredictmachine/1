@@ -1,4 +1,13 @@
-# Raport testów – MasterQUO AI 1.7.0
+# Raport testów – MasterQUO AI 1.7.1
+
+## 1.7.1 – karta sygnału (2026-10-11)
+Pełny przebieg `python tools/run_tests.py`: 230 testów; 5 testów wykresów (`test_ui_monitor` 01/02/04/05/06) nie przeszło, bo karta
+sygnału przesunęła wykresy poniżej widocznego obszaru (ruch myszy poza oknem) – poprawka w teście (przewinięcie do wykresu),
+po niej `test_ui_monitor`: 11/11 OK. Nowe: `test_signal_view.py` (6) i `test_ui_signal_card.py` (9, prawdziwy monitor w Chromium:
+BUY, SELL, oczekiwanie z kierunkiem, brak sygnału, blokada, brak danych, AI niedostępne, spóźniona odpowiedź AI, wygaśnięcie,
+reconnect, kopiowanie planu = wartości karty, karta = decyzja silnika, 1920/1366/900 px, konsola bez błędów) – PASS.
+Zrzuty: `data/logs/ui_signal_card/`. NOT_RUN: Windows i Twój terminal MT5 (środowisko budowy: Linux + symulator).
+
 
 ## 1.7 – przebieg z 2026-10-11
 
