@@ -86,6 +86,14 @@ class Runtime:
             self.shutdown_hook()
 
     def _on_event(self, ev: dict) -> None:
+        if ev["type"] == "agent_result":
+            r = ev.get("data") or {}
+            rec = r.get("record") or {}
+            if r.get("status") == "OK" and r.get("setup_id") and rec.get("proposed_action"):
+                row = self.engine.active.tracker.get(r["setup_id"])          # direction of exactly the assessed setup
+                if row:
+                    want = "BUY" if row["record"]["direction"] == "LONG" else "SELL"
+                    self.signals.set_ai_verdict(r["setup_id"], "ZGODA" if rec["proposed_action"] == want else "BRAK_ZGODY")
         if ev["type"] == "decision":
             d = ev["data"]
             s = d.get("setup") or {}

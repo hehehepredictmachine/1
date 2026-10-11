@@ -23,7 +23,7 @@ from ..db.database import dumps
 from ..risk import engine as risk_engine
 from ..risk.costs import resolve_commission
 from ..timeutil import TIMEFRAMES, iso, parse_iso, utcnow
-from . import chartdata, decision as decision_mod, lifecycle, targets, volzones
+from . import chartdata, context_tf, decision as decision_mod, lifecycle, signal_contract, targets, volzones
 from .active import ActiveEngine
 from .legacy import LegacyEngines, build_snapshot
 
@@ -57,6 +57,7 @@ class EngineService:
         self.last_full: dict | None = None
         self.decision: dict | None = None
         self.charts: dict[str, dict] = {}
+        self._last_signal_key: dict[str, tuple] = {}
         self.contexts: collections.OrderedDict[str, dict] = collections.OrderedDict()
         self.cycle_ms: float | None = None
         self.full_count = 0
@@ -68,6 +69,12 @@ class EngineService:
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
+        try:
+            n = self.expire_signals_on_start()
+            if n:
+                self.log.info("SIGNAL", "RESTART_EXPIRED", f"Po restarcie {n} wcześniejszych sygnałów oznaczono jako WYGASŁY (nie są bieżące).")
+        except Exception:
+            pass
         threading.Thread(target=self._loop, name="engine", daemon=True).start()
 
     def stop(self) -> None:
@@ -261,6 +268,7 @@ class EngineService:
         if cfg.active.profile == "ACTIVE":
             events = self.active.maybe_scan(bars, dq, quote, force=False, snapshot_id=full["snapshot_id"])
             setup, levels, active_ctx = self.active.decision_inputs()
+            levels = self._tp_from_entry(setup, levels, quote)
             if setup and levels and levels["status"] == "AVAILABLE":
                 live = setup["state"] == "CONFIRMED" and quote is not None
                 risk = self._risk(setup["direction"], levels, quote, live, self.active.hypothetical_entry())
@@ -289,6 +297,20 @@ class EngineService:
                 d["checklist"] = checklist_mod.build(d, self.active.selected_row(), no_setup_reasons=self.active.why_no_setup())
             except Exception as exc:                 # presentation only - never blocks the decision
                 d["checklist"] = {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        try:
+            ctx = context_tf.summarize(bars, dq.get("timeframes"), cfg.active.params.get("S11"))
+            d["context_tf"] = ctx
+            row = self.active.tracker.get(setup["setup_id"]) if (setup and active_ctx is not None) else None
+            sig = signal_contract.build(d, quote=quote, row=row, agent_result=(self.agent.by_setup.get(setup["setup_id"]) if (self.agent and setup) else None),
+                                        agent_status=self.agent.status() if self.agent else None, context=ctx,
+                                        costs={**((risk or {}).get("commission") or {}), "slippage_stress_points": cfg.costs.slippage_stress_points},
+                                        attempts=self.gateway.recent_attempts(10) if self.gateway is not None else [], ml=d.get("ml"),
+                                        data_source=("SYNTHETIC" if self.bridge.synthetic else f"MT5:{(self.bridge.account or {}).get('server')}"))
+            d["signal"] = signal_contract.ttl_status(sig, now_iso) if sig else None
+            if d["signal"]:
+                self._record_signal(d["signal"])
+        except Exception as exc:                     # presentation/contract only - never blocks the decision
+            d["signal"] = {"status": "BRAK_DANYCH", "error": f"{type(exc).__name__}: {exc}"[:200]}
         with self._lock:
             self.dq = dq
             self.decision = d
@@ -312,6 +334,52 @@ class EngineService:
                 self.gateway.execute(d["decision_id"], initiated_by="AUTO")
             except Exception as exc:
                 self.log.error("EXECUTION", "AUTO_EXECUTE_FAILED", f"Automatyczne wykonanie nieudane: {exc}")
+
+    def _tp_from_entry(self, setup: dict | None, levels: dict | None, quote: dict | None) -> dict | None:
+        """Strategies whose plan is 'TP = rr x risk from the real entry' (S11, exit_rules.tp_rule = RR_FROM_FILL): once the
+        setup is CONFIRMED the target is recomputed from the planned entry (Ask for LONG, Bid for SHORT), not from the
+        signal close. Other strategies keep their structural targets."""
+        if not setup or not levels or levels.get("status") != "AVAILABLE" or not quote or setup.get("state") != "CONFIRMED":
+            return levels
+        er = (levels.get("exit_rules") or {})
+        if er.get("tp_rule") != "RR_FROM_FILL" or levels.get("stop_loss") is None:
+            return levels
+        entry = quote["ask"] if setup["direction"] == "LONG" else quote["bid"]
+        risk = (entry - levels["stop_loss"]) if setup["direction"] == "LONG" else (levels["stop_loss"] - entry)
+        if risk <= 0:
+            return {**levels, "status": "UNAVAILABLE", "reasons": ["PRICE_BEYOND_STOP"]}
+        rr = float(er.get("rr") or 2.5)
+        tp = entry + rr * risk if setup["direction"] == "LONG" else entry - rr * risk
+        digits = int((self.bridge.symbol_info or {}).get("digits") or 2)
+        return {**levels, "targets": [{"price": round(tp, digits), "weight": 1.0, "basis": f"RR_{rr:g}_FROM_PLANNED_ENTRY"}],
+                "tp_basis": {"entry": entry, "rr": rr}}
+
+    def _record_signal(self, sig: dict) -> None:
+        """Signal history: one row per signal_id, updated when its status / execution state changes."""
+        key = (sig["status"], sig["execution_state"], (sig.get("ai") or {}).get("verdict"))
+        if self._last_signal_key.get(sig["signal_id"]) == key:
+            return
+        self._last_signal_key[sig["signal_id"]] = key
+        now = sig.get("generated_at")
+        self.db.execute("""INSERT INTO signal_history(signal_id, first_seen_at, updated_at, symbol, setup_id, strategy_id, entry_tf, side, status,
+                           execution_state, decision_source, ai_verdict, synthetic, record_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           ON CONFLICT(signal_id) DO UPDATE SET updated_at=excluded.updated_at, status=excluded.status,
+                           execution_state=excluded.execution_state, decision_source=excluded.decision_source, ai_verdict=excluded.ai_verdict,
+                           record_json=excluded.record_json""",
+                        (sig["signal_id"], now, now, sig["symbol"], sig["setup_id"], sig["strategy_id"], sig["entry_tf"], sig["side"], sig["status"],
+                         sig["execution_state"], sig["decision_source"], (sig.get("ai") or {}).get("verdict"), int(bool(sig.get("synthetic"))), dumps(sig)))
+        self.bus.publish("signal", sig)
+
+    def expire_signals_on_start(self) -> int:
+        """After a restart no stored signal is current: open ones are closed as WYGASŁY (reason RESTART)."""
+        rows = self.db.query("SELECT signal_id, record_json FROM signal_history WHERE status IN ('OCZEKIWANIE','POTWIERDZONY','ZABLOKOWANY')")
+        import json as _json
+        for r in rows:
+            rec = _json.loads(r["record_json"])
+            rec["status"] = "WYGASŁY"
+            rec["block_reasons"] = sorted(set((rec.get("block_reasons") or []) + ["RESTART"]))
+            self.db.execute("UPDATE signal_history SET status='WYGASŁY', updated_at=?, record_json=? WHERE signal_id=?", (iso(utcnow()), dumps(rec), r["signal_id"]))
+        return len(rows)
 
     def _ml_gate(self, setup: dict | None) -> dict | None:
         if self.ml is None or self.cfg_store.get().active.profile != "ACTIVE":

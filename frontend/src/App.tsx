@@ -80,10 +80,10 @@ export default function App() {
       <div className="toolbar">
         <div className="tabs small">
           <button className={cls(layout === "STD" && "on")} onClick={() => setLayout("STD")}>Układ standardowy</button>
-          <button className={cls(layout === "SIX" && "on")} onClick={() => setLayout("SIX")}>6 wykresów</button>
+          <button className={cls(layout === "SIX" && "on")} onClick={() => setLayout("SIX")}>Wszystkie interwały (8)</button>
         </div>
         {layout === "STD" && <div className="tabs small"><span className="lbl">Panel 4:</span>
-          {["H1", "H4", "D1"].map((t) => <button key={t} className={cls(p4 === t && "on")} onClick={() => setP4(t)}>{t}</button>)}</div>}
+          {["M30", "H1", "H4", "H8", "D1"].map((t) => <button key={t} className={cls(p4 === t && "on")} onClick={() => setP4(t)}>{t}</button>)}</div>}
         <div className="toggles">
           {([["showRsi", "RSI"], ["showMacd", "MACD"], ["showStructure", "BOS/CHoCH"], ["showZones", "FVG/OB"], ["showVol", "IV walls / Daily"], ["syncCrosshair", "Wspólny celownik"]] as const).map(([k, l]) => (
             <label key={k}><input type="checkbox" checked={!!opts[k]} onChange={(e) => o(k, e.target.checked)} />{l}</label>
@@ -106,9 +106,9 @@ export default function App() {
           </>
         ) : (
           <>
-            {["M1", "M5", "M15", "H1", "H4", "D1"].map((tf, i) => chart(tf, i + 1))}
-            <SignalsPanel index={7} />
-            <StatsPanel index={8} stats={stats} mode={statsMode} setMode={setStatsMode} />
+            {["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"].map((tf, i) => chart(tf, i + 1))}
+            <SignalsPanel index={9} />
+            <StatsPanel index={10} stats={stats} mode={statsMode} setMode={setStatsMode} />
           </>
         )}
         <div className="auto-row-grid">
@@ -121,7 +121,7 @@ export default function App() {
           <MarketsPanel onOpen={setMarket} />
           <BotSignalsPanel onOpen={setMarket} />
         </div>
-        <div className="ml-row"><MLPanel index={layout === "SIX" ? 9 : 7} /></div>
+        <div className="ml-row"><MLPanel index={layout === "SIX" ? 11 : 7} /></div>
         <div className="bottom-row">
           <NewsPanel />
           <RiskPanel onSettings={() => setSettings(true)} />

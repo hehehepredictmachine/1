@@ -51,7 +51,7 @@ class TestActivePipeline(unittest.TestCase):
         self.assertEqual(st["data_status"], "OK")
         self.assertGreaterEqual(st["scans"], 1)
         self.assertIn(st["regime"]["state"], ("TREND_UP", "TREND_DOWN", "RANGE", "COMPRESSION", "EXPANSION", "EXHAUSTION_OR_REVERSAL_CANDIDATE", "TRANSITION"))
-        self.assertEqual(len(st["strategies"]), 10)
+        self.assertEqual(len(st["strategies"]), 11)          # S01-S10 + S11 EMA20 Pullback
         self.assertNotEqual(st["system_state"], "STARTING")              # works with no Claude key and no DXY symbol
         d = self.engine.current_decision()
         self.assertEqual(d["profile"], "ACTIVE")

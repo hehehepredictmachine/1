@@ -221,7 +221,9 @@ class ActiveEngine:
             if ps.get("status") != "OK":
                 out.append(f"{sid}: {ps['status']} {', '.join(ps.get('reasons') or [])[:80]}")
             elif not ps.get("published"):
-                out.append(f"{sid}: {', '.join(ps.get('reasons') or ['brak struktury'])[:90]}")
+                txt = ", ".join(ps.get("reasons") or ["brak struktury"])
+                txt = txt.replace("LONG:", "scen. wzrostowy ").replace("SHORT:", "scen. spadkowy ").replace("<WATCH", " < próg obserwacji")
+                out.append(f"{sid}: {txt[:90]}")
         for rc in st.get("reason_codes") or []:
             out.append("Selektor: " + rc)
         return out[:16]

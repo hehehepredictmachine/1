@@ -275,6 +275,37 @@ class TestMonitorUI(unittest.TestCase):
         state = json.loads(p.evaluate("() => fetch('/api/v1/bot-signals').then(r => r.text())"))
         self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] for x in state["items"]))
 
+    def test_11_signal_plan_context_m30_h8_and_history(self):
+        p = self.page
+        p.wait_for_selector("[data-testid=signal-plan]", timeout=30000)
+        p.wait_for_selector("[data-testid=context-tf] .ctx-card[data-tf=H8]", timeout=30000)
+        h8 = p.locator(".ctx-card[data-tf=H8]").inner_text()
+        self.assertTrue("natywne MT5" in h8 or "BRAK_DANYCH" in h8, h8)               # source is always visible, never hidden
+        st = json.loads(p.evaluate("() => fetch('/api/v1/context-tf').then(r => r.text())"))
+        self.assertIn("M30", st["context"])
+        self.assertIn("H8", st["context"])
+        self.assertIn(st["context"]["H8"]["status"], ("OK", "BRAK_DANYCH", "INSUFFICIENT_HISTORY", "STALE"))
+        sig = st["signal"]
+        if sig:
+            self.assertIn(sig["status"], ("OCZEKIWANIE", "POTWIERDZONY", "ZABLOKOWANY", "UNIEWAŻNIONY", "WYGASŁY", "BRAK_DANYCH"))
+            self.assertIn(sig["decision_source"], ("STRATEGIA", "STRATEGIA + AI"))
+            self.assertEqual(sig["ai"]["status"], "AI_NIEDOSTEPNE")                    # no API key in tests: never a fake AI verdict
+            self.assertIsNone(sig["probability_win"])
+            self.assertIsNone(sig["fill_price"])
+        p.locator("button", has_text="Historia sygnałów").first.click()
+        p.wait_for_selector("[data-testid=signal-history]", timeout=10000)
+        p.locator("button", has_text="Scenariusze").first.click()
+        # all eight timeframes, M30 and H8 charts load real bars
+        p.locator("button", has_text="Wszystkie interwały").click()
+        p.wait_for_function("() => ['M30','H8'].every(tf => Object.values(window.__mqCharts).some(c => c.tf === tf && c.bars() > 50))", timeout=60000)
+        if os.environ.get("MQ_SCREENSHOT_DIR"):
+            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "all_timeframes.png"), full_page=True)
+        p.locator("button", has_text="Układ standardowy").click()
+        p.wait_for_function("() => ['panel1','panel2','panel3','panel4'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)", timeout=60000)
+        if os.environ.get("MQ_SCREENSHOT_DIR"):
+            p.locator("[data-testid=signal-plan]").scroll_into_view_if_needed()
+            p.locator(".plan-row").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "signal_plan.png"))
+
     def test_08_checklist_and_ml_panel(self):
         panel = self.page.locator("[data-testid='entry-checklist']")
         panel.wait_for(timeout=30000)

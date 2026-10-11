@@ -270,6 +270,21 @@ def create_app(rt, port: int) -> FastAPI:
         return {"symbol": symbol, "tf": tf, "meta": meta, "bars": data, "volatility": vol,
                 "bot_signals": [x for x in sig if x["status"] == "OPEN"][:3], "synthetic": rt.bridge.synthetic}
 
+    @app.get("/api/v1/signal-history")
+    def signal_history(strategy: str | None = None, status: str | None = None, tf: str | None = None, limit: int = Query(100, ge=1, le=1000)):
+        where, args = ["synthetic=?"], [int(bool(rt.bridge.synthetic))]
+        for col, val in (("strategy_id", strategy), ("status", status), ("entry_tf", tf)):
+            if val:
+                where.append(f"{col}=?")
+                args.append(val)
+        rows = rt.db.query(f"SELECT record_json FROM signal_history WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?", (*args, limit))
+        return {"items": [json.loads(r["record_json"]) for r in rows]}
+
+    @app.get("/api/v1/context-tf")
+    def context_tf_view():
+        d = rt.engine.current_decision() or {}
+        return {"context": d.get("context_tf"), "signal": d.get("signal")}
+
     @app.get("/api/v1/bot-signals")
     def bot_signals(symbol: str | None = None, limit: int = Query(50, ge=1, le=500), rejected: bool = True):
         if symbol:

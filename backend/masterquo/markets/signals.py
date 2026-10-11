@@ -204,6 +204,10 @@ class BotSignalService:
                 log.exception("telegram notify failed")
         return out
 
+    # ------------------------------------------------------------ AI qualification (measured separately from the strategy)
+    def set_ai_verdict(self, setup_id: str, verdict: str) -> None:
+        self.db.execute("UPDATE ai_signals SET ai_verdict=? WHERE source='BOT' AND setup_id=?", (verdict, setup_id))
+
     # ------------------------------------------------------------ tracking
     def track(self) -> int:
         rows = self.db.query("SELECT * FROM ai_signals WHERE source='BOT' AND status='OPEN'")
@@ -258,8 +262,11 @@ class BotSignalService:
         if not include_rejected:
             where += " AND status<>'REJECTED'"
         rows = self.db.query(f"SELECT * FROM ai_signals WHERE {where} ORDER BY created_at DESC LIMIT ?", (*args, limit))
-        allr = self.db.query(f"SELECT status, action, outcome_r FROM ai_signals WHERE {where}", tuple(args))
-        return {"items": [self._public(r) for r in rows], "stats": stats([dict(r) for r in allr])}
+        allr = [dict(r) for r in self.db.query(f"SELECT status, action, outcome_r, ai_verdict FROM ai_signals WHERE {where}", tuple(args))]
+        by_ai = {k: stats([r for r in allr if (r.get("ai_verdict") or "BRAK_OCENY") == k]) for k in ("ZGODA", "BRAK_ZGODY", "BRAK_OCENY")}
+        return {"items": [self._public(r) for r in rows], "stats": stats(allr), "stats_by_ai": by_ai,
+                "ai_note": "Porównanie: wyniki sygnałów strategii, z którymi AI się zgodziło / nie zgodziło / których nie oceniło. "
+                           "Mała liczba sygnałów = brak wniosku."}
 
     def status(self) -> dict:
         c = self.cfg

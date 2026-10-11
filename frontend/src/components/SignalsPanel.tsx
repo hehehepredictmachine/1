@@ -3,13 +3,21 @@ import { apiGet } from "../api";
 import { useStore } from "../store";
 import { cls, fmtNum, fmtTime } from "../util";
 import Checklist from "./Checklist";
+import SignalPlan, { ContextTF } from "./SignalPlan";
 
 const ACTIVE = ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED", "WATCH", "EARLY"];
 
 export default function SignalsPanel({ index }: { index: number }) {
   const { s } = useStore();
   const d = s.decision;
-  const [tab, setTab] = useState<"setups" | "orders" | "positions" | "settled">("setups");
+  const [tab, setTab] = useState<"setups" | "history" | "orders" | "positions" | "settled">("setups");
+  const [hist, setHist] = useState<any[]>([]);
+  const [hf, setHf] = useState<{ strategy: string; status: string; tf: string }>({ strategy: "", status: "", tf: "" });
+  useEffect(() => {
+    if (tab !== "history") return;
+    const q = new URLSearchParams(Object.entries(hf).filter(([, v]) => v) as any).toString();
+    apiGet(`/api/v1/signal-history?limit=100${q ? "&" + q : ""}`).then((r) => setHist(r.items || [])).catch(() => setHist([]));
+  }, [tab, hf, d?.signal?.status, d?.signal?.signal_id]);
   const [sig, setSig] = useState<any>(null);
   const setupKey = `${d?.setup?.setup_id}:${d?.setup?.state}:${(s.attempts || []).length}`;
   useEffect(() => {
@@ -22,14 +30,33 @@ export default function SignalsPanel({ index }: { index: number }) {
         <span className="ptitle">CHECKLISTA WEJŚCIA & POZYCJE</span>
         <span className="spacer" />
         <div className="tabs small">
-          {(["setups", "orders", "positions", "settled"] as const).map((t) => (
+          {(["setups", "history", "orders", "positions", "settled"] as const).map((t) => (
             <button key={t} className={cls(tab === t && "on")} onClick={() => setTab(t)}>
-              {{ setups: "Scenariusze", orders: "Zlecenia", positions: "Pozycje", settled: "Rozliczone" }[t]}
+              {{ setups: "Scenariusze", history: "Historia sygnałów", orders: "Zlecenia", positions: "Pozycje", settled: "Rozliczone" }[t]}
             </button>
           ))}
         </div>
       </div>
       <div className="table-wrap">
+        {tab === "history" && (
+          <div data-testid="signal-history">
+            <div className="ai-ask">
+              <select value={hf.strategy} onChange={(e) => setHf({ ...hf, strategy: e.target.value })}><option value="">wszystkie strategie</option>
+                {Array.from({ length: 11 }, (_, i) => `S${String(i + 1).padStart(2, "0")}`).map((x) => <option key={x}>{x}</option>)}</select>
+              <select value={hf.status} onChange={(e) => setHf({ ...hf, status: e.target.value })}><option value="">wszystkie statusy</option>
+                {["OCZEKIWANIE", "POTWIERDZONY", "ZABLOKOWANY", "UNIEWAŻNIONY", "WYGASŁY", "BRAK_DANYCH"].map((x) => <option key={x}>{x}</option>)}</select>
+              <select value={hf.tf} onChange={(e) => setHf({ ...hf, tf: e.target.value })}><option value="">wszystkie interwały</option>
+                {["M1", "M5", "M15", "M30", "H1", "H4", "H8"].map((x) => <option key={x}>{x}</option>)}</select>
+            </div>
+            <table className="tbl">
+              <thead><tr><th>Czas</th><th>Strategia</th><th>TF</th><th>Kierunek</th><th>Status</th><th>Wykonanie</th><th>Źródło</th><th>Wejście</th><th>SL</th><th>TP</th><th>AI</th></tr></thead>
+              <tbody>{hist.map((x: any) => <tr key={x.signal_id}><td>{fmtTime(x.generated_at, true)}</td><td>{x.strategy_id}</td><td>{x.entry_tf}</td><td>{x.side}</td>
+                <td>{x.status}</td><td>{x.execution_state}</td><td>{x.decision_source}</td><td>{x.entry_price ?? "—"}</td><td>{x.stop_loss ?? "—"}</td>
+                <td>{(x.targets || []).map((t: any) => t.price).join(" / ")}</td><td>{x.ai?.verdict ?? (x.ai?.status === "AI_NIEDOSTEPNE" ? "AI niedostępne" : "—")}</td></tr>)}
+                {!hist.length && <tr><td colSpan={11} className="muted">Brak sygnałów dla wybranych filtrów.</td></tr>}</tbody>
+            </table>
+          </div>
+        )}
         {tab === "setups" && (
           <table className="tbl">
             <thead><tr><th>Symbol</th><th>Scenariusz</th><th>Strategia</th><th>Etap</th><th>Powstał</th><th>SL (inw.)</th><th>Wynik</th></tr></thead>
@@ -96,7 +123,11 @@ export default function SignalsPanel({ index }: { index: number }) {
           </table>
         )}
       </div>
-      <Checklist c={d?.checklist} positions={(s.positions?.positions || []).length + (s.managed || []).filter((m: any) => m.mode === "PAPER").length} />
+      <div className="plan-row">
+        <SignalPlan sig={d?.signal} digits={s.symbol?.digits ?? 2} />
+        <Checklist c={d?.checklist} positions={(s.positions?.positions || []).length + (s.managed || []).filter((m: any) => m.mode === "PAPER").length} />
+      </div>
+      <ContextTF ctx={d?.context_tf} digits={s.symbol?.digits ?? 2} />
     </div>
   );
 }

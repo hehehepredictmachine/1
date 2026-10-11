@@ -117,7 +117,7 @@ class TestSimulatorAndScanner(unittest.TestCase):
         others = [i for i in s["items"] if i["symbol"] != "XAUUSD-"]
         self.assertEqual(len(others), 6)
         for i in others:
-            self.assertEqual(i["bot"]["strategies_ok"], 10, i)
+            self.assertEqual(i["bot"]["strategies_ok"], 11, i)
         rows = self.w.db.query("SELECT * FROM ai_signals WHERE source='BOT'")
         confirmed = {(i["symbol"], x["setup_id"]) for i in others for x in i["bot"]["setups"] if x["stage"] == "CONFIRMED"}
         recorded = {(r["symbol"], r["setup_id"]) for r in rows}
