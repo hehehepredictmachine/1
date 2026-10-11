@@ -89,6 +89,24 @@ class TestAdminPanelUI(unittest.TestCase):
         self.assertEqual(r, [403, "FORBIDDEN_ROLE"])
         ctx.close()
 
+    def test_03_one_click_generation(self):
+        ctx = self.browser.new_context()
+        page = ctx.new_page()
+        self.login(page, self.adm, "a-long-panel-password-1")
+        before = len(self.f.svc.list_licenses())
+        page.click("[data-testid=quick-gen]")                     # one button, no form
+        key = page.inner_text("[data-testid=quick-key]").strip()
+        self.assertTrue(key.startswith("MQL72-"))
+        self.assertEqual(len(self.f.svc.list_licenses()), before + 1)
+        newest = self.f.svc.list_licenses()[0]
+        self.assertEqual((newest["expires_at"] - newest["created_at"], newest["max_sessions"]), (259200, 1))
+        ctx.close()
+        vctx = self.browser.new_context()
+        vpage = vctx.new_page()
+        self.login(vpage, self.view, "a-long-panel-password-2")
+        self.assertEqual(vpage.locator("[data-testid=quick-gen]").count(), 0)   # VIEWER has no button
+        vctx.close()
+
 
 if __name__ == "__main__":
     unittest.main()

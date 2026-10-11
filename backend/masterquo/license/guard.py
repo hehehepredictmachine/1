@@ -116,6 +116,10 @@ def prompt_key(stdin=None, stdout=None) -> str:
     import sys
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
+    stdout.write("\n================ MasterQUO - licencja ================\n"
+                 "Serwer glowny wystartuje dopiero po przyjeciu licencji.\n"
+                 "Wklej klucz (prawy przycisk myszy lub Ctrl+V) - znaki nie sa wyswietlane.\n\n")
+    stdout.flush()
     if stdin.isatty():
         return getpass.getpass("Wklej licencję MasterQUO (MQL72-…) i naciśnij Enter: ")
     stdout.write("Wklej licencję MasterQUO (MQL72-…) i naciśnij Enter: \n")

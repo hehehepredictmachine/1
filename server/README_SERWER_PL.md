@@ -100,6 +100,8 @@ W `data\config.json` klienta (sekcja `license`):
   Uprawnienia są sprawdzane na **serwerze**, dla każdego endpointu.
 - **Zakładki:**
   - Podsumowanie: liczby, zdrowie usługi, migracje, ostatnie zdarzenia;
+  - przycisk **„＋ Generuj licencję 72 h”** w górnym pasku (jedno kliknięcie, klucz + „Kopiuj klucz”);
+  - CLI: `python -m mqlicense new-license [--note X]`;
   - Licencje: generowanie 72 h (klient, notatka, limit sesji), wyszukiwanie, filtr statusu, paginacja, czasy
     utworzenia/wygaśnięcia/pierwszego/ostatniego użycia, pozostały czas, cofnięcie, wydanie ponownie, przypisanie,
     zmiana limitu sesji;

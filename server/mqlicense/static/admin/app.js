@@ -53,13 +53,15 @@ async function boot() {
 function nav() {
   const tabs = [["dash", "Podsumowanie"], ["lic", "Licencje"], ["ses", "Sesje"], ["cus", "Klienci"], ["tel", "Statystyki (opt-in)"], ["aud", "Audyt"], ["acc", "Konto"]];
   return `<nav>${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
-   <button id="lo" class="push">Wyloguj</button></nav><div id="body"></div>`;
+   ${canWrite() ? `<button id="quick" class="primary push" data-testid="quick-gen" title="Jedno kliknięcie: nowa licencja 72 h (1 sesja), klucz do skopiowania">＋ Generuj licencję 72 h</button>` : ""}
+   <button id="lo" class="${canWrite() ? "" : "push"}">Wyloguj</button></nav><div id="quickbox"></div><div id="body"></div>`;
 }
 
 async function render() {
   $("#who").textContent = `${me.email} (${me.role})`;
   $("#app").innerHTML = nav();
   document.querySelectorAll("nav [data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
+  if ($("#quick")) $("#quick").onclick = quickGenerate;
   $("#lo").onclick = async () => { try { await api("/admin/logout", {}); } catch { } csrf = me = null; loginView(); };
   try { await ({ dash, lic, ses, cus, tel, aud, acc })[tab]($("#body")); }
   catch (e) { if (e.status === 401) loginView(e.message); else $("#body").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
@@ -133,6 +135,26 @@ async function lic(el) {
     const s = e.target.closest("select[data-act=assign]"); if (!s || !s.value) return;
     try { await api(`/admin/licenses/${s.closest("tr").dataset.id}/assign`, { customer_id: s.value }); render(); } catch (er) { alert(er.message); }
   };
+}
+
+async function quickGenerate() {
+  const b = $("#quick");
+  b.disabled = true;
+  try {
+    const r = await api("/admin/licenses", {});
+    const box = $("#quickbox");
+    box.innerHTML = `<div class="card quick"><b>Nowa licencja – klucz widoczny tylko teraz:</b>
+      <div class="key" data-testid="quick-key">${esc(r.key)}</div>
+      <p class="mut">Ważna do ${ts(r.expires_at)} (72 h od teraz), 1 jednoczesna sesja. Przekaż klucz użytkownikowi – wkleja go w terminalu przy starcie bota.</p>
+      <button id="qcp" class="primary">Kopiuj klucz</button> <button id="qclose">Zamknij</button> <span id="qmsg" class="mut"></span></div>`;
+    $("#qcp").onclick = async () => {
+      try { await navigator.clipboard.writeText(r.key); $("#qmsg").textContent = "Skopiowano."; }
+      catch { $("#qmsg").textContent = "Zaznacz klucz i skopiuj Ctrl+C."; }
+    };
+    $("#qclose").onclick = () => { box.innerHTML = ""; };
+    if (tab === "lic" || tab === "dash") await ({ dash, lic })[tab]($("#body"));
+  } catch (er) { $("#quickbox").innerHTML = `<p class="err">${esc(er.message)}</p>`; }
+  finally { b.disabled = false; }
 }
 
 function showKey(r) {

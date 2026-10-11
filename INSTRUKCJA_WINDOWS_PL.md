@@ -51,6 +51,14 @@ Tryb deweloperski służy do testów. Klucze z `data\dev` nie nadają się do pr
 
 ### A3. Wygenerowanie i przekazanie licencji
 
+**Najszybciej – jeden przycisk:** po zalogowaniu kliknij w górnym pasku panelu **„＋ Generuj licencję 72 h”**. Klucz pojawi się
+od razu z przyciskiem **„Kopiuj klucz”** (licencja 72 h, 1 jednoczesna sesja, bez wypełniania formularza).
+
+**Z terminala serwera:** `..\.venv-server\Scripts\python.exe -m mqlicense --env-file data\dev\dev.env new-license --note "Jan"`
+(w produkcji bez `--env-file`, w katalogu z `.env`).
+
+**Z opcjami (klient, notatka, limit sesji):**
+
 1. W panelu otwórz **Licencje** → „Nowa licencja”. Opcjonalnie: klient, notatka, limit jednoczesnych sesji (domyślnie 1).
 2. Kliknij **Generuj**. Klucz `MQL72-…` jest pokazany **tylko teraz**. Skopiuj go („Kopiuj”) i przekaż użytkownikowi
    bezpiecznym kanałem.
@@ -116,8 +124,8 @@ Zasady:
 
 ### B3. Start – przy każdym uruchomieniu wklej licencję
 
-1. Uruchom `masterquo_start.bat`. Działa też `03_START_MASTERQUO.bat`, który otwiera okno „MasterQUO server” z tym samym
-   pytaniem.
+1. Uruchom `masterquo_start.bat` (albo `03_START_MASTERQUO.bat` – działa w tym samym oknie). Najpierw program pyta o licencję
+   **w tym oknie terminala**; serwer główny i monitor startują dopiero po jej przyjęciu.
 2. W oknie pojawi się `Wklej licencję MasterQUO (MQL72-…) i naciśnij Enter:`. Wklej klucz prawym przyciskiem myszy
    (znaki nie są wyświetlane) i naciśnij Enter.
 3. Przy poprawnej licencji zobaczysz `Licencja aktywna – pozostało … h … min`. Monitor otworzy się pod

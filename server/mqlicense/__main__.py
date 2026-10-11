@@ -7,6 +7,7 @@
   python -m mqlicense add-admin --email x --role VIEWER
   python -m mqlicense reset-mfa --email x            new TOTP + recovery codes, logs the admin out everywhere
   python -m mqlicense disable-admin --email x | enable-admin --email x
+  python -m mqlicense new-license [--note X]       new 72 h license from the server terminal (key printed once)
   python -m mqlicense clock-ack                      acknowledge a server clock anomaly after checking the time
   python -m mqlicense backup --out backups/x.sqlite3
   python -m mqlicense serve                          (default 127.0.0.1:8790; put HTTPS reverse proxy in front)
@@ -64,6 +65,9 @@ def main(argv=None) -> int:
         p.add_argument("--email", required=True)
         if name == "add-admin":
             p.add_argument("--role", choices=["ADMIN", "VIEWER"], default="VIEWER")
+    nl = sub.add_parser("new-license", help="wygeneruj licencję 72 h z terminala serwera (klucz wypisany jeden raz)")
+    nl.add_argument("--note", default=None)
+    nl.add_argument("--max-sessions", type=int, default=None)
     sub.add_parser("clock-ack")
     b = sub.add_parser("backup")
     b.add_argument("--out", required=True)
@@ -122,6 +126,11 @@ def main(argv=None) -> int:
         elif a.cmd in ("disable-admin", "enable-admin"):
             svc.set_admin_status(a.email, "DISABLED" if a.cmd == "disable-admin" else "ACTIVE")
             print("OK")
+        elif a.cmd == "new-license":
+            r = svc.create_license({"id": "cli", "email": "cli", "role": "ADMIN"}, note=a.note, max_sessions=a.max_sessions)
+            print("Nowa licencja (klucz pokazywany tylko teraz):\n\n  " + r["key"] + "\n")
+            print(f"Ważna do: {__import__('datetime').datetime.fromtimestamp(r['expires_at'], __import__('datetime').timezone.utc):%Y-%m-%d %H:%M:%S} UTC "
+                  f"(72 h od wygenerowania), jednoczesne sesje: {r['max_sessions']}")
         elif a.cmd == "clock-ack":
             svc.clock.acknowledge()
             svc.audit(None, actor="cli", action="CLOCK_ACK")

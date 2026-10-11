@@ -341,6 +341,21 @@ class TestLicenseHTTPAndClient(unittest.TestCase):
         self.assertEqual(g2.public_state(), "LEASE_LAPSED")
         g2._stop.set()
 
+    def test_21_cli_new_license(self):
+        envf = self.f.dir / "cli.env"
+        envf.write_text(f"MQL_ENV=test\nMQL_DB_PATH={self.f.settings.db_path}\nMQL_SIGNING_KEY_FILE={self.f.settings.signing_key_file}\n"
+                        f"MQL_KEY_PEPPER={self.f.settings.key_pepper}\nMQL_DATA_KEY={self.f.settings.data_key}\n", encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("MQL_")}
+        r = subprocess.run([sys.executable, "-m", "mqlicense", "--env-file", str(envf), "new-license", "--note", "z terminala"],
+                           cwd=str(_env.ROOT / "server"), env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        key = next(w for w in r.stdout.split() if w.startswith("MQL72-"))
+        c = self.client()
+        st = c.open(key)                                                 # the printed key works for a client start
+        self.assertTrue(c.lease_ok())
+        self.assertLessEqual(st["license_seconds_left"], 259200)
+        c.end()
+
     def test_18_replayed_lease_never_extends_access(self):
         lic = self.f.issue()
         c = self.client()
