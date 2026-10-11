@@ -137,7 +137,14 @@ def _license_session(args, stdin=None):
     from .config import ConfigStore
     from .license.client import LicenseClient, LicenseError
     from .license.guard import LicenseGuard, prompt_key
-    lc = ConfigStore().get().license
+    store = ConfigStore()
+    lc = store.get().license
+    if not (os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url) or not (lc.public_key_pem or os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE")):
+        if (stdin or sys.stdin).isatty():                                   # first start on this computer: set up in the terminal
+            from .license import setup
+            if not setup.run(store, stdin=stdin):
+                return None
+            lc = store.get().license
     url = os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url            # address only - never the key
     pem = lc.public_key_pem
     if os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE"):
@@ -264,6 +271,7 @@ def cmd_profile(name: str) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("license-setup", help="ustaw adres serwera licencji i jego klucz publiczny (bez klucza licencji)")
     s = sub.add_parser("serve")
     s.add_argument("--demo", action="store_true", help="DANE SYNTETYCZNE (symulator terminala, oddzielna baza)")
     s.add_argument("--no-browser", action="store_true")
@@ -283,6 +291,10 @@ def main(argv=None) -> int:
     _load_dotenv()
     if a.cmd == "serve":
         return cmd_serve(a)
+    if a.cmd == "license-setup":
+        from .config import ConfigStore
+        from .license import setup
+        return 0 if setup.run(ConfigStore()) else 6
     if a.cmd == "stop":
         return cmd_stop(a)
     from . import diagnostics

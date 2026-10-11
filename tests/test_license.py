@@ -356,6 +356,26 @@ class TestLicenseHTTPAndClient(unittest.TestCase):
         self.assertLessEqual(st["license_seconds_left"], 259200)
         c.end()
 
+    def test_22_terminal_setup_pins_confirmed_key(self):
+        from masterquo.config import ConfigStore
+        from masterquo.license import setup
+        td = TempData()
+        try:
+            store = ConfigStore()
+            fp = setup.fingerprint(self.f.public_pem)
+            self.assertEqual(fp, self.f.svc.kid)                           # same fingerprint as the admin panel shows
+            out = io.StringIO()
+            self.assertFalse(setup.run(store, stdin=io.StringIO(self.f.url + "\nN\n"), stdout=out))   # not confirmed -> nothing saved
+            self.assertEqual(store.get().license.server_url, "")
+            self.assertTrue(setup.run(store, stdin=io.StringIO(self.f.url + "\nT\n"), stdout=out))
+            lc = ConfigStore().get().license
+            self.assertEqual((lc.server_url, lc.public_key_pem), (self.f.url, self.f.public_pem))
+            line = self.f.public_pem.split("\n")[1]
+            self.assertTrue(setup.run(store, stdin=io.StringIO(self.f.url + "\n" + line + "\n"), stdout=out))  # pasted key line
+            self.assertNotIn("MQL72", json.dumps(store.get().model_dump(mode="json")))
+        finally:
+            td.close()
+
     def test_18_replayed_lease_never_extends_access(self):
         lic = self.f.issue()
         c = self.client()

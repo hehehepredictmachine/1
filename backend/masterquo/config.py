@@ -399,6 +399,17 @@ class ConfigStore:
             self._cfg = cfg
             return cfg.model_copy(deep=True)
 
+    def set_license_server(self, server_url: str, public_key_pem: str) -> AppConfig:
+        """Only for the terminal setup (python -m masterquo license-setup / first masterquo_start). Address and PUBLIC key
+        only - the license key itself is never stored."""
+        with self._lock:
+            merged = self._cfg.model_dump(mode="json")
+            merged["license"].update({"server_url": server_url, "public_key_pem": public_key_pem})
+            cfg = AppConfig.model_validate(merged)
+            self._write(cfg)
+            self._cfg = cfg
+            return cfg.model_copy(deep=True)
+
     def set_runtime_flag(self, **flags) -> None:
         with self._lock:
             self._cfg = self._cfg.model_copy(update=flags)

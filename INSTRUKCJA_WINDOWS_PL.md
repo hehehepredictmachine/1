@@ -27,7 +27,8 @@ Od wersji 1.7 bot uruchamia się **tylko z ważną licencją**:
    - generuje klucze **deweloperskie** w `server\data\dev\`;
    - wypisuje **klucz publiczny** (`-----BEGIN PUBLIC KEY-----…`), który wpiszesz w konfiguracji klienta;
    - uruchamia serwer pod `http://127.0.0.1:8790`.
-4. W **drugim** oknie konsoli utwórz pierwszego administratora (tylko raz; publicznej rejestracji nie ma):
+4. Utwórz konto administratora: kliknij **`server\UTWORZ_ADMINA.bat`** (serwer może działać w drugim oknie). Podajesz e-mail i hasło,
+   dostajesz sekret TOTP i kody odzyskiwania. Ręcznie to samo robi polecenie (tylko raz; publicznej rejestracji nie ma):
 
    ```
    cd C:\MasterQUO_SERWER_LICENCJI\server
@@ -100,6 +101,10 @@ W panelu możesz też:
    (sprawdza MT5, symbol `XAUUSD-`, czas; nie składa zleceń).
 
 ### B2. Adres serwera licencji
+
+**Najprościej:** przy pierwszym `masterquo_start.bat` program sam zapyta w terminalu o adres serwera (Enter = `http://127.0.0.1:8790`),
+pobierze jego klucz publiczny i pokaże **odcisk** – porównaj go z panelem (Podsumowanie → „klucz podpisu”) i wpisz `T`.
+Zmiana później: **`09_KONFIGURACJA_LICENCJI.bat`**. Ręcznie:
 
 Administrator podaje adres serwera i klucz publiczny. Wpisz je w **jeden** z dwóch sposobów:
 
