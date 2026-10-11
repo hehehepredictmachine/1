@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.9.0 – wersja bez licencji
+* **Licencjonowanie usunięte w całości** (na prośbę użytkownika): serwer licencji i panel administratora (`server/`), moduł klienta
+  `backend/masterquo/license`, pytanie o klucz `MQL72-…` w `masterquo_start`, blokady silnika / skanera / sygnałów / ML / agenta / zleceń /
+  API / WebSocket, plansza „Licencja nieaktywna” i wskaźnik licencji w monitorze, `09_KONFIGURACJA_LICENCJI.bat`, zmienne
+  `MASTERQUO_LICENSE_*`, pakiety `cryptography`/`pyjwt`. Paczka serwera licencji nie jest już budowana.
+* Start: `masterquo_start.bat` / `03_START_MASTERQUO.bat` – monitor od razu, bez klucza.
+* `data\config.json` v8 → v9: sekcja `license` usuwana, pozostałe ustawienia bez zmian. Baza bez nowych migracji.
+* Bez zmian: sygnały, M30/H8, S11, karta BUY/SELL, wybór setupu, szczegóły, dźwignia / limit ekspozycji, ROI rachunku, tryby wykonania.
+
 ## 1.8.0 – wybór setupu, szczegóły scenariusza, dźwignia / limit ekspozycji
 * **Setup: AUTO / WYBRANY SETUP / WSZYSTKIE** (pasek nad kartą sygnału). AUTO = dotychczasowy wybór silnika; WYBRANY SETUP = silnik
   analizuje i wybiera tylko wskazaną strategię z rejestru (nic nie jest wymuszane – setup musi zostać wykryty i przejść wszystkie bramki);

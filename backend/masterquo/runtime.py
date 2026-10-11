@@ -15,7 +15,6 @@ from .engine.legacy import Profiles
 from .engine.service import EngineService
 from .events import AppLog, EventBus
 from .prefs import AccountPrefs
-from .license.guard import LicenseGuard, licensed
 from .execution.gateway import ExecutionGateway
 from .execution.manager import PositionManager
 from .execution.modes import ModeManager
@@ -38,11 +37,8 @@ def real_mt5_factory():
 
 
 class Runtime:
-    def __init__(self, *, demo: bool = False, mt5_factory=None, license_guard=None):
+    def __init__(self, *, demo: bool = False, mt5_factory=None):
         self.demo = demo
-        # License of THIS run (created by masterquo_start after the key was pasted). Without it every protected module
-        # stays blocked - there is no default "allow" guard in the product code.
-        self.license = license_guard if license_guard is not None else LicenseGuard(None)
         self.cfg = ConfigStore()
         if demo:
             self.cfg.set_runtime_flag(synthetic_demo=True)
@@ -87,9 +83,6 @@ class Runtime:
         self.prefs.listeners.append(lambda name, v: (self.engine.mark_dirty(), self._publish_prefs()))
         # another account (server:login) = its own preferences; broker parameters are re-read by the bridge
         self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)
-        for comp in (self.engine, self.gateway, self.agent, self.ml, self.scanner, self.signals):
-            comp.license = self.license
-        self.license.on_change = lambda st: self.bus.publish("license", st)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
         self.security = None
@@ -124,7 +117,6 @@ class Runtime:
 
     def start(self) -> None:
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
-        self.license.start()
         self.worker.start()
         self.bridge.start()
         self.news.start()
@@ -142,26 +134,10 @@ class Runtime:
 
     def _signal_track_loop(self) -> None:
         while not self._stop.wait(60):
-            if not licensed(self):
-                continue
             try:
                 self.signals.track()
             except Exception:
                 log.exception("bot signal tracking failed")
-
-    def telemetry(self) -> dict:
-        """Aggregates sent to the license server ONLY when license.telemetry_opt_in is on: no login, no server name, no
-        orders, no passwords. Balance/equity come from the terminal; statistics from settled bot trades (net of costs)."""
-        from . import stats
-        from .timeutil import iso, utcnow
-        mode = self.modes.mode
-        smode = mode if mode in ("PAPER", "AUTO_DEMO", "AUTO_LIVE") else "PAPER"
-        a = (stats.bot_stats(self.db, smode, self.bridge.account_key) or {}).get("all") or {}
-        acc = self.bridge.account_status() or {}
-        return {"execution_mode": mode, "symbol": self.cfg.get().mt5.symbol, "trades_closed": a.get("trades"),
-                "winrate_net_pct": a.get("win_rate"), "profit_factor_net": a.get("profit_factor"), "expectancy_r": a.get("expectancy_r"),
-                "balance": acc.get("balance"), "equity": acc.get("equity"), "currency": acc.get("currency"), "period": "ALL",
-                "stats_source": f"bot_stats:{smode}" + (":SYNTHETIC" if self.demo else ""), "stats_as_of": iso(utcnow())}
 
     def attach_loop(self, loop) -> None:
         self.agent.attach(loop)
@@ -176,7 +152,6 @@ class Runtime:
         self.news.stop()
         self.bridge.stop()
         self.worker.stop()
-        self.license.stop()               # ends the server session (frees the slot at once)
 
 
 def platform_info() -> dict:

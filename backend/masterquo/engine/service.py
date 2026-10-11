@@ -27,8 +27,6 @@ from . import chartdata, context_tf, decision as decision_mod, lifecycle, signal
 from .active import ActiveEngine
 from .legacy import LegacyEngines, build_snapshot
 
-from ..license.guard import licensed
-
 log = logging.getLogger("masterquo.engine")
 ANALYSIS_MIN_BARS = 260
 
@@ -101,10 +99,6 @@ class EngineService:
         while not self._stop.is_set():
             self._wake.wait(1.0)
             self._wake.clear()
-            if not licensed(self):
-                self.last_error = "LICENSE_REQUIRED"          # no new analysis / signals without a valid lease
-                self._dirty = True
-                continue
             try:
                 if self._dirty or self.bridge.session_epoch != self._seen_epoch or time.monotonic() - self._last_full_mono > 60:
                     time.sleep(0.3)  # coalesce simultaneous closes of several TFs

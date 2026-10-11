@@ -1,6 +1,6 @@
 """Windows launchers (static checks - Windows itself is not available in the build environment): ASCII + CRLF, paths
-built from %~dp0 are always quoted (folders with spaces), the start goes through masterquo_start (license prompt), the
-license key is never passed as an argument."""
+built from %~dp0 are always quoted (folders with spaces), the start goes through masterquo_start
+(no license - 1.9.0)."""
 import re
 import unittest
 
@@ -9,10 +9,10 @@ import _env
 
 class TestLaunchers(unittest.TestCase):
     def bats(self):
-        return sorted(list(_env.ROOT.glob("*.bat")) + list((_env.ROOT / "server").glob("*.bat")))
+        return sorted(_env.ROOT.glob("*.bat"))
 
     def test_ascii_crlf_and_quoted_paths(self):
-        self.assertGreaterEqual(len(self.bats()), 9)                 # 9 client launchers (+2 server ones in the repo)
+        self.assertGreaterEqual(len(self.bats()), 8)
         for f in self.bats():
             with self.subTest(f=f.name):
                 raw = f.read_bytes()
@@ -25,11 +25,10 @@ class TestLaunchers(unittest.TestCase):
                         before = line[:m.start()]
                         self.assertEqual(before.count('"') % 2, 1, f"unquoted path in {f.name}: {line}")
 
-    def test_start_requires_license_prompt(self):
+    def test_start_without_license(self):
         start = (_env.ROOT / "masterquo_start.bat").read_text()
         self.assertIn("-m masterquo serve", start)
-        code = "\n".join(l for l in start.splitlines() if not l.strip().lower().startswith("rem"))
-        self.assertNotRegex(code.upper(), r"MQL72|LICENSE_KEY|--KEY")
+        self.assertNotRegex(start.upper(), r"LICEN|MQL72|--KEY")
         self.assertIn("masterquo_start.bat", (_env.ROOT / "03_START_MASTERQUO.bat").read_text())
 
 

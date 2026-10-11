@@ -6,7 +6,6 @@ import unittest
 from types import SimpleNamespace as NS
 
 import _env  # noqa: F401
-from _license import AllowGuard  # noqa: E402
 from _env import TempData
 
 CTX = {"snapshot_id": "SNP-1", "as_of": "2026-10-08T12:00:00Z", "symbol": "XAUUSD-", "alias": "XAUUSD", "session_epoch": 1, "account_key": "srv:1",
@@ -79,7 +78,6 @@ class TestAgent(unittest.TestCase):
         bus = EventBus()
         self.db = db
         self.agent = ClaudeAgent(self.cfg, SecretStore(), db, bus, AppLog(db, bus), lambda sid: CTX)
-        self.agent.license = AllowGuard()
 
     def tearDown(self):
         os.environ.pop("ANTHROPIC_API_KEY", None)

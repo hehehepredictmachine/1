@@ -3,7 +3,6 @@ decision -> risk -> AI gate -> mode gate -> PAPER gateway. The AI is stubbed; no
 import unittest
 
 import _env  # noqa: F401
-from _license import AllowGuard  # noqa: E402
 from _env import TempData, core, wait_for
 from test_pipeline import StubAgent
 
@@ -33,7 +32,6 @@ class TestActivePipeline(unittest.TestCase):
         self.engine = EngineService(cfg, b, db, bus, log, self.modes, NewsService(cfg, SecretStore(), bus, log), PCClockCheck(None, 30))
         self.paper = PaperBroker(cfg, b, db, bus, log)
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, self.paper)
-        self.gw.license = AllowGuard()
         self.mgr = PositionManager(cfg, b, db, bus, log, self.modes, self.paper)
         self.gw.manager = self.mgr
         self.engine.gateway = self.gw

@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 
 import _env  # noqa: F401
 from _env import UTC, TempData, core, wait_for
-from _license import AllowGuard  # noqa: E402
 from test_risk_execution import LIMITS, SYM, StubEngine, levels, profit  # noqa: E402
 
 Q = {"bid": 2000.0, "ask": 2000.2, "spread_points": 20}
@@ -212,7 +211,6 @@ class TestPreSendRecheck(unittest.TestCase):
         self.prefs = AccountPrefs(db, b, cfg)
         self.engine = SettingsEngine(LifecycleStore(db), self.prefs, {"risk_gate": "PASS", "lots": 0.05})
         self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, PaperBroker(cfg, b, db, bus, log))
-        self.gw.license = AllowGuard()
         mgr = PositionManager(cfg, b, db, bus, log, self.modes, None)
         mgr.reconciled_epoch = b.session_epoch
         self.gw.manager = mgr

@@ -1,6 +1,6 @@
-# Audyt MasterQUO 1.7 – sygnały, M30/H8, EMA20 Pullback, statystyki, licencje
+# Audyt MasterQUO 1.7 – sygnały, M30/H8, EMA20 Pullback, statystyki
 
-Data: 2026-10-11. Zakres: kod w tym repozytorium (backend `backend/masterquo`, monitor `frontend`, serwer licencji `server/mqlicense`),
+Data: 2026-10-11. Zakres: kod w tym repozytorium (backend `backend/masterquo`, monitor `frontend`),
 załączona strategia Pine „EMA20 Pullback + 2.5R” i instrukcja PDF.
 
 Środowisko audytu to kontener Linux z symulatorem terminala (`mt5/fake.py`). **Nie było połączenia z Twoim terminalem MT5
@@ -116,71 +116,13 @@ Testy: `tests/test_stats_definitions.py`.
 | Checklista | NAPRAWIONE: kody kierunku (LONG:/SHORT:) tłumaczone na polski |
 | Nieaktualne testy (wersja configu 6, 10 strategii) | NAPRAWIONE: oczekiwania 8 / 11 |
 
-## 6. Licencje i serwer administratora
+## 6. Licencje – wycofane w 1.9.0
 
-**Architektura:**
-
-- Osobna aplikacja serwera `server/mqlicense`.
-- Klient: `backend/masterquo/license`.
-- Szczegóły: `server/README_SERWER_PL.md`.
-
-**Licencja:**
-
-- Klucz `MQL72-…` ma 256 bitów z CSPRNG. Pokazywany jest raz. W bazie jest tylko HMAC-SHA256 z sekretnym pieprzem i
-  podpowiedź (4 ostatnie znaki).
-- `expires_at = created_at + 259200` według zegara serwera (UTC). Wartość jest stała. W produkcji serwer odmawia
-  startu z inną wartością.
-- Ponowne wydanie tworzy nowy klucz i nowy rekord. Stary rekord jest cofany i zostaje w audycie.
-
-**Sesja jednego uruchomienia:**
-
-- Sesję wiążą `boot_id` i jednorazowy `nonce`.
-- Dzierżawa (lease) jest podpisana Ed25519 (JWT EdDSA), trwa ≤ 30 s i nigdy nie wykracza poza wygaśnięcie licencji.
-- Klient weryfikuje podpis **przypiętym** kluczem publicznym.
-- Odnowienie co ≤ 10 s.
-- Cofnięcie licencji lub zakończenie sesji dociera do klienta w ≤ 30 s.
-- Brak trybu offline, brak okresu karencji: po upływie dzierżawy moduły są blokowane.
-
-**Limit sesji:**
-
-- Domyślnie 1, ustawiany per licencja (1–10).
-- Rejestracja sesji jest atomowa (SQLite `BEGIN IMMEDIATE`).
-- Po awarii klienta slot zwalnia się po wygaśnięciu dzierżawy (≤ 30 s).
-
-**`masterquo_start`:**
-
-- Klucz trzeba wkleić przy **każdym** uruchomieniu: `getpass` w konsoli albo jedna linia ze stdin.
-- Klucz nie trafia do argumentów, zmiennych środowiska, plików, logów, URL ani eksportów (testy:
-  `test_license.py`, `test_app_process.test_90`).
-- Nie ma „zapamiętaj” i nie ma odczytu z pliku, rejestru, `.env` ani keyringu.
-
-**Strażnik (deny by default):**
-
-- Bez ważnej dzierżawy są wyłączone: analiza silnika, skaner rynków, sygnały bota, ML (etykietowanie, harmonogram),
-  agent AI, **nowe** zlecenia oraz API i WebSocket monitora.
-- Bez licencji działają tylko: health, sesja, status licencji i STOP.
-- PositionManager działa dalej. Otwarte pozycje nie są zamykane, a SL/TP nie są zdejmowane.
-
-**Panel administratora (`/admin/`, po polsku):**
-
-- Logowanie hasłem (Argon2id) i kodem TOTP lub jednorazowym kodem odzyskiwania.
-- Blokada konta po 5 błędach.
-- Sesje w ciasteczku HttpOnly + SameSite=Strict (+ `__Host-`/Secure w produkcji).
-- Ochrona: CSRF, kontrola Origin, nagłówki bezpieczeństwa (CSP, HSTS w produkcji).
-- Role ADMIN i VIEWER.
-- Funkcje: licencje (generuj, cofnij, wydaj ponownie, przypisz), sesje (zakończ), klienci, audyt, statystyki opt-in.
-- Administratorów tworzy się **tylko przez CLI** (`bootstrap-admin`). Nie ma domyślnego hasła.
-
-**Klient nie zawiera:** klucza prywatnego, pieprzu, klucza danych ani klucza API administratora. Zawiera tylko klucz
-publiczny i adres serwera.
-
-**Ograniczenia (bez deklaracji „nie do obejścia”):**
-
-- Ochrona po stronie klienta działa na komputerze użytkownika. Ktoś z pełnym dostępem do maszyny może zmodyfikować
-  kod Pythona albo podmienić klucz publiczny w `data\config.json`. Serwer kontroluje wydawanie licencji, czas ich
-  ważności i liczbę sesji, ale nie może zagwarantować integralności zmodyfikowanego klienta.
-- Serwer licencji **nie został wdrożony publicznie** w ramach tej pracy: działa lokalnie i w testach. Instrukcja
-  wdrożenia (HTTPS za reverse proxy) jest w README serwera.
+Na prośbę użytkownika licencjonowanie z 1.7–1.8 zostało w całości usunięte: serwer `server/mqlicense`, panel administratora,
+moduł klienta `backend/masterquo/license`, pytanie o klucz w `masterquo_start`, blokady silnika/skanera/sygnałów/ML/agenta/zleceń/API/WS
+i plansza w monitorze. Pakiety `cryptography`/`pyjwt` usunięto z wymagań. Istniejący `data\config.json` (v8) migruje do v9 – sekcja
+`license` jest usuwana, pozostałe ustawienia bez zmian. Wszystkie pozostałe funkcje (sygnały, M30/H8, S11, karta sygnału, wybór setupu,
+dźwignia, ROI) działają jak w 1.8.
 
 ## 7. Testy
 

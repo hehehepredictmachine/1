@@ -106,9 +106,6 @@ class MemoryReq(BaseModel):
     status: str
 
 
-LICENSE_FREE_PATHS = ("/api/v1/health", "/api/v1/session", "/api/v1/license", "/api/v1/admin/shutdown", "/api/v1/ws")
-
-
 def create_app(rt, port: int) -> FastAPI:
     sec = LocalSecurity(port)
     rt.security = sec
@@ -134,9 +131,6 @@ def create_app(rt, port: int) -> FastAPI:
                     return JSONResponse({"error": "CSRF_OR_SESSION_INVALID"}, status_code=403)
             elif path.startswith("/api/v1/") and path not in ("/api/v1/health",) and not sec.csrf_for(request.cookies.get(SESSION_COOKIE)):
                 return JSONResponse({"error": "SESSION_REQUIRED_OPEN_MONITOR_PAGE"}, status_code=401)
-            # license gate (deny by default): only health, session, license status and STOP work without a valid lease
-            if path.startswith("/api/v1/") and path not in LICENSE_FREE_PATHS and not rt.license.ok():
-                return JSONResponse({"error": "LICENSE_REQUIRED", "license": rt.license.status()}, status_code=403)
             resp: Response = await call_next(request)
             resp.headers["X-Content-Type-Options"] = "nosniff"
             resp.headers["Referrer-Policy"] = "no-referrer"
@@ -185,10 +179,6 @@ def create_app(rt, port: int) -> FastAPI:
     def health():
         return {"ok": True, "app": APP_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
                 "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow())}
-
-    @app.get("/api/v1/license")
-    def license_status():
-        return rt.license.status()          # no key, no token - state, expiry and lease countdown only
 
     @app.get("/api/v1/session")
     def session(request: Request):
@@ -745,10 +735,6 @@ def create_app(rt, port: int) -> FastAPI:
         if not sec.csrf_ok(sid, hello.get("csrf")):
             await websocket.close(code=4403)
             return
-        if not rt.license.ok():
-            await websocket.send_text(json.dumps({"type": "license", "data": rt.license.status()}, default=str))
-            await websocket.close(code=4402)
-            return
         queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
         unsub = rt.bus.subscribe_async(asyncio.get_running_loop(), queue)
         try:
@@ -761,10 +747,6 @@ def create_app(rt, port: int) -> FastAPI:
                     await websocket.send_text(json.dumps(ev, default=str))
             while True:
                 ev = await queue.get()
-                if not rt.license.ok():
-                    await websocket.send_text(json.dumps({"type": "license", "data": rt.license.status()}, default=str))
-                    await websocket.close(code=4402)
-                    return
                 if ev.get("type") == "__overflow__":
                     while not queue.empty():
                         queue.get_nowait()

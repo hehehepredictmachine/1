@@ -12,7 +12,6 @@ import urllib.error
 import urllib.request
 
 import _env
-from _license import LicenseServerFixture  # noqa: E402
 from _env import TempData, wait_for
 
 PORT = 8799
@@ -40,21 +39,16 @@ class TestAppProcess(unittest.TestCase):
         cls.td = TempData()
         os.makedirs(cls.td.dir, exist_ok=True)
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
-            cls.lic = LicenseServerFixture(lease_seconds=6)
-            cls.lic_info = cls.lic.issue(note="test")
-            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, **cls.lic.client_config()}, f)
+            json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}}, f)
         env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         env.pop("ANTHROPIC_API_KEY", None)
         cls.env = env
-        cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=env, cwd=str(_env.ROOT / "backend"), stdin=subprocess.PIPE,
+        cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=env, cwd=str(_env.ROOT / "backend"),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        cls.proc.stdin.write(cls.lic_info["key"] + "\n")
-        cls.proc.stdin.close()               # key pasted once, like a user at masterquo_start
         ok = wait_for(lambda: req("/api/v1/health")[0] == 200, 60, 0.5)
         if not ok:
             cls.proc.kill()
             cls.td.close()
-            cls.lic.close()
             raise RuntimeError("server did not start: " + (cls.proc.stdout.read() if cls.proc.stdout else ""))
         cls.jar = http.cookiejar.CookieJar()
         cls.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cls.jar))
@@ -69,7 +63,6 @@ class TestAppProcess(unittest.TestCase):
         except subprocess.TimeoutExpired:
             cls.proc.kill()
         cls.td.close()
-        cls.lic.close()
 
     def H(self, **extra):
         return {"Origin": BASE, "X-MQ-CSRF": self.csrf, **extra}
@@ -204,27 +197,6 @@ class TestAppProcess(unittest.TestCase):
         with self.op.open(BASE + "/media/masterquo/background", timeout=10) as r:
             self.assertEqual(r.read(), gif)
         os.remove(os.path.join(self.td.dir, "assets", "masterquo", "background-matrix.gif"))
-
-    def test_90_license_status_without_secrets(self):
-        st, body = req("/api/v1/license", opener=self.op)
-        self.assertEqual(st, 200)
-        lic = json.loads(body)
-        self.assertEqual(lic["state"], "ACTIVE")
-        self.assertLessEqual(lic["license_seconds_left"], 259200)
-        self.assertNotIn(self.lic_info["key"], body)
-        self.assertNotIn("token", body.lower())
-        logs = "".join(p.read_text(encoding="utf-8", errors="ignore") for p in Path(self.td.dir).rglob("*") if p.is_file() and p.suffix in (".log", ".json", ".txt"))
-        self.assertNotIn(self.lic_info["key"], logs)                   # never in logs / config / exports
-
-    def test_98_revoked_license_blocks_api_but_not_stop(self):
-        self.lic.svc.revoke_license({"id": "t", "email": "t@example.invalid", "role": "ADMIN"}, self.lic_info["id"], "test")
-        ok = wait_for(lambda: req("/api/v1/state", opener=self.op)[0] == 403, 15, 0.5)
-        self.assertTrue(ok)
-        st, body = req("/api/v1/state", opener=self.op)
-        self.assertEqual(json.loads(body)["error"], "LICENSE_REQUIRED")
-        lic = json.loads(req("/api/v1/license", opener=self.op)[1])
-        self.assertEqual((lic["state"], lic["reason"]), ("DENIED", "LICENSE_REVOKED"))
-        self.assertEqual(req("/api/v1/health")[0], 200)
 
     def test_99_stop_only_this_server(self):
         out = subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=self.env, cwd=str(_env.ROOT / "backend"),

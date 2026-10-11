@@ -26,7 +26,7 @@ widoczne w „Szczegóły”). Monitor nigdy nie podnosi stanu; obniża go, gdy 
 starsza niż 2 minuty.
 
 ## Uruchomienie i sprawdzenie
-* Start: `masterquo_start.bat` (licencja) – karta jest na górze monitora `http://127.0.0.1:8765/`.
+* Start: `masterquo_start.bat` – karta jest na górze monitora `http://127.0.0.1:8765/`.
 * Testy: `05_TESTY_OFFLINE.bat` – m.in. `tests/test_signal_view.py` (model karty) i `tests/test_ui_signal_card.py`
   (prawdziwy monitor w Chromium: BUY, SELL, oczekiwanie, brak sygnału, blokada, brak danych, AI niedostępne, spóźniona odpowiedź AI,
   wygaśnięcie, reconnect, kopiowanie, rozmiary okna). Zrzuty: `data\logs\ui_signal_card\`.

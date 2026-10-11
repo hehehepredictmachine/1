@@ -16,9 +16,7 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 2. Kliknij **`01_INSTALUJ.bat`** – tworzy `.venv` w folderze projektu i instaluje przypięte pakiety. Log: `data\logs\instalacja_*.log`.
 3. Kliknij **`02_DIAGNOSTYKA.bat`** – sprawdza Python, pakiety, połączenie z terminalem, symbol, rachunek, czas, klucz Claude.
    Nie składa zleceń. Wynik zapisuje w `data\logs`.
-4. Kliknij **`masterquo_start.bat`** (albo `03_START_MASTERQUO.bat`) i **wklej licencję** `MQL72-…` od administratora – program pyta
-   o nią przy każdym uruchomieniu (licencja ważna 72 h od wygenerowania). Potem przeglądarka otwiera monitor.
-   Adres serwera licencji: `INSTRUKCJA_WINDOWS_PL.md`, punkt B2.
+4. Kliknij **`masterquo_start.bat`** (albo `03_START_MASTERQUO.bat`) – przeglądarka otwiera monitor. Licencja nie jest potrzebna (od 1.9).
 5. Przy pierwszym uruchomieniu monitor pokaże kreator: limity ryzyka, koszty (prowizja), klucz Claude i model.
    * Klucz wpisujesz **tylko w monitorze** (pole hasła) albo w oknie konsoli: `.venv\Scripts\python -m masterquo set-key` w folderze `backend`.
      Jest szyfrowany Windows DPAPI w `data\secrets.dpapi.json`. Nie wklejaj go nigdzie indziej.
@@ -26,9 +24,9 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 6. Zamknięcie przeglądarki **nie** zatrzymuje programu. Zatrzymanie: **`04_STOP_MASTERQUO.bat`** (zatrzymuje tylko MasterQUO,
    nie inne programy Pythona ani terminal MT5).
 
-## Nowe w 1.7 – sygnały z planem wejścia, M30/H8, EMA20 Pullback, licencje 72 h
-Blok „Sygnał AI / plan wejścia” obok checklisty, historia sygnałów, kontekst M30/H8 i układ 8 wykresów, strategia S11 (tylko skanowanie),
-licencja wklejana przy każdym starcie. Szczegóły: `CHANGELOG.md`, `INSTRUKCJA_WINDOWS_PL.md`, `AUDYT_MASTERQUO.md`.
+## Nowe w 1.7 – sygnały z planem wejścia, M30/H8, EMA20 Pullback
+Blok „Sygnał AI / plan wejścia” obok checklisty, historia sygnałów, kontekst M30/H8 i układ 8 wykresów, strategia S11 (tylko skanowanie).
+Od 1.9 program działa bez licencji. Szczegóły: `CHANGELOG.md`, `INSTRUKCJA_WINDOWS_PL.md`, `AUDYT_MASTERQUO.md`.
 
 ## Nowe w 1.2 – AUTO, 10 strategii, animowany monitor
 * **AUTO — wybór strategii** (nagłówek): bot sam ocenia rynek (reżim), porównuje 10 strategii S01–S10 i wybiera główną. Kliknięcie

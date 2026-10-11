@@ -1,7 +1,7 @@
 """1.8 in the REAL monitor (Chromium + demo backend on the synthetic terminal): setup selector AUTO / WYBRANY SETUP /
 WSZYSTKIE, scenario list -> details, persistence after refresh AND after a program restart, leverage limit in the settings
 (three values) and its effect on the details, no order created by any choice. Screenshots: data/logs/ui_setup_panel/.
-Skipped (never "passed") without Playwright/Chromium or the license server package."""
+Skipped (never "passed") without Playwright/Chromium."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,6 @@ import urllib.request
 
 import _env
 from _env import TempData, wait_for
-from _license import LicenseServerFixture  # noqa: E402
 
 PORT = 8795
 BASE = f"http://127.0.0.1:{PORT}"
@@ -43,14 +42,12 @@ class TestSetupPanelUI(unittest.TestCase):
             raise unittest.SkipTest("frontend not built")
         SHOTS.mkdir(parents=True, exist_ok=True)
         cls.td = TempData()
-        cls.lic = LicenseServerFixture()
-        cls.info = cls.lic.issue(note="ui setup panel", max_sessions=2)
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
             json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None},
                        "risk": {"risk_per_trade_pct": 1.0, "max_total_open_risk_pct": 3.0, "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0,
                                 "max_open_positions": 3, "min_free_margin_buffer_pct": 20},
                        "costs": {"slippage_stress_points": 5, "commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.5},
-                       **cls.lic.client_config(), "first_run_completed": True}, f)
+                       "first_run_completed": True}, f)
         cls.env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         cls.env.pop("ANTHROPIC_API_KEY", None)
         cls.start_server()
@@ -67,9 +64,7 @@ class TestSetupPanelUI(unittest.TestCase):
     @classmethod
     def start_server(cls):
         cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=cls.env, cwd=str(_env.ROOT / "backend"),
-                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        cls.proc.stdin.write((cls.info["key"] + "\n").encode())
-        cls.proc.stdin.close()
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if not wait_for(health, 60, 0.5):
             cls.proc.kill()
             raise RuntimeError("server did not start")
@@ -91,7 +86,6 @@ class TestSetupPanelUI(unittest.TestCase):
         finally:
             cls.stop_server()
             cls.td.close()
-            cls.lic.close()
 
     def api(self, path):
         return self.page.request.get(BASE + path).json()

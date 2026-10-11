@@ -15,8 +15,6 @@ import time
 from ..timeutil import iso, utcnow
 from . import analysis
 
-from ..license.guard import licensed
-
 log = logging.getLogger("masterquo.markets")
 COUNTS = {"H1": 400, "H4": 400, "D1": 420}
 STRATEGY_COUNTS = {"M5": 400, "M15": 400, "M30": 400, "H8": 300}   # extra timeframes for the bot strategies S01-S11
@@ -63,9 +61,7 @@ class MarketScanner:
             due = time.monotonic() - last >= self.cfg.scan_interval_seconds
             if self._wake.is_set() or due:
                 self._wake.clear()
-                if not licensed(self):
-                    self.state = "LICENSE_REQUIRED"
-                elif self.cfg.enabled and self.bridge.state == "CONNECTED" and self.bridge.clock.offset is None:
+                if self.cfg.enabled and self.bridge.state == "CONNECTED" and self.bridge.clock.offset is None:
                     self.state = "WAITING_FOR_SERVER_CLOCK"      # bar times (UTC) need the server offset; retried every 2 s
                 elif self.cfg.enabled and self.bridge.state == "CONNECTED":
                     try:

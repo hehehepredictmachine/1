@@ -1,4 +1,10 @@
-# Raport testów – MasterQUO AI 1.8.0
+# Raport testów – MasterQUO AI 1.9.0
+
+## 1.9.0 – bez licencji (2026-10-11)
+Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium): **224 testy, OK**. Usunięte testy licencji
+(`test_license`, `test_license_admin_ui`, `test_app_process.test_90/test_98`); testy procesu i UI startują serwer bez klucza.
+Nowy test: `test_relaxed_gates.test_v8_license_section_dropped_on_upgrade` (config v8 z sekcją `license` → v9 bez niej, ustawienia zachowane).
+Nie sprawdzono tutaj: Windows (`.bat` tylko statycznie), Twój terminal MT5, prawdziwe API Claude.
 
 ## 1.8.0 – wybór setupu, szczegóły, dźwignia (2026-10-11)
 Pełny przebieg `python tools/run_tests.py`: **250 testów, 249 OK, 1 FAIL** – `test_ui_signal_card.test_09` (błędy 404 w konsoli: panel szczegółów
@@ -39,9 +45,8 @@ Windows ani Twój terminal MT5.
 
 **Wynik:** `Ran 212 tests … OK` – 0 błędów, 0 pominiętych. Raport maszynowy: `data/logs/testy_offline_20261011T133310Z.json`.
 
-Testy licencji uruchamiają **prawdziwy** serwer `mqlicense` na 127.0.0.1 z kluczami wygenerowanymi na czas testu.
-Testy procesu aplikacji startują `python -m masterquo serve` dokładnie jak `masterquo_start.bat` i wklejają klucz na
-stdin.
+Testy procesu aplikacji startują `python -m masterquo serve` dokładnie jak `masterquo_start.bat`.
+**1.9.0:** licencjonowanie usunięte – scenariusze 7–11 (licencje) i testy `test_license*` nie istnieją; patrz sekcja 1.9.0 na górze.
 
 ### Obowiązkowe scenariusze 1–12
 
@@ -68,7 +73,6 @@ stdin.
 | Twój terminal MT5, `XAUUSD-`, `order_calc_profit` brokera | brak terminala – połączenie **nie jest potwierdzone** |
 | Kompilacja Pine (oryginał/FIXED) w TradingView | brak dostępu do TradingView (proxy) – zgodność Pine ↔ Python **niezweryfikowana** |
 | Backtest na historii XAUUSD- | brak eksportu z Twojego terminala – RAPORT_WYNIKOW na danych syntetycznych |
-| Serwer licencji na publicznym hostingu (HTTPS) | wdrożenie nie było wykonane – testowany lokalnie (http://127.0.0.1) |
 | Prawdziwe API Claude | brak klucza – testy z atrapą klienta |
 
 ---

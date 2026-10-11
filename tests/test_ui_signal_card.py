@@ -3,7 +3,7 @@ code (signal_contract.build + signal_view.present) and delivered through the mon
 socket: the server stream passes through, the decision payload is replaced). Checks: BUY, SELL, waiting with the plan
 direction, no signal, block, no data, AI unavailable, late AI answer, expiry, reconnect, copy = card values, the live
 engine decision = card, readable layout at 1920/1366/900 px. Screenshots: data/logs/ui_signal_card/.
-Skipped (never "passed") without Playwright/Chromium or the license server package."""
+Skipped (never "passed") without Playwright/Chromium."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,6 @@ from datetime import datetime, timedelta, timezone
 
 import _env
 from _env import TempData, wait_for
-from _license import LicenseServerFixture  # noqa: E402
 
 PORT = 8796
 BASE = f"http://127.0.0.1:{PORT}"
@@ -90,17 +89,13 @@ class TestSignalCardUI(unittest.TestCase):
             raise unittest.SkipTest("frontend not built")
         SHOTS.mkdir(parents=True, exist_ok=True)
         cls.td = TempData()
-        cls.lic = LicenseServerFixture()
-        info = cls.lic.issue(note="ui signal card")
         with open(os.path.join(cls.td.dir, "config.json"), "w", encoding="utf-8") as f:
             json.dump({"server": {"port": PORT, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None},
-                       **cls.lic.client_config(), "first_run_completed": True}, f)
+                       "first_run_completed": True}, f)
         cls.env = dict(os.environ, MASTERQUO_DATA_DIR=cls.td.dir, PYTHONPATH=str(_env.ROOT / "backend"))
         cls.env.pop("ANTHROPIC_API_KEY", None)
         cls.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=cls.env, cwd=str(_env.ROOT / "backend"),
-                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        cls.proc.stdin.write((info["key"] + "\n").encode())
-        cls.proc.stdin.close()
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import urllib.request
 
         def health():
@@ -153,7 +148,6 @@ class TestSignalCardUI(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 cls.proc.kill()
             cls.td.close()
-            cls.lic.close()
 
     # ------------------------------------------------------------ helpers
     def show(self, kind: str, **kw) -> dict:

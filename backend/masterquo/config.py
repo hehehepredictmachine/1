@@ -323,17 +323,8 @@ class BotSignalsConfig(_Strict):
     telegram: bool = True                    # notify new signals (only when Telegram is configured)
 
 
-class LicenseConfig(_Strict):
-    """License server of the operator (server/mqlicense). Edited only in data/config.json (not through the monitor API).
-    The license KEY is never stored: it is pasted at every masterquo_start and kept in memory for the start request only."""
-    server_url: str = ""                     # https://licencje.example.pl  (http:// allowed only for 127.0.0.1/localhost)
-    public_key_pem: str = ""                 # Ed25519 public key printed by `python -m mqlicense gen-keys` (pinned lease verification)
-    telemetry_opt_in: bool = False           # send aggregated statistics (net winrate/PF/E[R], counts) - no account numbers, no orders
-    timeout_seconds: float = Field(10.0, ge=2.0, le=60.0)
-
-
 class AppConfig(_Strict):
-    config_version: int = 8
+    config_version: int = 9
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -349,7 +340,6 @@ class AppConfig(_Strict):
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
-    license: LicenseConfig = Field(default_factory=LicenseConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -392,19 +382,7 @@ class ConfigStore:
         with self._lock:
             merged = _deep_merge(self._cfg.model_dump(mode="json"), patch)
             merged.pop("synthetic_demo", None)
-            merged["license"] = self._cfg.license.model_dump(mode="json")     # not editable through the monitor API
             merged["synthetic_demo"] = self._cfg.synthetic_demo
-            cfg = AppConfig.model_validate(merged)
-            self._write(cfg)
-            self._cfg = cfg
-            return cfg.model_copy(deep=True)
-
-    def set_license_server(self, server_url: str, public_key_pem: str) -> AppConfig:
-        """Only for the terminal setup (python -m masterquo license-setup / first masterquo_start). Address and PUBLIC key
-        only - the license key itself is never stored."""
-        with self._lock:
-            merged = self._cfg.model_dump(mode="json")
-            merged["license"].update({"server_url": server_url, "public_key_pem": public_key_pem})
             cfg = AppConfig.model_validate(merged)
             self._write(cfg)
             self._cfg = cfg
@@ -427,7 +405,7 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 8:
+    if v >= 9:
         return False
     if v >= 3:
         _to_v5(raw)
@@ -459,8 +437,9 @@ def _to_v5(raw: dict) -> None:
     st = raw.setdefault("active", {}).setdefault("strategies", {})
     if isinstance(st, dict) and "S11" not in st:
         st["S11"] = {"scan": True, "trade": False}
-    # v7 -> v8 (1.7): `license` section (operator's license server) - defaults; nothing else changes
-    raw["config_version"] = 8
+    # v7 -> v8 (1.7) added `license`; v8 -> v9 (1.9) licensing withdrawn: the section is dropped, nothing else changes
+    raw.pop("license", None)
+    raw["config_version"] = 9
 
 
 def _to_v3(raw: dict) -> None:

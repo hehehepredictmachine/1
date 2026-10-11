@@ -33,5 +33,8 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
   z wersji 1.6 – zachowaj kopię przed pierwszym startem 1.7 (1.7 zapisuje `config_version: 8`, dodaje `license` i przełącznik S11).
 * Powrót: rozpakuj ZIP 1.6.0 do osobnego folderu, przywróć `data\config.json` z kopii (albo usuń sekcję `license`, wpis `S11`
   w `active.strategies` i ustaw `"config_version": 6`). Tabela `signal_history` i kolumna `ai_verdict` (0007) nie przeszkadzają 1.6.
-* Wersja 1.6 nie wymaga licencji – to decyzja administratora, czy wolno do niej wrócić.
-* Serwer licencji jest osobną aplikacją: jego wyłączenie (`systemctl stop mqlicense`) blokuje starty klientów 1.7, nie wpływa na 1.6.
+
+## 8. Wersja 1.9.0 → 1.8.0
+* 1.9.0 usuwa licencjonowanie i zapisuje `config_version: 9` (bez sekcji `license`); baza bez nowych migracji.
+* Powrót do 1.8.0 (wymaga licencji i serwera licencji): rozpakuj ZIP 1.8.0 do osobnego folderu i przywróć kopię `data\config.json`
+  sprzed 1.9 albo ustaw `"config_version": 8` – 1.8 poprosi o konfigurację serwera licencji przy starcie.

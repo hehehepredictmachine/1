@@ -10,10 +10,7 @@ __pycache__/
 *.log
 frontend/node_modules/
 release/*.tmp
-# license server secrets / databases - never committed or packaged
-server/data/
-server/secrets/
-server/.env
+# secrets / databases - never committed or packaged
 *.sqlite3
 *.pem
 secrets.env

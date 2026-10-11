@@ -1,7 +1,6 @@
 """Command line entry point (used by the Windows launchers).
 
-  python -m masterquo serve [--demo] [--no-browser]   start (or open the already running monitor); asks for the
-                                                      license key at every start (masterquo_start.bat)
+  python -m masterquo serve [--demo] [--no-browser]   start (or open the already running monitor)
   python -m masterquo stop                              stop only this project's server
   python -m masterquo doctor                            environment + MT5 + Claude diagnostics
   python -m masterquo clock                             raw MT5 time diagnostics (no trading)
@@ -79,15 +78,10 @@ def cmd_serve(args) -> int:
     if lock is None:
         print("[MasterQUO] Inna instancja MasterQUO już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
-    print(f"[MasterQUO] {_app_version()} – start: najpierw licencja, potem serwer główny.")
-    guard = _license_session(args)
-    if guard is None:
-        return 5
     import uvicorn
     from .api.app import create_app
     from .runtime import Runtime
-    rt = Runtime(demo=args.demo, license_guard=guard)
-    guard.telemetry_fn = lambda: {"app_version": _app_version(), **rt.telemetry()}
+    rt = Runtime(demo=args.demo)
     app = create_app(rt, port)
     tok = _rt_dir() / "shutdown.token"
     tok.write_text(rt.security.shutdown_token, encoding="utf-8")
@@ -122,63 +116,6 @@ def cmd_serve(args) -> int:
                 pass
         print("[MasterQUO] Zatrzymano.")
     return 0
-
-
-def _app_version() -> str:
-    try:
-        from .version import APP_VERSION
-        return APP_VERSION
-    except Exception:
-        return "?"
-
-
-def _license_session(args, stdin=None):
-    """masterquo_start: asks for the license key at EVERY run (no "remember", no reading from file / env / registry /
-    keyring), opens the server session of this run and returns the guard. Up to 3 attempts; nothing is stored."""
-    from .config import ConfigStore
-    from .license.client import LicenseClient, LicenseError
-    from .license.guard import LicenseGuard, prompt_key
-    store = ConfigStore()
-    lc = store.get().license
-    if not (os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url) or not (lc.public_key_pem or os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE")):
-        # first start on this computer: address + public key are asked in THIS terminal (no TTY check - some consoles
-        # on Windows report a pipe); without an answer nothing is saved and the program stops
-        from .license import setup
-        if not setup.run(store, stdin=stdin):
-            print("[MasterQUO] Serwer licencji nie jest skonfigurowany. Uruchom ponownie albo uzyj 09_KONFIGURACJA_LICENCJI.bat.", file=sys.stderr)
-            return None
-        lc = store.get().license
-    url = os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url            # address only - never the key
-    pem = lc.public_key_pem
-    if os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE"):
-        try:
-            pem = Path(os.environ["MASTERQUO_LICENSE_PUBLIC_KEY_FILE"]).read_text(encoding="utf-8")
-        except OSError:
-            pem = ""
-    try:
-        client = LicenseClient(url, pem, client_version=_app_version(), timeout=lc.timeout_seconds,
-                               telemetry_opt_in=lc.telemetry_opt_in)
-    except LicenseError as e:
-        print(f"[MasterQUO] Licencja: {e.message}", file=sys.stderr)
-        return None
-    for attempt in range(3):
-        key = prompt_key(stdin=stdin)
-        if not key:
-            print("[MasterQUO] Nie wklejono licencji – program nie uruchamia modułów chronionych.", file=sys.stderr)
-            return None
-        try:
-            st = client.open(key)
-        except LicenseError as e:
-            print(f"[MasterQUO] Licencja odrzucona: {e.message} [{e.code}]", file=sys.stderr)
-            if e.code in ("SERVER_UNREACHABLE", "RATE_LIMITED", "SERVER_CLOCK_ANOMALY", "LICENSE_EXPIRED", "LICENSE_REVOKED") or attempt == 2:
-                return None
-            continue
-        finally:
-            key = None                                     # drop the only reference to the key
-        left = st.get("license_seconds_left") or 0
-        print(f"[MasterQUO] Licencja aktywna – pozostało {left // 3600} h {(left % 3600) // 60} min (wg zegara serwera licencji).")
-        return LicenseGuard(client)
-    return None
 
 
 def _port_busy(port: int) -> bool:
@@ -252,9 +189,7 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        # whitelist: a license KEY in .env is never read (it must be pasted at every start)
-        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN",
-                 "MASTERQUO_LICENSE_SERVER_URL", "MASTERQUO_LICENSE_PUBLIC_KEY_FILE") and v and not os.environ.get(k):
+        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
@@ -274,7 +209,6 @@ def cmd_profile(name: str) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("license-setup", help="ustaw adres serwera licencji i jego klucz publiczny (bez klucza licencji)")
     s = sub.add_parser("serve")
     s.add_argument("--demo", action="store_true", help="DANE SYNTETYCZNE (symulator terminala, oddzielna baza)")
     s.add_argument("--no-browser", action="store_true")
@@ -294,10 +228,6 @@ def main(argv=None) -> int:
     _load_dotenv()
     if a.cmd == "serve":
         return cmd_serve(a)
-    if a.cmd == "license-setup":
-        from .config import ConfigStore
-        from .license import setup
-        return 0 if setup.run(ConfigStore()) else 6
     if a.cmd == "stop":
         return cmd_stop(a)
     from . import diagnostics
