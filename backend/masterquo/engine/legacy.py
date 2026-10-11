@@ -65,6 +65,12 @@ class Profiles:
             r = max(self.m02["min_closed_bars"], self.m03["min_closed_bars"], 30,
                     tp.get(tf, {}).get("min_closed_bars", self.m02i["min_closed_bars"]))
             req[tf] = r
+        # context timeframes (M30/H8) are not inputs of the legacy engines; their warm-up covers the longest
+        # indicator used on them (EMA200 / regime engine 130 bars / EMA-pullback EMA50+ADX), with margin
+        from ..timeutil import CONTEXT_TIMEFRAMES
+        for tf in CONTEXT_TIMEFRAMES:
+            req[tf] = max(req.values()) if req else 220
+            req[tf] = max(req[tf], 220)
         return req
 
 
@@ -72,7 +78,10 @@ def build_snapshot(*, snapshot_id: str, analysis_id: str, as_of: str, symbol: st
                    closed_bars: dict[str, list[dict]], analysis_status: str, reason_codes: list[str]) -> dict:
     """Legacy M01 DATA_SNAPSHOT from closed MT5 bars (Bid-based OHLC from the terminal)."""
     by_tf = {}
+    from ..timeutil import CORE_TIMEFRAMES
     for tf, bars in closed_bars.items():
+        if tf not in CORE_TIMEFRAMES:      # legacy M01-M07 contracts know the six core timeframes only
+            continue
         rows = []
         for b in bars:
             conf = b["close_confirmed_utc"]

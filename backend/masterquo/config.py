@@ -238,7 +238,9 @@ class ActiveThresholds(_Strict):
 
 
 def _default_toggles() -> dict[str, StrategyToggle]:
-    return {f"S{i:02d}": StrategyToggle() for i in range(1, 11)}
+    t = {f"S{i:02d}": StrategyToggle() for i in range(1, 11)}
+    t["S11"] = StrategyToggle(scan=True, trade=False)   # EMA20 Pullback 2.5R: challenger, never trades unless enabled by the user
+    return t
 
 
 class ActiveConfig(_Strict):
@@ -264,7 +266,7 @@ class ActiveConfig(_Strict):
     def _manual(cls, v: str | None) -> str | None:
         if v in (None, ""):
             return None
-        if not re.fullmatch(r"S(0[1-9]|10)", v):
+        if not re.fullmatch(r"S(0[1-9]|1[01])", v):
             raise ValueError("UNKNOWN_STRATEGY_ID")
         return v
 
@@ -322,7 +324,7 @@ class BotSignalsConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 6
+    config_version: int = 7
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -403,7 +405,7 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 6:
+    if v >= 7:
         return False
     if v >= 3:
         _to_v5(raw)
@@ -431,7 +433,11 @@ def _to_v5(raw: dict) -> None:
     raw.pop("connector", None)
     # v5 -> v6 (1.6): AI signals replaced by the bot's own signals (section `signals`); markets.scan interval default 120 s
     raw.pop("ai_signals", None)
-    raw["config_version"] = 6
+    # v6 -> v7 (1.7): strategy S11 (EMA20 Pullback 2.5R) added as scan-only (trade disabled); user toggles are kept
+    st = raw.setdefault("active", {}).setdefault("strategies", {})
+    if isinstance(st, dict) and "S11" not in st:
+        st["S11"] = {"scan": True, "trade": False}
+    raw["config_version"] = 7
 
 
 def _to_v3(raw: dict) -> None:

@@ -22,7 +22,7 @@ from . import indicators as ind
 
 CONTRACT_VERSION = "MQ-STRATEGY-CONTRACT-1.0.0"
 SCHEMA_VERSION = "mq-setup-1.0.0"
-TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600, "H4": 14400, "D1": 86400}
+from ..timeutil import TF_SECONDS, TIMEFRAMES  # noqa: E402  (single registry)
 STAGES = ("WATCH", "EARLY", "CONFIRMED")
 # ACTIVE score categories (points). Deterministic rules in `score`.
 WEIGHTS = {"structure": 25, "formation": 25, "momentum": 20, "trigger": 15, "htf": 10, "extra": 5}
@@ -200,7 +200,7 @@ def _mirror_regime(reg: dict) -> dict:
 def mirror_center(view: MarketView) -> float:
     """Centre of reflection: latest close of the lowest available TF (prices stay positive, same magnitude,
     so ratio indicators such as Bollinger width/mean remain valid)."""
-    for tf in ("M1", "M5", "M15", "H1", "H4", "D1"):
+    for tf in TIMEFRAMES:
         v = view.tfs.get(tf)
         if v is not None and v.c:
             return float(v.c[-1])

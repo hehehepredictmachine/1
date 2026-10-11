@@ -170,7 +170,8 @@ class ActiveEngine:
                   "entry_zone": (rec.get("entry_plan") or {}).get("zone"), "targets": rec.get("targets") or [], "exit_rules": rec.get("exit_rules"),
                   "reasons": [] if rec.get("targets") else ["NO_VALID_TARGET"]}
         toggle = cfg.strategies.get(rec["strategy_id"])
-        return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": True if toggle is None else toggle.trade,
+        default_trade = rec["strategy_id"] not in registry.DEFAULT_NO_TRADE
+        return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": default_trade if toggle is None else toggle.trade,
                                "reason_codes": st.get("reason_codes")}
 
     def hypothetical_entry(self) -> float | None:

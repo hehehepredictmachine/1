@@ -1,0 +1,217 @@
+//@version=6
+strategy(title="EMA20 Pullback + 2.5R Strategy — XAUUSD", shorttitle="EMA Pullback 2.5R", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, commission_type=strategy.commission.percent, commission_value=0.02, slippage=3, max_labels_count=500, max_lines_count=500)
+
+// ============================================================================
+// STRATEGY LOGIC
+// 1. Trend context: EMA20 vs EMA50 decides direction (uptrend = longs only,
+//    downtrend = shorts only).
+// 2. Pullback: price wicks into EMA20 while the trend is intact.
+// 3. Confirmation: on a LATER bar than the touch, price closes back above
+//    EMA20 (longs) / below EMA20 (shorts), with the ADX filter confirming a
+//    real trend, not chop.
+// 4. Stop loss: beyond the swing low/high over a lookback window, plus a
+//    small ATR buffer so a single wick doesn't stop you out prematurely.
+// 5. Take profit: exactly RR x the risk distance (entry to stop).
+// Runs on whichever chart timeframe you attach it to (M15, M30, H1, etc).
+// ============================================================================
+
+// ============================================================================
+// INPUTS — EMA SETTINGS
+// ============================================================================
+grp1 = "EMA Settings"
+lenEMA20   = input.int(20, title="EMA 20 Length", minval=1, group=grp1)
+lenEMA50   = input.int(50, title="EMA 50 Length", minval=1, group=grp1)
+colorEMA20 = input.color(color.new(color.blue, 0), title="EMA 20 Color", group=grp1)
+colorEMA50 = input.color(color.new(color.orange, 0), title="EMA 50 Color", group=grp1)
+
+// ============================================================================
+// INPUTS — PULLBACK SETTINGS
+// ============================================================================
+grp2 = "Pullback Settings"
+touchTolerancePct = input.float(0.05, title="Touch Tolerance % (0 = exact touch)", minval=0.0, step=0.01, group=grp2, tooltip="Widens the EMA20 'touch zone' slightly. Keep this small — anything much above ~0.05-0.1% starts matching routine bar-to-bar noise instead of genuine pullbacks, especially now that the same-bar confirmation bug is fixed and doesn't need a wide net to compensate.")
+maxPullbackBars   = input.int(20, title="Max Bars to Wait for Confirmation (0 = no limit)", minval=0, group=grp2, tooltip="If price touches EMA20 but doesn't confirm within this many bars, the setup is discarded.")
+requireGreenRedConfirm = input.bool(false, title="Require Confirmation Candle in Trade Direction", group=grp2, tooltip="Confirmation candle must itself be bullish (green) for longs / bearish (red) for shorts, not just close back above/below EMA20.")
+cooldownBars = input.int(1, title="Cooldown Bars Between Entries", minval=0, group=grp2, tooltip="Minimum bars that must pass after any entry before a new one can fire.")
+
+// ============================================================================
+// INPUTS — TREND STRENGTH FILTER
+// ============================================================================
+grp2b = "Trend Strength Filter (ADX)"
+useAdxFilter = input.bool(true, title="Require Trending Market (ADX)", group=grp2b, tooltip="Blocks entries when the market is choppy/ranging, which is exactly when this pullback logic generates false signals.")
+adxLength    = input.int(14, title="ADX / DI Length", minval=1, group=grp2b)
+adxSmoothing = input.int(14, title="ADX Smoothing", minval=1, group=grp2b)
+adxThreshold = input.float(20.0, title="Min ADX Value", minval=0.0, step=1.0, group=grp2b, tooltip="Standard readings: below 20 = ranging/choppy, 20-25 = developing trend, above 25 = established trend.")
+
+// ============================================================================
+// INPUTS — RISK SETTINGS
+// ============================================================================
+grp3 = "Risk / Reward"
+swingLookback = input.int(10, title="Swing Lookback (bars) for Stop Loss", minval=2, group=grp3, tooltip="Stop loss is placed beyond the lowest low / highest high over this many bars, ending at the confirmation bar.")
+atrLength     = input.int(14, title="ATR Length (for SL buffer)", minval=1, group=grp3)
+atrBufferMult = input.float(0.1, title="ATR Buffer Multiplier", minval=0.0, step=0.05, group=grp3, tooltip="Extra distance added beyond the swing low/high, in multiples of ATR.")
+rrRatio       = input.float(2.5, title="Take-Profit Reward:Risk Ratio", minval=0.1, step=0.1, group=grp3)
+allowOnlyOnePosition = input.bool(true, title="Only One Open Position at a Time", group=grp3, tooltip="ON by default. Overlapping trades were stacking losses on top of each other during choppy stretches.")
+
+grp3b = "Position Sizing"
+useRiskBasedSizing = input.bool(true, title="Size Positions by Fixed % Risk (Recommended)", group=grp3b, tooltip="Every trade risks the same % of equity regardless of stop distance, calculated from the actual SL for that trade.")
+riskPercentPerTrade = input.float(1.0, title="Risk % of Equity per Trade", minval=0.1, step=0.1, group=grp3b)
+
+grp4 = "Visuals"
+bullColor = input.color(color.new(color.green, 0), title="Bullish Color", group=grp4)
+bearColor = input.color(color.new(color.red, 0), title="Bearish Color", group=grp4)
+showTouchMarkers = input.bool(false, title="Show Pullback Touch Markers (debug only)", group=grp4)
+
+grp5 = "Diagnostics"
+showDiagnostics = input.bool(true, title="Show Signal Funnel Diagnostics", group=grp5)
+
+// ============================================================================
+// CORE EMA / ATR / ADX CALCULATIONS
+// ============================================================================
+ema20Value = ta.ema(close, lenEMA20)
+ema50Value = ta.ema(close, lenEMA50)
+atrValue   = ta.atr(atrLength)
+[diPlus, diMinus, adxValue] = ta.dmi(adxLength, adxSmoothing)
+
+plot(ema20Value, title="EMA 20", color=colorEMA20, linewidth=2)
+plot(ema50Value, title="EMA 50", color=colorEMA50, linewidth=2)
+
+trendUp   = ema20Value > ema50Value
+trendDown = ema20Value < ema50Value
+
+tolMult = 1.0 + touchTolerancePct / 100.0
+touchLong  = trendUp   and low  <= ema20Value * tolMult
+touchShort = trendDown and high >= ema20Value / tolMult
+
+// ============================================================================
+// PULLBACK STATE MACHINE
+// ============================================================================
+var bool waitingLong  = false
+var bool waitingShort = false
+var int  barsWaitingLong  = 0
+var int  barsWaitingShort = 0
+
+var int touchLongCount    = 0
+var int touchShortCount   = 0
+var int confirmLongCount  = 0
+var int confirmShortCount = 0
+var int entryLongCount    = 0
+var int entryShortCount   = 0
+var int blockedByPositionCount = 0
+var int blockedByCooldownCount = 0
+
+newTouchLong  = touchLong  and not waitingLong[1]
+newTouchShort = touchShort and not waitingShort[1]
+
+// Snapshot waiting state BEFORE this bar's touch handling mutates it below.
+// Confirmation checks against THIS snapshot, guaranteeing at least one full
+// bar between a touch and its confirmation — a same-bar wick-and-close-back
+// (routine noise in any trend) can no longer instantly self-confirm.
+wasWaitingLong  = waitingLong
+wasWaitingShort = waitingShort
+
+if newTouchLong
+    touchLongCount += 1
+if newTouchShort
+    touchShortCount += 1
+
+plotshape(showTouchMarkers and newTouchLong,  title="Touch Long",  style=shape.circle, location=location.belowbar, color=color.new(bullColor, 20), size=size.tiny)
+plotshape(showTouchMarkers and newTouchShort, title="Touch Short", style=shape.circle, location=location.abovebar, color=color.new(bearColor, 20), size=size.tiny)
+
+if touchLong
+    waitingLong := true
+    barsWaitingLong := 0
+else if waitingLong
+    barsWaitingLong += 1
+
+if touchShort
+    waitingShort := true
+    barsWaitingShort := 0
+else if waitingShort
+    barsWaitingShort += 1
+
+if maxPullbackBars > 0 and barsWaitingLong > maxPullbackBars
+    waitingLong := false
+if maxPullbackBars > 0 and barsWaitingShort > maxPullbackBars
+    waitingShort := false
+
+// ============================================================================
+// CONFIRMATION TRIGGER — uses wasWaitingLong/Short (the pre-bar snapshot),
+// NOT the same-bar mutated waitingLong/waitingShort above.
+// ============================================================================
+adxOk = not useAdxFilter or adxValue >= adxThreshold
+
+confirmLong  = wasWaitingLong  and close > ema20Value and (not requireGreenRedConfirm or close > open) and adxOk
+confirmShort = wasWaitingShort and close < ema20Value and (not requireGreenRedConfirm or close < open) and adxOk
+
+if confirmLong
+    confirmLongCount += 1
+    waitingLong := false
+if confirmShort
+    confirmShortCount += 1
+    waitingShort := false
+
+// ============================================================================
+// STRATEGY ENTRIES — structural SL, fixed 2.5R TP
+// ============================================================================
+var int lastEntryBar = -999999
+cooldownOk = (bar_index - lastEntryBar) >= cooldownBars
+positionFree = allowOnlyOnePosition ? strategy.position_size == 0 : true
+canEnter = positionFree and cooldownOk
+
+if (confirmLong or confirmShort) and not canEnter
+    if not positionFree
+        blockedByPositionCount += 1
+    else if not cooldownOk
+        blockedByCooldownCount += 1
+
+f_positionSize(riskDist) =>
+    useRiskBasedSizing ? (strategy.equity * riskPercentPerTrade / 100.0) / riskDist : (strategy.equity * 0.10) / close
+
+if confirmLong and canEnter
+    swingLow = ta.lowest(low, swingLookback)
+    slPrice  = swingLow - atrValue * atrBufferMult
+    entryPrice = close
+    riskDist = entryPrice - slPrice
+    if riskDist > 0
+        tpPrice = entryPrice + riskDist * rrRatio
+        qty = f_positionSize(riskDist)
+        tradeId = "L" + str.tostring(bar_index)
+        strategy.entry(tradeId, strategy.long, qty=qty)
+        strategy.exit("X" + tradeId, tradeId, stop=slPrice, limit=tpPrice)
+        lastEntryBar := bar_index
+        entryLongCount += 1
+        label.new(bar_index, low, text="BUY\nEntry " + str.tostring(entryPrice, "#.##") + "\nSL " + str.tostring(slPrice, "#.##") + "\nTP " + str.tostring(tpPrice, "#.##") + " (" + str.tostring(rrRatio, "#.#") + "R)", style=label.style_label_up, color=bullColor, textcolor=color.white, size=size.small, yloc=yloc.belowbar)
+
+if confirmShort and canEnter
+    swingHigh = ta.highest(high, swingLookback)
+    slPrice   = swingHigh + atrValue * atrBufferMult
+    entryPrice = close
+    riskDist = slPrice - entryPrice
+    if riskDist > 0
+        tpPrice = entryPrice - riskDist * rrRatio
+        qty = f_positionSize(riskDist)
+        tradeId = "S" + str.tostring(bar_index)
+        strategy.entry(tradeId, strategy.short, qty=qty)
+        strategy.exit("X" + tradeId, tradeId, stop=slPrice, limit=tpPrice)
+        lastEntryBar := bar_index
+        entryShortCount += 1
+        label.new(bar_index, high, text="SELL\nEntry " + str.tostring(entryPrice, "#.##") + "\nSL " + str.tostring(slPrice, "#.##") + "\nTP " + str.tostring(tpPrice, "#.##") + " (" + str.tostring(rrRatio, "#.#") + "R)", style=label.style_label_down, color=bearColor, textcolor=color.white, size=size.small, yloc=yloc.abovebar)
+
+// ============================================================================
+// DIAGNOSTICS TABLE
+// ============================================================================
+var table diagTable = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 0), border_width=1, border_color=color.new(color.gray, 60))
+
+if showDiagnostics and barstate.islast
+    table.cell(diagTable, 0, 0, "Signal Funnel", text_color=color.yellow, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 0, "", text_color=color.yellow, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 0, 1, "Touches (L/S)", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 1, str.tostring(touchLongCount) + " / " + str.tostring(touchShortCount), text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 0, 2, "Confirmed (L/S)", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 2, str.tostring(confirmLongCount) + " / " + str.tostring(confirmShortCount), text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 0, 3, "Entries (L/S)", text_color=color.lime, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 3, str.tostring(entryLongCount) + " / " + str.tostring(entryShortCount), text_color=color.lime, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 0, 4, "Blocked: Position", text_color=color.orange, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 4, str.tostring(blockedByPositionCount), text_color=color.orange, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 0, 5, "Blocked: Cooldown", text_color=color.orange, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(diagTable, 1, 5, str.tostring(blockedByCooldownCount), text_color=color.orange, bgcolor=color.new(color.black, 0), text_size=size.small)

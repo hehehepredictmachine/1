@@ -16,7 +16,7 @@ import math
 from collections import Counter
 from datetime import datetime, timedelta
 
-from ..timeutil import TF_SECONDS, TIMEFRAMES, from_epoch, iso, parse_iso
+from ..timeutil import CONTEXT_TIMEFRAMES, CORE_TIMEFRAMES, TF_SECONDS, TIMEFRAMES, from_epoch, iso, parse_iso
 
 FIX_HISTORY = ("Otwórz w MT5 wykres {sym} {tf}, przewiń go w lewo (Home) aż do pobrania historii; "
                "sprawdź Narzędzia → Opcje → Wykresy → 'Maks. liczba słupków na wykresie' (min. 5000).")
@@ -170,9 +170,16 @@ def assess(*, symbol: str, bars_by_tf: dict[str, list[dict]], required: dict[str
         reasons.append("MARKET_" + market_state)
     if pc_clock and pc_clock.get("status") == "SKEW":
         reasons.append("PC_CLOCK_SKEW")
-    bad = [tf for tf, r in per_tf.items() if r["status"] in ("INVALID", "TIME_ERROR", "NO_DATA")]
-    warming = [tf for tf, r in per_tf.items() if r["status"] == "INSUFFICIENT_HISTORY"]
-    degraded = [tf for tf, r in per_tf.items() if r["status"] in ("STALE", "DEGRADED")]
+    # the engine gate uses the core timeframes; context timeframes (M30/H8) are reported, never silently ignored,
+    # and strategies that need them check their status themselves (BRAK_DANYCH)
+    core = {tf: per_tf[tf] for tf in CORE_TIMEFRAMES}
+    bad = [tf for tf, r in core.items() if r["status"] in ("INVALID", "TIME_ERROR", "NO_DATA")]
+    warming = [tf for tf, r in core.items() if r["status"] == "INSUFFICIENT_HISTORY"]
+    degraded = [tf for tf, r in core.items() if r["status"] in ("STALE", "DEGRADED")]
+    context = {tf: per_tf[tf]["status"] for tf in CONTEXT_TIMEFRAMES}
+    for tf, st in context.items():
+        if st != "OK":
+            reasons.append(f"CONTEXT_{tf}_{st}")
     for tf in bad:
         reasons.append(f"{tf}_{per_tf[tf]['status']}")
     for tf in warming:
@@ -191,7 +198,7 @@ def assess(*, symbol: str, bars_by_tf: dict[str, list[dict]], required: dict[str
         dq = "GOOD"
     return {"data_quality": dq, "analysis_allowed": analysis_allowed, "entries_allowed": entries_allowed,
             "market_state": market_state, "server_now": iso(server_now) if server_now else None,
-            "quote_fresh": quote_fresh, "timeframes": per_tf, "session_model": session.as_dict(),
+            "quote_fresh": quote_fresh, "timeframes": per_tf, "context_timeframes": context, "session_model": session.as_dict(),
             "reason_codes": sorted(set(reasons)), "warming_up": warming, "assessed_at": iso(now)}
 
 

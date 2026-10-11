@@ -1,4 +1,4 @@
-"""Bot signals - CONFIRMED setups of the MasterQUO strategies S01-S10, on every market.
+"""Bot signals - CONFIRMED setups of the MasterQUO strategies S01-S11, on every market.
 
 Sources (both run the same strategy code, thresholds, parameters and per-strategy switches as the bot):
   MAIN     - the bot's own engine on the main symbol (ActiveEngine events NEW_CONFIRMED / STAGE_CONFIRMED);
@@ -27,7 +27,7 @@ from ..timeutil import iso, parse_iso, utcnow
 log = logging.getLogger("masterquo.signals")
 OPEN_STATES = ("OPEN",)
 SIGNAL_EVENTS = ("NEW_CONFIRMED", "STAGE_CONFIRMED")
-STRATEGY_TFS = {"M5": 400, "M15": 400, "H1": 400, "H4": 300, "D1": 420}
+STRATEGY_TFS = {"M5": 400, "M15": 400, "M30": 400, "H1": 400, "H4": 300, "H8": 300, "D1": 420}
 
 
 # ---------------------------------------------------------------------------------------------- validation

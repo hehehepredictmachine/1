@@ -1,0 +1,156 @@
+//@version=6
+// EMA20 Pullback + 2.5R — FIXED (MasterQUO audit, see AUDYT_MASTERQUO.md "Strategia EMA20 Pullback")
+// Same core rules as the original; corrected state machine and execution model. Equivalent Python implementation:
+// backend/masterquo/strategies/ema_pullback_core.py (run_fixed) + s11_ema_pullback.py.
+// NOT compiled in the build environment (no TradingView access) - compile and compare on your chart before use.
+strategy(title="EMA20 Pullback + 2.5R — XAUUSD (FIXED)", shorttitle="EMA PB 2.5R FIX", overlay=true,
+     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.percent, commission_value=0.02, slippage=3,
+     pyramiding=0, process_orders_on_close=false, calc_on_every_tick=false,
+     max_labels_count=500, max_lines_count=500)
+
+// ---------------------------------------------------------------------------- inputs (defaults = original)
+grp1 = "EMA"
+lenEMA20 = input.int(20, "EMA 20 Length", minval=1, group=grp1)
+lenEMA50 = input.int(50, "EMA 50 Length", minval=1, group=grp1)
+grp2 = "Pullback"
+touchTolerancePct = input.float(0.05, "Touch Tolerance %", minval=0.0, step=0.01, group=grp2)
+maxPullbackBars = input.int(20, "Max bars to confirm (0 = no limit)", minval=0, group=grp2, tooltip="Confirmation allowed on bars touch+1 .. touch+N. Expiry is evaluated BEFORE confirmation.")
+requireGreenRedConfirm = input.bool(false, "Confirmation candle in trade direction", group=grp2)
+cooldownBars = input.int(1, "Cooldown bars after a FILL", minval=0, group=grp2)
+grp2b = "ADX"
+useAdxFilter = input.bool(true, "Require ADX", group=grp2b)
+adxLength = input.int(14, "DI Length", minval=1, group=grp2b)
+adxSmoothing = input.int(14, "ADX Smoothing", minval=1, group=grp2b)
+adxThreshold = input.float(20.0, "Min ADX", minval=0.0, group=grp2b)
+grp3 = "Risk"
+swingLookback = input.int(10, "Swing lookback (bars)", minval=2, group=grp3)
+atrLength = input.int(14, "ATR Length", minval=1, group=grp3)
+atrBufferMult = input.float(0.1, "ATR buffer", minval=0.0, step=0.05, group=grp3)
+rrRatio = input.float(2.5, "Reward:Risk", minval=0.1, step=0.1, group=grp3)
+riskPercentPerTrade = input.float(1.0, "Risk % of equity", minval=0.1, step=0.1, group=grp3)
+qtyStep = input.float(1.0, "Quantity step (units)", minval=0.000001, group=grp3, tooltip="Contracts/units step of your symbol. Quantity is rounded DOWN; below the minimum the trade is skipped (risk is never increased).")
+minQty = input.float(1.0, "Minimum quantity (units)", minval=0.000001, group=grp3)
+grp4 = "Hypotheses (off = original rules)"
+useH8Filter = input.bool(false, "H8 trend filter (closed H8 bar, no repaint)", group=grp4)
+minEmaSepAtr = input.float(0.0, "Min |EMA20-EMA50| in ATR (0 = off)", minval=0.0, step=0.05, group=grp4)
+showDiagnostics = input.bool(true, "Diagnostics table", group="Diagnostics")
+
+// ---------------------------------------------------------------------------- indicators (computed on every bar)
+ema20 = ta.ema(close, lenEMA20)
+ema50 = ta.ema(close, lenEMA50)
+atr = ta.atr(atrLength)
+[diPlus, diMinus, adx] = ta.dmi(adxLength, adxSmoothing)
+swingLow = ta.lowest(low, swingLookback)          // moved out of the conditional blocks (consistent history)
+swingHigh = ta.highest(high, swingLookback)
+plot(ema20, "EMA 20", color.blue, 2)
+plot(ema50, "EMA 50", color.orange, 2)
+
+// H8 trend of the LAST CLOSED H8 bar: expr[1] + lookahead_on = no future data, no repainting
+h8Trend = request.security(syminfo.tickerid, "480", (ta.ema(close, lenEMA20) > ta.ema(close, lenEMA50) ? 1 : -1)[1], lookahead=barmerge.lookahead_on)
+warm = bar_index >= 3 * lenEMA50 and not na(atr) and not na(adx) and not na(ema50)
+
+trendUp = ema20 > ema50
+trendDown = ema20 < ema50
+tolMult = 1.0 + touchTolerancePct / 100.0
+touchLong = trendUp and low <= ema20 * tolMult
+touchShort = trendDown and high >= ema20 / tolMult
+adxOk = not useAdxFilter or adx >= adxThreshold
+sepOk = minEmaSepAtr <= 0 or math.abs(ema20 - ema50) >= minEmaSepAtr * atr
+
+// ---------------------------------------------------------------------------- explicit state machine
+// state: 0 = none, 1 = waiting (setup id = bar index of the FIRST touch)
+var int stL = 0
+var int stS = 0
+var int touchBarL = na
+var int touchBarS = na
+var int nTouchL = 0, var int nTouchS = 0, var int nConfL = 0, var int nConfS = 0
+var int nExpired = 0, var int nInvalid = 0, var int nBlockedFilter = 0, var int nBlockedPos = 0, var int nBlockedCool = 0
+var int nOrders = 0, var int nFills = 0
+var int lastFillBar = -1000000
+var float pendStop = na
+var bool exitsFromFill = false
+
+confirmLong = false
+confirmShort = false
+if warm
+    // (1) context change invalidates  (2) expiry before confirmation
+    if stL == 1 and not trendUp
+        stL := 0, nInvalid += 1
+    if stS == 1 and not trendDown
+        stS := 0, nInvalid += 1
+    if stL == 1 and maxPullbackBars > 0 and bar_index - touchBarL > maxPullbackBars
+        stL := 0, nExpired += 1
+    if stS == 1 and maxPullbackBars > 0 and bar_index - touchBarS > maxPullbackBars
+        stS := 0, nExpired += 1
+    // (3) confirmation on a LATER closed bar, trend still valid
+    if stL == 1 and bar_index > touchBarL and trendUp and close > ema20 and adxOk and (not requireGreenRedConfirm or close > open)
+        if sepOk and (not useH8Filter or h8Trend == 1)
+            confirmLong := true, nConfL += 1
+        else
+            nBlockedFilter += 1
+        stL := 0
+    else if stL == 0 and touchLong
+        stL := 1, touchBarL := bar_index, nTouchL += 1     // (4) only the FIRST touch opens a setup
+    if stS == 1 and bar_index > touchBarS and trendDown and close < ema20 and adxOk and (not requireGreenRedConfirm or close < open)
+        if sepOk and (not useH8Filter or h8Trend == -1)
+            confirmShort := true, nConfS += 1
+        else
+            nBlockedFilter += 1
+        stS := 0
+    else if stS == 0 and touchShort
+        stS := 1, touchBarS := bar_index, nTouchS += 1
+
+// ---------------------------------------------------------------------------- fills, exits recomputed from the real entry
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    nFills += 1
+    lastFillBar := bar_index
+    exitsFromFill := false
+if strategy.position_size != 0 and not exitsFromFill and not na(pendStop)
+    fillPx = strategy.position_avg_price
+    risk = math.abs(fillPx - pendStop)
+    tp = strategy.position_size > 0 ? fillPx + rrRatio * risk : fillPx - rrRatio * risk
+    strategy.exit("X", stop=math.round_to_mintick(pendStop), limit=math.round_to_mintick(tp))   // TP from the fill price
+    exitsFromFill := true
+
+// ---------------------------------------------------------------------------- entries (market at the next open)
+free = strategy.position_size == 0 and strategy.opentrades == 0
+coolOk = bar_index - lastFillBar >= cooldownBars
+qtyFor(riskDist) =>
+    q = (strategy.equity * riskPercentPerTrade / 100.0) / (riskDist * syminfo.pointvalue)
+    math.floor(q / qtyStep) * qtyStep
+
+doEntry(isLong) =>
+    stopPx = isLong ? swingLow - atr * atrBufferMult : swingHigh + atr * atrBufferMult
+    riskDist = isLong ? close - stopPx : stopPx - close
+    q = riskDist > 0 ? qtyFor(riskDist) : 0.0
+    [stopPx, riskDist, q]
+
+if (confirmLong or confirmShort) and not (free and coolOk)
+    if not free
+        nBlockedPos += 1          // the confirmed setup is consumed - never executed later
+    else
+        nBlockedCool += 1
+else if confirmLong or confirmShort
+    isLong = confirmLong
+    [stopPx, riskDist, q] = doEntry(isLong)
+    if riskDist > 0 and q >= minQty
+        strategy.entry(isLong ? "L" : "S", isLong ? strategy.long : strategy.short, qty=q)
+        tpRef = isLong ? close + riskDist * rrRatio : close - riskDist * rrRatio
+        strategy.exit("X", isLong ? "L" : "S", stop=math.round_to_mintick(stopPx), limit=math.round_to_mintick(tpRef))  // provisional; replaced from the fill
+        pendStop := stopPx
+        nOrders += 1
+        label.new(bar_index, isLong ? low : high, (isLong ? "BUY" : "SELL") + "\nRef " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(stopPx, format.mintick) + "\nTP (from fill) " + str.tostring(rrRatio, "#.#") + "R",
+             style=isLong ? label.style_label_up : label.style_label_down, color=isLong ? color.green : color.red, textcolor=color.white, size=size.small)
+
+// ---------------------------------------------------------------------------- diagnostics
+var table t = table.new(position.top_right, 2, 10, bgcolor=color.black)
+if showDiagnostics and barstate.islast
+    table.cell(t, 0, 0, "Touches L/S", text_color=color.white), table.cell(t, 1, 0, str.tostring(nTouchL) + " / " + str.tostring(nTouchS), text_color=color.white)
+    table.cell(t, 0, 1, "Confirmed L/S", text_color=color.white), table.cell(t, 1, 1, str.tostring(nConfL) + " / " + str.tostring(nConfS), text_color=color.white)
+    table.cell(t, 0, 2, "Expired", text_color=color.orange), table.cell(t, 1, 2, str.tostring(nExpired), text_color=color.orange)
+    table.cell(t, 0, 3, "Invalidated (trend)", text_color=color.orange), table.cell(t, 1, 3, str.tostring(nInvalid), text_color=color.orange)
+    table.cell(t, 0, 4, "Blocked: filter/pos/cool", text_color=color.orange), table.cell(t, 1, 4, str.tostring(nBlockedFilter) + " / " + str.tostring(nBlockedPos) + " / " + str.tostring(nBlockedCool), text_color=color.orange)
+    table.cell(t, 0, 5, "Orders sent", text_color=color.lime), table.cell(t, 1, 5, str.tostring(nOrders), text_color=color.lime)
+    table.cell(t, 0, 6, "Fills", text_color=color.lime), table.cell(t, 1, 6, str.tostring(nFills), text_color=color.lime)
+    table.cell(t, 0, 7, "H8 (closed) trend", text_color=color.white), table.cell(t, 1, 7, na(h8Trend) ? "BRAK_DANYCH" : str.tostring(h8Trend), text_color=color.white)

@@ -17,7 +17,7 @@ from . import analysis
 
 log = logging.getLogger("masterquo.markets")
 COUNTS = {"H1": 400, "H4": 400, "D1": 420}
-STRATEGY_COUNTS = {"M5": 400, "M15": 400}          # extra timeframes for the bot strategies S01-S10
+STRATEGY_COUNTS = {"M5": 400, "M15": 400, "M30": 400, "H8": 300}   # extra timeframes for the bot strategies S01-S11
 
 
 class MarketScanner:

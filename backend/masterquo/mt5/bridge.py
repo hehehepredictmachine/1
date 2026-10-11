@@ -18,16 +18,18 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from ..config import ConfigStore
-from ..timeutil import TF_SECONDS, TIMEFRAMES, UTC, from_epoch, iso, utcnow
+from ..timeutil import TF_REGISTRY, TF_SECONDS, TIMEFRAMES, UTC, from_epoch, iso, utcnow
 from .clock import ServerClock
 from .worker import PRIO_HISTORY, PRIO_QUOTE, MT5CallTimeout, MT5Worker, MT5WorkerUnavailable
 
 log = logging.getLogger("masterquo.mt5.bridge")
 
-TF_CONST = {"M1": "TIMEFRAME_M1", "M5": "TIMEFRAME_M5", "M15": "TIMEFRAME_M15",
-            "H1": "TIMEFRAME_H1", "H4": "TIMEFRAME_H4", "D1": "TIMEFRAME_D1"}
+TF_CONST = {tf: v["mt5"] for tf, v in TF_REGISTRY.items()}       # MetaTrader5 constants (never minutes as an enum)
 # Poll cadence per timeframe (seconds). Higher TFs change rarely.
-TF_POLL = {"M1": 1.0, "M5": 2.0, "M15": 3.0, "H1": 5.0, "H4": 10.0, "D1": 15.0}
+TF_POLL = {"M1": 1.0, "M5": 2.0, "M15": 3.0, "M30": 4.0, "H1": 5.0, "H4": 10.0, "H8": 12.0, "D1": 15.0}
+# Controlled fallback when the terminal returns no native bars for a timeframe: (source TF, bars per bucket).
+# Buckets are anchored on the broker server day (raw server epochs), like MT5's own H8 bars (00/08/16 server time).
+RESAMPLE_FROM = {"H8": ("H1", 8)}
 TRADE_MODE = {0: "DEMO", 1: "CONTEST", 2: "REAL"}
 MARGIN_MODE = {0: "NETTING", 1: "EXCHANGE", 2: "HEDGING"}
 
@@ -55,6 +57,8 @@ class Bar:
     observed_close_utc: datetime | None = None   # when we observed the next bar (live)
     basis: str = "FORMING"                       # FORMING | OBSERVED | HISTORICAL_ESTIMATE
     revision: int = 0
+    source: str = "native"                       # native | resampled (see RESAMPLE_FROM)
+    parts: int | None = None                     # resampled: number of source bars in the bucket
 
     def same_values(self, other: "Bar") -> bool:
         return (self.o, self.h, self.l, self.c, self.tv) == (other.o, other.h, other.l, other.c, other.tv)
@@ -287,7 +291,10 @@ class MarketBridge:
     # ---------------------------------------------------------------- history
     def _fetch(self, symbol: str, tf: str, count: int) -> list[Bar]:
         name = TF_CONST[tf]
-        raw = self._call(lambda m: m.copy_rates_from_pos(symbol, getattr(m, name), 0, count), PRIO_HISTORY)
+        raw = self._call(lambda m: m.copy_rates_from_pos(symbol, getattr(m, name, None), 0, count) if getattr(m, name, None) is not None
+                         else None, PRIO_HISTORY)
+        if (raw is None or len(raw) == 0) and tf in RESAMPLE_FROM:
+            return self._resample(symbol, tf, count)
         if raw is None:
             err = self._call(lambda m: m.last_error())
             raise BridgeError(f"COPY_RATES_FAILED:{tf}:{err}")
@@ -298,6 +305,28 @@ class MarketBridge:
                            int(d.get("tick_volume") or 0), int(d.get("real_volume") or 0), int(d.get("spread") or 0)))
         out.sort(key=lambda b: b.t_raw)
         return out
+
+    def _resample(self, symbol: str, tf: str, count: int) -> list[Bar]:
+        """Build `tf` bars from closed+forming source bars when the terminal has no native series.
+
+        Bucket = floor(raw server epoch / tf seconds): aligned with the broker's server day (as MT5's own H8),
+        open = first source open, high = max, low = min, close = last close, tick volume = sum. The newest bucket
+        stays FORMING (it is closed only when a later bucket is observed, the bridge's general rule). A bucket is
+        marked with the number of source bars it contains (`parts`) - session breaks make fewer bars normal,
+        so `parts` is evidence for the quality report, never padded."""
+        src, per = RESAMPLE_FROM[tf]
+        sec = TF_SECONDS[tf]
+        base = self._fetch(symbol, src, min(5000, count * per + per * 2))
+        out: list[Bar] = []
+        for b in base:
+            k = b.t_raw - (b.t_raw % sec)
+            if out and out[-1].t_raw == k:
+                x = out[-1]
+                x.h, x.l, x.c, x.tv, x.rv = max(x.h, b.h), min(x.l, b.l), b.c, x.tv + b.tv, x.rv + b.rv
+                x.parts = (x.parts or 0) + 1
+            else:
+                out.append(Bar(k, b.o, b.h, b.l, b.c, b.tv, b.rv, b.spread, source="resampled", parts=1))
+        return out[-count:]
 
     def buffer_size(self, tf: str) -> int:
         return min(2000, max(self.cfg.chart_bars, self.required_bars.get(tf, 260) + 60))
@@ -577,7 +606,8 @@ class MarketBridge:
         return {"t_raw": b.t_raw, "open_utc": iso(open_utc), "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "rv": b.rv,
                 "spread": b.spread, "closed": b.closed,
                 "close_confirmed_utc": iso(from_epoch(b.available_raw_next_open - off)) if (b.closed and off is not None and b.available_raw_next_open) else None,
-                "available_at": iso(avail), "basis": b.basis, "revision": b.revision}
+                "available_at": iso(avail), "basis": b.basis, "revision": b.revision, "source": b.source,
+                **({"parts": b.parts} if b.parts is not None else {})}
 
     def bars(self, tf: str, limit: int | None = None, include_forming: bool = True) -> list[dict]:
         with self._lock:

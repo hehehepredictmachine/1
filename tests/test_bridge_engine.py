@@ -21,7 +21,7 @@ class TestBridge(unittest.TestCase):
         try:
             self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.clock.verified, 40))
             meta = b.tf_meta()
-            self.assertEqual(set(meta), {"M1", "M5", "M15", "H1", "H4", "D1"})
+            self.assertEqual(set(meta), {"M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"})   # one registry incl. M30/H8
             for tf, m in meta.items():
                 self.assertTrue(m["loaded"], tf)
                 self.assertGreater(m["closed"], 200, tf)
@@ -33,8 +33,32 @@ class TestBridge(unittest.TestCase):
             self.assertTrue(all(x["closed"] for x in m1[:-1]))
             self.assertEqual(m1[-2]["close_confirmed_utc"], m1[-1]["open_utc"])  # closed only by observed next bar
             self.assertEqual(b.account["trade_mode"], "DEMO")
+            h8, m30 = b.bars("H8"), b.bars("M30")
+            self.assertEqual(h8[-1]["source"], "native")
+            self.assertTrue(all((x["t_raw"] % 28800) == 0 for x in h8))             # 00/08/16 server time
+            self.assertTrue(all((x["t_raw"] % 1800) == 0 for x in m30))
+            self.assertFalse(h8[-1]["closed"])                                       # forming H8 is preview only
         finally:
             b.stop()
+            worker.stop()
+
+    def test_h8_resampled_from_h1_when_terminal_has_no_native_series(self):
+        cfg, db, bus, log, fake, worker, b = core({"native_h8": False})
+        try:
+            b.connect()
+            h8, h1 = b.bars("H8"), b.bars("H1")
+            self.assertTrue(h8 and all(x["source"] == "resampled" for x in h8))
+            last_closed = [x for x in h8 if x["closed"]][-1]
+            k = last_closed["t_raw"]
+            parts = [x for x in h1 if k <= x["t_raw"] < k + 28800]
+            self.assertEqual(last_closed["parts"], len(parts))
+            self.assertEqual(last_closed["o"], parts[0]["o"])                        # open of the first source bar
+            self.assertEqual(last_closed["c"], parts[-1]["c"])                       # close of the last
+            self.assertEqual(last_closed["h"], max(p["h"] for p in parts))
+            self.assertEqual(last_closed["l"], min(p["l"] for p in parts))
+            self.assertFalse(h8[-1]["closed"])                                       # newest bucket stays forming
+            self.assertTrue(all(x["t_raw"] % 28800 == 0 for x in h8))
+        finally:
             worker.stop()
 
     def test_symbol_not_found_no_substitution(self):

@@ -14,11 +14,15 @@ from .s07_failed_breakout_reclaim import FailedBreakoutReclaim
 from .s08_range_edge_reversion import RangeEdgeReversion
 from .s09_statistical_mean_reversion import StatisticalMeanReversion
 from .s10_exhaustion_structure_reversal import ExhaustionStructureReversal
+from .s11_ema_pullback import EmaPullback
 
 REGISTRY_VERSION = "MQ-REGISTRY-1.0.0"
 STRATEGIES: dict[str, base.Strategy] = {s.id: s for s in (
     TrendPullback(), AdaptiveTrend(), ChannelBreakout(), VolatilityCompressionBreakout(), SessionRangeBreakout(),
-    BreakoutRetest(), FailedBreakoutReclaim(), RangeEdgeReversion(), StatisticalMeanReversion(), ExhaustionStructureReversal())}
+    BreakoutRetest(), FailedBreakoutReclaim(), RangeEdgeReversion(), StatisticalMeanReversion(), ExhaustionStructureReversal(),
+    EmaPullback())}
+# strategies that may be scanned/shown but are not allowed to trade until the user enables them (unvalidated challengers)
+DEFAULT_NO_TRADE = {"S11"}
 
 
 def params_for(sid: str, overrides: dict | None) -> dict:

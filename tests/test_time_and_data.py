@@ -168,7 +168,8 @@ class TestSymbolAndConfig(unittest.TestCase):
     def test_history_requirements_from_profiles(self):
         from masterquo.engine.legacy import Profiles
         req = Profiles().required_closed_bars()
-        self.assertEqual(set(req), {"M1", "M5", "M15", "H1", "H4", "D1"})
+        self.assertEqual(set(req), {"M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"})
+        self.assertGreaterEqual(req["H8"], 220)  # warm-up of the longest context indicator
         self.assertGreaterEqual(req["D1"], 230)  # not one fixed 90-bar limit
 
     def test_no_wrong_default_symbol_in_active_code(self):

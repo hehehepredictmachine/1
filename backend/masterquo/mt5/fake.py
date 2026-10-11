@@ -21,9 +21,10 @@ import numpy as np
 
 UTC = timezone.utc
 
-TIMEFRAME_M1, TIMEFRAME_M5, TIMEFRAME_M15 = 1, 5, 15
-TIMEFRAME_H1, TIMEFRAME_H4, TIMEFRAME_D1 = 16385, 16388, 16408
-_TF_SEC = {TIMEFRAME_M1: 60, TIMEFRAME_M5: 300, TIMEFRAME_M15: 900, TIMEFRAME_H1: 3600, TIMEFRAME_H4: 14400, TIMEFRAME_D1: 86400}
+TIMEFRAME_M1, TIMEFRAME_M5, TIMEFRAME_M15, TIMEFRAME_M30 = 1, 5, 15, 30
+TIMEFRAME_H1, TIMEFRAME_H4, TIMEFRAME_H8, TIMEFRAME_D1 = 16385, 16388, 16392, 16408   # official MetaTrader5 values
+_TF_SEC = {TIMEFRAME_M1: 60, TIMEFRAME_M5: 300, TIMEFRAME_M15: 900, TIMEFRAME_M30: 1800, TIMEFRAME_H1: 3600, TIMEFRAME_H4: 14400,
+           TIMEFRAME_H8: 28800, TIMEFRAME_D1: 86400}
 
 ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
 TRADE_ACTION_DEAL, TRADE_ACTION_SLTP = 1, 6
@@ -73,7 +74,7 @@ class FakeMT5:
                  clock: Callable[[], datetime] | None = None, history_days: int = 430, hedging: bool = True,
                  login: int = 5550001, server: str = "Synthetic-Demo", trade_mode: int = ACCOUNT_TRADE_MODE_DEMO,
                  commission_per_lot_side: float = 3.5, start_price: float = 2650.0, extra_symbols=("DXY_SYN",),
-                 markets: dict | None = None):
+                 markets: dict | None = None, native_h8: bool = True):
         self.symbol = symbol
         self.offset = int(server_offset_hours * 3600)
         self.clock = clock or (lambda: datetime.now(UTC))
@@ -93,6 +94,7 @@ class FakeMT5:
         self._ticket = 1000
         self._extra = set(extra_symbols)
         self._markets = dict(SYN_MARKETS if markets is None else markets)
+        self.native_h8 = native_h8      # False simulates a terminal without the H8 series (tests of the resampling fallback)
         self._series: dict[str, tuple] = {}
         self._visible = {symbol} | {n for n, m in self._markets.items() if m["visible"]}
         self._start_price = start_price
@@ -325,6 +327,9 @@ class FakeMT5:
 
     def copy_rates_from_pos(self, symbol, timeframe, start_pos, count):
         if not self._guard() or not self._known(symbol):
+            return None
+        if timeframe == TIMEFRAME_H8 and not self.native_h8:
+            self._last_error = (-1, "Terminal: Call failed")
             return None
         if symbol in self._markets:
             r = self._rates(timeframe, self._raw_now(), self._market_series(symbol))
