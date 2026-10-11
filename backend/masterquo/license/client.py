@@ -34,7 +34,7 @@ MESSAGES = {
     "RATE_LIMITED": "Za dużo prób – odczekaj kilka minut.", "NONCE_REUSED": "Powtórzone żądanie – spróbuj ponownie.",
     "SERVER_CLOCK_ANOMALY": "Serwer licencji wstrzymał wydawanie dostępu (anomalia zegara serwera).",
     "SERVER_UNREACHABLE": "Brak połączenia z serwerem licencji.", "LEASE_INVALID": "Odpowiedź serwera licencji nie przeszła weryfikacji podpisu.",
-    "NOT_CONFIGURED": "Brak konfiguracji serwera licencji (license.server_url i license.public_key_pem w data\\config.json).",
+    "NOT_CONFIGURED": "Brak konfiguracji serwera licencji - uruchom 09_KONFIGURACJA_LICENCJI.bat (adres serwera + klucz publiczny).",
     "INSECURE_URL": "Adres serwera licencji musi używać https:// (http:// tylko dla 127.0.0.1/localhost).",
 }
 FATAL = {"LICENSE_INVALID", "LICENSE_EXPIRED", "LICENSE_REVOKED", "SESSION_LIMIT_REACHED", "SESSION_TERMINATED", "SESSION_ENDED", "SESSION_INVALID",

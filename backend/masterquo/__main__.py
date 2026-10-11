@@ -79,6 +79,7 @@ def cmd_serve(args) -> int:
     if lock is None:
         print("[MasterQUO] Inna instancja MasterQUO już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
+    print(f"[MasterQUO] {_app_version()} – start: najpierw licencja, potem serwer główny.")
     guard = _license_session(args)
     if guard is None:
         return 5
@@ -140,11 +141,13 @@ def _license_session(args, stdin=None):
     store = ConfigStore()
     lc = store.get().license
     if not (os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url) or not (lc.public_key_pem or os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE")):
-        if (stdin or sys.stdin).isatty():                                   # first start on this computer: set up in the terminal
-            from .license import setup
-            if not setup.run(store, stdin=stdin):
-                return None
-            lc = store.get().license
+        # first start on this computer: address + public key are asked in THIS terminal (no TTY check - some consoles
+        # on Windows report a pipe); without an answer nothing is saved and the program stops
+        from .license import setup
+        if not setup.run(store, stdin=stdin):
+            print("[MasterQUO] Serwer licencji nie jest skonfigurowany. Uruchom ponownie albo uzyj 09_KONFIGURACJA_LICENCJI.bat.", file=sys.stderr)
+            return None
+        lc = store.get().license
     url = os.environ.get("MASTERQUO_LICENSE_SERVER_URL") or lc.server_url            # address only - never the key
     pem = lc.public_key_pem
     if os.environ.get("MASTERQUO_LICENSE_PUBLIC_KEY_FILE"):
