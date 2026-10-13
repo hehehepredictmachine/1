@@ -59,7 +59,7 @@ class Registry:
         return self.db.query("SELECT * FROM ml_events ORDER BY id DESC LIMIT ?", (limit,))
 
     def last_test_end(self) -> str | None:
-        r = self.db.query("SELECT metrics_json FROM ml_models ORDER BY created_at DESC LIMIT 20")
+        r = self.db.query("SELECT metrics_json FROM ml_models")             # every used test window, not only the latest rows
         ends = [json.loads(x["metrics_json"]).get("test_window", [None, None])[1] for x in r]
         ends = [e for e in ends if e]
         return max(ends) if ends else None
@@ -108,8 +108,11 @@ class Registry:
             from .dataset import load_snapshot
             from . import features as fe
             rows = load_snapshot(result["snapshot"])
-            w = result["validation"]["windows"]["test"]
-            test = [r for r in rows if w and w[0] <= r["asof_utc"] <= w[1]]
+            ids = result["validation"].get("test_sample_ids")
+            if ids is None:                                 # results from 1.9 without ids: no comparison instead of a different set
+                return None
+            want = set(ids)
+            test = [r for r in rows if r["sample_id"] in want]      # the SAME samples the challenger was tested on
             if not test:
                 return None
             f = [fe.from_json(json.loads(r["features_json"])) for r in test]

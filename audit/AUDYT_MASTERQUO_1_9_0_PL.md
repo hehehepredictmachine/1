@@ -155,7 +155,7 @@ Odtworzenia: skrypt `audit/repro/repro_audit.py`. Wynik dla 1.9.0 jest w pliku `
 
 **Dodatkowo:**
 - Etykieta liczy TP z rekordu setupu (cena z zamknięcia świecy sygnału), a nie od rzeczywistego fillu. Plan S11 to `RR_FROM_FILL` (`engine/service.py:354 _tp_from_entry`), więc etykieta ≠ wykonanie.
-- `ml/features.py:23` kategorie `strategy_id` obejmują tylko S01–S10, a `timeframe` tylko M1/M5/M15/H1. S11 i M30 kodują się jako „brak kategorii”.
+- `ml/features.py:23` opis schematu kategorii obejmuje tylko S01–S10 i M1/M5/M15/H1. **Weryfikacja:** kodowanie (`ml/prep.py:39`) używa kategorii **zaobserwowanych w treningu**, więc S11 i M30 są kodowane, gdy występują w danych. To jest wyłącznie niekompletna dokumentacja schematu (NIE_DOTYCZY jako błąd modelu).
 
 **Pewność:** wysoka.
 
@@ -359,7 +359,7 @@ Fill to bieżący Bid/Ask w chwili odczytu co ≈ 1 s (`manager._loop`).
 
 **Cel ML:** `label = 1 if net R > 0`. Zgodność z wykonywaną polityką jest naruszona przez usterki C, D i E. Koszty: usterka A.
 
-**Kategorie cech:** S11 i M30 są poza kategoriami (`features.py:23`). Po dodaniu S12 to samo dotyczyłoby nowych strategii. Poprawka: kategorie wyprowadzane z rejestru.
+**Kategorie cech:** opis schematu (`features.py:23`) nie wymienia S11 i M30. Kodowanie korzysta jednak z kategorii zaobserwowanych w treningu (`prep.py:39`), więc nie jest to błąd modelu (zweryfikowane). Lista w opisie schematu jest teraz wyprowadzana z rejestru (bez zmiany wersji schematu).
 
 **Podział:** chronologiczny, z grupowaniem zdarzeń, purgingiem i embargo; patrz G.
 
@@ -387,7 +387,7 @@ Fill to bieżący Bid/Ask w chwili odczytu co ≈ 1 s (`manager._loop`).
 | P0-6 | `tp1_done` przed `order_send` | ODTWORZONE (F) | `execution/manager.py:160-170` | `tp1_state` REQUESTED/UNKNOWN/CONFIRMED/REJECTED; BE tylko po CONFIRMED; rekonsyliacja wolumenu | `repro F`; `test_audit_fixes.test_tp1_state_*` |
 | P0-7 | Champion oceniany innym zbiorem | ODTWORZONE (G) | `ml/registry.py:104-122` | ocena po `sample_id` bloku testu zapisanych w wyniku | `repro G`; `test_audit_fixes.test_champion_same_ids` |
 | P0-8 | P/L None → 0 w PAPER | ODTWORZONE (J) | `execution/paper.py:79` | część nierozliczona: `trades.status=UNSETTLED`, poza statystykami | `repro J` |
-| P0-9 | S11/M30 poza kategoriami cech | POTWIERDZONE_W_KODZIE | `ml/features.py:23` | kategorie z rejestru strategii i rejestru TF; nowa wersja schematu cech | `test_ml` (schemat) |
+| P0-9 | Opis schematu kategorii bez S11/M30 (kodowanie z danych – **nie** błąd modelu) | ZWERYFIKOWANE – tylko dokumentacja | `ml/features.py:23`, `ml/prep.py:39` | lista w opisie z rejestru | – |
 | P0-10 | Kontrakt czasu na Twoim terminalu | BRAK_DANYCH | `mt5/clock.py` | eksport diagnostyki czasu | protokół `I` |
 
 ### P1 i P2

@@ -19,6 +19,7 @@ import uuid
 from ..db.database import dumps
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from ..timeutil import iso, parse_iso, utcnow
+from . import policy as exit_policy
 
 RETCODES = {10004: "REQUOTE", 10006: "REJECT", 10007: "CANCEL", 10008: "PLACED", 10009: "DONE", 10010: "DONE_PARTIAL",
             10011: "ERROR", 10012: "TIMEOUT", 10013: "INVALID", 10014: "INVALID_VOLUME", 10015: "INVALID_PRICE",
@@ -129,13 +130,23 @@ class ExecutionGateway:
             self.log.info("EXECUTION", "PREPARED", f"{mode}: {side} {risk['lots']} {d['symbol']} SL {risk['stop_loss']} TP {tp_final} ({initiated_by})",
                           {"attempt_id": attempt_id, "decision_id": d["decision_id"]})
             if mode == "PAPER":
-                res = self.paper.open(attempt_id=attempt_id, decision=d, side=side, lots=risk["lots"], sl=risk["stop_loss"], targets=targets)
+                res = self.paper.open(attempt_id=attempt_id, decision=d, side=side, lots=risk["lots"], sl=risk["stop_loss"], targets=targets,
+                                      exit_policy=self.plan_policy(d))
             else:
                 res = self._send(attempt_id, d, side, risk, tp_final)
             if res.get("status") in ("FILLED", "PARTIAL"):
                 self.engine.mark_entered(setup["setup_id"], f"{mode}_{res['status']}")
             self.bus.publish("orders", self.recent_attempts(10))
             return res
+
+    def plan_policy(self, d: dict, fill: float | None = None) -> dict:
+        """Exit policy of THIS decision's setup (targets + weights + exit_rules), frozen with the position at open."""
+        cfg = self.cfg_store.get()
+        risk = d.get("risk") or {}
+        lv = d.get("levels") or {}
+        return exit_policy.from_plan(side=d["analysis_direction"], stop_loss=float(risk["stop_loss"]), targets=risk.get("targets") or [],
+                                     exit_rules=lv.get("exit_rules"), timeframe=(d.get("setup") or {}).get("setup_tf"),
+                                     tp1_weight_default=cfg.strategy.tp1_weight, be_default=cfg.strategy.move_sl_to_breakeven_after_tp1, entry=fill)
 
     def _set(self, attempt_id: str, **fields) -> None:
         fields["updated_at"] = iso(utcnow())
@@ -200,13 +211,14 @@ class ExecutionGateway:
 
     def _register_position(self, attempt_id, d, side, ticket, volume, price, risk) -> None:
         mode = self.modes.gate(self.bridge.account_key)["mode"]
-        t = risk["targets"]
+        pol = self.plan_policy(d, fill=price)
+        t = pol["targets"]
         self.db.execute("""INSERT OR IGNORE INTO managed_positions(position_key, mode, account_key, position_ticket, attempt_id, decision_id, setup_id,
-                           strategy_id, symbol, side, volume_initial, volume_open, entry_price, sl, tp1, tp2, state, opened_at, planned_risk_money)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           strategy_id, symbol, side, volume_initial, volume_open, entry_price, sl, tp1, tp2, state, opened_at, planned_risk_money, exit_policy_json)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (f"{mode}:{self.bridge.account_key}:{ticket}", mode, self.bridge.account_key, ticket, attempt_id, d["decision_id"],
                          d["setup"]["setup_id"], d["setup"]["strategy_id"], d["symbol"], side, volume, volume, price, risk["stop_loss"],
-                         t[0]["price"] if len(t) > 1 else None, t[-1]["price"], "OPEN", iso(utcnow()), risk.get("modeled_loss")))
+                         t[0]["price"] if len(t) > 1 else None, t[-1]["price"], "OPEN", iso(utcnow()), risk.get("modeled_loss"), dumps(pol)))
 
     def recent_attempts(self, limit: int = 30) -> list[dict]:
         return self.db.query("SELECT attempt_id, decision_id, setup_id, created_at, updated_at, mode, symbol, side, volume, price_requested, sl, tp, "

@@ -122,6 +122,11 @@ class MLService:
         return f"{'SYNTHETIC' if self.synthetic else 'MT5'}:{a.get('server') or 'unknown'}:{self.cfg_store.get().mt5.symbol}"
 
     def _cost(self) -> dict:
+        """Costs for labels = the SAME source as execution (risk/costs.resolve_commission: configured value or the median from
+        the account's deal history). Commission is converted from account money per lot to price units per unit volume with
+        the broker profit calculator (value of a 1.0 price move for 1 lot) - no assumed account currency. Unknown commission
+        -> flag COMMISSION_UNKNOWN and the sample is stored as COST_UNKNOWN (excluded from training), never as 0."""
+        from ..risk.costs import resolve_commission
         cfg = self.cfg_store.get()
         info = self.bridge.symbol_info or {}
         q = self.bridge.quote_status() or {}
@@ -132,11 +137,27 @@ class MLService:
             spread = (info.get("spread") or 0) * point
             flags.append("SPREAD_FROM_SYMBOL_INFO")
         slip = (cfg.costs.slippage_stress_points or 0) * point
-        cps = cfg.costs.commission_per_lot_per_side
-        size = info.get("trade_contract_size") or 100.0
-        if cps is None:
-            flags.append("COMMISSION_UNKNOWN_ASSUMED_0")
-        return {"spread": float(spread), "slippage": float(slip), "commission": float(cps or 0.0) / float(size), "flags": flags}
+        with self.bridge._lock:
+            deals = list(getattr(self.bridge, "deals", []) or [])
+        res = resolve_commission(cfg.costs, deals, cfg.mt5.symbol)
+        per_lot = res.get("per_lot_per_side")
+        value_1 = None
+        try:
+            ref = q.get("bid") or q.get("ask")
+            if ref:
+                value_1 = self.bridge.calc_profit("BUY", 1.0, float(ref), float(ref) + 1.0)
+        except Exception:
+            value_1 = None
+        if not value_1:
+            value_1 = float(info.get("trade_contract_size") or 0) or None
+            flags.append("PRICE_VALUE_FROM_CONTRACT_SIZE_ASSUMES_ACCOUNT_CCY_EQ_QUOTE_CCY")
+        if per_lot is None or not value_1:
+            flags.append("COMMISSION_UNKNOWN")
+            comm = 0.0
+        else:
+            comm = float(per_lot) / float(value_1)
+        return {"spread": float(spread), "slippage": float(slip), "commission": comm, "flags": flags,
+                "commission_source": res.get("source"), "commission_per_lot_per_side": per_lot}
 
     # ------------------------------------------------------------ quotes (for ambiguous bars)
     def _tick_loop(self) -> None:

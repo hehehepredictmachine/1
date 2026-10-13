@@ -20,7 +20,9 @@ from ..strategies.base import TF_SECONDS, MarketView, TFView
 FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.0.0"
 NAN = float("nan")
 
-CATEGORICAL = {"strategy_id": [f"S{i:02d}" for i in range(1, 11)], "direction": ["LONG", "SHORT"], "timeframe": ["M1", "M5", "M15", "H1"],
+# documented categories (the encoder uses the categories SEEN IN TRAINING - prep.py - so new strategies / TFs are encoded
+# when they appear in the data; this list is the schema description)
+CATEGORICAL = {"strategy_id": [f"S{i:02d}" for i in range(1, 13)], "direction": ["LONG", "SHORT"], "timeframe": ["M1", "M5", "M15", "M30", "H1"],
                "regime": ["TREND_UP", "TREND_DOWN", "RANGE", "COMPRESSION", "EXPANSION", "EXHAUSTION_OR_REVERSAL_CANDIDATE", "TRANSITION",
                           "DATA_UNAVAILABLE", "STALE"],
                "family": ["TREND", "BREAKOUT", "REVERSION", "REVERSAL"]}

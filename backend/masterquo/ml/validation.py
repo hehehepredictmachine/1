@@ -3,7 +3,8 @@
 Blocks in time order:  FIT (50%) | TUNE (15%, early stopping / model choice) | CALIBRATION (15%) | TEST (20%, final)
 * all samples of one market event (event_id) - and therefore all versions of one setup - go to ONE block
   (the block of the event's first sample); correlated signals are never split between train and test;
-* PURGING: a sample of an earlier block whose label window ends after (next block start - embargo) is removed;
+* PURGING: a sample of an earlier block whose label window ends after (start of ANY later block - embargo) is removed
+  (an empty block in between does not switch purging off);
   the actual label_end_utc is used, not the row number (labels have different lengths, events are irregular);
 * the final TEST block must start after the end of every previously used test block (a used test becomes history);
 * each block needs `min_block_samples` and `min_block_per_class` of BOTH classes - otherwise NOT_READY with the exact gap.
@@ -49,10 +50,12 @@ def split(rows: list[dict], *, embargo_minutes: int, min_block: int, min_class: 
         blocks[BLOCKS[bi]].append(r)
     emb = timedelta(minutes=embargo_minutes)
     purged = {}
-    for a, b in zip(BLOCKS[:-1], BLOCKS[1:]):
-        if not blocks[b]:
+    for i, a in enumerate(BLOCKS[:-1]):
+        # purge against the NEXT NON-EMPTY later block (an empty block in between must not switch purging off)
+        later = [x for b in BLOCKS[i + 1:] for x in blocks[b]]
+        if not later:
             continue
-        start = _t(blocks[b][0]["asof_utc"])
+        start = min(_t(x["asof_utc"]) for x in later)
         keep = [r for r in blocks[a] if _t(r["label_end_utc"]) <= start - emb]
         purged[a] = len(blocks[a]) - len(keep)
         blocks[a] = keep

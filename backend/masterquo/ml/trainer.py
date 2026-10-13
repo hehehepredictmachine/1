@@ -78,7 +78,8 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
                  "strategy_prior": val.classification_metrics(ys["test"], prior_p, 0.5), "no_ml_policy": {k: v for k, v in no_ml.items() if k != "values"},
                  "no_ml_bootstrap": val.block_bootstrap(no_ml.get("values", []))}
     out = {"status": "DONE", "snapshot": snapshot_path, "validation": {"version": val.VERSION, "counts": info["counts"], "purged": info["purged"],
-                                                                       "windows": info["windows"], "embargo_minutes": cfg["embargo_minutes"]},
+                                                                       "windows": info["windows"], "embargo_minutes": cfg["embargo_minutes"],
+                                                                       "test_sample_ids": [r["sample_id"] for r in info["blocks"]["test"]]},
            "base_rate": round(base_rate, 4), "baselines": baselines, "models": {}, "promotion_rules": cfg["promotion"],
            "versions": {"sklearn": sklearn.__version__, "xgboost": xgboost.__version__, "numpy": np.__version__, "python": sys.version.split()[0]},
            "feature_schema_version": fe.FEATURE_SCHEMA_VERSION}

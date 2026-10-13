@@ -8,8 +8,9 @@ Method (fixed BEFORE looking at results; see docs/RAPORT_TESTOW.md):
   * the same scanner/tracker/selector code as the live monitor (strategies/registry, tracker, selector)
   * every first CONFIRMED setup is simulated: entry at the OPEN of the next M5 bar after the signal
     (Bid bars: LONG pays the spread), slippage added against the trade, commission per side;
-    SL/targets/time exit from the setup; if one M5 bar touches SL and a target, SL is assumed first
-    (OHLC does not reveal the intrabar order - conservative rule); TP1 partial then SL to break-even
+    exits = the shared exit policy (execution/policy.py): targets + weights, BE only if the plan says so, time exit only if
+    the plan has one, RR_FROM_FILL from the simulated fill; if one M5 bar touches SL and a target, SL is assumed first
+    (OHLC does not reveal the intrabar order - conservative rule); target + new BE stop in one bar -> AMBIGUOUS
   * results in R (initial risk), net of costs; chronological split DEV 60% / VAL 20% / OOS 20% by signal time
   * portfolio = only the AUTO-selected setup, one position at a time, common to all strategies
 Ten strategies x variants form a multiple-testing problem: a good DEV number is not evidence; the OOS
@@ -38,7 +39,7 @@ from masterquo.strategies.selector import StrategyAutoSelector  # noqa: E402
 from masterquo.strategies.tracker import SetupTracker  # noqa: E402
 
 UTC = timezone.utc
-TFS = ("M1", "M5", "M15", "H1", "H4", "D1")
+TFS = ("M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1")
 
 
 def iso(t: datetime) -> str:
@@ -69,7 +70,8 @@ def load_synthetic(days: int, seed: int) -> tuple[dict, str]:
     fk = F.FakeMT5(seed=seed)
     off = fk.offset
     raw_now = int(fk._raw_now()) // 3600 * 3600
-    codes = {"M1": F.TIMEFRAME_M1, "M5": F.TIMEFRAME_M5, "M15": F.TIMEFRAME_M15, "H1": F.TIMEFRAME_H1, "H4": F.TIMEFRAME_H4, "D1": F.TIMEFRAME_D1}
+    codes = {"M1": F.TIMEFRAME_M1, "M5": F.TIMEFRAME_M5, "M15": F.TIMEFRAME_M15, "M30": F.TIMEFRAME_M30, "H1": F.TIMEFRAME_H1,
+             "H4": F.TIMEFRAME_H4, "H8": F.TIMEFRAME_H8, "D1": F.TIMEFRAME_D1}
     start = raw_now - (days + 60) * 86400
     out = {}
     for tf, code in codes.items():
@@ -88,12 +90,17 @@ def load_synthetic(days: int, seed: int) -> tuple[dict, str]:
 
 # ----------------------------------------------------------------------------- simulation
 def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, cost: dict) -> dict | None:
+    """One setup with the SAME exit policy object as live / PAPER / ML labels (execution/policy.py, MQ-EXIT-POLICY-1.0.0):
+    plan targets + weights, BE after TP1 only if the plan says so, time exit only if the plan has one (None = held until
+    SL/TP within the data, never an invented 24-bar exit), RR_FROM_FILL target recomputed from the simulated fill.
+    M5 OHLC does not reveal the intrabar order: SL+target in one bar -> SL first (conservative); a target and the new BE
+    stop reachable in the SAME bar after it -> AMBIGUOUS (excluded from R statistics, counted)."""
+    from masterquo.execution import policy as exit_policy
     d = setup["direction"]
     sl = setup["stop_loss"]
     tg = setup.get("targets") or []
     if sl is None or not tg:
         return {"status": "NO_LEVELS"}
-    # first M5 bar opening at/after the signal time
     import bisect
     k = bisect.bisect_left(m5_index["times"], signal_t)
     if k >= len(m5):
@@ -104,15 +111,17 @@ def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, co
     risk = (entry - sl) if d == "LONG" else (sl - entry)
     if risk <= 0:
         return {"status": "ENTRY_BEYOND_STOP"}
-    tf_s = TF_SECONDS[setup["timeframe"]]
-    max_bars = max(1, int((setup.get("exit_rules") or {}).get("time_exit_bars", 24) * tf_s / 300))
+    pol = exit_policy.from_plan(side=d, stop_loss=sl, targets=tg, exit_rules=setup.get("exit_rules") or {}, timeframe=setup.get("timeframe"),
+                                entry=entry)
+    tf_min = pol.get("time_exit_minutes")
+    max_bars = max(1, tf_min // 5) if tf_min is not None else len(m5) - k      # None: no time exit, held until SL/TP or data end
     remaining = 1.0
     pnl = 0.0
     stop = sl
     mae = mfe = 0.0
-    tps = [(t["price"], t["weight"]) for t in tg]
+    tps = [(t["price"], t["weight"]) for t in pol["targets"]]
     held = 0
-    exit_reason = "TIME"
+    exit_reason = "TIME" if tf_min is not None else "DATA_END_OPEN"
     for j in range(k, min(len(m5), k + max_bars)):
         bb = m5[j]
         held += 1
@@ -127,24 +136,31 @@ def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, co
             remaining = 0
             exit_reason = "STOP" if stop == sl else "BREAKEVEN"
             break
+        hit_any = False
         while tps and ((d == "LONG" and bb["h"] >= tps[0][0]) or (d == "SHORT" and lo_exec <= tps[0][0])):
             price, w = tps.pop(0)
             w = min(w, remaining)
             pnl += w * ((price - entry) if d == "LONG" else (entry - price))
             remaining -= w
-            if (setup.get("exit_rules") or {}).get("be_after_tp1", True):
+            hit_any = True
+            if pol["be_after_tp1"]:
                 stop = entry
             if remaining <= 1e-9:
                 exit_reason = "TARGETS"
                 break
         if remaining <= 1e-9:
             break
-    if remaining > 1e-9:                                           # time exit at the last bar close (SHORT buys back at Ask)
-        last = m5[min(len(m5) - 1, k + held - 1)]
+        if hit_any and stop != sl and ((d == "LONG" and bb["l"] <= stop) or (d == "SHORT" and hi_exec >= stop)):
+            return {"status": "AMBIGUOUS", "reason": "BE_STOP_REACHABLE_IN_TARGET_BAR", "entry_time": b["open_utc"]}
+    if remaining > 1e-9:
+        if tf_min is None:                                         # no time exit in the plan and the data ended: not a result
+            return {"status": "OPEN_AT_DATA_END", "entry_time": b["open_utc"]}
+        last = m5[min(len(m5) - 1, k + held - 1)]                  # time exit at the last bar close (SHORT buys back at Ask)
         pnl += remaining * ((last["c"] - entry) if d == "LONG" else (entry - (last["c"] + spread)))
     pnl -= 2 * cost["commission"]
     return {"status": "CLOSED", "r": round(pnl / risk, 4), "mae_r": round(mae, 3), "mfe_r": round(mfe, 3), "held_m5": held, "exit": exit_reason,
-            "entry_time": b["open_utc"], "risk_price": round(risk, 4)}
+            "entry_time": b["open_utc"], "risk_price": round(risk, 4), "exit_policy": pol["version"],
+            "tp_rebased_on_fill": bool(pol.get("tp_rebased_on_fill"))}
 
 
 def stats(trades: list[dict]) -> dict:
@@ -158,7 +174,8 @@ def stats(trades: list[dict]) -> dict:
         eq += r
         peak = max(peak, eq)
         dd = max(dd, peak - eq)
-    return {"trades": len(rs), "expectancy_r": round(sum(rs) / len(rs), 3), "total_r": round(sum(rs), 2),
+    return {"trades": len(rs), "not_closed": dict(Counter(t.get("status") for t in trades if t.get("status") != "CLOSED")),
+            "expectancy_r": round(sum(rs) / len(rs), 3), "total_r": round(sum(rs), 2),
             "profit_factor": round(sum(wins) / -sum(losses), 2) if losses and sum(losses) < 0 else None,
             "win_rate": f"{len(wins)}/{len(rs)} ({100 * len(wins) / len(rs):.0f}%)", "max_drawdown_r": round(dd, 2),
             "avg_mae_r": round(sum(t["mae_r"] for t in trades if t.get("status") == "CLOSED") / len(rs), 2),

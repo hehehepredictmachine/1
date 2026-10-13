@@ -254,17 +254,22 @@ def case_E():
         paper, mgr = paper_stack(env, b)
         tg = [{"price": 2004.0, "weight": 0.3}, {"price": 2008.0, "weight": 0.3}, {"price": 2012.0, "weight": 0.4}]
         open_paper(env, paper, targets=tg, sl=1995.0, exit_rules={"be_after_tp1": False, "time_exit_bars": 24})
-        pos0 = env.db.one("SELECT tp1, tp2 FROM managed_positions")
+        pos0 = env.db.one("SELECT * FROM managed_positions")
+        pol = json.loads(pos0.get("exit_policy_json") or "null") if "exit_policy_json" in pos0 else None
+        middle = bool(pol) and any(abs(t["price"] - 2008.0) < 1e-9 for t in pol["targets"])
+        env.cfg.update({"strategy": {"tp1_weight": 0.8, "move_sl_to_breakeven_after_tp1": True}})   # settings changed while the position is open
         b.q.update(bid=2004.1, ask=2004.3)
         mgr._manage_paper()
         after = env.db.one("SELECT volume_open, sl, be_done FROM managed_positions")
         closed = round(0.10 - after["volume_open"], 4)
-        bad = abs(closed - 0.03) > 1e-9 or after["sl"] != 1995.0 or (pos0["tp1"], pos0["tp2"]) == (2004.0, 2012.0)
+        bad = abs(closed - 0.03) > 1e-9 or after["sl"] != 1995.0 or not middle
         return {"id": "E", "title": "Polityka wyjścia: globalne wagi/BE zamiast reguł setupu (3 cele, be_after_tp1=False)",
-                "inputs": {"targets": tg, "exit_rules": {"be_after_tp1": False, "time_exit_bars": 24}, "cfg_tp1_weight": 0.5, "cfg_be": True},
-                "observed": {"stored_tp1_tp2": pos0, "closed_at_tp1": closed, "sl_after_tp1": after["sl"], "be_done": after["be_done"],
-                             "middle_target_2008_stored": False},
-                "expected": {"closed_at_tp1": 0.03, "sl_after_tp1": 1995.0, "note": "wagi i BE z planu setupu zapisane przy otwarciu; środkowy cel nie znika"},
+                "inputs": {"targets": tg, "exit_rules": {"be_after_tp1": False, "time_exit_bars": 24}, "cfg_tp1_weight_at_open": 0.5,
+                           "cfg_tp1_weight_changed_while_open": 0.8, "cfg_be": True},
+                "observed": {"stored_tp1_tp2": {"tp1": pos0["tp1"], "tp2": pos0["tp2"]}, "closed_at_tp1": closed, "sl_after_tp1": after["sl"],
+                             "be_done": after["be_done"], "middle_target_2008_stored": middle},
+                "expected": {"closed_at_tp1": 0.03, "sl_after_tp1": 1995.0, "middle_target_2008_stored": True,
+                             "note": "wagi i BE z planu setupu zapisane przy otwarciu; środkowy cel nie znika; zmiana ustawień nie zmienia otwartej pozycji"},
                 "status": "REPRODUCED" if bad else "NOT_REPRODUCED"}
     finally:
         env.close()
@@ -301,25 +306,50 @@ def case_F():
 
 
 def case_G():
-    """ML: champion re-evaluated on a date window of the new test block instead of the same sample_ids."""
+    """ML: the champion must be re-evaluated on the SAME sample_ids as the challenger's test block (not on a date window)."""
+    import gzip
     from masterquo.ml import validation as V
+    from masterquo.ml.registry import Registry
     t0 = datetime(2026, 1, 1, tzinfo=UTC)
     rows = []
     for i in range(100):
         a = t0 + timedelta(hours=i)
         ev = f"E{i}" if i != 81 else "E79"                # sample 81 belongs to an event that started at sample 79 (calib)
         rows.append({"sample_id": f"S{i:03d}", "group_id": f"G{i}", "event_id": ev, "asof_utc": iso(a),
-                     "label_end_utc": iso(a + timedelta(minutes=30)), "label": i % 2, "outcome_r": 1.0 if i % 2 else -1.0})
+                     "label_end_utc": iso(a + timedelta(minutes=30)), "label": i % 2, "outcome_r": 1.0 if i % 2 else -1.0, "features_json": "{}"})
     info, why = V.split(rows, embargo_minutes=0, min_block=1, min_class=1)
     test_ids = {r["sample_id"] for r in info["blocks"]["test"]}
-    w = info["windows"]["test"]
-    window_ids = {r["sample_id"] for r in rows if w[0] <= r["asof_utc"] <= w[1]}
-    bad = window_ids != test_ids
+    tmp = tempfile.mkdtemp(prefix="mq_audit_g_")
+    try:
+        snap = os.path.join(tmp, "s.jsonl.gz")
+        with gzip.open(snap, "wt", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        seen = []
+
+        class Champ:
+            def raw(self, f):
+                seen.append(len(f))
+                import numpy as np
+                return np.full(len(f), 0.5)
+
+            class calib:
+                @staticmethod
+                def apply(raw):
+                    return None
+        fake = Registry.__new__(Registry)
+        fake.champion = Champ()
+        result = {"snapshot": snap, "validation": {"windows": info["windows"], "test_sample_ids": sorted(test_ids)}}
+        Registry._champion_brier_on(fake, result)
+        used = seen[0] if seen else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    bad = used is not None and used != len(test_ids)
     return {"id": "G", "title": "Porównanie z championem: okno dat zamiast tych samych sample_id",
             "inputs": {"rows": 100, "event_grouping": "S081 należy do zdarzenia E79 (blok CALIB)"},
-            "observed": {"test_block": len(test_ids), "window_selection": len(window_ids), "extra_in_window": sorted(window_ids - test_ids)},
-            "expected": {"note": "champion i challenger oceniani na identycznym zbiorze sample_id"},
-            "status": "REPRODUCED" if bad else "NOT_REPRODUCED"}
+            "observed": {"challenger_test_block": len(test_ids), "champion_evaluated_on": used},
+            "expected": {"champion_evaluated_on": len(test_ids), "note": "champion i challenger oceniani na identycznym zbiorze sample_id"},
+            "status": "REPRODUCED" if bad else ("NOT_REPRODUCED" if used is not None else "ERROR")}
 
 
 def case_J():
@@ -332,11 +362,14 @@ def case_J():
         b.profit_ok = False
         b.q.update(bid=1994.0, ask=1994.2)
         mgr._manage_paper()
-        rows = env.db.query("SELECT gross_pnl, net_pnl, closed_at FROM trades")
+        rows = env.db.query("SELECT * FROM trades")
+        rows = [{k: r.get(k) for k in ("gross_pnl", "net_pnl", "closed_at", "status")} for r in rows]
         pos = env.db.one("SELECT state FROM managed_positions")
-        bad = bool(rows) and rows[0]["gross_pnl"] == 0.0
+        from masterquo import stats
+        st = stats.bot_stats(env.db, "PAPER")["all"]
+        bad = bool(rows) and rows[0].get("status") != "UNSETTLED" and st["trades"] > 0
         return {"id": "J", "title": "PAPER: brak kalkulacji P/L zapisany jako 0", "inputs": {"calc_profit": None, "exit": "SL 1994.0"},
-                "observed": {"trades": rows, "position_state": pos["state"]},
+                "observed": {"trades": rows, "position_state": pos["state"], "stats_trades": st["trades"], "stats_breakeven": st.get("breakeven")},
                 "expected": {"note": "transakcja nierozliczona (UNSETTLED) - nie zero, nie BE w statystykach"},
                 "status": "REPRODUCED" if bad else "NOT_REPRODUCED"}
     finally:

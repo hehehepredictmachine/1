@@ -35,6 +35,8 @@ class SampleStore:
                cost: dict, synthetic: bool) -> bool:
         """Idempotent: a (setup_id, version) is stored once. Returns True when a new sample was created."""
         sid = f"{setup_id}:{version}"
+        if "COMMISSION_UNKNOWN" in (cost.get("flags") or []):
+            quality = "COST_UNKNOWN"                   # the net label cannot be computed honestly -> never trained on
         if self.db.one("SELECT 1 AS x FROM ml_samples WHERE sample_id=?", (sid,)):
             return False
         if rec.get("stop_loss") is None or not rec.get("targets"):
@@ -72,11 +74,11 @@ class SampleStore:
         return res["status"]
 
     def attach_realized(self) -> int:
-        """Link settled PAPER/DEMO/LIVE trades to their setup's sample (kept next to the hypothetical label)."""
+        """Link settled (fully CLOSED) PAPER/DEMO/LIVE trades to their setup's sample (kept next to the hypothetical label)."""
         n = 0
         for t in self.db.query("""SELECT t.setup_id, t.mode, t.net_pnl, t.gross_pnl, t.volume, t.closed_at, t.position_ticket FROM trades t
-                                  JOIN ml_samples s ON s.setup_id = t.setup_id WHERE s.realized_json IS NULL"""):
-            cnt = self.db.one("SELECT COUNT(*) AS n FROM trades WHERE setup_id=?", (t["setup_id"],))["n"]
+                                  JOIN ml_samples s ON s.setup_id = t.setup_id WHERE s.realized_json IS NULL AND t.status='CLOSED'"""):
+            cnt = self.db.one("SELECT COUNT(*) AS n FROM trades WHERE setup_id=? AND status='CLOSED'", (t["setup_id"],))["n"]
             info = {"mode": t["mode"], "net_pnl": t["net_pnl"], "gross_pnl": t["gross_pnl"], "volume": t["volume"], "closed_at": t["closed_at"],
                     "attribution": "UNIQUE" if cnt == 1 else "MULTIPLE_POSITIONS_FOR_SETUP"}
             n += self.db.execute("UPDATE ml_samples SET realized_json=? WHERE setup_id=? AND realized_json IS NULL", (dumps(info), t["setup_id"])) or 0
@@ -84,7 +86,7 @@ class SampleStore:
 
     # ------------------------------------------------------------ stats & snapshots
     def counts(self, include_approx: bool, synthetic: bool) -> dict:
-        q = (" AND synthetic=1" if synthetic else " AND synthetic=0") + ("" if include_approx else " AND quality='HIGH'")
+        q = (" AND synthetic=1" if synthetic else " AND synthetic=0") + ("" if include_approx else " AND quality='HIGH'") + " AND quality!='COST_UNKNOWN'"
         rows = self.db.query(f"SELECT status, label, COUNT(*) AS n FROM ml_samples WHERE 1=1{q} GROUP BY status, label")
         out = {"by_status": {}, "labeled": 0, "pos": 0, "neg": 0}
         for r in rows:
@@ -94,12 +96,13 @@ class SampleStore:
                 out["pos" if r["label"] == 1 else "neg"] += r["n"]
         out["unique_setups"] = (self.db.one(f"SELECT COUNT(DISTINCT setup_id) AS n FROM ml_samples WHERE status='LABELED'{q}") or {}).get("n", 0)
         out["samples"] = sum(out["by_status"].values())
-        out["approx_excluded"] = 0 if include_approx else (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality!='HIGH' AND status='LABELED'") or {}).get("n", 0)
+        out["approx_excluded"] = 0 if include_approx else (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality NOT IN ('HIGH','COST_UNKNOWN') AND status='LABELED'") or {}).get("n", 0)
+        out["cost_unknown_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality='COST_UNKNOWN'") or {}).get("n", 0)
         return out
 
     def eligible(self, include_approx: bool, cutoff: datetime, synthetic: bool) -> list[dict]:
         """Synthetic and real samples are never mixed: `synthetic` selects exactly one of the two worlds."""
-        q = "status='LABELED' AND label_known_utc <= ? AND synthetic=" + ("1" if synthetic else "0")
+        q = "status='LABELED' AND label_known_utc <= ? AND quality!='COST_UNKNOWN' AND synthetic=" + ("1" if synthetic else "0")
         if not include_approx:
             q += " AND quality='HIGH'"
         return self.db.query(f"""SELECT sample_id, setup_id, group_id, event_id, strategy_id, direction, timeframe, asof_utc, label_end_utc, label_known_utc,

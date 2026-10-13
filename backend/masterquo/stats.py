@@ -1,7 +1,9 @@
 """Statistics from settled, stored events only - no demo numbers.
 
-* bot statistics per mode (PAPER / AUTO_DEMO / AUTO_LIVE) from `trades`
-  (one row per position; partial fills grouped; commission, swap, fee included);
+* bot statistics per mode (PAPER / AUTO_DEMO / AUTO_LIVE) from `trades` with status CLOSED only
+  (one row per position; partial fills grouped; commission, swap, fee included). Positions with partial exits that are
+  still open (OPEN_PARTIAL) and positions whose P/L could not be calculated (UNSETTLED) are counted separately and never
+  enter winrate / PF / R;
 * account statistics from MT5 deal history: trading result separated from balance operations
   (deposits/withdrawals are not strategy profit);
 * equity curve from stored equity snapshots (labelled with the first snapshot date) - it is not
@@ -14,11 +16,15 @@ from datetime import timedelta
 from .timeutil import iso, parse_iso, utcnow
 
 DEAL_TYPE_BALANCE = 2
+# external flows for ROI: balance, credit, charge, correction, bonus (MT5 ENUM_DEAL_TYPE 2..6) - never trading profit
+EXTERNAL_FLOW_TYPES = (2, 3, 4, 5, 6)
 
 
 BE_BAND_R = 0.05          # |R| <= 0.05 after costs = breakeven (reported separately, not a win and not a loss)
 DEFINITIONS = {
     "win_rate": "wygrane / (wygrane + przegrane), po kosztach (prowizja, swap, opłaty); breakeven osobno",
+    "win_rate_all_closed": "wygrane / wszystkie zamknięte pozycje (z BE w mianowniku) - podawane obok, bez ukrywania zmiany mianownika",
+    "closed_only": "tylko całkowicie zamknięte i rozliczone pozycje; częściowe wyjścia przy otwartej reszcie i pozycje nierozliczone są poza statystyką",
     "breakeven": "|wynik| <= 0,05 R po kosztach (bez R: wynik netto = 0)",
     "profit_factor": "suma zysków netto / |suma strat netto|; brak strat = brak wartości (nie nieskończoność)",
     "expectancy_r": "średni wynik netto w R (R = ryzyko planowane do SL przy otwarciu)",
@@ -45,6 +51,7 @@ def _agg(rows: list[dict]) -> dict:
     exp_r = round(sum(rs) / len(rs), 3) if rs else None
     return {"trades": n, "wins": wins, "losses": losses, "breakeven": be, "net": round(sum(r["net_pnl"] for r in rows), 2),
             "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else None,
+            "win_rate_all_closed": round(wins / n * 100, 1),
             "profit_factor": round(gp / gl, 2) if gl > 0 else None, "profit_factor_note": None if gl > 0 else "BRAK_STRAT",
             "gross_profit": round(gp, 2), "gross_loss": round(gl, 2),
             "commission": round(sum(r["commission"] for r in rows), 2), "swap": round(sum(r["swap"] for r in rows), 2),
@@ -68,7 +75,10 @@ def bot_stats(db, mode: str, account_key: str | None = None) -> dict:
     if mode != "PAPER" and account_key:
         q += " AND account_key=?"
         args.append(account_key)
-    rows = db.query(q + " ORDER BY closed_at", args)
+    open_partial = db.query(q.replace("SELECT *", "SELECT COUNT(*) AS n") + " AND status='OPEN_PARTIAL'", args)[0]["n"]
+    unsettled = db.query(q.replace("SELECT *", "SELECT COUNT(*) AS n") + " AND status='UNSETTLED'", args)[0]["n"]
+    rows = db.query(q + " AND status='CLOSED' ORDER BY closed_at", args)
+    comm_unknown = sum(1 for r in rows if '"commission_unknown":true' in (r.get("deals_json") or "").replace(" ", ""))
     now = utcnow()
     day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week0 = day0 - timedelta(days=day0.weekday())
@@ -79,6 +89,7 @@ def bot_stats(db, mode: str, account_key: str | None = None) -> dict:
     cur = rows[-1]["currency"] if rows else None
     return {"mode": mode, "currency": cur, "all": _agg(rows), "day": _agg(since(day0)), "week": _agg(since(week0)),
             "month": _agg(since(month0)), "recent": rows[-20:][::-1],
+            "open_partial_positions": open_partial, "unsettled_positions": unsettled, "commission_unknown_trades": comm_unknown,
             "note": "Wyniki z rozliczonych transakcji bota w tym trybie. Mała próba nie pozwala wnioskować o skuteczności."}
 
 
@@ -101,6 +112,7 @@ def equity_curve(db, mode: str, account_key: str | None, days: int = 30) -> dict
 def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -> dict:
     trading = [d for d in deals if d.get("type") in (0, 1)]
     balance_ops = [d for d in deals if d.get("type") == DEAL_TYPE_BALANCE]
+    other_flows = [d for d in deals if d.get("type") in EXTERNAL_FLOW_TYPES and d.get("type") != DEAL_TYPE_BALANCE]
 
     def net(ds):
         return round(sum(float(d.get("profit") or 0) + float(d.get("commission") or 0) + float(d.get("swap") or 0) + float(d.get("fee") or 0) for d in ds), 2)
@@ -109,6 +121,7 @@ def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -
             "trading_net_today": net(today) if day_start_raw is not None else None,
             "balance_operations": round(sum(float(d.get("profit") or 0) for d in balance_ops), 2),
             "balance_operations_count": len(balance_ops), "deals": len(trading),
+            "credit_bonus_other_flows": round(sum(float(d.get("profit") or 0) for d in other_flows), 2),
             "note": "Wpłaty/wypłaty (operacje balance) są wykazane osobno i nie są zyskiem strategii."}
 
 
@@ -128,7 +141,7 @@ def account_roi(db, account_key: str | None, deals: list[dict], server_offset: f
     span = max(1.0, t1 - t0)
     flows = []
     for d in deals:
-        if d.get("type") != DEAL_TYPE_BALANCE:
+        if d.get("type") not in EXTERNAL_FLOW_TYPES:
             continue
         t = float(d.get("time") or 0) - server_offset
         if t0 < t <= t1:
@@ -137,4 +150,6 @@ def account_roi(db, account_key: str | None, deals: list[dict], server_offset: f
     roi = roi_modified_dietz(e0, e1, flows)
     return {"status": "OK" if roi is not None else "NO_DATA", "roi_pct": roi, "period_from": rows[0]["ts"], "period_to": rows[-1]["ts"],
             "start_equity": round(e0, 2), "end_equity": round(e1, 2), "net_flows": round(sum(a for a, _ in flows), 2), "flows_count": len(flows),
-            "method": "modified Dietz – wpłaty/wypłaty jako przepływy zewnętrzne, nie zysk", "snapshots": len(rows)}
+            "method": "modified Dietz – wpłaty/wypłaty, credit/bonus i korekty jako przepływy zewnętrzne, nie zysk", "snapshots": len(rows),
+            "scope": "cały rachunek (także transakcje ręczne) – to nie jest ROI samego bota",
+            "sampling_note": "equity próbkowane co 60 s podczas pracy programu – głębsze obsunięcia wewnątrz minuty i poza pracą programu nie są widoczne"}

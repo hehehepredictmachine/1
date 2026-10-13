@@ -206,7 +206,7 @@ def details(eng, setup_id: str) -> dict | None:
         st = "BRAK DANYCH" if o["direction"] is None else ("ZGODNY" if o["direction"] == want else ("NEUTRALNY" if o["direction"] == "FLAT" else "KONFLIKT"))
         tf_rows.append({**o, "agreement": st})
     # ---- real historical results of this strategy (closed bot trades only)
-    trades = eng.db.query("SELECT * FROM trades WHERE strategy_id=? AND source IN ('BOT','ADOPTED') ORDER BY closed_at", (sid,))
+    trades = eng.db.query("SELECT * FROM trades WHERE strategy_id=? AND source IN ('BOT','ADOPTED') AND status='CLOSED' ORDER BY closed_at", (sid,))
     hist = {"trades": len(trades), "period_from": trades[0].get("opened_at") or trades[0]["closed_at"] if trades else None,
             "period_to": trades[-1]["closed_at"] if trades else None, "stats": stats_mod._agg(trades) if trades else None,
             "note": "z rozliczonych transakcji bota (po kosztach)" if trades else "brak rozliczonych transakcji tej strategii – brak statystyk"}

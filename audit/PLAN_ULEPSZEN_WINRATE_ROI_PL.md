@@ -16,7 +16,7 @@ Nakład: M (mały) / S (średni) / D (duży).
 | 2 | Chronologiczne rozstrzyganie po TP1 (kursor ticków), jawne AMBIGUOUS | C | `ml/labels.py:step` | koniec zaniżania wyników BE-po-TP1 | uczciwe etykiety | DO_NAPRAWY (ODTWORZONE) | repro C | więcej AMBIGUOUS bez ticków | M | 2 | BE na minimum sprzed TP1 |
 | 3 | Rozliczanie partials: transakcja tylko po pełnym zamknięciu; P/L None = UNSETTLED | B, J | `execution/paper.py`, `stats.py` | winrate/PF tylko z zamkniętych pozycji | poprawny winrate | DO_NAPRAWY (ODTWORZONE) | repro B, J | statystyki „później” | M | 3 | otwarta pozycja w statystykach |
 | 4 | Koszty: jedno źródło (`resolve_commission`), nieznany koszt = COST_UNKNOWN (poza treningiem) | A | `ml/service.py:_cost`, `ml/dataset.py:eligible` | etykiety netto = koszty wykonania | brak zawyżenia R | DO_NAPRAWY (ODTWORZONE) | repro A | mniej próbek, dopóki brak historii prowizji | M | 4 | ML liczy 0 przy znanej prowizji |
-| 5 | S11: `time_exit_bars=None` jawnie, RR_FROM_FILL w etykiecie/replay; kategorie cech z rejestru | D, P0-9 | `ml/labels.py`, `tools/replay_strategies.py`, `ml/features.py` | S11 obecne w ML i replay | brak selekcji próby | DO_NAPRAWY (ODTWORZONE) | repro D | nowy schemat cech (stare modele nie pasują) | M | 5 | TypeError / brak S11 w próbkach |
+| 5 | S11: `time_exit_bars=None` jawnie, RR_FROM_FILL w etykiecie/replay | D | `ml/labels.py`, `tools/replay_strategies.py`, `ml/features.py` | S11 obecne w ML i replay | brak selekcji próby | DO_NAPRAWY (ODTWORZONE) | repro D | nowa wersja polityki etykiet (stare próbki oznaczone starą wersją) | M | 5 | TypeError / brak S11 w próbkach |
 | 6 | Stan TP1 z wykonania (REQUESTED/UNKNOWN/CONFIRMED/REJECTED), BE po CONFIRMED, rekonsyliacja wolumenu | F | `execution/manager.py` | brak „BE bez zysku TP1” | mniej sztucznych BE | DO_NAPRAWY (ODTWORZONE) | repro F | dłuższa ścieżka UNKNOWN | S | 6 | BE po odrzuconym TP1 |
 | 7 | Champion i challenger na tych samych sample_id | G | `ml/registry.py` | uczciwa promocja | mniej przypadkowych promocji | DO_NAPRAWY (ODTWORZONE) | repro G | – | M | 7 | różne zbiory |
 | 8 | Purging FIT także gdy blok TUNE pusty; jawny rejestr zużytych okien testu | G | `ml/validation.py`, `ml/registry.py` | brak przecieku przy małych próbach | – | DO_NAPRAWY (POTWIERDZONE_W_KODZIE) | test jednostkowy pustego bloku | – | M | 8 | etykieta FIT po starcie CALIB |
@@ -70,7 +70,7 @@ Nakład: M (mały) / S (średni) / D (duży).
 2. P0-3 rozliczanie partials + UNSETTLED.
 3. P0-2 kursor TP1→BE w etykietach.
 4. P0-4 jedno źródło kosztów w ML.
-5. P0-5 S11 None / RR_FROM_FILL / kategorie cech.
+5. P0-5 S11 None / RR_FROM_FILL.
 6. P0-6 stan TP1 z wykonania.
 7. P0-7/8 uczciwe porównanie modeli i purging.
 8. P1-17 pomiar poślizgu/latencji (dane do dalszych badań).

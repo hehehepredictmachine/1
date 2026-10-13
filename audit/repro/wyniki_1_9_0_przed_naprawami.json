@@ -1,7 +1,7 @@
 {
- "label": "1.9.0 przed naprawami",
+ "label": "1.9.0 przed naprawami (commit 318ce0d)",
  "app_version": "1.9.0",
- "run_at_utc": "2026-10-13T10:53:18.165473Z",
+ "run_at_utc": "2026-10-13T11:07:19.800746Z",
  "python": "3.13.16",
  "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
  "environment": "SYNTHETIC_FUNCTIONAL (bez terminala MT5, bez zleceń)",
@@ -57,8 +57,8 @@
     },
     "trades_rows": [
      {
-      "trade_id": "PAPER-560865827580",
-      "closed_at": "2026-10-13T10:53:18.098082Z",
+      "trade_id": "PAPER-473775710968",
+      "closed_at": "2026-10-13T11:07:19.742759Z",
       "volume": 0.1,
       "net_pnl": -26.5
      }
@@ -204,7 +204,8 @@
      "be_after_tp1": false,
      "time_exit_bars": 24
     },
-    "cfg_tp1_weight": 0.5,
+    "cfg_tp1_weight_at_open": 0.5,
+    "cfg_tp1_weight_changed_while_open": 0.8,
     "cfg_be": true
    },
    "observed": {
@@ -212,7 +213,7 @@
      "tp1": 2004.0,
      "tp2": 2012.0
     },
-    "closed_at_tp1": 0.05,
+    "closed_at_tp1": 0.08,
     "sl_after_tp1": 2000.2,
     "be_done": 1,
     "middle_target_2008_stored": false
@@ -220,7 +221,8 @@
    "expected": {
     "closed_at_tp1": 0.03,
     "sl_after_tp1": 1995.0,
-    "note": "wagi i BE z planu setupu zapisane przy otwarciu; środkowy cel nie znika"
+    "middle_target_2008_stored": true,
+    "note": "wagi i BE z planu setupu zapisane przy otwarciu; środkowy cel nie znika; zmiana ustawień nie zmienia otwartej pozycji"
    },
    "status": "REPRODUCED"
   },
@@ -267,13 +269,11 @@
     "event_grouping": "S081 należy do zdarzenia E79 (blok CALIB)"
    },
    "observed": {
-    "test_block": 19,
-    "window_selection": 20,
-    "extra_in_window": [
-     "S081"
-    ]
+    "challenger_test_block": 19,
+    "champion_evaluated_on": 20
    },
    "expected": {
+    "champion_evaluated_on": 19,
     "note": "champion i challenger oceniani na identycznym zbiorze sample_id"
    },
    "status": "REPRODUCED"
@@ -290,10 +290,13 @@
      {
       "gross_pnl": 0.0,
       "net_pnl": 0.0,
-      "closed_at": "2026-10-13T10:53:18.164735Z"
+      "closed_at": "2026-10-13T11:07:19.799959Z",
+      "status": null
      }
     ],
-    "position_state": "CLOSED"
+    "position_state": "CLOSED",
+    "stats_trades": 1,
+    "stats_breakeven": 1
    },
    "expected": {
     "note": "transakcja nierozliczona (UNSETTLED) - nie zero, nie BE w statystykach"

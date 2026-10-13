@@ -279,6 +279,13 @@ class TestExecution(unittest.TestCase):
         st = self.db.one("SELECT state FROM order_attempts WHERE setup_id='MQS-T2'")["state"]
         self.assertEqual(st, "FILLED")
 
+    def _set_tp1(self, mode, price):
+        import json
+        mp = self.db.one("SELECT * FROM managed_positions WHERE mode=?", (mode,))
+        pol = json.loads(mp["exit_policy_json"])
+        pol["targets"][0]["price"] = price
+        self.db.execute("UPDATE managed_positions SET tp1=?, exit_policy_json=? WHERE position_key=?", (price, json.dumps(pol), mp["position_key"]))
+
     def test_tp1_partial_and_breakeven_demo_and_paper(self):
         acct = self.b.account_status()
         self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
@@ -287,8 +294,8 @@ class TestExecution(unittest.TestCase):
         self.engine.decision = d
         self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
         q = self.b.quote_status()
-        # put TP1 just above the market for the SHORT so it is "reached" now
-        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='AUTO_DEMO'", (q["ask"] + 1.0,))
+        # put TP1 just above the market for the SHORT so it is "reached" now (in the exit policy stored at open)
+        self._set_tp1("AUTO_DEMO", q["ask"] + 1.0)
         self.b._t_account = 0
         self.assertTrue(wait_for(lambda: bool(self.b.positions), 10))
         self.mgr.tick()
@@ -306,7 +313,7 @@ class TestExecution(unittest.TestCase):
         d["risk"]["lots"] = 0.10
         self.engine.decision = d
         self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
-        self.db.execute("UPDATE managed_positions SET tp1=? WHERE mode='PAPER'", (self.b.quote_status()["ask"] + 1.0,))
+        self._set_tp1("PAPER", self.b.quote_status()["ask"] + 1.0)
         self.mgr.tick()
         mp = self.db.one("SELECT * FROM managed_positions WHERE mode='PAPER'")
         self.assertAlmostEqual(mp["volume_open"], 0.05)
@@ -365,7 +372,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008", "0009"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())
