@@ -1,4 +1,18 @@
-# Raport testów – MasterQUO AI 1.9.0
+# Raport testów – MasterQUO AI 1.10.0
+
+## 1.10.0 – audyt i naprawy P0, walls/formacje/S12, panel na trzy strony (2026-10-13)
+Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala – DANE SYNTETYCZNE, Chromium, bez klucza Claude): **290 testów, OK, 0 pominiętych**
+(raport lokalny `data/logs/testy_offline_20261013T122040Z.json`). Pierwszy przebieg: 290 testów, 2 FAIL + 1 ERROR – nieaktualne oczekiwania
+(`test_app_process.test_06`: 11 → 12 strategii po dodaniu S12; `test_setup_details`: nowe statusy wierszy OCZEKIWANIE / NIE DOTYCZY) oraz wyścig
+w predykacie testu UI (`window.__mqCharts` jeszcze nie istniał) – poprawione w testach, bez zmiany zachowania programu.
+Reprodukcje audytu (`audit/repro/repro_audit.py`): 1.9.0 – 8/8 ODTWORZONE, 1.10.0 – 0/8.
+Nowe testy: `test_audit_fixes.py` (16), `test_patterns_walls.py` (25), `test_s12_family.py`, `test_setup_groups.py` (2),
+`test_ui_pages.py` (8 – nawigacja, Wstecz/Dalej, link, odświeżenie, jeden WebSocket, brak automatycznego zapytania AI i zmiany strategii,
+stany karty AI, 5 wykresów z wykresem głównym bez szóstej instancji, rejestr TF na stronie 2, motyw, uszkodzony localStorage, panel boczny,
+rozdzielczości 1920×1080 / 1366×768 / 1024 / 390 px bez przewijania poziomego). Dostosowane: `test_ui_monitor` (11), `test_ui_setup_panel` (5,
+przeglądanie setupów bez `POST /api/v1/prefs/setup-view`), `test_ui_signal_card` (9). Zrzuty: `data/logs/ui_pages/`.
+`npm run typecheck` i `npm run build` – OK.
+Nie sprawdzono: Windows (`.bat` tylko statycznie), Twój terminal MT5, prawdziwe API Claude, skuteczność strategii (brak danych OOS – NIE_OCENIONO_SKUTECZNOŚCI).
 
 ## 1.9.0 – bez licencji (2026-10-11)
 Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium): **224 testy, OK**. Usunięte testy licencji

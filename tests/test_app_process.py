@@ -150,7 +150,7 @@ class TestAppProcess(unittest.TestCase):
         for k in ("contract", "strategy_mode", "system_state", "regime", "selected_strategy_id", "selection_reason_codes", "candidate_ranking",
                   "last_evaluated_at", "data_status", "strategies", "setups", "why_no_setup"):
             self.assertIn(k, a)
-        self.assertEqual(len(a["strategies"]), 11)
+        self.assertEqual(len(a["strategies"]), 12)                    # S01-S12 (1.10: S12 walls/range family)
         self.assertEqual(req("/api/v1/strategy/mode", "POST", {"strategy_mode": "MANUAL", "manual_strategy_id": "S03"}, opener=self.op)[0], 403)
         st, body = req("/api/v1/strategy/mode", "POST", {"strategy_mode": "MANUAL", "manual_strategy_id": "S03"}, self.H(), self.op)
         self.assertEqual(st, 200, body)

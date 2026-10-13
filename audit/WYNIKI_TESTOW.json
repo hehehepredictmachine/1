@@ -1,24 +1,136 @@
 {
  "note": "Wyłącznie faktycznie uruchomione sprawdzenia. Środowisko: kontener Linux, symulator terminala (FakeMT5) / atrapy, izolowany katalog danych (MASTERQUO_DATA_DIR tymczasowy). Żadne sprawdzenie nie łączyło się z terminalem użytkownika ani nie składało zleceń.",
- "environment": {"os": "Linux (kontener budowy)", "python": "3.13.16", "scikit_learn": "1.9.1", "xgboost": "3.4.1", "numpy": "2.5.3", "fastapi": "0.141.1",
-                 "chromium": "/opt/pw-browsers/chromium (Playwright)", "mt5_terminal": "BRAK", "windows": "BRAK", "anthropic_api_key": "BRAK (atrapa klienta)"},
+ "environment": {
+  "os": "Linux (kontener budowy)",
+  "python": "3.13.16",
+  "scikit_learn": "1.9.1",
+  "xgboost": "3.4.1",
+  "numpy": "2.5.3",
+  "fastapi": "0.141.1",
+  "chromium": "/opt/pw-browsers/chromium (Playwright)",
+  "mt5_terminal": "BRAK",
+  "windows": "BRAK",
+  "anthropic_api_key": "BRAK (atrapa klienta)"
+ },
  "runs": [
-  {"id": "T-1.9.0-full", "label": "1.9.0 przed naprawami (commit 318ce0d)", "started_utc": "2026-10-13T10:53Z",
-   "command": "python tools/run_tests.py", "cwd": "katalog główny projektu", "exit_code": 0,
-   "result": {"ran": 224, "failures": 0, "errors": 0, "skipped": 0}, "status": "PASS",
+  {
+   "id": "T-1.9.0-full",
+   "label": "1.9.0 przed naprawami (commit 318ce0d)",
+   "started_utc": "2026-10-13T10:53Z",
+   "command": "python tools/run_tests.py",
+   "cwd": "katalog główny projektu",
+   "exit_code": 0,
+   "result": {
+    "ran": 224,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+   },
+   "status": "PASS",
    "report": "data/logs/testy_offline_20261013T105807Z.json (lokalny, nie pakowany)",
-   "classification": "SYNTHETIC_FUNCTIONAL"},
-  {"id": "R-1.9.0-repro", "label": "reprodukcje audytu A-J na 1.9.0", "started_utc": "2026-10-13T10:53Z",
-   "command": "python audit/repro/repro_audit.py --out audit/repro/wyniki_1_9_0_przed_naprawami.json", "exit_code": 0,
-   "result": {"A": "REPRODUCED", "B": "REPRODUCED", "C": "REPRODUCED", "D": "REPRODUCED", "E": "REPRODUCED", "F": "REPRODUCED", "G": "REPRODUCED", "J": "REPRODUCED"},
-   "status": "8/8 usterek odtworzonych", "classification": "SYNTHETIC_FUNCTIONAL"}
+   "classification": "SYNTHETIC_FUNCTIONAL"
+  },
+  {
+   "id": "R-1.9.0-repro",
+   "label": "reprodukcje audytu A-J na 1.9.0",
+   "started_utc": "2026-10-13T10:53Z",
+   "command": "python audit/repro/repro_audit.py --out audit/repro/wyniki_1_9_0_przed_naprawami.json",
+   "exit_code": 0,
+   "result": {
+    "A": "REPRODUCED",
+    "B": "REPRODUCED",
+    "C": "REPRODUCED",
+    "D": "REPRODUCED",
+    "E": "REPRODUCED",
+    "F": "REPRODUCED",
+    "G": "REPRODUCED",
+    "J": "REPRODUCED"
+   },
+   "status": "8/8 usterek odtworzonych",
+   "classification": "SYNTHETIC_FUNCTIONAL"
+  },
+  {
+   "id": "R-1.10.0-repro",
+   "label": "reprodukcje audytu A-J po naprawach",
+   "command": "python audit/repro/repro_audit.py --out audit/repro/wyniki_1_10_0_po_naprawach.json",
+   "exit_code": 0,
+   "result": {
+    "A": "NOT_REPRODUCED",
+    "B": "NOT_REPRODUCED",
+    "C": "NOT_REPRODUCED",
+    "D": "NOT_REPRODUCED",
+    "E": "NOT_REPRODUCED",
+    "F": "NOT_REPRODUCED",
+    "G": "NOT_REPRODUCED",
+    "J": "NOT_REPRODUCED"
+   },
+   "status": "0/8 usterek odtworzonych",
+   "classification": "SYNTHETIC_FUNCTIONAL"
+  },
+  {
+   "id": "T-1.10.0-full-1",
+   "label": "1.10.0 pierwszy pełny przebieg",
+   "started_utc": "2026-10-13T12:08Z",
+   "command": "python tools/run_tests.py",
+   "exit_code": 1,
+   "result": {
+    "ran": 290,
+    "failures": 2,
+    "errors": 1,
+    "skipped": 0
+   },
+   "status": "FAIL",
+   "cause": "nieaktualne oczekiwania testów (11->12 strategii, nowe statusy OCZEKIWANIE/NIE DOTYCZY) i wyścig predykatu w teście UI; poprawione w testach",
+   "classification": "SYNTHETIC_FUNCTIONAL"
+  },
+  {
+   "id": "T-1.10.0-full-2",
+   "label": "1.10.0 po poprawkach testów",
+   "started_utc": "2026-10-13T12:15Z",
+   "command": "python tools/run_tests.py",
+   "exit_code": 0,
+   "result": {
+    "ran": 290,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+   },
+   "status": "PASS",
+   "report": "data/logs/testy_offline_20261013T122040Z.json (lokalny, nie pakowany)",
+   "classification": "SYNTHETIC_FUNCTIONAL"
+  },
+  {
+   "id": "F-1.10.0-frontend",
+   "command": "npm run typecheck && npm run build (frontend)",
+   "exit_code": 0,
+   "status": "PASS",
+   "classification": "BUILD"
+  }
  ],
  "not_run": [
-  {"check": "uruchomienie .bat na Windows", "reason": "brak Windows w środowisku; sprawdzone statycznie (test_launchers)"},
-  {"check": "terminal MT5 użytkownika, XAUUSD-, order_calc_profit/margin brokera, czas serwera", "reason": "brak terminala - połączenie NIE jest potwierdzone"},
-  {"check": "backtest / walk-forward / OOS / forward na historii XAUUSD-", "reason": "brak eksportu danych brokera -> NIE_OCENIONO_SKUTECZNOŚCI"},
-  {"check": "prawdziwe API Claude", "reason": "brak klucza API (klucz wprowadza wyłącznie użytkownik lokalnie)"},
-  {"check": "obciążenie skanera 30+ rynków na terminalu", "reason": "brak terminala; na symulatorze działa (test_markets_signals)"},
-  {"check": "POROWNANIE_WARIANTOW.csv", "reason": "brak prawdziwych wyników porównania - plik nie został utworzony"}
+  {
+   "check": "uruchomienie .bat na Windows",
+   "reason": "brak Windows w środowisku; sprawdzone statycznie (test_launchers)"
+  },
+  {
+   "check": "terminal MT5 użytkownika, XAUUSD-, order_calc_profit/margin brokera, czas serwera",
+   "reason": "brak terminala - połączenie NIE jest potwierdzone"
+  },
+  {
+   "check": "backtest / walk-forward / OOS / forward na historii XAUUSD-",
+   "reason": "brak eksportu danych brokera -> NIE_OCENIONO_SKUTECZNOŚCI"
+  },
+  {
+   "check": "prawdziwe API Claude",
+   "reason": "brak klucza API (klucz wprowadza wyłącznie użytkownik lokalnie)"
+  },
+  {
+   "check": "obciążenie skanera 30+ rynków na terminalu",
+   "reason": "brak terminala; na symulatorze działa (test_markets_signals)"
+  },
+  {
+   "check": "POROWNANIE_WARIANTOW.csv",
+   "reason": "brak prawdziwych wyników porównania - plik nie został utworzony"
+  }
  ]
 }

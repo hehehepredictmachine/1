@@ -153,7 +153,7 @@ class TestSetupPanelUI(unittest.TestCase):
         self.page.wait_for_selector("[data-testid=page-bot]", timeout=20000)
         self.assertIn("#/wykresy?tf=", self.page.url)
         tf = self.page.evaluate("() => new URLSearchParams(location.hash.split('?')[1]).get('tf')")
-        self.page.wait_for_function("(tf) => window.__mqCharts['bot-' + tf] && window.__mqCharts['bot-' + tf].highlight().length === 1", arg=tf, timeout=30000)
+        self.page.wait_for_function("(tf) => window.__mqCharts && window.__mqCharts['bot-' + tf] && window.__mqCharts['bot-' + tf].highlight().length === 1", arg=tf, timeout=30000)
         self.assertEqual(self.page.locator("[data-testid=bot-grid] .chart-panel").count(), 1)          # focus view on that TF
         self.page.go_back()
         self.page.wait_for_selector(f"[data-testid=setup-summary][data-setup='{sid}']", timeout=20000)

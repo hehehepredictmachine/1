@@ -8,7 +8,7 @@ import _env  # noqa: F401
 from _env import wait_for
 import test_active_pipeline
 
-STATUSES = {"SPEŁNIONY", "NIESPEŁNIONY", "BRAK DANYCH", "ODCZYT", "—"}
+STATUSES = {"SPEŁNIONY", "NIESPEŁNIONY", "BRAK DANYCH", "ODCZYT", "—", "OCZEKIWANIE", "NIE DOTYCZY"}   # 1.10: waiting trigger, n/a rows
 
 
 class TestSetupDetails(unittest.TestCase):
