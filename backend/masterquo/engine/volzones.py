@@ -163,9 +163,10 @@ def compute(d1_bars: list[dict], cfg, digits: int = 2, quote: dict | None = None
     out["expected_high"], out["expected_low"] = r(up1), r(dn1)
     if hi is not None and lo is not None and up1 > dn1:
         out["day"]["range_used_pct"] = round(100 * (hi - lo) / (up1 - dn1), 1)
+    vs = "IV" if out["source_type"] == "IV_MANUAL" else "HV-proxy"      # the name follows the volatility source (never "IV" for HV)
     lines = [{"kind": "DAILY_OPEN", "label": "Daily Open", "price": r(anchor)},
-             {"kind": "EXPECTED_HIGH", "label": "Daily High (IV 1σ)", "price": r(up1)},
-             {"kind": "EXPECTED_LOW", "label": "Daily Low (IV 1σ)", "price": r(dn1)},
+             {"kind": "EXPECTED_HIGH", "label": f"Daily High ({vs} 1σ)", "price": r(up1)},
+             {"kind": "EXPECTED_LOW", "label": f"Daily Low ({vs} 1σ)", "price": r(dn1)},
              {"kind": "STRADDLE_BE", "label": "Straddle BE+", "price": out["contract"]["breakeven_up"]},
              {"kind": "STRADDLE_BE", "label": "Straddle BE−", "price": out["contract"]["breakeven_down"]},
              {"kind": "PDH", "label": "PDH", "price": r(prev["h"])},

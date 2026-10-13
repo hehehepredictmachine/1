@@ -3,7 +3,7 @@ import { apiGet, apiSend, apiUpload } from "../api";
 import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
-import { LeverageSettings } from "./SetupPanel";
+import { LeverageSettings } from "./LeverageSettings";
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -119,7 +119,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Agent włączony", "agent.enabled", "bool")}
       </div>}
       {tab === "vol" && cfg.volatility && <div className="form">
-        <div className="note">Poziomy dzienne: Daily Open, Daily High/Low (IV ±1σ), PDH/PDL, straddle ATM i IV walls ±kσ. MT5 nie udostępnia opcji na złoto –
+        <div className="note">Poziomy dzienne: Daily Open, Daily High/Low (±1σ – etykieta podaje źródło: HV-proxy albo IV ręczna), PDH/PDL, straddle ATM i walls ±kσ. MT5 nie udostępnia opcji na złoto –
           domyślnie IV = zmienność historyczna z zamkniętych świec D1. Możesz wpisać IV z innego źródła (np. indeks GVZ). To informacja na wykresie – nie zmienia strategii ani zleceń.</div>
         {field("Pokazuj i licz poziomy", "volatility.enabled", "bool")}
         {field("Estymator HV", "volatility.estimator", "text", "close_to_close = zwroty zamknięć · parkinson = zakres high/low", ["close_to_close", "parkinson"])}

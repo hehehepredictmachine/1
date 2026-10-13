@@ -86,7 +86,7 @@ export function MarketsPanel({ onOpen }: { onOpen: (symbol: string) => void }) {
             {th("symbol", "Symbol")}<th>Cena</th>{th("change_d1_pct", "D1 %", "zmiana od zamknięcia poprzedniego dnia")}
             <th title="kierunek EMA20/50/200 na H1 · H4 · D1">Trend H1·H4·D1</th><th>Reżim</th>
             {th("rsi_h1", "RSI H1")}{th("adx_h4", "ADX H4")}{th("atr_d1_pct", "ATR D1 %")}{th("hv", "HV %", "zmienność historyczna 20 dni, roczna")}
-            {th("sigma_position", "Poz. σ", "położenie ceny względem Daily Open w odchyleniach dziennych (IV walls ±1σ)")}
+            {th("sigma_position", "Poz. σ", "położenie ceny względem Daily Open w odchyleniach dziennych (walls ±1σ; HV-proxy lub IV)")}
             {th("score", "Ranking", "heurystyka do przeglądu – nie prawdopodobieństwo")}<th>Obserwacje</th>
             <th title="najlepszy setup strategii S01–S10 bota na tym rynku">Setup bota</th><th>Sygnał</th>
           </tr></thead>
@@ -253,8 +253,8 @@ export function MarketDetail({ symbol, onClose }: { symbol: string; onClose: () 
         return { from: z.from_utc ? epochSec(z.from_utc) : 0, low: z.low, high: z.high, color: col, border: withAlpha(col, 0.7), label: z.label };
       }));
       add(v.day?.open, String(tk.dailyOpen), "Daily Open", LineStyle.Solid);
-      add(v.expected_high, String(tk.expectedHL), "Daily High (IV 1σ)", LineStyle.Dashed, 2);
-      add(v.expected_low, String(tk.expectedHL), "Daily Low (IV 1σ)", LineStyle.Dashed, 2);
+      add(v.expected_high, String(tk.expectedHL), `Daily High (${v.source_type === "IV_MANUAL" ? "IV" : "HV-proxy"} 1σ)`, LineStyle.Dashed, 2);
+      add(v.expected_low, String(tk.expectedHL), `Daily Low (${v.source_type === "IV_MANUAL" ? "IV" : "HV-proxy"} 1σ)`, LineStyle.Dashed, 2);
     } else zones.current?.setZones([]);
     for (const sg of data.bot_signals || []) {
       add(sg.entry_price, String(tk.entry), `${sg.strategy_id} ${sg.action}`, LineStyle.Dotted);
@@ -286,7 +286,7 @@ export function MarketDetail({ symbol, onClose }: { symbol: string; onClose: () 
           <div><label>ATR H1 / D1</label><b>{fmtNum(a.atr_h1, a.digits)} / {fmtNum(a.atr_d1, a.digits)}</b></div>
           <div><label>Spread / ATR H1</label><b>{a.spread_atr_h1_pct == null ? "—" : `${a.spread_atr_h1_pct}%`}</b></div>
           <div><label>HV / percentyl</label><b>{fmtNum(a.volatility?.hv_annual_pct, 1)}% / {a.volatility?.hv_percentile_1y ?? "—"}</b></div>
-          <div><label>Daily High/Low (IV 1σ)</label><b>{fmtNum(a.volatility?.expected_high, a.digits)} / {fmtNum(a.volatility?.expected_low, a.digits)}</b></div>
+          <div><label>Daily High/Low ({a.volatility?.source_type === "IV_MANUAL" ? "IV" : "HV-proxy"} 1σ)</label><b>{fmtNum(a.volatility?.expected_high, a.digits)} / {fmtNum(a.volatility?.expected_low, a.digits)}</b></div>
           <div><label>Ranking</label><b>{fmtNum(a.score, 0)}</b></div>
           <div><label>Obserwacje</label><b className="small">{(a.observations || []).map((o: string) => OBS_PL[o] ?? o).join(" · ") || "—"}</b></div>
         </div>}

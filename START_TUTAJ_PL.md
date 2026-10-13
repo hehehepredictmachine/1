@@ -24,6 +24,16 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 6. Zamknięcie przeglądarki **nie** zatrzymuje programu. Zatrzymanie: **`04_STOP_MASTERQUO.bat`** (zatrzymuje tylko MasterQUO,
    nie inne programy Pythona ani terminal MT5).
 
+## Nowe w 1.10 – trzy strony monitora
+Menu po lewej (na telefonie – trzy przyciski na dole):
+1. **Analiza AI** – co proponuje AI, dlaczego, na co czeka; wykresy H1, M30, M15, M5, M1. Obok karta „Pozwolenie silnika” – sama propozycja AI nie składa zleceń.
+   Bez klucza ANTHROPIC_API_KEY karta pokazuje „AI niedostępne” (klucz ustawiasz lokalnie). Analiza AI uruchamia się tylko przyciskiem „Analizuj teraz”.
+2. **Wykresy bota** – wszystkie interwały, których używa silnik (D1…M1), z rolą i stanem danych. Kliknij TF na pasku, aby go powiększyć (Skupienie).
+3. **Warunki setupu** – lista setupów i pełna checklista: „Spełniono X z Y warunków wymaganych”, co brakuje, trigger, unieważnienie, plan.
+   Klikanie setupów tylko je pokazuje; strategię silnika zmieniasz wyłącznie w karcie „Działanie bota – wybór strategii silnika”.
+Pozycje, zlecenia i statystyki: przycisk **Pozycje i statystyki** u góry; dziennik: **Logi**; rachunek i AUTO/MANUAL: **Konto ▾**.
+Walls: źródło jest zawsze na etykiecie – HV-proxy (przybliżenie z historii brokera) albo IV (import / ręcznie). S12 i S11 domyślnie tylko skanują.
+
 ## Nowe w 1.7 – sygnały z planem wejścia, M30/H8, EMA20 Pullback
 Blok „Sygnał AI / plan wejścia” obok checklisty, historia sygnałów, kontekst M30/H8 i układ 8 wykresów, strategia S11 (tylko skanowanie).
 Od 1.9 program działa bez licencji. Szczegóły: `CHANGELOG.md`, `INSTRUKCJA_WINDOWS_PL.md`, `AUDYT_MASTERQUO.md`.
@@ -97,7 +107,8 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 * **STOP** zatrzymuje tylko nowe wejścia; zamykanie pozycji to osobny przycisk (⏻).
 
 ## Jak czytać monitor
-* Zamiast sygnałów BUY/SELL panel 5 pokazuje **checklistę wejścia**: (1) co jest spełnione – z odczytami, (2) czego brakuje – z dokładnym
+* Pełna checklista konkretnego setupu jest na stronie **Warunki setupu**; checklista 12A silnika – tamże, sekcja „Sygnał silnika”.
+* Zamiast sygnałów BUY/SELL checklista wejścia pokazuje: (1) co jest spełnione – z odczytami, (2) czego brakuje – z dokładnym
   zdarzeniem, na które czekamy („brak danych”, gdy brak danych), (3) wyzwalacz – poziom/strefa, interwał, wymóg zamkniętej świecy,
   (4) unieważnienie – poziom, zdarzenie, czas. Gdy nic nie ma: „Brak aktualnego scenariusza”. Otwarte pozycje są w zakładce Pozycje.
 * Drzewo decyzji ma 8 bramek: dane, rynek, strategia, wyzwalacz, ryzyko, AI, **ML**, tryb – przy każdej powód blokady.

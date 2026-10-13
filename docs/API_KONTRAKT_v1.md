@@ -58,3 +58,12 @@ reason_codes, explanation_pl, answer_pl, lessons, playbook_proposals, model_id, 
 | `GET /api/v1/appearance/assets`, `POST /api/v1/appearance/upload?slot=background|frog` (body: GIF), `GET /media/masterquo/{slot}` | grafiki monitora; upload walidowany (struktura GIF, ≤ 15 MB) |
 `GET /api/v1/state` zawiera dodatkowo `auto` (skrót) i `active_config`. Rekord decyzji ma pole `profile` (ACTIVE/ORIGINAL),
 `direction_basis` może mieć wartość `REGIME_OBSERVATION`. WebSocket: nowe zdarzenie `auto`.
+
+## 1.10 – rozszerzenia prezentacyjne (zgodne wstecz)
+| Endpoint | Zawartość |
+|---|---|
+| `GET /api/v1/timeframes` | rejestr TF (`tf`, `seconds`, `role`, `core`), stan danych per TF (`data`, `closed_bars`, `required`), `used_by` (strategie), `strategies` (setup_tfs, required_tfs, context_tf) – źródło strony „Wykresy bota” |
+| `GET /api/v1/setups` | jak w 1.8 + `terminal_reason_pl` |
+| `GET /api/v1/setups/{id}/details` | schemat **MQ-SETUP-DETAILS-1.1.0**: każdy wiersz `checklist` ma `group` (1–10), `state` (MET/MISSING/PENDING/NO_DATA/NA), `required`, `tf`, `at`; nowe `summary` (`required_total`, `required_met`, `missing`, `pending`, `no_data`, `first_blocker`, `next_confirmation`, `groups`) i `selector_mode`. Setup innego rachunku → 404 |
+| `GET /api/v1/walls`, `POST /api/v1/walls/iv-import`, `GET /api/v1/structure?tf=` | snapshot walls ze źródłem; import IV; struktura TF (S/R, zakres M5, strefy M1, formacje, pivoty z `known_at`, dowody świecowe) |
+Monitor: odczyt szczegółów setupu nigdy nie wywołuje `POST /api/v1/prefs/setup-view` – ten endpoint zmienia wybór strategii silnika i jest używany tylko przez jawne ustawienie „Działanie bota”.

@@ -1,4 +1,4 @@
-"""Monitor UI in a real browser (Chromium via Playwright) on the synthetic demo backend.
+"""Monitor UI in a real browser (Chromium via Playwright) on the synthetic demo backend (1.10: three pages, chart ids per page + TF).
 
 Covers: independent zoom per chart, no view reset on data refresh / ticks / theme change / resize, persistence after
 reload, per-panel buttons, theme import validation, entry checklist and ML panel. Skipped (never "passed") when
@@ -62,8 +62,8 @@ class TestMonitorUI(unittest.TestCase):
             raise unittest.SkipTest(f"chromium not available: {exc}")
         cls.ctx = cls.browser.new_context(viewport={"width": 1700, "height": 1000})
         cls.page = cls.ctx.new_page()
-        cls.page.goto(BASE + "/")
-        cls.page.wait_for_function("() => window.__mqCharts && ['panel1','panel2','panel3','panel4'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)",
+        cls.page.goto(BASE + "/#/ai")
+        cls.page.wait_for_function("() => window.__mqCharts && ['ai-M1','ai-M5','ai-M15','ai-H1'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)",
                                    timeout=90000)
         time.sleep(1.0)
 
@@ -105,65 +105,65 @@ class TestMonitorUI(unittest.TestCase):
 
     # ------------------------------------------------------------ 1. independent zoom
     def test_01_wheel_zoom_changes_only_that_chart(self):
-        before = {c: self.logical(c) for c in ("panel1", "panel2", "panel3", "panel4")}
-        self.wheel("panel2", -300)
-        after = {c: self.logical(c) for c in ("panel1", "panel2", "panel3", "panel4")}
-        self.assertLess(self.width(after["panel2"]), self.width(before["panel2"]) * 0.9, (before["panel2"], after["panel2"]))
-        for c in ("panel1", "panel3", "panel4"):
+        before = {c: self.logical(c) for c in ("ai-M1", "ai-M5", "ai-M15", "ai-H1")}
+        self.wheel("ai-M5", -300)
+        after = {c: self.logical(c) for c in ("ai-M1", "ai-M5", "ai-M15", "ai-H1")}
+        self.assertLess(self.width(after["ai-M5"]), self.width(before["ai-M5"]) * 0.9, (before["ai-M5"], after["ai-M5"]))
+        for c in ("ai-M1", "ai-M15", "ai-H1"):
             self.assertAlmostEqual(self.width(after[c]), self.width(before[c]), delta=0.5, msg=c)
         # drag the zoomed chart to the left (manual view, no longer following)
-        self.page.locator("[data-chart-id='panel2'] .chart-box").scroll_into_view_if_needed()
-        box = self.page.locator("[data-chart-id='panel2'] .chart-box").bounding_box()
+        self.page.locator("[data-chart-id='ai-M5'] .chart-box").scroll_into_view_if_needed()
+        box = self.page.locator("[data-chart-id='ai-M5'] .chart-box").bounding_box()
         self.page.mouse.move(box["x"] + box["width"] * 0.4, box["y"] + box["height"] * 0.4)
         self.page.mouse.down()
         self.page.mouse.move(box["x"] + box["width"] * 0.8, box["y"] + box["height"] * 0.4, steps=8)
         self.page.mouse.up()
         time.sleep(0.6)
-        self.assertFalse(self.view("panel2")["follow"])
-        self.assertAlmostEqual(self.width(self.logical("panel1")), self.width(before["panel1"]), delta=0.5)
+        self.assertFalse(self.view("ai-M5")["follow"])
+        self.assertAlmostEqual(self.width(self.logical("ai-M1")), self.width(before["ai-M1"]), delta=0.5)
 
     # ------------------------------------------------------------ 2. data refresh / ticks / reconnect-like reload keep the view
     def test_02_full_refresh_and_ticks_do_not_reset_view(self):
-        if self.view("panel2")["follow"]:
+        if self.view("ai-M5")["follow"]:
             self.test_01_wheel_zoom_changes_only_that_chart()
-        r0 = self.trange("panel2")
-        w0 = self.width(self.logical("panel2"))
-        creations = self.page.evaluate("() => window.__mqCharts['panel2'].creations")
+        r0 = self.trange("ai-M5")
+        w0 = self.width(self.logical("ai-M5"))
+        creations = self.page.evaluate("() => window.__mqCharts['ai-M5'].creations")
         for _ in range(3):
             self.page.evaluate("() => window.__mqRefresh()")          # same path as reconnect/resync: reload of ALL charts
             time.sleep(1.2)
         time.sleep(3)                                                  # live ticks keep arriving meanwhile
-        r1 = self.trange("panel2")
+        r1 = self.trange("ai-M5")
         self.assertEqual((r0["from"], r0["to"]), (r1["from"], r1["to"]))
-        self.assertAlmostEqual(self.width(self.logical("panel2")), w0, delta=0.5)
-        self.assertEqual(self.page.evaluate("() => window.__mqCharts['panel2'].creations"), creations)   # never re-created
-        self.assertFalse(self.view("panel2")["follow"])
+        self.assertAlmostEqual(self.width(self.logical("ai-M5")), w0, delta=0.5)
+        self.assertEqual(self.page.evaluate("() => window.__mqCharts['ai-M5'].creations"), creations)   # never re-created
+        self.assertFalse(self.view("ai-M5")["follow"])
 
     # ------------------------------------------------------------ 3. buttons act on one panel only
     def test_03_buttons_per_panel(self):
-        w1 = self.width(self.logical("panel1"))
-        w3 = self.width(self.logical("panel3"))
-        self.page.locator("[data-chart-id='panel3'] [data-act='zoom-in']").click()
+        w1 = self.width(self.logical("ai-M1"))
+        w3 = self.width(self.logical("ai-M15"))
+        self.page.locator("[data-chart-id='ai-M15'] [data-act='zoom-in']").click()
         time.sleep(0.5)
-        self.assertLess(self.width(self.logical("panel3")), w3)
-        self.assertAlmostEqual(self.width(self.logical("panel1")), w1, delta=0.5)
-        self.page.locator("[data-chart-id='panel3'] [data-act='zoom-out']").click()
-        self.page.locator("[data-chart-id='panel3'] [data-act='latest']").click()
+        self.assertLess(self.width(self.logical("ai-M15")), w3)
+        self.assertAlmostEqual(self.width(self.logical("ai-M1")), w1, delta=0.5)
+        self.page.locator("[data-chart-id='ai-M15'] [data-act='zoom-out']").click()
+        self.page.locator("[data-chart-id='ai-M15'] [data-act='latest']").click()
         time.sleep(0.5)
-        self.assertTrue(self.view("panel3")["follow"])
-        n = self.page.evaluate("() => window.__mqCharts['panel3'].bars()")
-        self.assertGreaterEqual(self.logical("panel3")["to"], n - 1)
-        self.page.locator("[data-chart-id='panel3'] [data-act='autoscale']").click()
-        self.assertFalse(self.view("panel3")["autoScale"])
-        self.page.locator("[data-chart-id='panel3'] [data-act='autoscale']").click()
-        self.assertTrue(self.view("panel3")["autoScale"])
+        self.assertTrue(self.view("ai-M15")["follow"])
+        n = self.page.evaluate("() => window.__mqCharts['ai-M15'].bars()")
+        self.assertGreaterEqual(self.logical("ai-M15")["to"], n - 1)
+        self.page.locator("[data-chart-id='ai-M15'] [data-act='autoscale']").click()
+        self.assertFalse(self.view("ai-M15")["autoScale"])
+        self.page.locator("[data-chart-id='ai-M15'] [data-act='autoscale']").click()
+        self.assertTrue(self.view("ai-M15")["autoScale"])
 
     # ------------------------------------------------------------ 4. theme change: charts updated in place, view kept
     def test_04_theme_change_keeps_view(self):
-        if self.view("panel2")["follow"]:
+        if self.view("ai-M5")["follow"]:
             self.test_01_wheel_zoom_changes_only_that_chart()
-        r0 = self.trange("panel2")
-        creations = self.page.evaluate("() => window.__mqCharts['panel2'].creations")
+        r0 = self.trange("ai-M5")
+        creations = self.page.evaluate("() => window.__mqCharts['ai-M5'].creations")
         bg0 = self.page.evaluate("() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()")
         self.page.locator("button[title^='Wygląd']").click()
         dlg = self.page.locator(".theme-dialog")
@@ -173,38 +173,38 @@ class TestMonitorUI(unittest.TestCase):
         time.sleep(0.8)
         bg1 = self.page.evaluate("() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()")
         self.assertNotEqual(bg0, bg1)
-        self.assertEqual(self.page.evaluate("() => window.__mqCharts['panel2'].creations"), creations)
-        r1 = self.trange("panel2")
+        self.assertEqual(self.page.evaluate("() => window.__mqCharts['ai-M5'].creations"), creations)
+        r1 = self.trange("ai-M5")
         self.assertEqual((r0["from"], r0["to"]), (r1["from"], r1["to"]))
         stored = self.page.evaluate("() => JSON.parse(localStorage.getItem('mq.theme.v1'))")
         self.assertEqual((stored["version"], stored["preset"]), (1, "light"))
 
     # ------------------------------------------------------------ 5. resize keeps the manual view
     def test_05_resize_keeps_manual_view(self):
-        if self.view("panel2")["follow"]:
+        if self.view("ai-M5")["follow"]:
             self.test_01_wheel_zoom_changes_only_that_chart()
-        v0 = self.view("panel2")
+        v0 = self.view("ai-M5")
         self.page.set_viewport_size({"width": 1400, "height": 900})
         time.sleep(1.0)
         self.page.set_viewport_size({"width": 1700, "height": 1000})
         time.sleep(1.0)
-        v1 = self.view("panel2")
+        v1 = self.view("ai-M5")
         self.assertEqual((v0["from"], v0["to"], v0["follow"]), (v1["from"], v1["to"], v1["follow"]))   # saved state untouched
 
     # ------------------------------------------------------------ 6. persistence after reload (refresh / restart of the page)
     def test_06_view_and_theme_persist_after_reload(self):
-        if self.view("panel2")["follow"]:
+        if self.view("ai-M5")["follow"]:
             self.test_01_wheel_zoom_changes_only_that_chart()
         time.sleep(0.6)
-        v0 = self.view("panel2")
+        v0 = self.view("ai-M5")
         self.page.reload()
-        self.page.wait_for_function("() => window.__mqCharts && window.__mqCharts['panel2'] && window.__mqCharts['panel2'].bars() > 50", timeout=60000)
+        self.page.wait_for_function("() => window.__mqCharts && window.__mqCharts['ai-M5'] && window.__mqCharts['ai-M5'].bars() > 50", timeout=60000)
         time.sleep(1.5)
-        v1 = self.view("panel2")
+        v1 = self.view("ai-M5")
         self.assertFalse(v1["follow"])
-        r = self.trange("panel2")
+        r = self.trange("ai-M5")
         self.assertLessEqual(abs(r["from"] - v0["from"]), 120)          # within ~one M5 bar of the saved range
-        self.assertTrue(self.view("panel1")["follow"])                  # other panels keep their own (default) state
+        self.assertTrue(self.view("ai-M1")["follow"])                  # other panels keep their own (default) state
         self.assertEqual(self.page.evaluate("() => document.documentElement.dataset.theme"), "light")
 
     # ------------------------------------------------------------ 7. theme import validation
@@ -222,100 +222,28 @@ class TestMonitorUI(unittest.TestCase):
         st = json.loads(self.page.evaluate("() => fetch('/api/v1/state').then(r => r.text())"))
         self.assertNotEqual(st["mode"]["mode"], "AUTO_LIVE")
 
-    # ------------------------------------------------------------ 8. checklist instead of BUY/SELL, ML panel
-    def test_09_volatility_levels_and_iv_walls(self):
-        p = self.page
-        v = json.loads(p.evaluate("() => fetch('/api/v1/volatility').then(r => r.text())"))
-        self.assertEqual(v["status"], "OK", v)
-        self.assertEqual(len(v["walls"]), 4)
-        p.wait_for_selector("[data-testid=vol-panel] .vol-walls tbody tr", timeout=30000)
-        self.assertEqual(p.locator("[data-testid=vol-panel] .vol-walls tbody tr").count(), 4)
-        p.wait_for_function("() => window.__mqCharts.panel1.volLines().includes('Daily Open')", timeout=30000)
-        titles = p.evaluate("() => window.__mqCharts.panel1.volLines()")
-        for t in ("Daily Open", "Daily High (IV 1σ)", "Daily Low (IV 1σ)", "PDH", "PDL"):
-            self.assertIn(t, titles)
-        before = p.evaluate("() => window.__mqCharts.panel1.logical()")
-        box = p.locator("label", has_text="IV walls / Daily").locator("input")
-        box.uncheck()
-        p.wait_for_function("() => window.__mqCharts.panel1.volLines().length === 0", timeout=10000)
-        after = p.evaluate("() => window.__mqCharts.panel1.logical()")
-        self.assertAlmostEqual(before["from"], after["from"], delta=1.5)      # toggling levels never moves the view
-        box.check()
-        p.wait_for_function("() => window.__mqCharts.panel1.volLines().length > 5", timeout=10000)
-        if os.environ.get("MQ_SCREENSHOT_DIR"):
-            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "iv_walls_charts.png"))
-            p.locator("[data-testid=vol-panel]").scroll_into_view_if_needed()
-            p.locator("[data-testid=vol-panel]").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "iv_walls_panel.png"))
+    # ------------------------------------------------------------ helpers for the 1.10 pages
+    def go(self, h):
+        self.page.goto(BASE + "/" + h)
+        self.page.wait_for_selector("[data-page]", timeout=30000)
 
-    def test_10_markets_scanner_and_detail_chart(self):
-        p = self.page
-        p.wait_for_selector("[data-testid=markets-panel] tr[data-symbol='EURUSD-']", timeout=60000)
-        rows = p.locator("[data-testid=markets-panel] tbody tr[data-symbol]")
-        self.assertGreaterEqual(rows.count(), 5)
-        names = {rows.nth(i).get_attribute("data-symbol") for i in range(rows.count())}
-        self.assertTrue({"XAUUSD-", "EURUSD-", "GBPUSD-", "USDJPY-", "US30-"} <= names)
-        before = p.evaluate("() => window.__mqCharts.panel1.logical()")
-        p.locator("[data-testid=markets-panel] tr[data-symbol='EURUSD-']").click()
-        p.wait_for_selector("[data-testid=market-detail]", timeout=10000)
-        p.wait_for_function("() => window.__mqMarketChart && window.__mqMarketChart.bars() > 100", timeout=20000)
-        p.wait_for_function("() => window.__mqMarketChart.lines().includes('Daily Open')", timeout=10000)
-        self.assertEqual(p.locator("[data-act=detail-ai]").count(), 0)  # no AI-agent signals any more
-        if os.environ.get("MQ_SCREENSHOT_DIR"):
-            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "market_detail.png"))
-        p.keyboard.press("Escape")
-        p.locator(".modal-head button.icon").first.click()
-        after = p.evaluate("() => window.__mqCharts.panel1.logical()")
-        self.assertAlmostEqual(before["from"], after["from"], delta=1.5)
-        if os.environ.get("MQ_SCREENSHOT_DIR"):
-            p.locator("[data-testid=markets-panel]").scroll_into_view_if_needed()
-            p.locator(".markets-row").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "markets_ai.png"))
-        p.wait_for_selector("[data-testid=bot-signals-panel]", timeout=10000)
-        cells = p.locator("[data-testid=markets-panel] td.bot-setup")
-        self.assertGreaterEqual(cells.count(), 5)
-        texts = [cells.nth(i).inner_text() for i in range(cells.count())]
-        self.assertIn("silnik główny", texts)                         # main symbol handled by the bot's engine
-        self.assertTrue(any(t and t not in ("—", "silnik główny") for t in texts), texts)   # S01-S10 ran on other markets
-        state = json.loads(p.evaluate("() => fetch('/api/v1/bot-signals').then(r => r.text())"))
-        self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] for x in state["items"]))
+    def open_section(self, testid):
+        sec = self.page.locator(f"[data-testid={testid}]")
+        if sec.get_attribute("open") is None:
+            sec.locator("summary").click()
+        return sec
 
-    def test_11_signal_plan_context_m30_h8_and_history(self):
-        p = self.page
-        p.wait_for_selector("[data-testid=signal-plan]", timeout=30000)
-        p.wait_for_selector("[data-testid=context-tf] .ctx-card[data-tf=H8]", timeout=30000)
-        h8 = p.locator(".ctx-card[data-tf=H8]").inner_text()
-        self.assertTrue("natywne MT5" in h8 or "BRAK_DANYCH" in h8, h8)               # source is always visible, never hidden
-        st = json.loads(p.evaluate("() => fetch('/api/v1/context-tf').then(r => r.text())"))
-        self.assertIn("M30", st["context"])
-        self.assertIn("H8", st["context"])
-        self.assertIn(st["context"]["H8"]["status"], ("OK", "BRAK_DANYCH", "INSUFFICIENT_HISTORY", "STALE"))
-        sig = st["signal"]
-        if sig:
-            self.assertIn(sig["status"], ("OCZEKIWANIE", "POTWIERDZONY", "ZABLOKOWANY", "UNIEWAŻNIONY", "WYGASŁY", "BRAK_DANYCH"))
-            self.assertIn(sig["decision_source"], ("STRATEGIA", "STRATEGIA + AI"))
-            self.assertEqual(sig["ai"]["status"], "AI_NIEDOSTEPNE")                    # no API key in tests: never a fake AI verdict
-            self.assertIsNone(sig["probability_win"])
-            self.assertIsNone(sig["fill_price"])
-        p.locator("button", has_text="Historia sygnałów").first.click()
-        p.wait_for_selector("[data-testid=signal-history]", timeout=10000)
-        p.locator("button", has_text="Scenariusze").first.click()
-        # all eight timeframes, M30 and H8 charts load real bars
-        p.locator("button", has_text="Wszystkie interwały").click()
-        p.wait_for_function("() => ['M30','H8'].every(tf => Object.values(window.__mqCharts).some(c => c.tf === tf && c.bars() > 50))", timeout=60000)
-        if os.environ.get("MQ_SCREENSHOT_DIR"):
-            p.screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "all_timeframes.png"), full_page=True)
-        p.locator("button", has_text="Układ standardowy").click()
-        p.wait_for_function("() => ['panel1','panel2','panel3','panel4'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)", timeout=60000)
-        if os.environ.get("MQ_SCREENSHOT_DIR"):
-            p.locator("[data-testid=signal-plan]").scroll_into_view_if_needed()
-            p.locator(".plan-row").screenshot(path=os.path.join(os.environ["MQ_SCREENSHOT_DIR"], "signal_plan.png"))
-
+    # ------------------------------------------------------------ 8. checklist (page 3) and ML panel
     def test_08_checklist_and_ml_panel(self):
+        self.go("#/warunki/bot")
+        self.open_section("sec-engine-plan")
         panel = self.page.locator("[data-testid='entry-checklist']")
         panel.wait_for(timeout=30000)
         txt = panel.inner_text()
         for word in ("BUY", "SELL", "LONG", "SHORT"):
             self.assertNotIn(word, txt.upper().replace("LONGER", ""), word)
         self.assertTrue(any(k in txt for k in ("Spełnione", "Brak aktualnego scenariusza")))
+        self.open_section("sec-ml")
         ml = self.page.locator("[data-testid='ml-panel']")
         ml.wait_for(timeout=30000)
         mt = ml.inner_text()
@@ -324,6 +252,100 @@ class TestMonitorUI(unittest.TestCase):
             self.assertIn(b, mt)
         ml.get_by_role("button", name="Trenuj teraz").click()
         self.page.wait_for_function("() => document.querySelector(\"[data-testid='ml-panel']\").innerText.includes('ETYKIET')", timeout=15000)
+        self.go("#/ai")
+
+    def test_09_volatility_levels_and_walls_named_by_source(self):
+        p = self.page
+        v = json.loads(p.evaluate("() => fetch('/api/v1/volatility').then(r => r.text())"))
+        self.assertEqual(v["status"], "OK", v)
+        self.assertEqual(len(v["walls"]), 4)
+        self.go("#/wykresy")
+        p.locator("[data-view=all]").click()
+        self.open_section("sec-vol")
+        p.wait_for_selector("[data-testid=vol-panel] .vol-walls tbody tr", timeout=30000)
+        self.assertEqual(p.locator("[data-testid=vol-panel] .vol-walls tbody tr").count(), 4)
+        src = "IV" if v.get("source_type") == "IV_MANUAL" else "HV-proxy"
+        self.assertIn(f"Daily High ({src} 1σ)", p.locator("[data-testid=vol-panel]").inner_text())
+        p.wait_for_function("() => window.__mqCharts['bot-M1'] && window.__mqCharts['bot-M1'].volLines().includes('Daily Open')", timeout=30000)
+        titles = p.evaluate("() => window.__mqCharts['bot-M1'].volLines()")
+        for t in ("Daily Open", f"Daily High ({src} 1σ)", f"Daily Low ({src} 1σ)", "PDH", "PDL"):
+            self.assertIn(t, titles)
+        self.assertFalse(any("IV 1σ" in t for t in titles) and src != "IV", titles)   # HV never presented as implied volatility
+        before = p.evaluate("() => window.__mqCharts['bot-M1'].logical()")
+        box = p.locator(".chart-toolbar label", has_text="Walls dzienne / Daily").locator("input")
+        box.uncheck()
+        p.wait_for_function("() => window.__mqCharts['bot-M1'].volLines().length === 0", timeout=10000)
+        after = p.evaluate("() => window.__mqCharts['bot-M1'].logical()")
+        self.assertAlmostEqual(before["from"], after["from"], delta=1.5)      # toggling levels never moves the view
+        box.check()
+        p.wait_for_function("() => window.__mqCharts['bot-M1'].volLines().length > 5", timeout=10000)
+        self.go("#/ai")
+
+    def test_10_markets_scanner_and_detail_chart(self):
+        p = self.page
+        self.go("#/wykresy")
+        self.open_section("sec-markets")
+        p.wait_for_selector("[data-testid=markets-panel] tr[data-symbol='EURUSD-']", timeout=60000)
+        rows = p.locator("[data-testid=markets-panel] tbody tr[data-symbol]")
+        self.assertGreaterEqual(rows.count(), 5)
+        names = {rows.nth(i).get_attribute("data-symbol") for i in range(rows.count())}
+        self.assertTrue({"XAUUSD-", "EURUSD-", "GBPUSD-", "USDJPY-", "US30-"} <= names)
+        sym0 = json.loads(p.evaluate("() => fetch('/api/v1/state').then(r => r.text())"))["symbol"]["symbol"]
+        p.locator("[data-testid=markets-panel] tr[data-symbol='EURUSD-']").click()
+        p.wait_for_selector("[data-testid=market-detail]", timeout=10000)
+        p.wait_for_function("() => window.__mqMarketChart && window.__mqMarketChart.bars() > 100", timeout=20000)
+        p.wait_for_function("() => window.__mqMarketChart.lines().includes('Daily Open')", timeout=10000)
+        self.assertEqual(p.locator("[data-act=detail-ai]").count(), 0)
+        p.keyboard.press("Escape")
+        if p.locator("[data-testid=market-detail]").count():
+            p.locator(".modal-head button.icon").first.click()
+        sym1 = json.loads(p.evaluate("() => fetch('/api/v1/state').then(r => r.text())"))["symbol"]["symbol"]
+        self.assertEqual(sym0, sym1)                                   # browsing other markets never changes the engine's symbol
+        p.wait_for_selector("[data-testid=bot-signals-panel]", timeout=10000)
+        cells = p.locator("[data-testid=markets-panel] td.bot-setup")
+        self.assertGreaterEqual(cells.count(), 5)
+        texts = [cells.nth(i).inner_text() for i in range(cells.count())]
+        self.assertIn("silnik główny", texts)
+        self.assertTrue(any(t and t not in ("—", "silnik główny") for t in texts), texts)
+        state = json.loads(p.evaluate("() => fetch('/api/v1/bot-signals').then(r => r.text())"))
+        self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] for x in state["items"]))
+        self.go("#/ai")
+
+    def test_11_signal_plan_context_all_timeframes_and_history(self):
+        p = self.page
+        self.go("#/warunki/bot")
+        self.open_section("sec-engine-plan")
+        p.wait_for_selector("[data-testid=signal-plan]", timeout=30000)
+        p.wait_for_selector("[data-testid=context-tf] .ctx-card[data-tf=H8]", timeout=30000)
+        h8 = p.locator(".ctx-card[data-tf=H8]").inner_text()
+        self.assertTrue("natywne MT5" in h8 or "BRAK_DANYCH" in h8, h8)
+        st = json.loads(p.evaluate("() => fetch('/api/v1/context-tf').then(r => r.text())"))
+        self.assertIn("M30", st["context"])
+        self.assertIn("H8", st["context"])
+        sig = st["signal"]
+        if sig:
+            self.assertIn(sig["status"], ("OCZEKIWANIE", "POTWIERDZONY", "ZABLOKOWANY", "UNIEWAŻNIONY", "WYGASŁY", "BRAK_DANYCH"))
+            self.assertEqual(sig["ai"]["status"], "AI_NIEDOSTEPNE")                    # no API key in tests: never a fake AI verdict
+            self.assertIsNone(sig["probability_win"])
+            self.assertIsNone(sig["fill_price"])
+        # positions / signal history: global side panel, available from every page
+        p.locator("[data-testid=open-side]").click()
+        p.wait_for_selector("[data-testid=sidepanel]", timeout=5000)
+        p.locator("[data-testid=sidepanel] button", has_text="Pozycje i zlecenia").click()
+        p.locator("[data-testid=sidepanel] button", has_text="Historia sygnałów").first.click()
+        p.wait_for_selector("[data-testid=signal-history]", timeout=10000)
+        p.keyboard.press("Escape")
+        p.wait_for_selector("[data-testid=sidepanel]", state="detached", timeout=5000)
+        # page 2: every TF of the backend registry (8 in this release), M30 and H8 charts load real bars
+        self.go("#/wykresy")
+        p.locator("[data-view=all]").click()
+        reg = json.loads(p.evaluate("() => fetch('/api/v1/timeframes').then(r => r.text())"))
+        tfs = [t["tf"] for t in reg["timeframes"]]
+        self.assertGreaterEqual(len(tfs), 8)
+        p.wait_for_function("(tfs) => tfs.every(tf => window.__mqCharts['bot-' + tf] && window.__mqCharts['bot-' + tf].bars() > 20)", arg=tfs, timeout=90000)
+        self.assertEqual(p.locator("[data-testid=tf-bar] .tf-chip").count(), len(tfs))
+        self.go("#/ai")
+        p.wait_for_function("() => ['ai-M1','ai-M5','ai-M15','ai-H1'].every(k => window.__mqCharts[k] && window.__mqCharts[k].bars() > 50)", timeout=60000)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-# MasterQUO 1.9 – instrukcja dla Windows
+# MasterQUO 1.10 – instrukcja dla Windows
 
-Paczka: `MasterQUO_KLIENT_1_9_0.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
+Paczka: `MasterQUO_KLIENT_1_10_0.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
 
 **Od wersji 1.9 program nie wymaga licencji** – nie ma serwera licencji, klucza `MQL72-…` ani panelu administratora.
 Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwiera się od razu.
@@ -11,7 +11,7 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 
 ### B1. Instalacja lub aktualizacja
 
-1. Rozpakuj `MasterQUO_KLIENT_1_9_0.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_9`. Nie nadpisuj starej wersji:
+1. Rozpakuj `MasterQUO_KLIENT_1_10_0.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_10`. Nie nadpisuj starej wersji:
    to jest Twój punkt powrotu.
 2. Przy aktualizacji skopiuj ze starego folderu cały katalog `data\` (ustawienia, baza, zaszyfrowany klucz Claude).
    Stary folder zostaw bez zmian. Program przy migracji robi też kopię bazy w `data\backups\`.
@@ -25,6 +25,20 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 3. Zatrzymanie: `04_STOP_MASTERQUO.bat` – kończy tylko procesy tego projektu. Otwarte pozycje NIE są zamykane,
    a ich SL/TP zostają na serwerze brokera.
 4. Opcja `masterquo_start.bat --demo` uruchamia program na danych syntetycznych (symulator, osobna baza) – bez rachunku.
+5. Monitor ma trzy strony (menu po lewej, na telefonie przyciski na dole): **Analiza AI** (`#/ai`), **Wykresy bota** (`#/wykresy`),
+   **Warunki setupu** (`#/warunki/...`). Działają Wstecz/Dalej, zakładki przeglądarki i odświeżanie. Przeglądanie stron nie zmienia
+   trybu handlu, strategii silnika ani dźwigni i nie wysyła płatnych zapytań do AI. Opis: `START_TUTAJ_PL.md`.
+
+### B2a. Walls (HV-proxy / IV) i S12
+
+- Domyślne źródło walls to HV-proxy – zmienność historyczna z D1 brokera (przybliżenie, **nie** zmienność implikowana); etykiety zawsze podają źródło.
+- Własne dane IV (CSV/JSON, format w `docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md`, przykład `docs\przyklad_iv_import.csv` – tylko przykład):
+  ```
+  cd backend
+  ..\.venv\Scripts\python.exe -m masterquo import-iv ..\data\moje_iv.csv
+  ```
+  Dane są używane od chwili `available_at` w kolejnych snapshotach (bieżąca sesja ma zamrożony snapshot).
+- S12 (rodzina walls/range) jest kandydatem i domyślnie **tylko skanuje** – tak jak S11. Brak wyników OOS: skuteczność nie została oceniona.
 
 ### B3. Tryby i bezpieczeństwo handlu
 
@@ -50,7 +64,7 @@ cd ..
 ### B5. Rollback klienta
 
 Uruchom poprzednią wersję z jej własnego folderu (patrz B1, krok 1) i przywróć kopię `data\config.json`. Szczegóły:
-`ROLLBACK.md`, punkt 7.
+`ROLLBACK.md`, punkt 9 (1.10 → 1.9).
 
 ### Rozwiązywanie problemów
 

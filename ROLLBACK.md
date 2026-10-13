@@ -38,3 +38,12 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 * 1.9.0 usuwa licencjonowanie i zapisuje `config_version: 9` (bez sekcji `license`); baza bez nowych migracji.
 * Powrót do 1.8.0 (wymaga licencji i serwera licencji): rozpakuj ZIP 1.8.0 do osobnego folderu i przywróć kopię `data\config.json`
   sprzed 1.9 albo ustaw `"config_version": 8` – 1.8 poprosi o konfigurację serwera licencji przy starcie.
+
+## 9. Wersja 1.10.0 → 1.9.0
+* 1.10.0 zapisuje `config_version: 10` (sekcja `walls`, wpis `S12` w `active.strategies`) i dodaje migracje bazy **0009** (polityka wyjścia,
+  stan TP1, `trades.status`) i **0010** (`iv_observations`, `walls_snapshots`) – tylko nowe kolumny i tabele; kopia bazy sprzed migracji w `data\backups\`.
+* Bez cofania wersji: S12 wyłączysz w Ustawienia → AUTO / ACTIVE (domyślnie i tak tylko skanuje); źródło walls ustawisz w `"walls": {"source": "HV_PROXY"}`
+  (walls są wejściem tylko dla S12 i wykresów, nie zmieniają S01–S11).
+* Powrót: rozpakuj ZIP 1.9.0 do osobnego folderu, przywróć `data\config.json` z kopii sprzed 1.10 (albo usuń sekcję `walls`, wpis `S12`
+  i ustaw `"config_version": 9`) oraz bazę z `data\backups\` – 1.9 nie zna statusu OPEN_PARTIAL/UNSETTLED i liczyłaby je jak zamknięte.
+* Preferencje monitora 1.10 (strony, układy, widoki `ai-*`/`bot-*`) są w przeglądarce; 1.9 ich nie używa, a jej widoki `panelN` zostały zachowane.

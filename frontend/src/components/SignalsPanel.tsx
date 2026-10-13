@@ -10,6 +10,22 @@ const SIDE: Record<string, string> = { LONG: "BUY", SHORT: "SELL" };
 
 const ACTIVE = ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED", "WATCH", "EARLY"];
 
+/** Engine signal contract (plan, AI vs strategy), the 12A checklist and the M30/H8 context - shown on "Warunki setupu". */
+export function EnginePlan() {
+  const { s } = useStore();
+  const d = s.decision;
+  return (
+    <div className="engine-plan" data-testid="engine-plan">
+      <div className="plan-row">
+        <SignalPlan sig={d?.signal} digits={s.symbol?.digits ?? 2} />
+        <Checklist c={d?.checklist} positions={(s.positions?.positions || []).length + (s.managed || []).filter((m: any) => m.mode === "PAPER").length} />
+      </div>
+      <ContextTF ctx={d?.context_tf} digits={s.symbol?.digits ?? 2} />
+    </div>
+  );
+}
+
+/** Positions, orders, settled trades, scenarios and signal history (global side panel "Pozycje i statystyki"). */
 export default function SignalsPanel({ index }: { index: number }) {
   const { s } = useStore();
   const d = s.decision;
@@ -30,7 +46,7 @@ export default function SignalsPanel({ index }: { index: number }) {
     <div className="panel">
       <div className="panel-head">
         <span className="pnum">{index}</span>
-        <span className="ptitle">CHECKLISTA WEJŚCIA & POZYCJE</span>
+        <span className="ptitle">POZYCJE, ZLECENIA I SYGNAŁY</span>
         <span className="spacer" />
         <div className="tabs small">
           {(["setups", "history", "orders", "positions", "settled"] as const).map((t) => (
@@ -45,11 +61,11 @@ export default function SignalsPanel({ index }: { index: number }) {
           <div data-testid="signal-history">
             <div className="ai-ask">
               <select value={hf.strategy} onChange={(e) => setHf({ ...hf, strategy: e.target.value })}><option value="">wszystkie strategie</option>
-                {Array.from({ length: 11 }, (_, i) => `S${String(i + 1).padStart(2, "0")}`).map((x) => <option key={x}>{x}</option>)}</select>
+                {Array.from({ length: 12 }, (_, i) => `S${String(i + 1).padStart(2, "0")}`).map((x) => <option key={x}>{x}</option>)}</select>
               <select value={hf.status} onChange={(e) => setHf({ ...hf, status: e.target.value })}><option value="">wszystkie statusy</option>
                 {["OCZEKIWANIE", "POTWIERDZONY", "ZABLOKOWANY", "UNIEWAŻNIONY", "WYGASŁY", "BRAK_DANYCH"].map((x) => <option key={x}>{x}</option>)}</select>
               <select value={hf.tf} onChange={(e) => setHf({ ...hf, tf: e.target.value })}><option value="">wszystkie interwały</option>
-                {["M1", "M5", "M15", "M30", "H1", "H4", "H8"].map((x) => <option key={x}>{x}</option>)}</select>
+                {["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"].map((x) => <option key={x}>{x}</option>)}</select>
             </div>
             <table className="tbl">
               <thead><tr><th>Czas</th><th>Strategia</th><th>TF</th><th>Kierunek</th><th>Status</th><th>Wykonanie</th><th>Źródło</th><th>Wejście</th><th>SL</th><th>TP</th><th>AI</th><th></th></tr></thead>
@@ -129,11 +145,6 @@ export default function SignalsPanel({ index }: { index: number }) {
           </table>
         )}
       </div>
-      <div className="plan-row">
-        <SignalPlan sig={d?.signal} digits={s.symbol?.digits ?? 2} />
-        <Checklist c={d?.checklist} positions={(s.positions?.positions || []).length + (s.managed || []).filter((m: any) => m.mode === "PAPER").length} />
-      </div>
-      <ContextTF ctx={d?.context_tf} digits={s.symbol?.digits ?? 2} />
     </div>
   );
 }

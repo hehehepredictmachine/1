@@ -227,6 +227,21 @@ def create_app(rt, port: int) -> FastAPI:
         return rt.engine.volatility()
 
     # ------------------------------------------------------------ 1.10: walls for strategies, IV import, structure (S/R, range, patterns)
+    @app.get("/api/v1/timeframes")
+    def timeframes():
+        """TF registry (role per TF) + which TFs each strategy needs - the chart pages are built from this, never from a
+        hard-coded list. Data status per TF from the engine's data-quality gate."""
+        from ..strategies import registry as _reg
+        from ..timeutil import TF_REGISTRY
+        dq = (rt.engine.dq or {}).get("timeframes") or {}
+        strat = {d["strategy_id"]: {"setup_tfs": d["setup_tfs"], "required_tfs": d["required_tfs"], "context_tf": d["context_tf"], "name": d["name"]}
+                 for d in _reg.describe()}
+        return {"timeframes": [{"tf": tf, "seconds": v["seconds"], "role": v["role"], "core": v["core"],
+                                "data": (dq.get(tf) or {}).get("status"), "closed_bars": (dq.get(tf) or {}).get("closed_bars"),
+                                "required": (dq.get(tf) or {}).get("required"), "used_by": sorted(sid for sid, x in strat.items()
+                                                                                                     if tf in x["setup_tfs"] or tf in x["required_tfs"] or tf == x["context_tf"])}
+                               for tf, v in TF_REGISTRY.items()], "strategies": strat}
+
     @app.get("/api/v1/walls")
     def walls_get():
         snap = {k: v for k, v in (rt.walls.last or {}).items() if not k.startswith("_")}

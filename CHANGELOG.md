@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 1.10.0 – audyt winrate/ROI z naprawami P0, walls HV/IV + formacje + S12, panel na trzy strony
+**Audyt 1.9.0** (`audit/`): reprodukcje A–J w izolacji (`audit/repro/repro_audit.py`) – na 1.9.0 8/8 ODTWORZONE, po naprawach 0/8.
+Plan ulepszeń winrate/ROI, protokół walidacji i wyniki testów w `audit/`. Brak danych do oceny skuteczności: **OOS_NOT_RUN / NIE_OCENIONO_SKUTECZNOŚCI**.
+
+**Naprawy P0 (wykonanie, etykiety ML, statystyki):**
+* Jedna polityka wyjścia **MQ-EXIT-POLICY-1.0.0** (`execution/policy.py`) zapisywana przy otwarciu i używana przez LIVE, PAPER, etykiety ML i replay:
+  wszystkie cele (także środkowy), wagi częściowych wyjść, BE dopiero po POTWIERDZONYM TP1, `time_exit_bars` z planu (jawny brak dla S11), TP od fillu (RR_FROM_FILL).
+* Częściowe wyjścia jako maszyna stanów (REQUESTED / UNKNOWN / CONFIRMED / REJECTED / SKIPPED_VOLUME / NOT_FOUND_CHECK_TERMINAL); `trades.status`
+  OPEN_PARTIAL / CLOSED / UNSETTLED – statystyki, winrate i R tylko z CLOSED; ROI rachunku pomija wpłaty/wypłaty (typy 2–6).
+* Etykiety ML **MQ-LABEL-1.1.0**: kursor po TP1, kolejność wewnątrz świecy z kwotowań, bez nich AMBIGUOUS; koszty **MQ-COST-1.1.0** z tego samego źródła
+  prowizji co wykonanie; COST_UNKNOWN wyłączone z treningu; champion oceniany na tych samych próbkach testowych; purge względem każdego późniejszego bloku.
+* Migracja bazy **0009** (polityka wyjścia, stan TP1, status transakcji). Pozycje otwarte w 1.9 dostają politykę odtworzoną raz z zapisanych poziomów.
+
+**Walls, formacje, S12:**
+* Dostawca walls **MQ-WALLS-1.0.0**: HV_PROXY (zmienność historyczna brokera – przybliżenie, nie IV), IV_MANUAL, import IV (`import-iv`, `POST /api/v1/walls/iv-import`);
+  snapshot sesji zamrażany i wersjonowany (migracja **0010**). Etykiety zawsze ze źródłem („HV-proxy”, nigdy „IV” dla HV).
+* Silniki formacji: wykresowe **MQ-CHART-1.0.0** (pivoty z `known_at`, stany FORMING / CONFIRMED / INVALIDATED / EXPIRED), świecowe **MQ-CANDLE-1.0.0**
+  (zdarzenia dowodowe), strefy S/R **MQ-SR-1.0.0** (W1/MN1 z D1), zakres M5 + strefy M1 **MQ-RANGE-1.0.0**. Definicje: `docs/PATTERN_DEFINITIONS_PL.md`.
+* Nowa rodzina **S12 WALLS_RANGE_FAMILY** (RANGE_RECLAIM / WALL_REJECTION / BREAKOUT_RETEST + arbiter) – CANDIDATE, **tylko skanowanie** (jak S11).
+  Opis: `docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md`; ujednolicenie S01–S12: `docs/MAPA_UJEDNOLICENIA_STRATEGII_PL.md`.
+* `data\config.json` v9 → v10: sekcja `walls`, przełącznik S12 `{scan: true, trade: false}`; listy strategii z rejestru.
+* API: `GET /api/v1/timeframes`, `GET /api/v1/walls`, `POST /api/v1/walls/iv-import`, `GET /api/v1/structure?tf=`; agent: narzędzie `get_walls_and_patterns`.
+
+**Panel na trzy strony** (`docs/POSTEP_PRZEBUDOWY_PANELU_CLAUDE_CODE.md` – mapa przeniesionych paneli):
+* **Analiza AI** (`#/ai`): karta „Sygnał AI” (KUPNO / SPRZEDAŻ / CZEKAJ / BEZ TRANSAKCJI, kierunek, etap, strategia, czas i ważność, strefa, unieważnienie, cele)
+  oddzielona od **pozwolenia silnika**; stany: aktualna / wygasła / inny setup / brak klucza / błąd ostatniego przebiegu (historia wyraźnie oznaczona);
+  pełne wyjaśnienie (za, przeciw i sprzeczności, aktywacja, unieważnienie, 3 scenariusze, braki danych, dowody); „Analizuj teraz” / „Zapytaj AI” bez
+  podwójnych wysyłek; wykresy H1 → M30 → M15 → M5 → M1 z wykresem głównym (domyślnie M5) i przełącznikiem „Siatka 5 wykresów”.
+* **Wykresy bota** (`#/wykresy`): wszystkie TF z rejestru backendu (D1…M1) z rolą, stanem danych i wyróżnieniem wymaganych; widoki Wszystkie / Kontekst /
+  Setup i wejście / Skupienie; 1–3 kolumny; sekcje: zmienność i walls, reżim, monitor strategii, inne rynki, jakość danych.
+* **Warunki setupu** (`#/warunki/<setup_id>`): lista z filtrami i „Wybrany przez bota”, podsumowanie „Spełniono X z Y warunków wymaganych”, checklista w 10 sekcjach
+  (Spełnione / Niespełnione / Oczekiwanie / Brak danych / Nie dotyczy, TF i czas), karta triggera i unieważnienia, plan wejścia, „Pokaż na wykresie”.
+  **Oglądanie setupu nie zmienia strategii silnika**; zmiana to osobne ustawienie „Działanie bota – wybór strategii silnika”.
+* Wspólna rama: kompaktowy pasek (symbol, MT5, dane, tryb, STOP), rozwijane „Konto”, panel „Pozycje i statystyki”, „Logi”, pasek awarii na każdej stronie;
+  routing hash (Wstecz/Dalej, link, odświeżenie), pamięć ostatniej strony i układów; jedno połączenie WebSocket; widoki i kolory wykresów z 1.9 migrowane.
+
 ## 1.9.0 – wersja bez licencji
 * **Licencjonowanie usunięte w całości** (na prośbę użytkownika): serwer licencji i panel administratora (`server/`), moduł klienta
   `backend/masterquo/license`, pytanie o klucz `MQL72-…` w `masterquo_start`, blokady silnika / skanera / sygnałów / ML / agenta / zleceń /

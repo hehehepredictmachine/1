@@ -21,7 +21,7 @@ from . import checklist as checklist_mod
 from . import signal_view
 from .active import levels_for
 
-SCHEMA = "MQ-SETUP-DETAILS-1.0.0"
+SCHEMA = "MQ-SETUP-DETAILS-1.1.0"
 SIDE = {"LONG": "BUY", "SHORT": "SELL"}
 SCEN_PL = {"OCZEKIWANIE": "OCZEKIWANIE", "WARUNKI_SPELNIONE": "WARUNKI SPEŁNIONE", "UNIEWAZNIONY": "UNIEWAŻNIONY", "BRAK_DANYCH": "BRAK DANYCH"}
 TERMINAL_PL = {"INVALIDATED": "unieważniony (poziom unieważnienia)", "EXPIRED": "wygasł (brak wyzwalacza w czasie)", "MISSED_ENTRY": "wejście pominięte",
@@ -42,6 +42,49 @@ RISK_PL = {"SPREAD_LIMIT": "spread powyżej limitu", "STOPS_LEVEL_VIOLATION": "S
            "OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED": "otwarta pozycja bez SL", "PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED": "zlecenie oczekujące bez SL",
            "NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL": "rachunek netting z pozycją na symbolu", "DRAWDOWN_BREACH": "przekroczone obsunięcie",
            "COOLDOWN_AFTER_LOSS": "przerwa po stracie", "SYMBOL_TRADE_MODE_NOT_FULL": "symbol nie pozwala na pełny handel"}
+
+
+# ---- presentation grouping of the checklist (MQ-SETUP-DETAILS-1.1.0). Purely descriptive: the rows and their statuses are
+# the engine's; this only says WHICH section a row belongs to, whether it counts as a REQUIREMENT and a UI status code.
+GROUPS = {1: "Jakość i aktualność danych", 2: "Kontekst wyższych TF i reżim", 3: "Struktura / obszar setupu", 4: "Strefa wejścia i trigger",
+          5: "Momentum i potwierdzenia strategii", 6: "Spread, prowizja, poślizg i RR netto", 7: "Sizing, budżet ryzyka, margin i ekspozycja",
+          8: "News / sesja, AI i ML", 9: "Zezwolenie na wykonanie, TTL i blokady", 10: "Unieważnienie i zarządzanie planem"}
+STATE = {"SPEŁNIONY": "MET", "NIESPEŁNIONY": "MISSING", "BRAK DANYCH": "NO_DATA", "OCZEKIWANIE": "PENDING", "NIE DOTYCZY": "NA", "ODCZYT": "NA", "—": "NA"}
+_KEYS = [(1, ("dane mt5", "jakość danych", "aktualność")), (8, ("rynek", "news", "makro", "sesj", "agent ai", "model ml")),
+         (6, ("rr ", "rr po", "spread", "prowizj", "poślizg", "koszt")), (7, ("wolumen", "lot", "margin", "budżet", "ekspozycj", "dźwigni")),
+         (4, ("wyzwalacz", "trigger", "strefa wejścia", "wejście", "zamknięcie świecy", "retest", "okno")),
+         (2, ("reżim", "trend", "kontekst", "h1", "h4", "h8", "d1", "wyższ")),
+         (5, ("momentum", "rsi", "macd", "potwierdz", "wynik active", "aktywność", "świeca", "reakcj", "odrzuceni")),
+         (10, ("unieważn", "invalid")), (3, ("wall", "zakres", "struktur", "poziom", "konsolidac", "formacj", "warunki konieczne"))]
+
+
+def group_of(name: str) -> int:
+    n = (name or "").lower()
+    for g, keys in _KEYS:
+        if any(k in n for k in keys):
+            return g
+    return 3
+
+
+def annotate(rows: list[dict], *, entry_tf: str, checked_at: str | None) -> dict:
+    """Adds group / state / required / tf / at to every row and the "X of Y required" counter. Informational readings
+    (ODCZYT) and not-applicable rows are not requirements and never enter the denominator."""
+    for r in rows:
+        r.setdefault("group", group_of(r.get("name", "")))
+        st = r.get("state") or STATE.get(r.get("status") or "—", "NA")
+        r["state"] = st
+        r.setdefault("required", st != "NA")
+        r["tf"] = r.get("tf") or entry_tf
+        r["at"] = r.get("at") or checked_at
+    req = [r for r in rows if r["required"]]
+    first = next((r for r in req if r["state"] == "MISSING"), None) or next((r for r in req if r["state"] in ("PENDING", "NO_DATA")), None)
+    nxt = next((r for r in req if r["state"] == "PENDING"), None) or next((r for r in req if r["group"] == 4 and r["state"] != "MET"), None)
+    return {"required_total": len(req), "required_met": sum(1 for r in req if r["state"] == "MET"),
+            "missing": sum(1 for r in req if r["state"] == "MISSING"), "pending": sum(1 for r in req if r["state"] == "PENDING"),
+            "no_data": sum(1 for r in req if r["state"] == "NO_DATA"),
+            "first_blocker": None if first is None else {"name": first["name"], "state": first["state"], "reason": first.get("reason")},
+            "next_confirmation": None if nxt is None else {"name": nxt["name"], "threshold": nxt.get("threshold"), "tf": nxt.get("tf")},
+            "groups": GROUPS, "meaning": "postęp checklisty – NIE prawdopodobieństwo wygranej; spełnienie struktury nie oznacza zgody bramek ryzyka i wykonania"}
 
 
 def scenario_status(row: dict, data_ok: bool) -> str:
@@ -71,7 +114,8 @@ def scenarios(eng, *, include_terminal: bool = True, limit: int = 60) -> dict:
         out.append({"setup_id": r["setup_id"], "strategy_id": rec["strategy_id"], "strategy_name": rec.get("strategy_name"), "symbol": r.get("symbol"),
                     "direction": SIDE.get(rec["direction"]), "timeframe": rec["timeframe"], "created_at": r["first_seen_at"], "updated_at": r["updated_at"],
                     "stage": r["stage"], "status": r["status"], "scenario_status": scenario_status(r, data_ok), "setup_score": rec.get("setup_score"),
-                    "engine_selected": r["setup_id"] == sel, "terminal_reason": r.get("terminal_reason")})
+                    "engine_selected": r["setup_id"] == sel, "terminal_reason": r.get("terminal_reason"),
+                    "terminal_reason_pl": TERMINAL_PL.get(r.get("terminal_reason"), r.get("terminal_reason"))})
     return {"schema": SCHEMA, "items": out, "strategies": [{"strategy_id": d["strategy_id"], "name": d["name"]} for d in registry.describe()],
             "engine_selected": sel, "setup_view": eng.prefs.get("setup_view") if eng.prefs is not None else None}
 
@@ -102,8 +146,8 @@ def _age(iso_s: str | None, now: datetime) -> int | None:
 def details(eng, setup_id: str) -> dict | None:
     act = eng.active
     row = act.tracker.get(setup_id)
-    if not row:
-        return None
+    if not row or (row.get("account_key") or None) != (eng.bridge.account_key or None):
+        return None                                   # another account's scenario is never shown as this account's
     rec = row["record"]
     sid = rec["strategy_id"]
     strat = registry.STRATEGIES.get(sid)
@@ -154,7 +198,7 @@ def details(eng, setup_id: str) -> dict | None:
     tf = rec["timeframe"]
     rows.append({"name": f"Wyzwalacz na ZAMKNIĘTEJ świecy {tf}", "threshold": ep.get("trigger") or "wyzwalacz strategii",
                  "value": "spełniony" if live else ("świeca w trakcie / brak wyzwalacza" if row["status"] == "ACTIVE" else "—"),
-                 "status": "SPEŁNIONY" if live else ("NIESPEŁNIONY" if row["status"] == "ACTIVE" else "—"),
+                 "status": "SPEŁNIONY" if live else ("OCZEKIWANIE" if row["status"] == "ACTIVE" else "—"), "group": 4,
                  "reason": None if live else "warunek potwierdzany dopiero po zamknięciu świecy"})
     dn = nodes.get("DATA") or {}
     rows.append({"name": "Dane MT5 (jakość)", "threshold": "GOOD lub DEGRADED, bez błędów TF", "value": d.get("data_quality") or "BRAK DANYCH",
@@ -194,6 +238,15 @@ def details(eng, setup_id: str) -> dict | None:
         why += [c for c in (d.get("reason_codes") or [])[:4]]
     entry = {"status": "DOSTĘPNE" if not why else "ZABLOKOWANE", "reasons": sorted(set(why), key=why.index),
              "execution_mode": eng.modes.mode, "note": "DOSTĘPNE oznacza zgodę reguł bota; wysłanie zlecenia zależy jeszcze od trybu wykonania."}
+    rows.append({"name": "Zezwolenie na wejście (silnik, tryb, TTL)", "threshold": "setup wybrany przez silnik, wszystkie bramki PASS, ważny w czasie",
+                 "value": entry["status"], "status": "SPEŁNIONY" if entry["status"] == "DOSTĘPNE" else "NIESPEŁNIONY", "group": 9,
+                 "reason": "; ".join(entry["reasons"][:4]) or None})
+    exp = row.get("expires_at")
+    rows.append({"name": "Unieważnienie scenariusza", "threshold": "brak zamknięcia za poziomem unieważnienia i ważność w czasie",
+                 "value": ("—" if rec.get("invalidation_level") is None else f"poziom {rec.get('invalidation_level')}") + (f", ważny do {exp}" if exp else ""),
+                 "status": "SPEŁNIONY" if row["status"] == "ACTIVE" else "NIESPEŁNIONY", "group": 10,
+                 "reason": None if row["status"] == "ACTIVE" else TERMINAL_PL.get(row.get("terminal_reason"), row.get("terminal_reason"))})
+    summary = annotate(rows, entry_tf=rec["timeframe"], checked_at=d.get("as_of_utc") or now.isoformat())
     # ---- timeframes used by this strategy: agreement / conflict
     tfs = list(dict.fromkeys([tf] + list(getattr(strat, "setup_tfs", ()) or []) + list(getattr(strat, "required_tfs", ()) or [])
                              + ([strat.context_tf] if getattr(strat, "context_tf", None) else []) + ["H1", "H4"]))
@@ -234,7 +287,7 @@ def details(eng, setup_id: str) -> dict | None:
         "entry": entry,
         "context": {"regime": reg.get("state"), "regime_reason": reg.get("reason"), "countertrend": bool(rec.get("countertrend")),
                     "rationale": f"{sid} {rec.get('strategy_name') or ''}: {reason_txt}. Etap: {row['stage']}, wynik ACTIVE {rec.get('setup_score')}."},
-        "checklist": rows,
+        "checklist": rows, "summary": summary, "selector_mode": (act.prefs.get("setup_view")["mode"] if act.prefs else "AUTO"),
         "levels": {"entry_zone": ep.get("zone"), "trigger": ep.get("trigger"), "trigger_level": ep.get("trigger_level"), "reference_price": ep.get("reference_price"),
                    "planned_entry": risk.get("entry"), "entry_basis": risk.get("entry_basis"), "stop_loss": rec.get("stop_loss"),
                    "targets": [t.get("price") for t in rec.get("targets") or []], "invalidation_level": inv,

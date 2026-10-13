@@ -39,7 +39,14 @@ export interface ChartOpts {
   showVol: boolean;
   syncCrosshair: boolean;
   tz: TimeZoneMode;
+  showPatterns?: boolean;        // 1.10: walls snapshot, M5 range + M1 zones, chart patterns, confirmed pivots, candle evidence
+  showAiLevels?: boolean;        // 1.10: levels proposed by the AI (marked "AI:", separate from the engine plan)
 }
+
+export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
+export type Highlight = { price: number; label: string } | null;
+const ROLE_PL: Record<string, string> = { TRIGGER: "potwierdzenie / trigger", SETUP: "setup", SETUP_CONTEXT: "kontekst setupu", LOCAL_CONTEXT: "kontekst lokalny",
+  HTF: "wyższy kontekst", TREND_REGIME_CONTEXT: "kontekst trendu / reżimu", BACKGROUND: "tło rynku" };
 
 const withAlpha = (c: string, a: number) => {
   const p = parseColor(c);
@@ -50,19 +57,27 @@ declare global {
   interface Window { __mqCharts?: Record<string, any> }
 }
 
-export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }: {
+export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, chartId: idProp, variant, onMain, isMain, aiLevels, highlight, roleText, needed }: {
   tf: string;
   index: number;
   opts: ChartOpts;
   onFullscreen: () => void;
   fullscreen: boolean;
+  chartId?: string;               // stable id: page + TF (zoom / view state survive moving between slots and pages)
+  variant?: "main" | "normal" | "compact";
+  onMain?: () => void;            // "Wykres główny": move this TF into the large slot (no 6th chart)
+  isMain?: boolean;
+  aiLevels?: AiLevels;
+  highlight?: Highlight;
+  roleText?: string | null;
+  needed?: boolean | null;        // TF required by the selected setup's strategy
 }) {
   const { s } = useStore();
   const theme = useTheme();
-  const chartId = `panel${index}`;
+  const chartId = idProp ?? `panel${index}`;
   const symbol = s.symbol?.symbol ?? "XAUUSD-";
   const vkey = viewKey(chartId, symbol, tf);
-  const tk: Tokens = theme.chartTokens(chartId);
+  const tk: Tokens = { ...theme.chartTokens(`tf:${tf}`), ...(idProp ? {} : theme.chartTokens(chartId)) };
   const tkRef = useRef(tk);
   tkRef.current = tk;
   const box = useRef<HTMLDivElement>(null);
@@ -78,6 +93,13 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
   const volZones = useRef<ZonesPrimitive | null>(null);
   const volLines = useRef<IPriceLine[]>([]);
   const priceLines = useRef<IPriceLine[]>([]);
+  const aiLines = useRef<IPriceLine[]>([]);
+  const hlLines = useRef<IPriceLine[]>([]);
+  const structLines = useRef<IPriceLine[]>([]);
+  const structZones = useRef<ZonesPrimitive | null>(null);
+  const structMarkers = useRef<SeriesMarker<Time>[]>([]);
+  const baseMarkers = useRef<SeriesMarker<Time>[]>([]);
+  const [structure, setStructure] = useState<any>(null);
   const times = useRef<number[]>([]);                 // chart times of the candles currently in the series
   const initialized = useRef(false);
   const userUntil = useRef(0);                         // range changes before this moment come from the user
@@ -123,6 +145,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     candles.current.attachPrimitive(zones.current);
     volZones.current = new ZonesPrimitive();
     candles.current.attachPrimitive(volZones.current);
+    structZones.current = new ZonesPrimitive();
+    candles.current.attachPrimitive(structZones.current);
     markers.current = createSeriesMarkers(candles.current, []);
     const el = box.current;
     const onUser = () => markUser();
@@ -162,6 +186,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       view: () => ({ ...view.current }),
       bars: () => times.current.length,
       volLines: () => volLines.current.map((p) => p.options().title),
+      aiLines: () => aiLines.current.map((p) => p.options().title),
+      structLines: () => structLines.current.map((p) => p.options().title),
+      highlight: () => hlLines.current.map((p) => p.options().title),
       creations: (window.__mqCharts?.[chartId]?.creations ?? 0) + 1,
     };
     return () => {
@@ -178,6 +205,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       rsiLevels.current = [];
       macd.current = null;
       priceLines.current = [];
+      aiLines.current = [];
+      hlLines.current = [];
+      structLines.current = [];
       volLines.current = [];
       times.current = [];
       if (window.__mqCharts?.[chartId]?.chart === c) delete window.__mqCharts[chartId];
@@ -366,7 +396,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
       for (const w of ov.sweeps || []) mk.push({ time: TT(w.observed_at), position: w.side === "BSL" ? "aboveBar" : "belowBar", shape: "circle", color: String(t.sweep), text: "SWP", size: 0.5 });
     }
     const first = newTimes.length ? newTimes[0] : 0;
-    markers.current?.setMarkers(mk.filter((x) => (x.time as number) >= first).sort((a, b) => (a.time as number) - (b.time as number)));
+    baseMarkers.current = mk.filter((x) => (x.time as number) >= first);
+    setAllMarkers();
     zones.current?.setZones(o.showZones ? [
       ...(ov.fvgs || []).slice(-6).map((f: any) => {
         const col = String(f.direction === "BULLISH" ? t.fvgBull : t.fvgBear);
@@ -409,6 +440,104 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, opts.showRsi, opts.showMacd, opts.showStructure, opts.showZones, opts.showVol, shift]);
 
+  const setAllMarkers = () => {
+    const first = times.current.length ? times.current[0] : 0;
+    const all = [...baseMarkers.current, ...structMarkers.current].filter((x) => (x.time as number) >= first)
+      .sort((a, b) => (a.time as number) - (b.time as number));
+    markers.current?.setMarkers(all);
+  };
+
+  // ---------------------------------------------------------------- 1.10 structure layers (engine facts only, read-only)
+  useEffect(() => {
+    if (!opts.showPatterns) { setStructure(null); return; }
+    let alive = true;
+    apiGet(`/api/v1/structure?tf=${tf}`).then((r) => alive && setStructure(r)).catch(() => alive && setStructure(null));
+    return () => { alive = false; };
+  }, [tf, opts.showPatterns, s.analysisSeq]);
+
+  useEffect(() => {
+    const ser = candles.current;
+    if (!ser) return;
+    const t = tkRef.current;
+    const TT = (iso: string) => (epochSec(iso) + shiftRef.current) as Time;
+    structLines.current.forEach((p) => ser.removePriceLine(p));
+    structLines.current = [];
+    structMarkers.current = [];
+    const st = structure;
+    if (!opts.showPatterns || !st || st.status !== "OK") { structZones.current?.setZones([]); setAllMarkers(); return; }
+    const zs: any[] = [];
+    const w = st.walls || {};
+    if (w.status === "OK") {
+      const src = w.source_type === "HV_PROXY" ? "HV-proxy" : w.source_type === "IV_IMPORT" ? "IV (import)" : w.source_type === "IV_MANUAL" ? "IV (ręczna)" : w.source_type;
+      for (const x of w.walls || []) {
+        const col = String(x.side === "UPPER" ? t.ivWallUp : t.ivWallDown);
+        zs.push({ from: TT(w.anchor_time) as number, low: x.low, high: x.high, color: col, border: withAlpha(col, 0.8),
+          label: `${src} wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ (v${w.snapshot_version ?? 1})` });
+      }
+    }
+    const rg = st.range || {};
+    if (rg.status === "OK" && ["M1", "M5", "M15"].includes(tf)) {
+      const col = String(t.entry);
+      zs.push({ from: TT(rg.start_utc) as number, low: rg.bottom, high: rg.top, color: withAlpha(col, 0.08), border: withAlpha(col, 0.6),
+        label: `zakres M5 (zamrożony ${rg.state === "INSIDE" ? "" : "– " + rg.state})` });
+      const rz = st.range_zones || {};
+      for (const [k, z] of [["dolna", rz.lower], ["górna", rz.upper]] as const) {
+        if (z) zs.push({ from: TT(rg.start_utc) as number, low: z.low, high: z.high, color: withAlpha(col, 0.18), border: col, label: `strefa M1 ${k}` });
+      }
+    }
+    structZones.current?.setZones(zs);
+    for (const p of (st.chart?.patterns || []).filter((x: any) => x.state === "FORMING" || x.state === "CONFIRMED").slice(0, 3)) {
+      const b = p.boundary || {};
+      const lv = b.neckline ?? b.level ?? null;
+      const label = `${p.type} (${p.state === "CONFIRMED" ? "potwierdzona" : "potencjalna"})`;
+      const add = (price: number | null | undefined, title: string) => price != null && structLines.current.push(ser.createPriceLine({ price, color: String(t.choch),
+        title, lineStyle: p.state === "CONFIRMED" ? LineStyle.Solid : LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false }));
+      if (lv != null) add(lv, label);
+      else { add(b.upper, label + " ↑"); add(b.lower, label + " ↓"); }
+      if (p.confirm_bar) structMarkers.current.push({ time: TT(p.confirm_bar), position: p.direction_if_confirmed === "SHORT" ? "aboveBar" : "belowBar",
+        shape: p.direction_if_confirmed === "SHORT" ? "arrowDown" : "arrowUp", color: String(t.choch), text: p.type.slice(0, 10), size: 0.8 });
+    }
+    for (const pv of (st.pivots || []).slice(-16)) {
+      structMarkers.current.push({ time: TT(pv.t), position: pv.kind === "H" ? "aboveBar" : "belowBar", shape: "circle", color: String(t.sweep), text: "P", size: 0.4 });
+      structMarkers.current.push({ time: TT(pv.known_at), position: pv.kind === "H" ? "aboveBar" : "belowBar", shape: "square", color: withAlpha(String(t.sweep), 0.5),
+        text: "znany", size: 0.3 });
+    }
+    for (const ev of (st.candles?.evidence || []).filter((e: any) => e.direction !== "NEUTRAL").slice(-6)) {
+      structMarkers.current.push({ time: TT(ev.bar), position: ev.direction === "SHORT" ? "aboveBar" : "belowBar", shape: "circle",
+        color: String(ev.direction === "SHORT" ? t.tp : t.entry), text: ev.members[0].slice(0, 8), size: 0.5 });
+    }
+    setAllMarkers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structure, opts.showPatterns, data, shift]);
+
+  // ---------------------------------------------------------------- AI levels (marked "AI:" - never merged with the engine plan)
+  useEffect(() => {
+    const ser = candles.current;
+    if (!ser) return;
+    aiLines.current.forEach((p) => ser.removePriceLine(p));
+    aiLines.current = [];
+    if (!aiLevels || opts.showAiLevels === false) return;
+    const col = String(tk.choch);
+    const add = (price: number | null | undefined, title: string) => price != null && aiLines.current.push(ser.createPriceLine({ price, color: col, title,
+      lineStyle: LineStyle.SparseDotted, lineWidth: 1, axisLabelVisible: true }));
+    if (aiLevels.zone) { add(aiLevels.zone[0], "AI: strefa"); add(aiLevels.zone[1], ""); }
+    add(aiLevels.invalidation, "AI: unieważnienie");
+    (aiLevels.targets || []).forEach((x, i) => add(x, `AI: cel ${i + 1}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(aiLevels), opts.showAiLevels, data]);
+
+  // ---------------------------------------------------------------- "Pokaż na wykresie" highlight from the setup page
+  useEffect(() => {
+    const ser = candles.current;
+    if (!ser) return;
+    hlLines.current.forEach((p) => ser.removePriceLine(p));
+    hlLines.current = [];
+    if (highlight && highlight.price != null)
+      hlLines.current.push(ser.createPriceLine({ price: highlight.price, color: String(tk.chartCrosshair), title: "▶ " + highlight.label, lineStyle: LineStyle.Solid,
+        lineWidth: 2, axisLabelVisible: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight?.price, highlight?.label, data]);
+
   // ---------------------------------------------------------------- execution levels (existing values only; never touches the scale)
   useEffect(() => {
     const ser = candles.current;
@@ -421,8 +550,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     const add = (price: number, color: string, title: string, style = LineStyle.Dashed) =>
       price != null && priceLines.current.push(ser.createPriceLine({ price, color, title, lineStyle: style, lineWidth: 1, axisLabelVisible: true }));
     if (!lv || !st || !["EARLY_SETUP", "EARLY", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"].includes(st.state)) return;
-    add(lv.stop_loss, String(tk.sl), "SL");
-    (lv.targets || []).forEach((t: any, i: number) => add(t.price, String(tk.tp), `TP${i + 1}${st.state !== "CONFIRMED" ? " (scen.)" : ""}`));
+    add(lv.stop_loss, String(tk.sl), "Plan bota: SL");
+    (lv.targets || []).forEach((t: any, i: number) => add(t.price, String(tk.tp), `Plan bota: TP${i + 1}${st.state !== "CONFIRMED" ? " (scen.)" : ""}`));
     if (lv.entry_zone) {
       add(lv.entry_zone.high, String(tk.entry), "strefa wejścia", LineStyle.Dotted);
       add(lv.entry_zone.low, String(tk.entry), "", LineStyle.Dotted);
@@ -444,6 +573,13 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
     volume.current.update({ time: t as Time, value: b.tv, color: String(b.c >= b.o ? tk.volUp : tk.volDown) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.barTick?.[tf]]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onFullscreen(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [fullscreen, onFullscreen]);
 
   // ---------------------------------------------------------------- per-panel controls
   const zoom = (factor: number) => {
@@ -481,13 +617,17 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
   const stale = s.connection?.state !== "CONNECTED" || (s.decision && s.decision.data_quality === "BAD");
   const last = data?.bars?.length ? data.bars[data.bars.length - 1] : null;
   const role = data?.indicators?.role;
+  const lastClosed = data?.bars?.filter((b: any) => b.closed).slice(-1)[0];
+  const freshS = lastClosed?.open_utc ? Math.max(0, Math.round((Date.now() - Date.parse(lastClosed.open_utc)) / 1000)) : null;
   return (
-    <div className={cls("panel chart-panel", fullscreen && "fullscreen")} data-chart-id={chartId} data-tf={tf}>
+    <div className={cls("panel chart-panel", fullscreen && "fullscreen", variant && "cv-" + variant, isMain && "is-main")} data-chart-id={chartId} data-tf={tf}
+      data-needed={needed == null ? undefined : needed ? "1" : "0"}>
       <div className="panel-head">
-        <span className="pnum">{index}</span>
-        <span className="ptitle">{symbol}</span>
         <span className="ptf">{tf}</span>
-        <span className="psub">MT5{role ? ` · ${role}` : ""}</span>
+        <span className="ptitle">{symbol}</span>
+        <span className="psub" title="rola interwału z rejestru TF backendu">{roleText ?? (role ? ROLE_PL[role] ?? role.toLowerCase().replace(/_/g, " ") : "MT5")}</span>
+        {needed && <span className="badge ok" title="interwał wymagany przez strategię wybranego setupu">wymagany</span>}
+        {freshS != null && <span className="badge muted" title="czas od otwarcia ostatniej zamkniętej świecy">{freshS < 3600 ? `${Math.round(freshS / 60)} min` : `${Math.round(freshS / 3600)} h`}</span>}
         <span className={cls("badge", qStatus === "OK" ? "ok" : qStatus ? "warn" : "muted")} title={(q?.reasons || []).join(", ") || ""}>
           {qStatus === "INSUFFICIENT_HISTORY" ? `WARMING_UP ${q.closed_bars}/${q.required}` : qStatus ?? "…"}
         </span>
@@ -508,7 +648,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen }
         </select>
         <span className="spacer" />
         {!viewUi.follow && <span className="badge muted" title="Widok ręczny – nowe świece nie przesuwają wykresu">widok ręczny</span>}
-        <button className="icon" title={fullscreen ? "Zamknij pełny ekran" : "Pełny ekran"} onClick={onFullscreen}>{fullscreen ? "✕" : "⤢"}</button>
+        {onMain && !isMain && <button className="icon" data-act="main" title="Przenieś ten interwał na wykres główny" onClick={onMain}>Wykres główny</button>}
+        <button className="icon" data-act="fullscreen" title={fullscreen ? "Zamknij pełny ekran (Esc)" : "Pełny ekran"} aria-label={fullscreen ? "Zamknij pełny ekran" : "Pełny ekran"} onClick={onFullscreen}>{fullscreen ? "✕" : "⤢"}</button>
       </div>
       <div className="chart-box" ref={box} />
       {err && <div className="chart-msg bad">Błąd danych: {err}</div>}

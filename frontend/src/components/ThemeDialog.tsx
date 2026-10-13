@@ -134,7 +134,7 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
             <label className="field"><span>Zakres zmian</span>
               <select value={scope} onChange={(e) => { setScope(e.target.value); if (e.target.value !== "global" && !CHART_GROUPS.includes(group)) setGroup("Wykres"); }}>
                 <option value="global">Cała aplikacja (globalnie)</option>
-                {[1, 2, 3, 4, 5, 6].map((i) => <option key={i} value={`panel${i}`}>Tylko wykres {i}</option>)}
+                {["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"].map((tf) => <option key={tf} value={`tf:${tf}`}>Tylko wykresy {tf}</option>)}
               </select></label>
           </div>
           <div className="theme-grid">

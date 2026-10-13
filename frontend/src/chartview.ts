@@ -24,6 +24,29 @@ function readAll(): Record<string, ChartView> {
   }
 }
 
+/** 1.10: charts got stable ids per page + TF ("ai-M5", "bot-H1"). Views saved under the old positional ids ("panel1".."panel8",
+ * which were tied to a layout slot) are copied ONCE to the new ids of the same TF - the user's zoom is kept, no other
+ * chart's view is overwritten. Corrupted storage yields default views. */
+export function migrateLegacyViews(): void {
+  try {
+    if (localStorage.getItem("mq.chartview.migrated.1_10")) return;
+    const all = readAll();
+    const out = { ...all };
+    for (const [k, v] of Object.entries(all)) {
+      const m = /^panel\d+\|(.+)\|([A-Z0-9]+)$/.exec(k);
+      if (!m) continue;
+      for (const page of ["ai", "bot"]) {
+        const nk = `${page}-${m[2]}|${m[1]}|${m[2]}`;
+        if (!out[nk]) out[nk] = v;
+      }
+    }
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, views: out }));
+    localStorage.setItem("mq.chartview.migrated.1_10", "1");
+  } catch {
+    /* storage unavailable or corrupted: defaults */
+  }
+}
+
 export function viewKey(chartId: string, symbol: string, tf: string): string {
   return `${chartId}|${symbol}|${tf}`;
 }

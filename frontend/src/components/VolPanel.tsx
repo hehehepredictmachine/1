@@ -20,10 +20,11 @@ export default function VolPanel() {
   const ok = v?.status === "OK";
   const day = v?.day || {};
   const c = v?.contract || {};
+  const vs = v?.source_type === "IV_MANUAL" ? "IV" : "HV-proxy";            // label follows the volatility source
   return (
     <div className="panel vol-panel" data-testid="vol-panel">
       <div className="panel-head">
-        <span className="ptitle">ZMIENNOŚĆ DZIENNA · IV WALLS</span>
+        <span className="ptitle">ZMIENNOŚĆ DZIENNA · WALLS ({v?.source_type ?? "…"})</span>
         <span className="psub">{v?.model ?? ""}</span>
         <span className="spacer" />
         <span className={cls("badge", ok ? "ok" : v?.status === "DISABLED" ? "muted" : "warn")}
@@ -38,8 +39,8 @@ export default function VolPanel() {
           <div className="kv vol-kv">
             <div><label>Daily Open</label><b>{fmtNum(day.open)}</b></div>
             <div><label>High / Low dnia</label><b>{fmtNum(day.high)} / {fmtNum(day.low)}</b></div>
-            <div><label>Daily High (IV 1σ)</label><b>{fmtNum(v.expected_high)}</b></div>
-            <div><label>Daily Low (IV 1σ)</label><b>{fmtNum(v.expected_low)}</b></div>
+            <div><label>Daily High ({vs} 1σ)</label><b>{fmtNum(v.expected_high)}</b></div>
+            <div><label>Daily Low ({vs} 1σ)</label><b>{fmtNum(v.expected_low)}</b></div>
             <div><label>Oczekiwany ruch 1σ</label><b>±{fmtNum(v.expected_move_1s)}</b></div>
             <div><label>Wykorzystany zakres</label><b>{pct(day.range_used_pct, 0)}</b></div>
             <div><label>PDH / PDL</label><b>{fmtNum(v.previous_day?.high)} / {fmtNum(v.previous_day?.low)}</b></div>
@@ -50,7 +51,7 @@ export default function VolPanel() {
               <span className="muted small"> · BE {fmtNum(c.breakeven_down)} – {fmtNum(c.breakeven_up)}</span></div>
           </div>
           <table className="vol-walls">
-            <thead><tr><th>IV wall</th><th>Poziom</th><th>Strefa</th><th>Opcja</th><th>Premia</th><th>Delta</th><th>P(zamknięcie za)</th><th>P(dotknięcie)</th><th>Dziś</th></tr></thead>
+            <thead><tr><th>{vs} wall</th><th>Poziom</th><th>Strefa</th><th>Opcja</th><th>Premia</th><th>Delta</th><th>P(zamknięcie za)</th><th>P(dotknięcie)</th><th>Dziś</th></tr></thead>
             <tbody>
               {(v.walls || []).map((w: any) => (
                 <tr key={`${w.side}${w.sigma}`} className={w.side === "UP" ? "up" : "down"}>

@@ -265,9 +265,11 @@ export function parseThemeFile(text: string): { name: string; tokens: Tokens; ov
   if (j.chart_overrides !== undefined) {
     if (typeof j.chart_overrides !== "object" || Array.isArray(j.chart_overrides)) res.errors.push("chart_overrides: oczekiwano obiektu");
     else for (const [cid, ov] of Object.entries(j.chart_overrides)) {
-      if (!/^panel[1-8]$/.test(cid)) { res.errors.push(`chart_overrides: nieznany wykres ${cid}`); continue; }
+      const LEGACY_TF = ["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"];
+      const key = /^tf:(M1|M5|M15|M30|H1|H4|H8|D1)$/.test(cid) ? cid : /^panel[1-8]$/.test(cid) ? "tf:" + LEGACY_TF[Number(cid.slice(5)) - 1] : null;
+      if (!key) { res.errors.push(`chart_overrides: nieznany wykres ${cid}`); continue; }
       const r = validateTokens(ov, CHART_KEYS);
-      res.overrides[cid] = r.tokens;
+      res.overrides[key] = r.tokens;
       res.errors.push(...r.errors.map((e) => `${cid}.${e}`));
     }
   }
@@ -287,7 +289,14 @@ function load(): Stored {
     const custom: Record<string, Tokens> = {};
     for (const [n, v] of Object.entries(j.custom || {})) custom[n] = { ...MATRIX, ...validateTokens(v).tokens };
     const overrides: Record<string, Tokens> = {};
-    for (const [n, v] of Object.entries(j.overrides || {})) if (/^panel[1-8]$/.test(n)) overrides[n] = validateTokens(v, CHART_KEYS).tokens;
+    const LEGACY_TF = ["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"];        // "Wszystkie interwały" order of 1.9 (panelN -> TF)
+    for (const [n, v] of Object.entries(j.overrides || {})) {
+      if (/^tf:(M1|M5|M15|M30|H1|H4|H8|D1)$/.test(n)) overrides[n] = validateTokens(v, CHART_KEYS).tokens;
+      else if (/^panel[1-8]$/.test(n)) {                                            // 1.9 per-panel colours -> per-TF colours (once)
+        const tfk = "tf:" + LEGACY_TF[Number(n.slice(5)) - 1];
+        if (!overrides[tfk]) overrides[tfk] = validateTokens(v, CHART_KEYS).tokens;
+      }
+    }
     return { version: VERSION, preset: typeof j.preset === "string" ? j.preset : "matrix", tokens: { ...MATRIX, ...t }, custom, overrides };
   } catch {
     return def;
