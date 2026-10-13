@@ -78,7 +78,7 @@ class StrategyModeReq(BaseModel):
 
 
 class StrategyToggleReq(BaseModel):
-    strategy_id: str = Field(pattern="^S(0[1-9]|10)$")
+    strategy_id: str = Field(pattern="^S[0-9]{2}$")          # checked against the registry in the endpoint (S11, S12 included)
     scan: bool | None = None
     trade: bool | None = None
 
@@ -225,6 +225,35 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/volatility")
     def volatility():
         return rt.engine.volatility()
+
+    # ------------------------------------------------------------ 1.10: walls for strategies, IV import, structure (S/R, range, patterns)
+    @app.get("/api/v1/walls")
+    def walls_get():
+        snap = {k: v for k, v in (rt.walls.last or {}).items() if not k.startswith("_")}
+        return {"status": rt.walls.status(), "snapshot": snap,
+                "note": "HV_PROXY = zmienność historyczna brokera jako przybliżenie – nie zmienność implikowana. Walls to pasma konwencji log-zwrotu, nie prognoza."}
+
+    @app.post("/api/v1/walls/iv-import")
+    def walls_iv_import(body: dict = Body(...)):
+        from ..analysis import iv_import
+        text = str(body.get("text") or "")
+        if not text or len(text) > 1_000_000:
+            raise HTTPException(400, "IV_IMPORT_EMPTY_OR_TOO_LARGE")
+        try:
+            rows = iv_import.parse_text(text, body.get("format"))
+        except Exception as exc:
+            raise HTTPException(400, f"IV_IMPORT_PARSE_ERROR: {type(exc).__name__}") from exc
+        rep = iv_import.store(rt.db, rows, imported_by="MONITOR")
+        rt.log.info("WALLS", "IV_IMPORT", f"Import IV: przyjęto {rep['accepted']}, odrzucono {len(rep['rejected'])}, już zapisane {rep['already_stored']} "
+                    "(użycie od available_at; dotyczy przyszłych snapshotów).")
+        rt.engine.mark_dirty()
+        return rep
+
+    @app.get("/api/v1/structure")
+    def structure(tf: str = Query("M5")):
+        if tf not in TIMEFRAMES:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        return rt.engine.structure(tf)
 
     # ------------------------------------------------------------ markets (scanner) and AI signals
     import re as _re
@@ -585,6 +614,9 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/strategy/toggle")
     def strategy_toggle(req: StrategyToggleReq):
+        from ..strategies import registry as _reg
+        if req.strategy_id not in _reg.STRATEGIES:
+            raise HTTPException(400, "UNKNOWN_STRATEGY_ID")
         cur = rt.cfg.get().active.strategies.get(req.strategy_id)
         patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else True}
         if req.scan is not None:

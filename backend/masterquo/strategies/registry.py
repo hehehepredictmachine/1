@@ -1,4 +1,5 @@
-"""Registry of the 10 implemented strategies and the scanner that runs them on one MarketView."""
+"""Registry of the implemented strategies (S01-S12) and the scanner that runs them on one MarketView.
+Lists of strategies elsewhere (config validators, API, UI) are derived from STRATEGIES - adding a file is not enough."""
 from __future__ import annotations
 
 import hashlib
@@ -15,14 +16,15 @@ from .s08_range_edge_reversion import RangeEdgeReversion
 from .s09_statistical_mean_reversion import StatisticalMeanReversion
 from .s10_exhaustion_structure_reversal import ExhaustionStructureReversal
 from .s11_ema_pullback import EmaPullback
+from .s12_walls_range import WallsRangeFamily
 
 REGISTRY_VERSION = "MQ-REGISTRY-1.0.0"
 STRATEGIES: dict[str, base.Strategy] = {s.id: s for s in (
     TrendPullback(), AdaptiveTrend(), ChannelBreakout(), VolatilityCompressionBreakout(), SessionRangeBreakout(),
     BreakoutRetest(), FailedBreakoutReclaim(), RangeEdgeReversion(), StatisticalMeanReversion(), ExhaustionStructureReversal(),
-    EmaPullback())}
+    EmaPullback(), WallsRangeFamily())}
 # strategies that may be scanned/shown but are not allowed to trade until the user enables them (unvalidated challengers)
-DEFAULT_NO_TRADE = {"S11"}
+DEFAULT_NO_TRADE = {"S11", "S12"}
 
 
 def params_for(sid: str, overrides: dict | None) -> dict:
@@ -105,5 +107,10 @@ def scan(view: base.MarketView, *, enabled: dict[str, bool], overrides: dict[str
         per[sid] = {"status": "OK", "reasons": reasons[:6] if not drafts or below else [], "drafts": len(drafts), "below_watch": below,
                     "published": pub, "regime_fit": fit, "config_hash": chash}
         if not drafts:
-            per[sid]["reasons"] = ["NO_STRUCTURE_MATCHING_DEFINITION"]
+            rj = getattr(s, "last_rejections", None)
+            if rj:                                       # families with an explicit rejection list (S12): per variant and side
+                per[sid]["reasons"] = [f"{side}:{var}:{','.join(codes[:3])}" for side, d in rj.items() for var, codes in d.items()][:8] or ["NO_STRUCTURE_MATCHING_DEFINITION"]
+                per[sid]["rejections"] = rj
+            else:
+                per[sid]["reasons"] = ["NO_STRUCTURE_MATCHING_DEFINITION"]
     return {"candidates": candidates, "per_strategy": per, "regime": regime_state}

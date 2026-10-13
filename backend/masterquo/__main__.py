@@ -216,7 +216,7 @@ def main(argv=None) -> int:
     sub.add_parser("doctor")
     sub.add_parser("clock")
     sub.add_parser("set-key")
-    pr = sub.add_parser("profile", help="przełącz profil wykrywania: ACTIVE (S01-S10 + AUTO) albo ORIGINAL (M07 jak w 1.1)")
+    pr = sub.add_parser("profile", help="przełącz profil wykrywania: ACTIVE (S01-S12 + AUTO) albo ORIGINAL (M07 jak w 1.1)")
     pr.add_argument("name", choices=["ACTIVE", "ORIGINAL", "show"])
     e = sub.add_parser("export", help="eksport 8 TF (z M30 i H8) w formacie M06R z czasem UTC")
     e.add_argument("--from-utc", required=True)
@@ -224,6 +224,8 @@ def main(argv=None) -> int:
     e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_utc"))
     e.add_argument("--dst-model", choices=["UNIFORM", "NY_CLOSE"], default="UNIFORM",
                    help="UNIFORM = jeden offset (dzisiejszy) dla całego zakresu; NY_CLOSE = offset per świeca (Nowy Jork + 7 h)")
+    iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
+    iv.add_argument("file")
     a = ap.parse_args(argv)
     _load_dotenv()
     if a.cmd == "serve":
@@ -241,7 +243,28 @@ def main(argv=None) -> int:
         return diagnostics.export_history(a.from_utc, a.to_utc, a.out, a.dst_model)
     if a.cmd == "profile":
         return cmd_profile(a.name)
+    if a.cmd == "import-iv":
+        return cmd_import_iv(a.file)
     return 1
+
+
+def cmd_import_iv(path: str) -> int:
+    """Validated IV import into the local database (used from `available_at` on; never edits existing snapshots)."""
+    from pathlib import Path as _P
+
+    from .analysis import iv_import
+    from .db.database import Database
+    p = _P(path)
+    if not p.is_file():
+        print(f"[BŁĄD] Brak pliku: {p}")
+        return 2
+    db = Database()
+    db.migrate()
+    rep = iv_import.store(db, iv_import.parse_text(p.read_text(encoding="utf-8"), "json" if p.suffix.lower() == ".json" else "csv"), imported_by="CLI")
+    print(f"[IV] wierszy {rep['rows']}: przyjęto {rep['accepted']}, już zapisane {rep['already_stored']}, odrzucono {len(rep['rejected'])}")
+    for r in rep["rejected"][:50]:
+        print(f"  wiersz {r['row']}: {r['reason']}")
+    return 0 if not rep["rejected"] else 1
 
 
 if __name__ == "__main__":

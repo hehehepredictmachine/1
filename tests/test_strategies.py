@@ -47,12 +47,12 @@ def entry_of(d):
 
 
 class TestRulesPerStrategy(unittest.TestCase):
-    def test_registry_has_ten_plus_s11_implemented(self):
-        self.assertEqual(sorted(registry.STRATEGIES), ALL + ["S11"])          # S11 = EMA20 Pullback 2.5R (1.7), scan-only by default
-        self.assertEqual(registry.DEFAULT_NO_TRADE, {"S11"})
+    def test_registry_has_ten_plus_s11_s12_implemented(self):
+        self.assertEqual(sorted(registry.STRATEGIES), ALL + ["S11", "S12"])   # S11 EMA20 Pullback (1.7), S12 walls/range family (1.10)
+        self.assertEqual(registry.DEFAULT_NO_TRADE, {"S11", "S12"})          # both scan-only by default
         names = {d["name"] for d in registry.describe()}
-        self.assertEqual(len(names), 11)
-        self.assertTrue(all(d["implemented"] and d["validation_status"].startswith("FUNCTIONAL_ONLY") for d in registry.describe()))
+        self.assertEqual(len(names), 12)
+        self.assertTrue(all(d["implemented"] and ("FUNCTIONAL_ONLY" in d["validation_status"]) for d in registry.describe()))
 
     def test_long_and_short_trigger(self):
         for sid in ALL:
@@ -129,7 +129,7 @@ class TestScoringAndStages(unittest.TestCase):
 
     def test_score_scale_and_unknown_components(self):
         bars = scenario("S01")
-        res = registry.scan(view_for(bars), enabled={k: k == "S01" for k in ALL}, overrides={"S01": params("S01")}, thresholds=ZERO, account_key="a")
+        res = registry.scan(view_for(bars), enabled={k: k == "S01" for k in registry.STRATEGIES}, overrides={"S01": params("S01")}, thresholds=ZERO, account_key="a")
         c = res["candidates"][0]
         sc = c["score"]
         self.assertEqual(sum(sc["weights"].values()), 100)
@@ -182,7 +182,7 @@ class TestTracker(unittest.TestCase):
 
     def _scan(self, bars, sid):
         v = view_for(bars)
-        res = registry.scan(v, enabled={k: k == sid for k in ALL}, overrides={sid: params(sid)}, thresholds=ZERO, account_key="acc")
+        res = registry.scan(v, enabled={k: k == sid for k in registry.STRATEGIES}, overrides={sid: params(sid)}, thresholds=ZERO, account_key="acc")
         return v, [c for c in res["candidates"] if c["direction"] == "LONG"]
 
     def _now(self, bars):

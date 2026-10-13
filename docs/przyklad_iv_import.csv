@@ -1,0 +1,5 @@
+# PRZYKŁAD FORMATU - WARTOŚCI PRZYKŁADOWE, NIE SĄ DANYMI RYNKOWYMI. Zastąp własnymi obserwacjami (z czasem publikacji available_at).
+# unit: percent | fraction ; day_count_basis: ACT_365 | TRADING_252 ; quality: OK | ESTIMATED | STALE
+observed_at,available_at,underlier,source,sigma_annual,unit,day_count_basis,tenor_days,quality,note
+2026-10-12T20:15:00Z,2026-10-12T20:30:00Z,GLD,PRZYKLAD - GVZ close (wpisz prawdziwe źródło),15.0,percent,ACT_365,30,OK,przykład formatu
+2026-10-12T20:15:00Z,2026-10-12T20:30:00Z,XAUUSD-,PRZYKLAD - wlasny odczyt,0.150,fraction,ACT_365,1,ESTIMATED,przykład formatu

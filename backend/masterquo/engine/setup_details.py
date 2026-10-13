@@ -1,7 +1,7 @@
 """Scenario list and "Szczegóły setupu" (MQ-SETUP-DETAILS-1.0.0) - computed on request from the engine's live state.
 
 Terms:
-  strategy type   an entry of the strategy registry (S01..S11) - a method
+  strategy type   an entry of the strategy registry (S01..S12) - a method
   scenario        a concrete detection by that strategy (tracker row): stable setup_id, symbol, direction, timeframe,
                   first_seen_at - it lives through WATCH/EARLY/CONFIRMED and ends INVALIDATED/EXPIRED/MISSED_ENTRY
 
@@ -132,8 +132,12 @@ def details(eng, setup_id: str) -> dict | None:
     if cl.get("status") == "SCENARIO":
         rows.append({"name": "Warunki konieczne strategii", "threshold": "struktura wymagana przez " + sid, "value": cl["met"][0]["reading"] if cl["met"] else "—",
                      "status": "SPEŁNIONY", "reason": None})
+    own = (rec.get("facts") or {}).get("checklist")
+    if isinstance(own, list) and own:               # families with their own exact checklist (S12): requirement, reading, TF, time, reason
+        rows += [{"name": r["name"], "threshold": r.get("threshold") or "—", "value": r.get("value") or "—", "status": r["status"],
+                  "reason": r.get("reason"), "tf": r.get("tf"), "at": r.get("at")} for r in own]
     for k, v in (rec.get("facts") or {}).items():
-        if k in ("core", "touch_bar", "confirm_bar", "rr"):
+        if own or k in ("core", "touch_bar", "confirm_bar", "rr"):
             continue
         rows.append({"name": checklist_mod.FACT_PL.get(k, k), "threshold": _threshold(k, params) or "—", "value": "BRAK DANYCH" if v is None else checklist_mod._fmt(v),
                      "status": "BRAK DANYCH" if v is None else "ODCZYT", "reason": None if v is not None else "brak danych do odczytu"})

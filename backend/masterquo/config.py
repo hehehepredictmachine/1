@@ -238,13 +238,14 @@ class ActiveThresholds(_Strict):
 
 
 def _default_toggles() -> dict[str, StrategyToggle]:
-    t = {f"S{i:02d}": StrategyToggle() for i in range(1, 11)}
-    t["S11"] = StrategyToggle(scan=True, trade=False)   # EMA20 Pullback 2.5R: challenger, never trades unless enabled by the user
-    return t
+    """One toggle per strategy of the REGISTRY; unvalidated challengers (registry.DEFAULT_NO_TRADE: S11 EMA20 Pullback,
+    S12 walls/range family) are scan-only until the user explicitly enables trading."""
+    from .strategies import registry
+    return {sid: StrategyToggle(scan=True, trade=sid not in registry.DEFAULT_NO_TRADE) for sid in registry.STRATEGIES}
 
 
 class ActiveConfig(_Strict):
-    """Profile ACTIVE (S01-S10 scanner + AUTO strategy selection). ORIGINAL = legacy M07 path only."""
+    """Profile ACTIVE (S01-S12 scanner + AUTO strategy selection). ORIGINAL = legacy M07 path only."""
     profile: Literal["ACTIVE", "ORIGINAL"] = "ACTIVE"
     strategy_mode: Literal["AUTO", "MANUAL"] = "AUTO"       # AUTO = strategy selection only, never order execution
     manual_strategy_id: str | None = None
@@ -266,7 +267,8 @@ class ActiveConfig(_Strict):
     def _manual(cls, v: str | None) -> str | None:
         if v in (None, ""):
             return None
-        if not re.fullmatch(r"S(0[1-9]|1[01])", v):
+        from .strategies import registry
+        if v not in registry.STRATEGIES:                 # derived from the registry - a new strategy file needs no edit here
             raise ValueError("UNKNOWN_STRATEGY_ID")
         return v
 
@@ -287,6 +289,37 @@ class VolatilityConfig(_Strict):
     def _walls(cls, v: list[float]) -> list[float]:
         if not 1 <= len(v) <= 4 or any(not 0.25 <= x <= 4.0 for x in v):
             raise ValueError("WALLS_SIGMA_1_TO_4_VALUES_0.25_TO_4")
+        return sorted(set(round(x, 3) for x in v))
+
+
+class WallsManualIV(_Strict):
+    """Implied volatility typed by the user - with its timestamp, source, unit and validity (never a bare number)."""
+    sigma_annual_pct: float = Field(..., gt=1, le=300)
+    observed_at: str
+    available_at: str
+    valid_until: str
+    source: str = Field(..., min_length=2, max_length=80)
+    underlier: str = Field(..., min_length=1, max_length=40)
+    tenor_days: float = Field(30.0, gt=0, le=3650)
+    day_count_basis: Literal["ACT_365", "TRADING_252"] = "ACT_365"
+
+
+class WallsConfig(_Strict):
+    """Volatility walls for strategies (analysis/walls.py, MQ-WALLS-1.0.0). AUTO = imported IV, then manual IV, then the
+    HV proxy of the broker's D1 bars. IV_SOURCED needs an external adapter - none is configured in this package."""
+    source: Literal["AUTO", "HV_PROXY", "IV_MANUAL", "IV_IMPORT", "IV_SOURCED"] = "AUTO"
+    hv_window: int = Field(20, ge=5, le=250)
+    ks: list[float] = Field(default_factory=lambda: [1.0, 2.0])
+    band_sigma: float = Field(0.15, ge=0.0, le=0.5)
+    manual: WallsManualIV | None = None
+    import_underliers: list[str] = Field(default_factory=lambda: ["XAUUSD-", "GLD", "GC"])
+    external_adapter: str | None = None          # not configured: IV_SOURCED reports NOT_CONFIGURED
+
+    @field_validator("ks")
+    @classmethod
+    def _ks(cls, v: list[float]) -> list[float]:
+        if not 1 <= len(v) <= 4 or any(not 0.25 <= x <= 4.0 for x in v):
+            raise ValueError("WALLS_K_1_TO_4_VALUES_0.25_TO_4")
         return sorted(set(round(x, 3) for x in v))
 
 
@@ -324,7 +357,7 @@ class BotSignalsConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 9
+    config_version: int = 10
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -338,6 +371,7 @@ class AppConfig(_Strict):
     active: ActiveConfig = Field(default_factory=ActiveConfig)
     ml: MLConfig = Field(default_factory=MLConfig)
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
+    walls: WallsConfig = Field(default_factory=WallsConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     first_run_completed: bool = False
@@ -405,7 +439,7 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 9:
+    if v >= 10:
         return False
     if v >= 3:
         _to_v5(raw)
@@ -439,7 +473,10 @@ def _to_v5(raw: dict) -> None:
         st["S11"] = {"scan": True, "trade": False}
     # v7 -> v8 (1.7) added `license`; v8 -> v9 (1.9) licensing withdrawn: the section is dropped, nothing else changes
     raw.pop("license", None)
-    raw["config_version"] = 9
+    # v9 -> v10 (1.10): strategy S12 (walls / range family, CANDIDATE) added as scan-only; section `walls` gets defaults
+    if isinstance(st, dict) and "S12" not in st:
+        st["S12"] = {"scan": True, "trade": False}
+    raw["config_version"] = 10
 
 
 def _to_v3(raw: dict) -> None:

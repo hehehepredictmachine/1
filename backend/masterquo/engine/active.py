@@ -1,6 +1,6 @@
 """ActiveEngine - profile ACTIVE inside the single EngineService flow.
 
-bridge bars (closed + forming) + quote -> MarketView + MarketRegimeEngine -> scan S01-S10
+bridge bars (closed + forming) + quote -> MarketView + MarketRegimeEngine -> scan S01-S12
 -> SetupTracker (versions, hysteresis, invalidation, expiry) -> StrategyAutoSelector
 -> setup/levels for the existing decision tree, risk engine and execution gateway.
 
@@ -45,6 +45,7 @@ class ActiveEngine:
         self.ml = None                           # MLService (collector + ASSIST ranking), set by the runtime
         self.listeners: list = []                # fn(events, view) after each scan (bot signals)
         self.prefs = None                        # AccountPrefs: setup view (AUTO / SELECTED / ALL) per account, set by the runtime
+        self.context_fn = None                   # fn(view, bars) -> MarketView.context (1.10: frozen walls snapshot), set by the runtime
 
     def selection_cfg(self, ac):
         """Selector configuration from the per-account setup view (one source for engine and monitor). SELECTED = only
@@ -100,6 +101,11 @@ class ActiveEngine:
             view = adapter.build_view(symbol=sym, bars_by_tf=bars, bid=(quote or {}).get("bid"), ask=(quote or {}).get("ask"),
                                       point=info.get("point"), as_of=iso(now), synthetic=self.bridge.synthetic,
                                       regime_params=ac.regime, data_status=status)
+            if self.context_fn is not None:
+                try:
+                    view.context = self.context_fn(view, bars) or {}
+                except Exception:                     # context never stops the scan: strategies see NO_WALLS
+                    view.context = {}
             enabled = {sid: t.scan for sid, t in ac.strategies.items()}
             data_ok = status == "OK"
             res = registry.scan(view, enabled=enabled, overrides=ac.params, thresholds=ac.thresholds.model_dump(),

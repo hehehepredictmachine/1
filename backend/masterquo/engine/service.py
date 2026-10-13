@@ -515,7 +515,8 @@ class EngineService:
                "dq": dq, "quote": quote, "legacy": full["legacy"], "closed_bars": full["closed"], "setup": setup, "levels": levels,
                "risk": risk, "macro": macro, "headlines": news.get("news", []), "upcoming_events": news.get("calendar", []),
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
-               "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None}
+               "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
+               "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
@@ -564,6 +565,42 @@ class EngineService:
             return volzones.compute(self.bridge.bars("D1"), self.cfg_store.get().volatility, digits=digits, quote=self.bridge.quote_status())
         except Exception as exc:  # never break the chart because of the reference levels
             return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__}
+
+    def structure(self, tf: str) -> dict:
+        """Market structure for charts / agent / setup pages (read-only, from the SAME MarketView the last scan used):
+        S/R zones (H1/H4/H8/D1 + W1/MN1 aggregated from D1), the frozen M5 range with M1 local zones, chart and candle
+        patterns of `tf` with their states, confirmed pivots with the time they became known, and the walls snapshot."""
+        from ..analysis import candles as CN, chart_patterns as CH, levels as LV, range_m5 as RG
+        from ..strategies import indicators as ind
+        view = self.active.view
+        if view is None:
+            return {"status": "NO_SCAN_YET", "tf": tf}
+        key = (tf, view.as_of)
+        cache = getattr(self, "_structure_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        out = {"status": "OK", "tf": tf, "as_of": view.as_of, "symbol": view.symbol, "synthetic": view.synthetic,
+               "walls": {k: v for k, v in ((view.context or {}).get("walls") or {}).items() if not k.startswith("_")}}
+        try:
+            out["sr"] = LV.multi_tf(view, d1_raw=self.bridge.bars("D1"), point=(self.bridge.symbol_info or {}).get("point"))
+        except Exception as exc:
+            out["sr"] = {"status": "ERROR", "error": type(exc).__name__}
+        m5, m1 = view.tfs.get("M5"), view.tfs.get("M1")
+        rng = RG.detect(m5) if m5 is not None else {"status": "BRAK_DANYCH"}
+        out["range"] = {k: v for k, v in rng.items() if k != "params"}
+        out["range_zones"] = RG.local_zones(m1, rng) if (m1 is not None and rng.get("status") == "OK") else {"status": rng.get("status")}
+        v = view.tfs.get(tf)
+        if v is None or len(v) == 0:
+            out.update(chart={"status": "BRAK_DANYCH", "patterns": []}, candles={"status": "BRAK_DANYCH", "patterns": [], "evidence": []}, pivots=[])
+        else:
+            out["chart"] = CH.scan(v, tf)
+            out["candles"] = CN.scan(v, tf, lookback=20, include_forming=True)
+            sec = __import__("masterquo.timeutil", fromlist=["TF_SECONDS"]).TF_SECONDS[tf]
+            out["pivots"] = [{"kind": x["kind"], "t": v.t[x["index"]], "price": x["price"],
+                              "known_at": iso(parse_iso(v.t[x["confirmed_index"]]) + timedelta(seconds=sec))}
+                             for x in ind.pivots(v.h, v.l, 3, 3)[-40:]]
+        self._structure_cache = (key, out)
+        return out
 
     def mark_entered(self, setup_id: str, reason: str) -> None:
         if setup_id.startswith("MQA-"):

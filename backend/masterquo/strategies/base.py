@@ -85,6 +85,7 @@ class MarketView:
     synthetic: bool = False
     mirrored: bool = False
     center: float = 0.0          # mirror centre: p' = 2*center - p (set on mirrored views only)
+    context: dict = field(default_factory=dict)   # external context for strategies (1.10: frozen walls snapshot) - mirrored by the user
 
     @property
     def mid(self) -> float | None:

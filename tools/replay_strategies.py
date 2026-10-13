@@ -1,4 +1,4 @@
-"""Chronological replay / research runner for S01-S10 (profile ACTIVE) and the ORIGINAL M07 path.
+"""Chronological replay / research runner for S01-S12 (profile ACTIVE) and the ORIGINAL M07 path.
 
 Data:   --csv-dir DIR   files D1.csv..M1.csv from `python -m masterquo export` (UTC, available_at_utc)
         --synthetic N   N days from the built-in terminal simulator (labelled SYNTHETIC in every output)
@@ -184,7 +184,46 @@ def stats(trades: list[dict]) -> dict:
 
 
 # ----------------------------------------------------------------------------- replay
-def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: bool, max_steps: int | None) -> dict:
+def session_d1(d1_closed: list[dict], m5_visible: list[dict]) -> list[dict]:
+    """Closed D1 bars + the CURRENT session as a forming D1 bar built from the M5 bars visible now (anchor = session open).
+    Replay never sees the final high/low/close of the running day."""
+    if not d1_closed or not m5_visible:
+        return list(d1_closed)
+    end = d1_closed[-1]["available_at"]
+    cur = [b for b in m5_visible if b["open_utc"] >= end]
+    if not cur:
+        return list(d1_closed)
+    return list(d1_closed) + [{"open_utc": cur[0]["open_utc"], "o": cur[0]["o"], "h": max(b["h"] for b in cur), "l": min(b["l"] for b in cur),
+                               "c": cur[-1]["c"], "closed": False}]
+
+
+class ReplayWalls:
+    """Walls for replay with the live code (analysis/walls.py): HV proxy from the visible D1 bars, or imported IV usable only
+    from its available_at (a value read today is not history)."""
+
+    def __init__(self, mode: str, iv_rows: list[dict] | None):
+        from masterquo.analysis import walls as W
+        from masterquo.config import WallsConfig
+        self.W = W
+        self.mode = mode
+        self.cfg = WallsConfig(source="IV_IMPORT" if mode == "iv" else "HV_PROXY")
+        self.store = W.WallsStore(None)
+        self.iv = sorted(iv_rows or [], key=lambda r: r["available_at"])
+
+    def at(self, t: datetime, d1: list[dict]) -> dict | None:
+        if self.mode == "off":
+            return None
+        obs = None
+        if self.mode == "iv":
+            ts = iso(t)
+            usable = [r for r in self.iv if r["available_at"] <= ts and r["valid_until"] >= ts and r["quality"] in ("OK", "ESTIMATED")]
+            obs = usable[-1] if usable else None
+        snap = self.W.build(symbol="XAUUSD-", d1_bars=d1, cfg=self.cfg, iv_obs=obs, manual=None, now=t)
+        return self.store.freeze(snap)
+
+
+def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: bool, max_steps: int | None,
+        walls: "ReplayWalls | None" = None, overrides: dict | None = None) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="mq_replay_"))
     db = Database(tmp / "replay.sqlite")
     tr, sel = SetupTracker(db), StrategyAutoSelector(db)
@@ -220,7 +259,9 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
         view = adapter.build_view(symbol="XAUUSD-", bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + sp, point=0.01, as_of=iso(t),
                                   synthetic=source == "SYNTHETIC", regime_params=cfg.regime)
         regimes[view.regime["state"]] += 1
-        res = registry.scan(view, enabled={}, overrides={}, thresholds=cfg.thresholds.model_dump(), account_key="replay")
+        if walls is not None:
+            view.context = {"walls": walls.at(t, session_d1(data["D1"][:ptr["D1"]], data["M5"][:ptr["M5"]]))}
+        res = registry.scan(view, enabled={}, overrides=overrides or {}, thresholds=cfg.thresholds.model_dump(), account_key="replay")
         for sid, ps in res["per_strategy"].items():
             funnel[sid]["drafts"] += ps.get("drafts", 0)
             funnel[sid]["below_watch"] += ps.get("below_watch", 0)
@@ -350,7 +391,7 @@ def original_counts(data: dict, step_tf: str = "H1", max_steps: int | None = Non
 
 
 def to_markdown(r: dict) -> str:
-    L = [f"# Replay S01–S10 – {r['source']}", "", f"Kroki: {r['steps']} × {r['step_tf']} ({r['observed_hours']} h obserwowanego rynku), "
+    L = [f"# Replay S01–S12 – {r['source']}", "", f"Kroki: {r['steps']} × {r['step_tf']} ({r['observed_hours']} h obserwowanego rynku), "
          f"{r['ms_per_step']} ms/krok. Metoda: {r['method']}.", f"Status: **{r['status']}**", "",
          "| Strategia | Unikalne setupy | /h | EARLY→CONF | Mediana [min] | Transakcje | Expectancy R | PF | Win | DD R | OOS trans. | OOS exp. R |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -373,11 +414,14 @@ def main() -> int:
     g.add_argument("--csv-dir")
     g.add_argument("--synthetic", type=int, metavar="DAYS")
     ap.add_argument("--seed", type=int, default=3)
-    ap.add_argument("--step-tf", default="M15", choices=["M5", "M15", "H1"])
+    ap.add_argument("--step-tf", default="M15", choices=["M1", "M5", "M15", "H1"], help="S12 triggers on closed M1 bars: use M1 for S12 research")
     ap.add_argument("--spread", type=float, default=0.12, help="spread in price units when the CSV has none (gold: 0.12 = 12 pts at 2 digits)")
     ap.add_argument("--slippage", type=float, default=0.05, help="slippage per fill, price units")
     ap.add_argument("--commission", type=float, default=0.035, help="commission per side, price units per unit (e.g. 3.5 USD/lot/side = 0.035)")
     ap.add_argument("--compare-original", action="store_true")
+    ap.add_argument("--walls", choices=["hv", "iv", "off"], default="hv", help="walls for S12: HV proxy (default), imported IV (--iv-csv) or none")
+    ap.add_argument("--iv-csv", help="historical IV file (format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md); used only from available_at")
+    ap.add_argument("--params-json", help='strategy parameter overrides, e.g. {"S12": {"use_walls": false}} (ablation)')
     ap.add_argument("--max-steps", type=int)
     ap.add_argument("--out", default=str(ROOT / "data" / "reports"))
     a = ap.parse_args()
@@ -385,7 +429,20 @@ def main() -> int:
     if not data.get("M5") or not data.get(a.step_tf):
         print("[BLAD] brak danych M5/" + a.step_tf)
         return 2
-    r = run(data, source, a.step_tf, {"spread": a.spread, "slip": a.slippage, "commission": a.commission}, a.compare_original, a.max_steps)
+    iv_rows = None
+    if a.walls == "iv":
+        if not a.iv_csv:
+            print("[BLAD] --walls iv wymaga --iv-csv")
+            return 2
+        from masterquo.analysis import iv_import
+        iv_rows, bad = iv_import.validate(iv_import.parse_text(Path(a.iv_csv).read_text(encoding="utf-8")))
+        if bad:
+            print(f"[UWAGA] odrzucone wiersze IV: {len(bad)} (pierwsze: {bad[:3]})")
+    overrides = json.loads(a.params_json) if a.params_json else {}
+    r = run(data, source, a.step_tf, {"spread": a.spread, "slip": a.slippage, "commission": a.commission}, a.compare_original, a.max_steps,
+            walls=ReplayWalls(a.walls, iv_rows), overrides=overrides)
+    r["walls_mode"] = a.walls
+    r["overrides"] = overrides
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

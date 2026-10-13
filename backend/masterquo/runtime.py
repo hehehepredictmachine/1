@@ -80,6 +80,9 @@ class Runtime:
         self.prefs = AccountPrefs(self.db, self.bridge, self.cfg)          # per account (server:login): setup view + leverage limit
         self.engine.prefs = self.prefs
         self.engine.active.prefs = self.prefs
+        from .engine.walls_service import WallsService
+        self.walls = WallsService(self.cfg, self.db, self.bridge)           # frozen session walls snapshot -> strategies (S12)
+        self.engine.active.context_fn = self.walls.context
         self.prefs.listeners.append(lambda name, v: (self.engine.mark_dirty(), self._publish_prefs()))
         # another account (server:login) = its own preferences; broker parameters are re-read by the bridge
         self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)

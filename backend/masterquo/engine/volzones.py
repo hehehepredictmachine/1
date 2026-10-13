@@ -19,6 +19,10 @@ What is computed (from MT5 D1 bars of the traded symbol, Bid prices):
 
 These are statistical reference levels of a model (lognormal, constant volatility). They are not
 dealer positioning, not open interest walls and not a forecast; real intraday moves have fat tails.
+1.10: the output names its volatility source explicitly (source_type HV_PROXY / IV_MANUAL). With HV the "contract
+prices" are a MODEL valuation with a historical volatility and forward = Daily Open - not market option prices.
+p_close_beyond = N(d2) and p_touch = min(1, 2 N(d2)) are model quantities of a driftless lognormal process; they are NOT
+the probability of a winning trade and are not used in any entry condition (strategies use analysis/walls.py instead).
 """
 from __future__ import annotations
 
@@ -119,10 +123,14 @@ def compute(d1_bars: list[dict], cfg, digits: int = 2, quote: dict | None = None
     out["hv_percentile_1y"] = _percentile(closed, window, cfg.estimator, sig_d, int(tdy))
     if cfg.iv_source == "MANUAL" and cfg.manual_iv_pct:
         iv_ann = cfg.manual_iv_pct / 100.0
+        out["source_type"] = "IV_MANUAL"
         out["iv_note"] = "Zmienność implikowana wpisana ręcznie (np. GVZ lub łańcuch opcji)."
     else:
         iv_ann = hv_ann
-        out["iv_note"] = "MT5 nie udostępnia opcji na XAUUSD- – jako IV użyto zmienności historycznej (HV)."
+        out["source_type"] = "HV_PROXY"
+        out["iv_note"] = "MT5 nie udostępnia opcji na XAUUSD- – użyto zmienności HISTORYCZNEJ (HV) jako przybliżenia; to nie jest zmienność implikowana."
+    out["model_note"] = ("Wycena i P(...) to wielkości modelu (lognormalny, stała zmienność, r=0, bez dryfu) – nie rynkowe ceny opcji i nie "
+                         "prawdopodobieństwo wygranej transakcji; P(dotknięcie) = 2·N(d2) to przybliżenie. Nie są używane w warunkach wejścia.")
     t = 1.0 / tdy
     move = iv_ann * math.sqrt(t)                     # 1 sigma of the daily log return
     out["iv_annual_pct"] = round(100 * iv_ann, 2)
@@ -146,7 +154,8 @@ def compute(d1_bars: list[dict], cfg, digits: int = 2, quote: dict | None = None
                  "p_close_beyond": round(p_end, 4), "p_touch": round(min(1.0, 2 * p_end), 4),
                  "reached": (hi is not None and hi >= lvl) if sgn > 0 else (lo is not None and lo <= lvl)}
             walls.append(w)
-            zones.append({"kind": "IV_WALL", "label": f"IV wall {'+' if sgn > 0 else '−'}{k:g}σ", "sigma": k, "side": side,
+            zones.append({"kind": "IV_WALL", "label": f"{'IV' if out['source_type'] == 'IV_MANUAL' else 'HV-proxy'} wall {'+' if sgn > 0 else '−'}{k:g}σ",
+                          "source_type": out["source_type"], "sigma": k, "side": side,
                           "low": w["zone_low"], "high": w["zone_high"], "from_utc": day_open_utc})
     out["walls"] = walls
     up1 = anchor * math.exp(move)
