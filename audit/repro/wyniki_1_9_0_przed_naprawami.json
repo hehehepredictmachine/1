@@ -1,0 +1,304 @@
+{
+ "label": "1.9.0 przed naprawami",
+ "app_version": "1.9.0",
+ "run_at_utc": "2026-10-13T10:53:18.165473Z",
+ "python": "3.13.16",
+ "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+ "environment": "SYNTHETIC_FUNCTIONAL (bez terminala MT5, bez zleceń)",
+ "cases": [
+  {
+   "id": "A",
+   "title": "Prowizja w etykietach ML vs wykonanie (tylko historia deals)",
+   "inputs": {
+    "commission_mode": "FROM_DEAL_HISTORY",
+    "manual_commission": null,
+    "deals": "5 x 0.1 lota, prowizja 0.35 USD/deal (= 3.5 USD/lot/stronę)"
+   },
+   "observed": {
+    "execution_commission_per_lot_side": 3.5,
+    "execution_source": "DEAL_HISTORY_MEDIAN",
+    "ml_commission_price_units": 0.0,
+    "ml_flags": [
+     "COMMISSION_UNKNOWN_ASSUMED_0"
+    ]
+   },
+   "expected": {
+    "ml_commission_price_units": 0.035,
+    "note": "ten sam koszt co wykonanie (3.5 USD/lot/stronę)"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "B",
+   "title": "PAPER: częściowe wyjście liczone jako zamknięta transakcja",
+   "inputs": {
+    "entry_ask": 2000.2,
+    "sl": 1995.0,
+    "targets": [
+     {
+      "price": 2005.0,
+      "weight": 0.5
+     },
+     {
+      "price": 2010.0,
+      "weight": 0.5
+     }
+    ],
+    "lots": 0.1,
+    "path": "TP1 2005.1 -> 1990.0"
+   },
+   "observed": {
+    "stats_after_tp1_trades": 1,
+    "stats_after_tp1_wins": 1,
+    "position_after_tp1": {
+     "state": "OPEN",
+     "volume_open": 0.05,
+     "sl": 2000.2
+    },
+    "trades_rows": [
+     {
+      "trade_id": "PAPER-560865827580",
+      "closed_at": "2026-10-13T10:53:18.098082Z",
+      "volume": 0.1,
+      "net_pnl": -26.5
+     }
+    ],
+    "final_stats": {
+     "trades": 1,
+     "wins": 0,
+     "losses": 1,
+     "breakeven": 0,
+     "net": -26.5
+    }
+   },
+   "expected": {
+    "stats_after_tp1_trades": 0,
+    "note": "pozycja otwarta nie trafia do statystyk zamkniętych transakcji; po zamknięciu jedna transakcja"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "C",
+   "title": "TP1 -> BE w jednej świecy M1 (minimum przed TP1)",
+   "inputs": {
+    "spec": {
+     "direction": "LONG",
+     "asof_utc": "2026-10-13T10:00:00Z",
+     "stop_loss": 90.0,
+     "targets": [
+      {
+       "price": 105.0,
+       "weight": 0.5
+      },
+      {
+       "price": 110.0,
+       "weight": 0.5
+      }
+     ],
+     "be_after_tp1": true,
+     "horizon_minutes": 60,
+     "entry_window_minutes": 5,
+     "spread": 0.0,
+     "slippage": 0.0,
+     "commission": 0.0
+    },
+    "bar": {
+     "open_utc": "2026-10-13T10:01:00Z",
+     "o": 100.0,
+     "h": 106.0,
+     "l": 99.0,
+     "c": 106.0
+    },
+    "ticks": [
+     [
+      1791885661.0,
+      100.0,
+      100.0
+     ],
+     [
+      1791885670.0,
+      99.0,
+      99.0
+     ],
+     [
+      1791885680.0,
+      105.0,
+      105.0
+     ],
+     [
+      1791885700.0,
+      106.0,
+      106.0
+     ]
+    ]
+   },
+   "observed": {
+    "result": {
+     "status": "LABELED",
+     "label": 1,
+     "outcome_r": 0.25,
+     "mfe_r": 0.6,
+     "mae_r": 0.1,
+     "exit_reason": "BREAKEVEN_STOP",
+     "label_end_utc": "2026-10-13T10:02:00Z",
+     "entry_time": "2026-10-13T10:00:00Z",
+     "entry_price": 100.0
+    },
+    "remaining": 0.0,
+    "stop": 100.0
+   },
+   "expected": {
+    "result": null,
+    "remaining": 0.5,
+    "stop": 100.0,
+    "note": "po TP1 cena nie wróciła do 100 -> pozycja (0.5) nadal otwarta, SL na BE"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "D",
+   "title": "S11: time_exit_bars=None w etykietach ML i replay",
+   "inputs": {
+    "exit_rules": {
+     "tp_rule": "RR_FROM_FILL",
+     "rr": 2.5,
+     "be_after_tp1": false,
+     "trailing": null,
+     "time_exit_bars": null
+    }
+   },
+   "observed": {
+    "make_spec": {
+     "ok": false,
+     "error": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    "replay_simulate": {
+     "ok": false,
+     "error": "TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'"
+    }
+   },
+   "expected": {
+    "note": "brak time-exit reprezentowany jawnie (bez ukrytego 24), TP liczony od fillu (RR_FROM_FILL)"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "E",
+   "title": "Polityka wyjścia: globalne wagi/BE zamiast reguł setupu (3 cele, be_after_tp1=False)",
+   "inputs": {
+    "targets": [
+     {
+      "price": 2004.0,
+      "weight": 0.3
+     },
+     {
+      "price": 2008.0,
+      "weight": 0.3
+     },
+     {
+      "price": 2012.0,
+      "weight": 0.4
+     }
+    ],
+    "exit_rules": {
+     "be_after_tp1": false,
+     "time_exit_bars": 24
+    },
+    "cfg_tp1_weight": 0.5,
+    "cfg_be": true
+   },
+   "observed": {
+    "stored_tp1_tp2": {
+     "tp1": 2004.0,
+     "tp2": 2012.0
+    },
+    "closed_at_tp1": 0.05,
+    "sl_after_tp1": 2000.2,
+    "be_done": 1,
+    "middle_target_2008_stored": false
+   },
+   "expected": {
+    "closed_at_tp1": 0.03,
+    "sl_after_tp1": 1995.0,
+    "note": "wagi i BE z planu setupu zapisane przy otwarciu; środkowy cel nie znika"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "F",
+   "title": "TP1 oznaczony przed potwierdzeniem order_send (odrzucenie brokera)",
+   "inputs": {
+    "retcode": "10006 REJECT",
+    "volume_open": 0.1
+   },
+   "observed": {
+    "tp1_done_after_reject": 1,
+    "tp1_state": null,
+    "volume_open": 0.1,
+    "sl_to_be_requests_after_reject": 1,
+    "requests": [
+     {
+      "action": 1,
+      "volume": 0.05,
+      "sl": null,
+      "comment": "MQ:TP1"
+     },
+     {
+      "action": 6,
+      "volume": null,
+      "sl": 2000.2,
+      "comment": null
+     }
+    ]
+   },
+   "expected": {
+    "tp1_done_after_reject": 0,
+    "tp1_state": "REJECTED",
+    "sl_to_be_requests_after_reject": 0,
+    "note": "stan TP1 z wykonania: REQUESTED/UNKNOWN/CONFIRMED/REJECTED; BE dopiero po potwierdzonym TP1"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "G",
+   "title": "Porównanie z championem: okno dat zamiast tych samych sample_id",
+   "inputs": {
+    "rows": 100,
+    "event_grouping": "S081 należy do zdarzenia E79 (blok CALIB)"
+   },
+   "observed": {
+    "test_block": 19,
+    "window_selection": 20,
+    "extra_in_window": [
+     "S081"
+    ]
+   },
+   "expected": {
+    "note": "champion i challenger oceniani na identycznym zbiorze sample_id"
+   },
+   "status": "REPRODUCED"
+  },
+  {
+   "id": "J",
+   "title": "PAPER: brak kalkulacji P/L zapisany jako 0",
+   "inputs": {
+    "calc_profit": null,
+    "exit": "SL 1994.0"
+   },
+   "observed": {
+    "trades": [
+     {
+      "gross_pnl": 0.0,
+      "net_pnl": 0.0,
+      "closed_at": "2026-10-13T10:53:18.164735Z"
+     }
+    ],
+    "position_state": "CLOSED"
+   },
+   "expected": {
+    "note": "transakcja nierozliczona (UNSETTLED) - nie zero, nie BE w statystykach"
+   },
+   "status": "REPRODUCED"
+  }
+ ]
+}

@@ -1,0 +1,116 @@
+{
+ "protocol_id": "MQ-VALIDATION-PROTOCOL-1.0.0",
+ "created_utc": "2026-10-13",
+ "status": "ZDEFINIOWANY_PRZED_WYNIKAMI__DANE_NIEDOSTEPNE",
+ "note": "Protokół ustalony przed jakimkolwiek wynikiem. Brakujące wartości to null z powodem - nigdy liczby fikcyjne. Progi oznaczone 'robocze' to założenia autora audytu do akceptacji przez użytkownika.",
+ "data": {
+  "source": "terminal MT5 użytkownika, symbol dokładnie XAUUSD- (feed brokera)",
+  "required_exports": [
+   "OHLC + tick_volume + spread: M1, M5, M15, M30, H1, H4, H8, D1, W1, MN1 (python -m masterquo export --dst-model NY_CLOSE)",
+   "ticki Bid/Ask (copy_ticks_range) - przynajmniej dla okresów VALIDATION i OOS",
+   "symbol_info: point, tick_size, tick_value, trade_contract_size, volume_min/max/step, trade_stops_level, filling_mode, currency_profit, currency_margin",
+   "historia deals rachunku: commission, swap, fee, type, entry, time, time_msc",
+   "diagnostyka czasu: 06_DIAGNOZA_CZASU_MT5.bat w >= 3 sesjach, w tym tydzień po zmianie czasu (DST)",
+   "opcjonalnie: historyczna IV z available_at (format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)"
+  ],
+  "min_history": "robocze: >= 18 miesięcy M1 (pokrycie trend/range/wysoka i niska zmienność, sesje, okresy news)",
+  "range_utc": null,
+  "range_reason": "BRAK_DANYCH - eksport nie został dostarczony",
+  "time_contract_verified": false
+ },
+ "versions": {
+  "app": "1.10.0 (baseline po naprawach pomiaru P0)",
+  "label_policy": "MQ-LABEL-1.1.0",
+  "cost_model": "MQ-COST-1.1.0",
+  "exit_policy": "MQ-EXIT-POLICY-1.0.0",
+  "feature_schema": "MQ-FEAT-1.1.0",
+  "strategies": "S01-S11 (wersje z rejestru), S12 1.0.0-CANDIDATE (FUNCTIONAL_ONLY)"
+ },
+ "baseline": {
+  "definition": "dokładnie 1.10.0 z zapisaną konfiguracją użytkownika (data/config.json) - nie wartości domyślne, jeśli użytkownik ma własne",
+  "measurement_fixes_tested_separately": true,
+  "note": "naprawy pomiaru (P0) porównywane z 1.9.0 osobno; nowe strategie porównywane wyłącznie z baseline 1.10.0"
+ },
+ "cost_and_execution_policy": {
+  "entry": "LONG po Ask, SHORT po Bid; pierwsza świeca M1 otwarta po momencie dostępności sygnału",
+  "exit": "LONG po Bid, SHORT po Ask; polityka wyjścia zapisana przy otwarciu (MQ-EXIT-POLICY)",
+  "spread": "z ticków lub ze spreadu świecy M1 (zmienny w czasie); nigdy doliczany drugi raz",
+  "commission": "z historii deals (taryfa otwarcie/zamknięcie/round-turn ustalona z deals IN i OUT osobno); nieznana = próbka COST_UNKNOWN poza oceną",
+  "slippage": "empiryczny rozkład z fill_price - price_requested (gdy dostępne); scenariusze stresu osobno",
+  "swap": "z historii deals / symbol_info dla pozycji przez rollover",
+  "intrabar_order": "kolejność SL/TP w jednej M1 z ticków; bez ticków AMBIGUOUS (raportowane osobno, nie usuwane bez analizy wpływu)",
+  "capital": "robocze: 10 000 USD, ryzyko 1% equity na transakcję, max 3 pozycje, limit dzienny 5%",
+  "position_limits": "jak w risk engine (margin, ekspozycja, zlecenia oczekujące)"
+ },
+ "splits": {
+  "method": "chronologicznie; event grouping (event_id); purging po label_end_utc + embargo",
+  "blocks": ["RESEARCH/FIT", "TUNE", "CALIBRATION", "VALIDATION", "FINAL_UNTOUCHED_OOS"],
+  "fractions_robocze": [0.45, 0.15, 0.10, 0.15, 0.15],
+  "embargo_minutes_robocze": 1440,
+  "walk_forward": {"folds": 4, "type": "expanding", "inside": "FIT+TUNE"},
+  "holdout_policy": "FINAL_UNTOUCHED_OOS oceniany raz; każde jego użycie do wyboru = staje się VALIDATION i wymaga nowego okresu potwierdzenia",
+  "justification": "proporcje zależą od liczby niezależnych eventów i horyzontów - zostaną potwierdzone po inwentaryzacji danych, PRZED oceną wyników"
+ },
+ "trial_budget": {
+  "max_variants_total": 40,
+  "max_parameters_tuned_per_variant": 3,
+  "registry": "audit/REJESTR_PROB.csv (każda próba: wariant, parametry, wersje reguł, okres, wynik) - tworzony przy pierwszym badaniu",
+  "multiple_testing": "Deflated Sharpe Ratio / PBO - tylko gdy dostępne zwroty dzienne i pełny rejestr prób"
+ },
+ "metrics": [
+  "liczba całkowicie zamkniętych pozycji i niezależnych eventów",
+  "wins / losses / BE (BE: |R| <= 0.05 po kosztach)",
+  "winrate = wins/(wins+losses) ORAZ wins/wszystkie zamknięte",
+  "net P/L, PF, średnia wygrana/strata, expectancy netto w walucie i R",
+  "ROI w tym samym okresie (kapitał początkowy, przepływy, metoda)",
+  "drawdown equity (z pozycjami otwartymi), czas odrabiania, ekspozycja",
+  "udział kosztów, obrót, długość pozycji, seria strat, MAE/MFE, fill ratio",
+  "rozbicie: strategia, reżim, sesja, kierunek, okres - z liczebnością",
+  "przedziały niepewności: blokowy bootstrap (dzienny P/L lub eventy), CI95 różnic polityk"
+ ],
+ "acceptance_criteria_robocze": {
+  "primary": "dodatnia expectancy netto w FINAL_UNTOUCHED_OOS z dolną granicą CI95 > 0",
+  "roi": "ROI wariantu >= ROI baseline w tym samym okresie, przy tym samym budżecie ryzyka",
+  "drawdown": "max DD equity wariantu <= 1.10 x DD baseline",
+  "sample": "co najmniej 100 niezależnych eventów w OOS dla oceny ogólnej; mniejsze koszyki tylko opisowo (liczba do potwierdzenia na podstawie wymaganej precyzji)",
+  "winrate": "raportowany obok, nigdy kryterium samodzielne",
+  "min_practical_difference": "robocze: +0.05 R expectancy lub +2 pp ROI rocznie"
+ },
+ "ablations": [
+  {"id": "BASE", "desc": "1.10.0 profil ACTIVE z konfiguracją użytkownika"},
+  {"id": "H-STRICT-1", "desc": "rr_block_below=1.5, rr_pass_from=2.0, conditional_rr_executes=False"},
+  {"id": "H-STRICT-2", "desc": "structure_policy=STRICT_H4_H1"},
+  {"id": "H-STRICT-3", "desc": "macro_calendar_required=True"},
+  {"id": "COST-FILTER", "desc": "pełny koszt / ryzyko <= X (X w {0.10,0.15,0.20})"},
+  {"id": "EXIT-POLICY", "desc": "stały TP / strukturalny / partial+BE / trailing na tych samych wejściach"},
+  {"id": "S12-RANGE-BASE", "desc": "RANGE_RECLAIM bez walls i patternów (baseline rodziny)"},
+  {"id": "S12-RANGE+WALLS-HV", "desc": "+walls HV_PROXY"},
+  {"id": "S12-RANGE+WALLS-IV", "desc": "+walls z historycznej IV (tylko od available_at)"},
+  {"id": "S12-+CHART", "desc": "+chart patterns"},
+  {"id": "S12-+CANDLE", "desc": "+candle patterns"},
+  {"id": "S12-+ACTIVITY", "desc": "+filtr aktywności (tick volume)"},
+  {"id": "S12-FULL", "desc": "pełna polityka i warianty WALL_REJECTION / BREAKOUT_RETEST"},
+  {"id": "AGENT", "desc": "OFF / ADVISORY / VETO / REQUIRED (najpierw SHADOW)"},
+  {"id": "ML", "desc": "OFF / SHADOW / ASSIST; baseline prosty vs DT vs XGBoost na tej samej próbie"}
+ ],
+ "stress_scenarios": [
+  "koszty: empiryczny percentyl 75/90 spreadu i poślizgu brokera; scenariusz x2 oznaczony jako SCENARIUSZ, nie opis brokera",
+  "opóźnione wejście o 1/2 świece M1",
+  "luka cenowa przez SL (gorszy fill)",
+  "brak danych / brak ticków (AMBIGUOUS)",
+  "niedostępny news / Claude",
+  "restart w trakcie pozycji (polityka z exit_policy_json)",
+  "stabilność w sąsiedztwie parametrów (+-1 krok)"
+ ],
+ "forward": {
+  "mode": "SHADOW lub PAPER (odizolowany), ewentualnie konto DEMO",
+  "policy": "zamrożona (wersje jak wyżej)",
+  "length": "do osiągnięcia założonej liczby niezależnych eventów i pokrycia reżimów - nie stała liczba dni",
+  "checks": "rozbieżność plan vs fill, latencja, odrzucenia"
+ },
+ "result_files": {
+  "comparison_csv": "audit/POROWNANIE_WARIANTOW.csv - NIE UTWORZONO: brak prawdziwych wyników porównania",
+  "synthetic": "wyniki syntetyczne (jeśli powstaną) wyłącznie w osobnym pliku z sufiksem _SYNTHETIC"
+ },
+ "effectiveness_status": "NIE_OCENIONO_SKUTECZNOŚCI"
+}
