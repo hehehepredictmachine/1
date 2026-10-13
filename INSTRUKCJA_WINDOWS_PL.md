@@ -1,6 +1,6 @@
 # MasterQUO 1.10 – instrukcja dla Windows
 
-Paczka: `MasterQUO_KLIENT_1_10_0.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
+Paczka: `MasterQUO_KLIENT_1_10_1.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
 
 **Od wersji 1.9 program nie wymaga licencji** – nie ma serwera licencji, klucza `MQL72-…` ani panelu administratora.
 Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwiera się od razu.
@@ -11,7 +11,7 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 
 ### B1. Instalacja lub aktualizacja
 
-1. Rozpakuj `MasterQUO_KLIENT_1_10_0.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_10`. Nie nadpisuj starej wersji:
+1. Rozpakuj `MasterQUO_KLIENT_1_10_1.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_10`. Nie nadpisuj starej wersji:
    to jest Twój punkt powrotu.
 2. Przy aktualizacji skopiuj ze starego folderu cały katalog `data\` (ustawienia, baza, zaszyfrowany klucz Claude).
    Stary folder zostaw bez zmian. Program przy migracji robi też kopię bazy w `data\backups\`.
@@ -70,6 +70,7 @@ Uruchom poprzednią wersję z jej własnego folderu (patrz B1, krok 1) i przywr�
 
 | Komunikat | Co zrobić |
 |---|---|
+| `MT5_INITIALIZE_FAILED:(-6, 'Terminal: Authorization failed')` | Terminal nie ma zalogowanego rachunku albo broker odrzucił logowanie. Zaloguj rachunek w MT5 (Plik → Zaloguj, „Zapisz hasło”) i kliknij „Połącz ponownie” (Ustawienia → MT5). Jeśli terminal nie pamięta hasła: wpisz login, serwer i hasło w Ustawienia → MT5 (hasło zostaje lokalnie, DPAPI). Przy kilku instalacjach MT5 wpisz ścieżkę `terminal64.exe`. MT5 i MasterQUO uruchamiaj tym samym użytkownikiem (oba bez „jako administrator”). |
 | `Brak .venv - uruchom najpierw 01_INSTALUJ.bat` | Uruchom `01_INSTALUJ.bat` |
 | `Brak Python 3.13/3.12` | `winget install -e --id Python.Python.3.13 --scope user`, potem ponownie `01_INSTALUJ.bat` |
 | Monitor: „BRAK DANYCH” / MT5 niepołączony | Uruchom MetaTrader 5, zaloguj się, potem `02_DIAGNOSTYKA.bat` |

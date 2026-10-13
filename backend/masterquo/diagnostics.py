@@ -20,6 +20,22 @@ from .timeutil import TIMEFRAMES, iso
 OK, WARN, FAIL = "OK  ", "UWAGA", "BŁĄD"
 
 
+
+def _init_kw(cfg) -> dict:
+    """Same attach rules as the bridge (mt5/login.py): path, optional login/server, password only from the secret store."""
+    from .mt5 import login as lg
+    from .secrets_store import SecretStore
+    try:
+        pw = SecretStore().get("MT5_PASSWORD")
+    except Exception:
+        pw = None
+    return lg.init_kwargs(cfg.mt5, pw)
+
+
+def _hint(err) -> str:
+    from .mt5 import login as lg
+    return lg.hint(err)
+
 def _line(status: str, text: str) -> None:
     print(f"[{status}] {text}")
 
@@ -75,9 +91,9 @@ def doctor() -> int:
     try:
         import MetaTrader5 as mt5
         chk("Pakiet MetaTrader5", OK, getattr(mt5, "__version__", "?"))
-        ok = mt5.initialize(path=cfg.mt5.terminal_path) if cfg.mt5.terminal_path else mt5.initialize()
+        ok = mt5.initialize(**_init_kw(cfg))
         if not ok:
-            chk("Połączenie z terminalem MT5", FAIL, f"initialize() = False, last_error={mt5.last_error()} – uruchom i zaloguj MT5 (lub ustaw mt5.terminal_path)")
+            chk("Połączenie z terminalem MT5", FAIL, f"initialize() = False, last_error={mt5.last_error()} – {_hint(mt5.last_error()) or 'uruchom i zaloguj MT5 (lub ustaw mt5.terminal_path)'}")
         else:
             t = mt5.terminal_info()
             a = mt5.account_info()
@@ -137,9 +153,9 @@ def clock() -> int:
         _line(FAIL, f"Brak pakietu MetaTrader5: {exc}")
         print(_save("diagnoza_czasu", out))
         return 2
-    ok = mt5.initialize(path=cfg.mt5.terminal_path) if cfg.mt5.terminal_path else mt5.initialize()
+    ok = mt5.initialize(**_init_kw(cfg))
     if not ok:
-        _line(FAIL, f"initialize() nieudane: {mt5.last_error()}")
+        _line(FAIL, f"initialize() nieudane: {mt5.last_error()} {_hint(mt5.last_error())}")
         print(_save("diagnoza_czasu", out))
         return 3
     try:
@@ -252,7 +268,7 @@ def export_history(from_utc: str, to_utc: str, out_dir: str, dst_model: str = "U
         print("[BLAD] Zakres: --from-utc < --to-utc, maks. 500 dni, format 2026-01-01T00:00:00Z")
         return 2
     import MetaTrader5 as mt5
-    ok = mt5.initialize(path=cfg.mt5.terminal_path) if cfg.mt5.terminal_path else mt5.initialize()
+    ok = mt5.initialize(**_init_kw(cfg))
     if not ok:
         print("[BLAD] initialize():", mt5.last_error())
         return 3

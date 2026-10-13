@@ -398,7 +398,7 @@ def create_app(rt, port: int) -> FastAPI:
     def get_config():
         c = rt.cfg.get().model_dump(mode="json")
         return {"config": c, "secrets": {n: {"source": rt.secrets.source(n), "masked": rt.secrets.mask(n)}
-                                         for n in ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY")},
+                                         for n in ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD")},
                 "editable_note": "Klucze API są przechowywane lokalnie (Windows DPAPI) i nigdy nie są zwracane przez API."}
 
     @app.put("/api/v1/config")
@@ -428,9 +428,13 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/secrets")
     def set_secret(req: SecretReq):
-        if req.name not in ("TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "ANTHROPIC_API_KEY"):
+        if req.name not in ("TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "ANTHROPIC_API_KEY", "MT5_PASSWORD"):
             raise HTTPException(400, "UNKNOWN_SECRET")
         rt.secrets.set(req.name, req.value)
+        if req.name == "MT5_PASSWORD":                 # new password: try to connect again (value never logged)
+            rt.log.info("MT5", "PASSWORD_SET", "Zapisano lokalnie hasło MT5 (wartość nie jest logowana).")
+            if rt.bridge.state != "CONNECTED":
+                rt.bridge.next_retry = 0
         return {"ok": True, "source": rt.secrets.source(req.name)}
 
     # ------------------------------------------------------------ agent

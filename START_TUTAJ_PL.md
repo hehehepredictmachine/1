@@ -118,6 +118,8 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 ## Gdy coś nie działa
 * „Brak .venv” → uruchom `01_INSTALUJ.bat`.
 * „Terminal niepołączony” → uruchom i zaloguj MT5, potem przycisk „Połącz ponownie”.
+* „-6 Terminal: Authorization failed” → zaloguj rachunek w MT5 („Zapisz hasło”) albo podaj login / serwer / hasło w Ustawienia → MT5 (hasło tylko lokalnie);
+  przy kilku instalacjach MT5 wpisz ścieżkę `terminal64.exe`.
 * „Symbol XAUUSD- niedostępny” → dodaj go w Market Watch; program **nie** zamienia go na inny symbol.
 * Czas „UNKNOWN/STORED_UNVERIFIED” → normalne przy zamkniętym rynku; `06_DIAGNOZA_CZASU_MT5.bat` przy otwartym rynku.
 * Port 8765 zajęty → zmień `server.port` w `data\config.json`.

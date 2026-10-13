@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import paths
 
-ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY")
+ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD")
 
 
 def _dpapi(data: bytes, protect: bool) -> bytes:
@@ -102,4 +102,6 @@ class SecretStore:
         v = self.get(name)
         if not v:
             return None
+        if name == "MT5_PASSWORD":                  # a password is never partially shown
+            return "•••"
         return v[:7] + "…" + v[-4:] if len(v) > 14 else "•••"

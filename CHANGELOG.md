@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.10.1 – połączenie z MT5 po „-6 Terminal: Authorization failed”
+* Program nadal łączy się domyślnie z **zalogowanym** terminalem. Nowe: opcjonalny **login i serwer** (Ustawienia → MT5) oraz **hasło** zapisywane
+  wyłącznie lokalnie (`MT5_PASSWORD`, Windows DPAPI) – nie trafia do `config.json`, logów, odpowiedzi API ani przeglądarki (maska „•••”).
+* Odrzucone logowanie **nie jest ponawiane w pętli** (ochrona przed blokadą rachunku u brokera) – kolejna próba dopiero po zmianie loginu, serwera
+  lub hasła; w międzyczasie program próbuje sesji zalogowanej w terminalu.
+* Gdy `terminal_path` jest pusty, a domyślny terminal zwraca -6 / błąd IPC, program próbuje **uruchomionych** terminali `terminal64.exe`
+  (kilka instalacji MT5) i zapamiętuje ten, który zadziałał. Nie uruchamia innych instalacji. Ustawiona ścieżka nigdy nie jest zastępowana.
+* Komunikat błędu z polską podpowiedzią (pasek awarii, Ustawienia → MT5, `02_DIAGNOSTYKA.bat`); przycisk „Połącz ponownie” w Ustawienia → MT5.
+* Testy: `test_mt5_login.py` (7). Bez zmian strategii, ryzyka i wykonania.
+
 ## 1.10.0 – audyt winrate/ROI z naprawami P0, walls HV/IV + formacje + S12, panel na trzy strony
 **Audyt 1.9.0** (`audit/`): reprodukcje A–J w izolacji (`audit/repro/repro_audit.py`) – na 1.9.0 8/8 ODTWORZONE, po naprawach 0/8.
 Plan ulepszeń winrate/ROI, protokół walidacji i wyniki testów w `audit/`. Brak danych do oceny skuteczności: **OOS_NOT_RUN / NIE_OCENIONO_SKUTECZNOŚCI**.

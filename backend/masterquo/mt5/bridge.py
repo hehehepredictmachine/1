@@ -11,6 +11,7 @@ were already closed in the initial history load it is the next bar's open time
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -78,6 +79,13 @@ class BridgeError(RuntimeError):
     pass
 
 
+class _NoLogin:
+    """Config view without login/server: attach to the terminal's own logged-in session."""
+    def __init__(self, cfg):
+        self.terminal_path = cfg.terminal_path
+        self.login = self.server = None
+
+
 class MarketBridge:
     def __init__(self, config: ConfigStore, worker: MT5Worker, db, bus, applog,
                  clock_fn: Callable[[], datetime] = utcnow, required_bars: dict[str, int] | None = None):
@@ -120,6 +128,12 @@ class MarketBridge:
         self._last_bar_pub: dict[str, float] = {}
         self._t_account = self._t_quote = self._t_hist = self._t_hb = 0.0
         self._synthetic = False
+        self.secrets = None                       # SecretStore (runtime) - only for the optional MT5_PASSWORD
+        self.login_info: dict = {"mode": "TERMINAL_SESSION", "terminal_path": None, "credentials_rejected": False,
+                                 "running_terminals": [], "hint": None}
+        self._rejected_creds: str | None = None
+        self._detected_path: str | None = None
+        self._running: tuple[float, list[str]] = (0.0, [])
 
     # ---------------------------------------------------------------- helpers
     @property
@@ -200,13 +214,73 @@ class MarketBridge:
         self.quote = None
 
     # ---------------------------------------------------------------- connect
+    def _password(self) -> str | None:
+        try:
+            return self.secrets.get("MT5_PASSWORD") if self.secrets is not None else None
+        except KeyError:
+            return None
+
+    def _running_terminals(self) -> list[str]:
+        from . import login as lg
+        t, lst = self._running
+        if time.monotonic() - t > 60:
+            lst = lg.running_terminals()
+            self._running = (time.monotonic(), lst)
+        return lst
+
+    def _initialize(self) -> None:
+        """Attach to the terminal (mt5/login.py): configured path or the remembered detected one; optional explicit
+        login (password only from the local secret store); after an authorization / IPC failure without a fixed path,
+        every RUNNING terminal64.exe is tried (never starts another installation). A rejected login is not repeated
+        until the login, server or password changes."""
+        from . import login as lg
+        cfg = self.cfg
+        pw = self._password()
+        ck = lg.credentials_key(cfg, pw)
+        use_creds = bool(cfg.login and cfg.server) and self._rejected_creds != ck
+        info = {"mode": "CONFIG_LOGIN" if use_creds else "TERMINAL_SESSION", "credentials_rejected": self._rejected_creds == ck and bool(cfg.login),
+                "terminal_path": None, "running_terminals": self._running[1], "hint": None}
+
+        def attempt(path: str | None, creds: bool):
+            kw = lg.init_kwargs(cfg if creds else _NoLogin(cfg), pw if creds else None, path=path)
+            ok = self._call(lambda m: m.initialize(**kw))
+            return (True, None) if ok else (False, self._call(lambda m: m.last_error()))
+
+        first_path = cfg.terminal_path or self._detected_path
+        ok, err = attempt(first_path, use_creds)
+        if not ok and use_creds and lg.error_code(err) == lg.AUTH_FAILED:
+            self._rejected_creds = ck                       # never hammer the broker with a wrong password
+            self.log.write("WARNING", "MT5", "LOGIN_REJECTED", f"MT5: logowanie na rachunek {cfg.login} ({cfg.server}) odrzucone – "
+                           "nie ponawiam z tymi danymi, dopóki nie zmienisz loginu, serwera lub hasła. Próba z sesją terminala.")
+            info.update(mode="TERMINAL_SESSION", credentials_rejected=True)
+            use_creds = False
+            ok, err = attempt(first_path, False)
+        if not ok and not cfg.terminal_path and lg.error_code(err) in (lg.AUTH_FAILED, *lg.IPC_CODES):
+            running = self._running_terminals()
+            info["running_terminals"] = running
+            for p in running:
+                if first_path and os.path.normcase(p) == os.path.normcase(first_path):
+                    continue
+                ok2, err2 = attempt(p, use_creds)
+                if ok2:
+                    ok, err = True, None
+                    if self._detected_path != p:
+                        self.log.write("INFO", "MT5", "TERMINAL_DETECTED", f"MT5: połączono z uruchomionym terminalem {p} (wykryty automatycznie).")
+                    self._detected_path = p
+                    break
+                err = err2 if lg.error_code(err2) == lg.AUTH_FAILED else err
+        if not ok:
+            info["hint"] = lg.hint(err) or None
+            if len(info["running_terminals"]) > 1:
+                info["hint"] = (info["hint"] or "") + f" Uruchomione terminale: {len(info['running_terminals'])} – wskaż właściwy w Ustawienia → MT5."
+            self.login_info = info
+            raise BridgeError(f"MT5_INITIALIZE_FAILED:{err}" + (f" – {info['hint']}" if info["hint"] else ""))
+        info["terminal_path"] = cfg.terminal_path or self._detected_path
+        self.login_info = info
+
     def connect(self) -> None:
         self._set_state("CONNECTING", None)
-        path = self.cfg.terminal_path
-        ok = self._call(lambda m: m.initialize(path=path) if path else m.initialize())
-        if not ok:
-            err = self._call(lambda m: m.last_error())
-            raise BridgeError(f"MT5_INITIALIZE_FAILED:{err}")
+        self._initialize()
         from .fake import is_fake
         self._synthetic = bool(self._call(lambda m: is_fake(m)))
         term = self._call(lambda m: m.terminal_info())
@@ -643,7 +717,7 @@ class MarketBridge:
                 "connected_since": iso(self.connected_since), "last_heartbeat": iso(self.last_heartbeat),
                 "terminal": self.terminal, "account_key": self.account_key, "synthetic": self._synthetic,
                 "attempts": self.attempts, "module_error": self.worker.module_error,
-                "worker_wedged_seconds": round(self.worker.wedged_seconds, 1), "errors": self.errors[-8:],
+                "worker_wedged_seconds": round(self.worker.wedged_seconds, 1), "errors": self.errors[-8:], "login": self.login_info,
                 "clock": self.clock.evidence.as_dict()}
 
     def account_status(self) -> dict | None:

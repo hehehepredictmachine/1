@@ -56,6 +56,7 @@ class Runtime:
         self.worker = MT5Worker(mt5_factory)
         required = Profiles().required_closed_bars()
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
+        self.bridge.secrets = self.secrets
         c = self.cfg.get().clock
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,

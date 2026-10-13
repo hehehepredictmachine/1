@@ -22,6 +22,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [cfg, setCfg] = useState<any>(null);
   const [secrets, setSecrets] = useState<any>({});
   const [key, setKey] = useState("");
+  const [mt5pw, setMt5pw] = useState("");
   const [models, setModels] = useState<any[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState("mt5");
@@ -48,6 +49,17 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       setMsg("Błąd: " + (e.message || e));
     }
   };
+  const saveMt5Password = async (value: string | null) => {
+    try {
+      await apiSend("POST", "/api/v1/secrets", { name: "MT5_PASSWORD", value });
+      setMt5pw("");
+      setMsg(value ? "Hasło MT5 zapisane lokalnie (nie trafia do config.json ani logów). Łączę ponownie…" : "Usunięto zapisane hasło MT5.");
+      load();
+    } catch (e: any) {
+      setMsg("Błąd: " + (e.message || e));
+    }
+  };
+  const reconnectMt5 = () => apiSend("POST", "/api/v1/mt5/reconnect").then(() => setMsg("Łączenie z MT5…")).catch((e: any) => setMsg("Błąd: " + (e.message || e)));
   const saveKey = async () => {
     try {
       await apiSend("POST", "/api/v1/secrets/anthropic", { api_key: key });
@@ -97,7 +109,21 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Ścieżka terminal64.exe", "mt5.terminal_path", "text", "puste = domyślny/już uruchomiony terminal; przy kilku terminalach wskaż właściwy")}
         {field("Symbol DXY (opcjonalnie)", "mt5.dxy_symbol", "text", "tylko prawdziwy symbol indeksu u brokera – nie EURUSD")}
         {field("Liczba świec na wykresie", "mt5.chart_bars", "num")}
-        <div className="note">Hasło do rachunku nie jest potrzebne – aplikacja łączy się z już zalogowanym terminalem.</div>
+        {s.connection?.login?.hint && <div className="note bad" data-testid="mt5-hint">{s.connection.login.hint}</div>}
+        {(s.connection?.login?.running_terminals || []).length > 0 && <div className="note">Uruchomione terminale MT5: {s.connection.login.running_terminals.join(" · ")}</div>}
+        <div className="note">Zwykle hasło nie jest potrzebne – aplikacja łączy się z <b>zalogowanym</b> terminalem MT5 (zaloguj rachunek w MT5 i zaznacz „Zapisz hasło”).
+          Jeśli terminal nie ma zapisanego logowania („Authorization failed”), podaj poniżej login, serwer i hasło. Hasło zostaje tylko na tym komputerze
+          (Windows DPAPI) – nie trafia do config.json, logów ani przeglądarki. Odrzucone logowanie nie jest ponawiane w pętli.</div>
+        {field("Login rachunku (opcjonalnie)", "mt5.login", "num", "numer rachunku z MT5; puste = sesja terminala")}
+        {field("Serwer (opcjonalnie)", "mt5.server", "text", "dokładna nazwa serwera brokera z okna logowania MT5")}
+        <label className="field"><span>Hasło rachunku MT5 (opcjonalnie) <small>– zapisane: {secrets.MT5_PASSWORD?.source === "MISSING" || !secrets.MT5_PASSWORD ? "brak" : "tak"}</small></span>
+          <input type="password" value={mt5pw} autoComplete="new-password" onChange={(e) => setMt5pw(e.target.value)} data-testid="mt5-password" /></label>
+        <div className="row">
+          <button className="btn" disabled={mt5pw.length < 1} onClick={() => saveMt5Password(mt5pw)} data-testid="mt5-password-save">Zapisz hasło</button>
+          {secrets.MT5_PASSWORD?.source === "LOCAL_STORE" && <button className="btn ghost" onClick={() => saveMt5Password(null)}>Usuń hasło</button>}
+          <button className="btn ghost" onClick={reconnectMt5} data-testid="mt5-reconnect">Połącz ponownie</button>
+        </div>
+        <div className="note small">Login i serwer zapisz przyciskiem „Zapisz” ustawień, potem „Połącz ponownie”. Program nie składa przy tym żadnych zleceń.</div>
       </div>}
       {tab === "agent" && <div className="form">
         <div className="note">Klucz: <b>{secrets.ANTHROPIC_API_KEY?.source}</b> {secrets.ANTHROPIC_API_KEY?.masked ?? ""}. Klucz zostaje w tym komputerze (Windows DPAPI), nie trafia do przeglądarki ani logów.</div>

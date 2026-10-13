@@ -1,4 +1,11 @@
-# Raport testów – MasterQUO AI 1.10.0
+# Raport testów – MasterQUO AI 1.10.1
+
+## 1.10.1 – połączenie z MT5 po „-6 Authorization failed” (2026-10-13)
+Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium): **297 testów, OK** (`data/logs/testy_offline_20261013T131303Z.json`, lokalny).
+Nowe: `test_mt5_login.py` (7) – sesja terminala bez danych logowania; logowanie z hasłem tylko z lokalnego magazynu; odrzucone logowanie bez pętli
+i z powrotem do sesji terminala; wykrycie uruchomionego terminala przy kilku instalacjach i zapamiętanie go; ustawiona ścieżka nigdy nie jest
+zastępowana; polska podpowiedź dla -6; hasło niewidoczne w masce, konfiguracji, statusie i logu.
+Nie sprawdzono: prawdziwy pakiet MetaTrader5 i Twój terminal (zachowanie `initialize(login, password, server)` symulowane).
 
 ## 1.10.0 – audyt i naprawy P0, walls/formacje/S12, panel na trzy strony (2026-10-13)
 Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala – DANE SYNTETYCZNE, Chromium, bez klucza Claude): **290 testów, OK, 0 pominiętych**

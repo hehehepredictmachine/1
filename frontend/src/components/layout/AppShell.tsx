@@ -34,7 +34,9 @@ function FailureBanner() {
   const con = s.connection || {};
   const items: string[] = [];
   if (s.ws !== "OPEN") items.push(`Brak połączenia z lokalnym backendem (${s.ws}) – pokazane dane mogą być nieaktualne; ponowne łączenie automatyczne.`);
-  else if (con.state && con.state !== "CONNECTED") items.push(`MT5: ${con.state}${con.reason ? ` – ${con.reason}` : ""}. Dane z terminala nie są aktualne.`);
+  else if (con.state && con.state !== "CONNECTED")
+    items.push(con.login?.hint ? `MT5: ${con.state} – ${con.login.hint} (Ustawienia → MT5). Dane z terminala nie są aktualne.`
+      : `MT5: ${con.state}${con.reason ? ` – ${con.reason}` : ""}. Dane z terminala nie są aktualne.`);
   if (s.engine?.last_error) items.push(`Błąd silnika: ${String(s.engine.last_error).slice(0, 140)}`);
   if (s.mode?.kill_switch) items.push("Nowe wejścia ZATRZYMANE (STOP). Otwarte pozycje pozostają z SL/TP po stronie brokera.");
   if (!items.length) return null;

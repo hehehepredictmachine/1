@@ -39,6 +39,9 @@ class MT5Config(_Strict):
     analytical_alias: str = "XAUUSD"
     dxy_symbol: str | None = None
     terminal_path: str | None = None
+    # optional explicit login (1.10.1); the password is NEVER stored here - only in the local secret store (MT5_PASSWORD)
+    login: int | None = Field(None, ge=1)
+    server: str | None = Field(None, max_length=128)
     quote_poll_seconds: float = Field(0.5, ge=0.2, le=10)
     bars_poll_seconds: float = Field(2.0, ge=0.5, le=30)
     account_poll_seconds: float = Field(2.0, ge=0.5, le=60)
