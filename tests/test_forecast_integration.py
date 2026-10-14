@@ -122,9 +122,13 @@ class TestDoubleRetest(unittest.TestCase):
 class TestForecastConfigAndService(unittest.TestCase):
     def setUp(self):
         self.td = TempData()
+        self._py = os.environ.get("MQ_CANDLES_PYTHON")
 
     def tearDown(self):
-        os.environ.pop("MQ_CANDLES_PYTHON", None)
+        if self._py is None:
+            os.environ.pop("MQ_CANDLES_PYTHON", None)
+        else:
+            os.environ["MQ_CANDLES_PYTHON"] = self._py          # the runner still needs it for the candle suite
         self.td.close()
 
     def test_config_is_shadow_only(self):

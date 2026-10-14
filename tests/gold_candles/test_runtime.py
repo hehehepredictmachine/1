@@ -107,8 +107,8 @@ class Runtime(unittest.TestCase):
         make_data(short, days=4)
         rc = plan_train.main(["--data-dir", str(short), "--data-kind", "SYNTHETIC_TEST", "--trees", "10", "--no-activate"])
         self.assertIn(rc, (0, 4))
-        runs = sorted((self.tmp / "data" / "forecast" / "runs").glob("*"))
-        val = json.loads((runs[-1] / "forecast_validation.json").read_text(encoding="utf-8"))
+        runs = sorted((self.tmp / "data" / "forecast" / "runs").glob("*/forecast_validation.json"), key=lambda p: p.stat().st_mtime)
+        val = json.loads(runs[-1].read_text(encoding="utf-8"))
         self.assertEqual(val["overall_status"], "INSUFFICIENT_DATA")
         self.assertTrue(any("brakuje" in x for x in json.dumps(val, ensure_ascii=False).split('"')))
 

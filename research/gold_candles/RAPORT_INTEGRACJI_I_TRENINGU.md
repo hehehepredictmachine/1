@@ -73,7 +73,7 @@ Brak – wymaga rzeczywistej historii. `12_TRENING_MODELI_XAUUSD.bat` zapisze dl
 | `tests/gold_candles/test_candles.py` (29 testów modułu referencyjnego, `.venv_candles`) | 29/29 OK |
 | `tests/gold_candles/test_runtime.py` (7) | OK |
 | `tests/test_forecast_integration.py` (10, środowisko bota) | OK |
-| pełny `tools/run_tests.py` | patrz `RAPORT_TESTOW.md` |
+| pełny `tools/run_tests.py` (2026-10-14 17:46 UTC) | 307 testów bota OK + 36 testów modułu prognoz OK (`.venv_candles`) |
 
 `test_runtime.py` sprawdza:
 - protokół workera;

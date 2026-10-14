@@ -1,4 +1,14 @@
-# Raport testów – MasterQUO AI 1.10.1
+# Raport testów – MasterQUO AI 1.11.0
+
+## 1.11.0 – gold_candles: świece i prognozy SHADOW, eksport historii, trening z planem, Double Retest v2 (2026-10-14)
+Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium, `MQ_CANDLES_PYTHON` = izolowane `.venv_candles`):
+**307 testów bota OK + 36 testów modułu prognoz OK** (29 testów referencyjnych `gold_candles` + 7 testów runtime), raport lokalny
+`data/logs/testy_offline_20261014T174634Z.json`. Wcześniejszy przebieg pominął zestaw prognoz (test integracji usuwał zmienną środowiska
+interpretera) – poprawione w teście; jeden test runtime wybierał katalog runu po nazwie – poprawione (wybór po czasie). Bez zmian zachowania programu.
+Nowe: `tests/test_forecast_integration.py` (10), `tests/gold_candles/test_runtime.py` (7), `tests/gold_candles/test_candles.py` (29, referencyjne, bez zmian).
+Bez `.venv_candles` runner raportuje `SKIPPED_NO_CANDLE_ENV` (nigdy „passed”).
+**Trening na danych rynkowych: NIE wykonany – BLOCKED_NO_REAL_DATA** (brak dostępu do MT5 użytkownika w środowisku budowy). Treningi na danych
+syntetycznych służyły wyłącznie testom programu. Nie sprawdzono: Windows, Twój MT5, rzeczywista historia XAUUSD-.
 
 ## 1.10.1 – połączenie z MT5 po „-6 Authorization failed” (2026-10-13)
 Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium): **297 testów, OK** (`data/logs/testy_offline_20261013T131303Z.json`, lokalny).
