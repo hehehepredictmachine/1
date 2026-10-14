@@ -67,3 +67,11 @@ reason_codes, explanation_pl, answer_pl, lessons, playbook_proposals, model_id, 
 | `GET /api/v1/setups/{id}/details` | schemat **MQ-SETUP-DETAILS-1.1.0**: każdy wiersz `checklist` ma `group` (1–10), `state` (MET/MISSING/PENDING/NO_DATA/NA), `required`, `tf`, `at`; nowe `summary` (`required_total`, `required_met`, `missing`, `pending`, `no_data`, `first_blocker`, `next_confirmation`, `groups`) i `selector_mode`. Setup innego rachunku → 404 |
 | `GET /api/v1/walls`, `POST /api/v1/walls/iv-import`, `GET /api/v1/structure?tf=` | snapshot walls ze źródłem; import IV; struktura TF (S/R, zakres M5, strefy M1, formacje, pivoty z `known_at`, dowody świecowe) |
 Monitor: odczyt szczegółów setupu nigdy nie wywołuje `POST /api/v1/prefs/setup-view` – ten endpoint zmienia wybór strategii silnika i jest używany tylko przez jawne ustawienie „Działanie bota”.
+
+## 1.11 – prognozy świec (SHADOW)
+| Endpoint | Zawartość |
+|---|---|
+| `GET /api/v1/forecast` | `status` (SHADOW / NO_MODEL / NO_CANDLE_ENV / WARMUP / STALE_DATA / CONTRACT_MISMATCH / FORECAST_UNAVAILABLE / DISABLED / NO_DATA), `report` (gold_candles: formacje M5/M30, `forecast`, `execution_lock` = BLOCKED), `model`, `setup_v2` (Double Retest v2, EXECUTION_STATE=BLOCKED), `registry`, `training`, `shadow_summary`, `latency_ms`; zawsze `execution_permission=false` |
+| `GET /api/v1/forecast/shadow?limit=` | prognozy zapisane przed wynikiem i ich ocena (`outcome_status` PENDING / SCORED / NO_CONTINUOUS_DATA / OUT_OF_BUFFER) |
+| `POST /api/v1/forecast/reload` | proces analityki odczyta rejestr ponownie; nowy model od następnej zamkniętej M5 |
+WebSocket: zdarzenie `forecast` po każdej nowej zamkniętej M5.

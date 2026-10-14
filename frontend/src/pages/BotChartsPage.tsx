@@ -8,6 +8,7 @@ import ChartPanel, { type Highlight } from "../components/ChartPanel";
 import ChartToolbar, { useChartOpts } from "../components/ChartToolbar";
 import { BotSignalsPanel, MarketDetail, MarketsPanel } from "../components/MarketsPanel";
 import VolPanel from "../components/VolPanel";
+import CandleForecastPanel from "../components/CandleForecastPanel";
 import { navigate, usePersisted, type Route } from "../router";
 import { useStore } from "../store";
 import { cls } from "../util";
@@ -104,6 +105,7 @@ export default function BotChartsPage({ route }: { route: Route }) {
                 <span className={cls("badge", t.data === "OK" ? "ok" : "warn")}>{t.data ?? "?"}</span>{need?.has(t.tf) && <span className="badge">wymagany</span>}</li>))}</ul>
           </aside>)}
       </div>
+      <Section id="bot.forecast" title="Świece i prognozy 5/15/30 min (SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-forecast"><CandleForecastPanel /></Section>
       <Section id="bot.vol" title="Zmienność i walls (źródło: HV_PROXY / IV)" testid="sec-vol"><VolPanel /></Section>
       <Section id="bot.regime" title="Reżim rynku i stan AUTO" testid="sec-regime"><AutoPanel full={autoFull} /></Section>
       <Section id="bot.strategies" title="Monitor strategii (S01–S12)" testid="sec-strategies"><StrategiesPanel full={autoFull} reload={() => reloadAuto()} /></Section>

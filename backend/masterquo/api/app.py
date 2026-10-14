@@ -242,6 +242,22 @@ def create_app(rt, port: int) -> FastAPI:
                                                                                                      if tf in x["setup_tfs"] or tf in x["required_tfs"] or tf == x["context_tf"])}
                                for tf, v in TF_REGISTRY.items()], "strategies": strat}
 
+    @app.get("/api/v1/forecast")
+    def forecast_get():
+        """SHADOW candle analytics + price forecasts 5/15/30 + Double Retest v2 research state. Never an order permission."""
+        return {**rt.forecast.public(), "registry": rt.forecast.registry(), "training": rt.forecast.training_status(),
+                "config": rt.cfg.get().forecast.model_dump(), "shadow_summary": rt.forecast.shadow_summary()}
+
+    @app.get("/api/v1/forecast/shadow")
+    def forecast_shadow(limit: int = Query(100, ge=1, le=1000)):
+        return {"items": rt.forecast.recent(limit)}
+
+    @app.post("/api/v1/forecast/reload")
+    def forecast_reload():
+        rt.forecast.reload()
+        rt.log.info("FORECAST", "RELOAD", "Przeładowanie modelu prognoz – nowa wersja od następnej zamkniętej świecy M5.")
+        return {"ok": True}
+
     @app.get("/api/v1/walls")
     def walls_get():
         snap = {k: v for k, v in (rt.walls.last or {}).items() if not k.startswith("_")}

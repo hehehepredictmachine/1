@@ -24,6 +24,13 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 6. Zamknięcie przeglądarki **nie** zatrzymuje programu. Zatrzymanie: **`04_STOP_MASTERQUO.bat`** (zatrzymuje tylko MasterQUO,
    nie inne programy Pythona ani terminal MT5).
 
+## Nowe w 1.11 – świece i prognozy 5/15/30 min (SHADOW)
+1. `10_PROGNOZY_INSTALUJ.bat` – osobne środowisko dla modułu prognoz (główne `.venv` bez zmian).
+2. `11_EKSPORT_HISTORII_XAUUSD.bat` – przy zalogowanym MT5 pobiera zamknięte M5/M30 `XAUUSD-` (domyślnie 12 miesięcy) i raport jakości danych.
+3. `12_TRENING_MODELI_XAUUSD.bat` – trening i walidacja prognoz 5/15/30 min; `13_…` ponowna walidacja; `14_…` rollback modelu.
+4. Monitor → Wykresy bota → „Świece i prognozy”: formacje, prognozy z oznaczeniem SHADOW i status modelu, checklista setupu Double Retest v2.
+Prognoza **nie jest sygnałem** i nie daje zgody na zlecenie. Opis: `docs/PROGNOZY_SWIECE_GOLD_CANDLES_PL.md`.
+
 ## Nowe w 1.10 – trzy strony monitora
 Menu po lewej (na telefonie – trzy przyciski na dole):
 1. **Analiza AI** – co proponuje AI, dlaczego, na co czeka; wykresy H1, M30, M15, M5, M1. Obok karta „Pozwolenie silnika” – sama propozycja AI nie składa zleceń.

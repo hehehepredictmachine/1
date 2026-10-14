@@ -735,3 +735,16 @@ button.link { background: none; border: 0; padding: 0; color: var(--icon); text-
   .markets-row { grid-template-columns: minmax(0, 1fr) !important; }
   .chart-toolbar .toggles { gap: 4px 10px; }
 }
+
+/* 1.11 candles & forecasts (SHADOW) */
+.cf-panel { display: flex; flex-direction: column; gap: 8px; }
+.cf-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cf-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cf-grid > .card.wide { grid-column: 1 / -1; order: 3; }
+.cf-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cf-grid .card p { margin: 4px 0; }
+.dr-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; margin: 6px 0; }
+.dr-dl dt { color: var(--muted); }
+.dr-dl dd { margin: 0; }
+@media (max-width: 1280px) { .cf-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .cf-grid.two { grid-template-columns: minmax(0, 1fr); } .cf-panel .tbl { display: block; overflow-x: auto; } }

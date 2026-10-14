@@ -1,0 +1,27 @@
+{
+  "source_prompt_sha256": "2f6c6a9d6e7ecd87ff251eb408b04023239c1ce5871671f2035d878bf004f92a",
+  "strategy_validation": "UNVALIDATED",
+  "trained_real_market_model_included": false,
+  "files": {
+    "DEMO_WINDOWS.bat": "474086ec070a56e7d8b1cc86c3a66645297c2fe9f48bbcfd926c70251274a45e",
+    "INSTALUJ_WINDOWS.bat": "84d64116bf7daff052867102bfbe155e524d15d45d80c7776732459bb17e7564",
+    "MasterQUO_AUDYT_SCALPING_v2.md": "7b512a62d0ed3350f57a6ba43d08e35dc3e2be19c20dd138aa9a73386d5d2029",
+    "MasterQUO_XAUUSD_EXECUTION_LOCK_v2_PROMPT.md": "2d4e6169dd54a96fc21cb161ce5453ffdd8d9abc6e9ba4fef66dfec38c4dfbc9",
+    "README_PL.md": "673c0bf09d80f0e76c3d638472e405a560122e71763ceb0e0f2119ea98af82c7",
+    "SOURCE_PROMPT_v1.md": "2f6c6a9d6e7ecd87ff251eb408b04023239c1ce5871671f2035d878bf004f92a",
+    "TEST_REPORT.md": "561bc81c60c980094920aa2e927439027e62f3302148182950fd96ce533814f4",
+    "config_strategy_v2_research.json": "0dd160f6ad122949784193b98d090249e3656a6324a8fc8f9f0e4bad3518a2dc",
+    "demo_analysis.json": "8f6ff0d581672d4ab9e3139345c6d8395b91740c001243c6cdbe4e51ce6df577",
+    "gold_candles/__init__.py": "3c7d54b19a09450ee39af5af39cca515181a5ba50ed3dcce057458331a70188a",
+    "gold_candles/__main__.py": "23bb93dfa82b94036fce266f0a5b99f353ebebb2bb71dd25eb3379875a9fc557",
+    "gold_candles/analysis.py": "452c226d93920f54d67d578b86a7baafe8f542fc7e52a4ecd3426596f02fc14b",
+    "gold_candles/cli.py": "bc75bd4291b5596a2479937a34513d794af417a5750f592937a48659a8ab0150",
+    "gold_candles/data.py": "ce05b560618037aac54835978c5f68b63677befddafc46e22e2fd46281c65d09",
+    "gold_candles/features.py": "6abe28949478cd9e6aae7f12cb1b932dd6e411ea0c476f180e8e1ae57cac007c",
+    "gold_candles/model.py": "f9413d10affd49ac9b053c8429377b0bd51396a90fd20c719dc8db38e2ca6dd9",
+    "gold_candles/mt5_reader.py": "eaee58f55bdf289b948da78600c151db33baca7d081c6491d8d31809464e3bd3",
+    "gold_candles/patterns.py": "ab4430aa0f6febd871a386464f5dbaa0ee3de042eb09df8c7078736ec86cf0ee",
+    "requirements.txt": "bb8e4526fc3f15f700ed18f265da0aa698dbb3f2328d1259f14e06e743b08fba",
+    "tests/test_candles.py": "55bed6e8b6abfa469b5a590de168c2e59294c05600d82b4c161f369b3790f98d"
+  }
+}

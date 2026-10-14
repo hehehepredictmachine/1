@@ -359,6 +359,19 @@ class BotSignalsConfig(_Strict):
     telegram: bool = True                    # notify new signals (only when Telegram is configured)
 
 
+class ForecastConfig(_Strict):
+    """gold_candles price forecasts 5/15/30 min + Double Retest v2 research state machine (1.11). Observation only:
+    the mode is fixed to SHADOW and the two execution switches can only be false - no forecast can permit an order."""
+    enabled: bool = True                      # CANDLE_ANALYTICS_ENABLED / PRICE_FORECAST_ENABLED
+    mode: Literal["SHADOW"] = "SHADOW"        # FORECAST_MODE
+    ml_execution: Literal[False] = False      # ML_EXECUTION
+    module_order_permission: Literal[False] = False   # MODULE_ORDER_PERMISSION
+    python_path: str | None = None            # interpreter of .venv_candles (auto-detected when empty)
+    m5_bars: int = Field(600, ge=200, le=3000)
+    m30_bars: int = Field(300, ge=60, le=1000)
+    request_timeout_seconds: float = Field(30.0, ge=5, le=300)
+
+
 class AppConfig(_Strict):
     config_version: int = 10
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -375,6 +388,7 @@ class AppConfig(_Strict):
     ml: MLConfig = Field(default_factory=MLConfig)
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
     walls: WallsConfig = Field(default_factory=WallsConfig)
+    forecast: ForecastConfig = Field(default_factory=ForecastConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     first_run_completed: bool = False

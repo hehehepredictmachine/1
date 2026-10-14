@@ -1,6 +1,6 @@
 # MasterQUO 1.10 – instrukcja dla Windows
 
-Paczka: `MasterQUO_KLIENT_1_10_1.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
+Paczka: `MasterQUO_KLIENT_1_11_0.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
 
 **Od wersji 1.9 program nie wymaga licencji** – nie ma serwera licencji, klucza `MQL72-…` ani panelu administratora.
 Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwiera się od razu.
@@ -11,7 +11,7 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 
 ### B1. Instalacja lub aktualizacja
 
-1. Rozpakuj `MasterQUO_KLIENT_1_10_1.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_10`. Nie nadpisuj starej wersji:
+1. Rozpakuj `MasterQUO_KLIENT_1_11_0.zip` do **nowego** folderu, np. `C:\MasterQUO_AI_1_10`. Nie nadpisuj starej wersji:
    to jest Twój punkt powrotu.
 2. Przy aktualizacji skopiuj ze starego folderu cały katalog `data\` (ustawienia, baza, zaszyfrowany klucz Claude).
    Stary folder zostaw bez zmian. Program przy migracji robi też kopię bazy w `data\backups\`.
@@ -28,6 +28,14 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 5. Monitor ma trzy strony (menu po lewej, na telefonie przyciski na dole): **Analiza AI** (`#/ai`), **Wykresy bota** (`#/wykresy`),
    **Warunki setupu** (`#/warunki/...`). Działają Wstecz/Dalej, zakładki przeglądarki i odświeżanie. Przeglądanie stron nie zmienia
    trybu handlu, strategii silnika ani dźwigni i nie wysyła płatnych zapytań do AI. Opis: `START_TUTAJ_PL.md`.
+
+### B2b. Prognozy świec 5/15/30 min (SHADOW)
+
+1. `10_PROGNOZY_INSTALUJ.bat` – tworzy `.venv_candles` (pakiety z hashami) i uruchamia testy modułu.
+2. `11_EKSPORT_HISTORII_XAUUSD.bat` (opcjonalnie liczba miesięcy, np. `6`) – MT5 musi być uruchomiony i zalogowany; wynik w `data\forecast\history\`.
+   Sprawdź w `DATA_QUALITY_REPORT.json` liczbę dni handlowych – terminal może zwrócić krótszą historię (Narzędzia → Opcje → Wykresy → Maks. barów).
+3. `12_TRENING_MODELI_XAUUSD.bat` – trening w osobnym procesie (bot może działać). Raport: `data\forecast\runs\<run_id>\forecast_validation.json`.
+4. Monitor przełącza model przy następnej zamkniętej M5. Rollback: `14_ROLLBACK_MODELU_PROGNOZ.bat`. Wyłączenie: `"forecast": {"enabled": false}`.
 
 ### B2a. Walls (HV-proxy / IV) i S12
 

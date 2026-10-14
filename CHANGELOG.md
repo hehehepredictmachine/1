@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.11.0 – świece i prognozy 5/15/30 min (gold_candles, SHADOW) + Double Retest v2 (badawczo)
+* Moduł referencyjny `gold_candles` (MasterQUO_XAUUSD_CANDLES_FORECAST_v2) dołączony **bez zmian** (`backend/gold_candles/`, hashe zgodne z MANIFEST).
+  Działa w izolowanym `.venv_candles` (numpy 2.3.5 / pandas 2.2.3 / scikit-learn 1.8.0) – środowisko bota bez zmian.
+* Analityka SHADOW w bocie: zamknięte M5/M30 z sesji bota → proces roboczy (bez drugiej sesji MT5) → formacje, prognozy P(spadek/płasko/wzrost)
+  i q10/q50/q90 dla 5/15/30 min; statusy NO_CANDLE_ENV / NO_MODEL / WARMUP / STALE_DATA / CONTRACT_MISMATCH / FORECAST_UNAVAILABLE.
+  Prognozy zapisywane przed wynikiem (`forecast_shadow`, migracja 0011) i oceniane po upływie horyzontu. Zawsze `execution_permission=false`.
+* Eksport historii `python -m masterquo export-candles` (11_EKSPORT_HISTORII_XAUUSD.bat): cutoff zamrożony, porcje z checkpointami, metadane
+  ze specyfikacją brokera (tick_size), raport jakości danych. Trening `12_TRENING_MODELI_XAUUSD.bat`: zamrożony plan ze wspólnymi granicami
+  UTC dla 5/15/30, purge/embargo, baseline i model bez formacji zadeklarowane przed treningiem, bootstrap bloków dni, statusy, rejestr z
+  atomową aktywacją, walidacja (13) i rollback (14).
+* Maszyna stanów **MasterQUO Gold Double Retest 5/10/15 v2** (BUY/SELL lustrzane, dwa epizody, reclaim, retest, rodziny REJECTION /
+  CONTINUATION z tych samych flag formacji) – tylko badawczo, najwyżej RESEARCH_SETUP_COMPLETE, EXECUTION_STATE=BLOCKED.
+* Monitor: Wykresy bota → „Świece i prognozy”. API: `/api/v1/forecast`, `/api/v1/forecast/shadow`, `/api/v1/forecast/reload`.
+* **Trening na danych rynkowych nie został wykonany w środowisku budowy (BLOCKED_NO_REAL_DATA)** – wymaga eksportu z Twojego MT5.
+
 ## 1.10.1 – połączenie z MT5 po „-6 Terminal: Authorization failed”
 * Program nadal łączy się domyślnie z **zalogowanym** terminalem. Nowe: opcjonalny **login i serwer** (Ustawienia → MT5) oraz **hasło** zapisywane
   wyłącznie lokalnie (`MT5_PASSWORD`, Windows DPAPI) – nie trafia do `config.json`, logów, odpowiedzi API ani przeglądarki (maska „•••”).

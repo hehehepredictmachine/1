@@ -224,6 +224,10 @@ def main(argv=None) -> int:
     e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_utc"))
     e.add_argument("--dst-model", choices=["UNIFORM", "NY_CLOSE"], default="UNIFORM",
                    help="UNIFORM = jeden offset (dzisiejszy) dla całego zakresu; NY_CLOSE = offset per świeca (Nowy Jork + 7 h)")
+    ec = sub.add_parser("export-candles", help="eksport zamkniętych M5/M30 XAUUSD- do treningu prognoz (CSV + metadane + raport jakości)")
+    ec.add_argument("--months", type=int, default=12)
+    ec.add_argument("--out")
+    ec.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
     a = ap.parse_args(argv)
@@ -243,6 +247,9 @@ def main(argv=None) -> int:
         return diagnostics.export_history(a.from_utc, a.to_utc, a.out, a.dst_model)
     if a.cmd == "profile":
         return cmd_profile(a.name)
+    if a.cmd == "export-candles":
+        from .forecast.export import export_candles
+        return export_candles(a.months, a.out, a.dst_model)
     if a.cmd == "import-iv":
         return cmd_import_iv(a.file)
     return 1

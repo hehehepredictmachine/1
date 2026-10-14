@@ -1,17 +1,17 @@
 {
-  "checked_at_utc": "2026-10-14T17:10:00Z",
-  "repository_commit": "90a29a4",
-  "environment": {"os": "Linux (kontener w chmurze)", "python": "3.13.16", "scikit_learn": "1.9.1", "numpy": "2.5.3",
-                   "MetaTrader5_module": "BRAK (ModuleNotFoundError)", "mt5_terminal": "BRAK - brak dostepu do terminala uzytkownika"},
+  "checked_at_utc": "2026-10-14T17:40:00Z",
+  "environment": {"os": "Linux (kontener w chmurze)", "bot_python": "3.13.16 (numpy 2.5.3, scikit-learn 1.9.1)",
+                   "candle_env": ".venv_candles: Python 3.13.16, numpy 2.3.5, pandas 2.2.3, scikit-learn 1.8.0 (wersje modulu referencyjnego)",
+                   "MetaTrader5_module": "BRAK", "mt5_terminal": "BRAK - brak dostepu do terminala uzytkownika"},
+  "package": {"name": "MasterQUO_XAUUSD_CANDLES_FORECAST_v2.zip", "status": "ZINTEGROWANY",
+              "contract_files_match_MANIFEST": true, "reference_tests": "29/29 OK w .venv_candles"},
   "blockers": [
-    {"id": "BLOCKED_NO_PACKAGE", "what": "Pakiet MasterQUO_XAUUSD_CANDLES_FORECAST_v2.zip (katalog MasterQUO_Candles_v2, modul gold_candles, README_PL.md, config_strategy_v2_research.json, tests/test_candles.py) nie zostal udostepniony.",
-     "checked": ["katalog uploadow sesji (16 plikow: 3 dokumenty .md tego zadania, wczesniejsze prompty, archiwum ALL_IN_ONE z 2026-10-08 - bez gold_candles)", "cale repozytorium i system plikow (find *gold_candles*, *CANDLES_FORECAST*)"],
-     "blocks": ["integracja gold_candles", "29 testow modulu referencyjnego", "contract_hash / format modelu JSON", "launchery TRAIN/VALIDATE/START_FORECAST_SHADOW"]},
-    {"id": "BLOCKED_NO_REAL_DATA", "what": "Brak rzeczywistej historii XAUUSD- M5/M30: w repozytorium sa tylko dane jawnie syntetyczne (research/.../SYNTHETIC_*, data/results/*_SYN); terminal MT5 niedostepny z tego srodowiska.",
-     "blocks": ["eksport historii", "DATA_QUALITY_REPORT.json", "trening 5/15/30 min", "walidacja i statusy modeli", "SHADOW na zywym feedzie"]}
+    {"id": "BLOCKED_NO_REAL_DATA", "what": "Brak rzeczywistej historii XAUUSD- M5/M30: terminal MT5 niedostepny z tego srodowiska, w repozytorium tylko dane syntetyczne.",
+     "unblock": "11_EKSPORT_HISTORII_XAUUSD.bat na Windows z zalogowanym MT5, potem 12_TRENING_MODELI_XAUUSD.bat (albo wgranie katalogu data\\forecast\\history\\<cutoff>\\ do tej sesji)",
+     "blocks": ["rzeczywisty trening 5/15/30", "walidacja jakosci na rynku", "SHADOW na zywym feedzie brokera"]}
   ],
-  "training": {"h5": "BLOCKED_NO_REAL_DATA", "h15": "BLOCKED_NO_REAL_DATA", "h30": "BLOCKED_NO_REAL_DATA",
-               "runs_executed": 0, "models_saved": 0, "synthetic_training_as_substitute": "NIE WYKONANO (zakazane przez specyfikacje)"},
+  "training": {"h5": "BLOCKED_NO_REAL_DATA", "h15": "BLOCKED_NO_REAL_DATA", "h30": "BLOCKED_NO_REAL_DATA", "real_runs_executed": 0, "real_models_saved": 0,
+               "code_tests_on_synthetic": "wykonane wylacznie jako test programu (SYNTHETIC_TEST, nieaktywowalne w rejestrze)"},
   "strategy_validation": "STRATEGY_BACKTEST_NOT_AVAILABLE",
-  "execution": {"FORECAST_MODE": "nie wdrozono", "ML_EXECUTION": false, "MODULE_ORDER_PERMISSION": false}
+  "execution": {"FORECAST_MODE": "SHADOW", "ML_EXECUTION": false, "MODULE_ORDER_PERMISSION": false, "EXECUTION_LOCK": "BLOCKED"}
 }
