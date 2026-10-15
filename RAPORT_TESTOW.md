@@ -1,4 +1,18 @@
-# Raport testów – MasterQUO AI 1.11.0
+# Raport testów – MasterQUO AI 1.12.0
+
+## 1.12.0 – scalp M5 Range → M1 Sweep/Reclaim → Retest, hedge, ML/NN – SHADOW (2026-10-15)
+Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium, `MQ_CANDLES_PYTHON` = izolowane `.venv_candles`):
+**350 testów bota OK + 43 testy środowiska prognoz/scalp OK** (29 referencyjnych `gold_candles`, 7 runtime, 7 nowych `test_scalp_train`),
+raport lokalny `data/logs/testy_offline_20261015T145315Z.json`. Pierwszy przebieg pełny – bez błędów.
+Nowe: `tests/test_scalp_core.py` (40: przyczynowość i niezmienność prefiksu, sesje/DST, zamrożenie zakresu i `known_at`, TTL retestu,
+lustro BUY/SELL, geometria świec i jeden dowód na rodzinę, BB/SAR, kontrakty adapterów i PAL02M bez wartości, rozliczenie Bid/Ask, lot min/krok,
+partial TP, SL+TP w jednej świecy, luka przez SL, NETTING/HEDGING, brak drugiego hedge, osierocona noga, timeout bez ponownego wysłania,
+limity dzienne po restarcie, idempotentny zapis, brak executora, izolacja awarii, eksport M1–H1 na symulatorze + replay CLI),
+`tests/gold_candles/test_scalp_train.py` (7: plan przed treningiem i ponownie użyty, rozłączne okresy, purge, cechy bez look-ahead, etykiety
+bez przejścia przez lukę, odczyt przez ścieżkę workera, checksum, syntetyczny model nigdy aktywny, BLOCKED_NO_REAL_DATA),
+`tests/test_ui_scalp.py` (3: sześć widoków, EXECUTION_AUTHORIZED=false, brak POST, 390 px bez przewijania poziomego; zrzuty `data/logs/ui_scalp/`).
+**Trening i replay na danych rynkowych: NIE wykonane – BLOCKED_NO_REAL_DATA.** Dane syntetyczne służą wyłącznie testom programu.
+Nie sprawdzono: Windows, Twój MT5, rzeczywista historia XAUUSD-, ticki, wykonanie brokera.
 
 ## 1.11.0 – gold_candles: świece i prognozy SHADOW, eksport historii, trening z planem, Double Retest v2 (2026-10-14)
 Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium, `MQ_CANDLES_PYTHON` = izolowane `.venv_candles`):

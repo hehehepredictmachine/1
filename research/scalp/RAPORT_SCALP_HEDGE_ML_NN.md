@@ -71,7 +71,7 @@ Nic nie zostało dopuszczone do wykonania.
 | `python -m unittest test_ui_scalp` (Chromium, `serve --demo`) | symulator | 3 testy OK, zrzuty `data/logs/ui_scalp/` |
 | `gold_candles_runtime.scalp_train --data-kind SYNTHETIC_TEST --small-test` | 20 dni syntetycznego M1 | patrz niżej |
 | `export_candles(..., SCALP_TFS, "scalp")` na FakeMT5 + `scalp-replay` | symulator, `data_kind` SYNTHETIC_TEST | 0 cykli, INSUFFICIENT_EVIDENCE |
-| `tools/run_tests.py` | pełny zestaw | wynik w `RAPORT_TESTOW.md` |
+| `tools/run_tests.py` | pełny zestaw | 350 testów bota OK + 43 testy `.venv_candles` OK |
 
 **Szczegóły przebiegu `scalp_train --small-test`** (66 s; `.venv_candles`: numpy 2.3.5, pandas 2.2.3, scikit-learn 1.8.0):
 - Wybór w walk-forward: LR dla wszystkich horyzontów.
