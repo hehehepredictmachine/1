@@ -85,6 +85,8 @@ class Runtime:
         self.walls = WallsService(self.cfg, self.db, self.bridge)           # frozen session walls snapshot -> strategies (S12)
         from .forecast.service import ForecastService
         self.forecast = ForecastService(self.cfg, self.bridge, self.db, self.bus, self.log)   # SHADOW only, isolated worker process
+        from .scalp.service import ScalpService
+        self.scalp = ScalpService(self.cfg, self.bridge, self.db, self.bus, self.log, news=self.news, forecast=self.forecast)   # SHADOW only
         self.engine.active.context_fn = self.walls.context
         self.prefs.listeners.append(lambda name, v: (self.engine.mark_dirty(), self._publish_prefs()))
         # another account (server:login) = its own preferences; broker parameters are re-read by the bridge
@@ -131,6 +133,7 @@ class Runtime:
         self.ml.start()
         self.scanner.start()
         self.forecast.start()
+        self.scalp.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -154,6 +157,7 @@ class Runtime:
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
         self.ml.stop()
         self.forecast.stop()
+        self.scalp.stop()
         self.scanner.stop()
         self.engine.stop()
         self.manager.stop()

@@ -1,0 +1,16 @@
+{
+  "status": "BLOCKED_NO_REAL_DATA",
+  "at": "2026-10-15",
+  "reason": "Brak dostępu do MT5 użytkownika w środowisku budowy (pakiet MetaTrader5 niedostępny, brak eksportu historii M1/M5/M15/M30/H1 XAUUSD-).",
+  "task_A": "NOT_TRAINED_ON_MARKET_DATA",
+  "task_B": "NOT_TRAINED_ON_MARKET_DATA",
+  "task_C": "NOT_EVALUATED",
+  "hedge_vs_reduce": "NOT_EVALUATED_ON_REAL_DATA",
+  "code_path_checked_on": "SYNTHETIC_TEST (tests/gold_candles/test_scalp_train.py) – nie jest wynikiem rynkowym",
+  "unblock": [
+    "16_EKSPORT_HISTORII_SCALP.bat 6",
+    "19_REPLAY_SCALP.bat <prowizja>",
+    "17_TRENING_SCALP_ML.bat <prowizja>",
+    "18_WALIDACJA_SCALP.bat"
+  ]
+}

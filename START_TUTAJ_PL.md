@@ -24,6 +24,13 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 6. Zamknięcie przeglądarki **nie** zatrzymuje programu. Zatrzymanie: **`04_STOP_MASTERQUO.bat`** (zatrzymuje tylko MasterQUO,
    nie inne programy Pythona ani terminal MT5).
 
+## Nowe w 1.12 – scalp M5 Range → M1 Sweep → Retest + hedge + ML/NN (SHADOW)
+1. `16_EKSPORT_HISTORII_SCALP.bat` – przy zalogowanym MT5 pobiera zamknięte M1/M5/M15/M30/H1 `XAUUSD-` (domyślnie 6 miesięcy).
+2. `19_REPLAY_SCALP.bat <prowizja>` – replay po kosztach (też stres +50% i NETTING); `17_TRENING_SCALP_ML.bat <prowizja>` – trening A/B/C
+   (LR, boosting, sieć MLP 64/32, kwantyle); `18_…` walidacja, `21_…` rollback. `<prowizja>` = za 1 lot na stronę z warunków Twojego rachunku.
+3. `20_START_SCALP_SHADOW.bat` – monitor; Wykresy bota → „Scalp M5 Range → M1 Sweep → Retest + hedge” (MTF, Setup, Wskaźniki, Prognozy, Hedge/ryzyko, Trening).
+Moduł **nie wysyła zleceń** (EXECUTION_AUTHORIZED=false). Opis: `docs/SCALP_HEDGE_ML_NN_PL.md`, raport: `research/scalp/RAPORT_SCALP_HEDGE_ML_NN.md`.
+
 ## Nowe w 1.11 – świece i prognozy 5/15/30 min (SHADOW)
 1. `10_PROGNOZY_INSTALUJ.bat` – osobne środowisko dla modułu prognoz (główne `.venv` bez zmian).
 2. `11_EKSPORT_HISTORII_XAUUSD.bat` – przy zalogowanym MT5 pobiera zamknięte M5/M30 `XAUUSD-` (domyślnie 12 miesięcy) i raport jakości danych.

@@ -1,0 +1,49 @@
+{
+  "profile_id": "MQ-SCALP-RANGE-SWEEP-1.0.0-RESEARCH",
+  "status": "RESEARCH_HYPOTHESIS_UNVALIDATED",
+  "note": "Every number is a starting research hypothesis, tuned (if at all) only in development. Changing any value = new profile id.",
+  "symbol": "XAUUSD-",
+  "timeframes": {"context": ["H1", "M30", "M15"], "range": "M5", "trigger": "M1", "execution": "tick Bid/Ask"},
+  "range": {
+    "lookback_m5_bars": {"value": 12, "unit": "closed M5 bars"},
+    "width_min_atr": {"value": 1.2, "unit": "x ATR14(M5)"},
+    "width_max_atr": {"value": 4.0, "unit": "x ATR14(M5)"},
+    "er10_max": {"value": 0.35, "unit": "efficiency ratio 0..1 (ER10 on M5 closes)"},
+    "touch_tolerance_atr": {"value": 0.15, "unit": "x ATR14(M5)"},
+    "touch_min_per_edge": {"value": 2, "unit": "touches"},
+    "touch_min_separation_bars": {"value": 2, "unit": "M5 bars between counted touches"},
+    "ttl_m5_closes": {"value": 6, "unit": "M5 closes after arming"},
+    "invalidation_outside_atr": {"value": 0.25, "unit": "x ATR14(M5) at arm"},
+    "invalidation_consecutive_m1_closes": {"value": 2, "unit": "M1 closes"}
+  },
+  "zone": {"max_m1_bars": {"value": 3, "unit": "consecutive closed M1"}, "max_width_atr_m5": {"value": 0.5, "unit": "x ATR14(M5) at arm"},
+           "max_width_range_fraction": {"value": 0.25, "unit": "x range width W"}},
+  "trigger": {
+    "epsilon_atr_m1": {"value": 0.05, "unit": "x ATR14(M1), min 2 ticks"},
+    "tick_volume_ratio_min": {"value": 1.2, "unit": "tv / median(tv of previous 20 closed M1)"},
+    "retest_required": {"value": true, "unit": "bool"},
+    "retest_window_m1": {"value": 3, "unit": "M1 bars after the reclaim"},
+    "chase_limit_atr_m5": {"value": 0.10, "unit": "x ATR14(M5) at arm, min 2 ticks"}
+  },
+  "context_filter": {
+    "enabled": {"value": true, "unit": "bool (ablation)"},
+    "slope_atr_per_bar": {"value": 0.25, "unit": "|BB basis slope| / ATR per bar on M30 and M15"},
+    "bandwidth_percentile": {"value": 80, "unit": "percentile of own BandWidth over previous 100 bars"}
+  },
+  "exits": {
+    "sl_buffer": {"value": "max(2*tick, current_spread, 0.10*ATR14(M1))", "unit": "price"},
+    "tp1": {"value": "MID of the range", "unit": "price"}, "tp2": {"value": "opposite range edge - execution buffer", "unit": "price"},
+    "tp1_fraction": {"value": 0.5, "unit": "of volume (only if lot step allows; else single TP1 exit)"},
+    "max_hold_minutes": {"value": 30, "unit": "minutes from fill"},
+    "be_after_tp1": {"value": "NONE", "unit": "policy (cost-adjusted BE and SAR trailing are development variants)"}
+  },
+  "economics": {"max_cost_to_tp1_gross": {"value": 0.15, "unit": "fraction"}, "min_weighted_net_rr": {"value": 1.2, "unit": "net reward units per unit of full risk (geometry filter, not expectancy)"}},
+  "risk": {"cycle_risk_pct_equity": {"value": 0.25, "unit": "% equity, base+hedge"}, "daily_loss_pct": {"value": 1.5, "unit": "% equity"},
+           "weekly_loss_pct": {"value": 4.0, "unit": "% equity"}, "max_cycles_open": {"value": 1, "unit": "per XAUUSD-"},
+           "cooldown_after_3_losses_min": {"value": 15, "unit": "minutes"}, "cooldown_after_cycle_min": {"value": 5, "unit": "minutes"},
+           "quote_ttl_s": {"value": 2, "unit": "seconds"}, "news_block_before_min": {"value": 10, "unit": "minutes"}, "news_block_after_min": {"value": 15, "unit": "minutes"}},
+  "hedge": {"policy": "SHADOW", "max_fraction_of_base": {"value": 0.5, "unit": "of current base volume"}, "max_hedges_per_cycle": {"value": 1, "unit": "count"},
+            "ttl_m1": {"value": 3, "unit": "closed M1 from fill"}, "exit_confirm_m1": {"value": 2, "unit": "consecutive M1 in base direction + edge reclaim"}},
+  "indicators": {"bollinger": {"period": 20, "deviation": 2.0, "std": "population (divide by N, as MT5 iBands)"}, "sar": {"step": 0.02, "maximum": 0.2}},
+  "switches": {"MODE": "SHADOW", "LIVE_TRADING": false, "ML_EXECUTION": false, "HEDGE_EXECUTION": false}
+}

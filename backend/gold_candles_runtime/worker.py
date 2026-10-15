@@ -106,6 +106,44 @@ def analyze_request(req: dict) -> dict:
     return out
 
 
+_scalp_cache: dict = {"run_id": None, "model": None}
+
+
+def scalp_forecast(req: dict) -> dict:
+    """Task-A forecast 1/3/5 min on the latest CLOSED M1 (scalp model registry). SHADOW only - never an order permission."""
+    import numpy as np
+    from datetime import datetime as _dt
+    from . import scalp_features as SF
+    from .scalp_infer import ScalpModel, activatable, read_registry
+    reg = read_registry()
+    rid = reg.get("active")
+    if not rid:
+        return {"status": "UNAVAILABLE", "reason": "NO_MODEL", "execution_permission": False}
+    entry = reg["runs"][rid]
+    ok, why = activatable(entry, SF.contract_hash(entry["symbol"], entry["tick_size"]))
+    if not ok:
+        return {"status": "UNAVAILABLE", "reason": why, "execution_permission": False}
+    if _scalp_cache["run_id"] != rid:
+        _scalp_cache.update(run_id=rid, model=ScalpModel(entry))
+    bars = req.get("m1") or []
+    t = [int(_dt.fromisoformat(b["open_utc"].replace("Z", "+00:00")).timestamp()) for b in bars]
+    X, atr = SF.build(t, [b["o"] for b in bars], [b["h"] for b in bars], [b["l"] for b in bars], [b["c"] for b in bars],
+                      [b.get("tv") for b in bars], [b.get("spread_price") for b in bars])
+    if not len(X) or np.isnan(X[-1]).any():
+        return {"status": "WARMUP", "reason": "za mało zamkniętych M1 do cech", "execution_permission": False}
+    pred = _scalp_cache["model"].predict(X[-1:])
+    c, a = bars[-1]["c"], atr[-1]
+    out = {}
+    for hz, r in pred.items():
+        P = r["P"][0]
+        q = r["Q"][0] if r["Q"] is not None else None
+        out[hz] = {"p_down": round(float(P[0]), 4), "p_flat": round(float(P[1]), 4), "p_up": round(float(P[2]), 4),
+                   "q10_q50_q90_price": None if q is None else [round(c + float(x) * a, 3) for x in q],
+                   "status": entry["horizon_status"].get(hz), "model": entry["models"][hz]["selected"]}
+    return {"status": "SHADOW", "run_id": rid, "feature_time_utc": bars[-1]["open_utc"], "horizons": out, "execution_permission": False,
+            "note": "P(UP) nie jest P(TP przed SL) ani oceną transakcji"}
+
+
 def main() -> int:
     for line in sys.stdin:
         line = line.strip()
@@ -121,6 +159,8 @@ def main() -> int:
                 ans = {"ok": True}
             elif cmd == "analyze":
                 ans = analyze_request(req)
+            elif cmd == "scalp_forecast":
+                ans = scalp_forecast(req)
             elif cmd == "quit":
                 return 0
             else:

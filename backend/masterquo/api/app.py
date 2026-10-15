@@ -248,6 +248,16 @@ def create_app(rt, port: int) -> FastAPI:
         return {**rt.forecast.public(), "registry": rt.forecast.registry(), "training": rt.forecast.training_status(),
                 "config": rt.cfg.get().forecast.model_dump(), "shadow_summary": rt.forecast.shadow_summary()}
 
+    @app.get("/api/v1/scalp")
+    def scalp_get():
+        """Scalp profile (M5 Range -> M1 Sweep/Reclaim -> Retest) + hedge controller in SHADOW: MTF, setup, indicators, adapters,
+        forecasts, hedge/risk, training and the separate validity statuses. Never an order permission."""
+        return {**rt.scalp.public(), "config": rt.cfg.get().scalp.model_dump(), "profile": rt.scalp.prof, "registry": rt.scalp.registry()}
+
+    @app.get("/api/v1/scalp/shadow")
+    def scalp_shadow(limit: int = Query(100, ge=1, le=1000)):
+        return {"items": rt.scalp.recent(limit), "summary": rt.scalp.summary()}
+
     @app.get("/api/v1/forecast/shadow")
     def forecast_shadow(limit: int = Query(100, ge=1, le=1000)):
         return {"items": rt.forecast.recent(limit)}

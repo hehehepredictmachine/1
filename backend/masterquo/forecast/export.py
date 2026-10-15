@@ -24,6 +24,8 @@ from .. import paths
 from ..timeutil import iso
 
 TFS = {"M5": 300, "M30": 1800}
+ALL_TFS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
+SCALP_TFS = ("M1", "M5", "M15", "M30", "H1")
 CHUNK_DAYS = 31
 
 
@@ -63,7 +65,9 @@ def _gaps(times: list[int], step: int) -> dict:
     return out
 
 
-def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str = "AUTO") -> int:
+def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str = "AUTO", timeframes: tuple[str, ...] = ("M5", "M30"),
+                   kind: str = "forecast") -> int:
+    """kind="forecast": M5/M30 for gold_candles; kind="scalp": M1/M5/M15/M30/H1 for the scalp profile (data/scalp/history)."""
     from ..config import ConfigStore
     from ..diagnostics import _init_kw, ny_close_offset, server_to_utc
     from ..mt5.fake import is_fake
@@ -110,14 +114,14 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
             return 6
         cutoff = now.replace(second=0, microsecond=0) - timedelta(minutes=now.minute % 30)   # frozen BEFORE the first request
         start = (cutoff - timedelta(days=int(months * 30.44))).replace(hour=0, minute=0)
-        out = Path(out_dir) if out_dir else paths.data_dir() / "forecast" / "history" / cutoff.strftime("%Y%m%dT%H%MZ")
+        out = Path(out_dir) if out_dir else paths.data_dir() / kind / "history" / cutoff.strftime("%Y%m%dT%H%MZ")
         (out / "chunks").mkdir(parents=True, exist_ok=True)
         synthetic = bool(is_fake(mt5))
         dq: dict = {"symbol": sym, "cutoff_utc": iso(cutoff), "requested_from_utc": iso(start), "dst_model": model, "offset_seconds_now": offset,
                     "offset_basis": basis, "timeframes": {}}
         files = {}
         rows_by_tf: dict[str, dict[int, tuple]] = {}
-        for tf, step in TFS.items():
+        for tf, step in ((k, ALL_TFS[k]) for k in timeframes):
             const = getattr(mt5, "TIMEFRAME_" + tf)
             merged: dict[int, tuple] = {}
             dup = 0
@@ -201,7 +205,7 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
                 "price_basis": "BROKER_CHART_OHLC (MT5: zwykle Bid) – nie wykonywalne Ask/Bid", "tick_size": tick, "spec": spec,
                 "time_basis": "SERVER_TIME_CONVERTED_TO_UTC", "dst_model": model, "offset_seconds_now": offset, "offset_basis": basis,
                 "cutoff_utc": iso(cutoff), "range_utc": [dq["timeframes"]["M5"]["first_utc"], dq["timeframes"]["M5"]["last_utc"]],
-                "m30_source": "BROKER_M30", "files_sha256": files, "account_server": getattr(acc, "server", None),
+                "m30_source": "BROKER_M30", "timeframes": list(timeframes), "spread_unit": "points (x spec.point = price)", "files_sha256": files, "account_server": getattr(acc, "server", None),
                 "exported_at_utc": iso(datetime.now(timezone.utc)), "versions": {"python": platform.python_version(),
                                                                                 "MetaTrader5": getattr(mt5, "__version__", None)}}
         (out / "source_metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -228,6 +228,16 @@ def main(argv=None) -> int:
     ec.add_argument("--months", type=int, default=12)
     ec.add_argument("--out")
     ec.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
+    es = sub.add_parser("export-scalp", help="eksport zamkniętych M1/M5/M15/M30/H1 XAUUSD- do profilu scalp (data/scalp/history)")
+    es.add_argument("--months", type=int, default=6)
+    es.add_argument("--out")
+    es.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
+    sr = sub.add_parser("scalp-replay", help="replay profilu scalp na wyeksportowanej historii M1 (OHLC, przybliżony – bez ticków)")
+    sr.add_argument("--history", help="katalog eksportu (domyślnie najnowszy w data/scalp/history)")
+    sr.add_argument("--commission-per-lot-side", type=float, required=True, help="prowizja za 1 lot na stronę w walucie konta (Zero ≠ 0 kosztów)")
+    sr.add_argument("--slippage-ticks", type=float, default=2.0)
+    sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
+    sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
     a = ap.parse_args(argv)
@@ -250,6 +260,12 @@ def main(argv=None) -> int:
     if a.cmd == "export-candles":
         from .forecast.export import export_candles
         return export_candles(a.months, a.out, a.dst_model)
+    if a.cmd == "export-scalp":
+        from .forecast.export import SCALP_TFS, export_candles
+        return export_candles(a.months, a.out, a.dst_model, SCALP_TFS, "scalp")
+    if a.cmd == "scalp-replay":
+        from .scalp.cli import replay_cmd
+        return replay_cmd(a)
     if a.cmd == "import-iv":
         return cmd_import_iv(a.file)
     return 1

@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.12.0 – scalp M5 Range → M1 Sweep/Reclaim → Retest + kontrolowany hedge + ML/NN (wszystko SHADOW)
+* Jeden automat **MQ-SCALP-RANGE-SWEEP-1.0.0-RESEARCH** (`backend/masterquo/scalp/`, profil z jednostkami `config/scalp_profile_v1.json`):
+  zamrożony zakres M5, sekcja M1 z `known_at`, sweep/reclaim z potwierdzeniem świecy i tick volume, retest ≤3 M1, limit pogoni (MISSED),
+  SL/TP1(MID)/TP2, filtr koszt/TP1 i ważonego RR netto, wielkość pozycji w dół do kroku lota, BUY/SELL lustrzane, dziennik stanów.
+* Wskaźniki BB SMA20 ±2σ (populacyjne) / %B / BandWidth / percentyl / nachylenie, Parabolic SAR 0.02/0.2, sesje z IANA DST,
+  własny silnik świec **SCI-1.0.0** (jeden dowód na rodzinę, ZERO_RANGE, przyczynowe statystyki z shrinkage).
+* Adaptery zewnętrzne ze statusami (IQ Gold Gann / FX Gann / Star Lines / Volatility Master / heatmapa: UNAVAILABLE; **PAL02M:
+  UNDOCUMENTED_EXTERNAL**) – bez fikcyjnych wartości; opcjonalny mostek plikowy dla licencjonowanego eksportu (UNVALIDATED).
+* Kontroler hedge (SHADOW): NETTING → REDUCE, 1 hedge ≤50% base, TTL 3 M1, osierocona noga, timeout → rekonsyliacja, P&L koszyka.
+* Replay z Bid/Ask, prowizją, poślizgiem, częściowym TP, konserwatywną kolejnością OHLC; porównanie HOLD/REDUCE/CLOSE/HEDGE_PARTIAL na tej samej ścieżce.
+* Serwis SHADOW w bocie: bramki AND (brak informacji = BLOCKED), zapis decyzji przed wynikiem (`scalp_shadow`, migracja 0012), rozliczenie
+  hipotetyczne, statusy CODE/DATA/MODEL/STRATEGY/HEDGE_VALID i EXECUTION_AUTHORIZED=false. API `/api/v1/scalp`, `/api/v1/scalp/shadow`.
+  Konfiguracja `scalp`: `mode=SHADOW`, `live_trading/ml_execution/hedge_execution` tylko `false`.
+* ML/NN w `.venv_candles`: kontrakt cech SCALP-FEAT-1.0.0, zadania A (1/3/5 min, martwa strefa kosztów), B (P(TP1 przed SL) z replayu),
+  C (polityki hedge); LR, HistGradientBoosting, **MLP 64/32** z early stopping na późniejszym fragmencie, kwantyle; plan przed treningiem,
+  walk-forward, kalibracja, holdout raz, rejestr z checksumami, inference w workerze (`scalp_forecast`).
+* Eksport M1/M5/M15/M30/H1 (`export-scalp`), replay CLI (`scalp-replay`), launchery 16–21. Monitor: Wykresy bota → sekcja Scalp (6 widoków).
+* **Trening i replay na danych rynkowych NIE wykonane – BLOCKED_NO_REAL_DATA.** Hedge vs REDUCE nieoceniony. Nic nie jest dopuszczone do wykonania.
+  Raport: `research/scalp/RAPORT_SCALP_HEDGE_ML_NN.md`, opis: `docs/SCALP_HEDGE_ML_NN_PL.md`.
+
 ## 1.11.0 – świece i prognozy 5/15/30 min (gold_candles, SHADOW) + Double Retest v2 (badawczo)
 * Moduł referencyjny `gold_candles` (MasterQUO_XAUUSD_CANDLES_FORECAST_v2) dołączony **bez zmian** (`backend/gold_candles/`, hashe zgodne z MANIFEST).
   Działa w izolowanym `.venv_candles` (numpy 2.3.5 / pandas 2.2.3 / scikit-learn 1.8.0) – środowisko bota bez zmian.

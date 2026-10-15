@@ -372,6 +372,21 @@ class ForecastConfig(_Strict):
     request_timeout_seconds: float = Field(30.0, ge=5, le=300)
 
 
+class ScalpConfig(_Strict):
+    """M5 Range -> M1 Sweep/Reclaim -> Retest research profile + hedge controller (1.12). SHADOW only: every execution
+    switch can only be false; the module records hypothetical decisions and never sends an order."""
+    enabled: bool = True
+    mode: Literal["SHADOW"] = "SHADOW"                # MODE
+    live_trading: Literal[False] = False              # LIVE_TRADING
+    ml_execution: Literal[False] = False              # ML_EXECUTION
+    hedge_execution: Literal[False] = False           # HEDGE_EXECUTION
+    m1_bars: int = Field(1500, ge=300, le=5000)
+    commission_per_lot_side: float | None = None      # account currency per 1 lot per side; None = UNKNOWN -> gate BLOCKED
+    slippage_ticks: float = Field(2.0, ge=0, le=100)
+    max_spread_price: float | None = None             # absolute cap in price units (None = only the cost/TP1 filter)
+    max_spread_atr_m1: float = Field(0.5, gt=0, le=5)
+
+
 class AppConfig(_Strict):
     config_version: int = 10
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -389,6 +404,7 @@ class AppConfig(_Strict):
     volatility: VolatilityConfig = Field(default_factory=VolatilityConfig)
     walls: WallsConfig = Field(default_factory=WallsConfig)
     forecast: ForecastConfig = Field(default_factory=ForecastConfig)
+    scalp: ScalpConfig = Field(default_factory=ScalpConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     first_run_completed: bool = False

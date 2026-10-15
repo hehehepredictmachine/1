@@ -58,6 +58,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, ml: { ...(s.ml || {}), ...d } };
     case "forecast":
       return { ...s, forecast: d };
+    case "scalp":
+      return { ...s, scalp: d };
     case "markets":
       return { ...s, markets: d };
     case "bot_signal": {

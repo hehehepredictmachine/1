@@ -372,7 +372,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008", "0009", "0010", "0011"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())

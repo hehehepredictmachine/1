@@ -1,0 +1,179 @@
+{
+  "data_kind": "SYNTHETIC_TEST",
+  "warning": "Przykład formatu z danych syntetycznych testu (tests/scalp/scenario.py) – NIE jest wynikiem rynkowym ani odczytem z Twojego MT5.",
+  "profile_id": "MQ-SCALP-RANGE-SWEEP-1.0.0-RESEARCH",
+  "profile_hash": "e1f8f5d57de041da",
+  "context_filter": "wyłączony w tym przykładzie (ablation)",
+  "costs": {
+    "commission_price_side": 0.035,
+    "slippage_price": 0.02,
+    "spread_price": 0.1
+  },
+  "cycle": {
+    "setup_id": "SET-fa78ec0b58",
+    "direction": "BUY",
+    "decision_time": "2026-03-03T06:13:00Z",
+    "range_id": "RNG-20ec841be2",
+    "fill_time": "2026-03-03T06:13:00Z",
+    "fill": 1997.9199999999998,
+    "sl": 1996.22,
+    "tp1": 2000.0,
+    "tp2": 2002.98,
+    "spread": 0.1,
+    "exits": [
+      {
+        "vol": 0.5,
+        "price": 1999.98,
+        "time": "2026-03-03T06:17:00Z",
+        "reason": "TP1"
+      },
+      {
+        "vol": 0.5,
+        "price": 2002.96,
+        "time": "2026-03-03T06:22:00Z",
+        "reason": "TP2"
+      }
+    ],
+    "net_price": 3.4800000000001816,
+    "risk_price": 1.8099999999998182,
+    "net_r": 1.922651933701951,
+    "tp1_before_sl": true,
+    "ambiguous": false,
+    "mfe_r": 2.955801104972748,
+    "mae_r": 0.08287292817672853,
+    "hold_min": 9.0,
+    "economics": {
+      "gross_tp1": 2.1800000000001547,
+      "cost_round_trip": 0.21000000000000002,
+      "risk_per_unit": 1.8099999999998182,
+      "weighted_net_rr": 1.9116022099450336,
+      "cost_to_tp1": 0.09633027522935098,
+      "targets_on_right_side": true,
+      "ok": true,
+      "reason": "OK"
+    },
+    "precision": "OHLC_APPROX",
+    "confirmation": "REJECTION"
+  },
+  "decision_points_task_C": [
+    {
+      "setup_id": "SET-fa78ec0b58",
+      "decision_time": "2026-03-03T06:14:00Z",
+      "k": 0,
+      "unrealized_r": 0.26519337016590816,
+      "values_r": {
+        "HOLD": 1.922651933701951,
+        "CLOSE": 0.21546961325983588,
+        "REDUCE": 1.0690607734808935,
+        "HEDGE_PARTIAL": 1.5331491712710579
+      },
+      "best": "HOLD",
+      "hedge_minus_reduce_r": 0.4640883977901645,
+      "label_end": "2026-03-03T06:43:00Z"
+    },
+    {
+      "setup_id": "SET-fa78ec0b58",
+      "decision_time": "2026-03-03T06:15:00Z",
+      "k": 1,
+      "unrealized_r": 0.5966850828730735,
+      "values_r": {
+        "HOLD": 1.922651933701951,
+        "CLOSE": 0.5469613259670012,
+        "REDUCE": 1.234806629834476,
+        "HEDGE_PARTIAL": 1.533149171270995
+      },
+      "best": "HOLD",
+      "hedge_minus_reduce_r": 0.2983425414365191,
+      "label_end": "2026-03-03T06:43:00Z"
+    },
+    {
+      "setup_id": "SET-fa78ec0b58",
+      "decision_time": "2026-03-03T06:16:00Z",
+      "k": 2,
+      "unrealized_r": 0.9281767955802389,
+      "values_r": {
+        "HOLD": 1.922651933701951,
+        "CLOSE": 0.8784530386741666,
+        "REDUCE": 1.4005524861880587,
+        "HEDGE_PARTIAL": 1.533149171270995
+      },
+      "best": "HOLD",
+      "hedge_minus_reduce_r": 0.13259668508293643,
+      "label_end": "2026-03-03T06:43:00Z"
+    }
+  ],
+  "journal_tail": [
+    {
+      "t": "2026-03-03T06:05:00Z",
+      "state": "RANGE_ARMED",
+      "reason": "zakres zamrożony",
+      "range_id": "RNG-20ec841be2",
+      "L": 1996.92,
+      "H": 2003.08,
+      "MID": 2000.0,
+      "W": 6.1599999999998545,
+      "atr_m5": 2.195112487294653
+    },
+    {
+      "t": "2026-03-03T06:05:00Z",
+      "state": "WAIT_SWEEP",
+      "reason": "czekam na sweep i reclaim",
+      "range_id": "RNG-20ec841be2",
+      "direction": "BUY"
+    },
+    {
+      "t": "2026-03-03T06:05:00Z",
+      "state": "WAIT_SWEEP",
+      "reason": "czekam na sweep i reclaim",
+      "range_id": "RNG-20ec841be2",
+      "direction": "SELL"
+    },
+    {
+      "t": "2026-03-03T06:12:00Z",
+      "state": "WAIT_RETEST",
+      "reason": "sweep + reclaim potwierdzony – czekam na retest",
+      "range_id": "RNG-20ec841be2",
+      "direction": "BUY",
+      "bar": "2026-03-03T06:11:00Z",
+      "eps": 0.038575990786610566,
+      "confirmation": {
+        "family": "REJECTION",
+        "direction": "LONG",
+        "members": [
+          "PIN_BAR_BULL",
+          "HAMMER",
+          "REJECTION_BULL"
+        ],
+        "score": 0.9870967741935598
+      },
+      "tv_ratio": 4.0
+    },
+    {
+      "t": "2026-03-03T06:13:00Z",
+      "state": "ENTRY_CANDIDATE",
+      "reason": "kandydat wejścia – czekam na świeże kwotowanie i bramki",
+      "range_id": "RNG-20ec841be2",
+      "direction": "BUY",
+      "setup_id": "SET-fa78ec0b58"
+    },
+    {
+      "t": "2026-03-03T06:22:00Z",
+      "state": "COOLDOWN",
+      "reason": "cykl zakończony (replay)",
+      "range_id": "RNG-20ec841be2",
+      "direction": "BUY"
+    },
+    {
+      "t": "2026-03-03T06:24:00Z",
+      "state": "INVALIDATED",
+      "reason": "dwa kolejne zamknięcia M1 poza zakresem ± 0.25 ATR",
+      "range_id": "RNG-20ec841be2"
+    },
+    {
+      "t": "2026-03-03T06:25:00Z",
+      "state": "SEARCH_RANGE",
+      "reason": "dotknięcia L/H 1/1 < 2 (z separacją 2 M5)",
+      "range_id": null
+    }
+  ]
+}
