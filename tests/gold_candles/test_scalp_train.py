@@ -150,5 +150,62 @@ class ScalpTrain(unittest.TestCase):
         self.assertEqual(st["status"], "BLOCKED_NO_REAL_DATA")
 
 
+class SetupQualityFilter(unittest.TestCase):
+    """Task B as a filter on fabricated cycles (SYNTHETIC: one feature carries signal) - walk-forward choice, calibration,
+    threshold chosen on calibration by expectancy, holdout once with vs without the filter, artifact read by the worker path."""
+
+    def cycles(self, n, seed, t0):
+        from masterquo.scalp.strategy import SETUP_FEATURES
+        rng = np.random.default_rng(seed)
+        out = []
+        for k in range(n):
+            f = {x: float(rng.normal()) for x in SETUP_FEATURES}
+            good = rng.random() < 1 / (1 + np.exp(-2.5 * f["sweep_depth_atr5"]))
+            day = t0 + (k * 86400 * 60) // n
+            tt = datetime.fromtimestamp(day, tz=__import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            out.append({"features": f, "tp1_before_sl": bool(good), "net_r": 1.2 if good else -1.0, "fill_time": tt,
+                        "exits": [{"time": tt}], "ambiguous": False, "hold_min": 10, "direction": "BUY"})
+        return out
+
+    def test_filter_trained_calibrated_and_loadable(self):
+        from gold_candles_runtime import scalp_train as T
+        from gold_candles_runtime.scalp_infer import SetupModel
+        rd = Path(tempfile.mkdtemp(prefix="mq_setupq_"))
+        dev, cal, hold = self.cycles(600, 1, 1767225600), self.cycles(200, 2, 1767225600 + 70 * 86400), self.cycles(300, 3, 1767225600 + 140 * 86400)
+        logs = []
+        B, spec, arts = T.train_setup_model(dev, cal, hold, T.MIN, lambda *a, **k: logs.append(a), rd)
+        self.assertIn(B["selected"], ("LR", "HGB"))                                            # MLP needs >= 1000 dev cycles
+        self.assertNotIn("MLP", B["walk_forward_log_loss"])
+        self.assertIsNotNone(B["threshold"])
+        hu, hf = B["holdout_unfiltered"], B["holdout_filtered"]
+        self.assertGreater(hf["win_rate"], hu["win_rate"])                                     # the informative feature raises win rate
+        self.assertGreater(hf["expectancy_r"], hu["expectancy_r"])
+        self.assertLess(hf["cycles"], hu["cycles"])                                            # ... by trading less
+        self.assertEqual(B["status"], "FILTER_HELPS_IN_HOLDOUT")
+        entry = {"run_dir": str(rd), "artifacts": arts, "setup_model": spec}
+        m = SetupModel(entry)
+        X = np.asarray([[c["features"][k] for k in spec["features"]] for c in hold[:5]])
+        p = m.predict(X)
+        self.assertTrue(np.all((p > 0) & (p < 1)))
+        hi = dict(hold[0]["features"], sweep_depth_atr5=3.0)
+        lo = dict(hold[0]["features"], sweep_depth_atr5=-3.0)
+        ph, pl_ = m.predict(np.asarray([[hi[k] for k in spec["features"]], [lo[k] for k in spec["features"]]]))
+        self.assertGreater(ph, pl_)
+
+    def test_too_few_cycles_is_insufficient(self):
+        from gold_candles_runtime import scalp_train as T
+        B, spec, arts = T.train_setup_model(self.cycles(50, 1, 1767225600), self.cycles(20, 2, 1767225600), self.cycles(20, 3, 1767225600),
+                                            T.MIN, lambda *a, **k: None, None)
+        self.assertEqual(B["status"], "INSUFFICIENT_DATA")
+        self.assertIsNone(spec)
+
+    def test_noise_feature_gives_no_filter(self):
+        from gold_candles_runtime import scalp_train as T
+        cyc = lambda n, seed, t0: [dict(c, tp1_before_sl=bool(i % 2), net_r=1.0 if i % 2 else -1.0) for i, c in enumerate(self.cycles(n, seed, t0))]  # noqa: E731
+        B, spec, _ = T.train_setup_model(cyc(600, 4, 1767225600), cyc(200, 5, 1767225600 + 70 * 86400), cyc(300, 6, 1767225600 + 140 * 86400),
+                                         T.MIN, lambda *a, **k: None, None)
+        self.assertIn(B["status"], ("REJECTED", "NO_USEFUL_THRESHOLD", "FILTER_NOT_HELPING_IN_HOLDOUT"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,12 @@
   C (polityki hedge); LR, HistGradientBoosting, **MLP 64/32** z early stopping na późniejszym fragmencie, kwantyle; plan przed treningiem,
   walk-forward, kalibracja, holdout raz, rejestr z checksumami, inference w workerze (`scalp_forecast`).
 * Eksport M1/M5/M15/M30/H1 (`export-scalp`), replay CLI (`scalp-replay`), launchery 16–21. Monitor: Wykresy bota → sekcja Scalp (6 widoków).
+* **Warianty poprawy win ratio (profil 1.1.0)**: filtry jakości (tick volume, głębokość sweepu, rodziny świec), filtr sesji (godziny UTC,
+  po otwarciu Londynu/NY), tryb trendu BOTH/ANY/ANY_PLUS_H1 (H1 dodane do kontekstu), jakość zakresu, close retestu przy krawędzi, wejście
+  LIMIT_EDGE, BE + koszty po TP1, wyjście bez postępu, filtr modelu B (P(TP1 przed SL), cechy setupu, LR/HGB/MLP, kalibracja, próg z development).
+  Domyślnie zachowanie 1.0.0; `scalp-replay --variants` (i `19_REPLAY_SCALP.bat`) porównuje 15 wariantów: win ratio i expectancy obok siebie,
+  wybór po expectancy w development, test raz, stres kosztów +50%. Monitor: tabela wariantów, filtr B, win ratio. Wynik hipotetyczny SHADOW
+  w monitorze liczony teraz po prowizji i poślizgu.
 * Domyślna prowizja w paczce: **0.50 za 1 lot na stronę** (`scalp.commission_per_lot_side`; launchery 17/19 działają dwuklikiem, argument nadpisuje).
 * **Trening i replay na danych rynkowych NIE wykonane – BLOCKED_NO_REAL_DATA.** Hedge vs REDUCE nieoceniony. Nic nie jest dopuszczone do wykonania.
   Raport: `research/scalp/RAPORT_SCALP_HEDGE_ML_NN.md`, opis: `docs/SCALP_HEDGE_ML_NN_PL.md`.

@@ -41,6 +41,8 @@ def strategy_summary(cycles: list[dict], risk_pct: float = 0.25) -> dict:
     ci = _block_ci(by_day, lambda xs: sum(xs) / len(xs))
     out = {"cycles": n, "days": len(by_day), "net_r_total": round(sum(rs), 3), "expectancy_r": round(exp, 4), "expectancy_ci95_day_block": ci,
            "profit_factor": round(wins / losses, 3) if losses else None, "max_dd_r": round(dd, 3), "max_dd_pct_at_risk": round(dd * risk_pct, 3),
+           "win_rate": round(sum(1 for r in rs if r > 0) / n, 3), "avg_win_r": round(wins / max(1, sum(1 for r in rs if r > 0)), 3),
+           "avg_loss_r": round(-losses / max(1, sum(1 for r in rs if r < 0)), 3),
            "tp1_before_sl_share": round(sum(1 for c in cycles if c["tp1_before_sl"]) / n, 3),
            "ambiguous_share": round(sum(1 for c in cycles if c["ambiguous"]) / n, 3),
            "avg_hold_min": round(sum(c["hold_min"] or 0 for c in cycles) / n, 2), "worst_r": round(min(rs), 3),

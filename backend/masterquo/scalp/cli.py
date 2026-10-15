@@ -51,9 +51,26 @@ def replay_cmd(a) -> int:
         return 2
     k = a.cost_stress
     costs = {"commission_price_side": k * a.commission_per_lot_side / cs, "slippage_price": k * a.slippage_ticks * tick}
-    res = replay.run(bars["M1"], prof, tick, costs, bars.get("M5"), bars.get("M15"), bars.get("M30"), margin_mode=a.margin_mode)
     out = paths.data_dir() / "scalp" / "replay" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out.mkdir(parents=True, exist_ok=True)
+    h1 = load_csv(hist / "XAUUSD_H1.csv", point) if (hist / "XAUUSD_H1.csv").exists() else None
+    if getattr(a, "variants", False):
+        vdef = json.loads((st.PROFILE_PATH.parent / "scalp_variants_v1.json").read_text(encoding="utf-8"))
+        cmp_ = replay.compare_variants(bars["M1"], prof, vdef["variants"], tick, costs, bars.get("M5"), bars.get("M15"), bars.get("M30"), h1)
+        cmp_.update(data_kind=meta.get("data_kind"), history=str(hist), profile_id=prof["profile_id"], selection=vdef["selection"],
+                    costs={"commission_per_lot_side": a.commission_per_lot_side, "slippage_ticks": a.slippage_ticks}, seconds=round(time.time() - t0, 1),
+                    command=" ".join(sys.argv), python=sys.executable)
+        (out / "variants.json").write_text(json.dumps(cmp_, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"{'wariant':<15}{'dev cykle':>10}{'dev win%':>10}{'dev E[R]':>10}{'test cykle':>11}{'test win%':>10}{'test E[R]':>10}")
+        for r in cmp_["rows"]:
+            dv, ts_ = r["development"], r["test"]
+            f = lambda x, k, m=1: "—" if x.get(k) is None else f"{x[k] * m:.2f}"  # noqa: E731
+            print(f"{r['id']:<15}{dv['cycles']:>10}{f(dv, 'win_rate', 100):>10}{f(dv, 'expectancy_r'):>10}{ts_['cycles']:>11}"
+                  f"{f(ts_, 'win_rate', 100):>10}{f(ts_, 'expectancy_r'):>10}")
+        print(f"Wybrany (development): {cmp_['chosen'] or 'brak'} – {cmp_['chosen_reason']}")
+        print(f"Zapisano: {out / 'variants.json'}")
+        return 0
+    res = replay.run(bars["M1"], prof, tick, costs, bars.get("M5"), bars.get("M15"), bars.get("M30"), margin_mode=a.margin_mode, h1=h1)
     summ = {"data_kind": meta.get("data_kind"), "history": str(hist), "profile_id": prof["profile_id"], "profile_hash": st.profile_hash(prof),
             "costs": {"commission_per_lot_side": a.commission_per_lot_side, "slippage_ticks": a.slippage_ticks, "cost_stress": k,
                       "spread": "per-bar spread z eksportu MT5 (punkty × point)"},

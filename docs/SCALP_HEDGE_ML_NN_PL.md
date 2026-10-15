@@ -31,6 +31,33 @@ Profil badawczy: `config/scalp_profile_v1.json`, `MQ-SCALP-RANGE-SWEEP-1.0.0-RES
 - `python -m gold_candles_runtime.scalp_train`
 - `python -m gold_candles_runtime.scalp_registry {list|validate|activate|rollback|deactivate}`
 
+## Warianty poprawy win ratio (profil 1.1.0, `config/scalp_variants_v1.json`)
+
+Wszystkie przełączniki są w profilu. **Wartości domyślne zachowują się jak 1.0.0.** Żaden wariant nie jest włączony „na ślepo”: `19_REPLAY_SCALP.bat`
+porównuje je na Twojej historii (te same dane i koszty), wybiera po **expectancy R po kosztach** w okresie development (pierwsze 80% czasu,
+min. 30 cykli) i raz pokazuje wynik na teście (ostatnie 20%) oraz przy kosztach +50%. Win ratio jest pokazane obok – nie decyduje.
+
+| # | Przełącznik | Działanie | Wariant w porównaniu |
+|---|---|---|---|
+| 1 | `trigger.tick_volume_ratio_min`, `trigger.min_sweep_depth_atr_m5`, `trigger.allowed_confirmation_families` | silniejszy tick volume, głębszy sweep, tylko wybrane rodziny świec | V1_TV15, V1_DEPTH, V1_REJ |
+| 2 | `session_filter.allowed_utc_hours`, `session_filter.block_after_open_min` | dozwolone godziny UTC; brak wejść N min po otwarciu Londynu/NY (IANA DST) | V2_SESS, V2_ASIA_LATE |
+| 3 | `context_filter.mode` = BOTH / ANY / ANY_PLUS_H1 | blokada fade przy trendzie na obu / jednym TF / także H1 | V3_ANY, V3_H1 |
+| 4 | `range.touch_min_per_edge`, `range.er10_max` | lepszej jakości zakres | V4_TOUCH3, V4_ER25 |
+| 5 | `trigger.retest_close_max_atr_m1`, `entry.mode` = MARKET / LIMIT_EDGE | close retestu blisko krawędzi; zlecenie limit na krawędzi strefy (czeka `limit_wait_m1`, potem MISSED) | V5_CLOSE, V5_LIMIT |
+| 6 | `exits.be_after_tp1` = NONE / COST_ADJUSTED, `exits.early_exit_m1` + `early_exit_min_mfe_r` | SL na wejście + koszty po TP1; wyjście po N M1 bez postępu | V6_BE, V6_EARLY |
+| 7 | `ml_filter.enabled` | bramka modelu B: P(TP1 przed SL) ≥ próg wybrany w development | trening `17_TRENING_SCALP_ML.bat` |
+
+Grupa COMBO_QUALITY sprawdza filtry 1+3+4 razem. Wiele wariantów zwiększa ryzyko przypadkowego zwycięzcy – stąd jeden zamrożony wybór
+w development i jednorazowy test. Po wyborze ustaw przełączniki zwycięzcy w `config/scalp_profile_v1.json` (to nowa wersja profilu).
+
+**Filtr modelu B (punkt 7).** Cechy setupu w chwili decyzji (`strategy.setup_features`, 25 cech znormalizowanych kierunkiem: głębokość sweepu,
+szerokość zakresu i strefy, ER, dotknięcia, rodzina i siła potwierdzenia, tick volume, odległość retestu, ryzyko i TP1 w ATR, spread, %B M5,
+SAR M15/M30/H1, nachylenie M30, BandWidth M15, czas od uzbrojenia, odległość od poziomu 5 USD, godzina) – te same w replayu, treningu i monitorze.
+Trening: walk-forward LR / HistGradientBoosting / MLP 64/32 (MLP od 1000 cykli development), kalibracja Platta na późniejszych cyklach,
+próg wybrany na kalibracji po średnim R zostawionych setupów (musi być lepszy niż „bez filtra” i zostawić ≥30%), holdout raz: bez filtra vs z filtrem.
+Minimum: 300 cykli development i 100 w holdout – inaczej INSUFFICIENT_DATA i filtr wyłączony. Monitor pokazuje P(TP1 przed SL) przy każdym
+kandydacie; bramka działa dopiero po `"ml_filter": {"enabled": {"value": true}}` w profilu (nadal SHADOW).
+
 ## Strategia (dokładnie tak, jak w kodzie `backend/masterquo/scalp/strategy.py`)
 
 **Zakres M5.** Na zamknięciu M5 analizowanych jest 12 ostatnich kompletnych M5:

@@ -34,7 +34,7 @@ from .scalp_infer import ScalpModel, activatable, calib_to_json, lr_to_json, mlp
 EMBARGO_S = 30 * 60
 MIN = {"A_dev_rows": 5000, "A_cal_rows": 1000, "A_hold_rows": 1000, "A_class_min": 100,
        "MLP_train_rows": 10000, "MLP_train_days": 30, "MLP_class_min": 100,
-       "B_cycles_dev": 300, "B_cycles_hold": 100, "C_cycles": 200, "holdout_days": 30}
+       "B_cycles_dev": 300, "B_cycles_hold": 100, "B_MLP_cycles": 1000, "C_cycles": 200, "holdout_days": 30}
 CRITERIA = {"holdout_days_min": 30, "log_loss_better_than_baseline": True, "brier_better_than_baseline": True, "per_class_ece_max": 0.10}
 CANDIDATES = ("LR", "HGB", "MLP")
 SEED = 0
@@ -382,7 +382,8 @@ def main(argv=None) -> int:
         spec["_check"] = {"X": Xh[:50].tolist()}
 
     # ---- tasks B and C from the full-policy replay
-    report["task_B"], report["task_C"] = task_bc(d, plan, costs, log, X, mins)
+    report["task_B"], report["task_C"], setup_spec, setup_arts = task_bc(d, plan, costs, log, X, mins, rd)
+    artifacts.update(setup_arts)
     a_status = [r.get("status") for r in report["task_A"].values()]
     overall = ("INSUFFICIENT_DATA" if all(s == "INSUFFICIENT_DATA" for s in a_status) else "TRAINED_SHADOW" if all(s == "SHADOW_VALIDATED" for s in a_status)
                else "PARTIAL_VALIDATION" if any(s == "SHADOW_VALIDATED" for s in a_status) else "SHADOW_UNVALIDATED" if any(s == "SHADOW_UNVALIDATED" for s in a_status)
@@ -392,7 +393,8 @@ def main(argv=None) -> int:
              "dataset_sha256": d["dataset_sha"], "knowledge_cutoff_utc": d["meta"].get("cutoff_utc"), "boundaries_utc": plan["boundaries_utc"],
              "code": code_fingerprint(), "versions": versions(), "task_a_status": overall, "horizon_status": {k: v["status"] for k, v in report["task_A"].items()},
              "task_b_status": report["task_B"]["status"], "task_c_status": report["task_C"]["status"], "artifacts": artifacts,
-             "models": {k: {x: y for x, y in v.items() if x != "_check"} for k, v in models_spec.items()}, "small_test": a.small_test}
+             "models": {k: {x: y for x, y in v.items() if x != "_check"} for k, v in models_spec.items()}, "small_test": a.small_test,
+             "setup_model": setup_spec}
     if models_spec:
         sm = ScalpModel(entry)
         diffs = {}
@@ -423,7 +425,7 @@ def main(argv=None) -> int:
     return 0
 
 
-def task_bc(d: dict, plan: dict, costs: dict, log, X: np.ndarray, mins: dict) -> tuple[dict, dict]:
+def task_bc(d: dict, plan: dict, costs: dict, log, X: np.ndarray, mins: dict, rd: Path | None = None):
     from masterquo.scalp import replay, report as srep, strategy as st
     prof = st.load_profile()
     bars = [{"open_utc": _iso(t), "o": o, "h": h, "l": l, "c": c, "tv": tv, "spread_price": sp}
@@ -435,31 +437,10 @@ def task_bc(d: dict, plan: dict, costs: dict, log, X: np.ndarray, mins: dict) ->
     cal0, hold0 = _ts(b["calibration"][0]), _ts(b["holdout"][0])
     cyc = res["cycles"]
     dev = [c for c in cyc if _ts(c["exits"][-1]["time"]) <= cal0 - EMBARGO_S]
+    cal = [c for c in cyc if _ts(c["fill_time"]) >= cal0 and _ts(c["exits"][-1]["time"]) <= hold0 - EMBARGO_S]
     hold = [c for c in cyc if _ts(c["fill_time"]) >= hold0]
-    B = {"cycles": {"all": len(cyc), "development": len(dev), "holdout": len(hold)}, "dev_summary": srep.strategy_summary(dev),
-         "holdout_summary": srep.strategy_summary(hold), "precision": res["precision"]}
-    if len(dev) < mins["B_cycles_dev"] or len(hold) < mins["B_cycles_hold"]:
-        B.update(status="INSUFFICIENT_DATA", reason=f"niezależne cykle dev {len(dev)} (min {mins['B_cycles_dev']}), holdout {len(hold)} (min {mins['B_cycles_hold']})")
-    else:
-        idx = {t: i for i, t in enumerate(d["t"])}
-        def xy(cs):
-            rows = [(idx.get(_ts(c["decision_time"]) - 60), 1 if c["tp1_before_sl"] else 0) for c in cs]
-            rows = [(i, y) for i, y in rows if i is not None and not np.isnan(X[i]).any()]
-            return X[[i for i, _ in rows]], np.asarray([y for _, y in rows])
-        Xd, yd = xy(dev)
-        Xh, yh = xy(hold)
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
-        if len(np.unique(yd)) < 2:
-            B.update(status="INSUFFICIENT_DATA", reason="jedna klasa TP1/SL w development")
-        else:
-            sc = StandardScaler().fit(Xd)
-            m = LogisticRegression(C=0.5, max_iter=1000).fit(sc.transform(Xd), yd)
-            p = m.predict_proba(sc.transform(Xh))[:, 1]
-            base = yd.mean()
-            br, brb = float(((p - yh) ** 2).mean()), float(((base - yh) ** 2).mean())
-            B.update(status="SHADOW_UNVALIDATED" if br < brb else "REJECTED", model="LR P(TP1 before SL)", holdout_brier=round(br, 5),
-                     holdout_brier_baseline=round(brb, 5), note="bramka setupu pozostaje w SHADOW; promocja wymaga przyrostowej korzyści strategii")
+    B, spec, arts = train_setup_model(dev, cal, hold, mins, log, rd)
+    B["precision"] = res["precision"]
     hs_dev = srep.hedge_summary([x for x in res["decisions"] if _ts(x["decision_time"]) < cal0])
     hs_hold = srep.hedge_summary([x for x in res["decisions"] if _ts(x["decision_time"]) >= hold0])
     C = {"policy_eval_development": hs_dev, "policy_eval_holdout": hs_hold, "margin_mode_assumed": res["margin_mode_assumed"]}
@@ -467,7 +448,135 @@ def task_bc(d: dict, plan: dict, costs: dict, log, X: np.ndarray, mins: dict) ->
         C.update(status="INSUFFICIENT_DATA", reason=f"cykle z punktami decyzji w holdout {hs_hold.get('cycles', 0)} < {mins['C_cycles']} – hedge pozostaje SHADOW/REDUCE")
     else:
         C.update(status="HEDGE_BETTER_THAN_REDUCE_SHADOW" if hs_hold["status"] == "HEDGE_BETTER_THAN_REDUCE" else "HEDGE_NOT_BETTER_THAN_REDUCE")
-    return B, C
+    return B, C, spec, arts
+
+
+def _xy(cycles: list[dict], feats: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ok = [c for c in cycles if c.get("features") and all(c["features"].get(k) is not None for k in feats)]
+    X = np.asarray([[float(c["features"][k]) for k in feats] for c in ok]) if ok else np.zeros((0, len(feats)))
+    y = np.asarray([1 if c["tp1_before_sl"] else 0 for c in ok], dtype=int)
+    r = np.asarray([c["net_r"] for c in ok], dtype=float)
+    return X, y, r
+
+
+def _fit_bin(kind: str, X, y):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    if kind == "LR":
+        sc = StandardScaler().fit(X)
+        return ("LR", sc, LogisticRegression(C=0.5, max_iter=2000).fit(sc.transform(X), y))
+    if kind == "HGB":
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        return ("HGB", None, HistGradientBoostingClassifier(max_iter=100, learning_rate=0.05, max_leaf_nodes=15, min_samples_leaf=20,
+                                                           l2_regularization=1.0, early_stopping=False, random_state=SEED).fit(X, y))
+    from sklearn.neural_network import MLPClassifier
+    sc = StandardScaler().fit(X)
+    return ("MLP", sc, MLPClassifier(hidden_layer_sizes=(64, 32), alpha=1e-2, learning_rate_init=1e-3, max_iter=300, random_state=SEED,
+                                     early_stopping=False).fit(sc.transform(X), y))
+
+
+def _p1(model, X):
+    kind, sc, clf = model
+    P = clf.predict_proba(sc.transform(X) if sc is not None else X)
+    return P[:, list(clf.classes_).index(1)]
+
+
+def _bin_ll(p, y):
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    return float(-(y * np.log(p) + (1 - y) * np.log(1 - p)).mean())
+
+
+def train_setup_model(dev: list[dict], cal: list[dict], hold: list[dict], mins: dict, log, rd: Path | None):
+    """Task B as a FILTER: P(TP1 before SL) per setup (decision-time features of masterquo.scalp.strategy.setup_features).
+    Model chosen by walk-forward log loss inside development (cycles in time order), Platt calibration and the threshold
+    chosen on the later calibration cycles by mean net R of the retained setups (must beat 'no filter' and keep >= 30%),
+    holdout evaluated once: strategy without vs with the filter (win rate, expectancy R, 95% CI by day blocks)."""
+    from masterquo.scalp import report as srep
+    from masterquo.scalp.strategy import SETUP_FEATURES
+    feats = SETUP_FEATURES
+    B = {"cycles": {"development": len(dev), "calibration": len(cal), "holdout": len(hold)}, "features": list(feats),
+         "dev_summary": srep.strategy_summary(dev), "holdout_unfiltered": srep.strategy_summary(hold)}
+    Xd, yd, rdv = _xy(sorted(dev, key=lambda c: c["fill_time"]), feats)
+    Xc, yc, rc = _xy(cal, feats)
+    Xh, yh, rh = _xy(hold, feats)
+    if len(yd) < mins["B_cycles_dev"] or len(yh) < mins["B_cycles_hold"] or len(yc) < max(20, mins["B_cycles_hold"] // 2):
+        B.update(status="INSUFFICIENT_DATA", reason=f"cykle z cechami: dev {len(yd)} (min {mins['B_cycles_dev']}), kalibracja {len(yc)}, "
+                                                     f"holdout {len(yh)} (min {mins['B_cycles_hold']}) – filtr pozostaje wyłączony")
+        log("B", B["reason"])
+        return B, None, {}
+    if len(np.unique(yd)) < 2 or len(np.unique(yc)) < 2:
+        B.update(status="INSUFFICIENT_DATA", reason="jedna klasa TP1/SL w development lub kalibracji")
+        return B, None, {}
+    cands = ["LR", "HGB"] + (["MLP"] if len(yd) >= mins.get("B_MLP_cycles", 1000) else [])
+    n = len(yd)
+    wf = {k: [] for k in ["BASELINE"] + cands}
+    for k in range(4):
+        a, b = int(n * (k + 1) / 5), int(n * (k + 2) / 5)
+        if a < 30 or b - a < 10 or len(np.unique(yd[:a])) < 2:
+            continue
+        wf["BASELINE"].append(_bin_ll(np.full(b - a, yd[:a].mean()), yd[a:b]))
+        for c in cands:
+            wf[c].append(_bin_ll(_p1(_fit_bin(c, Xd[:a], yd[:a]), Xd[a:b]), yd[a:b]))
+    wfm = {k: (round(float(np.mean(v)), 5) if v else None) for k, v in wf.items()}
+    ok = {k: v for k, v in wfm.items() if k != "BASELINE" and v is not None}
+    sel = min(ok, key=ok.get) if ok else "BASELINE"
+    if wfm["BASELINE"] is not None and sel != "BASELINE" and ok[sel] >= wfm["BASELINE"]:
+        sel = "BASELINE"
+    log("B", f"walk-forward {wfm} → {sel} ({'MLP pominięty – za mało cykli' if 'MLP' not in cands else 'MLP w porównaniu'})")
+    prior = float(yd.mean())
+    if sel == "BASELINE":
+        B.update(status="REJECTED", reason="żaden model nie pobił częstości bazowej w walk-forward", walk_forward_log_loss=wfm)
+        return B, None, {}
+    model = _fit_bin(sel, Xd, yd)
+    from sklearn.linear_model import LogisticRegression
+    pc_raw = _p1(model, Xc)
+    lg = lambda p: np.log(np.clip(p, 1e-6, 1 - 1e-6) / np.clip(1 - p, 1e-6, 1))  # noqa: E731
+    pl = LogisticRegression(C=1e6, max_iter=1000).fit(lg(pc_raw).reshape(-1, 1), yc)
+    calib = {"a": float(pl.coef_[0][0]), "b": float(pl.intercept_[0])}
+    from .scalp_infer import platt
+    pc = platt(calib, pc_raw)
+    base_mean = float(rc.mean())
+    best, grid = None, []
+    for thr in np.round(np.arange(0.30, 0.81, 0.05), 2):
+        m = pc >= thr
+        if m.sum() < max(10, int(0.3 * len(rc))):
+            continue
+        e = float(rc[m].mean())
+        grid.append({"threshold": float(thr), "kept": int(m.sum()), "win_rate": round(float((rc[m] > 0).mean()), 3), "expectancy_r": round(e, 4)})
+        if e > base_mean and (best is None or e > best["expectancy_r"]):
+            best = grid[-1]
+    thr = best["threshold"] if best else None
+    ph = platt(calib, _p1(model, Xh))
+    br, brb = float(((ph - yh) ** 2).mean()), float(((prior - yh) ** 2).mean())
+    hold_sorted = [c for c in hold if c.get("features") and all(c["features"].get(k) is not None for k in feats)]
+    kept = [c for c, p in zip(hold_sorted, ph) if thr is not None and p >= thr]
+    B.update(selected=sel, walk_forward_log_loss=wfm, calibrator=calib, threshold_grid_calibration=grid, threshold=thr,
+             calibration_unfiltered_expectancy_r=round(base_mean, 4),
+             holdout={"brier": round(br, 5), "brier_baseline": round(brb, 5), "log_loss": round(_bin_ll(ph, yh), 5),
+                      "log_loss_baseline": round(_bin_ll(np.full(len(yh), prior), yh), 5)},
+             holdout_filtered=srep.strategy_summary(kept) if thr is not None else None)
+    if br >= brb:
+        st_ = "REJECTED"
+    elif thr is None:
+        st_ = "NO_USEFUL_THRESHOLD"
+    else:
+        hf, hu = B["holdout_filtered"], B["holdout_unfiltered"]
+        st_ = "FILTER_HELPS_IN_HOLDOUT" if hf["cycles"] and hf.get("expectancy_r", -9) > hu.get("expectancy_r", 9) else "FILTER_NOT_HELPING_IN_HOLDOUT"
+    B.update(status=st_, note="filtr w SHADOW; włączenie bramki (ml_filter.enabled) wymaga dodatniego wyniku w holdout i bramki badawczej strategii")
+    log("B", f"{st_}: wybór {sel}, próg {thr}, holdout Brier {br:.4f} vs {brb:.4f}")
+    spec, arts = None, {}
+    if rd is not None and thr is not None and st_ != "REJECTED":
+        from .scalp_infer import lr_to_json, mlp_to_json
+        if sel in ("LR", "MLP"):
+            f = f"setup_model_{sel}.json"
+            write_json_atomic(rd / f, lr_to_json(model[1], model[2]) if sel == "LR" else mlp_to_json(model[1], model[2]))
+        else:
+            f = "setup_model_HGB.pkl"
+            with open(rd / f, "wb") as fh:
+                pickle.dump(model[2], fh)
+        arts[f] = sha256_file(rd / f)
+        spec = {"selected": sel, "file": f, "calibrator": calib, "threshold": thr, "features": list(feats), "prior": prior, "status": st_}
+    return B, spec, arts
 
 
 if __name__ == "__main__":

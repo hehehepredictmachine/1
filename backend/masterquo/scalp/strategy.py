@@ -35,11 +35,31 @@ def profile_hash(p: dict) -> str:
     return hashlib.sha256(json.dumps(p, sort_keys=True).encode()).hexdigest()[:16]
 
 
-def V(p: dict, *keys):
+def V(p: dict, *keys, default=None):
     x = p
     for k in keys:
+        if not isinstance(x, dict) or k not in x:
+            return default                              # older profile without this switch -> documented default (feature off)
         x = x[k]
     return x["value"] if isinstance(x, dict) and "value" in x else x
+
+
+def with_overrides(p: dict, overrides: dict) -> dict:
+    """Copy of a profile with dotted-path overrides ({"trigger.tick_volume_ratio_min": 1.5}) - variant comparison."""
+    import copy
+    q = copy.deepcopy(p)
+    for path, val in overrides.items():
+        node = q
+        keys = path.split(".")
+        for k in keys[:-1]:
+            node = node.setdefault(k, {})
+        leaf = node.get(keys[-1])
+        if isinstance(leaf, dict) and "value" in leaf:
+            leaf["value"] = val
+        else:
+            node[keys[-1]] = {"value": val, "unit": "variant override"}
+    q["profile_id"] = p["profile_id"] + "+" + ",".join(f"{k}={v}" for k, v in sorted(overrides.items())) if overrides else p["profile_id"]
+    return q
 
 
 def ts(s) -> int:
@@ -119,16 +139,48 @@ def context(series: Series, prof: dict) -> dict:
 
 
 def fade_blocked(ctx: dict[str, dict], direction: str, prof: dict) -> tuple[bool | None, str]:
-    """Initial variant: block a fade only if BOTH M30 and M15 show a strong trend against it (SAR + slope + wide bands)."""
+    """Block a fade when the context TFs show a strong trend against it (SAR + slope + wide bands).
+    mode BOTH (1.0.0 default): M30 AND M15; ANY: M30 OR M15; ANY_PLUS_H1: M30 OR M15 OR H1."""
     if not V(prof, "context_filter", "enabled"):
         return False, "filtr kontekstu wyłączony (ablation)"
-    if any(x.get("status") != "OK" for x in ctx.values()):
-        return None, "WARMUP kontekstu M30/M15"
+    mode = V(prof, "context_filter", "mode", default="BOTH")
+    use = {k: v for k, v in ctx.items() if k in (("M30", "M15", "H1") if mode == "ANY_PLUS_H1" else ("M30", "M15"))}
+    if any(x.get("status") != "OK" for x in use.values()) or not use:
+        return None, "WARMUP kontekstu " + "/".join(use or ctx)
     s_max, bw_p = V(prof, "context_filter", "slope_atr_per_bar"), V(prof, "context_filter", "bandwidth_percentile")
     against = "DOWN" if direction == "BUY" else "UP"
-    strong = all(x["sar_trend"] == against and abs(x["slope"]) > s_max and (x["slope"] < 0) == (against == "DOWN") and x["bw_pct"] > bw_p
-                 for x in ctx.values())
-    return strong, "silny trend przeciwny na M30 i M15" if strong else "kontekst dopuszcza fade"
+    hit = {k: x["sar_trend"] == against and abs(x["slope"]) > s_max and (x["slope"] < 0) == (against == "DOWN") and x["bw_pct"] > bw_p
+           for k, x in use.items()}
+    strong = all(hit.values()) if mode == "BOTH" else any(hit.values())
+    tfs = "/".join(k for k, v in hit.items() if v)
+    return strong, f"silny trend przeciwny ({tfs}, tryb {mode})" if strong else f"kontekst dopuszcza fade (tryb {mode})"
+
+
+def session_blocked(t: int, prof: dict) -> tuple[bool, str]:
+    """Session filter: allowed UTC hours and N minutes after the London / New York open (IANA DST)."""
+    from . import sessions as _s
+    hours = V(prof, "session_filter", "allowed_utc_hours")
+    dt = datetime.fromtimestamp(t, timezone.utc)
+    if hours is not None and dt.hour not in hours:
+        return True, f"godzina {dt.hour} UTC poza dozwolonymi {hours}"
+    n = V(prof, "session_filter", "block_after_open_min", default=0) or 0
+    if n:
+        for name, a, _b in _s.windows(dt):
+            if name in ("LONDON", "NEW_YORK") and 0 <= (dt - a).total_seconds() < n * 60:
+                return True, f"{n} min po otwarciu {name}"
+    return False, "sesja dozwolona"
+
+
+def entry_filters(mach: "ScalpMachine", plan: dict, prof: dict) -> tuple[bool | None, str]:
+    """Shared by replay and the live SHADOW service: context trend filter + session filter. None = WARMUP (blocked)."""
+    ctx = {"M30": context(mach.m30, prof), "M15": context(mach.m15, prof), "H1": context(mach.h1, prof)}
+    blk, why = fade_blocked(ctx, plan["direction"], prof)
+    if blk is None or blk:
+        return blk, why
+    sb, swhy = session_blocked(plan["decision_ts"], prof)
+    if sb:
+        return True, swhy
+    return False, why + "; " + swhy
 
 
 def detect_range(m5: Series, prof: dict) -> dict:
@@ -165,13 +217,20 @@ def detect_range(m5: Series, prof: dict) -> dict:
 
 def find_zone(m1: Series, side: str, edge: float, tol: float, since: int, until: int, max_bars: int) -> dict | None:
     """Most recent run (<= max_bars consecutive closed M1, close <= until, open >= since) touching the edge tolerance."""
-    idx = [k for k in range(len(m1)) if m1.t[k] >= since and m1.close_time(k) <= until]
     touch = (lambda k: m1.l[k] <= edge + tol) if side == "LOW" else (lambda k: m1.h[k] >= edge - tol)
-    last = next((k for k in reversed(idx) if touch(k)), None)
+    k = len(m1) - 1
+    while k >= 0 and m1.close_time(k) > until:
+        k -= 1
+    last = None
+    while k >= 0 and m1.t[k] >= since:
+        if touch(k):
+            last = k
+            break
+        k -= 1
     if last is None:
         return None
     run = [last]
-    while len(run) < max_bars and run[0] - 1 in idx and touch(run[0] - 1) and m1.t[run[0]] - m1.t[run[0] - 1] == m1.tf:
+    while len(run) < max_bars and run[0] - 1 >= 0 and m1.t[run[0] - 1] >= since and touch(run[0] - 1) and m1.t[run[0]] - m1.t[run[0] - 1] == m1.tf:
         run.insert(0, run[0] - 1)
     return {"z_low": min(m1.l[k] for k in run), "z_high": max(m1.h[k] for k in run), "bars": [iso_ts(m1.t[k]) for k in run]}
 
@@ -179,7 +238,7 @@ def find_zone(m1: Series, side: str, edge: float, tol: float, since: int, until:
 class ScalpMachine:
     def __init__(self, prof: dict, tick: float = 0.01):
         self.p, self.tick = prof, tick
-        self.m1, self.m5, self.m15, self.m30 = Series(1), Series(5), Series(15), Series(30)
+        self.m1, self.m5, self.m15, self.m30, self.h1 = Series(1), Series(5), Series(15), Series(30), Series(60)
         self.range: dict | None = None
         self.dirs: dict[str, dict] = {}
         self.state = "WARMUP"
@@ -198,7 +257,7 @@ class ScalpMachine:
 
     # ------------------------------------------------------------ inputs
     def add_context(self, tf: int, b: dict) -> None:
-        {15: self.m15, 30: self.m30}[tf].append(b)
+        {15: self.m15, 30: self.m30, 60: self.h1}[tf].append(b)
 
     def on_m5_close(self, b: dict) -> None:
         if not self.m5.append(b):
@@ -288,11 +347,17 @@ class ScalpMachine:
             if not (swept and reclaimed):
                 return None
             key = f"{self.range['range_id']}|{direction}|{m1.t[i]}"
-            conf = candles_sci.confirmation(self.last_reading, "LONG" if sgn > 0 else "SHORT")
+            fams = V(p, "trigger", "allowed_confirmation_families", default=list(candles_sci.CONFIRMATION_FAMILIES))
+            conf = candles_sci.confirmation(self.last_reading, "LONG" if sgn > 0 else "SHORT", fams)
+            depth = ((z["z_low"] - eps) - m1.l[i]) if sgn > 0 else (m1.h[i] - (z["z_high"] + eps))
+            min_depth = (V(p, "trigger", "min_sweep_depth_atr_m5", default=0.0) or 0.0) * self.range["atr_m5"]
             tv_ok = tv_r is not None and tv_r >= V(p, "trigger", "tick_volume_ratio_min")
-            ev = {"direction": direction, "bar": iso_ts(m1.t[i]), "eps": eps, "confirmation": conf, "tv_ratio": tv_r}
+            ev = {"direction": direction, "bar": iso_ts(m1.t[i]), "eps": eps, "confirmation": conf, "tv_ratio": tv_r, "depth": depth}
+            if depth < min_depth:
+                self._j(T, "WAIT_SWEEP", f"sweep za płytki ({depth:.2f} < {min_depth:.2f})", **ev)
+                return None
             if not conf:
-                self._j(T, "WAIT_SWEEP", "sweep+reclaim bez potwierdzenia rodziny rejection/engulfing/displacement", **ev)
+                self._j(T, "WAIT_SWEEP", f"sweep+reclaim bez potwierdzenia z rodzin {'/'.join(fams)}", **ev)
                 return None
             if not tv_ok:
                 self._j(T, "WAIT_SWEEP", "tick volume UNKNOWN" if tv_r is None else f"tick volume {tv_r:.2f} < {V(p, 'trigger', 'tick_volume_ratio_min')}", **ev)
@@ -300,7 +365,7 @@ class ScalpMachine:
             if key in self._used_sweeps:
                 return None
             self._used_sweeps.add(key)
-            d.update(state="WAIT_RETEST", eps=eps, sweep_bar=i, sweep_extreme=m1.l[i] if sgn > 0 else m1.h[i], sweep_conf=conf, tv_ratio=tv_r,
+            d.update(state="WAIT_RETEST", eps=eps, sweep_bar=i, sweep_extreme=m1.l[i] if sgn > 0 else m1.h[i], sweep_conf=conf, tv_ratio=tv_r, sweep_depth=depth,
                      reason="sweep + reclaim potwierdzony – czekam na retest", sweep_key=key)
             self._j(T, "WAIT_RETEST", d["reason"], **ev)
             if not V(p, "trigger", "retest_required"):
@@ -314,6 +379,10 @@ class ScalpMachine:
                 return None
             overlap = m1.l[i] <= edge + eps and m1.h[i] >= edge - eps
             back = m1.c[i] > edge + eps if sgn > 0 else m1.c[i] < edge - eps
+            near_max = V(p, "trigger", "retest_close_max_atr_m1")
+            if overlap and back and near_max is not None and sgn * (m1.c[i] - edge) > near_max * a1:
+                self._j(T, "WAIT_RETEST", f"close retestu {sgn * (m1.c[i] - edge):.2f} za daleko od krawędzi (> {near_max} ATR M1)", direction=direction)
+                back = False
             if overlap and back:
                 return self._candidate(direction, d, i, T, a1)
             if i - d["sweep_bar"] >= V(p, "trigger", "retest_window_m1"):
@@ -344,6 +413,13 @@ class ScalpMachine:
                 "conditions": [{"name": "zakres zamrożony", "ok": True}, {"name": "sekcja M1 znana przed sweepem", "ok": True},
                                {"name": "sweep + reclaim", "ok": True}, {"name": f"potwierdzenie {d['sweep_conf']['family']}", "ok": True},
                                {"name": "tick volume ≥ próg", "ok": True}, {"name": "retest krawędzi sekcji", "ok": True}]}
+        mode = V(p, "entry", "mode", default="MARKET")
+        edge = d["zone"]["z_high"] if sgn > 0 else d["zone"]["z_low"]
+        plan["entry_mode"] = mode
+        plan["limit_price"] = _rt(edge + d["eps"] + sp, tick) if (mode == "LIMIT_EDGE" and sgn > 0) else \
+            _rt(edge - d["eps"], tick) if mode == "LIMIT_EDGE" else None          # BUY limit = Ask level, SELL limit = Bid level
+        plan["limit_wait_m1"] = V(p, "entry", "limit_wait_m1", default=3)
+        plan["features"] = setup_features(self, plan, d, i, a1)
         d.update(state="ENTRY_CANDIDATE", plan=plan, reason="kandydat wejścia – czekam na świeże kwotowanie i bramki")
         self._j(T, "ENTRY_CANDIDATE", d["reason"], direction=direction, setup_id=plan["setup_id"])
         return plan
@@ -363,6 +439,48 @@ class ScalpMachine:
                 "directions": {k: {x: v.get(x) for x in ("state", "reason", "zone", "eps", "sweep_extreme", "tv_ratio", "plan")}
                                for k, v in self.dirs.items()},
                 "journal": self.journal[-30:], "reading": self.last_reading}
+
+
+SETUP_FEATURES = ("sweep_depth_atr5", "range_w_atr5", "zone_w_atr5", "er10", "touches_low", "touches_high", "conf_rejection", "conf_engulfing",
+                  "conf_displacement", "conf_score", "tv_log_ratio", "retest_dist_atr1", "risk_atr1", "tp1_dist_atr1", "spread_atr1",
+                  "m5_pct_b_dir", "m15_sar_with", "m30_sar_with", "h1_sar_with", "m30_slope_dir", "m15_bw_pct", "minutes_since_arm",
+                  "dist_round5_atr5", "hour_sin", "hour_cos")
+
+
+def setup_features(mach: "ScalpMachine", plan: dict, d: dict, i: int, a1: float) -> dict:
+    """Features of ONE setup known at the decision time (task B / model filter). Same function in replay, training and live.
+    Direction-normalised (sgn) so BUY and SELL share one model; missing context -> 0.0 (neutral), never future data."""
+    m1, r = mach.m1, mach.range
+    sgn = 1 if plan["direction"] == "BUY" else -1
+    a5 = r["atr_m5"]
+    edge = d["zone"]["z_high"] if sgn > 0 else d["zone"]["z_low"]
+    conf = d["sweep_conf"] or {}
+    sp = m1.sp[i] if m1.sp[i] is not None else 0.0
+    ref = m1.c[i]
+
+    def sar_with(series):
+        c = context(series, mach.p)
+        if c.get("status") != "OK":
+            return 0.0, None
+        return (1.0 if (c["sar_trend"] == "UP") == (sgn > 0) else -1.0), c
+    m15w, c15 = sar_with(mach.m15)
+    m30w, c30 = sar_with(mach.m30)
+    h1w, _ = sar_with(mach.h1)
+    bb5 = ind.bollinger(mach.m5.c[-40:], mach.m5._atr[-40:])[-1] if len(mach.m5) >= 40 else None
+    pctb = (bb5["pct_b"] - 0.5) * sgn if bb5 and bb5["pct_b"] is not None else 0.0
+    hr = (plan["decision_ts"] % 86400) / 3600.0
+    r5 = ref - round(ref / 5.0) * 5.0
+    f = {"sweep_depth_atr5": (d.get("sweep_depth") or 0.0) / a5, "range_w_atr5": r["W"] / a5, "zone_w_atr5": (d["zone"]["z_high"] - d["zone"]["z_low"]) / a5,
+         "er10": r.get("er10") or 0.0, "touches_low": float(r.get("touches_low") or 0), "touches_high": float(r.get("touches_high") or 0),
+         "conf_rejection": 1.0 if conf.get("family") == "REJECTION" else 0.0, "conf_engulfing": 1.0 if conf.get("family") == "ENGULFING" else 0.0,
+         "conf_displacement": 1.0 if conf.get("family") == "DISPLACEMENT" else 0.0, "conf_score": float(conf.get("score") or 0.0),
+         "tv_log_ratio": math.log(d["tv_ratio"]) if d.get("tv_ratio") else 0.0, "retest_dist_atr1": sgn * (ref - edge) / a1,
+         "risk_atr1": sgn * (ref - plan["sl"]) / a1, "tp1_dist_atr1": sgn * (plan["tp1"] - ref) / a1, "spread_atr1": sp / a1,
+         "m5_pct_b_dir": pctb, "m15_sar_with": m15w, "m30_sar_with": m30w, "h1_sar_with": h1w,
+         "m30_slope_dir": sgn * c30["slope"] if c30 else 0.0, "m15_bw_pct": (c15["bw_pct"] / 100.0) if c15 else 0.5,
+         "minutes_since_arm": (plan["decision_ts"] - r["armed_at"]) / 60.0, "dist_round5_atr5": sgn * r5 / a5,
+         "hour_sin": math.sin(2 * math.pi * hr / 24), "hour_cos": math.cos(2 * math.pi * hr / 24)}
+    return {k: round(float(f[k]), 6) for k in SETUP_FEATURES}
 
 
 def _rt(x: float, tick: float) -> float:

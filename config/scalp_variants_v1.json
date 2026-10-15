@@ -1,0 +1,124 @@
+{
+  "schema": "masterquo-scalp-variants-1",
+  "selection": "najwyższa expectancy R po kosztach w okresie development (pierwsze 80% czasu), min. 30 cykli; test (ostatnie 20%) oceniany raz; win ratio raportowane obok, nie jest kryterium",
+  "variants": [
+    {
+      "id": "BASE",
+      "desc": "profil bez zmian",
+      "set": {}
+    },
+    {
+      "id": "V1_TV15",
+      "desc": "1: tick volume ≥1.5×",
+      "set": {
+        "trigger.tick_volume_ratio_min": 1.5
+      }
+    },
+    {
+      "id": "V1_DEPTH",
+      "desc": "1: sweep ≥0.15 ATR M5 poza strefą",
+      "set": {
+        "trigger.min_sweep_depth_atr_m5": 0.15
+      }
+    },
+    {
+      "id": "V1_REJ",
+      "desc": "1: tylko REJECTION",
+      "set": {
+        "trigger.allowed_confirmation_families": [
+          "REJECTION"
+        ]
+      }
+    },
+    {
+      "id": "V2_SESS",
+      "desc": "2: bez 30 min po otwarciu Londynu/NY",
+      "set": {
+        "session_filter.block_after_open_min": 30
+      }
+    },
+    {
+      "id": "V2_ASIA_LATE",
+      "desc": "2: tylko 00–06 i 18–21 UTC",
+      "set": {
+        "session_filter.allowed_utc_hours": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          18,
+          19,
+          20
+        ]
+      }
+    },
+    {
+      "id": "V3_ANY",
+      "desc": "3: blokada przy trendzie na M30 lub M15",
+      "set": {
+        "context_filter.mode": "ANY"
+      }
+    },
+    {
+      "id": "V3_H1",
+      "desc": "3: blokada przy trendzie na M30, M15 lub H1",
+      "set": {
+        "context_filter.mode": "ANY_PLUS_H1"
+      }
+    },
+    {
+      "id": "V4_TOUCH3",
+      "desc": "4: ≥3 dotknięcia granicy",
+      "set": {
+        "range.touch_min_per_edge": 3
+      }
+    },
+    {
+      "id": "V4_ER25",
+      "desc": "4: ER10 ≤0.25",
+      "set": {
+        "range.er10_max": 0.25
+      }
+    },
+    {
+      "id": "V5_CLOSE",
+      "desc": "5: close retestu ≤0.5 ATR M1 od krawędzi",
+      "set": {
+        "trigger.retest_close_max_atr_m1": 0.5
+      }
+    },
+    {
+      "id": "V5_LIMIT",
+      "desc": "5: zlecenie limit na krawędzi strefy",
+      "set": {
+        "entry.mode": "LIMIT_EDGE"
+      }
+    },
+    {
+      "id": "V6_BE",
+      "desc": "6: SL na BE + koszty po TP1",
+      "set": {
+        "exits.be_after_tp1": "COST_ADJUSTED"
+      }
+    },
+    {
+      "id": "V6_EARLY",
+      "desc": "6: wyjście po 8 M1 bez postępu (MFE <0.3 R)",
+      "set": {
+        "exits.early_exit_m1": 8
+      }
+    },
+    {
+      "id": "COMBO_QUALITY",
+      "desc": "1+3+4 razem (grupa filtrów jakości)",
+      "set": {
+        "trigger.tick_volume_ratio_min": 1.5,
+        "trigger.min_sweep_depth_atr_m5": 0.15,
+        "context_filter.mode": "ANY",
+        "range.touch_min_per_edge": 3
+      }
+    }
+  ]
+}

@@ -120,11 +120,11 @@ def read_bar(o, h, lo, c, t, i: int, atr: float | None, tf: str, avail: str | No
             "conflict": len(dirs) > 1, "note": "odczyt geometrii – nie jest prawdopodobieństwem wygranej transakcji"}
 
 
-def confirmation(reading: dict, direction: str) -> dict | None:
-    """Strongest confirmation evidence in `direction` from the rejection / engulfing / displacement families (one per family)."""
+def confirmation(reading: dict, direction: str, families=CONFIRMATION_FAMILIES) -> dict | None:
+    """Strongest confirmation evidence in `direction` from the allowed families (default rejection / engulfing / displacement)."""
     best = None
     for e in reading.get("evidence", []):
-        if e["direction"] == direction and e["family"] in CONFIRMATION_FAMILIES and (best is None or e["score"] > best["score"]):
+        if e["direction"] == direction and e["family"] in families and e["family"] in CONFIRMATION_FAMILIES and (best is None or e["score"] > best["score"]):
             best = e
     return best
 

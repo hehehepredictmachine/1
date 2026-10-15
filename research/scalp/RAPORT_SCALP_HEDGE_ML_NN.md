@@ -62,6 +62,11 @@ Nic nie zostało dopuszczone do wykonania.
 - Monitor: Wykresy bota → „Scalp M5 Range → M1 Sweep → Retest + hedge” z widokami MTF, Setup, Wskaźniki, Prognozy, Hedge/ryzyko, Trening.
 - Launchery Windows 16–21: eksport, trening, walidacja, replay, start SHADOW, rollback.
 
+**Aktualizacja – warianty poprawy win ratio (profil 1.1.0):** siedem dźwigni jako przełączniki profilu (domyślnie jak 1.0.0),
+porównanie 15 wariantów w `scalp-replay --variants` (wybór po expectancy w development, test raz, stres kosztów) oraz filtr modelu B
+(P(TP1 przed SL) z cech setupu, kalibracja, próg z development, holdout bez/z filtrem). Opis: `docs/SCALP_HEDGE_ML_NN_PL.md`.
+Na danych rzeczywistych nie uruchomione – rejestr: `research/scalp/EXPERIMENT_REGISTRY.json` (NOT_RUN_NO_REAL_DATA).
+
 ## 2. Uruchomione (w środowisku budowy, Linux, symulator terminala)
 
 | Polecenie | Dane | Wynik |

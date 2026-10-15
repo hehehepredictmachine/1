@@ -89,6 +89,51 @@ def _full(P, classes):
     return out / out.sum(axis=1, keepdims=True)
 
 
+def predict_binary_json(m: dict, X: np.ndarray) -> np.ndarray:
+    """P(class 1) of a portable binary LR / MLP."""
+    Z = (X - np.asarray(m["mean"])) / np.asarray(m["scale"])
+    if m["type"] == "LR":
+        z = Z @ np.asarray(m["coef"]).T + np.asarray(m["intercept"])
+    else:
+        z = Z
+        for k, (W, b) in enumerate(zip(m["coefs"], m["intercepts"])):
+            z = z @ np.asarray(W) + np.asarray(b)
+            if k < len(m["coefs"]) - 1:
+                z = np.maximum(z, 0.0) if m["activation"] == "relu" else np.tanh(z)
+    z = np.asarray(z)
+    if z.ndim == 2 and z.shape[1] == 2:
+        return _softmax(z)[:, 1]
+    return 1.0 / (1.0 + np.exp(-z.reshape(-1)))
+
+
+def platt(cal: dict | None, p: np.ndarray) -> np.ndarray:
+    if not cal:
+        return p
+    lg = np.log(np.clip(p, 1e-6, 1 - 1e-6) / np.clip(1 - p, 1e-6, 1))
+    return 1.0 / (1.0 + np.exp(-(cal["a"] * lg + cal["b"])))
+
+
+class SetupModel:
+    """Task-B model: P(TP1 before SL) for one setup + calibrator + threshold chosen in development."""
+
+    def __init__(self, entry: dict):
+        sm = entry["setup_model"]
+        rd = Path(entry["run_dir"])
+        self.spec = sm
+        if sm["selected"] in ("LR", "MLP"):
+            self.m = json.loads((rd / sm["file"]).read_text(encoding="utf-8"))
+        elif sm["selected"] == "HGB":
+            self.m = load_pickle_verified(rd / sm["file"], entry["artifacts"][sm["file"]])
+        else:
+            self.m = None
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if self.m is None:
+            return np.full(len(X), self.spec["prior"])
+        p = predict_binary_json(self.m, X) if isinstance(self.m, dict) else self.m.predict_proba(X)[:, list(self.m.classes_).index(1)]
+        return platt(self.spec.get("calibrator"), p)
+
+
 def calib_to_json(clf) -> dict:
     return {"coef": clf.coef_.tolist(), "intercept": clf.intercept_.tolist(), "classes": [int(x) for x in clf.classes_]}
 

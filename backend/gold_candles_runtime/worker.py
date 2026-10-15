@@ -144,6 +144,32 @@ def scalp_forecast(req: dict) -> dict:
             "note": "P(UP) nie jest P(TP przed SL) ani oceną transakcji"}
 
 
+def setup_quality(req: dict) -> dict:
+    """Task-B filter: P(TP1 before SL) of one setup from its decision-time features. SHADOW - never an order permission."""
+    import numpy as np
+    from . import scalp_features as SF
+    from .scalp_infer import SetupModel, activatable, read_registry
+    reg = read_registry()
+    rid = reg.get("active")
+    entry = (reg.get("runs") or {}).get(rid or "")
+    if not entry or not entry.get("setup_model"):
+        return {"status": "UNAVAILABLE", "reason": "NO_SETUP_MODEL", "pass": False, "execution_permission": False}
+    ok, why = activatable(entry, SF.contract_hash(entry["symbol"], entry["tick_size"]))
+    if not ok:
+        return {"status": "UNAVAILABLE", "reason": why, "pass": False, "execution_permission": False}
+    if _scalp_cache.get("setup_run") != rid:
+        _scalp_cache.update(setup_run=rid, setup=SetupModel(entry))
+    sm = entry["setup_model"]
+    f = req.get("features") or {}
+    if any(k not in f or f[k] is None for k in sm["features"]):
+        return {"status": "UNAVAILABLE", "reason": "FEATURES_MISSING", "pass": False, "execution_permission": False}
+    p = float(_scalp_cache["setup"].predict(np.asarray([[float(f[k]) for k in sm["features"]]]))[0])
+    thr = sm.get("threshold")
+    return {"status": "SHADOW", "p": round(p, 4), "threshold": thr, "pass": thr is not None and p >= thr, "model": sm["selected"],
+            "run_id": rid, "model_status": entry.get("task_b_status"), "execution_permission": False,
+            "reason": None if thr is not None else "brak progu poprawiającego expectancy w development – filtr nie odrzuca na podstawie modelu"}
+
+
 def main() -> int:
     for line in sys.stdin:
         line = line.strip()
@@ -159,6 +185,8 @@ def main() -> int:
                 ans = {"ok": True}
             elif cmd == "analyze":
                 ans = analyze_request(req)
+            elif cmd == "setup_quality":
+                ans = setup_quality(req)
             elif cmd == "scalp_forecast":
                 ans = scalp_forecast(req)
             elif cmd == "quit":

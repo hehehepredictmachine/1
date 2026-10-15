@@ -238,6 +238,7 @@ def main(argv=None) -> int:
     sr.add_argument("--slippage-ticks", type=float, default=2.0)
     sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
     sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")
+    sr.add_argument("--variants", action="store_true", help="porównanie wariantów z config/scalp_variants_v1.json (win ratio i expectancy obok siebie)")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
     a = ap.parse_args(argv)

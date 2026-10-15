@@ -103,9 +103,7 @@ class ScalpService:
     def _feed(self, bars: dict, point: float) -> None:
         ev = []
         for tf, mins in TFS.items():
-            if tf == "H1":
-                continue
-            pri = {"M30": 0, "M15": 1, "M5": 2, "M1": 3}[tf]
+            pri = {"H1": 0, "M30": 0, "M15": 1, "M5": 2, "M1": 3}[tf]
             last = self.fed.get(tf, -1)
             for b in bars[tf]:
                 t = st.ts(b["open_utc"])
@@ -115,7 +113,7 @@ class ScalpService:
                     ev.append((t + mins * 60, pri, tf, x, t))
         ev.sort(key=lambda e: (e[0], e[1]))
         for _, _, tf, x, t in ev:
-            if tf in ("M15", "M30"):
+            if tf in ("M15", "M30", "H1"):
                 self.machine.add_context(TFS[tf], x)
             elif tf == "M5":
                 self.machine.on_m5_close(x)
@@ -137,15 +135,15 @@ class ScalpService:
         age = q.get("age_seconds")
         fresh = bool(q.get("bid") and q.get("ask") and q["bid"] <= q["ask"] and age is not None and age <= st.V(self.prof, "risk", "quote_ttl_s"))
         gate("świeże Bid/Ask ≤ TTL", fresh, f"wiek {age}s")
-        ctx = {"M30": st.context(self.machine.m30, self.prof), "M15": st.context(self.machine.m15, self.prof)}
-        blk, why = st.fade_blocked(ctx, plan["direction"], self.prof)
-        gate("kontekst M30/M15", blk is False, why)
+        blk, why = st.entry_filters(self.machine, plan, self.prof)
+        gate("trend M30/M15/H1 i sesja", blk is False, why)
         decision_age = time.time() - plan["decision_ts"]
         gate("decyzja na świeżym zamknięciu M1", decision_age <= 60, f"{decision_age:.0f}s po zamknięciu retestu")
-        fill = (q.get("ask") if sgn > 0 else q.get("bid")) if fresh else None
+        limit = plan.get("entry_mode") == "LIMIT_EDGE"
+        fill = (plan["limit_price"] if limit else q.get("ask") if sgn > 0 else q.get("bid")) if fresh else None
         sp = (q["ask"] - q["bid"]) if fresh else None
         missed = False
-        if fill is not None:
+        if fill is not None and not limit:
             ref_exec = plan["ref_close_bid"] + ((plan["spread_at_signal"] or sp) if sgn > 0 else 0.0)
             missed = sgn * (fill - ref_exec) > plan["chase_limit"]
             gate("limit pogoni", not missed, f"{sgn * (fill - ref_exec):.3f} vs {plan['chase_limit']:.3f}")
@@ -174,7 +172,12 @@ class ScalpService:
         cool = bool(last_end) and (utcnow() - datetime.fromisoformat(last_end.replace("Z", "+00:00"))).total_seconds() < \
             st.V(self.prof, "risk", "cooldown_after_cycle_min") * 60
         gate("jeden cykl / cooldown", busy == 0 and not cool, f"otwarte hipotetyczne cykle {busy}, cooldown {cool}")
-        gate("model ML", True, "profil nie wymaga ML (NOT_REQUIRED)")
+        mq = self.setup_quality(plan)
+        plan["model_b"] = mq
+        if st.V(self.prof, "ml_filter", "enabled", default=False):
+            gate("filtr modelu jakości setupu (B)", bool(mq.get("pass")), mq.get("reason") or f"P(TP1 przed SL) {mq.get('p')} vs próg {mq.get('threshold')}")
+        else:
+            gate("model ML", True, "filtr modelu B wyłączony w profilu (ml_filter.enabled=false) – P(TP1 przed SL) tylko informacyjnie")
         gate("uprawnienie wykonania", False, "EXECUTION_AUTHORIZED=false (SHADOW)")
         core_ok = all(x["ok"] for x in g if x["name"] != "uprawnienie wykonania")
         status = "MISSED" if missed else "READY_SHADOW" if core_ok else "BLOCKED"
@@ -243,16 +246,47 @@ class ScalpService:
             sz = plan.get("sizing") or {}
             f1 = st.V(self.prof, "exits", "tp1_fraction") if sz.get("split", True) else 1.0
             tp2 = plan["tp2"] if f1 < 1 else None
-            fill = plan.get("fill_shadow") or (P.o[i] + ((P.sp[i] or 0) if sgn > 0 else 0))
-            res = replay.walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, T + st.V(self.prof, "exits", "max_hold_minutes") * 60, {})
+            costs = self._costs(plan)
+            if plan.get("entry_mode") == "LIMIT_EDGE":
+                fl = replay.get_fill(plan, P, T, costs["slippage_price"])
+                if not fl["ok"]:
+                    if fl["reason"] == "MISSED_LIMIT_NOT_FILLED" and P.t[-1] >= T + 60 * (plan.get("limit_wait_m1") or 3):
+                        self.db.execute("UPDATE scalp_shadow SET outcome_status='MISSED_LIMIT', settled_at=? WHERE id=?", (iso(utcnow()), r["id"]))
+                    continue
+                i, fill = fl["i"], fl["fill"]
+            else:
+                fill = plan.get("fill_shadow") or (P.o[i] + ((P.sp[i] or 0) if sgn > 0 else 0))
+            risk = (plan.get("economics") or {}).get("risk_per_unit") or abs(fill - plan["sl"])
+            res = replay.walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, P.t[i] + st.V(self.prof, "exits", "max_hold_minutes") * 60, costs,
+                              entry=fill, **replay.exit_params(self.prof, costs, risk))
             if res.get("open_at_end") or not res["exits"]:
                 continue
-            risk = (plan.get("economics") or {}).get("risk_per_unit") or abs(fill - plan["sl"])
-            net = replay.pnl(sgn, fill, 1.0, res["exits"], {})
+            net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
             out = {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
-                   "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": "spread w cenach; prowizja/poślizg nie odjęte w tej kolumnie"}
+                   "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
+                   "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
             self.db.execute("UPDATE scalp_shadow SET outcome_status='SETTLED', outcome=?, net_r=?, settled_at=? WHERE id=?",
                             (json.dumps(out), net / risk if risk else None, st.iso_ts(res["exits"][-1][2]), r["id"]))
+
+    def _costs(self, plan: dict) -> dict:
+        cfg = self.cfg_store.get()
+        info = self.bridge.symbol_info or {}
+        cs = float(info.get("trade_contract_size") or 100.0)
+        tick = float(info.get("trade_tick_size") or 0.01)
+        return {"commission_price_side": (cfg.scalp.commission_per_lot_side or 0.0) / cs, "slippage_price": cfg.scalp.slippage_ticks * tick}
+
+    def setup_quality(self, plan: dict) -> dict:
+        """Task-B model (P(TP1 before SL)) for this setup through the analytics worker - only when a compatible model is active."""
+        reg = self.registry()
+        act = (reg.get("runs") or {}).get(reg.get("active") or "", {})
+        if not act.get("setup_model"):
+            return {"status": "UNAVAILABLE", "reason": "brak aktywnego modelu jakości setupu (zadanie B) – trening na danych rzeczywistych", "pass": False}
+        if not self.forecast or not self.forecast.proc:
+            return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa", "pass": False}
+        try:
+            return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}}, 10)
+        except Exception as exc:
+            return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200], "pass": False}
 
     def recent(self, limit: int = 50) -> list[dict]:
         rows = self.db.query("SELECT * FROM scalp_shadow ORDER BY id DESC LIMIT ?", (limit,))
@@ -268,7 +302,8 @@ class ScalpService:
         for r in rows:
             st_[r["status"]] = st_.get(r["status"], 0) + 1
         settled = [r["net_r"] for r in rows if r["outcome_status"] == "SETTLED" and r["net_r"] is not None]
-        return {"by_status": st_, "settled": len(settled), "mean_r_gross_of_commission": round(sum(settled) / len(settled), 3) if settled else None,
+        return {"by_status": st_, "settled": len(settled), "win_rate": round(sum(1 for x in settled if x > 0) / len(settled), 3) if settled else None,
+                "mean_r_after_costs": round(sum(settled) / len(settled), 3) if settled else None,
                 "days": len({r["decision_time_utc"][:10] for r in rows}), "note": "SHADOW na żywo – za mało cykli to INSUFFICIENT_EVIDENCE, nie wynik"}
 
     # ------------------------------------------------------------ views
@@ -348,6 +383,8 @@ class ScalpService:
                 "status_file": json.loads(stf.read_text(encoding="utf-8")) if stf.exists() else None,
                 "last_run": json.loads(runs[-1].read_text(encoding="utf-8")).get("summary") if runs else None,
                 "last_replay": json.loads(rep[-1].read_text(encoding="utf-8")) if rep else None,
+                "last_variants": _load_last(d / "replay", "variants.json"),
+                "last_task_b": (_load_last(d / "runs", "report.json") or {}).get("task_B"),
                 "blocked": None if hist else "BLOCKED_NO_REAL_DATA – brak eksportu M1/M5/M15/M30/H1 (16_EKSPORT_HISTORII_SCALP.bat przy działającym MT5)"}
 
     def statuses(self) -> dict:
@@ -367,6 +404,14 @@ class ScalpService:
         if not v:
             return {}
         return {"p50": round(v[len(v) // 2], 1), "p95": round(v[int(0.95 * (len(v) - 1))], 1), "n": len(v)}
+
+
+def _load_last(base: Path, name: str):
+    f = sorted(base.glob(f"*/{name}"))
+    try:
+        return json.loads(f[-1].read_text(encoding="utf-8")) if f else None
+    except (OSError, ValueError):
+        return None
 
 
 def _r(x, n=4):

@@ -135,6 +135,9 @@ function SetupView({ f, n }: { f: any; n: (x: any, k?: number) => string }) {
                 {p && <Kv k="SL / TP1 / TP2" v={`${n(p.sl)} / ${n(p.tp1)} / ${n(p.tp2)}`} />}
                 {p?.economics && <Kv k="Koszt/TP1 · RR netto" v={`${n(p.economics.cost_to_tp1, 2)} · ${n(p.economics.weighted_net_rr, 2)}`} />}
                 {p?.sizing && <Kv k="Wolumen (hipotetyczny)" v={p.sizing.ok ? `${p.sizing.lots} lot, ${p.sizing.exit_variant}` : p.sizing.reason} />}
+                {p && <Kv k="Wejście" v={p.entry_mode === "LIMIT_EDGE" ? `limit ${n(p.limit_price)} (czeka ${p.limit_wait_m1} M1)` : "rynkowe (pierwsze świeże kwotowanie)"} />}
+                {p?.model_b && <Kv k="P(TP1 przed SL) – model B" v={p.model_b.status === "SHADOW"
+                  ? `${n(p.model_b.p, 3)} vs próg ${p.model_b.threshold ?? "brak"} → ${p.model_b.pass ? "przechodzi" : "odrzucony"}` : `${p.model_b.status}: ${p.model_b.reason}`} />}
               </dl>
               {p?.conditions && <ul className="small">{p.conditions.map((c: any) => <li key={c.name}>{c.ok ? "✔" : "✖"} {c.name}</li>)}</ul>}
             </>) : <p className="muted small">Kierunek nieuzbrojony. Brak BUY nie oznacza SELL.</p>}
@@ -193,10 +196,30 @@ function TrainView({ f }: { f: any }) {
           <Kv k="Aktywny model" v={reg.active ?? "brak (NO_MODEL)"} />
           <Kv k="Ostatni trening" v={t.last_run ? `A ${t.last_run.overall_task_A}, B ${t.last_run.task_B}, C ${t.last_run.task_C} (${t.last_run.data_kind})` : "nie uruchomiono"} />
         </dl></div>
+      <div className="card wide" data-testid="scalp-variants"><h4>Warianty poprawy win ratio (replay po kosztach)</h4>
+        {t.last_variants ? (<>
+          <div className="table-wrap"><table className="tbl"><thead><tr><th>Wariant</th><th>Opis</th><th>Dev: cykle</th><th>Dev: win %</th><th>Dev: E[R]</th>
+            <th>Test: cykle</th><th>Test: win %</th><th>Test: E[R]</th></tr></thead>
+            <tbody>{t.last_variants.rows.map((r: any) => (
+              <tr key={r.id} className={cls(r.id === t.last_variants.chosen && "chosen")}><td><b>{r.id}</b>{r.id === t.last_variants.chosen ? " ✔" : ""}</td>
+                <td className="small">{r.desc}</td><td>{r.development.cycles}</td>
+                <td>{r.development.win_rate != null ? (r.development.win_rate * 100).toFixed(1) : "—"}</td><td>{r.development.expectancy_r ?? "—"}</td>
+                <td>{r.test.cycles}</td><td>{r.test.win_rate != null ? (r.test.win_rate * 100).toFixed(1) : "—"}</td><td>{r.test.expectancy_r ?? "—"}</td></tr>))}</tbody>
+          </table></div>
+          <p className="small">Wybór: <b>{t.last_variants.chosen ?? "brak"}</b> – {t.last_variants.chosen_reason}. Dane: {t.last_variants.data_kind}.</p></>)
+          : <p className="muted">Brak porównania – uruchom 19_REPLAY_SCALP.bat po eksporcie historii.</p>}
+        <p className="muted small">Wybór po expectancy (R po kosztach) w okresie development; win ratio jest pokazane obok, ale nie decyduje. Test oceniany raz.</p></div>
+      <div className="card wide" data-testid="scalp-model-b"><h4>Filtr modelu jakości setupu (B)</h4>
+        {t.last_task_b ? (<dl className="dr-dl">
+          <Kv k="Status" v={t.last_task_b.status} /><Kv k="Model / próg" v={`${t.last_task_b.selected ?? "—"} / ${t.last_task_b.threshold ?? "brak"}`} />
+          <Kv k="Holdout bez filtra" v={t.last_task_b.holdout_unfiltered ? `${t.last_task_b.holdout_unfiltered.cycles} cykli, win ${t.last_task_b.holdout_unfiltered.win_rate ?? "—"}, E[R] ${t.last_task_b.holdout_unfiltered.expectancy_r ?? "—"}` : "—"} />
+          <Kv k="Holdout z filtrem" v={t.last_task_b.holdout_filtered ? `${t.last_task_b.holdout_filtered.cycles} cykli, win ${t.last_task_b.holdout_filtered.win_rate ?? "—"}, E[R] ${t.last_task_b.holdout_filtered.expectancy_r ?? "—"}` : "—"} />
+          <Kv k="Powód" v={t.last_task_b.reason ?? t.last_task_b.note} /></dl>) : <p className="muted">Nie trenowano.</p>}</div>
       <div className="card"><h4>Replay strategii (OOS, po kosztach)</h4>
         {t.last_replay ? (<dl className="dr-dl">
           <Kv k="Dane" v={t.last_replay.data_kind} /><Kv k="Status" v={t.last_replay.strategy?.status} />
           <Kv k="Cykle / dni" v={`${t.last_replay.strategy?.cycles} / ${t.last_replay.strategy?.days}`} />
+          <Kv k="Win ratio" v={t.last_replay.strategy?.win_rate != null ? `${(t.last_replay.strategy.win_rate * 100).toFixed(1)}% (śr. zysk ${t.last_replay.strategy.avg_win_r} R, śr. strata ${t.last_replay.strategy.avg_loss_r} R)` : "—"} />
           <Kv k="Expectancy (R)" v={`${t.last_replay.strategy?.expectancy_r ?? "—"} (CI ${(t.last_replay.strategy?.expectancy_ci95_day_block || []).join(" … ") || "—"})`} />
           <Kv k="Powód" v={t.last_replay.strategy?.reason} /></dl>) : <p className="muted">Brak replayu.</p>}
         <p className="muted small">Bramka badawcza: ≥30 dni i ≥200 niezależnych cykli OOS, dolny kraniec 95% CI expectancy &gt; 0, max DD ≤ 5%, dodatni wynik przy kosztach +50%.</p></div>

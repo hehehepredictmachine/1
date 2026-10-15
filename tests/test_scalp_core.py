@@ -484,6 +484,97 @@ class TestConfigAndService(unittest.TestCase):
             td.close()
 
 
+class TestWinRateVariants(unittest.TestCase):
+    """1.12 win-ratio levers 1-7 (profile switches; default = unchanged behaviour)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.p = prof()
+        cls.bars, cls.info = S.build(cls.p)
+
+    def plans(self, **over):
+        return S.run(st.with_overrides(self.p, over), self.bars)[1]
+
+    def test_1_quality_filters(self):
+        self.assertEqual(len(self.plans(**{"trigger.min_sweep_depth_atr_m5": 0.1})), 1)
+        self.assertEqual(self.plans(**{"trigger.min_sweep_depth_atr_m5": 0.5}), [])          # sweep ~0.25 ATR deep
+        self.assertEqual(len(self.plans(**{"trigger.allowed_confirmation_families": ["REJECTION"]})), 1)
+        self.assertEqual(self.plans(**{"trigger.allowed_confirmation_families": ["ENGULFING"]}), [])
+        self.assertEqual(self.plans(**{"trigger.tick_volume_ratio_min": 5.0}), [])             # sweep bar tv ratio 4.0
+
+    def test_2_session_filter(self):
+        t = int(datetime(2026, 3, 3, 8, 10, tzinfo=timezone.utc).timestamp())               # London 08:00 GMT (before DST)
+        self.assertTrue(st.session_blocked(t, st.with_overrides(self.p, {"session_filter.block_after_open_min": 30}))[0])
+        self.assertFalse(st.session_blocked(t + 3600, st.with_overrides(self.p, {"session_filter.block_after_open_min": 30}))[0])
+        q = st.with_overrides(self.p, {"session_filter.allowed_utc_hours": [12, 13]})
+        res = replay.run(self.bars, q, 0.01, COSTS)
+        self.assertEqual(res["cycles"], [])
+        self.assertIn("poza dozwolonymi", res["blocked"][0]["reason"])
+
+    def test_3_trend_modes(self):
+        down = {"status": "OK", "sar_trend": "DOWN", "slope": -0.4, "bw_pct": 90}
+        calm = dict(down, bw_pct=50)
+        for mode, exp in (("BOTH", False), ("ANY", True)):
+            p = st.with_overrides(prof(True), {"context_filter.mode": mode})
+            self.assertEqual(st.fade_blocked({"M30": down, "M15": calm, "H1": calm}, "BUY", p)[0], exp, mode)
+        p = st.with_overrides(prof(True), {"context_filter.mode": "ANY_PLUS_H1"})
+        self.assertTrue(st.fade_blocked({"M30": calm, "M15": calm, "H1": down}, "BUY", p)[0])
+        self.assertFalse(st.fade_blocked({"M30": calm, "M15": calm, "H1": down}, "BUY", prof(True))[0])   # BOTH ignores H1
+
+    def test_4_range_quality(self):
+        self.assertEqual(self.plans(**{"range.er10_max": 0.0}), [])
+        self.assertEqual(self.plans(**{"range.touch_min_per_edge": 5}), [])
+
+    def test_5_retest_proximity_and_limit_entry(self):
+        self.assertEqual(self.plans(**{"trigger.retest_close_max_atr_m1": 0.01}), [])
+        self.assertEqual(len(self.plans(**{"trigger.retest_close_max_atr_m1": 5.0})), 1)
+        q = st.with_overrides(self.p, {"entry.mode": "LIMIT_EDGE"})
+        pl = S.run(q, self.bars)[1][0]
+        self.assertEqual(pl["limit_price"], round(pl["zone"]["z_high"] + pl["eps"] + 0.1, 2))
+        res = replay.run(self.bars, q, 0.01, COSTS)
+        if res["cycles"]:
+            c = res["cycles"][0]
+            self.assertEqual(c["entry_mode"], "LIMIT")
+            self.assertLessEqual(c["fill"], pl["limit_price"] + 1e-9)                         # never worse than the limit
+        else:
+            self.assertEqual(res["blocked"][0]["reason"], "MISSED_LIMIT_NOT_FILLED")
+
+    def test_6_be_after_tp1_and_early_exit(self):
+        mk = lambda i, o, h, l, c: {"open_utc": f"2026-01-01T00:{i:02d}:00Z", "o": o, "h": h, "l": l, "c": c, "spread_price": 0.0}  # noqa: E731
+        P = replay.Path([mk(0, 100, 100.2, 99.9, 100.1), mk(1, 100.1, 101.1, 100.0, 101.0), mk(2, 101.0, 101.1, 99.5, 99.6)], None)
+        r = replay.walk(P, 0, 1, 1.0, 98.0, 101.0, 104.0, 0.5, 10 ** 10, {}, entry=100.0, be_offset=0.05)
+        self.assertEqual([e[3] for e in r["exits"]], ["TP1", "BE"])
+        self.assertAlmostEqual(r["exits"][1][1], 100.05)                                       # stop at entry + costs, not the original SL
+        r0 = replay.walk(P, 0, 1, 1.0, 98.0, 101.0, 104.0, 0.5, 10 ** 10, {}, entry=100.0)
+        self.assertNotIn("BE", [e[3] for e in r0["exits"]])
+        F = replay.Path([mk(k, 100, 100.1, 99.9, 100) for k in range(12)], None)
+        e = replay.walk(F, 0, 1, 1.0, 98.0, 101.0, 104.0, 0.5, 10 ** 10, {}, entry=100.0, early=(8, 0.5))
+        self.assertEqual(e["exits"][0][3], "EARLY_NO_PROGRESS")
+        self.assertEqual(e["end_i"], 7)
+
+    def test_7_setup_features_causal_and_identical(self):
+        pl = S.run(self.p, self.bars)[1][0]
+        self.assertEqual(tuple(pl["features"]), st.SETUP_FEATURES)
+        self.assertTrue(all(isinstance(v, float) and math.isfinite(v) for v in pl["features"].values()))
+        ret = next(k for k, b in enumerate(self.bars) if b["open_utc"] == self.info["retest_time"])
+        pl2 = S.run(self.p, self.bars[:ret + 1])[1][0]                                          # nothing after the decision
+        self.assertEqual(pl["features"], pl2["features"])
+        res = replay.run(self.bars, self.p, 0.01, COSTS)
+        self.assertEqual(res["cycles"][0]["features"], pl["features"])                         # replay = live features
+        self.assertTrue(res["cycles"][0]["win"])
+
+    def test_variant_comparison_small_sample(self):
+        vdef = json.loads((st.PROFILE_PATH.parent / "scalp_variants_v1.json").read_text(encoding="utf-8"))
+        ids = [v["id"] for v in vdef["variants"]]
+        self.assertEqual(ids[0], "BASE")
+        cmp_ = replay.compare_variants(self.bars, self.p, vdef["variants"][:3], 0.01, COSTS)
+        self.assertIsNone(cmp_["chosen"])                                                       # < 30 development cycles -> no winner
+        self.assertIn("INSUFFICIENT", cmp_["chosen_reason"])
+        self.assertIn("win_rate", cmp_["rows"][0]["development"] if cmp_["rows"][0]["development"]["cycles"] else {"win_rate": 0})
+        for v in vdef["variants"]:
+            st.with_overrides(st.load_profile(), v["set"])                                     # every override path is valid
+
+
 class TestScalpExportAndReplayCli(unittest.TestCase):
     def test_export_on_simulator_then_replay(self):
         """export-scalp on the simulated terminal (SYNTHETIC_TEST, never REAL_USER_DATA) -> scalp-replay CLI summary."""

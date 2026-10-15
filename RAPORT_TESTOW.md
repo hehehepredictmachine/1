@@ -1,5 +1,14 @@
 # Raport testów – MasterQUO AI 1.12.0
 
+## 1.12.0 (aktualizacja) – warianty poprawy win ratio + filtr modelu jakości setupu (2026-10-15)
+Pełny przebieg `python tools/run_tests.py`: **359 testów bota OK + 46 testów `.venv_candles` OK**
+(raport lokalny `data/logs/testy_offline_20261015T195150Z.json`). Nowe: `TestWinRateVariants` (8: filtry jakości, sesja, tryby trendu,
+jakość zakresu, close retestu i wejście limit, BE po TP1 i wyjście bez postępu, cechy setupu przyczynowe i identyczne w replayu i na żywo,
+porównanie wariantów przy małej próbie = brak zwycięzcy), test domyślnej prowizji 0.50, `SetupQualityFilter` (3: filtr podnosi win ratio
+i expectancy na danych z sygnałem kosztem mniejszej liczby transakcji, za mało cykli = INSUFFICIENT_DATA, szum = brak filtra), UI: tabela wariantów
+i karta filtra B. Domyślne ustawienia profilu zachowują się jak przed zmianą (wszystkie wcześniejsze testy bez zmian oczekiwań).
+Dane wyłącznie syntetyczne – **skuteczność wariantów na XAUUSD- nieoceniona (BLOCKED_NO_REAL_DATA)**.
+
 ## 1.12.0 – scalp M5 Range → M1 Sweep/Reclaim → Retest, hedge, ML/NN – SHADOW (2026-10-15)
 Pełny przebieg `python tools/run_tests.py` (Linux, symulator terminala, Chromium, `MQ_CANDLES_PYTHON` = izolowane `.venv_candles`):
 **350 testów bota OK + 43 testy środowiska prognoz/scalp OK** (29 referencyjnych `gold_candles`, 7 runtime, 7 nowych `test_scalp_train`),

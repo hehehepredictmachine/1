@@ -2,7 +2,8 @@
 setlocal
 rem Replay profilu scalp na najnowszym eksporcie (OHLC M1 + spread z MT5; przyblizony - bez tickow), z kosztami i stresem +50%%.
 rem Opcjonalny argument (domyslnie 0.50): prowizja za 1 lot na strone (waluta konta). Przyklad: 19_REPLAY_SCALP.bat 3.5
-rem Wynik: data\scalp\replay\^<czas^>\summary.json (cykle, dni, expectancy R z 95%% CI, hedge vs REDUCE).
+rem Wynik: data\scalp\replay\^<czas^>\summary.json (cykle, dni, win ratio, expectancy R z 95%% CI, hedge vs REDUCE) oraz
+rem variants.json - porownanie wariantow poprawy win ratio (wybor po expectancy w development, test oceniany raz).
 cd /d "%~dp0"
 set "COMM=%~1"
 if "%COMM%"=="" set "COMM=0.50"
@@ -13,6 +14,7 @@ pushd "%~dp0backend"
 set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --cost-stress 1.5
 if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --margin-mode NETTING
+if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --variants
 popd
 pause
 exit /b %RC%

@@ -102,6 +102,8 @@ class TestScalpUI(unittest.TestCase):
         self.assertIn("UNDOCUMENTED_EXTERNAL", p.locator("[data-testid=scalp-adapters]").inner_text())
         p.locator("[data-testid=scalp-tab-train]").click()
         self.assertIn("BLOCKED_NO_REAL_DATA", p.locator("[data-testid=scalp-training]").inner_text())
+        self.assertIn("Brak porównania", p.locator("[data-testid=scalp-variants]").inner_text())
+        self.assertIn("Nie trenowano", p.locator("[data-testid=scalp-model-b]").inner_text())
         p.locator("[data-testid=scalp-tab-mtf]").click()
         self.assertEqual(p.locator("[data-testid=scalp-mtf] tbody tr").count(), 5)
         self.assertFalse([u for u in self.posts if "/scalp" in u])
