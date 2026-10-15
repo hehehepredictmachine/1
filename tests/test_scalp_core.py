@@ -373,6 +373,19 @@ class TestConfigAndService(unittest.TestCase):
             with self.assertRaises(Exception):
                 ScalpConfig(**{k: v})
 
+    def test_commission_default_050_and_null_migrated(self):
+        from masterquo.config import ConfigStore, ScalpConfig
+        self.assertEqual(ScalpConfig().commission_per_lot_side, 0.5)
+        td = TempData()
+        try:
+            p = Path(td.dir) / "config.json"
+            p.write_text(json.dumps({"config_version": 10, "scalp": {"commission_per_lot_side": None}}), encoding="utf-8")
+            self.assertEqual(ConfigStore(p).get().scalp.commission_per_lot_side, 0.5)
+            p.write_text(json.dumps({"config_version": 10, "scalp": {"commission_per_lot_side": 3.5}}), encoding="utf-8")
+            self.assertEqual(ConfigStore(p).get().scalp.commission_per_lot_side, 3.5)
+        finally:
+            td.close()
+
     def test_profile_units_and_switches(self):
         p = st.load_profile()
         self.assertEqual(p["switches"], {"MODE": "SHADOW", "LIVE_TRADING": False, "ML_EXECUTION": False, "HEDGE_EXECUTION": False})

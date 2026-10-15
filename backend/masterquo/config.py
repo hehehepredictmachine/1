@@ -381,7 +381,7 @@ class ScalpConfig(_Strict):
     ml_execution: Literal[False] = False              # ML_EXECUTION
     hedge_execution: Literal[False] = False           # HEDGE_EXECUTION
     m1_bars: int = Field(1500, ge=300, le=5000)
-    commission_per_lot_side: float | None = None      # account currency per 1 lot per side; None = UNKNOWN -> gate BLOCKED
+    commission_per_lot_side: float | None = Field(0.5, ge=0)   # account currency per 1 lot per side (package default 0.50); None = UNKNOWN -> BLOCKED
     slippage_ticks: float = Field(2.0, ge=0, le=100)
     max_spread_price: float | None = None             # absolute cap in price units (None = only the cost/TP1 filter)
     max_spread_atr_m1: float = Field(0.5, gt=0, le=5)
@@ -423,6 +423,10 @@ class ConfigStore:
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             migrated = migrate(raw)
+            sc = raw.get("scalp")
+            if isinstance(sc, dict) and sc.get("commission_per_lot_side", 0.5) is None:
+                sc["commission_per_lot_side"] = 0.5            # 1.12.0 wrote null (unknown); package default is 0.50 per lot per side
+                migrated = True
             cfg = AppConfig.model_validate(raw)
             if migrated:
                 self._write(cfg)

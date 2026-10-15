@@ -26,8 +26,8 @@ przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera
 
 ## Nowe w 1.12 – scalp M5 Range → M1 Sweep → Retest + hedge + ML/NN (SHADOW)
 1. `16_EKSPORT_HISTORII_SCALP.bat` – przy zalogowanym MT5 pobiera zamknięte M1/M5/M15/M30/H1 `XAUUSD-` (domyślnie 6 miesięcy).
-2. `19_REPLAY_SCALP.bat <prowizja>` – replay po kosztach (też stres +50% i NETTING); `17_TRENING_SCALP_ML.bat <prowizja>` – trening A/B/C
-   (LR, boosting, sieć MLP 64/32, kwantyle); `18_…` walidacja, `21_…` rollback. `<prowizja>` = za 1 lot na stronę z warunków Twojego rachunku.
+2. `19_REPLAY_SCALP.bat` – replay po kosztach (też stres +50% i NETTING); `17_TRENING_SCALP_ML.bat` – trening A/B/C
+   (LR, boosting, sieć MLP 64/32, kwantyle); `18_…` walidacja, `21_…` rollback. Prowizja domyślnie 0.50 za 1 lot na stronę (inna: argument, np. `17_TRENING_SCALP_ML.bat 3.5`).
 3. `20_START_SCALP_SHADOW.bat` – monitor; Wykresy bota → „Scalp M5 Range → M1 Sweep → Retest + hedge” (MTF, Setup, Wskaźniki, Prognozy, Hedge/ryzyko, Trening).
 Moduł **nie wysyła zleceń** (EXECUTION_AUTHORIZED=false). Opis: `docs/SCALP_HEDGE_ML_NN_PL.md`, raport: `research/scalp/RAPORT_SCALP_HEDGE_ML_NN.md`.
 

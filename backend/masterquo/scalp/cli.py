@@ -43,6 +43,12 @@ def replay_cmd(a) -> int:
     prof = st.load_profile()
     t0 = time.time()
     bars = {tf: load_csv(hist / f"XAUUSD_{tf}.csv", point) for tf in ("M1", "M5", "M15", "M30") if (hist / f"XAUUSD_{tf}.csv").exists()}
+    if a.commission_per_lot_side is None:
+        from ..config import ConfigStore
+        a.commission_per_lot_side = ConfigStore().get().scalp.commission_per_lot_side
+    if a.commission_per_lot_side is None:
+        print("[BLAD] prowizja nieznana – ustaw scalp.commission_per_lot_side w data\\config.json albo podaj --commission-per-lot-side")
+        return 2
     k = a.cost_stress
     costs = {"commission_price_side": k * a.commission_per_lot_side / cs, "slippage_price": k * a.slippage_ticks * tick}
     res = replay.run(bars["M1"], prof, tick, costs, bars.get("M5"), bars.get("M15"), bars.get("M30"), margin_mode=a.margin_mode)

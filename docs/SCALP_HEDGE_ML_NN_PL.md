@@ -15,16 +15,15 @@ Profil badawczy: `config/scalp_profile_v1.json`, `MQ-SCALP-RANGE-SWEEP-1.0.0-RES
 |---|---|---|
 | 0 | `10_PROGNOZY_INSTALUJ.bat` | jednorazowo: `.venv_candles` (scikit-learn, pandas – pakiety z hashami) |
 | 1 | `16_EKSPORT_HISTORII_SCALP.bat [miesiące]` | zamknięte M1/M5/M15/M30/H1 `XAUUSD-` z Twojego zalogowanego MT5 (domyślnie 6 mies.) → `data\scalp\history\<cutoff>\` z `DATA_QUALITY_REPORT.json` |
-| 2 | `19_REPLAY_SCALP.bat <prowizja>` | replay po kosztach w trzech wariantach: normalnym, ze stresem kosztów +50% oraz NETTING → `data\scalp\replay\<czas>\summary.json` |
-| 3 | `17_TRENING_SCALP_ML.bat <prowizja>` | trening A/B/C (plan, walk-forward, kalibracja, holdout raz) → `data\scalp\runs\<run_id>\report.json` |
+| 2 | `19_REPLAY_SCALP.bat [prowizja]` | replay po kosztach w trzech wariantach: normalnym, ze stresem kosztów +50% oraz NETTING → `data\scalp\replay\<czas>\summary.json` |
+| 3 | `17_TRENING_SCALP_ML.bat [prowizja]` | trening A/B/C (plan, walk-forward, kalibracja, holdout raz) → `data\scalp\runs\<run_id>\report.json` |
 | 4 | `18_WALIDACJA_SCALP.bat` | checksumy, kontrakt cech, odczyt przez ścieżkę workera bota |
 | 5 | `20_START_SCALP_SHADOW.bat` | start monitora; sekcja: Wykresy bota → „Scalp M5 Range → M1 Sweep → Retest + hedge” |
 | — | `21_ROLLBACK_MODELU_SCALP.bat [BRAK]` | poprzedni zgodny model albo brak modelu |
 
-**`<prowizja>`** to prowizja za 1 lot na stronę, w walucie konta, z warunków Twojego rachunku.
-- Profil „Zero” nie oznacza zerowych kosztów.
-- W monitorze ustaw ją w `data\config.json`: `"scalp": {"commission_per_lot_side": 3.5}`.
-- Bez niej bramka „prowizja znana” blokuje READY_SHADOW.
+**`<prowizja>`** to prowizja za 1 lot na stronę, w walucie konta. **Domyślnie w paczce: 0.50** – launchery 17 i 19 można uruchomić dwuklikiem.
+- Inna wartość: argument launchera (np. `17_TRENING_SCALP_ML.bat 3.5`) oraz w `data\config.json`: `"scalp": {"commission_per_lot_side": 3.5}`.
+- Sprawdź ją w warunkach swojego rachunku – profil „Zero” nie oznacza zerowych kosztów.
 
 **Polecenia CLI:**
 - `python -m masterquo export-scalp`

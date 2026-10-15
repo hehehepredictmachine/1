@@ -31,9 +31,9 @@ Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwi
 
 ### B2c. Scalp M5 Range → M1 Sweep → Retest + hedge + ML/NN (SHADOW)
 
-1. Wpisz prowizję rachunku (za 1 lot na stronę) w `data\config.json`: `"scalp": {"commission_per_lot_side": 3.5}` – bez tego bramka kosztów blokuje READY_SHADOW.
+1. Prowizja domyślnie **0.50** za 1 lot na stronę. Jeśli Twój rachunek ma inną: `data\config.json` → `"scalp": {"commission_per_lot_side": 3.5}` i argument launcherów 17/19.
 2. `16_EKSPORT_HISTORII_SCALP.bat 6` – MT5 uruchomiony i zalogowany; wynik w `data\scalp\history\` (+ `DATA_QUALITY_REPORT.json`).
-3. `19_REPLAY_SCALP.bat 3.5` – replay po kosztach; `17_TRENING_SCALP_ML.bat 3.5` – trening (osobny proces, `.venv_candles` z `10_PROGNOZY_INSTALUJ.bat`).
+3. `19_REPLAY_SCALP.bat` – replay po kosztach; `17_TRENING_SCALP_ML.bat` – trening (osobny proces, `.venv_candles` z `10_PROGNOZY_INSTALUJ.bat`).
 4. `18_WALIDACJA_SCALP.bat`, `20_START_SCALP_SHADOW.bat`; rollback `21_ROLLBACK_MODELU_SCALP.bat` (lub `… BRAK`). Wyłączenie: `"scalp": {"enabled": false}`.
 
 ### B2b. Prognozy świec 5/15/30 min (SHADOW)

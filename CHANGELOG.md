@@ -17,6 +17,7 @@
   C (polityki hedge); LR, HistGradientBoosting, **MLP 64/32** z early stopping na późniejszym fragmencie, kwantyle; plan przed treningiem,
   walk-forward, kalibracja, holdout raz, rejestr z checksumami, inference w workerze (`scalp_forecast`).
 * Eksport M1/M5/M15/M30/H1 (`export-scalp`), replay CLI (`scalp-replay`), launchery 16–21. Monitor: Wykresy bota → sekcja Scalp (6 widoków).
+* Domyślna prowizja w paczce: **0.50 za 1 lot na stronę** (`scalp.commission_per_lot_side`; launchery 17/19 działają dwuklikiem, argument nadpisuje).
 * **Trening i replay na danych rynkowych NIE wykonane – BLOCKED_NO_REAL_DATA.** Hedge vs REDUCE nieoceniony. Nic nie jest dopuszczone do wykonania.
   Raport: `research/scalp/RAPORT_SCALP_HEDGE_ML_NN.md`, opis: `docs/SCALP_HEDGE_ML_NN_PL.md`.
 

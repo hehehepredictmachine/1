@@ -234,7 +234,7 @@ def main(argv=None) -> int:
     es.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
     sr = sub.add_parser("scalp-replay", help="replay profilu scalp na wyeksportowanej historii M1 (OHLC, przybliżony – bez ticków)")
     sr.add_argument("--history", help="katalog eksportu (domyślnie najnowszy w data/scalp/history)")
-    sr.add_argument("--commission-per-lot-side", type=float, required=True, help="prowizja za 1 lot na stronę w walucie konta (Zero ≠ 0 kosztów)")
+    sr.add_argument("--commission-per-lot-side", type=float, default=None, help="prowizja za 1 lot na stronę w walucie konta; domyślnie scalp.commission_per_lot_side z config.json (paczka: 0.50)")
     sr.add_argument("--slippage-ticks", type=float, default=2.0)
     sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
     sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")

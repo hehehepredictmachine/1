@@ -210,7 +210,7 @@ def main(argv=None) -> int:
     ap.add_argument("--history", help="katalog eksportu (domyślnie najnowszy data/scalp/history)")
     ap.add_argument("--latest", action="store_true")
     ap.add_argument("--data-kind", default="REAL_USER_DATA", choices=["REAL_USER_DATA", "SYNTHETIC_TEST"])
-    ap.add_argument("--commission-per-lot-side", type=float, required=True, help="prowizja na 1 lot na stronę (waluta konta)")
+    ap.add_argument("--commission-per-lot-side", type=float, default=0.5, help="prowizja na 1 lot na stronę (waluta konta); domyślnie 0.50 jak w paczce")
     ap.add_argument("--slippage-ticks", type=float, default=2.0)
     ap.add_argument("--no-activate", action="store_true")
     ap.add_argument("--small-test", action="store_true", help="tylko SYNTHETIC_TEST: zmniejszone minima do testu ścieżki kodu")
