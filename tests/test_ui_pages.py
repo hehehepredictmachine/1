@@ -95,6 +95,9 @@ class TestThreePagesUI(unittest.TestCase):
             server.on_message(lambda msg: ws.send(msg))
         cls.page.route_web_socket(re.compile(r".*/api/v1/ws$"), on_ws)
         cls.page.goto(BASE + "/")
+        cls.page.wait_for_selector("[data-testid=page-pulpit]", timeout=30000)     # 1.13: first start = Pulpit
+        cls.first_url = cls.page.url
+        cls.page.goto(BASE + "/#/ai")
         cls.page.wait_for_selector("[data-testid=page-ai]", timeout=30000)
 
     @classmethod
@@ -126,7 +129,7 @@ class TestThreePagesUI(unittest.TestCase):
     # ------------------------------------------------------------ 1. default page, nav, Back/Forward, direct link, refresh
     def test_01_navigation_history_direct_link_refresh(self):
         p = self.page
-        self.assertTrue(p.url.endswith("#/ai"), p.url)                                            # first start: "Analiza AI"
+        self.assertTrue(self.first_url.endswith("#/pulpit"), self.first_url)                   # first start: "Pulpit" (1.13)
         self.assertEqual(p.locator("[data-testid=sidenav] [aria-current=page]").get_attribute("data-page"), "ai")
         self.nav("wykresy")
         p.wait_for_selector("[data-testid=page-bot]")

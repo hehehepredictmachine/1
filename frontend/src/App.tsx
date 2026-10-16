@@ -1,4 +1,4 @@
-// Three routable pages inside one shared frame. The store (one WebSocket) is provided ABOVE this component (main.tsx),
+// PepeMarketWizard: routable pages (grouped menu) inside one shared frame. The store (one WebSocket) is provided ABOVE this component (main.tsx),
 // so switching pages never reconnects; pages only choose what to show.
 import { useEffect, useState } from "react";
 import { BackgroundLayer, useAppearance } from "./appearance";
@@ -9,7 +9,8 @@ import { ThemeDialog } from "./components/ThemeDialog";
 import AiAnalysisPage from "./pages/AiAnalysisPage";
 import BotChartsPage from "./pages/BotChartsPage";
 import SetupRequirementsPage from "./pages/SetupRequirementsPage";
-import { useRoute } from "./router";
+import { ContextPage, DashboardPage, DiagnosticsPage, IndicatorsPage, JournalPage, PatternsPage, PositionsPage, SignalAnalysisPage, TestsPage } from "./pages/AnalyticsPages";
+import { PAGES, useRoute } from "./router";
 import { useStore } from "./store";
 import { UiCtx } from "./ui";
 import { cls } from "./util";
@@ -30,26 +31,35 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.loaded]);
   useEffect(() => {
-    document.title = `MasterQUO AI – ${{ ai: "Analiza AI", wykresy: "Wykresy bota", warunki: "Warunki setupu" }[route.page]}`;
+    document.title = `PepeMarketWizard – ${PAGES.find((p) => p.id === route.page)?.label ?? ""}`;
   }, [route.page]);
 
-  if (!s.loaded) return <><BackgroundLayer /><div className="loading">MasterQUO AI – łączenie z lokalnym backendem…</div></>;
+  if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
   return (
     <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
       <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
         <BackgroundLayer />
-        {s.synthetic && <div className="synthetic-banner">DANE SYNTETYCZNE – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
+        {s.synthetic && <div className="synthetic-banner">DANE PRZYKŁADOWE (SYNTETYCZNE) – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
         <AppShell page={route.page} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)}>
           {route.page === "ai" && <AiAnalysisPage />}
           {route.page === "wykresy" && <BotChartsPage route={route} />}
           {route.page === "warunki" && <SetupRequirementsPage route={route} />}
+          {route.page === "pulpit" && <DashboardPage />}
+          {route.page === "kontekst" && <ContextPage />}
+          {route.page === "indykatory" && <IndicatorsPage />}
+          {route.page === "sygnal" && <SignalAnalysisPage />}
+          {route.page === "formacje" && <PatternsPage />}
+          {route.page === "pozycje" && <PositionsPage />}
+          {route.page === "dziennik" && <JournalPage />}
+          {route.page === "testy" && <TestsPage />}
+          {route.page === "diagnostyka" && <DiagnosticsPage />}
         </AppShell>
         {settings && <SettingsModal onClose={() => setSettings(false)} />}
         {mode && <ModeDialog onClose={() => setMode(false)} />}
         {power && <PowerDialog onClose={() => setPower(false)} />}
         {look && <ThemeDialog onClose={() => setLook(false)} />}
         <footer className="footer">
-          MasterQUO AI {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
+          PepeMarketWizard {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
           Narzędzie analityczne – nie gwarantuje zysków.
         </footer>
       </div>

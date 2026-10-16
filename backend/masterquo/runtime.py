@@ -85,6 +85,8 @@ class Runtime:
         self.walls = WallsService(self.cfg, self.db, self.bridge)           # frozen session walls snapshot -> strategies (S12)
         from .forecast.service import ForecastService
         self.forecast = ForecastService(self.cfg, self.bridge, self.db, self.bus, self.log)   # SHADOW only, isolated worker process
+        from .analytics.service import AnalyticsService
+        self.analytics = AnalyticsService(self.cfg, self.bridge, self.db, self.bus, self.log)   # observational: BB/MA, FFT/EMD/VMD, Double Bottom
         from .scalp.service import ScalpService
         self.scalp = ScalpService(self.cfg, self.bridge, self.db, self.bus, self.log, news=self.news, forecast=self.forecast)   # SHADOW only
         self.engine.active.context_fn = self.walls.context
@@ -134,6 +136,7 @@ class Runtime:
         self.scanner.start()
         self.forecast.start()
         self.scalp.start()
+        self.analytics.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -158,6 +161,7 @@ class Runtime:
         self.ml.stop()
         self.forecast.stop()
         self.scalp.stop()
+        self.analytics.stop()
         self.scanner.stop()
         self.engine.stop()
         self.manager.stop()

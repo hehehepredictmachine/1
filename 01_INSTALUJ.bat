@@ -1,14 +1,14 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem MasterQUO AI - instalacja (Windows 10/11 x64). Nie zmienia globalnego Pythona ani zabezpieczen Windows.
+rem PepeMarketWizard - instalacja (Windows 10/11 x64). Nie zmienia globalnego Pythona ani zabezpieczen Windows.
 cd /d "%~dp0"
 set "ROOT=%~dp0"
 if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=install"
 set "LOG=%ROOT%data\logs\instalacja_%TS%.log"
-echo [MasterQUO] Instalacja - log: "%LOG%"
-echo MasterQUO AI install %DATE% %TIME% > "%LOG%"
+echo [PepeMarketWizard] Instalacja - log: "%LOG%"
+echo PepeMarketWizard install %DATE% %TIME% > "%LOG%"
 
 rem ---- 1. wybor sprawnego interpretera: preferowany Python 3.13 x64, potem 3.12 (bez automatycznego najnowszego)
 set "PYEXE="

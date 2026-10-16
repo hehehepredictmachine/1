@@ -60,6 +60,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, forecast: d };
     case "scalp":
       return { ...s, scalp: d };
+    case "analytics":
+      return { ...s, analytics: d };
     case "markets":
       return { ...s, markets: d };
     case "bot_signal": {
@@ -118,7 +120,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   if (error)
     return (
       <div className="fatal">
-        <h1>MasterQUO AI</h1>
+        <h1>PepeMarketWizard</h1>
         <p>Nie można połączyć się z lokalnym backendem: {error}</p>
         <p>Uruchom 03_START_MASTERQUO.bat i odśwież stronę.</p>
       </div>

@@ -11,7 +11,7 @@ probability_win:                only from a calibrated ML model validated out of
 """
 from __future__ import annotations
 
-from ..timeutil import CONTEXT_TIMEFRAMES, TF_SECONDS, iso, parse_iso
+from ..timeutil import CONTEXT_TIMEFRAMES, parse_iso
 
 SIGNAL_SCHEMA = "MQ-SIGNAL-1.0.0"
 RR_NET_DEFINITION = ("RR po kosztach = (ważony zysk do celów − prowizja w obie strony − stres poślizgu) / "

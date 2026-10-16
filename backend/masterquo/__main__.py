@@ -66,17 +66,17 @@ def cmd_serve(args) -> int:
     url = f"http://127.0.0.1:{port}/"
     h = _health(port)
     if h and h.get("app") == "MasterQUO AI":
-        print(f"[MasterQUO] Aplikacja już działa ({'DANE SYNTETYCZNE' if h.get('synthetic') else 'MT5'}) – otwieram monitor {url}")
+        print(f"[PepeMarketWizard] Aplikacja już działa ({'DANE SYNTETYCZNE' if h.get('synthetic') else 'MT5'}) – otwieram monitor {url}")
         if not args.no_browser:
             webbrowser.open(url)
         return 0
     if h is not None or _port_busy(port):
-        print(f"[MasterQUO] Port {port} jest zajęty przez inny program. Zmień server.port w data\\config.json.", file=sys.stderr)
+        print(f"[PepeMarketWizard] Port {port} jest zajęty przez inny program. Zmień server.port w data\\config.json.", file=sys.stderr)
         return 3
     _setup_logging()
     lock = _single_instance_lock()
     if lock is None:
-        print("[MasterQUO] Inna instancja MasterQUO już się uruchamia w tym folderze.", file=sys.stderr)
+        print("[PepeMarketWizard] Inna instancja PepeMarketWizard już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
     import uvicorn
     from .api.app import create_app
@@ -99,7 +99,7 @@ def cmd_serve(args) -> int:
     def opener():
         for _ in range(120):
             if _health(port, 1.0):
-                print(f"[MasterQUO] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb wykonania wg ustawień'})")
+                print(f"[PepeMarketWizard] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb wykonania wg ustawień'})")
                 if not args.no_browser and rt.cfg.get().server.open_browser:
                     webbrowser.open(url)
                 return
@@ -114,7 +114,7 @@ def cmd_serve(args) -> int:
                 (_rt_dir() / f).unlink()
             except OSError:
                 pass
-        print("[MasterQUO] Zatrzymano.")
+        print("[PepeMarketWizard] Zatrzymano.")
     return 0
 
 
@@ -157,10 +157,10 @@ def cmd_stop(args) -> int:
     port = _port()
     tokf = _rt_dir() / "shutdown.token"
     if not _health(port):
-        print("[MasterQUO] Aplikacja nie działa (brak odpowiedzi na porcie %d)." % port)
+        print("[PepeMarketWizard] Aplikacja nie działa (brak odpowiedzi na porcie %d)." % port)
         return 0
     if not tokf.exists():
-        print("[MasterQUO] Brak pliku tokenu zatrzymania – zamknij okno serwera MasterQUO ręcznie.", file=sys.stderr)
+        print("[PepeMarketWizard] Brak pliku tokenu zatrzymania – zamknij okno serwera MasterQUO ręcznie.", file=sys.stderr)
         return 2
     req = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/admin/shutdown", data=b"{}", method="POST",
                                  headers={"x-mq-shutdown": tokf.read_text(encoding="utf-8").strip(), "Content-Type": "application/json",
@@ -168,14 +168,14 @@ def cmd_stop(args) -> int:
     try:
         urllib.request.urlopen(req, timeout=5).read()
     except (urllib.error.URLError, OSError) as exc:
-        print("[MasterQUO] Nie udało się wysłać żądania zatrzymania:", exc, file=sys.stderr)
+        print("[PepeMarketWizard] Nie udało się wysłać żądania zatrzymania:", exc, file=sys.stderr)
         return 3
     for _ in range(40):
         if not _health(port, 0.8):
-            print("[MasterQUO] Zatrzymano serwer MasterQUO (terminal MT5 i inne programy Python nie zostały zamknięte).")
+            print("[PepeMarketWizard] Zatrzymano serwer PepeMarketWizard (terminal MT5 i inne programy Python nie zostały zamknięte).")
             return 0
         time.sleep(0.5)
-    print("[MasterQUO] Serwer nie zakończył się w czasie 20 s – zamknij okno 'MasterQUO server'.", file=sys.stderr)
+    print("[PepeMarketWizard] Serwer nie zakończył się w czasie 20 s – zamknij okno 'PepeMarketWizard server'.", file=sys.stderr)
     return 4
 
 

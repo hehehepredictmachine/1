@@ -6,7 +6,7 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-echo [MasterQUO] Diagnostyka srodowiska, terminala MT5 i agenta Claude (bez zlecen).
+echo [PepeMarketWizard] Diagnostyka srodowiska, terminala MT5 i agenta Claude (bez zlecen).
 pushd "%~dp0backend"
 "%~dp0.venv\Scripts\python.exe" -m masterquo doctor
 set "RC=%ERRORLEVEL%"

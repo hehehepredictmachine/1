@@ -26,20 +26,11 @@ def indicator_series(tf: str, closed: list[dict], tf_profile: dict) -> dict:
     def pts(vals):
         return [{"time": t, "value": round(v, 5)} for t, v in zip(times, vals) if v is not None]
 
-    for n in enabled.get("ema", []):
-        out["lines"].append({"id": f"EMA{n}", "label": f"EMA {n}", "points": pts(m.ema(closes, n)), "visual_only": False})
+    # 1.13: EMA and Bollinger lines come from the shared engine analytics/ta.py (same formulas as M02I - EMA seeded with SMA,
+    # population std - verified by tests); one implementation for charts, explanations, history and tests.
+    from ..analytics import ta
     bb = enabled.get("bollinger")
-    if bb:
-        mids, ups, los = [], [], []
-        p, k = bb["period"], bb["std_mult"]
-        for i in range(len(closes)):
-            if i + 1 < p:
-                mids.append(None); ups.append(None); los.append(None)
-                continue
-            r = m.bb(closes[: i + 1], p, k)
-            mids.append(r["mid"]); ups.append(r["upper"]); los.append(r["lower"])
-        out["lines"] += [{"id": "BB_U", "label": "BB górna", "points": pts(ups), "visual_only": False},
-                         {"id": "BB_L", "label": "BB dolna", "points": pts(los), "visual_only": False}]
+    out["lines"] += ta.chart_lines(closed, {"period": bb["period"], "k": bb["std_mult"]} if bb else None, None, list(enabled.get("ema", [])))
     rsi_n = enabled.get("rsi")
     rsi_visual = rsi_n is None
     out["panels"]["rsi"] = {"period": rsi_n or DEFAULT_RSI, "visual_only": rsi_visual,

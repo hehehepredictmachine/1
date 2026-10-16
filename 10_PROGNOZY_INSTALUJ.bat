@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-rem MasterQUO AI - izolowane srodowisko .venv_candles dla modulu prognoz gold_candles (numpy/pandas/scikit-learn przypiete
+rem PepeMarketWizard - izolowane srodowisko .venv_candles dla modulu prognoz gold_candles (numpy/pandas/scikit-learn przypiete
 rem przez modul referencyjny). Glowne .venv bota NIE jest zmieniane. Bez kompilacji, tylko pakiety z hashami.
 cd /d "%~dp0"
 set "ROOT=%~dp0"
@@ -8,7 +8,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=candles"
 set "LOG=%ROOT%data\logs\instalacja_prognoz_%TS%.log"
-echo [MasterQUO] Srodowisko prognoz - log: "%LOG%"
+echo [PepeMarketWizard] Srodowisko prognoz - log: "%LOG%"
 set "PYEXE="
 for %%V in (3.13 3.12) do (
   if not defined PYEXE (

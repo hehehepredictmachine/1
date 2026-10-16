@@ -22,7 +22,7 @@ from . import indicators as ind
 
 CONTRACT_VERSION = "MQ-STRATEGY-CONTRACT-1.0.0"
 SCHEMA_VERSION = "mq-setup-1.0.0"
-from ..timeutil import TF_SECONDS, TIMEFRAMES  # noqa: E402  (single registry)
+from ..timeutil import TF_SECONDS, TIMEFRAMES  # noqa: E402,F401  (single registry, re-exported for tracker)
 STAGES = ("WATCH", "EARLY", "CONFIRMED")
 # ACTIVE score categories (points). Deterministic rules in `score`.
 WEIGHTS = {"structure": 25, "formation": 25, "momentum": 20, "trigger": 15, "htf": 10, "extra": 5}

@@ -15,7 +15,7 @@ different level types: their proximity is a confluence FEATURE, it never renames
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 from ..strategies import indicators as ind
 from ..timeutil import TF_SECONDS, iso, parse_iso

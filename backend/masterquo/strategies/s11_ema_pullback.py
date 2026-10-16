@@ -123,7 +123,7 @@ class EmaPullback(Strategy):
                 components={"structure": min(1.0, (adx[i] or 0) / 35.0), "formation": 1.0 if (conf or waiting) else 0.4,
                             "trigger": 1.0 if conf else 0.0},
                 momentum_mode="CONTINUATION", missing=missing,
-                reason_codes=[f"EMA20>EMA50", f"ADX_{adx[i]:.0f}", f"SETUP_{setup_bar}"] + ([f"WAIT_LEFT_{wait_left}"] if wait_left is not None else []),
+                reason_codes=["EMA20>EMA50", f"ADX_{adx[i]:.0f}", f"SETUP_{setup_bar}"] + ([f"WAIT_LEFT_{wait_left}"] if wait_left is not None else []),
                 facts={"ema20_px": round(e20[i], 5), "ema50_px": round(e50[i], 5), "atr": round(atr[i], 5), "adx": round(adx[i], 2),
                        "touch_bar": setup_bar, "confirm_bar": t[i] if conf else None, "rr": cp.rr, "core": core.CORE_VERSION},
                 horizon="INTRADAY" if tf in ("M15", "M30") else "SCALP"))

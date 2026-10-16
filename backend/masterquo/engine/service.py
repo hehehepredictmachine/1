@@ -74,8 +74,8 @@ class EngineService:
             n = self.expire_signals_on_start()
             if n:
                 self.log.info("SIGNAL", "RESTART_EXPIRED", f"Po restarcie {n} wcześniejszych sygnałów oznaczono jako WYGASŁY (nie są bieżące).")
-        except Exception:
-            pass
+        except Exception as exc:                 # audit A-07: no longer silent - start continues, the reason is logged
+            self.log.warn("SIGNAL", "RESTART_EXPIRE_FAILED", f"Nie udało się oznaczyć starych sygnałów: {type(exc).__name__}: {exc}"[:300])
         threading.Thread(target=self._loop, name="engine", daemon=True).start()
 
     def stop(self) -> None:

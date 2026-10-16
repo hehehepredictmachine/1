@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import pickle
 import sys
 import time
@@ -249,8 +248,7 @@ def main(argv=None) -> int:
     write_json_atomic(rd / "TRAINING_PLAN.json", plan)
     mins = plan["minimums"]
     b = plan["boundaries_utc"]
-    cal0, hold0, end = _ts(b["calibration"][0]), _ts(b["holdout"][0]), _ts(b["holdout"][1])
-    dev0 = _ts(b["development"][0])
+    cal0, hold0 = _ts(b["calibration"][0]), _ts(b["holdout"][0])
 
     X, atr = SF.build(d["t"], d["o"], d["h"], d["l"], d["c"], d["tv"], d["sp"])
     Y, Q, END = SF.labels(d["t"], d["c"], atr, d["sp"], costs["commission_price_side"], costs["slippage_price"])

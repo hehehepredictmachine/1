@@ -1,6 +1,6 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/MasterQUO_KLIENT_1_12_0.zip   bot for Windows (no license, no secrets, no admin rights)
+  release/PepeMarketWizard_KLIENT_1_13_0.zip   bot for Windows (no license, no secrets, no admin rights)
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -13,8 +13,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.12.0"
-CLIENT_ZIP = "MasterQUO_KLIENT_1_12_0.zip"
+VERSION = "1.13.0"
+CLIENT_ZIP = "PepeMarketWizard_KLIENT_1_13_0.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
@@ -63,9 +63,9 @@ def main():
     scan(client)
     lines = [f"{hashlib.sha256((ROOT / f).read_bytes()).hexdigest()}  {f}" for f in client]
     (ROOT / "MANIFEST_SHA256.txt").write_text(
-        f"# MasterQUO AI {VERSION} (klient) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
+        f"# PepeMarketWizard {VERSION} (klient) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
         encoding="utf-8", newline="\n")
-    write_zip(CLIENT_ZIP, "MasterQUO_AI/", client + ["MANIFEST_SHA256.txt"])
+    write_zip(CLIENT_ZIP, "PepeMarketWizard/", client + ["MANIFEST_SHA256.txt"])
 
 
 if __name__ == "__main__":

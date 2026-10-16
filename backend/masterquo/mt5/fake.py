@@ -14,7 +14,7 @@ from __future__ import annotations
 import threading
 import os
 from collections import namedtuple
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Callable
 
 import numpy as np

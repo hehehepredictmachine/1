@@ -372,6 +372,48 @@ class ForecastConfig(_Strict):
     request_timeout_seconds: float = Field(30.0, ge=5, le=300)
 
 
+class AnalyticsConfig(_Strict):
+    """1.13 shared analytics (BB / MAs, FFT / EMD / VMD, Double Bottom). Observational: `influence` can only be OBSERVE -
+    the results feed charts, explanations, history and tests, never the execution permission or the position size."""
+    enabled: bool = True
+    influence: Literal["OBSERVE"] = "OBSERVE"
+    timeframes: list[Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1"]] = Field(default_factory=lambda: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"])
+    bars: int = Field(400, ge=150, le=2000)
+    bb_period: int = Field(20, ge=2, le=200)
+    bb_k: float = Field(2.0, gt=0, le=5)
+    bb_squeeze_lookback: int = Field(120, ge=20, le=1000)
+    bb_squeeze_pct: float = Field(20.0, ge=1, le=50)
+    mas: list[dict] = Field(default_factory=lambda: [{"id": "EMA9", "type": "EMA", "period": 9, "visible": False},
+                                                       {"id": "EMA21", "type": "EMA", "period": 21, "visible": True},
+                                                       {"id": "SMA50", "type": "SMA", "period": 50, "visible": False},
+                                                       {"id": "SMA200", "type": "SMA", "period": 200, "visible": False}])
+    signal_enabled: bool = True
+    signal_timeframes: list[Literal["M1", "M5", "M15", "M30", "H1"]] = Field(default_factory=lambda: ["M5", "M15", "H1"])
+    signal_window: int = Field(256, ge=128, le=1024)
+    fft_input: Literal["log_returns", "detrended_log_close"] = "log_returns"
+    vmd_k: int = Field(4, ge=2, le=8)
+    vmd_alpha: float = Field(2000.0, gt=0, le=1e6)
+    vmd_max_iter: int = Field(500, ge=10, le=2000)
+    emd_max_imfs: int = Field(8, ge=1, le=12)
+    timeout_seconds: float = Field(10.0, ge=1, le=120)
+    db_timeframes: list[Literal["M1", "M5", "M15", "M30", "H1"]] = Field(default_factory=lambda: ["M5", "M15", "H1"])
+    db_mode: Literal["SOURCE_COMPAT", "EXTENDED"] = "SOURCE_COMPAT"
+    db_min_separation: int = Field(5, ge=2, le=200)
+    db_max_separation: int = Field(60, ge=3, le=500)
+    db_max_bottom_diff_frac: float = Field(0.25, gt=0, le=1)
+    db_min_depth_pct: float = Field(0.05, ge=0, le=10)
+    db_profile: Literal["STANDALONE_STRUCTURE", "CONTEXT_FOR_STRATEGY"] = "STANDALONE_STRUCTURE"
+    snapshot_retention: int = Field(20000, ge=1000, le=500000)
+
+    @field_validator("mas")
+    @classmethod
+    def _mas(cls, v):
+        for m in v:
+            if m.get("type") not in ("SMA", "EMA", "WMA") or not 1 <= int(m.get("period", 0)) <= 500 or not m.get("id"):
+                raise ValueError(f"nieprawidłowa średnia: {m}")
+        return v
+
+
 class ScalpConfig(_Strict):
     """M5 Range -> M1 Sweep/Reclaim -> Retest research profile + hedge controller (1.12). SHADOW only: every execution
     switch can only be false; the module records hypothetical decisions and never sends an order."""
@@ -405,6 +447,7 @@ class AppConfig(_Strict):
     walls: WallsConfig = Field(default_factory=WallsConfig)
     forecast: ForecastConfig = Field(default_factory=ForecastConfig)
     scalp: ScalpConfig = Field(default_factory=ScalpConfig)
+    analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     first_run_completed: bool = False

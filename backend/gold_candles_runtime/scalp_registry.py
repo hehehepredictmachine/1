@@ -3,7 +3,6 @@ only compatible REAL_USER_DATA runs with verified checksums can be active (SHADO
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 

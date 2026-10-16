@@ -6,7 +6,7 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-rem Zatrzymuje wylacznie serwer MasterQUO (token z data\runtime). Nie zamyka MT5 ani innych programow Python.
+rem Zatrzymuje wylacznie serwer PepeMarketWizard (token z data\runtime). Nie zamyka MT5 ani innych programow Python.
 pushd "%~dp0backend"
 "%~dp0.venv\Scripts\python.exe" -m masterquo stop
 set "RC=%ERRORLEVEL%"

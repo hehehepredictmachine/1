@@ -4,13 +4,13 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { Frog } from "../../appearance";
-import { PAGES, href, type Page, usePersisted } from "../../router";
+import { GROUPS, PAGES, href, type Page, usePersisted } from "../../router";
 import { useStore } from "../../store";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../../util";
 import SignalsPanel from "../SignalsPanel";
 import StatsPanel from "../StatsPanel";
 
-const ICON: Record<Page, string> = { ai: "✦", wykresy: "▦", warunki: "☑" };
+const PAGE_BY_ID = Object.fromEntries(PAGES.map((p) => [p.id, p]));
 
 export type Overlay = null | "side" | "logs";
 
@@ -111,9 +111,9 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
   const tickAge = s.quote?.age_seconds;
   return (
     <header className="topbar2" data-testid="topbar">
-      <a className="brand" href={href(page)} aria-label="MasterQUO AI">
+      <a className="brand" href={href(page)} aria-label="PepeMarketWizard">
         <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--panel)" stroke="var(--neon)" /><path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="var(--neon)" strokeWidth="2.6" strokeLinecap="round" /></svg>
-        <span>MasterQUO <em>AI</em></span>
+        <span>PepeMarket<em>Wizard</em></span>
       </a>
       <div className="tb-chips">
         <span className={cls("chip", s.symbol?.status === "OK" ? "ok" : "warn")} title="Dokładny symbol brokera i jego status handlu"><i className="dot" />{s.symbol?.symbol ?? "?"}</span>
@@ -133,7 +133,7 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
         <button className={cls("tb-btn", overlay === "logs" && "on")} data-testid="open-logs" onClick={() => setOverlay(overlay === "logs" ? null : "logs")} title="Pełny dziennik bota">Logi</button>
         <button className="icon big" title="Wygląd – kolory i motywy" aria-label="Wygląd" onClick={onLook}>🎨</button>
         <button className="icon big" title="Ustawienia" aria-label="Ustawienia" onClick={onSettings}>⚙</button>
-        <button className="tb-btn stop" onClick={onPower} data-testid="stop-button" title="Zatrzymanie: nowe wejścia / pozycje bota / aplikacja (tylko procesy MasterQUO)">
+        <button className="tb-btn stop" onClick={onPower} data-testid="stop-button" title="Zatrzymanie: nowe wejścia / pozycje bota / aplikacja (tylko procesy PepeMarketWizard)">
           {mode.kill_switch ? "STOP aktywny" : "STOP"}</button>
       </div>
       {acct && <AccountSummary stats={stats} onClose={() => setAcct(false)} />}
@@ -141,16 +141,29 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
   );
 }
 
-function SideNav({ page }: { page: Page }) {
+function SideNav({ page, onSettings }: { page: Page; onSettings: () => void }) {
   const [collapsed, setCollapsed] = usePersisted<boolean>("nav.collapsed", false, (v) => typeof v === "boolean");
+  const [open, setOpen] = usePersisted<Record<string, boolean>>("nav.groups", {}, (v) => v && typeof v === "object");
   return (
     <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Strony" data-testid="sidenav">
-      {PAGES.map((p) => (
-        <a key={p.id} href={href(p.id)} className={cls("nav-item", page === p.id && "on")} aria-current={page === p.id ? "page" : undefined} data-page={p.id} title={p.label}>
-          <i aria-hidden="true">{ICON[p.id]}</i><span>{p.label}</span>
-        </a>
-      ))}
+      {GROUPS.map((g) => {
+        const cur = g.pages.includes(page);
+        const isOpen = cur || open[g.id] !== false;                 // the group of the current page is always expanded
+        return (
+          <div key={g.id} className="nav-group" data-group={g.id}>
+            <button className="nav-group-head" aria-expanded={isOpen} onClick={() => setOpen({ ...open, [g.id]: !isOpen })} title={g.label}>
+              <span>{g.label}</span><i aria-hidden="true">{isOpen ? "▾" : "▸"}</i></button>
+            {isOpen && g.pages.map((id) => {
+              const p = PAGE_BY_ID[id];
+              return (
+                <a key={id} href={href(id)} className={cls("nav-item", page === id && "on")} aria-current={page === id ? "page" : undefined} data-page={id} title={p.label}>
+                  <i aria-hidden="true">{p.icon}</i><span>{p.label}</span>
+                </a>);
+            })}
+          </div>);
+      })}
       <span className="spacer" />
+      <button className="nav-item nav-settings" onClick={onSettings} title="Ustawienia (MT5, symbol, ryzyko, koszty, AI)"><i aria-hidden="true">⚙</i><span>Ustawienia</span></button>
       <button className="nav-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Rozwiń menu" : "Zwiń menu"} title={collapsed ? "Rozwiń menu" : "Zwiń menu"}>
         {collapsed ? "»" : "«"}</button>
     </nav>
@@ -162,7 +175,7 @@ function MobileNav({ page }: { page: Page }) {
     <nav className="mobnav" aria-label="Strony (mobilne)" data-testid="mobnav">
       {PAGES.map((p) => (
         <a key={p.id} href={href(p.id)} className={cls("nav-item", page === p.id && "on")} aria-current={page === p.id ? "page" : undefined} data-page={p.id}>
-          <i aria-hidden="true">{ICON[p.id]}</i><span>{p.short}</span>
+          <i aria-hidden="true">{p.icon}</i><span>{p.short}</span>
         </a>
       ))}
     </nav>
@@ -230,7 +243,7 @@ export default function AppShell({ page, children, onSettings, onPower, onMode, 
       <TopBar page={page} stats={stats} onSettings={onSettings} onPower={onPower} onMode={onMode} onLook={onLook} overlay={overlay} setOverlay={setOverlay} />
       <FailureBanner />
       <div className="shell-body">
-        <SideNav page={page} />
+        <SideNav page={page} onSettings={onSettings} />
         <main className="page" data-page={page} id="main">{children}</main>
       </div>
       <MobileNav page={page} />

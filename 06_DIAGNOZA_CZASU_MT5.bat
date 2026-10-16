@@ -6,7 +6,7 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-echo [MasterQUO] Diagnoza czasu MT5: surowe czasy tickow i swiec, zmierzony offset serwera, zegar PC.
+echo [PepeMarketWizard] Diagnoza czasu MT5: surowe czasy tickow i swiec, zmierzony offset serwera, zegar PC.
 echo            Najlepiej uruchomic przy otwartym rynku. Bez zlecen.
 pushd "%~dp0backend"
 "%~dp0.venv\Scripts\python.exe" -m masterquo clock

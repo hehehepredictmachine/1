@@ -334,8 +334,8 @@ export function PowerDialog({ onClose }: { onClose: () => void }) {
         <div className="box"><b>2. Zamknij pozycje bota</b><p className="small">Tylko pozycje otwarte/przejęte przez aplikację (bieżący rachunek + PAPER). Wpisz <code>ZAMKNIJ</code>.</p>
           <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="ZAMKNIJ" />
           <button className="btn danger" disabled={confirm !== "ZAMKNIJ"} onClick={close}>Zamknij pozycje</button></div>
-        <div className="box"><b>3. Zatrzymaj aplikację</b><p className="small">Kończy tylko proces MasterQUO (jak 04_STOP_MASTERQUO.bat).</p>
-          <button className="btn ghost" onClick={stopApp}>Zatrzymaj MasterQUO</button></div>
+        <div className="box"><b>3. Zatrzymaj aplikację</b><p className="small">Kończy tylko proces PepeMarketWizard (jak 04_STOP_MASTERQUO.bat).</p>
+          <button className="btn ghost" onClick={stopApp}>Zatrzymaj PepeMarketWizard</button></div>
       </div>
       {msg && <div className="note">{msg}</div>}
     </Modal>

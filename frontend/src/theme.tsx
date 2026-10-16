@@ -123,7 +123,23 @@ const CONTRAST: Tokens = {
   upBody: "#00ff00", downBody: "#ff3030", upWick: "#00ff00", downWick: "#ff3030", upBorder: "#00ff00", downBorder: "#ff3030",
   checkMet: "#00ff00", checkMissing: "#ffff00", checkNoData: "#c0c0c0", overlayDim: 0.9,
 };
+// 1.13 PepeMarketWizard: dark panel with muted gold accent; candles black/white-grey by default (colour only for statuses).
+const GOLD: Tokens = {
+  ...DARK, bg: "#0f1214", bgGlow: "#15191c", gridLine: "#ffffff05", panel: "#191d20f5", card: "#191d20", header: "#121618f2", modal: "#191d20", input: "#111416",
+  tableHead: "#1e2327", text: "#f4f6fa", textStrong: "#ffffff", textDim: "#c6ced8", muted: "#a8b3bf", muted2: "#8a96a3", number: "#f4f6fa", icon: "#d8b45f",
+  line: "#30363d", line2: "#d8b45f", accent: "#d8b45f", accent2: "#c9a24a", accentInk: "#0f1214", info: "#8fb8de",
+  btnBg: "#23282c", btnHover: "#2c3237", btnActive: "#3a4147", btnText: "#f4f6fa", btnDisabledBg: "#191d20", btnDisabledText: "#6e7781",
+  bad: "#e5534b", warn: "#d4a72c", badText: "#ffb1ab", warnText: "#e8c46a", badLine: "#7a2621", warnLine: "#6b5a1d", pnlPos: "#57ab5a", pnlNeg: "#e5534b",
+  connOk: "#57ab5a", connWarn: "#d4a72c", connBad: "#e5534b",
+  chartBg: "#00000000", chartGrid: "#ffffff0a", chartAxis: "#30363d", chartLabels: "#a8b3bf", chartCrosshair: "#d8b45faa", chartSeparator: "#30363d",
+  upBody: "#e6e9ee", downBody: "#3a4048", upWick: "#c9ced6", downWick: "#8a929c", upBorder: "#e6e9ee", downBorder: "#8a929c",
+  formingUp: "#e6e9ee66", formingDown: "#3a404866", volUp: "#e6e9ee2e", volDown: "#8a929c2e",
+  ind1: "#d8b45f", ind2: "#8fb8de", ind3: "#c792ea", ind4: "#e0915a", ind5: "#7fc48a", ind6: "#e07a9a",
+  checkMet: "#57ab5a", checkMissing: "#d4a72c", checkNoData: "#8a96a3", tp: "#57ab5a", sl: "#e5534b", entry: "#d8b45f",
+  gifOpacity: 0, overlayDim: 0.9,                   // clean dark background (the matrix GIF can be brought back in Wygląd)
+};
 export const PRESETS: Record<string, { label: string; scheme: "dark" | "light"; tokens: Tokens }> = {
+  gold: { label: "PepeMarketWizard – złoty (domyślny)", scheme: "dark", tokens: GOLD },
   matrix: { label: "Matrix zielony", scheme: "dark", tokens: MATRIX },
   dark: { label: "Ciemny", scheme: "dark", tokens: DARK },
   light: { label: "Jasny", scheme: "light", tokens: LIGHT },
@@ -279,7 +295,7 @@ export function parseThemeFile(text: string): { name: string; tokens: Tokens; ov
 type Stored = { version: number; preset: string; tokens: Tokens; custom: Record<string, Tokens>; overrides: Record<string, Tokens> };
 
 function load(): Stored {
-  const def: Stored = { version: VERSION, preset: "matrix", tokens: { ...MATRIX }, custom: {}, overrides: {} };
+  const def: Stored = { version: VERSION, preset: "gold", tokens: { ...GOLD }, custom: {}, overrides: {} };
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return def;
@@ -354,7 +370,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setDraftS(null);
     },
     cancel: () => setDraftS(null),
-    resetDefaults: () => setDraftS({ tokens: { ...MATRIX }, overrides: {}, preset: "matrix" }),
+    resetDefaults: () => setDraftS({ tokens: { ...GOLD }, overrides: {}, preset: "gold" }),
     saveCustom: (name) => {
       const n = { ...stored, custom: { ...stored.custom, [name]: { ...(draft?.tokens ?? stored.tokens) } } };
       setStored(n);

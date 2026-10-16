@@ -43,8 +43,9 @@ class Registry:
             for r in self.db.query("SELECT * FROM ml_models WHERE status='CHALLENGER' ORDER BY created_at DESC LIMIT 2"):
                 try:
                     self.challengers[r["model_id"]] = Bundle.load(Path(r["path"]))
-                except Exception:
-                    pass
+                except Exception as exc:          # audit A-08: a broken challenger is reported, not silently skipped
+                    self.challenger_errors = getattr(self, "challenger_errors", {})
+                    self.challenger_errors[r["model_id"]] = f"CHALLENGER_LOAD_FAILED:{type(exc).__name__}"
 
     def models(self, limit: int = 30) -> list[dict]:
         out = []
