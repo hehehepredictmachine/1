@@ -1,4 +1,10 @@
-# Raport testów – MasterQUO AI 1.12.0
+# Raport testów – PepeMarketWizard 1.13.0 (dawniej MasterQUO AI)
+
+## 1.13.0 – analityka BB/MA, VMD/FFT/EMD, Double Bottom, nowy panel, zmiana nazwy (2026-10-16)
+Pełny przebieg `python tools/run_tests.py`: 378 testów bota (376 OK, 1 FAIL, 1 ERROR) + 46 testów `.venv_candles` OK.
+Oba błędy wyjaśnione i poprawione: wykrywanie działającej instancji po zmianie nazwy (A-05) oraz test karty sygnału oczekujący jej na stronie
+startowej (stroną startową jest teraz Pulpit). Ponowny przebieg obu zestawów: 18 OK. Szczegóły: `TEST_REPORT.md`.
+Dane wyłącznie syntetyczne – Twój MT5 i rzeczywisty rachunek nie były testowane.
 
 ## 1.12.0 (aktualizacja) – warianty poprawy win ratio + filtr modelu jakości setupu (2026-10-15)
 Pełny przebieg `python tools/run_tests.py`: **359 testów bota OK + 46 testów `.venv_candles` OK**

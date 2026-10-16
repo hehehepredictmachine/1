@@ -132,7 +132,7 @@ class TestSignalCardUI(unittest.TestCase):
                 ws.send(msg)
             server.on_message(from_server)
         cls.page.route_web_socket(re.compile(r".*/api/v1/ws$"), on_ws)
-        cls.page.goto(BASE + "/")
+        cls.page.goto(BASE + "/#/ai")
         cls.page.wait_for_selector("[data-testid=signal-hero]", timeout=30000)
         wait_for(lambda: cls.page.evaluate("() => document.querySelector('[data-testid=signal-hero]').dataset.state") not in (None, ""), 20, 0.5)
 
