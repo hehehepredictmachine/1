@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 1.13.0 – PepeMarketWizard: panel w grupach, wspólny silnik BB/MA, FFT/EMD/VMD, Double Bottom z biblioteką, audyt
+* **Nowa nazwa: PepeMarketWizard** (monitor, tytuły, komunikaty, paczka `PepeMarketWizard_KLIENT_1_13_0.zip`). Pakiet `masterquo`, folder `data\`,
+  klucze przeglądarki i nazwy plików `.bat` bez zmian (zgodność z istniejącą konfiguracją i skrótami).
+* **Panel:** menu w grupach Rynek / Analiza / Praca bota; nowe strony Pulpit, Kontekst rynku, Indykatory, Analiza sygnału, Formacje i biblioteka,
+  Pozycje i ryzyko, Dziennik i wyniki, Testy i raporty, Diagnostyka (istniejące moduły zachowane i wpięte); domyślny motyw złoty (#0F1214 / #D8B45F,
+  świece biało-szare) dla nowych instalacji; „DANE PRZYKŁADOWE” w trybie demo; Pulpit startowy.
+* **Wspólny silnik BB/MA** `analytics/ta.py` (MQ-TA-1.0.0): BB z odchyleniem populacyjnym, %b bez przycinania, bandwidth ratio/%, squeeze względem
+  przeszłości, zdarzenia pasma; SMA/EMA/WMA, przecięcia potwierdzone zamknięciem ze stałym ID, kontekst wg jawnych reguł. Linie EMA/BB na wykresach
+  liczone tym samym silnikiem (zgodność z M02I i modułem scalp potwierdzona testem).
+* **FFT / EMD / VMD** `analytics/signal.py`: numpy/scipy bez nowych zależności, okno ciągłe (luki → unavailable), metadane wejścia, flagi jakości,
+  pomiar rewizji końca okna, limit czasu, wątek roboczy z kolejką i cache, odrzucanie spóźnionych wyników.
+* **Double Bottom** `analytics/double_bottom.py` + `library.py`: walidator INVALID/CANDIDATE/CONFIRMED/FAILED (pierwsze rozstrzygnięcie ostateczne),
+  biblioteka próbek (zapis z zakresu świec, import/eksport), VALIDATE SELECTED/ALL (job_id, postęp, anulowanie, raport JSON/CSV), SHOW ON CHART ze
+  współrzędnymi walidatora, skaner przyczynowy z czasem dostępności i zdarzeniami.
+* `AnalyticsService` (tryb OBSERVE), archiwum wyników z chwili decyzji (`analytics_snapshots`), karta „Co wspiera analizę” z wyjaśnieniem
+  budowanym wyłącznie z danych strukturalnych. Migracja 0013 (tylko nowe tabele). API `/api/v1/analytics*`, `/api/v1/patterns/*`.
+* **Audyt:** `AUDIT_REPORT.md`, `INTEGRATION_MAP.md`, `TEST_REPORT.md`; naprawione ciche wyjątki (start silnika, ładowanie challengerów ML),
+  nieużywane importy; ujednolicona implementacja BB.
+
 ## 1.12.0 – scalp M5 Range → M1 Sweep/Reclaim → Retest + kontrolowany hedge + ML/NN (wszystko SHADOW)
 * Jeden automat **MQ-SCALP-RANGE-SWEEP-1.0.0-RESEARCH** (`backend/masterquo/scalp/`, profil z jednostkami `config/scalp_profile_v1.json`):
   zamrożony zakres M5, sekcja M1 z `known_at`, sweep/reclaim z potwierdzeniem świecy i tick volume, retest ≤3 M1, limit pogoni (MISSED),

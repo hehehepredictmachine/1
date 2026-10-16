@@ -59,13 +59,16 @@ def _setup_logging() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+from .version import APP_NAME  # noqa: E402
+
+
 def cmd_serve(args) -> int:
     if args.demo and not os.environ.get("MASTERQUO_DATA_DIR"):
         os.environ["MASTERQUO_DATA_DIR"] = str(paths.ROOT_DIR / "data" / "demo_synthetic")
     port = _port()
     url = f"http://127.0.0.1:{port}/"
     h = _health(port)
-    if h and h.get("app") == "MasterQUO AI":
+    if h and h.get("app") in (APP_NAME, "MasterQUO AI"):          # also an instance of the pre-1.13 name
         print(f"[PepeMarketWizard] Aplikacja już działa ({'DANE SYNTETYCZNE' if h.get('synthetic') else 'MT5'}) – otwieram monitor {url}")
         if not args.no_browser:
             webbrowser.open(url)

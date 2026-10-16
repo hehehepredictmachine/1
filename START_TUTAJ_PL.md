@@ -1,4 +1,15 @@
-# MasterQUO AI – START TUTAJ
+# PepeMarketWizard – START TUTAJ
+
+> **1.13: nowa nazwa programu – PepeMarketWizard** (dawniej MasterQUO AI). Pliki startowe (`03_START_MASTERQUO.bat`, `04_STOP_MASTERQUO.bat`,
+> `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
+> i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
+
+## Nowe w 1.13 – panel w grupach, analityka BB/MA, FFT/EMD/VMD, Double Bottom
+* Menu po lewej w trzech grupach: **Rynek** (Pulpit, Wykresy MTF, Kontekst rynku), **Analiza** (Setupy, Analiza AI, Indykatory,
+  Analiza sygnału, Formacje i biblioteka), **Praca bota** (Pozycje i ryzyko, Dziennik i wyniki, Testy i raporty, Diagnostyka); Ustawienia na dole.
+  Pierwsza strona to **Pulpit**. Dawne linki `#/ai`, `#/wykresy`, `#/warunki` działają.
+* Nowy domyślny motyw „PepeMarketWizard – złoty” (ciemne tło, złote akcenty, świece biało-szare). Twój zapisany motyw zostaje; zmiana w 🎨 Wygląd.
+* Analityka działa **obserwacyjnie** (nie zmienia decyzji, ryzyka ani blokady wykonania). Opis: `docs/ANALITYKA_BB_MA_VMD_FFT_EMD_DOUBLE_BOTTOM_PL.md`.
 
 Lokalna aplikacja Windows: Twój terminal MetaTrader 5 → silnik MasterQUO → agent Claude → ryzyko → monitor w przeglądarce
 `http://127.0.0.1:8765`. Tryb wykonania wybierasz sam (SIGNALS „Analiza warunków” / PAPER / AUTO DEMO / AUTO LIVE) i program go pamięta;

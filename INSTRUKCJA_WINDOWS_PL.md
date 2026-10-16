@@ -1,6 +1,6 @@
-# MasterQUO 1.10 – instrukcja dla Windows
+# PepeMarketWizard 1.13 (dawniej MasterQUO AI) – instrukcja dla Windows
 
-Paczka: `MasterQUO_KLIENT_1_11_0.zip` – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
+Paczka: `PepeMarketWizard_KLIENT_1_13_0.zip` (folder `PepeMarketWizard`) – bot, monitor i launchery `.bat` dla komputera z MetaTrader 5.
 
 **Od wersji 1.9 program nie wymaga licencji** – nie ma serwera licencji, klucza `MQL72-…` ani panelu administratora.
 Uruchamiasz `masterquo_start.bat` (albo `03_START_MASTERQUO.bat`) i monitor otwiera się od razu.
