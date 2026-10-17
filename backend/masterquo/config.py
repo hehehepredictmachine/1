@@ -19,7 +19,7 @@ import threading
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import paths
 
@@ -187,6 +187,10 @@ class ExecutionConfig(_Strict):
     deviation_points: int = Field(20, ge=0, le=1000)
     order_timeout_seconds: float = Field(10.0, ge=2, le=60)
     paper_starting_balance: float = Field(10000.0, gt=0)
+    # 1.14 Execution Lock: LOCKED = no order_send / position modification reaches the terminal from ANY path (gateway,
+    # position manager, trade pad, direct API). Enforced in the MT5 worker proxy. Only the user can unlock (typed phrase).
+    lock: Literal["LOCKED", "UNLOCKED_BY_USER"] = "LOCKED"
+    lock_changed_at: str | None = None
 
 
 class MLPromotion(_Strict):
@@ -429,8 +433,56 @@ class ScalpConfig(_Strict):
     max_spread_atr_m1: float = Field(0.5, gt=0, le=5)
 
 
+CanonicalAsset = Literal["XAUUSD", "BTC"]
+ALLOWED_ASSETS: tuple[str, ...] = ("XAUUSD", "BTC")
+
+
+class AssetMapping(_Strict):
+    """Mapping canonical asset -> exact broker symbol (assets/registry.py). Never derived by prefix/stripping.
+    UNMAPPED: no symbol; PROPOSED: candidate found by metadata, waits for the user; USER_SPECIFIED: the user typed the
+    symbol earlier (XAUUSD- from the 1.x configuration), metadata still checked on connect; CONFIRMED: the user confirmed
+    it in Ustawienia after the metadata check (fingerprint stored - a changed contract blocks the path)."""
+    broker_symbol: str | None = None
+    status: Literal["UNMAPPED", "PROPOSED", "USER_SPECIFIED", "CONFIRMED"] = "UNMAPPED"
+    confirmed_at: str | None = None
+    fingerprint: dict | None = None
+
+    @field_validator("broker_symbol")
+    @classmethod
+    def _bs(cls, v: str | None) -> str | None:
+        if v in (None, ""):
+            return None
+        if not SYMBOL_RE.fullmatch(v):
+            raise ValueError("INVALID_BROKER_SYMBOL")
+        return v
+
+
+def _default_mappings() -> dict:
+    return {"XAUUSD": AssetMapping(broker_symbol="XAUUSD-", status="USER_SPECIFIED"), "BTC": AssetMapping()}
+
+
+class AssetsConfig(_Strict):
+    """1.14: the application works on exactly two canonical assets: XAUUSD and BTC (allowlist)."""
+    active: CanonicalAsset = "XAUUSD"
+    mappings: dict[str, AssetMapping] = Field(default_factory=_default_mappings)
+    max_joint_exposure_pct: float = Field(2.0, gt=0, le=50, description="simulated joint open risk XAUUSD+BTC, % of equity")
+
+    @field_validator("mappings")
+    @classmethod
+    def _keys(cls, v: dict) -> dict:
+        bad = [k for k in v if k not in ALLOWED_ASSETS]
+        if bad:
+            raise ValueError("ASSET_NOT_ALLOWED:" + ",".join(bad))
+        for k in ALLOWED_ASSETS:
+            v.setdefault(k, AssetMapping())
+        syms = [m.broker_symbol for m in v.values() if m.broker_symbol]
+        if len(syms) != len(set(syms)):
+            raise ValueError("ONE_BROKER_SYMBOL_MAPPED_TO_TWO_ASSETS")
+        return v
+
+
 class AppConfig(_Strict):
-    config_version: int = 10
+    config_version: int = 11
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -450,8 +502,21 @@ class AppConfig(_Strict):
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
+    assets: AssetsConfig = Field(default_factory=AssetsConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
+
+    @model_validator(mode="after")
+    def _main_symbol_is_active_asset(self):
+        """The engine symbol is always the mapped broker symbol of the active asset (no free-text symbol switch)."""
+        m = self.assets.mappings.get(self.assets.active)
+        if m is None or not m.broker_symbol:
+            raise ValueError(f"ACTIVE_ASSET_NOT_MAPPED:{self.assets.active}")
+        if self.mt5.symbol != m.broker_symbol:
+            raise ValueError(f"MT5_SYMBOL_NOT_ACTIVE_ASSET_MAPPING:{self.mt5.symbol}!={m.broker_symbol}")
+        if self.mt5.analytical_alias != self.assets.active:
+            raise ValueError("ANALYTICAL_ALIAS_MUST_EQUAL_ACTIVE_ASSET")
+        return self
 
 
 class ConfigStore:
@@ -491,6 +556,10 @@ class ConfigStore:
         with self._lock:
             return self._cfg.model_copy(deep=True)
 
+    def execution_locked(self) -> bool:
+        """Cheap read (no copy) for the MT5 worker: True unless the user unlocked execution."""
+        return self._cfg.execution.lock != "UNLOCKED_BY_USER"
+
     def update(self, patch: dict) -> AppConfig:
         """Deep-merge a partial dict, validate the whole result, persist atomically."""
         with self._lock:
@@ -519,14 +588,19 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 10:
+    if v >= 11:
         return False
+    if v == 10:
+        _to_v11(raw)
+        return True
     if v >= 3:
         _to_v5(raw)
+        _to_v11(raw)
         return True
     if v == 2:
         _to_v3(raw)
         _to_v5(raw)
+        _to_v11(raw)
         return True
     for (sec, key), old, new in _V2_CHANGES:
         part = raw.get(sec)
@@ -537,7 +611,23 @@ def migrate(raw: dict) -> bool:
         agent["gate_policy"] = "ADVISORY" if agent.get("required_for_entry") is False else "VETO"
     _to_v3(raw)
     _to_v5(raw)
+    _to_v11(raw)
     return True
+
+
+def _to_v11(raw: dict) -> None:
+    """v10 -> v11 (1.14): two-asset allowlist + Execution Lock.
+    The broker symbol the user configured in 1.x becomes the USER_SPECIFIED mapping of XAUUSD (its metadata is checked on
+    connect; a non-gold contract blocks the path). BTC starts UNMAPPED. Execution Lock starts LOCKED for everybody."""
+    m5 = raw.setdefault("mt5", {})
+    sym = m5.get("symbol") or "XAUUSD-"
+    raw["assets"] = {"active": "XAUUSD", "mappings": {"XAUUSD": {"broker_symbol": sym, "status": "USER_SPECIFIED"},
+                                                       "BTC": {"broker_symbol": None, "status": "UNMAPPED"}}}
+    m5["symbol"] = sym
+    m5["analytical_alias"] = "XAUUSD"
+    ex = raw.setdefault("execution", {})
+    ex["lock"] = "LOCKED"
+    raw["config_version"] = 11
 
 
 def _to_v5(raw: dict) -> None:

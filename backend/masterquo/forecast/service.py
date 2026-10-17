@@ -136,6 +136,10 @@ class ForecastService:
                 self._kill()
                 self._set("DISABLED", None)
             return
+        if cfg.assets.active != "XAUUSD":
+            if self.state["status"] != "UNSUPPORTED_ASSET":
+                self._set("UNSUPPORTED_ASSET", f"gold_candles jest modułem XAUUSD – aktywne aktywo {cfg.assets.active}")
+            return
         m5 = [b for b in self.bridge.bars("M5", cfg.forecast.m5_bars, include_forming=False) if b.get("open_utc")]
         m30 = [b for b in self.bridge.bars("M30", cfg.forecast.m30_bars, include_forming=False) if b.get("open_utc")]
         if not m5 or not m30:

@@ -49,14 +49,18 @@ class Runtime:
         if mt5_factory is None:
             if demo:
                 from .mt5.fake import FakeMT5
-                symbol = self.cfg.get().mt5.symbol
-                mt5_factory = lambda: FakeMT5(symbol=symbol, seed=3)  # noqa: E731
+                gold = self.cfg.get().assets.mappings["XAUUSD"].broker_symbol or "XAUUSD-"   # synthetic terminal: gold main + BTCUSD- market
+                mt5_factory = lambda: FakeMT5(symbol=gold, seed=3)  # noqa: E731
             else:
                 mt5_factory = real_mt5_factory
         self.worker = MT5Worker(mt5_factory)
+        self.worker.lock_fn = self.cfg.execution_locked                     # Execution Lock below every order path
         required = Profiles().required_closed_bars()
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         self.bridge.secrets = self.secrets
+        from .assets.registry import AssetRegistry
+        self.assets = AssetRegistry(self.cfg, self.bridge, self.log)      # two-asset allowlist (XAUUSD, BTC)
+        self.bridge.assets = self.assets
         c = self.cfg.get().clock
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,

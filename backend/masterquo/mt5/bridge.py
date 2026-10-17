@@ -134,6 +134,7 @@ class MarketBridge:
         self._rejected_creds: str | None = None
         self._detected_path: str | None = None
         self._running: tuple[float, list[str]] = (0.0, [])
+        self.assets = None                        # AssetRegistry (runtime): two-asset allowlist on every data input
 
     # ---------------------------------------------------------------- helpers
     @property
@@ -335,8 +336,13 @@ class MarketBridge:
             from ..timeutil import parse_iso
             self.clock.load_stored(row["offset_seconds"], parse_iso(row["measured_at"]))
 
+    def _guard(self, symbol: str, path: str = "DATA") -> None:
+        if self.assets is not None:
+            self.assets.check_symbol(symbol, path)
+
     def _check_symbol(self) -> None:
         sym = self.cfg.symbol
+        self._guard(sym)
         info = self._call(lambda m: m.symbol_info(sym))
         if info is None:
             cands = self._call(lambda m: m.symbols_get(group="*XAU*,*GOLD*")) or ()
@@ -353,6 +359,13 @@ class MarketBridge:
             info = _row(self._call(lambda m: m.symbol_info(sym)))
         if info.get("name") != sym:
             raise BridgeError(f"SYMBOL_NAME_MISMATCH:{info.get('name')}!={sym}")
+        if self.assets is not None:
+            try:
+                self.assets.verify_main(sym, info)
+            except PermissionError as exc:
+                self.symbol_status = "ASSET_METADATA_CONFLICT"
+                self.bus.publish("symbol", self.symbol_status_dict())
+                raise BridgeError(str(exc)) from exc
         keep = ("name", "description", "path", "point", "digits", "trade_tick_size", "trade_tick_value", "trade_contract_size",
                 "volume_min", "volume_max", "volume_step", "trade_stops_level", "trade_freeze_level", "trade_mode",
                 "filling_mode", "currency_base", "currency_profit", "currency_margin", "spread", "spread_float")
@@ -437,7 +450,7 @@ class MarketBridge:
 
     # ---------------------------------------------------------------- other symbols (market scanner, AI signals; read-only)
     _META_KEYS = ("name", "description", "path", "point", "digits", "trade_mode", "currency_base", "currency_profit",
-                  "trade_contract_size", "visible", "spread")
+                  "trade_contract_size", "visible", "spread", "trade_calc_mode", "currency_margin")
 
     def list_symbols(self, visible_only: bool = True) -> list[dict]:
         """Symbols of the connected terminal. visible_only=True -> Market Watch only (no side effects)."""
@@ -453,7 +466,9 @@ class MarketBridge:
         out.sort(key=lambda x: str(x.get("name")))
         return out
 
-    def symbol_meta(self, symbol: str, select: bool = False) -> dict | None:
+    def symbol_meta(self, symbol: str, select: bool = False, guard: bool = True) -> dict | None:
+        if guard:
+            self._guard(symbol)
         info = self._call(lambda m: m.symbol_info(symbol), PRIO_HISTORY)
         if info is None:
             return None
@@ -465,6 +480,7 @@ class MarketBridge:
         return {k: d.get(k) for k in self._META_KEYS}
 
     def symbol_quote(self, symbol: str, point: float | None = None) -> dict | None:
+        self._guard(symbol)
         tick = self._call(lambda m: m.symbol_info_tick(symbol), PRIO_HISTORY)
         if tick is None:
             return None
@@ -479,6 +495,7 @@ class MarketBridge:
     def symbol_bars(self, symbol: str, tf: str, count: int) -> list[dict]:
         """Bars of any symbol (oldest first). The newest bar is 'forming' unless its period has already ended
         by the server clock; without a known server offset it is always treated as forming (conservative)."""
+        self._guard(symbol)
         bars = self._fetch(symbol, tf, count)
         off = self.clock.offset
         raw_now = self.now().timestamp() + off if off is not None else None

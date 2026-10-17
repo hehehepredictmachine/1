@@ -153,7 +153,11 @@ class EngineService:
         closed = {tf: [b for b in bars[tf] if b["closed"] and b.get("open_utc") and b.get("close_confirmed_utc")][-max(ANALYSIS_MIN_BARS, self.required[tf] + 30):]
                   for tf in TIMEFRAMES}
         legacy_out: dict = {"errors": []}
-        if dq["analysis_allowed"]:
+        if alias != "XAUUSD":
+            # legacy M01-M07 / S01-S12 are calibrated and audited for XAUUSD only (M01 rejects other instrument_id);
+            # BTC scenarios come from the asset-agnostic lab scenario engine, not from relabelled gold rules.
+            legacy_out["errors"].append("LEGACY_ENGINE_XAUUSD_ONLY")
+        elif dq["analysis_allowed"]:
             snap = build_snapshot(snapshot_id=sid, analysis_id=f"MQAI-{self.bus.boot_id}", as_of=as_of, symbol=sym, alias=alias,
                                   closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"])
             legacy_out = self.legacy.run(snap, cfg.strategy.mode, cfg.strategy.structure_policy)

@@ -86,9 +86,15 @@ class MarketScanner:
             syms = self.bridge.list_symbols(visible_only=(c.source == "MARKET_WATCH"))
             self.symbols_total = len(syms)
             names = [s["name"] for s in syms if s.get("trade_mode") != 0]   # skip symbols with trading disabled
+        allowed = getattr(self.bridge, "assets", None)
+        if allowed is not None:                     # 1.14 two-asset allowlist: only the mapped XAUUSD / BTC symbols
+            ok = allowed.allowed_symbols()
+            names = [n for n in ok if n != main] if c.source != "LIST" else [n for n in names if n in ok]
+            if main not in ok:
+                main = None
         names = [n for n in names if n not in c.exclude and n != main]
         names = names[: max(0, c.max_symbols - (1 if c.include_main else 0))]
-        return ([main] if c.include_main else []) + names
+        return ([main] if c.include_main and main else []) + names
 
     def analyze_symbol(self, name: str) -> dict:
         select = self.cfg.source != "MARKET_WATCH"

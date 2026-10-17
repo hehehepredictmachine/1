@@ -67,6 +67,10 @@ class ScalpService:
             if self.state["status"] != "DISABLED":
                 self._set("DISABLED", "wyłączone w konfiguracji")
             return
+        if cfg.assets.active != "XAUUSD":
+            if self.state["status"] != "UNSUPPORTED_ASSET":
+                self._set("UNSUPPORTED_ASSET", f"profil scalp 1.12 jest zdefiniowany dla XAUUSD – aktywne aktywo {cfg.assets.active}")
+            return
         bars = {tf: [b for b in self.bridge.bars(tf, cfg.scalp.m1_bars if tf == "M1" else 400, include_forming=False) if b.get("open_utc")]
                 for tf in TFS}
         if not bars["M1"] or not bars["M5"]:

@@ -24,6 +24,20 @@ from .security import SESSION_COOKIE, LocalSecurity
 log = logging.getLogger("masterquo.api")
 
 
+class AssetConfirmReq(BaseModel):
+    asset: str
+    broker_symbol: str
+
+
+class AssetActiveReq(BaseModel):
+    asset: str
+
+
+class LockReq(BaseModel):
+    lock: str
+    phrase: str | None = None
+
+
 class ModeReq(BaseModel):
     mode: str
     confirm: str = ""
@@ -396,7 +410,78 @@ def create_app(rt, port: int) -> FastAPI:
     def _sym(symbol: str) -> str:
         if not _re.fullmatch(SYMBOL_RX, symbol or ""):
             raise HTTPException(400, "INVALID_SYMBOL")
+        try:
+            rt.assets.check_symbol(symbol, "API")
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         return symbol
+
+    # ------------------------------------------------------------ 1.14 assets (XAUUSD / BTC) and Execution Lock
+    @app.get("/api/v1/assets")
+    def assets_state(refresh: bool = False):
+        if refresh:
+            rt.assets.refresh()
+        return rt.assets.state()
+
+    @app.get("/api/v1/assets/{asset}/candidates")
+    def assets_candidates(asset: str):
+        try:
+            return {"asset": asset, "candidates": rt.assets.candidates(asset),
+                    "note": "Kandydaci wg metadanych terminala (currency_base/profit). Nic nie jest wybierane automatycznie."}
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(409, f"{type(exc).__name__}: {exc}") from exc
+
+    @app.post("/api/v1/assets/confirm")
+    def assets_confirm(req: AssetConfirmReq):
+        if not _re.fullmatch(SYMBOL_RX, req.broker_symbol or ""):
+            raise HTTPException(400, "INVALID_SYMBOL")
+        try:
+            st = rt.assets.confirm(req.asset, req.broker_symbol)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"asset_confirm": req.model_dump()})))
+        return st
+
+    @app.post("/api/v1/assets/active")
+    def assets_active(req: AssetActiveReq):
+        old = rt.cfg.get().mt5.symbol
+        try:
+            st = rt.assets.switch(req.asset)
+        except PermissionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"active_asset": req.asset})))
+        if rt.cfg.get().mt5.symbol != old:
+            rt.modes.reset("ACTIVE_ASSET_CHANGED")
+            rt.bridge.state = "RECONNECTING"
+            rt.bridge.next_retry = 0
+        rt.engine.mark_dirty()
+        rt.bus.publish("assets", st)
+        return st
+
+    UNLOCK_PHRASE = "ODBLOKUJ WYKONANIE ZLECEN"
+
+    @app.get("/api/v1/execution/lock")
+    def exec_lock():
+        c = rt.cfg.get().execution
+        return {"lock": c.lock, "changed_at": c.lock_changed_at, "blocked_attempts": rt.worker.locked_attempts,
+                "unlock_phrase_required": UNLOCK_PHRASE,
+                "note": "LOCKED: żadna ścieżka (AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła order_send do terminala."}
+
+    @app.post("/api/v1/execution/lock")
+    def exec_lock_set(req: LockReq):
+        if req.lock not in ("LOCKED", "UNLOCKED_BY_USER"):
+            raise HTTPException(400, "INVALID_LOCK")
+        if req.lock == "UNLOCKED_BY_USER" and (req.phrase or "").strip().upper() != UNLOCK_PHRASE:
+            raise HTTPException(403, "UNLOCK_PHRASE_REQUIRED")
+        rt.cfg.update({"execution": {"lock": req.lock, "lock_changed_at": iso(utcnow())}})
+        rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"execution_lock": req.lock})))
+        rt.log.warn("EXECUTION", "LOCK_" + req.lock, "Execution Lock: " + ("ZABLOKOWANE" if req.lock == "LOCKED" else "odblokowane przez użytkownika"))
+        rt.engine.mark_dirty()
+        return exec_lock()
 
     @app.get("/api/v1/markets")
     def markets():
@@ -524,6 +609,11 @@ def create_app(rt, port: int) -> FastAPI:
     @app.put("/api/v1/config")
     def put_config(patch: dict = Body(...)):
         patch.pop("server", None)
+        # 1.14: asset mapping / active asset / Execution Lock change only through their dedicated, checked endpoints
+        if "assets" in patch or "symbol" in (patch.get("mt5") or {}) or "analytical_alias" in (patch.get("mt5") or {}):
+            raise HTTPException(400, "USE_ASSETS_ENDPOINTS: /api/v1/assets/confirm, /api/v1/assets/active")
+        if isinstance(patch.get("execution"), dict) and ({"lock", "lock_changed_at"} & set(patch["execution"])):
+            raise HTTPException(400, "USE_EXECUTION_LOCK_ENDPOINT")
         try:
             old = rt.cfg.get()
             new = rt.cfg.update(patch)

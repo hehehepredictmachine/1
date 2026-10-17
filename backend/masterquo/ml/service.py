@@ -262,6 +262,9 @@ class MLService:
             if self._job is not None:
                 return {"started": False, "reason": "JOB_ALREADY_RUNNING", "job_id": self._job["job_id"]}
             c = self.cfg
+            if self.cfg_store.get().assets.active != "XAUUSD":
+                return {"started": False, "reason": "ML_DT_XGB_USES_XAUUSD_LEGACY_SETUPS_ONLY",
+                        "detail": "Model DT/XGBoost uczy się na setupach silnika S01–S12 (XAUUSD). Dla BTC: Modele i trening → ścieżka per aktywo (lab)."}
             if not force and not self.readiness.get("ready"):
                 return {"started": False, "reason": "NOT_READY", "reasons": self.readiness.get("reasons")}
             cnt = self.store.counts(c.use_backfill_approx, self.synthetic)

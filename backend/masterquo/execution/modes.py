@@ -145,10 +145,13 @@ class ModeManager:
                     reasons.append(f"AUTO_LIVE_BUT_ACCOUNT_IS_{tm}")
                 if mode == "AUTO_LIVE" and synthetic:
                     reasons.append("AUTO_LIVE_ON_SYNTHETIC_DATA")
+                if self.cfg_store.execution_locked():
+                    reasons.append("EXECUTION_LOCKED")
             if self.kill_switch:
                 reasons.append("NEW_ENTRIES_STOPPED")
             missing = limits_configured(self.cfg_store.get().risk)
             if missing and mode != "SIGNALS":
                 reasons.append("RISK_LIMITS_NOT_CONFIGURED")
             return {"mode": mode, "allowed": not reasons, "auto_trading": self.auto_trading and not reasons,
-                    "kill_switch": self.kill_switch, "reason_codes": reasons}
+                    "kill_switch": self.kill_switch, "reason_codes": reasons,
+                    "execution_lock": "LOCKED" if self.cfg_store.execution_locked() else "UNLOCKED_BY_USER"}

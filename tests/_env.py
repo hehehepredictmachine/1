@@ -63,12 +63,13 @@ def core(fake_kwargs: dict | None = None, symbol: str = "XAUUSD-"):
     from masterquo.mt5.worker import MT5Worker
     cfg = ConfigStore()
     if symbol != cfg.get().mt5.symbol:
-        cfg.update({"mt5": {"symbol": symbol}})
+        cfg.update({"mt5": {"symbol": symbol}, "assets": {"mappings": {"XAUUSD": {"broker_symbol": symbol, "status": "USER_SPECIFIED"}}}})
     db = Database()
     bus = EventBus()
     log = AppLog(db, bus)
     fake = FakeMT5(**(fake_kwargs or {}))
     worker = MT5Worker(lambda: fake)
+    worker.lock_fn = cfg.execution_locked
     worker.start()
     bridge = MarketBridge(cfg, worker, db, bus, log)
     return cfg, db, bus, log, fake, worker, bridge

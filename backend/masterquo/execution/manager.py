@@ -172,6 +172,7 @@ class PositionManager:
             positions = {p["ticket"]: p for p in b.positions}
             deals = list(b.deals)
         q = b.quote_status()
+        locked = self.cfg_store.execution_locked()
         for mp in rows:
             p = positions.get(mp["position_ticket"])
             if p is None:
@@ -182,8 +183,9 @@ class PositionManager:
             if abs(vol_now - mp["volume_open"]) > 1e-9:
                 self.db.execute("UPDATE managed_positions SET volume_open=? WHERE position_key=?", (vol_now, mp["position_key"]))
                 mp["volume_open"] = vol_now
-            if mp["adopted"]:
-                continue                                    # adopted manual positions: settlement / close on request only
+            if mp["adopted"] or locked:
+                continue                                    # adopted manual positions: settlement / close on request only;
+                                                            # Execution Lock: read-only reconcile, no modification of positions
             pol = self._policy(mp)
             self._sync_broker_tp(mp, p, pol)
             if not q:
@@ -475,6 +477,9 @@ class PositionManager:
                 continue
             if mp["account_key"] != b.account_key:
                 errors.append({"ticket": mp["position_ticket"], "error": "OTHER_ACCOUNT"})
+                continue
+            if self.cfg_store.execution_locked():
+                errors.append({"ticket": mp["position_ticket"], "error": "EXECUTION_LOCKED"})
                 continue
             p = next((x for x in b.positions if x["ticket"] == mp["position_ticket"]), None)
             if not p:
