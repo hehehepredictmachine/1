@@ -1,4 +1,7 @@
-# Raport testów – PepeMarketWizard 1.14.0
+# Raport testów – PepeMarketWizard 1.14.1
+
+## 1.14.1 – bez blokad symboli (2026-10-17)
+Pełny przebieg `python tools/run_tests.py`: **427 testów bota OK + 46 testów `.venv_candles` OK**. Testy symboli przepisane: inne włączone symbole działają, brakujący symbol XAUUSD/BTC jest brany z rachunku, różnica metadanych to tylko ostrzeżenie.
 
 ## 1.14.0 – dwa aktywa, Execution Lock, lab M01–M42, protokół walidacji, panel 7 sekcji (2026-10-17)
 Pełny przebieg `python tools/run_tests.py`: **427 testów bota OK + 46 testów `.venv_candles` OK**.
