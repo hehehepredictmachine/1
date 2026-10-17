@@ -1,5 +1,10 @@
-# Raport testów – PepeMarketWizard 1.13.0 (dawniej MasterQUO AI)
+# Raport testów – PepeMarketWizard 1.14.0
 
+## 1.14.0 – dwa aktywa, Execution Lock, lab M01–M42, protokół walidacji, panel 7 sekcji (2026-10-17)
+Pełny przebieg `python tools/run_tests.py`: **427 testów bota OK + 46 testów `.venv_candles` OK**.
+Raport lokalny: `data/logs/testy_offline_20261017T160055Z.json`.
+Pierwszy przebieg wykrył 6 problemów (w tym realną usterkę `is_fake` za proxy blokady). Wszystkie poprawione – szczegóły w `TEST_REPORT.md`.
+Dane wyłącznie syntetyczne. Badania modeli na symulatorze dały NO_VALIDATED_EDGE (`VALIDATION_RESULTS.md`).
 ## 1.13.0 – analityka BB/MA, VMD/FFT/EMD, Double Bottom, nowy panel, zmiana nazwy (2026-10-16)
 Pełny przebieg `python tools/run_tests.py`: 378 testów bota (376 OK, 1 FAIL, 1 ERROR) + 46 testów `.venv_candles` OK.
 Oba błędy wyjaśnione i poprawione: wykrywanie działającej instancji po zmianie nazwy (A-05) oraz test karty sygnału oczekujący jej na stronie
