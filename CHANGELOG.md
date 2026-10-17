@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 1.14.0 – dwa aktywa XAUUSD / BTC, Execution Lock, moduły badawcze M01–M42, protokół walidacji, panel 7 sekcji, aktywność sieci
+* **Dwa aktywa:**
+  * `assets/registry.py` – XAUUSD i BTC (allowlista) na wejściu danych (bridge), w API, treningu, skanerze, powiadomieniach i wykonaniu;
+  * mapowanie symbolu brokera wyłącznie po metadanych (currency_base/profit, kontrakt), np. XAUT/PAXG ≠ XAU, WBTC ≠ BTC, BTCUSDT nie jest zakładany;
+  * potwierdzenie przez użytkownika, fingerprint kontraktu (zmiana blokuje aktywo);
+  * przełącznik w górnym pasku przełącza feed, cechy, modele, checklistę, wykresy i statystyki.
+* **Execution Lock:**
+  * proxy modułu MT5 w workerze odrzuca każde `order_send` (dowolna ścieżka, także bezpośrednie API i Trade Pad);
+  * menedżer pozycji tylko odczytuje i rozlicza;
+  * bramka i tryby pokazują `EXECUTION_LOCKED`;
+  * odblokowanie tylko frazą w Ustawieniach; migracja ustawia LOCKED.
+* **Moduły lab** (`lab/`, wszystkie na zamkniętych świecach, z `origin_time`/`confirmed_at`):
+  * Markov, mapa reżimów, reżim zmienności, struktura swingów, trendlinie, płynność, sesje (zoneinfo/DST), ICT sweep→MSS→FVG→retest;
+  * strefy S/D z trwałym zapisem (transakcja + snapshot + .bak), Memory Sequence;
+  * SMMA(3) H/L, hipotezy Z-score, PSAR (wspólna implementacja), Stochastic Daily Breakout, quiet drift;
+  * ACD i kinematyka z ticków (`copy_ticks_from`), ekstrapolator Fouriera z archiwum prognoz;
+  * Repaint Inspector, drift CUSUM, bootstrap blokowy, Trade Pad (tylko symulacja).
+* **Modele** (numpy, bez torch):
+  * MiniRocket (clean-room), ResNet1D/ResNeXt (sprawdzenie gradientu), SEW-SNN z LIF, gradientem zastępczym, karą energetyczną i routingiem wg reżimu;
+  * LOGREG/TREE/XGB, eksperymenty PCA/GMM/neutralizacja.
+* **Protokół walidacji MQ-LAB-VAL-1.0.0:**
+  * holdout z hashem i jednorazowym dostępem, walk-forward z purgingiem i embargo;
+  * rejestr wszystkich prób, kontrole negatywne, kryteria promocji ustalone wcześniej;
+  * werdykty INSUFFICIENT_EVIDENCE / NO_VALIDATED_EDGE;
+  * artefakty z manifestem, blokadą aktywa i schematu oraz sumą kontrolną.
+* **Scenariusze lab** (dla obu aktywów, tryb cienia): setup_id, checklista, trigger, unieważnienie; kompletność checklisty, wynik modelu i prawdopodobieństwo są rozdzielone.
+* **Panel – 7 sekcji:**
+  * Pulpit, Wykresy, Setupy, Modele i trening, Badania i walidacja, Dane i diagnostyka, Ustawienia; dotychczasowe strony jako podstrony;
+  * Neural Network Activity z telemetrii tej samej inferencji: architektura, aktywacje, raster spike'ów; brak modelu → „Sieć nieaktywna”;
+  * odpowiedzi dla nieaktywnego aktywa są odrzucane.
+* **Naprawy wykryte przy przełączaniu aktywów:**
+  * cache analityki 1.13 bez symbolu;
+  * bufory bridge poprzedniego symbolu;
+  * S01–S12, scalp i gold_candles dla BTC – jawnie niedostępne.
+* **Migracje:** konfiguracja v11 (kopia `config.v10.bak.json`), baza 0014 (`lab_zones`, `lab_forecasts`, `lab_repaint`, `lab_trials`, `lab_holdout_access`, `lab_snapshots`).
+* **Dokumenty:** AUDIT, RESEARCH_SOURCES, REQUIREMENTS_TRACEABILITY, ARCHITECTURE, VALIDATION_PROTOCOL, VALIDATION_RESULTS, MODEL_CARDS/, DATA_REQUIREMENTS, RUNBOOK_PL.
+* **Ograniczenia:**
+  * żaden model ani scenariusz nie jest zwalidowany rynkowo (brak historii MT5 w środowisku budowania);
+  * źródła MQL5 i prace naukowe były niedostępne z sieci – implementacje własne.
+
 ## 1.13.0 – PepeMarketWizard: panel w grupach, wspólny silnik BB/MA, FFT/EMD/VMD, Double Bottom z biblioteką, audyt
 * **Nowa nazwa: PepeMarketWizard** (monitor, tytuły, komunikaty, paczka `PepeMarketWizard_KLIENT_1_13_0.zip`). Pakiet `masterquo`, folder `data\`,
   klucze przeglądarki i nazwy plików `.bat` bez zmian (zgodność z istniejącą konfiguracją i skrótami).

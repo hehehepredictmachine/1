@@ -4,6 +4,23 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.14 – dwa aktywa (XAUUSD i BTC), Execution Lock, laboratorium modeli
+* **Execution Lock jest domyślnie WŁĄCZONY.**
+  * Żadna ścieżka (tryby AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła zleceń do MT5.
+  * Pozycje są tylko odczytywane.
+  * Odblokowanie: Ustawienia → Execution Lock → fraza `ODBLOKUJ WYKONANIE ZLECEN` (Twoja decyzja).
+* **Program pracuje tylko na XAUUSD i BTC.**
+  * XAUUSD = Twój dotychczasowy symbol (`XAUUSD-`).
+  * BTC trzeba raz potwierdzić: Ustawienia → Aktywa → BTC → „Szukaj kandydatów” → „Potwierdź”. Program pokazuje tylko symbole, których metadane terminala to BTC/USD.
+  * Przełącznik XAUUSD/BTC jest w górnym pasku.
+* **Menu ma 7 sekcji:** Pulpit, Wykresy, Setupy, Modele i trening, Badania i walidacja, Dane i diagnostyka, Ustawienia. Dawne strony są podstronami.
+* **Pulpit pokazuje:**
+  * kartę scenariusza – co spełnione, czego brakuje, unieważnienie;
+  * aktywność modelu. Bez wytrenowanego modelu: „Sieć nieaktywna”.
+* **Silnik S01–S12, scalp i gold_candles działają tylko dla XAUUSD.** Dla BTC działają scenariusze lab (tryb cienia).
+* **Modele:** Modele i trening → „Uruchom badanie”. Wynik bez przewagi to `NO_VALIDATED_EDGE` – to uczciwy wynik, nie błąd.
+* Szczegóły: `RUNBOOK_PL.md`, `VALIDATION_PROTOCOL.md`, `REQUIREMENTS_TRACEABILITY.md`, `DATA_REQUIREMENTS.md`.
+
 ## Nowe w 1.13 – panel w grupach, analityka BB/MA, FFT/EMD/VMD, Double Bottom
 * Menu po lewej w trzech grupach: **Rynek** (Pulpit, Wykresy MTF, Kontekst rynku), **Analiza** (Setupy, Analiza AI, Indykatory,
   Analiza sygnału, Formacje i biblioteka), **Praca bota** (Pozycje i ryzyko, Dziennik i wyniki, Testy i raporty, Diagnostyka); Ustawienia na dole.

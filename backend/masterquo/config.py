@@ -529,8 +529,14 @@ class ConfigStore:
 
     def _load(self) -> AppConfig:
         if self.path.exists():
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            text = self.path.read_text(encoding="utf-8")
+            raw = json.loads(text)
+            v_before = int(raw.get("config_version", 1))
             migrated = migrate(raw)
+            if migrated:                       # keep the pre-migration file for a rollback to the previous release
+                bak = self.path.with_name(f"config.v{v_before}.bak.json")
+                if not bak.exists():
+                    bak.write_text(text, encoding="utf-8")
             sc = raw.get("scalp")
             if isinstance(sc, dict) and sc.get("commission_per_lot_side", 0.5) is None:
                 sc["commission_per_lot_side"] = 0.5            # 1.12.0 wrote null (unknown); package default is 0.50 per lot per side

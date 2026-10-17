@@ -127,7 +127,7 @@ ROWS: list[dict] = [
     {"id": "M36", "element": "PAL02M", "source": "nieustalone", "function": "—", "io": "—", "deps": "—", "platform": "—", "files": "—", "integration": "—",
      "implementation_status": "blocked", "availability": "missing_data", "decision_role": "research", "evidence": "RESEARCH_SOURCES.md", "limits": "brak pliku i specyfikacji"},
     {"id": "M37", "element": "super candles intelligence trading", "source": "nieustalone", "function": "zastępczo własne moduły świecowe MQ-CANDLE (1.10) i SCI (1.12) pod własnymi nazwami",
-     "io": "świece → cechy", "deps": "numpy", "platform": "Python", "files": "analysis/candles*, scalp/candles.py", "integration": "strategie/scalp",
+     "io": "świece → cechy", "deps": "numpy", "platform": "Python", "files": "analysis/candles.py, scalp/candles_sci.py", "integration": "strategie/scalp",
      "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": "tests/test_patterns_walls.py, tests/test_scalp_core.py",
      "limits": "to NIE jest produkt o tej nazwie"},
     {"id": "M38", "element": "MITP Multi-Indicator Trend Painter", "source": "R38 (MQ4)", "function": "—", "io": "—", "deps": "—", "platform": "MQL4", "files": "—", "integration": "—",
