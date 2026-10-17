@@ -516,27 +516,46 @@ class LabTrainer:
             os.replace(tmp, f)                                           # checkpoint / result written atomically
             job["result_file"] = str(f)
             job["verdict"] = res.get("verdict")
-            fam = res.get("candidate", {}).get("family") if artifact_family == "auto" else artifact_family
-            if fam and res.get("samples", 0) >= protocol["min_events"]:
+            cand = res.get("candidate", {}).get("family")
+            if artifact_family == "ALL":         # every completed family gets its own artefact (baseline DUMMY excluded)
+                fams = [f for f, v in (res.get("families") or {}).items() if v.get("status") == "COMPLETED" and f != "DUMMY"]
+            elif artifact_family == "auto":
+                fams = [cand] if cand else []
+            else:
+                fams = [artifact_family]
+            if fams and res.get("samples", 0) >= protocol["min_events"] and res.get("verdict") != "CANCELLED":
                 prepd = st.prepare()
                 idx = prepd["idx"]
                 X = prepd["fm"]["X"][idx]
                 Xs = FE.sequences(prepd["fm"]["X"], idx, protocol["seq_len"])
                 y = prepd["lb"]["y"][idx].astype(int)
-                fitted = fit_family(fam, X, Xs, y, seed=protocol["seeds"][0], budget=protocol["tuning_budget_per_family"])
                 synthetic = source != "MT5"
-                role = "fixture_only" if synthetic else ("shadow" if res.get("verdict") == "HOLDOUT_PASSED" else "research")
-                mid = f"LM-{protocol['asset']}-{protocol['tf']}x{protocol['horizon_bars']}-{fam}-{uuid.uuid4().hex[:6]}"
-                man = {"model_id": mid, "model_version": VERSION, "asset": protocol["asset"], "instrument_id": instrument_id, "data_source": source,
-                       "horizon": f"{protocol['tf']}x{protocol['horizon_bars']}", "family": fam, "feature_set": FE.FEATURE_SET, "features": FE.FEATURES,
-                       "seq_channels": FE.SEQ_CHANNELS, "seq_len": protocol["seq_len"], "label_spec": res.get("label_spec"),
-                       "cutoff": res.get("period", {}).get("to"), "protocol_id": protocol["protocol_id"], "params": fitted.cfg,
-                       "seeds": protocol["seeds"], "verdict": res.get("verdict"), "role": role, "trained_at": now(),
-                       "metrics": {k: v for k, v in (res.get("families", {}).get(fam) or {}).items() if k != "folds"}}
-                p = save_artifact(self.root / "models" / protocol["asset"], fitted, man)
-                job["artifact"] = str(p)
-                job["model_id"] = mid
-                logl(f"artefakt {mid} rola={role}")
+                saved = []
+                for k, fam in enumerate(fams):
+                    if job["cancel"]:
+                        break
+                    job.update(stage=f"artefakt {fam} ({k + 1}/{len(fams)})")
+                    try:
+                        fitted = fit_family(fam, X, Xs, y, seed=protocol["seeds"][0], budget=protocol["tuning_budget_per_family"])
+                    except Exception as exc:  # one family failing never drops the others
+                        logl(f"artefakt {fam}: BŁĄD {type(exc).__name__}: {exc}"[:300])
+                        continue
+                    passed = res.get("verdict") == "HOLDOUT_PASSED" and fam == cand
+                    role = "fixture_only" if synthetic else ("shadow" if passed else "research")
+                    mid = f"LM-{protocol['asset']}-{protocol['tf']}x{protocol['horizon_bars']}-{fam}-{uuid.uuid4().hex[:6]}"
+                    man = {"model_id": mid, "model_version": VERSION, "asset": protocol["asset"], "instrument_id": instrument_id, "data_source": source,
+                           "horizon": f"{protocol['tf']}x{protocol['horizon_bars']}", "family": fam, "feature_set": FE.FEATURE_SET, "features": FE.FEATURES,
+                           "seq_channels": FE.SEQ_CHANNELS, "seq_len": protocol["seq_len"], "label_spec": res.get("label_spec"),
+                           "cutoff": res.get("period", {}).get("to"), "protocol_id": protocol["protocol_id"], "params": fitted.cfg,
+                           "seeds": protocol["seeds"], "verdict": res.get("verdict"), "role": role, "trained_at": now(),
+                           "validation_candidate": fam == cand,
+                           "metrics": {kk: v for kk, v in (res.get("families", {}).get(fam) or {}).items() if kk != "folds"}}
+                    p = save_artifact(self.root / "models" / protocol["asset"], fitted, man)
+                    saved.append(mid)
+                    job["artifact"] = str(p)
+                    job["model_id"] = mid
+                    logl(f"artefakt {mid} rola={role}")
+                job["model_ids"] = saved
             job["status"] = "CANCELLED" if res.get("verdict") == "CANCELLED" else "COMPLETED"
             logl(f"koniec: {res.get('verdict')}")
         except Exception as exc:  # a failed challenger never stops the live analysis

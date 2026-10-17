@@ -242,6 +242,20 @@ def main(argv=None) -> int:
     sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
     sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")
     sr.add_argument("--variants", action="store_true", help="porównanie wariantów z config/scalp_variants_v1.json (win ratio i expectancy obok siebie)")
+    ta = sub.add_parser("train-all", help="trenuje WSZYSTKIE modele (prognozy, scalp ML/NN, ML DT/XGB, lab XAUUSD+BTC) i przekazuje je do bota")
+    ta.add_argument("--months", type=int, default=12, help="historia M5/M30 dla prognoz (miesiące)")
+    ta.add_argument("--scalp-months", type=int, default=6)
+    ta.add_argument("--commission", type=float, default=0.5, help="prowizja na 1 lot na stronę (domyślnie 0.50)")
+    ta.add_argument("--ml-days", type=int, default=180, help="dni historii dla próbek ML (backfill)")
+    ta.add_argument("--lab-bars", type=int, default=30000, help="liczba świec M5 na aktywo dla modeli lab")
+    ta.add_argument("--min-events", type=int, default=600)
+    ta.add_argument("--mt5-wait", type=float, default=300, help="ile sekund czekać na połączenie MT5")
+    ta.add_argument("--ml-no-approx", action="store_true", help="nie używaj próbek odtworzonych z historii (APPROX) w treningu ML")
+    ta.add_argument("--skip-candles", action="store_true")
+    ta.add_argument("--skip-ml", action="store_true")
+    ta.add_argument("--skip-lab", action="store_true")
+    ta.add_argument("--quick", action="store_true", help="test ścieżki: mniej rodzin modeli")
+    ta.add_argument("--demo", action="store_true", help="tylko test: uruchamia bota na danych syntetycznych, jeśli nie działa")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
     a = ap.parse_args(argv)
@@ -272,6 +286,9 @@ def main(argv=None) -> int:
         return replay_cmd(a)
     if a.cmd == "import-iv":
         return cmd_import_iv(a.file)
+    if a.cmd == "train-all":
+        from .train_all import train_all
+        return train_all(a)
     return 1
 
 

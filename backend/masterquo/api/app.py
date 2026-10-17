@@ -305,7 +305,7 @@ def create_app(rt, port: int) -> FastAPI:
         src = "SYNTHETIC" if (rt.demo or rt.bridge.synthetic or rt.cfg.get().synthetic_demo) else "MT5"
         return rt.lab.trainer.start(a, bars, point=float(meta.get("point") or 0.01), data_source=src,
                                     instrument_id=rt.assets.instrument(a)["instrument_id"], protocol=prot,
-                                    artifact_family=body.get("artifact_family") if body.get("artifact_family") in fams else "auto")
+                                    artifact_family=body.get("artifact_family") if (body.get("artifact_family") in fams or body.get("artifact_family") == "ALL") else "auto")
 
     @app.get("/api/v1/lab/jobs")
     def lab_jobs():

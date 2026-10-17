@@ -21,6 +21,12 @@
 - Przełącznik XAUUSD/BTC jest w górnym pasku. Po przełączeniu bridge wczytuje historię nowego symbolu, a panel czeka na nowe dane i nie pokazuje starych.
 
 ## Trening i badania
+- **Wszystko naraz:** `22_TRENUJ_WSZYSTKIE_MODELE.bat`.
+  - Opcjonalny parametr: prowizja, np. `22_TRENUJ_WSZYSTKIE_MODELE.bat 3.5`.
+  - Wymaga uruchomionego i zalogowanego MT5. Bota uruchamia sam, jeśli nie działa.
+  - Trenuje prognozy, scalp ML/NN, ML DT/XGBoost i modele lab dla XAUUSD oraz BTC, a potem wszystkie działają w bocie.
+  - Podsumowanie: w oknie i w `data/logs/trening_wszystkiego_*.json`.
+  - Czas: od kilkudziesięciu minut do kilku godzin, zależnie od komputera i historii.
 - Modele i trening → wybierz rodziny → „Uruchom badanie dla <aktywo>”.
   - Zadanie ma postęp, log i przycisk Anuluj.
   - Wynik jest zapisywany atomowo w `data/lab/studies/`.

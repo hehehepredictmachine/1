@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import Section from "../components/Section";
-import { href } from "../router";
+import { href, usePersisted } from "../router";
 import { useStore } from "../store";
 import { useUi } from "../ui";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../util";
@@ -168,8 +168,34 @@ export function LabDashboardTop() {
         {lab?.status === "warming_up" && <p className="muted small">Lab: {lab.reason}</p>}
       </div>
       <ScenarioCard lab={lab} />
-      <NNActivity model={lab?.model} stale={!!lab?.stale || !lab?.fresh} scenarios={lab?.scenarios || []} />
+      <AllModels lab={lab} />
     </div>);
+}
+
+/** Every model artefact of the active asset runs on each closed M5 bar; pick which one the activity view shows. */
+function AllModels({ lab }: { lab: any }) {
+  const [sel, setSel] = usePersisted<string>("lab.nnModel", "", (x) => typeof x === "string");
+  const list: any[] = lab?.models || [];
+  const byFam = list.find((m) => m.family === sel && m.status === "ready");
+  const shown = byFam || lab?.model;
+  return (
+    <>
+      <NNActivity model={shown} stale={!!lab?.stale || !lab?.fresh} scenarios={lab?.scenarios || []} />
+      {list.length > 0 && (
+        <div className="card nn-card" data-testid="all-models">
+          <div className="nn-head"><h3>Wszystkie modele {lab?.asset} ({list.length})</h3>
+            <label className="small">Pokaż w wizualizacji: <select aria-label="Model w wizualizacji" value={byFam ? sel : ""} onChange={(e) => setSel(e.target.value)}>
+              <option value="">automatycznie ({lab?.model?.family ?? "—"})</option>
+              {list.filter((m) => m.status === "ready").map((m) => <option key={m.family} value={m.family}>{m.family}</option>)}</select></label></div>
+          <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Model</th><th>Rodzina</th><th>Rola</th><th>Wynik (TP przed SL)</th><th>Czas</th><th>Status</th></tr></thead>
+            <tbody>{list.map((m) => (
+              <tr key={m.model_id ?? m.family} className={m.status === "ready" ? "" : "warn"}>
+                <td className="mono">{m.model_id}</td><td>{m.family}</td><td>{ROLE_PL[m.role] ?? m.role ?? "—"}</td>
+                <td>{m.raw_score != null ? `${fmtNum(m.raw_score * 100, 1)}%` : "—"}</td><td>{m.telemetry?.latency_ms != null ? `${m.telemetry.latency_ms} ms` : "—"}</td>
+                <td>{m.status}{m.reason ? ` – ${m.reason}` : ""}</td></tr>))}</tbody></table></div>
+          <p className="muted small">Wszystkie modele liczą się na każdej zamkniętej świecy M5. Żaden nie składa zleceń; rola „badawczy”/„techniczny” = bez wpływu na decyzje.</p>
+        </div>)}
+    </>);
 }
 
 // ------------------------------------------------------------------------------------------- Setupy

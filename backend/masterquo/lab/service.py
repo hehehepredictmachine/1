@@ -75,7 +75,7 @@ class LabService:
         if not bars["M5"]:
             return None
         ml = self.trainer.models(asset)
-        key = f"{asset}|{sym}|{bars['M5'][-1]['open_utc']}|{ml[0]['model_id'] if ml else '-'}"     # new artefact -> recompute
+        key = f"{asset}|{sym}|{bars['M5'][-1]['open_utc']}|{','.join(m['model_id'] for m in ml)}"     # new artefact -> recompute
         if not force and self._last_key.get(asset) == key:
             self._tick_quotes(asset, sym)
             return self.state.get(asset)
@@ -140,7 +140,7 @@ class LabService:
                "regime": mods.get("M15", {}).get("regime"), "fresh": fresh,
                "fresh_detail": f"wiek notowania {q.get('age_seconds')} s" if q else "brak notowania",
                "cost": {"spread_atr": (q["spread"] / at) if (q and at) else None}}
-        model = self._infer(asset, bars["M5"], trace)
+        model, all_models = self._infer_all(asset, bars["M5"], trace)
         scen = scenarios.build(ctx, mods, model)
         prev = {s["setup_id"]: s for s in (self.state.get(asset) or {}).get("scenarios", [])}
         for s in scen:
@@ -151,7 +151,7 @@ class LabService:
             st = {"asset": asset, "symbol": sym, "instrument": self.assets.instrument(asset) if self.assets else None, "seq": self.seq,
                   "trace_id": trace, "as_of": as_of, "computed_at": iso(time.time()), "version": VERSION,
                   "data_mode": "fixture" if (self.bridge.synthetic or cfg.synthetic_demo) else "live", "modules": mods, "fourier": fx, "zones": zl[-20:],
-                  "zone_events": self.zones.events[-5:], "repaint_changes": rp[-10:], "scenarios": scen, "model": model,
+                  "zone_events": self.zones.events[-5:], "repaint_changes": rp[-10:], "scenarios": scen, "model": model, "models": all_models,
                   "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "quote": q, "fresh": fresh}
             st["ticks"] = (self.state.get(asset) or {}).get("ticks")
             self.state[asset] = st
@@ -192,26 +192,60 @@ class LabService:
         st["ticks"] = res
 
     # ------------------------------------------------------------------ models + telemetry
-    def _model_for(self, asset: str):
-        lst = self.trainer.models(asset)
-        if not lst:
-            return None
-        path = str(self.trainer.root / "models" / asset / lst[0]["path"])
-        cached = self._models.get(asset)
-        if cached and cached[0] == path:
-            return cached
-        fitted, man = load_artifact(Path(path), asset=asset, feature_set=FE.FEATURE_SET)
-        self._models[asset] = (path, fitted, man)
-        return self._models[asset]
+    def _active_models(self, asset: str) -> list[tuple]:
+        """Latest artefact of EVERY model family of this asset (all of them run; one is shown as primary)."""
+        out, seen, errors = [], set(), []
+        for m in self.trainer.models(asset):
+            if m.get("family") in seen:
+                continue
+            seen.add(m.get("family"))
+            path = str(self.trainer.root / "models" / asset / m["path"])
+            cached = self._models.get(path)
+            if cached is None:
+                try:
+                    fitted, man = load_artifact(Path(path), asset=asset, feature_set=FE.FEATURE_SET)
+                except Exception as exc:
+                    errors.append(f"{m.get('model_id')}: {exc}")
+                    continue
+                cached = self._models[path] = (path, fitted, man)
+            out.append(cached)
+        self._artifact_errors = errors
+        return out
 
-    def _infer(self, asset: str, m5: list[dict], trace: str) -> dict:
-        try:
-            got = self._model_for(asset)
-        except Exception as exc:
-            return {"status": "error", "reason": f"ARTEFAKT_ODRZUCONY: {exc}", "nn_status": "INACTIVE"}
-        if got is None:
-            return {"status": "no_model", "reason": f"brak wytrenowanego modelu dla {asset} (Modele i trening → uruchom badanie)",
-                    "nn_status": "INACTIVE", "nn_reason": "sieć nieaktywna – brak artefaktu"}
+    @staticmethod
+    def _primary(results: list[dict]) -> dict | None:
+        """Shown on the dashboard: validated (shadow) first, then a neural network, then the newest."""
+        ready = [r for r in results if r.get("status") == "ready"]
+        if not ready:
+            return results[0] if results else None
+        for pred in (lambda r: r.get("role") in ("shadow", "active"), lambda r: r.get("family") == "SEW_SNN",
+                     lambda r: r.get("family") == "RESNET1D", lambda r: True):
+            hit = [r for r in ready if pred(r)]
+            if hit:
+                return hit[0]
+        return ready[0]
+
+    def _infer_all(self, asset: str, m5: list[dict], trace: str) -> tuple[dict, list[dict]]:
+        models = self._active_models(asset)
+        if not models:
+            reason = f"brak wytrenowanego modelu dla {asset} (Modele i trening → uruchom badanie)"
+            if getattr(self, "_artifact_errors", None):
+                reason = "ARTEFAKT_ODRZUCONY: " + "; ".join(self._artifact_errors)[:300]
+            m = {"status": "no_model", "reason": reason, "nn_status": "INACTIVE", "nn_reason": "sieć nieaktywna – brak artefaktu"}
+            return m, []
+        results = []
+        for got in models:
+            try:
+                results.append(self._infer(asset, m5, trace, got))
+            except Exception as exc:  # one model failing never stops the others
+                results.append({"status": "error", "model_id": got[2].get("model_id"), "family": got[1].family, "reason": f"{type(exc).__name__}: {exc}"[:200]})
+        prim = self._primary(results)
+        nn_any = any(r.get("family") in NN_FAMILIES and r.get("status") == "ready" for r in results)
+        if prim is not None and prim.get("family") not in NN_FAMILIES and nn_any:
+            prim = {**prim, "nn_reason": "sieć działa jako dodatkowy model – wybierz ją w liście modeli"}
+        return prim, results
+
+    def _infer(self, asset: str, m5: list[dict], trace: str, got: tuple) -> dict:
         path, fitted, man = got
         tf, H = man["horizon"].split("x")
         if tf != "M5":

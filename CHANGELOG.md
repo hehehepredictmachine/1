@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 1.14.2 – jeden plik do treningu wszystkich modeli: `22_TRENUJ_WSZYSTKIE_MODELE.bat`
+* Jedno uruchomienie (`python -m masterquo train-all`) wykonuje po kolei:
+  1. start bota w tle, jeśli nie działa, i oczekiwanie na MT5;
+  2. prognozy gold_candles: eksport M5/M30, trening z planem, przeładowanie w bocie;
+  3. scalp ML/NN A/B/C: eksport M1–H1, trening (prowizja 0,50/lot/stronę lub z parametru), replay wariantów;
+  4. ML Decision Tree / XGBoost: próbki z historii (APPROX – jawnie włączone; `--ml-no-approx` wyłącza) i trening;
+  5. modele lab dla XAUUSD i BTC: wszystkie rodziny (LOGREG, drzewo, MiniRocket, XGBoost, ResNet1D, SEW-SNN, eksperymenty PCA/GMM/neutralizacja).
+* Kroki zablokowane (np. za mało danych) są raportowane i nie zatrzymują kolejnych.
+* Raport: `data/logs/trening_wszystkiego_<czas>.json`.
+* Bot uruchamia teraz **wszystkie** zapisane modele lab danego aktywa na każdej zamkniętej świecy M5:
+  * Pulpit → „Wszystkie modele” (wynik, czas, rola);
+  * wybór modelu do wizualizacji; sieć neuronowa jest domyślnie pokazywana jako główna.
+* Bez zmian: żadnego zlecenia, Execution Lock nienaruszony, modele bez zaliczonej walidacji działają w trybie badawczym (bez wpływu na decyzje).
+
 ## 1.14.1 – bez blokad symboli: bot pracuje na symbolach włączonych na rachunku
 * Twoja zgłoszona usterka: na Twoim MT5 pojawiało się „SYMBOL_NOT_ALLOWED:DATA:XAUUSD-”, a dane z terminala przestały płynąć.
   Przyczyna: w 1.14.0 metadane kontraktu `XAUUSD-` u brokera nie przeszły reguły XAU/USD, a to blokowało cały symbol.
