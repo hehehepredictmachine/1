@@ -196,7 +196,7 @@ class TestPreSendRecheck(unittest.TestCase):
         self.td = TempData()
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.fake, self.worker, self.b = cfg, db, fake, worker, b
-        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5}})
+        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5}, "execution": {"lock": "UNLOCKED_BY_USER"}})   # FakeMT5 only
         b.start()
         self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.quote_status() and b.symbol_info, 40))
         from masterquo.engine.lifecycle import LifecycleStore
