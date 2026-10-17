@@ -282,32 +282,33 @@ class TestMonitorUI(unittest.TestCase):
         self.go("#/ai")
 
     def test_10_markets_scanner_and_detail_chart(self):
-        """1.14: the scanner covers ONLY the two allowed assets (XAUUSD + the confirmed BTC symbol); other terminal symbols are
-        rejected by the backend (403), never scanned or charted."""
         p = self.page
-        st, _ = p.evaluate("""async () => { const s = await (await fetch('/api/v1/session')).json();
-            const r = await fetch('/api/v1/assets/confirm', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-MQ-CSRF': s.csrf},
-              body: JSON.stringify({asset: 'BTC', broker_symbol: 'BTCUSD-'})}); return [r.status, null]; }""")
-        self.assertEqual(st, 200)
         self.go("#/wykresy")
         self.open_section("sec-markets")
-        p.wait_for_selector("[data-testid=markets-panel] tr[data-symbol='BTCUSD-']", timeout=90000)
+        p.wait_for_selector("[data-testid=markets-panel] tr[data-symbol='EURUSD-']", timeout=60000)
         rows = p.locator("[data-testid=markets-panel] tbody tr[data-symbol]")
+        self.assertGreaterEqual(rows.count(), 5)
         names = {rows.nth(i).get_attribute("data-symbol") for i in range(rows.count())}
-        self.assertTrue(names <= {"XAUUSD-", "BTCUSD-"}, names)
-        self.assertEqual(p.request.get(BASE + "/api/v1/markets/detail?symbol=EURUSD-").status, 403)
+        self.assertTrue({"XAUUSD-", "EURUSD-", "GBPUSD-", "USDJPY-", "US30-"} <= names)
         sym0 = json.loads(p.evaluate("() => fetch('/api/v1/state').then(r => r.text())"))["symbol"]["symbol"]
-        p.locator("[data-testid=markets-panel] tr[data-symbol='BTCUSD-']").click()
+        p.locator("[data-testid=markets-panel] tr[data-symbol='EURUSD-']").click()
         p.wait_for_selector("[data-testid=market-detail]", timeout=10000)
         p.wait_for_function("() => window.__mqMarketChart && window.__mqMarketChart.bars() > 100", timeout=20000)
+        p.wait_for_function("() => window.__mqMarketChart.lines().includes('Daily Open')", timeout=10000)
         self.assertEqual(p.locator("[data-act=detail-ai]").count(), 0)
         p.keyboard.press("Escape")
         if p.locator("[data-testid=market-detail]").count():
             p.locator(".modal-head button.icon").first.click()
         sym1 = json.loads(p.evaluate("() => fetch('/api/v1/state').then(r => r.text())"))["symbol"]["symbol"]
-        self.assertEqual(sym0, sym1)                                   # browsing the other asset never changes the engine's symbol
+        self.assertEqual(sym0, sym1)                                   # browsing other markets never changes the engine's symbol
+        p.wait_for_selector("[data-testid=bot-signals-panel]", timeout=10000)
+        cells = p.locator("[data-testid=markets-panel] td.bot-setup")
+        self.assertGreaterEqual(cells.count(), 5)
+        texts = [cells.nth(i).inner_text() for i in range(cells.count())]
+        self.assertIn("silnik główny", texts)
+        self.assertTrue(any(t and t not in ("—", "silnik główny") for t in texts), texts)
         state = json.loads(p.evaluate("() => fetch('/api/v1/bot-signals').then(r => r.text())"))
-        self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] and x["symbol"] in ("XAUUSD-", "BTCUSD-") for x in state["items"]))
+        self.assertTrue(all(x["source"] == "BOT" and x["strategy_id"] for x in state["items"]))
         self.go("#/ai")
 
     def test_11_signal_plan_context_all_timeframes_and_history(self):

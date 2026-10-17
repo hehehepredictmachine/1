@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.14.1 – bez blokad symboli: bot pracuje na symbolach włączonych na rachunku
+* Twoja zgłoszona usterka: na Twoim MT5 pojawiało się „SYMBOL_NOT_ALLOWED:DATA:XAUUSD-”, a dane z terminala przestały płynąć.
+  Przyczyna: w 1.14.0 metadane kontraktu `XAUUSD-` u brokera nie przeszły reguły XAU/USD, a to blokowało cały symbol.
+* Zmiana na Twoją prośbę:
+  * **żadnych blokad po symbolu** – dane, analiza, skaner rynków (Market Watch jak przed 1.14), API i powiadomienia działają na włączonych symbolach;
+  * metadane są tylko informacją;
+  * gdy zapisanego symbolu nie ma u brokera, bot sam bierze pasujący symbol z rachunku (najpierw z Market Watch, z pominięciem XAUT, PAXG i WBTC);
+  * BTC jest wykrywany automatycznie (status `AUTO_DETECTED`), bez potwierdzania;
+  * symbol wpisany w Ustawieniach (MT5) znów działa i staje się symbolem aktywnego aktywa.
+* **Bez zmian:** Execution Lock (blokada wysyłania zleceń) zostaje domyślnie włączony. Odblokowanie: Ustawienia → Execution Lock.
+
 ## 1.14.0 – dwa aktywa XAUUSD / BTC, Execution Lock, moduły badawcze M01–M42, protokół walidacji, panel 7 sekcji, aktywność sieci
 * **Dwa aktywa:**
   * `assets/registry.py` – XAUUSD i BTC (allowlista) na wejściu danych (bridge), w API, treningu, skanerze, powiadomieniach i wykonaniu;

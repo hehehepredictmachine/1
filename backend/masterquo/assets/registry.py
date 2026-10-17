@@ -6,7 +6,9 @@
   prefix matching or stripping characters; XAUT/PAXG are not XAU, WBTC/BTCB are not BTC, a USDT-quoted symbol is not BTCUSD;
 * nothing is auto-selected: candidates are PROPOSED and the user confirms one (Ustawienia); a CONFIRMED mapping stores the
   contract fingerprint and a changed contract blocks only that asset's path (CONTRACT_SPEC_CHANGED);
-* `check_symbol(sym, path)` is the allowlist used by the data input (bridge), API, training, notifications and execution.
+* 1.14.1 (user decision): NO symbol blocking. The bot works on the symbols enabled on the broker account; when the configured
+  symbol is missing it adopts the matching symbol from the terminal (Market Watch first). Metadata checks are informational
+  (warnings), never a reason to stop data, analysis or the API. `check_symbol` only labels a symbol with its asset.
 """
 from __future__ import annotations
 
@@ -87,14 +89,10 @@ class AssetRegistry:
         return self.cfg_store.get().assets.active
 
     def _usable(self, asset: str) -> tuple[bool, str | None]:
+        """An asset is usable whenever it has a broker symbol (no confirmation / metadata gate)."""
         m = self.mapping(asset)
         if m is None or not m.broker_symbol:
-            return False, "UNMAPPED"
-        if m.status not in ("USER_SPECIFIED", "CONFIRMED"):
-            return False, f"MAPPING_{m.status}_NEEDS_CONFIRMATION"
-        chk = self._check.get(asset)
-        if chk and chk["status"] == "CONFLICT":
-            return False, "METADATA_CONFLICT:" + ",".join(chk["reasons"][:3])
+            return False, "BRAK_SYMBOLU_W_TERMINALU"
         return True, None
 
     def allowed_symbols(self) -> dict[str, str]:
@@ -109,22 +107,18 @@ class AssetRegistry:
     def asset_of(self, symbol: str) -> str | None:
         return self.allowed_symbols().get(symbol)
 
-    def check_symbol(self, symbol: str, path: str) -> str:
-        """Allowlist gate. Returns the canonical asset or raises SymbolNotAllowed (logged, counted)."""
-        a = self.asset_of(symbol)
-        if a is None:
-            rec = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "symbol": symbol, "path": path}
-            with self._lock:
-                self.rejections = (self.rejections + [rec])[-50:]
-            raise SymbolNotAllowed(f"SYMBOL_NOT_ALLOWED:{path}:{symbol}")
-        return a
+    def check_symbol(self, symbol: str, path: str) -> str | None:
+        """Labels a symbol with its asset (XAUUSD / BTC) or None for any other enabled symbol. Never blocks."""
+        return self.asset_of(symbol)
 
     def check_asset(self, asset: str, path: str) -> str:
         if asset not in ALLOWED:
             raise SymbolNotAllowed(f"ASSET_NOT_ALLOWED:{path}:{asset}")
         ok, why = self._usable(asset)
         if not ok:
-            raise SymbolNotAllowed(f"ASSET_NOT_USABLE:{path}:{asset}:{why}")
+            got = self.autodetect(asset)                 # try the account's enabled symbols before giving up
+            if not got:
+                raise SymbolNotAllowed(f"ASSET_NOT_USABLE:{path}:{asset}:{why}")
         return self.mapping(asset).broker_symbol
 
     # ------------------------------------------------------------------ metadata check
@@ -148,19 +142,79 @@ class AssetRegistry:
         with self._lock:
             self._meta[asset] = meta or {}
             self._check[asset] = res
-        if res["status"] == "CONFLICT" and self.log is not None:
-            self.log.warn("ASSETS", "METADATA_CONFLICT", f"{asset}: symbol {m.broker_symbol if m else '-'} zablokowany – " + ", ".join(res["reasons"][:3]))
+        if res["status"] == "CONFLICT":
+            res["status"] = "WARNING"                     # informational only - nothing is blocked
+            if self.log is not None:
+                self.log.info("ASSETS", "METADATA_NOTE", f"{asset}: symbol {m.broker_symbol if m else '-'} – metadane: " + ", ".join(res["reasons"][:3])
+                              + " (tylko informacja, symbol działa)")
         return res
 
     def verify_main(self, symbol: str, meta: dict) -> None:
-        """Called by the bridge after reading symbol_info of the main symbol. Raises when the path must stay blocked."""
+        """Called by the bridge after reading symbol_info of the main symbol: records metadata, never raises. Afterwards the
+        other asset gets its symbol from the account if it has none yet."""
         a = self.active()
-        m = self.mapping(a)
-        if m is None or m.broker_symbol != symbol:
-            raise SymbolNotAllowed(f"SYMBOL_NOT_ALLOWED:DATA:{symbol}")
-        res = self.verify(a, meta)
-        if res["status"] == "CONFLICT":
-            raise SymbolNotAllowed(f"ASSET_METADATA_CONFLICT:{a}:{','.join(res['reasons'][:3])}")
+        self.verify(a, meta)
+        for other in ALLOWED:
+            m = self.mapping(other)
+            if other != a and (m is None or not m.broker_symbol):
+                try:
+                    self.autodetect(other)
+                except Exception:  # detection is best effort; the main symbol keeps working
+                    pass
+
+    # ------------------------------------------------------------------ symbol from the account
+    NAME_HINTS = {"XAUUSD": ("XAUUSD", "GOLD", "XAU"), "BTC": ("BTCUSD", "BITCOIN", "BTC")}
+
+    def find_on_account(self, asset: str) -> str | None:
+        """Symbol of `asset` enabled on the account: Market Watch first, then all symbols; metadata match first, then name.
+        Look-alikes (XAUT, PAXG, WBTC, ...) are skipped."""
+        b = self.bridge
+        if b is None:
+            return None
+        try:
+            raw = b._call(lambda mm: mm.symbols_get())
+        except Exception:
+            return None
+        rows = []
+        for r in raw or ():
+            d = r._asdict() if hasattr(r, "_asdict") else dict(r)
+            rows.append(d)
+        bad = SPECS[asset]["forbidden_base"]
+
+        def score(d):
+            name = str(d.get("name") or "").upper()
+            if any(x in name for x in bad) or _up(d.get("currency_base")) in bad:
+                return None
+            c = classify(d)
+            s = 0
+            if c["asset"] == asset:
+                s += 10
+            elif not any(h in name for h in self.NAME_HINTS[asset]):
+                return None
+            if name.startswith(self.NAME_HINTS[asset][0]):
+                s += 3
+            if d.get("visible"):
+                s += 5
+            if d.get("trade_mode", 4) != 0:
+                s += 1
+            return s
+        best = sorted(((score(d), str(d.get("name"))) for d in rows if score(d) is not None), key=lambda x: (-x[0], len(x[1]), x[1]))
+        return best[0][1] if best else None
+
+    def autodetect(self, asset: str) -> str | None:
+        sym = self.find_on_account(asset)
+        if not sym:
+            return None
+        others = [a for a in ALLOWED if a != asset and self.mapping(a) and self.mapping(a).broker_symbol == sym]
+        if others:
+            return None
+        patch = {"assets": {"mappings": {asset: {"broker_symbol": sym, "status": "AUTO_DETECTED"}}}}
+        if self.active() == asset:
+            patch["mt5"] = {"symbol": sym}
+        self.cfg_store.update(patch)
+        if self.log is not None:
+            self.log.info("ASSETS", "AUTO_DETECTED", f"{asset}: używam symbolu z rachunku – {sym}")
+        return sym
 
     def refresh(self) -> None:
         """Re-read metadata of both mapped symbols (no side effects in the terminal)."""
@@ -184,13 +238,15 @@ class AssetRegistry:
         if b is None or b.state != "CONNECTED":
             return []
         out = []
+        hints = self.NAME_HINTS[asset]
         for s in b.list_symbols(visible_only=False):
             c = classify(s)
-            if c["asset"] == asset or any(x.startswith(asset + "_") for x in c["conflicts"]):
+            if c["asset"] == asset or any(x.startswith(asset + "_") for x in c["conflicts"]) or any(h in str(s.get("name", "")).upper() for h in hints):
                 out.append({"broker_symbol": s.get("name"), "description": s.get("description"), "path": s.get("path"),
                             "currency_base": s.get("currency_base"), "currency_profit": s.get("currency_profit"),
                             "contract_size": s.get("trade_contract_size"), "digits": s.get("digits"),
-                            "eligible": c["asset"] == asset, "conflicts": c["conflicts"], "instrument_type": c["instrument_type"]})
+                            "eligible": True, "metadata_match": c["asset"] == asset, "conflicts": c["conflicts"],
+                            "instrument_type": c["instrument_type"], "visible": s.get("visible")})
         return out
 
     # ------------------------------------------------------------------ changes (user actions)
@@ -203,9 +259,7 @@ class AssetRegistry:
         meta = b.symbol_meta(broker_symbol, guard=False)
         if meta is None:
             raise ValueError(f"SYMBOL_NOT_IN_TERMINAL:{broker_symbol}")
-        c = classify(meta)
-        if c["asset"] != asset:
-            raise ValueError(f"METADATA_DOES_NOT_MATCH_{asset}:" + ",".join(c["conflicts"] or [f"IS_{c['asset']}"]))
+        c = classify(meta)                                # informational: the user's choice is respected
         other = [a for a in ALLOWED if a != asset and (self.mapping(a) and self.mapping(a).broker_symbol == broker_symbol)]
         if other:
             raise ValueError("SYMBOL_ALREADY_MAPPED_TO_" + other[0])

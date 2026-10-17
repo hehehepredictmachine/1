@@ -516,10 +516,6 @@ def create_app(rt, port: int) -> FastAPI:
     def _sym(symbol: str) -> str:
         if not _re.fullmatch(SYMBOL_RX, symbol or ""):
             raise HTTPException(400, "INVALID_SYMBOL")
-        try:
-            rt.assets.check_symbol(symbol, "API")
-        except PermissionError as exc:
-            raise HTTPException(403, str(exc)) from exc
         return symbol
 
     # ------------------------------------------------------------ 1.14 assets (XAUUSD / BTC) and Execution Lock
@@ -717,8 +713,11 @@ def create_app(rt, port: int) -> FastAPI:
     def put_config(patch: dict = Body(...)):
         patch.pop("server", None)
         # 1.14: asset mapping / active asset / Execution Lock change only through their dedicated, checked endpoints
-        if "assets" in patch or "symbol" in (patch.get("mt5") or {}) or "analytical_alias" in (patch.get("mt5") or {}):
-            raise HTTPException(400, "USE_ASSETS_ENDPOINTS: /api/v1/assets/confirm, /api/v1/assets/active")
+        patch.pop("assets", None)
+        m5 = patch.get("mt5") or {}
+        m5.pop("analytical_alias", None)
+        if m5.get("symbol"):                       # symbol typed in Ustawienia -> becomes the active asset's broker symbol
+            patch.setdefault("assets", {})["mappings"] = {rt.cfg.get().assets.active: {"broker_symbol": m5["symbol"], "status": "USER_SPECIFIED"}}
         if isinstance(patch.get("execution"), dict) and ({"lock", "lock_changed_at"} & set(patch["execution"])):
             raise HTTPException(400, "USE_EXECUTION_LOCK_ENDPOINT")
         try:

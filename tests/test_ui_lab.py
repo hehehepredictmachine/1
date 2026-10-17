@@ -1,7 +1,7 @@
 """1.14 panel in a real browser (Chromium + demo backend on the SYNTHETIC terminal): seven-section menu, XAUUSD/BTC switch
 (every lab page answers for the active asset; a response for the other asset is never shown), scenario card + checklist,
 Neural Network Activity drawn from the SAME inference_id as the backend result (and 'sieć nieaktywna' without an artefact),
-Execution Lock enforced by the backend (trade pad execute, unlock without phrase, config bypass), allowlist in the API,
+Execution Lock enforced by the backend (trade pad execute, unlock without phrase, config bypass), no symbol blocking (1.14.1),
 390 px without horizontal scroll. Screenshots: data/logs/ui_lab/. Skipped without Playwright."""
 from __future__ import annotations
 
@@ -120,12 +120,9 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(st, 403)
         st, _ = self.send("PUT", "/api/v1/config", {"execution": {"lock": "UNLOCKED_BY_USER"}})
         self.assertEqual(st, 400)
-        st, _ = self.send("PUT", "/api/v1/config", {"mt5": {"symbol": "EURUSD-"}})
-        self.assertEqual(st, 400)
-        self.assertEqual(self.page.request.get(BASE + "/api/v1/lab?asset=DOGE").status, 403)
-        self.assertEqual(self.page.request.get(BASE + "/api/v1/markets/detail?symbol=EURUSD-").status, 403)
-        st, _ = self.send("POST", "/api/v1/assets/active", {"asset": "BTC"})               # BTC not confirmed yet
-        self.assertEqual(st, 409)
+        self.assertEqual(self.page.request.get(BASE + "/api/v1/lab?asset=DOGE").status, 403)   # asset id must be XAUUSD / BTC
+        self.assertEqual(self.page.request.get(BASE + "/api/v1/markets/detail?symbol=EURUSD-").status, 200)   # no symbol blocking
+        self.assertTrue(wait_for(lambda: self.api("/api/v1/assets")["assets"]["BTC"]["broker_symbol"] == "BTCUSD-", 30, 0.5))  # from the account
         st, j = self.send("POST", "/api/v1/lab/tradepad", {"side": "BUY", "entry": 100, "sl": 99, "tp": 102, "lots": 0.01})
         self.assertEqual(st, 200)
         self.assertEqual(j["execution"], "BLOCKED_BY_EXECUTION_LOCK")
@@ -162,7 +159,7 @@ class TestLabUI(unittest.TestCase):
         p.wait_for_selector("[data-testid=asset-mapping]")
         p.click("tr[data-asset=BTC] button")
         p.wait_for_selector("[data-testid=cands-BTC] button")
-        p.click("[data-testid=cands-BTC] button")
+        p.click("[data-testid=cands-BTC] button:has-text('Użyj')")
         wait_for(lambda: self.api("/api/v1/assets")["assets"]["BTC"]["usable"], 20, 0.5)
         p.goto(BASE + "/#/pulpit")
         p.wait_for_selector("[data-testid=asset-switch] button[data-asset=BTC]:not([disabled])", timeout=20000)

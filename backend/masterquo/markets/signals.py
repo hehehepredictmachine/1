@@ -207,9 +207,6 @@ class BotSignalService:
                + (f" – odrzucony ({', '.join(v['reasons'])})" if st == "REJECTED" else ""))
         self.log.info("SIGNAL", st, txt, {"signal_id": sid, "setup_id": rec["setup_id"]})
         self.bus.publish("bot_signal", out)
-        reg = getattr(self.bridge, "assets", None)
-        if st == "OPEN" and reg is not None and reg.asset_of(rec.get("symbol") or "") is None:
-            st = "OPEN_NOT_NOTIFIED_SYMBOL_NOT_ALLOWED"           # allowlist also on notifications
         if st == "OPEN" and self.telegram is not None and self.cfg.telegram:
             try:
                 self.telegram.notify(f"signal:{rec['setup_id']}", f"MasterQUO {'[DANE SYNTETYCZNE] ' if view.synthetic else ''}{txt}")

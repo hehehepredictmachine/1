@@ -73,12 +73,7 @@ class ExecutionGateway:
             raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
         if gate.get("mode") in ("AUTO_DEMO", "AUTO_LIVE") and self.cfg_store.execution_locked():
             raise ExecutionError("EXECUTION_LOCKED")
-        assets = getattr(b, "assets", None)
-        if assets is not None:
-            try:
-                assets.check_symbol(self.cfg_store.get().mt5.symbol, "EXECUTION")
-            except PermissionError as exc:
-                raise ExecutionError(str(exc)) from exc
+
         if self.manager is not None and self.manager.reconciled_epoch != b.session_epoch:
             raise ExecutionError("RECONCILIATION_WITH_TERMINAL_PENDING")
         setup = d.get("setup") or {}

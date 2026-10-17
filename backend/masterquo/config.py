@@ -443,7 +443,7 @@ class AssetMapping(_Strict):
     symbol earlier (XAUUSD- from the 1.x configuration), metadata still checked on connect; CONFIRMED: the user confirmed
     it in Ustawienia after the metadata check (fingerprint stored - a changed contract blocks the path)."""
     broker_symbol: str | None = None
-    status: Literal["UNMAPPED", "PROPOSED", "USER_SPECIFIED", "CONFIRMED"] = "UNMAPPED"
+    status: Literal["UNMAPPED", "PROPOSED", "USER_SPECIFIED", "CONFIRMED", "AUTO_DETECTED"] = "UNMAPPED"
     confirmed_at: str | None = None
     fingerprint: dict | None = None
 

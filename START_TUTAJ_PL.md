@@ -9,7 +9,8 @@
   * Żadna ścieżka (tryby AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła zleceń do MT5.
   * Pozycje są tylko odczytywane.
   * Odblokowanie: Ustawienia → Execution Lock → fraza `ODBLOKUJ WYKONANIE ZLECEN` (Twoja decyzja).
-* **Program pracuje tylko na XAUUSD i BTC.**
+* **1.14.1: bez blokad symboli.** Bot bierze symbole włączone na Twoim rachunku; gdy zapisanego nie ma, wybiera pasujący z Market Watch. BTC wykrywa się sam.
+* **Aktywa w przełączniku: XAUUSD i BTC** (moduły lab, scenariusze i modele liczone per aktywo).
   * XAUUSD = Twój dotychczasowy symbol (`XAUUSD-`).
   * BTC trzeba raz potwierdzić: Ustawienia → Aktywa → BTC → „Szukaj kandydatów” → „Potwierdź”. Program pokazuje tylko symbole, których metadane terminala to BTC/USD.
   * Przełącznik XAUUSD/BTC jest w górnym pasku.

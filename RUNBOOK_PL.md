@@ -13,6 +13,7 @@
    - aktywność modelu. Bez artefaktu: „Sieć nieaktywna”.
 
 ## Aktywa
+- **1.14.1:** symbole nie są blokowane. Bot używa symboli z Twojego rachunku i sam dobiera brakujący symbol XAUUSD/BTC z Market Watch. W Ustawieniach → Aktywa możesz wskazać inny („Użyj”).
 - Ustawienia → Aktywa:
   - XAUUSD jest wstępnie przypisane do Twojego symbolu, a metadane są sprawdzane przy połączeniu;
   - konflikt metadanych (np. inny kontrakt) blokuje tylko to aktywo.

@@ -37,6 +37,10 @@ Innych wywołań `order_send` w kodzie nie ma (grep).
 | B-08 | P3 | kontrola negatywna | kontrola „etykiety opóźnione” była źle zaprojektowana (przeszła etykieta jest wyznaczalna z bieżących cech) | zastąpiona kontrolą `FUTURE_SHIFTED_LABELS` z purgingiem | `TestProtocol` |
 | A-06 | P2 | replay | spread z pola świecy (z 1.13) | nadal otwarte – wymaga ticków | – |
 
+**1.14.1:** allowlista symboli (B-01) została wycofana na prośbę użytkownika – na jego MT5 blokowała `XAUUSD-` (SYMBOL_NOT_ALLOWED).
+- Symbole są teraz pobierane z rachunku, a metadane są tylko ostrzeżeniem.
+- Execution Lock (B-02) bez zmian.
+
 ## 3. Czego nie dało się sprawdzić
 
 - Prawdziwy terminal: metadane `XAUUSD-` u brokera, nazwa i kontrakt BTC (np. `BTCUSD`), sesje, `copy_ticks_from`, `trade_calc_mode`.

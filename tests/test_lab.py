@@ -79,56 +79,52 @@ class TestSymbolLock(unittest.TestCase):
         self.assertEqual(c.assets.mappings["BTC"].status, "UNMAPPED")
         self.assertEqual(c.execution.lock, "LOCKED")
 
-    def test_unknown_symbol_rejected_in_data_scanner_and_mapping(self):
+    def test_no_symbol_blocking_and_account_symbols(self):
+        """1.14.1: nothing is blocked by symbol - other enabled symbols work; BTC is taken from the account automatically."""
         cfg, db, bus, log, fake, worker, b, reg = connected()
         try:
-            from masterquo.assets.registry import SymbolNotAllowed
-            with self.assertRaises(SymbolNotAllowed):
-                b.symbol_bars("EURUSD-", "H1", 10)                                     # data input
-            with self.assertRaises(SymbolNotAllowed):
-                b.symbol_quote("EURUSD-")
-            with self.assertRaises(SymbolNotAllowed):
-                b.ticks("EURUSD-", 60)
-            with self.assertRaises(SymbolNotAllowed):
-                reg.check_asset("DOGE", "TRAINING")                                    # training path
-            with self.assertRaises(SymbolNotAllowed):
-                reg.switch("BTC")                                                      # BTC not mapped yet
-            self.assertEqual([c["broker_symbol"] for c in reg.candidates("BTC")], ["BTCUSD-"])
-            with self.assertRaises(ValueError):
-                reg.confirm("BTC", "EURUSD-")                                          # metadata is not BTC
-            reg.confirm("BTC", "BTCUSD-")
+            self.assertTrue(b.symbol_bars("EURUSD-", "H1", 10))                       # other enabled symbol: works
+            self.assertIsNone(reg.check_symbol("EURUSD-", "DATA"))                    # labelled, not rejected
+            self.assertEqual(reg.check_symbol("XAUUSD-", "DATA"), "XAUUSD")
+            self.assertTrue(wait_for(lambda: cfg.get().assets.mappings["BTC"].broker_symbol == "BTCUSD-", 20))
+            self.assertEqual(cfg.get().assets.mappings["BTC"].status, "AUTO_DETECTED")
+            with self.assertRaises(SymbolNotAllowedT()):
+                reg.check_asset("DOGE", "TRAINING")                                    # only the asset id must be XAUUSD / BTC
             from masterquo.markets.scanner import MarketScanner
-            sc = MarketScanner(cfg, b, bus, log)
-            self.assertEqual(sorted(sc.universe()), ["BTCUSD-", "XAUUSD-"] if cfg.get().markets.include_main else ["BTCUSD-"])
+            self.assertIn("EURUSD-", MarketScanner(cfg, b, bus, log).universe())    # scanner: Market Watch as before
             reg.switch("BTC")
             self.assertEqual((cfg.get().mt5.symbol, cfg.get().mt5.analytical_alias), ("BTCUSD-", "BTC"))
-            self.assertTrue(len(reg.rejections) >= 3)
         finally:
             b.stop()
             worker.stop()
 
-    def test_unconfirmed_mapping_not_usable(self):
-        cfg, db, bus, log, fake, worker, b = core()
-        from masterquo.assets.registry import AssetRegistry, SymbolNotAllowed
-        reg = AssetRegistry(cfg, b, log)
-        cfg.update({"assets": {"mappings": {"XAUUSD": {"broker_symbol": "XAUUSD-", "status": "PROPOSED"}}}})
-        with self.assertRaises(SymbolNotAllowed):
-            reg.check_symbol("XAUUSD-", "DATA")                                         # XAUUSD- maps only after confirmation
-        cfg.update({"assets": {"mappings": {"XAUUSD": {"status": "USER_SPECIFIED"}}}})
-        self.assertEqual(reg.check_symbol("XAUUSD-", "DATA"), "XAUUSD")
-        worker.stop()
+    def test_missing_configured_symbol_uses_account_symbol(self):
+        """Configured symbol not offered by the broker -> the gold symbol enabled on the account is used (no blocking)."""
+        cfg, db, bus, log, fake, worker, b = core(symbol="XAUUSD.pro")
+        from masterquo.assets.registry import AssetRegistry
+        b.assets = AssetRegistry(cfg, b, log)
+        b.start()
+        try:
+            self.assertTrue(wait_for(lambda: b.state == "CONNECTED", 40))
+            self.assertEqual(cfg.get().mt5.symbol, "XAUUSD-")
+            self.assertEqual(cfg.get().assets.mappings["XAUUSD"].status, "AUTO_DETECTED")
+        finally:
+            b.stop()
+            worker.stop()
 
-    def test_contract_change_blocks_confirmed_asset(self):
+    def test_metadata_mismatch_is_only_a_warning(self):
         cfg, db, bus, log, fake, worker, b = core()
         from masterquo.assets.registry import AssetRegistry
         reg = AssetRegistry(cfg, b, log)
-        cfg.update({"assets": {"mappings": {"XAUUSD": {"status": "CONFIRMED", "fingerprint": {"currency_base": "XAU", "currency_profit": "USD",
-                                                                                             "trade_contract_size": 100.0, "digits": 2, "point": 0.01}}}}})
-        self.assertEqual(reg.verify("XAUUSD", {"currency_base": "XAU", "currency_profit": "USD", "trade_contract_size": 100.0, "digits": 2, "point": 0.01})["status"], "OK")
-        r = reg.verify("XAUUSD", {"currency_base": "XAU", "currency_profit": "USD", "trade_contract_size": 1.0, "digits": 2, "point": 0.01})
-        self.assertEqual(r["status"], "CONFLICT")
-        self.assertNotIn("XAUUSD-", reg.allowed_symbols())
+        r = reg.verify("XAUUSD", {"currency_base": "USD", "currency_profit": "USD", "trade_contract_size": 100.0, "digits": 2, "point": 0.01})
+        self.assertEqual(r["status"], "WARNING")
+        self.assertIn("XAUUSD-", reg.allowed_symbols())                                  # still works
         worker.stop()
+
+
+def SymbolNotAllowedT():
+    from masterquo.assets.registry import SymbolNotAllowed
+    return SymbolNotAllowed
 
 
 # ------------------------------------------------------------------------------------------------ Execution Lock
@@ -580,8 +576,7 @@ class TestEndToEnd(unittest.TestCase):
                 if s["model"] and s["model"].get("inference_id"):
                     self.assertEqual(s["model"]["inference_id"], tel["inference_id"])
             json.dumps(lab.public("XAUUSD"))
-            # ---- BTC
-            reg.confirm("BTC", "BTCUSD-")
+            # ---- BTC (symbol taken from the account automatically)
             reg.switch("BTC")
             b.state = "RECONNECTING"
             b.next_retry = 0

@@ -345,6 +345,11 @@ class MarketBridge:
         sym = self.cfg.symbol
         self._guard(sym)
         info = self._call(lambda m: m.symbol_info(sym))
+        if info is None and self.assets is not None:
+            got = self.assets.autodetect(self.cfg_store.get().assets.active)     # symbol enabled on the broker account
+            if got:
+                sym = got
+                info = self._call(lambda m: m.symbol_info(sym))
         if info is None:
             cands = self._call(lambda m: m.symbols_get(group="*XAU*,*GOLD*")) or ()
             self.symbol_candidates = sorted({_row(c)["name"] for c in cands})[:30]
@@ -362,11 +367,9 @@ class MarketBridge:
             raise BridgeError(f"SYMBOL_NAME_MISMATCH:{info.get('name')}!={sym}")
         if self.assets is not None:
             try:
-                self.assets.verify_main(sym, info)
-            except PermissionError as exc:
-                self.symbol_status = "ASSET_METADATA_CONFLICT"
-                self.bus.publish("symbol", self.symbol_status_dict())
-                raise BridgeError(str(exc)) from exc
+                self.assets.verify_main(sym, info)            # informational only
+            except Exception:
+                log.exception("asset metadata note failed")
         keep = ("name", "description", "path", "point", "digits", "trade_tick_size", "trade_tick_value", "trade_contract_size",
                 "volume_min", "volume_max", "volume_step", "trade_stops_level", "trade_freeze_level", "trade_mode",
                 "filling_mode", "currency_base", "currency_profit", "currency_margin", "spread", "spread_float")

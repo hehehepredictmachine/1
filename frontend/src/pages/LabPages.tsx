@@ -428,7 +428,7 @@ export function LabSettingsPage() {
       <h2>Ustawienia</h2>
       <div className="card" data-testid="asset-mapping">
         <h3>Aktywa (tylko XAUUSD i BTC)</h3>
-        <p className="muted small">Symbol brokera jest przypisywany wyłącznie po metadanych terminala (waluta bazowa/zysku, kontrakt) i Twoim potwierdzeniu. Program niczego nie wybiera sam (np. nie zakłada BTCUSDT).</p>
+        <p className="muted small">Bot używa symboli włączonych na Twoim rachunku. Brak zapisanego symbolu → bierze pasujący symbol z terminala (najpierw z Market Watch). Metadane są tylko informacją – nic nie jest blokowane. Możesz wybrać inny symbol przyciskiem „Użyj”.</p>
         <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Aktywo</th><th>Symbol brokera</th><th>Mapowanie</th><th>Metadane</th><th>Użyteczne</th><th></th></tr></thead>
           <tbody>{(a?.allowed || []).map((id: string) => {
             const it = a.assets[id];
@@ -439,7 +439,7 @@ export function LabSettingsPage() {
         {Object.entries(cands).map(([asset, list]) => (
           <div key={asset} className="small" data-testid={`cands-${asset}`}><b>{asset}:</b> {!list.length ? "brak kandydatów w terminalu" : list.map((c) => (
             <span key={c.broker_symbol} className="cand">{c.broker_symbol} ({c.currency_base}/{c.currency_profit}, kontrakt {c.contract_size}{c.conflicts.length ? `, ${c.conflicts.join(",")}` : ""})
-              {c.eligible && <button className="btn" onClick={() => confirm(asset, c.broker_symbol)}>Potwierdź</button>}</span>))}</div>))}
+              {c.eligible && <button className="btn" onClick={() => confirm(asset, c.broker_symbol)}>Użyj</button>}</span>))}</div>))}
       </div>
       <div className="card" data-testid="lock-card">
         <h3>Execution Lock</h3>
