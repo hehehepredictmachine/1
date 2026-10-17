@@ -46,7 +46,7 @@ function Missing({ why }: { why?: string | null }) {
 
 // ------------------------------------------------------------------------------------------- Neural Network Activity
 export function NNActivity({ model, stale, scenarios }: { model: any; stale: boolean; scenarios: any[] }) {
-  if (!model) return <div className="card nn-card" data-testid="nn-activity"><h3>Aktywność modelu</h3><Missing why="brak obliczenia lab" /></div>;
+  if (!model) return <div className="card nn-card" data-testid="nn-activity" data-state="waiting"><h3>Aktywność modelu</h3><Missing why="brak obliczenia lab" /></div>;
   if (model.status !== "ready") {
     return (
       <div className="card nn-card nn-off" data-testid="nn-activity" data-state="inactive">
@@ -213,8 +213,8 @@ export function SetupsPage() {
         <details key={sc.setup_id} className="card scn-detail" open={want ? want === sc.setup_id : undefined} data-testid="scenario-row">
           <summary><b>{sc.kind}</b> {sc.side} {sc.tf} · <Badge k={sc.status === "WATCH" ? "warn" : sc.status === "ALL_CONDITIONS_MET_SHADOW" ? "ok" : "muted"}>{SCN_PL[sc.status] ?? sc.status}</Badge>
             {" "}· {sc.checklist_completeness.met}/{sc.checklist_completeness.total} · {sc.waiting_for}</summary>
-          <table className="tbl small"><thead><tr><th>Warunek</th><th>Stan</th><th>Szczegół</th></tr></thead>
-            <tbody>{sc.checklist.map((c: any) => <tr key={c.name} className={c.state === "MET" ? "ok" : c.state === "CONFLICT" ? "bad" : "warn"}><td>{c.name}</td><td>{COND_PL[c.state]}</td><td>{c.detail}</td></tr>)}</tbody></table>
+          <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Warunek</th><th>Stan</th><th>Szczegół</th></tr></thead>
+            <tbody>{sc.checklist.map((c: any) => <tr key={c.name} className={c.state === "MET" ? "ok" : c.state === "CONFLICT" ? "bad" : "warn"}><td>{c.name}</td><td>{COND_PL[c.state]}</td><td>{c.detail}</td></tr>)}</tbody></table></div>
           <p className="small mono">setup_id {sc.setup_id} · {sc.version} · utworzony {fmtTime(sc.created_at, true)} · wygasa {fmtTime(sc.expires_at, true)} · trace {sc.trace_id}</p>
           <p className="small">Trigger: {sc.trigger} · Unieważnienie: {sc.invalidation ?? "—"} · Poziomy: {(sc.levels || []).map((l: any) => l.price ?? `${l.bottom}–${l.top}`).join(", ") || "—"}</p>
           <p className="small">Model: {sc.model?.raw_score != null ? `${sc.model.family} · wynik ${fmtNum(sc.model.raw_score * 100, 1)}% · prawdopodobieństwo skalibrowane: brak kalibratora (ECE ${fmtNum(sc.model.calibration_ece, 3)}) · ${sc.model.event}` : sc.model?.reason ?? "brak"}</p>
@@ -297,10 +297,10 @@ export function ModelsPage() {
       <div className="card" data-testid="models">
         <h3>Artefakty {active} (champion / challenger)</h3>
         {!models.length && <p className="muted">Brak artefaktów – sieć i modele nieaktywne dla {active}.</p>}
-        <table className="tbl small"><thead><tr><th>Model</th><th>Rodzina</th><th>Horyzont</th><th>Rola</th><th>Werdykt</th><th>Źródło</th><th>Odcięcie</th><th>Log loss</th><th>ECE</th><th>Krzywa</th></tr></thead>
+        <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Model</th><th>Rodzina</th><th>Horyzont</th><th>Rola</th><th>Werdykt</th><th>Źródło</th><th>Odcięcie</th><th>Log loss</th><th>ECE</th><th>Krzywa</th></tr></thead>
           <tbody>{models.map((m, i) => (
             <tr key={m.model_id}><td className="mono">{m.model_id}{i === 0 ? " (bieżący)" : ""}</td><td>{m.family}</td><td>{m.horizon}</td><td>{ROLE_PL[m.role] ?? m.role}</td><td>{m.verdict}</td>
-              <td>{m.data_source}</td><td>{fmtTime(m.cutoff, true)}</td><td>{fmtNum(m.metrics?.log_loss_mean, 4)}</td><td>{fmtNum(m.metrics?.ece_mean, 3)}</td><td><Curve curve={m.curve} /></td></tr>))}</tbody></table>
+              <td>{m.data_source}</td><td>{fmtTime(m.cutoff, true)}</td><td>{fmtNum(m.metrics?.log_loss_mean, 4)}</td><td>{fmtNum(m.metrics?.ece_mean, 3)}</td><td><Curve curve={m.curve} /></td></tr>))}</tbody></table></div>
       </div>
     </div>);
 }
@@ -332,17 +332,17 @@ export function ResearchPage() {
           <p><b>Werdykt: {study.verdict}</b> {study.candidate?.reason ? `– ${study.candidate.reason}` : ""}</p>
           <p className="small mono">{study.protocol_id} · dane {study.data_source} · hash {study.data_hash} · zdarzeń {study.samples} (dev {study.dev_samples} / holdout {study.holdout_samples}) · niejednoznaczne SL/TP w świecy {study.ambiguous_same_bar}
             · okres {fmtTime(study.period?.from, true)} – {fmtTime(study.period?.to, true)} · holdout od {fmtTime(study.holdout_from, true)} (hash {study.holdout_hash})</p>
-          <table className="tbl small"><thead><tr><th>Rodzina</th><th>Status</th><th>Log loss</th><th>Brier</th><th>ECE</th><th>AUC</th><th>Expectancy R</th><th>Pokrycie</th><th>Transakcje</th></tr></thead>
+          <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Rodzina</th><th>Status</th><th>Log loss</th><th>Brier</th><th>ECE</th><th>AUC</th><th>Expectancy R</th><th>Pokrycie</th><th>Transakcje</th></tr></thead>
             <tbody>{Object.entries(study.families || {}).map(([k, v]: [string, any]) => (
               <tr key={k}><td>{k}</td><td>{v.status}{v.note ? ` (${v.note})` : ""}</td><td>{fmtNum(v.log_loss_mean, 4)} ±{fmtNum(v.log_loss_std, 4)}</td><td>{fmtNum(v.brier_mean, 4)}</td>
-                <td>{fmtNum(v.ece_mean, 3)}</td><td>{fmtNum(v.auc_mean, 3)}</td><td>{v.expectancy_r_mean == null ? "—" : fmtNum(v.expectancy_r_mean, 3)}</td><td>{fmtNum((v.coverage_mean ?? 0) * 100, 1)}%</td><td>{v.trades_total}</td></tr>))}</tbody></table>
+                <td>{fmtNum(v.ece_mean, 3)}</td><td>{fmtNum(v.auc_mean, 3)}</td><td>{v.expectancy_r_mean == null ? "—" : fmtNum(v.expectancy_r_mean, 3)}</td><td>{fmtNum((v.coverage_mean ?? 0) * 100, 1)}%</td><td>{v.trades_total}</td></tr>))}</tbody></table></div>
           <p className="small">Kontrole negatywne: {Object.entries(study.controls || {}).map(([k, v]: [string, any]) => `${k}: zysk vs dummy ${fmtNum(v.logloss_gain_vs_dummy, 4)}${v.suspicious ? " ⚠ PODEJRZANE" : " (OK)"}`).join(" · ")}</p>
           <p className="small">Holdout: {study.holdout ? (study.holdout.refused ? study.holdout.refused : `użyty raz – ${study.holdout.passed ? "zaliczony" : "niezaliczony"}`) : "nie użyty (brak kandydata po danych rozwojowych)"}</p>
         </>)}
       </div>
       <Section id="lab.trials" title={`Rejestr prób (${trials?.trials?.length ?? 0}) i dostęp do holdoutu`}>
-        <table className="tbl small"><thead><tr><th>Czas</th><th>Rodzina</th><th>Horyzont</th><th>Status</th><th>Protokół</th><th>Dane</th></tr></thead>
-          <tbody>{(trials?.trials || []).slice(0, 60).map((t: any) => <tr key={t.trial_id}><td>{fmtTime(t.created_at, true)}</td><td>{t.model_family}</td><td>{t.horizon}</td><td>{t.status}</td><td className="mono">{t.protocol_id}</td><td className="mono">{t.data_hash}</td></tr>)}</tbody></table>
+        <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Czas</th><th>Rodzina</th><th>Horyzont</th><th>Status</th><th>Protokół</th><th>Dane</th></tr></thead>
+          <tbody>{(trials?.trials || []).slice(0, 60).map((t: any) => <tr key={t.trial_id}><td>{fmtTime(t.created_at, true)}</td><td>{t.model_family}</td><td>{t.horizon}</td><td>{t.status}</td><td className="mono">{t.protocol_id}</td><td className="mono">{t.data_hash}</td></tr>)}</tbody></table></div>
         <p className="small">Użycia holdoutu: {(trials?.holdout_access || []).length}</p>
       </Section>
       <div className="card" data-testid="traceability">
@@ -388,8 +388,8 @@ export function DataPage() {
             <p className="small muted">{tk.acd?.policy}</p></>)}
         </div>
         <div className="card"><h3>Repaint Inspector (M39)</h3>
-          <table className="tbl small"><thead><tr><th>Moduł</th><th>TF</th><th>Obserwacje</th><th>Zmiany</th><th>Nowe</th><th>Zniknięte</th><th>Od</th></tr></thead>
-            <tbody>{(rep?.report || []).map((r: any) => <tr key={r.module + r.tf + r.asset}><td>{r.asset} {r.module}</td><td>{r.tf}</td><td>{r.observations}</td><td>{r.changed}</td><td>{r.appeared}</td><td>{r.vanished}</td><td>{fmtTime(r.observing_since, true)}</td></tr>)}</tbody></table>
+          <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Moduł</th><th>TF</th><th>Obserwacje</th><th>Zmiany</th><th>Nowe</th><th>Zniknięte</th><th>Od</th></tr></thead>
+            <tbody>{(rep?.report || []).map((r: any) => <tr key={r.module + r.tf + r.asset}><td>{r.asset} {r.module}</td><td>{r.tf}</td><td>{r.observations}</td><td>{r.changed}</td><td>{r.appeared}</td><td>{r.vanished}</td><td>{fmtTime(r.observing_since, true)}</td></tr>)}</tbody></table></div>
           <p className="small muted">Brak zmian w okresie obserwacji nie dowodzi braku repaintingu.</p></div>
         <div className="card"><h3>Strefy S/D (M18) i archiwum prognoz (M29)</h3>
           <p className="small">Strefy: {(lab?.zones || []).length} (zapis transakcyjny + snapshot .bak) {lab?.zone_events?.length ? `· zdarzenia: ${lab.zone_events.map((e: any) => e.event).join(", ")}` : ""}</p>
@@ -429,13 +429,13 @@ export function LabSettingsPage() {
       <div className="card" data-testid="asset-mapping">
         <h3>Aktywa (tylko XAUUSD i BTC)</h3>
         <p className="muted small">Symbol brokera jest przypisywany wyłącznie po metadanych terminala (waluta bazowa/zysku, kontrakt) i Twoim potwierdzeniu. Program niczego nie wybiera sam (np. nie zakłada BTCUSDT).</p>
-        <table className="tbl small"><thead><tr><th>Aktywo</th><th>Symbol brokera</th><th>Mapowanie</th><th>Metadane</th><th>Użyteczne</th><th></th></tr></thead>
+        <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Aktywo</th><th>Symbol brokera</th><th>Mapowanie</th><th>Metadane</th><th>Użyteczne</th><th></th></tr></thead>
           <tbody>{(a?.allowed || []).map((id: string) => {
             const it = a.assets[id];
             return (<tr key={id} data-asset={id}><td><b>{id}</b>{a.active === id ? " (aktywne)" : ""}</td><td className="mono">{it.broker_symbol ?? "—"}</td><td>{it.mapping_status}</td>
               <td>{it.metadata_check?.status}{it.metadata_check?.reasons?.length ? ` – ${it.metadata_check.reasons.join(", ")}` : ""}</td><td>{it.usable ? "tak" : `nie – ${it.blocked_reason}`}</td>
               <td><button className="btn ghost" onClick={() => find(id)}>Szukaj kandydatów</button></td></tr>);
-          })}</tbody></table>
+          })}</tbody></table></div>
         {Object.entries(cands).map(([asset, list]) => (
           <div key={asset} className="small" data-testid={`cands-${asset}`}><b>{asset}:</b> {!list.length ? "brak kandydatów w terminalu" : list.map((c) => (
             <span key={c.broker_symbol} className="cand">{c.broker_symbol} ({c.currency_base}/{c.currency_profit}, kontrakt {c.contract_size}{c.conflicts.length ? `, ${c.conflicts.join(",")}` : ""})

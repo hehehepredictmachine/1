@@ -89,7 +89,7 @@ class TestAnalyticsUI(unittest.TestCase):
         self.assertIn("PepeMarketWizard", p.title())
         self.assertIn("PepeMarketWizard", p.locator("[data-testid=topbar] .brand").inner_text().replace("\n", ""))
         groups = [g.get_attribute("data-group") for g in p.locator("[data-testid=sidenav] .nav-group").all()]
-        self.assertEqual(groups, ["rynek", "analiza", "praca"])
+        self.assertEqual(groups, ["pulpit", "wykresy", "setupy", "modele", "badania", "dane", "ustawienia"])   # 1.14 seven sections
         self.assertTrue(p.locator("[data-testid=demo-flag]").first.is_visible())          # demo always marked
 
     def test_02_every_page_renders(self):

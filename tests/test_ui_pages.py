@@ -116,8 +116,12 @@ class TestThreePagesUI(unittest.TestCase):
     def api(self, path):
         return self.page.request.get(BASE + path).json()
 
+    SECTION = {"wykresy": "wykresy", "warunki": "setupy", "ai": "setupy", "pulpit": "pulpit"}
+
     def nav(self, page_id):
-        self.page.locator(f"[data-testid=sidenav] [data-page={page_id}]").click()
+        """1.14 menu: section in the side menu, then the sub-page tab."""
+        self.page.locator(f"[data-testid=sidenav] [data-section={self.SECTION[page_id]}]").click()
+        self.page.locator(f"main [data-testid=subtabs] [data-page={page_id}]").click()
         self.page.wait_for_selector(f"main.page[data-page={page_id}]", timeout=20000)
 
     def charts(self):
@@ -131,9 +135,9 @@ class TestThreePagesUI(unittest.TestCase):
         p = self.page
         self.assertTrue(self.first_url.endswith("#/pulpit"), self.first_url)                   # first start: "Pulpit" (1.13)
         self.assertEqual(p.locator("[data-testid=sidenav] [aria-current=page]").get_attribute("data-page"), "ai")
-        self.nav("wykresy")
-        p.wait_for_selector("[data-testid=page-bot]")
-        self.nav("warunki")
+        p.evaluate("location.hash = '#/wykresy'")          # 1.14: section + sub-tab clicks add their own history entries; Back/Forward
+        p.wait_for_selector("[data-testid=page-bot]")      # is checked on plain page-to-page navigation
+        p.evaluate("location.hash = '#/warunki'")
         p.wait_for_selector("[data-testid=page-warunki]")
         p.go_back()
         p.wait_for_selector("[data-testid=page-bot]", timeout=10000)
@@ -166,7 +170,7 @@ class TestThreePagesUI(unittest.TestCase):
             for pid in ("wykresy", "warunki", "ai"):
                 self.nav(pid)
                 time.sleep(0.4)
-        p.locator("[data-testid=sidenav] [data-page=wykresy]").click()
+        self.nav("wykresy")
         p.locator("[data-testid=tf-bar] .tf-chip[data-tf=H1]").click()                           # clicking a TF: presentation only
         time.sleep(1)
         self.assertEqual(len(self.routes), n0)                                                   # page switches never open another socket

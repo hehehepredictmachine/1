@@ -152,7 +152,8 @@ function SideNav({ page }: { page: Page }) {
     <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Menu główne" data-testid="sidenav">
       {GROUPS.map((g) => (
         <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id}>
-          <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")} aria-current={cur === g.id ? "page" : undefined}
+          <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")}
+            aria-current={cur === g.id ? (g.pages.length > 1 ? "location" : "page") : undefined} data-page={g.pages.length === 1 ? g.pages[0] : undefined}
             data-section={g.id} title={g.label}><i aria-hidden="true">{g.icon}</i><span>{g.label}</span></a>
           {cur === g.id && g.pages.length > 1 && !collapsed && g.pages.map((id) => {
             const p = PAGE_BY_ID[id];

@@ -1,6 +1,6 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/PepeMarketWizard_KLIENT_1_13_0.zip   bot for Windows (no license, no secrets, no admin rights)
+  release/PepeMarketWizard_KLIENT_1_14_0.zip   bot for Windows (no license, no secrets, no admin rights)
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -13,8 +13,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.13.0"
-CLIENT_ZIP = "PepeMarketWizard_KLIENT_1_13_0.zip"
+VERSION = "1.14.0"
+CLIENT_ZIP = "PepeMarketWizard_KLIENT_1_14_0.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}

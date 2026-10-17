@@ -849,3 +849,6 @@ button.link { background: none; border: 0; padding: 0; color: var(--icon); text-
   .asset-switch { order: 3; width: 100%; } .asset-btn { flex: 1; }
   .nn-col { min-width: 100px; } .tbl { font-size: .8em; }
 }
+.lab-page select, .lab-page input { max-width: 100%; }
+.lab-page .card { min-width: 0; overflow-wrap: anywhere; }
+.lab-page pre { max-width: 100%; }

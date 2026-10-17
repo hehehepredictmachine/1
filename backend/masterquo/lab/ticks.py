@@ -58,18 +58,24 @@ def acd_filter(x: np.ndarray, seg: np.ndarray, w: float, a: float, b: float) -> 
 
 
 def fit_acd(x: np.ndarray, seg: np.ndarray) -> dict:
-    """Exponential QMLE of ACD(1,1) on diurnally adjusted durations. Constraints: w>0, a,b>=0, a+b<1."""
+    """Exponential QMLE of ACD(1,1) on diurnally adjusted durations. Parametrisation keeps w>0, a,b>=0 and a+b<1 by
+    construction (persistence s = 0.999*sigmoid(q), split u = sigmoid(r): a = s*u, b = s*(1-u))."""
     from scipy.optimize import minimize
+    sig = lambda z: 1 / (1 + math.exp(-z))  # noqa: E731
+    mean = float(x.mean())
+
+    def unpack(p):
+        s_, u = 0.999 * sig(p[1]), sig(p[2])
+        return math.exp(p[0]), s_ * u, s_ * (1 - u)
 
     def nll(p):
-        w, a, b = math.exp(p[0]), 1 / (1 + math.exp(-p[1])), 1 / (1 + math.exp(-p[2]))
-        if a + b >= 0.999:
-            return 1e12
-        psi = acd_filter(x, seg, w, a, b)
+        w, a, b = unpack(p)
+        psi = np.maximum(acd_filter(x, seg, w, a, b), 1e-12)
         return float(np.sum(np.log(psi) + x / psi))
-    p0 = np.array([math.log(max(1e-6, 0.1 * x.mean())), 0.0, 1.0])
-    r = minimize(nll, p0, method="Nelder-Mead", options={"maxiter": 600, "xatol": 1e-4, "fatol": 1e-6})
-    w, a, b = math.exp(r.x[0]), 1 / (1 + math.exp(-r.x[1])), 1 / (1 + math.exp(-r.x[2]))
+    # start: persistence 0.9, a = 0.1, unconditional mean matched
+    p0 = np.array([math.log(max(1e-6, mean * 0.1)), 2.2, -2.08])     # sigmoid(2.2)~0.9 persistence, sigmoid(-2.08)~0.11 share
+    r = minimize(nll, p0, method="Nelder-Mead", options={"maxiter": 800, "xatol": 1e-4, "fatol": 1e-6})
+    w, a, b = unpack(r.x)
     return {"omega": w, "alpha": a, "beta": b, "converged": bool(r.success), "nll": float(r.fun), "n": int(len(x))}
 
 
