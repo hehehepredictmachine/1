@@ -50,6 +50,7 @@ class ForecastService:
         self.last_key: str | None = None
         self.retry_at = 0.0
         self.machine = double_retest.DoubleRetest()
+        self.inst = "XAUUSD"                          # instrument of the running worker (registry/model space)
         self.state: dict = {"status": "STARTING", "status_pl": STATUS_PL["STARTING"], "mode": "SHADOW", "execution_permission": False,
                             "report": None, "model": None, "setup_v2": None, "updated_at": None, "latency_ms": None, "worker": None}
 
@@ -86,13 +87,15 @@ class ForecastService:
         if not py:
             self._set("NO_CANDLE_ENV", None)
             return False
-        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8")
+        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8",
+                   MQ_INSTRUMENT=self.inst)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen([py, "-m", "gold_candles_runtime.worker"], cwd=str(paths.ROOT_DIR / "backend"), env=env, text=True,
                                      encoding="utf-8", stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=1,
                                      creationflags=flags)
         hello = self._ask({"cmd": "hello"}, 60)
-        self.state["worker"] = {"python": py, "runtime": hello.get("runtime"), "versions": hello.get("versions"), "pid": self.proc.pid}
+        self.state["worker"] = {"python": py, "runtime": hello.get("runtime"), "versions": hello.get("versions"), "pid": self.proc.pid,
+                                "instrument": hello.get("instrument")}
         self.log.info("FORECAST", "WORKER_STARTED", f"Analityka świec SHADOW: proces {self.proc.pid} ({py}).")
         return True
 
@@ -136,10 +139,15 @@ class ForecastService:
                 self._kill()
                 self._set("DISABLED", None)
             return
-        if cfg.assets.active != "XAUUSD":
+        import mq_instruments
+        if cfg.assets.active not in mq_instruments.profiles():
             if self.state["status"] != "UNSUPPORTED_ASSET":
-                self._set("UNSUPPORTED_ASSET", f"gold_candles jest modułem XAUUSD – aktywne aktywo {cfg.assets.active}")
+                self._set("UNSUPPORTED_ASSET", f"brak profilu instrumentu {cfg.assets.active}")
             return
+        if cfg.assets.active != self.inst:            # other instrument = other registry, model and worker; never reuse
+            self._kill()
+            self.inst, self.last_key, self.machine = cfg.assets.active, None, double_retest.DoubleRetest()
+            self.state.update(instrument=self.inst, report=None, model=None, setup_v2=None)
         m5 = [b for b in self.bridge.bars("M5", cfg.forecast.m5_bars, include_forming=False) if b.get("open_utc")]
         m30 = [b for b in self.bridge.bars("M30", cfg.forecast.m30_bars, include_forming=False) if b.get("open_utc")]
         if not m5 or not m30:
@@ -157,8 +165,8 @@ class ForecastService:
                 self.retry_at = time.monotonic() + 60
                 return
         info = self.bridge.symbol_info or {}
-        if info.get("currency_base") not in (None, "XAU") or info.get("currency_profit") not in (None, "USD"):
-            self._set("SYMBOL_SPEC", f"{info.get('currency_base')}/{info.get('currency_profit')}")
+        if info.get("currency_base") is not None and not mq_instruments.check_metadata(self.inst, info)[0]:
+            self._set("SYMBOL_SPEC", f"{info.get('currency_base')}/{info.get('currency_profit')} nie pasuje do profilu {self.inst}")
             self.last_key = key
             return
         tick = float(info.get("trade_tick_size") or 0) or 0.01
@@ -166,7 +174,7 @@ class ForecastService:
         quote = {"bid": q.get("bid"), "ask": q.get("ask"), "time_utc": q.get("time_utc"), "age_seconds": q.get("age_seconds"),
                  "valid": bool(q.get("bid") and q.get("ask") and (q.get("age_seconds") or 99) <= 2 and q["bid"] <= q["ask"])}
         as_of = iso(utcnow())
-        req = {"cmd": "analyze", "symbol": cfg.mt5.symbol, "tick_size": tick, "as_of": as_of, "quote": quote, "flags_tail": len(m5),
+        req = {"cmd": "analyze", "instrument": self.inst, "symbol": cfg.mt5.symbol, "tick_size": tick, "as_of": as_of, "quote": quote, "flags_tail": len(m5),
                "m5": [{k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")} for b in m5],
                "m30": [{k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")} for b in m30]}
         t0 = time.perf_counter()
@@ -178,7 +186,7 @@ class ForecastService:
         self._set(status, ans.get("reason") or ans.get("error"), report=ans.get("report"), model=ans.get("model"), setup_v2=setup,
                   latency_ms={"worker": ans.get("latency_ms"), "round_trip": rt_ms}, worker_peak_rss_mb=ans.get("peak_rss_mb"),
                   bars={"m5_last_open_utc": m5[-1]["open_utc"], "m30_last_open_utc": m30[-1]["open_utc"], "m5": len(m5), "m30": len(m30)},
-                  shadow=self.shadow_summary())
+                  shadow=self.shadow_summary(), instrument=self.inst)
         if status == "SHADOW":
             self.record(ans)
 
@@ -194,11 +202,11 @@ class ForecastService:
             p = h["probabilities"]
             q = h.get("close_price_quantiles") or {}
             self.db.execute("""INSERT OR IGNORE INTO forecast_shadow(created_at, run_id, feature_time_utc, horizon_minutes, target_time_utc, close_now,
-                               neutral_band, p_down, p_flat, p_up, q10, q50, q90, session_check, horizon_status, outcome_status)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                               neutral_band, p_down, p_flat, p_up, q10, q50, q90, session_check, horizon_status, outcome_status, instrument)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (iso(utcnow()), run_id, fc["feature_time_utc"], h["horizon_minutes"], h["target_time_utc"], rep.get("chart_close"),
                              h["neutral_band_price"], p["DOWN"], p["FLAT"], p["UP"], q.get("q10"), q.get("q50"), q.get("q90"), h.get("session_check"),
-                             hs.get(str(h["horizon_minutes"] // 5)), "PENDING"))
+                             hs.get(str(h["horizon_minutes"] // 5)), "PENDING", self.inst))
 
     def score_due(self, m5: list[dict]) -> None:
         """Outcome = close of the M5 bar that CLOSES exactly at target time, with every M5 between present (continuous)."""
@@ -206,8 +214,8 @@ class ForecastService:
             return
         closes = {parse_iso(b["open_utc"]) + timedelta(minutes=5): b["c"] for b in m5}
         last_close = max(closes)
-        rows = self.db.query("SELECT * FROM forecast_shadow WHERE outcome_status='PENDING' AND target_time_utc <= ? LIMIT 200",
-                             (iso(last_close),))
+        rows = self.db.query("SELECT * FROM forecast_shadow WHERE outcome_status='PENDING' AND instrument=? AND target_time_utc <= ? LIMIT 200",
+                             (self.inst, iso(last_close)))
         for r in rows:
             t, tgt = parse_iso(r["feature_time_utc"]), parse_iso(r["target_time_utc"])
             steps = [t + timedelta(minutes=5 * k) for k in range(1, r["horizon_minutes"] // 5 + 1)]
@@ -226,8 +234,9 @@ class ForecastService:
     def shadow_summary(self) -> dict:
         out = {}
         for h in (5, 15, 30):
-            rows = self.db.query("SELECT * FROM forecast_shadow WHERE horizon_minutes=? AND outcome_status='SCORED' ORDER BY id DESC LIMIT 2000", (h,))
-            pend = self.db.one("SELECT COUNT(*) AS n FROM forecast_shadow WHERE horizon_minutes=? AND outcome_status='PENDING'", (h,))["n"]
+            rows = self.db.query("SELECT * FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND outcome_status='SCORED' ORDER BY id DESC LIMIT 2000",
+                                 (h, self.inst))
+            pend = self.db.one("SELECT COUNT(*) AS n FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND outcome_status='PENDING'", (h, self.inst))["n"]
             if not rows:
                 out[str(h)] = {"scored": 0, "pending": pend}
                 continue
@@ -248,8 +257,12 @@ class ForecastService:
     def recent(self, limit: int = 100) -> list[dict]:
         return self.db.query("SELECT * FROM forecast_shadow ORDER BY id DESC LIMIT ?", (limit,))
 
+    def _root(self) -> Path:
+        import mq_instruments
+        return mq_instruments.root("forecast", getattr(self, "inst", "XAUUSD"))
+
     def registry(self) -> dict:
-        p = paths.data_dir() / "forecast" / "registry.json"
+        p = self._root() / "registry.json"
         try:
             reg = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -260,8 +273,8 @@ class ForecastService:
                          for k, v in sorted(reg.get("runs", {}).items())[-10:]}}
 
     def training_status(self) -> dict:
-        h = sorted((paths.data_dir() / "forecast" / "history").glob("*/source_metadata.json"))
-        st = paths.data_dir() / "forecast" / "TRAINING_STATUS.json"
+        h = sorted((self._root() / "history").glob("*/source_metadata.json"))
+        st = self._root() / "TRAINING_STATUS.json"
         return {"history_exports": [str(x.parent.name) for x in h[-5:]],
                 "latest_export": json.loads(h[-1].read_text(encoding="utf-8")) if h else None,
                 "status_file": json.loads(st.read_text(encoding="utf-8")) if st.exists() else None,

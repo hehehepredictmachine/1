@@ -5,18 +5,20 @@ import argparse
 import sys
 import time
 
-from .common import activate, activatable, read_registry, write_registry
+from .common import use_instrument, activate, activatable, read_registry, write_registry
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Rejestr modeli prognoz XAUUSD (SHADOW).")
+    ap = argparse.ArgumentParser(description="Rejestr modeli prognoz (SHADOW) – osobny dla każdego instrumentu (--instrument / MQ_INSTRUMENT).")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    ap.add_argument("--instrument", help="XAUUSD (domyślnie) albo BTC – osobny rejestr każdego instrumentu")
     sub.add_parser("list")
     a = sub.add_parser("activate")
     a.add_argument("run_id")
     sub.add_parser("rollback", help="przywróć poprzedni aktywny model")
     sub.add_parser("deactivate", help="brak aktywnego modelu (monitor pokaże NO_MODEL)")
     args = ap.parse_args(argv)
+    use_instrument(args.instrument)
     reg = read_registry()
     if args.cmd == "list":
         print(f"Aktywny: {reg.get('active') or 'brak'}")

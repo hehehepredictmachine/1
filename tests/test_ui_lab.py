@@ -178,6 +178,12 @@ class TestLabUI(unittest.TestCase):
             self.assertIn("BTC", p.locator(sel).first.inner_text(), page)
             self.assertNotIn("XAUUSD-", p.locator("main.page").inner_text().split("Pulpit")[0] if page == "pulpit" else "", page)
             p.screenshot(path=str(SHOTS / f"btc_{page}.png"))
+        # 1.15: training card (same backend as the BAT installers) - start / progress / active models / rollback controls
+        p.goto(BASE + "/#/modele")
+        p.wait_for_selector("[data-testid=training-card] [data-testid=tr-start]")
+        p.wait_for_selector("[data-testid=tr-active] li")
+        self.assertIn("forecast:", p.locator("[data-testid=tr-active]").inner_text())
+        self.assertIn("XAUUSD", p.locator("[data-testid=training-card]").inner_text())
         # fast switching: the page must end on the asset that is active, never on a stale answer
         p.goto(BASE + "/#/pulpit")
         p.click("[data-testid=asset-switch] button[data-asset=XAUUSD]")

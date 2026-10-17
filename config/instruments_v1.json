@@ -1,0 +1,26 @@
+{
+  "schema": "mq-instruments-1",
+  "note": "Profile instrumentów treningu. canonical_asset (XAUUSD/BTC) jest oddzielony od dokładnego broker_symbol (wybierany w kreatorze / z terminala, nigdy normalizowany). Liczby to parametry robocze modeli, nie zweryfikowane warunki rachunku.",
+  "instruments": {
+    "XAUUSD": {
+      "canonical_asset": "XAUUSD",
+      "default_broker_symbol": "XAUUSD-",
+      "name_hints": ["XAUUSD", "GOLD", "XAU"],
+      "metadata": {"currency_base": ["XAU"], "currency_profit": ["USD"], "forbidden_base": ["XAUT", "XAUT0", "PAXG"]},
+      "file_prefix": "XAUUSD",
+      "forecast": {"grid_step": 5.0, "neutral_atr": 0.20, "grid_step_note": "krok siatki okrągłych poziomów w cenie (złoto: 5 USD) – parametr cech referencyjnych"},
+      "scalp_profile": "config/scalp_profile_v1.json",
+      "sessions": "sesje brokera z przerwą dzienną; weekend zamknięty"
+    },
+    "BTC": {
+      "canonical_asset": "BTC",
+      "default_broker_symbol": "BTCUSDT-",
+      "name_hints": ["BTCUSDT", "BTCUSD", "BITCOIN", "BTC"],
+      "metadata": {"currency_base": ["BTC", "XBT"], "currency_profit": ["USD", "USDT", "USDC"], "forbidden_base": ["WBTC", "BTCB", "TBTC", "RENBTC"]},
+      "file_prefix": "BTC",
+      "forecast": {"grid_step": 500.0, "neutral_atr": 0.20, "grid_step_note": "krok siatki okrągłych poziomów dla BTC (500 w walucie kwotowania) – hipoteza robocza, nie przeniesiona ze złota"},
+      "scalp_profile": "config/scalp_profile_BTC_v1.json",
+      "sessions": "dostępność 24/7 tylko jeśli broker notuje kontrakt w weekend – sprawdzane z historii, nie zakładane"
+    }
+  }
+}

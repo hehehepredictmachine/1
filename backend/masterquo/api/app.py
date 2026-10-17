@@ -7,6 +7,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -76,6 +78,10 @@ class SecretReq(BaseModel):
 
 class MLModeReq(BaseModel):
     mode: str = Field(pattern="^(OFF|SHADOW|ASSIST)$")
+
+
+class MLTrainReq(BaseModel):
+    include_approx: bool | None = None          # per job only (training installer); config ml.use_backfill_approx stays untouched
 
 
 class MLBackfillReq(BaseModel):
@@ -901,13 +907,114 @@ def create_app(rt, port: int) -> FastAPI:
         return rt.ml.set_paused(req.on)
 
     @app.post("/api/v1/ml/train")
-    def ml_train():
+    def ml_train(req: MLTrainReq | None = None):
         """'Trenuj teraz': skips the waiting time/new-label threshold but never the data minimums of the validation blocks."""
         if rt.cfg.get().ml.training_paused:
             raise HTTPException(409, "TRAINING_PAUSED")
-        res = rt.ml.start_training("USER", force=True)
+        res = rt.ml.start_training("USER", force=True, include_approx=req.include_approx if req else None)
         rt.bus.publish("ml", rt.ml.status(compact=True))
         return res
+
+    # ------------------------------------------------------------ training installer (same backend as the BAT launchers)
+    @app.get("/api/v1/training")
+    def training_state():
+        from ..training import core as tc
+        rid = tc.Run.latest()
+        st = tc.Run.load(rid).state if rid else None
+        if st:
+            from ..training.report import summary
+            st = dict(st, summary=summary(st))
+        return {"run": st, "profiles": {k: v["label"] for k, v in tc.profiles().items()}}
+
+    @app.post("/api/v1/training/start")
+    def training_start(body: dict):
+        """Starts `masterquo training run` as a separate process (never inside the bot process; no orders, lock untouched)."""
+        import subprocess
+        from ..training import core as tc
+        insts = ",".join(i for i in ("XAUUSD", "BTC") if i in (body.get("instruments") or []))
+        if not insts:
+            raise HTTPException(400, "NO_INSTRUMENT")
+        prof = body.get("profile") or "PELNY_TRENING"
+        if prof not in tc.profiles():
+            raise HTTPException(400, "BAD_PROFILE")
+        cmd = [sys.executable, "-m", "masterquo", "training", "run", "--instruments", insts, "--profile", prof, "--origin", "panel"]
+        for k, flag in (("months", "--months"), ("symbol_xauusd", "--symbol-xauusd"), ("symbol_btc", "--symbol-btc"),
+                        ("commission_xauusd", "--commission-xauusd"), ("commission_btc", "--commission-btc")):
+            if body.get(k) not in (None, ""):
+                cmd += [flag, str(body[k])]
+        if rt.demo:
+            cmd.append("--demo")
+        held = None
+        try:
+            import json as _j
+            cur = _j.loads(tc.lock_path().read_text(encoding="utf-8"))
+            held = cur.get("run_id") if tc._pid_alive(int(cur.get("pid", 0))) else None
+        except (OSError, ValueError):
+            pass
+        if held:
+            return {"started": False, "reason": f"TRAINING_ALREADY_RUNNING:{held}"}
+        log = open(tc.training_dir() / "panel_start.log", "a", encoding="utf-8")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
+        subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, MQ_NO_BROWSER="1"), stdout=log, stderr=subprocess.STDOUT, **kw)
+        return {"started": True}
+
+    @app.post("/api/v1/training/cancel")
+    def training_cancel():
+        from ..training import core as tc
+        rid = tc.Run.latest()
+        if not rid:
+            return {"ok": False, "reason": "NO_RUN"}
+        (tc.runs_dir() / rid / "CANCEL").write_text(tc.now(), encoding="utf-8")
+        return {"ok": True, "run_id": rid}
+
+    @app.get("/api/v1/training/active")
+    def training_active(instrument: str = Query(...)):
+        import json as _j
+        import mq_instruments as mi
+        from ..lab.protocol import read_pointer
+        from ..ml.router import ml_store
+        if instrument not in mi.profiles():
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        out = {}
+        for fam in ("forecast", "scalp"):
+            try:
+                reg = _j.loads((mi.root(fam, instrument) / "registry.json").read_text(encoding="utf-8"))
+                e = (reg.get("runs") or {}).get(reg.get("active") or "", {})
+                out[fam] = {"active": reg.get("active"), "status": e.get("overall_status") or e.get("task_a_status"), "history": (reg.get("history") or [])[-3:]}
+            except (OSError, ValueError):
+                out[fam] = {"active": None}
+        if instrument == rt.ml.inst:
+            out["ml"] = {"active": rt.ml.registry.champion_id}
+        else:
+            db, root = ml_store(instrument, rt.db)
+            row = db.one("SELECT model_id FROM ml_models WHERE status='CHAMPION'")
+            out["ml"] = {"active": row["model_id"] if row else None}
+        ptr = read_pointer(paths.data_dir() / "lab", instrument)
+        out["lab"] = {"pinned": ptr["active"], "models": [{k: m.get(k) for k in ("model_id", "family", "role", "verdict")} for m in rt.lab.trainer.models(instrument)][:20]}
+        return {"instrument": instrument, "families": out}
+
+    @app.post("/api/v1/training/rollback")
+    def training_rollback(body: dict):
+        import subprocess
+        inst, fam = body.get("instrument"), str(body.get("family") or "")
+        if inst not in ("XAUUSD", "BTC") or not (fam in ("forecast", "scalp", "ml") or fam.startswith("lab:")):
+            raise HTTPException(400, "BAD_REQUEST")
+        if fam == "ml" and inst == rt.ml.inst:
+            try:
+                return {"ok": True, "result": rt.ml.rollback()}
+            except ValueError as exc:
+                return {"ok": False, "reason": str(exc)}
+        r = subprocess.run([sys.executable, "-m", "masterquo", "training", "rollback", "--instrument", inst, "--family", fam],
+                           cwd=str(paths.ROOT_DIR / "backend"), capture_output=True, text=True, timeout=300)
+        rt.forecast.reload()
+        return {"ok": r.returncode == 0, "output": (r.stdout + r.stderr)[-800:]}
+
+    @app.post("/api/v1/ml/reload")
+    def ml_reload():
+        """After offline training (training installer): re-read champion of the active instrument's ML registry."""
+        rt.ml.registry.reload()
+        rt.ml._pred_cache.clear()
+        return {"ok": True, "instrument": rt.ml.inst, "champion": rt.ml.registry.champion_id}
 
     @app.post("/api/v1/ml/backfill")
     def ml_backfill(req: MLBackfillReq):

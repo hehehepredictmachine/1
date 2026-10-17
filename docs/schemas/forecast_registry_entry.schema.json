@@ -1,0 +1,35 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "Wpis rejestru prognoz (registry.json → runs.<run_id>)",
+ "type": "object",
+ "required": [
+  "run_id",
+  "model_path",
+  "artifact_sha256",
+  "data_kind",
+  "symbol",
+  "tick_size",
+  "contract_hash",
+  "instrument",
+  "grid_step",
+  "runtime_check",
+  "overall_status"
+ ],
+ "properties": {
+  "instrument": {
+   "enum": [
+    "XAUUSD",
+    "BTC"
+   ]
+  },
+  "overall_status": {
+   "enum": [
+    "TRAINED_SHADOW",
+    "PARTIAL_VALIDATION",
+    "SHADOW_UNVALIDATED",
+    "REJECTED",
+    "INSUFFICIENT_DATA"
+   ]
+  }
+ }
+}

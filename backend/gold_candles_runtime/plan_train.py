@@ -22,13 +22,14 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .common import RunLog, activate, code_fingerprint, forecast_dir, read_registry, sha256_file, versions, write_json_atomic, write_registry
+from .common import (RunLog, activate, code_fingerprint, forecast_dir, instrument, make_config, read_registry, sha256_file, use_instrument, versions,
+                     write_json_atomic, write_registry)
 
 MIN_ROWS = {"fit": 600, "calibration": 200, "holdout": 250}
 MIN_CLASS = 10
@@ -38,7 +39,8 @@ SESSIONS = (("ASIA_00_08_UTC", 0, 8), ("LONDON_08_13_UTC", 8, 13), ("NEW_YORK_13
 
 
 def load_dataset(data_dir: Path, data_kind: str):
-    from gold_candles.data import Config, read_csv
+    import mq_instruments
+    from gold_candles.data import read_csv
     meta_p = data_dir / "source_metadata.json"
     if not meta_p.exists():
         raise SystemExit(f"[BLAD] Brak {meta_p} – użyj eksportu bota (11_EKSPORT_HISTORII_XAUUSD.bat).")
@@ -46,13 +48,18 @@ def load_dataset(data_dir: Path, data_kind: str):
     if meta.get("data_kind", "REAL_USER_DATA") != data_kind:
         raise SystemExit(f"[BLAD] Dane oznaczone {meta.get('data_kind')}, a trening wywołano z --data-kind {data_kind}.")
     symbol, tick = meta["symbol"], float(meta["tick_size"])
+    inst = meta.get("instrument", "XAUUSD")
+    if inst != instrument():                     # the dataset decides nothing silently: process and data must agree
+        raise SystemExit(f"[BLAD] INSTRUMENT_MISMATCH: dane {inst}, proces {instrument()} (--instrument).")
+    config = make_config(symbol, tick, inst)
+    prefix = meta.get("file_prefix") or mq_instruments.file_prefix(inst)
     cutoff = meta["cutoff_utc"]
-    m5 = read_csv(data_dir / "XAUUSD_M5.csv", 5, cutoff, symbol)
-    m30p = data_dir / "XAUUSD_M30.csv"
+    m5p, m30p = data_dir / f"{prefix}_M5.csv", data_dir / f"{prefix}_M30.csv"
+    m5 = read_csv(m5p, 5, cutoff, symbol)
     m30 = read_csv(m30p, 30, cutoff, symbol) if m30p.exists() else None
-    files = {p.name: sha256_file(p) for p in (data_dir / "XAUUSD_M5.csv", m30p) if p.exists()}
+    files = {p.name: sha256_file(p) for p in (m5p, m30p) if p.exists()}
     dataset_sha = __import__("hashlib").sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    return m5, m30, Config(symbol=symbol, tick_size=tick), meta, files, dataset_sha
+    return m5, m30, config, meta, files, dataset_sha
 
 
 def make_plan(times: pd.Series, dataset_sha: str, config, context_source: str) -> dict:
@@ -297,7 +304,7 @@ def run(args) -> int:
     model_p = out / "forecast_model.json"
     write_json_atomic(model_p, artifact)
     # the bot's inference path must reproduce the training predictions on the holdout
-    runtime = runtime_check(model_p, m5, m30, config, plan, log) if len(models) == 3 else {"status": "SKIPPED_NOT_ALL_HORIZONS"}
+    runtime = runtime_check(model_p, m5, m30, config, plan, log, x) if len(models) == 3 else {"status": "SKIPPED_NOT_ALL_HORIZONS"}
     summary = clean_json({"run_id": run_id, "overall_status": overall, "horizon_status": hstat, "data_kind": args.data_kind, "symbol": config.symbol,
                           "tick_size": config.tick_size, "m30_source": x.attrs["context_source"], "dataset_sha256": dataset_sha, "dataset_files": files,
                           "source_metadata": meta, "feature_rows": int(usable.sum()), "horizons": reports, "runtime_check": runtime,
@@ -309,6 +316,7 @@ def run(args) -> int:
     reg["runs"][run_id] = {"run_id": run_id, "created_at_utc": artifact["created_at_utc"], "model_path": str(model_p.resolve()),
                            "artifact_sha256": sha256_file(model_p), "validation_path": str((out / "forecast_validation.json").resolve()),
                            "data_kind": args.data_kind, "data_dir": str(data_dir.resolve()), "symbol": config.symbol, "tick_size": config.tick_size, "m30_source": x.attrs["context_source"],
+                           "instrument": instrument(), "grid_step": config.grid_step, "dataset_id": meta.get("dataset_id"), "runtime_check": runtime,
                            "contract_hash": config.contract_hash(), "code": fp, "dataset_sha256": dataset_sha, "feature_names": list(x.columns),
                            "label_threshold_atr": config.neutral_atr, "horizons_m5": [1, 3, 6], "horizons_trained": sorted(models), "versions": versions(),
                            "knowledge_cutoff_utc": knowledge, "train_range_utc": [plan["feature_rows_first_utc"], plan["boundaries_utc"]["calibration_start"]],
@@ -316,14 +324,24 @@ def run(args) -> int:
                            "training_seconds": round(time.monotonic() - log.t0, 1)}
     write_registry(reg)
     log("registry", f"zapisano run {run_id}: {overall}")
-    if args.activate and args.data_kind == "REAL_USER_DATA" and len(models) == 3 and runtime.get("status") == "OK":
-        activate(run_id, reason="po treningu, wszystkie horyzonty, zgodny kontrakt")
+    if args.activate and args.data_kind == "REAL_USER_DATA" and len(models) == 3 and runtime.get("status") == "OK" and overall in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):
+        activate(run_id, reason="po treningu: horyzonty z walidacją SHADOW, zgodność loadera")
+    elif args.activate:
+        log("registry", f"NIE aktywowano ({overall}, loader {runtime.get('status')}) – poprzedni aktywny model bez zmian; run dostępny do inspekcji")
         log("registry", f"aktywny model obserwacyjny SHADOW: {run_id}")
     log("end", f"{overall}; artefakty w {out}")
     return 0
 
 
-def runtime_check(model_p: Path, m5, m30, config, plan, log, sample: int = 40) -> dict:
+def _batch_probs(native: dict, row) -> np.ndarray:
+    """Training-pipeline prediction: the exported component applied to the BATCH feature frame row."""
+    from gold_candles.model import logistic_probability
+    z = (row - np.asarray(native["mean"], dtype=float)) / np.asarray(native["scale"], dtype=float)
+    raw = logistic_probability(z, native["classifier"])
+    return logistic_probability(np.log(np.clip(raw, 1e-12, 1)), native["calibrator"])[0]
+
+
+def runtime_check(model_p: Path, m5, m30, config, plan, log, x=None, sample: int = 40, tol: float = 1e-6) -> dict:
     """Loads the saved JSON with the reference loader and runs gold_candles.model.forecast() on the last closed snapshot of
     each sampled holdout time (exactly what the bot's worker does), comparing with the in-memory predictions."""
     from gold_candles.model import forecast, load_model
@@ -335,6 +353,7 @@ def runtime_check(model_p: Path, m5, m30, config, plan, log, sample: int = 40) -
     pick = idx[np.linspace(0, len(idx) - 1, min(sample, len(idx))).astype(int)]
     t0 = time.perf_counter()
     ok = warm = 0
+    max_diff = 0.0
     for i in pick:
         cut = m5.time_close_utc.iloc[i]
         sub5 = m5.iloc[: i + 1]
@@ -343,14 +362,32 @@ def runtime_check(model_p: Path, m5, m30, config, plan, log, sample: int = 40) -
         if r.get("status") == "SHADOW_RESEARCH_FORECAST":
             p = [sum(v["probabilities"].values()) for v in r["probabilities"].values()]
             q = [v["close_price_quantiles"] for v in r["probabilities"].values()]
-            if all(abs(s - 1) < 1e-9 for s in p) and all(x["q10"] <= x["q50"] <= x["q90"] for x in q):
+            good = all(abs(s - 1) < 1e-9 for s in p) and all(v["q10"] <= v["q50"] <= v["q90"] for v in q)
+            if x is not None:                  # bot loader on a truncated snapshot vs batch training features, same record
+                row = x.iloc[i].to_numpy(dtype=float)[None, :]
+                for hk, comp in model["models"].items():
+                    exp = _batch_probs(comp, row)
+                    got = np.array([r["probabilities"][str(int(hk) * 5)]["probabilities"][c] for c in ("DOWN", "FLAT", "UP")])
+                    diff = float(np.max(np.abs(exp - got)))
+                    max_diff = max(max_diff, diff)
+                    good = good and np.isfinite(got).all() and diff <= tol
+            if good:
                 ok += 1
         else:
             warm += 1
     ms = (time.perf_counter() - t0) * 1000 / len(pick)
     log("runtime", f"inference przez ścieżkę bota: {ok}/{len(pick)} poprawnych, {warm} warmup/brak, {ms:.1f} ms / prognozę")
-    return {"status": "OK" if ok > 0 and ok + warm == len(pick) else "FAILED", "checked": int(len(pick)), "valid": ok, "warmup_or_stale": warm,
-            "mean_latency_ms": round(ms, 2)}
+    from gold_candles.data import Config
+    try:                                       # a model of another instrument/contract must be rejected by the loader
+        other = Config(symbol="XAUUSD-", tick_size=0.01) if config.symbol not in ("XAUUSD", "XAUUSD-") else replace(config, grid_step=config.grid_step * 2)
+        forecast(m5, m30, other, model)
+        foreign = "NOT_REJECTED"
+    except Exception as exc:                   # noqa: BLE001
+        foreign = f"REJECTED:{exc}"
+    status = "OK" if ok > 0 and ok + warm == len(pick) and foreign.startswith("REJECTED") else "FAILED"
+    return {"status": status, "checked": int(len(pick)), "valid": ok, "warmup_or_stale": warm, "mean_latency_ms": round(ms, 2),
+            "parity": {"max_abs_prob_diff": max_diff, "tolerance": tol, "compared": "loader(snapshot) vs batch training features",
+                       "applied": x is not None}, "foreign_contract": foreign}
 
 
 def main(argv=None) -> int:
@@ -361,7 +398,9 @@ def main(argv=None) -> int:
     ap.add_argument("--trees", type=int, default=80)
     ap.add_argument("--data-kind", choices=("REAL_USER_DATA", "SYNTHETIC_TEST"), default="REAL_USER_DATA")
     ap.add_argument("--no-activate", dest="activate", action="store_false")
+    ap.add_argument("--instrument", help="XAUUSD (domyślnie) albo BTC – osobne dane, rejestr i modele")
     args = ap.parse_args(argv)
+    use_instrument(args.instrument)
     if args.latest and not args.data_dir:
         hist = sorted((forecast_dir() / "history").glob("*/source_metadata.json"))
         if not hist:

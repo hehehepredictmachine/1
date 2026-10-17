@@ -1,0 +1,129 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "mq-training-run-1 (data/training/runs/<run>/state.json, report.json)",
+ "type": "object",
+ "required": [
+  "schema",
+  "run_id",
+  "plan",
+  "tasks",
+  "status"
+ ],
+ "properties": {
+  "schema": {
+   "const": "mq-training-run-1"
+  },
+  "run_id": {
+   "type": "string",
+   "pattern": "^TR-"
+  },
+  "status": {
+   "enum": [
+    "PLANNED",
+    "RUNNING",
+    "FINISHED",
+    "CANCELLED"
+   ]
+  },
+  "plan": {
+   "type": "object",
+   "required": [
+    "profile",
+    "instruments",
+    "symbols",
+    "commissions",
+    "months",
+    "synthetic",
+    "activate",
+    "rules",
+    "frozen_at"
+   ],
+   "properties": {
+    "instruments": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "XAUUSD",
+       "BTC"
+      ]
+     }
+    },
+    "symbols": {
+     "type": "object"
+    },
+    "commissions": {
+     "type": "object"
+    },
+    "profile": {
+     "enum": [
+      "TEST_INSTALACJI",
+      "PELNY_TRENING"
+     ]
+    },
+    "include_approx": {
+     "type": "boolean"
+    }
+   }
+  },
+  "tasks": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "instrument",
+     "kind",
+     "execution",
+     "quality",
+     "integration"
+    ],
+    "properties": {
+     "execution": {
+      "enum": [
+       "NIE_URUCHOMIONE",
+       "W_TOKU",
+       "UKONCZONE",
+       "POMINIETE",
+       "BLAD_TECHNICZNY",
+       "ANULOWANE"
+      ]
+     },
+     "quality": {
+      "enum": [
+       "NIE_DOTYCZY",
+       "BRAK_PRZESLANEK",
+       "ODRZUCONY",
+       "NIEZWALIDOWANY",
+       "CZESCIOWO_ZWALIDOWANY",
+       "ZWALIDOWANY_SHADOW",
+       "TEST_TECHNICZNY"
+      ]
+     },
+     "integration": {
+      "enum": [
+       "NIEZAPISANY",
+       "ZAPISANY_DO_BADAN",
+       "AKTYWNY_W_REJESTRZE",
+       "ZALADOWANY_DO_SHADOW",
+       "ROLLBACK"
+      ]
+     },
+     "kind": {
+      "enum": [
+       "export",
+       "quality",
+       "forecast",
+       "scalp_A",
+       "scalp_B",
+       "scalp_C",
+       "ml",
+       "lab",
+       "activate",
+       "bot"
+      ]
+     }
+    }
+   }
+  }
+ }
+}

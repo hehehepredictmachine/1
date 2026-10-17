@@ -40,7 +40,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class MLService:
-    def __init__(self, cfg_store, db, bridge, bus, applog, root: Path | None = None, spawn=None):
+    def __init__(self, cfg_store, db, bridge, bus, applog, root: Path | None = None, spawn=None, instrument: str = "XAUUSD"):
+        self.inst = instrument                    # own database + model directory per instrument (ml/router.py)
         self.cfg_store = cfg_store
         self.db = db
         self.bridge = bridge
@@ -103,10 +104,13 @@ class MLService:
         not selected, blocked by risk/mode or never executed (no 'executed only' selection bias)."""
         if not self.cfg.collect or view is None:
             return 0
+        my_symbol = getattr(self.cfg_store.get().assets.mappings.get(self.inst), "broker_symbol", None)
         n = 0
         for kind, r in events:
             if kind not in ("NEW_CONFIRMED", "STAGE_CONFIRMED") or not r or not r.get("record"):
                 continue
+            if my_symbol and r.get("symbol") and r["symbol"] != my_symbol:
+                continue                                        # a setup of another instrument never enters this database
             try:
                 rec = dict(r["record"], symbol=r.get("symbol"))
                 if self.store.create(rec=rec, setup_id=r["setup_id"], version=int(r["version"]), view=view, asof=now, source="LIVE",
@@ -255,22 +259,24 @@ class MLService:
                 "note": "Gotowość do nauki oznacza tylko spełnione progi danych - nie wytrenowany model."}
 
     # ------------------------------------------------------------ training jobs
-    def start_training(self, initiated_by: str, *, force: bool = False) -> dict:
+    def start_training(self, initiated_by: str, *, force: bool = False, include_approx: bool | None = None) -> dict:
+        """include_approx: per-job choice (e.g. the training installer); None = ml.use_backfill_approx. Never written to config."""
         if not self._job_lock.acquire(blocking=False):
             return {"started": False, "reason": "JOB_LOCKED"}
         try:
             if self._job is not None:
                 return {"started": False, "reason": "JOB_ALREADY_RUNNING", "job_id": self._job["job_id"]}
             c = self.cfg
-            if self.cfg_store.get().assets.active != "XAUUSD":
-                return {"started": False, "reason": "ML_DT_XGB_USES_XAUUSD_LEGACY_SETUPS_ONLY",
-                        "detail": "Model DT/XGBoost uczy się na setupach silnika S01–S12 (XAUUSD). Dla BTC: Modele i trening → ścieżka per aktywo (lab)."}
+            if self.cfg_store.get().assets.active != self.inst:
+                return {"started": False, "reason": f"ML_INSTRUMENT_NOT_ACTIVE:{self.inst}",
+                        "detail": "Baza ML tego instrumentu nie jest aktywna – przełącz aktywo albo użyj treningu offline (00_TRENING_START.bat)."}
+            approx = c.use_backfill_approx if include_approx is None else bool(include_approx)
             if not force and not self.readiness.get("ready"):
                 return {"started": False, "reason": "NOT_READY", "reasons": self.readiness.get("reasons")}
-            cnt = self.store.counts(c.use_backfill_approx, self.synthetic)
+            cnt = self.store.counts(approx, self.synthetic)
             if cnt["labeled"] < 4 * c.min_block_samples:
                 return {"started": False, "reason": f"ZA_MALO_ETYKIET_{cnt['labeled']}_POTRZEBA_CO_NAJMNIEJ_{4 * c.min_block_samples}"}
-            snap = self.store.snapshot(self.root / "snapshots", include_approx=c.use_backfill_approx, synthetic=self.synthetic)
+            snap = self.store.snapshot(self.root / "snapshots", include_approx=approx, synthetic=self.synthetic)
             job_id = "JOB-" + utcnow().strftime("%Y%m%dT%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
             jcfg = {k: getattr(c, k) for k in ("embargo_minutes", "min_block_samples", "min_block_per_class", "dt_tuning_budget", "xgb_tuning_budget",
                                                "xgb_max_trees", "xgb_threads", "xgb_device", "random_state")}
@@ -415,7 +421,7 @@ class MLService:
                     per_day = {"M1": 1440, "M5": 288, "M15": 96, "H1": 24, "H4": 6, "D1": 1}
                     data = backfill.bridge_data(self.bridge, {tf: min(99000, (days + 30) * n + 50) for tf, n in per_day.items()})
                     feed = "MT5"
-                res = backfill.run(self.db, data, feed=feed, synthetic=self.synthetic, cost=dict(self._cost(), point=(self.bridge.symbol_info or {}).get("point") or 0.01),
+                res = backfill.run(self.db, data, feed=feed, synthetic=self.synthetic, symbol=self.cfg_store.get().mt5.symbol, cost=dict(self._cost(), point=(self.bridge.symbol_info or {}).get("point") or 0.01),
                                    warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p), should_stop=self._stop.is_set)
                 self.backfill_state = {"status": "DONE", "result": res, "finished_at": iso(utcnow())}
                 self.log.info("ML", "BACKFILL_DONE", f"Backfill {feed}: {res['created']} próbek (jakość APPROX, domyślnie poza treningiem)", res)

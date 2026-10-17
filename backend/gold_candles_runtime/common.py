@@ -18,10 +18,48 @@ def data_dir() -> Path:
     return Path(os.environ.get("MASTERQUO_DATA_DIR") or (ROOT / "data"))
 
 
+def instrument() -> str:
+    """Instrument of this process (MQ_INSTRUMENT, default XAUUSD). XAUUSD keeps data/forecast and data/scalp."""
+    import mq_instruments
+    return mq_instruments.current()
+
+
+def use_instrument(inst: str | None, symbol: str | None = None) -> str:
+    """Selects the instrument space of this process and registers its exact broker symbol for gold_candles.Config."""
+    import mq_instruments
+    from gold_candles import data as gd
+    inst = mq_instruments.current(inst)
+    os.environ["MQ_INSTRUMENT"] = inst
+    if symbol and inst != "XAUUSD":
+        gd.REGISTERED_SYMBOLS.add(symbol)
+    return inst
+
+
+def make_config(symbol: str, tick_size: float, inst: str | None = None, grid_step: float | None = None):
+    """gold_candles Config of the instrument profile (XAUUSD: reference defaults, unchanged contract hash)."""
+    import mq_instruments
+    from gold_candles.data import Config
+    inst = use_instrument(inst, symbol)
+    if inst == "XAUUSD":
+        return Config(symbol=symbol, tick_size=tick_size)
+    prof = mq_instruments.profile(inst)["forecast"]
+    return Config(symbol=symbol, tick_size=tick_size, grid_step=float(grid_step or prof["grid_step"]), neutral_atr=float(prof["neutral_atr"]))
+
+
 def forecast_dir() -> Path:
-    d = data_dir() / "forecast"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    import mq_instruments
+    return mq_instruments.root("forecast")
+
+
+def relocated(path: str | Path, root: Path) -> Path:
+    """Registry paths are absolute; after the whole project folder was moved, the same artefact is found under the current
+    data root (…/runs/<run>/<file>). The checksum check that follows still decides whether it may be used."""
+    p = Path(path)
+    if p.exists() or "runs" not in p.parts:
+        return p
+    i = len(p.parts) - 1 - p.parts[::-1].index("runs")
+    q = root.joinpath(*p.parts[i:])
+    return q if q.exists() else p
 
 
 def sha256_file(path: Path) -> str:
@@ -97,7 +135,7 @@ def activatable(entry: dict, current_contract: str | None = None) -> tuple[bool,
         return False, "NOT_REAL_USER_DATA"            # the override exists only for automated tests of the code path
     if sorted(entry.get("horizons_trained") or []) != ["1", "3", "6"]:
         return False, "NOT_ALL_HORIZONS_TRAINED"
-    model = Path(entry["model_path"])
+    model = relocated(entry["model_path"], forecast_dir())
     if not model.exists() or sha256_file(model) != entry.get("artifact_sha256"):
         return False, "ARTIFACT_MISSING_OR_CHECKSUM_MISMATCH"
     if current_contract and entry.get("contract_hash") != current_contract:
@@ -111,8 +149,7 @@ def activate(run_id: str, *, reason: str) -> dict:
     entry = reg["runs"].get(run_id)
     if not entry:
         raise SystemExit(f"[BLAD] Nieznany run_id {run_id}")
-    from gold_candles.data import Config
-    ok, why = activatable(entry, Config(symbol=entry["symbol"], tick_size=entry["tick_size"]).contract_hash())
+    ok, why = activatable(entry, make_config(entry["symbol"], entry["tick_size"], entry.get("instrument"), entry.get("grid_step")).contract_hash())
     if not ok:
         raise SystemExit(f"[BLAD] Model {run_id} nie może być aktywny: {why}")
     if reg.get("active") and reg["active"] != run_id:

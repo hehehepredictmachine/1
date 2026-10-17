@@ -1,7 +1,7 @@
-# RUNBOOK – PepeMarketWizard 1.14
+# RUNBOOK – PepeMarketWizard 1.15
 
 ## Uruchomienie
-1. Rozpakuj `PepeMarketWizard_KLIENT_1_14_0.zip`. Dane z wcześniejszej wersji (`data/`) zostają.
+1. Rozpakuj `PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip` (wersja 1.15.0; suma SHA256 w pliku `.sha256` obok ZIP). Dane z wcześniejszej wersji (`data/`) zostają.
    - Konfiguracja migruje się sama do wersji 11.
    - XAUUSD dostaje symbol, który był wpisany wcześniej (domyślnie `XAUUSD-`).
    - **Execution Lock = LOCKED.**
@@ -21,18 +21,16 @@
 - Przełącznik XAUUSD/BTC jest w górnym pasku. Po przełączeniu bridge wczytuje historię nowego symbolu, a panel czeka na nowe dane i nie pokazuje starych.
 
 ## Trening i badania
-- **Wszystko naraz:** `22_TRENUJ_WSZYSTKIE_MODELE.bat`.
-  - Opcjonalny parametr: prowizja, np. `22_TRENUJ_WSZYSTKIE_MODELE.bat 3.5`.
-  - Wymaga uruchomionego i zalogowanego MT5. Bota uruchamia sam, jeśli nie działa.
-  - Trenuje prognozy, scalp ML/NN, ML DT/XGBoost i modele lab dla XAUUSD oraz BTC, a potem wszystkie działają w bocie.
-  - Podsumowanie: w oknie i w `data/logs/trening_wszystkiego_*.json`.
-  - Czas: od kilkudziesięciu minut do kilku godzin, zależnie od komputera i historii.
-- Modele i trening → wybierz rodziny → „Uruchom badanie dla <aktywo>”.
-  - Zadanie ma postęp, log i przycisk Anuluj.
-  - Wynik jest zapisywany atomowo w `data/lab/studies/`.
-- Artefakt powstaje:
-  - automatycznie – tylko gdy kandydat przejdzie walidację;
-  - albo z ręcznym wyborem rodziny – wtedy ma rolę „badawczy”, a na danych syntetycznych „techniczny”.
+- **1.15 – instalatory treningu:** zacznij od `START_TUTAJ_TRENING_PL.md`.
+  - Kolejność: `INSTALUJ_TRENING.bat` → `DIAGNOSTYKA_TRENINGU.bat` → `00_TRENING_START.bat` (albo `TRENUJ_XAUUSD.bat` / `TRENUJ_BTCUSDT.bat` / `TRENUJ_OBA.bat`).
+  - Wszystkie launchery, `22_TRENUJ_WSZYSTKIE_MODELE.bat` i panel „Modele i trening → Trening XAUUSD / BTC” używają jednego mechanizmu.
+  - Wynik: raport HTML/JSON w `data/training/runs/<run>/`. Każde zadanie ma trzy statusy: wykonanie / jakość / integracja.
+  - Aktywowane są tylko modele dopuszczone walidacją. Rollback działa per instrument i rodzina.
+- Modele i trening → wybierz rodziny → „Uruchom badanie dla <aktywo>”: pojedyncze badanie lab z buforu bota (postęp, log, Anuluj).
+- Artefakt lab to zawsze model oceniony na danych rozwojowych.
+  - Rola „shadow”: tylko gdy przeszedł holdout.
+  - Rola „badawczy”: pozostałe modele.
+  - Rola „techniczny”: dane syntetyczne.
 - Badania i walidacja: werdykt, foldy, kontrole, rejestr prób, holdout, macierz M01–M42.
 
 ## Diagnostyka

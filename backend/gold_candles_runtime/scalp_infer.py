@@ -12,13 +12,12 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import data_dir, sha256_file
+from .common import sha256_file, relocated
 
 
 def scalp_dir() -> Path:
-    d = data_dir() / "scalp"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    import mq_instruments
+    return mq_instruments.root("scalp")
 
 
 def registry_path() -> Path:
@@ -41,7 +40,7 @@ def activatable(entry: dict, contract: str | None) -> tuple[bool, str | None]:
     if entry.get("task_a_status") in (None, "INSUFFICIENT_DATA"):
         return False, "TASK_A_NOT_TRAINED"
     for f, sha in (entry.get("artifacts") or {}).items():
-        p = Path(entry["run_dir"]) / f
+        p = relocated(entry["run_dir"], scalp_dir()) / f
         if not p.exists() or sha256_file(p) != sha:
             return False, f"ARTIFACT_CHECKSUM_MISMATCH:{f}"
     if contract and entry.get("contract_hash") != contract:
@@ -118,7 +117,7 @@ class SetupModel:
 
     def __init__(self, entry: dict):
         sm = entry["setup_model"]
-        rd = Path(entry["run_dir"])
+        rd = relocated(entry["run_dir"], scalp_dir())
         self.spec = sm
         if sm["selected"] in ("LR", "MLP"):
             self.m = json.loads((rd / sm["file"]).read_text(encoding="utf-8"))
@@ -157,7 +156,7 @@ class ScalpModel:
 
     def __init__(self, entry: dict):
         self.entry = entry
-        rd = Path(entry["run_dir"])
+        rd = relocated(entry["run_dir"], scalp_dir())
         arts = entry["artifacts"]
         self.h = {}
         for hz, spec in entry["models"].items():

@@ -1,0 +1,65 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "Artefakt lab: data/lab/models/<INST>/<model_id>/manifest.json",
+ "type": "object",
+ "required": [
+  "model_id",
+  "asset",
+  "family",
+  "horizon",
+  "side",
+  "fit_scope",
+  "feature_set",
+  "features",
+  "protocol_id",
+  "role",
+  "verdict",
+  "sha256",
+  "loader_parity"
+ ],
+ "properties": {
+  "asset": {
+   "enum": [
+    "XAUUSD",
+    "BTC"
+   ]
+  },
+  "side": {
+   "enum": [
+    "LONG",
+    "SHORT"
+   ]
+  },
+  "role": {
+   "enum": [
+    "shadow",
+    "research",
+    "fixture_only"
+   ]
+  },
+  "fit_scope": {
+   "type": "string",
+   "pattern": "^DEVELOPMENT_ONLY"
+  },
+  "sha256": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$"
+  },
+  "loader_parity": {
+   "type": "object",
+   "required": [
+    "status",
+    "max_abs_diff",
+    "foreign_asset"
+   ],
+   "properties": {
+    "status": {
+     "const": "OK"
+    },
+    "foreign_asset": {
+     "const": "REJECTED"
+    }
+   }
+  }
+ }
+}

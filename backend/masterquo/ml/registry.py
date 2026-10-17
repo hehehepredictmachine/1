@@ -30,19 +30,24 @@ class Registry:
         self.load_error: str | None = None
         self.reload()
 
+    def _path(self, p: str) -> Path:
+        """Stored path, or the same bundle under the current models root after the project folder was moved."""
+        q = Path(p)
+        return q if q.exists() or not (self.root / q.name).exists() else self.root / q.name
+
     def reload(self) -> None:
         with self._lock:
             self.champion, self.champion_id, self.load_error = None, None, None
             row = self.db.one("SELECT * FROM ml_models WHERE status='CHAMPION' ORDER BY promoted_at DESC LIMIT 1")
             if row:
                 try:
-                    self.champion, self.champion_id = Bundle.load(Path(row["path"])), row["model_id"]
+                    self.champion, self.champion_id = Bundle.load(self._path(row["path"])), row["model_id"]
                 except Exception as exc:  # corrupt files -> explicit fallback, no fake model
                     self.load_error = f"CHAMPION_LOAD_FAILED:{type(exc).__name__}"
             self.challengers = {}
             for r in self.db.query("SELECT * FROM ml_models WHERE status='CHALLENGER' ORDER BY created_at DESC LIMIT 2"):
                 try:
-                    self.challengers[r["model_id"]] = Bundle.load(Path(r["path"]))
+                    self.challengers[r["model_id"]] = Bundle.load(self._path(r["path"]))
                 except Exception as exc:          # audit A-08: a broken challenger is reported, not silently skipped
                     self.challenger_errors = getattr(self, "challenger_errors", {})
                     self.challenger_errors[r["model_id"]] = f"CHALLENGER_LOAD_FAILED:{type(exc).__name__}"
@@ -66,7 +71,8 @@ class Registry:
         return max(ends) if ends else None
 
     # ------------------------------------------------------------ register + promote
-    def register(self, result: dict, snapshot_id: str, promotion_cfg: dict) -> dict:
+    def register(self, result: dict, snapshot_id: str, promotion_cfg: dict, allow_promotion: bool = True) -> dict:
+        """allow_promotion=False (e.g. a model trained on APPROX backfill labels): evaluated and stored, never champion."""
         decisions = {}
         version = (self.db.one("SELECT MAX(version) AS v FROM ml_models") or {}).get("v") or 0
         cand = []
@@ -97,6 +103,10 @@ class Registry:
             self.db.execute("UPDATE ml_models SET status=?, promotion_json=? WHERE model_id=?",
                             (status, dumps({"passed": d["passed"], "reasons": d["reasons"], "rules": promotion_cfg}), mid))
             self.event("REJECT" if status == "REJECTED" else "EVALUATED", mid, d)
+        if best and not allow_promotion:
+            self.db.execute("UPDATE ml_models SET status='RESEARCH_APPROX' WHERE model_id=?", (best[1],))
+            self.event("NOT_PROMOTED_APPROX", best[1], {"reason": "trening na etykietach APPROX (backfill OHLC) – tylko do badań"})
+            best = None
         if best:
             self.promote(best[1], "PASSED_RULES_AND_BEAT_CHAMPION" if self.champion else "PASSED_RULES_FIRST_CHAMPION")
         self.reload()
@@ -153,7 +163,7 @@ class Registry:
 
     def promote(self, model_id: str, reason: str) -> None:
         row = self.db.one("SELECT * FROM ml_models WHERE model_id=?", (model_id,))
-        bundle = Bundle.load(Path(row["path"]))              # load fully BEFORE switching
+        bundle = Bundle.load(self._path(row["path"]))              # load fully BEFORE switching
         now = iso(utcnow())
         with self.db.tx() as c:
             c.execute("UPDATE ml_models SET status='RETIRED', retired_at=? WHERE status='CHAMPION'", (now,))
@@ -167,7 +177,7 @@ class Registry:
         prev = self.db.one("SELECT * FROM ml_models WHERE status='RETIRED' AND promoted_at IS NOT NULL ORDER BY retired_at DESC LIMIT 1")
         if not prev:
             raise ValueError("NO_PREVIOUS_CHAMPION")
-        bundle = Bundle.load(Path(prev["path"]))
+        bundle = Bundle.load(self._path(prev["path"]))
         now = iso(utcnow())
         with self.db.tx() as c:
             if cur:

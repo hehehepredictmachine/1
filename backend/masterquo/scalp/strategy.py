@@ -26,7 +26,11 @@ STATES = ("WARMUP", "SEARCH_RANGE", "RANGE_ARMED", "WAIT_SWEEP", "WAIT_RETEST", 
 PROFILE_PATH = Path(__file__).resolve().parents[3] / "config" / "scalp_profile_v1.json"
 
 
-def load_profile(path: Path | None = None) -> dict:
+def load_profile(path: Path | None = None, instrument: str | None = None) -> dict:
+    """Profile of the instrument (config/instruments_v1.json -> scalp_profile); default XAUUSD (PROFILE_PATH)."""
+    if path is None and instrument and instrument != "XAUUSD":
+        import mq_instruments
+        path = mq_instruments.ROOT / mq_instruments.profile(instrument)["scalp_profile"]
     raw = json.loads((path or PROFILE_PATH).read_text(encoding="utf-8"))
     return raw
 

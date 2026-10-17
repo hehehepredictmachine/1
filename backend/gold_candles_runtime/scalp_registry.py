@@ -9,7 +9,7 @@ import time
 import numpy as np
 
 from . import scalp_features as SF
-from .common import write_json_atomic
+from .common import use_instrument, write_json_atomic
 from .scalp_infer import ScalpModel, activatable, read_registry, registry_path
 
 
@@ -18,8 +18,9 @@ def _ev(reg, **kw):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Rejestr modeli scalp XAUUSD- (SHADOW).")
+    ap = argparse.ArgumentParser(description="Rejestr modeli scalp (SHADOW) – osobny dla każdego instrumentu (--instrument / MQ_INSTRUMENT).")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    ap.add_argument("--instrument", help="XAUUSD (domyślnie) albo BTC – osobny rejestr każdego instrumentu")
     sub.add_parser("list")
     a = sub.add_parser("activate")
     a.add_argument("run_id")
@@ -27,6 +28,7 @@ def main(argv=None) -> int:
     sub.add_parser("deactivate")
     sub.add_parser("validate", help="checksumy, kontrakt cech i odczyt przez ścieżkę workera")
     args = ap.parse_args(argv)
+    use_instrument(args.instrument)
     reg = read_registry()
     contract = lambda e: SF.contract_hash(e["symbol"], e["tick_size"])  # noqa: E731
     if args.cmd == "list":

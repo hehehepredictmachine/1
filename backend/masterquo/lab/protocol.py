@@ -283,6 +283,79 @@ def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, 
     return Fitted(d["family"], d["obj"], d["cfg"], prep), man
 
 
+def _write_manifest(path: Path, man: dict) -> None:
+    tmp = path / "manifest.json.tmp"
+    tmp.write_text(json.dumps(man, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path / "manifest.json")
+
+
+def loader_parity(path: Path, fitted: Fitted, X: np.ndarray, Xs: np.ndarray, *, asset: str, tol: float = 1e-9) -> dict:
+    """The bot's loader (load_artifact) on the saved files vs the in-memory model, same rows; plus rejection of another asset."""
+    try:
+        got, _ = load_artifact(path, asset=asset, feature_set=FE.FEATURE_SET)
+        a = np.asarray(fitted.predict(X, Xs, _regime(X)), dtype=float)
+        b = np.asarray(got.predict(X, Xs, _regime(X)), dtype=float)
+        diff = float(np.max(np.abs(a - b))) if len(a) else 0.0
+        finite = bool(np.isfinite(b).all())
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "LOAD_FAILED", "reason": f"{type(exc).__name__}: {exc}"[:200], "max_abs_diff": None}
+    try:
+        load_artifact(path, asset="BTC" if asset != "BTC" else "XAUUSD", feature_set=FE.FEATURE_SET)
+        foreign = "NOT_REJECTED"
+    except ArtifactMismatch:
+        foreign = "REJECTED"
+    ok = finite and diff <= tol and len(b) == len(X) and foreign == "REJECTED"
+    return {"status": "OK" if ok else "MISMATCH", "rows": int(len(X)), "max_abs_diff": diff, "tolerance": tol, "finite": finite,
+            "foreign_asset": foreign}
+
+
+# ----------------------------------------------------------------------------- active pointer / rollback (per asset x family)
+def pointer_path(root: Path, asset: str) -> Path:
+    return Path(root) / "models" / asset / "ACTIVE.json"
+
+
+def read_pointer(root: Path, asset: str) -> dict:
+    try:
+        return json.loads(pointer_path(root, asset).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"active": {}, "history": []}
+
+
+def set_active(root: Path, asset: str, family: str, model_id: str | None, reason: str) -> dict:
+    """Atomic pointer update; the previous model of the family is kept in history (rollback)."""
+    ptr = read_pointer(root, asset)
+    prev = ptr["active"].get(family)
+    if model_id and not (Path(root) / "models" / asset / model_id / "manifest.json").exists():
+        raise ValueError(f"UNKNOWN_MODEL:{model_id}")
+    if prev and prev != model_id:
+        ptr["history"].append({"family": family, "model_id": prev, "at": now()})
+    if model_id:
+        ptr["active"][family] = model_id
+    else:
+        ptr["active"].pop(family, None)
+    ptr.setdefault("events", []).append({"at": now(), "family": family, "from": prev, "to": model_id, "reason": reason})
+    p = pointer_path(root, asset)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
+    return ptr
+
+
+def rollback_family(root: Path, asset: str, family: str) -> dict:
+    """Previous model of this asset x family back as active (the replaced one goes to history)."""
+    ptr = read_pointer(root, asset)
+    hist = [h for h in ptr["history"] if h["family"] == family and (Path(root) / "models" / asset / h["model_id"]).exists()]
+    if not hist:
+        raise ValueError(f"NO_PREVIOUS_MODEL:{asset}:{family}")
+    ptr["history"].remove(hist[-1])
+    p = pointer_path(root, asset)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
+    return set_active(root, asset, family, hist[-1]["model_id"], "ROLLBACK")
+
+
 # ----------------------------------------------------------------------------- the study
 class Study:
     """One asset x horizon study on the given closed bars. `db` = trial registry + holdout log."""
@@ -369,6 +442,7 @@ class Study:
             if status == "CANCELLED":
                 res["verdict"] = "CANCELLED"
                 return res
+        self.split = {"dev": dev, "hold": hold}
         res["controls"] = self._controls(X, Xs, y, r, folds)
         cand = self._select(res, oof, y, r)
         res["candidate"] = cand
@@ -460,6 +534,7 @@ class Study:
         if used:
             return {"refused": "HOLDOUT_ALREADY_USED", "previous": used}
         f = fit_family(family, X[dev], Xs[dev], y[dev], seed=self.p["seeds"][0], budget=self.p["tuning_budget_per_family"])
+        self.evaluated = {family: f}                 # THIS object is the one saved as the artefact (no refit inherits the verdict)
         m = metrics(f.predict(X[hold], Xs[hold], _regime(X[hold])), y[hold], r[hold], self.p["p_trade"], self.p["promotion"]["cost_stress_r"])
         dm = metrics(np.full(len(hold), y[dev].mean()), y[hold], r[hold], self.p["p_trade"])
         passed = (dm["log_loss"] - m["log_loss"]) >= self.p["promotion"]["min_logloss_gain_vs_dummy"] and (m["expectancy_r"] or -1) > 0
@@ -523,39 +598,62 @@ class LabTrainer:
                 fams = [cand] if cand else []
             else:
                 fams = [artifact_family]
+            job["requested_families"] = fams
+            job["missing"] = {}
             if fams and res.get("samples", 0) >= protocol["min_events"] and res.get("verdict") != "CANCELLED":
                 prepd = st.prepare()
                 idx = prepd["idx"]
                 X = prepd["fm"]["X"][idx]
                 Xs = FE.sequences(prepd["fm"]["X"], idx, protocol["seq_len"])
                 y = prepd["lb"]["y"][idx].astype(int)
+                dev, hold = st.split["dev"], st.split["hold"]
                 synthetic = source != "MT5"
                 saved = []
+                evaluated = getattr(st, "evaluated", {})
                 for k, fam in enumerate(fams):
                     if job["cancel"]:
-                        break
+                        job["missing"][fam] = "CANCELLED"
+                        continue
                     job.update(stage=f"artefakt {fam} ({k + 1}/{len(fams)})")
-                    try:
-                        fitted = fit_family(fam, X, Xs, y, seed=protocol["seeds"][0], budget=protocol["tuning_budget_per_family"])
+                    try:                          # the SAME development-only fit that was (or would be) judged on the holdout
+                        fitted = evaluated.get(fam) or fit_family(fam, X[dev], Xs[dev], y[dev], seed=protocol["seeds"][0],
+                                                                  budget=protocol["tuning_budget_per_family"])
                     except Exception as exc:  # one family failing never drops the others
+                        job["missing"][fam] = f"FIT_FAILED: {type(exc).__name__}: {exc}"[:300]
                         logl(f"artefakt {fam}: BŁĄD {type(exc).__name__}: {exc}"[:300])
                         continue
-                    passed = res.get("verdict") == "HOLDOUT_PASSED" and fam == cand
+                    passed = res.get("verdict") == "HOLDOUT_PASSED" and fam == cand and fam in evaluated
                     role = "fixture_only" if synthetic else ("shadow" if passed else "research")
                     mid = f"LM-{protocol['asset']}-{protocol['tf']}x{protocol['horizon_bars']}-{fam}-{uuid.uuid4().hex[:6]}"
                     man = {"model_id": mid, "model_version": VERSION, "asset": protocol["asset"], "instrument_id": instrument_id, "data_source": source,
                            "horizon": f"{protocol['tf']}x{protocol['horizon_bars']}", "family": fam, "feature_set": FE.FEATURE_SET, "features": FE.FEATURES,
                            "seq_channels": FE.SEQ_CHANNELS, "seq_len": protocol["seq_len"], "label_spec": res.get("label_spec"),
+                           "side": protocol.get("side", "LONG"), "direction_scope": f"{protocol.get('side', 'LONG')}_ONLY",
+                           "fit_scope": "DEVELOPMENT_ONLY (przed holdoutem; bez refitu na train+holdout)",
+                           "holdout_evaluated": fam in evaluated, "holdout": res.get("holdout") if fam in evaluated else None,
+                           "train_rows": int(len(dev)), "dataset_hash": res.get("data_hash"),
                            "cutoff": res.get("period", {}).get("to"), "protocol_id": protocol["protocol_id"], "params": fitted.cfg,
                            "seeds": protocol["seeds"], "verdict": res.get("verdict"), "role": role, "trained_at": now(),
-                           "validation_candidate": fam == cand,
+                           "validation_candidate": fam == cand, "study_job_id": job["job_id"],
                            "metrics": {kk: v for kk, v in (res.get("families", {}).get(fam) or {}).items() if kk != "folds"}}
                     p = save_artifact(self.root / "models" / protocol["asset"], fitted, man)
+                    chk = hold if len(hold) else dev[-50:]
+                    man = json.loads((p / "manifest.json").read_text(encoding="utf-8"))        # as saved (incl. sha256)
+                    man["loader_parity"] = loader_parity(p, fitted, X[chk], Xs[chk], asset=protocol["asset"])
+                    _write_manifest(p, man)
+                    if man["loader_parity"]["status"] != "OK":
+                        job["missing"][fam] = f"LOADER_PARITY_{man['loader_parity']['status']}"
+                        shutil.rmtree(p, ignore_errors=True)           # an artefact the bot cannot reproduce is not kept
+                        logl(f"artefakt {mid}: parity {man['loader_parity']} – usunięty")
+                        continue
                     saved.append(mid)
                     job["artifact"] = str(p)
                     job["model_id"] = mid
-                    logl(f"artefakt {mid} rola={role}")
+                    logl(f"artefakt {mid} rola={role} parity max|Δp|={man['loader_parity']['max_abs_diff']:.2e}")
                 job["model_ids"] = saved
+            elif fams:
+                job["missing"] = {f: f"NO_TRAINING_DATA:{res.get('verdict')}" for f in fams}
+            job["complete"] = not job["missing"]
             job["status"] = "CANCELLED" if res.get("verdict") == "CANCELLED" else "COMPLETED"
             logl(f"koniec: {res.get('verdict')}")
         except Exception as exc:  # a failed challenger never stops the live analysis

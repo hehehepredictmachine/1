@@ -1,0 +1,27 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "config/training_profiles_v1.json",
+ "type": "object",
+ "properties": {
+  "profiles": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "object",
+    "required": [
+     "months",
+     "timeframes",
+     "forecast_trees",
+     "lab_bars",
+     "lab_families",
+     "lab_experiments",
+     "lab_min_events",
+     "ml_days",
+     "threads",
+     "min_free_ram_mb",
+     "activate",
+     "task_timeout_minutes"
+    ]
+   }
+  }
+ }
+}

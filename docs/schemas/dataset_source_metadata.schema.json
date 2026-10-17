@@ -1,0 +1,76 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "Eksport treningowy: source_metadata.json",
+ "type": "object",
+ "required": [
+  "symbol",
+  "instrument",
+  "canonical_asset",
+  "file_prefix",
+  "dataset_id",
+  "data_kind",
+  "tick_size",
+  "spec",
+  "time_basis",
+  "dst_model",
+  "cutoff_utc",
+  "range_utc",
+  "files_sha256",
+  "costs",
+  "quote_currency"
+ ],
+ "properties": {
+  "instrument": {
+   "enum": [
+    "XAUUSD",
+    "BTC"
+   ]
+  },
+  "data_kind": {
+   "enum": [
+    "REAL_USER_DATA",
+    "SYNTHETIC_TEST"
+   ]
+  },
+  "time_basis": {
+   "const": "SERVER_TIME_CONVERTED_TO_UTC"
+  },
+  "dst_model": {
+   "enum": [
+    "UNIFORM",
+    "NY_CLOSE"
+   ]
+  },
+  "quote_currency": {
+   "type": [
+    "string",
+    "null"
+   ],
+   "description": "USD i USDT to różne waluty – zapisywane, nie normalizowane"
+  },
+  "costs": {
+   "type": "object",
+   "required": [
+    "source"
+   ],
+   "properties": {
+    "source": {
+     "enum": [
+      "DEALS_HISTORY",
+      "UNKNOWN"
+     ]
+    },
+    "commission_per_lot_side": {
+     "type": "number"
+    }
+   }
+  },
+  "files_sha256": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "string",
+    "pattern": "^[0-9a-f]{64}$"
+   }
+  }
+ }
+}

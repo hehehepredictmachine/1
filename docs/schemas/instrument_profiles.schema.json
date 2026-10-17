@@ -1,0 +1,28 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "config/instruments_v1.json",
+ "type": "object",
+ "required": [
+  "schema",
+  "instruments"
+ ],
+ "properties": {
+  "schema": {
+   "const": "mq-instruments-1"
+  },
+  "instruments": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "object",
+    "required": [
+     "canonical_asset",
+     "default_broker_symbol",
+     "metadata",
+     "file_prefix",
+     "forecast",
+     "scalp_profile"
+    ]
+   }
+  }
+ }
+}

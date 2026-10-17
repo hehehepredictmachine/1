@@ -67,6 +67,9 @@ SYN_MARKETS = {
     "BTCUSD-": dict(base=64000.0, scale=28.0, digits=2, seed=16, spread=3000, visible=False, desc="Bitcoin vs US Dollar (synthetic)",
                     path="Synthetic\\Crypto\\BTCUSD-", base_ccy="BTC", profit_ccy="USD", contract=1.0),
 }
+# USDT-quoted contract (tests of the training installer: USD and USDT are different quote currencies). Not in the default list.
+BTCUSDT_SYN = {"BTCUSDT-": dict(base=64010.0, scale=28.0, digits=2, seed=17, spread=3000, visible=True, desc="Bitcoin vs Tether (synthetic)",
+                                path="Synthetic\\Crypto\\BTCUSDT-", base_ccy="BTC", profit_ccy="USDT", contract=1.0)}
 
 
 class FakeMT5:

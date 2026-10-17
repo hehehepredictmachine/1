@@ -16,6 +16,12 @@ class DataError(ValueError):
     pass
 
 
+# Exact broker symbols of non-gold instruments registered by the runtime (gold_candles_runtime.common.use_instrument) from
+# config/instruments_v1.json. The feature/label code is price-scale free (ATR-relative) except grid_step, which comes from
+# the instrument profile and is part of the contract hash.
+REGISTERED_SYMBOLS: set[str] = set()
+
+
 @dataclass(frozen=True)
 class Config:
     symbol: str = "XAUUSD-"
@@ -26,7 +32,7 @@ class Config:
     horizons: tuple[int, ...] = (1, 3, 6)
 
     def __post_init__(self):
-        if self.symbol not in ("XAUUSD", "XAUUSD-"):
+        if self.symbol not in ("XAUUSD", "XAUUSD-") and self.symbol not in REGISTERED_SYMBOLS:
             raise DataError("ONLY_XAUUSD_SUPPORTED")
         for key in ("tick_size", "neutral_atr", "grid_step"):
             value = getattr(self, key)

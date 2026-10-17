@@ -15,7 +15,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .. import paths
 from ..timeutil import iso, utcnow
 from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions, strategy as st
 
@@ -25,6 +24,7 @@ TFS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
 class ScalpService:
     def __init__(self, cfg_store, bridge, db, bus, log, news=None, forecast=None):
         self.cfg_store, self.bridge, self.db, self.bus, self.log, self.news, self.forecast = cfg_store, bridge, db, bus, log, news, forecast
+        self.inst = "XAUUSD"                          # profile / registry / SHADOW rows of this instrument
         self.prof = st.load_profile()
         self.hedge = hedge_mod.HedgeController(self.prof)
         self._stop = threading.Event()
@@ -67,10 +67,17 @@ class ScalpService:
             if self.state["status"] != "DISABLED":
                 self._set("DISABLED", "wyłączone w konfiguracji")
             return
-        if cfg.assets.active != "XAUUSD":
+        import mq_instruments
+        if cfg.assets.active not in mq_instruments.profiles():
             if self.state["status"] != "UNSUPPORTED_ASSET":
-                self._set("UNSUPPORTED_ASSET", f"profil scalp 1.12 jest zdefiniowany dla XAUUSD – aktywne aktywo {cfg.assets.active}")
+                self._set("UNSUPPORTED_ASSET", f"brak profilu scalp dla {cfg.assets.active}")
             return
+        if cfg.assets.active != self.inst:            # own profile, registry and state per instrument - nothing carried over
+            self.inst = cfg.assets.active
+            self.prof = st.load_profile(instrument=self.inst)
+            self.hedge = hedge_mod.HedgeController(self.prof)
+            self.machine, self.fed, self.last_key = None, {}, None
+            self.state.update(instrument=self.inst, profile_id=self.prof["profile_id"], profile_hash=st.profile_hash(self.prof))
         bars = {tf: [b for b in self.bridge.bars(tf, cfg.scalp.m1_bars if tf == "M1" else 400, include_forming=False) if b.get("open_utc")]
                 for tf in TFS}
         if not bars["M1"] or not bars["M5"]:
@@ -133,7 +140,8 @@ class ScalpService:
         def gate(name, ok, detail=None):
             g.append({"name": name, "ok": ok, "detail": detail})
             return ok
-        gate("symbol XAU/USD", info.get("currency_base") in (None, "XAU") and info.get("currency_profit") in (None, "USD"),
+        import mq_instruments
+        gate(f"symbol {self.inst}", info.get("currency_base") is None or mq_instruments.check_metadata(self.inst, info)[0],
              f"{info.get('currency_base')}/{info.get('currency_profit')}")
         q = self.bridge.quote_status() or {}
         age = q.get("age_seconds")
@@ -171,8 +179,9 @@ class ScalpService:
             gate("wielkość pozycji", False, "brak equity / kosztu")
         gate("limity dzienny/tygodniowy", *self._loss_limits(acc))
         gate("kalendarz makro", *self._calendar())
-        busy = self.db.one("SELECT COUNT(*) AS n FROM scalp_shadow WHERE status='READY_SHADOW' AND outcome_status='PENDING'")["n"]
-        last_end = self.db.one("SELECT MAX(settled_at) AS t FROM scalp_shadow WHERE status='READY_SHADOW' AND outcome_status='SETTLED'")["t"]
+        busy = self.db.one("SELECT COUNT(*) AS n FROM scalp_shadow WHERE status='READY_SHADOW' AND outcome_status='PENDING' AND instrument=?", (self.inst,))["n"]
+        last_end = self.db.one("SELECT MAX(settled_at) AS t FROM scalp_shadow WHERE status='READY_SHADOW' AND outcome_status='SETTLED' AND instrument=?",
+                               (self.inst,))["t"]
         cool = bool(last_end) and (utcnow() - datetime.fromisoformat(last_end.replace("Z", "+00:00"))).total_seconds() < \
             st.V(self.prof, "risk", "cooldown_after_cycle_min") * 60
         gate("jeden cykl / cooldown", busy == 0 and not cool, f"otwarte hipotetyczne cykle {busy}, cooldown {cool}")
@@ -191,10 +200,10 @@ class ScalpService:
                                adverse_signal=None, policy_model=None, hedges_used=0, budget_ok=True,
                                vmin=float(info.get("volume_min") or 0.01), vstep=float(info.get("volume_step") or 0.01))
         self.db.execute("""INSERT OR IGNORE INTO scalp_shadow(created_at, setup_id, profile_id, direction, decision_time_utc, status, reasons, plan, gates, hedge,
-                           outcome_status) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                           outcome_status, instrument) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (iso(utcnow()), plan["setup_id"], self.prof["profile_id"], plan["direction"], plan["decision_time"], status,
                          json.dumps(reasons, ensure_ascii=False), json.dumps(plan, ensure_ascii=False, default=str), json.dumps(g, ensure_ascii=False),
-                         json.dumps(hd, ensure_ascii=False), "PENDING" if status == "READY_SHADOW" else "NOT_APPLICABLE"))
+                         json.dumps(hd, ensure_ascii=False), "PENDING" if status == "READY_SHADOW" else "NOT_APPLICABLE", self.inst))
         self.machine.close_direction(plan["direction"], status, "; ".join(reasons) or "wszystkie bramki SHADOW spełnione", plan["decision_ts"])
         self.log.info("SCALP", status, f"{plan['direction']} {plan['setup_id']}: {status}" + (f" – {reasons[0]}" if reasons else ""))
 
@@ -202,7 +211,7 @@ class ScalpService:
         eq = acc.get("equity")
         if not eq:
             return False, "brak equity"
-        p = paths.data_dir() / "scalp" / "risk_reference.json"
+        p = self._root() / "risk_reference.json"
         now = utcnow()
         day, week = now.strftime("%Y-%m-%d"), now.strftime("%G-W%V")
         try:
@@ -232,7 +241,7 @@ class ScalpService:
 
     # ------------------------------------------------------------ hypothetical outcomes
     def settle(self, m1: list[dict], point: float) -> None:
-        rows = self.db.query("SELECT * FROM scalp_shadow WHERE outcome_status='PENDING' LIMIT 50")
+        rows = self.db.query("SELECT * FROM scalp_shadow WHERE outcome_status='PENDING' AND instrument=? LIMIT 50", (self.inst,))
         if not rows:
             return
         bars = [dict({k: b.get(k) for k in ("open_utc", "o", "h", "l", "c")}, spread_price=(b["spread"] * point if b.get("spread") is not None else None))
@@ -301,7 +310,7 @@ class ScalpService:
         return rows
 
     def summary(self) -> dict:
-        rows = self.db.query("SELECT status, outcome_status, net_r, decision_time_utc FROM scalp_shadow")
+        rows = self.db.query("SELECT status, outcome_status, net_r, decision_time_utc FROM scalp_shadow WHERE instrument=?", (self.inst,))
         st_ = {}
         for r in rows:
             st_[r["status"]] = st_.get(r["status"], 0) + 1
@@ -370,15 +379,19 @@ class ScalpService:
                 "equity": acc.get("equity"), "free_margin": acc.get("free_margin"),
                 "open_cycle": None, "note": "SHADOW: brak rzeczywistych ticketów; porównanie HEDGE_PARTIAL vs REDUCE pochodzi z replayu (zadanie C)"}
 
+    def _root(self) -> Path:
+        import mq_instruments
+        return mq_instruments.root("scalp", getattr(self, "inst", "XAUUSD"))
+
     def registry(self) -> dict:
-        p = paths.data_dir() / "scalp" / "registry.json"
+        p = self._root() / "registry.json"
         try:
             return json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"active": None, "runs": {}}
 
     def training_status(self) -> dict:
-        d = paths.data_dir() / "scalp"
+        d = self._root()
         hist = sorted((d / "history").glob("*/source_metadata.json"))
         stf = d / "TRAINING_STATUS.json"
         runs = sorted((d / "runs").glob("*/report.json"))

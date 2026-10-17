@@ -297,6 +297,7 @@ export function ModelsPage() {
   return (
     <div className="lab-page" data-testid="page-modele">
       <h2>Modele i trening – {active}</h2>
+      <TrainingCard />
       <p className="muted small">Każde aktywo i horyzont ma osobną ścieżkę. Model z danych syntetycznych ma rolę „techniczny” i nigdy nie wpływa na decyzje. Brak danych lub przewagi → INSUFFICIENT_EVIDENCE / NO_VALIDATED_EDGE.</p>
       <div className="card" data-testid="train-card">
         <h3>Nowe badanie (protokół VP – zamrożony przed startem)</h3>
@@ -328,6 +329,76 @@ export function ModelsPage() {
             <tr key={m.model_id}><td className="mono">{m.model_id}{i === 0 ? " (bieżący)" : ""}</td><td>{m.family}</td><td>{m.horizon}</td><td>{ROLE_PL[m.role] ?? m.role}</td><td>{m.verdict}</td>
               <td>{m.data_source}</td><td>{fmtTime(m.cutoff, true)}</td><td>{fmtNum(m.metrics?.log_loss_mean, 4)}</td><td>{fmtNum(m.metrics?.ece_mean, 3)}</td><td><Curve curve={m.curve} /></td></tr>))}</tbody></table></div>
       </div>
+    </div>);
+}
+
+// ------------------------------------------------------------------------------------------- Trening XAUUSD / BTC (instalator)
+const EX_PL: Record<string, string> = { NIE_URUCHOMIONE: "czeka", W_TOKU: "w toku", UKONCZONE: "ukończone", POMINIETE: "pominięte", BLAD_TECHNICZNY: "błąd", ANULOWANE: "anulowane" };
+const Q_PL: Record<string, string> = { NIE_DOTYCZY: "—", BRAK_PRZESLANEK: "za mało danych", ODRZUCONY: "odrzucony", NIEZWALIDOWANY: "niezwalidowany",
+  CZESCIOWO_ZWALIDOWANY: "częściowo zwalidowany", ZWALIDOWANY_SHADOW: "zwalidowany SHADOW", TEST_TECHNICZNY: "test techniczny" };
+const I_PL: Record<string, string> = { NIEZAPISANY: "—", ZAPISANY_DO_BADAN: "do badań", AKTYWNY_W_REJESTRZE: "aktywny w rejestrze", ZALADOWANY_DO_SHADOW: "załadowany do SHADOW", ROLLBACK: "rollback" };
+
+export function TrainingCard() {
+  const [st, setSt] = useState<any>(null);
+  const [inst, setInst] = useState<string[]>(["XAUUSD"]);
+  const [prof, setProf] = useState("PELNY_TRENING");
+  const [months, setMonths] = useState("12");
+  const [btcSym, setBtcSym] = useState("");
+  const [comBtc, setComBtc] = useState("");
+  const [act, setAct] = useState<any>(null);
+  const [actInst, setActInst] = useState("XAUUSD");
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => {
+    apiGet("/api/v1/training").then(setSt).catch(() => undefined);
+    apiGet(`/api/v1/training/active?instrument=${actInst}`).then(setAct).catch(() => undefined);
+  };
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [actInst]);
+  const run = st?.run;
+  const busy = run?.status === "RUNNING";
+  const start = async () => {
+    setMsg(null);
+    const r = await apiSend("POST", "/api/v1/training/start", { instruments: inst, profile: prof, months: Number(months) || undefined,
+      symbol_btc: btcSym || undefined, commission_btc: comBtc ? Number(comBtc.replace(",", ".")) : undefined }).catch((e) => ({ started: false, reason: String(e?.message || e) }));
+    setMsg(r.started ? "Trening uruchomiony w osobnym procesie – postęp poniżej." : `Nie uruchomiono: ${r.reason}`);
+    setTimeout(load, 1500);
+  };
+  const rollback = async (family: string) => {
+    const r = await apiSend("POST", "/api/v1/training/rollback", { instrument: actInst, family }).catch((e) => ({ ok: false, reason: String(e?.message || e) }));
+    setMsg(r.ok ? `Rollback ${actInst} ${family}: wykonany.` : `Rollback ${actInst} ${family}: ${r.reason || r.output || "brak poprzedniego modelu"}`);
+    load();
+  };
+  const tog = (k: string) => setInst(inst.includes(k) ? inst.filter((x) => x !== k) : [...inst, k]);
+  const tasks: any[] = run?.tasks || [];
+  const done = tasks.filter((t) => ["UKONCZONE", "POMINIETE", "BLAD_TECHNICZNY", "ANULOWANE"].includes(t.execution)).length;
+  return (
+    <div className="card" data-testid="training-card">
+      <h3>Trening XAUUSD / BTC (ten sam mechanizm co 00_TRENING_START.bat)</h3>
+      <p className="muted small">Offline, bez zleceń; Execution Lock bez zmian. Aktywowane są tylko modele dopuszczone walidacją; odrzucone zostają do badań. Strona modeli lab: LONG.</p>
+      <div className="chips-row">
+        {["XAUUSD", "BTC"].map((k) => <label key={k} className="chk"><input type="checkbox" checked={inst.includes(k)} onChange={() => tog(k)} data-testid={`tr-inst-${k}`} />{k}</label>)}
+        <select aria-label="Profil" value={prof} onChange={(e) => setProf(e.target.value)} data-testid="tr-profile">
+          {Object.entries(st?.profiles || { PELNY_TRENING: "PEŁNY TRENING", TEST_INSTALACJI: "TEST INSTALACJI" }).map(([k, v]) => <option key={k} value={k}>{String(v)}</option>)}</select>
+        <label className="small">miesięcy <input aria-label="Miesiące historii" className="num" value={months} onChange={(e) => setMonths(e.target.value)} size={3} /></label>
+        {inst.includes("BTC") && <>
+          <label className="small">symbol BTC <input aria-label="Symbol BTC" value={btcSym} placeholder="BTCUSDT-" onChange={(e) => setBtcSym(e.target.value)} size={10} /></label>
+          <label className="small">prowizja BTC/lot/strona <input aria-label="Prowizja BTC" value={comBtc} placeholder="z historii" onChange={(e) => setComBtc(e.target.value)} size={6} /></label></>}
+        <button className="btn" onClick={start} disabled={busy || !inst.length} data-testid="tr-start">Start</button>
+        {busy && <button className="btn ghost" onClick={() => apiSend("POST", "/api/v1/training/cancel").then(load)} data-testid="tr-cancel">Anuluj</button>}
+      </div>
+      {msg && <p className="small">{msg}</p>}
+      {run && <>
+        <p className="small" data-testid="tr-summary"><b className="mono">{run.run_id}</b> · {run.status} · {done}/{tasks.length} <progress max={tasks.length || 1} value={done} />
+          {run.summary?.line && <> · {run.summary.line}</>}</p>
+        <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Instr.</th><th>Zadanie</th><th>Wykonanie</th><th>Jakość</th><th>Integracja</th><th>Szczegóły</th></tr></thead>
+          <tbody>{tasks.map((t) => <tr key={t.id} data-exec={t.execution}><td>{t.instrument}</td><td>{t.title}</td><td>{EX_PL[t.execution] ?? t.execution}</td>
+            <td>{Q_PL[t.quality] ?? t.quality}</td><td>{I_PL[t.integration] ?? t.integration}</td><td className="wrap-cell">{t.detail}</td></tr>)}</tbody></table></div></>}
+      <h4>Aktywne modele <select aria-label="Instrument aktywnych modeli" value={actInst} onChange={(e) => setActInst(e.target.value)}><option>XAUUSD</option><option>BTC</option></select></h4>
+      {act && <ul className="small" data-testid="tr-active">
+        {["forecast", "scalp", "ml"].map((f) => <li key={f}>{f}: <span className="mono">{act.families[f]?.active || "brak"}</span> {act.families[f]?.status && `(${act.families[f].status})`}
+          {" "}<button className="btn ghost" onClick={() => rollback(f)}>Rollback</button></li>)}
+        {Object.entries(act.families.lab?.pinned || {}).map(([fam, mid]) => <li key={fam}>lab {fam}: <span className="mono">{String(mid)}</span>{" "}
+          <button className="btn ghost" onClick={() => rollback(`lab:${fam}`)}>Rollback</button></li>)}
+      </ul>}
     </div>);
 }
 

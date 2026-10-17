@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "MQ_PAUSE=pause"
+if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
 rem PepeMarketWizard - instalacja (Windows 10/11 x64). Nie zmienia globalnego Pythona ani zabezpieczen Windows.
 cd /d "%~dp0"
 set "ROOT=%~dp0"
@@ -36,7 +38,7 @@ if not defined PYEXE (
   echo        ^(zaznacz "py launcher"^). Nie usuwaj innych wersji Pythona.
   echo        Szczegoly kontroli: "%LOG%"
   type "%LOG%"
-  pause
+  %MQ_PAUSE%
   exit /b 1
 )
 echo [OK] Interpreter: "%PYEXE%"
@@ -61,7 +63,7 @@ if not exist "%ROOT%.venv\Scripts\python.exe" (
   if errorlevel 1 (
     echo [BLAD] Nie udalo sie utworzyc .venv - patrz log. Typowa przyczyna: uszkodzona instalacja Pythona
     echo        ^(brak venvlauncher.exe^). Zainstaluj ponownie Python 3.13 x64.
-    pause
+    %MQ_PAUSE%
     exit /b 2
   )
 )
@@ -72,19 +74,19 @@ echo [..] Instaluje zaleznosci (wymaga internetu, kilka minut)
 "%VPY%" -m pip install --disable-pip-version-check --no-input --require-hashes --only-binary=:all: -r "%ROOT%requirements\requirements-win.txt" >> "%LOG%" 2>&1
 if errorlevel 1 (
   echo [BLAD] Instalacja pakietow nie powiodla sie - szczegoly: "%LOG%"
-  pause
+  %MQ_PAUSE%
   exit /b 3
 )
 "%VPY%" -c "import fastapi, uvicorn, pydantic, anthropic, numpy, websockets, MetaTrader5; print('IMPORT_OK')" >> "%LOG%" 2>&1
 if errorlevel 1 (
   echo [BLAD] Kontrola importow nie powiodla sie - szczegoly: "%LOG%"
-  pause
+  %MQ_PAUSE%
   exit /b 4
 )
 echo [OK] IMPORT_OK
 if not exist "%ROOT%frontend\dist\index.html" (
   echo [BLAD] Brak zbudowanego monitora frontend\dist - rozpakuj ponownie caly ZIP.
-  pause
+  %MQ_PAUSE%
   exit /b 5
 )
 
@@ -96,5 +98,5 @@ echo.
 echo [GOTOWE] Instalacja zakonczona.
 echo   Dalej: 02_DIAGNOSTYKA.bat (przy uruchomionym i zalogowanym MT5), potem 03_START_MASTERQUO.bat
 echo   Klucz Claude wpiszesz w monitorze (Ustawienia - Agent Claude); nie wklejaj go do rozmow ani plikow.
-pause
+%MQ_PAUSE%
 exit /b 0

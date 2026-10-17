@@ -16,14 +16,13 @@ import traceback
 from datetime import datetime, timezone
 
 from . import RUNTIME_VERSION
-from .common import activatable, bars_frame, peak_rss_mb, read_registry, sha256_file, versions
+from .common import activatable, bars_frame, forecast_dir, instrument, make_config, relocated, peak_rss_mb, read_registry, sha256_file, versions
 
 _cache: dict = {"key": None, "model": None, "entry": None}
 
 
 def _active_model(symbol: str, tick_size: float):
     """(model | None, entry | None, status, reason)."""
-    from gold_candles.data import Config
     from gold_candles.model import load_model
     reg = read_registry()
     rid = reg.get("active")
@@ -34,13 +33,14 @@ def _active_model(symbol: str, tick_size: float):
         return None, None, "NO_MODEL", f"aktywny run {rid} nie istnieje w rejestrze"
     if entry.get("symbol") != symbol or abs(float(entry.get("tick_size", 0)) - float(tick_size)) > 1e-12:
         return None, entry, "CONTRACT_MISMATCH", f"model dla {entry.get('symbol')} tick {entry.get('tick_size')}, feed {symbol} tick {tick_size}"
-    ok, why = activatable(entry, Config(symbol=symbol, tick_size=tick_size).contract_hash())
+    ok, why = activatable(entry, make_config(symbol, tick_size).contract_hash())
     if not ok:
         return None, entry, "CONTRACT_MISMATCH" if why == "CONTRACT_MISMATCH" else "NO_MODEL", why
     key = (rid, entry["artifact_sha256"])
     if _cache["key"] != key:
-        model = load_model(entry["model_path"])
-        if sha256_file(__import__("pathlib").Path(entry["model_path"])) != entry["artifact_sha256"]:
+        mp = relocated(entry["model_path"], forecast_dir())
+        model = load_model(mp)
+        if sha256_file(mp) != entry["artifact_sha256"]:
             return None, entry, "NO_MODEL", "ARTIFACT_CHECKSUM_MISMATCH"
         _cache.update(key=key, model=model, entry=entry)
     return _cache["model"], _cache["entry"], "OK", None
@@ -61,12 +61,12 @@ def session_check(feature_close_utc: str, horizon_minutes: int) -> str:
 
 def analyze_request(req: dict) -> dict:
     from gold_candles.analysis import analyze
-    from gold_candles.data import Config, DataError
+    from gold_candles.data import DataError
     t0 = time.perf_counter()
     symbol, tick = req.get("symbol") or "XAUUSD-", float(req["tick_size"])
     out: dict = {"execution_permission": False, "mode": "SHADOW"}
     try:
-        config = Config(symbol=symbol, tick_size=tick)
+        config = make_config(symbol, tick)
         as_of = req["as_of"]
         m5 = bars_frame(req["m5"], 5, as_of, symbol)
         m30 = bars_frame(req["m30"], 30, as_of, symbol) if req.get("m30") else None
@@ -179,7 +179,7 @@ def main() -> int:
             req = json.loads(line)
             cmd = req.get("cmd")
             if cmd == "hello":
-                ans = {"ok": True, "runtime": RUNTIME_VERSION, "versions": versions()}
+                ans = {"ok": True, "runtime": RUNTIME_VERSION, "versions": versions(), "instrument": instrument()}
             elif cmd == "reload":
                 _cache.update(key=None, model=None, entry=None)
                 ans = {"ok": True}

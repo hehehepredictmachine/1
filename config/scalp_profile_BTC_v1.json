@@ -1,0 +1,276 @@
+{
+  "profile_id": "MQ-SCALP-RANGE-SWEEP-1.1.0-BTC-RESEARCH",
+  "status": "RESEARCH_HYPOTHESIS_UNVALIDATED",
+  "note": "Profil BTC: te same reguły co XAUUSD (wszystkie progi względne – ATR, ticki, liczba świec), skopiowane jako HIPOTEZA badawcza – nie dostrojone ani nie zwalidowane dla BTC. Rozmiar kontraktu, tick i prowizja pochodzą ze specyfikacji symbolu/eksportu. Zmiana dowolnej wartości = nowe profile_id. Every number is a starting research hypothesis, tuned (if at all) only in development. Changing any value = new profile id. 1.1.0: przełączniki wariantów (filtry jakości, sesja, trend, wejście limit, BE po TP1, wyjście czasowe, filtr modelu B) – domyślnie jak 1.0.0; warianty porównuje replay (config/scalp_variants_v1.json).",
+  "symbol": "BTCUSDT-",
+  "timeframes": {
+    "context": [
+      "H1",
+      "M30",
+      "M15"
+    ],
+    "range": "M5",
+    "trigger": "M1",
+    "execution": "tick Bid/Ask"
+  },
+  "range": {
+    "lookback_m5_bars": {
+      "value": 12,
+      "unit": "closed M5 bars"
+    },
+    "width_min_atr": {
+      "value": 1.2,
+      "unit": "x ATR14(M5)"
+    },
+    "width_max_atr": {
+      "value": 4.0,
+      "unit": "x ATR14(M5)"
+    },
+    "er10_max": {
+      "value": 0.35,
+      "unit": "efficiency ratio 0..1 (ER10 on M5 closes)"
+    },
+    "touch_tolerance_atr": {
+      "value": 0.15,
+      "unit": "x ATR14(M5)"
+    },
+    "touch_min_per_edge": {
+      "value": 2,
+      "unit": "touches"
+    },
+    "touch_min_separation_bars": {
+      "value": 2,
+      "unit": "M5 bars between counted touches"
+    },
+    "ttl_m5_closes": {
+      "value": 6,
+      "unit": "M5 closes after arming"
+    },
+    "invalidation_outside_atr": {
+      "value": 0.25,
+      "unit": "x ATR14(M5) at arm"
+    },
+    "invalidation_consecutive_m1_closes": {
+      "value": 2,
+      "unit": "M1 closes"
+    }
+  },
+  "zone": {
+    "max_m1_bars": {
+      "value": 3,
+      "unit": "consecutive closed M1"
+    },
+    "max_width_atr_m5": {
+      "value": 0.5,
+      "unit": "x ATR14(M5) at arm"
+    },
+    "max_width_range_fraction": {
+      "value": 0.25,
+      "unit": "x range width W"
+    }
+  },
+  "trigger": {
+    "epsilon_atr_m1": {
+      "value": 0.05,
+      "unit": "x ATR14(M1), min 2 ticks"
+    },
+    "tick_volume_ratio_min": {
+      "value": 1.2,
+      "unit": "tv / median(tv of previous 20 closed M1)"
+    },
+    "retest_required": {
+      "value": true,
+      "unit": "bool"
+    },
+    "retest_window_m1": {
+      "value": 3,
+      "unit": "M1 bars after the reclaim"
+    },
+    "chase_limit_atr_m5": {
+      "value": 0.1,
+      "unit": "x ATR14(M5) at arm, min 2 ticks"
+    },
+    "min_sweep_depth_atr_m5": {
+      "value": 0.0,
+      "unit": "x ATR14(M5) at arm beyond Z_low-eps / Z_high+eps (0 = off)"
+    },
+    "allowed_confirmation_families": {
+      "value": [
+        "REJECTION",
+        "ENGULFING",
+        "DISPLACEMENT"
+      ],
+      "unit": "candle families accepted as confirmation"
+    },
+    "retest_close_max_atr_m1": {
+      "value": null,
+      "unit": "max distance of the retest close beyond the zone edge, x ATR14(M1) (null = off)"
+    }
+  },
+  "context_filter": {
+    "enabled": {
+      "value": true,
+      "unit": "bool (ablation)"
+    },
+    "slope_atr_per_bar": {
+      "value": 0.25,
+      "unit": "|BB basis slope| / ATR per bar on M30 and M15"
+    },
+    "bandwidth_percentile": {
+      "value": 80,
+      "unit": "percentile of own BandWidth over previous 100 bars"
+    },
+    "mode": {
+      "value": "BOTH",
+      "unit": "BOTH (M30 and M15 strong against) | ANY (M30 or M15) | ANY_PLUS_H1 (M30, M15 or H1)"
+    }
+  },
+  "exits": {
+    "sl_buffer": {
+      "value": "max(2*tick, current_spread, 0.10*ATR14(M1))",
+      "unit": "price"
+    },
+    "tp1": {
+      "value": "MID of the range",
+      "unit": "price"
+    },
+    "tp2": {
+      "value": "opposite range edge - execution buffer",
+      "unit": "price"
+    },
+    "tp1_fraction": {
+      "value": 0.5,
+      "unit": "of volume (only if lot step allows; else single TP1 exit)"
+    },
+    "max_hold_minutes": {
+      "value": 30,
+      "unit": "minutes from fill"
+    },
+    "be_after_tp1": {
+      "value": "NONE",
+      "unit": "NONE | COST_ADJUSTED (SL to entry + round-trip costs after TP1)"
+    },
+    "early_exit_m1": {
+      "value": null,
+      "unit": "closed M1 after fill without progress -> exit at close (null = off)"
+    },
+    "early_exit_min_mfe_r": {
+      "value": 0.3,
+      "unit": "required MFE in R before early_exit_m1 bars, else exit"
+    }
+  },
+  "economics": {
+    "max_cost_to_tp1_gross": {
+      "value": 0.15,
+      "unit": "fraction"
+    },
+    "min_weighted_net_rr": {
+      "value": 1.2,
+      "unit": "net reward units per unit of full risk (geometry filter, not expectancy)"
+    }
+  },
+  "risk": {
+    "cycle_risk_pct_equity": {
+      "value": 0.25,
+      "unit": "% equity, base+hedge"
+    },
+    "daily_loss_pct": {
+      "value": 1.5,
+      "unit": "% equity"
+    },
+    "weekly_loss_pct": {
+      "value": 4.0,
+      "unit": "% equity"
+    },
+    "max_cycles_open": {
+      "value": 1,
+      "unit": "per symbol BTC"
+    },
+    "cooldown_after_3_losses_min": {
+      "value": 15,
+      "unit": "minutes"
+    },
+    "cooldown_after_cycle_min": {
+      "value": 5,
+      "unit": "minutes"
+    },
+    "quote_ttl_s": {
+      "value": 2,
+      "unit": "seconds"
+    },
+    "news_block_before_min": {
+      "value": 10,
+      "unit": "minutes"
+    },
+    "news_block_after_min": {
+      "value": 15,
+      "unit": "minutes"
+    }
+  },
+  "hedge": {
+    "policy": "SHADOW",
+    "max_fraction_of_base": {
+      "value": 0.5,
+      "unit": "of current base volume"
+    },
+    "max_hedges_per_cycle": {
+      "value": 1,
+      "unit": "count"
+    },
+    "ttl_m1": {
+      "value": 3,
+      "unit": "closed M1 from fill"
+    },
+    "exit_confirm_m1": {
+      "value": 2,
+      "unit": "consecutive M1 in base direction + edge reclaim"
+    }
+  },
+  "indicators": {
+    "bollinger": {
+      "period": 20,
+      "deviation": 2.0,
+      "std": "population (divide by N, as MT5 iBands)"
+    },
+    "sar": {
+      "step": 0.02,
+      "maximum": 0.2
+    }
+  },
+  "switches": {
+    "MODE": "SHADOW",
+    "LIVE_TRADING": false,
+    "ML_EXECUTION": false,
+    "HEDGE_EXECUTION": false
+  },
+  "entry": {
+    "mode": {
+      "value": "MARKET",
+      "unit": "MARKET (first fresh quote) | LIMIT_EDGE (limit at zone edge +/- eps)"
+    },
+    "limit_wait_m1": {
+      "value": 3,
+      "unit": "M1 bars a LIMIT_EDGE order waits before MISSED"
+    }
+  },
+  "session_filter": {
+    "allowed_utc_hours": {
+      "value": null,
+      "unit": "list of UTC hours allowed for new entries (null = all)"
+    },
+    "block_after_open_min": {
+      "value": 0,
+      "unit": "minutes after the London / New York session open without new entries (IANA DST)"
+    }
+  },
+  "ml_filter": {
+    "enabled": {
+      "value": false,
+      "unit": "bool - gate READY_SHADOW on the setup-quality model (task B)"
+    },
+    "threshold": {
+      "value": "FROM_MODEL",
+      "unit": "P(TP1 before SL) threshold chosen in development by expectancy after costs"
+    }
+  }
+}

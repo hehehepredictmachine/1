@@ -21,7 +21,6 @@ from .execution.modes import ModeManager
 from .execution.paper import PaperBroker
 from .markets.scanner import MarketScanner
 from .markets.signals import BotSignalService
-from .ml.service import MLService
 from .mt5.bridge import MarketBridge
 from .mt5.worker import MT5Worker
 from .news.service import NewsService
@@ -74,7 +73,8 @@ class Runtime:
         self.engine.gateway = self.gateway
         self.agent = ClaudeAgent(self.cfg, self.secrets, self.db, self.bus, self.log, self.engine.context)
         self.engine.agent = self.agent
-        self.ml = MLService(self.cfg, self.db, self.bridge, self.bus, self.log)
+        from .ml.router import MLRouter
+        self.ml = MLRouter(self.cfg, self.db, self.bridge, self.bus, self.log)      # legacy ML: own database per instrument
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
         self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db)

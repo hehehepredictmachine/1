@@ -75,7 +75,9 @@ class LabService:
         if not bars["M5"]:
             return None
         ml = self.trainer.models(asset)
-        key = f"{asset}|{sym}|{bars['M5'][-1]['open_utc']}|{','.join(m['model_id'] for m in ml)}"     # new artefact -> recompute
+        from .protocol import read_pointer
+        pin = ",".join(f"{k}={v}" for k, v in sorted(read_pointer(self.trainer.root, asset)["active"].items()))
+        key = f"{asset}|{sym}|{bars['M5'][-1]['open_utc']}|{','.join(m['model_id'] for m in ml)}|{pin}"     # new artefact / activation -> recompute
         if not force and self._last_key.get(asset) == key:
             self._tick_quotes(asset, sym)
             return self.state.get(asset)
@@ -193,10 +195,13 @@ class LabService:
 
     # ------------------------------------------------------------------ models + telemetry
     def _active_models(self, asset: str) -> list[tuple]:
-        """Latest artefact of EVERY model family of this asset (all of them run; one is shown as primary)."""
+        """Active artefact of EVERY model family of this asset: the pinned one (ACTIVE.json - activation / rollback per family),
+        otherwise the latest. All of them run; one is shown as primary."""
+        from .protocol import read_pointer
+        pinned = read_pointer(self.trainer.root, asset)["active"]
         out, seen, errors = [], set(), []
         for m in self.trainer.models(asset):
-            if m.get("family") in seen:
+            if m.get("family") in seen or (m.get("family") in pinned and pinned[m["family"]] != m.get("model_id")):
                 continue
             seen.add(m.get("family"))
             path = str(self.trainer.root / "models" / asset / m["path"])

@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 1.15.0 – instalatory treningu XAUUSD / BTC (`PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip`)
+* **Jeden wspólny mechanizm** `masterquo/training`, wywoływany przez cienkie launchery:
+  * `00_TRENING_START.bat` (menu), `INSTALUJ_TRENING.bat`, `TRENUJ_XAUUSD.bat`, `TRENUJ_BTCUSDT.bat`, `TRENUJ_OBA.bat`, `DIAGNOSTYKA_TRENINGU.bat`;
+  * `22_TRENUJ_WSZYSTKIE_MODELE.bat` (zgodność argumentów: prowizja dotyczy teraz tylko XAUUSD);
+  * panel: Modele i trening → „Trening XAUUSD / BTC”.
+* **Profile instrumentów** (`config/instruments_v1.json`): canonical_asset jest oddzielony od dokładnego symbolu brokera.
+  * USD ≠ USDT; XAUT/PAXG/WBTC są odrzucane.
+  * Domyślny symbol BTC to `BTCUSDT-`, z weryfikacją w terminalu, bez cichej zamiany.
+* **Eksport per instrument** (M1–D1, porcjami, wznawialny, metadane, SHA256, jakość danych, prowizja z historii transakcji).
+* **Cały łańcuch dla BTC:**
+  * gold_candles (grid 500 jako hipoteza);
+  * scalp A/B/C (profil BTC = reguły XAUUSD, wszystkie progi względne);
+  * legacy ML (osobna baza `data/instruments/BTC/ml/ml.sqlite`, strumień setupów z symbolem BTC);
+  * lab.
+  * Osobne rejestry; XAUUSD zostaje w dotychczasowych katalogach.
+* **Bot:**
+  * ForecastService, ScalpService i ML przełączają model, profil i rejestr razem z aktywnym instrumentem;
+  * SHADOW zapisuje kolumnę `instrument` (migracja 0015).
+* **Lab:**
+  * zapisywany jest **ten sam model, który oceniono** (fit na danych rozwojowych), bez refitu na train+holdout dziedziczącego status;
+  * kontrola zgodności loadera i odrzucenia innego aktywa;
+  * wskaźnik aktywnego modelu per rodzina i rollback.
+* **Prognozy:**
+  * zgodność loadera porównuje prawdopodobieństwa z pipeline'em treningowym na tych samych rekordach, nie tylko ich sumę;
+  * model odrzucony nie zastępuje aktywnego (dotyczy też scalp).
+* **APPROX tylko per zadanie:** `use_backfill_approx` nie jest już włączane w konfiguracji bota. Model z próbek APPROX ma status `RESEARCH_APPROX` i nie zostaje championem.
+* **Statusy w trzech osiach** (wykonanie / jakość / integracja), udokumentowane kody wyjścia, wznawianie, anulowanie i blokada drugiego runu.
+* **Raport HTML/JSON** z liczbami z bieżącego runu.
+* **Dokumenty:** `MAPA_MODELI_I_TRENINGU.md/.json`, `START_TUTAJ_TRENING_PL.md`, `docs/schemas/*.schema.json`.
+* **Bez zmian:** trening nie wysyła zleceń (eksport ma zablokowane funkcje zleceń), Execution Lock nienaruszony.
+
 ## 1.14.2 – jeden plik do treningu wszystkich modeli: `22_TRENUJ_WSZYSTKIE_MODELE.bat`
 * Jedno uruchomienie (`python -m masterquo train-all`) wykonuje po kolei:
   1. start bota w tle, jeśli nie działa, i oczekiwanie na MT5;

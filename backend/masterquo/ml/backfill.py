@@ -36,8 +36,9 @@ def _iso(t: datetime) -> str:
 
 
 def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_tf: str = "M15", warmup_days: int = 30,
-        max_steps: int | None = None, progress=None, should_stop=None) -> dict:
-    """`data[tf]` = list of closed bars {"open_utc","o","h","l","c","tv","available_at","spread_points"} in time order."""
+        max_steps: int | None = None, progress=None, should_stop=None, symbol: str = "XAUUSD-") -> dict:
+    """`symbol` = exact broker symbol of the instrument whose setups are replayed (each instrument has its own ML database).
+    `data[tf]` = list of closed bars {"open_utc","o","h","l","c","tv","available_at","spread_points"} in time order."""
     store = SampleStore(target_db)
     tmp = Path(tempfile.mkdtemp(prefix="mq_backfill_"))
     work = Database(tmp / "bf.sqlite")                 # tracker state of the replay is private (never mixes with live setups)
@@ -64,17 +65,17 @@ def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_t
         if not last:
             continue
         spread = (last[-1].get("spread_points") or 0) * cost["point"] or cost["spread"]
-        view = adapter.build_view(symbol="XAUUSD-", bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + spread, point=cost["point"], as_of=_iso(t),
+        view = adapter.build_view(symbol=symbol, bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + spread, point=cost["point"], as_of=_iso(t),
                                   synthetic=synthetic, regime_params=cfg.regime)
         res = registry.scan(view, enabled={}, overrides={}, thresholds=cfg.thresholds.model_dump(), account_key="backfill")
-        events = tr.update(res["candidates"], view=view, symbol="XAUUSD-", account_key="backfill", data_ok=True, new_data=True, now=t, cfg=cfg,
+        events = tr.update(res["candidates"], view=view, symbol=symbol, account_key="backfill", data_ok=True, new_data=True, now=t, cfg=cfg,
                            scanned=set(registry.STRATEGIES))
         for kind, r in events:
             if kind not in ("NEW_CONFIRMED", "STAGE_CONFIRMED") or not r:
                 continue
             sid = f"BF-{feed}-{r['setup_id']}"
             c = dict(cost, spread=spread)
-            if store.create(rec=dict(r["record"], symbol="XAUUSD-"), setup_id=sid, version=int(r["version"]), view=view, asof=t,
+            if store.create(rec=dict(r["record"], symbol=symbol), setup_id=sid, version=int(r["version"]), view=view, asof=t,
                             source=f"BACKFILL_{feed}", quality="APPROX", feed_id=f"BACKFILL:{feed}", cost=c, synthetic=synthetic):
                 created += 1
         if progress and k % 200 == 0:

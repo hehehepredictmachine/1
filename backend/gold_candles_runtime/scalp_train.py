@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import RunLog, code_fingerprint, sha256_file, versions, write_json_atomic
+from .common import RunLog, code_fingerprint, instrument, sha256_file, use_instrument, versions, write_json_atomic
 from . import scalp_features as SF
 from .scalp_infer import ScalpModel, activatable, calib_to_json, lr_to_json, mlp_to_json, read_registry, registry_path, scalp_dir
 
@@ -48,9 +48,13 @@ def load(hist: Path, data_kind: str) -> dict:
     meta = json.loads((hist / "source_metadata.json").read_text(encoding="utf-8"))
     if meta.get("data_kind") != data_kind:
         raise SystemExit(f"[BLAD] Dane oznaczone {meta.get('data_kind')}, a trening wywołano z --data-kind {data_kind}.")
-    p = hist / "XAUUSD_M1.csv"
+    inst = meta.get("instrument", "XAUUSD")
+    if inst != instrument():
+        raise SystemExit(f"[BLAD] INSTRUMENT_MISMATCH: dane {inst}, proces {instrument()} (--instrument).")
+    prefix = meta.get("file_prefix") or "XAUUSD"
+    p = hist / f"{prefix}_M1.csv"
     if not p.exists():
-        raise SystemExit("[BLAD] BLOCKED_NO_REAL_DATA: brak XAUUSD_M1.csv – użyj 16_EKSPORT_HISTORII_SCALP.bat (export-scalp).")
+        raise SystemExit(f"[BLAD] BLOCKED_NO_REAL_DATA: brak {prefix}_M1.csv – uruchom eksport (00_TRENING_START.bat albo 16_EKSPORT_HISTORII_SCALP.bat).")
     spec = meta["spec"]
     point = float(spec.get("point") or spec["trade_tick_size"])
     t, o, h, lo, c, tv, sp = [], [], [], [], [], [], []
@@ -60,7 +64,7 @@ def load(hist: Path, data_kind: str) -> dict:
             o.append(float(r["open"])); h.append(float(r["high"])); lo.append(float(r["low"])); c.append(float(r["close"]))
             tv.append(float(r["tick_volume"]) if r.get("tick_volume") not in (None, "") else None)
             sp.append(float(r["spread_points"]) * point if r.get("spread_points") not in (None, "") else None)
-    files = {x.name: sha256_file(x) for x in sorted(hist.glob("XAUUSD_*.csv"))}
+    files = {x.name: sha256_file(x) for x in sorted(hist.glob(f"{prefix}_*.csv"))}
     sha = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
     return {"meta": meta, "t": t, "o": o, "h": h, "l": lo, "c": c, "tv": tv, "sp": sp, "files": files, "dataset_sha": sha, "hist": str(hist)}
 
@@ -209,11 +213,14 @@ def main(argv=None) -> int:
     ap.add_argument("--history", help="katalog eksportu (domyślnie najnowszy data/scalp/history)")
     ap.add_argument("--latest", action="store_true")
     ap.add_argument("--data-kind", default="REAL_USER_DATA", choices=["REAL_USER_DATA", "SYNTHETIC_TEST"])
-    ap.add_argument("--commission-per-lot-side", type=float, default=0.5, help="prowizja na 1 lot na stronę (waluta konta); domyślnie 0.50 jak w paczce")
+    ap.add_argument("--commission-per-lot-side", type=float, default=None,
+                    help="prowizja na 1 lot na stronę (waluta konta); domyślnie z metadanych eksportu (historia transakcji), inaczej 0.50 jak w paczce (XAUUSD)")
+    ap.add_argument("--instrument", help="XAUUSD (domyślnie) albo BTC – osobne dane, profil, rejestr i modele")
     ap.add_argument("--slippage-ticks", type=float, default=2.0)
     ap.add_argument("--no-activate", action="store_true")
     ap.add_argument("--small-test", action="store_true", help="tylko SYNTHETIC_TEST: zmniejszone minima do testu ścieżki kodu")
     a = ap.parse_args(argv)
+    use_instrument(a.instrument)
     if a.small_test and a.data_kind != "SYNTHETIC_TEST":
         raise SystemExit("[BLAD] --small-test dozwolone wyłącznie z --data-kind SYNTHETIC_TEST")
     hist = Path(a.history) if a.history else None
@@ -228,7 +235,17 @@ def main(argv=None) -> int:
     d = load(hist, a.data_kind)
     tick = float(d["meta"]["tick_size"])
     cs = float(d["meta"]["spec"]["trade_contract_size"])
-    costs = {"commission_per_lot_side": a.commission_per_lot_side, "commission_price_side": a.commission_per_lot_side / cs,
+    mc = (d["meta"].get("costs") or {})
+    if a.commission_per_lot_side is not None:
+        com, com_src = a.commission_per_lot_side, "USER_ARGUMENT"
+    elif mc.get("commission_per_lot_side") is not None:
+        com, com_src = float(mc["commission_per_lot_side"]), mc.get("source", "EXPORT_METADATA")
+    elif instrument() == "XAUUSD":
+        com, com_src = 0.5, "PACKAGE_DEFAULT_XAUUSD"
+    else:
+        raise SystemExit(f"[BLAD] COMMISSION_UNKNOWN: brak prowizji dla {instrument()} w historii transakcji – podaj --commission-per-lot-side.")
+    a.commission_per_lot_side = com
+    costs = {"commission_per_lot_side": com, "commission_source": com_src, "commission_unit": "waluta rachunku / 1 lot / strona", "commission_price_side": a.commission_per_lot_side / cs,
              "slippage_ticks": a.slippage_ticks, "slippage_price": a.slippage_ticks * tick, "reference_volume_lots": 1.0,
              "conversion": "commission cash per lot side / contract size = price units per unit volume"}
     run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "_" + d["dataset_sha"][:8] + ("_SYN" if a.data_kind == "SYNTHETIC_TEST" else "")
@@ -387,6 +404,7 @@ def main(argv=None) -> int:
                else "PARTIAL_VALIDATION" if any(s == "SHADOW_VALIDATED" for s in a_status) else "SHADOW_UNVALIDATED" if any(s == "SHADOW_UNVALIDATED" for s in a_status)
                else "REJECTED" if any(s == "REJECTED" for s in a_status) else "INSUFFICIENT_DATA")
     entry = {"run_id": run_id, "created_at_utc": _now(), "run_dir": str(rd), "data_kind": a.data_kind, "symbol": d["meta"]["symbol"],
+             "instrument": instrument(), "dataset_id": d["meta"].get("dataset_id"), "costs": costs,
              "tick_size": tick, "feature_contract": SF.VERSION, "features": list(SF.FEATURES), "contract_hash": plan["contract_hash"],
              "dataset_sha256": d["dataset_sha"], "knowledge_cutoff_utc": d["meta"].get("cutoff_utc"), "boundaries_utc": plan["boundaries_utc"],
              "code": code_fingerprint(), "versions": versions(), "task_a_status": overall, "horizon_status": {k: v["status"] for k, v in report["task_A"].items()},
@@ -409,6 +427,8 @@ def main(argv=None) -> int:
     reg = read_registry()
     reg["runs"][run_id] = entry
     ok, why = activatable(entry, plan["contract_hash"])
+    if ok and overall not in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):
+        ok, why = False, f"QUALITY_{overall}"       # rejected / unvalidated runs stay RESEARCH, the admitted model keeps running
     if ok and not a.no_activate and not a.small_test:
         if reg.get("active") and reg["active"] != run_id:
             reg.setdefault("history", []).append(reg["active"])
@@ -425,7 +445,7 @@ def main(argv=None) -> int:
 
 def task_bc(d: dict, plan: dict, costs: dict, log, X: np.ndarray, mins: dict, rd: Path | None = None):
     from masterquo.scalp import replay, report as srep, strategy as st
-    prof = st.load_profile()
+    prof = st.load_profile(instrument=instrument())
     bars = [{"open_utc": _iso(t), "o": o, "h": h, "l": l, "c": c, "tv": tv, "spread_price": sp}
             for t, o, h, l, c, tv, sp in zip(d["t"], d["o"], d["h"], d["l"], d["c"], d["tv"], d["sp"])]
     t0 = time.time()
