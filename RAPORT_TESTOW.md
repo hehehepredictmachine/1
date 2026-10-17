@@ -1,4 +1,10 @@
-# Raport testów – PepeMarketWizard 1.14.1
+# Raport testów – PepeMarketWizard 1.14.2
+
+## 1.14.2 – jeden plik treningu wszystkich modeli (2026-10-17)
+Pełny przebieg: **428 testów bota OK + 46 testów `.venv_candles` OK**. Nowy `tests/test_train_all.py`:
+- `train-all` na symulatorze sam uruchamia bota, trenuje modele lab XAUUSD i BTC (wszystkie rodziny) i przywraca aktywo;
+- bot uruchamia wszystkie zapisane modele; Execution Lock pozostaje LOCKED;
+- eksport i trening prognoz/scalp w demo są uczciwie raportowane jako POMINIĘTE (wymagają prawdziwego MT5).
 
 ## 1.14.1 – bez blokad symboli (2026-10-17)
 Pełny przebieg `python tools/run_tests.py`: **427 testów bota OK + 46 testów `.venv_candles` OK**. Testy symboli przepisane: inne włączone symbole działają, brakujący symbol XAUUSD/BTC jest brany z rachunku, różnica metadanych to tylko ostrzeżenie.
