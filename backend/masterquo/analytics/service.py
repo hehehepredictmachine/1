@@ -100,7 +100,13 @@ class AnalyticsService:
         if not a.enabled:
             return
         sym = self.cfg_store.get().mt5.symbol
-        h = self.config_hash()
+        if getattr(self, "_sym", None) != sym:              # asset switch: nothing of the previous symbol survives
+            self.state.clear()
+            self.keys.clear()
+            self.cache.clear()
+            self.pending.clear()
+            self._sym = sym
+        h = self.config_hash() + "|" + sym
         changed = False
         for tf in a.timeframes:
             bars = [b for b in self.bridge.bars(tf, a.bars, include_forming=False) if b.get("open_utc")]

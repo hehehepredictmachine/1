@@ -135,6 +135,7 @@ class MarketBridge:
         self._detected_path: str | None = None
         self._running: tuple[float, list[str]] = (0.0, [])
         self.assets = None                        # AssetRegistry (runtime): two-asset allowlist on every data input
+        self.buffer_symbol: str | None = None     # symbol the TF buffers belong to (None while (re)loading)
 
     # ---------------------------------------------------------------- helpers
     @property
@@ -419,6 +420,8 @@ class MarketBridge:
         return min(2000, max(self.cfg.chart_bars, self.required_bars.get(tf, 260) + 60))
 
     def _load_all_history(self) -> None:
+        with self._lock:
+            self.buffer_symbol = None             # buffers of the previous symbol are never served as the new one
         for tf in TIMEFRAMES:
             bars = self._fetch(self.cfg.symbol, tf, self.buffer_size(tf) + 1)
             for i in range(len(bars) - 1):
@@ -429,6 +432,8 @@ class MarketBridge:
                 st = self.tfs[tf]
                 st.bars, st.loaded, st.last_poll, st.last_error = bars, True, time.monotonic(), None
             self.bus.publish("bars_reloaded", {"tf": tf, "count": len(bars)})
+        with self._lock:
+            self.buffer_symbol = self.cfg.symbol
 
     def _load_dxy(self) -> None:
         sym = self.cfg.dxy_symbol
@@ -733,6 +738,8 @@ class MarketBridge:
 
     def bars(self, tf: str, limit: int | None = None, include_forming: bool = True) -> list[dict]:
         with self._lock:
+            if tf != "DXY_H1" and self.buffer_symbol != self.cfg.symbol:
+                return []                          # asset switch in progress: no bars of the old symbol under the new name
             src = self.dxy.bars if tf == "DXY_H1" else self.tfs[tf].bars
             seq = src if include_forming else [b for b in src if b.closed]
             if limit:

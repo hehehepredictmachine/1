@@ -10,6 +10,7 @@ import AiAnalysisPage from "./pages/AiAnalysisPage";
 import BotChartsPage from "./pages/BotChartsPage";
 import SetupRequirementsPage from "./pages/SetupRequirementsPage";
 import { ContextPage, DashboardPage, DiagnosticsPage, IndicatorsPage, JournalPage, PatternsPage, PositionsPage, SignalAnalysisPage, TestsPage } from "./pages/AnalyticsPages";
+import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { PAGES, useRoute } from "./router";
 import { useStore } from "./store";
 import { UiCtx } from "./ui";
@@ -44,7 +45,12 @@ export default function App() {
           {route.page === "ai" && <AiAnalysisPage />}
           {route.page === "wykresy" && <BotChartsPage route={route} />}
           {route.page === "warunki" && <SetupRequirementsPage route={route} />}
-          {route.page === "pulpit" && <DashboardPage />}
+          {route.page === "pulpit" && <><LabDashboardTop /><DashboardPage /></>}
+          {route.page === "setupy" && <SetupsPage />}
+          {route.page === "modele" && <ModelsPage />}
+          {route.page === "badania" && <ResearchPage />}
+          {route.page === "dane" && <DataPage />}
+          {route.page === "ustawienia" && <LabSettingsPage />}
           {route.page === "kontekst" && <ContextPage />}
           {route.page === "indykatory" && <IndicatorsPage />}
           {route.page === "sygnal" && <SignalAnalysisPage />}

@@ -36,7 +36,7 @@ SEQ_CHANNELS = ["ret_1", "range_rel", "z20", "tv_pct"]
 def feature_matrix(bars: list[dict], tf: str) -> dict:
     """Row i uses bars[0..i] only. warmup rows are NaN and flagged."""
     a = arrays(bars)
-    o, h, lo, c, tv, t = a["o"], a["h"], a["l"], a["c"], a["tv"], a["t"]
+    h, lo, c, tv, t = a["h"], a["l"], a["c"], a["tv"], a["t"]
     n = len(c)
     F = np.full((n, len(FEATURES)), np.nan)
     at = atr(h, lo, c)

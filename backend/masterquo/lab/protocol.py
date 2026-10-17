@@ -558,5 +558,6 @@ class LabTrainer:
                 if f.exists() and not m.name.endswith(".tmp"):
                     man = json.loads(f.read_text(encoding="utf-8"))
                     out.append({**{k: man.get(k) for k in ("model_id", "asset", "family", "horizon", "role", "verdict", "data_source", "trained_at",
-                                                            "cutoff", "protocol_id", "instrument_id")}, "path": str(m)})
+                                                            "cutoff", "protocol_id", "instrument_id")},
+                                "curve": (man.get("params") or {}).get("curve"), "metrics": man.get("metrics"), "path": m.name})
         return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)

@@ -315,7 +315,7 @@ def ict_sequence(bars: list[dict], tf: str, displacement_atr: float = 1.2, lookb
     for p in pv:
         side = "BUY" if p["kind"] == "L" else "SELL"
         j0 = p["confirmed_i"] + 1
-        sw = next((j for j in range(j0, n) if (a["l"][j] < p["price"] < a["c"][j]) if side == "BUY" else (a["h"][j] > p["price"] > a["c"][j])), None)
+        sw = next((j for j in range(j0, n) if ((a["l"][j] < p["price"] < a["c"][j]) if side == "BUY" else (a["h"][j] > p["price"] > a["c"][j]))), None)
         if sw is None:
             continue
         opp = [q for q in pivots(bars[:sw + 1], tf) if q["kind"] == ("H" if side == "BUY" else "L")]

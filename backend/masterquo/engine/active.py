@@ -89,6 +89,11 @@ class ActiveEngine:
             now = utcnow()
             sym = cfg.mt5.symbol
             account_key = self.bridge.account_key
+            if cfg.assets.active != "XAUUSD":
+                # S01-S12 are calibrated / audited for XAUUSD only; BTC uses the lab scenario engine (no relabelled gold rules)
+                self.data_status = "UNSUPPORTED_ASSET"
+                self.tracker.cancel_all(sym, account_key, "ASSET_NOT_SUPPORTED_BY_S01_S12", iso(now))
+                return []
             if not self._startup_reset_done:
                 # after (re)start no previous recommendation is valid until re-detected on fresh data
                 n = self.tracker.cancel_all(sym, account_key, "RESTART_REVALIDATION", iso(now))

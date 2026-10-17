@@ -221,7 +221,8 @@ def create_app(rt, port: int) -> FastAPI:
                 "first_run_completed": cfg.first_run_completed,
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
                 "ml": rt.ml.status(compact=True), "markets": rt.scanner.summary(),
-                "bot_signals": {**rt.signals.status(), **rt.signals.list(limit=40)}}
+                "bot_signals": {**rt.signals.status(), **rt.signals.list(limit=40)},
+                "assets": rt.assets.state(), "execution_lock": cfg.execution.lock, "lab": rt.lab.summary(cfg.assets.active)}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -263,6 +264,111 @@ def create_app(rt, port: int) -> FastAPI:
                 "config": rt.cfg.get().forecast.model_dump(), "shadow_summary": rt.forecast.shadow_summary()}
 
     # ------------------------------------------------------------ 1.13 analytics + pattern library (observational)
+    # ------------------------------------------------------------ 1.14 lab (XAUUSD / BTC)
+    def _asset(asset: str | None) -> str:
+        a = asset or rt.cfg.get().assets.active
+        if a not in ("XAUUSD", "BTC"):
+            raise HTTPException(403, f"ASSET_NOT_ALLOWED:{a}")
+        return a
+
+    @app.get("/api/v1/lab")
+    def lab_state(asset: str | None = None):
+        return rt.lab.public(_asset(asset))
+
+    @app.get("/api/v1/lab/traceability")
+    def lab_trace():
+        from ..lab import traceability
+        return {"rows": traceability.ROWS, "summary": traceability.summary()}
+
+    @app.get("/api/v1/lab/memory")
+    def lab_memory(tf: str = Query(...), t: str = Query(...)):
+        from ..lab.sessions import memory_sequence
+        if tf not in TIMEFRAMES:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        by = {x: [b for b in rt.bridge.bars(x, 500, include_forming=False) if b.get("open_utc")] for x in ("M1", "M5", "M15", "M30", "H1", "H4", "D1")}
+        return {"asset": rt.cfg.get().assets.active, **memory_sequence(by, tf, t)}
+
+    @app.post("/api/v1/lab/train")
+    def lab_train(body: dict = Body(default={})):
+        from ..lab.protocol import default_protocol, FAMILIES, EXPERIMENTS
+        a = _asset(body.get("asset"))
+        if a != rt.cfg.get().assets.active:
+            raise HTTPException(409, "TRAIN_ONLY_ACTIVE_ASSET")
+        sym = rt.assets.check_asset(a, "TRAINING")
+        if rt.bridge.state != "CONNECTED":
+            raise HTTPException(409, "MT5_NOT_CONNECTED")
+        fams = [f for f in (body.get("families") or FAMILIES) if f in FAMILIES]
+        exps = [e for e in (body.get("experiments") if body.get("experiments") is not None else EXPERIMENTS) if e in EXPERIMENTS]
+        bars = [b for b in rt.bridge.symbol_bars(sym, "M5", int(min(max(body.get("bars") or 20000, 2000), 100000))) if b.get("closed") and b.get("open_utc")]
+        prot = default_protocol(a, families=fams, experiments=exps, min_events=int(body.get("min_events") or 600))
+        meta = rt.bridge.symbol_meta(sym) or {}
+        src = "SYNTHETIC" if (rt.demo or rt.bridge.synthetic or rt.cfg.get().synthetic_demo) else "MT5"
+        return rt.lab.trainer.start(a, bars, point=float(meta.get("point") or 0.01), data_source=src,
+                                    instrument_id=rt.assets.instrument(a)["instrument_id"], protocol=prot,
+                                    artifact_family=body.get("artifact_family") if body.get("artifact_family") in fams else "auto")
+
+    @app.get("/api/v1/lab/jobs")
+    def lab_jobs():
+        return {"jobs": rt.lab.trainer.public()}
+
+    @app.post("/api/v1/lab/jobs/{jid}/cancel")
+    def lab_cancel(jid: str):
+        return rt.lab.trainer.cancel(jid)
+
+    @app.get("/api/v1/lab/models")
+    def lab_models(asset: str | None = None):
+        a = _asset(asset)
+        return {"asset": a, "models": rt.lab.trainer.models(a)}
+
+    @app.get("/api/v1/lab/studies/{jid}")
+    def lab_study(jid: str):
+        if not _re.fullmatch(r"LJOB-[0-9TZ]+-[0-9a-f]{4}", jid):
+            raise HTTPException(400, "INVALID_JOB_ID")
+        f = rt.lab.trainer.root / "studies" / f"{jid}.json"
+        if not f.exists():
+            raise HTTPException(404, "NO_STUDY")
+        return json.loads(f.read_text(encoding="utf-8"))
+
+    @app.get("/api/v1/lab/trials")
+    def lab_trials(asset: str | None = None):
+        a = _asset(asset)
+        return {"asset": a, "trials": rt.db.query("SELECT trial_id, created_at, horizon, model_family, protocol_id, data_hash, status, metrics, note "
+                                                  "FROM lab_trials WHERE asset=? ORDER BY created_at DESC LIMIT 200", (a,)),
+                "holdout_access": rt.db.query("SELECT * FROM lab_holdout_access WHERE asset=? ORDER BY at DESC LIMIT 50", (a,))}
+
+    @app.get("/api/v1/lab/zones")
+    def lab_zones(asset: str | None = None):
+        a = _asset(asset)
+        return {"asset": a, "zones": rt.lab.zones.load_db(a)[-100:], "events": rt.lab.zones.events[-10:]}
+
+    @app.get("/api/v1/lab/repaint")
+    def lab_repaint():
+        return {"report": rt.lab.repaint.report(),
+                "recent": rt.db.query("SELECT asset, module, tf, bar_open, observed_at, change FROM lab_repaint ORDER BY id DESC LIMIT 50")}
+
+    @app.post("/api/v1/lab/tradepad")
+    def lab_tradepad(body: dict = Body(...)):
+        from ..lab.edge import trade_pad_plan
+        a = rt.cfg.get().assets.active
+        sym = rt.assets.check_asset(a, "TRADEPAD")
+        meta = rt.bridge.symbol_meta(sym)
+        if not meta:
+            raise HTTPException(409, "NO_SYMBOL_METADATA")
+        meta = {**meta, **{k: (rt.bridge.symbol_info or {}).get(k) for k in ("volume_min", "volume_step")}}
+        try:
+            plan = trade_pad_plan(side=str(body.get("side")), entry=float(body["entry"]), sl=float(body["sl"]), tp=float(body["tp"]),
+                                  lots=float(body.get("lots") or 0.01), meta=meta, quote=rt.bridge.quote_status(),
+                                  commission_per_lot_side=float(rt.cfg.get().scalp.commission_per_lot_side or 0))
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, f"INVALID_PLAN: {exc}") from exc
+        return {"asset": a, "broker_symbol": sym, **plan, "execution_lock": rt.cfg.get().execution.lock}
+
+    @app.post("/api/v1/lab/tradepad/execute")
+    def lab_tradepad_execute(body: dict = Body(default={})):
+        # deliberately no order path: the trade pad is analytical in this release; refused below the UI too
+        rt.log.warn("EXECUTION", "TRADEPAD_REFUSED", "Trade Pad: próba wykonania odrzucona (Execution Lock / tryb analityczny).")
+        raise HTTPException(403, "EXECUTION_LOCKED_TRADEPAD_SIMULATION_ONLY")
+
     @app.get("/api/v1/analytics")
     def analytics_get():
         return {**rt.analytics.summary(), "config": rt.cfg.get().analytics.model_dump()}
@@ -481,6 +587,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"execution_lock": req.lock})))
         rt.log.warn("EXECUTION", "LOCK_" + req.lock, "Execution Lock: " + ("ZABLOKOWANE" if req.lock == "LOCKED" else "odblokowane przez użytkownika"))
         rt.engine.mark_dirty()
+        rt.bus.publish("execution_lock", {"lock": req.lock})
         return exec_lock()
 
     @app.get("/api/v1/markets")

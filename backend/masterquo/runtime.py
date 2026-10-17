@@ -91,6 +91,8 @@ class Runtime:
         self.forecast = ForecastService(self.cfg, self.bridge, self.db, self.bus, self.log)   # SHADOW only, isolated worker process
         from .analytics.service import AnalyticsService
         self.analytics = AnalyticsService(self.cfg, self.bridge, self.db, self.bus, self.log)   # observational: BB/MA, FFT/EMD/VMD, Double Bottom
+        from .lab.service import LabService
+        self.lab = LabService(self.cfg, self.bridge, self.db, self.bus, self.log, self.assets)      # 1.14 lab: two assets, SHADOW
         from .scalp.service import ScalpService
         self.scalp = ScalpService(self.cfg, self.bridge, self.db, self.bus, self.log, news=self.news, forecast=self.forecast)   # SHADOW only
         self.engine.active.context_fn = self.walls.context
@@ -141,6 +143,7 @@ class Runtime:
         self.forecast.start()
         self.scalp.start()
         self.analytics.start()
+        self.lab.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -166,6 +169,7 @@ class Runtime:
         self.forecast.stop()
         self.scalp.stop()
         self.analytics.stop()
+        self.lab.stop()
         self.scanner.stop()
         self.engine.stop()
         self.manager.stop()

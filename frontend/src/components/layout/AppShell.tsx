@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { Frog } from "../../appearance";
-import { GROUPS, PAGES, href, type Page, usePersisted } from "../../router";
+import { GROUPS, PAGES, SECTION_OF, href, type Page, usePersisted } from "../../router";
 import { useStore } from "../../store";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../../util";
 import SignalsPanel from "../SignalsPanel";
@@ -115,7 +115,11 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
         <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--panel)" stroke="var(--neon)" /><path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="var(--neon)" strokeWidth="2.6" strokeLinecap="round" /></svg>
         <span>PepeMarket<em>Wizard</em></span>
       </a>
+      <AssetSwitch />
       <div className="tb-chips">
+        <span className={cls("chip", (s.execution_lock ?? "LOCKED") === "LOCKED" ? "ok" : "bad")} data-testid="chip-lock"
+          title="Execution Lock: LOCKED = żadna ścieżka nie wysyła zleceń do terminala (zmiana tylko w Ustawieniach, z frazą potwierdzenia)">
+          <i className="dot" />{(s.execution_lock ?? "LOCKED") === "LOCKED" ? "Execution Lock" : "ZLECENIA ODBLOKOWANE"}</span>
         <span className={cls("chip", s.symbol?.status === "OK" ? "ok" : "warn")} title="Dokładny symbol brokera i jego status handlu"><i className="dot" />{s.symbol?.symbol ?? "?"}</span>
         <span className={cls("chip", tone(con.state))} title={con.reason || con.module_error || ""} data-testid="chip-mt5"><i className="dot" />MT5 <b>{con.state === "CONNECTED" ? "połączony" : con.state ?? "…"}</b></span>
         <span className={cls("chip", engineOk ? tone(dq) : "bad")} title={(s.engine?.last_error || "") + (tickAge != null ? ` · tick ${Math.round(tickAge)} s` : "")}>
@@ -141,45 +145,87 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
   );
 }
 
-function SideNav({ page, onSettings }: { page: Page; onSettings: () => void }) {
+function SideNav({ page }: { page: Page }) {
   const [collapsed, setCollapsed] = usePersisted<boolean>("nav.collapsed", false, (v) => typeof v === "boolean");
-  const [open, setOpen] = usePersisted<Record<string, boolean>>("nav.groups", {}, (v) => v && typeof v === "object");
+  const cur = SECTION_OF[page];
   return (
-    <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Strony" data-testid="sidenav">
-      {GROUPS.map((g) => {
-        const cur = g.pages.includes(page);
-        const isOpen = cur || open[g.id] !== false;                 // the group of the current page is always expanded
-        return (
-          <div key={g.id} className="nav-group" data-group={g.id}>
-            <button className="nav-group-head" aria-expanded={isOpen} onClick={() => setOpen({ ...open, [g.id]: !isOpen })} title={g.label}>
-              <span>{g.label}</span><i aria-hidden="true">{isOpen ? "▾" : "▸"}</i></button>
-            {isOpen && g.pages.map((id) => {
-              const p = PAGE_BY_ID[id];
-              return (
-                <a key={id} href={href(id)} className={cls("nav-item", page === id && "on")} aria-current={page === id ? "page" : undefined} data-page={id} title={p.label}>
-                  <i aria-hidden="true">{p.icon}</i><span>{p.label}</span>
-                </a>);
-            })}
-          </div>);
-      })}
+    <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Menu główne" data-testid="sidenav">
+      {GROUPS.map((g) => (
+        <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id}>
+          <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")} aria-current={cur === g.id ? "page" : undefined}
+            data-section={g.id} title={g.label}><i aria-hidden="true">{g.icon}</i><span>{g.label}</span></a>
+          {cur === g.id && g.pages.length > 1 && !collapsed && g.pages.map((id) => {
+            const p = PAGE_BY_ID[id];
+            return (
+              <a key={id} href={href(id)} className={cls("nav-item nav-sub", page === id && "on")} aria-current={page === id ? "page" : undefined} data-page={id} title={p.label}>
+                <span>{p.label}</span>
+              </a>);
+          })}
+        </div>))}
       <span className="spacer" />
-      <button className="nav-item nav-settings" onClick={onSettings} title="Ustawienia (MT5, symbol, ryzyko, koszty, AI)"><i aria-hidden="true">⚙</i><span>Ustawienia</span></button>
       <button className="nav-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Rozwiń menu" : "Zwiń menu"} title={collapsed ? "Rozwiń menu" : "Zwiń menu"}>
         {collapsed ? "»" : "«"}</button>
     </nav>
   );
 }
 
-function MobileNav({ page }: { page: Page }) {
+/** Sub-pages of the current section as tabs (all widths; on phones this is the only way to reach them). */
+function SubTabs({ page }: { page: Page }) {
+  const g = GROUPS.find((x) => x.id === SECTION_OF[page]);
+  if (!g || g.pages.length < 2) return null;
   return (
-    <nav className="mobnav" aria-label="Strony (mobilne)" data-testid="mobnav">
-      {PAGES.map((p) => (
-        <a key={p.id} href={href(p.id)} className={cls("nav-item", page === p.id && "on")} aria-current={page === p.id ? "page" : undefined} data-page={p.id}>
-          <i aria-hidden="true">{p.icon}</i><span>{p.short}</span>
+    <div className="subtabs" role="tablist" aria-label={g.label} data-testid="subtabs">
+      {g.pages.map((id) => (
+        <a key={id} role="tab" aria-selected={page === id} className={cls(page === id && "on")} href={href(id)} data-page={id}>{PAGE_BY_ID[id].label}</a>))}
+    </div>);
+}
+
+function MobileNav({ page }: { page: Page }) {
+  const cur = SECTION_OF[page];
+  return (
+    <nav className="mobnav" aria-label="Menu główne (mobilne)" data-testid="mobnav">
+      {GROUPS.map((g) => (
+        <a key={g.id} href={href(g.pages[0])} className={cls("nav-item", cur === g.id && "on")} aria-current={cur === g.id ? "page" : undefined} data-section={g.id}>
+          <i aria-hidden="true">{g.icon}</i><span>{g.label.split(" ")[0]}</span>
         </a>
       ))}
     </nav>
   );
+}
+
+/** XAUUSD / BTC switch: the only two assets of the application. Unmapped / unconfirmed asset -> disabled with the reason. */
+export function AssetSwitch() {
+  const { s, refresh } = useStore();
+  const a = s.assets;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!a) return null;
+  const go = async (asset: string) => {
+    if (asset === a.active || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiSend("POST", "/api/v1/assets/active", { asset });
+      await refresh();
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="asset-switch" role="group" aria-label="Aktywo" data-testid="asset-switch">
+      {(a.allowed || []).map((id: string) => {
+        const it = a.assets?.[id] || {};
+        return (
+          <button key={id} className={cls("asset-btn", a.active === id && "on")} aria-pressed={a.active === id} disabled={!it.usable || busy} data-asset={id}
+            onClick={() => go(id)} title={it.usable ? `${id} → ${it.broker_symbol} (${it.mapping_status}; metadane ${it.metadata_check?.status})` :
+              `${id}: niedostępne – ${it.blocked_reason} (Ustawienia → mapowanie aktywów)`}>
+            <b>{id}</b><small>{it.broker_symbol ?? "niezmapowane"}</small>
+          </button>);
+      })}
+      {err && <span className="bad small" role="alert">{err}</span>}
+    </div>);
 }
 
 function LogsPanel() {
@@ -243,8 +289,8 @@ export default function AppShell({ page, children, onSettings, onPower, onMode, 
       <TopBar page={page} stats={stats} onSettings={onSettings} onPower={onPower} onMode={onMode} onLook={onLook} overlay={overlay} setOverlay={setOverlay} />
       <FailureBanner />
       <div className="shell-body">
-        <SideNav page={page} onSettings={onSettings} />
-        <main className="page" data-page={page} id="main">{children}</main>
+        <SideNav page={page} />
+        <main className="page" data-page={page} id="main"><SubTabs page={page} />{children}</main>
       </div>
       <MobileNav page={page} />
       <SidePanel kind={overlay} onClose={() => setOverlay(null)} stats={stats} statsMode={statsMode} setStatsMode={setStatsMode} />
