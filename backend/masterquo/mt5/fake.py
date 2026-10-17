@@ -349,6 +349,44 @@ class FakeMT5:
                 out[k] = 100.0 + (out[k] - self._start_price) * 0.002
         return out
 
+    TICK_DTYPE = np.dtype([("time", "<i8"), ("bid", "<f8"), ("ask", "<f8"), ("last", "<f8"), ("volume", "<u8"),
+                           ("time_msc", "<i8"), ("flags", "<u4"), ("volume_real", "<f8")])
+
+    def copy_ticks_from(self, symbol, date_from, count, flags=0):
+        """Synthetic quote stream (SYNTHETIC - for code tests only): per closed/forming M1 minute a deterministic number
+        of quote changes (from the minute's tick volume) at irregular times inside the minute; no ticks while closed."""
+        if not self._guard() or not self._known(symbol):
+            return None
+        raw = self._raw_now()
+        f = date_from.timestamp() if isinstance(date_from, datetime) else float(date_from)
+        if symbol in self._markets:
+            mins, m1 = self._market_series(symbol)
+            conv = lambda x: self._to_market(symbol, x)  # noqa: E731
+            d = self._markets[symbol]["digits"]
+            spr = self._markets[symbol]["spread"] * 10.0 ** -d
+        else:
+            mins, m1 = self._mins, self._m1
+            conv, d, spr = (lambda x: x), 2, 0.12  # noqa: E731
+        i0 = int(np.searchsorted(mins, f - 60, side="left"))
+        i1 = self._m1_upto(raw, mins)
+        rows = []
+        for i in range(i0, i1):
+            t0 = float(mins[i])
+            rng = np.random.default_rng((self.seed * 1_000_003 + int(t0)) % (2 ** 32))
+            k = int(min(60, max(1, m1["tick_volume"][i] // 20)))
+            ts_ = np.sort(rng.uniform(0, 60, k)) + t0
+            path = m1["open"][i] + (m1["close"][i] - m1["open"][i]) * (ts_ - t0) / 60.0
+            noise = rng.normal(0, max(1e-9, (m1["high"][i] - m1["low"][i]) / 6), k)
+            px = np.clip(path + noise, m1["low"][i], m1["high"][i])
+            for tt, pp in zip(ts_, px):
+                if tt < f or tt > raw:
+                    continue
+                b = round(float(conv(pp)), d)
+                rows.append((int(tt), b, round(b + spr, d), 0.0, 0, int(tt * 1000), 6, 0.0))
+            if len(rows) >= count:
+                break
+        return np.array(rows[:count], dtype=self.TICK_DTYPE)
+
     def copy_rates_range(self, symbol, timeframe, date_from, date_to):
         if not self._guard():
             return None

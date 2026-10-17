@@ -99,6 +99,8 @@ class Env:
         from masterquo.db.database import Database
         from masterquo.events import AppLog, EventBus
         self.cfg = ConfigStore()
+        # reproductions exercise the order machinery on a MOCKED terminal -> Execution Lock explicitly off (never real)
+        self.cfg.update({"execution": {"lock": "UNLOCKED_BY_USER"}})
         self.db = Database()
         self.bus = EventBus()
         self.log = AppLog(self.db, self.bus)

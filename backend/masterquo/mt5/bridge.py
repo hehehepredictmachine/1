@@ -507,6 +507,37 @@ class MarketBridge:
                         "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "spread": b.spread, "closed": closed})
         return out
 
+    def ticks(self, symbol: str, seconds: int = 3600, max_count: int = 200_000) -> dict:
+        """Quote ticks of an allowed symbol (copy_ticks_from, COPY_TICKS_INFO = bid/ask changes). Times converted from
+        server time to UTC with the measured offset; received_at = when this read returned. Without the offset -> no ticks."""
+        self._guard(symbol, "DATA_TICKS")
+        off = self.clock.offset
+        if off is None:
+            return {"status": "missing_data", "reason": "SERVER_OFFSET_UNKNOWN", "ticks": []}
+        raw_from = self.now().timestamp() + off - seconds
+
+        def job(m):
+            fn = getattr(m, "copy_ticks_from", None)
+            if fn is None:
+                return None
+            return fn(symbol, raw_from, int(max_count), getattr(m, "COPY_TICKS_INFO", 1))
+        arr = self._call(job, PRIO_HISTORY)
+        recv = iso(self.now())
+        if arr is None:
+            return {"status": "unsupported", "reason": "COPY_TICKS_UNAVAILABLE", "ticks": []}
+        out, last = [], None
+        for r in arr:
+            msc = int(r["time_msc"])
+            key = (msc, float(r["bid"]), float(r["ask"]))
+            if key == last:                                  # duplicate after re-read
+                continue
+            last = key
+            if not (r["bid"] > 0 and r["ask"] > 0 and r["ask"] >= r["bid"]):
+                continue                                     # invalid quote is dropped, never turned into 0
+            out.append({"t": (msc / 1000.0) - off, "bid": float(r["bid"]), "ask": float(r["ask"]), "flags": int(r["flags"])})
+        return {"status": "ok" if out else "missing_data", "symbol": symbol, "received_at_utc": recv, "count": len(out), "ticks": out,
+                "source": "SYNTHETIC" if self._synthetic else "MT5"}
+
     def _merge_tail(self, st: TFState, tf: str, tail: list[Bar], symbol: str) -> list[Bar]:
         """Merge the newest bars. Returns newly *closed* bars. Fills gaps by refetching."""
         if not tail:

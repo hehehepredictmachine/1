@@ -161,7 +161,8 @@ class TestExecution(unittest.TestCase):
         self.td = TempData()
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.bus, self.log, self.fake, self.worker, self.b = cfg, db, bus, log, fake, worker, b
-        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5}})
+        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5},
+                    "execution": {"lock": "UNLOCKED_BY_USER"}})      # order machinery on FakeMT5 only; default is LOCKED
         b.start()
         self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.quote_status() and b.symbol_info, 40))
         from masterquo.engine.lifecycle import LifecycleStore
@@ -372,7 +373,7 @@ class TestDatabase(unittest.TestCase):
         from masterquo import paths
         from masterquo.db.database import Database
         db = Database()
-        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"])
+        self.assertEqual(db.schema_versions(), ["0001", "0002", "0003", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"])
         db.execute("INSERT INTO app_events(ts, level, category, code, message) VALUES ('t','INFO','T','C','m')")
         p = db.backup("test")
         self.assertTrue(p.exists())
