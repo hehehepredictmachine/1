@@ -29,7 +29,7 @@ import { loadView, saveView, SYNC, viewKey, type ChartView, type SyncGroup, type
 import { useStore } from "../store";
 import { parseColor, toHex, useTheme, type Tokens } from "../theme";
 import { chartShift, cls, epochSec, fmtNum, type TimeZoneMode } from "../util";
-import { ZonesPrimitive } from "../zones";
+import { BoundedBoxesPrimitive, type BoundedBox, type BoxMarker, ZonesPrimitive } from "../zones";
 
 export interface ChartOpts {
   showRsi: boolean;
@@ -43,6 +43,8 @@ export interface ChartOpts {
   showAiLevels?: boolean;        // 1.10: levels proposed by the AI (marked "AI:", separate from the engine plan)
   showSar?: boolean;             // PMW-UPD-02: shared SAR core points
   showExtInd?: boolean;          // PMW-UPD-02: IQ Gold Gann / Star Lines levels from the approved exporter mapping
+  showSessions?: boolean;        // PMW-UPD-06: session sweep boxes (shared engine, time-bounded) + edge events
+  showHeatmap?: boolean;         // PMW-UPD-06: liquidation heatmap panel (separate source price axis unless mapping is validated)
 }
 
 export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
@@ -99,6 +101,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const hlLines = useRef<IPriceLine[]>([]);
   const structLines = useRef<IPriceLine[]>([]);
   const structZones = useRef<ZonesPrimitive | null>(null);
+  const sessBoxes = useRef<BoundedBoxesPrimitive | null>(null);
+  const [sessions, setSessions] = useState<any>(null);
   const structMarkers = useRef<SeriesMarker<Time>[]>([]);
   const baseMarkers = useRef<SeriesMarker<Time>[]>([]);
   const [structure, setStructure] = useState<any>(null);
@@ -152,6 +156,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     candles.current.attachPrimitive(volZones.current);
     structZones.current = new ZonesPrimitive();
     candles.current.attachPrimitive(structZones.current);
+    sessBoxes.current = new BoundedBoxesPrimitive();
+    candles.current.attachPrimitive(sessBoxes.current);
     markers.current = createSeriesMarkers(candles.current, []);
     const el = box.current;
     const onUser = () => markUser();
@@ -544,6 +550,48 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
         lineWidth: 1, axisLabelVisible: false }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indCtx, opts.showSar, opts.showExtInd, data, shift]);
+
+  // ---------------------------------------------------------------- PMW-UPD-06: session sweep boxes (same box ids on every TF)
+  useEffect(() => {
+    if (!opts.showSessions) { setSessions(null); return; }
+    let alive = true;
+    apiGet(`/api/v1/liquidity/sessions?tf=${tf}`).then((r) => alive && setSessions(r)).catch(() => alive && setSessions(null));
+    return () => { alive = false; };
+  }, [tf, opts.showSessions, s.analysisSeq]);
+
+  useEffect(() => {
+    const pr = sessBoxes.current;
+    if (!pr) return;
+    if (!opts.showSessions || !sessions?.boxes) { pr.set([]); return; }
+    const TT = (iso: string) => epochSec(iso) + shiftRef.current;
+    const t: any = tkRef.current;
+    const boxes: BoundedBox[] = [];
+    const marks: BoxMarker[] = [];
+    const nowT = (times.current[times.current.length - 1] ?? 0) + 60;
+    for (const b of sessions.boxes) {
+      const from = TT(b.start_utc), to = TT(b.end_utc);
+      if (b.state === "FINAL") {
+        boxes.push({ from, to, low: b.final_low, high: b.final_high, color: "rgba(212,160,23,0.08)", border: String(t.sweep ?? "#d4a017"),
+          label: `${b.session} FINAL (znany ${String(b.known_at).slice(11, 16)} UTC)` });
+        const edgeEnd = (e: string) => { const ev = (b.events || []).find((x: any) => x.edge === e || x.edge === "BOTH"); return ev ? TT(ev.bar_open_utc) : Math.min(TT(b.expires_at), nowT); };
+        boxes.push({ from: TT(b.known_at), to: edgeEnd("HIGH"), low: b.final_high, high: b.final_high, color: "", border: String(t.sweep ?? "#d4a017"), dashed: true });
+        boxes.push({ from: TT(b.known_at), to: edgeEnd("LOW"), low: b.final_low, high: b.final_low, color: "", border: String(t.sweep ?? "#d4a017"), dashed: true });
+        for (const e of b.events || []) {
+          const up = e.kind === "SWEEP_HIGH" || e.kind === "BREAKOUT_UP";
+          marks.push({ time: TT(e.bar_open_utc), price: up ? e.high : e.low, up: !up, color: e.kind.startsWith("SWEEP") ? "#e0a030" : "#7aa7ff",
+            label: `${e.kind} ${b.session} (potw. ${String(e.confirmed_at).slice(11, 16)})` });
+        }
+      } else if (b.state === "DEVELOPING") {
+        boxes.push({ from, to: Math.min(to, nowT), low: b.developing_low, high: b.developing_high, color: "rgba(150,150,150,0.06)", border: "#999",
+          dashed: true, label: `${b.session} w trakcie` });
+      } else if (b.state === "INCOMPLETE") {
+        boxes.push({ from, to, low: b.observed_low, high: b.observed_high, color: "rgba(150,150,150,0.04)", border: "#777", dashed: true,
+          label: `${b.session} NIEPEŁNY (${b.observed_slots}/${b.expected_slots})` });
+      }
+    }
+    pr.set(boxes, marks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, opts.showSessions, data, shift]);
 
   // ---------------------------------------------------------------- AI levels (marked "AI:" - never merged with the engine plan)
   useEffect(() => {

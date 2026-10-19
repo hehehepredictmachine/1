@@ -283,9 +283,65 @@
    "update_id": "PMW-UPD-06-HEATMAP",
    "spec_file": "PepeMarketWizard_LIQUIDATION_HEATMAP_SESSION_SWEEP_CLAUDE_CODE.md",
    "spec_sha256": "3efeed5bb8631ada4aa3112d0593a8b2d99928ccbd9d5f99714f66cdccc5a489",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "LS-01": "VERIFIED (wspólny silnik, profile, adaptery scalp/lab)",
+    "LS-02": "VERIFIED (pokrycie slotów, INCOMPLETE, known_at przy opóźnieniu; regresja błędu 1)",
+    "LS-03": "VERIFIED (SWEEP_BOTH_AMBIGUOUS, breakout/return, TTL; regresja błędu 2)",
+    "LS-04": "IMPLEMENTED (CoinGlass PAIR/AGGREGATED + import; real API NOT_RUN – brak klucza)",
+    "LS-05": "VERIFIED (XAUT/BTC na osi źródła, mapowanie VALIDATED odrzucane)",
+    "LS-06": "VERIFIED (first_received_at, as_of(D), brak podwójnego liczenia)",
+    "LS-07": "IMPLEMENTED (BoundedBoxesPrimitive, panel heatmapy canvas; test UI)",
+    "LS-08": "VERIFIED (polityka OBSERVE, reason codes, rodziny dowodów)",
+    "LS-09": "VERIFIED (LQ-K w prompt 1.5.0, get_liquidity_context z zamrożonego kontekstu)",
+    "LS-10": "IMPLEMENTED (B0–B3, B2/B3 BLOCKED bez mapowania/archiwum)",
+    "LS-11": "VERIFIED (regresja scalp/lab/agent/lock)",
+    "LS-12": "PARTIAL (MT5/klucz NOT_RUN)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "Wspólny silnik sesji, heatmapa CoinGlass/plik z archiwum point-in-time, polityka i wiedza LQ-K, warstwy wykresu, ocena B0–B3",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "CoinGlass: MISSING_API_KEY; MT5: NOT_RUN",
+    "data": "BRAK archiwum heatmapy",
+    "training": "NOT_APPLICABLE",
+    "artifacts": "NOT_APPLICABLE",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_EVALUATED"
+   },
+   "files": [
+    "backend/masterquo/analytics/session_engine.py",
+    "backend/masterquo/analytics/liquidation/{contract,provider,service}.py",
+    "backend/masterquo/analytics/liquidity_context.py",
+    "backend/masterquo/analytics/liquidity_eval.py",
+    "backend/masterquo/analytics/liquidity_cli.py",
+    "backend/masterquo/db/migrations/0020_liquidity.sql",
+    "backend/masterquo/config.py (LiquidityConfig)",
+    "backend/masterquo/scalp/sessions.py, lab/sessions.py (adaptery)",
+    "backend/masterquo/engine/service.py::_liquidity_context",
+    "backend/masterquo/agent/{service,tools}.py + prompt 1.5.0",
+    "backend/masterquo/api/app.py (/api/v1/liquidity/*)",
+    "frontend/src/zones.ts (BoundedBoxesPrimitive)",
+    "frontend/src/components/{ChartPanel,LiquidityHeatmapPanel,LiquidityContextCard}.tsx",
+    "25_LIQUIDITY.bat",
+    "docs/indicators/LIQUIDATION_AND_SESSION_SWEEPS_PL.md",
+    "tests/test_liquidity.py",
+    "tests/test_ui_lab.py::test_09_liquidity_layers"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_liquidity",
+     "result": "14/14 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_09_liquidity_layers",
+     "result": "1/1 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Lokalnie: klucz CoinGlass z uprawnieniem model1 → 25_LIQUIDITY.bat (1,2), rejestrować archiwum tygodniami; ocena B0–B3 na eksporcie REAL_USER_DATA."
   },
   "PMW-UPD-07-STRUCTURE": {
    "update_id": "PMW-UPD-07-STRUCTURE",

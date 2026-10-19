@@ -29,6 +29,7 @@ class ScalpService:
         self.ml = None                                # runtime sets the ML router (PMW-UPD-03 candidate collector)
         self.nss = None                               # runtime sets the NeuralScalpService (PMW-UPD-04)
         self.dashboard = None                         # runtime sets the MTFDashboard (PMW-UPD-05)
+        self.liquidity = None                         # runtime sets the LiquidityService (PMW-UPD-06)
         self.prof = st.load_profile()
         self.hedge = hedge_mod.HedgeController(self.prof)
         self._stop = threading.Event()
@@ -205,6 +206,7 @@ class ScalpService:
         plan["indicator_context"] = self.indicator_context(plan)      # PMW-UPD-02 reaction model - SHADOW observation, never a gate
         plan["ml_scalp"] = self.ml_scalp(plan)                         # PMW-UPD-03: candidate stored BEFORE any model filter + inference
         plan["neural"] = self.neural(plan)                             # PMW-UPD-04: frozen snapshot to the NSS worker (async, OBSERVE)
+        plan["liquidity_context"] = self.liquidity_context(plan)       # PMW-UPD-06: session boxes / heatmap reading (OBSERVE, never a gate)
         if st.V(self.prof, "ml_filter", "enabled", default=False):
             gate("filtr modelu jakości setupu (B)", bool(mq.get("pass")), mq.get("reason") or f"P(TP1 przed SL) {mq.get('p')} vs próg {mq.get('threshold')}")
         else:
@@ -321,6 +323,24 @@ class ScalpService:
         cs = float(info.get("trade_contract_size") or 100.0)
         tick = float(info.get("trade_tick_size") or 0.01)
         return {"commission_price_side": (cfg.scalp.commission_per_lot_side or 0.0) / cs, "slippage_price": cfg.scalp.slippage_ticks * tick}
+
+    def liquidity_context(self, plan: dict) -> dict:
+        if self.liquidity is None:
+            return {"status": "NOT_INSTALLED"}
+        try:
+            from ..analytics import liquidity_context as lc
+            T = plan["decision_ts"]
+            tf = self.liquidity.cfg.sessions_base_tf
+            bars = (getattr(self, "_bars", {}) or {}).get(tf) or []
+            sess = self.liquidity.sessions(bars, 60 if tf == "M1" else 300, self.inst, T)
+            from datetime import datetime as _dt, timezone as _tz
+            D = _dt.fromtimestamp(T, _tz.utc).isoformat()
+            hm = self.liquidity.heatmap_public(self.inst, D, max_cells=0)
+            hm.pop("grid", None)
+            return lc.evaluate(boxes=sess["boxes"], heatmap=hm, price=plan.get("ref_close_bid"), atr_m5=(plan.get("range") or {}).get("atr_m5"),
+                               setup={"side": plan["direction"], "setup_id": plan["setup_id"]}, as_of=D)
+        except Exception as exc:  # noqa: BLE001 - observation only
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def neural(self, plan: dict) -> dict:
         if getattr(self, "nss", None) is None:

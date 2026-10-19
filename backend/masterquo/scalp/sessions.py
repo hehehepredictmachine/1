@@ -11,10 +11,10 @@ These rules are not a copy of any external indicator (the external Session Sweep
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
-VERSION = "SESS-1.0.0"
+VERSION = "SESS-1.1.0"
+PROFILE = "SCALP_OPENING_V1"
 SESSIONS = {"ASIA": ("Asia/Tokyo", (9, 0), (15, 0)), "LONDON": ("Europe/London", (8, 0), (12, 0)),
             "NEW_YORK": ("America/New_York", (8, 0), (12, 0))}
 
@@ -24,48 +24,40 @@ def _t(s) -> datetime:
 
 
 def windows(day_utc: datetime) -> list[tuple[str, datetime, datetime]]:
-    """Session windows (UTC) whose local date is the calendar day of day_utc or the day before (for Asia at UTC midnight)."""
-    out = []
-    for name, (tz, (h0, m0), (h1, m1)) in SESSIONS.items():
-        z = ZoneInfo(tz)
-        for dd in (-1, 0):
-            d = (day_utc + timedelta(days=dd)).date()
-            a = datetime(d.year, d.month, d.day, h0, m0, tzinfo=z).astimezone(timezone.utc)
-            b = datetime(d.year, d.month, d.day, h1, m1, tzinfo=z).astimezone(timezone.utc)
-            out.append((name, a, b))
-    return out
+    """Session windows (UTC) whose local date is the calendar day of day_utc or the day before (for Asia at UTC midnight).
+    PMW-UPD-06: computed by the shared engine (profile SCALP_OPENING_V1)."""
+    from ..analytics import session_engine as se
+    return [(w["session"], w["start"], w["end"]) for w in se.windows(PROFILE, day_utc, 1, 0)]
 
 
-def boxes_as_of(bars: list[dict], tf_minutes: int, as_of) -> list[dict]:
-    """Latest COMPLETED box of each session (end <= as_of) from closed bars {open_utc, h, l, c}, plus its sweep state."""
+LEGACY_STATE = {"SWEEP_HIGH": "SWEEP_HIGH", "SWEEP_LOW": "SWEEP_LOW", "SWEEP_BOTH_AMBIGUOUS": "SWEEP_BOTH_AMBIGUOUS", "BREAKOUT_UP": "BREAK_HIGH",
+                "BREAKOUT_DOWN": "BREAK_LOW"}
+
+
+def boxes_as_of(bars: list[dict], tf_minutes: int, as_of, instrument: str = "XAUUSD") -> list[dict]:
+    """Latest COMPLETED box of each session (end <= as_of) from closed bars {open_utc, h, l, c} + its edge events (shared engine).
+    status OK only for a FINAL (complete) box; INCOMPLETE / NO_BARS otherwise (a single bar never makes a full box)."""
+    from ..analytics import session_engine as se
     t = _t(as_of)
-    step = timedelta(minutes=tf_minutes)
-    rows = [(_t(b["open_utc"]), b) for b in bars]
-    rows = [(o, b) for (o, b) in rows if o + step <= t]          # closed and known
+    boxes = se.build(bars, tf_minutes * 60, PROFILE, instrument, t, days=2)
     out = []
     for name in SESSIONS:
-        cands = [(a, b) for (n, a, b) in windows(t) + windows(t - timedelta(days=1)) if n == name and b <= t]
-        if not cands:
+        done = [b for b in boxes if b["session"] == name and _t(b["end_utc"]) <= t]
+        if not done:
             continue
-        a, e = max(cands, key=lambda x: x[1])
-        inside = [b for (o, b) in rows if o >= a and o + step <= e]
-        if not inside:
-            out.append({"session": name, "start_utc": a.isoformat(), "end_utc": e.isoformat(), "status": "NO_BARS"})
+        b = max(done, key=lambda x: x["end_utc"])
+        base = {"session": name, "start_utc": b["start_utc"], "end_utc": b["end_utc"], "box_id": b["box_id"], "profile_id": PROFILE,
+                "coverage": {k: b.get(k) for k in ("expected_slots", "observed_slots", "missing_slots", "coverage_ratio", "coverage_basis")},
+                "version": VERSION, "engine": se.VERSION}
+        if b["state"] == "NO_DATA":
+            out.append(dict(base, status="NO_BARS"))
             continue
-        hi, lo = max(b["h"] for b in inside), min(b["l"] for b in inside)
-        after = [b for (o, b) in rows if o >= e]
-        state, at = "UNTOUCHED", None
-        for b in after:
-            if b["c"] > hi:
-                state, at = "BREAK_HIGH", b["open_utc"]
-                break
-            if b["c"] < lo:
-                state, at = "BREAK_LOW", b["open_utc"]
-                break
-            if b["h"] > hi and state == "UNTOUCHED":
-                state, at = "SWEEP_HIGH", b["open_utc"]
-            elif b["l"] < lo and state == "UNTOUCHED":
-                state, at = "SWEEP_LOW", b["open_utc"]
-        out.append({"session": name, "start_utc": a.isoformat(), "end_utc": e.isoformat(), "known_at": e.isoformat(), "high": hi, "low": lo,
-                    "bars": len(inside), "state": state, "state_at": at, "status": "OK", "version": VERSION})
+        if b["state"] == "INCOMPLETE":
+            out.append(dict(base, status="INCOMPLETE", high=None, low=None, observed_high=b["observed_high"], observed_low=b["observed_low"],
+                            bars=b["bars"], state="UNKNOWN", reason=b["reason"]))
+            continue
+        first = next((e for e in b["events"] if e["kind"] != "RETURN_INSIDE_AFTER_BREAK"), None)
+        out.append(dict(base, known_at=b["known_at"], high=b["final_high"], low=b["final_low"], bars=b["bars"], revision=b["revision"],
+                        state=LEGACY_STATE.get(first["kind"], first["kind"]) if first else "UNTOUCHED", state_at=first["bar_open_utc"] if first else None,
+                        events=b["events"], edges=b["edges"], expires_at=b.get("expires_at"), status="OK"))
     return out

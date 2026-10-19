@@ -5,10 +5,9 @@ UTC. A session box's high/low is final (available) only after the session end; b
 """
 from __future__ import annotations
 
-from datetime import datetime, time as dtime, timedelta, timezone
+from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-import numpy as np
 
 from ..analytics.ta import TF_SEC
 from .common import iso, ts
@@ -30,65 +29,44 @@ def _hm(s: str) -> dtime:
     return dtime(int(h), int(m))
 
 
+PROFILE = {"XAUUSD": "LAB_XAU_REFERENCE_V1", "BTC": "LAB_BTC_REFERENCE_V1"}
+
+
 def session_windows(asset: str, day_utc: datetime) -> list[dict]:
-    """UTC windows of each session whose LOCAL date equals the given calendar day (DST-correct)."""
+    """UTC windows of each session whose LOCAL date equals the given calendar day (DST-correct) - shared engine (PMW-UPD-06)."""
+    from ..analytics import session_engine as se
     out = []
-    for name, tz, a, b in SESSIONS[asset]:
-        z = ZoneInfo(tz)
+    for s_ in se.PROFILES[PROFILE[asset]]["sessions"]:
+        z = ZoneInfo(s_[1])
         local_day = day_utc.astimezone(z).date() if day_utc.tzinfo else day_utc.date()
-        start = datetime.combine(local_day, _hm(a), z).astimezone(timezone.utc)
-        end = datetime.combine(local_day, _hm(b), z).astimezone(timezone.utc)
-        out.append({"session": name, "tz": tz, "start": start, "end": end})
+        a, b = se.local_window(s_, local_day)
+        out.append({"session": s_[0], "tz": s_[1], "start": a, "end": b})
     return out
 
 
 def session_boxes(bars: list[dict], tf: str, asset: str, days: int = 3) -> dict:
-    """Boxes for the last `days` UTC days: high/low from bars fully inside the window, breakout (first close beyond after
-    the end), return inside, sweep (wick beyond + close inside)."""
+    """Boxes of the asset's lab profile for the last `days` days from the shared engine; legacy fields kept (state FINAL /
+    DEVELOPING / INCOMPLETE, available_at only for FINAL, events [{t, event}]), engine fields added."""
+    from ..analytics import session_engine as se
     if not bars:
         return {"boxes": []}
-    t = np.array([ts(b["open_utc"]) for b in bars])
-    h = np.array([b["h"] for b in bars], float)
-    lo = np.array([b["l"] for b in bars], float)
-    c = np.array([b["c"] for b in bars], float)
     sec = TF_SEC[tf]
-    as_of = t[-1] + sec
-    last_day = datetime.fromtimestamp(t[-1], timezone.utc)
-    boxes = []
-    for k in range(days, -1, -1):
-        day = last_day - timedelta(days=k)
-        for w in session_windows(asset, day):
-            s0, s1 = w["start"].timestamp(), w["end"].timestamp()
-            m = (t >= s0) & (t + sec <= s1)
-            if not m.any() or s0 > as_of:
-                continue
-            final = s1 <= as_of
-            hi, low = float(h[m].max()), float(lo[m].min())
-            box = {"id": f"SB-{asset}-{w['session']}-{w['start'].date()}", "session": w["session"], "tz": w["tz"],
-                   "start_utc": iso(s0), "end_utc": iso(s1), "high": hi, "low": low, "bars": int(m.sum()),
-                   "state": "FINAL" if final else "DEVELOPING", "available_at": iso(s1) if final else None,
-                   "high_at": bars[int(np.where(m)[0][np.argmax(h[m])])]["open_utc"],
-                   "low_at": bars[int(np.where(m)[0][np.argmin(lo[m])])]["open_utc"], "events": []}
-            if final:
-                after = np.where(t >= s1)[0]
-                state = "INSIDE"
-                for i in after:
-                    if state in ("INSIDE", "RETURNED"):
-                        if c[i] > hi:
-                            box["events"].append({"t": bars[i]["open_utc"], "event": "BREAKOUT_UP"})
-                            state = "OUT_UP"
-                        elif c[i] < low:
-                            box["events"].append({"t": bars[i]["open_utc"], "event": "BREAKOUT_DOWN"})
-                            state = "OUT_DOWN"
-                        elif h[i] > hi or lo[i] < low:
-                            box["events"].append({"t": bars[i]["open_utc"], "event": "SWEEP_HIGH" if h[i] > hi else "SWEEP_LOW"})
-                    elif (state == "OUT_UP" and c[i] < hi) or (state == "OUT_DOWN" and c[i] > low):
-                        box["events"].append({"t": bars[i]["open_utc"], "event": "RETURN_INSIDE"})
-                        state = "RETURNED"
-                    if len(box["events"]) >= 6:
-                        break
-            boxes.append(box)
-    return {"boxes": boxes[-9:], "definitions": SESSIONS[asset], "note": "czas lokalny giełdy z zoneinfo (DST); wartości w UTC"}
+    as_of = ts(bars[-1]["open_utc"]) + sec
+    prof = PROFILE[asset]
+    out = []
+    for b in se.build(bars, sec, prof, asset, as_of, days=days):
+        if b["state"] in ("SCHEDULED", "NO_DATA"):
+            continue
+        hi = b.get("final_high") if b["state"] == "FINAL" else b.get("developing_high") if b["state"] == "DEVELOPING" else b.get("observed_high")
+        lo = b.get("final_low") if b["state"] == "FINAL" else b.get("developing_low") if b["state"] == "DEVELOPING" else b.get("observed_low")
+        out.append({"id": f"SB-{asset}-{b['session']}-{b['local_date']}", "box_id": b["box_id"], "profile_id": prof, "session": b["session"], "tz": b["tz"],
+                    "start_utc": iso(ts(b["start_utc"])), "end_utc": iso(ts(b["end_utc"])), "high": hi, "low": lo, "bars": b["bars"], "state": b["state"],
+                    "available_at": b.get("known_at") if b["state"] == "FINAL" else None, "high_at": b.get("high_at"), "low_at": b.get("low_at"),
+                    "coverage": {k: b.get(k) for k in ("expected_slots", "observed_slots", "missing_slots", "coverage_ratio", "coverage_basis")},
+                    "events": [{"t": e["bar_open_utc"], "event": e["kind"].replace("RETURN_INSIDE_AFTER_BREAK", "RETURN_INSIDE"), "available_at": e["available_at"],
+                                "event_id": e["event_id"]} for e in b.get("events") or []], "edges": b.get("edges")})
+    return {"boxes": out[-9:], "definitions": SESSIONS[asset], "profile_id": prof, "engine": se.VERSION,
+            "note": "czas lokalny giełdy z zoneinfo (DST); wartości w UTC; wspólny silnik sesji (profil " + prof + ")"}
 
 
 def memory_sequence(bars_by_tf: dict[str, list[dict]], host_tf: str, host_open_utc: str) -> dict:

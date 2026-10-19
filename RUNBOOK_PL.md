@@ -47,6 +47,10 @@
 ## Scalping MTF (PMW-UPD-05)
 - Instrukcja: `docs/SCALPING_MTF_DASHBOARD_PL.md`, panel: Wykresy → Scalping MTF (`#/scalp-mtf`); działa bez modeli.
 
+## Boksy sesji i heatmapa likwidacji (PMW-UPD-06)
+- Instrukcja: `docs/indicators/LIQUIDATION_AND_SESSION_SWEEPS_PL.md`, launcher `25_LIQUIDITY.bat`, panel: Wykresy MTF → „Boksy sesji”, „Heatmapa likwidacji”.
+- Klucz CoinGlass wpisujesz lokalnie w panelu (SecretStore) albo jako zmienną `COINGLASS_API_KEY`; bez klucza status MISSING_API_KEY.
+
 ## Diagnostyka
 - `02_DIAGNOSTYKA.bat` (MT5).
 - Dane i diagnostyka: ticki (ACD, kinematyka), repaint, strefy, archiwum prognoz, źródła i licencje.

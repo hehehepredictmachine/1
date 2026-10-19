@@ -433,6 +433,27 @@ class ScalpConfig(_Strict):
     max_spread_atr_m1: float = Field(0.5, gt=0, le=5)
 
 
+class HeatmapSource(_Strict):
+    """One explicitly chosen CoinGlass model1 source for a broker asset (PMW-UPD-06). source_symbol is the PROVIDER instrument
+    (e.g. BTC or BTCUSDT on an exchange) - never the broker symbol; mapping to the broker price axis is UNMAPPED until validated."""
+    enabled: bool = False
+    variant: Literal["AGGREGATED", "PAIR"] = "AGGREGATED"
+    source_symbol: str | None = Field(None, max_length=32)
+    exchange: str | None = Field(None, max_length=32)
+    range: Literal["12h", "24h", "3d", "7d", "30d", "90d", "180d", "1y"] = "24h"
+    contract_type: str = Field("PERPETUAL", max_length=32)
+    mapping: Literal["UNMAPPED", "VALIDATED_BASIS"] = "UNMAPPED"
+
+
+class LiquidityConfig(_Strict):
+    """Session sweep boxes + liquidation heatmap (PMW-UPD-06) - OBSERVE only, never an execution gate."""
+    sessions_enabled: bool = True
+    scalp_profile: Literal["SCALP_OPENING_V1", "LAB_XAU_REFERENCE_V1", "LAB_BTC_REFERENCE_V1"] = "SCALP_OPENING_V1"
+    sessions_base_tf: Literal["M1", "M5"] = "M1"
+    poll_seconds: int = Field(30, ge=15, le=3600)
+    sources: dict[str, HeatmapSource] = Field(default_factory=lambda: {"XAUUSD": HeatmapSource(), "BTC": HeatmapSource(source_symbol="BTC")})
+
+
 CanonicalAsset = Literal["XAUUSD", "BTC"]
 ALLOWED_ASSETS: tuple[str, ...] = ("XAUUSD", "BTC")
 
@@ -503,6 +524,7 @@ class AppConfig(_Strict):
     markets: MarketsConfig = Field(default_factory=MarketsConfig)
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
+    liquidity: LiquidityConfig = Field(default_factory=LiquidityConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

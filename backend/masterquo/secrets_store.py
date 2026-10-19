@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import paths
 
-ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD")
+ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")
 
 
 def _dpapi(data: bytes, protect: bool) -> bytes:

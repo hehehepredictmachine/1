@@ -6,6 +6,8 @@ import { apiGet } from "../api";
 import { AutoPanel, StrategiesPanel, useAutoFull } from "../components/AutoPanels";
 import ChartPanel, { type Highlight } from "../components/ChartPanel";
 import ChartToolbar, { useChartOpts } from "../components/ChartToolbar";
+import LiquidityHeatmapPanel from "../components/LiquidityHeatmapPanel";
+import LiquidityContextCard from "../components/LiquidityContextCard";
 import { BotSignalsPanel, MarketDetail, MarketsPanel } from "../components/MarketsPanel";
 import VolPanel from "../components/VolPanel";
 import CandleForecastPanel from "../components/CandleForecastPanel";
@@ -73,7 +75,7 @@ export default function BotChartsPage({ route }: { route: Route }) {
           <div className="tabs small" role="group" aria-label="Liczba kolumn">
             {[1, 2, 3].map((c) => <button key={c} className={cls(cols === c && "on", c === 3 && "wide-only")} aria-pressed={cols === c} data-cols={c} onClick={() => setCols(c)}>{c} kol.</button>)}
           </div>)}
-        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
+        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showSessions", "showHeatmap", "showSar", "showExtInd", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
       </div>
       <div className="tf-bar" role="navigation" aria-label="Interwały" data-testid="tf-bar">
         {ordered.map((t) => (
@@ -106,6 +108,8 @@ export default function BotChartsPage({ route }: { route: Route }) {
                 <span className={cls("badge", t.data === "OK" ? "ok" : "warn")}>{t.data ?? "?"}</span>{need?.has(t.tf) && <span className="badge">wymagany</span>}</li>))}</ul>
           </aside>)}
       </div>
+      {opts.showHeatmap && <LiquidityHeatmapPanel />}
+      {opts.showSessions && <LiquidityContextCard />}
       <Section id="bot.scalp" title="Scalp M5 Range → M1 Sweep → Retest + hedge (SHADOW – bez zleceń)" defaultOpen testid="sec-scalp"><ScalpPanel /></Section>
       <Section id="bot.forecast" title="Świece i prognozy 5/15/30 min (SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-forecast"><CandleForecastPanel /></Section>
       <Section id="bot.vol" title="Zmienność i walls (źródło: HV_PROXY / IV)" testid="sec-vol"><VolPanel /></Section>

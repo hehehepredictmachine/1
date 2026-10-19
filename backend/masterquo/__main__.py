@@ -211,6 +211,10 @@ def cmd_profile(name: str) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["liquidity"]:                    # PMW-UPD-06: session boxes + liquidation heatmap (masterquo/analytics/liquidity_cli.py)
+        _load_dotenv()
+        from .analytics.liquidity_cli import main as liq_main
+        return liq_main(argv[1:])
     if argv[:1] == ["neural-scalp"]:                 # PMW-UPD-04: Neural Scalp System (masterquo/lab/nss_cli.py)
         _load_dotenv()
         from .lab.nss_cli import main as nss_main

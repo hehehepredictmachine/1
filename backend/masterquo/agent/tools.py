@@ -45,6 +45,10 @@ TOOL_DEFS = [
     _tool("get_indicator_context", "Moduły IQ Gold Gann / IQ Star Lines / PAL02M / Parabolic SAR zamrożone w snapshocie: SAR (profil, parametry, "
           "stan, flip, EP/AF, dystans w ATR, interpretacja), stany źródeł IQ/PAL (tożsamość, mapping, odczyt as-of), status modelu reakcji i "
           "zastosowane reguły IND-K. Brak źródła = brak wartości, nie zero.", {}, []),
+    _tool("get_liquidity_context", "Boksy sesji (wspólny silnik, profil, stan DEVELOPING/FINAL/INCOMPLETE, krawędzie i zdarzenia sweep/wybicie z "
+          "czasem potwierdzenia i dostępności) oraz strefy szacowanej heatmapy likwidacji zamrożone w snapshocie; reason codes polityki "
+          "OBSERVE i zastosowane reguły LQ-K. Heatmapa obcego instrumentu bez mapowania jest na osi źródła.",
+          {"timeframe": {"type": "string", "enum": ["M1", "M5", "M15", "H1"]}}, ["timeframe"]),
     _tool("get_signal_history", "Ostatnie setupy i ich wyniki (rozliczone/unieważnione) oraz zapisane wnioski.",
           {"limit": {"type": "integer"}}, ["limit"]),
 ]
@@ -218,6 +222,12 @@ class Toolbox:
     def t_get_indicator_context(self) -> dict:
         c = self.ctx.get("indicator_context")
         return c if c else {"status": "UNAVAILABLE"}
+
+    def t_get_liquidity_context(self, timeframe: str) -> dict:
+        if timeframe not in ("M1", "M5", "M15", "H1"):
+            raise ToolError("TIMEFRAME_INVALID")
+        c = self.ctx.get("liquidity_context")
+        return dict(c, timeframe_view=timeframe, note="te same boksy/ID na każdym TF (zmienia się tylko prezentacja)") if c else {"status": "UNAVAILABLE"}
 
     def t_get_signal_history(self, limit: int) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 30:

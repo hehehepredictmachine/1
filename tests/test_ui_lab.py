@@ -274,6 +274,38 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
+    def test_09_liquidity_layers(self):
+        """PMW-UPD-06: file fixture (SYNTHETIC_TEST, XAUT source) -> validator -> archive -> API -> heatmap panel on the SOURCE axis;
+        session boxes + OBSERVE context card; XAUT never presented as XAUUSD- prices; Execution Lock untouched."""
+        st, m = self.send("PUT", "/api/v1/liquidity/source", {"asset": "XAUUSD", "source_symbol": "XAUT", "variant": "AGGREGATED", "range": "24h"})
+        self.assertEqual(st, 200, m)
+        st, _ = self.send("PUT", "/api/v1/liquidity/source", {"asset": "XAUUSD", "mapping": "VALIDATED_BASIS"})
+        self.assertEqual(st, 400)                                                         # no mapping without a validated basis adapter
+        times = [1_760_000_000 + 300 * i for i in range(6)]
+        data = {"y_axis": [3990.0, 4000.0, 4010.0, 4020.0], "liquidation_leverage_data": [[i, j, float(1 + i + 7 * j)] for i in range(6) for j in range(4)],
+                "price_candlesticks": [[t, 1, 1, 1, 1, 1] for t in times]}
+        inbox = Path(self.td.dir) / "liquidity" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "xaut_fixture.json").write_text(json.dumps({"schema": "pmw-liq-export-1", "target_asset": "XAUUSD", "variant": "AGGREGATED", "source_symbol": "XAUT",
+                                                             "range": "24h", "data": data, "note": "SYNTHETIC_TEST"}))
+        self.assertEqual(self.send("POST", "/api/v1/liquidity/poll", {})[0], 200)
+        hm = self.api("/api/v1/liquidity/heatmap?asset=XAUUSD")
+        self.assertEqual((hm["status"], hm["mapping_status"], hm["availability_trust"]), ("OK", "MAPPING_UNVALIDATED", "IMPORT_TIME_ONLY"))
+        self.assertTrue(hm["axis"].startswith("SOURCE_PRICE"))
+        p = self.page
+        p.goto(BASE + "/#/wykresy")
+        p.evaluate("""() => { const k = 'mq.chartopts.bot'; const o = JSON.parse(localStorage.getItem(k) || '{}');
+                              localStorage.setItem(k, JSON.stringify({...o, tz: o.tz || 'LOCAL', showSessions: true, showHeatmap: true})); }""")
+        p.reload()
+        p.wait_for_selector("[data-testid=liq-heatmap][data-status=OK] canvas")
+        txt = p.inner_text("[data-testid=liq-heatmap]")
+        self.assertIn("SOURCE_PRICE", txt)
+        self.assertIn("XAUT", txt)
+        p.wait_for_selector("[data-testid=liq-context] [data-testid=liq-codes]")
+        self.assertIn("OBSERVE", p.inner_text("[data-testid=liq-context]"))
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
     def test_05_mobile(self):
         p = self.page
         p.set_viewport_size({"width": 390, "height": 844})

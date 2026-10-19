@@ -521,13 +521,36 @@ class EngineService:
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
-               "indicator_context": self._indicator_context(full)}
+               "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full)}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
             self.contexts[sid] = ctx
             while len(self.contexts) > 12:
                 self.contexts.popitem(last=False)
+
+    def _liquidity_context(self, full) -> dict | None:
+        """PMW-UPD-06: session boxes + heatmap snapshot FROZEN at this snapshot (copies; a later map never enters it)."""
+        try:
+            from ..analytics import liquidity_context as lc
+            from ..timeutil import parse_iso
+            liq = getattr(self, "liquidity", None)
+            if liq is None:
+                return None
+            inst = self.cfg_store.get().assets.active
+            t = parse_iso(full["as_of"]) if isinstance(full.get("as_of"), str) else utcnow()
+            tf = liq.cfg.sessions_base_tf
+            bars = [x for x in self.bridge.bars(tf, 3000 if tf == "M1" else 1000, include_forming=False) if x.get("open_utc")]
+            sess = liq.sessions(bars, 60 if tf == "M1" else 300, inst, t.timestamp())
+            hm = liq.heatmap_public(inst, iso(t), max_cells=0) if hasattr(liq, "heatmap_public") else None
+            if hm:
+                hm.pop("grid", None)
+            m5 = [x for x in self.bridge.bars("M5", 60, include_forming=False) if x.get("open_utc")]
+            a5 = (sum(x["h"] - x["l"] for x in m5[-14:]) / 14) if len(m5) >= 14 else None
+            px = m5[-1]["c"] if m5 else None
+            return dict(lc.frozen(sess["boxes"], hm, px, a5, iso(t)), knowledge_version=lc.KNOWLEDGE_VERSION, profile_id=sess["profile_id"], instrument=inst)
+        except Exception as exc:  # noqa: BLE001 - context only
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def _indicator_context(self, full) -> dict | None:
         """PMW-UPD-02: SAR / IQ / PAL values FROZEN at this snapshot (no later callback to 'latest')."""
