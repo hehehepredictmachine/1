@@ -211,6 +211,10 @@ def cmd_profile(name: str) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["structure-intelligence"]:      # PMW-UPD-07: Structure Intelligence (masterquo/lab/structure_cli.py)
+        _load_dotenv()
+        from .lab.structure_cli import main as si_main
+        return si_main(argv[1:])
     if argv[:1] == ["liquidity"]:                    # PMW-UPD-06: session boxes + liquidation heatmap (masterquo/analytics/liquidity_cli.py)
         _load_dotenv()
         from .analytics.liquidity_cli import main as liq_main

@@ -125,18 +125,55 @@ class PatternLibrary:
         return {"ok": True, "sample_id": sid, "result": r}
 
     def start_job(self, ids: list[int] | None, cfg: dict | None = None) -> dict:
+        """Freeze the manifest (sample ids + their data sha256 + symbol/TF, full-precision config, rules version) BEFORE any
+        validation. Samples are immutable rows (delete = soft flag), so the manifest reproduces the exact input later."""
         cfg = cfg or self.db_cfg()
         sel = [r["id"] for r in self.list()] if ids is None else sorted({int(i) for i in ids})
-        version = DB.VERSION_EXT if cfg.get("mode") == "EXTENDED" else DB.VERSION
+        version = DB.VERSION_BUF if cfg.get("mode") == "BUFFERED" else DB.VERSION_EXT if cfg.get("mode") == "EXTENDED" else DB.VERSION
         job_id = "DBJ-" + uuid.uuid4().hex[:12]
-        self.db.execute("""INSERT INTO pattern_jobs(job_id, created_at, kind, sample_ids, config_hash, rules_version, status, total)
-                           VALUES (?,?,?,?,?,?,?,?)""", (job_id, iso(utcnow()), "ALL" if ids is None else "SELECTED", json.dumps(sel),
-                                                         contract.config_hash(cfg), version, "RUNNING", len(sel)))
+        items = []
+        for sid in sel:
+            r = self.db.one("SELECT id, symbol, timeframe, data_sha256 FROM pattern_samples WHERE id=? AND deleted=0", (sid,))
+            items.append({"sample_id": sid, "sample_sha": r["data_sha256"] if r else None, "symbol": r["symbol"] if r else None,
+                          "timeframe": r["timeframe"] if r else None})
+        manifest = {"schema": "mq-db-job-manifest-1", "job_id": job_id, "rules_version": version, "config": dict(cfg),
+                    "config_hash": contract.config_hash(cfg), "items": items, "created_at": iso(utcnow())}
+        msha = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+        self.db.execute("""INSERT INTO pattern_jobs(job_id, created_at, kind, sample_ids, config_hash, rules_version, status, total, manifest, manifest_sha)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""", (job_id, iso(utcnow()), "ALL" if ids is None else "SELECTED", json.dumps(sel),
+                                                             contract.config_hash(cfg), version, "RUNNING", len(sel), json.dumps(manifest), msha))
+        self._spawn(job_id)
+        return {"ok": True, "job_id": job_id, "total": len(sel), "config_hash": contract.config_hash(cfg), "rules_version": version, "manifest_sha": msha,
+                "message": "Biblioteka pusta – zadanie zakończy się COMPLETED z total=0" if not sel else None}
+
+    def _spawn(self, job_id: str) -> None:
         ev = threading.Event()
         with self._lock:
             self._jobs[job_id] = {"cancel": ev}
-        threading.Thread(target=self._run, args=(job_id, sel, dict(cfg), version, ev), name=f"db-job-{job_id}", daemon=True).start()
-        return {"ok": True, "job_id": job_id, "total": len(sel), "config_hash": contract.config_hash(cfg), "rules_version": version}
+        threading.Thread(target=self._run, args=(job_id, ev), name=f"db-job-{job_id}", daemon=True).start()
+
+    def mark_interrupted(self) -> int:
+        """Startup: a RUNNING/QUEUED job without a live thread was interrupted (process restart) - never reported as complete."""
+        live = set(self._jobs)
+        rows = self.db.query("SELECT job_id FROM pattern_jobs WHERE status IN ('RUNNING','QUEUED')")
+        n = 0
+        for r in rows:
+            if r["job_id"] not in live:
+                self.db.execute("UPDATE pattern_jobs SET status='INTERRUPTED' WHERE job_id=?", (r["job_id"],))
+                n += 1
+        return n
+
+    def resume(self, job_id: str) -> dict:
+        j = self.db.one("SELECT status, manifest FROM pattern_jobs WHERE job_id=?", (job_id,))
+        if not j:
+            return {"ok": False, "error": "JOB_NOT_FOUND"}
+        if j["status"] not in ("INTERRUPTED", "CANCELLED", "FAILED_EXECUTION"):
+            return {"ok": False, "error": f"NOT_RESUMABLE: {j['status']}"}
+        if not j["manifest"]:
+            return {"ok": False, "error": "LEGACY_JOB_WITHOUT_MANIFEST"}
+        self.db.execute("UPDATE pattern_jobs SET status='RUNNING', resumed=resumed+1, finished_at=NULL WHERE job_id=?", (job_id,))
+        self._spawn(job_id)
+        return {"ok": True, "job_id": job_id, "resumed": True}
 
     def cancel(self, job_id: str) -> bool:
         j = self._jobs.get(job_id)
@@ -145,80 +182,144 @@ class PatternLibrary:
             return True
         return False
 
-    def _run(self, job_id: str, ids: list[int], cfg: dict, version: str, cancel: threading.Event) -> None:
+    @staticmethod
+    def _result_id(job_id: str, sid: int) -> str:
+        return "DBRES-" + hashlib.sha256(f"{job_id}|{sid}".encode()).hexdigest()[:16]
+
+    def _counts(self, job_id: str) -> dict:
         counts = {s: 0 for s in DB.STATUSES} | {"ERROR": 0, "MISSING": 0}
-        rows = []
+        for r in self.db.query("SELECT status, COUNT(*) AS n FROM pattern_results WHERE job_id=? GROUP BY status", (job_id,)):
+            counts[r["status"]] = counts.get(r["status"], 0) + r["n"]
+        return counts
+
+    def _run(self, job_id: str, cancel: threading.Event) -> None:
+        j = self.db.one("SELECT manifest FROM pattern_jobs WHERE job_id=?", (job_id,))
+        man = json.loads(j["manifest"])
+        cfg, items = man["config"], man["items"]
+        self.db.execute("UPDATE pattern_jobs SET status='RUNNING' WHERE job_id=?", (job_id,))
+        done = {r["sample_id"] for r in self.db.query("SELECT sample_id FROM pattern_results WHERE job_id=?", (job_id,))}
         status = "COMPLETED"
         try:
-            for k, sid in enumerate(ids):
+            for it in items:
+                if it["sample_id"] in done:
+                    continue                                    # resume: same manifest, no duplicated results
                 if cancel.is_set():
                     status = "CANCELLED"
                     break
-                s = self.get(sid)
-                if not s:
-                    counts["MISSING"] += 1                      # deleted sample / gap in ids: reported, not fatal
-                    st, res = "MISSING", {"error": "SAMPLE_NOT_FOUND_OR_DELETED"}
+                sid = it["sample_id"]
+                s = self.db.one("SELECT * FROM pattern_samples WHERE id=?", (sid,))   # deleted later -> still reproducible from the row
+                if not s or it["sample_sha"] is None or s["data_sha256"] != it["sample_sha"]:
+                    st, res = "MISSING", {"error": "SAMPLE_NOT_FOUND" if not s else "SAMPLE_REVISION_MISMATCH"}
                 else:
-                    r = DB.validate(s["bars"], cfg, symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
-                    if r["status"] == "error":
-                        st = "ERROR"
-                    else:
-                        st = r["values"]["status"] if r["values"]["status"] in DB.STATUSES else "ERROR"
-                    counts[st] += 1
+                    r = DB.validate(json.loads(s["bars"]), cfg, symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
+                    st = "ERROR" if r["status"] == "error" else (r["values"]["status"] if r["values"]["status"] in DB.STATUSES else "ERROR")
                     res = r
-                self.db.execute("INSERT OR REPLACE INTO pattern_results(job_id, sample_id, status, result) VALUES (?,?,?,?)",
-                                (job_id, sid, st, json.dumps(res, default=str)))
-                rows.append((sid, s["symbol"] if s else None, s["timeframe"] if s else None, st, res))
-                self.db.execute("UPDATE pattern_jobs SET progress=?, counts=? WHERE job_id=?", (k + 1, json.dumps(counts), job_id))
+                usable = (res.get("values") or {}).get("usable_at") if isinstance(res, dict) else None
+                self.db.execute("INSERT OR IGNORE INTO pattern_results(job_id, sample_id, status, result, result_id, sample_sha, usable_at, created_at) "
+                                "VALUES (?,?,?,?,?,?,?,?)", (job_id, sid, st, json.dumps(res, default=str), self._result_id(job_id, sid), it["sample_sha"],
+                                                            usable, iso(utcnow())))
+                c = self._counts(job_id)
+                self.db.execute("UPDATE pattern_jobs SET progress=?, counts=? WHERE job_id=?", (sum(c.values()), json.dumps(c), job_id))
         except Exception as exc:                                 # program error != pattern FAILED
             status = "FAILED_EXECUTION"
             self.db.execute("UPDATE pattern_jobs SET error=? WHERE job_id=?", (f"{type(exc).__name__}: {exc}"[:500], job_id))
-        report_id = f"DBR-{utcnow().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
-        export = "OK"
-        try:
-            self._write_report(report_id, job_id, ids, rows, counts, cfg, version, status)
-        except OSError as exc:
-            export = f"EXPORT_FAILED: {type(exc).__name__}"
-        self.db.execute("UPDATE pattern_jobs SET status=?, counts=?, report_id=?, export_status=?, finished_at=? WHERE job_id=?",
-                        (status, json.dumps(counts), report_id if export == "OK" else None, export, iso(utcnow()), job_id))
+        c = self._counts(job_id)
+        self.db.execute("UPDATE pattern_jobs SET status=?, counts=?, progress=?, finished_at=? WHERE job_id=?",
+                        (status, json.dumps(c), sum(c.values()), iso(utcnow()), job_id))
+        self.export(job_id)                                     # export success is separate from validation success
         with self._lock:
             self._jobs.pop(job_id, None)
 
-    def _write_report(self, report_id, job_id, ids, rows, counts, cfg, version, status) -> None:
+    def export(self, job_id: str) -> dict:
+        """(Re)write the JSON + CSV report from STORED results - no validation is run. A failure keeps the results (EXPORT_FAILED)."""
+        j = self.job(job_id)
+        if not j:
+            return {"ok": False, "error": "JOB_NOT_FOUND"}
+        report_id = f"DBR-{utcnow().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
+        try:
+            rid = self._write_report(report_id, j)
+            self.db.execute("UPDATE pattern_jobs SET report_id=?, export_status='OK' WHERE job_id=?", (rid, job_id))
+            return {"ok": True, "report_id": rid}
+        except OSError as exc:
+            self.db.execute("UPDATE pattern_jobs SET export_status=? WHERE job_id=?", (f"EXPORT_FAILED: {type(exc).__name__}", job_id))
+            return {"ok": False, "error": f"EXPORT_FAILED: {type(exc).__name__}"}
+
+    def results(self, job_id: str) -> list[dict]:
+        rows = self.db.query("SELECT result_id, sample_id, status, sample_sha, usable_at, created_at FROM pattern_results WHERE job_id=? ORDER BY sample_id", (job_id,))
+        return rows
+
+    def result(self, result_id: str) -> dict | None:
+        r = self.db.one("SELECT pr.*, pj.rules_version, pj.config_hash, pj.manifest_sha FROM pattern_results pr JOIN pattern_jobs pj ON pj.job_id=pr.job_id "
+                        "WHERE pr.result_id=?", (result_id,))
+        if r:
+            r["result"] = json.loads(r["result"])
+        return r
+
+    def latest_result(self, sid: int) -> dict | None:
+        r = self.db.one("SELECT result_id FROM pattern_results WHERE sample_id=? AND result_id IS NOT NULL ORDER BY id DESC LIMIT 1", (sid,))
+        return self.result(r["result_id"]) if r else None
+
+    @staticmethod
+    def _safe_cell(v):
+        """Spreadsheet-safe cell: text starting with = + - @ TAB CR is prefixed with ' (formula injection)."""
+        if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + v
+        return v
+
+    def _write_report(self, report_id, j) -> str:
         d = lib_dir() / "reports"
         base = d / report_id
         if base.with_suffix(".json").exists():                  # collision guard: never overwrite a report
             base = d / f"{report_id}-{uuid.uuid4().hex[:4]}"
-        rep = {"report_id": base.name, "job_id": job_id, "created_at": iso(utcnow()), "job_status": status, "complete": status == "COMPLETED",
-               "rules_version": version, "config": cfg, "config_hash": contract.config_hash(cfg), "samples_requested": len(ids),
-               "samples_processed": len(rows), "counts": counts,
-               "results": [{"sample_id": sid, "symbol": sym, "timeframe": tf, "status": st,
-                            "pattern_id": (res.get("values") or {}).get("pattern_id") if isinstance(res, dict) else None,
-                            "reason": ((res.get("values") or {}).get("reason") if res.get("values") else res.get("reason") or res.get("error")) if isinstance(res, dict) else None,
-                            "coordinates": (res.get("values") or {}).get("coordinates") if isinstance(res, dict) else None,
-                            "measurements": (res.get("values") or {}).get("measurements") if isinstance(res, dict) else None}
-                           for sid, sym, tf, st, res in rows]}
+        man = json.loads(j["manifest"]) if j.get("manifest") else None
+        rows = self.db.query("SELECT pr.result_id, pr.sample_id, pr.status, pr.result, ps.symbol, ps.timeframe FROM pattern_results pr "
+                             "LEFT JOIN pattern_samples ps ON ps.id = pr.sample_id WHERE pr.job_id=? ORDER BY pr.sample_id", (j["job_id"],))
+        counts = j["counts"] or {}
+        processed = sum(counts.values())
+        res = []
+        for r in rows:
+            x = json.loads(r["result"])
+            v = x.get("values") or {}
+            res.append({"result_id": r["result_id"], "sample_id": r["sample_id"], "symbol": r["symbol"], "timeframe": r["timeframe"], "status": r["status"],
+                        "pattern_id": v.get("pattern_id"), "reason": v.get("reason") if v else x.get("reason") or x.get("error"),
+                        "coordinates": v.get("coordinates"), "measurements": v.get("measurements"), "usable_at": v.get("usable_at")})
+        rep = {"report_id": base.name, "job_id": j["job_id"], "created_at": iso(utcnow()), "job_status": j["status"], "complete": j["status"] == "COMPLETED",
+               "rules_version": j["rules_version"], "manifest_sha": j.get("manifest_sha"), "config": (man or {}).get("config"), "config_hash": j["config_hash"],
+               "source": "pattern_library (manual selection – nie rynkowy win rate)", "samples_requested": j["total"], "processed": processed,
+               "pending": j["total"] - processed, "counts": counts, "results": res,
+               "message": "Biblioteka pusta (total=0)" if j["total"] == 0 else None}
         tmp = base.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(rep, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(base.with_suffix(".json"))
-        with open(base.with_suffix(".csv"), "w", newline="", encoding="utf-8") as fh:
+        head = ["result_id", "sample_id", "symbol", "timeframe", "status", "pattern_id", "reason", "bottom1", "bottom2", "neckline", "depth", "usable_at"]
+
+        def line(r):
+            co = r["coordinates"] or {}
+            return [r["result_id"], r["sample_id"], r["symbol"], r["timeframe"], r["status"], r["pattern_id"], r["reason"], (co.get("bottom1") or {}).get("price"),
+                    (co.get("bottom2") or {}).get("price"), (co.get("neckline") or {}).get("price"), (r["measurements"] or {}).get("depth"), r["usable_at"]]
+        with open(base.with_suffix(".csv"), "w", newline="", encoding="utf-8") as fh:          # machine-readable (exact values)
             w = csv.writer(fh, quoting=csv.QUOTE_MINIMAL)
-            w.writerow(["sample_id", "symbol", "timeframe", "status", "pattern_id", "reason", "bottom1", "bottom2", "neckline", "depth"])
-            for r in rep["results"]:
-                co = r["coordinates"] or {}
-                w.writerow([r["sample_id"], r["symbol"], r["timeframe"], r["status"], r["pattern_id"], r["reason"],
-                            (co.get("bottom1") or {}).get("price"), (co.get("bottom2") or {}).get("price"), (co.get("neckline") or {}).get("price"),
-                            (r["measurements"] or {}).get("depth")])
+            w.writerow(head)
+            for r in res:
+                w.writerow(line(r))
+        with open(base.parent / f"{base.name}_sheet.csv", "w", newline="", encoding="utf-8-sig") as fh:   # spreadsheet-safe copy
+            w = csv.writer(fh, quoting=csv.QUOTE_ALL)
+            w.writerow(head)
+            for r in res:
+                w.writerow([self._safe_cell(x) for x in line(r)])
+        return base.name
 
     def job(self, job_id: str) -> dict | None:
         r = self.db.one("SELECT * FROM pattern_jobs WHERE job_id=?", (job_id,))
         if r:
             r["counts"] = json.loads(r["counts"]) if r.get("counts") else None
             r["sample_ids"] = json.loads(r["sample_ids"])
+            r["processed"] = sum((r["counts"] or {}).values())
+            r["pending"] = r["total"] - r["processed"]
         return r
 
     def jobs(self, limit: int = 20) -> list[dict]:
-        rows = self.db.query("SELECT job_id, created_at, kind, status, progress, total, counts, report_id, export_status, rules_version, finished_at "
+        rows = self.db.query("SELECT job_id, created_at, kind, status, progress, total, counts, report_id, export_status, rules_version, finished_at, manifest_sha "
                              "FROM pattern_jobs ORDER BY created_at DESC LIMIT ?", (limit,))
         for r in rows:
             r["counts"] = json.loads(r["counts"]) if r.get("counts") else None

@@ -22,6 +22,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("indicator_context", "Kontekst wskaźników (SAR + IQ/PAL): kalibracja SAR i model reakcji P(TP1 przed SL)"),
          ("ml_scalp", "Scalp ML: XGBoost P(dodatni wynik netto cyklu) + net_R, osobno LONG/SHORT"),
          ("neural_scalp", "Neural Scalp System: TCN M1/M5 + kontekst – P(TP1/SL/TIMEOUT) i net_R kandydata scalp"),
+         ("structure_intelligence", "Structure Intelligence: ruch M1 h=3/5/15 (LOGREG/XGB/ResNeXt/SEW/SEW-EB) + kontekst setupu"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
@@ -370,6 +371,34 @@ def t_neural_scalp(run: Run, inst: str) -> None:
             unit={"task": "P(TP1_FIRST/SL_FIRST/TIMEOUT) + E[net_R]", "tf": "M1 128 + M5 32 (+M15/H1)", "horizons": "max hold profilu", "side": "głowice LONG/SHORT"})
 
 
+def t_structure_intelligence(run: Run, inst: str) -> None:
+    """PMW-UPD-07 STRUCTURE_MOVE_M1_V1 + SCALP_STRUCTURE_CONTEXT_V1: dataset + frozen protocol; holdout not opened; never selected."""
+    tid, plan = f"{inst}:structure_intelligence", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_structure_intelligence.json"
+    com = plan["commissions"].get(inst)
+    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    cmd = [core.bot_python(), "-m", "masterquo", "structure-intelligence", "pipeline", "--asset", inst, "--dataset", str(ds), "--out", str(out),
+           "--profile", prof] + (["--allow-synthetic-fixture"] if plan["synthetic"] else []) + (["--commission", str(com)] if com is not None else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_structure_intelligence")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if not rep:
+        return _fail(run, tid, f"structure-intelligence kod {rc}: {tail}")
+    st = {k: v.get("status") for k, v in rep["tasks"].items()}
+    q = ("TEST_TECHNICZNY" if plan["synthetic"] else "BRAK_PRZESLANEK" if all(v in ("INSUFFICIENT_EVIDENCE", "NO_SETUP", "BLOCKED_COSTS", "BLOCKED_NO_TICK_HISTORY")
+                                                                              for v in st.values())
+         else "DO_OCENY_NA_DEV")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="ZAPISANY_DO_BADAN",
+            model_id=(rep["tasks"].get("STRUCTURE_MOVE_M1_V1") or {}).get("run_id"),
+            detail=f"zadania {json.dumps(st)}; profil {prof}{' (niepełny smoke)' if prof == 'quick' else ''}; holdout tylko przez evaluate-holdout; SHADOW ręcznie",
+            unit={"task": "P(DOWN/FLAT/UP) + q10/q50/q90 r_h/ATR; setup TP1/SL/TIMEOUT", "tf": "M1 128 + M5/M15/H1 point-in-time", "horizons": "3/5/15 świec M1",
+                  "side": "kierunek ruchu (nie zlecenie)"})
+
+
 def t_activate(run: Run, inst: str) -> None:
     """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
     tid, plan = f"{inst}:activate", run.state["plan"]
@@ -473,6 +502,7 @@ def _wait(pred, timeout: float, step: float = 3.0) -> bool:
 
 STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scalp_A": t_scalp, "ml": t_ml, "lab": t_lab,
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
+         "structure_intelligence": t_structure_intelligence,
          "activate": t_activate, "bot": t_bot}
 
 

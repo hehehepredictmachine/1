@@ -347,17 +347,124 @@
    "update_id": "PMW-UPD-07-STRUCTURE",
    "spec_file": "PepeMarketWizard_STRUCTURE_CANDLES_FULL_SYSTEM_CLAUDE_CODE.md",
    "spec_sha256": "56b217634750c4c4dc91e551714e6fb924e94512dcd5580dd387a12aa6a2ba7e",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "R01": "IMPLEMENTED (snapshot SI przypięty do parent MTF snapshot, as_of/known_at, prefix invariance – testy T02/T03)",
+    "R02": "VERIFIED (STRUCTURE_CAUSAL_V2: pivoty 3/3+5/5, HH/HL/LH/LL, BOS/STRUCTURE_CHANGE/SWEEP, automat A-07-01, LEGACY_COMPAT bez zmian)",
+    "R03": "VERIFIED (SCI2 role, grupy dowodów, brak sygnału ze świecy)",
+    "R04": "IMPLEMENTED (STRUCTURE_MOVE_M1_V1 h=3/5/15, kwantyle, SCALP_STRUCTURE_CONTEXT_V1 z NO_SETUP; archiwum prognoz i dojrzewanie)",
+    "R05": "VERIFIED (Black-76 2.0.0: parytet, granice, degeneracje, IV solver, forward z parytetu)",
+    "R06": "VERIFIED (MITP 32 węzły, dwustopniowe potwierdzenie, NO_ENABLED_SIGNALS, checkpoint == batch; parytet R38 UNVERIFIED)",
+    "R07": "VERIFIED (manifest, INTERRUPTED/resume, result_id, usable_at, eksport oddzielny, bezpieczny CSV, DB-1.2.0-BUF, pattern_events_v2)",
+    "R08": "IMPLEMENTED (SHOW ON CHART z zapisanego wyniku, REVALIDATE jawny, blokada przy niezgodnym hashu)",
+    "R09": "VERIFIED (ZoneStore 2.0: epizody, idempotencja, checkpoint, rewizje, tombstone, snapshot fsync/.bak, lista as-of)",
+    "R10": "VERIFIED (MQ_SEW_RESNET1D_V2: LIF/BPTT, SEW ADD tożsamość, RESET_EACH_WINDOW, VJP niezależny)",
+    "R11": "VERIFIED (MQ_RESNEXT1D_V2, MQ_SEW_RESNEXT_EB_V1: grouped bottleneck, kara aktywności z gradientem, telemetria, energy NOT_MEASURED)",
+    "R12": "VERIFIED (Manual Pad: plan/sizing/tick, intent, idempotencja, PAPER, LOCKED blokuje realne mutacje; realne MT5 NOT_RUN)",
+    "R13": "IMPLEMENTED (macierz struktury w istniejącym MTF, rozbieżności, karta prognozy, strona #/struktura)",
+    "R14": "IMPLEMENTED (protokół SI-PROTO-1.0.0, CLI structure-intelligence, evaluate-holdout jednorazowy, train-all etap structure_intelligence)",
+    "R15": "VERIFIED (K01–K18, K36, get_structure_intelligence, prompt 1.6.0)",
+    "R16": "PARTIAL (migracja 0021, docs, launcher 26; paczka Windows przy wydaniu zbiorczym)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "Struktura v2 + automat formacji, SCI2, Black-76 2.0, MITP 32, biblioteka DB z manifestem, strefy Part V+, sieci ResNeXt/SEW/SEW-EB, zadania ruchu M1 i kontekstu setupu, Manual Trade Pad, MTF + agent",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5: NOT_RUN (brak terminala w środowisku)",
+    "data": "BRAK eksportu REAL_USER_DATA",
+    "training": "NOT_RUN (tylko smoke na danych syntetycznych – TEST_ONLY)",
+    "artifacts": "BRAK (tylko TEST_ONLY w testach)",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_EVALUATED"
+   },
+   "files": [
+    "backend/masterquo/analysis/{structure_v2,sci2,mitp,structure_knowledge}.py",
+    "backend/masterquo/analytics/black76.py",
+    "backend/masterquo/analytics/{double_bottom,library,service}.py",
+    "backend/masterquo/lab/{structure_nets,structure_task,structure_cli,si_service,zones,service}.py",
+    "backend/masterquo/execution/{manual,gateway}.py",
+    "backend/masterquo/db/migrations/0021_structure_intelligence.sql",
+    "backend/masterquo/scalp/dashboard.py, runtime.py, engine/service.py, agent/{service,tools}.py + prompt 1.6.0",
+    "backend/masterquo/api/app.py (/structure-intelligence, /manual, /black76, /lab/zones, /patterns/results)",
+    "backend/masterquo/training/runner.py, train_all.py",
+    "frontend/src/components/StructureIntel.tsx, pages/{ScalpMtfPage,AnalyticsPages}.tsx, router.ts",
+    "26_STRUCTURE_INTELLIGENCE.bat",
+    "docs/STRUCTURE_INTELLIGENCE_PL.md",
+    "tests/test_structure_v2.py",
+    "tests/test_structure_intelligence.py",
+    "tests/test_ui_lab.py::test_10_structure_intelligence"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_structure_v2 test_structure_intelligence",
+     "result": "35/35 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_10_structure_intelligence test_02 test_08",
+     "result": "3/3 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Lokalnie: eksport REAL_USER_DATA (00_TRENING_START.bat) → 26_STRUCTURE_INTELLIGENCE.bat (2, 4, 2, 5) → raport → ręczny wybór SHADOW; holdout tylko evaluate-holdout."
   },
   "PMW-UPD-08-NEUTRAL-NEWTON": {
    "update_id": "PMW-UPD-08-NEUTRAL-NEWTON",
    "spec_file": "PepeMarketWizard_CLAUDE_CODE_NEUTRALIZATION_SEW_NEWTONIAN.md",
    "spec_sha256": "479ea957595a7742723e759b084d7a2993ad10d29b46215a916349858539c880",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "R17": "VERIFIED (score-before-update, OLS SVD z interceptem, stany awarii, z-score z wcześniejszych strumieni, checkpoint/reset, diagnostyka poza oknem, eksperyment MQ_NEUTRAL_REACTION_V1 na tych samych wierszach)",
+    "R18": "VERIFIED (ADD/AND/IAND forward/backward, orientacja IAND, identity init sprawdzany wielokrokowo, DOMAIN_MISMATCH, projekcja+SN, manifest connect_f, warianty --sew-operators)",
+    "R19": "IMPLEMENTED (MQ_NEWTONIAN_QUOTES_V2: kubełki per strona, Kish 16/64/256, SE klasyczne + RW/kwantyzacja (sumy sufiksowe), spread, punkt zwrotu, faza z histerezą, strumień prognoz + scoreboard, archiwum ticków NPZ + replay, MQ_QUOTE_CONTEXT_REACTION_V1 z BLOCKED_NO_TICK_HISTORY; rzeczywiste ticki MT5 NOT_RUN)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "Rolling neutralization sygnału, operatory SEW ADD/AND/IAND, kinematyka Bid/Ask z niepewnością i scoreboardem, eksperymenty reakcji",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5 ticki: NOT_RUN (brak terminala)",
+    "data": "BRAK archiwum ticków / REAL_USER_DATA",
+    "training": "NOT_RUN (smoke TEST_ONLY)",
+    "artifacts": "BRAK",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_EVALUATED",
+    "parity": "NewtonianMechanics MQ5: UNVERIFIED (źródła nieodczytane)"
+   },
+   "files": [
+    "backend/masterquo/analysis/neutralization.py",
+    "backend/masterquo/lab/structure_nets.py (sew_merge_*)",
+    "backend/masterquo/lab/quotes.py",
+    "backend/masterquo/lab/tick_store.py",
+    "backend/masterquo/lab/structure_task.py (train_experiment, expand_families)",
+    "backend/masterquo/lab/si_service.py",
+    "backend/masterquo/mt5/bridge.py (ticks_range, time_msc)",
+    "backend/masterquo/db/migrations/0022_neutral_quotes.sql",
+    "backend/masterquo/analysis/structure_knowledge.py (K19–K24) + prompt 1.7.0",
+    "backend/masterquo/api/app.py",
+    "backend/masterquo/lab/structure_cli.py",
+    "frontend/src/components/StructureIntel.tsx",
+    "26_STRUCTURE_INTELLIGENCE.bat",
+    "docs/NEUTRALIZATION_SEW_NEWTONIAN_PL.md",
+    "tests/test_signal_neutralization.py",
+    "tests/test_sew_operators.py",
+    "tests/test_quote_kinematics.py",
+    "tests/test_ui_lab.py::test_11_neutral_sew_quotes"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_signal_neutralization test_sew_operators test_quote_kinematics test_structure_intelligence test_structure_v2",
+     "result": "64/64 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_10_structure_intelligence test_11_neutral_sew_quotes",
+     "result": "2/2 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Lokalnie: job tick_export (panel) → tick-replay → eksperymenty; trening SEW ADD/AND/IAND na REAL_USER_DATA; wybór wariantu tylko na dev."
   },
   "PMW-UPD-09-SPIKE-MINI": {
    "update_id": "PMW-UPD-09-SPIKE-MINI",

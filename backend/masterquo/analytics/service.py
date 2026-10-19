@@ -35,6 +35,7 @@ class AnalyticsService:
     def __init__(self, cfg_store, bridge, db, bus, log):
         self.cfg_store, self.bridge, self.db, self.bus, self.log = cfg_store, bridge, db, bus, log
         self.library = PatternLibrary(db, self.db_cfg)
+        self.library.mark_interrupted()                 # a job RUNNING before a restart is INTERRUPTED (resumable), never complete
         self.state: dict[str, dict] = {}
         self.keys: dict[str, str] = {}
         self.pending: dict[str, tuple] = {}
@@ -205,6 +206,14 @@ class AnalyticsService:
         self.db.execute("""INSERT OR IGNORE INTO pattern_events(created_at, pattern_id, symbol, timeframe, status, available_at, payload)
                            VALUES (?,?,?,?,?,?,?)""", (iso(utcnow()), v["pattern_id"], d["symbol"], d["timeframe"], v["status"], d["available_at"],
                                                       json.dumps(_strip(d), default=str)))
+        # v2 history (PMW-UPD-07 R07): every status CHANGE per (pattern, rules version, config) is kept, incl. later cycles
+        ver, ch = d.get("algorithm_version") or "?", d.get("config_hash") or "?"
+        last = self.db.one("SELECT status FROM pattern_events_v2 WHERE pattern_id=? AND rules_version=? ORDER BY id DESC LIMIT 1", (v["pattern_id"], ver))
+        if not last or last["status"] != v["status"]:
+            n = self.db.one("SELECT COUNT(*) AS n FROM pattern_events_v2 WHERE pattern_id=? AND rules_version=?", (v["pattern_id"], ver))["n"]
+            self.db.execute("""INSERT OR IGNORE INTO pattern_events_v2(created_at, event_key, pattern_id, rules_version, symbol, timeframe, status, available_at, payload)
+                               VALUES (?,?,?,?,?,?,?,?,?)""", (iso(utcnow()), f"{v['pattern_id']}|{ver}|{ch}|{n}|{v['status']}", v["pattern_id"], ver,
+                                                             d["symbol"], d["timeframe"], v["status"], d["available_at"], json.dumps(_strip(d), default=str)))
 
     # ------------------------------------------------------------ views
     def tf_state(self, tf: str, full: bool = False) -> dict:

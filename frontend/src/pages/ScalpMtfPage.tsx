@@ -7,6 +7,7 @@ import MtfChart from "../components/MtfChart";
 import { href, usePersisted } from "../router";
 import { useStore } from "../store";
 import { cls, fmtNum, fmtTime } from "../util";
+import { StructureMatrix } from "../components/StructureIntel";
 
 const STATUS_PL: Record<string, string> = { OK: "OK", STALE: "nieaktualne", DISCONNECTED: "rozłączone", MISSING: "brak danych", WARMING_UP: "rozgrzewka",
   NOT_APPLICABLE: "nie dotyczy", MET: "spełniony", MISSING_C: "brakuje", CONFLICT: "sprzeczny", UNKNOWN: "nieznany", DEGRADED: "częściowo" };
@@ -115,6 +116,8 @@ export default function ScalpMtfPage({ params }: { params?: URLSearchParams }) {
         <p className="small">Filtr kontekstu strategii (jak w silniku): LONG {snap.context_filter?.BUY?.status} – {snap.context_filter?.BUY?.detail}; SHORT {snap.context_filter?.SELL?.status} – {snap.context_filter?.SELL?.detail}.
           Stan maszyny: <b>{STATE_PL[machine?.state] ?? machine?.state ?? "—"}</b>{machine?.range ? ` · zakres ${machine.range.range_id} L ${fmtNum(machine.range.L, 2)} H ${fmtNum(machine.range.H, 2)} (ważny do ${machine.range.ttl_end?.slice(11, 16)})` : ""}</p>
       </div>}
+
+      {snap && <StructureMatrix snap={snap} />}
 
       {snap && <div className={cls("mtf-grid", !narrow && "with-side")}>
         <div className={cls("mtf-charts", `n${shown.length}`)}>

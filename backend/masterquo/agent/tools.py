@@ -49,6 +49,10 @@ TOOL_DEFS = [
           "czasem potwierdzenia i dostępności) oraz strefy szacowanej heatmapy likwidacji zamrożone w snapshocie; reason codes polityki "
           "OBSERVE i zastosowane reguły LQ-K. Heatmapa obcego instrumentu bez mapowania jest na osi źródła.",
           {"timeframe": {"type": "string", "enum": ["M1", "M5", "M15", "H1"]}}, ["timeframe"]),
+    _tool("get_structure_intelligence", "Snapshot Structure Intelligence (STRUCTURE_CAUSAL_V2, SCI2, MITP, strefy, prognoza STRUCTURE_MOVE_M1_V1 "
+          "tylko z wybranego modelu SHADOW) dla podanego snapshot_id lub najnowszego ('latest'): fakty per TF z evidence IDs, rozbieżności MTF, "
+          "zastosowane reguły K. Bez modelu brak procentów; agent nie ma dostępu do zleceń ani treningu.",
+          {"snapshot_id": {"type": "string"}}, ["snapshot_id"]),
     _tool("get_signal_history", "Ostatnie setupy i ich wyniki (rozliczone/unieważnione) oraz zapisane wnioski.",
           {"limit": {"type": "integer"}}, ["limit"]),
 ]
@@ -228,6 +232,21 @@ class Toolbox:
             raise ToolError("TIMEFRAME_INVALID")
         c = self.ctx.get("liquidity_context")
         return dict(c, timeframe_view=timeframe, note="te same boksy/ID na każdym TF (zmienia się tylko prezentacja)") if c else {"status": "UNAVAILABLE"}
+
+    def t_get_structure_intelligence(self, snapshot_id: str) -> dict:
+        from ..analysis import structure_knowledge as sk
+        if not isinstance(snapshot_id, str) or len(snapshot_id) > 40:
+            raise ToolError("SNAPSHOT_ID_INVALID")
+        fn = self.ctx.get("structure_snapshot_fn")
+        snap = fn(snapshot_id) if fn else None
+        if snap is None:
+            return {"status": "UNAVAILABLE", "snapshot_id": snapshot_id, "rules": ["K01", "K15"]}
+        out = sk.explain(snap)
+        out["cells"] = {tf: {k: c.get(k) for k in ("status", "last_closed_open", "structure", "pattern", "candle_role", "mitp", "zone")}
+                        for tf, c in (snap.get("cells") or {}).items()}
+        out["neutralization"] = snap.get("neutralization")
+        out["quotes"] = snap.get("quotes")
+        return out
 
     def t_get_signal_history(self, limit: int) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 30:

@@ -11,6 +11,7 @@ import BotChartsPage from "./pages/BotChartsPage";
 import SetupRequirementsPage from "./pages/SetupRequirementsPage";
 import { ContextPage, DashboardPage, DiagnosticsPage, IndicatorsPage, JournalPage, PatternsPage, PositionsPage, SignalAnalysisPage, TestsPage } from "./pages/AnalyticsPages";
 import { NeuralPage } from "./components/NeuralSystem";
+import { StructurePage } from "./components/StructureIntel";
 import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { PAGES, useRoute } from "./router";
@@ -52,6 +53,7 @@ export default function App() {
           {route.page === "setupy" && <SetupsPage />}
           {route.page === "modele" && <ModelsPage />}
           {route.page === "neural" && <NeuralPage params={route.params} />}
+          {route.page === "struktura" && <StructurePage />}
           {route.page === "badania" && <ResearchPage />}
           {route.page === "dane" && <DataPage />}
           {route.page === "ustawienia" && <LabSettingsPage />}

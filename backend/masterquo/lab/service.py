@@ -103,12 +103,11 @@ class LabService:
         if len(bars["M15"]) >= 20:
             mods["M15"]["sessions"] = sessions.session_boxes(bars["M15"], "M15", asset)
         # zones (persisted)
-        zl = []
         for tf in ("M15", "H1"):
             if len(bars[tf]) >= 60:
-                z = detect_zones(bars[tf], tf, asset)
-                self.zones.save(asset, z, sym)
-                zl += z
+                self.zones.save(asset, detect_zones(bars[tf], tf, asset), sym)       # discovery only (stored lifecycle never overwritten)
+                self.zones.process(asset, tf, bars[tf])                              # incremental lifecycle from each zone's checkpoint
+        zl = self.zones.list_asof(asset)                                             # store as-of, not only the last detect() window
         # Fourier with point-in-time archive
         fx = {}
         for tf in ("M15", "H1"):

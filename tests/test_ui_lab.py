@@ -116,7 +116,7 @@ class TestLabUI(unittest.TestCase):
 
     def test_02_backend_locks_and_allowlist(self):
         st, j = self.send("POST", "/api/v1/lab/tradepad/execute", {"side": "BUY"})
-        self.assertEqual(st, 403)
+        self.assertEqual(st, 400)                                   # PMW-UPD-07: explicit routing - an intent is required (no blind order)
         st, _ = self.send("POST", "/api/v1/execution/lock", {"lock": "UNLOCKED_BY_USER", "phrase": "zle"})
         self.assertEqual(st, 403)
         st, _ = self.send("PUT", "/api/v1/config", {"execution": {"lock": "UNLOCKED_BY_USER"}})
@@ -303,6 +303,59 @@ class TestLabUI(unittest.TestCase):
         self.assertIn("XAUT", txt)
         p.wait_for_selector("[data-testid=liq-context] [data-testid=liq-codes]")
         self.assertIn("OBSERVE", p.inner_text("[data-testid=liq-context]"))
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
+    def test_10_structure_intelligence(self):
+        """PMW-UPD-07: structure cells attached to the SAME parent MTF snapshot; Structure page; Manual Pad PAPER plan->intent->execute
+        (synthetic feed, no order_send), duplicate click; Execution Lock untouched."""
+        self.assertTrue(wait_for(lambda: ((self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("structure_intelligence") or {}).get("snapshot_id"), 90, 1.0))
+        snap = self.api("/api/v1/scalp/dashboard")["snapshot"]
+        si = snap["structure_intelligence"]
+        self.assertEqual(si["parent_snapshot_id"], snap["snapshot_id"])
+        self.assertEqual({r["structure"]["parent_snapshot_id"] for r in snap["timeframes"]}, {snap["snapshot_id"]})
+        self.assertEqual(si["forecast"]["forecast_status"], "ABSTAIN")                    # no SHADOW model -> no invented numbers
+        self.assertEqual(self.api("/api/v1/structure-intelligence/snapshots/" + si["snapshot_id"])["snapshot_id"], si["snapshot_id"])
+        p = self.page
+        p.goto(BASE + "/#/scalp-mtf")
+        p.wait_for_selector("[data-testid=mtf-structure] tr[data-tf=M5]")
+        self.assertIn("brak", p.inner_text("[data-testid=mtf-forecast]"))
+        p.goto(BASE + "/#/struktura")
+        p.wait_for_selector("[data-testid=si-models]")
+        p.wait_for_selector("[data-testid=zones-manager]")
+        p.screenshot(path=str(SHOTS / "struktura_1366.png"))
+        q = self.api("/api/v1/scalp/dashboard")["snapshot"].get("quote") or {}
+        st, plan = self.send("POST", "/api/v1/manual/plan", {"side": "BUY", "sl": (q.get("ask") or 0) - 5, "tp": (q.get("ask") or 0) + 10, "sizing_mode": "FIXED", "lots": 0.01})
+        if st == 200 and plan["execution_eligible"]:
+            st, it = self.send("POST", "/api/v1/manual/intents", {"plan_id": plan["plan_id"]})
+            self.assertEqual(st, 200, it)
+            st, r1 = self.send("POST", f"/api/v1/manual/intents/{it['intent_id']}/execute", {})
+            st, r2 = self.send("POST", f"/api/v1/manual/intents/{it['intent_id']}/execute", {})
+            self.assertEqual(r2["status"], "DUPLICATE")
+            self.assertIn(r1["status"], ("FILLED", "BLOCKED"))
+        else:
+            self.assertIn(st, (200, 400))                                                   # e.g. COMMISSION_UNKNOWN / QUOTE_STALE explained
+        p.goto(BASE + "/#/pozycje")
+        p.click("text=Manual Trade Pad (jawne akcje użytkownika)")
+        p.wait_for_selector("[data-testid=manual-pad]")
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
+    def test_11_neutral_sew_quotes(self):
+        """PMW-UPD-08: quote kinematics from the SAME bridge (synthetic feed), neutralization section, Structure page cards; Lock untouched."""
+        self.assertTrue(wait_for(lambda: self.api("/api/v1/structure-intelligence/quotes").get("phase"), 90, 1.0))
+        q = self.api("/api/v1/structure-intelligence/quotes")
+        self.assertIn(q["phase"], ("WARMING", "STRESSED", "RETRACEMENT", "EXPANSION", "CONSOLIDATION", "UNDETERMINED"))
+        self.assertEqual(set(q["sides"]), {"BID", "ASK"})
+        self.assertIn("scoreboard", self.api("/api/v1/structure-intelligence/quote-quality"))
+        self.assertTrue(wait_for(lambda: self.api("/api/v1/structure-intelligence/neutralization").get("last"), 90, 1.0))
+        n = self.api("/api/v1/structure-intelligence/neutralization")
+        self.assertEqual(n["profile"], "SIGNAL_NEUTRALIZATION_ROLLING_V1")
+        p = self.page
+        p.goto(BASE + "/#/struktura")
+        p.wait_for_selector("[data-testid=quotes-card] table")
+        p.wait_for_selector("[data-testid=neutral-card]")
+        p.screenshot(path=str(SHOTS / "struktura_quotes_1366.png"))
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 

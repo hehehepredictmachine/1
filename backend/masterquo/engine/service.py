@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import collections
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -521,13 +522,24 @@ class EngineService:
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
-               "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full)}
+               "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
+               "structure_snapshot_fn": self._structure_snapshot}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
             self.contexts[sid] = ctx
             while len(self.contexts) > 12:
                 self.contexts.popitem(last=False)
+
+    def _structure_snapshot(self, sid: str) -> dict | None:
+        """PMW-UPD-07: frozen Structure Intelligence snapshot by id ('latest' = the newest one); read-only."""
+        si = getattr(self, "si", None)
+        if si is None:
+            return None
+        if sid == "latest":
+            return si.last
+        r = self.db.one("SELECT payload FROM si_snapshots WHERE snapshot_id=?", (sid,))
+        return json.loads(r["payload"]) if r else None
 
     def _liquidity_context(self, full) -> dict | None:
         """PMW-UPD-06: session boxes + heatmap snapshot FROZEN at this snapshot (copies; a later map never enters it)."""

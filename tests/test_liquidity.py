@@ -300,7 +300,7 @@ class TestPolicyAndKnowledge(unittest.TestCase):                         # 11.10
         from masterquo.analytics import liquidity_context as lc
         body, ver = load_prompt()
         self.assertIn("LQ-K13", body)
-        self.assertTrue(ver.endswith("+" + lc.KNOWLEDGE_VERSION))
+        self.assertIn("+" + lc.KNOWLEDGE_VERSION, ver)
         fz = lc.frozen(self.final_box("x", h=100.5, l=98.5, c=99.8), None, 99.9, 1.0, "2026-01-15T12:10:00+00:00", max_events=1)
         tb = Toolbox.__new__(Toolbox)
         tb.ctx = {"liquidity_context": fz}

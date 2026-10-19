@@ -434,10 +434,43 @@ def create_app(rt, port: int) -> FastAPI:
                                                   "FROM lab_trials WHERE asset=? ORDER BY created_at DESC LIMIT 200", (a,)),
                 "holdout_access": rt.db.query("SELECT * FROM lab_holdout_access WHERE asset=? ORDER BY at DESC LIMIT 50", (a,))}
 
+    @app.post("/api/v1/lab/zones")
+    def lab_zone_add(body: dict = Body(...)):
+        a = body.get("asset") or rt.cfg.get().assets.active
+        rt.assets.check_asset(a, "ZONES")
+        try:
+            return rt.lab.zones.add_manual(a, str(body["tf"]), str(body["kind"]), float(body["top"]), float(body["bottom"]), str(body["origin_time"]))
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, f"INVALID_ZONE: {exc}") from exc
+
+    @app.patch("/api/v1/lab/zones/{zone_id}")
+    def lab_zone_patch(zone_id: str, body: dict = Body(...)):
+        try:
+            return rt.lab.zones.patch(zone_id, int(body["expected_revision"]), top=body.get("top"), bottom=body.get("bottom"), state=body.get("state"),
+                                      blacklist=body.get("blacklist"), reason=str(body.get("reason") or ""))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/v1/lab/zones/{zone_id}")
+    def lab_zone_delete(zone_id: str, expected_revision: int):
+        try:
+            return rt.lab.zones.delete(zone_id, expected_revision)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/v1/lab/zones/diagnostics")
+    def lab_zone_diag(asset: str | None = None):
+        a = asset or rt.cfg.get().assets.active
+        return rt.lab.zones.diagnostics(a)
+
     @app.get("/api/v1/lab/zones")
     def lab_zones(asset: str | None = None):
         a = _asset(asset)
-        return {"asset": a, "zones": rt.lab.zones.load_db(a)[-100:], "events": rt.lab.zones.events[-10:]}
+        return {"asset": a, "zones": rt.lab.zones.list_asof(a)[-100:], "events": rt.lab.zones.events[-10:], "snapshot": rt.lab.zones.snapshot_status.get(a)}
 
     @app.get("/api/v1/lab/repaint")
     def lab_repaint():
@@ -463,9 +496,173 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/lab/tradepad/execute")
     def lab_tradepad_execute(body: dict = Body(default={})):
-        # deliberately no order path: the trade pad is analytical in this release; refused below the UI too
-        rt.log.warn("EXECUTION", "TRADEPAD_REFUSED", "Trade Pad: próba wykonania odrzucona (Execution Lock / tryb analityczny).")
-        raise HTTPException(403, "EXECUTION_LOCKED_TRADEPAD_SIMULATION_ONLY")
+        """Compatibility adapter: explicit routing to the Manual Pad gates (intent required; LOCKED still blocks real mutations)."""
+        iid = body.get("intent_id")
+        if not iid:
+            raise HTTPException(400, "INTENT_REQUIRED: POST /api/v1/manual/plan → /api/v1/manual/intents → /execute")
+        return manual_execute(str(iid), {"action_revision": body.get("action_revision", 1)})
+
+    # ------------------------------------------------------------ PMW-UPD-07 R12 Manual Trade Pad (explicit user actions only)
+    @app.post("/api/v1/manual/plan")
+    def manual_plan(body: dict = Body(...)):
+        from ..execution.manual import PlanError
+        try:
+            return rt.manual.plan(body)
+        except PlanError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/v1/manual/intents")
+    def manual_intent(body: dict = Body(...)):
+        from ..execution.manual import PlanError
+        try:
+            return rt.manual.create_intent(str(body.get("plan_id")))
+        except PlanError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/v1/manual/intents")
+    def manual_intents():
+        return {"items": rt.manual.intents(30)}
+
+    @app.get("/api/v1/manual/intents/{iid}")
+    def manual_intent_get(iid: str):
+        r = rt.manual.intent(iid)
+        if not r:
+            raise HTTPException(404, "INTENT_NOT_FOUND")
+        return r
+
+    @app.post("/api/v1/manual/intents/{iid}/execute")
+    def manual_execute(iid: str, body: dict = Body(default={})):
+        from ..execution.manual import PlanError
+        try:
+            return rt.manual.execute(iid, int(body.get("action_revision") or 1))
+        except PlanError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/v1/manual/intents/{iid}/manage")
+    def manual_manage(iid: str, body: dict = Body(...)):
+        from ..execution.manual import PlanError
+        try:
+            return rt.manual.manage(iid, str(body.get("action")), int(body.get("action_revision") or 1), offset_points=float(body.get("offset_points") or 0),
+                                    volume=None if body.get("volume") is None else float(body["volume"]))
+        except PlanError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/v1/manual/reconcile")
+    def manual_reconcile():
+        return rt.manual.reconcile()
+
+    # ------------------------------------------------------------ PMW-UPD-07 structure intelligence (GET never trains)
+    def _si_inst(asset):
+        a = asset or rt.cfg.get().assets.active
+        rt.assets.check_asset(a, "STRUCTURE_INTELLIGENCE")
+        return a
+
+    @app.get("/api/v1/structure-intelligence")
+    def si_latest():
+        snap = rt.si.last
+        return {"snapshot": snap, "status": "OK" if snap else "NO_SNAPSHOT_YET",
+                "jobs": [rt.si.job(j) for j in list(rt.si.jobs)[-5:]]}
+
+    @app.get("/api/v1/structure-intelligence/snapshots/{sid}")
+    def si_snapshot(sid: str):
+        r = rt.db.one("SELECT payload FROM si_snapshots WHERE snapshot_id=?", (sid,))
+        if not r:
+            raise HTTPException(404, "SNAPSHOT_NOT_FOUND")
+        return json.loads(r["payload"])
+
+    @app.get("/api/v1/structure-intelligence/forecasts")
+    def si_forecasts(asset: str | None = None, limit: int = Query(50, ge=1, le=500)):
+        return {"items": rt.si.forecasts(_si_inst(asset), limit)}
+
+    @app.get("/api/v1/structure-intelligence/models")
+    def si_models(asset: str | None = None):
+        from ..lab import structure_task as T
+        a = _si_inst(asset)
+        reg = T._reg(a)
+        return {"instrument": a, "shadow": reg.get("shadow"), "runs": reg.get("runs"), "holdout_access": list((reg.get("holdout_access") or {}).keys()),
+                "indicator_profile": T.indicator_profile(a), "families": list(T.FAMILIES_ALL), "execution": "NEVER_AUTOMATIC"}
+
+    @app.post("/api/v1/structure-intelligence/models/select")
+    def si_select(body: dict = Body(...)):
+        from ..lab import structure_task as T
+        try:
+            return T.select_shadow(_si_inst(body.get("asset")), str(body.get("candidate_id")))
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/v1/structure-intelligence/models/rollback")
+    def si_rollback(body: dict = Body(...)):
+        from ..lab import structure_task as T
+        try:
+            return T.rollback(_si_inst(body.get("asset")), str(body.get("task") or T.TASK_MOVE))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/v1/structure-intelligence/neutralization")
+    def si_neutral(asset: str | None = None, limit: int = Query(120, ge=1, le=2000)):
+        return rt.si.neutralization(_si_inst(asset), limit)
+
+    @app.get("/api/v1/structure-intelligence/quotes")
+    def si_quotes():
+        return rt.si.quotes_public()
+
+    @app.get("/api/v1/structure-intelligence/quote-forecasts")
+    def si_quote_fc(limit: int = Query(100, ge=1, le=1000)):
+        return {"items": rt.si.quote_forecasts(limit)}
+
+    @app.get("/api/v1/structure-intelligence/quote-quality")
+    def si_quote_q():
+        return rt.si.quote_quality()
+
+    @app.get("/api/v1/structure-intelligence/quality")
+    def si_quality(asset: str | None = None):
+        return rt.si.quality(_si_inst(asset))
+
+    @app.post("/api/v1/structure-intelligence/jobs")
+    def si_job_start(body: dict = Body(...)):
+        try:
+            return rt.si.start_job(str(body.get("kind")), {k: body.get(k) for k in ("asset", "task", "families", "profile", "experiment", "sew_operators", "days")})
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/v1/structure-intelligence/jobs/{jid}")
+    def si_job(jid: str):
+        j = rt.si.job(jid)
+        if not j:
+            raise HTTPException(404, "JOB_NOT_FOUND")
+        return j
+
+    @app.post("/api/v1/structure-intelligence/jobs/{jid}/cancel")
+    def si_job_cancel(jid: str):
+        return {"ok": rt.si.cancel(jid)}
+
+    # ------------------------------------------------------------ PMW-UPD-07 R05 Black-76 (pure maths; HV is never shown as IV)
+    @app.post("/api/v1/black76/price")
+    def b76_price(body: dict = Body(...)):
+        from ..analytics import black76 as B
+        try:
+            d = B.discount(body.get("rate"), float(body["t_years"]), body.get("discount"))
+            return B.price(float(body["forward"]), float(body["strike"]), float(body["sigma"]), float(body["t_years"]), d)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(400, f"INVALID_INPUT: {exc}") from exc
+
+    @app.post("/api/v1/black76/iv")
+    def b76_iv(body: dict = Body(...)):
+        from ..analytics import black76 as B
+        try:
+            d = B.discount(body.get("rate"), float(body["t_years"]), body.get("discount"))
+            return dict(B.implied_vol(float(body["premium"]), float(body["forward"]), float(body["strike"]), float(body["t_years"]), d,
+                                      str(body.get("kind") or "call")), source="IV_FROM_PREMIUM", version=B.VERSION)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(400, f"INVALID_INPUT: {exc}") from exc
+
+    @app.post("/api/v1/black76/forward")
+    def b76_forward(body: dict = Body(...)):
+        from ..analytics import black76 as B
+        try:
+            return B.forward_from_parity(list(body.get("pairs") or []), float(body.get("discount") or 1.0), exercise_style=str(body.get("exercise_style") or "UNKNOWN"))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"INVALID_INPUT: {exc}") from exc
 
     @app.get("/api/v1/analytics")
     def analytics_get():
@@ -538,6 +735,37 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/patterns/jobs/{job_id}/cancel")
     def pat_cancel(job_id: str):
         return {"ok": rt.analytics.library.cancel(job_id)}
+
+    @app.post("/api/v1/patterns/jobs/{job_id}/resume")
+    def pat_resume(job_id: str):
+        r = rt.analytics.library.resume(job_id)
+        if not r["ok"]:
+            raise HTTPException(409, r["error"])
+        return r
+
+    @app.post("/api/v1/patterns/jobs/{job_id}/export")
+    def pat_export_job(job_id: str):
+        """Re-export the report from STORED results (no validation)."""
+        return rt.analytics.library.export(job_id)
+
+    @app.get("/api/v1/patterns/jobs/{job_id}/results")
+    def pat_job_results(job_id: str):
+        return {"job_id": job_id, "items": rt.analytics.library.results(job_id)}
+
+    @app.get("/api/v1/patterns/results/{result_id}")
+    def pat_result(result_id: str):
+        """Saved immutable result for SHOW ON CHART - never re-analyses (REVALIDATE is the explicit POST validate)."""
+        r = rt.analytics.library.result(result_id)
+        if not r:
+            raise HTTPException(404, "RESULT_NOT_FOUND")
+        return r
+
+    @app.get("/api/v1/patterns/samples/{sid}/result")
+    def pat_sample_result(sid: int):
+        r = rt.analytics.library.latest_result(sid)
+        if not r:
+            raise HTTPException(404, "NO_SAVED_RESULT – najpierw waliduj (VALIDATE / REVALIDATE)")
+        return r
 
     @app.get("/api/v1/patterns/reports/{report_id}")
     def pat_report(report_id: str):

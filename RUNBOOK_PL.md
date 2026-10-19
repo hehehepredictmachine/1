@@ -51,6 +51,16 @@
 - Instrukcja: `docs/indicators/LIQUIDATION_AND_SESSION_SWEEPS_PL.md`, launcher `25_LIQUIDITY.bat`, panel: Wykresy MTF → „Boksy sesji”, „Heatmapa likwidacji”.
 - Klucz CoinGlass wpisujesz lokalnie w panelu (SecretStore) albo jako zmienną `COINGLASS_API_KEY`; bez klucza status MISSING_API_KEY.
 
+## Structure Intelligence, Manual Pad, strefy, biblioteka DB (PMW-UPD-07)
+- Instrukcja: `docs/STRUCTURE_INTELLIGENCE_PL.md`, launcher `26_STRUCTURE_INTELLIGENCE.bat`, panel: Modele i trening → Structure Intelligence (`#/struktura`),
+  Wykresy → Scalping MTF (karta „Struktura, formacje, świece i MITP”), Setupy → Pozycje i ryzyko → „Manual Trade Pad”.
+- Holdout tylko przez `structure-intelligence evaluate-holdout` (jednorazowo). Wybór SHADOW ręcznie; nigdy wykonanie automatyczne.
+- Manual Pad: plan → intencja → wykonanie przez wspólny gateway; Execution Lock LOCKED blokuje każdą zmianę rachunku.
+
+## Neutralizacja, operatory SEW, kinematyka Bid/Ask (PMW-UPD-08)
+- Instrukcja: `docs/NEUTRALIZATION_SEW_NEWTONIAN_PL.md`, launcher `26_STRUCTURE_INTELLIGENCE.bat` (10–14), panel Structure Intelligence.
+- Eksport ticków wykonuje działający bot (job `tick_export`); bez ticków etap kontekstu kwotowań ma BLOCKED_NO_TICK_HISTORY.
+
 ## Diagnostyka
 - `02_DIAGNOSTYKA.bat` (MT5).
 - Dane i diagnostyka: ticki (ACD, kinematyka), repaint, strefy, archiwum prognoz, źródła i licencje.

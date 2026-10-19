@@ -58,6 +58,7 @@ class MTFDashboard:
         self.cache: collections.OrderedDict = collections.OrderedDict()      # snapshot_id -> (created monotonic, snapshot, bars)
         self.seq = 0
         self.last = None
+        self.si = None                    # PMW-UPD-07 Structure Intelligence (cells on the SAME bar set, parent = this snapshot)
         self.health = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -225,6 +226,17 @@ class MTFDashboard:
                     warnings=[w for w in (["DANE SYNTETYCZNE"] if body["source"] == "SYNTHETIC" else []) + (["zegar serwera niezweryfikowany"] if clock.get("status") not in (None, "OK", "VERIFIED") else [])],
                     missing_dependencies=[d for d, ok in (("NSS: brak wybranego modelu", any(m.get("task_id") == "SCALP_SETUP_MARKET_V1" and m.get("status") == "READY_INFERENCE" for s_ in setups for m in s_["models"])),) if not ok],
                     timings={"build_ms": round((time.perf_counter() - t_start) * 1000, 2), "since_tick_ms": round((time.perf_counter() - t0) * 1000, 2) if t0 else None})
+        if self.si is not None:
+            try:
+                closed = {tf: [x for x in (bars.get(tf) or []) if st.ts(x["open_utc"]) + secs <= (as_of or 0)] for tf, secs in TFS}
+                si = self.si.snapshot(closed, sc.inst, float((info or {}).get("trade_tick_size") or 0.01), body["as_of"])
+                snap["structure_intelligence"] = {"snapshot_id": si["snapshot_id"], "parent_snapshot_id": sid, "divergences": si["divergences"],
+                                                  "forecast": si["forecast"], "profiles": si["profiles"], "build_ms": si["build_ms"],
+                                                  "neutralization": si.get("neutralization"), "quotes": si.get("quotes")}
+                for row in rows:
+                    row["structure"] = dict(si["cells"].get(row["tf"]) or {}, parent_snapshot_id=sid)
+            except Exception as exc:                            # noqa: BLE001 - structure layer failure never blocks the dashboard
+                snap["structure_intelligence"] = {"status": "ERROR", "error": type(exc).__name__, "parent_snapshot_id": sid}
         with self._lock:
             self.cache[sid] = (time.monotonic(), snap, {tf: list(bars.get(tf) or []) for tf, _ in TFS})
             self._evict()

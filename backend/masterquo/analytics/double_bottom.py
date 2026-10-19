@@ -35,6 +35,7 @@ from .ta import TF_SEC, atr14
 
 VERSION = "DB-1.0.0"
 VERSION_EXT = "DB-1.1.0-EXT"
+VERSION_BUF = "DB-1.2.0-BUF"          # PMW-UPD-07 R07: explicit breakout / failure buffers (x ATR14) and pair choice; old versions unchanged
 DEFAULT = {"mode": "SOURCE_COMPAT", "pivot_left": 3, "pivot_right": 3, "min_separation": 5, "max_separation": 60, "min_depth_pct": 0.05,
            "min_depth_atr": 1.0, "max_bottom_diff_frac": 0.25, "max_asymmetry": 3.0, "prior_bars": 20, "prior_move_frac": 0.5}
 STATUSES = ("INVALID", "CANDIDATE", "CONFIRMED", "FAILED")
@@ -80,14 +81,18 @@ def validate(bars: list[dict], cfg: dict | None = None, *, symbol: str | None = 
     measurements, reason. Coordinates are the exact bars used - the renderer never searches again."""
     t0 = time.perf_counter()
     cfg = {**DEFAULT, **(cfg or {})}
-    version = VERSION_EXT if cfg["mode"] == "EXTENDED" else VERSION
-    bad = check_bars(bars)
+    version = VERSION_BUF if cfg["mode"] == "BUFFERED" else VERSION_EXT if cfg["mode"] == "EXTENDED" else VERSION
+    if cfg["mode"] not in ("SOURCE_COMPAT", "EXTENDED", "BUFFERED") or cfg.get("pair_choice", "RECENT_DEEPEST_EARLIEST") not in ("RECENT_DEEPEST_EARLIEST", "DEEPEST_RECENT"):
+        return contract.result("double_bottom", version, cfg, symbol=symbol, tf=tf, bars=[], status="error", reason="CONFIG_INVALID", t0=t0,
+                               extra={"mode": mode_label})
+    # only the passed PREFIX is validated / analysed: a damaged future bar can never change an earlier result
+    bad = check_bars(bars if upto is None else bars[: upto + 1])
     if bad:
         return contract.result("double_bottom", version, cfg, symbol=symbol, tf=tf, bars=bars if isinstance(bars, list) else [], status="error",
                                reason=f"DATA_ERROR: {bad}", t0=t0, extra={"mode": mode_label})
     end = len(bars) - 1 if upto is None else upto
     h, lo, c = [b["h"] for b in bars], [b["l"] for b in bars], [b["c"] for b in bars]
-    a = atr14(h, lo, c) if cfg["mode"] == "EXTENDED" else None
+    a = atr14(h, lo, c) if cfg["mode"] in ("EXTENDED", "BUFFERED") else None
     piv = pivot_lows(lo, int(cfg["pivot_left"]), int(cfg["pivot_right"]), end)
     R = int(cfg["pivot_right"])
     cands, rejects = [], {}
@@ -112,7 +117,7 @@ def validate(bars: list[dict], cfg: dict | None = None, *, symbol: str | None = 
             if depth <= 0 or depth < cfg["min_depth_pct"] / 100.0 * low:
                 rej("DEPTH_TOO_SMALL")
                 continue
-            if a is not None and (a[i2] is None or depth < cfg["min_depth_atr"] * a[i2]):
+            if cfg["mode"] == "EXTENDED" and (a[i2] is None or depth < cfg["min_depth_atr"] * a[i2]):
                 rej("DEPTH_BELOW_ATR")
                 continue
             diff = abs(lo[i1] - lo[i2])
@@ -137,14 +142,18 @@ def validate(bars: list[dict], cfg: dict | None = None, *, symbol: str | None = 
         return contract.result("double_bottom", version, cfg, symbol=symbol, tf=tf, bars=bars[: end + 1], status="ready", t0=t0,
                                values={"status": "INVALID", "reason": why, "rejections": rejects, "pivots": len(piv), "coordinates": None},
                                tf_seconds=TF_SEC.get(tf or ""), extra={"mode": mode_label})
-    best = sorted(cands, key=lambda z: (-z["i2"], -z["depth"], z["i1"]))[0]
+    order = (lambda z: (-z["depth"], -z["i2"], z["i1"])) if cfg.get("pair_choice") == "DEEPEST_RECENT" else (lambda z: (-z["i2"], -z["depth"], z["i1"]))
+    best = sorted(cands, key=order)[0]
     i1, i2 = best["i1"], best["i2"]
     status, ev = "CANDIDATE", None
+    buf = cfg["mode"] == "BUFFERED"
     for k in range(i2 + 1, end + 1):
-        if c[k] > best["neck"]:
+        bb = (float(cfg.get("breakout_buffer_atr", 0.1)) * (a[k] or 0.0)) if buf else 0.0
+        fb = (float(cfg.get("failure_buffer_atr", 0.1)) * (a[k] or 0.0)) if buf else 0.0
+        if c[k] > best["neck"] + bb:
             status, ev = "CONFIRMED", k
             break
-        if c[k] < best["low"]:
+        if c[k] < best["low"] - fb:
             status, ev = "FAILED", k
             break
     tsec = TF_SEC.get(tf or "", 0)
@@ -158,7 +167,14 @@ def validate(bars: list[dict], cfg: dict | None = None, *, symbol: str | None = 
               "decisive": None if ev is None else {"index": ev, "time": T(ev), "close": rp(c[ev]), "kind": "BREAK_ABOVE_NECKLINE" if status == "CONFIRMED" else "BREAK_BELOW_BOTTOMS"}}
     avail = {"bottom2_pivot_known_at": _iso_plus(T(known2), tsec) if known2 <= end and tsec else None,
              "decisive_known_at": _iso_plus(T(ev), tsec) if ev is not None and tsec else None}
-    vals = {"status": status, "pattern_id": pid, "coordinates": coords, "available": avail,
+    # the result is usable only after max(pivot known, decisive bar closed); the historical decisive coordinate is kept as is
+    known_list = [x for x in (avail["bottom2_pivot_known_at"], avail["decisive_known_at"]) if x]
+    usable_at = max(known_list) if known_list and avail["bottom2_pivot_known_at"] else None
+    flags = []
+    if ev is not None and ev < known2:
+        flags.append("DECISIVE_EVENT_PRECEDED_RECOGNITION")
+    vals = {"status": status, "pattern_id": pid, "coordinates": coords, "available": avail, "usable_at": usable_at, "flags": flags,
+            "decisive_event_time": T(ev) if ev is not None else None,
             "measurements": {"depth": round(best["depth"], 5), "depth_pct": round(100 * best["depth"] / best["low"], 4), "bottom_diff": round(best["diff"], 5),
                              "bottom_diff_frac": round(best["diff"] / best["depth"], 4), "separation_bars": best["sep"], "asymmetry": round(best["asym"], 3),
                              "prior_high": rp(best["prior_high"])},

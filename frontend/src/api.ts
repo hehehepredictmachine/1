@@ -26,7 +26,7 @@ export async function apiGet<T = any>(path: string): Promise<T> {
   return r.json();
 }
 
-export async function apiSend<T = any>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+export async function apiSend<T = any>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, {
     method,
     credentials: "same-origin",

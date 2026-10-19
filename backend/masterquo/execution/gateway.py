@@ -103,6 +103,72 @@ class ExecutionGateway:
                 raise ExecutionError("LIMITS_CHANGED_SIZE_SMALLER_RECALC")
         return d
 
+    # ------------------------------------------------------------ common controls (shared by BOT_SETUP and MANUAL_USER sources)
+    def common_checks(self, *, side: str, entry: float, require_real: bool = False) -> str:
+        """Mode gate (account / DEMO-LIVE / Execution Lock / STOP / risk limits), reconciliation, quote freshness and drift.
+        Returns the mode; raises ExecutionError with the concrete reason. Source-specific checks stay in each validator."""
+        b = self.bridge
+        gate = self.modes.gate(b.account_key)
+        mode = gate["mode"]
+        if mode == "SIGNALS":
+            return mode
+        if not gate["allowed"]:
+            raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
+        if mode != "PAPER" and self.cfg_store.execution_locked():
+            raise ExecutionError("EXECUTION_LOCKED")
+        if require_real and mode == "PAPER":
+            raise ExecutionError("REAL_MODE_REQUIRED")
+        if mode != "PAPER" and self.manager is not None and self.manager.reconciled_epoch != b.session_epoch:
+            raise ExecutionError("RECONCILIATION_WITH_TERMINAL_PENDING")
+        q = b.quote_status()
+        cfg = self.cfg_store.get()
+        if not q or q.get("age_seconds") is None or q["age_seconds"] > cfg.mt5.max_quote_age_seconds:
+            raise ExecutionError("QUOTE_STALE")
+        point = float((b.symbol_info or {}).get("point") or 0)
+        px = q["ask"] if side == "BUY" else q["bid"]
+        if point and abs(px - entry) > cfg.execution.deviation_points * point:
+            raise ExecutionError("PRICE_DRIFT_REPLAN")
+        return mode
+
+    def manual_modify(self, mp: dict, action: str, *, offset_points: float = 0.0, volume: float | None = None) -> dict:
+        """Real-account management of ONE managed position (own ticket only; netting share is refused). LOCKED -> refused."""
+        if self.cfg_store.execution_locked():
+            return {"status": "BLOCKED", "reason": "EXECUTION_LOCKED"}
+        b = self.bridge
+        if mp["account_key"] != b.account_key:
+            return {"status": "REJECTED", "reason": "OTHER_ACCOUNT"}
+        p = next((x for x in b.positions if x["ticket"] == mp["position_ticket"]), None)
+        if not p:
+            return {"status": "REJECTED", "reason": "POSITION_NOT_FOUND"}
+        if abs(float(p["volume"]) - float(mp["volume_open"])) > 1e-9:
+            return {"status": "REJECTED", "reason": "NETTING_SHARE_MISMATCH (pozycja zawiera inne transakcje)"}
+        cfg = self.cfg_store.get()
+        info = b.symbol_info or {}
+        point = float(info.get("point") or 0)
+        try:
+            if action == "BREAK_EVEN":
+                new_sl = mp["entry_price"] + (offset_points * point if mp["side"] == "BUY" else -offset_points * point)
+                cur = p.get("sl") or mp.get("sl")
+                if cur and ((mp["side"] == "BUY" and cur >= new_sl) or (mp["side"] == "SELL" and cur <= new_sl)):
+                    return {"status": "UNCHANGED", "reason": "SL_ALREADY_BETTER"}
+                r = b.raw_call(lambda m: m.order_send({"action": m.TRADE_ACTION_SLTP, "symbol": mp["symbol"], "position": p["ticket"], "sl": new_sl,
+                                                       "tp": p.get("tp") or 0.0, "magic": int(cfg.mt5.magic_number)}), PRIO_TRADE,
+                               timeout=cfg.execution.order_timeout_seconds)
+            else:
+                vol = float(p["volume"]) if action == "CLOSE" else float(volume or 0)
+
+                def req(m):
+                    t = m.symbol_info_tick(mp["symbol"])
+                    return {"action": m.TRADE_ACTION_DEAL, "symbol": mp["symbol"], "volume": vol, "position": p["ticket"],
+                            "type": m.ORDER_TYPE_SELL if mp["side"] == "BUY" else m.ORDER_TYPE_BUY, "price": t.bid if mp["side"] == "BUY" else t.ask,
+                            "deviation": int(cfg.execution.deviation_points), "magic": int(cfg.mt5.magic_number), "comment": "MQ:MANUAL",
+                            "type_time": m.ORDER_TIME_GTC, "type_filling": m.ORDER_FILLING_FOK if int(info.get("filling_mode") or 0) & 1 else m.ORDER_FILLING_IOC}
+                r = b.raw_call(lambda m: m.order_send(req(m)), PRIO_TRADE, timeout=cfg.execution.order_timeout_seconds)
+        except MT5CallTimeout:
+            return {"status": "UNKNOWN", "reason": "TIMEOUT_CHECK_TERMINAL"}
+        rc = getattr(r, "retcode", None)
+        return {"status": "DONE" if rc in OK_CODES else "REJECTED", "retcode": RETCODES.get(rc, rc)}
+
     # ------------------------------------------------------------ public
     def execute(self, decision_id: str, initiated_by: str = "USER") -> dict:
         with self._lock:

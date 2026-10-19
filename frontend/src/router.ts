@@ -6,14 +6,14 @@
 import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
-  | "diagnostyka" | "setupy" | "modele" | "neural" | "badania" | "dane" | "ustawienia";
+  | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit"] },
   { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
   { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "warunki", "ai", "pozycje", "dziennik"] },
-  { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "testy"] },
+  { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
   { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
   { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia"] },
@@ -32,6 +32,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "dziennik", label: "Dziennik i wyniki", short: "Dziennik", icon: "☰" },
   { id: "modele", label: "Modele i trening", short: "Modele", icon: "✦" },
   { id: "neural", label: "Neural System", short: "Neural", icon: "⟁" },
+  { id: "struktura", label: "Structure Intelligence", short: "Struktura", icon: "⌗" },
   { id: "testy", label: "Testy scalp / prognozy", short: "Testy", icon: "⚗" },
   { id: "badania", label: "Badania i walidacja", short: "Badania", icon: "⚗" },
   { id: "formacje", label: "Formacje i biblioteka", short: "Formacje", icon: "W" },

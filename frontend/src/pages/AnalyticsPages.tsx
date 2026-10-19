@@ -1,6 +1,7 @@
 // 1.13 pages of the grouped menu. Every value comes from the backend (shared engines: analytics/ta.py, signal.py,
 // double_bottom.py, library.py and the existing modules) - the frontend never computes a second version of an indicator.
 // UNKNOWN / missing data is shown as "—" with the reason, never as green; nothing on these pages changes the trading mode.
+import { ManualPadCard } from "../components/StructureIntel";
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineStyle, type Time } from "lightweight-charts";
 import { apiGet, apiSend } from "../api";
@@ -285,7 +286,7 @@ export function PatternsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [flt, setFlt] = useState({ tf: "", status: "" });
-  const [view, setView] = useState<{ sample: any; result: any } | null>(null);
+  const [view, setView] = useState<{ sample: any; result: any; saved: any; revalidated?: boolean } | null>(null);
   const [job, setJob] = useState<any>(null);
   const [live, setLive] = useState<any>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -306,9 +307,18 @@ export function PatternsPage() {
     try { const r = await apiSend("POST", "/api/v1/patterns/validate", { ids }); setJob({ job_id: r.job_id, status: "RUNNING", progress: 0, total: r.total }); }
     catch (e: any) { setMsg(String(e?.message || e)); }
   };
+  // SHOW ON CHART = saved immutable result (sample_id + result_id) - no re-analysis; REVALIDATE is a separate explicit action
   const show = async (id: number) => {
+    setMsg(null);
+    const sample = await apiGet(`/api/v1/patterns/samples/${id}`);
+    try {
+      const saved = await apiGet(`/api/v1/patterns/samples/${id}/result`);
+      setView({ sample, result: saved.result, saved });
+    } catch { setView({ sample, result: null, saved: null }); }
+  };
+  const revalidate = async (id: number) => {
     const [sample, r] = await Promise.all([apiGet(`/api/v1/patterns/samples/${id}`), apiSend("POST", `/api/v1/patterns/samples/${id}/validate`)]);
-    setView({ sample, result: r.result });
+    setView({ sample, result: r.result, saved: null, revalidated: true });
   };
   const add = async () => {
     setMsg(null);
@@ -382,9 +392,13 @@ export function PatternsPage() {
             <p className="muted">Zapisywane są surowe OHLCV z feedu bota (symbol, TF, granice, hash danych). Istniejąca próbka nie jest nadpisywana.</p></details>
           {jobs.length > 0 && <details className="small"><summary>Ostatnie zadania walidacji ({jobs.length})</summary><ul>{jobs.map((j) => <li key={j.job_id}>{fmtTime(j.created_at, true)} · {j.kind} · {j.status} {j.progress}/{j.total} · {j.rules_version}{j.report_id ? ` · raport ${j.report_id}` : ""}</li>)}</ul></details>}
         </div>
-        {view && <div className="card wide" data-testid="db-view"><h3>Próbka #{view.sample.id} · {view.sample.symbol} {view.sample.timeframe} – <b>{DB_PL[view.result?.values?.status] ?? view.result?.status}</b>
-          <button className="link" onClick={() => setView(null)}> zamknij</button></h3>
-          <SampleChart sample={view.sample} result={view.result} />
+        {view && <div className="card wide" data-testid="db-view"><h3>Próbka #{view.sample.id} · {view.sample.symbol} {view.sample.timeframe} – <b>{view.result ? (DB_PL[view.result?.values?.status] ?? view.result?.status) : "brak zapisanego wyniku"}</b>
+          <button className="link" onClick={() => setView(null)}> zamknij</button> <button className="link" onClick={() => revalidate(view.sample.id)} data-testid="db-revalidate">REVALIDATE</button></h3>
+          <p className="small muted" data-testid="db-view-source">ARCHIVED_SAMPLE_VIEW – oryginalne świece próbki (osobny wykres przeglądu, aktywny instrument bez zmian).{" "}
+            {view.saved ? <>Wynik zapisany <code>{view.saved.result_id}</code> · zadanie {view.saved.job_id} · reguły {view.saved.rules_version}</> : view.revalidated ? "Wynik REVALIDATE (nowe obliczenie, nie zapisane w zadaniu)." : null}</p>
+          {view.saved && view.saved.sample_sha && view.saved.sample_sha !== view.sample.data_sha256 && <p className="bad small" data-testid="db-hash-mismatch">Hash próbki ≠ hash z wyniku – nakładka zablokowana.</p>}
+          {!view.result && <p className="warn small" data-testid="db-no-result">Ta próbka nie ma zapisanego wyniku – najpierw waliduj (VALIDATE SELECTED / ALL) albo użyj REVALIDATE.</p>}
+          {view.result && !(view.saved && view.saved.sample_sha && view.saved.sample_sha !== view.sample.data_sha256) && <SampleChart sample={view.sample} result={view.result} />}
           {view.result?.values ? (<dl className="an-kv"><dt>Powód</dt><dd>{view.result.values.reason}</dd>
             {view.result.values.measurements && <><dt>Pomiary</dt><dd>głębokość {view.result.values.measurements.depth} ({view.result.values.measurements.depth_pct}%), różnica dołków {view.result.values.measurements.bottom_diff_frac}×głęb.,
               odstęp {view.result.values.measurements.separation_bars} św., asymetria {view.result.values.measurements.asymmetry}</dd>
@@ -418,6 +432,7 @@ export function PositionsPage() {
       <div className="page-head"><h1>Pozycje i ryzyko</h1><DemoFlag /></div>
       <Section id="pos.list" title="Pozycje, zlecenia, scenariusze" defaultOpen testid="pos-list"><SignalsPanel index={5} /></Section>
       <Section id="pos.risk" title="Ryzyko, blokady i koszty (moduł ryzyka)" defaultOpen testid="pos-risk"><RiskPanel onSettings={ui.openSettings} /></Section>
+      <Section id="pos.manual" title="Manual Trade Pad (jawne akcje użytkownika)" testid="pos-manual"><ManualPadCard /></Section>
       <Section id="pos.lev" title="Dźwignia z rachunku i limit ekspozycji" testid="pos-lev"><LeverageSettings /></Section>
     </div>);
 }

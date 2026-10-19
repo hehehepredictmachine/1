@@ -103,6 +103,12 @@ class Runtime:
         from .scalp.dashboard import MTFDashboard
         self.mtf = MTFDashboard(self.scalp, self.bridge, self.bus, self.db)      # PMW-UPD-05: MTFContextSnapshot + 1 s freshness heartbeat
         self.scalp.dashboard = self.mtf
+        from .lab.si_service import StructureIntelligenceService
+        self.si = StructureIntelligenceService(self.cfg, self.bridge, self.db, self.bus, self.log, lab=self.lab)   # PMW-UPD-07 (SHADOW/OBSERVE)
+        self.mtf.si = self.si
+        self.engine.si = self.si
+        from .execution.manual import ManualPad
+        self.manual = ManualPad(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.paper, self.gateway)   # PMW-UPD-07 R12
         from .analytics.liquidation.service import LiquidityService
         self.liquidity = LiquidityService(self.cfg, self.db, self.bus, self.log, secrets=self.secrets, bridge=self.bridge)   # PMW-UPD-06 (OBSERVE)
         self.engine.liquidity = self.liquidity
@@ -162,6 +168,7 @@ class Runtime:
         self.extind.start()
         self.nss.start()
         self.mtf.start()
+        self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
         self.liquidity.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -192,6 +199,7 @@ class Runtime:
         self.extind.stop()
         self.nss.stop()
         self.mtf.stop()
+        self.si.stop()
         self.liquidity.stop()
         self.scanner.stop()
         self.engine.stop()

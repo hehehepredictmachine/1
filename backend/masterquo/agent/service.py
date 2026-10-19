@@ -45,10 +45,11 @@ def load_prompt() -> tuple[str, str]:
     m = re.search(r"PROMPT_VERSION:\s*([A-Za-z0-9_.\-]+)", text)
     version = m.group(1) if m else "UNVERSIONED"
     body = re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
+    from ..analysis import structure_knowledge as sk
     from ..analytics import liquidity_context as lq
     from ..extind.knowledge import KNOWLEDGE_VERSION, prompt_section
-    return (body + "\n\n" + prompt_section() + "\n\n" + lq.prompt_section(),                     # knowledge from code (PMW-UPD-02 / 06)
-            f"{version}+{KNOWLEDGE_VERSION}+{lq.KNOWLEDGE_VERSION}")
+    return (body + "\n\n" + prompt_section() + "\n\n" + lq.prompt_section() + "\n\n" + sk.prompt_section(),   # knowledge from code (PMW-UPD-02 / 06 / 07)
+            f"{version}+{KNOWLEDGE_VERSION}+{lq.KNOWLEDGE_VERSION}+{sk.KNOWLEDGE_VERSION}")
 
 
 class ClaudeAgent:

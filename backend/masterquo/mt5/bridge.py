@@ -515,14 +515,18 @@ class MarketBridge:
                         "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "spread": b.spread, "closed": closed})
         return out
 
-    def ticks(self, symbol: str, seconds: int = 3600, max_count: int = 200_000) -> dict:
+    def ticks_range(self, symbol: str, from_utc: float, to_utc: float, max_count: int = 500_000) -> dict:
+        """Bounded range read for the tick archive (PMW-UPD-08): same worker queue, ticks with from <= t <= to (UTC seconds)."""
+        return self.ticks(symbol, max_count=max_count, from_utc=from_utc, to_utc=to_utc)
+
+    def ticks(self, symbol: str, seconds: int = 3600, max_count: int = 200_000, from_utc: float | None = None, to_utc: float | None = None) -> dict:
         """Quote ticks of an allowed symbol (copy_ticks_from, COPY_TICKS_INFO = bid/ask changes). Times converted from
         server time to UTC with the measured offset; received_at = when this read returned. Without the offset -> no ticks."""
         self._guard(symbol, "DATA_TICKS")
         off = self.clock.offset
         if off is None:
             return {"status": "missing_data", "reason": "SERVER_OFFSET_UNKNOWN", "ticks": []}
-        raw_from = self.now().timestamp() + off - seconds
+        raw_from = (from_utc + off) if from_utc is not None else self.now().timestamp() + off - seconds
 
         def job(m):
             fn = getattr(m, "copy_ticks_from", None)
@@ -542,9 +546,12 @@ class MarketBridge:
             last = key
             if not (r["bid"] > 0 and r["ask"] > 0 and r["ask"] >= r["bid"]):
                 continue                                     # invalid quote is dropped, never turned into 0
-            out.append({"t": (msc / 1000.0) - off, "bid": float(r["bid"]), "ask": float(r["ask"]), "flags": int(r["flags"])})
+            if to_utc is not None and (msc / 1000.0) - off > to_utc:
+                break
+            out.append({"t": (msc / 1000.0) - off, "bid": float(r["bid"]), "ask": float(r["ask"]), "flags": int(r["flags"]),
+                        "time_msc": msc, "t_ms": int(round(msc - off * 1000.0)), "ord": len(out)})   # raw source time kept (PMW-UPD-08)
         return {"status": "ok" if out else "missing_data", "symbol": symbol, "received_at_utc": recv, "count": len(out), "ticks": out,
-                "source": "SYNTHETIC" if self._synthetic else "MT5"}
+                "source": "SYNTHETIC" if self._synthetic else "MT5", "clock_transform": f"t_ms = time_msc - server_offset ({off} s)"}
 
     def _merge_tail(self, st: TFState, tf: str, tail: list[Bar], symbol: str) -> list[Bar]:
         """Merge the newest bars. Returns newly *closed* bars. Fills gaps by refetching."""
