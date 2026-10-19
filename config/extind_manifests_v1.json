@@ -1,0 +1,18 @@
+{
+  "schema": "pmw-extind-manifests-1",
+  "note": "Tożsamość źródeł zewnętrznych. To dane – loader niczego z nich nie wykonuje. Brak tożsamości/licencji/mappingu = jawny stan, nigdy READY.",
+  "sources": {
+    "IQ_GOLD_GANN": {"title": "IQ Gold Gann Levels MT5", "vendor": "IQ (MQL5 Market)", "product_id": "134935", "platform": "MT5",
+                     "url": "https://www.mql5.com/en/market/product/134935", "not_the_same_as": ["134335 (wersja MT4)", "IQ FX Gann (inny produkt)"],
+                     "interface": "OBJECTS", "buffers_documented": false,
+                     "interface_note": "opis producenta MT5: brak wyjścia buforowego do EA – odczyt wyłącznie przez obiekty wykresu zatwierdzonym mappingiem",
+                     "kinds": ["LEVEL"], "identity_confirmed": true},
+    "IQ_STAR_LINES": {"title": "IQ Star Lines MT5", "vendor": "IQ (MQL5 Market)", "product_id": "145140", "platform": "MT5",
+                      "url": "https://www.mql5.com/en/market/product/145140", "interface": "OBJECTS", "buffers_documented": false,
+                      "interface_note": "poziomy i okna czasu z obiektów; opis astrologiczny to deklaracja autora, nie fakt rynkowy",
+                      "kinds": ["LEVEL", "TIME_WINDOW", "TIME_EVENT"], "identity_confirmed": true},
+    "PAL02M": {"title": "PAL02M", "vendor": null, "product_id": null, "platform": null, "url": null, "interface": null,
+               "buffers_documented": null, "kinds": [], "identity_confirmed": false,
+               "interface_note": "tożsamość niepotwierdzona – wymagany manifest użytkownika (data/extind/manifests/PAL02M.json) i zaufany dekoder w kodzie"}
+  }
+}

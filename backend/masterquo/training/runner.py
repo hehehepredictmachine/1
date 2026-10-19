@@ -18,7 +18,11 @@ from .core import Run, now
 TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości danych"), ("forecast", "Prognozy świec gold_candles 5/15/30 min"),
          ("scalp_A", "Scalp A: kierunek 1/3/5 min (LR/HGB/MLP)"), ("scalp_B", "Scalp B: jakość setupu P(TP1 przed SL)"),
          ("scalp_C", "Scalp C: ocena polityki hedge vs REDUCE w replayu (to nie jest sieć)"), ("ml", "Legacy ML: Decision Tree + XGBoost (setupy S01–S12)"),
-         ("lab", "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN (+eksperymenty), strona LONG"), ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
+         ("lab", "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN (+eksperymenty), strona LONG"),
+         ("indicator_context", "Kontekst wskaźników (SAR + IQ/PAL): kalibracja SAR i model reakcji P(TP1 przed SL)"),
+         ("ml_scalp", "Scalp ML: XGBoost P(dodatni wynik netto cyklu) + net_R, osobno LONG/SHORT"),
+         ("neural_scalp", "Neural Scalp System: TCN M1/M5 + kontekst – P(TP1/SL/TIMEOUT) i net_R kandydata scalp"),
+         ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
 
@@ -287,6 +291,85 @@ def t_lab(run: Run, inst: str) -> None:
             unit={"task": "potrójna bariera TP 1.5×ATR / SL 1.0×ATR", "tf": "M5", "horizons": "12 świec (60 min)", "side": "LONG (tylko długie)"})
 
 
+def t_indicator_context(run: Run, inst: str) -> None:
+    """PMW-UPD-02: SAR calibration + reaction models (BASE / +SAR / +IQ / PAL blocked) on the same scalp replay cycles."""
+    tid, plan = f"{inst}:indicator_context", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_indicator_context.json"
+    com = plan["commissions"].get(inst)
+    cmd = [core.bot_python(), "-m", "masterquo", "indicator-context", "train", "--asset", inst, "--dataset", str(ds), "--out", str(out)] + \
+        (["--allow-synthetic-fixture"] if plan["synthetic"] else []) + (["--commission", str(com)] if com is not None else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_indicator_context")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if rc == 2 and "COMMISSION_UNKNOWN" in tail:
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+    if not rep:
+        return _fail(run, tid, f"indicator-context kod {rc}: {tail}")
+    vs = {k: v.get("status") for k, v in (rep.get("variants") or {}).items()}
+    q = ("TEST_TECHNICZNY" if plan["synthetic"] else "BRAK_PRZESLANEK" if rep["status"] != "EVALUATED" else
+         "NIEZWALIDOWANY")                                   # one holdout: edge stays NO_VALIDATED_EDGE until an independent evaluation
+    run.set(tid, execution="UKONCZONE", quality=q, integration="ZAPISANY_DO_BADAN" if rep["status"] == "EVALUATED" else "NIEZAPISANY",
+            model_id=rep.get("run_id"), detail=f"{rep['status']}; cykli {rep.get('cycles')}; warianty {json.dumps(vs, ensure_ascii=False)}; "
+            f"SAR wybrany na TUNE {((rep.get('sar_calibration') or {}).get('selected'))}; edge {rep.get('edge_status')}",
+            unit={"task": "P(TP1 przed SL) w zamrożonej polityce scalp", "tf": "M1 (+SAR M5/M15)", "horizons": "do wyjścia cyklu", "side": "BUY+SELL"})
+
+
+def t_ml_scalp(run: Run, inst: str) -> None:
+    """PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1: walk-forward + frozen bundle + one holdout evaluation; never selected automatically."""
+    tid, plan = f"{inst}:ml_scalp", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_ml_scalp.json"
+    com = plan["commissions"].get(inst)
+    cmd = [core.bot_python(), "-m", "masterquo", "ml-scalp", "train", "--asset", inst, "--dataset", str(ds), "--out", str(out), "--activate", "none"] + \
+        (["--allow-synthetic-fixture"] if plan["synthetic"] else []) + (["--commission", str(com)] if com is not None else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_ml_scalp")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if rc == 2 and "COSTS_UNKNOWN" in tail:
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+    if not rep:
+        return _fail(run, tid, f"ml-scalp kod {rc}: {tail}")
+    sides = {k: v.get("status") for k, v in rep["sides"].items()}
+    q = ("TEST_TECHNICZNY" if plan["synthetic"] else "ZWALIDOWANY_SHADOW" if "HOLDOUT_PASSED" in sides.values() else
+         "BRAK_PRZESLANEK" if all(v in (None, "INSUFFICIENT_EVIDENCE") for v in sides.values()) else "ODRZUCONY")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="ZAPISANY_DO_BADAN" if rep["status"] == "EVALUATED" else "NIEZAPISANY",
+            model_id=rep["run_id"], detail=f"{rep['status']}; kandydatów {rep['candidates']}; strony {json.dumps(sides)}; wybór roli ręcznie (OBSERVE/SHADOW_GATE)",
+            unit={"task": "P(net_R cyklu > 0) + E[net_R]", "tf": "M1/M5 (+M15/M30/H1)", "horizons": "pełny cykl (max hold profilu)", "side": "LONG i SHORT osobno"})
+
+
+def t_neural_scalp(run: Run, inst: str) -> None:
+    """PMW-UPD-04 CAUSAL_MTF_TCN_V1 / SCALP_SETUP_MARKET_V1: walk-forward, frozen ensemble, one holdout evaluation; never selected."""
+    tid, plan = f"{inst}:neural_scalp", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_neural_scalp.json"
+    com = plan["commissions"].get(inst)
+    cmd = [core.bot_python(), "-m", "masterquo", "neural-scalp", "train", "--asset", inst, "--dataset", str(ds), "--out", str(out), "--activate", "none"] + \
+        (["--allow-synthetic-fixture"] if plan["synthetic"] else []) + (["--commission", str(com)] if com is not None else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_neural_scalp")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if rc == 2 and "COSTS_UNKNOWN" in tail:
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+    if not rep:
+        return _fail(run, tid, f"neural-scalp kod {rc}: {tail}")
+    sides = {k: v.get("status") for k, v in rep.get("sides", {}).items()}
+    q = ("TEST_TECHNICZNY" if plan["synthetic"] else "ZWALIDOWANY_SHADOW" if "HOLDOUT_PASSED" in sides.values() else
+         "BRAK_PRZESLANEK" if rep["status"] in ("INSUFFICIENT_EVIDENCE", "BUDGET_EXCEEDED") else "ODRZUCONY")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="ZAPISANY_DO_BADAN" if rep.get("model_hash") else "NIEZAPISANY",
+            model_id=rep["run_id"], detail=f"{rep['status']}; próbek {rep['candidates']}; strony {json.dumps(sides)}; wybór OBSERVE/SHADOW_GATE ręcznie",
+            unit={"task": "P(TP1_FIRST/SL_FIRST/TIMEOUT) + E[net_R]", "tf": "M1 128 + M5 32 (+M15/H1)", "horizons": "max hold profilu", "side": "głowice LONG/SHORT"})
+
+
 def t_activate(run: Run, inst: str) -> None:
     """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
     tid, plan = f"{inst}:activate", run.state["plan"]
@@ -389,6 +472,7 @@ def _wait(pred, timeout: float, step: float = 3.0) -> bool:
 
 
 STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scalp_A": t_scalp, "ml": t_ml, "lab": t_lab,
+         "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "activate": t_activate, "bot": t_bot}
 
 

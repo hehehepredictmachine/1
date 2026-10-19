@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -298,6 +299,8 @@ def create_app(rt, port: int) -> FastAPI:
     def lab_train(body: dict = Body(default={})):
         from ..lab.protocol import default_protocol, FAMILIES, EXPERIMENTS
         a = _asset(body.get("asset"))
+        if body.get("task_id") == "SCALP_SETUP_MARKET_V1":           # PMW-UPD-04 NSS: same jobs view, own child process, activate=none
+            return _nss_job(["train", "--asset", a, "--activate", "none"])
         if a != rt.cfg.get().assets.active:
             raise HTTPException(409, "TRAIN_ONLY_ACTIVE_ASSET")
         sym = rt.assets.check_asset(a, "TRAINING")
@@ -320,6 +323,89 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/lab/jobs/{jid}/cancel")
     def lab_cancel(jid: str):
         return rt.lab.trainer.cancel(jid)
+
+    # ------------------------------------------------------------ PMW-UPD-02: IQ Gold Gann / IQ Star Lines / PAL02M / SAR
+    @app.get("/api/v1/indicator-context")
+    def indicator_context_status():
+        from ..extind import trainer as ict
+        inst = rt.cfg.get().assets.active
+        reg_p = ict.root(inst) / "registry.json"
+        reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {"active": None, "runs": {}}
+        runs = {k: v for k, v in sorted(reg.get("runs", {}).items())[-10:]}
+        return {"instrument": inst, "sources": rt.extind.status(inst), "sar": {"profile": "MQ_SAR_WILDER_PROFILE_V1", "live_params": {"step": 0.02, "max": 0.2},
+                "implementation_status": "VERIFIED_REFERENCE_TESTS", "weights_training": "NOT_APPLICABLE", "calibration": "GRID_ON_TRAIN_FOLD (indicator-context calibrate-sar)",
+                "mt5_parity": "MT5_PARITY_NOT_RUN"}, "model": {"active": reg.get("active"), "runs": runs,
+                "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1", "schema": "SCALP_INDICATOR_CONTEXT_V1"}}
+
+    @app.get("/api/v1/indicator-context/chart")
+    def indicator_context_chart(tf: str = Query("M5")):
+        from ..scalp.indicators import SAR_PROFILE, sar_points
+        from ..timeutil import utcnow as _now
+        b = [x for x in rt.bridge.bars(tf, 600, include_forming=False) if x.get("open_utc")]
+        sar = None
+        if len(b) >= 2:
+            pts = sar_points([x["h"] for x in b], [x["l"] for x in b], 0.02, 0.2)
+            sar = {"profile": SAR_PROFILE, "params": {"step": 0.02, "max": 0.2},
+                   "points": [{"t": b[i]["open_utc"], "sar": p["sar"], "trend": p["trend"], "flip": p["flip"]} for i, p in enumerate(pts) if p]}
+        inst = rt.cfg.get().assets.active
+        lv = []
+        for a, short in (("IQ_GOLD_GANN", "IQ Gann"), ("IQ_STAR_LINES", "IQ Star")):
+            snap = rt.extind.as_of(a, inst, _now())
+            for x in (snap or {}).get("levels") or []:
+                if x.get("kind") == "LEVEL" and x.get("price") is not None:
+                    lv.append({"price": x["price"], "title": f"{short}: {x.get('role')}", "adapter": a, "snapshot_id": snap["snapshot_id"],
+                               "known_at": snap["available_at"]})
+        return {"tf": tf, "instrument": inst, "sar": sar, "ext_levels": lv}
+
+    @app.get("/api/v1/indicator-context/inventory")
+    def indicator_context_inventory(adapter: str = Query(...)):
+        if adapter not in ("IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M"):
+            raise HTTPException(400, "UNKNOWN_ADAPTER")
+        from ..extind import mapping as emp
+        return {"adapter": adapter, "heartbeat": rt.extind.heartbeat.get(adapter), "mapping": emp.mapping(adapter), "manifest": emp.manifest(adapter)}
+
+    @app.put("/api/v1/indicator-context/mapping")
+    def indicator_context_mapping(body: dict):
+        from ..extind import mapping as emp
+        a = body.get("adapter")
+        if a not in ("IQ_GOLD_GANN", "IQ_STAR_LINES"):
+            raise HTTPException(400, "MAPPING_ONLY_FOR_IDENTIFIED_IQ")
+        try:
+            return emp.save_mapping(a, body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/v1/indicator-context/train")
+    def indicator_context_train(body: dict):
+        """Separate process (never in the bot); POST returns at once, the result is in the registry/report."""
+        import subprocess
+        inst = body.get("asset") or rt.cfg.get().assets.active
+        if inst not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        from ..training import core as tc
+        log = open(tc.training_dir() / "indicator_context_train.log", "a", encoding="utf-8")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
+        cmd = [sys.executable, "-m", "masterquo", "indicator-context", "train", "--asset", inst]
+        if body.get("commission") is not None:
+            cmd += ["--commission", str(float(body["commission"]))]
+        subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), stdout=log, stderr=subprocess.STDOUT, **kw)
+        return {"started": True, "instrument": inst}
+
+    @app.post("/api/v1/indicator-context/activate")
+    def indicator_context_activate(body: dict):
+        from ..extind import trainer as ict
+        try:
+            return {"ok": True, "active": ict.activate(body.get("asset") or rt.cfg.get().assets.active, str(body.get("run_id")), str(body.get("variant")))}
+        except (ValueError, OSError, KeyError) as exc:
+            return {"ok": False, "reason": str(exc)}
+
+    @app.post("/api/v1/indicator-context/rollback")
+    def indicator_context_rollback(body: dict):
+        from ..extind import trainer as ict
+        try:
+            return {"ok": True, "active": ict.rollback(body.get("asset") or rt.cfg.get().assets.active)}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "reason": str(exc)}
 
     @app.get("/api/v1/lab/models")
     def lab_models(asset: str | None = None):
@@ -1008,6 +1094,162 @@ def create_app(rt, port: int) -> FastAPI:
                            cwd=str(paths.ROOT_DIR / "backend"), capture_output=True, text=True, timeout=300)
         rt.forecast.reload()
         return {"ok": r.returncode == 0, "output": (r.stdout + r.stderr)[-800:]}
+
+    # ------------------------------------------------------------ PMW-UPD-04 Neural Scalp System (CAUSAL_MTF_TCN_V1)
+    nss_jobs: dict = {}
+
+    def _nss_job(args: list[str]):
+        import subprocess
+        from ..training import core as tc
+        if any(pr.poll() is None for pr in nss_jobs.values()):
+            return {"started": False, "reason": "JOB_RUNNING – jedno ciężkie zadanie NSS naraz"}
+        jid = "NSSJ-" + __import__("uuid").uuid4().hex[:8]
+        log = open(tc.training_dir() / f"nss_{jid}.log", "a", encoding="utf-8")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
+        nss_jobs[jid] = subprocess.Popen([sys.executable, "-m", "masterquo", "neural-scalp", *args], cwd=str(paths.ROOT_DIR / "backend"), stdout=log,
+                                         stderr=subprocess.STDOUT, **kw)
+        return {"started": True, "job_id": jid, "args": args}
+
+    @app.get("/api/v1/lab/neural")
+    def nss_state(asset: str | None = Query(None)):
+        return rt.nss.public(_asset(asset) if asset else rt.cfg.get().assets.active)
+
+    @app.get("/api/v1/lab/neural/history")
+    def nss_history(limit: int = Query(50, ge=1, le=500)):
+        return {"asset": rt.nss.inst, "rows": rt.nss.history(limit)}
+
+    @app.get("/api/v1/lab/neural/report")
+    def nss_report(asset: str | None = Query(None), run_id: str | None = Query(None)):
+        from ..lab import nss
+        a = _asset(asset) if asset else rt.cfg.get().assets.active
+        p = nss.root(a) / "registry.json"
+        reg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"runs": {}}
+        rid = run_id or (sorted(reg["runs"])[-1] if reg["runs"] else None)
+        if not rid or rid not in reg["runs"]:
+            return {"asset": a, "status": "NO_REPORT"}
+        rep = json.loads((Path(reg["runs"][rid]["run_dir"]) / "report.json").read_text(encoding="utf-8"))
+        return {"asset": a, "run_id": rid, "report": rep}
+
+    @app.get("/api/v1/lab/neural/jobs")
+    def nss_jobs_list():
+        return {"jobs": [{"job_id": k, "pid": v.pid, "running": v.poll() is None, "returncode": v.poll()} for k, v in nss_jobs.items()]}
+
+    @app.post("/api/v1/lab/neural/prepare")
+    def nss_prepare(body: dict = Body(default={})):
+        return _nss_job(["prepare", "--asset", _asset(body.get("asset") or rt.cfg.get().assets.active)])
+
+    @app.post("/api/v1/lab/neural/doctor")
+    def nss_doctor(body: dict = Body(default={})):
+        import subprocess
+        a = _asset(body.get("asset") or rt.cfg.get().assets.active)
+        r = subprocess.run([sys.executable, "-m", "masterquo", "neural-scalp", "doctor", "--asset", a], cwd=str(paths.ROOT_DIR / "backend"),
+                           capture_output=True, text=True, timeout=120)
+        try:
+            return json.loads(r.stdout)
+        except ValueError:
+            return {"status": "ERROR", "output": (r.stdout + r.stderr)[-2000:]}
+
+    @app.post("/api/v1/lab/neural/train")
+    def nss_train(body: dict = Body(default={})):
+        return _nss_job(["train", "--asset", _asset(body.get("asset") or rt.cfg.get().assets.active), "--activate", "none"])
+
+    @app.post("/api/v1/lab/neural/cancel")
+    def nss_cancel(body: dict = Body(default={})):
+        pr = nss_jobs.get(str(body.get("job_id")))
+        if pr is None:
+            raise HTTPException(404, "UNKNOWN_JOB")
+        if pr.poll() is None:
+            pr.terminate()
+        return {"ok": True, "job_id": body.get("job_id"), "note": "anulowanie nie podmienia wybranego modelu"}
+
+    @app.post("/api/v1/lab/neural/select")
+    def nss_select(body: dict = Body(default={})):
+        from ..lab import nss
+        try:
+            return {"ok": True, "selected": nss.select(_asset(body.get("asset") or rt.cfg.get().assets.active), str(body.get("run_id")), str(body.get("role") or "OBSERVE"))}
+        except (ValueError, OSError, KeyError) as exc:
+            return {"ok": False, "reason": str(exc)}
+
+    @app.post("/api/v1/lab/neural/rollback")
+    def nss_rollback(body: dict = Body(default={})):
+        from ..lab import nss
+        try:
+            return {"ok": True, "selected": nss.rollback(_asset(body.get("asset") or rt.cfg.get().assets.active))}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "reason": str(exc)}
+
+    # ------------------------------------------------------------ PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1
+    @app.get("/api/v1/ml/scalp")
+    def ml_scalp_status(asset: str | None = Query(None)):
+        inst = asset or rt.cfg.get().assets.active
+        if inst != rt.ml.inst:
+            from ..ml.router import ml_store
+            from ..ml.service import MLService
+            db, root = ml_store(inst, rt.db)
+            return MLService(rt.cfg, db, rt.bridge, rt.bus, rt.log, root=root, instrument=inst).scalp_status(inst)
+        return rt.ml.scalp_status(inst)
+
+    def _ml_scalp_job(args: list[str]):
+        import subprocess
+        from ..training import core as tc
+        log = open(tc.training_dir() / "ml_scalp_jobs.log", "a", encoding="utf-8")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
+        pr = subprocess.Popen([sys.executable, "-m", "masterquo", "ml-scalp", *args], cwd=str(paths.ROOT_DIR / "backend"), stdout=log,
+                              stderr=subprocess.STDOUT, **kw)
+        return {"started": True, "job_pid": pr.pid, "args": args}
+
+    @app.post("/api/v1/ml/scalp/prepare")
+    def ml_scalp_prepare(body: dict):
+        inst = body.get("asset") or rt.cfg.get().assets.active
+        if inst not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        return _ml_scalp_job(["prepare", "--asset", inst])
+
+    @app.post("/api/v1/ml/scalp/train")
+    def ml_scalp_train(body: dict):
+        inst = body.get("asset") or rt.cfg.get().assets.active
+        if inst not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        args = ["train", "--asset", inst, "--activate", "none"]
+        if body.get("commission") is not None:
+            args += ["--commission", str(float(body["commission"]))]
+        return _ml_scalp_job(args)
+
+    @app.get("/api/v1/ml/scalp/predictions")
+    def ml_scalp_predictions(limit: int = Query(50, ge=1, le=500), before: str | None = Query(None)):
+        q, prm = "SELECT * FROM ml_scalp_predictions WHERE instrument=?", [rt.ml.inst]
+        if before:
+            q += " AND computed_at < ?"
+            prm.append(before)
+        return {"predictions": rt.ml.db.query(q + " ORDER BY computed_at DESC LIMIT ?", (*prm, limit))}
+
+    @app.get("/api/v1/ml/scalp/explain")
+    def ml_scalp_explain(prediction_id: str = Query(...)):
+        from ..ml import scalp_task as stk
+        pr = rt.ml.db.one("SELECT * FROM ml_scalp_predictions WHERE prediction_id=?", (prediction_id,))
+        if not pr:
+            raise HTTPException(404, "UNKNOWN_PREDICTION")
+        smp = rt.ml.db.one("SELECT features FROM ml_scalp_samples WHERE sample_id=?", (pr["sample_id"],))
+        b, sel = stk.selected_bundle(pr["instrument"], pr["side"])
+        if b is None or b.man["model_hash"] != pr["model_hash"]:
+            return {"status": "MODEL_CHANGED", "reason": "model tej predykcji nie jest już wybrany – wyjaśnienie nie zostanie zmieszane z innym modelem"}
+        return dict(b.explain(json.loads(smp["features"])), prediction_id=prediction_id, snapshot_hash=pr["snapshot_hash"])
+
+    @app.post("/api/v1/ml/scalp/select")
+    def ml_scalp_select(body: dict):
+        from ..ml import scalp_task as stk
+        try:
+            return {"ok": True, "selected": stk.select(body.get("asset") or rt.ml.inst, str(body.get("run_id")), str(body.get("side")), str(body.get("role")))}
+        except (ValueError, OSError, KeyError) as exc:
+            return {"ok": False, "reason": str(exc)}
+
+    @app.post("/api/v1/ml/scalp/rollback")
+    def ml_scalp_rollback(body: dict):
+        from ..ml import scalp_task as stk
+        try:
+            return {"ok": True, "selected": stk.rollback(body.get("asset") or rt.ml.inst, str(body.get("side")))}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "reason": str(exc)}
 
     @app.post("/api/v1/ml/reload")
     def ml_reload():

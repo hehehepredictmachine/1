@@ -435,12 +435,20 @@ def zscore(bars: list[dict], n: int = 20, min_rel_std: float = 1e-5) -> dict:
 
 # ----------------------------------------------------------------------------- M24 PSAR (shared implementation)
 def psar(bars: list[dict], step: float = 0.02, maximum: float = 0.2) -> dict:
-    from ..scalp.indicators import sar          # single implementation for engine, chart and tests
+    """Shared SAR core (scalp.indicators, profile MQ_SAR_WILDER_PROFILE_V1) - same values as scalp/chart/composer."""
+    from ..scalp.indicators import SAR_PROFILE, atr, sar_diagnostics, sar_points
     a = arrays(bars)
-    s = sar(list(a["h"]), list(a["l"]), step, maximum)
-    last = next((x for x in reversed(s) if x), None)
-    return {"implementation": "scalp.indicators.sar (wspólna)", "params": {"step": step, "max": maximum},
-            "last": last, "series": [x and {"sar": round(x["sar"], 5), "trend": x.get("trend")} for x in s[-120:]]}
+    h, lo, c = list(a["h"]), list(a["l"]), list(a["c"])
+    if len(h) < 2:
+        return {"implementation": "scalp.indicators (wspólna)", "profile": SAR_PROFILE, "params": {"step": step, "max": maximum},
+                "status": "WARMING_UP", "last": None, "series": []}
+    pts = sar_points(h, lo, step, maximum)
+    at = atr(h, lo, c)
+    diag = sar_diagnostics(h, lo, c, at[-1], step, maximum)
+    times = [b.get("open_utc") for b in bars]
+    return {"implementation": "scalp.indicators (wspólna)", "profile": SAR_PROFILE, "params": {"step": step, "max": maximum},
+            "last": pts[-1] and {k: pts[-1][k] for k in ("sar", "trend", "flip")}, "diagnostics": diag, "mt5_parity": "MT5_PARITY_NOT_RUN",
+            "series": [x and {"t": times[i], "sar": round(x["sar"], 5), "trend": x["trend"], "flip": x["flip"]} for i, x in enumerate(pts)][-120:]}
 
 
 # ----------------------------------------------------------------------------- M25 Stochastic daily breakout

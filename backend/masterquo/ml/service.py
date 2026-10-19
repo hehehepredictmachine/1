@@ -431,6 +431,75 @@ class MLService:
         threading.Thread(target=work, name="ml-backfill", daemon=True).start()
         return {"started": True, "days": days}
 
+    # ------------------------------------------------------------ PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1 (scalp candidates)
+    def on_scalp_candidate(self, plan: dict, *, instrument: str, profile_hash: str, session_epoch, costs: dict, entry_mode: str) -> dict:
+        """Called by ScalpService for EVERY candidate before any model filter: the snapshot is stored once (setup x side), then the
+        selected model of this (instrument, profile, side) is evaluated; the prediction is written BEFORE it is published."""
+        import hashlib
+        from . import scalp_task as stk
+        from ..scalp.strategy import NET_FEATURE_SCHEMA
+        if instrument != self.inst:
+            return {"status": "ABSTAIN", "reason": f"ML_INSTRUMENT_NOT_ACTIVE:{self.inst}"}
+        feats = plan.get("net_features") or {}
+        side = plan["direction"]
+        sid = f"{plan['setup_id']}:{side}"
+        snap = json.dumps({"f": feats, "sl": plan["sl"], "tp1": plan["tp1"], "tp2": plan["tp2"], "t": plan["decision_time"]}, sort_keys=True, default=str)
+        shash = hashlib.sha256(snap.encode()).hexdigest()[:16]
+        now = utcnow()
+        keep = {k: plan.get(k) for k in ("setup_id", "direction", "decision_ts", "decision_time", "sl", "tp1", "tp2", "entry_mode", "fill_shadow",
+                                         "economics", "sizing", "limit_wait_m1", "range_id")}
+        self.db.execute("""INSERT OR IGNORE INTO ml_scalp_samples(sample_id, instrument, profile_hash, setup_id, range_id, side, signal_time, decision_time,
+                           session_epoch, feature_schema, features, plan, snapshot_hash, costs, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (sid, instrument, profile_hash, plan["setup_id"], plan.get("range_id"), side, plan["decision_time"], iso(now), str(session_epoch),
+                         NET_FEATURE_SCHEMA, json.dumps(feats), json.dumps(keep, default=str), shash, json.dumps(costs),
+                         "UNSUPPORTED_ENTRY_POLICY" if entry_mode != "MARKET" else "PENDING", iso(now)))
+        if self.cfg.mode == "OFF":
+            return {"status": "ML_OFF", "sample_id": sid}
+        if entry_mode != "MARKET":
+            return {"status": "UNSUPPORTED_ENTRY_POLICY", "sample_id": sid}
+        try:
+            b, sel = stk.selected_bundle(instrument, side)
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "ARTIFACT_ERROR", "reason": str(exc)[:200], "sample_id": sid}
+        if b is None:
+            return {"status": "NO_MODEL", "sample_id": sid, "task_id": stk.TASK_ID}
+        t0 = time.perf_counter()
+        out = b.predict(feats, instrument=instrument, profile_hash=profile_hash, side=side)
+        out.update(role=sel["role"], sample_id=sid, snapshot_hash=shash, latency_ms=round((time.perf_counter() - t0) * 1000, 2))
+        pid = "SP-" + __import__("uuid").uuid4().hex[:16]
+        exp = now + timedelta(seconds=120)
+        self.db.execute("""INSERT INTO ml_scalp_predictions(prediction_id, sample_id, model_hash, role, instrument, side, snapshot_hash, session_epoch, as_of,
+                           computed_at, expires_at, status, raw_margin, p, expected_net_r, proposed_filter, detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (pid, sid, out.get("model_hash"), sel["role"], instrument, side, shash, str(session_epoch), plan["decision_time"], iso(now), iso(exp),
+                         out["status"], out.get("raw_margin"), out.get("calibrated_probability"), out.get("expected_net_r"),
+                         None if out.get("proposed_filter") is None else int(out["proposed_filter"]), json.dumps({"policy": out.get("policy")})))
+        out.update(prediction_id=pid, expires_at=iso(exp))
+        self.bus.publish("ml_scalp", {k: out.get(k) for k in ("prediction_id", "status", "calibrated_probability", "expected_net_r", "proposed_filter",
+                                                             "role", "model_hash", "snapshot_hash", "expires_at")} | {"setup_id": plan["setup_id"], "side": side})
+        return out
+
+    def scalp_pending(self, instrument: str, limit: int = 50) -> list[dict]:
+        return self.db.query("SELECT sample_id, plan FROM ml_scalp_samples WHERE instrument=? AND status='PENDING' ORDER BY signal_time LIMIT ?", (instrument, limit))
+
+    def scalp_label(self, sample_id: str, status: str, out: dict | None) -> None:
+        if status == "SETTLED" and out and out.get("net_r") is not None:
+            self.db.execute("UPDATE ml_scalp_samples SET status='LABELED', net_r=?, y=?, label_end=?, label_available_at=?, precision=? WHERE sample_id=?",
+                            (out["net_r"], 1 if out["net_r"] > 0 else 0, out["label_end"], iso(utcnow()), out.get("precision"), sample_id))
+        else:                                                   # no fill / no data: never a loss
+            self.db.execute("UPDATE ml_scalp_samples SET status=? WHERE sample_id=?",
+                            ("NO_EXECUTABLE_ENTRY" if status == "MISSED_LIMIT" else "DATA_GAP", sample_id))
+
+    def scalp_status(self, instrument: str) -> dict:
+        from . import scalp_task as stk
+        cnt = {r["status"]: r["n"] for r in self.db.query("SELECT status, COUNT(*) AS n FROM ml_scalp_samples WHERE instrument=? GROUP BY status", (instrument,))}
+        cls = {r["side"]: {"pos": r["pos"], "neg": r["neg"]} for r in self.db.query(
+            "SELECT side, SUM(y=1) AS pos, SUM(y=0) AS neg FROM ml_scalp_samples WHERE instrument=? AND status='LABELED' GROUP BY side", (instrument,))}
+        p = stk.root(instrument) / "registry.json"
+        reg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"selected": {}, "runs": {}}
+        last = self.db.query("SELECT * FROM ml_scalp_predictions WHERE instrument=? ORDER BY computed_at DESC LIMIT 10", (instrument,))
+        return {"task_id": stk.TASK_ID, "family": stk.FAMILY, "instrument": instrument, "live_samples": cnt, "classes": cls, "selected": reg.get("selected"),
+                "runs": dict(sorted(reg.get("runs", {}).items())[-10:]), "recent_predictions": last, "criteria": stk.CRITERIA}
+
     # ------------------------------------------------------------ settings
     def set_mode(self, mode: str) -> dict:
         if mode not in ("OFF", "SHADOW", "ASSIST"):

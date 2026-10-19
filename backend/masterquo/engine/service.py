@@ -520,13 +520,46 @@ class EngineService:
                "risk": risk, "macro": macro, "headlines": news.get("news", []), "upcoming_events": news.get("calendar", []),
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
-               "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get}
+               "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
+               "indicator_context": self._indicator_context(full)}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
             self.contexts[sid] = ctx
             while len(self.contexts) > 12:
                 self.contexts.popitem(last=False)
+
+    def _indicator_context(self, full) -> dict | None:
+        """PMW-UPD-02: SAR / IQ / PAL values FROZEN at this snapshot (no later callback to 'latest')."""
+        try:
+            from ..extind import knowledge
+            from ..scalp import indicators as ind
+            from ..timeutil import parse_iso
+            t = parse_iso(full["as_of"]) if isinstance(full.get("as_of"), str) else utcnow()
+            sar = {}
+            for tf in ("M5", "M15"):
+                b = [x for x in self.bridge.bars(tf, 400, include_forming=False) if x.get("open_utc")]
+                h, lo, c = [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
+                a = ind.atr(h, lo, c) if len(b) >= 15 else [None]
+                sar[tf] = ind.sar_diagnostics(h, lo, c, a[-1], 0.02, 0.2) if len(b) >= 2 else {"status": "WARMING_UP"}
+            ext = getattr(self, "extind", None)
+            inst = self.cfg_store.get().assets.active
+            sources = {}
+            if ext is not None:
+                st = ext.status(inst)["adapters"]
+                for a_ in ("IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M"):
+                    snap = ext.as_of(a_, inst, t) if a_ != "PAL02M" else None
+                    sources[a_] = {k: st[a_][k] for k in ("identity_status", "source_status", "mapping_status", "runtime_status")}
+                    if snap:
+                        sources[a_].update(snapshot_id=snap["snapshot_id"], available_at=snap["available_at"], levels=snap["levels"][:20],
+                                           windows=snap["windows"][:10])
+            ctx = {"knowledge_version": knowledge.KNOWLEDGE_VERSION, "as_of": full.get("as_of"), "instrument": inst, "sar": sar, "sources": sources,
+                   "model": {"status": "SEE_SETUP", "note": "ocena modelu reakcji jest liczona dla konkretnego setupu scalp (indicator_context)"}}
+            ctx["applied_rules"] = knowledge.applied_rules(ctx)
+            ctx["explanation_pl"] = knowledge.explain_pl(ctx)
+            return ctx
+        except Exception as exc:  # noqa: BLE001 - analysis never fails because of this block
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def context(self, snapshot_id: str | None) -> dict | None:
         with self._lock:

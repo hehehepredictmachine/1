@@ -33,6 +33,14 @@
   - Rola „techniczny”: dane syntetyczne.
 - Badania i walidacja: werdykt, foldy, kontrole, rejestr prób, holdout, macierz M01–M42.
 
+## Moduły IQ / PAL / SAR (PMW-UPD-02)
+- Instrukcja: `docs/MODULY_IQ_PAL_SAR_PL.md`, launcher `MODULY_IQ_PAL_SAR.bat`, panel: Modele i trening → „Moduły IQ / PAL / SAR”.
+- Standard gotowości modułów: `docs/STANDARD_MODULOW_PL.md`; rejestr postępu aktualizacji: `docs/updates/update_registry.json`.
+
+## Scalp ML – wynik netto cyklu (PMW-UPD-03)
+- Instrukcja: `docs/SCALP_ML_NETTO_PL.md`, launcher `24_SCALP_ML.bat`, panel: Modele i trening → „Scalp ML – wynik netto cyklu”.
+- Model nigdy nie jest wybierany automatycznie; OBSERVE / SHADOW_GATE ręcznie, bez wpływu na zlecenia.
+
 ## Diagnostyka
 - `02_DIAGNOSTYKA.bat` (MT5).
 - Dane i diagnostyka: ticki (ACD, kinematyka), repaint, strefy, archiwum prognoz, źródła i licencje.

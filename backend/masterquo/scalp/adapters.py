@@ -79,5 +79,26 @@ def snapshot(name: str, symbol: str, now: datetime | None = None, max_age_s: flo
                 else f"eksport starszy niż {max_age_s:.0f} s")
 
 
-def all_snapshots(symbol: str, now: datetime | None = None) -> list[dict]:
-    return [snapshot(n, symbol, now) for n in ADAPTERS]
+EXTIND = ("IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M")       # PMW-UPD-02: served by the read-only ingest (extind), not this bridge
+
+
+def extind_snapshot(name: str, symbol: str, ext, instrument: str | None, now: datetime) -> dict:
+    meta = ADAPTERS[name]
+    st = ext.status(instrument, now)["adapters"][name]
+    snap = ext.as_of(name, instrument, now) if instrument else None
+    vals = None
+    if snap:
+        lv = sorted(x["price"] for x in snap["levels"] if x.get("kind") == "LEVEL" and x.get("price") is not None)
+        vals = {"levels": len(lv), "windows": len(snap["windows"])}
+    status = "AVAILABLE" if st["runtime_status"] == "READY_RUNTIME" and snap else (
+        "UNDOCUMENTED_EXTERNAL" if st["identity_status"] != "IDENTIFIED" else "STALE" if st["source_status"] == "STALE" else "UNAVAILABLE")
+    return {"adapter": name, "title": meta["title"], "version": snap and snap.get("product_version"), "symbol": symbol, "values": vals,
+            "known_at": snap and snap["available_at"], "received_at": now.isoformat(), "delay_seconds": snap and round(snap["age_s"], 1),
+            "status": status, "reason": "; ".join(st["needs"]) or "odczyt zatwierdzonego mappingu", "needs": st["needs"],
+            "identity_status": st["identity_status"], "source_status": st["source_status"], "mapping_status": st["mapping_status"],
+            "snapshot_id": snap and snap["snapshot_id"]}
+
+
+def all_snapshots(symbol: str, now: datetime | None = None, ext=None, instrument: str | None = None) -> list[dict]:
+    now = now or datetime.now(timezone.utc)
+    return [extind_snapshot(n, symbol, ext, instrument, now) if (ext is not None and n in EXTIND) else snapshot(n, symbol, now) for n in ADAPTERS]

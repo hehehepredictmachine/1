@@ -211,6 +211,18 @@ def cmd_profile(name: str) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["neural-scalp"]:                 # PMW-UPD-04: Neural Scalp System (masterquo/lab/nss_cli.py)
+        _load_dotenv()
+        from .lab.nss_cli import main as nss_main
+        return nss_main(argv[1:])
+    if argv[:1] == ["ml-scalp"]:                     # PMW-UPD-03: SCALP_NET_PROFIT_MARKET_V1 (masterquo/ml/scalp_cli.py)
+        _load_dotenv()
+        from .ml.scalp_cli import main as ml_scalp_main
+        return ml_scalp_main(argv[1:])
+    if argv[:1] == ["indicator-context"]:            # PMW-UPD-02: IQ / PAL / SAR modules (masterquo/extind/cli.py)
+        _load_dotenv()
+        from .extind.cli import main as extind_main
+        return extind_main(argv[1:])
     if argv[:1] == ["training"]:                     # training installer / orchestrator (masterquo/training/cli.py)
         _load_dotenv()
         from .training.cli import main as training_main

@@ -1,7 +1,8 @@
 <!--
-PROMPT_VERSION: MQAI-AGENT-PROMPT-1.3.0
+PROMPT_VERSION: MQAI-AGENT-PROMPT-1.4.0
 Edytowalny plik. Po zmianie zmień też PROMPT_VERSION (pierwsza linia komentarza) – wersja jest zapisywana
 przy każdej analizie. Źródła reguł: docs/MASTERQUO_SPEC_REKONSTRUKCJA_v1.0.0.md, docs/AUTO_LOGIKA.md, docs/PLAYBOOK_10_STRATEGII.md.
+1.4.0: wiedza IND-K01..K12 (IQ/PAL/SAR) dołączana z kodu (extind/knowledge.py), narzędzie get_indicator_context.
 1.2.0: profil ACTIVE (S01–S10, MarketRegimeEngine, AUTO wybór strategii), etapy WATCH/EARLY/CONFIRMED z punktacją.
 1.3.0: S11 i S12 (rodzina walls/range, CANDIDATE), narzędzie get_walls_and_patterns (walls ze źródłem, S/R, zakres M5, formacje).
 -->

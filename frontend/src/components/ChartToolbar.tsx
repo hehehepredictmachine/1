@@ -4,7 +4,7 @@ import { usePersisted } from "../router";
 import type { TimeZoneMode } from "../util";
 
 const BASE: ChartOpts = { showRsi: false, showMacd: false, showStructure: false, showZones: false, showVol: false, syncCrosshair: false, tz: "LOCAL",
-  showPatterns: false, showAiLevels: true };
+  showPatterns: false, showAiLevels: true, showSar: false, showExtInd: false };
 
 /** Per-page chart options. `legacy` = the 1.9 key (one set for the whole monitor) used once as the starting point. */
 export function useChartOpts(page: string, defaults: Partial<ChartOpts>, legacy?: string): [ChartOpts, (k: keyof ChartOpts, v: any) => void] {
@@ -23,6 +23,8 @@ export function useChartOpts(page: string, defaults: Partial<ChartOpts>, legacy?
 const LABELS: [keyof ChartOpts, string, string][] = [
   ["showAiLevels", "Poziomy AI", "poziomy zaproponowane przez AI – oznaczone „AI:”, osobno od planu silnika"],
   ["showPatterns", "Walls / zakres / formacje", "snapshot walls (HV_PROXY lub IV – źródło na etykiecie), zakres M5 i strefy M1, formacje, pivoty, dowody świecowe"],
+  ["showSar", "SAR", "Parabolic SAR (profil MQ_SAR_WILDER_PROFILE_V1, step/max z profilu) – punkty zamkniętych świec; flip potwierdza zamknięta świeca"],
+  ["showExtInd", "IQ / PAL", "poziomy IQ Gold Gann / IQ Star Lines z zatwierdzonego mappingu eksportera (wersja znana teraz); brak źródła = brak linii"],
   ["showStructure", "BOS/CHoCH", "struktura rynku"],
   ["showZones", "FVG/OB", "strefy FVG i order block"],
   ["showVol", "Walls dzienne / Daily", "pasma zmienności dnia (źródło: HV_PROXY = przybliżenie z historii brokera, IV tylko z importu) i daily open/high/low"],

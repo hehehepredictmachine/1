@@ -41,6 +41,8 @@ export interface ChartOpts {
   tz: TimeZoneMode;
   showPatterns?: boolean;        // 1.10: walls snapshot, M5 range + M1 zones, chart patterns, confirmed pivots, candle evidence
   showAiLevels?: boolean;        // 1.10: levels proposed by the AI (marked "AI:", separate from the engine plan)
+  showSar?: boolean;             // PMW-UPD-02: shared SAR core points
+  showExtInd?: boolean;          // PMW-UPD-02: IQ Gold Gann / Star Lines levels from the approved exporter mapping
 }
 
 export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
@@ -100,6 +102,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const structMarkers = useRef<SeriesMarker<Time>[]>([]);
   const baseMarkers = useRef<SeriesMarker<Time>[]>([]);
   const [structure, setStructure] = useState<any>(null);
+  const [indCtx, setIndCtx] = useState<any>(null);
+  const sarSeries = useRef<ISeriesApi<"Line"> | null>(null);
+  const extLines = useRef<IPriceLine[]>([]);
   const times = useRef<number[]>([]);                 // chart times of the candles currently in the series
   const initialized = useRef(false);
   const userUntil = useRef(0);                         // range changes before this moment come from the user
@@ -200,6 +205,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       el.removeEventListener("dblclick", onUser);
       c.remove();
       chart.current = null;
+      sarSeries.current = null;
+      extLines.current = [];
       lines.current = new Map();
       rsi.current = null;
       rsiLevels.current = [];
@@ -509,6 +516,34 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     setAllMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structure, opts.showPatterns, data, shift]);
+
+  // ---------------------------------------------------------------- PMW-UPD-02: SAR points + IQ levels (backend values only)
+  useEffect(() => {
+    if (!opts.showSar && !opts.showExtInd) { setIndCtx(null); return; }
+    let alive = true;
+    apiGet(`/api/v1/indicator-context/chart?tf=${tf}`).then((r) => alive && setIndCtx(r)).catch(() => alive && setIndCtx(null));
+    return () => { alive = false; };
+  }, [tf, opts.showSar, opts.showExtInd, s.analysisSeq]);
+
+  useEffect(() => {
+    const c = chart.current, ser = candles.current;
+    if (!c || !ser) return;
+    const TT = (iso: string) => (epochSec(iso) + shiftRef.current) as Time;
+    if (sarSeries.current && (!opts.showSar || !indCtx?.sar)) { try { c.removeSeries(sarSeries.current); } catch { /* chart gone */ } sarSeries.current = null; }
+    if (opts.showSar && indCtx?.sar?.points?.length) {
+      if (!sarSeries.current) sarSeries.current = c.addSeries(LineSeries, { color: String(tkRef.current.choch), lineVisible: false, pointMarkersVisible: true,
+        pointMarkersRadius: 1.6, priceLineVisible: false, lastValueVisible: false, title: `SAR ${indCtx.sar.params.step}/${indCtx.sar.params.max}` });
+      const seen = new Set<number>();
+      sarSeries.current.setData(indCtx.sar.points.filter((p: any) => p.t).map((p: any) => ({ time: TT(p.t), value: p.sar }))
+        .filter((p: any) => !seen.has(p.time as number) && seen.add(p.time as number)));
+    }
+    extLines.current.forEach((p) => ser.removePriceLine(p));
+    extLines.current = [];
+    if (opts.showExtInd) for (const lv of indCtx?.ext_levels || [])
+      extLines.current.push(ser.createPriceLine({ price: lv.price, color: String(tkRef.current.sweep), title: lv.title, lineStyle: LineStyle.Dashed,
+        lineWidth: 1, axisLabelVisible: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indCtx, opts.showSar, opts.showExtInd, data, shift]);
 
   // ---------------------------------------------------------------- AI levels (marked "AI:" - never merged with the engine plan)
   useEffect(() => {

@@ -153,7 +153,10 @@ def exit_params(prof: dict, costs: dict, risk: float) -> dict:
 
 
 def run(m1: list[dict], prof: dict, tick: float, costs: dict, m5: list[dict] | None = None, m15: list[dict] | None = None,
-        m30: list[dict] | None = None, decision_points: int = 10, margin_mode: str = "HEDGING", h1: list[dict] | None = None) -> dict:
+        m30: list[dict] | None = None, decision_points: int = 10, margin_mode: str = "HEDGING", h1: list[dict] | None = None,
+        accept=None) -> dict:
+    """accept(plan) -> bool: optional policy filter applied at the decision (e.g. SCALP_NET_PROFIT_MARKET_V1). A rejected candidate
+    does not occupy the one-cycle slot / cooldown, so the next candidate can be taken - a full chronological policy replay."""
     m1 = sorted(m1, key=lambda b: ts(b["open_utc"]))
     h1 = h1 if h1 is not None else aggregate(m1, 60)
     m5 = m5 if m5 is not None else aggregate(m1, 5)
@@ -190,6 +193,10 @@ def run(m1: list[dict], prof: dict, tick: float, costs: dict, m5: list[dict] | N
                 blocked.append(dict(rec, reason=why))
                 mach.close_direction(plan["direction"], "BLOCKED", why, T)
                 continue
+            if accept is not None and not accept(plan):
+                blocked.append(dict(rec, reason="ML_POLICY_REJECTED"))
+                mach.close_direction(plan["direction"], "BLOCKED", "filtr modelu (replay polityki)", T)
+                continue
             fl = get_fill(plan, P, T, slip)
             if not fl["ok"]:
                 blocked.append(dict(rec, reason=fl["reason"]))
@@ -212,7 +219,7 @@ def run(m1: list[dict], prof: dict, tick: float, costs: dict, m5: list[dict] | N
             risk = eco["risk_per_unit"]
             net = pnl(sgn, fill, 1.0, res["exits"], costs)
             first = res["exits"][0][3] if res["exits"] else None
-            cyc = dict(rec, range_id=plan["range_id"], fill_time=iso_ts(P.t[i]), fill=fill, entry_mode=fl["mode"], features=plan.get("features"), sl=plan["sl"], tp1=plan["tp1"], tp2=tp2, spread=sp,
+            cyc = dict(rec, range_id=plan["range_id"], fill_time=iso_ts(P.t[i]), fill=fill, entry_mode=fl["mode"], features=plan.get("features"), net_features=plan.get("net_features"), signal_time=plan["decision_time"], sl=plan["sl"], tp1=plan["tp1"], tp2=tp2, spread=sp,
                        exits=[{"vol": v, "price": round(px, 5), "time": iso_ts(t), "reason": r} for (v, px, t, r) in res["exits"]],
                        net_price=net, risk_price=risk, net_r=net / risk, tp1_before_sl=first == "TP1", ambiguous=res["ambiguous"],
                        mfe_r=res["mfe"] / risk, mae_r=res["mae"] / risk, hold_min=(res["exits"][-1][2] - P.t[i]) / 60 if res["exits"] else None, win=net > 0,

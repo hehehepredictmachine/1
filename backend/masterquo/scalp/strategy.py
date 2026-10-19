@@ -424,6 +424,7 @@ class ScalpMachine:
             _rt(edge - d["eps"], tick) if mode == "LIMIT_EDGE" else None          # BUY limit = Ask level, SELL limit = Bid level
         plan["limit_wait_m1"] = V(p, "entry", "limit_wait_m1", default=3)
         plan["features"] = setup_features(self, plan, d, i, a1)
+        plan["net_features"] = scalp_net_features(self, plan, d, i, a1)      # SCALP_NET_PROFIT_MARKET_V1 (ML) - same in replay / live
         d.update(state="ENTRY_CANDIDATE", plan=plan, reason="kandydat wejścia – czekam na świeże kwotowanie i bramki")
         self._j(T, "ENTRY_CANDIDATE", d["reason"], direction=direction, setup_id=plan["setup_id"])
         return plan
@@ -485,6 +486,64 @@ def setup_features(mach: "ScalpMachine", plan: dict, d: dict, i: int, a1: float)
          "minutes_since_arm": (plan["decision_ts"] - r["armed_at"]) / 60.0, "dist_round5_atr5": sgn * r5 / a5,
          "hour_sin": math.sin(2 * math.pi * hr / 24), "hour_cos": math.cos(2 * math.pi * hr / 24)}
     return {k: round(float(f[k]), 6) for k in SETUP_FEATURES}
+
+
+NET_FEATURE_SCHEMA = "SCALP-NET-FEAT-1.0.0"
+NET_FEATURES = SETUP_FEATURES + ("m1_ret1_atr", "m1_ret3_atr", "m1_ret5_atr", "m1_ret10_atr", "m1_range_atr", "m1_body_ratio", "m1_wick_with",
+                                 "m1_wick_against", "m1_pctb_dir", "m1_ema20_dist_atr", "atr1_atr5", "spread_over_risk", "ctx_m15_ok", "ctx_m30_ok",
+                                 "ctx_h1_ok", "spread_known", "tv_known")
+
+
+def scalp_net_features(mach: "ScalpMachine", plan: dict, d: dict, i: int, a1: float) -> dict:
+    """SCALP-NET-FEAT-1.0.0 for SCALP_NET_PROFIT_MARKET_V1: the setup features WITHOUT the 0.0-for-missing convention (missing =
+    NaN, with explicit *_ok / *_known flags) + an M1 block (direction-normalised, ATR(M1) units) + cost relative to the risk.
+    Uses only closed bars <= the signal bar i. The legacy setup_features() is unchanged (old artefacts keep their meaning)."""
+    nan = float("nan")
+    m1 = mach.m1
+    sgn = 1 if plan["direction"] == "BUY" else -1
+    base = dict(plan.get("features") or setup_features(mach, plan, d, i, a1))
+    oks = {}
+    for tf, key, s_ in (("m15", "m15_sar_with", mach.m15), ("m30", "m30_sar_with", mach.m30), ("h1", "h1_sar_with", mach.h1)):
+        ok = context(s_, mach.p).get("status") == "OK"
+        oks[tf] = ok
+        if not ok:
+            base[key] = nan
+    if not oks["m30"]:
+        base["m30_slope_dir"] = nan
+    if not oks["m15"]:
+        base["m15_bw_pct"] = nan
+    sp_known = m1.sp[i] is not None
+    tv_known = bool(d.get("tv_ratio"))
+    if not sp_known:
+        base["spread_atr1"] = nan
+    if not tv_known:
+        base["tv_log_ratio"] = nan
+    if len(mach.m5) < 40:
+        base["m5_pct_b_dir"] = nan
+    c, h, lo, o = m1.c, m1.h, m1.l, m1.o
+
+    def ret(k):
+        return sgn * (c[i] - c[i - k]) / a1 if i - k >= 0 else nan
+    rng = h[i] - lo[i]
+    up_w, dn_w = h[i] - max(o[i], c[i]), min(o[i], c[i]) - lo[i]
+    win = c[max(0, i - 19):i + 1]
+    m = sum(win) / len(win)
+    sd = (sum((x - m) ** 2 for x in win) / len(win)) ** 0.5
+    pctb = ((c[i] - (m - 2 * sd)) / (4 * sd) - 0.5) * sgn if len(win) == 20 and sd > 0 else nan
+    k = 2 / 21
+    ema = c[max(0, i - 59)]
+    for x in c[max(0, i - 58):i + 1]:
+        ema = x * k + ema * (1 - k)
+    risk = sgn * (c[i] - plan["sl"])
+    a5 = (mach.range or {}).get("atr_m5")
+    base.update({"m1_ret1_atr": ret(1), "m1_ret3_atr": ret(3), "m1_ret5_atr": ret(5), "m1_ret10_atr": ret(10), "m1_range_atr": rng / a1,
+                 "m1_body_ratio": abs(c[i] - o[i]) / rng if rng > 0 else nan,
+                 "m1_wick_with": (dn_w if sgn > 0 else up_w) / a1, "m1_wick_against": (up_w if sgn > 0 else dn_w) / a1, "m1_pctb_dir": pctb,
+                 "m1_ema20_dist_atr": sgn * (c[i] - ema) / a1 if i >= 20 else nan, "atr1_atr5": a1 / a5 if a5 else nan,
+                 "spread_over_risk": (m1.sp[i] / risk) if (sp_known and risk > 0) else nan,
+                 "ctx_m15_ok": 1.0 if oks["m15"] else 0.0, "ctx_m30_ok": 1.0 if oks["m30"] else 0.0, "ctx_h1_ok": 1.0 if oks["h1"] else 0.0,
+                 "spread_known": 1.0 if sp_known else 0.0, "tv_known": 1.0 if tv_known else 0.0})
+    return {kk: (round(float(base[kk]), 6) if math.isfinite(float(base[kk])) else nan) for kk in NET_FEATURES}
 
 
 def _rt(x: float, tick: float) -> float:

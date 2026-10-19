@@ -45,7 +45,8 @@ def load_prompt() -> tuple[str, str]:
     m = re.search(r"PROMPT_VERSION:\s*([A-Za-z0-9_.\-]+)", text)
     version = m.group(1) if m else "UNVERSIONED"
     body = re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
-    return body, version
+    from ..extind.knowledge import KNOWLEDGE_VERSION, prompt_section
+    return body + "\n\n" + prompt_section(), f"{version}+{KNOWLEDGE_VERSION}"     # knowledge from code (PMW-UPD-02)
 
 
 class ClaudeAgent:

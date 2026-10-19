@@ -1,0 +1,255 @@
+{
+ "schema": "pmw-update-registry-1",
+ "note": "Wpis nie jest dowodem wykonania – stan sprawdza kod i wyniki testów. Statusy: NOT_STARTED/IN_PROGRESS/IMPLEMENTED/VERIFIED/PARTIAL/BLOCKED.",
+ "updates": {
+  "PMW-UPD-01-BB": {
+   "update_id": "PMW-UPD-01-BB",
+   "spec_file": null,
+   "spec_sha256": null,
+   "code_status": "BLOCKED",
+   "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
+   "requirements": {}
+  },
+  "PMW-UPD-02-IQ-SAR": {
+   "update_id": "PMW-UPD-02-IQ-SAR",
+   "spec_file": "PepeMarketWizard_IQ_GANN_STAR_PAL02M_SAR_CLAUDE_CODE_1.md",
+   "spec_sha256": "3f777434e8c25396c0e9f8ade6067e4bba528a2d57c760897a8baace1993fab9",
+   "code_status": "PARTIAL",
+   "blocker": null,
+   "requirements": {
+    "MOD-01": "PARTIAL (kod gotowy; brak produktu/licencji/mappingu)",
+    "MOD-02": "PARTIAL (kod gotowy; brak produktu)",
+    "MOD-03": "BLOCKED (tożsamość PAL02M)",
+    "MOD-04": "VERIFIED",
+    "MOD-05": "IMPLEMENTED (eksporter niekompilowany)",
+    "MOD-06": "IMPLEMENTED",
+    "MOD-07": "IMPLEMENTED",
+    "MOD-08": "IMPLEMENTED",
+    "MOD-09": "IMPLEMENTED",
+    "MOD-10": "IMPLEMENTED (trening na fixture; realny NOT_RUN)",
+    "MOD-11": "IMPLEMENTED (ablacje/bootstrap; edge NOT_EVALUATED)",
+    "MOD-12": "VERIFIED (regresja scalp/agent)",
+    "MOD-13": "PARTIAL (Windows/MT5 NOT_RUN)",
+    "MOD-14": "IMPLEMENTED (docs/STANDARD_MODULOW_PL.md)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "SAR zweryfikowany; ingest/mapping/archiwum/eksporter/composer/trener/API/UI/wiedza agenta zaimplementowane; produkty IQ, PAL02M, MT5 i kompilacja niedostępne",
+   "states": {
+    "SAR": {
+     "implementation": "VERIFIED",
+     "source": "MT5 bary bota",
+     "runtime": "READY (lab/wykres/scalp/agent)",
+     "dataset": "TRAINING_PIPELINE_IMPLEMENTED",
+     "training": "NOT_RUN_NO_REAL_DATA",
+     "weights": "NOT_APPLICABLE",
+     "mt5_parity": "MT5_PARITY_NOT_RUN",
+     "edge": "NOT_EVALUATED"
+    },
+    "IQ_GOLD_GANN": {
+     "implementation": "IMPLEMENTED",
+     "source": "PRODUCT_NOT_INSTALLED (środowisko budowy)",
+     "mapping": "MAPPING_MISSING",
+     "runtime": "NOT_READY",
+     "dataset": "BLOCKED_NO_ARCHIVE",
+     "training": "BLOCKED_NO_DATA",
+     "native": "NOT_COMPILED_NO_METAEDITOR"
+    },
+    "IQ_STAR_LINES": {
+     "implementation": "IMPLEMENTED",
+     "source": "PRODUCT_NOT_INSTALLED",
+     "mapping": "MAPPING_MISSING",
+     "runtime": "NOT_READY",
+     "dataset": "BLOCKED_NO_ARCHIVE",
+     "training": "BLOCKED_NO_DATA",
+     "native": "NOT_COMPILED_NO_METAEDITOR"
+    },
+    "PAL02M": {
+     "implementation": "IMPLEMENTED_MANIFEST_MECHANISM",
+     "identity": "BLOCKED_IDENTITY_REQUIRED",
+     "runtime": "NOT_READY",
+     "training": "BLOCKED_IDENTITY_REQUIRED"
+    }
+   },
+   "files": [
+    "backend/masterquo/scalp/indicators.py (SarState, sar_points, sar_diagnostics, validate_sar)",
+    "backend/masterquo/lab/market.py::psar",
+    "backend/masterquo/extind/{contract,mapping,service,features,trainer,knowledge,cli}.py",
+    "backend/masterquo/db/migrations/0016_extind_archive.sql",
+    "config/extind_manifests_v1.json",
+    "mql5/PMW_ExtIndicatorExporter.mq5",
+    "backend/masterquo/api/app.py (/api/v1/indicator-context*)",
+    "backend/masterquo/scalp/{service,adapters}.py",
+    "backend/masterquo/engine/service.py::_indicator_context",
+    "backend/masterquo/agent/{service,tools}.py + prompt 1.4.0",
+    "backend/masterquo/training/runner.py::t_indicator_context",
+    "frontend/src/components/{ChartPanel,ChartToolbar}.tsx",
+    "frontend/src/pages/LabPages.tsx::IndicatorModulesCard",
+    "MODULY_IQ_PAL_SAR.bat, tools/ic.cmd",
+    "tests/test_ind_context.py"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_ind_context",
+     "result": "12/12 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab",
+     "result": "6/6 OK (w tym test_06 moduły IQ/PAL/SAR end-to-end)",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Na komputerze z MT5: skompilować mql5/PMW_ExtIndicatorExporter.mq5, dodać do wykresu z IQ, zatwierdzić mapping po porównaniu liczb, rejestrować ≥ kilka tygodni."
+  },
+  "PMW-UPD-03-ML-SCALP": {
+   "update_id": "PMW-UPD-03-ML-SCALP",
+   "spec_file": "PepeMarketWizard_MACHINE_LEARNING_SCALPING_CLAUDE_CODE.md",
+   "spec_sha256": "42d46ac0333cf8e7f137932ace942919bec211c2deb36a9b560971ee422e3c11",
+   "code_status": "IMPLEMENTED",
+   "blocker": null,
+   "requirements": {
+    "SMS-01": "IMPLEMENTED (MLService – jeden właściciel, ta sama DB per instrument)",
+    "SMS-02": "IMPLEMENTED (SCALP-NET-FEAT-1.0.0; kandydaci ScalpMachine → ml_scalp_samples)",
+    "SMS-03": "VERIFIED (cel netto cyklu, klasa 0 dla 0, brak fałszywych strat)",
+    "SMS-04": "VERIFIED (natywne .ubj, parytet po reload, hash plików)",
+    "SMS-05": "VERIFIED (bloki rozłączne, purge/embargo, ledger holdoutu)",
+    "SMS-06": "IMPLEMENTED (replay polityki + bootstrap dzienny; realne NOT_RUN)",
+    "SMS-07": "IMPLEMENTED (zapis przed publikacją, TTL, bus ml_scalp, API)",
+    "SMS-08": "VERIFIED (TreeSHAP, suma = margines, MODEL_CHANGED)",
+    "SMS-09": "VERIFIED (brak autopromocji, FIXTURE nie do wyboru, SHADOW_GATE tylko po HOLDOUT_PASSED, rollback)",
+    "SMS-10": "PARTIAL (24_SCALP_ML.bat, CLI, docs, testy; Windows NOT_RUN)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "Kolektor kandydatów, cechy netto, XGBoost klasyfikator+regresor per strona, walk-forward, ledger, bundle, SHAP, role, API/panel/runner; trening realny NOT_RUN",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5 eksport REAL_USER_DATA (brak w środowisku budowy)",
+    "data": "NOT_AVAILABLE_HERE",
+    "training": "NOT_RUN_NO_REAL_DATA (fixture OK)",
+    "artifacts": "FIXTURE_ONLY",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_EVALUATED"
+   },
+   "files": [
+    "backend/masterquo/ml/scalp_task.py",
+    "backend/masterquo/ml/scalp_cli.py",
+    "backend/masterquo/ml/service.py (on_scalp_candidate, scalp_label, scalp_status)",
+    "backend/masterquo/db/migrations/0017_ml_scalp.sql",
+    "backend/masterquo/scalp/strategy.py (NET_FEATURES, scalp_net_features)",
+    "backend/masterquo/scalp/replay.py (accept)",
+    "backend/masterquo/scalp/service.py (ml_scalp, _outcome, settle)",
+    "backend/masterquo/api/app.py (/api/v1/ml/scalp*)",
+    "backend/masterquo/training/runner.py::t_ml_scalp",
+    "backend/masterquo/train_all.py",
+    "frontend/src/pages/LabPages.tsx::ScalpMlCard",
+    "24_SCALP_ML.bat",
+    "docs/SCALP_ML_NETTO_PL.md",
+    "tests/test_ml_scalp.py"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_ml_scalp",
+     "result": "8/8 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Na komputerze z MT5: 00_TRENING_START.bat (eksport) → 24_SCALP_ML.bat (4) → raport; wybór OBSERVE ręcznie."
+  },
+  "PMW-UPD-04-NEURAL": {
+   "update_id": "PMW-UPD-04-NEURAL",
+   "spec_file": "PepeMarketWizard_NEURAL_SCALP_SYSTEM_CLAUDE_CODE.md",
+   "spec_sha256": "3c1244ad8ba2c0208f4fd1d3b37815265763f332ecfe963e49486ebba544ea6f",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-05-MTF": {
+   "update_id": "PMW-UPD-05-MTF",
+   "spec_file": "PepeMarketWizard_MTF_SCALPING_DASHBOARD_CLAUDE_CODE.md",
+   "spec_sha256": "8b58068829eac370e5097d7b3ef25b2de501e67a37d01beb277361393fdb9ccd",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-06-HEATMAP": {
+   "update_id": "PMW-UPD-06-HEATMAP",
+   "spec_file": "PepeMarketWizard_LIQUIDATION_HEATMAP_SESSION_SWEEP_CLAUDE_CODE.md",
+   "spec_sha256": "3efeed5bb8631ada4aa3112d0593a8b2d99928ccbd9d5f99714f66cdccc5a489",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-07-STRUCTURE": {
+   "update_id": "PMW-UPD-07-STRUCTURE",
+   "spec_file": "PepeMarketWizard_STRUCTURE_CANDLES_FULL_SYSTEM_CLAUDE_CODE.md",
+   "spec_sha256": "56b217634750c4c4dc91e551714e6fb924e94512dcd5580dd387a12aa6a2ba7e",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-08-NEUTRAL-NEWTON": {
+   "update_id": "PMW-UPD-08-NEUTRAL-NEWTON",
+   "spec_file": "PepeMarketWizard_CLAUDE_CODE_NEUTRALIZATION_SEW_NEWTONIAN.md",
+   "spec_sha256": "479ea957595a7742723e759b084d7a2993ad10d29b46215a916349858539c880",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-09-SPIKE-MINI": {
+   "update_id": "PMW-UPD-09-SPIKE-MINI",
+   "spec_file": "PepeMarketWizard_CLAUDE_CODE_SPIKINGBRAIN_MINIROCKET_REGIME_STRUCTURE.md",
+   "spec_sha256": "7196f6f2f7723e0af8185e07d086e66c48f6db3ec81ae4e04fa1defb07eba7ef",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-10-MARKET-INTEL": {
+   "update_id": "PMW-UPD-10-MARKET-INTEL",
+   "spec_file": null,
+   "spec_sha256": null,
+   "code_status": "BLOCKED",
+   "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
+   "requirements": {}
+  },
+  "PMW-UPD-11-FLOW": {
+   "update_id": "PMW-UPD-11-FLOW",
+   "spec_file": "PepeMarketWizard_CLAUDE_CODE_MARKOV_HEIKIN_CHANNELS_STOPDISTANCE.md",
+   "spec_sha256": "6cca86d3f9e8ade2970415c754904e2f800fae9ea02ae13e3429e1efdbb2d2db",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-12-SAMPLING": {
+   "update_id": "PMW-UPD-12-SAMPLING",
+   "spec_file": null,
+   "spec_sha256": null,
+   "code_status": "BLOCKED",
+   "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
+   "requirements": {}
+  },
+  "PMW-UPD-13-QUIET": {
+   "update_id": "PMW-UPD-13-QUIET",
+   "spec_file": null,
+   "spec_sha256": null,
+   "code_status": "BLOCKED",
+   "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
+   "requirements": {}
+  },
+  "PMW-UPD-14-VAMD-SMC": {
+   "update_id": "PMW-UPD-14-VAMD-SMC",
+   "spec_file": "PepeMarketWizard_CLAUDE_CODE_VAMD_SMC_FRACTAL_BUFFER_INSPECTOR.md",
+   "spec_sha256": "f6d57f3d15943962cba3213ec2ec25c7521622e8c678cd8f32f6c3aaa98124f8",
+   "code_status": "NOT_STARTED",
+   "blocker": null,
+   "requirements": {}
+  },
+  "PMW-UPD-15-MT5-EA": {
+   "update_id": "PMW-UPD-15-MT5-EA",
+   "spec_file": null,
+   "spec_sha256": null,
+   "code_status": "BLOCKED",
+   "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
+   "requirements": {}
+  }
+ }
+}

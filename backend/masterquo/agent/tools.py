@@ -42,6 +42,9 @@ TOOL_DEFS = [
           "formacje wykresowe i świecowe interwału ze stanami (FORMING / CONFIRMED / INVALIDATED / EXPIRED, available_at) oraz dla wybranego setupu "
           "S12: wariant, arbiter, warunki spełnione i brakujące. Nie potwierdzaj formacji 'z wyglądu' i nie omijaj bramek – opisujesz te fakty.",
           {"timeframe": {"type": "string", "enum": TFS}}, ["timeframe"]),
+    _tool("get_indicator_context", "Moduły IQ Gold Gann / IQ Star Lines / PAL02M / Parabolic SAR zamrożone w snapshocie: SAR (profil, parametry, "
+          "stan, flip, EP/AF, dystans w ATR, interpretacja), stany źródeł IQ/PAL (tożsamość, mapping, odczyt as-of), status modelu reakcji i "
+          "zastosowane reguły IND-K. Brak źródła = brak wartości, nie zero.", {}, []),
     _tool("get_signal_history", "Ostatnie setupy i ich wyniki (rozliczone/unieważnione) oraz zapisane wnioski.",
           {"limit": {"type": "integer"}}, ["limit"]),
 ]
@@ -211,6 +214,10 @@ class Toolbox:
             out["s12_selected_setup"] = {"variant": f.get("variant"), "arbiter": f.get("arbiter"), "alternatives": f.get("alternatives"),
                                          "missing": row["record"].get("missing_confirmations"), "checklist": f.get("checklist")}
         return out
+
+    def t_get_indicator_context(self) -> dict:
+        c = self.ctx.get("indicator_context")
+        return c if c else {"status": "UNAVAILABLE"}
 
     def t_get_signal_history(self, limit: int) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 30:

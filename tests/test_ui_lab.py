@@ -6,6 +6,7 @@ Execution Lock enforced by the backend (trade pad execute, unlock without phrase
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import os
 import subprocess
 import sys
@@ -189,6 +190,35 @@ class TestLabUI(unittest.TestCase):
         p.click("[data-testid=asset-switch] button[data-asset=XAUUSD]")
         self.assertTrue(wait_for(lambda: self.api("/api/v1/assets")["active"] == "XAUUSD", 20, 0.5))
         self.assertTrue(wait_for(lambda: p.locator("[data-testid=asset-card] h3").inner_text().startswith("XAUUSD"), 30, 0.5))
+        self.assertEqual(self.errors, [])
+
+    def test_06_indicator_modules_end_to_end(self):
+        """PMW-UPD-02 AUD-04: exporter file -> ingest -> archive -> API chart/status -> panel; PAL02M honestly blocked."""
+        sys.path.insert(0, str(_env.ROOT / "backend"))
+        from masterquo.extind import contract
+        st, m = self.send("PUT", "/api/v1/indicator-context/mapping", {"adapter": "IQ_GOLD_GANN", "product_version": "1.0", "approved": True,
+                                                                         "verified_examples": [{"name": "IQG_major_1", "chart": 2650.0}],
+                                                                         "rules": [{"prefix": "IQG_major", "type": "HLINE", "kind": "LEVEL", "role": "MAJOR"}]})
+        self.assertEqual(st, 200, m)
+        body = {"schema_version": "pmw-extind-1", "producer_version": "test", "adapter_id": "IQ_GOLD_GANN", "product": {"version": "1.0"},
+                "terminal_fingerprint": "Synthetic:001", "chart_id": "1", "symbol": "XAUUSD-", "tf": "PERIOD_M5", "time_basis": "UTC",
+                "captured_at_server": 1_800_000_000, "generation": 1, "sequence": 1, "complete": True,
+                "objects": [{"name": "IQG_major_1", "type": "HLINE", "prices": [2650.0], "times": []}]}
+        inbox = Path(self.td.dir) / "extind" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "IQ_GOLD_GANN__1.json").write_bytes(contract.wrap(body))
+        self.assertTrue(wait_for(lambda: self.api("/api/v1/indicator-context/chart?tf=M5")["ext_levels"], 30, 0.5))
+        ch = self.api("/api/v1/indicator-context/chart?tf=M5")
+        stat = self.api("/api/v1/indicator-context")
+        self.assertEqual(ch["ext_levels"][0]["price"], 2650.0)
+        self.assertEqual(ch["ext_levels"][0]["snapshot_id"], stat["sources"]["adapters"]["IQ_GOLD_GANN"]["last_snapshot_id"])   # same snapshot id
+        self.assertEqual(ch["sar"]["profile"], "MQ_SAR_WILDER_PROFILE_V1")
+        self.assertEqual(stat["sources"]["adapters"]["PAL02M"]["identity_status"], "BLOCKED_IDENTITY_REQUIRED")
+        p = self.page
+        p.goto(BASE + "/#/modele")
+        p.wait_for_selector("[data-testid=ind-modules] tr[data-adapter=PAL02M]")
+        self.assertIn("wymagana identyfikacja", p.locator("[data-testid=ind-modules] tr[data-adapter=PAL02M]").inner_text())
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
     def test_05_mobile(self):

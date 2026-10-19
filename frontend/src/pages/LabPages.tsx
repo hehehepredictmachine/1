@@ -298,6 +298,8 @@ export function ModelsPage() {
     <div className="lab-page" data-testid="page-modele">
       <h2>Modele i trening – {active}</h2>
       <TrainingCard />
+      <IndicatorModulesCard />
+      <ScalpMlCard asset={active} />
       <p className="muted small">Każde aktywo i horyzont ma osobną ścieżkę. Model z danych syntetycznych ma rolę „techniczny” i nigdy nie wpływa na decyzje. Brak danych lub przewagi → INSUFFICIENT_EVIDENCE / NO_VALIDATED_EDGE.</p>
       <div className="card" data-testid="train-card">
         <h3>Nowe badanie (protokół VP – zamrożony przed startem)</h3>
@@ -399,6 +401,96 @@ export function TrainingCard() {
         {Object.entries(act.families.lab?.pinned || {}).map(([fam, mid]) => <li key={fam}>lab {fam}: <span className="mono">{String(mid)}</span>{" "}
           <button className="btn ghost" onClick={() => rollback(`lab:${fam}`)}>Rollback</button></li>)}
       </ul>}
+    </div>);
+}
+
+// ------------------------------------------------------------------------------------------- PMW-UPD-02 Moduły IQ / PAL / SAR
+const SRC_PL: Record<string, string> = { RECEIVING: "odbiera dane", SOURCE_MISSING: "brak źródła (eksporter/wskaźnik)", STALE: "dane nieaktualne",
+  BLOCKED_IDENTITY_REQUIRED: "wymagana identyfikacja narzędzia", DECODER_NOT_IMPLEMENTED: "brak zaufanego dekodera", MANIFEST_INCOMPLETE: "manifest niekompletny",
+  UNSUPPORTED_PLATFORM: "nieobsługiwana platforma", IDENTIFIED: "zidentyfikowany" };
+const MAP_PL: Record<string, string> = { MAPPING_MISSING: "brak mappingu", MAPPING_UNVERIFIED: "mapping niezweryfikowany", MAPPING_APPROVED: "mapping zatwierdzony",
+  MAPPING_VERSION_CHANGED: "zmiana wersji produktu – mapping do ponownej weryfikacji" };
+
+export function IndicatorModulesCard() {
+  const [st, setSt] = useState<any>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => apiGet("/api/v1/indicator-context").then(setSt).catch(() => undefined);
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+  if (!st) return null;
+  const src = st.sources?.adapters || {};
+  const runs = Object.entries(st.model?.runs || {}) as [string, any][];
+  const act = st.model?.active;
+  return (
+    <div className="card" data-testid="ind-modules">
+      <h3>Moduły IQ / PAL / SAR – {st.instrument}</h3>
+      <p className="muted small">Odczyt oryginalnych wskaźników tylko przez eksporter (mql5/PMW_ExtIndicatorExporter.mq5) i zatwierdzony mapping. Brak źródła = brak
+        wartości, nie zero. Model reakcji przewiduje P(TP1 przed SL) istniejącego setupu – to nie P(zysk) ani sygnał; działa w SHADOW.</p>
+      <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Moduł</th><th>Tożsamość</th><th>Źródło</th><th>Mapping</th><th>Runtime</th><th>Archiwum</th><th>Trening</th><th>Czego brakuje</th></tr></thead>
+        <tbody>
+          <tr data-adapter="SAR"><td>Parabolic SAR ({st.sar?.profile}, {st.sar?.live_params?.step}/{st.sar?.live_params?.max})</td><td>własna implementacja</td>
+            <td>MT5 (bary bota)</td><td>—</td><td>działa</td><td>—</td><td>kalibracja: {st.sar?.calibration}; wagi: nie dotyczy</td><td>parytet iSAR: {st.sar?.mt5_parity}</td></tr>
+          {Object.values(src).map((v: any) => (
+            <tr key={v.adapter} data-adapter={v.adapter}><td>{v.title}</td><td>{SRC_PL[v.identity_status] ?? v.identity_status}</td>
+              <td>{SRC_PL[v.source_status] ?? v.source_status}{v.heartbeat ? ` (${fmtTime(v.heartbeat.at, true)})` : ""}</td>
+              <td>{MAP_PL[v.mapping_status] ?? v.mapping_status}</td><td>{v.runtime_status}</td><td>{v.archived_approved}</td><td>{v.training_status}</td>
+              <td className="wrap-cell">{(v.needs || []).join("; ") || "—"}</td></tr>))}
+        </tbody></table></div>
+      <h4>Model reakcji SCALP_INDICATOR_CONTEXT_V1 (zadanie {st.model?.task_id})</h4>
+      <p className="small">Aktywny (SHADOW): <span className="mono">{act ? `${act.run_id} / ${act.variant}` : "brak"}</span>{" "}
+        <button className="btn ghost" onClick={() => apiSend("POST", "/api/v1/indicator-context/train", { asset: st.instrument }).then(() => setMsg("Trening uruchomiony w osobnym procesie."))}
+          data-testid="ind-train">Trenuj / oceń</button>{" "}
+        {act && <button className="btn ghost" onClick={() => apiSend("POST", "/api/v1/indicator-context/rollback", { asset: st.instrument }).then(load)}>Rollback</button>}</p>
+      {msg && <p className="small">{msg}</p>}
+      {!runs.length && <p className="muted small">Brak runów – potrzebny eksport REAL_USER_DATA (trening XAUUSD/BTC) albo MODULY_IQ_PAL_SAR.bat.</p>}
+      {runs.map(([rid, r]) => (
+        <div key={rid} className="small"><span className="mono">{rid}</span> · {r.status} · rola {r.role}
+          {(r.artifacts || []).map((a: string) => { const v = a.replace(/^model_/, "").replace(/\.json$/, "");
+            return <button key={a} className="btn ghost" disabled={r.role === "fixture_only"} title={r.role === "fixture_only" ? "dane syntetyczne – nigdy aktywne" : "aktywuj do obserwacji SHADOW"}
+              onClick={() => apiSend("POST", "/api/v1/indicator-context/activate", { asset: st.instrument, run_id: rid, variant: v }).then((x: any) => { setMsg(x.ok ? `Aktywny: ${v}` : x.reason); load(); })}>{v}</button>; })}
+        </div>))}
+    </div>);
+}
+
+/** PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1: candidates, runs, roles (OBSERVE / SHADOW_GATE chosen by the user), predictions with
+ * TreeSHAP explanation. The probability is P(positive NET result of the whole scalp cycle) - not P(price up). */
+export function ScalpMlCard({ asset }: { asset?: string }) {
+  const [st, setSt] = useState<any>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [ex, setEx] = useState<any>(null);
+  const load = () => asset && apiGet(`/api/v1/ml/scalp?asset=${asset}`).then((r) => r.instrument === asset && setSt(r)).catch(() => undefined);
+  useEffect(() => { setSt(null); load(); const t = setInterval(load, 7000); return () => clearInterval(t); }, [asset]);
+  if (!st) return null;
+  const sel = st.selected || {};
+  const runs = Object.entries(st.runs || {}) as [string, any][];
+  const act = (path: string, body: any) => apiSend("POST", path, { asset, ...body }).then((x: any) => { setMsg(x.ok === false ? x.reason : x.started ? "Uruchomiono w osobnym procesie." : "OK"); load(); });
+  return (
+    <div className="card" data-testid="ml-scalp">
+      <h3>Scalp ML – wynik netto cyklu ({st.task_id}) – {st.instrument}</h3>
+      <p className="muted small">XGBoost osobno dla LONG i SHORT: P(dodatni wynik netto całego cyklu po kosztach) i oczekiwany net_R. Nie jest to P(wzrost ceny) ani sygnał.
+        Model nigdy nie jest wybierany automatycznie; rola SHADOW_GATE tylko po zaliczonym holdoucie i tylko jako hipotetyczny filtr – bez wpływu na zlecenia.</p>
+      <p className="small">Kandydaci (live): {Object.entries(st.live_samples || {}).map(([k, v]) => `${k} ${v}`).join(" · ") || "brak"} · klasy: {Object.entries(st.classes || {}).map(([k, v]: [string, any]) => `${k} +${v.pos}/−${v.neg}`).join(" · ") || "—"}</p>
+      <p className="small">Wybrane: {["BUY", "SELL"].map((s) => <span key={s}>{s}: <span className="mono">{sel[s] ? `${sel[s].run_id} (${sel[s].role})` : "brak"}</span>
+        {sel[s] && <button className="btn ghost" onClick={() => act("/api/v1/ml/scalp/rollback", { side: s })}>Rollback</button>} </span>)}</p>
+      <p className="small"><button className="btn ghost" data-testid="ml-scalp-prepare" onClick={() => act("/api/v1/ml/scalp/prepare", {})}>Przygotuj dane</button>{" "}
+        <button className="btn ghost" data-testid="ml-scalp-train" onClick={() => act("/api/v1/ml/scalp/train", {})}>Trenuj i oceń (bez aktywacji)</button></p>
+      {msg && <p className="small">{msg}</p>}
+      {!runs.length && <p className="muted small">Brak runów – potrzebny eksport REAL_USER_DATA (00_TRENING_START.bat) albo 24_SCALP_ML.bat.</p>}
+      {runs.map(([rid, r]) => (
+        <div key={rid} className="small"><span className="mono">{rid}</span> · {r.status} · rola {r.role}
+          {Object.entries(r.sides || {}).map(([side, v]: [string, any]) => <span key={side}> · {side}: {v.status}
+            {v.model_hash && r.role !== "FIXTURE_ONLY" && <>
+              <button className="btn ghost" onClick={() => act("/api/v1/ml/scalp/select", { run_id: rid, side, role: "OBSERVE" })}>OBSERVE</button>
+              <button className="btn ghost" disabled={v.status !== "HOLDOUT_PASSED"} title={v.status !== "HOLDOUT_PASSED" ? "wymaga HOLDOUT_PASSED" : "hipotetyczny filtr w cieniu"}
+                onClick={() => act("/api/v1/ml/scalp/select", { run_id: rid, side, role: "SHADOW_GATE" })}>SHADOW_GATE</button></>}</span>)}
+        </div>))}
+      {(st.recent_predictions || []).length > 0 && <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Czas</th><th>Strona</th><th>P(net&gt;0)</th><th>E[net_R]</th><th>Filtr</th><th>Rola</th><th></th></tr></thead>
+        <tbody>{st.recent_predictions.map((p: any) => <tr key={p.prediction_id}><td>{fmtTime(p.computed_at, true)}</td><td>{p.side}</td><td>{p.p == null ? "niekalibrowane" : fmtNum(p.p * 100, 1) + "%"}</td>
+          <td>{fmtNum(p.expected_net_r, 3)}</td><td>{p.proposed_filter == null ? "—" : p.proposed_filter ? "przepuść" : "odrzuć"}</td><td>{p.role}</td>
+          <td><button className="btn ghost" onClick={() => apiGet(`/api/v1/ml/scalp/explain?prediction_id=${p.prediction_id}`).then(setEx)}>Dlaczego?</button></td></tr>)}</tbody></table></div>}
+      {ex && <div className="small" data-testid="ml-scalp-explain">{ex.status === "MODEL_CHANGED" ? ex.reason : <>
+        <b>{ex.method}</b> ({ex.units}); bias {fmtNum(ex.bias, 3)}, margines {fmtNum(ex.raw_margin, 3)}, suma {ex.sum_check ? "zgodna" : "NIEZGODNA"}
+        <ul>{(ex.top || []).map((t: any) => <li key={t.feature}><span className="mono">{t.feature}</span> = {t.value == null ? "brak" : fmtNum(t.value, 3)} → {t.contribution > 0 ? "+" : ""}{fmtNum(t.contribution, 3)}</li>)}</ul>
+        pozostałe cechy: {fmtNum(ex.other_features, 3)}</>}</div>}
     </div>);
 }
 

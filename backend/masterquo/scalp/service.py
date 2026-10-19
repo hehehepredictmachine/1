@@ -25,6 +25,9 @@ class ScalpService:
     def __init__(self, cfg_store, bridge, db, bus, log, news=None, forecast=None):
         self.cfg_store, self.bridge, self.db, self.bus, self.log, self.news, self.forecast = cfg_store, bridge, db, bus, log, news, forecast
         self.inst = "XAUUSD"                          # profile / registry / SHADOW rows of this instrument
+        self.extind = None                            # runtime sets the ExtIndService (PMW-UPD-02)
+        self.ml = None                                # runtime sets the ML router (PMW-UPD-03 candidate collector)
+        self.nss = None                               # runtime sets the NeuralScalpService (PMW-UPD-04)
         self.prof = st.load_profile()
         self.hedge = hedge_mod.HedgeController(self.prof)
         self._stop = threading.Event()
@@ -95,6 +98,9 @@ class ScalpService:
         if self.machine is None or epoch != self.epoch:
             self.machine, self.fed, self.epoch = st.ScalpMachine(self.prof, tick), {}, epoch     # restart / reconnect: rebuild from history
         self._feed(bars, point)
+        self._bars = bars
+        if getattr(self, "nss", None) is not None:            # PMW-UPD-04: context telemetry on every new closed M1 (latest wins)
+            self.nss.on_m1(bars, instrument=self.inst, epoch=epoch, point=point)
         self.last_key = key
         cands = self.machine.candidates
         self.machine.candidates = []
@@ -107,7 +113,7 @@ class ScalpService:
         self.latency.append((time.perf_counter() - t0) * 1000)
         self.latency = self.latency[-200:]
         self._set("SHADOW", None, mtf=self.mtf(bars), indicators=self.indicators(bars), sessions=sessions.boxes_as_of(bars["M5"], 5, iso(utcnow())),
-                  adapters=adapters.all_snapshots(cfg.mt5.symbol), setup=self.machine.public(), forecasts=self.forecasts(),
+                  adapters=adapters.all_snapshots(cfg.mt5.symbol, ext=self.extind, instrument=self.inst), setup=self.machine.public(), forecasts=self.forecasts(),
                   hedge_risk=self.hedge_view(cfg), recent=self.recent(20), summary=self.summary(), statuses=self.statuses(),
                   training=self.training_status(), latency_ms=self._lat())
 
@@ -187,6 +193,9 @@ class ScalpService:
         gate("jeden cykl / cooldown", busy == 0 and not cool, f"otwarte hipotetyczne cykle {busy}, cooldown {cool}")
         mq = self.setup_quality(plan)
         plan["model_b"] = mq
+        plan["indicator_context"] = self.indicator_context(plan)      # PMW-UPD-02 reaction model - SHADOW observation, never a gate
+        plan["ml_scalp"] = self.ml_scalp(plan)                         # PMW-UPD-03: candidate stored BEFORE any model filter + inference
+        plan["neural"] = self.neural(plan)                             # PMW-UPD-04: frozen snapshot to the NSS worker (async, OBSERVE)
         if st.V(self.prof, "ml_filter", "enabled", default=False):
             gate("filtr modelu jakości setupu (B)", bool(mq.get("pass")), mq.get("reason") or f"P(TP1 przed SL) {mq.get('p')} vs próg {mq.get('threshold')}")
         else:
@@ -240,46 +249,62 @@ class ScalpService:
         return True, f"kalendarz {m.get('status')} (częściowy)"
 
     # ------------------------------------------------------------ hypothetical outcomes
+    def _outcome(self, P, plan: dict) -> tuple[str, dict | None]:
+        """Full-cycle outcome of ONE plan with the replay rules (shared by SHADOW settlement and the ML scalp labels).
+        Returns (status, outcome): PENDING (bars not yet available / cycle open), NO_DATA, MISSED_LIMIT or SETTLED."""
+        T = plan["decision_ts"]
+        i = P.index.get(T)
+        if i is None:
+            return ("NO_DATA" if P.t and P.t[-1] > T + 120 else "PENDING"), None
+        sgn = 1 if plan["direction"] == "BUY" else -1
+        sz = plan.get("sizing") or {}
+        f1 = st.V(self.prof, "exits", "tp1_fraction") if sz.get("split", True) else 1.0
+        tp2 = plan["tp2"] if f1 < 1 else None
+        costs = self._costs(plan)
+        if plan.get("entry_mode") == "LIMIT_EDGE":
+            fl = replay.get_fill(plan, P, T, costs["slippage_price"])
+            if not fl["ok"]:
+                if fl["reason"] == "MISSED_LIMIT_NOT_FILLED" and P.t[-1] >= T + 60 * (plan.get("limit_wait_m1") or 3):
+                    return "MISSED_LIMIT", None
+                return "PENDING", None
+            i, fill = fl["i"], fl["fill"]
+        else:
+            fill = plan.get("fill_shadow") or (P.o[i] + ((P.sp[i] or 0) if sgn > 0 else 0))
+        risk = (plan.get("economics") or {}).get("risk_per_unit") or abs(fill - plan["sl"])
+        res = replay.walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, P.t[i] + st.V(self.prof, "exits", "max_hold_minutes") * 60, costs,
+                          entry=fill, **replay.exit_params(self.prof, costs, risk))
+        if res.get("open_at_end") or not res["exits"]:
+            return "PENDING", None
+        net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
+        return "SETTLED", {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
+                           "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
+                           "net_r": net / risk if risk else None, "label_end": st.iso_ts(res["exits"][-1][2]),
+                           "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
+
     def settle(self, m1: list[dict], point: float) -> None:
         rows = self.db.query("SELECT * FROM scalp_shadow WHERE outcome_status='PENDING' AND instrument=? LIMIT 50", (self.inst,))
-        if not rows:
+        mlrows = self.ml.scalp_pending(self.inst) if self.ml is not None else []
+        nrows = self.nss.pending() if getattr(self, "nss", None) is not None else []
+        if not rows and not mlrows and not nrows:
             return
         bars = [dict({k: b.get(k) for k in ("open_utc", "o", "h", "l", "c")}, spread_price=(b["spread"] * point if b.get("spread") is not None else None))
                 for b in m1]
         P = replay.Path(bars, None)
         for r in rows:
-            plan = json.loads(r["plan"])
-            T = plan["decision_ts"]
-            i = P.index.get(T)
-            if i is None:
-                if P.t and P.t[-1] > T + 120:
-                    self.db.execute("UPDATE scalp_shadow SET outcome_status='NO_DATA', settled_at=? WHERE id=?", (iso(utcnow()), r["id"]))
-                continue
-            sgn = 1 if plan["direction"] == "BUY" else -1
-            sz = plan.get("sizing") or {}
-            f1 = st.V(self.prof, "exits", "tp1_fraction") if sz.get("split", True) else 1.0
-            tp2 = plan["tp2"] if f1 < 1 else None
-            costs = self._costs(plan)
-            if plan.get("entry_mode") == "LIMIT_EDGE":
-                fl = replay.get_fill(plan, P, T, costs["slippage_price"])
-                if not fl["ok"]:
-                    if fl["reason"] == "MISSED_LIMIT_NOT_FILLED" and P.t[-1] >= T + 60 * (plan.get("limit_wait_m1") or 3):
-                        self.db.execute("UPDATE scalp_shadow SET outcome_status='MISSED_LIMIT', settled_at=? WHERE id=?", (iso(utcnow()), r["id"]))
-                    continue
-                i, fill = fl["i"], fl["fill"]
-            else:
-                fill = plan.get("fill_shadow") or (P.o[i] + ((P.sp[i] or 0) if sgn > 0 else 0))
-            risk = (plan.get("economics") or {}).get("risk_per_unit") or abs(fill - plan["sl"])
-            res = replay.walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, P.t[i] + st.V(self.prof, "exits", "max_hold_minutes") * 60, costs,
-                              entry=fill, **replay.exit_params(self.prof, costs, risk))
-            if res.get("open_at_end") or not res["exits"]:
-                continue
-            net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
-            out = {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
-                   "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
-                   "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
-            self.db.execute("UPDATE scalp_shadow SET outcome_status='SETTLED', outcome=?, net_r=?, settled_at=? WHERE id=?",
-                            (json.dumps(out), net / risk if risk else None, st.iso_ts(res["exits"][-1][2]), r["id"]))
+            stt, out = self._outcome(P, json.loads(r["plan"]))
+            if stt in ("NO_DATA", "MISSED_LIMIT"):
+                self.db.execute("UPDATE scalp_shadow SET outcome_status=?, settled_at=? WHERE id=?", (stt, iso(utcnow()), r["id"]))
+            elif stt == "SETTLED":
+                self.db.execute("UPDATE scalp_shadow SET outcome_status='SETTLED', outcome=?, net_r=?, settled_at=? WHERE id=?",
+                                (json.dumps(out), out["net_r"], out["label_end"], r["id"]))
+        for r in nrows:                                    # NSS inference labels (first exit + net_R of the cycle), after maturity
+            stt, out = self._outcome(P, json.loads(r["plan"]))
+            if stt != "PENDING":
+                self.nss.label(r["inference_id"], stt, out)
+        for r in mlrows:                                   # ML scalp labels: every candidate, same policy, written after maturity
+            stt, out = self._outcome(P, json.loads(r["plan"]))
+            if stt != "PENDING":
+                self.ml.scalp_label(r["sample_id"], stt, out)
 
     def _costs(self, plan: dict) -> dict:
         cfg = self.cfg_store.get()
@@ -287,6 +312,45 @@ class ScalpService:
         cs = float(info.get("trade_contract_size") or 100.0)
         tick = float(info.get("trade_tick_size") or 0.01)
         return {"commission_price_side": (cfg.scalp.commission_per_lot_side or 0.0) / cs, "slippage_price": cfg.scalp.slippage_ticks * tick}
+
+    def neural(self, plan: dict) -> dict:
+        if getattr(self, "nss", None) is None:
+            return {"status": "NOT_INSTALLED"}
+        try:
+            info = self.bridge.symbol_info or {}
+            point = float(info.get("point") or info.get("trade_tick_size") or 0.01)
+            return self.nss.submit(plan, getattr(self, "_bars", {}) or {}, instrument=self.inst, profile_hash=st.profile_hash(self.prof),
+                                   epoch=getattr(self.bridge, "session_epoch", None), point=point)
+        except Exception as exc:  # noqa: BLE001 - observation only
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
+
+    def ml_scalp(self, plan: dict) -> dict:
+        if self.ml is None:
+            return {"status": "NOT_INSTALLED"}
+        try:
+            return self.ml.on_scalp_candidate(dict(plan), instrument=self.inst, profile_hash=st.profile_hash(self.prof),
+                                              session_epoch=getattr(self.bridge, "session_epoch", None), costs=self._costs(plan),
+                                              entry_mode=plan.get("entry_mode", "MARKET"))
+        except Exception as exc:  # noqa: BLE001 - observation only
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
+
+    def indicator_context(self, plan: dict) -> dict:
+        """SCALP_INDICATOR_CONTEXT_V1 for THIS setup (same composer as training). No active model -> NO_MODEL (no percentage)."""
+        try:
+            from ..extind import trainer as ict
+            m = ict.active_model(self.inst)
+            if m is None:
+                return {"status": "NO_MODEL", "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1",
+                        "reason": "brak aktywnego modelu kontekstu wskaźników (indicator-context train + activate)"}
+            from datetime import datetime as _dt, timezone as _tz
+            t = _dt.fromtimestamp(plan["decision_ts"], _tz.utc)
+            bars = getattr(self, "_bars", {}) or {}
+            ext = {a: (self.extind.as_of(a, self.inst, t) if self.extind else None) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}
+            return dict(m.predict({"decision_time": t, "side": plan["direction"], "price": plan["ref_close_bid"], "atr_m5": plan["range"]["atr_m5"],
+                                   "base": plan.get("features") or {}, "bars": {k: bars.get(k) or [] for k in ("M5", "M15")}, "ext": ext}, self.inst),
+                        setup_id=plan["setup_id"], as_of=plan["decision_time"])
+        except Exception as exc:  # noqa: BLE001 - observation only
+            return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def setup_quality(self, plan: dict) -> dict:
         """Task-B model (P(TP1 before SL)) for this setup through the analytics worker - only when a compatible model is active."""
