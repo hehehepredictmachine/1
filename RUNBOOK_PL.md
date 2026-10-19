@@ -41,6 +41,12 @@
 - Instrukcja: `docs/SCALP_ML_NETTO_PL.md`, launcher `24_SCALP_ML.bat`, panel: Modele i trening → „Scalp ML – wynik netto cyklu”.
 - Model nigdy nie jest wybierany automatycznie; OBSERVE / SHADOW_GATE ręcznie, bez wpływu na zlecenia.
 
+## Neural Scalp System (PMW-UPD-04)
+- Instrukcja: `docs/NEURAL_SCALP_SYSTEM_PL.md`, launcher `23_NEURAL_SCALP.bat`, panel: Pulpit → „Neural System — Scalping”, Modele i trening → Neural System.
+
+## Scalping MTF (PMW-UPD-05)
+- Instrukcja: `docs/SCALPING_MTF_DASHBOARD_PL.md`, panel: Wykresy → Scalping MTF (`#/scalp-mtf`); działa bez modeli.
+
 ## Diagnostyka
 - `02_DIAGNOSTYKA.bat` (MT5).
 - Dane i diagnostyka: ticki (ACD, kinematyka), repaint, strefy, archiwum prognoz, źródła i licencje.

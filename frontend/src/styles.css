@@ -852,3 +852,37 @@ button.link { background: none; border: 0; padding: 0; color: var(--icon); text-
 .lab-page select, .lab-page input { max-width: 100%; }
 .lab-page .card { min-width: 0; overflow-wrap: anywhere; }
 .lab-page pre { max-width: 100%; }
+
+/* PMW-UPD-04 Neural Scalp System graph / heatmap */
+.nss-graph { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr); gap: 8px; align-items: start; }
+.nss-area { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.nss-area h4 { margin: 0; font-size: 11px; letter-spacing: .08em; opacity: .7; }
+.nss-lane { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.nss-node { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 4px 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+.nss-node.sel { outline: 2px solid var(--accent, #d4a017); }
+.nss-heat { display: grid; gap: 1px; max-width: 100%; }
+.nss-heat span { display: block; aspect-ratio: 1 / 1; min-width: 4px; }
+@media (max-width: 700px) { .nss-graph { grid-template-columns: 1fr; } .nss-lane { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* PMW-UPD-05 Scalping MTF dashboard */
+.mtf-page .mtf-bar { line-height: 1.8; }
+.mtf-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; }
+.mtf-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.mtf-grid.with-side { grid-template-columns: minmax(0, 1fr) 340px; }
+@container (max-width: 1100px) { .mtf-grid.with-side { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1100px) { .mtf-grid.with-side { grid-template-columns: minmax(0, 1fr); } }
+.mtf-charts { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 0; }
+.mtf-charts.n1 { grid-template-columns: minmax(0, 1fr); }
+.mtf-charts.n2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+.mtf-charts.n5 > :nth-child(4), .mtf-charts.n5 > :nth-child(5) { grid-column: span 1; }
+.mtf-charts.n5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.mtf-charts.n5 > :nth-child(-n+3) { grid-column: span 2; }
+.mtf-charts.n5 > :nth-child(4), .mtf-charts.n5 > :nth-child(5) { grid-column: span 3; }
+@media (max-width: 900px) { .mtf-charts, .mtf-charts.n2, .mtf-charts.n5 { grid-template-columns: minmax(0, 1fr); } .mtf-charts > * { grid-column: auto !important; } }
+.mtf-chart { min-width: 0; padding: 6px; }
+.mtf-chart-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mtf-chart-tools { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; }
+.mtf-side { min-width: 0; }
+.mtf-conds { padding-left: 0; list-style: none; }
+.mtf-conds li { margin: 2px 0; }
+tr.sel td { outline: 1px solid var(--accent, #d4a017); }

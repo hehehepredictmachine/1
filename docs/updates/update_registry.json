@@ -159,17 +159,125 @@
    "update_id": "PMW-UPD-04-NEURAL",
    "spec_file": "PepeMarketWizard_NEURAL_SCALP_SYSTEM_CLAUDE_CODE.md",
    "spec_sha256": "3c1244ad8ba2c0208f4fd1d3b37815265763f332ecfe963e49486ebba544ea6f",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "NSS-01": "IMPLEMENTED (ten sam bridge/ScalpService, brak drugiej sesji MT5)",
+    "NSS-02": "VERIFIED (snapshot as-of, własny zegar M1, test prefiksu i granicy H1)",
+    "NSS-03": "VERIFIED (wynik związany z setup_id/stroną/profilem; brak setupu = brak P)",
+    "NSS-04": "VERIFIED (gradient check, trening zmienia wagi, inferencja nie)",
+    "NSS-05": "IMPLEMENTED (walk-forward, ledger, baseline, replay polityki; realne NOT_RUN)",
+    "NSS-06": "VERIFIED (hash ocenionego = zapisanego = załadowanego bundla)",
+    "NSS-07": "VERIFIED (telemetria z tego samego forwardu, layer_id)",
+    "NSS-08": "IMPLEMENTED (karta Pulpitu + #/neural, test UI)",
+    "NSS-09": "VERIFIED (kolejka 8, timeout, reset sesji/aktywa, zapis przed publikacją)",
+    "NSS-10": "VERIFIED (OBSERVE domyślnie, SHADOW_GATE tylko po HOLDOUT_PASSED, brak ścieżki zleceń)",
+    "NSS-11": "PARTIAL (23_NEURAL_SCALP.bat, CLI, panel; Windows NOT_RUN)",
+    "NSS-12": "PARTIAL (testy offline + build; trening realny i benchmark p95 na CPU użytkownika NOT_RUN)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "TCN M1/M5 + kontekst w NumPy, protokół, bundle NPZ, worker runtime, DB 0018, API/WS, panel, CLI, launcher; trening realny NOT_RUN",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5 (bridge bota)",
+    "data": "NOT_AVAILABLE_HERE",
+    "training": "NOT_RUN_NO_REAL_DATA (fixture OK)",
+    "artifacts": "FIXTURE_ONLY",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_EVALUATED"
+   },
+   "files": [
+    "backend/masterquo/lab/scalp_net.py",
+    "backend/masterquo/lab/nss.py",
+    "backend/masterquo/lab/nss_service.py",
+    "backend/masterquo/lab/nss_cli.py",
+    "backend/masterquo/db/migrations/0018_nss_inferences.sql",
+    "backend/masterquo/scalp/service.py (neural, on_m1, settle)",
+    "backend/masterquo/runtime.py",
+    "backend/masterquo/api/app.py (/api/v1/lab/neural*, /lab/train task_id, state.lab_neural)",
+    "backend/masterquo/training/runner.py::t_neural_scalp",
+    "frontend/src/components/NeuralSystem.tsx",
+    "frontend/src/{router.ts,store.tsx,App.tsx,styles.css}",
+    "23_NEURAL_SCALP.bat",
+    "docs/NEURAL_SCALP_SYSTEM_PL.md",
+    "tests/test_nss.py",
+    "tests/test_ui_lab.py::test_07_neural_system"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_nss",
+     "result": "10/10 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_07_neural_system",
+     "result": "1/1 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_nss test_scalp_core test_risk_execution test_train_all test_ml_scalp",
+     "result": "98/98 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Na komputerze z MT5: 00_TRENING_START.bat (eksport ≥12 mies.) → 23_NEURAL_SCALP.bat (1, 2, 3) → raport; wybór OBSERVE ręcznie."
   },
   "PMW-UPD-05-MTF": {
    "update_id": "PMW-UPD-05-MTF",
    "spec_file": "PepeMarketWizard_MTF_SCALPING_DASHBOARD_CLAUDE_CODE.md",
    "spec_sha256": "8b58068829eac370e5097d7b3ef25b2de501e67a37d01beb277361393fdb9ccd",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "MTF-01": "VERIFIED (role TF z profilu, test)",
+    "MTF-02": "VERIFIED (jeden instrument/epoka/as_of/rewizje)",
+    "MTF-03": "IMPLEMENTED (świece MT5, BB/SAR, range/strefy/poziomy, podgląd LIVE)",
+    "MTF-04": "IMPLEMENTED (kursor po UTC w zakresie świecy, grupy A/B, zoom per wykres; test JS mapowania NOT_RUN – brak runnera testów TS)",
+    "MTF-05": "VERIFIED (checklista z zapisanych bramek, kompletność, blokady)",
+    "MTF-06": "VERIFIED (NOT_LINKED dla innego setupu, brak procentu bez modelu)",
+    "MTF-07": "VERIFIED (heartbeat 1 s: DISCONNECTED/STALE bez nowej M1)",
+    "MTF-08": "IMPLEMENTED (presety, mobile 390 bez poziomego przewijania – test UI)",
+    "MTF-09": "VERIFIED (cache ≤10/60 s, bez drugiego połączenia MT5)",
+    "MTF-10": "PARTIAL (kod/testy/build/docs; test na prawdziwym MT5 NOT_RUN)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "MTFContextSnapshot + heartbeat + archiwum 0019 + API/WS + strona #/scalp-mtf (5 wykresów, macierz, checklista, presety, inspekcja)",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5 (bridge bota)",
+    "data": "LIVE/SYNTHETIC",
+    "training": "NOT_APPLICABLE",
+    "artifacts": "NOT_APPLICABLE",
+    "native": "NOT_APPLICABLE",
+    "edge": "NOT_APPLICABLE"
+   },
+   "files": [
+    "backend/masterquo/scalp/dashboard.py",
+    "backend/masterquo/db/migrations/0019_mtf_snapshots.sql",
+    "backend/masterquo/scalp/service.py (dashboard.build)",
+    "backend/masterquo/runtime.py",
+    "backend/masterquo/api/app.py (/api/v1/scalp/dashboard*)",
+    "frontend/src/pages/ScalpMtfPage.tsx",
+    "frontend/src/components/MtfChart.tsx",
+    "frontend/src/chartview.ts (SyncMsg workspace/instrument/epoch/seq)",
+    "frontend/src/components/ChartPanel.tsx (ignoruje wiadomości dashboardu)",
+    "docs/SCALPING_MTF_DASHBOARD_PL.md",
+    "tests/test_mtf_dashboard.py",
+    "tests/test_ui_lab.py::test_08_scalp_mtf_dashboard"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_mtf_dashboard",
+     "result": "7/7 OK",
+     "date": "2026-10-19"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_08_scalp_mtf_dashboard",
+     "result": "1/1 OK",
+     "date": "2026-10-19"
+    }
+   ],
+   "next_step": "Na komputerze z MT5: otworzyć #/scalp-mtf, sprawdzić symbol XAUUSD-, czasy, Bid/Ask, reconnect i zmianę aktywa."
   },
   "PMW-UPD-06-HEATMAP": {
    "update_id": "PMW-UPD-06-HEATMAP",

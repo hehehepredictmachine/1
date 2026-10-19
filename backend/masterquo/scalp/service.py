@@ -28,6 +28,7 @@ class ScalpService:
         self.extind = None                            # runtime sets the ExtIndService (PMW-UPD-02)
         self.ml = None                                # runtime sets the ML router (PMW-UPD-03 candidate collector)
         self.nss = None                               # runtime sets the NeuralScalpService (PMW-UPD-04)
+        self.dashboard = None                         # runtime sets the MTFDashboard (PMW-UPD-05)
         self.prof = st.load_profile()
         self.hedge = hedge_mod.HedgeController(self.prof)
         self._stop = threading.Event()
@@ -81,6 +82,8 @@ class ScalpService:
             self.hedge = hedge_mod.HedgeController(self.prof)
             self.machine, self.fed, self.last_key = None, {}, None
             self.state.update(instrument=self.inst, profile_id=self.prof["profile_id"], profile_hash=st.profile_hash(self.prof))
+            if self.dashboard is not None:
+                self.dashboard.last = None                  # no snapshot of the previous instrument under the new one
         bars = {tf: [b for b in self.bridge.bars(tf, cfg.scalp.m1_bars if tf == "M1" else 400, include_forming=False) if b.get("open_utc")]
                 for tf in TFS}
         if not bars["M1"] or not bars["M5"]:
@@ -116,6 +119,12 @@ class ScalpService:
                   adapters=adapters.all_snapshots(cfg.mt5.symbol, ext=self.extind, instrument=self.inst), setup=self.machine.public(), forecasts=self.forecasts(),
                   hedge_risk=self.hedge_view(cfg), recent=self.recent(20), summary=self.summary(), statuses=self.statuses(),
                   training=self.training_status(), latency_ms=self._lat())
+        if self.dashboard is not None:                     # PMW-UPD-05: one MTFContextSnapshot of exactly this bar set and state
+            try:
+                self.dashboard.build(bars, info=info, epoch=epoch, recent=[r for r in self.recent(40) if r.get("instrument") == self.inst][:10],
+                                     nss_last=self.nss.last if self.nss is not None else None, t0=t0)
+            except Exception as exc:  # noqa: BLE001 - presentation only, never stops the strategy
+                self.log.error("SCALP", "MTF_SNAPSHOT", f"{type(exc).__name__}: {exc}"[:300])
 
     def _feed(self, bars: dict, point: float) -> None:
         ev = []

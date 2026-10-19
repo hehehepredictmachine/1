@@ -252,7 +252,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     const h = (e: Event) => {
       const m = (e as CustomEvent).detail as SyncMsg;
       const c = chart.current;
-      if (m.src === chartId || !c || !candles.current) return;
+      if (m.src === chartId || !c || !candles.current || m.workspace) return;      // dashboard-scoped messages are not for this page
       if (m.kind === "crosshair") {
         if (!optsRef.current.syncCrosshair) return;
         if (m.time == null) { c.clearCrosshairPosition(); return; }

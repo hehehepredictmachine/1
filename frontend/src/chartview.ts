@@ -75,5 +75,7 @@ export function saveView(key: string, v: ChartView): void {
 }
 
 // cross-chart bus: crosshair (global toggle) and time range (only inside the same group)
-export type SyncMsg = { src: string; kind: "crosshair" | "range"; group?: SyncGroup; time?: number | null; from?: number; to?: number };
+// PMW-UPD-05: dashboard messages are scoped (workspace + instrument + session epoch + seq); pages without a workspace ignore them
+export type SyncMsg = { src: string; kind: "crosshair" | "range"; group?: SyncGroup; time?: number | null; from?: number; to?: number;
+  workspace?: string; instrument?: string; epoch?: string; seq?: number };
 export const SYNC = new EventTarget();

@@ -229,7 +229,8 @@ def create_app(rt, port: int) -> FastAPI:
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
                 "ml": rt.ml.status(compact=True), "markets": rt.scanner.summary(),
                 "bot_signals": {**rt.signals.status(), **rt.signals.list(limit=40)},
-                "assets": rt.assets.state(), "execution_lock": cfg.execution.lock, "lab": rt.lab.summary(cfg.assets.active)}
+                "assets": rt.assets.state(), "execution_lock": cfg.execution.lock, "lab": rt.lab.summary(cfg.assets.active),
+                "lab_neural": _nss_compact(cfg.assets.active)}
 
     def logs_list(limit: int) -> list[dict]:
         return rt.db.query("SELECT id, ts, level, category, code, message FROM app_events ORDER BY id DESC LIMIT ?", (limit,))
@@ -272,6 +273,11 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ------------------------------------------------------------ 1.13 analytics + pattern library (observational)
     # ------------------------------------------------------------ 1.14 lab (XAUUSD / BTC)
+    def _nss_compact(asset: str) -> dict | None:
+        snap = (rt.nss.last or {}) if getattr(rt, "nss", None) is not None and rt.nss.inst == asset else {}
+        return {k: snap.get(k) for k in ("inference_id", "seq", "asset", "setup_id", "side", "technical_status", "mode", "model_hash", "computed_at",
+                                         "expires_at")} if snap else None
+
     def _asset(asset: str | None) -> str:
         a = asset or rt.cfg.get().assets.active
         if a not in ("XAUUSD", "BTC"):
@@ -1094,6 +1100,42 @@ def create_app(rt, port: int) -> FastAPI:
                            cwd=str(paths.ROOT_DIR / "backend"), capture_output=True, text=True, timeout=300)
         rt.forecast.reload()
         return {"ok": r.returncode == 0, "output": (r.stdout + r.stderr)[-800:]}
+
+    # ------------------------------------------------------------ PMW-UPD-05 Multi TimeFrame Scalping Dashboard
+    @app.get("/api/v1/scalp/dashboard")
+    def mtf_dashboard(asset: str | None = Query(None), snapshot_id: str | None = Query(None)):
+        a = _asset(asset) if asset else rt.cfg.get().assets.active
+        if a != rt.scalp.inst:
+            return {"asset": a, "status": "ASSET_NOT_ACTIVE", "snapshot": None, "health": None}
+        import mq_instruments
+        if a not in mq_instruments.profiles():
+            return {"asset": a, "status": "UNSUPPORTED_STRATEGY_PROFILE", "snapshot": None, "health": rt.mtf.health}
+        snap = rt.mtf.get(snapshot_id)
+        if snapshot_id and snap is None:
+            return {"asset": a, "status": "ARCHIVE_SNAPSHOT_UNAVAILABLE", "snapshot_id": snapshot_id, "snapshot": None, "health": rt.mtf.health}
+        if snap is not None and snap.get("asset") != a:
+            snap = None
+        return {"asset": a, "status": "OK" if snap else "NO_SNAPSHOT", "snapshot": snap, "health": rt.mtf.health or rt.mtf.heartbeat(),
+                "scalp_status": rt.scalp.state.get("status"), "scalp_reason": rt.scalp.state.get("reason")}
+
+    @app.get("/api/v1/scalp/dashboard/chart")
+    def mtf_chart(tf: str = Query(...), snapshot_id: str = Query(...), bars: int = Query(400, ge=50, le=600)):
+        r = rt.mtf.chart(tf, snapshot_id, bars)
+        if r.get("status") == "SNAPSHOT_EXPIRED":
+            return JSONResponse(r, status_code=410)
+        return r
+
+    @app.get("/api/v1/scalp/dashboard/snapshots")
+    def mtf_snapshots(setup_id: str | None = Query(None), cursor: str | None = Query(None), limit: int = Query(50, ge=1, le=200)):
+        rows = rt.mtf.snapshots(setup_id, limit, cursor)
+        return {"asset": rt.scalp.inst, "rows": rows, "next_cursor": rows[-1]["computed_at"] if len(rows) == limit else None}
+
+    @app.get("/api/v1/scalp/dashboard/snapshots/{sid}")
+    def mtf_snapshot(sid: str):
+        snap = rt.mtf.get(sid)
+        if snap is None:
+            raise HTTPException(404, "ARCHIVE_SNAPSHOT_UNAVAILABLE")
+        return snap
 
     # ------------------------------------------------------------ PMW-UPD-04 Neural Scalp System (CAUSAL_MTF_TCN_V1)
     nss_jobs: dict = {}

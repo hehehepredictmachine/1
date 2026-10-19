@@ -100,6 +100,9 @@ class Runtime:
         from .lab.nss_service import NeuralScalpService
         self.nss = NeuralScalpService(self.db, self.bus, self.log, instrument=self.cfg.get().assets.active)   # PMW-UPD-04: own M1 clock, OBSERVE
         self.scalp.nss = self.nss
+        from .scalp.dashboard import MTFDashboard
+        self.mtf = MTFDashboard(self.scalp, self.bridge, self.bus, self.db)      # PMW-UPD-05: MTFContextSnapshot + 1 s freshness heartbeat
+        self.scalp.dashboard = self.mtf
         self.scalp.extind = self.extind
         self.scalp.ml = self.ml
         self.engine.extind = self.extind
@@ -154,6 +157,7 @@ class Runtime:
         self.lab.start()
         self.extind.start()
         self.nss.start()
+        self.mtf.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -182,6 +186,7 @@ class Runtime:
         self.lab.stop()
         self.extind.stop()
         self.nss.stop()
+        self.mtf.stop()
         self.scanner.stop()
         self.engine.stop()
         self.manager.stop()

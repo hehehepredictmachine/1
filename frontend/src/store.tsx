@@ -64,6 +64,12 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, analytics: d };
     case "lab":
       return { ...s, lab: d };
+    case "scalp_dashboard":
+      return { ...s, scalp_dashboard: { ...d, seq: ev.seq } } as any;
+    case "scalp_dashboard_health":
+      return { ...s, scalp_dashboard_health: d } as any;
+    case "lab_neural":
+      return { ...s, lab_neural: { ...d, seq: ev.seq } } as any;
     case "assets":
       return { ...s, assets: d };
     case "execution_lock":

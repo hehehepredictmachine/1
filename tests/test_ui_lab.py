@@ -221,6 +221,59 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
+    def test_07_neural_system(self):
+        """PMW-UPD-04: card on Pulpit + #/neural built from the server architecture (layer_id), honest no-model state, no fake activations."""
+        st = self.api("/api/v1/lab/neural?asset=XAUUSD")
+        self.assertEqual(self.api("/api/v1/lab/neural?asset=BTC")["status"], "ASSET_NOT_ACTIVE")
+        ids = sorted(n["layer_id"] for n in st["architecture"]["nodes"])
+        p = self.page
+        p.goto(BASE + "/#/pulpit")
+        p.wait_for_selector("[data-testid=nss-card] [data-testid=nss-graph]")
+        card = p.locator("[data-testid=nss-card]").inner_text()
+        self.assertIn("Neural System", card)
+        if not st["trained"]:
+            self.assertIn("brak wytrenowanego modelu", card)
+            self.assertIsNone(st["snapshot"] and st["snapshot"].get("candidate_output"))
+        p.goto(BASE + "/#/neural")
+        p.wait_for_selector("[data-testid=page-neural] [data-testid=nss-graph]")
+        shown = sorted(p.eval_on_selector_all("[data-testid=page-neural] [data-layer]", "els => els.map(e => e.dataset.layer)"))
+        self.assertEqual(shown, ids)
+        p.click("[data-testid=page-neural] [data-layer=m1_block5_d16]")
+        self.assertIn("dylatacja 16", p.locator("[data-testid=nss-layer]").inner_text())
+        p.set_viewport_size({"width": 390, "height": 844})
+        p.wait_for_timeout(300)
+        self.assertTrue(self.no_hscroll())
+        p.set_viewport_size({"width": 1366, "height": 900})
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
+    def test_08_scalp_mtf_dashboard(self):
+        """PMW-UPD-05: one snapshot drives the bar, the matrix and all five charts (same snapshot_id); expired id -> 410; mobile 390."""
+        self.assertTrue(wait_for(lambda: (self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("snapshot_id"), 60, 1.0))
+        d = self.api("/api/v1/scalp/dashboard")
+        self.assertEqual([r["tf"] for r in d["snapshot"]["timeframes"]], ["H1", "M30", "M15", "M5", "M1"])
+        self.assertEqual(d["snapshot"]["data_mode"], "DANE SYNTETYCZNE")
+        self.assertEqual(self.page.request.get(BASE + "/api/v1/scalp/dashboard/chart?tf=M1&snapshot_id=MTF-expired").status, 410)
+        p = self.page
+        p.goto(BASE + "/#/scalp-mtf")
+        p.wait_for_selector("[data-testid=mtf-matrix] tr[data-tf=M1]")
+        self.assertTrue(wait_for(lambda: len(set(p.eval_on_selector_all(".mtf-chart", "els => els.map(e => e.dataset.snapshot)")) - {""}) == 1
+                                 and len(p.eval_on_selector_all(".mtf-chart", "els => els.map(e => e.dataset.snapshot).filter(Boolean)")) == 5, 20, 0.5))
+        sid = p.inner_text("[data-testid=mtf-snapshot-id]")
+        self.assertEqual(set(p.eval_on_selector_all(".mtf-chart", "els => els.map(e => e.dataset.snapshot)")), {sid})
+        self.assertIn("DANE SYNTETYCZNE", p.inner_text("[data-testid=mtf-bar]"))
+        p.click("text=Wejście")
+        p.wait_for_timeout(300)
+        self.assertEqual(sorted(p.eval_on_selector_all(".mtf-chart", "els => els.map(e => e.dataset.testid)")), ["mtf-chart-M1", "mtf-chart-M5"])
+        p.click("text=Pełne MTF")
+        p.set_viewport_size({"width": 390, "height": 844})
+        p.wait_for_timeout(500)
+        self.assertTrue(self.no_hscroll())
+        self.assertEqual(p.eval_on_selector_all(".mtf-chart", "els => els.length"), 1)       # one chart + matrix on mobile
+        p.set_viewport_size({"width": 1366, "height": 900})
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
     def test_05_mobile(self):
         p = self.page
         p.set_viewport_size({"width": 390, "height": 844})

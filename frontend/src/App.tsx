@@ -10,6 +10,8 @@ import AiAnalysisPage from "./pages/AiAnalysisPage";
 import BotChartsPage from "./pages/BotChartsPage";
 import SetupRequirementsPage from "./pages/SetupRequirementsPage";
 import { ContextPage, DashboardPage, DiagnosticsPage, IndicatorsPage, JournalPage, PatternsPage, PositionsPage, SignalAnalysisPage, TestsPage } from "./pages/AnalyticsPages";
+import { NeuralPage } from "./components/NeuralSystem";
+import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { PAGES, useRoute } from "./router";
 import { useStore } from "./store";
@@ -44,10 +46,12 @@ export default function App() {
         <AppShell page={route.page} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)}>
           {route.page === "ai" && <AiAnalysisPage />}
           {route.page === "wykresy" && <BotChartsPage route={route} />}
+          {route.page === "scalp-mtf" && <ScalpMtfPage params={route.params} />}
           {route.page === "warunki" && <SetupRequirementsPage route={route} />}
           {route.page === "pulpit" && <><LabDashboardTop /><DashboardPage /></>}
           {route.page === "setupy" && <SetupsPage />}
           {route.page === "modele" && <ModelsPage />}
+          {route.page === "neural" && <NeuralPage params={route.params} />}
           {route.page === "badania" && <ResearchPage />}
           {route.page === "dane" && <DataPage />}
           {route.page === "ustawienia" && <LabSettingsPage />}
