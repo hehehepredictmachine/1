@@ -286,6 +286,7 @@ class PatternLibrary:
         rep = {"report_id": base.name, "job_id": j["job_id"], "created_at": iso(utcnow()), "job_status": j["status"], "complete": j["status"] == "COMPLETED",
                "rules_version": j["rules_version"], "manifest_sha": j.get("manifest_sha"), "config": (man or {}).get("config"), "config_hash": j["config_hash"],
                "source": "pattern_library (manual selection – nie rynkowy win rate)", "samples_requested": j["total"], "processed": processed,
+               "samples_processed": processed,                     # pre-1.16 report key kept for existing consumers
                "pending": j["total"] - processed, "counts": counts, "results": res,
                "message": "Biblioteka pusta (total=0)" if j["total"] == 0 else None}
         tmp = base.with_suffix(".json.tmp")
