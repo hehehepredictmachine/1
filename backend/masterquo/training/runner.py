@@ -70,8 +70,8 @@ def _skip(run: Run, tid: str, why: str, quality: str = "NIE_DOTYCZY") -> None:
 
 
 def _fail(run: Run, tid: str, why: str) -> None:
-    run.set(tid, execution="BLAD_TECHNICZNY", detail=why[-600:])
-    run.event(f"{tid}: BŁĄD – {why[-200:]}")
+    run.set(tid, execution="BLAD_TECHNICZNY", detail=why[:1800])
+    run.event(f"{tid}: BŁĄD – {why[:600]}")
 
 
 # ------------------------------------------------------------------ tasks

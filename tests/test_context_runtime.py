@@ -177,3 +177,16 @@ class KnowledgeTests(unittest.TestCase):
         self.assertIn("bez strony", txt)
         self.assertIn("kandydat", txt)
         self.assertNotIn("%", txt)
+
+
+class ChildReasonTests(unittest.TestCase):
+    def test_command_echo_does_not_hide_error(self):
+        from masterquo.training.core import child_reason
+        log = ("\n=== 2026-10-20T05:25:47Z C:\\Users\\x\\Desktop\\Nowy folder (2)\\PepeMarketWizard\\.venv\\Scripts\\python.exe -m masterquo training export "
+               "--instrument XAUUSD --symbol XAUUSD- --months 6 --out C:\\Users\\x\\data\\training\\runs\\TR-1\\XAUUSD --tfs M1,M5\n"
+               "[BLAD] initialize(): (-6, 'Terminal: Authorization failed') zaloguj się w MT5\n")
+        r = child_reason(log, Path("x.log"))
+        self.assertTrue(r.startswith("[BLAD] initialize()"))
+        self.assertNotIn("python.exe", r)
+        self.assertIn("x.log", r)
+        self.assertIn("nie wypisał nic", child_reason("\n=== t cmd\n"))

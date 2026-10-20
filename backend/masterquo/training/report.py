@@ -23,7 +23,7 @@ def summary(state: dict) -> dict:
         ts = [t for t in state["tasks"] if t["instrument"] == inst and t.get("detail") != "nie wybrano w planie"]
         done = sum(t["execution"] == "UKONCZONE" for t in ts)
         skipped = [f"{t['title']}: {t.get('detail')}" for t in ts if t["execution"] == "POMINIETE"]
-        errors = [f"{t['title']}: {(t.get('detail') or '')[:160]}" for t in ts if t["execution"] == "BLAD_TECHNICZNY"]
+        errors = [f"{t['title']}: {(t.get('detail') or '')[:600]}" for t in ts if t["execution"] == "BLAD_TECHNICZNY"]
         admitted = sum(1 for t in ts if t["quality"] in ("ZWALIDOWANY_SHADOW", "CZESCIOWO_ZWALIDOWANY")
                        and t["integration"] in ("AKTYWNY_W_REJESTRZE", "ZALADOWANY_DO_SHADOW"))
         lab = next((t for t in ts if t["kind"] == "lab"), {})

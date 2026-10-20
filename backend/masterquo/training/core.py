@@ -226,9 +226,17 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
                 p.wait()
                 return 124, f"TIMEOUT {timeout_s / 60:.0f} min"
             time.sleep(1.0)
-    tail = log_p.read_text(encoding="utf-8", errors="replace")[-2500:]
     run.set(tid, seconds=round(time.monotonic() - t0, 1))
-    return p.returncode, tail
+    return p.returncode, child_reason(log_p.read_text(encoding="utf-8", errors="replace")[-6000:], log_p)
+
+
+def child_reason(text: str, log_p: Path | None = None) -> str:
+    """What the child said, without our own '=== <time> <command>' echo (it pushed the real [BLAD] line out of the summary).
+    [BLAD] lines and the last traceback line first; the log path last so the user can open the full output."""
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip() and not ln.startswith("=== ")]
+    key = [ln for ln in lines if "[BLAD]" in ln or "BLOCKED" in ln or ln.startswith(("Traceback", "Error", "Exception")) or "Error:" in ln]
+    body = " | ".join((key or lines)[-4:]) if lines else "proces nie wypisał nic (sprawdź log)"
+    return body[-1500:] + (f" (log: {log_p})" if log_p else "")
 
 
 def bot_python() -> str:
