@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import { useStore } from "../store";
 import { fmtNum, fmtTime } from "../util";
+import { MarketSummaryCells, MarketStoryCard, ModelLabCard, RegimeCard, SmmaZCard } from "./MarketStory";
 
 const ROLE_PL: Record<string, string> = {
   NECKLINE_BREAK: "wybicie neckline", RETEST_HOLD: "utrzymany retest", SWEEP_RECLAIM: "sweep i powrót", TREND_PULLBACK: "korekta w trendzie",
@@ -21,18 +22,18 @@ export function StructureMatrix({ snap }: { snap: any }) {
     <div className="card" data-testid="mtf-structure">
       <h3>Struktura, formacje, świece i MITP <span className="muted small">(parent {si.parent_snapshot_id} · {si.snapshot_id} · {si.build_ms} ms)</span></h3>
       <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>TF</th><th>HH/HL/LH/LL</th><th>Trend (wewn./nadrz.)</th><th>Ostatnie zdarzenie</th><th>Formacja</th>
-        <th>Rola świecy</th><th>MITP (stan / głos)</th><th>Strefa</th></tr></thead>
+        <th>Rola świecy</th><th>MITP (stan / głos)</th><th>Strefa</th><th>Reżim / zmienność</th><th>Bias MBA</th><th>SMMA(3)</th><th>Z incl/prev</th></tr></thead>
         <tbody>{snap.timeframes.map((r: any) => {
           const c = r.structure || {};
           const s = c.structure || {};
           return <tr key={r.tf} data-tf={r.tf}><td><b>{r.tf}</b></td>
-            {c.status !== "OK" ? <td colSpan={7} className="muted">{c.status ?? "—"}</td> : <>
+            {c.status !== "OK" ? <td colSpan={11} className="muted">{c.status ?? "—"}</td> : <>
               <td>{s.last_high?.label ?? "—"} / {s.last_low?.label ?? "—"}</td><td>{s.trend_internal} / {s.trend_major}</td>
               <td title={s.last_event?.label ?? ""}>{s.last_event ? `${s.last_event.kind} @ ${fmtNum(s.last_event.level, 2)} (${s.last_event.bar_t?.slice(11, 16)})` : "—"}</td>
               <td>{c.pattern ? `${c.pattern.type} · ${c.pattern.state} · ${c.pattern.geometry_quality}` : "—"}</td>
               <td title={(c.candle_role?.reason_codes || []).join(", ")}>{ROLE_PL[c.candle_role?.role] ?? c.candle_role?.role ?? "—"}{c.candle_role?.role_direction && c.candle_role.role_direction !== "NEUTRAL" ? ` (${c.candle_role.role_direction})` : ""}</td>
               <td>{c.mitp ? `${c.mitp.held_state ?? "—"} / ${c.mitp.current_vote ?? "—"}` : "—"}</td>
-              <td>{c.zone ? `${c.zone.zone_id?.slice(-16)} · ${c.zone.distance_atr} ATR` : "—"}</td></>}
+              <td>{c.zone ? `${c.zone.zone_id?.slice(-16)} · ${c.zone.distance_atr} ATR` : "—"}</td><MarketSummaryCells m={c.market} /></>}
           </tr>;
         })}</tbody></table></div>
       <p className="small" data-testid="mtf-neutral-quotes">Neutralizacja ROC20: {si.neutralization?.raw != null ? `raw ${fmtNum(si.neutralization.raw, 5)} · ekspozycja ${fmtNum(si.neutralization.exposure, 5)} · reszta ${fmtNum(si.neutralization.residual, 5)}` : "—"} ({si.neutralization?.status ?? "—"})
@@ -200,6 +201,10 @@ export function StructurePage() {
             <tbody>{runs.map(([rid, r]) => <tr key={rid}><td className="mono">{rid}</td><td>{r.task}</td><td>{r.status}</td><td>{r.role}</td><td>{fmtTime(r.created_at, true)}</td></tr>)}
               {!runs.length && <tr><td colSpan={5} className="muted">Brak runów – wymagany eksport REAL_USER_DATA (BLOCKED_NO_HISTORY bez danych).</td></tr>}</tbody></table></div>
         </div>
+        <ModelLabCard asset={asset} onStart={start} />
+        <RegimeCard asset={asset} />
+        <MarketStoryCard asset={asset} />
+        <SmmaZCard asset={asset} />
         <QuotesCard />
         <NeutralCard asset={asset} />
         <ZonesCard asset={asset} />

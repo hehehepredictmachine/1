@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import threading
 import time
 import uuid
@@ -55,12 +56,19 @@ class StructureIntelligenceService:
         self.quote_status = {"status": "NOT_STARTED"}
         self._qstop = threading.Event()
         self._qthread = None
+        from .market_service import MarketSections
+        self.market = MarketSections()                          # PMW-UPD-09 R22-R25 sections (incremental, checkpointed)
+        self.native_importer = None
 
     # ------------------------------------------------------------ per-TF cell
-    def cell(self, tf: str, bars: list[dict], tick: float, zones: list[dict]) -> dict:
+    def cell(self, tf: str, bars: list[dict], tick: float, zones: list[dict], instrument: str | None = None) -> dict:
         b = bars[-WINDOW:]
         if len(b) < 30:
             return {"tf": tf, "status": "WARMING_UP", "bars": len(b)}
+        try:
+            market = self.market.summary(self.market.update(instrument or "XAUUSD", tf, bars, tick))
+        except Exception as exc:                                # noqa: BLE001 - one section must not hide the rest
+            market = {"status": "ERROR", "error": type(exc).__name__}
         t, o, h, lo, c = [x["open_utc"] for x in b], [x["o"] for x in b], [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
         st = S.analyse(t, h, lo, c, tick=tick)
         a = S._atr(h, lo, c, len(c) - 1)
@@ -86,7 +94,7 @@ class StructureIntelligenceService:
                 "patterns_seen": len(pats), "candle_role": {k: rd.get(k) for k in ("reading_id", "role", "role_direction", "reason_codes", "evidence", "invalidation")},
                 "mitp": {"status": mt["status"], "held_state": (mt.get("general") or {}).get("held_state"), "current_vote": (mt.get("general") or {}).get("current_vote"),
                          "votes": mt.get("votes"), "note": "utrzymany stan ≠ aktualna jednomyślność"},
-                "zone": rd.get("zone")}
+                "zone": rd.get("zone"), "market": market}
 
     def divergences(self, cells: dict) -> list[str]:
         facts = []
@@ -115,7 +123,7 @@ class StructureIntelligenceService:
         cells = {}
         for tf in TFS:
             try:
-                cells[tf] = self.cell(tf, bars.get(tf) or [], tick, zones)
+                cells[tf] = self.cell(tf, bars.get(tf) or [], tick, zones, instrument)
             except Exception as exc:                            # noqa: BLE001
                 cells[tf] = {"tf": tf, "status": "ERROR", "error": type(exc).__name__}
         fc = self.forecast(bars, instrument, tick, as_of)
@@ -130,7 +138,9 @@ class StructureIntelligenceService:
                                                  sort_keys=True).encode()).hexdigest()[:16]
         snap = {"snapshot_id": sid, "seq": seq, "instrument": instrument, "as_of": as_of, "computed_at": iso(utcnow()), "cells": cells,
                 "divergences": self.divergences(cells), "forecast": fc, "neutralization": neu,
-                "quotes": self.quotes_public(compact=True), "profiles": {"structure": S.PROFILE, "mitp": mitp.VERSION, "sci": sci2.VERSION},
+                "quotes": self.quotes_public(compact=True), "native": self.native_status(instrument, poll=False),
+                "profiles": {"structure": S.PROFILE, "mitp": mitp.VERSION, "sci": sci2.VERSION, "regime": "MQ_REGIME_MULTI_V2",
+                             "behavior": "MARKET_BEHAVIOR_V1", "smma": "MQ_SMMA_HL3_V2", "zscore": "MQ_ZSCORE_V2"},
                 "note": "kontekst analityczny; kierunek nie jest zleceniem"}
         ms = (time.perf_counter() - t0) * 1000
         self.timings = (self.timings + [ms])[-200:]
@@ -183,6 +193,33 @@ class StructureIntelligenceService:
                 "note": "reszta = część nieopisana wybranymi czynnikami liniowymi; nie jest automatycznie alpha"}
 
     # ------------------------------------------------------------ PMW-UPD-08 R19 live quote kinematics (same bridge, own thread)
+    # ------------------------------------------------------------ PMW-UPD-09 R21 native MiniRocket status (read-only SHADOW audit)
+    def native_status(self, instrument: str, poll: bool = True) -> dict:
+        import os
+        from . import minirocket_v2 as MR
+        files = os.environ.get("MQ_MT5_FILES_DIR")
+        exp = Path(os.environ.get("MQ_MINIROCKET_EXPORT_DIR") or (Path(__file__).resolve().parents[3] / "exports" / "minirocket"))
+        man = None
+        try:
+            man = json.loads((exp / "manifest.json").read_text(encoding="utf-8")) if (exp / "manifest.json").exists() else None
+        except (OSError, ValueError):
+            man = None
+        sym = None
+        try:
+            sym = self.cfg.get().assets.symbols.get(instrument) if hasattr(self.cfg.get().assets, "symbols") else None
+        except Exception:                                       # noqa: BLE001
+            sym = None
+        if self.native_importer is None or self.native_importer.dir != (Path(files) if files else None):
+            self.native_importer = MR.NativeResultImporter(files, (man or {}).get("model_bin_sha256"), sym or "XAUUSD-", "M1")
+        res = self.native_importer.poll() if poll else (self.native_importer.last or {"status": "NOT_POLLED"})
+        st = MR.native_status(Path(files) / "PMW" / "native_status.json" if files else None)
+        return {"export": {"status": "EXPORTED" if man else "NOT_EXPORTED", "model_bin_sha256": (man or {}).get("model_bin_sha256"),
+                           "role": (man or {}).get("role"), "layout_F": ((man or {}).get("layout") or {}).get("F")},
+                "compile": st, "feed": {k: v for k, v in res.items() if k != "scores"} if isinstance(res, dict) else res,
+                "scores": (res or {}).get("scores") if isinstance(res, dict) else None,
+                "parity_scope": "sktime 1.2.0 frozen-state fixture (tests/fixtures/minirocket); native NOT_EXECUTED bez terminala",
+                "role": "SHADOW_AUDIT – nie nadpisuje głównej prognozy ani Execution Lock"}
+
     def start(self) -> None:
         if self._qthread is None:
             self._qstop.clear()
@@ -345,7 +382,7 @@ class StructureIntelligenceService:
 
     # ------------------------------------------------------------ background jobs (progress / cancel; GET never trains)
     def start_job(self, kind: str, params: dict) -> dict:
-        if kind not in ("dataset", "train", "calibrate", "tick_export", "tick_replay", "experiment"):
+        if kind not in ("dataset", "train", "calibrate", "calibrate_market", "tick_export", "tick_replay", "experiment"):
             raise ValueError("JOB_KIND_INVALID")
         jid = "SIJ-" + uuid.uuid4().hex[:10]
         ev = threading.Event()
@@ -372,6 +409,17 @@ class StructureIntelligenceService:
                 job["result"] = T.save_dataset(inst, d)
             elif job["kind"] == "calibrate":
                 job["result"] = T.calibrate_indicators(inst, log=log)
+            elif job["kind"] == "calibrate_market":
+                from . import market_v2 as MV
+                from ..extind.trainer import _bars
+                ds = _latest_real(inst)
+                if ds is None:
+                    raise ValueError("BLOCKED_NO_HISTORY: brak eksportu REAL_USER_DATA")
+                meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
+                rep = MV.calibrate_profiles(_bars(ds, meta.get("file_prefix") or "XAUUSD", "M1"), float(meta["tick_size"]),
+                                            [MV.REGIME_PROFILE, MV.SMMA_PROFILE, MV.Z_PROFILE, "STRUCTURE_CAUSAL_V2"])
+                (T.root(inst) / "market_profiles.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
+                job["result"] = {"status": rep["status"], "profiles": list(rep.get("profiles", {}))}
             elif job["kind"] == "tick_export":
                 from . import tick_store as TS
                 job["result"] = TS.export_via_bridge(self.bridge, self.cfg.get().mt5.symbol, inst, float(p.get("days") or 7),
@@ -393,7 +441,9 @@ class StructureIntelligenceService:
                 if d is None:
                     raise ValueError("BLOCKED_NO_DATASET: najpierw dataset")
                 job["result"] = {k: v for k, v in T.train(inst, d, task, p.get("families") or ["LOGREG"], p.get("profile") or "quick", db=self.db, log=log,
-                                                         cancel=job["cancel"].is_set, sew_operators=p.get("sew_operators")).items()
+                                                         cancel=job["cancel"].is_set, sew_operators=p.get("sew_operators"),
+                                                         spike_cfg={k: p[k] for k in ("encoder", "attention") if p.get(k)},
+                                                         transform=p.get("transform")).items()
                                  if k in ("run_id", "status", "evidence", "candidates", "comparison")}
             job["status"] = "CANCELLED" if job["cancel"].is_set() else "COMPLETED"
         except Exception as exc:                                # noqa: BLE001

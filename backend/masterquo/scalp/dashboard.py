@@ -232,7 +232,7 @@ class MTFDashboard:
                 si = self.si.snapshot(closed, sc.inst, float((info or {}).get("trade_tick_size") or 0.01), body["as_of"])
                 snap["structure_intelligence"] = {"snapshot_id": si["snapshot_id"], "parent_snapshot_id": sid, "divergences": si["divergences"],
                                                   "forecast": si["forecast"], "profiles": si["profiles"], "build_ms": si["build_ms"],
-                                                  "neutralization": si.get("neutralization"), "quotes": si.get("quotes")}
+                                                  "neutralization": si.get("neutralization"), "quotes": si.get("quotes"), "native": si.get("native")}
                 for row in rows:
                     row["structure"] = dict(si["cells"].get(row["tf"]) or {}, parent_snapshot_id=sid)
             except Exception as exc:                            # noqa: BLE001 - structure layer failure never blocks the dashboard

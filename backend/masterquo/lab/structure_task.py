@@ -400,7 +400,11 @@ def metrics(P, Q, Y, R) -> list[dict]:
     for j in range(Y.shape[1]):
         m = (Y[:, j] >= 0) & np.isfinite(R[:, j])
         if not m.any():
-            out.append({"n": 0})
+            out.append({"n": 0, "status": "NO_SAMPLES", "log_loss": None, "brier": None, "ece": None, "balanced_accuracy": None, "pinball": None,
+                        "coverage_10_90": None})
+            continue
+        if not (np.isfinite(P[m, j]).all() and np.isfinite(Q[m, j]).all()) or P.shape[-1] != 3 or not np.allclose(P[m, j].sum(-1), 1.0, atol=1e-6):
+            out.append({"n": int(m.sum()), "status": "INVALID_PREDICTION", "log_loss": None})
             continue
         y, r, p, q = Y[m, j].astype(int), R[m, j], np.clip(P[m, j], 1e-12, 1), Q[m, j]
         ll = float(-np.mean(np.log(p[np.arange(len(y)), y])))
@@ -421,7 +425,7 @@ def metrics(P, Q, Y, R) -> list[dict]:
         out.append({"n": int(m.sum()), "class_counts": np.bincount(y, minlength=3).tolist(), "log_loss": ll, "brier": br, "ece": float(ece), "ece_bins": bins,
                     "balanced_accuracy": float(np.mean(recalls)) if recalls else None, "pinball": pin, "mae_q50": float(np.mean(np.abs(r - q[:, 1]))),
                     "coverage_10_90": float(np.mean((r >= q[:, 0]) & (r <= q[:, 2]))), "width_10_90": float(np.mean(q[:, 2] - q[:, 0])),
-                    "share_flat_pred": float(np.mean(top == 1))})
+                    "share_flat_pred": float(np.mean(top == 1)), "status": "ONE_CLASS" if len(set(y.tolist())) == 1 else "OK"})
     return out
 
 
@@ -647,13 +651,16 @@ def _compare(rep: dict) -> dict:
             continue
         base = f["families"].get("CLASS_FREQ", [{}])[0].get("metrics")
         for fam, res in f["families"].items():
-            lls = [np.mean([m["log_loss"] for m in r["metrics"] if m.get("n")]) for r in res if r.get("metrics")]
+            lls = [np.mean([m["log_loss"] for m in r["metrics"] if m.get("log_loss") is not None])
+                   for r in res if r.get("metrics") and any(m.get("log_loss") is not None for m in r["metrics"])]
             if not lls:
                 continue
             o = out.setdefault(fam, {"fold_ll": [], "gains": []})
             o["fold_ll"].append(float(np.mean(lls)))
             if base:
-                o["gains"].append(float(np.mean([m["log_loss"] for m in base if m.get("n")]) - np.mean(lls)))
+                bl = [m["log_loss"] for m in base if m.get("log_loss") is not None]
+                if bl:
+                    o["gains"].append(float(np.mean(bl) - np.mean(lls)))
     for fam, o in out.items():
         g = o["gains"]
         o["mean_ll"] = float(np.mean(o["fold_ll"]))

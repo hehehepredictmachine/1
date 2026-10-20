@@ -359,6 +359,48 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
+    def test_12_market_story_regime_smma_z_native(self):
+        """PMW-UPD-09: regime/swings/SMMA/Z sections from the SAME SI producer (snapshot cells == REST), Swing Inspector by ID,
+        native MiniRocket status explicit (no terminal -> NOT_COMPILED / feed unavailable), Lock untouched."""
+        self.assertTrue(wait_for(lambda: ((self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("timeframes") or [{}])[0]
+                                 .get("structure", {}).get("market", {}).get("status") == "OK", 120, 1.0))
+        row = self.api("/api/v1/scalp/dashboard")["snapshot"]["timeframes"][0]
+        tf = row["tf"]
+        rg = self.api(f"/api/v1/structure-intelligence/regimes?tf={tf}")
+        self.assertIn(rg["current"]["state"], ("TREND_UP", "TREND_DOWN", "RANGE", "TRANSITION", "WARMING_UP"))
+        self.assertFalse(rg["current"]["strength_is_probability"])
+        sw = self.api(f"/api/v1/structure-intelligence/swings?tf={tf}")
+        self.assertIn(sw["story"]["bias"], ("UP", "DOWN", "MIXED", "UNKNOWN"))
+        if sw["swings"]:
+            one = self.api(f"/api/v1/structure-intelligence/swings/{sw['swings'][0]['id']}")
+            self.assertEqual(one["id"], sw["swings"][0]["id"])
+        st = self.page.evaluate("async (p) => (await fetch(p)).status", "/api/v1/structure-intelligence/swings/SW-doesnotexist")
+        self.assertEqual(st, 404)
+        z = self.api(f"/api/v1/structure-intelligence/zscore?tf={tf}&mode=PREVIOUS_N")
+        self.assertEqual(z["profile"]["window_mode"], "PREVIOUS_N")
+        self.assertIn("events", self.api(f"/api/v1/structure-intelligence/smma?tf={tf}"))
+        nat = self.api("/api/v1/structure-intelligence/native-status")
+        self.assertEqual(nat["compile"]["NATIVE_COMPILED"], "NOT_COMPILED_NO_METAEDITOR")
+        self.assertEqual(nat["feed"]["status"], "NATIVE_FEED_UNAVAILABLE")
+        p = self.page
+        p.goto(BASE + "/#/struktura")
+        p.wait_for_selector("[data-testid=regime-card] [data-testid=regime-bands]")
+        p.wait_for_selector("[data-testid=smma-z-card]")
+        p.wait_for_selector("[data-testid=model-lab-card] [data-testid=native-status]")
+        if sw["swings"]:
+            p.wait_for_selector("[data-testid=market-story] [data-swing-row]")
+            sid = p.get_attribute("[data-testid=market-story] [data-swing-row]", "data-swing-row")
+            p.click(f"[data-swing-row='{sid}']")
+            p.wait_for_selector("[data-testid=swing-inspector]")
+            self.assertIn(sid, p.inner_text("[data-testid=swing-inspector]"))
+            p.uncheck("[data-testid=market-story] input[type=checkbox] >> nth=1")       # labels off: display only
+            p.wait_for_selector("[data-testid=swing-inspector]")
+        p.screenshot(path=str(SHOTS / "struktura_market_1366.png"), full_page=True)
+        p.goto(BASE + "/#/scalp-mtf")
+        p.wait_for_selector("[data-testid=mtf-structure] tr[data-tf=M5]")
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
     def test_05_mobile(self):
         p = self.page
         p.set_viewport_size({"width": 390, "height": 844})

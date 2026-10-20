@@ -211,6 +211,10 @@ def cmd_profile(name: str) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["flow-context"]:                 # PMW-UPD-11: Markov / Heikin Flow / S/R channels / StopDistance (lab/flow_context/cli.py)
+        _load_dotenv()
+        from .lab.flow_context.cli import main as fc_main
+        return fc_main(argv[1:])
     if argv[:1] == ["structure-intelligence"]:      # PMW-UPD-07: Structure Intelligence (masterquo/lab/structure_cli.py)
         _load_dotenv()
         from .lab.structure_cli import main as si_main

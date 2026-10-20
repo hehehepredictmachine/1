@@ -614,6 +614,64 @@ def create_app(rt, port: int) -> FastAPI:
     def si_quote_q():
         return rt.si.quote_quality()
 
+    # ------------------------------------------------------------ PMW-UPD-09 R21-R25 sections (read-only; GET never trains)
+    def _mkey(asset, tf):
+        a = _si_inst(asset)
+        if tf not in ("M1", "M5", "M15", "H1"):
+            raise HTTPException(400, "TF_INVALID")
+        k = rt.si.market.keys.get((a, tf))
+        if k is None:
+            raise HTTPException(404, "NO_MARKET_STATE_YET (sekcja powstaje przy pierwszym snapshocie Structure Intelligence)")
+        return k
+
+    @app.get("/api/v1/structure-intelligence/regimes")
+    def si_regimes(asset: str | None = None, tf: str = "M1", limit: int = Query(300, ge=1, le=600)):
+        return rt.si.market.regimes(_mkey(asset, tf), limit)
+
+    @app.get("/api/v1/structure-intelligence/swings")
+    def si_swings(asset: str | None = None, tf: str = "M1", as_of: float | None = None, limit: int = Query(120, ge=1, le=600)):
+        return rt.si.market.swings(_mkey(asset, tf), as_of, limit)
+
+    @app.get("/api/v1/structure-intelligence/swings/{sid}")
+    def si_swing(sid: str, asset: str | None = None, as_of: float | None = None):
+        r = rt.si.market.swing(_si_inst(asset), sid, as_of)
+        if r is None:
+            raise HTTPException(404, "SWING_NOT_FOUND (kontekst usunięty albo spoza okna)")
+        return r
+
+    @app.get("/api/v1/structure-intelligence/smma")
+    def si_smma(asset: str | None = None, tf: str = "M1", limit: int = Query(200, ge=1, le=600)):
+        return rt.si.market.smma(_mkey(asset, tf), limit)
+
+    @app.get("/api/v1/structure-intelligence/zscore")
+    def si_zscore(asset: str | None = None, tf: str = "M1", mode: str = "INCLUSIVE_N", n: int = Query(20, ge=2, le=500)):
+        if mode not in ("INCLUSIVE_N", "PREVIOUS_N"):
+            raise HTTPException(400, "ZSCORE_MODE_INVALID")
+        return rt.si.market.zscore(_mkey(asset, tf), mode, n)
+
+    @app.get("/api/v1/structure-intelligence/native-status")
+    def si_native(asset: str | None = None):
+        return rt.si.native_status(_si_inst(asset))
+
+    @app.get("/api/v1/structure-intelligence/model-diagnostics")
+    def si_model_diag(asset: str | None = None, run: str | None = None):
+        from ..lab import structure_task as T
+        a = _si_inst(asset)
+        reg = T._reg(a)
+        rid = run or (sorted(reg["runs"])[-1] if reg["runs"] else None)
+        if not rid or rid not in reg["runs"]:
+            return {"status": "NO_RUNS"}
+        rp = Path(reg["runs"][rid]["run_dir"]) / "report.json"
+        rep = json.loads(rp.read_text(encoding="utf-8")) if rp.exists() else {}
+        diag = {}
+        for f in rep.get("folds", []):
+            for fam, res in (f.get("families") or {}).items():
+                for r in res:
+                    if r.get("diagnostics"):
+                        diag.setdefault(fam, []).append({"fold": f["fold"], "seed": r.get("seed"), "status": r.get("status"), **r["diagnostics"]})
+        return {"run_id": rid, "role": rep.get("role"), "spike_profile": rep.get("spike_profile"), "transform": rep.get("transform"),
+                "diagnostics": diag, "status": rep.get("status")}
+
     @app.get("/api/v1/structure-intelligence/quality")
     def si_quality(asset: str | None = None):
         return rt.si.quality(_si_inst(asset))
@@ -621,7 +679,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/structure-intelligence/jobs")
     def si_job_start(body: dict = Body(...)):
         try:
-            return rt.si.start_job(str(body.get("kind")), {k: body.get(k) for k in ("asset", "task", "families", "profile", "experiment", "sew_operators", "days")})
+            return rt.si.start_job(str(body.get("kind")), {k: body.get(k) for k in ("asset", "task", "families", "profile", "experiment", "sew_operators", "days",
+                                                                                  "encoder", "attention", "transform")})
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 

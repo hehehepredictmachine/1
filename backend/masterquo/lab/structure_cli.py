@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import sys
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("calibrate-indicators", help="wybór profilu STRUCTURE_CAUSAL_V2 / MITP tylko na części dev")
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--latest", action="store_true")
-    s.add_argument("--profiles", default="MQ_MITP_32_V1,STRUCTURE_CAUSAL_V2")
+    s.add_argument("--profiles", default="MQ_MITP_32_V1,STRUCTURE_CAUSAL_V2,MQ_REGIME_MULTI_V2,MQ_SMMA_HL3_V2,MQ_ZSCORE_V2")
     s.add_argument("--dataset")
     s = sub.add_parser("train", help="trening rodzin na zamrożonym protokole (holdout nieotwierany)")
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
@@ -50,6 +51,23 @@ def main(argv: list[str]) -> int:
     s.add_argument("--profile", choices=tuple(T.PROFILES), default="standard")
     s.add_argument("--experiment", choices=T.EXPERIMENTS, help="MQ_NEUTRAL_REACTION_V1 / MQ_QUOTE_CONTEXT_REACTION_V1 (LOGREG/XGB)")
     s.add_argument("--sew-operators", help="np. ADD,AND,IAND – warianty rodzin SEW (nowa konfiguracja treningu)")
+    s.add_argument("--encoder", choices=("BAR_EVENT_V1", "QUOTE_EVENT_V1"), help="profil wejścia MQ_SPIKE_BRAIN_FINANCE_V1")
+    s.add_argument("--attention", choices=("LINEAR", "SLIDING", "HYBRID"), help="tryb uwagi MQ_SPIKE_BRAIN_FINANCE_V1")
+    s.add_argument("--transform", help="MQ_MINIROCKET_UNIVARIATE_V2 dla MQ_MINIROCKET_RIDGE_V2")
+    s.add_argument("--out")
+    s = sub.add_parser("minirocket", help="MiniRocket V2: export-native / export-fixture / parity / native-status")
+    s.add_argument("action", choices=("export-native", "export-fixture", "parity", "native-status"))
+    s.add_argument("--asset", choices=INSTR, default="XAUUSD")
+    s.add_argument("--model-id", help="candidate_id MQ_MINIROCKET_RIDGE_V2 (export-native)")
+    s.add_argument("--output", default="./exports/minirocket")
+    s.add_argument("--fixtures", default=str(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket"))
+    s.add_argument("--reference-version", help="przypięta wersja referencji (np. sktime==1.2.0) – zapisywana w raporcie")
+    s.add_argument("--reference-python", help="interpreter z przypiętym sktime (uruchomienie referencji na żywo)")
+    s.add_argument("--native-scores", help="mr2_infer_scores.csv z terminala (HEAD_PARITY)")
+    s.add_argument("--native-status-file", help="native_status.json z 27_MINIROCKET_NATIVE.bat")
+    s = sub.add_parser("benchmark", help="pomiar CPU rodzin (Python); native mierzy skrypt MQL5 w terminalu")
+    s.add_argument("--families", default="MQ_SPIKE_BRAIN_FINANCE_V1,MQ_MINIROCKET_RIDGE_V2")
+    s.add_argument("--profile", choices=("cpu",), default="cpu")
     s.add_argument("--out")
     s = sub.add_parser("neutralize", help="rolling OLS neutralization surowego sygnału na najnowszym datasecie (diagnostyka)")
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
@@ -144,7 +162,27 @@ def main(argv: list[str]) -> int:
             if err:
                 print("[BLAD] " + err)
                 return 2
-            _print(T.calibrate_indicators(a.asset, ds))
+            profs = [x.strip() for x in a.profiles.split(",") if x.strip()]
+            out = {}
+            if {"MQ_MITP_32_V1", "STRUCTURE_CAUSAL_V2"} & set(profs):
+                out["indicator_profile"] = T.calibrate_indicators(a.asset, ds)
+            mk = [x for x in profs if x in ("MQ_REGIME_MULTI_V2", "MQ_SMMA_HL3_V2", "MQ_ZSCORE_V2", "STRUCTURE_CAUSAL_V2")]
+            if mk:
+                from . import market_v2 as MV
+                from ..extind.trainer import _bars
+                meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
+                m1 = _bars(ds, meta.get("file_prefix") or "XAUUSD", "M1")
+                rep = MV.calibrate_profiles(m1, float(meta["tick_size"]), mk)
+                rep.update(data_kind=meta.get("data_kind"), raw_dataset=str(ds), created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                pth = T.root(a.asset) / "market_profiles.json"
+                if pth.exists():
+                    hist = T.root(a.asset) / "market_profiles_history"
+                    hist.mkdir(exist_ok=True)
+                    (hist / f"{int(time.time())}.json").write_text(pth.read_text(encoding="utf-8"), encoding="utf-8")
+                pth.write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
+                out["market_profiles"] = {k: (v.get("chosen") or v.get("note")) for k, v in rep.get("profiles", {}).items()}
+                out["market_profiles_status"] = rep["status"]
+            _print(out)
             print("[INFO] Nowy profil – zbuduj ponownie dataset: python -m masterquo structure-intelligence dataset --asset " + a.asset)
             return 0
         if a.c == "train":
@@ -168,7 +206,11 @@ def main(argv: list[str]) -> int:
             if ops and any(o not in T.SN.CONNECT_F for o in ops):
                 print("[BLAD] CONNECT_F_INVALID (ADD|AND|IAND)")
                 return 2
-            rep = T.train(a.asset, d, a.task, fams, a.profile, db=Database(), sew_operators=ops)
+            spike = {k: v for k, v in (("encoder", a.encoder), ("attention", a.attention)) if v}
+            rep = T.train(a.asset, d, a.task, fams, a.profile, db=Database(), sew_operators=ops, spike_cfg=spike, transform=a.transform)
+            if rep.get("status") == "INCOMPATIBLE":
+                print(f"[BLAD] INCOMPATIBLE: {rep.get('reason')}")
+                return 2
             if a.out:
                 Path(a.out).write_text(json.dumps(rep, indent=1, default=T._jd), encoding="utf-8")
             if rep["status"] in ("STALE_DATASET", "NO_SETUP"):
@@ -198,6 +240,47 @@ def main(argv: list[str]) -> int:
             _, Y, R = T._task_arrays(data, T.TASK_MOVE)
             _print({"mode": "shadow", "candidate": s["candidate_id"], "rows": int(len(tail)), "scope": "DEV_TAIL (holdout nieotwierany)",
                     "metrics_uncalibrated": T.metrics(P, Q, Y[tail], R[tail])})
+            return 0
+        if a.c == "minirocket":
+            from . import minirocket_v2 as MR
+            if a.action == "parity":
+                rep = MR.parity(Path(a.fixtures), a.reference_python, Path(a.native_scores) if a.native_scores else None,
+                                Path(a.output) if a.native_scores else None, Path(a.native_status_file) if a.native_status_file else None)
+                rep["reference_version_requested"] = a.reference_version
+                _print(rep)
+                return 0 if all(v != "FAIL" and not str(v).startswith("FAIL") for v in rep["results"].values()) else 3
+            if a.action == "native-status":
+                _print(MR.native_status(Path(a.native_status_file) if a.native_status_file else None))
+                return 0
+            if a.action == "export-fixture":
+                z = __import__("numpy").load(Path(a.fixtures) / "sktime_fixture.npz")
+                mr = MR.MiniRocketV2().configure(z["X"].shape[1], 10000, 32)
+                mr.biases = z["biases"].astype("float32")
+                mr.fit_idx = __import__("numpy").zeros(len(mr.lay["dilations"]) * 84, "int32")
+                Path(a.output).mkdir(parents=True, exist_ok=True)
+                _print(MR.export_fixture(Path(a.output) / "PMW_MR2_FIXTURE.bin", mr, z["X"]))
+                print("[INFO] Skopiuj PMW_MR2_FIXTURE.bin do <MT5 Data Folder>\\MQL5\\Files\\PMW\\ i uruchom skrypt PMW_MR2_SelfTest.")
+                return 0
+            if not a.model_id:
+                print("[BLAD] --model-id wymagane (candidate_id rodziny MQ_MINIROCKET_RIDGE_V2)")
+                return 2
+            reg = T._reg(a.asset)
+            rid = next((r for r in reg["runs"] if a.model_id.startswith(r + "-")), None)
+            if rid is None or not a.model_id.endswith(MR.HEAD_ID):
+                print("[BLAD] MODEL_NOT_FOUND albo nie jest MQ_MINIROCKET_RIDGE_V2")
+                return 2
+            meta, model = T.load_candidate(Path(reg["runs"][rid]["run_dir"]) / "models" / MR.HEAD_ID)
+            temps = [c["T"] for c in meta["calibration"]]
+            man = MR.export_native(Path(a.output), model[1], model[2], temps, dict(meta, calibration_status="TEMPERATURE"))
+            _print({"exported": a.output, "model_bin_sha256": man["model_bin_sha256"], "role": meta["role"],
+                    "native": "NATIVE_NOT_EXECUTED (eksport ≠ test natywnej inferencji)"})
+            return 0
+        if a.c == "benchmark":
+            from . import si_families as SFm
+            rep = SFm.benchmark([f.strip() for f in a.families.split(",") if f.strip()])
+            if a.out:
+                Path(a.out).write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
+            _print(rep)
             return 0
         if a.c == "neutralize":
             from ..analysis import neutralization as NZ
@@ -258,6 +341,15 @@ def main(argv: list[str]) -> int:
             rep = T.train(a.asset, dsd, T.TASK_MOVE, fams, a.profile, db=Database(), sew_operators=ops)
             out["tasks"][T.TASK_MOVE] = {k: rep.get(k) for k in ("run_id", "status", "evidence", "candidates", "role")}
             out["sew_operators"] = ops
+            # PMW-UPD-09: the same task with the new families (bar profile HYBRID + MiniRocket V2), then the quote profile separately
+            r9 = T.train(a.asset, dsd, T.TASK_MOVE, list(T.SF.FAMILIES), a.profile, db=Database(), spike_cfg={"encoder": "BAR_EVENT_V1",
+                         "attention": "HYBRID"}, transform=T.SF.MR.TRANSFORM_ID)
+            out["tasks"]["PMW-UPD-09:BAR+MINIROCKET"] = {k: r9.get(k) for k in ("run_id", "status", "candidates", "role")}
+            rq = T.train(a.asset, dsd, T.TASK_MOVE, [T.SF.SB_FAMILY], a.profile, db=Database(), spike_cfg={"encoder": "QUOTE_EVENT_V1",
+                         "attention": "HYBRID"})
+            out["tasks"]["PMW-UPD-09:QUOTE_EVENT_V1"] = {k: rq.get(k) for k in ("run_id", "status", "candidates", "role")}
+            from . import minirocket_v2 as MR
+            out["minirocket_parity"] = MR.parity(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket")["results"]
             for ex in T.EXPERIMENTS:                                                     # PMW-UPD-08 experiments (ticks missing -> BLOCKED only here)
                 try:
                     r3 = T.train_experiment(a.asset, dsd, ex, ["LOGREG", "XGB"], a.profile, db=Database())

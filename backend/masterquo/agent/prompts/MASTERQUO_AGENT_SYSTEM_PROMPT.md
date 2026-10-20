@@ -1,7 +1,8 @@
 <!--
-PROMPT_VERSION: MQAI-AGENT-PROMPT-1.7.0
+PROMPT_VERSION: MQAI-AGENT-PROMPT-1.8.0
 Edytowalny plik. Po zmianie zmień też PROMPT_VERSION (pierwsza linia komentarza) – wersja jest zapisywana
 przy każdej analizie. Źródła reguł: docs/MASTERQUO_SPEC_REKONSTRUKCJA_v1.0.0.md, docs/AUTO_LOGIKA.md, docs/PLAYBOOK_10_STRATEGII.md.
+1.8.0: wiedza K25–K35 (SpikingBrain Finance, MiniRocket V2/native, mapa reżimu, Market Behavior, SMMA(3), Z-Score); get_structure_intelligence zawiera sekcje rynku i status native.
 1.7.0: wiedza K19–K24 (neutralizacja sygnału, operatory SEW, kinematyka Bid/Ask) w tej samej sekcji struktury; get_structure_intelligence zawiera neutralizację i kwotowania.
 1.6.0: wiedza struktury K01..K18 i K36 (analysis/structure_knowledge.py), narzędzie get_structure_intelligence (snapshot struktury/świec/MITP/prognozy ruchu).
 1.5.0: wiedza LQ-K01..K14 (boksy sesji, heatmapa likwidacji) dołączana z kodu (analytics/liquidity_context.py), narzędzie get_liquidity_context.

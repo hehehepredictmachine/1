@@ -470,9 +470,70 @@
    "update_id": "PMW-UPD-09-SPIKE-MINI",
    "spec_file": "PepeMarketWizard_CLAUDE_CODE_SPIKINGBRAIN_MINIROCKET_REGIME_STRUCTURE.md",
    "spec_sha256": "7196f6f2f7723e0af8185e07d086e66c48f6db3ec81ae4e04fa1defb07eba7ef",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "R20": "VERIFIED (FD/VJP/gęsta referencja LINEAR, przyczynowość, maski, router z gradientem przez p_selected, aux/capacity, resume == trening bez przerwy, save/load; trening rynkowy NOT_RUN)",
+    "R21": "IMPLEMENTED (layout golden, kwantyle float32, SplitMix64, PPV strict, ridge dual/CG, kalibracja, format binarny + importer wyniku native; FROZEN_STATE_PARITY i FIT_LAYOUT_PARITY PASS vs sktime 1.2.0; Fit na jednym oknie: różnice zaokrągleń numba fastmath raportowane; NATIVE_COMPILED/EXECUTED NOT_RUN – brak MetaEditor)",
+    "R22": "VERIFIED (ER/nachylenie/zgodność, histereza, przejście przez TRANSITION, checkpoint, wspólna oś zmienności z M11)",
+    "R23": "VERIFIED (raw pivoty, tail/sealed/FINAL, EQH/EQL, AMBIGUOUS_ORDER, filtry, jednostki, role, as-of, Swing Inspector po ID)",
+    "R24": "VERIFIED (seed SMA + Wilder, CURRENT_CLOSED/PREVIOUS_BOUNDARY, lag, deadband, dedup ID, luka)",
+    "R25": "VERIFIED (INCLUSIVE_N/PREVIOUS_N, dwuprzebiegowa wariancja, LOW_DISPERSION, %B, hipotezy jako osobne strumienie)",
+    "R26": "IMPLEMENTED (domeny metryk NO_SAMPLES/ONE_CLASS/INVALID_PREDICTION, artefakty, E2E przez wspólny trener; A-07-01 z aktualizacji 07)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "MQ_SPIKE_BRAIN_FINANCE_V1 (enkoder BAR/QUOTE, adaptacyjny LIF, LINEAR/SLIDING/HYBRID, top-1 MoE), MiniRocket V2 + ridge + native MQL5, MQ_REGIME_MULTI_V2, Market Behavior, SMMA(3), Z-Score",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5 OHLC/ticki: NOT_RUN (brak terminala)",
+    "data": "BRAK REAL_USER_DATA / archiwum ticków",
+    "training": "NOT_RUN (wyłącznie TEST_ONLY smoke)",
+    "artifacts": "BRAK",
+    "native": "SOURCES_ONLY – NOT_COMPILED_NO_METAEDITOR, NATIVE_NOT_EXECUTED",
+    "parity": "sktime 1.2.0 (numba 0.68, numpy 2.5.4): FROZEN_STATE_PARITY PASS (40 okien × 9996, 0 rozbieżności), FIT_RANDOM_SELECTION NOT_CLAIMED; Arixis regime MQ5: UNVERIFIED",
+    "edge": "NOT_EVALUATED",
+    "energy": "NOT_MEASURED"
+   },
+   "files": [
+    "backend/masterquo/lab/autodiff.py",
+    "backend/masterquo/lab/spike_brain.py",
+    "backend/masterquo/lab/minirocket_v2.py",
+    "backend/masterquo/lab/si_families.py",
+    "backend/masterquo/lab/market_v2.py",
+    "backend/masterquo/lab/market_service.py",
+    "backend/masterquo/lab/market.py (axis_v2)",
+    "backend/masterquo/lab/structure_task.py",
+    "backend/masterquo/lab/structure_cli.py",
+    "backend/masterquo/lab/si_service.py",
+    "backend/masterquo/api/app.py",
+    "backend/masterquo/scalp/dashboard.py",
+    "backend/masterquo/analysis/structure_knowledge.py (K25–K35) + prompt 1.8.0",
+    "backend/masterquo/agent/tools.py",
+    "mql5/MiniRocketV2/**",
+    "tools/minirocket_sktime_reference.py",
+    "tools/mr2_native_status.py",
+    "tests/fixtures/minirocket/",
+    "frontend/src/components/MarketStory.tsx",
+    "frontend/src/components/StructureIntel.tsx",
+    "26_STRUCTURE_INTELLIGENCE.bat",
+    "27_MINIROCKET_NATIVE.bat",
+    "docs/SPIKINGBRAIN_MINIROCKET_REGIME_PL.md"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_spike_brain test_minirocket test_market_behavior test_regime_map test_smma_zscore test_structure_quality",
+     "result": "PASS"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_12_market_story_regime_smma_z_native",
+     "result": "PASS"
+    }
+   ],
+   "blocked_items": [
+    "NATIVE_COMPILED/NATIVE_EXECUTED/benchmark native: brak MetaEditor/Windows",
+    "QUOTE_EVENT_V1 trening: brak archiwum rzeczywistych ticków",
+    "trening rynkowy i edge: brak REAL_USER_DATA"
+   ]
   },
   "PMW-UPD-10-MARKET-INTEL": {
    "update_id": "PMW-UPD-10-MARKET-INTEL",

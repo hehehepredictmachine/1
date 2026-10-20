@@ -4,7 +4,7 @@ when the snapshot contains a model output (forecast_status OK); otherwise the te
 the prompt is NOT fine-tuning of the language model."""
 from __future__ import annotations
 
-KNOWLEDGE_VERSION = "PMW-SI-KNOWLEDGE-1.1.0"
+KNOWLEDGE_VERSION = "PMW-SI-KNOWLEDGE-1.2.0"
 RULES = {
     "K01": "Najpierw TF, kontekst i czas dostępności; brak świeżych danych oznacza ograniczoną odpowiedź.",
     "K02": "Świeca jest dowodem warunkowym w strukturze, nie obietnicą kierunku.",
@@ -30,6 +30,17 @@ RULES = {
     "K22": "Newtonian opisuje Bid/Ask osobno; niepewność parametrów, przyszłej ceny i prawdopodobieństwo zysku nie są tym samym.",
     "K23": "Turning time i etykieta fazy są hipotezą lokalnego modelu; nie gwarantują odwrócenia rynku.",
     "K24": "Prognoza tickowa bez terminowego quote do oceny ma UNSCORED_GAP, a nie trafny sygnał.",
+    "K25": "MQ SpikingBrain Finance jest własną adaptacją; fixed regime router nie jest uczonym MoE, a sparse aktywacje nie dowodzą oszczędności prądu.",
+    "K26": "MiniRocket ma stałe jądra, lecz Fit biasów, liniowy head i kalibrator wymagają train; PPV nie jest prawdopodobieństwem transakcji.",
+    "K27": "„Bit-exact” i czas transformacji obowiązują wyłącznie dla sprawdzonego zakresu danych/build/dtype; nie przenoś cudzych benchmarków na bot.",
+    "K28": "Regime strength opisuje siłę bieżących dowodów, nie prawdopodobieństwo przyszłego kierunku; trend i zmienność są osobnymi osiami.",
+    "K29": "Pivot known, rozwijający się tail i finalna noga mają różne czasy; przyszły następny swing nie był znany wcześniej.",
+    "K30": "EQH/EQL nie są LH/LL; retracement ponad 100% może wskazywać przekroczenie poprzedniego ruchu, nie gwarantuje zmiany trendu.",
+    "K31": "Na złocie pip wymaga jawnej definicji; bez niej używaj ceny/points/ticks zamiast zgadywanej jednostki.",
+    "K32": "UP/DOWN kanału SMMA jest zdarzeniem przejścia zamknięcia, a ABOVE/BELOW stanem; utrzymywanie stanu nie tworzy nowego sygnału.",
+    "K33": "Skrajne Z oznacza nietypową odległość względem wskazanego okna; bez kontekstu nie wybiera reversal ani continuation.",
+    "K34": "Inclusive i previous-window Z mają różne znaczenie; flat daje null, a Z=±2 nie daje automatycznie 95% pewności.",
+    "K35": "Z i percentB przy tych samych parametrach są zależne algebraicznie, a wiele pochodnych ceny nie jest niezależnym potwierdzeniem.",
     "K36": "Kod/integracja/trening/parytet/native/edge mają oddzielne statusy; brak danych albo testu nie może zostać przemilczany.",
 }
 
@@ -70,6 +81,23 @@ def explain(snap: dict | None) -> dict:
         if m.get("held_state") is not None or m.get("current_vote") is not None:
             line += f"; MITP stan utrzymany {m.get('held_state')}, bieżący głos {m.get('current_vote')}"
             rules.update({"K08", "K09"})
+        mk = c.get("market") or {}
+        if mk.get("status") == "OK":
+            rg = mk.get("regime") or {}
+            line += (f"; reżim {rg.get('state')} (siła dowodów {rg.get('strength')}, nie prawdopodobieństwo), zmienność {rg.get('volatility')}"
+                     f"; bias swingów {(mk.get('behavior') or {}).get('bias')}")
+            rules.update({"K28", "K29"})
+            lf = (mk.get("behavior") or {}).get("last_final_leg")
+            if lf and lf.get("retracement_pct") is not None and lf["retracement_pct"] > 100:
+                rules.add("K30")
+            sm = mk.get("smma") or {}
+            if sm.get("location"):
+                line += f"; SMMA(3) stan {sm['location']}" + (f", zamknięcie przeszło przez kanał ({sm['event']})" if sm.get("event") in ("UP", "DOWN") else "")
+                rules.add("K32")
+            z = (mk.get("zscore") or {}).get("inclusive") or {}
+            zp = (mk.get("zscore") or {}).get("previous") or {}
+            line += f"; Z(20) inclusive {('null (' + str(z.get('status')) + ')') if z.get('z') is None else round(z['z'], 2)}, previous {('null (' + str(zp.get('status')) + ')') if zp.get('z') is None else round(zp['z'], 2)}"
+            rules.update({"K33", "K34", "K35"})
         facts.append(line)
     fc = snap.get("forecast") or {}
     if fc.get("forecast_status") == "OK":
@@ -91,6 +119,12 @@ def explain(snap: dict | None) -> dict:
     if q.get("phase"):
         rules.update({"K22", "K23", "K24"})
         facts.append(f"kinematyka Bid/Ask: faza {q['phase']} (hipoteza lokalnego modelu), zegar {q.get('clock')}")
+    nat = snap.get("native") or {}
+    if nat:
+        rules.update({"K26", "K27"})
+        missing.append(f"native MiniRocket: kompilacja {(nat.get('compile') or {}).get('NATIVE_COMPILED')}, feed {(nat.get('feed') or {}).get('status')}")
+    if (fc.get("family") or "") == "MQ_SPIKE_BRAIN_FINANCE_V1":
+        rules.add("K25")
     if snap.get("divergences"):
         rules.add("K17")
         facts += [f"rozbieżność MTF: {d}" for d in snap["divergences"]]
