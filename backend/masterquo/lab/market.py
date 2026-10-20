@@ -131,7 +131,11 @@ def vol_regime(bars: list[dict], n_atr: int = 14, window: int = 200, lo_pct: flo
         p = pct_rank(w, at[i])
         states.append(None if p is None else ("COMPRESSION" if p < lo_pct else "EXPANSION" if p > hi_pct else "NORMAL"))
     last_p = pct_rank(at[max(0, len(at) - window):], at[-1]) if len(at) and not np.isnan(at[-1]) else None
-    return {"state": states[-1] if states else None, "atr": None if not len(at) or np.isnan(at[-1]) else round(float(at[-1]), 5),
+    from .market_v2 import atr_series as _atr2, vol_axis
+    at2 = _atr2(a["h"], a["l"], a["c"])                 # shared core with R22 (profile VOL_PCT_PRIOR_V2: previous 200, min 100)
+    rel = np.array([x / cc if x else np.nan for x, cc in zip(at2, a["c"])])
+    axis_v2 = vol_axis(rel, len(rel) - 1, window, 100, lo_pct, hi_pct) if len(rel) else None
+    return {"axis_v2": axis_v2, "state": states[-1] if states else None, "atr": None if not len(at) or np.isnan(at[-1]) else round(float(at[-1]), 5),
             "atr_percentile": None if last_p is None else round(last_p, 3),
             "series": [{"t": bars[i]["open_utc"], "state": states[i]} for i in range(max(0, len(bars) - series), len(bars))],
             "params": {"atr": n_atr, "window": window, "compression_below": lo_pct, "expansion_above": hi_pct}}

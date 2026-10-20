@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from ..analysis import mitp, structure_v2 as S
+from . import si_families as SF
 from . import structure_nets as SN
 
 TASK_MOVE = "STRUCTURE_MOVE_M1_V1"
@@ -47,13 +48,14 @@ TAB = ["ret1", "ret3", "ret5", "ret15", "body", "upper", "lower", "clv", "range_
        "h1_ret3", "h1_pos", "ctx_known", "black_known"]
 SEQ = ["ret1", "body", "upper", "lower", "clv", "range_atr", "trend_int", "dist_h", "dist_l", "mitp_vote", "bb_pctb"]
 SEQ_IDX = [TAB.index(x) for x in SEQ]
-FAMILIES_ALL = ("LOGREG", "XGB") + SN.FAMILIES
+FAMILIES_ALL = ("LOGREG", "XGB") + SN.FAMILIES + SF.FAMILIES
 EVIDENCE = {"min_rows": 20000, "min_sessions": 60, "min_per_class": 500, "min_setups": 600}
 CRITERIA = {"logloss_gain_folds": 0.75, "min_mean_logloss_gain": 0.005, "max_ece": 0.10, "nominal_coverage": 0.80}
 PROFILES = {"standard": {"epochs": 60, "batch": 64, "patience": 8, "lr": 1e-3, "seeds": [11, 23, 37], "net_cfg": {}, "max_fit_rows": None,
-                         "trial_minutes": 120},
+                         "trial_minutes": 120, "mr_requested": 10000, "mr_max_fit_rows": 20000, "spike_max_fit_rows": 20000},
             "quick": {"epochs": 2, "batch": 64, "patience": 2, "lr": 1e-3, "seeds": [11], "net_cfg": {"widths": [8, 16, 16], "blocks_per_stage": 1},
-                      "max_fit_rows": 1500, "trial_minutes": 10, "max_folds": 1, "max_eval_rows": 1500}}
+                      "max_fit_rows": 1500, "trial_minutes": 10, "max_folds": 1, "max_eval_rows": 1500, "mr_requested": 840,
+                      "mr_max_fit_rows": 1500, "spike_max_fit_rows": 128}}
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 
 
@@ -470,10 +472,15 @@ def _task_arrays(data: dict, task: str):
     return b, data["Y"][b].astype(np.int64), data["R"][b].astype(np.float64)
 
 
-def _fit_family(fam: str, data: dict, task: str, blocks: dict, prof: dict, seed: int, log, deadline: float):
+def _fit_family(fam: str, data: dict, task: str, blocks: dict, prof: dict, seed: int, log, deadline: float, cancel=None):
     bars, Y, R = _task_arrays(data, task)
     F = data["fe"]["F"]
     H = Y.shape[1]
+    if fam == SF.MR_FAMILY:
+        return SF.fit_minirocket(data, bars, Y, R, blocks, prof, seed, float(data.get("tick") or data["manifest"]["tick"]))
+    if fam == SF.SB_FAMILY:
+        return SF.fit_spike(data["manifest"]["instrument"], data, bars, Y, R, blocks, prof, seed,
+                            min(60 * prof["trial_minutes"], max(1.0, deadline - time.time())), cancel)
     fit, tune = blocks["FIT"], blocks["TUNE"]
     if prof["max_fit_rows"]:
         fit = fit[-prof["max_fit_rows"]:]
@@ -509,6 +516,10 @@ def _predict(model, fam: str, data: dict, task: str, pos: np.ndarray):
     F = data["fe"]["F"]
     if isinstance(model, Tabular):
         return model.predict(F[bars[pos]])
+    if model[0] == "MR2":
+        return SF.predict_minirocket(model, data, bars[pos], float(data.get("tick") or data["manifest"]["tick"]))
+    if model[0] == "SB":
+        return SF.predict_spike(model, data["manifest"]["instrument"], data, bars[pos])
     net, sc = model
     P, Q = [], []
     for b0 in range(0, len(pos), 512):
@@ -529,7 +540,9 @@ def expand_families(families: list[str], sew_operators: list[str] | None) -> lis
 
 
 def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str = "standard", db=None, log=print, cancel=None,
-          sew_operators: list[str] | None = None) -> dict:
+          sew_operators: list[str] | None = None, spike_cfg: dict | None = None, transform: str | None = None) -> dict:
+    if transform and transform != SF.MR.TRANSFORM_ID:
+        return {"status": "INCOMPATIBLE", "reason": f"nieobsługiwana transformacja {transform} (dostępna {SF.MR.TRANSFORM_ID})"}
     data = load_dataset(dsdir, task)
     man = data["manifest"]
     prof_now = indicator_profile(inst)
@@ -538,7 +551,7 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
                 "rebuild": f"python -m masterquo structure-intelligence dataset --asset {inst} --task {task}"}
     if task == TASK_SETUP and not len(data.get("setup_idx", [])):
         return {"status": "NO_SETUP", "reason": "brak rzeczywistych setupów strategii w danych"}
-    prof = PROFILES[profile]
+    prof = dict(PROFILES[profile], spike_cfg=dict(spike_cfg or {}))
     if task == TASK_SETUP:
         data["rows_idx"] = data["setup_idx"]
     sp = split(data)
@@ -552,7 +565,10 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
            "profile_note": "quick = niepełny smoke" if profile == "quick" else None, "families": families, "evidence": ev, "holdout_from": sp["cut"],
            "class_order": list(SN.CLASSES) if task == TASK_MOVE else list(SETUP_CLASSES), "horizons": list(HORIZONS) if task == TASK_MOVE else None,
            "role": "TEST_ONLY" if synthetic else "RESEARCH", "folds": [], "created_at": datetime.now(timezone.utc).isoformat(), "criteria": CRITERIA,
-           "budget": {k: prof[k] for k in ("epochs", "batch", "patience", "lr", "seeds", "trial_minutes")}}
+           "budget": {k: prof[k] for k in ("epochs", "batch", "patience", "lr", "seeds", "trial_minutes", "mr_requested", "mr_max_fit_rows",
+                                            "spike_max_fit_rows")},
+           "spike_profile": {"encoder": (spike_cfg or {}).get("encoder", "BAR_EVENT_V1"), "attention": (spike_cfg or {}).get("attention", "HYBRID")}
+           if SF.SB_FAMILY in families else None, "transform": SF.MR.TRANSFORM_ID if SF.MR_FAMILY in families else None}
     deadline = time.time() + 60 * prof["trial_minutes"] * (len(families) + 2) * 5
     _, Yall, Rall = _task_arrays(data, task)
     families = expand_families(families, sew_operators)
@@ -569,10 +585,10 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
             continue
         fr = {"fold": f["fold"], "status": "OK", "sizes": {k: int(len(v)) for k, v in b.items()}, "eval_n": int(len(f["eval"])), "families": {}}
         for fam in fams:
-            seeds = prof["seeds"] if fam in SN.FAMILIES else [0]
+            seeds = prof["seeds"] if (fam in SN.FAMILIES or fam in SF.FAMILIES) else [0]
             res = []
             for sd in seeds:
-                model, info = _fit_family(fam, data, task, b, prof, sd, log, deadline)
+                model, info = _fit_family(fam, data, task, b, prof, sd, log, deadline, cancel)
                 if model is None:
                     res.append({"seed": sd, **info})
                     continue
@@ -582,7 +598,8 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
                 if temps:
                     P = np.stack([_apply_T(P[:, j], temps[j]["T"]) for j in range(P.shape[1])], axis=1)
                 res.append({"seed": sd, "status": info["status"], "epochs_run": info.get("epochs_run"), "calibration": temps,
-                            "metrics": metrics(P, Q, Yall[f["eval"]], Rall[f["eval"]])})
+                            "metrics": metrics(P, Q, Yall[f["eval"]], Rall[f["eval"]]),
+                            **({"diagnostics": _diag(model, info)} if fam in SF.FAMILIES else {})})
             fr["families"][fam] = res
             log(f"fold {f['fold'] + 1} {fam}: {[r.get('status') for r in res]}")
         rep["folds"].append(fr)
@@ -594,14 +611,14 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
     rep["candidates"] = {}
     if rep["status"] != "CANCELLED" and min(len(v) for v in fb.values()) >= 5:
         for fam in families:
-            model, info = _fit_family(fam, data, task, fb, prof, prof["seeds"][0], log, deadline)
+            model, info = _fit_family(fam, data, task, fb, prof, prof["seeds"][0], log, deadline, cancel)
             if model is None:
                 rep["candidates"][fam] = info
                 continue
             Pc, _ = _predict(model, fam, data, task, fb["CALIBRATION"])
             temps = [_temperature(Pc[:, j], Yall[fb["CALIBRATION"], j]) for j in range(Yall.shape[1])]
             cid = f"{rid}-{fam}"
-            mh = save_candidate(rd / "models" / fam, fam, model, temps, rep, man)
+            mh = save_candidate(rd / "models" / fam, fam, model, temps, rep, man, info)
             rep["candidates"][fam] = {"candidate_id": cid, "model_hash": mh, "status": info["status"], "calibration": temps,
                                       "holdout": "NOT_EVALUATED_ON_HOLDOUT_BY_DESIGN"}
     rep["run_dir"] = str(rd)
@@ -647,13 +664,28 @@ def _compare(rep: dict) -> dict:
 
 
 # ------------------------------------------------------------------ artefacts / registry
-def save_candidate(d: Path, fam: str, model, temps: list, rep: dict, man: dict) -> str:
+def _diag(model, info: dict) -> dict:
+    """Model diagnostics shown in the panel (encoder/attention/router/experts or transform/solver) - from the real fitted object."""
+    if model[0] == "SB":
+        net = model[1]
+        return {"architecture_id": SF.SB.ARCH_ID, "encoder": model[3], "attention": net.cfg["attention"], "telemetry": net.last_tel,
+                "epochs_run": info.get("epochs_run"), "history_tail": (info.get("history") or [])[-3:], "energy_j": None}
+    return {"transform": model[1].state(), "solver": info.get("solver"), "lambda": info.get("lambda"), "budget_note": info.get("budget_note")}
+
+
+def save_candidate(d: Path, fam: str, model, temps: list, rep: dict, man: dict, info: dict | None = None) -> str:
     d.mkdir(parents=True, exist_ok=False)
     meta = {"task_id": rep["task_id"], "family": fam, "instrument": man["instrument"], "symbol": man["symbol"], "feature_schema": FEATURE_SCHEMA,
             "labels_version": LABELS_VERSION, "indicator_profile_hash": man["indicator_profile"]["hash"], "class_order": rep["class_order"],
             "horizons": rep["horizons"], "calibration": temps, "role": rep["role"], "protocol_id": PROTOCOL_ID, "dataset_id": man["dataset_id"],
-            "created_at": datetime.now(timezone.utc).isoformat(), "state_policy": "RESET_EACH_WINDOW" if fam in SN.FAMILIES else None}
-    if fam in SN.FAMILIES:
+            "created_at": datetime.now(timezone.utc).isoformat(), "state_policy": "RESET_EACH_WINDOW" if (fam in SN.FAMILIES or fam == SF.SB_FAMILY) else None}
+    if fam == SF.MR_FAMILY:
+        meta["mr"] = SF.save_minirocket(d / "mr2", model)
+        meta["diagnostics"] = _diag(model, info or {})
+    elif fam == SF.SB_FAMILY:
+        meta["sb"] = SF.save_spike(d, model)
+        meta["diagnostics"] = _diag(model, info or {})
+    elif fam in SN.FAMILIES:
         net, sc = model
         nm = net.save(d / "net")
         np.savez(d / "scaler.npz", mu=sc["mu"], sd=sc["sd"])
@@ -690,6 +722,10 @@ def load_candidate(d: Path, expect: dict | None = None):
         if meta.get(k) != v:
             raise ValueError(f"INCOMPATIBLE_ARTIFACT: {k}={meta.get(k)} (oczekiwano {v})")
     fam = meta["family"]
+    if fam == SF.MR_FAMILY:
+        return meta, SF.load_minirocket(d / "mr2", meta)
+    if fam == SF.SB_FAMILY:
+        return meta, SF.load_spike(d, meta)
     if fam in SN.FAMILIES:
         net = SN.StructureNet.load(d / "net")
         with np.load(d / "scaler.npz", allow_pickle=False) as z:
@@ -820,7 +856,8 @@ class Forecaster:
         if run[b] < WINDOW - 1 or not np.isfinite(fe["atr"][b]):
             return {"forecast_status": "ABSTAIN", "reason": "DATA_GAP_IN_WINDOW"}
         fam = self.meta["family"]
-        data = {"fe": fe, "rows_idx": np.array([b]), "Y": np.full((len(m1), 3), -1), "R": np.full((len(m1), 3), np.nan)}
+        data = {"fe": fe, "rows_idx": np.array([b]), "Y": np.full((len(m1), 3), -1), "R": np.full((len(m1), 3), np.nan), "tick": tick,
+                "manifest": {"instrument": self.inst, "tick": tick}}
         P, Q = _predict(self.model, fam, data, TASK_MOVE, np.array([0]))
         C, A = float(fe["c"][b]), float(fe["atr"][b])
         heads = []
