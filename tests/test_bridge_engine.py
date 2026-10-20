@@ -248,3 +248,46 @@ class TestVendoredEnginesUnchanged(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSlowTerminal(unittest.TestCase):
+    """User report 1.16: 'connection lost every moment'. A long HISTORY job on the single MT5 worker must not be read as a
+    dead terminal, and slow answers must not trigger a reconnect storm while heartbeats still succeed."""
+
+    def test_worker_busy_with_history_is_not_unresponsive(self):
+        import time
+        from masterquo.mt5.worker import PRIO_HISTORY, MT5Busy, MT5CallTimeout, MT5Worker
+        w = MT5Worker(lambda: object())
+        w.start()
+        try:
+            w.submit(lambda m: time.sleep(2.5), PRIO_HISTORY)
+            time.sleep(0.2)
+            with self.assertRaises(MT5Busy):
+                w.call(lambda m: 1, timeout=0.5)
+            self.assertTrue(issubclass(MT5Busy, MT5CallTimeout))        # callers unaware of MT5Busy still see a timeout
+            time.sleep(2.5)
+            self.assertEqual(w.call(lambda m: 7, timeout=1.0), 7)
+            w.submit(lambda m: time.sleep(2.0))                          # a stuck NON-history call is still a real timeout
+            time.sleep(0.2)
+            with self.assertRaises(MT5CallTimeout) as cm:
+                w.call(lambda m: 1, timeout=0.5)
+            self.assertNotIsInstance(cm.exception, MT5Busy)
+        finally:
+            w.stop()
+
+    def test_bridge_stays_connected_during_long_history_job(self):
+        import time
+        from masterquo.mt5.worker import PRIO_HISTORY
+        cfg, db, bus, log, fake, worker, b = core()
+        b.start()
+        try:
+            self.assertTrue(wait_for(lambda: b.state == "CONNECTED", 40))
+            epoch = b.session_epoch
+            worker.submit(lambda m: time.sleep(b.cfg.call_timeout_seconds + 6), PRIO_HISTORY)   # e.g. a big tick / rates export
+            time.sleep(b.cfg.call_timeout_seconds + 8)
+            self.assertEqual(b.state, "CONNECTED")
+            self.assertEqual(b.session_epoch, epoch)                     # no reconnect, no history reload
+            self.assertGreater(b.busy_waits, 0)
+        finally:
+            b.stop()
+            worker.stop()

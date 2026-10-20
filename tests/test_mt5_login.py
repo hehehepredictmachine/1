@@ -62,18 +62,34 @@ class TestMT5Login(unittest.TestCase):
         self.secrets.set("MT5_PASSWORD", "s3cret-PW-123456")
         st = self.use(StubLogin())
         self.bridge._initialize()
-        self.assertEqual(st.calls, [{"login": 5012345, "server": "Broker-Demo", "password": "s3cret-PW-123456"}])
+        # 1.16: attach to the running session first; credentials only because ANOTHER account (the simulator's) is logged in
+        self.assertEqual(st.calls, [{}, {"login": 5012345, "server": "Broker-Demo", "password": "s3cret-PW-123456"}])
         self.assertEqual(self.bridge.login_info["mode"], "CONFIG_LOGIN")
         self.assertEqual(self.secrets.mask("MT5_PASSWORD"), "•••")          # never partially shown
         dumped = json.dumps(self.cfg.get().model_dump(mode="json")) + json.dumps(self.bridge.connection_status(), default=str)
         self.assertNotIn("s3cret", dumped)                                    # not in config.json nor in the status
+
+    def test_same_account_already_logged_in_is_not_logged_in_again(self):
+        """User report 1.16 'connection lost every moment': re-sending login/password re-logs the account in MT5 and drops
+        the trade-server connection. When the terminal already runs the configured account, no credentials are sent."""
+        acc = self.fake._accounts[self.fake._login]                          # the account the (simulated) terminal runs
+        self.fake.connected = True
+        self.cfg.update({"mt5": {"login": int(acc["login"]), "server": str(acc["server"])}})
+        self.secrets.set("MT5_PASSWORD", "s3cret-PW-123456")
+        st = self.use(StubLogin())
+        self.bridge._initialize()
+        self.assertEqual(st.calls, [{}])
+        from masterquo.diagnostics import attach
+        st.calls.clear()
+        self.assertTrue(attach(self.fake, self.cfg.get()))                 # training export / diagnostics: same rule
+        self.assertEqual(st.calls, [{}])
 
     def test_rejected_login_not_repeated_and_falls_back_to_session(self):
         self.cfg.update({"mt5": {"login": 5012345, "server": "Broker-Demo"}})
         self.secrets.set("MT5_PASSWORD", "wrong-password")
         st = self.use(StubLogin(ok=lambda kw: "login" not in kw))           # the terminal itself is logged in
         self.bridge._initialize()
-        self.assertEqual([("login" in c) for c in st.calls], [True, False])
+        self.assertEqual([("login" in c) for c in st.calls], [False, True, False])     # attach, rejected login, session
         self.assertTrue(self.bridge.login_info["credentials_rejected"])
         st.calls.clear()
         self.bridge._initialize()                                           # next reconnect: the rejected login is NOT sent again
@@ -81,7 +97,7 @@ class TestMT5Login(unittest.TestCase):
         self.secrets.set("MT5_PASSWORD", "new-password")                    # credentials changed -> one new attempt
         st.calls.clear()
         self.bridge._initialize()
-        self.assertTrue("login" in st.calls[0])
+        self.assertEqual([("login" in c) for c in st.calls][:2], [False, True])   # attach first, then the new credentials once
         logs = json.dumps(self.db.query("SELECT message, data_json FROM app_events"), ensure_ascii=False)
         self.assertIn("LOGIN_REJECTED", json.dumps(self.db.query("SELECT code FROM app_events")))
         self.assertNotIn("wrong-password", logs)

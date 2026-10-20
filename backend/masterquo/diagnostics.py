@@ -32,6 +32,24 @@ def _init_kw(cfg) -> dict:
     return lg.init_kwargs(cfg.mt5, pw)
 
 
+def attach(mt5, cfg) -> bool:
+    """Secondary processes (training export, diagnostics, symbol listing) ATTACH to the already logged-in terminal session
+    first (path only, no login): initialize() with login/password makes MT5 log the account in again, which drops the
+    terminal's trade-server connection for a moment and the running bot sees a disconnect. Credentials are used only when
+    the terminal is not logged in at all."""
+    path_kw = {k: v for k, v in _init_kw(cfg).items() if k == "path"}
+    if mt5.initialize(**path_kw):
+        try:
+            if mt5.account_info() is not None:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    full = _init_kw(cfg)
+    if set(full) == set(path_kw):
+        return mt5.initialize(**path_kw)
+    return bool(mt5.initialize(**full))
+
+
 def _hint(err) -> str:
     from .mt5 import login as lg
     return lg.hint(err)
@@ -91,7 +109,7 @@ def doctor() -> int:
     try:
         import MetaTrader5 as mt5
         chk("Pakiet MetaTrader5", OK, getattr(mt5, "__version__", "?"))
-        ok = mt5.initialize(**_init_kw(cfg))
+        ok = attach(mt5, cfg)
         if not ok:
             chk("Połączenie z terminalem MT5", FAIL, f"initialize() = False, last_error={mt5.last_error()} – {_hint(mt5.last_error()) or 'uruchom i zaloguj MT5 (lub ustaw mt5.terminal_path)'}")
         else:
@@ -153,7 +171,7 @@ def clock() -> int:
         _line(FAIL, f"Brak pakietu MetaTrader5: {exc}")
         print(_save("diagnoza_czasu", out))
         return 2
-    ok = mt5.initialize(**_init_kw(cfg))
+    ok = attach(mt5, cfg)
     if not ok:
         _line(FAIL, f"initialize() nieudane: {mt5.last_error()} {_hint(mt5.last_error())}")
         print(_save("diagnoza_czasu", out))
@@ -268,7 +286,7 @@ def export_history(from_utc: str, to_utc: str, out_dir: str, dst_model: str = "U
         print("[BLAD] Zakres: --from-utc < --to-utc, maks. 500 dni, format 2026-01-01T00:00:00Z")
         return 2
     import MetaTrader5 as mt5
-    ok = mt5.initialize(**_init_kw(cfg))
+    ok = attach(mt5, cfg)
     if not ok:
         print("[BLAD] initialize():", mt5.last_error())
         return 3

@@ -21,7 +21,7 @@ from typing import Any, Callable
 from ..config import ConfigStore
 from ..timeutil import TF_REGISTRY, TF_SECONDS, TIMEFRAMES, UTC, from_epoch, iso, utcnow
 from .clock import ServerClock
-from .worker import PRIO_HISTORY, PRIO_QUOTE, MT5CallTimeout, MT5Worker, MT5WorkerUnavailable
+from .worker import PRIO_HISTORY, PRIO_QUOTE, MT5Busy, MT5CallTimeout, MT5Worker, MT5WorkerUnavailable
 
 log = logging.getLogger("masterquo.mt5.bridge")
 
@@ -122,6 +122,9 @@ class MarketBridge:
         self.attempts = 0
         self.next_retry = 0.0
         self.consecutive_errors = 0
+        self._last_ok = time.monotonic()
+        self.disconnect_grace_s = 20.0
+        self.busy_waits = 0
         self.errors: list[dict] = []
         self.listeners: list[Callable[[str, dict], None]] = []
         self._last_quote_pub = 0.0
@@ -192,6 +195,8 @@ class MarketBridge:
                 else:
                     self.poll(mono)
                     self.consecutive_errors = 0
+            except MT5Busy:
+                self.busy_waits += 1                    # long history job in progress: the terminal is alive, not a failure
             except (MT5CallTimeout,) as exc:
                 self._handle_failure("TERMINAL_UNRESPONSIVE", str(exc))
             except (BridgeError, MT5WorkerUnavailable) as exc:
@@ -204,8 +209,17 @@ class MarketBridge:
     def _handle_failure(self, code: str, detail: str) -> None:
         self.consecutive_errors += 1
         self._error(code, detail)
-        if self.state == "CONNECTED" and self.consecutive_errors < 3:
-            return
+        if self.state == "CONNECTED":
+            # Slow answers are tolerated: the connection is dropped only when there was no good heartbeat for
+            # disconnect_grace_seconds AND a direct terminal probe fails too (no reconnect storm that would
+            # reload the whole history and slow the terminal further).
+            if time.monotonic() - self._last_ok < self.disconnect_grace_s:
+                return
+            if self._probe_ok():
+                self.consecutive_errors = 0
+                self._last_ok = time.monotonic()
+                self.log.write("WARNING", "MT5", "MT5_SLOW", f"MT5 odpowiadał wolno ({code}); terminal żyje – połączenie utrzymane.")
+                return
         self.attempts += 1
         delay = min(self.cfg.reconnect_max_backoff_seconds, 2.0 ** min(self.attempts, 6))
         self.next_retry = time.monotonic() + delay
@@ -214,6 +228,13 @@ class MarketBridge:
         else:
             self._set_state("RECONNECTING" if self.connected_since else "DISCONNECTED", f"{code}: {detail}"[:240])
         self.quote = None
+
+    def _probe_ok(self) -> bool:
+        try:
+            t = self.worker.call(lambda m: m.terminal_info(), priority=0, timeout=max(5.0, self.cfg.call_timeout_seconds))
+            return t is not None and bool(_row(t).get("connected"))
+        except Exception:  # noqa: BLE001
+            return False
 
     # ---------------------------------------------------------------- connect
     def _password(self) -> str | None:
@@ -249,7 +270,17 @@ class MarketBridge:
             return (True, None) if ok else (False, self._call(lambda m: m.last_error()))
 
         first_path = cfg.terminal_path or self._detected_path
-        ok, err = attempt(first_path, use_creds)
+        ok, err = False, None
+        if use_creds:
+            # attach to the running session first: re-sending login/password makes MT5 log the account in again, which drops
+            # the trade-server connection on every reconnect. Credentials only if another (or no) account is logged in.
+            ok, err = attempt(first_path, False)
+            if ok:
+                acc = self._call(lambda m: m.account_info())
+                if acc is None or int(_row(acc).get("login") or 0) != int(cfg.login):
+                    ok = False
+        if not ok:
+            ok, err = attempt(first_path, use_creds)
         if not ok and use_creds and lg.error_code(err) == lg.AUTH_FAILED:
             self._rejected_creds = ck                       # never hammer the broker with a wrong password
             self.log.write("WARNING", "MT5", "LOGIN_REJECTED", f"MT5: logowanie na rachunek {cfg.login} ({cfg.server}) odrzucone – "
@@ -310,6 +341,7 @@ class MarketBridge:
         self._load_all_history()
         self._load_dxy()
         self.connected_since = self.now()
+        self._last_ok = time.monotonic()
         self.attempts = 0
         self._set_state("CONNECTED", None)
         self._notify("connected", {"account_key": new_key, "session_epoch": self.session_epoch})
@@ -610,6 +642,8 @@ class MarketBridge:
                 self.terminal.update({"connected": t.get("connected"), "trade_allowed": t.get("trade_allowed"),
                                       "tradeapi_disabled": t.get("tradeapi_disabled"), "ping_last": t.get("ping_last")})
             self.last_heartbeat = self.now()
+            if t.get("connected"):
+                self._last_ok = time.monotonic()              # liveness = a good heartbeat, not an idle loop
             if not t.get("connected"):
                 self._error("TERMINAL_NOT_CONNECTED_TO_TRADE_SERVER")
         if mono - self._t_quote >= c.quote_poll_seconds:
@@ -779,7 +813,7 @@ class MarketBridge:
 
     def connection_status(self) -> dict:
         return {"state": self.state, "reason": self.state_reason, "session_epoch": self.session_epoch,
-                "connected_since": iso(self.connected_since), "last_heartbeat": iso(self.last_heartbeat),
+                "connected_since": iso(self.connected_since), "last_heartbeat": iso(self.last_heartbeat), "busy_waits": self.busy_waits,
                 "terminal": self.terminal, "account_key": self.account_key, "synthetic": self._synthetic,
                 "attempts": self.attempts, "module_error": self.worker.module_error,
                 "worker_wedged_seconds": round(self.worker.wedged_seconds, 1), "errors": self.errors[-8:], "login": self.login_info,

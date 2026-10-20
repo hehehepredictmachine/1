@@ -31,6 +31,11 @@ class MT5CallTimeout(TimeoutError):
     pass
 
 
+class MT5Busy(MT5CallTimeout):
+    """The single worker is still executing a long HISTORY job (rates / ticks / symbols / deals). The terminal is not
+    unresponsive - the call simply waited behind that job. Callers that do not know this class still see a timeout."""
+
+
 class MT5WorkerUnavailable(RuntimeError):
     pass
 
@@ -66,6 +71,8 @@ class MT5Worker:
         self.module: Any = None
         self.module_error: str | None = None
         self._busy_since: float | None = None
+        self._busy_prio: int | None = None
+        self.history_grace_s = 300.0                       # a single history job may legitimately run this long
         self._lock = threading.Lock()
         self.calls = 0
         self.failures = 0
@@ -91,13 +98,14 @@ class MT5Worker:
             self.module_error = f"{type(exc).__name__}: {exc}"
             log.error("MetaTrader5 module unavailable: %s", self.module_error)
         while not self._stop.is_set():
-            _, _, fn, fut = self._q.get()
+            prio, _, fn, fut = self._q.get()
             if fn is None:
                 break
             if fut.set_running_or_notify_cancel() is False:
                 continue
             with self._lock:
                 self._busy_since = time.monotonic()
+                self._busy_prio = prio
             try:
                 if self.module is None:
                     raise MT5WorkerUnavailable(self.module_error or "MT5_MODULE_UNAVAILABLE")
@@ -114,18 +122,28 @@ class MT5Worker:
                 self.calls += 1
                 with self._lock:
                     self._busy_since = None
+                    self._busy_prio = None
 
     def submit(self, fn: Callable[[Any], Any], priority: int = PRIO_QUOTE) -> Future:
         fut: Future = Future()
         self._q.put((priority, next(self._counter), fn, fut))
         return fut
 
+    def busy_with_history(self) -> bool:
+        with self._lock:
+            return self._busy_prio == PRIO_HISTORY and self._busy_since is not None and \
+                time.monotonic() - self._busy_since < self.history_grace_s
+
     def call(self, fn: Callable[[Any], Any], priority: int = PRIO_QUOTE, timeout: float = 15.0) -> Any:
         if self.wedged_seconds > timeout:
+            if self.busy_with_history():
+                raise MT5Busy("MT5_BUSY_HISTORY")
             raise MT5CallTimeout("TERMINAL_UNRESPONSIVE")
         fut = self.submit(fn, priority)
         try:
             return fut.result(timeout=timeout)
         except TimeoutError as exc:
             fut.cancel()
+            if self.busy_with_history():
+                raise MT5Busy("MT5_BUSY_HISTORY") from exc
             raise MT5CallTimeout("MT5_CALL_TIMEOUT") from exc

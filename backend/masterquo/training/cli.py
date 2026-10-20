@@ -40,10 +40,10 @@ def detect(synthetic: bool = False) -> dict:
         out["error"] = "BRAK_PAKIETU_MetaTrader5 (działa na Windows z zainstalowanym MT5)"
         return out
     from ..config import ConfigStore
-    from ..diagnostics import _init_kw
+    from ..diagnostics import attach
     from ..forecast.export import NoOrders
     mt5 = NoOrders(mt5)
-    if not mt5.initialize(**_init_kw(ConfigStore().get())):
+    if not attach(mt5, ConfigStore().get()):
         out["error"] = f"initialize(): {mt5.last_error()} – uruchom i zaloguj MT5"
         return out
     try:

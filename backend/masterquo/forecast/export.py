@@ -101,7 +101,7 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
     instrument: XAUUSD (default, historical paths/file names) or BTC; symbol: the EXACT broker symbol (never normalised)."""
     import mq_instruments as mi
     from ..config import ConfigStore
-    from ..diagnostics import _init_kw, ny_close_offset, server_to_utc
+    from ..diagnostics import attach, ny_close_offset, server_to_utc
     from ..mt5.fake import is_fake
     from ..mt5 import login as lg
     cfg = ConfigStore().get()
@@ -121,7 +121,7 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
         print("[BLAD] BLOCKED_NO_MT5: brak pakietu MetaTrader5 (eksport działa na Windows z zainstalowanym i zalogowanym MT5).")
         return 3
     mt5 = NoOrders(mt5)
-    if not mt5.initialize(**_init_kw(cfg)):
+    if not attach(mt5, cfg):
         err = mt5.last_error()
         print(f"[BLAD] initialize(): {err} {lg.hint(err)}")
         return 3
