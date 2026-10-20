@@ -277,7 +277,11 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
         lf.flush()
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
         _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
+        beat = time.monotonic()
         while p.poll() is None:
+            if time.monotonic() - beat >= 120:                 # heartbeat: long tasks must not look frozen
+                beat = time.monotonic()
+                print(f"[TRENING] {tid}: w toku {int((beat - t0) // 60)} min – {_last_line(log_p)} (nie zamykaj okna)", flush=True)
             if run.cancel_requested():
                 p.terminate()
                 try:
@@ -292,6 +296,16 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
             time.sleep(1.0)
     run.set(tid, seconds=round(time.monotonic() - t0, 1))
     return p.returncode, child_reason(log_p.read_text(encoding="utf-8", errors="replace")[-6000:], log_p)
+
+
+def _last_line(log_p: Path) -> str:
+    try:
+        with open(log_p, "rb") as fh:
+            fh.seek(max(0, fh.seek(0, 2) - 4000))
+            lines = [ln for ln in fh.read().decode("utf-8", "replace").splitlines() if ln.strip() and not ln.startswith("=== ")]
+        return (lines[-1].strip()[:140]) if lines else "obliczenia trwają"
+    except OSError:
+        return "obliczenia trwają"
 
 
 def child_reason(text: str, log_p: Path | None = None) -> str:
