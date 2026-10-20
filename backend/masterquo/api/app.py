@@ -719,6 +719,101 @@ def create_app(rt, port: int) -> FastAPI:
         return {"instrument": a, "runs": reg["runs"], "shadow": reg["shadow"], "families": list(FT.FAMILIES), "task": FT.TASK, "schema": FT.SCHEMA,
                 "execution": "NEVER_AUTOMATIC"}
 
+    # ------------------------------------------------------------ PMW-UPD-14 VAMD / FD / SMC / Buffer Inspector (GET never trains)
+    def _ckey(asset, tf):
+        a = _si_inst(asset)
+        if tf not in ("M1", "M5", "M15", "H1"):
+            raise HTTPException(400, "TF_INVALID")
+        k = rt.si.ctx.keys.get((a, tf))
+        if k is None:
+            raise HTTPException(404, "NO_CONTEXT_STATE_YET (powstaje przy pierwszym snapshocie)")
+        return k
+
+    @app.get("/api/v1/lab/context")
+    def ctx_summary(asset: str | None = None):
+        from ..lab.context_ind import task as CT
+        a = _si_inst(asset)
+        return {"instrument": a, "tfs": {tf: rt.si.ctx.summary(k) for (i, tf), k in rt.si.ctx.keys.items() if i == a}, "profile": CT.profile(a)}
+
+    @app.get("/api/v1/lab/vamd")
+    def ctx_vamd(asset: str | None = None, tf: str = "M5", limit: int = Query(300, ge=1, le=600)):
+        return rt.si.ctx.vamd(_ckey(asset, tf), limit)
+
+    @app.get("/api/v1/lab/fractal-regime")
+    def ctx_fd(asset: str | None = None, tf: str = "M5", limit: int = Query(300, ge=1, le=600)):
+        return rt.si.ctx.fractal(_ckey(asset, tf), limit)
+
+    @app.get("/api/v1/lab/smc")
+    def ctx_smc(asset: str | None = None, tf: str = "M5", as_of: float | None = None, limit: int = Query(300, ge=1, le=800)):
+        return rt.si.ctx.smc(_ckey(asset, tf), as_of, limit)
+
+    @app.get("/api/v1/lab/buffers/reports")
+    def buf_reports():
+        from ..lab.context_ind import buffers as BF
+        return {"reports": BF.list_reports(), "note": "raporty importowane z PWM_BufferInspector (MT5); panel nie skanuje terminala zdalnie"}
+
+    @app.get("/api/v1/lab/buffers/reports/{rid}")
+    def buf_report(rid: str):
+        from ..lab.context_ind import buffers as BF
+        r = BF.get_report(rid)
+        if r is None:
+            raise HTTPException(404, "REPORT_NOT_FOUND")
+        return r
+
+    @app.post("/api/v1/lab/buffers/reports/import")
+    def buf_import(body: dict = Body(...)):
+        from ..extind.contract import EnvelopeError
+        from ..lab.context_ind import buffers as BF
+        files = os.environ.get("MQ_MT5_FILES_DIR")
+        name = str(body.get("file") or "PWM_BUFFER_REPORT.json")
+        if not files or not name.replace("_", "").replace("-", "").replace(".", "").isalnum() or not name.endswith(".json"):
+            raise HTTPException(400, "FILE_NOT_WHITELISTED_OR_NO_FILES_DIR")
+        p = Path(files) / "PMW" / name
+        if not p.exists():
+            raise HTTPException(404, "REPORT_FILE_MISSING (uruchom PWM_BufferInspector w MT5)")
+        try:
+            d = BF.import_report(p.read_bytes())
+        except EnvelopeError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"report_id": d["report_id"], "coverage": d["coverage"], "instances": len(d.get("instances") or [])}
+
+    @app.get("/api/v1/lab/buffers/mappings")
+    def buf_mappings():
+        from ..lab.context_ind import buffers as BF
+        return {"mappings": BF.mappings(), "required": list(BF.MAPPING_REQUIRED)}
+
+    @app.post("/api/v1/lab/buffers/mappings/validate")
+    def buf_validate(body: dict = Body(...)):
+        from ..lab.context_ind import buffers as BF
+        return BF.validate_mapping(body)
+
+    @app.post("/api/v1/lab/buffers/mappings")
+    def buf_save(body: dict = Body(...)):
+        from ..lab.context_ind import buffers as BF
+        return BF.save_mapping({k: body.get(k) for k in BF.MAPPING_REQUIRED + ("chart_window", "instance", "notes")})
+
+    @app.post("/api/v1/lab/buffers/mappings/{mid}/rollback")
+    def buf_rollback(mid: str):
+        from ..lab.context_ind import buffers as BF
+        try:
+            return BF.rollback_mapping(mid)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/v1/lab/buffers/source")
+    def buf_source(tf: str = "M5"):
+        return rt.si.ctx.external(rt.cfg.get().mt5.symbol, tf)
+
+    @app.post("/api/v1/lab/context/calibrate")
+    def ctx_calibrate(body: dict = Body(default={})):
+        kind = {"calibrate": "context_calibrate", "dataset": "context_dataset", "train": "context_train"}.get(str(body.get("step") or "calibrate"))
+        if kind is None:
+            raise HTTPException(400, "STEP_INVALID")
+        try:
+            return rt.si.start_job(kind, {k: body.get(k) for k in ("asset", "families", "profile")})
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.get("/api/v1/structure-intelligence/quality")
     def si_quality(asset: str | None = None):
         return rt.si.quality(_si_inst(asset))

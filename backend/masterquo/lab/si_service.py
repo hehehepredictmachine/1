@@ -60,6 +60,8 @@ class StructureIntelligenceService:
         self.market = MarketSections()                          # PMW-UPD-09 R22-R25 sections (incremental, checkpointed)
         from .flow_context.service import FlowSections
         self.flow = FlowSections()                              # PMW-UPD-11 flow context (Heikin / S/R / StopDistance / Markov)
+        from .context_ind.service import ContextSections
+        self.ctx = ContextSections()                            # PMW-UPD-14 VAMD / bounded FD / Pullback+SMC (closed bars, SHADOW)
         self.native_importer = None
 
     # ------------------------------------------------------------ per-TF cell
@@ -77,6 +79,10 @@ class StructureIntelligenceService:
             flow = self.flow.summary(self.flow.update(instrument or "XAUUSD", tf, bars, point, tick))
         except Exception as exc:                                # noqa: BLE001
             flow = {"status": "ERROR", "error": type(exc).__name__}
+        try:
+            context = self.ctx.summary(self.ctx.update(instrument or "XAUUSD", tf, bars, tick))
+        except Exception as exc:                                # noqa: BLE001
+            context = {"status": "ERROR", "error": type(exc).__name__}
         t, o, h, lo, c = [x["open_utc"] for x in b], [x["o"] for x in b], [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
         st = S.analyse(t, h, lo, c, tick=tick)
         a = S._atr(h, lo, c, len(c) - 1)
@@ -102,7 +108,7 @@ class StructureIntelligenceService:
                 "patterns_seen": len(pats), "candle_role": {k: rd.get(k) for k in ("reading_id", "role", "role_direction", "reason_codes", "evidence", "invalidation")},
                 "mitp": {"status": mt["status"], "held_state": (mt.get("general") or {}).get("held_state"), "current_vote": (mt.get("general") or {}).get("current_vote"),
                          "votes": mt.get("votes"), "note": "utrzymany stan ≠ aktualna jednomyślność"},
-                "zone": rd.get("zone"), "market": market, "flow": flow}
+                "zone": rd.get("zone"), "market": market, "flow": flow, "context": context}
 
     def divergences(self, cells: dict) -> list[str]:
         facts = []
@@ -391,7 +397,8 @@ class StructureIntelligenceService:
     # ------------------------------------------------------------ background jobs (progress / cancel; GET never trains)
     def start_job(self, kind: str, params: dict) -> dict:
         if kind not in ("dataset", "train", "calibrate", "calibrate_market", "tick_export", "tick_replay", "experiment",
-                        "flow_calibrate", "flow_markov", "flow_dataset", "flow_train"):
+                        "flow_calibrate", "flow_markov", "flow_dataset", "flow_train",
+                        "context_calibrate", "context_dataset", "context_train"):
             raise ValueError("JOB_KIND_INVALID")
         jid = "SIJ-" + uuid.uuid4().hex[:10]
         ev = threading.Event()
@@ -441,6 +448,24 @@ class StructureIntelligenceService:
                         raise ValueError("BLOCKED_NO_DATASET: najpierw dataset flow")
                     r = FT.train(inst, d, p.get("families") or ["LOGREG", "XGB"], p.get("profile") or "quick", db=self.db, log=log, cancel=job["cancel"].is_set)
                     job["result"] = {k: r.get(k) for k in ("run_id", "status", "evidence", "candidates", "edge_status", "reason")}
+            elif job["kind"].startswith("context_"):
+                from .context_ind import task as CT
+                from ..extind.trainer import _bars
+                ds = _latest_real(inst)
+                if ds is None:
+                    raise ValueError("BLOCKED_NO_REAL_DATA: brak eksportu REAL_USER_DATA")
+                meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
+                if job["kind"] == "context_calibrate":
+                    r = CT.calibrate(inst, _bars(ds, meta.get("file_prefix") or "XAUUSD", "M5"), float(meta["tick_size"]), meta)
+                    job["result"] = {"chosen": r["chosen"], "grid_size": r["grid_size"], "holdout_read": r["holdout_read"]}
+                elif job["kind"] == "context_dataset":
+                    job["result"] = CT.build_dataset(inst, ds, log)
+                else:
+                    d = CT.latest(inst)
+                    if d is None:
+                        raise ValueError("BLOCKED_NO_DATASET: najpierw dataset context")
+                    r = CT.train(inst, d, p.get("families") or ["LOGREG", "XGB"], p.get("profile") or "quick", db=self.db, log=log)
+                    job["result"] = {k: r.get(k) for k in ("run_id", "status", "candidates", "edge_status", "reason")}
             elif job["kind"] == "calibrate_market":
                 from . import market_v2 as MV
                 from ..extind.trainer import _bars

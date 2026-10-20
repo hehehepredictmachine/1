@@ -218,7 +218,7 @@ class BridgeImporter:
             if v is not None and (not isinstance(v, (int, float)) or not math.isfinite(v)):
                 return {"status": "REJECTED", "reason": "NON_FINITE_VALUE"}
             empty = v is None or abs(v) >= EMPTY_VALUE * 0.999 or (mp.get("empty_sentinel") not in (None, "EMPTY_VALUE") and v == mp["empty_sentinel"]
-                                                                       and not mp.get("zero_is_valid"))
+                                                                       and not (v == 0 and mp.get("zero_is_valid")))
             rows.append({"source_bar": r.get("source_bar"), "value": None if empty else v, "empty": empty})
         self.seen[key] = int(d["seq"])
         self.last = {"status": "AVAILABLE_UNVALIDATED", "mapping_id": d["mapping_id"], "units": mp["units"], "rows": rows[-200:],
