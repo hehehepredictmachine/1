@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.16.0 – aktualizacje PMW-UPD 02–09, 11, 14 (kod; trening rynkowy i native nieuruchomione)
+* Wdrożone sekwencyjnie według rejestru `docs/updates/update_registry.json`. Każda pozycja ma osobne statusy: kod / źródło / dane / trening / artefakty / native / edge.
+  * 02 IQ/PAL/SAR (PARTIAL), 03 ML scalp, 04 Neural Scalp, 05 MTF dashboard, 06 heatmapa likwidacji + boxy sesji;
+  * 07/08 Structure Intelligence + neutralizacja/SEW/kwotowania;
+  * 09 SpikingBrain Finance / MiniRocket v2 (+ native MQL5) / reżim / SMMA / Z-Score;
+  * 11 Markov + Heikin Flow + kanały S/R + StopDistance;
+  * 14 VAMD + bounded Katz FD + Pullback/SMC (BoS/CHoCH/IDM/x) + Buffer Inspector.
+* Nowe launchery 25–29; runner treningu ma 16 zadań; prompt agenta `MQAI-AGENT-PROMPT-2.0.0`.
+* Wszystkie nowe modele działają w trybie SHADOW/OBSERVE, bez automatycznej promocji. Execution Lock bez zmian, brak zleceń.
+* Bez REAL_USER_DATA i bez MetaEditora: trening rynkowy `NOT_RUN`, native `NOT_EXECUTED`, `NO_VALIDATED_EDGE`.
+* Specyfikacje 01 (BB), 10, 12, 13 i 15 (EA) nie zostały dostarczone. Status BLOCKED, algorytmów nie rekonstruowano.
+
 ## 1.15.0 – instalatory treningu XAUUSD / BTC (`PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip`)
 * **Jeden wspólny mechanizm** `masterquo/training`, wywoływany przez cienkie launchery:
   * `00_TRENING_START.bat` (menu), `INSTALUJ_TRENING.bat`, `TRENUJ_XAUUSD.bat`, `TRENUJ_BTCUSDT.bat`, `TRENUJ_OBA.bat`, `DIAGNOSTYKA_TRENINGU.bat`;
