@@ -615,9 +615,57 @@
    "update_id": "PMW-UPD-14-VAMD-SMC",
    "spec_file": "PepeMarketWizard_CLAUDE_CODE_VAMD_SMC_FRACTAL_BUFFER_INSPECTOR.md",
    "spec_sha256": "f6d57f3d15943962cba3213ec2ec25c7521622e8c678cd8f32f6c3aaa98124f8",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "VS01": "PARTIAL (closed-bar/available_at, epoch przy rewizji, ledger zdarzeń z unikalnymi ID, checkpointy VAMD; zapis w plikach JSON/JSONL zamiast migracji DB)",
+    "VS02": "VERIFIED (Wilder ATR, baseline z bieżącym ATR, alpha clamp, rozgrzewka 63, zero→brak wartości, wypukłość, podgląd bez mutacji, checkpoint/restore)",
+    "VS03": "VERIFIED (tabela WICK/CLOSE, outside bar, równość, siatka ticka, ledger append-only, replay idempotentny)",
+    "VS04": "VERIFIED (seed, pending/IDM ratchet, fallback, x z relokacją jako nowa wersja, BoS/CHoCH, anchor, maska zdarzeń, as-of)",
+    "VS05": "VERIFIED (Katz z d=max przemieszczenia, saturacja, clip, NO_MOTION reset, EMA seed, strefy bez kierunku, golden ręczny)",
+    "VS06": "IMPLEMENTED (import/heurystyki/mapowania/rollback/most z whitelist+seq+TTL; źródła MQL5 Inspector/Fixture/Bridge – NOT_EXECUTED)",
+    "VS07": "PARTIAL (runtime/API/panel/agent C01–C07; native źródła + parytet Python + transliteracja SMC 0 różnic; brak typowanego WS; NOT_EXECUTED_METAEDITOR_UNAVAILABLE)",
+    "VS08": "IMPLEMENTED (kalibracja 24 konfiguracji na dev, dataset/trening/ablacje/CLI/runner/launcher 29/docs/rollback; trening rynkowy NOT_RUN – brak REAL_USER_DATA)"
+   },
+   "prompt_version": "MQAI-AGENT-PROMPT-2.0.0+PMW-CTX-KNOWLEDGE-1.0.0",
+   "summary": "VAMD, bounded Katz FD, Pullback + SMC (BoS/CHoCH/IDM/x z wersjami punktów), Buffer Inspector + most, model CONTEXT_MOVE_M5_V1, native MQL5 + parytet",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5: NOT_RUN",
+    "data": "BRAK REAL_USER_DATA",
+    "training": "NOT_RUN (TEST_ONLY smoke)",
+    "artifacts": "BRAK",
+    "native": "SOURCES_ONLY – NOT_EXECUTED_METAEDITOR_UNAVAILABLE",
+    "parity": "własne Python vs golden PASS; transliteracja MQL5 SMC 160 przebiegów 0 różnic; native eksport NOT_RUN",
+    "edge": "NO_VALIDATED_EDGE"
+   },
+   "files": [
+    "backend/masterquo/lab/context_ind/*",
+    "mql5/ContextIndicators/**",
+    "29_CONTEXT_INDICATORS.bat",
+    "tools/mr2_native_status.py (--context)",
+    "backend/masterquo/lab/si_service.py (ctx)",
+    "backend/masterquo/api/app.py (/lab/vamd|fractal-regime|smc|buffers/*|context/*)",
+    "backend/masterquo/training/runner.py (context_indicators)",
+    "frontend/src/components/ContextIndicators.tsx",
+    "docs/VAMD_SMC_FRACTAL_BUFFER_INSPECTOR_PL.md",
+    "tests/fixtures/context_ind/golden.json"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_vamd_fractal test_pullback_smc test_indicator_buffers test_context_runtime",
+     "result": "PASS"
+    },
+    {
+     "cmd": "python -m unittest test_ui_lab.TestLabUI.test_14_context_indicators",
+     "result": "PASS"
+    }
+   ],
+   "blocked_items": [
+    "kompilacja/uruchomienie MQL5: brak MetaEditor/Windows",
+    "trening rynkowy i edge: brak REAL_USER_DATA",
+    "WS typowany: nie dodano (REST polling)"
+   ]
   },
   "PMW-UPD-15-MT5-EA": {
    "update_id": "PMW-UPD-15-MT5-EA",

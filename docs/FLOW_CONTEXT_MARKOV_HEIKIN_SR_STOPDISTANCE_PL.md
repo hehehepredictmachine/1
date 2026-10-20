@@ -25,7 +25,7 @@ python -m masterquo flow-context benchmark --profile cpu
 python -m masterquo flow-context report --latest
 python -m masterquo flow-context evaluate-holdout --candidate-id <ID> --protocol-id SI-PROTO-1.0.0
 ```
-Launcher: `28_FLOW_CONTEXT.bat`. Train-all: zadanie `flow_context` (runner, 15 zadań).
+Launcher: `28_FLOW_CONTEXT.bat`. Train-all: zadanie `flow_context` (runner; od PMW-UPD-14 16 zadań).
 
 ## API (tylko odczyt)
 `/api/v1/flow-context`, `/flow-context/series`, `/channels?mode=CURRENT_MAP_FULL_WIDTH|HISTORY_AS_KNOWN&as_of=`, `/markov`, `/stopdistance?entry=&side=`, `/native`, `/models`. Zadania: `POST /api/v1/structure-intelligence/jobs` z `kind` = `flow_calibrate`, `flow_markov`, `flow_dataset` lub `flow_train`. Każda komórka snapshotu Structure Intelligence ma sekcję `flow`, a agent ma wiedzę F01–F09 (prompt 1.9.0).
