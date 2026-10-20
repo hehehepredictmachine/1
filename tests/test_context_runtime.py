@@ -105,6 +105,31 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(par["NATIVE_COMPILED"], "NOT_EXECUTED_METAEDITOR_UNAVAILABLE")
 
 
+class MqlSourceTests(unittest.TestCase):
+    def test_sources_and_envelope_compat(self):
+        root = Path(__file__).resolve().parents[1] / "mql5" / "ContextIndicators"
+        srcs = list(root.rglob("*.mq*"))
+        self.assertGreaterEqual(len(srcs), 8)
+        for f in srcs:
+            t = f.read_text(encoding="utf-8")
+            for bad in ("OrderSend", "CTrade", "#import", "WebRequest", "PositionOpen", "TradeRequest"):
+                self.assertNotIn(bad, t, f)
+        smc = (root / "Indicators" / "PWM_SMCStructure.mq5").read_text(encoding="utf-8")
+        self.assertIn("indicator_buffers 8", smc)
+        core = (root / "Include" / "PMW" / "PMW_ContextCore.mqh").read_text(encoding="utf-8")
+        from masterquo.lab.context_ind import smc as SM
+        for k, v in SM.EVENT_BITS.items():                                    # bit dictionary identical in both implementations
+            self.assertIn(str(v), core)
+        self.assertFalse(list(root.rglob("*.ex5")))
+        # MQL5 PmwWriteEnvelope layout: body escaped as a JSON string, checksum over the UNESCAPED body text
+        import hashlib
+        from masterquo.lab.context_ind import buffers as B
+        body = '{"schema_version":"pmw-bufbridge-1","source":"Foo \\"x\\" \\\\ y","rows":[]}'
+        esc = body.replace("\\", "\\\\").replace('"', '\\"')
+        raw = ('{"envelope":"pmw-bufbridge-1","checksum":"' + hashlib.sha256(body.encode()).hexdigest() + '","body":"' + esc + '"}').encode()
+        self.assertEqual(B.unwrap(raw, B.BRIDGE_SCHEMA)["source"], 'Foo "x" \\ y')
+
+
 class CliTests(unittest.TestCase):
     def setUp(self):
         self.td = TempData()

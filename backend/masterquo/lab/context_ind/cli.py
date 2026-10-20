@@ -97,6 +97,7 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("native-parity")
     s.add_argument("--fixtures", default=str(FIX))
     s.add_argument("--native-status-file")
+    s.add_argument("--export", help="MQL5/Files/PMW/PWM_CONTEXT_EXPORT.txt z PWM_ContextSelfTest")
     a = ap.parse_args(argv)
 
     if a.c in ("audit", "calibrate", "replay", "dataset", "train"):
@@ -148,6 +149,9 @@ def main(argv: list[str]) -> int:
         _print({"golden": str(Path(a.out) / "golden.json"), "bars": len(g["bars"])})
         return 0
     if a.c == "native-parity":
-        _print(NV.parity(Path(a.fixtures), Path(a.native_status_file) if a.native_status_file else None))
+        files = __import__("os").environ.get("MQ_MT5_FILES_DIR")
+        exp = Path(a.export) if a.export else (Path(files) / "PMW" / "PWM_CONTEXT_EXPORT.txt" if files else None)
+        st = Path(a.native_status_file) if a.native_status_file else (Path(files) / "PMW" / "ctx_native_status.json" if files else None)
+        _print(NV.parity(Path(a.fixtures), st, exp if exp and exp.exists() else None))
         return 0
     return 1

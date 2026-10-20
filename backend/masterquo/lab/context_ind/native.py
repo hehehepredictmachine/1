@@ -120,8 +120,13 @@ def native_status(status_file: Path | None) -> dict:
     if status_file is None or not Path(status_file).exists():
         return {"NATIVE_COMPILED": "NOT_EXECUTED_METAEDITOR_UNAVAILABLE", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
+    res = st.get("selftest_result", "NATIVE_NOT_EXECUTED")
+    live = Path(status_file).parent / "ctx_selftest.txt"                  # self-test runs in the terminal AFTER compilation
+    if live.exists():
+        txt = live.read_text(errors="replace")
+        res = "PASS" if "RESULT=PASS" in txt else ("FAIL" if "RESULT=FAIL" in txt else res)
     return {"NATIVE_COMPILED": "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL",
-            "NATIVE_EXECUTED": st.get("selftest_result", "NATIVE_NOT_EXECUTED"), "build": st.get("build"), "ex5_sha256": st.get("ex5_sha256")}
+            "NATIVE_EXECUTED": res, "metaeditor": st.get("log"), "ex5_sha256": st.get("ex5_sha256")}
 
 
 def frozen_inputs(n: int = 400, seed: int = 14) -> list[dict]:
@@ -149,9 +154,9 @@ def make_golden(path: Path) -> dict:
     return gold
 
 
-def parity(fixtures: Path, status_file: Path | None = None) -> dict:
+def parity(fixtures: Path, status_file: Path | None = None, export: Path | None = None) -> dict:
     out = {"ORIGINAL_SOURCE_PARITY": "NOT_APPLICABLE (własne implementacje wg spec; brak oryginałów do porównania)", **native_status(status_file)}
-    f = Path(fixtures) / "native_export.txt"
+    f = Path(export) if export else Path(fixtures) / "native_export.txt"
     if f.exists():
         try:
             out["OWN_IMPLEMENTATIONS"] = compare(parse_export(f.read_bytes()))
