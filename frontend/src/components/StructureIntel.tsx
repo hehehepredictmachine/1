@@ -7,6 +7,7 @@ import { useStore } from "../store";
 import { fmtNum, fmtTime } from "../util";
 import { MarketSummaryCells, MarketStoryCard, ModelLabCard, RegimeCard, SmmaZCard } from "./MarketStory";
 import { FlowContextCard } from "./FlowContext";
+import { ContextIndicatorsCard } from "./ContextIndicators";
 
 const ROLE_PL: Record<string, string> = {
   NECKLINE_BREAK: "wybicie neckline", RETEST_HOLD: "utrzymany retest", SWEEP_RECLAIM: "sweep i powrót", TREND_PULLBACK: "korekta w trendzie",
@@ -207,6 +208,7 @@ export function StructurePage() {
         <MarketStoryCard asset={asset} />
         <SmmaZCard asset={asset} />
         <FlowContextCard asset={asset} onStart={start} />
+        <ContextIndicatorsCard asset={asset} onStart={start} />
         <QuotesCard />
         <NeutralCard asset={asset} />
         <ZonesCard asset={asset} />

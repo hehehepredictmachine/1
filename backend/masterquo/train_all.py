@@ -93,7 +93,8 @@ def train_all(a) -> int:
     from .training.cli import main as training_main
     tasks = [t for t, skip in (("forecast", a.skip_candles), ("scalp_A", a.skip_candles), ("ml", a.skip_ml), ("lab", a.skip_lab),
                                ("indicator_context", a.skip_candles), ("ml_scalp", a.skip_ml), ("neural_scalp", a.skip_lab),
-                               ("structure_intelligence", a.skip_lab), ("flow_context", a.skip_lab)) if not skip]
+                               ("structure_intelligence", a.skip_lab), ("flow_context", a.skip_lab),
+                               ("context_indicators", a.skip_lab)) if not skip]
     argv = ["run", "--instruments", a.instruments, "--profile", "TEST_INSTALACJI" if a.quick else "PELNY_TRENING", "--origin", "train-all",
             "--tasks", ",".join(tasks) or "none"]
     for flag, v in (("--months", a.months), ("--commission-xauusd", a.commission), ("--commission-btc", a.commission_btc), ("--ml-days", a.ml_days),

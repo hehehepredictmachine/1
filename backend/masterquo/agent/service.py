@@ -48,9 +48,11 @@ def load_prompt() -> tuple[str, str]:
     from ..analysis import structure_knowledge as sk
     from ..analytics import liquidity_context as lq
     from ..extind.knowledge import KNOWLEDGE_VERSION, prompt_section
+    from ..lab.context_ind import knowledge as ck
     from ..lab.flow_context import knowledge as fk
-    return (body + "\n\n" + prompt_section() + "\n\n" + lq.prompt_section() + "\n\n" + sk.prompt_section() + "\n\n" + fk.prompt_section(),
-            f"{version}+{KNOWLEDGE_VERSION}+{lq.KNOWLEDGE_VERSION}+{sk.KNOWLEDGE_VERSION}+{fk.KNOWLEDGE_VERSION}")   # knowledge from code (02/06/07/09/11)
+    return (body + "\n\n" + prompt_section() + "\n\n" + lq.prompt_section() + "\n\n" + sk.prompt_section() + "\n\n" + fk.prompt_section()
+            + "\n\n" + ck.prompt_section(),
+            f"{version}+{KNOWLEDGE_VERSION}+{lq.KNOWLEDGE_VERSION}+{sk.KNOWLEDGE_VERSION}+{fk.KNOWLEDGE_VERSION}+{ck.KNOWLEDGE_VERSION}")  # 02/06/07/09/11/14
 
 
 class ClaudeAgent:

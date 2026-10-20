@@ -424,6 +424,45 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
+    def test_14_context_indicators(self):
+        """PMW-UPD-14: context sections from the SAME SI producer; VAMD/FD/SMC endpoints; as-of view; buffer inspector without a bridge
+        (UNAVAILABLE, not a fake scan); mapping validation; panel card with chart + would_block checklist; no horizontal scroll at 390px;
+        Lock untouched."""
+        self.assertTrue(wait_for(lambda: ((self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("timeframes") or [{}])[0]
+                                 .get("structure", {}).get("context", {}).get("status") == "OK", 120, 1.0))
+        v = self.api("/api/v1/lab/vamd?tf=M5&limit=50")
+        self.assertEqual(v["profile"], "PWM_VAMD_ATR_WILDER_SMA_v1")
+        f = self.api("/api/v1/lab/fractal-regime?tf=M5&limit=50")
+        self.assertEqual(f["profile"], "PWM_KATZ_BOUNDED_v1")
+        sm = self.api("/api/v1/lab/smc?tf=M5&limit=200")
+        self.assertEqual(sm["mode"], "CURRENT")
+        if sm["events"]:
+            cut = sm["events"][0]["available_at"]
+            sa = self.api(f"/api/v1/lab/smc?tf=M5&as_of={cut}")
+            self.assertTrue(all(e["available_at"] <= cut for e in sa["events"]))
+        self.assertEqual(self.api("/api/v1/lab/buffers/source?tf=M5")["status"], "UNAVAILABLE")
+        st, j = self.send("POST", "/api/v1/lab/buffers/mappings/validate", {"units": "PRICE"})
+        self.assertEqual((st, j["status"]), (200, "MAPPING_INCOMPLETE"))
+        p = self.page
+        p.goto(BASE + "/#/struktura")
+        p.wait_for_selector("[data-testid=ctx-ind-card] [data-testid=ctx-chart] canvas")
+        p.wait_for_selector("[data-testid=ctx-wouldblock] table")
+        self.assertIn("nie jest triggerem", p.inner_text("[data-testid=ctx-wouldblock]"))
+        p.uncheck("[data-testid=ctx-ind-card] input[type=checkbox] >> nth=0")          # render toggle only
+        p.wait_for_selector("[data-testid=ctx-chart] canvas")
+        p.click("[data-testid=ctx-buffers] button:has-text('Waliduj')")
+        p.wait_for_selector("[data-testid=ctx-mapping-status]")
+        self.assertIn("MAPPING_INCOMPLETE", p.inner_text("[data-testid=ctx-mapping-status]"))
+        self.assertIn("UNAVAILABLE", p.inner_text("[data-testid=ctx-source]"))
+        p.locator("[data-testid=ctx-ind-card]").screenshot(path=str(SHOTS / "context_indicators_1366.png"))
+        p.set_viewport_size({"width": 390, "height": 844})
+        p.wait_for_timeout(500)
+        self.assertTrue(self.no_hscroll(), "struktura 390")
+        p.locator("[data-testid=ctx-ind-card]").screenshot(path=str(SHOTS / "context_indicators_390.png"))
+        p.set_viewport_size({"width": 1366, "height": 900})
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
     def test_05_mobile(self):
         p = self.page
         p.set_viewport_size({"width": 390, "height": 844})

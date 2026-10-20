@@ -156,3 +156,24 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KnowledgeTests(unittest.TestCase):
+    def test_agent_knowledge(self):
+        from masterquo.agent.service import load_prompt
+        from masterquo.lab.context_ind import knowledge as K
+        text, ver = load_prompt()
+        self.assertTrue(ver.endswith("PMW-CTX-KNOWLEDGE-1.0.0"))
+        for r in K.RULES:
+            self.assertIn(r, text)
+        self.assertEqual(K.explain_cell("M5", {"status": "WARMING_UP"}), ([], set()))
+        facts, rules = K.explain_cell("M5", {"status": "OK", "vamd": {"y": 0.4, "alpha": 0.2, "status": "READY"},
+                                             "fd": {"zone": "TREND", "fd_smooth": 1.3, "saturated": False},
+                                             "smc": {"trend": "UP", "active_high": None, "active_low": 2000.0, "pending": True,
+                                                     "last_events": [{"kind": "BOS_UP"}]},
+                                             "would_block": {"SELL": {"status": "WOULD_BLOCK"}, "BUY": {"status": "NO_BLOCK"}}})
+        self.assertTrue({"C01", "C02", "C03", "C06"} <= rules)
+        txt = " ".join(facts)
+        self.assertIn("bez strony", txt)
+        self.assertIn("kandydat", txt)
+        self.assertNotIn("%", txt)

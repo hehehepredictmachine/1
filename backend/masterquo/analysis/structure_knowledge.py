@@ -119,11 +119,15 @@ def explain(snap: dict | None) -> dict:
     if q.get("phase"):
         rules.update({"K22", "K23", "K24"})
         facts.append(f"kinematyka Bid/Ask: faza {q['phase']} (hipoteza lokalnego modelu), zegar {q.get('clock')}")
+    from ..lab.context_ind import knowledge as ck
     from ..lab.flow_context import knowledge as fk
     for tf, c in (snap.get("cells") or {}).items():
         ff, fr = fk.explain_cell(tf, c.get("flow"))
         facts += ff
         rules.update(fr)
+        cf, cr = ck.explain_cell(tf, c.get("context"))
+        facts += cf
+        rules.update(cr)
     nat = snap.get("native") or {}
     if nat:
         rules.update({"K26", "K27"})

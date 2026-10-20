@@ -77,7 +77,7 @@ class KnowledgeTests(unittest.TestCase):
         from masterquo.analysis import structure_knowledge as sk
         text, ver = load_prompt()
         self.assertIn("F05", text)
-        self.assertTrue(ver.endswith("PMW-FLOW-KNOWLEDGE-1.0.0"))
+        self.assertTrue("PMW-FLOW-KNOWLEDGE-1.0.0" in ver)
         snap = {"cells": {"M15": {"status": "OK", "structure": {}, "flow": {"status": "OK", "heikin": {"color": "BULL", "quality": "PARTIAL_STARTUP"},
                 "stopdistance": {"average_points": 120.0, "suggested_points": 180.0, "suggested_price_distance": 1.8},
                 "sr": {"nearest": {"support": {"lo": 1, "hi": 2, "id": "x"}, "resistance": None}}}}}, "forecast": {}}

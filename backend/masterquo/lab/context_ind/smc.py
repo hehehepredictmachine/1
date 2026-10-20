@@ -138,7 +138,7 @@ class SMC:
     # ---------------------------------------------------------------- step
     def update(self, bar: dict, t_close: float) -> dict:
         i = len(self.bars)
-        self.bars.append({"h": float(bar["h"]), "l": float(bar["l"]), "c": float(bar["c"]), "t": bar["open_utc"]})
+        self.bars.append({"o": float(bar.get("o", bar["c"])), "h": float(bar["h"]), "l": float(bar["l"]), "c": float(bar["c"]), "t": bar["open_utc"]})
         n0 = len(self.events)
         new_sw = self.pb.update(i, bar, t_close)                       # 1. pullback first
         for s in new_sw:

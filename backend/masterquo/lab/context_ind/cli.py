@@ -88,6 +88,11 @@ def main(argv: list[str]) -> int:
     common(s)
     s.add_argument("--families", default="LOGREG,XGB")
     s.add_argument("--profile", choices=("standard", "quick"), default="standard")
+    s = sub.add_parser("pipeline")
+    common(s)
+    s.add_argument("--profile", choices=("standard", "quick"), default="standard")
+    s.add_argument("--families", default="LOGREG,XGB")
+    s.add_argument("--out")
     s = sub.add_parser("buffers-verify")
     s.add_argument("--report", required=True)
     s.add_argument("--mapping")
@@ -100,7 +105,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--export", help="MQL5/Files/PMW/PWM_CONTEXT_EXPORT.txt z PWM_ContextSelfTest")
     a = ap.parse_args(argv)
 
-    if a.c in ("audit", "calibrate", "replay", "dataset", "train"):
+    if a.c in ("audit", "calibrate", "replay", "dataset", "train", "pipeline"):
         ds, meta, err = _raw(a.asset, a.dataset, a.allow_synthetic_fixture)
         if err:
             print(err)
@@ -118,6 +123,23 @@ def main(argv: list[str]) -> int:
             _print(replay(m5[: int(0.8 * len(m5))], tick, CT.profile(a.asset)))
         elif a.c == "dataset":
             _print(CT.build_dataset(a.asset, ds))
+        elif a.c == "pipeline":                                  # runner stage: audit -> calibrate (dev) -> dataset -> train; holdout never opened
+            rep = {"audit": audit(ds, meta)}
+            try:
+                cal = CT.calibrate(a.asset, m5, tick, meta)
+                rep["calibrate"] = {"chosen": cal["chosen"], "grid_size": cal["grid_size"], "holdout_read": cal["holdout_read"]}
+                rep["replay"] = replay(m5[: int(0.8 * len(m5))], tick, CT.profile(a.asset))
+                man = CT.build_dataset(a.asset, ds, log=lambda *_: None)
+                rep["dataset"] = {k: man[k] for k in ("dataset_id", "rows", "data_kind")}
+                tr = CT.train(a.asset, CT.latest(a.asset), tuple(a.families.split(",")), a.profile, log=lambda *_: None)
+                rep["train"] = {k: tr.get(k) for k in ("run_id", "status", "role", "candidates", "edge_status", "reason")}
+                rc = 0
+            except ValueError as exc:
+                rep["error"], rc = str(exc), 3
+            if a.out:
+                Path(a.out).write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
+            _print({k: rep.get(k) for k in ("calibrate", "dataset", "train", "error")})
+            return rc
         else:
             d = CT.latest(a.asset)
             if d is None:

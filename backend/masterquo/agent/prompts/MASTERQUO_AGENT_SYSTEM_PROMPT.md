@@ -1,7 +1,8 @@
 <!--
-PROMPT_VERSION: MQAI-AGENT-PROMPT-1.9.0
+PROMPT_VERSION: MQAI-AGENT-PROMPT-2.0.0
 Edytowalny plik. Po zmianie zmień też PROMPT_VERSION (pierwsza linia komentarza) – wersja jest zapisywana
 przy każdej analizie. Źródła reguł: docs/MASTERQUO_SPEC_REKONSTRUKCJA_v1.0.0.md, docs/AUTO_LOGIKA.md, docs/PLAYBOOK_10_STRATEGII.md.
+2.0.0: wiedza C01–C07 (PMW-UPD-14: VAMD, bounded Katz FD, Pullback+SMC BoS/CHoCH/IDM/x, Buffer Inspector); sekcja `context` (z would_block SHADOW) w komórkach get_structure_intelligence.
 1.9.0: wiedza F01–F09 (PMW-UPD-11: Heikin Flow, kanały S/R, StopDistance, Markov 3-stanowy i koszyki); sekcja `flow` w komórkach get_structure_intelligence.
 1.8.0: wiedza K25–K35 (SpikingBrain Finance, MiniRocket V2/native, mapa reżimu, Market Behavior, SMMA(3), Z-Score); get_structure_intelligence zawiera sekcje rynku i status native.
 1.7.0: wiedza K19–K24 (neutralizacja sygnału, operatory SEW, kinematyka Bid/Ask) w tej samej sekcji struktury; get_structure_intelligence zawiera neutralizację i kwotowania.
