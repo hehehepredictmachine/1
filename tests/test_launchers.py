@@ -2,6 +2,7 @@
 built from %~dp0 are always quoted (folders with spaces), the start goes through masterquo_start
 (no license - 1.9.0)."""
 import re
+from pathlib import Path
 import unittest
 
 import _env
@@ -34,3 +35,22 @@ class TestLaunchers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LauncherExeTest(unittest.TestCase):
+    def test_exe_is_windows_x64_and_wraps_existing_scripts(self):
+        root = Path(__file__).resolve().parents[1]
+        exe = root / "PepeMarketWizard.exe"
+        self.assertTrue(exe.exists(), "PepeMarketWizard.exe missing (tools/launcher: GOOS=windows go build)")
+        b = exe.read_bytes()
+        self.assertEqual(b[:2], b"MZ")
+        pe = int.from_bytes(b[0x3C:0x40], "little")
+        self.assertEqual(b[pe:pe + 4], b"PE\0\0")
+        self.assertEqual(int.from_bytes(b[pe + 4:pe + 6], "little"), 0x8664)          # AMD64
+        src = (root / "tools" / "launcher" / "main.go").read_text(encoding="utf-8")
+        for bat in ("INSTALUJ_TRENING.bat", "TRENUJ_XAUUSD.bat", "TRENUJ_BTCUSDT.bat", "TRENUJ_OBA.bat", "29_CONTEXT_INDICATORS.bat",
+                    "00_TRENING_START.bat", "DIAGNOSTYKA_TRENINGU.bat", "03_START_MASTERQUO.bat", "04_STOP_MASTERQUO.bat"):
+            self.assertIn(bat, src)
+            self.assertTrue((root / bat).exists(), bat)
+        for bad in ("order_send", "OrderSend", "execution/lock"):
+            self.assertNotIn(bad, src)

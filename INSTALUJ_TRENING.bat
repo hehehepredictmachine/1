@@ -18,14 +18,21 @@ if defined MQ_MISSING (
   pause
   exit /b 2
 )
-if not exist "%~dp0.venv\Scripts\python.exe" (
-  echo [..] Brak .venv - uruchamiam 01_INSTALUJ.bat
+set "MQ_VENV_OK="
+if exist "%~dp0.venv\Scripts\python.exe" "%~dp0.venv\Scripts\python.exe" -c "import fastapi, numpy, sklearn, xgboost" >nul 2>&1 && set "MQ_VENV_OK=1"
+if not defined MQ_VENV_OK (
+  echo [..] Brak sprawnego .venv - uruchamiam 01_INSTALUJ.bat
   call "%~dp001_INSTALUJ.bat"
 )
-if not exist "%~dp0.venv_candles\Scripts\python.exe" (
-  echo [..] Brak .venv_candles - uruchamiam 10_PROGNOZY_INSTALUJ.bat
+set "MQ_CANDLES_OK="
+if exist "%~dp0.venv_candles\Scripts\python.exe" "%~dp0.venv_candles\Scripts\python.exe" -c "import numpy, pandas, sklearn" >nul 2>&1 && set "MQ_CANDLES_OK=1"
+if not defined MQ_CANDLES_OK (
+  echo [..] Brak sprawnego .venv_candles - uruchamiam 10_PROGNOZY_INSTALUJ.bat
   call "%~dp010_PROGNOZY_INSTALUJ.bat"
 )
+set "MQ_CANDLES_OK="
+if exist "%~dp0.venv_candles\Scripts\python.exe" "%~dp0.venv_candles\Scripts\python.exe" -c "import numpy, pandas, sklearn" >nul 2>&1 && set "MQ_CANDLES_OK=1"
+if not defined MQ_CANDLES_OK echo [UWAGA] .venv_candles nadal niesprawne - prognozy i Scalp A/B/C zostana pominiete. Log: data\logs\instalacja_prognoz_*.log
 call "%~dp0tools\trening.cmd" install
 set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" (echo [OK] Srodowisko treningu gotowe. Dalej: 00_TRENING_START.bat) else (echo [UWAGA] Sa problemy - opis powyzej i w data\training\install_check.json)

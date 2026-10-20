@@ -186,11 +186,74 @@ def free_ram_mb() -> float | None:
     return None
 
 
+def ram_budget_mb(plan: dict) -> int:
+    """Memory one training child may use (user setting; default 8 GB). MQ_RAM_BUDGET_MB overrides the profile."""
+    try:
+        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or 8192))
+    except ValueError:
+        return 8192
+
+
+def ram_gate(plan: dict, wait_s: float = 180.0, step_s: float = 10.0, sleep=time.sleep) -> tuple[float, str | None]:
+    """(scale, note). scale 1.0 = full data; 0 < scale < 1 = run on a proportionally smaller sample (never below 25 %);
+    0 = skip (only below hard_min_free_ram_mb after waiting up to wait_s for other programs to release memory)."""
+    pp = plan["profile_params"]
+    want = min(int(pp.get("min_free_ram_mb") or 2000), ram_budget_mb(plan))
+    hard = int(pp.get("hard_min_free_ram_mb") or 600)
+    ram = free_ram_mb()
+    waited = 0.0
+    while ram is not None and ram < want and waited < wait_s:
+        sleep(step_s)
+        waited += step_s
+        ram = free_ram_mb()
+    if ram is None or ram >= want:
+        return 1.0, None
+    if ram < hard:
+        return 0.0, f"za mało wolnej pamięci RAM ({ram} MB < {hard} MB) także po {waited:.0f} s oczekiwania – zamknij inne programy"
+    scale = max(0.25, ram / want)
+    return scale, f"mniej wolnej pamięci ({ram} MB < {want} MB) – zadanie na {scale:.0%} danych"
+
+
+def _job_limit(proc: subprocess.Popen, mb: int) -> None:
+    """Windows: put the child in a Job Object with a per-process memory cap (the user's RAM budget). Best effort, never fatal."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_ulonglong) for n in ("r", "w", "o", "rb", "wb", "ob")]
+
+        class BASIC(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong), ("PerJobUserTimeLimit", ctypes.c_longlong), ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t), ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+        class EXT(ctypes.Structure):
+            _fields_ = [("Basic", BASIC), ("Io", IO), ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        k = ctypes.windll.kernel32
+        k.CreateJobObjectW.restype = wintypes.HANDLE
+        k.OpenProcess.restype = wintypes.HANDLE
+        job = k.CreateJobObjectW(None, None)
+        info = EXT()
+        info.Basic.LimitFlags = 0x100 | 0x2000                      # PROCESS_MEMORY | KILL_ON_JOB_CLOSE
+        info.ProcessMemoryLimit = mb * 1024 * 1024
+        k.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
+        h = k.OpenProcess(0x1F0FFF, False, proc.pid)
+        k.AssignProcessToJobObject(wintypes.HANDLE(job), wintypes.HANDLE(h))
+        proc._mq_job = job                                         # keep the handle alive as long as the child
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def child_env(plan: dict, instrument: str | None = None) -> dict:
     """Environment of every child: thread limits, instrument space, training flag (no order path), UTF-8."""
     th = str(plan["threads"])
     env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8",
-               OMP_NUM_THREADS=th, MKL_NUM_THREADS=th, OPENBLAS_NUM_THREADS=th, NUMEXPR_NUM_THREADS=th, MQ_TRAINING="1")
+               OMP_NUM_THREADS=th, MKL_NUM_THREADS=th, OPENBLAS_NUM_THREADS=th, NUMEXPR_NUM_THREADS=th, MQ_TRAINING="1",
+               MQ_RAM_BUDGET_MB=str(ram_budget_mb(plan)))
     if instrument:
         env["MQ_INSTRUMENT"] = instrument
     if plan.get("synthetic"):
@@ -213,6 +276,7 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
         lf.write(f"\n=== {now()} {' '.join(cmd)}\n")
         lf.flush()
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
+        _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
         while p.poll() is None:
             if run.cancel_requested():
                 p.terminate()
@@ -241,6 +305,53 @@ def child_reason(text: str, log_p: Path | None = None) -> str:
 
 def bot_python() -> str:
     return sys.executable
+
+
+_CANDLES_OK: dict = {}
+
+
+def candles_healthy(py: str) -> bool:
+    """The interpreter exists AND its pinned packages import (a half-installed venv is treated as missing)."""
+    if py not in _CANDLES_OK:
+        try:
+            r = subprocess.run([py, "-c", "import numpy, pandas, sklearn"], capture_output=True, timeout=120)
+            _CANDLES_OK[py] = r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _CANDLES_OK[py] = False
+    return _CANDLES_OK[py]
+
+
+def ensure_candles(run: "Run") -> tuple[str | None, str | None]:
+    """(python, reason). Missing or broken .venv_candles is installed ONCE per run with 10_PROGNOZY_INSTALUJ.bat (no pause) on
+    Windows, instead of skipping forecast / scalp tasks. The installer only creates the isolated venv with hashed packages."""
+    py = candles_python()
+    if py and candles_healthy(py):
+        return py, None
+    if run.state.get("candles_install_tried"):
+        return None, run.state.get("candles_install_reason") or "brak sprawnego .venv_candles"
+    run.state["candles_install_tried"] = True
+    bat = paths.ROOT_DIR / "10_PROGNOZY_INSTALUJ.bat"
+    if os.name != "nt" or not bat.exists():
+        reason = "brak sprawnego .venv_candles – uruchom INSTALUJ_TRENING.bat"
+    else:
+        run.event("brak sprawnego .venv_candles – instaluję automatycznie (10_PROGNOZY_INSTALUJ.bat, kilka minut)")
+        env = dict(os.environ, MQ_NO_PAUSE="1")
+        try:
+            r = subprocess.run(["cmd.exe", "/c", str(bat)], cwd=str(paths.ROOT_DIR), env=env, capture_output=True, text=True, timeout=3600,
+                               errors="replace")
+            out = (r.stdout or "") + (r.stderr or "")
+        except (OSError, subprocess.SubprocessError) as exc:
+            out = str(exc)
+        _CANDLES_OK.clear()
+        py = candles_python()
+        if py and candles_healthy(py):
+            run.event(".venv_candles zainstalowane")
+            run.save()
+            return py, None
+        reason = "instalacja .venv_candles nie powiodła się: " + child_reason(out[-3000:]) + " – log w data\\logs\\instalacja_prognoz_*.log"
+    run.state["candles_install_reason"] = reason
+    run.save()
+    return None, reason
 
 
 def candles_python() -> str | None:

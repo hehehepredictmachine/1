@@ -1,36 +1,73 @@
 {
   "schema": "mq-training-profiles-1",
-  "note": "Profile treningu. TEST INSTALACJI sprawdza, czy cały łańcuch działa na krótkiej historii – jego modele NIGDY nie są aktywowane. PEŁNY TRENING to właściwy trening. Liczby to parametry robocze, nie gwarancje jakości.",
+  "note": "Profile treningu. TEST INSTALACJI sprawdza, czy cały łańcuch działa na krótkiej historii – jego modele NIGDY nie są aktywowane. PEŁNY TRENING to właściwy trening. Liczby to parametry robocze, nie gwarancje jakości. ram_budget_mb = maksymalna pamięć jednego procesu treningu (Windows: limit Job Object); przy mniejszej wolnej pamięci zadanie działa na mniejszej próbce zamiast być pomijane (pominięcie dopiero poniżej hard_min_free_ram_mb). Nadpisanie: zmienna MQ_RAM_BUDGET_MB.",
   "profiles": {
     "TEST_INSTALACJI": {
       "label": "TEST INSTALACJI (szybki, bez aktywacji modeli)",
       "months": 2,
-      "timeframes": ["M1", "M5", "M15", "M30", "H1", "H4", "D1"],
+      "timeframes": [
+        "M1",
+        "M5",
+        "M15",
+        "M30",
+        "H1",
+        "H4",
+        "D1"
+      ],
       "forecast_trees": 30,
       "lab_bars": 8000,
-      "lab_families": ["DUMMY", "LOGREG", "SEW_SNN"],
+      "lab_families": [
+        "DUMMY",
+        "LOGREG",
+        "SEW_SNN"
+      ],
       "lab_experiments": [],
       "lab_min_events": 300,
       "ml_days": 30,
       "threads": 2,
       "min_free_ram_mb": 1000,
       "activate": false,
-      "task_timeout_minutes": 120
+      "task_timeout_minutes": 120,
+      "ram_budget_mb": 8192,
+      "hard_min_free_ram_mb": 600
     },
     "PELNY_TRENING": {
       "label": "PEŁNY TRENING (właściwe modele, aktywacja tylko po walidacji)",
       "months": 12,
-      "timeframes": ["M1", "M5", "M15", "M30", "H1", "H4", "D1"],
+      "timeframes": [
+        "M1",
+        "M5",
+        "M15",
+        "M30",
+        "H1",
+        "H4",
+        "D1"
+      ],
       "forecast_trees": 80,
       "lab_bars": 60000,
-      "lab_families": ["DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", "SEW_SNN"],
-      "lab_experiments": ["LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED"],
+      "lab_families": [
+        "DUMMY",
+        "RULE",
+        "LOGREG",
+        "TREE",
+        "MINIROCKET",
+        "XGB",
+        "RESNET1D",
+        "SEW_SNN"
+      ],
+      "lab_experiments": [
+        "LOGREG_PCA",
+        "LOGREG_GMM_AUG",
+        "LOGREG_NEUTRALIZED"
+      ],
       "lab_min_events": 600,
       "ml_days": 180,
       "threads": 4,
       "min_free_ram_mb": 2000,
       "activate": true,
-      "task_timeout_minutes": 480
+      "task_timeout_minutes": 480,
+      "ram_budget_mb": 8192,
+      "hard_min_free_ram_mb": 600
     }
   }
 }

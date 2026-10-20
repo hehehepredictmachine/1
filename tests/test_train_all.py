@@ -171,6 +171,32 @@ class TestUnits(unittest.TestCase):
     def tearDown(self):
         self.td.close()
 
+    def test_ram_gate_scales_instead_of_skipping(self):
+        from masterquo.training import core
+        plan = {"profile_params": {"min_free_ram_mb": 2000, "hard_min_free_ram_mb": 600, "ram_budget_mb": 8192}}
+        orig = core.free_ram_mb
+        try:
+            core.free_ram_mb = lambda: 5000
+            self.assertEqual(core.ram_gate(plan, sleep=lambda s: None), (1.0, None))
+            core.free_ram_mb = lambda: 1708                     # the user's case: was a skip, now ~85 % of the data
+            sc, note = core.ram_gate(plan, sleep=lambda s: None)
+            self.assertAlmostEqual(sc, 1708 / 2000)
+            self.assertIn("1708", note)
+            core.free_ram_mb = lambda: 300
+            self.assertEqual(core.ram_gate(plan, sleep=lambda s: None)[0], 0.0)
+            seq = iter([900, 900, 2500])                       # memory released while waiting -> full run
+            core.free_ram_mb = lambda: next(seq)
+            self.assertEqual(core.ram_gate(plan, sleep=lambda s: None)[0], 1.0)
+        finally:
+            core.free_ram_mb = orig
+        import os
+        os.environ["MQ_RAM_BUDGET_MB"] = "4096"
+        try:
+            self.assertEqual(core.ram_budget_mb(plan), 4096)
+        finally:
+            os.environ.pop("MQ_RAM_BUDGET_MB")
+        self.assertEqual(core.ram_budget_mb(plan), 8192)
+
     def test_instrument_profiles_usd_usdt_and_lookalikes(self):
         import mq_instruments as mi
         self.assertEqual(mi.check_metadata("BTC", {"currency_base": "BTC", "currency_profit": "USDT"}), (True, []))

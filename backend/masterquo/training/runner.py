@@ -133,9 +133,11 @@ def _ready(run: Run, inst: str, tid: str, need_candles: bool = False) -> Path | 
     if qa["quality"] == "ODRZUCONY":
         _skip(run, tid, "dane odrzucone przez kontrolę jakości: " + (qa.get("detail") or ""))
         return None
-    if need_candles and not core.candles_python():
-        _skip(run, tid, "brak środowiska .venv_candles – uruchom INSTALUJ_TRENING.bat")
-        return None
+    if need_candles:
+        py, why = core.ensure_candles(run)
+        if not py:
+            _skip(run, tid, why)
+            return None
     return Path(ex["dataset_dir"])
 
 
@@ -231,12 +233,15 @@ def t_ml(run: Run, inst: str) -> None:
     ds = _ready(run, inst, tid)
     if ds is None:
         return
-    ram = core.free_ram_mb()
-    if ram is not None and ram < plan["profile_params"]["min_free_ram_mb"]:
-        return _skip(run, tid, f"za mało wolnej pamięci RAM ({ram} MB < {plan['profile_params']['min_free_ram_mb']} MB)")
+    scale, note = core.ram_gate(plan)
+    if scale <= 0:
+        return _skip(run, tid, note)
+    days = plan["ml_days"] if scale >= 1 else max(30, int(plan["ml_days"] * scale))
+    if note:
+        run.event(f"{tid}: {note} (ml: {days} dni zamiast {plan['ml_days']})")
     out = run.dir / f"{inst}_ml_result.json"
     com = plan["commissions"].get(inst)
-    cmd = [core.bot_python(), "-m", "masterquo", "training", "ml-offline", "--instrument", inst, "--dataset", str(ds), "--days", str(plan["ml_days"]),
+    cmd = [core.bot_python(), "-m", "masterquo", "training", "ml-offline", "--instrument", inst, "--dataset", str(ds), "--days", str(days),
            "--threads", str(plan["threads"]), "--out", str(out)] + (["--include-approx"] if plan["include_approx"] else []) + \
         (["--commission", str(com)] if com is not None else [])
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_ml")
@@ -265,12 +270,15 @@ def t_lab(run: Run, inst: str) -> None:
     ds = _ready(run, inst, tid)
     if ds is None:
         return
-    ram = core.free_ram_mb()
-    if ram is not None and ram < plan["profile_params"]["min_free_ram_mb"]:
-        return _skip(run, tid, f"za mało wolnej pamięci RAM ({ram} MB)")
+    scale, note = core.ram_gate(plan)
+    if scale <= 0:
+        return _skip(run, tid, note)
+    bars = plan["lab_bars"] if scale >= 1 else max(8000, int(plan["lab_bars"] * scale))
+    if note:
+        run.event(f"{tid}: {note} (lab: {bars} świec M5 zamiast {plan['lab_bars']})")
     out = run.dir / f"{inst}_lab_result.json"
     pp = plan["profile_params"]
-    cmd = [core.bot_python(), "-m", "masterquo", "training", "lab-offline", "--instrument", inst, "--dataset", str(ds), "--bars", str(plan["lab_bars"]),
+    cmd = [core.bot_python(), "-m", "masterquo", "training", "lab-offline", "--instrument", inst, "--dataset", str(ds), "--bars", str(bars),
            "--families", ",".join(pp["lab_families"]), "--experiments", ",".join(pp["lab_experiments"]), "--min-events", str(plan["lab_min_events"]),
            "--out", str(out)]
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), pp["task_timeout_minutes"] * 60, f"{inst}_lab")
