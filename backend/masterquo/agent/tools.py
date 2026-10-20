@@ -242,7 +242,7 @@ class Toolbox:
         if snap is None:
             return {"status": "UNAVAILABLE", "snapshot_id": snapshot_id, "rules": ["K01", "K15"]}
         out = sk.explain(snap)
-        out["cells"] = {tf: {k: c.get(k) for k in ("status", "last_closed_open", "structure", "pattern", "candle_role", "mitp", "zone", "market")}
+        out["cells"] = {tf: {k: c.get(k) for k in ("status", "last_closed_open", "structure", "pattern", "candle_role", "mitp", "zone", "market", "flow")}
                         for tf, c in (snap.get("cells") or {}).items()}
         out["neutralization"] = snap.get("neutralization")
         out["quotes"] = snap.get("quotes")

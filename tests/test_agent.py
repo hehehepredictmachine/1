@@ -94,7 +94,7 @@ class TestAgent(unittest.TestCase):
                               msg([text(json.dumps(answer()))], "end_turn")])
         self.assertEqual(r["status"], "OK", r)
         self.assertEqual(r["record"]["proposed_action"], "SELL")
-        self.assertEqual(r["record"]["prompt_version"], "MQAI-AGENT-PROMPT-1.8.0+PMW-IND-KNOWLEDGE-1.0.0+PMW-LIQ-KNOWLEDGE-1.0.0+PMW-SI-KNOWLEDGE-1.2.0")
+        self.assertEqual(r["record"]["prompt_version"], "MQAI-AGENT-PROMPT-1.9.0+PMW-IND-KNOWLEDGE-1.0.0+PMW-LIQ-KNOWLEDGE-1.0.0+PMW-SI-KNOWLEDGE-1.2.0+PMW-FLOW-KNOWLEDGE-1.0.0")
         self.assertEqual(len(r["tool_calls"]), 2)
         second = c.calls[1]["messages"]
         results = second[-1]["content"]

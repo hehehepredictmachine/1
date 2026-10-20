@@ -672,6 +672,53 @@ def create_app(rt, port: int) -> FastAPI:
         return {"run_id": rid, "role": rep.get("role"), "spike_profile": rep.get("spike_profile"), "transform": rep.get("transform"),
                 "diagnostics": diag, "status": rep.get("status")}
 
+    # ------------------------------------------------------------ PMW-UPD-11 flow context (read-only; GET never trains)
+    def _fkey(asset, tf):
+        a = _si_inst(asset)
+        if tf not in ("M1", "M5", "M15", "H1"):
+            raise HTTPException(400, "TF_INVALID")
+        k = rt.si.flow.keys.get((a, tf))
+        if k is None:
+            raise HTTPException(404, "NO_FLOW_STATE_YET (powstaje przy pierwszym snapshocie)")
+        return k
+
+    @app.get("/api/v1/flow-context")
+    def fc_summary(asset: str | None = None):
+        a = _si_inst(asset)
+        return {"instrument": a, "tfs": {tf: rt.si.flow.summary(k) for (i, tf), k in rt.si.flow.keys.items() if i == a},
+                "profile": __import__("masterquo.lab.flow_context.task", fromlist=["profile"]).profile(a)}
+
+    @app.get("/api/v1/flow-context/series")
+    def fc_series(asset: str | None = None, tf: str = "M15", limit: int = Query(300, ge=1, le=800)):
+        return rt.si.flow.series(_fkey(asset, tf), limit)
+
+    @app.get("/api/v1/flow-context/channels")
+    def fc_channels(asset: str | None = None, tf: str = "M15", as_of: str | None = None, mode: str = "CURRENT_MAP_FULL_WIDTH"):
+        if mode not in ("CURRENT_MAP_FULL_WIDTH", "HISTORY_AS_KNOWN"):
+            raise HTTPException(400, "MODE_INVALID")
+        return rt.si.flow.channels(_fkey(asset, tf), as_of, mode)
+
+    @app.get("/api/v1/flow-context/markov")
+    def fc_markov(asset: str | None = None):
+        return rt.si.flow.markov(_fkey(asset, "M1"))
+
+    @app.get("/api/v1/flow-context/stopdistance")
+    def fc_stop(asset: str | None = None, tf: str = "M15", entry: float | None = None, side: str | None = None, strategy_sl_points: float | None = None):
+        return rt.si.flow.stopdistance(_fkey(asset, tf), entry, side, strategy_sl_points)
+
+    @app.get("/api/v1/flow-context/native")
+    def fc_native(asset: str | None = None):
+        a = _si_inst(asset)
+        return rt.si.flow.native(a, rt.cfg.get().mt5.symbol)
+
+    @app.get("/api/v1/flow-context/models")
+    def fc_models(asset: str | None = None):
+        from ..lab.flow_context import task as FT
+        a = _si_inst(asset)
+        reg = FT._reg(a)
+        return {"instrument": a, "runs": reg["runs"], "shadow": reg["shadow"], "families": list(FT.FAMILIES), "task": FT.TASK, "schema": FT.SCHEMA,
+                "execution": "NEVER_AUTOMATIC"}
+
     @app.get("/api/v1/structure-intelligence/quality")
     def si_quality(asset: str | None = None):
         return rt.si.quality(_si_inst(asset))

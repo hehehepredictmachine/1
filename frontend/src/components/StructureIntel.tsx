@@ -6,6 +6,7 @@ import { apiGet, apiSend } from "../api";
 import { useStore } from "../store";
 import { fmtNum, fmtTime } from "../util";
 import { MarketSummaryCells, MarketStoryCard, ModelLabCard, RegimeCard, SmmaZCard } from "./MarketStory";
+import { FlowContextCard } from "./FlowContext";
 
 const ROLE_PL: Record<string, string> = {
   NECKLINE_BREAK: "wybicie neckline", RETEST_HOLD: "utrzymany retest", SWEEP_RECLAIM: "sweep i powrót", TREND_PULLBACK: "korekta w trendzie",
@@ -205,6 +206,7 @@ export function StructurePage() {
         <RegimeCard asset={asset} />
         <MarketStoryCard asset={asset} />
         <SmmaZCard asset={asset} />
+        <FlowContextCard asset={asset} onStart={start} />
         <QuotesCard />
         <NeutralCard asset={asset} />
         <ZonesCard asset={asset} />

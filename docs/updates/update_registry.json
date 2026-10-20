@@ -547,9 +547,53 @@
    "update_id": "PMW-UPD-11-FLOW",
    "spec_file": "PepeMarketWizard_CLAUDE_CODE_MARKOV_HEIKIN_CHANNELS_STOPDISTANCE.md",
    "spec_sha256": "6cca86d3f9e8ade2970415c754904e2f800fae9ea02ae13e3429e1efdbb2d2db",
-   "code_status": "NOT_STARTED",
+   "code_status": "IMPLEMENTED",
    "blocker": null,
-   "requirements": {}
+   "requirements": {
+    "FF01": "VERIFIED (liczności/alpha/tau train-only, prekwencja, dedup, ring, luka, stacjonarny z PERIODIC/NON_UNIQUE)",
+    "FF02": "VERIFIED (koszyki side=right, scalanie, emisje, DP zgodne z enumeracją i fixture, MC vs DP, NO_VARIATION, TAIL_OUT_OF_SUPPORT, save/load)",
+    "FF03": "VERIFIED (16 par MA vs naiwna referencja, PARTIAL/FULL seed, clamp, preview bez mutacji, incremental=batch, niezmienniki OHLC)",
+    "FF04": "VERIFIED (pivoty known po prawej, 290/291, limit szerokości, score 20+1, zachłanny bez nakładania, ID/as-of/zdarzenia)",
+    "FF05": "VERIFIED (punkty, luka≠ATR, FULL_SEED SMA/EMA, factor, cena SL na zewnątrz do tick, doradczo, kalibracja pokrycia)",
+    "FF06": "PARTIAL (źródła MQL5 + kolektor + self-test + importer/parytet Python; NOT_COMPILED_NO_METAEDITOR, NATIVE_NOT_EXECUTED)",
+    "FF07": "IMPLEMENTED (dataset/protokół/trening/ablacje/holdout raz/registry/CLI/train-all; trening rynkowy NOT_RUN – brak REAL_USER_DATA)",
+    "FF08": "IMPLEMENTED (API, sekcja flow w snapshot, panel, wiedza F01–F09 + prompt 1.9.0, launcher 28, docs)"
+   },
+   "prompt_version": "AUDIT-2026-10-19.1",
+   "summary": "Markov 3-stanowy i koszyki różnic (DP+MC), Heikin Flow (16 par MA), kanały S/R z rankingiem, StopDistance, model reakcji FLOW_CONTEXT_MOVE_M1_V1, native MQL5 + importer",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5: NOT_RUN",
+    "data": "BRAK REAL_USER_DATA",
+    "training": "NOT_RUN (TEST_ONLY smoke)",
+    "artifacts": "BRAK",
+    "native": "SOURCES_ONLY – NOT_COMPILED_NO_METAEDITOR",
+    "parity": "ORIGINAL QCL/SR/StopDistance MQ5: UNVERIFIED; own Python vs golden PASS",
+    "edge": "NO_VALIDATED_EDGE"
+   },
+   "files": [
+    "backend/masterquo/lab/flow_context/*",
+    "mql5/FlowContext/**",
+    "28_FLOW_CONTEXT.bat",
+    "tools/mr2_native_status.py (--flow)",
+    "backend/masterquo/lab/si_service.py (flow)",
+    "backend/masterquo/api/app.py (/flow-context/*)",
+    "backend/masterquo/training/runner.py (flow_context)",
+    "frontend/src/components/FlowContext.tsx",
+    "docs/FLOW_CONTEXT_MARKOV_HEIKIN_SR_STOPDISTANCE_PL.md",
+    "tests/fixtures/flow_context/golden.json"
+   ],
+   "tests": [
+    {
+     "cmd": "python -m unittest test_markov_reward test_heikin_flow test_sr_channels test_stopdistance test_flow_context",
+     "result": "PASS"
+    }
+   ],
+   "blocked_items": [
+    "kompilacja/uruchomienie MQL5: brak MetaEditor/Windows",
+    "trening rynkowy i edge: brak REAL_USER_DATA",
+    "parytet z oryginałami: źródła MQ5 nieodczytane"
+   ]
   },
   "PMW-UPD-12-SAMPLING": {
    "update_id": "PMW-UPD-12-SAMPLING",

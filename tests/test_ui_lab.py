@@ -401,6 +401,29 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
         self.assertEqual(self.errors, [])
 
+    def test_13_flow_context(self):
+        """PMW-UPD-11: flow sections from the SAME SI producer; series/channels/stopdistance endpoints; Markov MODEL_MISSING without a fit;
+        native explicit NOT_COMPILED; panel card; Lock untouched."""
+        self.assertTrue(wait_for(lambda: ((self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("timeframes") or [{}])[0]
+                                 .get("structure", {}).get("flow", {}).get("status") == "OK", 120, 1.0))
+        s = self.api("/api/v1/flow-context/series?tf=M15&limit=50")
+        self.assertIn("synthetic", s["units"])
+        self.assertTrue(s["heikin"])
+        ch = self.api("/api/v1/flow-context/channels?tf=M15&mode=HISTORY_AS_KNOWN")
+        self.assertEqual(ch["mode"], "HISTORY_AS_KNOWN")
+        sd = self.api("/api/v1/flow-context/stopdistance?tf=M15&entry=2000&side=BUY")
+        self.assertIn("row", sd)
+        self.assertEqual(self.api("/api/v1/flow-context/markov")["status"], "MODEL_MISSING")
+        self.assertEqual(self.api("/api/v1/flow-context/native")["compile"]["NATIVE_COMPILED"], "NOT_COMPILED_NO_METAEDITOR")
+        p = self.page
+        p.goto(BASE + "/#/struktura")
+        p.wait_for_selector("[data-testid=flow-context-card] [data-testid=flow-candles]")
+        p.wait_for_selector("[data-testid=flow-markov]")
+        self.assertIn("MODEL_MISSING", p.inner_text("[data-testid=flow-markov]"))
+        p.locator("[data-testid=flow-context-card]").screenshot(path=str(SHOTS / "flow_context_1366.png"))
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(self.errors, [])
+
     def test_05_mobile(self):
         p = self.page
         p.set_viewport_size({"width": 390, "height": 844})

@@ -61,7 +61,7 @@ class KnowledgeTests(unittest.TestCase):
         text, ver = load_prompt()
         for k in ("K25", "K28", "K31", "K34", "K35"):
             self.assertIn(k, text)
-        self.assertTrue(ver.startswith("MQAI-AGENT-PROMPT-1.8.0"))
+        self.assertTrue(ver.startswith("MQAI-AGENT-PROMPT-1.9.0"))
         snap = {"snapshot_id": "S1", "cells": {"M1": {"status": "OK", "structure": {"trend_internal": "UP", "trend_major": "UP"},
                 "market": {"status": "OK", "regime": {"state": "TREND_UP", "strength": 72.0, "volatility": "HIGH"}, "behavior": {"bias": "UP"},
                            "smma": {"location": "ABOVE", "event": "UP"}, "zscore": {"inclusive": {"z": 2.4, "status": "OK"}, "previous": {"z": None, "status": "LOW_DISPERSION"}}}}},

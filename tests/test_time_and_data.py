@@ -176,8 +176,10 @@ class TestSymbolAndConfig(unittest.TestCase):
         import re
         root = _env.ROOT / "backend" / "masterquo"
         for f in root.rglob("*.py"):
-            txt = f.read_text(encoding="utf-8")
-            self.assertIsNone(re.search(r"default=['\"]XAUUSD['\"]", txt), f)
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if '"--asset"' in line:                       # instrument id of the allowlist (XAUUSD/BTC), not an MT5 symbol (XAUUSD-)
+                    continue
+                self.assertIsNone(re.search(r"default=['\"]XAUUSD['\"]", line), f"{f}: {line.strip()}")
 
 
 if __name__ == "__main__":

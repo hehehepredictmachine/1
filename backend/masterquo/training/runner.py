@@ -23,6 +23,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("ml_scalp", "Scalp ML: XGBoost P(dodatni wynik netto cyklu) + net_R, osobno LONG/SHORT"),
          ("neural_scalp", "Neural Scalp System: TCN M1/M5 + kontekst – P(TP1/SL/TIMEOUT) i net_R kandydata scalp"),
          ("structure_intelligence", "Structure Intelligence: ruch M1 h=3/5/15 (LOGREG/XGB/ResNeXt/SEW/SEW-EB/SpikingBrain/MiniRocket V2) + kontekst setupu"),
+         ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
@@ -399,6 +400,30 @@ def t_structure_intelligence(run: Run, inst: str) -> None:
                   "side": "kierunek ruchu (nie zlecenie)"})
 
 
+def t_flow_context(run: Run, inst: str) -> None:
+    """PMW-UPD-11: dev-only profile calibration, Markov fits, reaction dataset + frozen protocol; holdout not opened; never selected."""
+    tid, plan = f"{inst}:flow_context", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_flow_context.json"
+    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    cmd = [core.bot_python(), "-m", "masterquo", "flow-context", "pipeline", "--asset", inst, "--dataset", str(ds), "--out", str(out),
+           "--profile", prof] + (["--allow-synthetic-fixture"] if plan["synthetic"] else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_flow_context")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if not rep:
+        return _fail(run, tid, f"flow-context kod {rc}: {tail}")
+    tr = rep.get("train") or {}
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("BRAK_PRZESLANEK" if tr.get("status") == "INSUFFICIENT_EVIDENCE" else "DO_OCENY_NA_DEV")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="ZAPISANY_DO_BADAN", model_id=tr.get("run_id"),
+            detail=f"trening {tr.get('status')}; {tr.get('edge_status')}; profil {prof}{' (niepełny smoke)' if prof == 'quick' else ''}; SHADOW ręcznie",
+            unit={"task": "FLOW_CONTEXT_MOVE_M1_V1 P(DOWN/FLAT/UP) + kwantyle r_h/ATR", "tf": "M1", "horizons": "3/5/15 świec M1",
+                  "side": "kierunek ruchu (nie zlecenie)"})
+
+
 def t_activate(run: Run, inst: str) -> None:
     """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
     tid, plan = f"{inst}:activate", run.state["plan"]
@@ -503,6 +528,7 @@ def _wait(pred, timeout: float, step: float = 3.0) -> bool:
 STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scalp_A": t_scalp, "ml": t_ml, "lab": t_lab,
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "structure_intelligence": t_structure_intelligence,
+         "flow_context": t_flow_context,
          "activate": t_activate, "bot": t_bot}
 
 
