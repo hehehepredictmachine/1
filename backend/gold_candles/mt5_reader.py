@@ -19,7 +19,9 @@ def read_mt5(symbol="XAUUSD-",count=3000):
             raise DataError("EXACT_BROKER_SYMBOL_NOT_FOUND")
         if not info.visible and not mt5.symbol_select(symbol,True):
             raise DataError("SYMBOL_SELECT_FAILED")
-        if info.currency_base != "XAU" or info.currency_profit != "USD":
+        name=str(getattr(info,"name","") or symbol).upper()
+        cfd_gold=info.currency_base==info.currency_profit=="USD" and ("XAUUSD" in name or "GOLD" in name) and "XAUT" not in name  # CFD brokers report base=USD
+        if not (info.currency_base=="XAU" and info.currency_profit=="USD") and not cfd_gold:
             raise DataError("BROKER_SYMBOL_NOT_CONFIRMED_AS_XAU_USD")
         tick_size=float(info.trade_tick_size)
         if tick_size<=0 or info.trade_contract_size<=0:

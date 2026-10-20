@@ -178,6 +178,19 @@ class TestUnits(unittest.TestCase):
         self.assertFalse(mi.check_metadata("BTC", {"currency_base": "WBTC", "currency_profit": "USDT"})[0])
         self.assertFalse(mi.check_metadata("XAUUSD", {"currency_base": "PAXG", "currency_profit": "USD"})[0])
         self.assertFalse(mi.check_metadata("XAUUSD", {"currency_base": "XAU", "currency_profit": "EUR"})[0])
+        # CFD brokers: gold reported as base=USD/profit=USD - accepted only when the symbol NAME carries the instrument
+        self.assertEqual(mi.check_metadata("XAUUSD", {"name": "XAUUSD-", "currency_base": "USD", "currency_profit": "USD", "description": "Gold vs US Dollar"}),
+                         (True, []))
+        self.assertTrue(mi.check_metadata("XAUUSD", {"name": "GOLD", "currency_base": "USD", "currency_profit": "USD"})[0])
+        self.assertFalse(mi.check_metadata("XAUUSD", {"name": "EURUSD", "currency_base": "USD", "currency_profit": "USD", "description": "gold"})[0])
+        self.assertFalse(mi.check_metadata("XAUUSD", {"name": "XAUTUSD", "currency_base": "USD", "currency_profit": "USD"})[0])
+        self.assertFalse(mi.check_metadata("XAUUSD", {"name": "XAUUSD", "currency_base": "EUR", "currency_profit": "USD"})[0])
+        from masterquo.assets import registry as R
+        c = R.classify({"name": "XAUUSD-", "currency_base": "USD", "currency_profit": "USD"})
+        self.assertEqual(c["asset"], "XAUUSD")
+        self.assertIn("XAUUSD_CFD_BASE_REPORTED_AS_USD", c["notes"])
+        self.assertIsNone(R.classify({"name": "XAUTUSD", "currency_base": "USD", "currency_profit": "USD"})["asset"])
+        self.assertIsNone(R.classify({"name": "EURUSD", "currency_base": "USD", "currency_profit": "USD"})["asset"])
         c = mi.candidates("BTC", [{"name": "WBTCUSDT", "currency_base": "WBTC", "currency_profit": "USDT"},
                                   {"name": "BTSUSDT-", "currency_base": "BTS", "currency_profit": "USDT"},
                                   {"name": "BTCUSD-", "currency_base": "BTC", "currency_profit": "USD"},

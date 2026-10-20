@@ -18,10 +18,10 @@ from datetime import datetime, timezone
 ALLOWED = ("XAUUSD", "BTC")
 
 SPECS: dict[str, dict] = {
-    "XAUUSD": {"base": {"XAU"}, "profit": {"USD"}, "forbidden_base": {"XAUT", "XAUT0", "PAXG", "XAUUSDT"},
+    "XAUUSD": {"base": {"XAU"}, "profit": {"USD"}, "forbidden_base": {"XAUT", "XAUT0", "PAXG", "XAUUSDT"}, "name_hints": ("XAUUSD", "GOLD"),
                "asset_class": "METAL", "price_unit": "USD za uncję trojańską × contract_size (z terminala)",
                "sessions": "przerwy wg sesji brokera (symbol_info_session_* / brak notowań w weekend)"},
-    "BTC": {"base": {"BTC", "XBT"}, "profit": {"USD"}, "forbidden_base": {"WBTC", "BTCB", "TBTC", "RENBTC"},
+    "BTC": {"base": {"BTC", "XBT"}, "profit": {"USD"}, "forbidden_base": {"WBTC", "BTCB", "TBTC", "RENBTC"}, "name_hints": ("BTCUSD", "XBTUSD", "BITCOIN"),
             "asset_class": "CRYPTO", "price_unit": "USD za 1 BTC × contract_size (z terminala)",
             "sessions": "dostępność CFD/venue sprawdzana z notowań (także weekend) - nie zakładana"},
 }
@@ -46,9 +46,16 @@ def classify(meta: dict | None) -> dict:
     base, profit = _up(meta.get("currency_base")), _up(meta.get("currency_profit"))
     out: dict = {"asset": None, "conflicts": [], "notes": [], "base": base, "profit": profit}
     hits = []
+    name = _up(meta.get("name"))
     for asset, sp in SPECS.items():
-        if base in sp["forbidden_base"]:
-            out["conflicts"].append(f"{asset}_LOOKALIKE_BASE:{base}")
+        if base in sp["forbidden_base"] or any(f in name for f in sp["forbidden_base"]):
+            out["conflicts"].append(f"{asset}_LOOKALIKE_BASE:{base if base in sp['forbidden_base'] else name}")
+            continue
+        # CFD brokers often report currency_base = quote currency (gold "XAUUSD-": base=USD/profit=USD). Accepted only when base == profit
+        # and the symbol NAME itself carries the asset; recorded as a note so it stays visible.
+        if base not in sp["base"] and base and base == profit and profit in sp["profit"] and any(h in name for h in sp["name_hints"]):
+            hits.append(asset)
+            out["notes"].append(f"{asset}_CFD_BASE_REPORTED_AS_{base}")
             continue
         if base in sp["base"]:
             if profit in sp["profit"]:

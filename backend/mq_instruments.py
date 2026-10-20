@@ -51,13 +51,20 @@ def file_prefix(inst: str | None = None) -> str:
 def check_metadata(inst: str, meta: dict) -> tuple[bool, list[str]]:
     """Metadata of a terminal symbol vs the instrument profile. Returns (ok, problems). USD and USDT stay different quote
     currencies: the quote currency is recorded with the dataset, never rewritten."""
-    md = profile(inst)["metadata"]
+    p = profile(inst)
+    md = p["metadata"]
     base, prof = str(meta.get("currency_base") or "").upper(), str(meta.get("currency_profit") or "").upper()
+    name = str(meta.get("name") or "").upper()
+    text = " ".join(str(meta.get(k) or "") for k in ("name", "description", "path")).upper()
     problems = []
-    if base in md["forbidden_base"]:
-        problems.append(f"LOOKALIKE_BASE_{base}")
+    if base in md["forbidden_base"] or any(f in name for f in md["forbidden_base"]):
+        problems.append(f"LOOKALIKE_BASE_{base if base in md['forbidden_base'] else name}")
     elif base not in md["currency_base"]:
-        problems.append(f"BASE_{base or 'UNKNOWN'}_NOT_{'/'.join(md['currency_base'])}")
+        # Many CFD brokers report currency_base = the account/quote currency (e.g. gold "XAUUSD-": base=USD, profit=USD). Accept that
+        # only when base == profit currency AND the symbol name itself carries the instrument (name hint), never from description alone.
+        cfd = base and base == prof and any(h in name for h in p["name_hints"]) and any(h in text for h in p["name_hints"])
+        if not cfd:
+            problems.append(f"BASE_{base or 'UNKNOWN'}_NOT_{'/'.join(md['currency_base'])}")
     if prof not in md["currency_profit"]:
         problems.append(f"PROFIT_{prof or 'UNKNOWN'}_NOT_{'/'.join(md['currency_profit'])}")
     return (not problems), problems
