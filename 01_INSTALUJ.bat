@@ -4,6 +4,20 @@ set "MQ_PAUSE=pause"
 if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
 rem PepeMarketWizard - instalacja (Windows 10/11 x64). Nie zmienia globalnego Pythona ani zabezpieczen Windows.
 cd /d "%~dp0"
+rem ---- 0. kompletnosc rozpakowania (brak plikow to nie problem z Pythonem)
+set "MQ_MISSING="
+for %%F in ("tools\check_python.py" "tools\trening.cmd" "backend\masterquo\__main__.py" "backend\mq_instruments.py" "frontend\dist\index.html" "MANIFEST_SHA256.txt") do (
+  if not exist "%~dp0%%~F" set "MQ_MISSING=%%~F"
+)
+if defined MQ_MISSING (
+  echo [BLAD] Niekompletny folder programu - brak pliku: %MQ_MISSING%
+  echo        Folder: "%~dp0"
+  echo        Rozpakuj CALY plik ZIP: prawy klik - Wyodrebnij wszystkie - do NOWEGO, pustego folderu,
+  echo        potem uruchom instalator z tego folderu. Nie uruchamiaj .bat z podgladu ZIP i nie kopiuj pojedynczych plikow.
+  echo        Jesli plik znika po rozpakowaniu, sprawdz kwarantanne antywirusa.
+  %MQ_PAUSE%
+  exit /b 2
+)
 set "ROOT=%~dp0"
 if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
