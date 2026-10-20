@@ -1,9 +1,19 @@
-# START TUTAJ – trening modeli XAUUSD i BTC (PepeMarketWizard 1.15)
+# START TUTAJ – trening modeli XAUUSD i BTC (PepeMarketWizard 1.16)
 
 Trening działa **offline**. Nie wysyła zleceń, nie zamyka pozycji i nie zmienia Execution Lock. Odczytuje historię z Twojego terminala MT5 przez osobne połączenie: tylko odczyt, a funkcje zleceń są w nim zablokowane. Działający bot dostaje gotowe modele dopiero po walidacji.
 
+## Najprościej: `PepeMarketWizard.exe` (1.16)
+Uruchom `PepeMarketWizard.exe` z rozpakowanego folderu. Do wyboru masz:
+- **1** – instalacja lub naprawa środowiska;
+- **2 / 3 / 4** – kalibracja i trening XAUUSD / BTC / obu;
+- **5** – kalibracja wskaźników kontekstu VAMD/FD/SMC i instalacja MQL5;
+- **8 / 9** – start / stop bota;
+- **R** – budżet RAM treningu (domyślnie 8 GB).
+
+Launcher uruchamia te same pliki `.bat` co poniżej. Nie wysyła zleceń i nie zmienia Execution Lock. Szczegóły i lista napraw: `docs/AUDYT_PACZKI_1_16_PL.md`.
+
 ## 1. Jednorazowo: instalacja
-1. Rozpakuj `PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip` do dowolnego folderu. Spacje, polskie litery i znak `!` w ścieżce są obsługiwane.
+1. Rozpakuj `PepeMarketWizard_KLIENT_1_16_0.zip` (cały ZIP – „Wyodrębnij wszystkie”) do dowolnego folderu. Spacje, polskie litery i znak `!` w ścieżce są obsługiwane.
    - Dane z poprzedniej wersji (`data/`) możesz skopiować.
    - Istniejące modele XAUUSD zostają w dotychczasowych katalogach i nadal działają.
 2. Uruchom **`INSTALUJ_TRENING.bat`**.

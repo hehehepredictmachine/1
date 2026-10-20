@@ -4,6 +4,16 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Najprościej: `PepeMarketWizard.exe` (1.16)
+Uruchom `PepeMarketWizard.exe` z rozpakowanego folderu. Do wyboru masz:
+- **1** – instalacja lub naprawa środowiska;
+- **2 / 3 / 4** – kalibracja i trening XAUUSD / BTC / obu;
+- **5** – kalibracja wskaźników kontekstu VAMD/FD/SMC i instalacja MQL5;
+- **8 / 9** – start / stop bota;
+- **R** – budżet RAM treningu (domyślnie 8 GB).
+
+Launcher uruchamia te same pliki `.bat` co poniżej. Nie wysyła zleceń i nie zmienia Execution Lock. Szczegóły i lista napraw: `docs/AUDYT_PACZKI_1_16_PL.md`.
+
 ## Nowe w 1.14 – dwa aktywa (XAUUSD i BTC), Execution Lock, laboratorium modeli
 * **Execution Lock jest domyślnie WŁĄCZONY.**
   * Żadna ścieżka (tryby AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła zleceń do MT5.

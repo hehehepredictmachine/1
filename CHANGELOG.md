@@ -10,6 +10,13 @@
 * Nowe launchery 25–29; runner treningu ma 16 zadań; prompt agenta `MQAI-AGENT-PROMPT-2.0.0`.
 * Wszystkie nowe modele działają w trybie SHADOW/OBSERVE, bez automatycznej promocji. Execution Lock bez zmian, brak zleceń.
 * Bez REAL_USER_DATA i bez MetaEditora: trening rynkowy `NOT_RUN`, native `NOT_EXECUTED`, `NO_VALIDATED_EDGE`.
+* **Naprawy treningu po zgłoszeniach (audyt `docs/AUDYT_PACZKI_1_16_PL.md`):**
+  * czytelna przyczyna błędu eksportu;
+  * akceptacja złota CFD zgłaszanego jako base=USD;
+  * kontrola kompletności rozpakowania;
+  * budżet RAM 8 GB ze skalowaniem próbki zamiast pomijania zadań;
+  * automatyczna instalacja i walidacja `.venv_candles`.
+* **`PepeMarketWizard.exe`** – launcher: instalacja, kalibracja + trening, kalibracja kontekstu, diagnostyka, start/stop bota, budżet RAM.
 * Specyfikacje 01 (BB), 10, 12, 13 i 15 (EA) nie zostały dostarczone. Status BLOCKED, algorytmów nie rekonstruowano.
 
 ## 1.15.0 – instalatory treningu XAUUSD / BTC (`PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip`)
