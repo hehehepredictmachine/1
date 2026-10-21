@@ -108,6 +108,9 @@ Dowód weryfikacji uzupełniam przy naprawach (`docs/strategie_sh/05_TESTY.md`).
 | F-16 | N | `scalp/service.py:219` | Hedge controller wołany z `adverse_signal=None` → zawsze HOLD (martwa logika) | przegląd | zastąpione automatem HEDGING (etap 6) |
 | F-17 | Ś | `lab/flow_context`, `lab/context_ind` | Modele reakcji trenowane, ale bez żadnej inferencji na żywo (trening bez konsumenta) | przegląd | etap 3: status NIEPODŁĄCZONY w rejestrze; konsument opcjonalny |
 | F-18 | N | `execution/gateway.py:36` | `client_tag` obcięty do 20 znaków – przy id „MQA-” zostaje 13 znaków hex, możliwe dwuznaczności `startswith` | przegląd | nowe strategie: krótki, unikalny tag z licznikiem i ścisłym dopasowaniem |
+| F-19 | W | `sh/tpmodel.py` (nowy kod, etap 3) | Bramka holdoutu „Brier < bazowy” przepuszczała model z czystego szumu | `test_sh_setup.TpModel` (dane z szumem) | **naprawione**: wymagana istotna poprawa > 2 SE różnicy sparowanej |
+| F-20 | K | `sh/lifecycle.py` (nowy kod, etap 5) | Luka przez TP1–TP3 w jednym notowaniu: zamknięcie runnera zlecane pełnym pozostałym wolumenem przed wykonaniem partiali (próba zamknięcia większego wolumenu niż pozycja) | `test_sh_core.GapThroughAllTargets`, replay | **naprawione**: runner = pozostało − oczekujące partiale |
+| F-21 | Ś | `sh/context.py` (nowy kod) | Reżim M5 przeliczany od zera na 400 świecach przy każdej świecy M5 (replay 12 mies. > 2 h) | profilowanie replay | **naprawione**: przyrostowa maszyna `IncRegime`, identyczne stany jak `regime_series` (400/400) |
 
 ## 5. Pokryty zakres i ograniczenia
 **Sprawdzone:**
