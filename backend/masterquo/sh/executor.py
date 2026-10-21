@@ -58,7 +58,7 @@ class SHExecutor:
 
     def perform(self, plan: dict, action: dict, *, mode: str, quote: dict, ticket: int | None, side_of_position: str,
                 slippage: float = 0.0, now: float | None = None) -> dict:
-        """Execute one state-machine action (CLOSE_PARTIAL / CLOSE_RUNNER / CLOSE_PRIMARY / CLOSE_HEDGE / MODIFY_SL)."""
+        """Execute one state-machine action (CLOSE_PARTIAL / CLOSE_RUNNER / CLOSE_PRIMARY / CLOSE_HEDGE / MODIFY_SL / MODIFY_TP)."""
         return self._run(action, mode, quote, slippage, now,
                          lambda: self._paper_action(action, quote, side_of_position, slippage),
                          lambda: self._mt5_action(plan, action, ticket, side_of_position))
@@ -92,6 +92,8 @@ class SHExecutor:
 
     @staticmethod
     def _paper_action(action, quote, pos_side, slip) -> dict:
+        if action["kind"] == "MODIFY_TP":
+            return {"status": "DONE", "tp": action["tp"], "simulated": True}
         if action["kind"] == "MODIFY_SL":
             px = quote["bid"] if pos_side == "BUY" else quote["ask"]
             ok = (action["sl"] < px) if pos_side == "BUY" else (action["sl"] > px)       # SL must stay on the protective side
@@ -152,12 +154,14 @@ class SHExecutor:
             return {"status": "REJECTED", "reason": "POZYCJA_NIE_NALEŻY_DO_PLANU"}
 
         def go(m):
-            if action["kind"] == "MODIFY_SL":
+            if action["kind"] in ("MODIFY_SL", "MODIFY_TP"):
                 p = (m.positions_get(ticket=ticket) or [None])[0]
                 if p is None:
                     return SimpleNamespace(retcode=-1, comment="POSITION_NOT_FOUND", volume=0)
-                return m.order_send({"action": m.TRADE_ACTION_SLTP, "symbol": sym, "position": int(ticket), "sl": float(action["sl"]),
-                                     "tp": float(p.tp or 0), "magic": self.magic})
+                sl = float(action["sl"]) if action["kind"] == "MODIFY_SL" else float(p.sl or 0)
+                tp = float(action["tp"]) if action["kind"] == "MODIFY_TP" else float(p.tp or 0)
+                return m.order_send({"action": m.TRADE_ACTION_SLTP, "symbol": sym, "position": int(ticket), "sl": sl, "tp": tp,
+                                     "magic": self.magic})
             q = m.symbol_info_tick(sym)
             buy = pos_side == "SELL"
             return m.order_send({"action": m.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(action["volume"]), "position": int(ticket),

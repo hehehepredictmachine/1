@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -994,6 +995,84 @@ def create_app(rt, port: int) -> FastAPI:
         """Scalp profile (M5 Range -> M1 Sweep/Reclaim -> Retest) + hedge controller in SHADOW: MTF, setup, indicators, adapters,
         forecasts, hedge/risk, training and the separate validity statuses. Never an order permission."""
         return {**rt.scalp.public(), "config": rt.cfg.get().scalp.model_dump(), "profile": rt.scalp.prof, "registry": rt.scalp.registry()}
+
+    # ------------------------------------------------------------------ PMW-SH-1 SCALPING / HEDGING
+    @app.get("/api/v1/sh")
+    def sh_get():
+        """Strategy panel: service state, last evaluation per strategy (checklist, levels, models, risk, coordination), open plans
+        with position / basket state, single config source with hash, model matrix and the event-model status."""
+        from ..sh import config as SHC, models as SHM, tpmodel as SHT
+        inst = rt.sh.instrument()
+        st = rt.sh.public()
+        return {**{k: v for k, v in st.items() if k != "snapshot"}, "config": SHC.load(), "config_errors": SHC.validate(SHC.load()),
+                "models": SHM.matrix(rt, inst), "tp_model": SHT.status(inst), "snapshot": rt.sh.snapshot, "server_time": time.time()}
+
+    @app.get("/api/v1/sh/signals")
+    def sh_signals(strategy: str | None = None, limit: int = Query(100, ge=1, le=1000)):
+        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit)}
+
+    @app.get("/api/v1/sh/signals/{sid}")
+    def sh_signal(sid: str):
+        r = rt.sh.store.signal(sid)
+        if not r:
+            raise HTTPException(404)
+        return r
+
+    @app.get("/api/v1/sh/plans")
+    def sh_plans(open_only: bool = False, limit: int = Query(50, ge=1, le=500)):
+        q = rt.sh.quote(time.time())
+        if open_only:
+            return {"items": [rt.sh.plan_view(p, q) for p in rt.sh.store.open_plans()]}
+        rows = rt.db.query("SELECT plan_id FROM sh_plans ORDER BY created_at DESC LIMIT ?", (limit,))
+        return {"items": [rt.sh.plan_view(rt.sh.store.plan(r["plan_id"]), q) for r in rows]}
+
+    @app.get("/api/v1/sh/plans/{pid}")
+    def sh_plan(pid: str):
+        r = rt.sh.store.plan(pid)
+        if not r:
+            raise HTTPException(404)
+        v = rt.sh.plan_view(r, rt.sh.quote(time.time()))
+        v.update(result=r.get("result"), actions=rt.sh.store.actions(pid), events=rt.sh.store.events(pid))
+        return v
+
+    @app.post("/api/v1/sh/plans/{pid}/close")
+    def sh_plan_close(pid: str):
+        """Explicit, user-confirmed close of one SH plan (primary + hedge) through its state machine; Execution Lock applies."""
+        r = rt.sh.close_plan(pid, "MANUAL_CLOSE")
+        rt.log.warn("SH", "MANUAL_CLOSE", f"Zamknięcie planu {pid} na żądanie: {r}")
+        return r
+
+    @app.get("/api/v1/sh/config")
+    def sh_config_get():
+        from ..sh import config as SHC
+        return SHC.load()
+
+    @app.post("/api/v1/sh/config")
+    def sh_config_set(body: dict = Body(...)):
+        """Panel change of the single SH config source (validated, versioned). Open plans keep their frozen parameters."""
+        from ..sh import config as SHC
+        try:
+            cfg = SHC.save_override(body, who="panel")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        rt.log.info("SH", "CONFIG", f"Zmiana konfiguracji SH – wersja {cfg['_override_version']}, hash {cfg['_hash']}")
+        return cfg
+
+    @app.post("/api/v1/sh/config/rollback")
+    def sh_config_rollback():
+        from ..sh import config as SHC
+        try:
+            return SHC.rollback_override()
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.get("/api/v1/sh/chart")
+    def sh_chart(tf: str = Query("M1"), limit: int = Query(240, ge=20, le=1000)):
+        if tf not in ("M1", "M5", "M15"):
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        bars = [b for b in rt.bridge.bars(tf, limit, include_forming=True) if b.get("open_utc")]
+        return {"tf": tf, "bars": bars, "quote": rt.sh.quote(time.time()), "last_eval": rt.sh.last_eval,
+                "open_plans": [rt.sh.plan_view(p, rt.sh.quote(time.time())) for p in rt.sh.store.open_plans()]}
 
     @app.get("/api/v1/scalp/shadow")
     def scalp_shadow(limit: int = Query(100, ge=1, le=1000)):

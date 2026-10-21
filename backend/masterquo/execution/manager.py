@@ -527,6 +527,13 @@ class PositionManager:
         p = next((x for x in b.positions if x["ticket"] == ticket), None)
         if not p:
             return {"ok": False, "error": "POSITION_NOT_FOUND"}
+        try:                                                    # one owner per position: SCALPING/HEDGING positions are never adopted
+            from ..sh import config as _shc
+            sh_owned = self.db.one("SELECT 1 FROM sh_owners WHERE account_key=? AND position_ticket=?", (b.account_key, int(ticket)))
+            if sh_owned or int(p.get("magic") or 0) == int(_shc.load()["magic_number"]):
+                return {"ok": False, "error": "POSITION_OWNED_BY_SH_STRATEGY"}
+        except Exception:  # noqa: BLE001 - the ownership check must never break adoption of manual positions
+            pass
         key = f"ADOPTED:{b.account_key}:{ticket}"
         mode = self.modes.gate(b.account_key)["mode"]
         if mode not in ("AUTO_DEMO", "AUTO_LIVE"):

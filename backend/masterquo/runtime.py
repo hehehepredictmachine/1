@@ -113,6 +113,8 @@ class Runtime:
         self.liquidity = LiquidityService(self.cfg, self.db, self.bus, self.log, secrets=self.secrets, bridge=self.bridge)   # PMW-UPD-06 (OBSERVE)
         self.engine.liquidity = self.liquidity
         self.scalp.liquidity = self.liquidity
+        from .sh.service import SHService
+        self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
         self.scalp.extind = self.extind
         self.scalp.ml = self.ml
         self.engine.extind = self.extind
@@ -170,6 +172,7 @@ class Runtime:
         self.mtf.start()
         self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
         self.liquidity.start()
+        self.sh.start()
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -194,6 +197,7 @@ class Runtime:
         self.ml.stop()
         self.forecast.stop()
         self.scalp.stop()
+        self.sh.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()
