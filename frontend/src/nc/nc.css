@@ -50,7 +50,6 @@
 .nc-note { border-left: 3px solid #a790ef; border-radius: 5px; padding: 10px; background: #201d3b; line-height: 1.6; margin-top: 8px; }
 .nc-chart { width: 100%; }
 .nc-click { cursor: pointer; }
-.nc-neural { display: block; width: 100%; height: 360px; background: radial-gradient(ellipse at center, #2a204a, #0d1529 72%); cursor: crosshair; }
 .nc-full { position: fixed !important; z-index: 9999 !important; inset: 10px !important; display: flex; flex-direction: column; background: #0d1428 !important; }
 .nc-full .nc-neural { flex: 1; height: auto; }
 .nc-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
@@ -73,3 +72,13 @@
   .nc-main { padding: 9px; } .nc-grid, .nc-three { grid-template-columns: repeat(2, minmax(0, 1fr)); } .nc-two { grid-template-columns: minmax(0, 1fr); }
   .nc-heading h1 { font-size: 17px; } .nc-fields { grid-template-columns: minmax(0, 1fr); } .nc-header { padding: 10px; } .nc-brand { font-size: 16px; }
 }
+
+/* Neural System brain */
+.nc-brain-wrap { position: relative; }
+.nc-brain { display: block; width: 100%; background: #05081a; touch-action: none; }
+.nc-brain-info { position: absolute; top: 12px; left: 12px; max-width: min(420px, calc(100% - 24px)); padding: 9px 11px; border-radius: 8px; font-size: 11px;
+  background: rgba(10, 14, 40, .78); border: 1px solid #3d3a7a; color: var(--nc-text); backdrop-filter: blur(3px); pointer-events: none; }
+.nc-brain-legend { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 9px 12px; font-size: 10.5px; color: #c4cbe6; border-top: 1px solid #2e3854; }
+.nc-brain-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; box-shadow: 0 0 8px currentColor; }
+.nc-full .nc-brain-wrap { flex: 1; display: flex; flex-direction: column; } .nc-full .nc-brain { flex: 1; }
+@media (max-width: 630px) { .nc-brain { height: 420px !important; } .nc-brain-info { font-size: 10px; } }

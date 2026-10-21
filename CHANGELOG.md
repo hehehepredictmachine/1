@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.17.2 – Neural System: animowany, interaktywny mózg
+* Okno Neural System (panel Neural Cyberpunk → Dashboard) powiększone do 640 px, z trybem pełnoekranowym (Esc zamyka).
+* Animacja Canvas: sieć neuronów w kształcie mózgu (kontur, bruzdy kory, móżdżek, duże neurony z dendrytami), impulsy na połączeniach,
+  paralaksa i „synapsy” do kursora; respektuje `prefers-reduced-motion`.
+* Jasne neurony = moduły z rejestru `/api/v1/training/models` (kolor wg gotowości); najechanie pokazuje opis, kliknięcie przypina.
+  Tło i impulsy są dekoracją – nie przedstawiają inferencji (opisane w legendzie).
+
 ## 1.16.0 – aktualizacje PMW-UPD 02–09, 11, 14 (kod; trening rynkowy i native nieuruchomione)
 * Wdrożone sekwencyjnie według rejestru `docs/updates/update_registry.json`. Każda pozycja ma osobne statusy: kod / źródło / dane / trening / artefakty / native / edge.
   * 02 IQ/PAL/SAR (PARTIAL), 03 ML scalp, 04 Neural Scalp, 05 MTF dashboard, 06 heatmapa likwidacji + boxy sesji;

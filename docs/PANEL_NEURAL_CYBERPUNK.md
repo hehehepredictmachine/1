@@ -19,7 +19,7 @@ blok pokazuje status źródła:
 
 | # | Ekran | Źródło w bocie | Uwagi |
 |---|---|---|---|
-| 01 | Dashboard | `/api/v1/sh` (karty SCALPING/HEDGING, checklista), stan WS, `/api/v1/execution/lock`, `/api/v1/training/models` | Neural System: węzły i połączenia to wyłącznie stan rejestru modeli; brak losowej „aktywności” |
+| 01 | Dashboard | `/api/v1/sh` (karty SCALPING/HEDGING, checklista), stan WS, `/api/v1/execution/lock`, `/api/v1/training/models` | Neural System (1.17.2): animowany mózg z sieci neuronów; tło, impulsy i reakcja na kursor to dekoracja (opisana w legendzie), a jasne neurony modułów i ich kolory pochodzą wyłącznie z rejestru modeli |
 | 02 | Market Analysis | `/api/v1/candles` (M1–D1), overlays M03 (FVG / OB / sweep / BOS-CHoCH), notowanie | EMA20/50 liczone z zamkniętych świec MT5; rysowanie poziomów kliknięciem; zoom i przesuwanie (lightweight-charts, Apache-2.0); VWAP/RSI/MACD: NOT_IMPLEMENTED |
 | 03 | Pattern Intelligence | `/api/v1/structure`, `/api/v1/patterns/live`, overlays M03 | 36 nazw przypisanych do detektorów bota (32). Brak detektora: Bullish/Bearish Harami, Piercing Line, Dark Cloud Cover (NOT_IMPLEMENTED). Win rate wzorca: NOT_RUN |
 | 04 | Validation & OOS | `/api/v1/sh/validation`, `/api/v1/stats` | raport replay tylko z danych terminala; bez raportu: NOT_RUN |

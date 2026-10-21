@@ -6,7 +6,7 @@
 //   DISCONNECTED / UNAVAILABLE / NOT_IMPLEMENTED / NOT_RUN / ERROR - nothing is drawn as if it existed
 // Nothing here sends an order. The only state change offered is the existing STOP (kill switch: stop new entries), the active
 // instrument switch (same endpoint as the classic header) and SH config changes - all go through the backend's own checks.
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { CandlestickSeries, ColorType, createChart, CrosshairMode, LineSeries, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type Time } from "lightweight-charts";
 import { apiGet, apiSend } from "../api";
 import LiquidityHeatmapPanel from "../components/LiquidityHeatmapPanel";
@@ -15,6 +15,7 @@ import { navigate, type Route } from "../router";
 import { useStore } from "../store";
 import { useUi } from "../ui";
 import { fmtNum } from "../util";
+import NeuralBrain from "./NeuralBrain";
 import "./nc.css";
 
 export const NC_PAGES = [
@@ -137,73 +138,24 @@ function NcChart({ tf, height = 340, mini = false, emaOn = true, overlaysOn = tr
   </div>);
 }
 
-// ------------------------------------------------------------------------------------------------ neural system (real model registry, no fake activity)
+// ------------------------------------------------------------------------------------------------ neural system (brain of neurons; modules from the registry)
 function NeuralSystem({ inst }: { inst: string }) {
   const [reg] = usePoll<any>(`/api/v1/training/models?instrument=${inst}`, 15000);
-  const ref = useRef<HTMLCanvasElement>(null);
-  const [hover, setHover] = useState<any>(null);
   const [full, setFull] = useState(false);
-  const nodes = useMemo(() => {
-    const ms: any[] = reg?.models || [];
-    const groups = Array.from(new Set(ms.map((m) => m.group)));
-    return ms.map((m) => {
-      const gi = groups.indexOf(m.group), inG = ms.filter((x) => x.group === m.group), k = inG.indexOf(m);
-      const ang = (gi / Math.max(1, groups.length)) * Math.PI * 2 + (k - (inG.length - 1) / 2) * 0.16;
-      const r = m.kind === "TRAINED" ? 0.38 : 0.27;
-      return { ...m, x: 0.5 + Math.cos(ang) * r, y: 0.5 + Math.sin(ang) * r * 0.82 };
-    });
-  }, [reg]);
-  const col = (m: any) => (m.readiness === "READY" || m.readiness === "DETERMINISTIC_OK" ? "#46e2b6" : m.readiness === "SHADOW" ? "#76dcfc" :
-    m.status === "ERROR" || m.status === "INCOMPATIBLE" ? "#ff819f" : "#5b6788");
+  const ms: any[] = reg?.models || [];
+  const ready = ms.filter((n) => n.readiness === "READY" || n.readiness === "DETERMINISTIC_OK").length;
   useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const draw = () => {
-      const d = Math.min(devicePixelRatio || 1, 2), r = c.getBoundingClientRect();
-      c.width = r.width * d; c.height = r.height * d;
-      const g = c.getContext("2d")!;
-      g.setTransform(d, 0, 0, d, 0, 0);
-      g.clearRect(0, 0, r.width, r.height);
-      const cx = r.width / 2, cy = r.height / 2;
-      nodes.forEach((n) => {
-        const use = n.SCALPING?.use || "NONE";
-        g.strokeStyle = use === "NONE" ? "rgba(91,103,136,.25)" : use === "INFO" ? "rgba(118,220,252,.35)" : "rgba(180,154,255,.65)";
-        g.setLineDash(use === "NONE" ? [3, 4] : []);
-        g.beginPath(); g.moveTo(n.x * r.width, n.y * r.height); g.lineTo(cx, cy); g.stroke();
-      });
-      g.setLineDash([]);
-      g.fillStyle = "#b49aff"; g.shadowBlur = 18; g.shadowColor = "#b49aff";
-      g.beginPath(); g.arc(cx, cy, 14, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-      g.fillStyle = "#e7edff"; g.font = "10px system-ui"; g.textAlign = "center"; g.fillText("DECYZJA SH", cx, cy + 28);
-      nodes.forEach((n) => {
-        const x = n.x * r.width, y = n.y * r.height;
-        g.fillStyle = col(n); g.shadowBlur = n.readiness === "READY" || n.readiness === "DETERMINISTIC_OK" ? 10 : 0; g.shadowColor = g.fillStyle as string;
-        g.beginPath(); g.arc(x, y, n.kind === "TRAINED" ? 6 : 4.5, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-      });
-    };
-    draw();
-    const ro = new ResizeObserver(draw);
-    ro.observe(c);
-    return () => ro.disconnect();
-  }, [nodes, full]);
-  const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const hit = nodes.find((n) => Math.hypot(n.x * r.width - (e.clientX - r.left), n.y * r.height - (e.clientY - r.top)) < 9);
-    setHover(hit || null);
-  };
-  const ready = nodes.filter((n) => n.readiness === "READY" || n.readiness === "DETERMINISTIC_OK").length;
+    if (!full) return;
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [full]);
   return (
     <section className={`nc-panel ${full ? "nc-full" : ""}`} data-testid="nc-neural">
-      <div className="nc-ph"><span>◎ NEURAL SYSTEM – rejestr modeli {inst} <St s={reg ? "VERIFIED" : "UNAVAILABLE"}>{reg ? "z rejestru" : "brak danych"}</St></span>
-        <div className="nc-ctrl"><span className="nc-small">gotowe {ready}/{nodes.length} · tryb {reg?.mode}</span>
-          <button className="nc-btn" onClick={() => setFull(!full)} data-testid="nc-neural-full">{full ? "✕ Zamknij" : "⛶ Pełny ekran"}</button></div></div>
-      <canvas ref={ref} className="nc-neural" onPointerMove={move} onPointerLeave={() => setHover(null)} aria-label="Mapa modeli i ich udziału w decyzji" />
-      <div className="nc-body nc-small">{hover ? <>
-        <b>{hover.name}</b> · {hover.kind} · grupa {hover.group} · status <St s={hover.readiness === "READY" || hover.readiness === "DETERMINISTIC_OK" ? "VERIFIED" : "NOT_RUN"}>{hover.status}</St>
-        {" "}· SCALPING: {hover.SCALPING?.role}/{hover.SCALPING?.use} · HEDGING: {hover.HEDGING?.role}/{hover.HEDGING?.use}
-        {(hover.blockers || []).length > 0 && <> · blokady: {hover.blockers.join("; ")}</>}</> :
-        <>Węzły = moduły z rejestru (zielony gotowy, niebieski SHADOW, szary nieprzetrenowany/niepodłączony). Linie = udział w decyzji (ciągła = dowód/bramka,
-          przerywana = brak udziału). Animacja nie udaje inferencji – stan pochodzi wyłącznie z rejestru.</>}</div>
+      <div className="nc-ph"><span>◎ NEURAL SYSTEM – mózg modułów {inst} <St s={reg ? "VERIFIED" : "UNAVAILABLE"}>{reg ? "stan z rejestru" : "brak danych"}</St></span>
+        <div className="nc-ctrl"><span className="nc-small">moduły gotowe {ready}/{ms.length} · tryb {reg?.mode || "—"}</span>
+          <button className="nc-btn" onClick={() => setFull(!full)} data-testid="nc-neural-full">{full ? "✕ Zamknij (Esc)" : "⛶ Pełny ekran"}</button></div></div>
+      <NeuralBrain models={ms} mode={reg?.mode} height={full ? Math.max(420, window.innerHeight - 150) : 640} />
     </section>);
 }
 
