@@ -25,7 +25,7 @@ from ..engine.lifecycle import TERMINAL
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from . import policy as exit_policy
 from ..timeutil import from_epoch, iso, parse_iso, utcnow
-from .gateway import RETCODES
+from .gateway import RETCODES, snap_tick
 
 log = logging.getLogger("masterquo.manager")
 
@@ -40,6 +40,7 @@ class PositionManager:
         self.modes = modes
         self.paper = paper
         self.reconciled_epoch = -1
+        self._be_tries: dict = {}           # position_key -> BE retry state (F-06)
         self._stop = threading.Event()
         self._last_equity = 0.0
         self.last_error: str | None = None
@@ -266,6 +267,9 @@ class PositionManager:
             mp["tp1_state"] = "UNKNOWN"
             self.log.error("EXECUTION", "TP_PARTIAL_UNKNOWN", "Brak odpowiedzi przy częściowym zamknięciu – stan UNKNOWN, rekonsyliacja z terminalem (bez ponownego wysłania).")
             return
+        except Exception as exc:  # noqa: BLE001 - F-08: refused before sending (Lock / worker) -> handled as a rejection
+            from types import SimpleNamespace
+            r = SimpleNamespace(retcode=-1, volume=0, comment=type(exc).__name__)
         rc = getattr(r, "retcode", None) if r is not None else None
         if rc in (10009, 10010) and (getattr(r, "volume", None) or 0) > 0:
             rec.update(state="CONFIRMED", volume=float(r.volume), retcode=rc, confirmed_by="ORDER_SEND_RESULT")
@@ -306,6 +310,8 @@ class PositionManager:
             note["tp_sync"] = "DONE" if getattr(r, "retcode", None) in (10008, 10009) else f"REJECTED_{getattr(r, 'retcode', None)}"
         except MT5CallTimeout:
             note["tp_sync"] = "UNKNOWN"
+        except Exception as exc:  # noqa: BLE001 - F-08
+            note["tp_sync"] = f"REFUSED_{type(exc).__name__}"
         self._save_note(mp, note)
         self.db.execute("UPDATE managed_positions SET tp2=? WHERE position_key=?", (want, mp["position_key"]))
 
@@ -334,6 +340,8 @@ class PositionManager:
             r = self.bridge.raw_call(lambda m: m.order_send(req(m)), PRIO_TRADE, timeout=cfg.execution.order_timeout_seconds)
         except MT5CallTimeout:
             return "UNKNOWN"
+        except Exception as exc:  # noqa: BLE001 - F-08: Lock / worker refused before sending
+            return f"REJECTED_{type(exc).__name__}"
         rc = getattr(r, "retcode", None) if r is not None else None
         return "DONE" if rc in (10008, 10009, 10010) else ("UNKNOWN" if r is None else f"REJECTED_{RETCODES.get(rc, rc)}")
 
@@ -345,7 +353,7 @@ class PositionManager:
         q = self.bridge.quote_status()
         if not q:
             return
-        be = mp["entry_price"]
+        be = snap_tick(info, mp["entry_price"], "up" if mp["side"] == "BUY" else "down")   # F-05: on the tick grid, never worse
         cur_sl = p.get("sl") or 0
         better = (be > cur_sl) if mp["side"] == "BUY" else (cur_sl == 0 or be < cur_sl)
         ref = q["bid"] if mp["side"] == "BUY" else q["ask"]
@@ -354,6 +362,17 @@ class PositionManager:
             return
         if abs(ref - be) < max(stops, freeze):
             return  # too close to the market (stops/freeze level) - retry next tick
+        # F-06: bounded retries with back-off (was: a new SLTP request every second after a rejection)
+        st = self._be_tries.setdefault(mp["position_key"], {"n": 0, "next": 0.0, "warned": False})
+        if time.monotonic() < st["next"]:
+            return
+        if st["n"] >= 6:
+            if not st["warned"]:
+                st["warned"] = True
+                self.log.warn("EXECUTION", "SL_TO_BE_GAVE_UP", f"BE dla pozycji {mp['position_ticket']} odrzucony {st['n']}× – ustaw ręcznie w terminalu.")
+            return
+        st["n"] += 1
+        st["next"] = time.monotonic() + min(300.0, 5.0 * 2 ** (st["n"] - 1))
         cfg = self.cfg_store.get()
         ticket, tp = mp["position_ticket"], p.get("tp") or 0.0
         try:
@@ -365,6 +384,8 @@ class PositionManager:
                 self.log.info("EXECUTION", "SL_TO_BE", f"SL przesunięty na cenę wejścia ({be}) dla pozycji {ticket} (BE cenowe – prowizja i swap nadal obciążają wynik).")
         except MT5CallTimeout:
             self.log.error("EXECUTION", "SL_TO_BE_UNKNOWN", "Brak odpowiedzi przy przesunięciu SL na BE – sprawdź terminal.")
+        except Exception as exc:  # noqa: BLE001 - Lock flipped / worker down: nothing sent, retried with back-off
+            self.log.warn("EXECUTION", "SL_TO_BE_REFUSED", f"Przesunięcie SL na BE nie wysłane: {type(exc).__name__}")
 
     def _settle_mt5(self, mp: dict, deals: list[dict]) -> None:
         mine = [d for d in deals if d.get("position_id") == mp["position_ticket"]]
@@ -496,6 +517,8 @@ class PositionManager:
                 (done if rc in (10008, 10009, 10010) else errors).append({"ticket": p["ticket"], "retcode": RETCODES.get(rc, rc)})
             except MT5CallTimeout:
                 errors.append({"ticket": p["ticket"], "error": "TIMEOUT_CHECK_TERMINAL"})
+            except Exception as exc:  # noqa: BLE001 - F-08
+                errors.append({"ticket": p["ticket"], "error": type(exc).__name__})
         self.log.warn("EXECUTION", "CLOSE_REQUEST", f"Zamknięcie pozycji ({scope}): wykonane {len(done)}, błędy {len(errors)}")
         return {"closed": done, "errors": errors}
 

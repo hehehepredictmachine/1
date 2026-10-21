@@ -150,10 +150,13 @@ class Bundle:
         (path / "preprocessor.json").write_text(json.dumps(self.prep.to_json()), encoding="utf-8")
         (path / "calibrator.json").write_text(json.dumps(self.calib.to_json()), encoding="utf-8")
         (path / "meta.json").write_text(json.dumps(self.meta, indent=1, default=str), encoding="utf-8")
+        write_integrity(path)
 
     @classmethod
     def load(cls, path: Path) -> "Bundle":
+        integrity = verify_integrity(path)                    # F-12: before any pickle / model file is opened
         meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+        meta["integrity"] = integrity
         fam = meta["family"]
         if fam == "XGBOOST":
             import xgboost as xgb
@@ -163,8 +166,42 @@ class Bundle:
             import joblib
             model = joblib.load(path / "model.joblib")
         prep = Preprocessor.from_json(json.loads((path / "preprocessor.json").read_text(encoding="utf-8")))
+        from .features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
+        sv = meta.get("feature_schema_version")
+        if sv and sv != FEATURE_SCHEMA_VERSION:
+            raise ValueError(f"FEATURE_SCHEMA_MISMATCH:{sv}!={FEATURE_SCHEMA_VERSION}")
+        unknown = [c for c in prep.numeric if c not in FEATURE_NAMES]
+        if unknown:
+            raise ValueError("FEATURE_COLUMNS_UNKNOWN:" + ",".join(unknown[:5]))
         calib = Calibrator.from_json(json.loads((path / "calibrator.json").read_text(encoding="utf-8")))
         return cls(fam, model, prep, calib, meta)
+
+
+INTEGRITY = "integrity.json"
+_FILES = ("model.ubj", "model.joblib", "preprocessor.json", "calibrator.json", "meta.json")
+
+
+def write_integrity(path: Path) -> None:
+    import hashlib
+    h = {f: hashlib.sha256((path / f).read_bytes()).hexdigest() for f in _FILES if (path / f).exists()}
+    (path / INTEGRITY).write_text(json.dumps({"sha256": h}, indent=1), encoding="utf-8")
+
+
+def verify_integrity(path: Path) -> str:
+    """VERIFIED when every file matches integrity.json. A mismatch refuses the load (no unverified pickle is opened).
+    Bundles saved before 1.16 have no manifest: XGBoost (no pickle) loads as UNVERIFIED_LEGACY; a joblib pickle without a
+    manifest is refused - retrain or re-save it."""
+    import hashlib
+    p = path / INTEGRITY
+    if not p.exists():
+        if (path / "model.joblib").exists():
+            raise ValueError("INTEGRITY_MANIFEST_MISSING_FOR_PICKLE (model sprzed 1.16 – wytrenuj ponownie)")
+        return "UNVERIFIED_LEGACY"
+    want = json.loads(p.read_text(encoding="utf-8")).get("sha256") or {}
+    for f, h in want.items():
+        if hashlib.sha256((path / f).read_bytes()).hexdigest() != h:
+            raise ValueError(f"INTEGRITY_MISMATCH:{f}")
+    return "VERIFIED"
 
 
 # ----------------------------------------------------------------------------- explanations

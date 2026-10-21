@@ -581,7 +581,7 @@ def size(risk_per_unit_price: float, contract_size: float, equity: float, prof: 
     per_lot = risk_per_unit_price * contract_size
     raw = budget / per_lot if per_lot > 0 else 0.0
     lots = math.floor(raw / vstep + 1e-9) * vstep
-    lots = min(lots, vmax)
+    lots = math.floor(min(lots, vmax) / vstep + 1e-9) * vstep          # F-15: re-floor after the vmax cap (vmax may be off-grid)
     if lots < vmin:
         return {"ok": False, "lots": 0.0, "raw": raw, "budget": budget, "reason": "minimalny lot przekracza budżet ryzyka – pominięcie"}
     half = math.floor(lots * V(prof, "exits", "tp1_fraction") / vstep + 1e-9) * vstep

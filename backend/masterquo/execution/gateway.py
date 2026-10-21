@@ -33,6 +33,23 @@ RETCODES = {10004: "REQUOTE", 10006: "REJECT", 10007: "CANCEL", 10008: "PLACED",
 OK_CODES = (10008, 10009, 10010)
 
 
+def snap_tick(info: dict, price: float, mode: str) -> float:
+    """Align a price to trade_tick_size: mode 'down' / 'up' / 'nearest' (F-05: SL/TP/BE were only rounded to 6 decimals)."""
+    import math
+    tick = float((info or {}).get("trade_tick_size") or (info or {}).get("point") or 0)
+    if not price or tick <= 0:
+        return float(price or 0.0)
+    q = price / tick
+    n = math.floor(q + 1e-9) if mode == "down" else math.ceil(q - 1e-9) if mode == "up" else math.floor(q + 0.5)
+    return round(n * tick, int((info or {}).get("digits") or 8))
+
+
+def align_stops(info: dict, side: str, sl: float, tp: float) -> tuple[float, float]:
+    """Conservative alignment: the SL never moves closer to the entry (BUY down, SELL up) and the TP never closer (BUY up, SELL down)."""
+    buy = side in ("BUY", "LONG")
+    return (snap_tick(info, sl, "down" if buy else "up") if sl else 0.0, snap_tick(info, tp, "up" if buy else "down") if tp else 0.0)
+
+
 def client_tag(setup_id: str) -> str:
     return ("MQ:" + setup_id.replace("MQS-", ""))[:20]
 
@@ -147,7 +164,8 @@ class ExecutionGateway:
         point = float(info.get("point") or 0)
         try:
             if action == "BREAK_EVEN":
-                new_sl = mp["entry_price"] + (offset_points * point if mp["side"] == "BUY" else -offset_points * point)
+                new_sl = snap_tick(info, mp["entry_price"] + (offset_points * point if mp["side"] == "BUY" else -offset_points * point),
+                                   "up" if mp["side"] == "BUY" else "down")
                 cur = p.get("sl") or mp.get("sl")
                 if cur and ((mp["side"] == "BUY" and cur >= new_sl) or (mp["side"] == "SELL" and cur <= new_sl)):
                     return {"status": "UNCHANGED", "reason": "SL_ALREADY_BETTER"}
@@ -156,6 +174,15 @@ class ExecutionGateway:
                                timeout=cfg.execution.order_timeout_seconds)
             else:
                 vol = float(p["volume"]) if action == "CLOSE" else float(volume or 0)
+                if action != "CLOSE":
+                    import math
+                    step, vmin = float(info.get("volume_step") or 0.01), float(info.get("volume_min") or 0.01)
+                    vol = round(math.floor(vol / step + 1e-9) * step, 8)
+                    rest = round(float(p["volume"]) - vol, 8)
+                    if vol < vmin - 1e-9:
+                        return {"status": "REJECTED", "reason": f"VOLUME_BELOW_MIN ({vol} < {vmin})"}
+                    if 1e-9 < rest < vmin - 1e-9:
+                        return {"status": "REJECTED", "reason": f"REMAINDER_BELOW_MIN ({rest} < {vmin}) – zamknij całą pozycję"}
 
                 def req(m):
                     t = m.symbol_info_tick(mp["symbol"])
@@ -166,6 +193,8 @@ class ExecutionGateway:
                 r = b.raw_call(lambda m: m.order_send(req(m)), PRIO_TRADE, timeout=cfg.execution.order_timeout_seconds)
         except MT5CallTimeout:
             return {"status": "UNKNOWN", "reason": "TIMEOUT_CHECK_TERMINAL"}
+        except Exception as exc:  # noqa: BLE001 - ExecutionLocked / worker unavailable: refused, nothing was sent
+            return {"status": "REJECTED", "reason": type(exc).__name__}
         rc = getattr(r, "retcode", None)
         return {"status": "DONE" if rc in OK_CODES else "REJECTED", "retcode": RETCODES.get(rc, rc)}
 
@@ -234,9 +263,10 @@ class ExecutionGateway:
             q = m.symbol_info_tick(sym)
             price = q.ask if side == "BUY" else q.bid
             filling = m.ORDER_FILLING_FOK if fm & 1 else (m.ORDER_FILLING_IOC if fm & 2 else m.ORDER_FILLING_RETURN)
+            sl_px, tp_px = align_stops(info, side, float(risk["stop_loss"]), float(tp_final))
             return {"action": m.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(risk["lots"]),
                     "type": m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL, "price": price,
-                    "sl": float(risk["stop_loss"]), "tp": float(tp_final), "deviation": int(cfg.execution.deviation_points),
+                    "sl": sl_px, "tp": tp_px, "deviation": int(cfg.execution.deviation_points),
                     "magic": int(cfg.mt5.magic_number), "comment": tag, "type_time": m.ORDER_TIME_GTC, "type_filling": filling}
         try:
             req = b.raw_call(build, PRIO_TRADE)
@@ -268,15 +298,27 @@ class ExecutionGateway:
         rd = {k: getattr(res, k, None) for k in ("retcode", "deal", "order", "volume", "price", "bid", "ask", "comment", "request_id")}
         if rc in OK_CODES and (res.volume or 0) > 0:
             state = "PARTIAL" if rc == 10010 or res.volume < float(risk["lots"]) - 1e-9 else "FILLED"
+            pos = self._position_of_deal(res.deal) or res.order       # netting/exchange: position id != order ticket
             self._set(attempt_id, state=state, retcode=rc, retcode_text=RETCODES.get(rc), order_ticket=res.order, deal_ticket=res.deal,
-                      position_ticket=res.order, fill_price=res.price, filled_volume=res.volume, result_json=dumps(rd))
-            self._register_position(attempt_id, d, side, res.order, res.volume, res.price, risk)
-            self.log.info("EXECUTION", state, f"Zlecenie wykonane: {side} {res.volume} @ {res.price} (ticket {res.order})")
-            return {"status": state, "ticket": res.order, "price": res.price, "volume": res.volume}
+                      position_ticket=pos, fill_price=res.price, filled_volume=res.volume, result_json=dumps(rd))
+            self._register_position(attempt_id, d, side, pos, res.volume, res.price, risk)
+            self.log.info("EXECUTION", state, f"Zlecenie wykonane: {side} {res.volume} @ {res.price} (pozycja {pos})")
+            return {"status": state, "ticket": pos, "price": res.price, "volume": res.volume}
         self._set(attempt_id, state="REJECTED", retcode=rc, retcode_text=RETCODES.get(rc, str(rc)) + ":" + str(getattr(res, "comment", "")),
                   result_json=dumps(rd))
         self.log.warn("EXECUTION", "REJECTED", f"Broker odrzucił zlecenie: {RETCODES.get(rc, rc)} {getattr(res, 'comment', '')}")
         return {"status": "REJECTED", "retcode": rc, "reason": RETCODES.get(rc, str(rc))}
+
+    def _position_of_deal(self, deal_ticket) -> int | None:
+        """Position id of the entry deal (on netting/exchange accounts the order ticket is NOT the position ticket)."""
+        if not deal_ticket:
+            return None
+        try:
+            deals = self.bridge.raw_call(lambda m: m.history_deals_get(ticket=deal_ticket))
+            pid = getattr((deals or [None])[0], "position_id", None)
+            return int(pid) if pid else None
+        except Exception:  # noqa: BLE001 - never fatal; reconciliation uses deal.position_id anyway
+            return None
 
     def _register_position(self, attempt_id, d, side, ticket, volume, price, risk) -> None:
         mode = self.modes.gate(self.bridge.account_key)["mode"]

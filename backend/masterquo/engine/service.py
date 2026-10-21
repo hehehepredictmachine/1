@@ -445,8 +445,9 @@ class EngineService:
         exposure = self.prefs.exposure_limit() if self.prefs is not None else None
         try:
             orisk = risk_engine.open_risk(positions, pos_risk)
-            last_loss = self.db.one("SELECT closed_at FROM trades WHERE source='BOT' AND status='CLOSED' AND net_pnl < 0 AND IFNULL(account_key,'')=IFNULL(?, '') ORDER BY closed_at DESC LIMIT 1",
-                                    (b.account_key,))
+            cur_mode = self.modes.gate(b.account_key)["mode"] if self.modes is not None else None   # F-10: PAPER losses don't cool down AUTO
+            last_loss = self.db.one("SELECT closed_at FROM trades WHERE source='BOT' AND status='CLOSED' AND net_pnl < 0 AND IFNULL(account_key,'')=IFNULL(?, '') "
+                                    "AND (? IS NULL OR mode=?) ORDER BY closed_at DESC LIMIT 1", (b.account_key, cur_mode, cur_mode))
             res = risk_engine.evaluate(side=direction, levels=levels, quote=q, symbol_info=b.symbol_info, account=b.account_status(),
                                        limits=cfg.risk, costs_cfg=cfg.costs, commission=commission,
                                        profit_fn=lambda s, v, o, c: b.calc_profit(s, v, o, c), margin_fn=lambda s, v, p: b.calc_margin(s, v, p),

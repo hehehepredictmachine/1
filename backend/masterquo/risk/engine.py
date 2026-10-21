@@ -171,7 +171,7 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
     if portfolio.get("pending_without_sl"):
         reasons.append("PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED")
     total_open_risk = open_risk_info["open_risk"] + pend_risk
-    if margin_mode == "NETTING" and any(p.get("symbol") == symbol for p in positions):
+    if margin_mode in ("NETTING", "EXCHANGE") and any(p.get("symbol") == symbol for p in positions):   # EXCHANGE nets too
         reasons.append("NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL")
     if res["limits_missing"]:
         reasons.append("RISK_LIMITS_NOT_CONFIGURED")
