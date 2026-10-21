@@ -12,7 +12,7 @@ export type Route = { page: Page; setupId: string | null; params: URLSearchParam
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit"] },
   { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
-  { id: "setupy", label: "Setupy", icon: "☑", pages: ["strategie", "setupy", "warunki", "ai", "pozycje", "dziennik"] },
+  { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "strategie", "warunki", "ai", "pozycje", "dziennik"] },
   { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
   { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
