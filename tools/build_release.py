@@ -29,7 +29,7 @@ SECRET_PATTERNS = [
 def tracked():
     out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True).stdout
     files = sorted(f for f in out.decode().split("\0") if f)
-    return [f for f in files if not f.startswith("release/") and f != "MANIFEST_SHA256.txt"]
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/")) and f != "MANIFEST_SHA256.txt"]   # Frog Wizard = separate product
 
 
 def scan(files):
