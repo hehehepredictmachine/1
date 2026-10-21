@@ -14,6 +14,7 @@ import { NeuralPage } from "./components/NeuralSystem";
 import { StructurePage } from "./components/StructureIntel";
 import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
+import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { PAGES, useRoute } from "./router";
 import { useStore } from "./store";
@@ -45,6 +46,7 @@ export default function App() {
       <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
         <BackgroundLayer />
         {s.synthetic && <div className="synthetic-banner">DANE PRZYKŁADOWE (SYNTETYCZNE) – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
+        {route.page === "nc" ? <NeuralCyberpunk route={route} /> :
         <AppShell page={route.page} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)}>
           {route.page === "ai" && <AiAnalysisPage />}
           {route.page === "wykresy" && <BotChartsPage route={route} />}
@@ -67,7 +69,7 @@ export default function App() {
           {route.page === "dziennik" && <JournalPage />}
           {route.page === "testy" && <TestsPage />}
           {route.page === "diagnostyka" && <DiagnosticsPage />}
-        </AppShell>
+        </AppShell>}
         {settings && <SettingsModal onClose={() => setSettings(false)} />}
         {mode && <ModeDialog onClose={() => setMode(false)} />}
         {power && <PowerDialog onClose={() => setPower(false)} />}

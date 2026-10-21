@@ -1043,6 +1043,21 @@ def create_app(rt, port: int) -> FastAPI:
         rt.log.warn("SH", "MANUAL_CLOSE", f"Zamknięcie planu {pid} na żądanie: {r}")
         return r
 
+    @app.get("/api/v1/sh/validation")
+    def sh_validation(instrument: str = Query("XAUUSD")):
+        """Validation reports of the SH strategies on REAL exported data (written by `sh train`); absent = not run yet."""
+        if instrument not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        out = {}
+        for strat in ("SCALPING", "HEDGING"):
+            p = paths.data_dir() / "sh" / "validation" / f"{instrument}_{strat}.json"
+            try:
+                out[strat] = {"status": "VERIFIED_REPLAY", "report": json.loads(p.read_text(encoding="utf-8"))} if p.exists() else \
+                    {"status": "NOT_RUN", "reason": "brak raportu walidacji na danych z terminala – uruchom zadanie sh_models (30_SH_WALIDACJA.bat)"}
+            except (OSError, ValueError) as exc:
+                out[strat] = {"status": "ERROR", "reason": str(exc)[:200]}
+        return {"instrument": instrument, "strategies": out}
+
     @app.get("/api/v1/sh/config")
     def sh_config_get():
         from ..sh import config as SHC

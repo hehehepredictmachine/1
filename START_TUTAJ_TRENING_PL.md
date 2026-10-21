@@ -13,7 +13,7 @@ Uruchom `PepeMarketWizard.exe` z rozpakowanego folderu. Do wyboru masz:
 Launcher uruchamia te same pliki `.bat` co poniżej. Nie wysyła zleceń i nie zmienia Execution Lock. Szczegóły i lista napraw: `docs/AUDYT_PACZKI_1_16_PL.md`.
 
 ## 1. Jednorazowo: instalacja
-1. Rozpakuj `PepeMarketWizard_KLIENT_1_17_0.zip` (cały ZIP – „Wyodrębnij wszystkie”) do dowolnego folderu. Spacje, polskie litery i znak `!` w ścieżce są obsługiwane.
+1. Rozpakuj `PepeMarketWizard_KLIENT_1_17_1.zip` (cały ZIP – „Wyodrębnij wszystkie”) do dowolnego folderu. Spacje, polskie litery i znak `!` w ścieżce są obsługiwane.
    - Dane z poprzedniej wersji (`data/`) możesz skopiować.
    - Istniejące modele XAUUSD zostają w dotychczasowych katalogach i nadal działają.
 2. Uruchom **`INSTALUJ_TRENING.bat`**.

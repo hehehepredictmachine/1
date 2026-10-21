@@ -1,7 +1,7 @@
 """Single source of version identifiers used across API, DB and agent records."""
 
 APP_NAME = "PepeMarketWizard"        # 1.13: product name (internal package / data paths stay "masterquo" for compatibility)
-APP_VERSION = "1.17.0"
+APP_VERSION = "1.17.1"
 # Backend <-> frontend contract. Bump on any breaking change of /api/v1 or WS payloads.
 API_CONTRACT_VERSION = "1.0.0"
 # Decision record schema produced by the backend (engine + risk + agent).
