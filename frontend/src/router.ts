@@ -6,13 +6,13 @@
 import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
-  | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia";
+  | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit"] },
   { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
-  { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "warunki", "ai", "pozycje", "dziennik"] },
+  { id: "setupy", label: "Setupy", icon: "☑", pages: ["strategie", "setupy", "warunki", "ai", "pozycje", "dziennik"] },
   { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
   { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
@@ -25,6 +25,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "kontekst", label: "Kontekst rynku", short: "Kontekst", icon: "◎" },
   { id: "indykatory", label: "Indykatory BB/MA", short: "BB/MA", icon: "≋" },
   { id: "sygnal", label: "Analiza sygnału", short: "Sygnał", icon: "∿" },
+  { id: "strategie", label: "SCALPING / HEDGING", short: "Strategie", icon: "⇅" },
   { id: "setupy", label: "Scenariusze (lab)", short: "Setupy", icon: "☑" },
   { id: "warunki", label: "Setup silnika S01–S12", short: "Silnik", icon: "☐" },
   { id: "ai", label: "Analiza AI", short: "AI", icon: "✧" },

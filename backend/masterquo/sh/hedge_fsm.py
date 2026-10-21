@@ -91,7 +91,8 @@ class Basket:
         return {"basket_id": self.basket_id, "state": self.state,
                 "primary": {"realized": pr, "unrealized": pu, "remaining": p.remaining, "sl": p.sl, "protection": protected},
                 "hedge": {"realized": hr, "unrealized": hu, "volume": self.hedge.volume if self.hedge and self.hedge.status == "OPEN" else 0.0,
-                          "activations": self.activations},
+                          "activations": self.activations, "entry": self.hedge.entry if self.hedge else None,
+                          "side": self.hedge.side if self.hedge else None, "status": self.hedge.status if self.hedge else None},
                 "basket": {"realized": pr + hr, "unrealized": pu + hu, "net_after_costs": pr + hr + pu + hu - costs_money,
                            "gross_exposure_lots": p.remaining + (self.hedge.volume if self.hedge and self.hedge.status == "OPEN" else 0.0),
                            "net_exposure_lots": (p.remaining if p.side == "BUY" else -p.remaining)

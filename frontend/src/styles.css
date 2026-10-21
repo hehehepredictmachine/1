@@ -886,3 +886,15 @@ button.link { background: none; border: 0; padding: 0; color: var(--icon); text-
 .mtf-conds { padding-left: 0; list-style: none; }
 .mtf-conds li { margin: 2px 0; }
 tr.sel td { outline: 1px solid var(--accent, #d4a017); }
+
+/* PMW-SH-1 strategy + training panels */
+.page-sh { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.page-sh .panel, [data-testid=training-panel] { padding: 8px 10px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+.checklist { margin: 4px 0 6px 18px; padding: 0; }
+.checklist li { margin: 2px 0; }
+.bad-text { color: var(--bad-text); }
+pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--card); border: 1px solid var(--line); padding: 6px; }
+.wrap-cell { white-space: normal !important; }
+.checklist li { overflow-wrap: anywhere; }

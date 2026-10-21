@@ -13,6 +13,7 @@ import { ContextPage, DashboardPage, DiagnosticsPage, IndicatorsPage, JournalPag
 import { NeuralPage } from "./components/NeuralSystem";
 import { StructurePage } from "./components/StructureIntel";
 import ScalpMtfPage from "./pages/ScalpMtfPage";
+import { StrategyPage } from "./components/ShPanels";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { PAGES, useRoute } from "./router";
 import { useStore } from "./store";
@@ -51,6 +52,7 @@ export default function App() {
           {route.page === "warunki" && <SetupRequirementsPage route={route} />}
           {route.page === "pulpit" && <><LabDashboardTop /><DashboardPage /></>}
           {route.page === "setupy" && <SetupsPage />}
+          {route.page === "strategie" && <StrategyPage />}
           {route.page === "modele" && <ModelsPage />}
           {route.page === "neural" && <NeuralPage params={route.params} />}
           {route.page === "struktura" && <StructurePage />}

@@ -162,5 +162,14 @@ class HedgeFsmTests(unittest.TestCase):
         self.assertEqual(b.state, "CLOSED")
 
 
+
+class GapThroughAllTargets(unittest.TestCase):
+    def test_runner_volume_excludes_pending_partials(self):
+        from masterquo.sh.lifecycle import Leg, Position
+        p = Position("R", "BUY", 2000.25, 1.0, 1998.0, [Leg("TP1", 2002.75, 0.5), Leg("TP2", 2003.25, 0.3), Leg("TP3", 2005.25, 0.2)])
+        acts = p.on_quote(2006.0, 2006.2)
+        self.assertEqual([(a["kind"], a["volume"]) for a in acts], [("CLOSE_PARTIAL", 0.5), ("CLOSE_PARTIAL", 0.3), ("CLOSE_RUNNER", 0.2)])
+        self.assertAlmostEqual(sum(a["volume"] for a in acts), 1.0)
+
 if __name__ == "__main__":
     unittest.main()

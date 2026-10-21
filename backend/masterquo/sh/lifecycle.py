@@ -88,7 +88,10 @@ class Position:
             if not hit:
                 break                                                 # targets are ordered; later ones need earlier ones
             if leg.name == "TP3":
-                a = self._act("CLOSE_RUNNER", leg.name, volume=self.remaining, reason="TP3")
+                # partials requested in this same pass are not filled yet: the runner is what remains AFTER them (a gap through
+                # TP1..TP3 must never request more volume than the position holds)
+                pending = sum(x.volume for x in self.legs if x.status == "REQUESTED")
+                a = self._act("CLOSE_RUNNER", leg.name, volume=round(max(0.0, self.remaining - pending), 8), reason="TP3")
             else:
                 a = self._act("CLOSE_PARTIAL", leg.name, volume=leg.volume, reason=leg.name)
             if a:

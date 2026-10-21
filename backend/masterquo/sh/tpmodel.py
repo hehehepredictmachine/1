@@ -83,7 +83,8 @@ def _fit_logreg(X, y, l2=1.0, iters=400, lr=0.1):
     return w, b
 
 
-def train(inst: str, strategy: str, samples: list[dict], *, embargo_s: float, min_n: int = 200, log=print) -> dict:
+def train(inst: str, strategy: str, samples: list[dict], *, embargo_s: float, min_n: int = 200, log=print, allow_promotion: bool = True,
+          provenance: dict | None = None) -> dict:
     """samples: [{t, x: [features], y: 0/1}] in time order (labels from the strategy replay). Chronological split
     60 % fit / 20 % calibration / 20 % holdout, purge embargo_s between blocks; scaler and model on FIT only; Platt on CAL;
     holdout touched once. Gate: holdout Brier better than the base rate by > 2 SE (paired) AND ≥ min_n samples."""
@@ -91,11 +92,13 @@ def train(inst: str, strategy: str, samples: list[dict], *, embargo_s: float, mi
     d = root(inst, strategy)
     reg_p = d / "registry.json"
     reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {"active": None, "runs": [], "history": []}
-    rec = {"run_id": rid, "version": VERSION, "n": len(samples), "created_at": time.time(), "features": FEATURES}
+    rec = {"run_id": rid, "version": VERSION, "n": len(samples), "created_at": time.time(), "features": FEATURES, "provenance": provenance or {},
+           "seed": "deterministyczny (regresja logistyczna, bez losowości)", "promoted": False}
     if len(samples) < min_n:
         rec.update(verdict="INSUFFICIENT_DATA", reason=f"{len(samples)} < {min_n} setupów z etykietą")
         reg["runs"].append(rec)
-        reg_p.write_text(json.dumps(reg, indent=1), encoding="utf-8")
+        _save_reg(reg_p, reg)
+        log(f"sh_tp_model {inst}/{strategy}: INSUFFICIENT_DATA ({len(samples)} < {min_n})")
         return rec
     t = np.array([s["t"] for s in samples], float)
     X = np.array([s["x"] for s in samples], float)
@@ -127,28 +130,88 @@ def train(inst: str, strategy: str, samples: list[dict], *, embargo_s: float, mi
                verdict="HOLDOUT_PASSED" if passed else "HOLDOUT_FAILED")
     np.savez(d / f"{rid}.npz", mu=mu, sd=sd, w=w, b=np.array([b]), a=a, c=np.array([c]))
     rec["sha256"] = hashlib.sha256((d / f"{rid}.npz").read_bytes()).hexdigest()
+    if passed and not allow_promotion:
+        rec["reason"] = "dane syntetyczne/testowe – model techniczny, bez promocji"
     reg["runs"].append(rec)
-    if passed:                                                              # promotion is atomic; previous kept for rollback
+    if passed and allow_promotion:                                          # promotion is atomic; previous kept for rollback
         reg["history"].append({"from": reg.get("active"), "to": rid, "at": time.time()})
         reg["active"] = rid
-    tmp = reg_p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
-    os.replace(tmp, reg_p)
+        rec["promoted"] = True
+    _save_reg(reg_p, reg)
     log(f"sh_tp_model {inst}/{strategy}: {rec['verdict']} (holdout Brier {brier_h:.4f} vs base {brier_base:.4f})")
     return rec
 
 
-def rollback(inst: str, strategy: str) -> dict:
+def _save_reg(reg_p: Path, reg: dict) -> None:
+    tmp = reg_p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
+    os.replace(tmp, reg_p)
+
+
+def _reg(inst: str, strategy: str) -> tuple[Path, dict]:
     reg_p = root(inst, strategy) / "registry.json"
-    reg = json.loads(reg_p.read_text(encoding="utf-8"))
+    reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {"active": None, "runs": [], "history": []}
+    return reg_p, reg
+
+
+def rollback(inst: str, strategy: str) -> dict:
+    reg_p, reg = _reg(inst, strategy)
     if not reg.get("history"):
         raise ValueError("BRAK_HISTORII")
     h = reg["history"].pop()
     reg["active"] = h["from"]
-    tmp = reg_p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
-    os.replace(tmp, reg_p)
+    _save_reg(reg_p, reg)
     return {"active": reg["active"]}
+
+
+def compatible(run: dict) -> tuple[bool, str]:
+    if run.get("features") != FEATURES:
+        return False, "schemat cech niezgodny z bieżącą wersją"
+    if str(run.get("version", "")).split(".")[0] != VERSION.split(".")[0]:
+        return False, f"wersja {run.get('version')} niezgodna z {VERSION}"
+    return True, "zgodny"
+
+
+def promote(inst: str, strategy: str, run_id: str) -> dict:
+    """Explicit promotion of a stored run: only HOLDOUT_PASSED on real data, compatible schema and intact file. Atomic, reversible."""
+    reg_p, reg = _reg(inst, strategy)
+    run = next((r for r in reg["runs"] if r["run_id"] == run_id), None)
+    if not run:
+        raise ValueError("BRAK_RUNU")
+    ok, why = compatible(run)
+    if not ok:
+        raise ValueError("NIEZGODNY:" + why)
+    if run.get("verdict") != "HOLDOUT_PASSED":
+        raise ValueError(f"RUN_NIE_PRZESZEDŁ_BRAMKI:{run.get('verdict')}")
+    if (run.get("provenance") or {}).get("data_kind") not in (None, "REAL_USER_DATA"):
+        raise ValueError("DANE_TESTOWE_BEZ_PROMOCJI")
+    f = root(inst, strategy) / f"{run_id}.npz"
+    if not f.exists() or hashlib.sha256(f.read_bytes()).hexdigest() != run.get("sha256"):
+        raise ValueError("PLIK_MODELU_USZKODZONY")
+    if reg.get("active") == run_id:
+        return {"active": run_id, "changed": False}
+    reg["history"].append({"from": reg.get("active"), "to": run_id, "at": time.time(), "by": "promote"})
+    reg["active"] = run_id
+    _save_reg(reg_p, reg)
+    return {"active": run_id, "changed": True}
+
+
+def import_run(inst: str, strategy: str, run: dict, npz_bytes: bytes) -> dict:
+    """Import of an exported run (never activated by the import): checksum and schema compatibility are verified; the run is
+    stored as a candidate and can be promoted explicitly."""
+    if hashlib.sha256(npz_bytes).hexdigest() != run.get("sha256"):
+        raise ValueError("SUMA_KONTROLNA_NIEZGODNA")
+    ok, why = compatible(run)
+    reg_p, reg = _reg(inst, strategy)
+    if any(r["run_id"] == run["run_id"] for r in reg["runs"]):
+        return {"imported": False, "reason": "RUN_JUŻ_ISTNIEJE", "compatible": ok}
+    f = root(inst, strategy) / f"{run['run_id']}.npz"
+    tmp = f.with_suffix(".tmp")
+    tmp.write_bytes(npz_bytes)
+    os.replace(tmp, f)
+    reg["runs"].append({**run, "imported_at": time.time(), "imported": True, "promoted": False, "compatible": ok, "compatibility": why})
+    _save_reg(reg_p, reg)
+    return {"imported": True, "compatible": ok, "compatibility": why, "active_unchanged": reg.get("active")}
 
 
 def predict(inst: str, strategy: str, x: list[float]) -> dict:

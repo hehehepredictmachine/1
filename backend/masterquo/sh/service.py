@@ -51,6 +51,7 @@ class SHService:
         self.last_eval: dict = {}
         self.last_saved: dict = {}
         self.snapshot: dict | None = None
+        self.snap_cache: dict = {}                    # per (instrument, session epoch): no M5 analysis carried across a switch
         self.state: dict = {"status": "STARTING", "updated_at": None, "warnings": []}
 
     # ------------------------------------------------------------------ lifecycle
@@ -198,7 +199,7 @@ class SHService:
         r = shc["risk"]
         ic = shc["instruments"][inst]
         snap = CX.snapshot(bars, q, tick=spec.tick_size, now=now, cfg={"max_bar_age_s": r["max_bar_age_s"], "max_quote_age_s": r["max_quote_age_s"],
-                                                                      "max_spread_usd": ic.get("max_spread_usd")})
+                                                                      "max_spread_usd": ic.get("max_spread_usd")}, cache=self.snap_cache.setdefault((inst, getattr(self.bridge, "session_epoch", None)), {}))
         self.snapshot = snap
         mx = MR.matrix(None, inst)
         evals = {}

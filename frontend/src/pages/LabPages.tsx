@@ -9,6 +9,7 @@ import { useStore } from "../store";
 import { useUi } from "../ui";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../util";
 import { NeuralCard } from "../components/NeuralSystem";
+import { TrainingPanel } from "../components/ShPanels";
 
 const ROLE_PL: Record<string, string> = { active: "aktywny", shadow: "cień (bez wpływu)", research: "badawczy", visual_only: "tylko wizualny", fixture_only: "techniczny (dane syntetyczne)" };
 const SCN_PL: Record<string, string> = { WATCH: "obserwacja", ALL_CONDITIONS_MET_SHADOW: "warunki spełnione (cień)", INVALIDATED: "unieważniony", EXPIRED: "wygasł" };
@@ -299,6 +300,7 @@ export function ModelsPage() {
   return (
     <div className="lab-page" data-testid="page-modele">
       <h2>Modele i trening – {active}</h2>
+      <TrainingPanel instrument={active} />
       <TrainingCard />
       <IndicatorModulesCard />
       <ScalpMlCard asset={active} />

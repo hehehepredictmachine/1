@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -1519,12 +1520,130 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/training")
     def training_state():
         from ..training import core as tc
+        from ..training import panel as tp
         rid = tc.Run.latest()
-        st = tc.Run.load(rid).state if rid else None
-        if st:
-            from ..training.report import summary
-            st = dict(st, summary=summary(st))
-        return {"run": st, "profiles": {k: v["label"] for k, v in tc.profiles().items()}}
+        st = tp.run_detail(rid) if rid else None
+        from ..training.runner import TASKS
+        return {"run": st, "profiles": {k: v["label"] for k, v in tc.profiles().items()}, "tasks": [{"kind": k, "title": t} for k, t in TASKS],
+                "lock": tp.lock_holder()}
+
+    # ---------------------------------------------------------------- PMW-SH-1 training panel (registry, readiness, history, export)
+    @app.get("/api/v1/training/models")
+    def training_models(instrument: str = Query(...)):
+        from ..training import panel as tp
+        if instrument not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        return tp.models(rt, instrument)
+
+    @app.get("/api/v1/training/readiness")
+    def training_readiness(instrument: str = Query(...)):
+        from ..training import panel as tp
+        if instrument not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        return tp.readiness(rt, instrument)
+
+    @app.get("/api/v1/training/runs")
+    def training_runs(limit: int = Query(50, ge=1, le=500)):
+        from ..training import panel as tp
+        return {"items": tp.runs(limit)}
+
+    def _rid_ok(rid: str) -> str:
+        from ..training import core as tc
+        if not re.fullmatch(r"[A-Za-z0-9_\-]{6,80}", rid) or not (tc.runs_dir() / rid / "state.json").exists():
+            raise HTTPException(404)
+        return rid
+
+    @app.get("/api/v1/training/runs/{rid}")
+    def training_run(rid: str):
+        from ..training import panel as tp
+        return tp.run_detail(_rid_ok(rid))
+
+    @app.get("/api/v1/training/runs/{rid}/log")
+    def training_run_log(rid: str, task: str = Query(...), nbytes: int = Query(20000, ge=1000, le=500000)):
+        from ..training import panel as tp
+        try:
+            return tp.task_log(_rid_ok(rid), task, nbytes)
+        except StopIteration:
+            raise HTTPException(404, "UNKNOWN_TASK")
+
+    @app.get("/api/v1/training/runs/{rid}/report")
+    def training_run_report(rid: str):
+        from ..training import core as tc
+        p = tc.runs_dir() / _rid_ok(rid) / "report.html"
+        if not p.exists():
+            raise HTTPException(404, "REPORT_NOT_READY")
+        return FileResponse(p, media_type="text/html")
+
+    @app.get("/api/v1/training/compare")
+    def training_compare(a: str = Query(...), b: str = Query(...)):
+        from ..training import panel as tp
+        return tp.compare(_rid_ok(a), _rid_ok(b))
+
+    @app.post("/api/v1/training/resume")
+    def training_resume(body: dict = Body(default={})):
+        import subprocess
+        from ..training import core as tc
+        from ..training import panel as tp
+        h = tp.lock_holder()
+        if h and h.get("alive"):
+            return {"started": False, "reason": f"TRAINING_ALREADY_RUNNING:{h.get('run_id')}"}
+        rid = body.get("run_id") or tc.Run.latest()
+        if not rid:
+            return {"started": False, "reason": "NO_RUN"}
+        _rid_ok(rid)
+        log = open(tc.training_dir() / "panel_start.log", "a", encoding="utf-8")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
+        subprocess.Popen([sys.executable, "-m", "masterquo", "training", "resume", rid], cwd=str(paths.ROOT_DIR / "backend"),
+                         env=dict(os.environ, MQ_NO_BROWSER="1"), stdout=log, stderr=subprocess.STDOUT, **kw)
+        return {"started": True, "run_id": rid}
+
+    @app.post("/api/v1/training/export")
+    def training_export(body: dict = Body(...)):
+        from ..training import panel as tp
+        inst = body.get("instrument")
+        if inst not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        try:
+            r = tp.export_package(inst, str(body.get("scope") or "all"), body.get("run_id"))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        r["download"] = f"/api/v1/training/exports/{r['file']}"
+        rt.log.info("TRAINING", "EXPORT", f"Pakiet treningowy {r['file']} ({r['files']} plików, braki: {len(r['missing'])})")
+        return r
+
+    @app.get("/api/v1/training/exports/{name}")
+    def training_export_file(name: str):
+        from ..training import panel as tp
+        if not re.fullmatch(r"PMW_TRENING_[A-Za-z0-9_\-]+\.zip", name):
+            raise HTTPException(404)
+        p = tp.exports_dir() / name
+        if not p.exists():
+            raise HTTPException(404)
+        return FileResponse(p, media_type="application/zip", filename=name)
+
+    @app.post("/api/v1/training/import")
+    async def training_import(request: Request):
+        from ..training import panel as tp
+        data = await request.body()
+        if not data or len(data) > 512 * 2**20:
+            raise HTTPException(400, "EMPTY_OR_TOO_LARGE")
+        try:
+            return tp.import_package(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/api/v1/training/sh/promote")
+    def training_sh_promote(body: dict = Body(...)):
+        from ..sh import tpmodel as TM
+        inst, strat, rid = body.get("instrument"), body.get("strategy"), body.get("run_id")
+        if inst not in ("XAUUSD", "BTC") or strat not in ("SCALPING", "HEDGING") or not rid:
+            raise HTTPException(400, "BAD_REQUEST")
+        try:
+            r = TM.promote(inst, strat, str(rid))
+        except ValueError as exc:
+            return {"ok": False, "reason": str(exc)}
+        rt.log.warn("TRAINING", "SH_PROMOTE", f"sh_tp_model {inst}/{strat}: aktywny {r['active']}")
+        return {"ok": True, **r}
 
     @app.post("/api/v1/training/start")
     def training_start(body: dict):
@@ -1538,6 +1657,12 @@ def create_app(rt, port: int) -> FastAPI:
         if prof not in tc.profiles():
             raise HTTPException(400, "BAD_PROFILE")
         cmd = [sys.executable, "-m", "masterquo", "training", "run", "--instruments", insts, "--profile", prof, "--origin", "panel"]
+        if body.get("tasks"):                                  # one model / a subset (export, QC, activation and bot always run)
+            from ..training.runner import TASKS
+            sel = [t for t in body["tasks"] if t in {k for k, _ in TASKS}]
+            if not sel:
+                raise HTTPException(400, "BAD_TASKS")
+            cmd += ["--tasks", ",".join(sel)]
         for k, flag in (("months", "--months"), ("symbol_xauusd", "--symbol-xauusd"), ("symbol_btc", "--symbol-btc"),
                         ("commission_xauusd", "--commission-xauusd"), ("commission_btc", "--commission-btc")):
             if body.get(k) not in (None, ""):
@@ -1597,8 +1722,16 @@ def create_app(rt, port: int) -> FastAPI:
     def training_rollback(body: dict):
         import subprocess
         inst, fam = body.get("instrument"), str(body.get("family") or "")
-        if inst not in ("XAUUSD", "BTC") or not (fam in ("forecast", "scalp", "ml") or fam.startswith("lab:")):
+        if inst not in ("XAUUSD", "BTC") or not (fam in ("forecast", "scalp", "ml") or fam.startswith(("lab:", "sh:"))):
             raise HTTPException(400, "BAD_REQUEST")
+        if fam.startswith("sh:"):
+            from ..sh import tpmodel as TM
+            if fam[3:] not in ("SCALPING", "HEDGING"):
+                raise HTTPException(400, "BAD_REQUEST")
+            try:
+                return {"ok": True, "result": TM.rollback(inst, fam[3:])}
+            except ValueError as exc:
+                return {"ok": False, "reason": str(exc)}
         if fam == "ml" and inst == rt.ml.inst:
             try:
                 return {"ok": True, "result": rt.ml.rollback()}

@@ -25,6 +25,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("structure_intelligence", "Structure Intelligence: ruch M1 h=3/5/15 (LOGREG/XGB/ResNeXt/SEW/SEW-EB/SpikingBrain/MiniRocket V2) + kontekst setupu"),
          ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
          ("context_indicators", "Kontekst VAMD / FD / Pullback+SMC: kalibracja dev (<=24 konfiguracje), model CONTEXT_MOVE_M5_V1 + ablacje"),
+         ("sh_models", "SCALPING/HEDGING: replay strategii + model zdarzenia P(TP2 przed SL) + raport walidacji"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
@@ -458,6 +459,40 @@ def t_context_indicators(run: Run, inst: str) -> None:
                   "side": "kierunek ruchu (nie zlecenie)"})
 
 
+def t_sh_models(run: Run, inst: str) -> None:
+    """PMW-SH-1: replay of both strategies with the live code, event labels of their OWN setups, sh_tp_model (holdout gate;
+    promoted atomically only on real data), validation reports (whole cycle, baseline, HEDGE vs NO_HEDGE vs REDUCE)."""
+    tid, plan = f"{inst}:sh_models", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_sh_models.json"
+    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    cmd = [core.bot_python(), "-m", "masterquo", "sh", "train", "--instrument", inst, "--dataset", str(ds), "--out", str(out)]
+    cmd += (["--last-m1", "6000"] if quick else []) + (["--allow-synthetic"] if plan["synthetic"] else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_sh_models")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if not rep:
+        return _fail(run, tid, f"sh train kod {rc}: {tail}")
+    if rep.get("status") == "BLOCKED":
+        return _skip(run, tid, rep.get("reason") or "zablokowane")
+    st = rep.get("strategies") or {}
+    verdicts = {k: (v.get("model") or {}).get("verdict") for k, v in st.items()}
+    promoted = [k for k, v in st.items() if (v.get("model") or {}).get("promoted")]
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if promoted else
+                                                    "BRAK_PRZESLANEK" if all(v == "INSUFFICIENT_DATA" for v in verdicts.values()) else "ODRZUCONY")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="AKTYWNY_W_REJESTRZE" if promoted else "ZAPISANY_DO_BADAN",
+            model_id=",".join(f"{k}:{(v.get('model') or {}).get('run_id')}" for k, v in st.items()),
+            detail="; ".join(f"{k}: setupów {v.get('setups_ready')}, model {verdicts[k]}, E[R] {((v.get('metrics') or {}).get('expectancy'))!s:.6} "
+                             f"(baseline {((v.get('baseline') or {}).get('expectancy'))!s:.6})" for k, v in st.items())
+            + ("; replay ograniczony do 6000 M1 (test)" if quick else ""),
+            artifacts=[str(out)] + [v.get("report") for v in st.values() if v.get("report")],
+            unit={"task": "P(TP2 przed SL w horyzoncie strategii) – zdarzenie dokładnie tej strategii", "tf": "M1 (+M5/M15/H1 zamknięte)",
+                  "horizons": "SCALPING 30 min / HEDGING 240 min", "side": "kierunek setupu"})
+
+
 def t_activate(run: Run, inst: str) -> None:
     """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
     tid, plan = f"{inst}:activate", run.state["plan"]
@@ -563,7 +598,7 @@ STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scal
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "structure_intelligence": t_structure_intelligence,
          "flow_context": t_flow_context, "context_indicators": t_context_indicators,
-         "activate": t_activate, "bot": t_bot}
+         "sh_models": t_sh_models, "activate": t_activate, "bot": t_bot}
 
 
 def execute(run: Run) -> int:

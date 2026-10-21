@@ -239,6 +239,9 @@ def main(argv=None) -> int:
         _load_dotenv()
         from .extind.cli import main as extind_main
         return extind_main(argv[1:])
+    if argv[:1] == ["sh"]:                           # PMW-SH-1: SCALPING / HEDGING event model + validation (masterquo/sh/train_cli.py)
+        from .sh.train_cli import main as sh_main
+        return sh_main(argv[1:])
     if argv[:1] == ["training"]:                     # training installer / orchestrator (masterquo/training/cli.py)
         _load_dotenv()
         from .training.cli import main as training_main
