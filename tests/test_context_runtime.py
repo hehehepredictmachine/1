@@ -163,7 +163,7 @@ class KnowledgeTests(unittest.TestCase):
         from masterquo.agent.service import load_prompt
         from masterquo.lab.context_ind import knowledge as K
         text, ver = load_prompt()
-        self.assertTrue(ver.endswith("PMW-CTX-KNOWLEDGE-1.0.0"))
+        self.assertIn("+PMW-CTX-KNOWLEDGE-1.0.0", ver)                     # later knowledge sections (PMW-MM) follow it
         for r in K.RULES:
             self.assertIn(r, text)
         self.assertEqual(K.explain_cell("M5", {"status": "WARMING_UP"}), ([], set()))

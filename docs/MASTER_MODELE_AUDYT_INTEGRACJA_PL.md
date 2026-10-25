@@ -167,7 +167,7 @@ GPR rolling refit z ledgerem. Wyniki powyżej – nie są dowodem przewagi; walk
 |---|---|
 | `python -m unittest test_mm_core` | 38 testów OK (matematyka, kontrakty, splity, Kalman, HDC, SMC bez lookahead, TSVP, BUZOA, GPR vs scipy, STFS/stack/STE, mathbench) |
 | `python -m unittest test_mm_integration` | 17 testów: 15 OK + 2 pominięte w venv bota (OpenCL/ONNX – brak pakietów); w venv z pyopencl+pocl+onnx+onnxruntime oba OK |
-| `test_nc_panel`, `test_sh_api`, `test_agent`, `test_structure_quality`, `test_risk_execution`, `test_ui_lab`, `test_train_all` | patrz sekcja „Regresje” w opisie wydania |
+| pełny zestaw `python -m unittest discover -p "test_*.py"` (73 pliki) | 811 testów: 807 OK, 2 pominięte (OpenCL/ONNX), 2 regresje wykryte i naprawione: wersja wiedzy agenta (test oczekiwał CTX na końcu łańcucha) oraz domyślne `--instrument XAUUSD` w `mm` CLI (reguła repo: instrument zawsze jawny) – moduły po poprawce ponownie: 56 testów OK |
 | transliteracja MQL5 → Python (skrypty weryfikacyjne) | Breakout core 52 przebiegi / 0 różnic; Kalman 33 przebiegi / 0 różnic |
 
 `test_mm_integration` obejmuje: pełny graf orchestratora (subprocess, eksport syntetyczny), anulowanie, uszkodzony snapshot (BLOCKED_DATA_QUALITY,
@@ -188,6 +188,7 @@ narzędzie agenta, endpointy API na prawdziwym procesie serwera (tryb nie zmieni
 * TSVP: przy budżecie wierszy mniejszym niż liczba kubełków pełne przerysowanie zaczynało od początku w każdym przebiegu → pełne przerysowanie oznacza
   wszystkie kubełki jako brudne i dalej idą przebiegi częściowe (Python i MQL5, test budżetu).
 * Orchestrator raportował `FINISHED` mimo odrzuconego snapshotu → statusy BLOCKED_DATA_QUALITY / FINISHED_WITH_BLOCKED.
+* `mm` CLI miało domyślny instrument `XAUUSD` (łamało regułę „instrument zawsze jawny”) → `--instrument` wymagany, wybór XAUUSD/BTC.
 * Port MQL5 stref wybicia: pierwsza wersja agregowała strefę bez listy członków (nie dało się zastąpić mniej skrajnego swingu) → lista członków jak w referencji.
 
 ## 12. Bezpieczeństwo wykonania

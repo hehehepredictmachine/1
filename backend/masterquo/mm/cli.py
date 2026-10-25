@@ -1,8 +1,8 @@
 """`python -m masterquo mm ...` - master models CLI (SHADOW / OBSERVE; no command here can send, modify or close an order).
 
-  mm inventory [--instrument XAUUSD] [--json]        module inventory with evidence-based statuses (latest run merged)
+  mm inventory --instrument XAUUSD [--json]          module inventory with evidence-based statuses (latest run merged)
   mm train --dataset DIR --instrument XAUUSD --out DIR [--profile quick|standard] [--only a,b] [--cancel-file F]
-  mm status [--instrument XAUUSD]                    latest run summary + artifacts + SHADOW pointer
+  mm status --instrument XAUUSD                      latest run summary + artifacts + SHADOW pointer
   mm buzoa-bench [--budget N]                        BUZOA vs PSO/DE/Random on the benchmark functions
   mm mathbench-export --out DIR                      float64 MLP weights / vectors / float32 ONNX + Python checks (copy to MQL5\\Files\\PMW_MathFidelity)
   mm export-fixtures --out DIR [--parity NATIVE]     frozen inputs + Python reference outputs for the MQL5 self-test (Kalman/GPR/HDC/breakout);
@@ -16,23 +16,25 @@ import json
 import sys
 from pathlib import Path
 
+INSTR = ("XAUUSD", "BTC")      # instrument ids of the allowlist (never an MT5 broker symbol); always explicit, no default
+
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="masterquo mm")
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("inventory")
-    i.add_argument("--instrument", default="XAUUSD")
+    i.add_argument("--instrument", choices=INSTR, required=True)
     i.add_argument("--json", action="store_true")
     t = sub.add_parser("train")
     t.add_argument("--dataset", required=True)
-    t.add_argument("--instrument", default="XAUUSD")
+    t.add_argument("--instrument", choices=INSTR, required=True)
     t.add_argument("--out", required=True)
     t.add_argument("--profile", default="standard", choices=["quick", "standard"])
     t.add_argument("--only", default="")
     t.add_argument("--seed", type=int, default=20261025)
     t.add_argument("--cancel-file")
     s = sub.add_parser("status")
-    s.add_argument("--instrument", default="XAUUSD")
+    s.add_argument("--instrument", choices=INSTR, required=True)
     b = sub.add_parser("buzoa-bench")
     b.add_argument("--budget", type=int, default=2000)
     m = sub.add_parser("mathbench-export")
@@ -41,7 +43,7 @@ def main(argv: list[str]) -> int:
     f.add_argument("--out", required=True)
     f.add_argument("--parity", default="")
     r = sub.add_parser("rollback")
-    r.add_argument("--instrument", default="XAUUSD")
+    r.add_argument("--instrument", choices=INSTR, required=True)
     r.add_argument("--model", required=True)
     a = ap.parse_args(argv)
     if a.cmd == "inventory":
