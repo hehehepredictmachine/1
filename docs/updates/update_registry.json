@@ -674,6 +674,47 @@
    "code_status": "BLOCKED",
    "blocker": "SPEC_FILE_NOT_PROVIDED – nie rekonstruuję algorytmu z nazwy",
    "requirements": {}
+  },
+  "PMW-MM-MASTER-MODELS": {
+   "update_id": "PMW-MM-MASTER-MODELS",
+   "spec_file": "PEPEMARKETWIZARD_MASTER_MODEL_AUDIT_INTEGRATION_TRAINING_PROMPT.md + XXX.rar (11 specyfikacji)",
+   "spec_sha256": null,
+   "code_status": "IMPLEMENTED",
+   "blocker": "6 z 20 pozycji bez specyfikacji (SDOm, Quant Momentum, Renko, H&S v2, Data Grabber, Chart Sync) – BLOCKED, nie rekonstruowane z nazwy",
+   "requirements": {
+    "MM01_inventory": "VERIFIED (mm/inventory.py, API /api/v1/mm/status, panel 12)",
+    "MM02_contracts_pipeline": "VERIFIED (snapshot+sha256, splity purge/embargo, HoldoutGuard, artefakty niezmienne, SHADOW pointer+rollback, ledger z dojrzewaniem, drift)",
+    "MM03_deterministic": "VERIFIED (AlignMean, Kalman, Breakout+RobustVol, TSVP, Multi-Indicator, SMC FVG/IDM – testy jednostkowe i integracyjne)",
+    "MM04_trainable": "IMPLEMENTED (HDC, GPR, event engine+state stack, STFS, STE-FlowNet, BUZOA; trening wykonany na SYNTHETIC_TEST, VALIDATION_PASSED: brak)",
+    "MM05_native": "IMPLEMENTED (MQL5: Kalman, GPR, HDC, StateStack OpenCL, BreakoutZones, TSVP, AlignMean, self-test parytetu, Math Fidelity 3 silniki) – NOT_EXECUTED_METAEDITOR_UNAVAILABLE",
+    "MM06_integration": "VERIFIED (runner master_models, rejestr SH rola OBSERVATION, API, panel, agent get_master_models + MM-K01..K06)"
+   },
+   "prompt_version": "MQAI-AGENT-PROMPT-2.1.0+PMW-MM-KNOWLEDGE-1.0.0",
+   "summary": "Master models PMW-MM: wspólne kontrakty, orchestrator 16 zadań, 14 modułów ze specyfikacją + tablica dowodów, native MQL5, SHADOW/OBSERVE",
+   "states": {
+    "code": "IMPLEMENTED",
+    "source": "MT5: NOT_RUN (testy na symulatorze)",
+    "data": "BRAK REAL_USER_DATA",
+    "training": "TRAINING_EXECUTED na SYNTHETIC_TEST (MMRUN-20261025T183142Z-f762ab, 16/16 SUCCEEDED)",
+    "artifacts": "TECHNICAL_TEST_ONLY (wskaźnik SHADOW pusty)",
+    "native": "SOURCES_ONLY – NOT_EXECUTED_METAEDITOR_UNAVAILABLE",
+    "parity": "transliteracja MQL5 Breakout 52/0 różnic, Kalman 33/0; parytet natywny NATIVE_NOT_EXECUTED",
+    "edge": "NO_VALIDATED_EDGE"
+   },
+   "files": [
+    "backend/masterquo/mm/**",
+    "mql5/MasterModels/**",
+    "mql5/MathFidelity/**",
+    "frontend/src/nc/MasterModels.tsx",
+    "backend/masterquo/api/app.py (/api/v1/mm/*)",
+    "backend/masterquo/training/runner.py (master_models)",
+    "backend/masterquo/sh/models.py (OBSERVATION)",
+    "backend/masterquo/agent/tools.py (get_master_models)",
+    "tests/test_mm_core.py",
+    "tests/test_mm_integration.py",
+    "docs/MASTER_MODELE_AUDYT_INTEGRACJA_PL.md"
+   ],
+   "decision": "CONDITIONAL GO — INTEGRATED, SOME MODEL/DATA VALIDATION REMAINS (tylko dalsza walidacja SHADOW)"
   }
  }
 }

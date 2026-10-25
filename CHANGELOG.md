@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.18.0 – Master models (XXX.rar): audyt, integracja, trening – SHADOW/OBSERVE
+* Nowy pakiet `backend/masterquo/mm`: wspólne kontrakty wyjść (execution_allowed zawsze false), snapshot danych z sha256, splity chronologiczne
+  z purge/embargo i jednorazowym holdoutem, niezmienne artefakty (promocja wyłącznie VALIDATED_SHADOW, rollback), ledger predykcji z dojrzewaniem etykiet, drift.
+* Moduły: Align Mean, Kalman crossover, Breakout Zones + Robust Volatility, Tick Session Volume Profile, Multi-Indicator Strategy Pro, SMC BoS/IDM/FVG,
+  HDC, GPR (Matérn 3/2), event engine (GRU + state stack, OpenCL), S3CE/STFS, STE-FlowNet, BUZOA (+ PSO/DE/Random), Math Fidelity Benchmark, tablica dowodów.
+* Orchestrator 16 zadań (`python -m masterquo mm train`), zadanie `master_models` w runnerze treningu, API `/api/v1/mm/*`, ekran „12 Master Models”
+  w panelu Neural Cyberpunk, narzędzie agenta `get_master_models` (prompt `MQAI-AGENT-PROMPT-2.1.0`, wiedza MM-K01..K06).
+* Native MQL5 (`mql5/MasterModels`, `mql5/MathFidelity`): wskaźniki i EA bez handlu, self-test parytetu, 3 silniki benchmarku – nieskompilowane (brak MetaEditora).
+* 6 pozycji bez specyfikacji w paczce (SDOm, Quant Momentum, Renko, H&S v2, Data Grabber, Chart Sync) – BLOCKED.
+* Trening wykonany wyłącznie na danych syntetycznych: brak VALIDATED_SHADOW, `NO_VALIDATED_EDGE`. Raport: `docs/MASTER_MODELE_AUDYT_INTEGRACJA_PL.md`.
+
 ## 1.17.2 – Neural System: animowany, interaktywny mózg
 * Okno Neural System (panel Neural Cyberpunk → Dashboard) powiększone do 640 px, z trybem pełnoekranowym (Esc zamyka).
 * Animacja Canvas: sieć neuronów w kształcie mózgu (kontur, bruzdy kory, móżdżek, duże neurony z dendrytami), impulsy na połączeniach,

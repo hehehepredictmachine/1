@@ -55,6 +55,11 @@ TOOL_DEFS = [
           {"snapshot_id": {"type": "string"}}, ["snapshot_id"]),
     _tool("get_signal_history", "Ostatnie setupy i ich wyniki (rozliczone/unieważnione) oraz zapisane wnioski.",
           {"limit": {"type": "integer"}}, ["limit"]),
+    _tool("get_master_models", "Master models PMW-MM (tryb SHADOW/OBSERVE, zamknięte świece M5): wspólna średnia Align Mean na TF z odległością w pkt/%/ATR, "
+          "stan Kalman fast/slow, ostatnie zaakceptowane wybicie stref (kierunek, nie pozycja), robust volatility, decyzja Multi-Indicator ze śladem reguł, "
+          "SMC BoS/IDM/FVG, rozkład log-zwrotu GPR 3×M5 z kalibracją z ledgera oraz tablica dowodów bez łączenia wyników. To obserwacja: nie bramka, "
+          "nie głos w strategii, nie prawdopodobieństwo setupu; moduły liczą z tego samego feedu cen (zgodność nie jest niezależnym potwierdzeniem).",
+          {}, []),
 ]
 
 
@@ -248,6 +253,20 @@ class Toolbox:
         out["quotes"] = snap.get("quotes")
         out["native"] = snap.get("native")
         return out
+
+    def t_get_master_models(self) -> dict:
+        fn = self.ctx.get("master_models_fn")
+        lv = fn() if fn else None
+        if not lv or lv.get("status") != "OK":
+            return {"status": (lv or {}).get("status", "UNAVAILABLE"), "reason": (lv or {}).get("reason"), "rules": ["MM-K01"]}
+        g = lv.get("gpr") or {}
+        return {"status": "OK", "mode": "SHADOW_OBSERVE", "execution_allowed": False, "last_closed_m5": lv.get("last_closed_m5"),
+                "data_quality": lv.get("data_quality"),
+                "align_mean": lv.get("align_mean"), "kalman": lv.get("kalman"), "breakout": {"panel": (lv.get("breakout") or {}).get("panel")},
+                "robust_vol": lv.get("robust_vol"), "multi_indicator": {k: (lv.get("multi_indicator") or {}).get(k) for k in ("decision", "long_reasons", "short_reasons")},
+                "smc_fvg": {k: (lv.get("smc_fvg") or {}).get(k) for k in ("trend", "depth_min", "live_setups")},
+                "gpr": {k: g.get(k) for k in ("status", "mean_logret", "sd", "price", "live_calibration", "horizon_bars", "flags")},
+                "board": lv.get("board"), "rules": ["MM-K01", "MM-K02", "MM-K03", "MM-K04", "MM-K05", "MM-K06"]}
 
     def t_get_signal_history(self, limit: int) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 30:

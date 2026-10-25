@@ -1550,6 +1550,49 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return tp.models(rt, instrument)
 
+    # ---------------------------------------------------------------- PMW-MM master models (inventory, SHADOW live view, ledger, rollback)
+    def _mm_inst(instrument: str) -> str:
+        if instrument not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        return instrument
+
+    @app.get("/api/v1/mm/status")
+    def mm_status(instrument: str = Query("XAUUSD")):
+        return rt.mm.status(_mm_inst(instrument))
+
+    @app.get("/api/v1/mm/live")
+    def mm_live(instrument: str = Query("XAUUSD")):
+        return rt.mm.live(_mm_inst(instrument))
+
+    @app.get("/api/v1/mm/job")
+    def mm_job(instrument: str = Query("XAUUSD"), job: str = Query(...)):
+        from ..mm import inventory as mi
+        from ..mm.orchestrator import GRAPH
+        if job not in {g[0] for g in GRAPH}:
+            raise HTTPException(400, "UNKNOWN_JOB")
+        rep = mi.latest_report(_mm_inst(instrument))
+        if not rep or not rep.get("run_dir"):
+            return {"status": "NOT_RUN", "reason": "brak przebiegu master models dla instrumentu (trening: zadanie master_models)"}
+        p = Path(rep["run_dir"]) / f"{job}.json"
+        if not p.exists():
+            return {"status": "NOT_RUN", "reason": f"zadanie {job} nie zostało wykonane w ostatnim przebiegu"}
+        return {"status": "OK", "run_id": rep.get("run_id"), "data_kind": (rep.get("snapshot") or {}).get("data_kind"),
+                "result": json.loads(p.read_text(encoding="utf-8"))}
+
+    @app.get("/api/v1/mm/ledger")
+    def mm_ledger(instrument: str = Query("XAUUSD"), model: str = Query("gpr_logret:LIVE"), limit: int = 200):
+        led = rt.mm._ledger(_mm_inst(instrument))
+        rows = led.rows(model, limit=min(max(limit, 1), 2000))
+        return {"summary": led.summary(), "rows": rows[-min(max(limit, 1), 2000):]}
+
+    @app.post("/api/v1/mm/rollback")
+    def mm_rollback(body: dict = Body(...)):
+        from ..mm import artifacts as ma
+        try:
+            return {"ok": True, "pointer": ma.rollback(_mm_inst(body.get("instrument", "")), str(body.get("model", "")))}
+        except ma.ArtifactError as exc:
+            return {"ok": False, "reason": str(exc)}
+
     @app.get("/api/v1/training/readiness")
     def training_readiness(instrument: str = Query(...)):
         from ..training import panel as tp

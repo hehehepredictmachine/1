@@ -104,7 +104,7 @@ class TestTrainingRun(_Base):
         self.assertNotEqual((cfg.get("execution") or {}).get("lock"), "UNLOCKED_BY_USER")             # Execution Lock never touched
         rep = json.loads((self.data / "training" / "runs" / st["run_id"] / "report.json").read_text(encoding="utf-8"))
         line = rep["summary"]["line"]
-        self.assertRegex(line, r"XAUUSD: \d+/17 zadań ukończonych; BTC: \d+/17")
+        self.assertRegex(line, r"XAUUSD: \d+/18 zadań ukończonych; BTC: \d+/18")
         self.assertTrue((self.data / "training" / "runs" / st["run_id"] / "report.html").exists())
         # rollback of a lab family uses the per-family pointer
         r = self.cli("training", "rollback", "--instrument", "BTC", "--family", "lab:LOGREG")

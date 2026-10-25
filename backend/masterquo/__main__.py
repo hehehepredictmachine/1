@@ -242,6 +242,9 @@ def main(argv=None) -> int:
     if argv[:1] == ["sh"]:                           # PMW-SH-1: SCALPING / HEDGING event model + validation (masterquo/sh/train_cli.py)
         from .sh.train_cli import main as sh_main
         return sh_main(argv[1:])
+    if argv[:1] == ["mm"]:                           # PMW-MM: master models (audit inventory, orchestrator, benchmarks; masterquo/mm/cli.py)
+        from .mm.cli import main as mm_main
+        return mm_main(argv[1:])
     if argv[:1] == ["training"]:                     # training installer / orchestrator (masterquo/training/cli.py)
         _load_dotenv()
         from .training.cli import main as training_main

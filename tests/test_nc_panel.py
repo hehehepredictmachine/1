@@ -13,7 +13,7 @@ import test_sh_api as T
 from test_sh_api import CHROMIUM, HAVE_PW, call
 
 SHOTS = _env.ROOT / "data" / "logs" / "ui_nc"
-PAGES = ["dashboard", "market", "pattern", "validation", "training", "decision", "mt5", "liquidity", "statistics", "operations", "settings"]
+PAGES = ["dashboard", "market", "pattern", "validation", "training", "decision", "mt5", "liquidity", "statistics", "operations", "settings", "models"]
 
 
 @unittest.skipUnless(HAVE_PW, "playwright not installed")
@@ -39,7 +39,7 @@ class TestNeuralCyberpunk(T.TestSHApi):
                 p.on("dialog", lambda d: d.accept())
                 p.goto(BASE_URL() + "/#/nc?p=dashboard")
                 p.wait_for_selector("[data-testid=nc-root]", timeout=30000)
-                self.assertEqual(p.locator("[data-testid=nc-nav] button").count(), 11)
+                self.assertEqual(p.locator("[data-testid=nc-nav] button").count(), 12)
                 for pid in PAGES:
                     p.click(f"[data-testid=nc-nav] [data-nc={pid}]")
                     p.wait_for_selector(f"[data-testid=nc-page-{pid}]", timeout=20000)
@@ -62,6 +62,11 @@ class TestNeuralCyberpunk(T.TestSHApi):
                     if pid == "decision" and w == 1440:
                         p.click("[data-testid=nc-dry]")
                         self.assertIn("Żadne zlecenie nie zostało wysłane", p.locator("[data-testid=nc-dry-msg]").inner_text())
+                    if pid == "models":
+                        p.wait_for_selector("[data-testid=nc-mm-inventory] tr[data-mm]", timeout=20000)
+                        self.assertEqual(p.locator("[data-testid=nc-mm-inventory] tr[data-mm]").count(), 20)
+                        self.assertEqual(p.locator("[data-testid=nc-mm-inventory] tr[data-mm=sdom] [data-status=BLOCKED]").count(), 1)
+                        self.assertTrue(wait_for(lambda: "SHADOW" in p.locator("[data-testid=nc-mm-live]").inner_text(), 30, 0.5))
                     if pid == "mt5" and w == 1440:
                         p.click("[data-testid=nc-kill]")                                   # STOP new entries (no order)
                         self.assertTrue(wait_for(lambda: "Wznów" in p.locator("[data-testid=nc-kill]").inner_text(), 15, 0.3))

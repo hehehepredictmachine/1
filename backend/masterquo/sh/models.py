@@ -16,7 +16,8 @@ import json
 from pathlib import Path
 
 ROLES = ("DATA_QUALITY", "RISK_ANOMALY", "REGIME", "DIRECTION_STRUCTURE", "VOLATILITY", "TIMING", "PATTERN", "LIQUIDITY",
-         "TARGET_PROB", "SUPERVISION")
+         "TARGET_PROB", "SUPERVISION", "OBSERVATION")
+# OBSERVATION (PMW-MM master models): shown with its live status, never a gate, never evidence, never a probability of the SH event.
 STATUS = ("READY", "SHADOW_ONLY", "NOT_TRAINED", "NOT_CONNECTED", "INCOMPATIBLE", "ERROR", "DETERMINISTIC_OK", "DATA_MISSING", "UNAVAILABLE")
 
 # id, name, kind, event/output, correlation group, roles {SCALPING, HEDGING}, training task (runner) or None
@@ -75,6 +76,25 @@ REGISTRY: list[dict] = [
      "group": "M1_DIRECTION", "roles": {"SCALPING": "TIMING", "HEDGING": "TIMING"}, "train": "flow_context"},
     {"id": "context_move", "name": "Context indicators – CONTEXT_MOVE_M5_V1", "kind": "TRAINED", "output": "P(DOWN/FLAT/UP) M5", "group": "M5_DIRECTION",
      "roles": {"SCALPING": "TIMING", "HEDGING": "DIRECTION_STRUCTURE"}, "train": "context_indicators"},
+    # --- PMW-MM master models (XXX.rar bundle) - OBSERVATION only: they never vote in SCALPING/HEDGING ---------------------------
+    {"id": "mm_align_mean", "name": "Align Mean (wspólna średnia, odległość w ATR)", "kind": "DETERMINISTIC", "output": "odległość od średniej (kontekst)",
+     "group": "MM_MEAN_REF", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    {"id": "mm_kalman", "name": "Kalman crossover fast/slow (zamknięte świece)", "kind": "DETERMINISTIC", "output": "stan przecięcia + K", "group": "MM_TREND_FILTER",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    {"id": "mm_breakout", "name": "Breakout zones + robust volatility", "kind": "DETERMINISTIC", "output": "kierunek ostatniego wybicia, strefy",
+     "group": "MM_ZONES", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    {"id": "mm_multi_indicator", "name": "Multi-Indicator Strategy (RSI/SAR/HA/Stoch/CCI/W%R/Power)", "kind": "DETERMINISTIC",
+     "output": "decyzja z pełnym śladem reguł", "group": "MM_RULES", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    {"id": "mm_smc_fvg", "name": "SMC BoS/IDM/FVG continuation (73%)", "kind": "DETERMINISTIC", "output": "setup entry/SL/2R (obserwacja)",
+     "group": "STRUCTURE", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    {"id": "mm_gpr", "name": "GPR Matérn 3/2 – prognoza log-zwrotu z niepewnością", "kind": "TRAINED", "output": "N(mean, observed var) log-zwrotu 3 świec M5",
+     "group": "MM_RETURN_DIST", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
+    {"id": "mm_hdc", "name": "HDC – hiperwektory binarne (DOWN/FLAT/UP)", "kind": "TRAINED", "output": "klasa + margines (nie prawdopodobieństwo)",
+     "group": "M5_DIRECTION", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
+    {"id": "mm_event_engine", "name": "Event engine GRU + state stack + korelacja (+STFS)", "kind": "TRAINED", "output": "P(DOWN/FLAT/UP) jednostki zdarzeń",
+     "group": "EVENT_DIRECTION", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
+    {"id": "mm_ste_flownet", "name": "STE-FlowNet (adaptacja finansowa) – log-zwrot h zdarzeń", "kind": "TRAINED", "output": "prognoza log-zwrotu",
+     "group": "EVENT_DIRECTION", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
      "group": "AGENT", "roles": {"SCALPING": "SUPERVISION", "HEDGING": "SUPERVISION"}, "train": None},
 ]
@@ -139,6 +159,18 @@ def probe(item: dict, rt, inst: str) -> dict:
                  "flow_reaction": (base / "flow_context" / inst / "registry.json", "shadow")}
         if mid in files:
             return dict(zip(("status", "reason", "detail"), _probe_registry_file(*files[mid])))
+        if mid.startswith("mm_") and item["kind"] == "TRAINED":
+            from ..mm import artifacts as MA
+            mm_ids = {"mm_gpr": "gpr_logret", "mm_hdc": "hdc_dir3", "mm_event_engine": "event_engine_dir3", "mm_ste_flownet": "ste_flownet_ret"}
+            aid = (MA.read_pointer(inst).get("active") or {}).get(mm_ids[mid])
+            arts = MA.list_artifacts(inst, mm_ids[mid])
+            if aid:
+                return {"status": "SHADOW_ONLY", "reason": f"zwalidowany na danych rzeczywistych (SHADOW): {aid}; obserwacja, nie głos SH"}
+            if mid == "mm_gpr":
+                return {"status": "SHADOW_ONLY", "reason": f"dopasowanie na żywo co świecę M5 (SHADOW, ledger kalibracji); kandydaci: {len(arts)}"}
+            if arts:
+                return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
+            return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
         if mid == "context_move":
             runs = list((base / "context_ind" / inst / "runs").glob("*/report.json"))
             return {"status": "NOT_CONNECTED", "reason": f"{len(runs)} runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania"}
@@ -151,7 +183,9 @@ def participation(item: dict, st: dict, strategy: str) -> dict:
     """How this component takes part in `strategy` right now."""
     role = item["roles"].get(strategy)
     s = st["status"]
-    if role in ("DATA_QUALITY", "RISK_ANOMALY", "REGIME"):
+    if role == "OBSERVATION":
+        use = "INFO" if s in ("READY", "DETERMINISTIC_OK", "SHADOW_ONLY") else "NONE"
+    elif role in ("DATA_QUALITY", "RISK_ANOMALY", "REGIME"):
         use = "GATE" if s == "DETERMINISTIC_OK" else "GATE_UNAVAILABLE"
     elif role == "TARGET_PROB":
         use = "PROBABILITY" if s == "READY" else "NONE"

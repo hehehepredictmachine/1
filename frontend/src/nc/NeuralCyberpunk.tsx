@@ -16,6 +16,7 @@ import { useStore } from "../store";
 import { useUi } from "../ui";
 import { fmtNum } from "../util";
 import NeuralBrain from "./NeuralBrain";
+import MasterModels from "./MasterModels";
 import "./nc.css";
 
 export const NC_PAGES = [
@@ -30,6 +31,7 @@ export const NC_PAGES = [
   { id: "statistics", n: "09", label: "Statistics", title: "Statistics & Performance", icon: "▦" },
   { id: "operations", n: "10", label: "System Monitor", title: "Operations Center", icon: "⌁" },
   { id: "settings", n: "11", label: "Settings", title: "Settings & Users", icon: "⚙" },
+  { id: "models", n: "12", label: "Master Models", title: "Master Models (SHADOW)", icon: "⬡" },
 ] as const;
 type NcPage = (typeof NC_PAGES)[number]["id"];
 const TFS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
@@ -583,6 +585,7 @@ export default function NeuralCyberpunk({ route }: { route: Route }) {
             {page === "statistics" && <Statistics ctx={ctx} />}
             {page === "operations" && <Operations ctx={ctx} />}
             {page === "settings" && <Settings ctx={ctx} />}
+            {page === "models" && <MasterModels inst={s.assets?.active || "XAUUSD"} synthetic={!!s.synthetic} />}
           </section></Guard>
         </main>
       </div>

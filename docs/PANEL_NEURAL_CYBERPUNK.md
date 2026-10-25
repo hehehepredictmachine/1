@@ -2,7 +2,7 @@
 
 Panel w bocie: **Pulpit → Neural Cyberpunk** albo adres `#/nc` (np. `http://127.0.0.1:<port>/#/nc?p=market`).
 Kod: `frontend/src/nc/NeuralCyberpunk.tsx` i `nc.css`; endpoint `GET /api/v1/sh/validation`.
-Test: `tests/test_nc_panel.py` (prawdziwy proces serwera i Chromium, 11 ekranów, szerokości 1440 i 390 px).
+Test: `tests/test_nc_panel.py` (prawdziwy proces serwera i Chromium, 12 ekranów, szerokości 1440 i 390 px).
 Zrzuty ekranów: `data/logs/ui_nc/`.
 
 Handoff zawierał starter UI z danymi **syntetycznymi** i specyfikację. W bocie żaden ekran nie używa danych z startera. Każdy
@@ -30,6 +30,7 @@ blok pokazuje status źródła:
 | 09 | Statistics | `/api/v1/stats` | statystyki z historii transakcji bota i deali rachunku |
 | 10 | System Monitor | `/api/v1/diagnostics`, `/api/v1/training`, `/api/v1/sh`, dziennik WS | |
 | 11 | Settings | `/api/v1/config`, klasyczne okno Ustawień | RBAC: NOT_IMPLEMENTED; licencje 48 h usunięte (wersja 1.4); Telegram EN+简体中文: NOT_IMPLEMENTED (obecnie komunikaty po polsku) |
+| 12 | Master Models (1.18.0) | `/api/v1/mm/status`, `/api/v1/mm/live` | inwentarz 20 modułów ze statusem wg dowodów (6 BLOCKED – brak specyfikacji), SHADOW na zamkniętych świecach M5 (Align Mean na TF, Kalman, wybicia, Multi-Indicator, SMC, robust vol, GPR z kalibracją z ledgera, tablica dowodów), ostatni przebieg `master_models`; tylko odczyt, `execution_allowed = false` |
 
 ## Nieobjęte (blokery lub zakres)
 

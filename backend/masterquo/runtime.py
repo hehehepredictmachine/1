@@ -100,6 +100,9 @@ class Runtime:
         from .lab.nss_service import NeuralScalpService
         self.nss = NeuralScalpService(self.db, self.bus, self.log, instrument=self.cfg.get().assets.active)   # PMW-UPD-04: own M1 clock, OBSERVE
         self.scalp.nss = self.nss
+        from .mm.service import MMService
+        self.mm = MMService(self)                                                   # PMW-MM: master models, SHADOW / OBSERVE (no order path)
+        self.engine.mm_provider = lambda: self.mm.live(self.cfg.get().assets.active)    # read-only view for the agent tool get_master_models
         from .scalp.dashboard import MTFDashboard
         self.mtf = MTFDashboard(self.scalp, self.bridge, self.bus, self.db)      # PMW-UPD-05: MTFContextSnapshot + 1 s freshness heartbeat
         self.scalp.dashboard = self.mtf

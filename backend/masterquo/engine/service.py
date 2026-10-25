@@ -524,7 +524,7 @@ class EngineService:
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
                "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
-               "structure_snapshot_fn": self._structure_snapshot}
+               "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None)}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)

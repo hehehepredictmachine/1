@@ -26,6 +26,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
          ("context_indicators", "Kontekst VAMD / FD / Pullback+SMC: kalibracja dev (<=24 konfiguracje), model CONTEXT_MOVE_M5_V1 + ablacje"),
          ("sh_models", "SCALPING/HEDGING: replay strategii + model zdarzenia P(TP2 przed SL) + raport walidacji"),
+         ("master_models", "Master models (XXX.rar): HDC/GPR/event engine+STFS/STE-FlowNet + ewaluacja Kalman/Breakout/SMC/Multi-Indicator/TSVP/BUZOA"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
@@ -493,6 +494,38 @@ def t_sh_models(run: Run, inst: str) -> None:
                   "horizons": "SCALPING 30 min / HEDGING 240 min", "side": "kierunek setupu"})
 
 
+def t_master_models(run: Run, inst: str) -> None:
+    """PMW-MM: one orchestrated run of every master-model job on THIS run's dataset (own process, timeout, cancel). Candidates are immutable
+    artifacts; only VALIDATED_SHADOW on REAL data moves the SHADOW pointer - never live execution."""
+    tid, plan = f"{inst}:master_models", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_master_models"
+    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    cmd = [core.bot_python(), "-m", "masterquo", "mm", "train", "--dataset", str(ds), "--instrument", inst, "--out", str(out), "--profile", prof,
+           "--cancel-file", str(run.dir / "CANCEL")]
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_master_models")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out / "REPORT.json")
+    if not rep or not rep.get("jobs"):
+        return _fail(run, tid, f"mm train kod {rc}: {(rep or {}).get('reason') or tail}")
+    jobs = rep["jobs"]
+    trained = [k for k, v in jobs.items() if v.get("training_executed")]
+    valid = [k for k, v in jobs.items() if v.get("validation_passed")]
+    failed = [k for k, v in jobs.items() if v["status"] == "FAILED"]
+    blocked = [f"{k}={v['status']}" for k, v in jobs.items() if v["status"].startswith("BLOCKED")]
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if valid else "BRAK_PRZESLANEK")
+    run.set(tid, execution="UKONCZONE" if not failed else "BLAD_TECHNICZNY", quality=q,
+            integration="AKTYWNY_W_REJESTRZE" if valid and not plan["synthetic"] else "ZAPISANY_DO_BADAN", model_id=rep.get("run_id"),
+            detail=f"zadania {len(jobs)}; trening wykonany: {', '.join(trained) or '-'}; walidacja PASS: {', '.join(valid) or 'brak'}"
+                   + (f"; BŁĘDY: {', '.join(failed)}" if failed else "") + (f"; zablokowane: {', '.join(blocked)}" if blocked else "") + f"; profil {prof}; SHADOW",
+            artifacts=[str(out / "REPORT.json"), str(out / "REPORT.md")],
+            unit={"task": "HDC/event/STE: kierunek lub log-zwrot; GPR: rozkład log-zwrotu 3×M5; reszta: ewaluacja deterministyczna", "tf": "M1 (zdarzenia) / M5 / M15",
+                  "horizons": "12×M5 (HDC), 3×M5 (GPR), 2 jednostki (event), 32 zdarzenia (STE)", "side": "kierunek (nie zlecenie)"})
+
+
 def t_activate(run: Run, inst: str) -> None:
     """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
     tid, plan = f"{inst}:activate", run.state["plan"]
@@ -598,7 +631,7 @@ STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scal
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "structure_intelligence": t_structure_intelligence,
          "flow_context": t_flow_context, "context_indicators": t_context_indicators,
-         "sh_models": t_sh_models, "activate": t_activate, "bot": t_bot}
+         "sh_models": t_sh_models, "master_models": t_master_models, "activate": t_activate, "bot": t_bot}
 
 
 def execute(run: Run) -> int:
