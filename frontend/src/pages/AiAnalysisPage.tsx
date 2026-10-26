@@ -254,7 +254,7 @@ export default function AiAnalysisPage() {
         <div className="tabs small mob-only" role="group" aria-label="Skupienie na TF (mały ekran)">
           {AI_TFS.map((t) => <button key={t} className={cls(focus === t && "on")} onClick={() => setFocus(t)}>{t}</button>)}
         </div>
-        <ChartToolbar opts={opts} set={setOpt} show={["showAiLevels", "showPatterns", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
+        <ChartToolbar opts={opts} set={setOpt} show={["showAiLevels", "showPatterns", "showZoneMap", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
       </div>
       <div className={cls("ai-grid", "lay-" + layout)} data-focus={focus}>
         <div className="ai-col" style={{ gridArea: "card" }}>

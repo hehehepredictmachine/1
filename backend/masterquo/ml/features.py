@@ -1,4 +1,4 @@
-"""FeatureEngine (MQ-FEAT-1.0.0) - one deterministic feature code for training AND prediction.
+"""FeatureEngine (MQ-FEAT-1.1.0 = 1.0.0 + zone block) - one deterministic feature code for training AND prediction.
 
 Input: a MarketView (closed bars per TF, Bid/Ask) + a setup candidate + the decision time `asof`.
 Every TF is cut AS-OF: only bars whose close time (open + TF) <= asof are used, so a view that
@@ -17,7 +17,10 @@ from ..strategies import indicators as ind
 from ..strategies import regime as regime_mod
 from ..strategies.base import TF_SECONDS, MarketView, TFView
 
-FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.0.0"
+FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.1.0"
+# 1.1.0 = 1.0.0 + the zone block (PMW-ZONE-FEAT-1). Strict superset: 1.0.0 samples are read with the zone features missing (NaN) and
+# the preprocessor keeps a feature only where enough values exist; models trained on 1.0.0 ignore the extra keys at inference.
+COMPATIBLE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0")
 NAN = float("nan")
 
 # documented categories (the encoder uses the categories SEEN IN TRAINING - prep.py - so new strategies / TFs are encoded
@@ -75,6 +78,17 @@ SCHEMA += [
     _num("countertrend", "0/1", "setup przeciw HTF"), _num("conflicts", "-", "liczba konfliktów TF"), _num("dxy_missing", "0/1", "brak DXY (opcjonalny)"),
     _num("htf_missing", "0/1", "brak H4/D1"),
 ]
+from ..zones import features as _ZF                                       # noqa: E402 - zone block of the same schema
+_ZONE_DESC = {"zone_dist_m5_high_atr": "do najbliższej strefy szczytów M5 nad ceną / ATR", "zone_dist_m5_low_atr": "do strefy dołków M5 pod ceną / ATR",
+              "zone_dist_m15_high_atr": "j.w. M15 (szczyty)", "zone_dist_m15_low_atr": "j.w. M15 (dołki)", "zone_dist_poc_atr": "do POC ostatniej zamkniętej sesji (wg kierunku)",
+              "zone_dist_vah_atr": "do VAH (wg kierunku)", "zone_dist_val_atr": "do VAL (wg kierunku)", "zone_va_position": "pozycja wobec value area (wg kierunku)",
+              "zone_dist_demand_atr": "do strefy popytu pod ceną", "zone_dist_supply_atr": "do strefy podaży nad ceną", "zone_opp_dist_r": "do strefy przeciwnej (R)",
+              "zone_opp_room_after_costs_r": "miejsce do strefy przeciwnej po kosztach (R)", "zone_opp_score": "wynik konfluencji strefy przeciwnej (0-100, nie P)",
+              "zone_opp_width_atr": "szerokość strefy przeciwnej / ATR", "zone_opp_age_bars": "wiek strefy przeciwnej", "zone_opp_retests": "retesty strefy przeciwnej",
+              "zone_own_dist_r": "do strefy wspierającej (R)", "zone_own_score": "wynik strefy wspierającej", "zone_own_swept": "strefa wspierająca po sweepie i reclaimie",
+              "zone_session": "sesja (0 Azja, 1 Londyn, 2 NY, -1 poza)", "zone_relvol": "względna aktywność sesji (tick volume)", "zone_poc_migration": "migracja POC (koszyki, wg kierunku)",
+              "zone_hvn_near": "HVN w 0,5 ATR", "zone_lvn_near": "LVN w 0,5 ATR", "zone_data_ok": "mapa stref kompletna", "zone_volume_source": "źródło wolumenu (0 brak, 1 tick, 2 giełdowy)"}
+SCHEMA += [_num(n, "-", "strefy: " + _ZONE_DESC.get(n, n)) for n in _ZF.NAMES]
 SCHEMA += [{"name": k, "type": "category", "unit": "-", "desc": f"kategoria {k}", "categories": v} for k, v in CATEGORICAL.items()]
 FEATURE_NAMES = [f["name"] for f in SCHEMA]
 
@@ -209,6 +223,7 @@ def compute(view: MarketView, cand: dict, asof: datetime) -> dict:
     f["timeframe"] = cand["timeframe"]
     f["regime"] = (reg or {}).get("state") or "DATA_UNAVAILABLE"
     f["family"] = cand.get("family") or "TREND"
+    f.update(zone_block(view, tfs, cand, entry, sl_, asof))
     missing = [n for n in FEATURE_NAMES if n not in f]
     if missing:
         raise RuntimeError("FEATURE_SCHEMA_INCOMPLETE:" + ",".join(missing[:5]))
@@ -222,3 +237,31 @@ def to_json_safe(feats: dict) -> dict:
 
 def from_json(d: dict) -> dict:
     return {k: (NAN if v is None and k not in CATEGORICAL else v) for k, v in d.items()}
+
+
+def zone_block(view: MarketView, tfs: dict, cand: dict, entry, stop, asof: datetime) -> dict:
+    """Zone features from the SAME zone engine as the live map (zones.engine), on the as-of cut of the view (closed bars only)."""
+    nan = {n: NAN for n in _ZF.NAMES}
+    try:
+        from ..config import ZonesConfig
+        from ..zones import engine as ZE
+        bars = {}
+        for tf in ("M5", "M15", "H1", "D1"):
+            v = tfs.get(tf)
+            if v is not None and len(v):
+                bars[tf] = [{"open_utc": t, "o": o, "h": h, "l": lo, "c": c, "tv": tv, "closed": True}
+                            for t, o, h, lo, c, tv in zip(v.t[-600:], v.o[-600:], v.h[-600:], v.l[-600:], v.c[-600:], v.tv[-600:])]
+        if not bars.get("M5"):
+            return nan
+        inst = "BTC" if str(view.symbol or "").upper().startswith("BTC") else "XAUUSD"
+        zm = ZE.compute_map(instrument=inst, symbol=view.symbol, tick=view.point or 0.01, bars=bars, cfg=ZonesConfig(), as_of=asof.timestamp())
+        e = entry if entry is not None else (view.ask if cand["direction"] == "LONG" else view.bid)
+        if e is None:
+            return nan
+        quoted = view.bid is not None and view.ask is not None            # cost known at the decision time = the quoted spread
+        f = _ZF.compute(zm, direction=cand["direction"], entry=float(e), stop=stop, cost_price=view.spread if quoted else 0.0)
+        if not quoted:
+            f["zone_opp_room_after_costs_r"] = NAN                         # cost unknown: no "after costs" value is invented
+        return f
+    except Exception:  # noqa: BLE001 - a zone failure is a missing feature, never a crash of the feature pipeline
+        return nan

@@ -4,7 +4,7 @@ import { usePersisted } from "../router";
 import type { TimeZoneMode } from "../util";
 
 const BASE: ChartOpts = { showRsi: false, showMacd: false, showStructure: false, showZones: false, showVol: false, syncCrosshair: false, tz: "LOCAL",
-  showPatterns: false, showAiLevels: true, showSar: false, showExtInd: false, showSessions: false, showHeatmap: false };
+  showPatterns: false, showAiLevels: true, showSar: false, showExtInd: false, showSessions: false, showHeatmap: false, showZoneMap: false };
 
 /** Per-page chart options. `legacy` = the 1.9 key (one set for the whole monitor) used once as the starting point. */
 export function useChartOpts(page: string, defaults: Partial<ChartOpts>, legacy?: string): [ChartOpts, (k: keyof ChartOpts, v: any) => void] {
@@ -25,6 +25,7 @@ const LABELS: [keyof ChartOpts, string, string][] = [
   ["showPatterns", "Walls / zakres / formacje", "snapshot walls (HV_PROXY lub IV – źródło na etykiecie), zakres M5 i strefy M1, formacje, pivoty, dowody świecowe"],
   ["showSar", "SAR", "Parabolic SAR (profil MQ_SAR_WILDER_PROFILE_V1, step/max z profilu) – punkty zamkniętych świec; flip potwierdza zamknięta świeca"],
   ["showExtInd", "IQ / PAL", "poziomy IQ Gold Gann / IQ Star Lines z zatwierdzonego mappingu eksportera (wersja znana teraz); brak źródła = brak linii"],
+  ["showZoneMap", "Strefy H/L + profil sesji", "mapa stref PMW (HLZE + DSVIE + UZICE) z backendu: strefy od chwili potwierdzenia, prowizoryczne przerywane z dopiskiem PROW.; POC/VAH/VAL ostatniej zakończonej sesji (rozwijająca się – przerywane); wolumen = tick volume brokera, nie wolumen giełdowy; wynik 0–100 nie jest prawdopodobieństwem"],
   ["showSessions", "Boksy sesji", "Session Sweep Boxes – wspólny silnik sesji (profil z ustawień); FINAL tylko przy kompletnych danych okna; zdarzenia sweep / wybicie z czasem potwierdzenia"],
   ["showHeatmap", "Heatmapa likwidacji", "szacowane poziomy likwidacji dostawcy (CoinGlass model1) – osobny panel z osią ceny źródła; brak źródła = brak mapy"],
   ["showStructure", "BOS/CHoCH", "struktura rynku"],

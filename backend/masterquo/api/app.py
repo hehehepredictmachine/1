@@ -1575,6 +1575,44 @@ def create_app(rt, port: int) -> FastAPI:
     def mm_status(instrument: str = Query("XAUUSD")):
         return rt.mm.status(_mm_inst(instrument))
 
+    @app.get("/api/v1/zones/map")
+    def zones_map(tf: str = Query("ALL"), as_of: str | None = Query(None), full: bool = Query(False)):
+        if tf not in ("ALL", "M5", "M15"):
+            raise HTTPException(400, "INVALID_TF")
+        from ..zones.series import ts as _ts
+        if as_of:
+            try:
+                t = _ts(as_of)
+            except ValueError as exc:
+                raise HTTPException(400, "INVALID_AS_OF") from exc
+            zm = rt.zones.at(t)
+        else:
+            zm = rt.zones.current_or_refresh()
+        if zm is None:
+            return {"status": "NO_MAP", "reason": rt.zones.state.get("last_error")}
+        return zm if full else rt.zones.chart_view(zm, tf)
+
+    @app.get("/api/v1/zones/status")
+    def zones_status():
+        return rt.zones.status()
+
+    @app.get("/api/v1/zones/events")
+    def zones_events(limit: int = Query(100, ge=1, le=1000)):
+        return {"items": rt.zones.events(limit)}
+
+    @app.get("/api/v1/zones/profiles")
+    def zones_profiles():
+        zm = rt.zones.current_or_refresh()
+        if zm is None:
+            return {"status": "NO_MAP", "reason": rt.zones.state.get("last_error")}
+        return {"profiles": zm.get("profiles"), "context": zm.get("context"), "volume_source": zm.get("volume_source"), "as_of": zm.get("as_of")}
+
+    @app.get("/api/v1/zones/context")
+    def zones_context(direction: str = Query(...), entry: float = Query(...), stop: float | None = Query(None), cost: float = Query(0.0)):
+        if direction not in ("LONG", "SHORT"):
+            raise HTTPException(400, "INVALID_DIRECTION")
+        return rt.zones.context_for(direction=direction, entry=entry, stop=stop, cost_price=cost) or {"status": "NO_MAP"}
+
     @app.get("/api/v1/eval/status")
     def eval_status():
         return rt.evaluation.status()

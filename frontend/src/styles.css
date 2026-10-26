@@ -114,6 +114,7 @@ code { color: var(--neon); }
 .badge.bad { color: var(--bad-text); border-color: var(--bad-line); background: color-mix(in srgb, var(--bad) 8%, transparent); }
 .chart-panel .chart-box { flex: 1; min-height: 0; position: relative; }
 .chart-msg { position: absolute; left: 10px; bottom: 34px; right: 10px; padding: 6px 8px; background: color-mix(in srgb, var(--bg) 85%, transparent); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); }
+.chart-ztip { position: absolute; left: 8px; right: 8px; bottom: 30px; font-size: 10.5px; color: var(--text); background: color-mix(in srgb, var(--bg) 85%, transparent); border: 1px solid var(--line); padding: 3px 6px; border-radius: 3px; pointer-events: none; }
 .chart-hint { position: absolute; left: 8px; right: 8px; top: 34px; font-size: 10.5px; color: var(--warn); background: color-mix(in srgb, var(--bg) 75%, transparent); padding: 3px 6px; border-radius: 3px; }
 .panel.fullscreen { position: fixed; inset: 8px; z-index: 50; }
 

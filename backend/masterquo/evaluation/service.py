@@ -37,6 +37,11 @@ ACTIVE_KINDS = ("NEW_CONFIRMED", "STAGE_CONFIRMED", "PLAN_REVISED")
 log = logging.getLogger("masterquo.evaluation")
 
 
+def _ts(x) -> float:
+    from datetime import datetime
+    return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+
+
 def _default_dir() -> Path:
     from ..paths import data_dir
     return data_dir() / "evaluation"
@@ -51,6 +56,7 @@ class EvaluationService:
         self.last_assessment: dict | None = None
         self._last_mature = 0.0
         self.regime_sources: dict = {}           # {"ACTIVE": fn() -> regime dict, "SH": fn() -> regime dict} set by the runtime (O4)
+        self.zone_provider = None                # ZoneService (PMW-ZONES): zone context of every candidate
 
     # ------------------------------------------------------------------ inputs
     def on_active_events(self, events: list, view) -> None:
@@ -186,8 +192,18 @@ class EvaluationService:
 
     def _log(self, c: K.SetupCandidate, prob: dict | None, extra_cost: float | None) -> dict:
         c.market_regime = dict(c.market_regime, both=self._regimes())     # O4: both definitions at the decision moment
+        zctx = None
+        if self.zone_provider is not None:
+            try:
+                zctx = self.zone_provider.context_for(direction=c.direction, entry=c.entry_price, stop=c.stop_loss, cost_price=extra_cost or 0.0)
+            except Exception:  # noqa: BLE001 - a zone failure never blocks an assessment
+                zctx = None
+            if zctx and zctx.get("map_as_of") and _ts(zctx["map_as_of"]) > c.decision_ts + 1e-6:
+                zctx = None                                              # a map newer than the decision would be look-ahead
+            if zctx:
+                c.features = dict(c.features, zones={k: (None if v != v else v) for k, v in (zctx.get("features") or {}).items()})
         items = X.positions(self.db, c.symbol)
-        a = E.assess(c, prob=prob, extra_cost=extra_cost, exposure=X.for_candidate(items, c.symbol, c.direction))
+        a = E.assess(c, prob=prob, extra_cost=extra_cost, exposure=X.for_candidate(items, c.symbol, c.direction), zones=zctx)
         ad = a.to_dict()
         ok = self.ledger.log(pred_id=c.key(), model_id=f"{E.VERSION}/{c.engine}", artifact_id=(prob or {}).get("source"),
                              feature_schema=K.VERSION, symbol=c.symbol, timeframe=c.timeframe, source_ts=c.decision_ts,
@@ -251,7 +267,7 @@ class EvaluationService:
                         "expected_value_interval_r": a["expected_value_interval_r"], "gain_r": a["gain_r"], "loss_r": a["loss_r"],
                         "cost_r": a["cost_r"], "execution": a["execution_quality"].get("status"),
                         "portfolio": (a["portfolio_risk_status"] or {}).get("status"), "notes": a["notes"],
-                        "outcome": json.loads(r["outcome"]) if r["outcome"] else None})
+                        "zone_context": a.get("zone_context"), "outcome": json.loads(r["outcome"]) if r["outcome"] else None})
         return out
 
     def report(self) -> dict:

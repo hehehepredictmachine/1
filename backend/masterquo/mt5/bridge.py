@@ -544,7 +544,7 @@ class MarketBridge:
             last = i == len(bars) - 1
             closed = not last or (raw_now is not None and b.t_raw + TF_SECONDS[tf] <= raw_now)
             out.append({"open_utc": iso(from_epoch(b.t_raw - off)) if off is not None else None, "t_raw": b.t_raw,
-                        "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "spread": b.spread, "closed": closed})
+                        "o": b.o, "h": b.h, "l": b.l, "c": b.c, "tv": b.tv, "rv": b.rv, "spread": b.spread, "closed": closed})
         return out
 
     def ticks_range(self, symbol: str, from_utc: float, to_utc: float, max_count: int = 500_000) -> dict:

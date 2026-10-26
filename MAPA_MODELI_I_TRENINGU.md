@@ -108,7 +108,7 @@ Jednostka modelu: instrument × zadanie × TF × horyzont × strona. Każdy inst
 - **TF:** TF setupu
 - **Horyzont:** do wyjścia setupu
 - **Strona:** oba (cecha kierunku)
-- **Cechy:** MQ-FEAT-1.0.0 (ml/features.py)
+- **Cechy:** MQ-FEAT-1.1.0 (ml/features.py; 1.0.0 + cechy stref PMW-ZONE-FEAT-1)
 - **Etykieta:** MQ-LABEL-1.1.0 (koszty: spread+poślizg+prowizja)
 - **Trainer:** ml/trainer.py (bloki fit/tune/calibrate/test, embargo 120 min); offline: training ml-offline
 - **Loader:** ml/registry.py Bundle → MLService.predict (bot, baza aktywnego instrumentu)
@@ -124,7 +124,7 @@ Jednostka modelu: instrument × zadanie × TF × horyzont × strona. Każdy inst
 - **TF:** TF setupu
 - **Horyzont:** do wyjścia setupu
 - **Strona:** oba
-- **Cechy:** MQ-FEAT-1.0.0
+- **Cechy:** MQ-FEAT-1.1.0
 - **Etykieta:** MQ-LABEL-1.1.0
 - **Trainer:** ml/trainer.py
 - **Loader:** ml/registry.py

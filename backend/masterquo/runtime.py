@@ -123,6 +123,9 @@ class Runtime:
         self.engine.active.listeners.append(self.evaluation.on_active_events)
         self.sh.listeners.append(self.evaluation.on_sh_cycle)
         self.scalp.listeners.append(self.evaluation.on_scalp_setup)                               # O6: third SHADOW source
+        from .zones.service import ZoneService
+        self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
+        self.evaluation.zone_provider = self.zones
         self.evaluation.regime_sources = {"ACTIVE": lambda: getattr(getattr(self.engine.active, "view", None), "regime", None),
                                           "SH": lambda: (self.sh.snapshot or {}).get("regime")}             # O4: both definitions
         self.scalp.extind = self.extind
@@ -184,6 +187,7 @@ class Runtime:
         self.liquidity.start()
         self.sh.start()
         self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
+        self.zones.start()                      # PMW-ZONES: zone map on every closed M5
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -210,6 +214,7 @@ class Runtime:
         self.scalp.stop()
         self.sh.stop()
         self.mm.stop()
+        self.zones.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()

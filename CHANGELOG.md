@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.22.0 – Mapa stref PMW: High/Low Zone Engine + Daily Session Volume Intelligence + jedna mapa stref (ANALYTICAL_ONLY)
+* **HLZE** (`zones/hlze.py`): strefy swingów M5/M15 (pivoty z `strategies/indicators`, istotność w ATR), pivoty prowizoryczne
+  vs potwierdzone (`confirmed_at` = zamknięcie świecy pivot + right; nic nie jest datowane wstecz), granice knot–korpus z limitem
+  szerokości (WIDE / odrzucenie), cykl życia ACTIVE → TESTED → WEAKENED / SWEPT / BROKEN / EXPIRED (przełamanie wyłącznie zamknięciem,
+  sweep = knot + zamknięcie z powrotem, więcej testów = słabsza strefa), zmiana roli w BREAKOUT/BREAKDOWN_LEVEL, równe szczyty/dołki
+  (płynność wyłącznie wnioskowana), poziomy poprzedniego dnia, poprzedniej sesji (`analytics/session_engine`), dnia bieżącego, konsolidacji.
+* **DSVIE** (`zones/dsvie.py`): źródło wolumenu zawsze podane (TICK_VOLUME = aktywność brokera, nie wolumen globalny ani agresorów;
+  order flow / footprint / arkusz = UNAVAILABLE), profile sesji z DST (POC, VAH/VAL 70%, HVN/LVN, ścieżka i migracja POC), stany
+  DEVELOPING / COMPLETED / INVALID / STALE, wolumen względny tej samej sesji w tym samym czasie, kontekst sesji, strefy popytu/podaży
+  tylko z dowodami (odrzucenie + przemieszczenie + kontekst; typ dowodu przy każdym).
+* **UZICE** (`zones/uzice.py`, `zones/engine.py`): jedna mapa stref `PMW-ZONE-1.0` – łączenie tylko tej samej polaryzacji, zachowane
+  pochodzenie, konflikty, punktacja 25/25/20/15/10/5 bez podwójnego liczenia, kary; wynik nie jest prawdopodobieństwem
+  (`confidence_status` = UNVALIDATED).
+* **ZoneService + API:** przeliczenie raz na zamkniętą M5, stabilne id, dziennik zdarzeń bez duplikatów, widok historyczny `as_of`;
+  `GET /api/v1/zones/{map,status,events,profiles,context}`.
+* **Ocena setupów (SHADOW):** `zone_context` każdego setupu; silna strefa przeciwna bliżej niż 1 R po kosztach → REDUCE w ocenie
+  SHADOW (tylko przy danych OK); mapa późniejsza niż decyzja jest odrzucana. **Wykonanie bez zmian.**
+* **ML:** schemat cech MQ-FEAT-1.1.0 = 1.0.0 + 26 cech stref z tego samego silnika; trener przyjmuje próbki 1.0.0 i 1.1.0; model 1.0.0
+  ładuje się dalej (poprawka: wcześniej zmiana wersji schematu zablokowałaby czempiona). Bez automatycznego retreningu i promocji.
+* **Wykres:** opcja „Strefy H/L + profil sesji” (Wykresy bota, Analiza AI) – strefy od chwili potwierdzenia, prowizoryczne przerywane
+  z dopiskiem „PROW.”, POC/VAH/VAL, podpowiedź pod kursorem (typ, TF, status, wynik, testy, czas potwierdzenia, źródło wolumenu).
+* Dokumenty: `docs/ZONE_ENGINE_ARCHITECTURE.md`, `docs/HIGH_LOW_ZONE_ENGINE.md`, `docs/DAILY_SESSION_VOLUME_ENGINE.md`,
+  `docs/ZONE_AI_INTEGRATION.md`, `docs/ZONE_ENGINE_TEST_REPORT.md`. Walidacja predykcyjna na danych klienta – jeszcze niewykonana.
+
 ## 1.21.0 – Domknięcie planu po audycie: wspólny strażnik portfela, metryki, rozkład wyników, master models w pętli, O5, O8
 * **Wspólny strażnik portfela (§23, Definition of Done 8):** nowe wejścia każdej ścieżki są sprawdzane względem dzisiejszego zrealizowanego
   wyniku i otwartych pozycji **obu** ścieżek (S01–S12 + SCALPING/HEDGING), wobec ostrzejszego z dwóch skonfigurowanych limitów

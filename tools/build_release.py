@@ -1,7 +1,7 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/PepeMarketWizard_KLIENT_1_21_0.zip         bot 1.21.0 (SCALPING/HEDGING + panel Neural Cyberpunk + master models SHADOW + ocena setupów SHADOW + ścieżka główna + strażnik portfela) + training installers for Windows (no license, no secrets)
-  release/PepeMarketWizard_KLIENT_1_21_0.zip.sha256  SHA-256 of the ZIP (outside the ZIP)
+  release/PepeMarketWizard_KLIENT_1_22_0.zip         bot 1.22.0 (SCALPING/HEDGING + panel Neural Cyberpunk + master models SHADOW + ocena setupów SHADOW + ścieżka główna + strażnik portfela + mapa stref PMW) + training installers for Windows (no license, no secrets)
+  release/PepeMarketWizard_KLIENT_1_22_0.zip.sha256  SHA-256 of the ZIP (outside the ZIP)
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.21.0"
+VERSION = "1.22.0"
 CLIENT_ZIP = "PepeMarketWizard_KLIENT_1_21_0.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)

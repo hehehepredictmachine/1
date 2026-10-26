@@ -176,6 +176,11 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 * Drzewo decyzji ma 8 bramek: dane, rynek, strategia, wyzwalacz, ryzyko, AI, **ML**, tryb – przy każdej powód blokady.
 * „Jakość” to ocena punktowa, **nie** prawdopodobieństwo wygranej.
 * Domyślne bramki są łagodne (kierunek z H1, RR od 1,0, Claude tylko jako weto). Wersję ścisłą MasterQUO włączysz w Ustawieniach – szczegóły w `MIGRACJA_I_ZMIANY.md`.
+* Od 1.22 na stronie **Wykresy bota** (i w Analizie AI) jest przełącznik **„Strefy H/L + profil sesji”**: strefy szczytów/dołków M5/M15,
+  poziomy dnia i sesji, POC/VAH/VAL. Strefa jest rysowana od chwili potwierdzenia; prowizoryczna ma przerywaną ramkę i dopisek „PROW.”.
+  Najedź kursorem na strefę, by zobaczyć typ, status, wynik, testy i źródło wolumenu. Wolumen to aktywność tickowa brokera (nie wolumen
+  giełdowy), a wynik 0–100 to opis zbieżności, **nie** prawdopodobieństwo. Strefy nie składają zleceń – szczegóły w
+  `docs/ZONE_ENGINE_ARCHITECTURE.md`.
 
 ## Gdy coś nie działa
 * „Brak .venv” → uruchom `01_INSTALUJ.bat`.

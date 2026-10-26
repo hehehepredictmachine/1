@@ -38,7 +38,7 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
     rows = load_snapshot(snapshot_path)
     rows = [dict(r, **{"f": fe.from_json(json.loads(r["features_json"]))}) for r in rows]
     schema = {r["feature_schema_version"] for r in rows}
-    if schema and schema != {fe.FEATURE_SCHEMA_VERSION}:
+    if schema and not schema <= set(getattr(fe, "COMPATIBLE_SCHEMAS", (fe.FEATURE_SCHEMA_VERSION,))):
         return {"status": "FAILED", "reason": f"FEATURE_SCHEMA_MISMATCH:{sorted(schema)}"}
     info, reasons = val.split(rows, embargo_minutes=cfg["embargo_minutes"], min_block=cfg["min_block_samples"], min_class=cfg["min_block_per_class"],
                               test_after=prior_test_end)

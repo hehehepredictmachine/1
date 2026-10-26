@@ -166,9 +166,9 @@ class Bundle:
             import joblib
             model = joblib.load(path / "model.joblib")
         prep = Preprocessor.from_json(json.loads((path / "preprocessor.json").read_text(encoding="utf-8")))
-        from .features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
+        from .features import COMPATIBLE_SCHEMAS, FEATURE_NAMES, FEATURE_SCHEMA_VERSION
         sv = meta.get("feature_schema_version")
-        if sv and sv != FEATURE_SCHEMA_VERSION:
+        if sv and sv not in COMPATIBLE_SCHEMAS:                   # 1.1.0 only adds columns: a 1.0.0 model reads its own saved columns
             raise ValueError(f"FEATURE_SCHEMA_MISMATCH:{sv}!={FEATURE_SCHEMA_VERSION}")
         unknown = [c for c in prep.numeric if c not in FEATURE_NAMES]
         if unknown:

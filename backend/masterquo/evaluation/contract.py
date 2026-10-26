@@ -126,6 +126,7 @@ class SetupAssessment:
     execution_quality: dict = field(default_factory=dict)
     portfolio_risk_status: dict = field(default_factory=dict)
     hedge_assessment: dict = field(default_factory=dict)
+    zone_context: dict = field(default_factory=dict)  # PMW-ZONES: opposing / supporting zone, room after costs (evidence, not a rule)
     decision: str = "REJECT"
     rejection_reasons: list = field(default_factory=list)
     notes: list = field(default_factory=list)

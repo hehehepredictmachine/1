@@ -70,7 +70,7 @@ def execution_quality(c: SetupCandidate, *, max_spread_frac_of_risk: float = 0.2
 
 
 def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, exposure: dict | None = None,
-           agreement: dict | None = None) -> SetupAssessment:
+           agreement: dict | None = None, zones: dict | None = None) -> SetupAssessment:
     """prob: {"value", "calibrated": bool, "event", "source", "n_calibration", "event_matches": bool}."""
     a = SetupAssessment(setup_id=c.setup_id, engine=c.engine, strategy_id=c.strategy_id, candidate_key=c.key(), decision_ts=c.decision_ts,
                         event=(prob or {}).get("event") or DEFAULT_EVENT.get(c.engine, "net R > 0 wg planu setupu"),
@@ -124,6 +124,13 @@ def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, ex
         a.uncertainty = {"method": None, "reason": "brak skalibrowanego prawdopodobieństwa zdarzenia"}
         if a.break_even_probability is not None:
             a.notes.append(f"setup wymaga P > {a.break_even_probability:.3f} dla dodatniego EV (próg z kosztów i R:R, nie arbitralny)")
+    zflags = []
+    if zones:
+        a.zone_context = {k: zones.get(k) for k in ("map_id", "map_as_of", "data_state", "opposing_zone", "supporting_zone", "room_after_costs_r", "flags")}
+        if zones.get("data_state") == "OK":
+            zflags = list(zones.get("flags") or [])
+        else:
+            a.notes.append(f"mapa stref {zones.get('data_state')} – bez wpływu na ocenę")
     hard = [r for r in reasons if not r.startswith("EV_NOT_POSITIVE")]
     if reasons:
         a.decision = "REJECT"
@@ -133,8 +140,12 @@ def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, ex
         a.decision, reasons = "REDUCE", ["EV_INTERVAL_UNKNOWN"]
     elif a.expected_value_interval_r[0] <= 0 < a.expected_value_interval_r[1]:
         a.decision, reasons = "REDUCE", ["EV_INTERVAL_STRADDLES_ZERO"]
+    elif "ZONE_ROOM_INSUFFICIENT" in zflags:
+        a.decision, reasons = "REDUCE", ["ZONE_ROOM_INSUFFICIENT"]            # strong opposing zone closer than min_room_r after costs
     else:
         a.decision = "ACCEPT"
+    if "ZONE_ROOM_INSUFFICIENT" in zflags and a.decision != "REDUCE":
+        a.notes.append("silna strefa przeciwna bliżej niż minimalne miejsce po kosztach (kontekst strefowy)")
     a.rejection_reasons = reasons if reasons else []
     if hard:
         a.notes.append("odrzucenie niezależne od modelu: " + ", ".join(hard))

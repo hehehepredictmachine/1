@@ -75,7 +75,7 @@ export default function BotChartsPage({ route }: { route: Route }) {
           <div className="tabs small" role="group" aria-label="Liczba kolumn">
             {[1, 2, 3].map((c) => <button key={c} className={cls(cols === c && "on", c === 3 && "wide-only")} aria-pressed={cols === c} data-cols={c} onClick={() => setCols(c)}>{c} kol.</button>)}
           </div>)}
-        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showSessions", "showHeatmap", "showSar", "showExtInd", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
+        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showZoneMap", "showSessions", "showHeatmap", "showSar", "showExtInd", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
       </div>
       <div className="tf-bar" role="navigation" aria-label="Interwały" data-testid="tf-bar">
         {ordered.map((t) => (

@@ -45,6 +45,7 @@ export interface ChartOpts {
   showExtInd?: boolean;          // PMW-UPD-02: IQ Gold Gann / Star Lines levels from the approved exporter mapping
   showSessions?: boolean;        // PMW-UPD-06: session sweep boxes (shared engine, time-bounded) + edge events
   showHeatmap?: boolean;         // PMW-UPD-06: liquidation heatmap panel (separate source price axis unless mapping is validated)
+  showZoneMap?: boolean;         // PMW zone map (HLZE + DSVIE + UZICE) from /api/v1/zones/map - backend values only
 }
 
 export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
@@ -103,6 +104,11 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const structZones = useRef<ZonesPrimitive | null>(null);
   const sessBoxes = useRef<BoundedBoxesPrimitive | null>(null);
   const [sessions, setSessions] = useState<any>(null);
+  const zmBoxes = useRef<BoundedBoxesPrimitive | null>(null);
+  const [zoneMap, setZoneMap] = useState<any>(null);
+  const zoneMapRef = useRef<any>(null);
+  zoneMapRef.current = zoneMap;
+  const [zoneTip, setZoneTip] = useState<string | null>(null);
   const structMarkers = useRef<SeriesMarker<Time>[]>([]);
   const baseMarkers = useRef<SeriesMarker<Time>[]>([]);
   const [structure, setStructure] = useState<any>(null);
@@ -158,6 +164,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     candles.current.attachPrimitive(structZones.current);
     sessBoxes.current = new BoundedBoxesPrimitive();
     candles.current.attachPrimitive(sessBoxes.current);
+    zmBoxes.current = new BoundedBoxesPrimitive();
+    candles.current.attachPrimitive(zmBoxes.current);
     markers.current = createSeriesMarkers(candles.current, []);
     const el = box.current;
     const onUser = () => markUser();
@@ -174,6 +182,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
         const b: any = p.seriesData.get(candles.current);
         setLegend(b ? { o: b.open, h: b.high, l: b.low, c: b.close } : null);
       }
+      setZoneTip(zoneTipAt(zoneMapRef.current, p.point && candles.current ? candles.current.coordinateToPrice(p.point.y) : null));
       if (optsRef.current.syncCrosshair && p.sourceEvent)
         SYNC.dispatchEvent(new CustomEvent("sync", { detail: { src: chartId, kind: "crosshair", time: (p.time as number) ?? null } as SyncMsg }));
     });
@@ -593,6 +602,42 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, opts.showSessions, data, shift]);
 
+  // ---------------------------------------------------------------- PMW zone map (UZICE): backend values only, drawn from the moment of
+  // confirmation (a provisional zone from its creation, dashed and labelled "PROW."); the panel never recomputes zones.
+  useEffect(() => {
+    if (!opts.showZoneMap) { setZoneMap(null); return; }
+    let alive = true;
+    const ztf = tf === "M5" || tf === "M15" ? tf : "ALL";
+    apiGet(`/api/v1/zones/map?tf=${ztf}`).then((r) => alive && setZoneMap(r)).catch(() => alive && setZoneMap(null));
+    return () => { alive = false; };
+  }, [tf, opts.showZoneMap, s.analysisSeq]);
+
+  useEffect(() => {
+    const pr = zmBoxes.current;
+    if (!pr) return;
+    if (!opts.showZoneMap || zoneMap?.status !== "OK") { pr.set([]); return; }
+    const TT = (iso: string) => epochSec(iso) + shiftRef.current;
+    const nowT = (times.current[times.current.length - 1] ?? 0) + 60;
+    const boxes: BoundedBox[] = [];
+    for (const z of zoneMap.zones || []) {
+      const from = TT(z.confirmed_at || z.created_at);
+      const col = z.polarity === "HIGH" ? "#d9534f" : "#3a9d6b";
+      boxes.push({ from, to: nowT, low: z.lower_price, high: z.upper_price, color: withAlpha(col, z.provisional ? 0.04 : 0.09), border: col,
+        dashed: !!z.provisional, label: zoneLabel(z) });
+    }
+    const prof = (p: any, dev: boolean) => {
+      if (!p || p.poc == null) return;
+      const from = TT(dev ? p.start : p.end);
+      for (const [k, v] of [["POC", p.poc], ["VAH", p.vah], ["VAL", p.val]] as [string, number][])
+        if (v != null) boxes.push({ from, to: nowT, low: v, high: v, color: "", border: k === "POC" ? "#8a6dd8" : "#6d8ad8", dashed: dev,
+          label: `${dev ? "rozw. " : ""}${k} ${p.session ?? ""}`.trim() });
+    };
+    prof(zoneMap.profile_last_completed, false);
+    prof(zoneMap.profile_developing, true);
+    pr.set(boxes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneMap, opts.showZoneMap, data, shift]);
+
   // ---------------------------------------------------------------- AI levels (marked "AI:" - never merged with the engine plan)
   useEffect(() => {
     const ser = candles.current;
@@ -738,6 +783,28 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       {err && <div className="chart-msg bad">Błąd danych: {err}</div>}
       {!err && data && data.bars?.length === 0 && <div className="chart-msg">Brak świec z MT5 – {q?.fix_hint || "sprawdź połączenie z terminalem"}</div>}
       {q?.fix_hint && data?.bars?.length > 0 && qStatus === "INSUFFICIENT_HISTORY" && <div className="chart-hint">{q.fix_hint}</div>}
+      {opts.showZoneMap && zoneMap && zoneMap.status === "OK" && zoneMap.data?.state !== "OK" &&
+        <div className="chart-hint" title={(zoneMap.data?.reasons || []).join(", ")}>Mapa stref: dane {zoneMap.data?.state} – strefy tylko informacyjnie</div>}
+      {opts.showZoneMap && zoneTip && <div className="chart-ztip">{zoneTip}</div>}
     </div>
   );
+}
+
+/** Text label of a unified zone: type, TFs, status and score - the provisional state is spelled out, not only shown by the dash. */
+function zoneLabel(z: any): string {
+  const tfs = (z.timeframes || []).join("/");
+  return `${z.provisional ? "PROW. " : ""}${z.zone_type} ${tfs} ${z.status} ${z.confluence_score}`;
+}
+
+/** Tooltip of the zones under the cursor price (values from the backend map; score 0-100 is not a probability). */
+function zoneTipAt(zm: any, price: number | null): string | null {
+  if (!zm || zm.status !== "OK" || price == null) return null;
+  const hit = (zm.zones || []).filter((z: any) => price >= z.lower_price && price <= z.upper_price);
+  if (!hit.length) return null;
+  return hit.slice(0, 3).map((z: any) => {
+    const rm = z.reaction_metrics || {};
+    const fl = (z.flags || []).length ? ` [${z.flags.join(",")}]` : "";
+    return `${zoneLabel(z)} | ${fmtNum(z.lower_price)}–${fmtNum(z.upper_price)} | testy ${rm.retests ?? 0}${rm.swept ? ", sweep" : ""}`
+      + ` | potw. ${String(z.confirmed_at || "—").slice(11, 16)} | wolumen: ${(zm.volume_source || {}).source ?? "?"}${fl}`;
+  }).join("  ·  ") + "  (wynik nie jest prawdopodobieństwem)";
 }

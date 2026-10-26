@@ -517,6 +517,45 @@ class AssetsConfig(_Strict):
         return v
 
 
+class ZonesConfig(_Strict):
+    """PMW-ZONES 1.22: High/Low Zone Engine (HLZE) + Daily Session Volume Intelligence (DSVIE) + Unified Zone Intelligence (UZICE).
+    Every threshold of the subsystem. The defaults are design choices, NOT empirically validated parameters."""
+    enabled: bool = True
+    tfs: list[str] = Field(default_factory=lambda: ["M5", "M15"])
+    swing_left: dict[str, int] = Field(default_factory=lambda: {"M5": 3, "M15": 3})
+    swing_right: dict[str, int] = Field(default_factory=lambda: {"M5": 3, "M15": 2})
+    min_prominence_atr: dict[str, float] = Field(default_factory=lambda: {"M5": 0.6, "M15": 0.5},
+                                                 description="swing size (pivot vs opposite extreme of its window) >= k x ATR14")
+    zone_half_width_atr: float = Field(0.25, gt=0, le=2, description="zone of one pivot: wick-to-body, capped at this x ATR")
+    min_width_ticks: int = Field(5, ge=1, le=10000)
+    max_zone_width_atr: float = Field(1.5, gt=0, le=10, description="wider = downgraded (WIDE); more than 2x = rejected")
+    cluster_tol_atr: float = Field(0.25, gt=0, le=2, description="equal highs / lows: pivots within this x ATR")
+    min_cluster_gap_bars: int = Field(3, ge=1, le=500)
+    touch_tol_atr: float = Field(0.10, ge=0, le=2, description="price within this x ATR of a boundary = touch")
+    break_close_atr: float = Field(0.10, ge=0, le=2, description="close beyond the boundary by this x ATR = BROKEN")
+    reclaim_bars: int = Field(3, ge=1, le=50, description="wick beyond + close back on the zone side within N bars = SWEPT (reclaim)")
+    retest_gap_bars: int = Field(3, ge=1, le=500, description="a retest needs price to have left the zone for N bars")
+    weaken_after_retests: int = Field(3, ge=1, le=50)
+    max_age_bars: dict[str, int] = Field(default_factory=lambda: {"M5": 576, "M15": 384})
+    displacement_atr: float = Field(1.0, gt=0, le=10, description="demand / supply: move away >= k x ATR ...")
+    displacement_bars: int = Field(6, ge=1, le=100, description="... within N bars after the pivot")
+    session_profile: dict[str, str] = Field(default_factory=lambda: {"XAUUSD": "LAB_XAU_REFERENCE_V1", "BTC": "LAB_BTC_REFERENCE_V1"})
+    profile_tf: Literal["M1", "M5"] = "M5"
+    profile_history_bars: int = Field(2016, ge=300, le=20000, description="deep history read for completed profiles and baselines")
+    bin_size: dict[str, float] = Field(default_factory=lambda: {"XAUUSD": 0.5, "BTC": 25.0})
+    value_area_pct: float = Field(0.70, gt=0.3, lt=1.0)
+    min_profile_coverage: float = Field(0.9, gt=0, le=1.0, description="completed profile below this slot coverage = INVALID")
+    node_smoothing_bins: int = Field(3, ge=1, le=21)
+    hvn_min_share_of_poc: float = Field(0.6, gt=0, le=1)
+    lvn_max_share_of_peaks: float = Field(0.35, gt=0, lt=1)
+    relvol_lookback_sessions: int = Field(5, ge=1, le=60)
+    merge_tol_atr: float = Field(0.15, ge=0, le=2)
+    score_weights: dict[str, float] = Field(default_factory=lambda: {"structure": 25, "volume": 25, "reaction": 20, "mtf": 15,
+                                                                      "freshness": 10, "data_quality": 5})
+    strong_zone_score: float = Field(60.0, ge=0, le=100)
+    min_room_r: float = Field(1.0, ge=0, le=20, description="SHADOW evaluation: strong opposing zone closer than this (R, after costs)")
+
+
 class AppConfig(_Strict):
     config_version: int = 11
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -540,6 +579,7 @@ class AppConfig(_Strict):
     signals: BotSignalsConfig = Field(default_factory=BotSignalsConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
     liquidity: LiquidityConfig = Field(default_factory=LiquidityConfig)
+    zones: ZonesConfig = Field(default_factory=ZonesConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

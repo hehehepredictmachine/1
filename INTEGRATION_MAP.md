@@ -29,13 +29,15 @@ Runtime
  │    └─ si / liquidity / extind / mm_provider        (kontekst dla agenta, tylko odczyt)
  ├─ SHService(bridge, modes)  ── własne: context, setup, coordinator, risk, executor, store ─ listeners: EvaluationService (SHADOW)
  ├─ EvaluationService(cfg, bridge, db) ── tylko odczyt: managed_positions, sh_plans, ml_predictions, bufor M1; własny ledger;
- │     źródła: ActiveEngine, SHService, ScalpService (O6); regime_sources: widok A + snapshot SH (O4)
+ │     źródła: ActiveEngine, SHService, ScalpService (O6); regime_sources: widok A + snapshot SH (O4); zone_provider = ZoneService (1.22)
+ ├─ ZoneService(cfg, bridge, bus) ── 1.22: mapa stref PMW (HLZE + DSVIE + UZICE) na każdej zamkniętej M5, tylko odczyt świec
+ │     (bridge.symbol_bars M5/M15, bufory H1/D1), własna baza data/zones/zones.sqlite; ANALYTICAL_ONLY
  ├─ SHADOW: ForecastService, ScalpService(+nss, mtf, liquidity, extind, ml), LabService, NSS, SI, Liquidity, Analytics,
  │          MarketScanner+BotSignalService, MMService (na żądanie API), WallsService
  └─ API (FastAPI) – czyta wszystkie serwisy; zapisuje tylko konfigurację, tryb, STOP, ręczne akcje i trening
 ```
 
-Serwisy SHADOW nie mają referencji do `gateway`, `manager`, `paper` ani `SHExecutor` (sprawdzane testami: scalp, analytics, mm, evaluation).
+Serwisy SHADOW nie mają referencji do `gateway`, `manager`, `paper` ani `SHExecutor` (sprawdzane testami: scalp, analytics, mm, evaluation, zones).
 
 ## 3. Zależności pakietów (`backend/masterquo/<pakiet>` → pakiety, z których importuje)
 
@@ -80,6 +82,9 @@ Pominięto wspólne narzędzia `version`, `paths`, `timeutil`.
 * `evaluation` (nowy) importuje `mm.ledger`, `sh.store`, `sh.tpmodel`, `risk.costs` (czysta funkcja prowizji) i `paths`; nie importuje
   `execution`, `risk.engine`, `engine.decision`, `sh.executor` ani `mt5.worker` i nie odwołuje się do `order_send`, gateway, PaperBroker,
   PositionManager ani SHExecutor (test statyczny `tests/test_evaluation.py` `Isolation`).
+* `zones` (1.22) importuje `strategies` (pivoty, ATR, TFView), `analytics.session_engine`, `analysis` (`levels`, `range_m5`),
+  `timeutil`, `paths`; konsumenci: `evaluation` (przez `zone_provider`, bez importu), `ml.features` (`zone_block`), `api`, `runtime`.
+  Te same zakazy importu co `evaluation` (test `tests/test_zones.py` `Isolation`).
 
 ## 4. Moduły bez wywołań w procesie bota (z grafu i pomiaru)
 
