@@ -26,7 +26,14 @@ identyczne po dodaniu do widoku 10 h przyszłych świec) – wynik w pełnym prz
 
 ## 2. Pełny zestaw testów offline
 
-`tools/run_tests.py` (wszystkie `tests/test_*.py`): przebieg w toku – wynik uzupełniany po jego zakończeniu.
+`tools/run_tests.py` (wszystkie `tests/test_*.py`): **Ran 895 tests in 1544 s – OK (skipped=4)**. Pominięte: 2 opcjonalne backendy
+(ONNX, OpenCL – brak pakietów w środowisku) oraz 2 testy treningu gold_candles wymagające `MQ_CANDLES_PYTHON` (w tym przebiegu
+zmienna nie była ustawiona) – uruchomione osobno z `.venv_candles`, wynik w §2a. Przebieg pełny ruszył przed trzema ostatnimi
+poprawkami (koszt w cechach ML, ograniczenie pól wykresu, zapis w jednej transakcji); moduły, których dotyczą, powtórzono w §2a.
+
+### 2a. Powtórzenie na końcowym kodzie
+
+Przebieg w toku (`test_ml`, `test_evaluation`, `test_zones` + 2 testy gold_candles z `MQ_CANDLES_PYTHON`) – wynik uzupełniany po zakończeniu.
 
 ## 3. Sprawdzenie w działającym bocie (demo, symulator terminala, 26.10.2026)
 
