@@ -1312,7 +1312,8 @@ def create_app(rt, port: int) -> FastAPI:
             deals = list(b.deals)
         ds = b.server_day_start_utc()
         ds_raw = ds.timestamp() + b.clock.offset if ds and b.clock.offset is not None else None
-        return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
+        return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "engines": stats.engine_stats(rt.db, mode, b.account_key),
+                "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
                 "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None,
                 "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset)}
 
@@ -1559,6 +1560,25 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/mm/status")
     def mm_status(instrument: str = Query("XAUUSD")):
         return rt.mm.status(_mm_inst(instrument))
+
+    @app.get("/api/v1/eval/status")
+    def eval_status():
+        return rt.evaluation.status()
+
+    @app.get("/api/v1/eval/assessments")
+    def eval_assessments(engine: str | None = Query(None), limit: int = Query(50, ge=1, le=500)):
+        from ..evaluation.contract import ENGINES
+        if engine is not None and engine not in ENGINES:
+            raise HTTPException(400, "UNKNOWN_ENGINE")
+        return {"items": rt.evaluation.assessments(engine, limit), "mode": "SHADOW"}
+
+    @app.get("/api/v1/eval/report")
+    def eval_report():
+        return rt.evaluation.report()
+
+    @app.get("/api/v1/eval/exposure")
+    def eval_exposure():
+        return rt.evaluation.exposure()
 
     @app.get("/api/v1/mm/live")
     def mm_live(instrument: str = Query("XAUUSD")):

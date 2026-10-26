@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 1.19.0 – Audyt architektury (Faza A) + wspólna ocena setupów (SHADOW)
+* **Poprawka bezpieczeństwa (AR-01):** SCALPING/HEDGING respektuje STOP (kill switch), Execution Lock i powody wiązania rachunku z
+  `ModeManager` – wcześniej czytał tylko nazwę trybu i po STOP otwierał nowe plany. Otwarte plany są nadal zarządzane. Test: `tests/test_arch_fixes.py`.
+* Audyt architektury oparty na grafie importów i pomiarze wykonania (pętla bota 12 min + panel w Chromium): `ARCHITECTURE.md`,
+  `COMPONENT_INVENTORY.md`, `INTEGRATION_MAP.md`, `REFACTOR_PLAN.md` (ustalenia AR-01…AR-16, decyzje O1–O8, stan Definition of Done).
+* Nowy pakiet `backend/masterquo/evaluation` (SHADOW, bez dostępu do ścieżki zleceń – test statyczny):
+  wspólny kontrakt `SetupCandidate`/`SetupAssessment` (lookahead = błąd kontraktu), ocena P nazwanego zdarzenia, EV netto, próg p* = L/(G+L)
+  z kosztów i R:R, przedział Wilsona, jakość wykonania, konflikt portfela; ledger każdego setupu obu ścieżek (także zablokowanych) z
+  dojrzewaniem wyniku z zamkniętych M1 (TP przed SL, MFE/MAE, wynik planu netto; świeca niejednoznaczna = SL).
+* Widok łącznej ekspozycji obu ścieżek (tylko odczyt) i statystyki per silnik + łącznie (`/api/v1/stats` → nowe pole `engines`;
+  pole `bot` bez zmian). API: `/api/v1/eval/status|assessments|report|exposure`.
+* Test `test_nss` (kolejka NSS): warunek oczekiwania na odrzucenie starego zadania był spełniony przez wcześniejsze odrzucenia, co pod
+  obciążeniem dawało wyścig z wątkiem roboczym; test czeka teraz na nowe odrzucenie.
+* Zachowanie decyzji S01–S12 i SCALPING/HEDGING bez zmian poza AR-01. Zmiany zmieniające zachowanie bota czekają na decyzję użytkownika
+  (`REFACTOR_PLAN.md` §4). LIVE zablokowany.
+
 ## 1.18.0 – Master models (XXX.rar): audyt, integracja, trening – SHADOW/OBSERVE
 * Nowy pakiet `backend/masterquo/mm`: wspólne kontrakty wyjść (execution_allowed zawsze false), snapshot danych z sha256, splity chronologiczne
   z purge/embargo i jednorazowym holdoutem, niezmienne artefakty (promocja wyłącznie VALIDATED_SHADOW, rollback), ledger predykcji z dojrzewaniem etykiet, drift.

@@ -118,6 +118,10 @@ class Runtime:
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
         self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
+        from .evaluation.service import EvaluationService
+        self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
+        self.engine.active.listeners.append(self.evaluation.on_active_events)
+        self.sh.listeners.append(self.evaluation.on_sh_cycle)
         self.scalp.extind = self.extind
         self.scalp.ml = self.ml
         self.engine.extind = self.extind

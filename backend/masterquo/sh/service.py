@@ -10,6 +10,7 @@ tick (broker-side SL/TP, external closes, unknown outcomes) and after a restart 
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ from .store import SHStore
 from .units import SymbolSpec, UnitError
 
 STRATEGIES = ("SCALPING", "HEDGING")
+NOT_SH_GATE_REASONS = ("EXECUTION_MODE_SIGNALS", "RISK_LIMITS_NOT_CONFIGURED")
 MM = {"NETTING": 0, "EXCHANGE": 1, "HEDGING": 2}
 
 
@@ -50,6 +52,7 @@ class SHService:
         self.recovered_epoch = None
         self.last_eval: dict = {}
         self.last_saved: dict = {}
+        self.listeners: list = []                  # fn(evals, inst=, symbol=, snap=, now=) after each cycle - read-only observers
         self.snapshot: dict | None = None
         self.snap_cache: dict = {}                    # per (instrument, session epoch): no M5 analysis carried across a switch
         self.state: dict = {"status": "STARTING", "updated_at": None, "warnings": []}
@@ -91,10 +94,17 @@ class SHService:
         return run
 
     def mode(self) -> str:
+        return self.gate()["mode"]
+
+    def gate(self) -> dict:
+        """Execution mode + reasons that forbid NEW plans now, from the shared ModeManager: the user's STOP (kill switch), the
+        Execution Lock, a missing / unconfirmed / wrong-type account in AUTO_DEMO. Open plans are always managed. Not applied:
+        SIGNALS (never opens plans) and the legacy RiskLimits of the S01-S12 engine (SH enforces its own limits, sh/risk.py)."""
         try:
-            return self.modes.gate(self.bridge.account_key)["mode"]
-        except Exception:  # noqa: BLE001
-            return "SIGNALS"
+            g = self.modes.gate(self.bridge.account_key)
+        except Exception as exc:  # noqa: BLE001 - unknown gate state = no new entries
+            return {"mode": "SIGNALS", "entry_block": [f"MODE_GATE_ERROR:{type(exc).__name__}"]}
+        return {"mode": g["mode"], "entry_block": [r for r in g.get("reason_codes") or [] if r not in NOT_SH_GATE_REASONS]}
 
     def account(self) -> dict:
         a = self.bridge.account_status() or {}
@@ -173,7 +183,8 @@ class SHService:
             self._set("NO_SYMBOL", str(exc))
             return
         q = self.quote(now)
-        mode = self.mode()
+        gate = self.gate()
+        mode = gate["mode"]
         ex = self.executor(spec)
         epoch = getattr(self.bridge, "session_epoch", None)
         if self.recovered_epoch != epoch:
@@ -189,13 +200,13 @@ class SHService:
         key = (bars["M1"][-1]["open_utc"], epoch, inst)
         if key != self.last_bar_key:
             self.last_bar_key = key
-            self.cycle(inst, bars, q, spec, acc, mode, now, shc, ex)
-        self._set("RUNNING", None, mode=mode, instrument=inst, symbol=spec.symbol, account_margin_mode=acc.get("margin_mode"),
+            self.cycle(inst, bars, q, spec, acc, mode, now, shc, ex, entry_block=gate["entry_block"])
+        self._set("RUNNING", None, mode=mode, entry_block=gate["entry_block"], instrument=inst, symbol=spec.symbol, account_margin_mode=acc.get("margin_mode"),
                   open_plans=[self.plan_view(p, q) for p in self.store.open_plans(spec.symbol)], last_eval=self.last_eval,
                   config_hash=shc["_hash"])
 
     # ------------------------------------------------------------------ evaluation cycle (new closed M1)
-    def cycle(self, inst, bars, q, spec, acc, mode, now, shc, ex) -> dict:
+    def cycle(self, inst, bars, q, spec, acc, mode, now, shc, ex, entry_block: list | None = None) -> dict:
         r = shc["risk"]
         ic = shc["instruments"][inst]
         snap = CX.snapshot(bars, q, tick=spec.tick_size, now=now, cfg={"max_bar_age_s": r["max_bar_age_s"], "max_quote_age_s": r["max_quote_age_s"],
@@ -226,10 +237,18 @@ class SHService:
                     su["risk"] = risk
                 else:
                     su["status_reason"] = "koordynator: " + coord[strat]["reason"]
+            if risk and risk["status"] == "PASS" and entry_block:
+                su["entry_block"] = list(entry_block)
+                su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
             self.persist_signal(su, risk, coord.get(strat), now)
             self.last_eval[strat] = su                                     # full setup (checklist, levels, models) for the panel
-            if risk and risk["status"] == "PASS" and mode in ("PAPER", "AUTO_DEMO"):
+            if risk and risk["status"] == "PASS" and mode in ("PAPER", "AUTO_DEMO") and not entry_block:
                 self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
+        for fn in list(self.listeners):
+            try:
+                fn(evals, inst=inst, symbol=spec.symbol, snap=snap, now=now)
+            except Exception:  # noqa: BLE001 - an observer never stops the cycle
+                logging.getLogger("masterquo.sh").exception("sh listener failed")
         return evals
 
     def persist_signal(self, su, risk, coord, now) -> None:

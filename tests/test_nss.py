@@ -317,12 +317,13 @@ class TestService(unittest.TestCase):
             self.assertEqual(pub["snapshot"]["inference_id"], last["inference_id"])
             self.assertEqual(s.public("BTC")["status"], "ASSET_NOT_ACTIVE")
             n_before = len(bus.ev)
+            d0 = s.stats["stale_discarded"]                                          # earlier discards must not satisfy the wait below
             s.epoch = 2                                                              # reconnect: an old-session request is discarded
             s.q.append({"request_id": "old", "plan": plan, "bars": tail, "instrument": "XAUUSD", "profile_hash": "h", "epoch": 1, "mode": "OBSERVE",
                         "enqueued": time.time()})
             with s._cv:
                 s._cv.notify()
-            self.assertTrue(self._wait(lambda: s.stats["stale_discarded"] >= 1))
+            self.assertTrue(self._wait(lambda: s.stats["stale_discarded"] > d0))
             self.assertEqual(len(bus.ev), n_before)
             s.epoch = 1
             s._candidate({"request_id": "late", "plan": dict(plan, setup_id="SET-T"), "bars": tail, "instrument": "XAUUSD", "profile_hash": "h", "epoch": 1,

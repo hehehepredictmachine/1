@@ -1,39 +1,103 @@
-# INTEGRATION_MAP – PepeMarketWizard 1.13 (rzeczywiste połączenia modułów)
+# INTEGRATION_MAP – PepeMarketWizard 1.18 · mapa zależności (DEPENDENCY_MAP), 26.10.2026
 
-**Uruchomienie:** `03_START_MASTERQUO.bat` → `masterquo_start.bat` → `python -m masterquo serve`.
-- Serwer: FastAPI i uvicorn, wyłącznie na 127.0.0.1.
-- Baza: SQLite w `data/`, migracje 0001–0013.
-- Panel: React i Vite (`frontend/dist`). Transport: jeden WebSocket (`/api/v1/ws`) z migawką stanu i zdarzeniami oraz REST `/api/v1/*`.
+Zastępuje opis 1.13. Źródła: statyczny graf importów (`ast`, 281 modułów `backend/`, importy modułowe i wewnątrz funkcji), okablowanie w
+`backend/masterquo/runtime.py` i pomiar działania (`ARCHITECTURE.md` §1).
 
-## Moduły nowe i zmienione w 1.13
+## 1. Procesy
 
-| Moduł | Wejście | Wynik | Odbiorcy w kodzie | Weryfikacja |
-|---|---|---|---|---|
-| `analytics/ta.py` (BB, SMA/EMA/WMA) | zamknięte świece z MarketBridge | kontrakt mq-analytics + linie wykresu | `engine/chartdata.py` (linie EMA/BB na wszystkich wykresach), `AnalyticsService` (Pulpit, Indykatory, Kontekst, wyjaśnienia), `analytics_snapshots` | `test_analytics.TestBBMA` (wartości wzorcowe, rozgrzewka, płaskie okno, zgodność z M02I i scalp, niezmienność prefiksu) |
-| `analytics/signal.py` (FFT, EMD, VMD) | ciągłe okno zamkniętych świec | widmo, IMF, mody i jakość | `AnalyticsService` → wątek „analytics-heavy” → Analiza sygnału, karta „Co wspiera analizę”, archiwum | `test_analytics.TestSignal` (znane częstotliwości, rekonstrukcja, luki, płaski sygnał, TIMEOUT, czysty JSON) |
-| `analytics/double_bottom.py` | świece próbki albo bieżące (causal) | status, współrzędne, pomiary, dostępność | skaner w `AnalyticsService` → `pattern_events` → Formacje; biblioteka; karta wyjaśnień | `TestDoubleBottom` (4 statusy, pierwsze rozstrzygnięcie, błąd danych ≠ FAILED, przyczynowość, wersja EXT) |
-| `analytics/library.py` | próbki w DB, konfiguracja | zadania, wyniki, raporty JSON/CSV | API `/api/v1/patterns/*` → Formacje | `TestLibrary` (duplikaty, równość pojedynczej i zbiorczej, pusta kolekcja, usunięte, anulowanie, import, ścieżka raportu) |
-| `analytics/service.py` | MarketBridge (`bars(tf, closed)`) | stan per TF, wyjaśnienia, diagnostyka | WS „analytics”, API `/api/v1/analytics*`, panel | `TestServiceIntegration` (odrzucenie spóźnionego wyniku, archiwum nienadpisywane, OBSERVE), `test_ui_analytics` |
-| `scalp/*` (1.12) | MarketBridge M1–H1 | decyzje SHADOW, replay, trening | `scalp_shadow`, API `/api/v1/scalp*`, strona Testy i raporty | `test_scalp_core`, `test_scalp_train`, `test_ui_scalp` |
-| Panel – nowe strony | API / WS | Pulpit, Kontekst, Indykatory, Analiza sygnału, Formacje, Pozycje, Dziennik, Testy, Diagnostyka | – | `test_ui_analytics` (render, 1920/1366/390 px, przepływ biblioteki), `test_ui_pages` |
+| Proces | Start | Rola | Połączenie z botem |
+|---|---|---|---|
+| bot | `python -m masterquo serve` (`03_START_MASTERQUO.bat`, `PepeMarketWizard.exe`) | FastAPI 127.0.0.1 + wątki serwisów | – |
+| worker prognoz | potomny `.venv_candles` (`gold_candles_runtime.worker`) | inferencja gold_candles / Scalp A-B | stdin/stdout JSON (`forecast/service.py`) |
+| trening | `python -m masterquo training run` (proces potomny na zadanie) | 17 zadań, artefakty | pliki w `data/`; bot przeładowuje rejestry |
+| CLI modułów | `mm`, `structure-intelligence`, `flow-context`, `context-indicators`, `ml-scalp`, `neural-scalp`, `indicator-context` | dataset, trening, ewaluacja | pliki w `data/` |
+| terminal MT5 | użytkownik | dane, konto, zlecenia | tylko przez `MT5Worker` |
 
-## Przepływ główny – bez zmian
+## 2. Okablowanie w runtime (kto ma referencję do kogo)
 
-1. **Dane:** MT5 → `mt5/bridge.py`.
-   - bufory TF, świeca otwarta osobno od zamkniętych;
-   - czas serwera przeliczany na UTC zmierzonym offsetem;
-   - reconnect z `session_epoch`.
-2. **Silnik:** `engine/service.py`.
-   - wejścia: M01 (jakość danych), M02/M02I (wskaźniki), M03 (struktura), strategie S01–S12 i AUTO;
-   - wyjścia: `decision`, checklista, sygnał → WS.
-3. **Wykonanie:** `risk/engine.py` → `execution/gateway.py`.
-   - tryby SIGNALS / PAPER / AUTO_DEMO / AUTO_LIVE;
-   - Execution Lock, `order_check` → `execution/manager.py`.
-4. **Moduły obserwacyjne:** forecast (gold_candles), scalp (SHADOW) i analytics (OBSERVE).
-   - **nie mają referencji** do gateway ani risk;
-   - test sprawdza, że serwis scalp nie ma pola gateway;
-   - analytics nie importuje modułów wykonania.
+```
+Runtime
+ ├─ MT5Worker ◄─ lock_fn = cfg.execution_locked (Execution Lock dla każdego wywołania handlowego)
+ ├─ MarketBridge(worker) ◄─ AssetRegistry
+ ├─ ModeManager(account_provider = bridge)          ◄── używany przez EngineService, gateway, manager, SHService (AR-01)
+ ├─ EngineService(bridge, modes, news, pcclock)
+ │    ├─ ActiveEngine (S01–S12, tracker, selector) ─ listeners: BotSignalService, EvaluationService (SHADOW)
+ │    ├─ gateway  = ExecutionGateway(engine, paper)   ──► PositionManager
+ │    ├─ agent    = ClaudeAgent(context=engine.context)
+ │    ├─ ml       = MLRouter                          (bramka tylko w ASSIST)
+ │    └─ si / liquidity / extind / mm_provider        (kontekst dla agenta, tylko odczyt)
+ ├─ SHService(bridge, modes)  ── własne: context, setup, coordinator, risk, executor, store ─ listeners: EvaluationService (SHADOW)
+ ├─ EvaluationService(cfg, bridge, db) ── tylko odczyt: managed_positions, sh_plans, ml_predictions, bufor M1; własny ledger
+ ├─ SHADOW: ForecastService, ScalpService(+nss, mtf, liquidity, extind, ml), LabService, NSS, SI, Liquidity, Analytics,
+ │          MarketScanner+BotSignalService, MMService (na żądanie API), WallsService
+ └─ API (FastAPI) – czyta wszystkie serwisy; zapisuje tylko konfigurację, tryb, STOP, ręczne akcje i trening
+```
 
-## Czego nowe moduły nie dotykają
+Serwisy SHADOW nie mają referencji do `gateway`, `manager`, `paper` ani `SHExecutor` (sprawdzane testami: scalp, analytics, mm, evaluation).
 
-Strategie S01–S12, reguły checklisty, ryzyko, wielkość pozycji, tryb wykonania, Execution Lock, konfiguracja brokera.
+## 3. Zależności pakietów (`backend/masterquo/<pakiet>` → pakiety, z których importuje)
+
+Pominięto wspólne narzędzia `version`, `paths`, `timeutil`.
+
+| Pakiet | Importuje |
+|---|---|
+| `__main__` | analysis, analytics, api, config, db, diagnostics, extind, forecast, lab, ml, mm, runtime, scalp, sh, train_all, training |
+| `agent` | analysis, analytics, db, extind, lab, mm, strategies |
+| `analysis` | lab, strategies |
+| `analytics` | config, db, extind, ml, mq_instruments, scalp, secrets_store |
+| `api` | analysis, analytics, engine, evaluation, execution, extind, lab, media, ml, mm, mq_instruments, prefs, runtime, scalp, sh, stats, strategies, training |
+| `config` | strategies |
+| `diagnostics` | config, data, db, mt5, secrets_store |
+| `engine` | analysis, analytics, data, db, extind, risk, scalp, stats, strategies |
+| `evaluation` | mm, paths, risk (`costs`), sh (`store`, `tpmodel`) |
+| `events` | db |
+| `execution` | db, engine, mt5, risk, sh |
+| `extind` | config, db, mq_instruments, scalp |
+| `forecast` | config, db, diagnostics, mq_instruments, mt5 |
+| `gold_candles_runtime` | gold_candles, mq_instruments, scalp |
+| `lab` | analysis, analytics, db, extind, ml, mq_instruments, scalp, strategies |
+| `markets` | db, engine, strategies |
+| `ml` | config, db, execution, extind, mq_instruments, mt5, risk, scalp, strategies |
+| `mm` | lab, mq_instruments, mt5, scalp, stats, strategies |
+| `mt5` | config |
+| `prefs` | db, strategies |
+| `runtime` | agent, analytics, assets, config, data, db, engine, evaluation, events, execution, extind, forecast, lab, markets, ml, mm, mt5, news, notify, prefs, scalp, secrets_store, sh |
+| `scalp` | analysis, analytics, config, extind, mq_instruments |
+| `sh` | analysis, db, lab, mm, mq_instruments, mt5 |
+| `strategies` | analysis, db |
+| `train_all` | training |
+| `training` | __main__, config, db, diagnostics, forecast, lab, ml, mq_instruments, mt5, sh, train_all |
+
+**Cykle na poziomie pakietów** (rozwiązane importami wewnątrz funkcji; ryzyko kolejności inicjalizacji – AR-15):
+`analysis ↔ lab`, `analysis ↔ strategies`, `analytics ↔ scalp`, `extind ↔ scalp`, `training ↔ __main__`, `training ↔ train_all`.
+
+**Uwagi o kierunku zależności:**
+* `execution → sh` (`execution/manager.py:531`): menedżer legacy czyta konfigurację SH (magic number), żeby nie dotykać pozycji SH.
+* `ml → execution` (`ml/labels.py`): etykiety ML używają tej samej polityki wyjścia co wykonanie (dobrze – jedna definicja).
+* `sh → mm`: rejestr modeli SH zawiera wpisy master models (rola OBSERVATION).
+* `evaluation` (nowy) importuje `mm.ledger`, `sh.store`, `sh.tpmodel`, `risk.costs` (czysta funkcja prowizji) i `paths`; nie importuje
+  `execution`, `risk.engine`, `engine.decision`, `sh.executor` ani `mt5.worker` i nie odwołuje się do `order_send`, gateway, PaperBroker,
+  PositionManager ani SHExecutor (test statyczny `tests/test_evaluation.py` `Isolation`).
+
+## 4. Moduły bez wywołań w procesie bota (z grafu i pomiaru)
+
+| Moduł | Gdzie jest używany | Wniosek |
+|---|---|---|
+| `gold_candles_runtime.*` (`plan_train`, `scalp_train`, `validate`, `registry_cli`, `scalp_registry`) | procesy potomne z runnera i launchery `.bat` | aktywne poza botem |
+| `gold_candles.cli`, `gold_candles.mt5_reader` | referencyjny pakiet źródłowy | nieużywane w ścieżce bota |
+| `strategies/ema_pullback_backtest.py` | `tools/backtest_ema_pullback.py` | narzędzie badawcze |
+| `mm/drift.py` | tylko testy | **nieużywany** (AR-08) |
+| `scalp/hedge.py` (logika decyzji) | wywoływany z `adverse_signal=None` | **martwa logika** (F-16, AR-09) |
+| `mm/*` (poza `service.py`) | tylko na żądanie `/api/v1/mm/live` i orchestrator treningu | inferencja nie jest ciągła (AR-08) |
+
+## 5. Duplikaty (AR-10)
+
+| Obszar | Implementacje | Propozycja |
+|---|---|---|
+| reżim rynku | `strategies/regime.py` (ścieżka A), `lab/market_v2.py` + `sh/context.py IncRegime` (ścieżka B), `lab/market.py`, `lab/context_ind/fractal.py` | jeden kanoniczny reżim do routingu (decyzja O4), pozostałe jako cechy |
+| jakość danych | `data/quality.py`, `sh/context.py` | wspólna funkcja, dwa profile progów |
+| koszty | `risk/costs.py`, `sh/units.py`+`sh/setup.py`, `scalp/replay.py` | jeden model kosztów z prowizją z historii i poślizgiem per instrument |
+| rejestry cech | `lab/features.py` (FS-1.0.0), `ml/features.py`, `mm/features.py`, `extind/features.py` | rejestr wspólny z wersjonowanym schematem |
+| ledgery predykcji | 10 tabel + `data/mm/*/ledger.sqlite` | ledger oceny setupów (nowy) jako wspólny format; migracja reszty stopniowo |
+| rejestry modeli | `sh/models.py` (żywy), `MAPA_MODELI_I_TRENINGU.*` (statyczny, 1.15), `mm/inventory.py` | `sh/models.py` jako jedyne źródło; mapa generowana z niego |
+| wejście po sweepie płynności | S07/S12 RANGE_RECLAIM, SH SCALPING (odwrócenie), scalp Range→Sweep→Retest (SHADOW) | zachować; porównać w jednym ledgerze zanim cokolwiek usunąć |

@@ -93,6 +93,39 @@ def bot_stats(db, mode: str, account_key: str | None = None) -> dict:
             "note": "Wyniki z rozliczonych transakcji bota w tym trybie. Mała próba nie pozwala wnioskować o skuteczności."}
 
 
+def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
+    """Per execution path and combined (AR-04): S01-S12 from `trades` (as bot_stats), SCALPING / HEDGING from closed `sh_plans`
+    (one plan = one result for the whole cycle incl. the hedge leg; spread/slippage inside the fill prices; commission when known;
+    swap is not tracked by SH). Reporting only - no limit or decision reads this."""
+    q = "SELECT * FROM trades WHERE mode=? AND source IN ('BOT','ADOPTED') AND status='CLOSED'"
+    args: list = [mode]
+    if mode != "PAPER" and account_key:
+        q += " AND account_key=?"
+        args.append(account_key)
+    legacy = db.query(q + " ORDER BY closed_at", args)
+    sq = "SELECT strategy, state, result FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
+    sargs: list = [mode]
+    if mode != "PAPER" and account_key:
+        sq += " AND account_key=?"
+        sargs.append(account_key)
+    import json
+    sh: dict[str, list[dict]] = {"SCALPING": [], "HEDGING": []}
+    unsettled, comm_unknown = 0, 0
+    for r in db.query(sq + " ORDER BY closed_at", sargs):
+        res = json.loads(r["result"]) if r.get("result") else {}
+        if r["state"] != "CLOSED" or res.get("net_money") is None:
+            unsettled += 1
+            continue
+        comm_unknown += 0 if res.get("commission_known") else 1
+        sh.setdefault(r["strategy"], []).append({"net_pnl": float(res["net_money"]), "r_multiple": res.get("r_multiple"),
+                                                  "commission": float(res.get("commission_money") or 0.0), "swap": 0.0})
+    per = {"ACTIVE_S01_S12": _agg(legacy), **{"SH_" + k: _agg(v) for k, v in sh.items()}}
+    return {"mode": mode, "per_engine": per, "combined": _agg(legacy + [x for v in sh.values() for x in v]),
+            "sh_unsettled_or_error_closed": unsettled, "sh_commission_unknown_plans": comm_unknown,
+            "note": "S01–S12 z tabeli trades, SCALPING/HEDGING z zamkniętych planów sh_plans (cały cykl = jeden wynik). "
+                    "Mała próba nie pozwala wnioskować o skuteczności."}
+
+
 def equity_curve(db, mode: str, account_key: str | None, days: int = 30) -> dict:
     frm = iso(utcnow() - timedelta(days=days))
     if mode == "PAPER":
