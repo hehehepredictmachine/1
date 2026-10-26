@@ -182,6 +182,9 @@ class ServiceAndExposure(unittest.TestCase):
         self.assertTrue(out["event_hit"])
         rep = self.svc.report()["groups"][0]
         self.assertEqual((rep["engine"], rep["decision"], rep["n"], rep["status"]), ("SH_SCALPING", "DEFER", 1, "SMALL_SAMPLE"))
+        dist = self.svc.report()["outcome_distribution"]["SH_SCALPING"]                  # §8: empirical TP / SL / neither with interval
+        self.assertEqual((dist["n"], dist["TP_FIRST"]["rate"], dist["SL_FIRST"]["rate"]), (1, 1.0, 0.0))
+        self.assertLess(dist["TP_FIRST"]["interval90"][0], 0.5)                          # one observation: wide interval
 
     def test_window_older_than_buffer_is_unknown_not_invented(self):
         su = mk_setup(self.spec, "SCALPING", "BUY", ref=2000.2)

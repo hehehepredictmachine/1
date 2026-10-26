@@ -38,6 +38,31 @@ class MMService:
         self._lock = threading.Lock()
         self._cache: dict = {}
         self._ledgers: dict = {}
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.loop = {"runs": 0, "last_bar": None, "last_error": None}
+        self.loop_interval_s = 30.0
+
+    # AR-08: inference on every new closed M5 bar, also when the panel is closed (no gaps in the SHADOW ledger). Own thread,
+    # read-only; it never touches the order path.
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._loop, name="mm-shadow", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.loop_interval_s):
+            try:
+                rows = self.rt.bridge.bars("M5", include_forming=False)
+                t = rows[-1].get("open_utc") if rows else None
+                if t and t != self.loop["last_bar"]:
+                    self.loop["last_bar"] = t                    # one attempt per bar, also when it fails (no retry storm)
+                    self.live(self._active())
+                    self.loop.update(runs=self.loop["runs"] + 1, last_error=None)
+            except Exception as exc:  # noqa: BLE001 - SHADOW loop never stops the bot
+                self.loop["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
 
     def _ledger(self, inst: str):
         from .ledger import Ledger
@@ -56,7 +81,7 @@ class MMService:
         return {"version": VERSION, "instrument": inst, "inventory": inventory.merge_run(rep), "latest_run": rep and {k: rep.get(k) for k in
                 ("run_id", "status", "profile", "started_at", "finished_at", "snapshot", "jobs", "safety")},
                 "artifacts": artifacts.list_artifacts(inst), "shadow_pointer": artifacts.read_pointer(inst), "ledger": self._ledger(inst).summary(),
-                "spec_bundle": inventory.SPEC_BUNDLE, "execution_allowed": False}
+                "spec_bundle": inventory.SPEC_BUNDLE, "execution_allowed": False, "shadow_loop": dict(self.loop)}
 
     def live(self, inst: str) -> dict:
         if inst != self._active():
@@ -184,6 +209,12 @@ class MMService:
         sc = [x["outcome"] for x in led.rows(mid, scored_only=True)]
         cal = {"n_scored": len(sc), "coverage_1sd": float(np.mean([s["in_1sd"] for s in sc])) if sc else None,
                "coverage_2sd": float(np.mean([s["in_2sd"] for s in sc])) if sc else None, "inconclusive": len(sc) < 200}
+        from . import drift as D                     # AR-08: calibration drift of the live forecast vs the nominal 1-sigma coverage
+        enough = len(sc) >= D.DEFAULT_POLICY["min_recent"]
+        cal["drift"] = D.evaluate(feature_ref={}, feature_cur={}, ref_abs_err=None, cur_abs_err=None, ref_coverage=0.6827 if enough else None,
+                                  cur_coverage=cal["coverage_1sd"] if enough else None, artifact_created_at=None)
+        if not enough:
+            cal["drift"]["note"] = f"za mało ocenionych prognoz ({len(sc)} < {D.DEFAULT_POLICY['min_recent']}) – dryf nieoceniany"
         return {**{k: p.get(k) for k in ("status", "mean_logret", "latent_var", "observed_var", "sd", "price", "edge_price", "z", "hp", "jitter", "flags")},
                 "horizon_bars": cfg.horizon, "live_calibration": cal, "search": m.last_search and {k: m.last_search[k] for k in ("candidates", "failed", "flat_surface")},
                 "note": "prognoza log-zwrotu z niepewnością; pasma to założenie gaussowskie do kalibracji, nie gwarancja"}

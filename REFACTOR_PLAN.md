@@ -78,7 +78,18 @@ API (wszystkie tylko do odczytu): `/api/v1/eval/status`, `/api/v1/eval/assessmen
 | **O3** | (b) REDUCE zamiast hedge na netting | `hedge.netting_alternative = REDUCE` w profilu HEDGING; `sh/risk.py` dopuszcza HEDGING na NETTING tylko po zaliczonej walidacji replay wariantu REDUCE (`SHService.netting_reduce_validation`: raport na REAL_USER_DATA, n ≥ 30, wynik oczekiwany > 0); bez nogi hedge w ekspozycji i depozycie; zdarzenie hedge → częściowe zamknięcie (istniejąca ścieżka REDUCE) | **tak, po walidacji**: do czasu treningu SH na Twojej historii HEDGING na netting pozostaje zablokowany (z podanym powodem) |
 | **O4** | (c) oba reżimy w ledgerze | każda ocena zapisuje reżim `MarketRegimeEngine` (A) i `RegimeMachine v2` (B); `report.regimes` – tabela par z wynikiem planu | nie |
 | **O6** | (b) scalp Sweep→Retest w ledgerze | słuchacz `ScalpService.listeners` → `EvaluationService.on_scalp_setup` (silnik `SCALP_SHADOW`, zdarzenie TP1 przed SL, także kandydaci BLOCKED/MISSED) | nie |
-| O5, O7, O8 | nie wybrane | bez zmian | – |
+| O5, O8 | wdrożone w 1.21 na polecenie „dokończ zadanie” | O5: sześć starych raportów w `docs/archiwum/` z indeksem (treść bez zmian); O8: promocja legacy ML wymaga zysku Briera > 2 SE (`MLPromotion.min_brier_gain_se`) | O8: może zablokować promocję słabego modelu; działający czempion bez zmian |
+| O7 | odłożone razem z O2 (zgodnie z rekomendacją) | bez zmian | – |
+
+### 4.0 Domknięcie planu (1.21.0)
+
+| Punkt promptu / planu | Wdrożenie |
+|---|---|
+| §23 Risk Guard, DoD 8 | `risk/portfolio.py`: dla nowych wejść każdej ścieżki liczony jest dzisiejszy zrealizowany wynik **obu** ścieżek i ich otwarte pozycje wobec ostrzejszego z limitów (`PORTFOLIO_DAILY_LOSS_LIMIT`, `PORTFOLIO_MAX_OPEN_POSITIONS`); błąd odczytu = brak nowych wejść |
+| §22 metryki | średni zysk i strata, max drawdown (pieniądze i R), błąd standardowy R, rozbicie per strategia i per miesiąc (stabilność między okresami) – `/api/v1/stats` → `engines` |
+| §8 / §19 rozkład wyniku | raport oceny: empiryczne P(TP przed SL), P(SL przed TP), P(żaden poziom) z przedziałem Wilsona, mediana czasu utrzymania, log loss obok Briera |
+| AR-08 | master models na każdej zamkniętej M5 (wątek SHADOW), dryf kalibracji GPR przez `mm/drift.py` |
+
 
 Odpowiedź „Something else” w ankiecie przyszła bez treści – nie realizowano nic poza powyższym.
 
@@ -114,15 +125,15 @@ Do archiwum (treść zachowana): `ARCHITEKTURA.md` (1.13), `AUDIT.md`, `AUDIT_RE
 | 5 | Niepewność i konflikty modeli | **CZĘŚCIOWY** | przedział Wilsona, REDUCE przy nieznanej/szerokiej niepewności; zgodność modeli: brak dwóch niezależnych skalibrowanych modeli tego samego zdarzenia |
 | 6 | Scalping: realistyczne koszty i warunki wykonania | **CZĘŚCIOWY** | wejście po Ask/Bid, prowizja, poślizg, jakość spreadu; spread liczony podwójnie w SH (O7); brak danych o poślizgu brokera |
 | 7 | Hedging ocenia ekspozycję i koszt zabezpieczenia | **CZĘŚCIOWY** | koszyk porównuje koszt hedge z redukcją, walidacja HEDGE/NO_HEDGE/REDUCE; na netting REDUCE zamiast hedge po walidacji (O3); brak wytrenowanych modeli na danych klienta |
-| 8 | Wszystkie strategie korzystają ze wspólnego Risk Engine | **NIEUKOŃCZONY** | nadal dwa silniki ryzyka; od O1 na instrumencie wejścia otwiera tylko jedna ścieżka, więc ich ryzyko się nie sumuje; wspólne są STOP, wiązanie rachunku i wybór ścieżki |
+| 8 | Wszystkie strategie korzystają ze wspólnego Risk Engine | **CZĘŚCIOWY** | wspólne dla obu ścieżek: STOP, Execution Lock, wiązanie rachunku, ścieżka główna (O1) i strażnik portfela (dzienny wynik i pozycje obu ścieżek, 1.21); wielkość pozycji nadal liczy każda ścieżka własnym kalkulatorem |
 | 9 | Trening i walidacja odseparowane od danych testowych | **SPEŁNIONY** | chronologiczne podziały z embargo, holdout oceniany raz (`sh/tpmodel.py`, `ml/validation.py`, master models) |
 | 10 | Backtest uwzględnia ograniczenia egzekucji | **CZĘŚCIOWY** | konserwatywne świece niejednoznaczne, koszty; brak odrzuceń/requote i częściowych wypełnień brokera |
 | 11 | Testy jednostkowe, integracyjne i regresyjne | **SPEŁNIONY** | pełny zestaw testów; nowe: `test_arch_fixes.py` (AR-01, O1, O3), `test_evaluation.py` (B, D, O2, O4, O6) |
-| 12 | Dokumentacja odpowiada implementacji | **SPEŁNIONY dla dokumentów tego audytu** | starsze raporty – O5 |
+| 12 | Dokumentacja odpowiada implementacji | **SPEŁNIONY** | dokumenty audytu aktualne; starsze raporty w `docs/archiwum/` z indeksem (O5) |
 | 13 | Nowe moduły podłączone do przepływu decyzyjnego | **CZĘŚCIOWY** | wybór ścieżki głównej (O1) i wariant REDUCE (O3) działają w przepływie decyzji; `EvaluationService` jest obserwatorem trzech źródeł (O2) |
 | 14 | Bot potrafi bezpiecznie odmówić | **SPEŁNIONY** | pomiar 12 min: 21/21 decyzji zablokowanych z powodami; STOP w obu ścieżkach (AR-01); DEFER/REJECT oceny |
 | 15 | LIVE nieaktywny bez zgody | **SPEŁNIONY** | Execution Lock `LOCKED`, SH odmawia AUTO_LIVE, żaden test ani trening nie zmienia trybu |
 
-**Projekt nie jest ukończony w rozumieniu §26** – warunki 3 i 8 są nieukończone, a 4–7, 10 i 13 częściowe. Domknięcie 3 i 13 zależy od
-zebrania 200 ocen per silnik i decyzji o ASSIST (O2); 4–7 i 10 – od treningu i walidacji na historii klienta (B-DATA); 8 – od połączenia
-silników ryzyka (osobna decyzja, poza O1).
+**Projekt nie jest ukończony w rozumieniu §26** – warunek 3 jest nieukończony, a 4–8, 10 i 13 częściowe. Domknięcie 3 i 13 zależy od
+zebrania 200 ocen per silnik i decyzji o ASSIST (O2); 4–7 i 10 – od treningu i walidacji na historii klienta (B-DATA); 8 – od wspólnego
+kalkulatora wielkości pozycji (zmiana sizingu wymaga osobnej walidacji).

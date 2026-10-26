@@ -15,6 +15,11 @@ from datetime import timedelta
 
 from .timeutil import iso, parse_iso, utcnow
 
+
+def _from_epoch(t):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(float(t), timezone.utc) if t is not None else None
+
 DEAL_TYPE_BALANCE = 2
 # external flows for ROI: balance, credit, charge, correction, bonus (MT5 ENUM_DEAL_TYPE 2..6) - never trading profit
 EXTERNAL_FLOW_TYPES = (2, 3, 4, 5, 6)
@@ -29,6 +34,8 @@ DEFINITIONS = {
     "profit_factor": "suma zysków netto / |suma strat netto|; brak strat = brak wartości (nie nieskończoność)",
     "expectancy_r": "średni wynik netto w R (R = ryzyko planowane do SL przy otwarciu)",
     "roi": "ROI liczone metodą Dietza z uwzględnieniem wpłat/wypłat (roi_modified_dietz); wpłaty nie są zyskiem",
+    "max_drawdown": "największy spadek krzywej zrealizowanego wyniku netto (kolejność zamknięć); max_drawdown_r to samo w R",
+    "expectancy_r_se": "błąd standardowy średniego R – przy małej próbie przedział niepewności jest szeroki",
 }
 
 
@@ -49,7 +56,23 @@ def _agg(rows: list[dict]) -> dict:
     gl = -sum(r["net_pnl"] for r in rows if r["net_pnl"] < 0)
     rs = [r["r_multiple"] for r in rows if r.get("r_multiple") is not None]
     exp_r = round(sum(rs) / len(rs), 3) if rs else None
+    eq = peak = dd = 0.0
+    eq_r = peak_r = dd_r = 0.0
+    for r in rows:                                     # rows are in closing order: drawdown of the realised result curve
+        eq += r["net_pnl"]
+        peak = max(peak, eq)
+        dd = max(dd, peak - eq)
+        if r.get("r_multiple") is not None:
+            eq_r += r["r_multiple"]
+            peak_r = max(peak_r, eq_r)
+            dd_r = max(dd_r, peak_r - eq_r)
+    win_v = [r["net_pnl"] for r in rows if _outcome(r) == "WIN"]
+    loss_v = [r["net_pnl"] for r in rows if _outcome(r) == "LOSS"]
+    sd_r = (sum((x - exp_r) ** 2 for x in rs) / (len(rs) - 1)) ** 0.5 if exp_r is not None and len(rs) > 1 else None
     return {"trades": n, "wins": wins, "losses": losses, "breakeven": be, "net": round(sum(r["net_pnl"] for r in rows), 2),
+            "avg_win": round(sum(win_v) / len(win_v), 2) if win_v else None, "avg_loss": round(sum(loss_v) / len(loss_v), 2) if loss_v else None,
+            "max_drawdown": round(dd, 2), "max_drawdown_r": round(dd_r, 3) if rs else None,
+            "expectancy_r_se": round(sd_r / len(rs) ** 0.5, 3) if sd_r is not None else None,
             "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else None,
             "win_rate_all_closed": round(wins / n * 100, 1),
             "profit_factor": round(gp / gl, 2) if gl > 0 else None, "profit_factor_note": None if gl > 0 else "BRAK_STRAT",
@@ -103,7 +126,7 @@ def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
         q += " AND account_key=?"
         args.append(account_key)
     legacy = db.query(q + " ORDER BY closed_at", args)
-    sq = "SELECT strategy, state, result FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
+    sq = "SELECT strategy, state, result, closed_at FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
     sargs: list = [mode]
     if mode != "PAPER" and account_key:
         sq += " AND account_key=?"
@@ -118,9 +141,18 @@ def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
             continue
         comm_unknown += 0 if res.get("commission_known") else 1
         sh.setdefault(r["strategy"], []).append({"net_pnl": float(res["net_money"]), "r_multiple": res.get("r_multiple"),
-                                                  "commission": float(res.get("commission_money") or 0.0), "swap": 0.0})
+                                                  "commission": float(res.get("commission_money") or 0.0), "swap": 0.0,
+                                                  "strategy_id": r["strategy"], "closed_at": iso(_from_epoch(r["closed_at"]))})
     per = {"ACTIVE_S01_S12": _agg(legacy), **{"SH_" + k: _agg(v) for k, v in sh.items()}}
-    return {"mode": mode, "per_engine": per, "combined": _agg(legacy + [x for v in sh.values() for x in v]),
+    allr = sorted(legacy + [x for v in sh.values() for x in v], key=lambda r: str(r.get("closed_at") or ""))
+    by_strategy: dict[str, list] = {}
+    by_month: dict[str, list] = {}
+    for r in allr:
+        by_strategy.setdefault(str(r.get("strategy_id") or "?"), []).append(r)
+        by_month.setdefault(str(r.get("closed_at") or "")[:7] or "?", []).append(r)
+    return {"mode": mode, "per_engine": per, "combined": _agg(allr),
+            "per_strategy": {k: _agg(v) for k, v in sorted(by_strategy.items())},
+            "per_month": {k: {x: _agg(v)[x] for x in ("trades", "net", "expectancy_r", "win_rate", "max_drawdown")} for k, v in sorted(by_month.items())},
             "sh_unsettled_or_error_closed": unsettled, "sh_commission_unknown_plans": comm_unknown,
             "note": "S01–S12 z tabeli trades, SCALPING/HEDGING z zamkniętych planów sh_plans (cały cykl = jeden wynik). "
                     "Mała próba nie pozwala wnioskować o skuteczności."}

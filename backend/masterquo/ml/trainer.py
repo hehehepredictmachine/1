@@ -101,6 +101,10 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
         p_t = calib.apply(raw_t)
         p_eval = raw_t if p_t is None else p_t
         cm = val.classification_metrics(ys["test"], p_eval, best_thr)
+        yt = np.asarray(ys["test"], float)                   # O8: paired Brier gain vs the base-rate forecast and its standard error
+        dlt = (base_rate - yt) ** 2 - (np.clip(np.asarray(p_eval, float), 0, 1) - yt) ** 2
+        cm["brier_gain"] = round(float(dlt.mean()), 6) if len(dlt) else None
+        cm["brier_gain_se"] = round(float(dlt.std(ddof=1) / np.sqrt(len(dlt))), 6) if len(dlt) > 1 else None
         pol = val.policy_eval(test_rows, p_eval >= best_thr)
         bundle.meta.update({"family": fam, "threshold": best_thr, "base_rate": base_rate, "calibration": calib.kind,
                             "feature_schema_version": fe.FEATURE_SCHEMA_VERSION, "test_window": info["windows"]["test"],

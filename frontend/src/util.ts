@@ -65,6 +65,8 @@ export const REASON_PL: Record<string, string> = {
   QUOTE_STALE: "Kwotowanie nieświeże",
   NEW_ENTRIES_STOPPED: "Nowe wejścia zatrzymane",
   PRIMARY_PATH_NOT_SELECTED: "Nie wybrano ścieżki głównej (okno Tryb → 4)",
+  PORTFOLIO_DAILY_LOSS_LIMIT: "Dzienny limit straty portfela (obie ścieżki łącznie)",
+  PORTFOLIO_MAX_OPEN_POSITIONS: "Limit otwartych pozycji portfela (obie ścieżki łącznie)",
   COST_MODEL_UNKNOWN_COMMISSION: "Nieznana prowizja",
   SLIPPAGE_STRESS_NOT_CONFIGURED: "Nieustawiony stres poślizgu",
   SIZE_BELOW_BROKER_MIN_LOT: "Wielkość poniżej min. lota brokera (nie zaokrąglamy w górę)",
@@ -78,6 +80,7 @@ export const REASON_PL: Record<string, string> = {
 
 export function reasonPl(code: string): string {
   if (REASON_PL[code]) return REASON_PL[code];
+  if (code.startsWith("PORTFOLIO_GUARD_ERROR")) return "Nie można ustalić stanu portfela – brak nowych wejść";
   if (code.startsWith("NOT_PRIMARY_PATH_")) return "Ta ścieżka tylko analizuje – wejścia otwiera ścieżka główna " + (code.endsWith("_SH") ? "SCALPING/HEDGING" : "S01–S12");
   if (code.startsWith("RR_NET_BELOW")) return "RR netto poniżej progu blokady";
   if (code.startsWith("RR_NET_CONDITIONAL_REDUCED_RISK")) return "RR netto warunkowy – wejście z mniejszym ryzykiem (x" + code.split("_X").pop() + ")";

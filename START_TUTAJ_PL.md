@@ -93,7 +93,7 @@ Walls: źródło jest zawsze na etykiecie – HV-proxy (przybliżenie z historii
 
 ## Nowe w 1.7 – sygnały z planem wejścia, M30/H8, EMA20 Pullback
 Blok „Sygnał AI / plan wejścia” obok checklisty, historia sygnałów, kontekst M30/H8 i układ 8 wykresów, strategia S11 (tylko skanowanie).
-Od 1.9 program działa bez licencji. Szczegóły: `CHANGELOG.md`, `INSTRUKCJA_WINDOWS_PL.md`, `AUDYT_MASTERQUO.md`.
+Od 1.9 program działa bez licencji. Szczegóły: `CHANGELOG.md`, `INSTRUKCJA_WINDOWS_PL.md`, `docs/archiwum/AUDYT_MASTERQUO.md`.
 
 ## Nowe w 1.2 – AUTO, 10 strategii, animowany monitor
 * **AUTO — wybór strategii** (nagłówek): bot sam ocenia rynek (reżim), porównuje 10 strategii S01–S10 i wybiera główną. Kliknięcie
@@ -165,6 +165,8 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 4. **Ścieżka główna** (per instrument): S01–S12 albo SCALPING / HEDGING – tylko ona otwiera nowe wejścia; bez wyboru żadna.
    Na rachunku typu NETTING strategia HEDGING działa dopiero po walidacji replay na Twojej historii (zamiast pozycji przeciwnej
    częściowo zamyka pozycję – REDUCE); do tego czasu jest zablokowana z podanym powodem.
+* Od 1.21 limity dziennej straty i liczby otwartych pozycji obejmują **obie ścieżki łącznie** (obowiązuje ostrzejszy z ustawionych
+  limitów); po ich osiągnięciu bot nie otwiera nowych wejść do końca dnia UTC lub do zamknięcia pozycji.
 
 ## Jak czytać monitor
 * Pełna checklista konkretnego setupu jest na stronie **Warunki setupu**; checklista 12A silnika – tamże, sekcja „Sygnał silnika”.
@@ -183,6 +185,6 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 * „Symbol XAUUSD- niedostępny” → dodaj go w Market Watch; program **nie** zamienia go na inny symbol.
 * Czas „UNKNOWN/STORED_UNVERIFIED” → normalne przy zamkniętym rynku; `06_DIAGNOZA_CZASU_MT5.bat` przy otwartym rynku.
 * Port 8765 zajęty → zmień `server.port` w `data\config.json`.
-* Dokumenty: `ARCHITEKTURA.md`, `MAPA_WYMAGAN.md`, `RAPORT_TESTOW.md`, `ZNANE_OGRANICZENIA.md`, `MIGRACJA_I_ZMIANY.md`, `AUDYT_WEJSCIOWY.md`.
+* Dokumenty: `ARCHITECTURE.md`, `COMPONENT_INVENTORY.md`, `REFACTOR_PLAN.md`, `MAPA_WYMAGAN.md`, `RAPORT_TESTOW.md`, `ZNANE_OGRANICZENIA.md`, `MIGRACJA_I_ZMIANY.md`; starsze raporty w `docs/archiwum/`.
 
 Aplikacja jest narzędziem badawczym. Strategie i modele nie mają zweryfikowanej skuteczności na Twoim rachunku – zacznij od SIGNALS i PAPER.

@@ -27,6 +27,7 @@ Three independent settings (never derived from each other):
 from __future__ import annotations
 
 import threading
+import time
 
 from ..db.database import dumps
 from ..risk.engine import limits_configured
@@ -190,6 +191,16 @@ class ModeManager:
                     reasons.append("PRIMARY_PATH_NOT_SELECTED")
                 elif prim != path:
                     reasons.append("NOT_PRIMARY_PATH_" + prim)
+            portfolio = None
+            if path is not None and mode != "SIGNALS":
+                try:                                            # shared portfolio guard of both paths (prompt §23, DoD 8)
+                    from ..risk import portfolio as PF
+                    from ..sh import config as SHC
+                    portfolio = PF.state(self.db, mode, account_key, time.time())
+                    reasons.extend(PF.check(portfolio, equity=(account or {}).get("equity"), legacy_limits=self.cfg_store.get().risk,
+                                            sh_limits=SHC.load().get("risk")))
+                except Exception as exc:  # noqa: BLE001 - unknown portfolio state = no new entry
+                    reasons.append(f"PORTFOLIO_GUARD_ERROR:{type(exc).__name__}")
             return {"mode": mode, "allowed": not reasons, "auto_trading": self.auto_trading and not reasons,
-                    "kill_switch": self.kill_switch, "reason_codes": reasons, "primary_path": prim, "path": path,
+                    "kill_switch": self.kill_switch, "reason_codes": reasons, "primary_path": prim, "path": path, "portfolio": portfolio,
                     "execution_lock": "LOCKED" if self.cfg_store.execution_locked() else "UNLOCKED_BY_USER"}

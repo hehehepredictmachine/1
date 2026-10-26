@@ -262,6 +262,7 @@ class EvaluationService:
         groups: dict = {}
         ready: dict = {}
         regimes: dict = {}
+        dist: dict = {}
         for r in rows:
             pl = json.loads(r["payload"])
             out = json.loads(r["outcome"]) if r["outcome"] else {}
@@ -273,6 +274,12 @@ class EvaluationService:
                 continue
             rg["matured"] += 1
             rg["r"].append(out["plan_r_net"])
+            ds = dist.setdefault(a["engine"], {"n": 0, "TP_FIRST": 0, "SL_FIRST": 0, "NEITHER": 0, "hold": []})
+            ds["n"] += 1
+            th = out.get("targets_hit") or []
+            ds["SL_FIRST" if out.get("first_event") == "SL" else "TP_FIRST" if any(th) else "NEITHER"] += 1
+            if out.get("hold_s") is not None:
+                ds["hold"].append(out["hold_s"])
             rd = ready.setdefault(a["engine"], {"matured": 0, "with_probability": 0, "y": [], "p": []})
             rd["matured"] += 1
             if a.get("probability") is not None and out.get("event_hit") is not None:
@@ -302,15 +309,28 @@ class EvaluationService:
             base = sum(rd["y"]) / n if n else None
             brier0 = base * (1 - base) if base is not None else None                   # base-rate forecast
             cal_ok = brier is not None and brier0 is not None and brier < brier0
+            ll = -sum(y * math.log(min(max(p, 1e-6), 1 - 1e-6)) + (1 - y) * math.log(1 - min(max(p, 1e-6), 1 - 1e-6))
+                      for p, y in zip(rd["p"], rd["y"])) / n if n else None
             readiness[eng] = {"matured": rd["matured"], "with_probability": n, "target": ASSIST_MIN_MATURED,
+                              "log_loss": None if ll is None else round(ll, 4),
                               "progress": round(min(1.0, n / ASSIST_MIN_MATURED), 4), "brier": None if brier is None else round(brier, 4),
                               "brier_base_rate": None if brier0 is None else round(brier0, 4),
                               "evidence_sufficient": n >= ASSIST_MIN_MATURED and cal_ok,
                               "note": "tylko informacja – przejście do ASSIST wymaga decyzji użytkownika"}
+        outcomes = {}
+        for eng, ds in sorted(dist.items()):
+            n = ds["n"]
+            hold = sorted(ds["hold"])
+            outcomes[eng] = {"n": n, "median_hold_s": hold[len(hold) // 2] if hold else None,
+                             **{k: {"rate": round(ds[k] / n, 4), "interval90": [round(x, 4) for x in E.wilson(ds[k] / n, n)]}
+                                for k in ("TP_FIRST", "SL_FIRST", "NEITHER")}}
         reg = [{"active_regime": k[0], "sh_regime": k[1], "n": v["n"], "matured": v["matured"],
                 "mean_plan_r_net": round(sum(v["r"]) / len(v["r"]), 4) if v["r"] else None}
                for k, v in sorted(regimes.items(), key=lambda kv: -kv[1]["n"])]
         return {"groups": res, "matured": sum(g["n"] for g in groups.values()), "mode": "SHADOW", "assist_readiness": readiness,
+                "outcome_distribution": outcomes,
+                "outcome_note": "TP_FIRST = pierwszy cel przed SL; SL_FIRST = SL przed jakimkolwiek celem; NEITHER = żaden poziom w horyzoncie "
+                                "(empiryczne częstości z przedziałem Wilsona 90 %, nie prognoza modelu)",
                 "regimes": reg, "regimes_note": "reżim obu definicji w chwili oceny (O4); wybór kanonicznego reżimu po zebraniu danych",
                 "note": "wynik planu bez BE i bez realnego wypełnienia (BINARY_PLAN_APPROX); mała próba nie pozwala wnioskować o skuteczności"}
 

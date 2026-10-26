@@ -183,6 +183,7 @@ class Runtime:
         self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
         self.liquidity.start()
         self.sh.start()
+        self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -208,6 +209,7 @@ class Runtime:
         self.forecast.stop()
         self.scalp.stop()
         self.sh.stop()
+        self.mm.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 1.21.0 – Domknięcie planu po audycie: wspólny strażnik portfela, metryki, rozkład wyników, master models w pętli, O5, O8
+* **Wspólny strażnik portfela (§23, Definition of Done 8):** nowe wejścia każdej ścieżki są sprawdzane względem dzisiejszego zrealizowanego
+  wyniku i otwartych pozycji **obu** ścieżek (S01–S12 + SCALPING/HEDGING), wobec ostrzejszego z dwóch skonfigurowanych limitów
+  (`PORTFOLIO_DAILY_LOSS_LIMIT`, `PORTFOLIO_MAX_OPEN_POSITIONS`). Błąd odczytu stanu portfela = brak nowych wejść. Zarządzanie pozycjami
+  i transakcje ręczne bez zmian.
+* **Metryki §22** w `/api/v1/stats` → `engines`: średni zysk i strata, maksymalny drawdown (pieniądze i R), błąd standardowy średniego R,
+  rozbicie per strategia i per miesiąc.
+* **Raport oceny setupów:** empiryczne częstości „TP przed SL / SL przed TP / żaden poziom w horyzoncie” z przedziałem Wilsona,
+  mediana czasu utrzymania, log loss obok Briera.
+* **Master models (AR-08):** inferencja na każdej zamkniętej świecy M5 we własnym wątku SHADOW (bez luk w ledgerze, także przy
+  zamkniętym panelu); dryf kalibracji prognozy GPR liczony przez `mm/drift.py` (od 200 ocenionych prognoz).
+* **O8:** promocja legacy ML wymaga zysku Briera ponad wskaźnik bazowy większego niż 2 błędy standardowe (jak `sh_tp_model`);
+  modele ocenione przed 1.21 wymagają retreningu przed promocją. Działający czempion bez zmian.
+* **O5:** sześć starszych raportów (ARCHITEKTURA, AUDIT, AUDIT_REPORT, AUDYT_MASTERQUO, AUDYT_WEJSCIOWY, RAPORT_1_3) przeniesione do
+  `docs/archiwum/` z indeksem; treść bez zmian, odnośniki poprawione.
+
 ## 1.20.0 – Decyzje po audycie: ścieżka główna (O1), REDUCE na netting (O3), ocena SHADOW rozszerzona (O2, O4, O6)
 * **Zmiana zachowania (O1):** na każdym instrumencie nowe wejścia otwiera tylko wybrana ścieżka główna – S01–S12 albo SCALPING/HEDGING
   (okno Tryb → „4. Ścieżka główna”, `POST /api/v1/mode/primary-path`, zapis w konfiguracji i w `settings_audit`). Druga ścieżka nadal

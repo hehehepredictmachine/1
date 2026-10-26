@@ -20,7 +20,7 @@ Runtime
  ├─ MT5Worker ◄─ lock_fn = cfg.execution_locked (Execution Lock dla każdego wywołania handlowego)
  ├─ MarketBridge(worker) ◄─ AssetRegistry
  ├─ ModeManager(account_provider = bridge)          ◄── używany przez EngineService, gateway, manager, SHService (AR-01);
- │                                                      gate(path=ACTIVE|SH) = reguła ścieżki głównej (O1)
+ │                                                      gate(path=ACTIVE|SH) = reguła ścieżki głównej (O1) + strażnik portfela (risk/portfolio.py)
  ├─ EngineService(bridge, modes, news, pcclock)
  │    ├─ ActiveEngine (S01–S12, tracker, selector) ─ listeners: BotSignalService, EvaluationService (SHADOW)
  │    ├─ gateway  = ExecutionGateway(engine, paper)   ──► PositionManager
@@ -88,9 +88,9 @@ Pominięto wspólne narzędzia `version`, `paths`, `timeutil`.
 | `gold_candles_runtime.*` (`plan_train`, `scalp_train`, `validate`, `registry_cli`, `scalp_registry`) | procesy potomne z runnera i launchery `.bat` | aktywne poza botem |
 | `gold_candles.cli`, `gold_candles.mt5_reader` | referencyjny pakiet źródłowy | nieużywane w ścieżce bota |
 | `strategies/ema_pullback_backtest.py` | `tools/backtest_ema_pullback.py` | narzędzie badawcze |
-| `mm/drift.py` | tylko testy | **nieużywany** (AR-08) |
+| `mm/drift.py` | od 1.21 `MMService._gpr` (dryf kalibracji) | używany (AR-08) |
 | `scalp/hedge.py` (logika decyzji) | wywoływany z `adverse_signal=None` | **martwa logika** (F-16, AR-09) |
-| `mm/*` (poza `service.py`) | tylko na żądanie `/api/v1/mm/live` i orchestrator treningu | inferencja nie jest ciągła (AR-08) |
+| `mm/*` (poza `service.py`) | od 1.21 wątek `mm-shadow` na każdej zamkniętej M5 + `/api/v1/mm/live` + orchestrator treningu | inferencja ciągła, SHADOW (AR-08) |
 
 ## 5. Duplikaty (AR-10)
 

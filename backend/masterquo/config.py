@@ -210,6 +210,9 @@ class MLPromotion(_Strict):
     min_test_samples: int = Field(150, ge=20)
     min_test_per_class: int = Field(30, ge=5)
     max_brier_vs_baseline: float = Field(0.0, description="challenger Brier minus base-rate Brier must be <= this (negative = better)")
+    # 1.21 (O8): the Brier gain over the base rate must exceed this many standard errors of the paired difference (as sh_tp_model);
+    # a noise model can beat the base rate by chance. Models evaluated without the SE cannot be promoted (re-train).
+    min_brier_gain_se: float = Field(2.0, ge=0, le=10)
     min_net_r_vs_no_ml: float = Field(0.0, description="net R per trade of the ML policy minus all-trades policy on the test block")
     max_drawdown_increase_r: float = Field(2.0, ge=0)
     max_calibration_error: float = Field(0.10, ge=0, le=1)

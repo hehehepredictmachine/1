@@ -49,7 +49,7 @@ MT5 terminal ──► MT5Worker (1 wątek; Execution Lock na każdym order_send
    ├───────────────────────────────────────────────────────────────────────────────────────────────┤
    │  SHADOW / OBSERVE (bez ścieżki do zleceń): ForecastService (proces .venv_candles), ScalpService   │
    │  (Range→Sweep→Retest), LabService, NSS, Structure Intelligence, Liquidity, Analytics, BotSignal-  │
-   │  Service + MarketScanner (inne rynki), MMService (tylko na żądanie API – AR-08)                   │
+   │  Service + MarketScanner (inne rynki), MMService (od 1.21 na każdej zamkniętej M5 + drift – AR-08)│
    ├───────────────────────────────────────────────────────────────────────────────────────────────┤
    │  NOWE (SHADOW, słuchacz obu ścieżek): ActiveEngine.listeners + SHService.listeners → Evaluation-   │
    │  Service → SetupCandidate → assess (P zdarzenia, EV, p*, niepewność, ekspozycja) → ledger →       │
@@ -66,7 +66,7 @@ ryzyka SH ani gateway nie zostały wywołane – brak setupu, który doszedłby 
 
 ### 3.1 Struktura projektu
 `backend/` (281 modułów w chwili pomiaru, z `gold_candles*`, ok. 58 tys. linii bez `vendor/`), `frontend/src` (42 pliki TSX, dwa panele: klasyczny – 22 strony, Neural
-Cyberpunk – 12 ekranów), `mql5/` (kod natywny, nieskompilowany), `tests/` (75 plików, 848 testów w 1.20), `config/` (profile strategii i instrumentów),
+Cyberpunk – 12 ekranów), `mql5/` (kod natywny, nieskompilowany), `tests/` (76 plików, 856 testów w 1.21), `config/` (profile strategii i instrumentów),
 launchery `.bat` i `PepeMarketWizard.exe`. Jeden proces bota + proces potomny prognoz (`.venv_candles`) + procesy treningu.
 
 ### 3.2 Modele i trening
@@ -111,19 +111,21 @@ Waga: **K** krytyczne (bezpieczeństwo/kapitał), **W** wysokie, **Ś** średnie
 | AR-01 | K | `sh/service.py` `_tick`/`cycle` | SCALPING/HEDGING czytał z `ModeManager.gate()` tylko nazwę trybu – **STOP (kill switch) nie zatrzymywał nowych planów SH**, ignorowane były też powody wiązania rachunku w AUTO_DEMO | `test_arch_fixes.ShStopGate` – przed poprawką plan otwarty przy STOP (stan OPEN) | **naprawione**: SH respektuje STOP, Execution Lock i powody rachunku; zarządzanie otwartymi planami trwa |
 | AR-02 | W | `engine/service.py`, `sh/service.py`, `risk/engine.py`, `sh/risk.py` | Dwie niezależne ścieżki wykonawcze na tym samym instrumencie. W PAPER żadna nie widzi pozycji drugiej (SH: `foreign_positions` tylko w AUTO_DEMO; legacy: `managed_positions`). Możliwe dwie równoległe ekspozycje lub przeciwne kierunki | przegląd kodu | **O1 wdrożone (1.20)**: jedna ścieżka główna na instrument, druga tylko analizuje; widok łącznej ekspozycji (tylko odczyt) |
 | AR-03 | W | `engine/decision.py`, `strategies/selector.py`, `sh/setup.py` | Brak P(TP przed SL) i EV w decyzji ścieżki A; router z wagami 0,35/0,65 bez wyników OOS; próg P w SH stały (0,55), nie z kosztów i R:R | przegląd kodu | kontrakt + silnik oceny w SHADOW (wdrożone); użycie jako bramki – **decyzja O2** |
-| AR-04 | W | `stats.py`, `/api/v1/stats` | Statystyki, win rate, PF, R i krzywa equity liczone tylko z `trades`; wyniki planów SH (`sh_plans`) nie są wliczane | `grep INTO trades` – zapisują tylko gateway/manager/paper | statystyki per silnik + łącznie (tylko raportowanie) |
+| AR-04 | W | `stats.py`, `/api/v1/stats` | Statystyki, win rate, PF, R i krzywa equity liczone tylko z `trades`; wyniki planów SH (`sh_plans`) nie są wliczane | `grep INTO trades` – zapisują tylko gateway/manager/paper | statystyki per silnik + łącznie; 1.21: metryki §22 (średni zysk/strata, max DD, per strategia, per miesiąc) |
 | AR-05 | Ś | `strategies/regime.py`, `lab/market_v2.py`, `sh/context.py` | Dwie różne definicje reżimu decydują w ścieżkach A i B – ten sam rynek może być TREND dla A i TRANSITION dla B | przegląd kodu | **O4 wdrożone (1.20)**: oba reżimy zapisywane przy każdej ocenie; wybór kanonicznego po zebraniu danych |
 | AR-06 | Ś | `risk/costs.py`, `sh/setup.py`, `scalp/replay.py` | Trzy modele kosztów; SH liczy spread podwójnie (wejście po Ask, a spread także w koszcie round-trip) → RR netto zaniżone (konserwatywnie) | `sh/setup.py:150` i koszt w `sh/setup.py` (krok 7) | plan: jeden model kosztów; zmiana progu przejścia SH wymaga decyzji |
-| AR-07 | Ś | `config.py` `MLPromotion.max_brier_vs_baseline = 0.0` | Bramka promocji legacy ML: Brier ≤ bazowy bez marginesu błędu – ta sama słabość co F-19 w `sh_tp_model` (szum może przejść), częściowo łagodzona przez wymóg net R i błędu kalibracji | przegląd kodu | plan (zaostrzenie polityki promocji) |
-| AR-08 | Ś | `mm/service.py` | Inferencja master models tylko na żądanie panelu – ledger GPR ma luki, gdy panel jest zamknięty; `mm/drift.py` niewywoływany | pomiar pętli: 1/84 funkcji `mm/*` | plan |
+| AR-07 | Ś | `config.py` `MLPromotion.max_brier_vs_baseline = 0.0` | Bramka promocji legacy ML: Brier ≤ bazowy bez marginesu błędu – ta sama słabość co F-19 w `sh_tp_model` (szum może przejść), częściowo łagodzona przez wymóg net R i błędu kalibracji | przegląd kodu | **O8 wdrożone (1.21)**: zysk Briera > 2 błędy standardowe (jak `sh_tp_model`); modele bez SE wymagają retreningu |
+| AR-08 | Ś | `mm/service.py` | Inferencja master models tylko na żądanie panelu – ledger GPR ma luki, gdy panel jest zamknięty; `mm/drift.py` niewywoływany | pomiar pętli: 1/84 funkcji `mm/*` | **wdrożone (1.21)**: własny wątek SHADOW na każdej zamkniętej M5, dryf kalibracji GPR z `mm/drift.py` |
 | AR-09 | Ś | `scalp/hedge.py`, `sh/hedge_fsm.py` | HedgeController scalp nie podejmuje decyzji (F-16). Aktywny hedge to koszyk HEDGING, który na rachunku netting **blokuje się**, bez alternatywy REDUCE | pomiar: 2/8 funkcji; `sh/risk.py` `account_hedging` | **O3 wdrożone (1.20)**: na NETTING REDUCE zamiast hedge, dopuszczone po walidacji replay na danych klienta |
 | AR-10 | N | wiele | Duplikaty infrastruktury: ≥4 rejestry cech, >8 ledgerów predykcji, 2 implementacje jakości danych, 3 rejestry modeli | `INTEGRATION_MAP.md` §3 | plan konsolidacji |
-| AR-11 | N | dokumentacja | Opisy architektury nieaktualne (1.13–1.15), sześć nakładających się raportów audytu | daty i wersje w nagłówkach | ARCHITECTURE/INTEGRATION_MAP zaktualizowane; konsolidacja w planie |
+| AR-11 | N | dokumentacja | Opisy architektury nieaktualne (1.13–1.15), sześć nakładających się raportów audytu | daty i wersje w nagłówkach | ARCHITECTURE/INTEGRATION_MAP zaktualizowane; **O5 (1.21)**: sześć starych raportów w `docs/archiwum/` z indeksem |
 | AR-12 | N | `api/app.py` | 241 endpointów w jednym pliku (ok. 2300 linii) | `grep -c @app.` | plan (podział na routery bez zmiany ścieżek) |
 | AR-13 | Ś | `strategies/*`, `sh/*`, `scalp/*` | Pakiet S1–S6 z promptu pokrywa się z istniejącymi S01–S12 i SH; nowe moduły byłyby duplikatami | §3.3 | mapowanie zamiast nowych plików |
 | AR-14 | N | `config.RiskLimits` | Świeża instalacja: ścieżka A w PAPER nie handluje (limity nieustawione), a ścieżka B handluje w PAPER na własnych limitach – niespójne domyślne zachowanie | pomiar 12 min | rozwiązane przez O1: bez wybranej ścieżki głównej żadna ścieżka nie otwiera nowych wejść |
 | AR-15 | N | pakiety | Cykle importów pakietów (analysis↔lab, analysis↔strategies, analytics↔scalp, extind↔scalp) rozwiązane importami leniwymi | graf importów | plan |
 | AR-16 | N | hedging | Brak hedgingu korelacyjnego międzyinstrumentowego – w allowliście są tylko XAUUSD i BTC, korelacja niestabilna | `assets/registry.py` | NIE DOTYCZY (udokumentowane) |
+
+| AR-17 | W | `risk/engine.py`, `sh/risk.py` | Limity dziennej straty i liczby pozycji liczone osobno w każdej ścieżce – żadna nie widzi wyniku drugiej (w PAPER także strat) | przegląd kodu | **wdrożone (1.21)**: wspólny strażnik portfela `risk/portfolio.py` w `ModeManager.gate(path=…)` – wynik dnia i pozycje obu ścieżek wobec ostrzejszego limitu |
 
 Ustalenia F-01…F-21 z audytu SH (`docs/strategie_sh/01_AUDYT_ARCHITEKTURY.md`) pozostają ważne; nowe numery AR-xx ich nie dublują.
 

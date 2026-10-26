@@ -70,10 +70,18 @@ def label(cand: dict, bars: list[dict], *, cost_r: float = 0.0) -> dict:
         if last_close is not None and r > 0:
             gross += rest * sgn * (last_close - entry) / r          # remainder marked at the last close of the horizon
     first = "SL" if sl_at is not None and not any(hit) else ("TP1" if hit and hit[0] else ("TIMEOUT" if not any(hit) else "TP"))
+    t0 = float(cand["decision_ts"])
+    if sl_at is not None:
+        exit_at = sl_at + M1                                # exit inside that bar: its close bounds the holding time
+    elif all(hit):
+        exit_at = max(hit_at) + M1
+    else:
+        exit_at = bar_ts(bars[-1]) + M1 if bars else None
     return {"status": "MATURED" if bars else "NO_BARS", "bars_used": len(bars), "ambiguous_bars": amb, "exit": exit_kind,
             "first_event": first, "targets_hit": hit, "targets_hit_at": hit_at, "sl_hit_at": sl_at,
             "mfe_r": round(mfe / r, 4) if r > 0 else None, "mae_r": round(mae / r, 4) if r > 0 else None,
             "plan_r_gross": round(gross, 4), "plan_r_net": round(gross - cost_r, 4),
+            "hold_s": round(exit_at - t0, 1) if exit_at is not None else None,
             "method": "M1 zamknięte w horyzoncie; świeca niejednoznaczna = SL pierwszy; bez BE (BINARY_PLAN_APPROX)"}
 
 

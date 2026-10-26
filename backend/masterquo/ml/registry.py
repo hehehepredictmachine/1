@@ -146,6 +146,13 @@ class Registry:
         base = result["baselines"]["base_rate"]["brier"]
         if t["brier"] - base > rules["max_brier_vs_baseline"]:
             why.append(f"BRIER_{t['brier']}_NOT_BETTER_THAN_BASE_RATE_{base}")
+        k = rules.get("min_brier_gain_se", 2.0)
+        if k:
+            g, se = t.get("brier_gain"), t.get("brier_gain_se")
+            if g is None or se is None:
+                why.append("BRIER_GAIN_SE_UNKNOWN_RETRAIN")
+            elif g <= k * se:
+                why.append(f"BRIER_GAIN_{g:.5f}_NOT_ABOVE_{k:g}SE_{se:.5f}")
         if m["calibration"] == "NONE":
             why.append("NOT_CALIBRATED")
         if isinstance(t.get("ece"), (int, float)) and t["ece"] > rules["max_calibration_error"]:

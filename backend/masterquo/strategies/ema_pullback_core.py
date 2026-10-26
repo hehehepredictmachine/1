@@ -2,7 +2,7 @@
 
 Source: the attached Pine Script v6 strategy "EMA20 Pullback + 2.5R Strategy — XAUUSD"
 (strategies/pine/EMA20_Pullback_2.5R_ORIGINAL.pine, sha256 6c14dbd0...). The corrected Pine version is
-strategies/pine/EMA20_Pullback_2.5R_FIXED.pine. Audit: AUDYT_MASTERQUO.md, section "Strategia EMA20 Pullback".
+strategies/pine/EMA20_Pullback_2.5R_FIXED.pine. Audit: docs/archiwum/AUDYT_MASTERQUO.md, section "Strategia EMA20 Pullback".
 
 Indicators follow the Pine reference definitions (the reference examples of ta.ema / ta.rma / ta.atr / ta.dmi):
   ema  : alpha = 2/(n+1), first value = the first source value          (pine_ema example)

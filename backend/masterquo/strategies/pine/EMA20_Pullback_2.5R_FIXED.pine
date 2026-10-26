@@ -1,5 +1,5 @@
 //@version=6
-// EMA20 Pullback + 2.5R — FIXED (MasterQUO audit, see AUDYT_MASTERQUO.md "Strategia EMA20 Pullback")
+// EMA20 Pullback + 2.5R — FIXED (MasterQUO audit, see docs/archiwum/AUDYT_MASTERQUO.md "Strategia EMA20 Pullback")
 // Same core rules as the original; corrected state machine and execution model. Equivalent Python implementation:
 // backend/masterquo/strategies/ema_pullback_core.py (run_fixed) + s11_ema_pullback.py.
 // NOT compiled in the build environment (no TradingView access) - compile and compare on your chart before use.

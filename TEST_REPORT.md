@@ -76,7 +76,7 @@ pyflakes backend/masterquo                                                   # b
 | `pyflakes backend/masterquo` | bez uwag |
 
 **Błędy pełnego przebiegu i przyczyny:**
-1. `test_app_process.test_01_health_and_single_instance` – wykrywanie działającej instancji porównywało dosłowną starą nazwę (usterka A-05 w `AUDIT_REPORT.md`). Poprawka w `__main__.cmd_serve` została wprowadzona w trakcie pełnego przebiegu; po niej test przechodzi.
+1. `test_app_process.test_01_health_and_single_instance` – wykrywanie działającej instancji porównywało dosłowną starą nazwę (usterka A-05 w `docs/archiwum/AUDIT_REPORT.md`). Poprawka w `__main__.cmd_serve` została wprowadzona w trakcie pełnego przebiegu; po niej test przechodzi.
 2. `test_ui_signal_card` (setUpClass) – test oczekiwał karty sygnału na stronie startowej, a w 1.13 stroną startową jest Pulpit. Test wchodzi teraz bezpośrednio na `#/ai`; zachowanie programu bez zmian.
 
 ## Nowe testy 1.13

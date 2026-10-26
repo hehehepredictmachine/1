@@ -180,7 +180,7 @@ Statusy: **PASS** – uruchomione i przeszło; **FAIL** – uruchomione i nie pr
 | `legacy_core/RUN_MACRO_GUARD_ALL_TESTS.py` | 287/287 (49 + 153 + 85) | PASS |
 | `legacy_core/RUN_ALL_OFFLINE_TESTS.py` | 47/48 – błąd `test_40_viewer_has_six_correct_roles`: brak modułu `tkinter` w Linuksie budowy (viewer Tk, nieużywany przez nową aplikację) | FAIL (środowiskowy) |
 | `m04n/M04N_TESTS.py` | 96/96 | PASS |
-| Pełna regresja 794 testów legacy (`--with-regression`/`--full`) | długi przebieg; nie uruchomiono ani w audycie, ani tutaj (w audycie: M00U 76/76, tests 94/94 – patrz `AUDYT_WEJSCIOWY.md`) | NOT_RUN |
+| Pełna regresja 794 testów legacy (`--with-regression`/`--full`) | długi przebieg; nie uruchomiono ani w audycie, ani tutaj (w audycie: M00U 76/76, tests 94/94 – patrz `docs/archiwum/AUDYT_WEJSCIOWY.md`) | NOT_RUN |
 
 ## 3. Frontend
 | Sprawdzenie | Status |
