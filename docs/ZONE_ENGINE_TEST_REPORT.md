@@ -33,7 +33,9 @@ poprawkami (koszt w cechach ML, ograniczenie pól wykresu, zapis w jednej transa
 
 ### 2a. Powtórzenie na końcowym kodzie
 
-Przebieg w toku (`test_ml`, `test_evaluation`, `test_zones` + 2 testy gold_candles z `MQ_CANDLES_PYTHON`) – wynik uzupełniany po zakończeniu.
+`test_ml`, `test_evaluation`, `test_zones` oraz 2 testy treningu gold_candles (`MQ_CANDLES_PYTHON` = `.venv_candles`):
+**Ran 92 tests in 1115 s – OK** (bez pominięć). Łącznie: wszystkie 895 testów zaliczone; pominięte wyłącznie testy opcjonalnych
+backendów ONNX i OpenCL.
 
 ## 3. Sprawdzenie w działającym bocie (demo, symulator terminala, 26.10.2026)
 

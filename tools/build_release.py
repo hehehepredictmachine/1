@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.22.0"
-CLIENT_ZIP = "PepeMarketWizard_KLIENT_1_21_0.zip"
+CLIENT_ZIP = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
