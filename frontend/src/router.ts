@@ -6,7 +6,8 @@
 import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
-  | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc";
+  | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
+  | "trading-intelligence" | "ai-neural-lab" | "system-control";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
@@ -19,6 +20,9 @@ export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[
   { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia"] },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
+  { id: "trading-intelligence", label: "Trading Intelligence", short: "Trading", icon: "▦" },
+  { id: "ai-neural-lab", label: "AI Neural Lab", short: "Neural Lab", icon: "✦" },
+  { id: "system-control", label: "System Control Center", short: "Control", icon: "⛨" },
   { id: "pulpit", label: "Pulpit", short: "Pulpit", icon: "◈" },
   { id: "nc", label: "Neural Cyberpunk (11 ekranów)", short: "Neural", icon: "◎" },
   { id: "wykresy", label: "Wykresy MTF", short: "Wykresy", icon: "▦" },
@@ -44,6 +48,8 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
 ];
 export const SECTION_OF: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.pages.map((p) => [p, g.id])));
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
+/** Pages rendered in the new terminal shell (features/shell); every other page keeps the existing AppShell. */
+export const TERMINAL_PAGE_IDS: Page[] = ["trading-intelligence", "ai-neural-lab", "system-control"];
 const LAST = "mq.lastPage";
 
 export function parse(hash: string): Route {

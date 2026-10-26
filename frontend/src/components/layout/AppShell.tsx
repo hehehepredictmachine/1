@@ -165,6 +165,8 @@ function SideNav({ page }: { page: Page }) {
           })}
         </div>))}
       <span className="spacer" />
+      <a href={href("trading-intelligence")} className="nav-item nav-main" data-testid="nav-terminal"
+        title="Nowe panele: Trading Intelligence, AI Neural Lab, System Control Center"><i aria-hidden="true">◆</i><span>Nowe panele</span></a>
       <button className="nav-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Rozwiń menu" : "Zwiń menu"} title={collapsed ? "Rozwiń menu" : "Zwiń menu"}>
         {collapsed ? "»" : "«"}</button>
     </nav>

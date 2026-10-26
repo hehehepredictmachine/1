@@ -16,7 +16,11 @@ import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
 import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
-import { PAGES, useRoute } from "./router";
+import { PAGES, TERMINAL_PAGE_IDS, useRoute } from "./router";
+import TerminalShell from "./features/shell/TerminalShell";
+import TradingIntelligencePage from "./features/trading-intelligence/pages/TradingIntelligencePage";
+import AiNeuralLabPage from "./features/ai-neural-lab/pages/AiNeuralLabPage";
+import SystemControlPage from "./features/system-control/pages/SystemControlPage";
 import { useStore } from "./store";
 import { UiCtx } from "./ui";
 import { cls } from "./util";
@@ -41,12 +45,19 @@ export default function App() {
   }, [route.page]);
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
+  const terminal = TERMINAL_PAGE_IDS.includes(route.page);
   return (
     <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
-      <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase())}>
-        <BackgroundLayer />
-        {s.synthetic && <div className="synthetic-banner">DANE PRZYKŁADOWE (SYNTETYCZNE) – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
-        {route.page === "nc" ? <NeuralCyberpunk route={route} /> :
+      <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase(), terminal && "app-terminal")}>
+        {!terminal && <BackgroundLayer />}
+        {s.synthetic && !terminal && <div className="synthetic-banner">DANE PRZYKŁADOWE (SYNTETYCZNE) – symulator terminala, oddzielna baza. To nie są notowania MT5 ani wyniki rachunku.</div>}
+        {terminal ? (
+          <TerminalShell page={route.page} asOf={route.params.get("as_of")}>
+            {route.page === "trading-intelligence" && <TradingIntelligencePage />}
+            {route.page === "ai-neural-lab" && <AiNeuralLabPage />}
+            {route.page === "system-control" && <SystemControlPage />}
+          </TerminalShell>) :
+        route.page === "nc" ? <NeuralCyberpunk route={route} /> :
         <AppShell page={route.page} onSettings={() => setSettings(true)} onPower={() => setPower(true)} onMode={() => setMode(true)} onLook={() => setLook(true)}>
           {route.page === "ai" && <AiAnalysisPage />}
           {route.page === "wykresy" && <BotChartsPage route={route} />}
