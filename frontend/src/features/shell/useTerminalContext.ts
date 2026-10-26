@@ -37,9 +37,10 @@ export function envOf(s: any, asOf?: string | null): { env: Env; detail: string 
   return { env: "UNKNOWN", detail: tm ? `nieznany typ rachunku: ${tm}` : "terminal nie potwierdził rachunku" };
 }
 
+/** Without the backend link the last MT5 state cannot be confirmed - it is shown only as "last known", never as current. */
 export function mt5Of(s: any): Mt5 {
   const st = s.connection?.state;
-  if (!st) return "UNKNOWN";
+  if (!st || s.ws !== "OPEN") return "UNKNOWN";
   return st === "CONNECTED" ? "CONNECTED" : "DISCONNECTED";
 }
 

@@ -36,6 +36,18 @@ def health():
         return False
 
 
+# Replaces the browser WebSocket for /api/v1/ws with one that fails to connect, so the page sees a lost backend link.
+DEAD_WS = """(() => {
+  const Real = window.WebSocket;
+  window.WebSocket = function (url, protocols) {
+    if (!String(url).endsWith("/api/v1/ws")) return new Real(url, protocols);
+    const ws = { readyState: 0, send() {}, close() {}, onopen: null, onmessage: null, onerror: null, onclose: null };
+    setTimeout(() => { ws.readyState = 3; ws.onerror && ws.onerror({}); ws.onclose && ws.onclose({ code: 1006 }); }, 30);
+    return ws;
+  };
+})();"""
+
+
 @unittest.skipUnless(HAVE_PW, "playwright not installed")
 class TestTerminalShell(unittest.TestCase):
     @classmethod
@@ -185,16 +197,17 @@ class TestTerminalShell(unittest.TestCase):
     # ------------------------------------------------------------------ F8
     def test_07_keyboard_skip_link_and_focus(self):
         self.go("trading-intelligence")
-        self.page.evaluate("() => document.activeElement && document.activeElement.blur()")
+        self.page.reload()                                       # fresh document: sequential focus starts at the top, not where earlier tests left it
+        self.page.wait_for_selector("[data-testid=page-trading-intelligence]", timeout=20000)
         self.page.keyboard.press("Tab")
         self.assertEqual(self.page.evaluate("() => document.activeElement.dataset.testid"), "t-skip")
         self.assertGreaterEqual(self.page.locator("[data-testid=t-skip]").bounding_box()["x"], 0)    # visible when focused
         self.page.keyboard.press("Enter")
         self.assertEqual(self.page.evaluate("() => document.activeElement.id"), "terminal-main")
-        for _ in range(12):                                                                          # keyboard focus -> :focus-visible
+        for _ in range(40):                    # keyboard focus -> :focus-visible; the header sits before main, so walk backwards
             if self.page.evaluate("() => document.activeElement.dataset.testid") == "t-mt5":
                 break
-            self.page.keyboard.press("Tab")
+            self.page.keyboard.press("Shift+Tab")
         self.assertEqual(self.page.evaluate("() => document.activeElement.dataset.testid"), "t-mt5")
         outline = self.page.evaluate("() => getComputedStyle(document.activeElement).outlineStyle")
         self.assertNotEqual(outline, "none")
@@ -206,8 +219,12 @@ class TestTerminalShell(unittest.TestCase):
             for route in ROUTES:
                 self.go(route)
                 self.assertTrue(self.no_hscroll(), f"{route} {w}x{h}")
-            if w <= 1000:
-                self.assertLessEqual(self.page.locator("[data-testid=t-sidebar]").bounding_box()["width"], 60)
+            if w <= 1000:                                        # the sidebar width is animated (0.15 s) - wait for it to settle
+                sb = self.page.locator("[data-testid=t-sidebar]")
+                self.assertTrue(wait_for(lambda: sb.bounding_box()["width"] <= 60, 5, 0.1), f"sidebar {sb.bounding_box()['width']} at {w}")
+            if w >= 1366:                                                                           # header fits one row
+                self.assertLessEqual(self.page.locator("[data-testid=t-header]").bounding_box()["height"], 56, f"{w}x{h}")
+            self.go("trading-intelligence")
             self.page.screenshot(path=str(SHOTS / f"trading-intelligence_{w}.png"))
         self.page.set_viewport_size({"width": 1600, "height": 1000})
 
@@ -228,12 +245,13 @@ class TestTerminalShell(unittest.TestCase):
         ctx = self.browser.new_context(viewport={"width": 1366, "height": 768})
         p = ctx.new_page()
         try:
-            p.route_web_socket(re.compile(r".*/api/v1/ws$"), lambda ws: ws.close())
+            p.add_init_script(DEAD_WS)                       # the backend WebSocket never opens (route_web_socket hung the sync driver)
             p.goto(BASE + "/#/trading-intelligence")
             p.wait_for_selector("[data-testid=terminal-shell]", timeout=30000)
             wait_for(lambda: p.locator("[data-testid=t-backend]").count() > 0, 20, 0.3)
             self.assertTrue(p.locator("[data-testid=t-backend]").is_visible())
             self.assertEqual(p.locator("[data-testid=t-fresh]").get_attribute("data-fresh"), "DISCONNECTED")
+            self.assertEqual(p.locator("[data-testid=t-mt5]").get_attribute("data-mt5"), "UNKNOWN")             # last known != current
             self.assertIn("Brak połączenia z lokalnym backendem", p.locator("[data-testid=t-warnings]").inner_text())
             self.assertEqual(p.locator("main#terminal-main").get_attribute("data-stale"), "1")
             p.screenshot(path=str(SHOTS / "disconnected.png"))

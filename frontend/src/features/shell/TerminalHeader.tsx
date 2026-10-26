@@ -12,6 +12,15 @@ type Pop = null | "mt5" | "alerts";
 const ENV_TONE: Record<string, string> = { LIVE: "bad", DEMO: "info", SYNTHETIC: "warn", HISTORY: "info", UNKNOWN: "muted" };
 const FRESH_TONE: Record<string, string> = { FRESH: "ok", DEGRADED: "warn", STALE: "warn", DISCONNECTED: "bad", UNKNOWN: "muted" };
 
+const BELL = "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0";
+const PULSE = "M3 12h4l2.5-6 4 12 2.5-6h5";
+const GEAR = "M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM12 2.5v3m0 13v3M2.5 12h3m13 0h3M5.3 5.3l2.1 2.1m9.2 9.2 2.1 2.1M5.3 18.7l2.1-2.1m9.2-9.2 2.1-2.1";
+
+function Icon({ d }: { d: string }) {
+  return <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>;
+}
+
 function usePopover(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -37,7 +46,8 @@ function Mt5Details({ ctx, quoteAge, onClose }: { ctx: TerminalContext; quoteAge
   return (
     <div className="t-pop" ref={ref} role="dialog" aria-label="Szczegóły połączenia MT5" data-testid="t-mt5-details">
       <dl className="t-kv">
-        {row("Stan", fmtUnknown(c.state, undefined, "UNKNOWN"))}
+        {row("Stan", ctx.backend === "OPEN" ? fmtUnknown(c.state, undefined, "UNKNOWN")
+          : `UNKNOWN – brak połączenia z backendem${c.state ? ` (ostatni znany: ${c.state})` : ""}`)}
         {row("Przyczyna", fmtUnknown(c.reason))}
         {row("Ostatni heartbeat", fmtUnknown(c.last_heartbeat, (x) => fmtTime(x, true)))}
         {row("Połączony od", fmtUnknown(c.connected_since, (x) => fmtTime(x, true)))}
@@ -84,28 +94,30 @@ export default function TerminalHeader({ ctx, quoteAge }: { ctx: TerminalContext
       <div className="t-pop-anchor">
         <button className={cls("t-chip", ctx.mt5 === "CONNECTED" ? "ok" : ctx.mt5 === "UNKNOWN" ? "muted" : "bad")} data-pop-toggle aria-expanded={pop === "mt5"}
           aria-haspopup="dialog" onClick={() => toggle("mt5")} data-testid="t-mt5" data-mt5={ctx.mt5}>
-          <i className="t-dot" aria-hidden="true" />MT5 <b>{ctx.mt5}</b>{ctx.mt5State && ctx.mt5State !== ctx.mt5 ? <span className="t-dim"> ({ctx.mt5State})</span> : null}
+          <i className="t-dot" aria-hidden="true" />MT5 <b>{ctx.mt5}</b>{ctx.mt5State && ctx.mt5State !== ctx.mt5
+            ? <span className="t-dim"> ({ctx.backend === "OPEN" ? ctx.mt5State : `ostatnio ${ctx.mt5State}`})</span> : null}
         </button>
         {pop === "mt5" && <Mt5Details ctx={ctx} quoteAge={quoteAge} onClose={close} />}
       </div>
       <span className={cls("t-chip", FRESH_TONE[ctx.freshness])} title={ctx.freshnessDetail} data-testid="t-fresh" data-fresh={ctx.freshness}>
         <i className="t-dot" aria-hidden="true" />Dane <b>{ctx.freshness}</b></span>
-      <span className="t-chip muted" data-testid="t-instrument"
-        title="Instrument aktywny w bocie. Przełączanie zmienia pracę bota (reset trybu) – w nowych panelach dostępne od etapu 2, po decyzji D1.">
-        Instrument <b>{fmtUnknown(ctx.instrument, undefined, "UNKNOWN")}</b>{ctx.brokerSymbol ? <span className="t-dim"> · {ctx.brokerSymbol}</span> : null}</span>
+      <span className="t-chip muted" data-testid="t-instrument" data-broker-symbol={ctx.brokerSymbol ?? ""}
+        title={`Instrument aktywny w bocie${ctx.brokerSymbol ? ` (symbol brokera: ${ctx.brokerSymbol})` : ""}. Przełączanie zmienia pracę bota (reset trybu) – w nowych panelach dostępne od etapu 2, po decyzji D1.`}>
+        Instrument <b>{fmtUnknown(ctx.instrument, undefined, "UNKNOWN")}</b></span>
       <span className={cls("t-chip", ctx.mode === "AUTO_LIVE" ? "bad" : ctx.mode === "SIGNALS" ? "muted" : "warn")} data-testid="t-mode"
-        title="Tryb wykonania bota (zmiana w obecnym panelu: przycisk „Wykonanie”)">Wykonanie <b>{fmtUnknown(ctx.modeLabel ?? ctx.mode, undefined, "UNKNOWN")}</b></span>
+        title={`Tryb wykonania bota${ctx.modeLabel ? `: ${ctx.modeLabel}` : ""} (zmiana w obecnym panelu: przycisk „Wykonanie”)`}>
+        Tryb <b>{fmtUnknown(ctx.mode, undefined, "UNKNOWN")}</b></span>
       <span className={cls("t-chip", ctx.executionLock === "LOCKED" ? "ok" : ctx.executionLock ? "bad" : "muted")} data-testid="t-lock"
         title="Execution Lock: LOCKED = żadna ścieżka nie wysyła zleceń do terminala">Lock <b>{fmtUnknown(ctx.executionLock, undefined, "UNKNOWN")}</b></span>
       {ctx.backend !== "OPEN" && <span className="t-chip bad" data-testid="t-backend">Backend <b>{ctx.backend}</b></span>}
       <span className="t-spacer" />
       <div className="t-pop-anchor">
         <button className={cls("t-btn", ctx.alerts.length > 0 && "t-btn-warn")} data-pop-toggle aria-expanded={pop === "alerts"} aria-haspopup="dialog"
-          onClick={() => toggle("alerts")} data-testid="t-alerts" aria-label={`Powiadomienia: ${ctx.alerts.length}`}>
-          Powiadomienia <b>{ctx.alerts.length}</b></button>
+          onClick={() => toggle("alerts")} data-testid="t-alerts" aria-label={`Powiadomienia: ${ctx.alerts.length}`} title="Powiadomienia (ostrzeżenia i błędy)">
+          <Icon d={BELL} /><b>{ctx.alerts.length}</b></button>
         {pop === "alerts" && <AlertsList alerts={ctx.alerts} onClose={close} />}
       </div>
-      <a className="t-btn" href={href("diagnostyka")} data-testid="t-diag">Diagnostyka</a>
-      <button className="t-btn" onClick={ui.openSettings} data-testid="t-settings">Ustawienia</button>
+      <a className="t-btn t-icon-btn" href={href("diagnostyka")} data-testid="t-diag" aria-label="Diagnostyka" title="Diagnostyka"><Icon d={PULSE} /></a>
+      <button className="t-btn t-icon-btn" onClick={ui.openSettings} data-testid="t-settings" aria-label="Ustawienia" title="Ustawienia"><Icon d={GEAR} /></button>
     </header>);
 }

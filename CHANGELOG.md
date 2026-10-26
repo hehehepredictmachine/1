@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Nowe panele PMW – w toku (bez nowej wersji do etapu 5)
+* **Etap 0 – audyt:** `docs/PEPE_UI_AUDIT.md`, `docs/PEPE_UI_API_MAP.md`, `docs/PEPE_UI_IMPLEMENTATION_PLAN.md`,
+  `docs/PEPE_UI_TEST_PLAN.md` (specyfikacja: `docs/PEPE_UI_IMPLEMENTATION_SPEC.md`).
+* **Etap 1 – szkielet:** nowe trasy `#/trading-intelligence`, `#/ai-neural-lab`, `#/system-control` w osobnym shellu
+  (`frontend/src/features/`): sidebar stały i zwijany, nagłówek ze środowiskiem (LIVE / DEMO / SYNTHETIC / HISTORY / UNKNOWN), statusem
+  MT5 i panelem szczegółów, świeżością danych, instrumentem (tylko wyświetlenie), trybem, Execution Lock, powiadomieniami. Sekcje paneli
+  są puste i oznaczone „etap N – nie zintegrowane”. Bez połączenia z backendem stan MT5 = UNKNOWN (ostatni znany tylko jako opis).
+  Jeden store i jedno połączenie WS ze starym UI; stare trasy bez zmian; jedyna zmiana starego UI – pozycja „Nowe panele” w menu.
+  **Backend, strategia, modele, ryzyko i wykonanie bez zmian.**
+
 ## 1.22.0 – Mapa stref PMW: High/Low Zone Engine + Daily Session Volume Intelligence + jedna mapa stref (ANALYTICAL_ONLY)
 * **HLZE** (`zones/hlze.py`): strefy swingów M5/M15 (pivoty z `strategies/indicators`, istotność w ATR), pivoty prowizoryczne
   vs potwierdzone (`confirmed_at` = zamknięcie świecy pivot + right; nic nie jest datowane wstecz), granice knot–korpus z limitem

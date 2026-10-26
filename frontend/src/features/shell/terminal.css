@@ -64,6 +64,9 @@ button.t-chip { cursor: pointer; }
 .t-badge-info { border-color: var(--t-info); background: rgba(99, 168, 255, 0.1); }
 .t-badge-muted { border-color: var(--t-line2); color: var(--t-dim); }
 .t-btn-warn { border-color: rgba(232, 184, 74, 0.6); }
+.t-icon-btn { padding: 5px 8px; }
+.t-btn svg { flex: none; color: var(--t-dim); }
+.t-btn:hover svg, .t-btn-warn svg { color: var(--t-strong); }
 
 /* popovers */
 .t-pop-anchor { position: relative; }
