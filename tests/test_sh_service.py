@@ -40,7 +40,7 @@ class Modes:
     def __init__(self, mode):
         self.mode = mode
 
-    def gate(self, key):
+    def gate(self, key, **kw):
         return {"mode": self.mode, "allowed": True, "reason_codes": []}
 
 

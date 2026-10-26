@@ -27,6 +27,8 @@ import math
 from .contract import SetupAssessment, SetupCandidate
 
 VERSION = "PMW-EVAL-ENGINE-1"
+DEFAULT_EVENT = {"SH_SCALPING": "TP2 przed SL w horyzoncie", "SH_HEDGING": "TP2 przed SL w horyzoncie",
+                 "SCALP_SHADOW": "TP1 przed SL w horyzoncie", "ACTIVE_S01_S12": "net R > 0 wg planu setupu"}
 Z90 = 1.6448536269514722
 
 
@@ -71,7 +73,7 @@ def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, ex
            agreement: dict | None = None) -> SetupAssessment:
     """prob: {"value", "calibrated": bool, "event", "source", "n_calibration", "event_matches": bool}."""
     a = SetupAssessment(setup_id=c.setup_id, engine=c.engine, strategy_id=c.strategy_id, candidate_key=c.key(), decision_ts=c.decision_ts,
-                        event=(prob or {}).get("event") or ("TP2 przed SL w horyzoncie" if c.engine.startswith("SH_") else "net R > 0 wg planu setupu"),
+                        event=(prob or {}).get("event") or DEFAULT_EVENT.get(c.engine, "net R > 0 wg planu setupu"),
                         market_regime=dict(c.market_regime), data_timestamp=c.decision_ts,
                         model_agreement=agreement or {"status": "NO_INDEPENDENT_EVIDENCE",
                                                       "note": "brak skalibrowanych, niezależnych modeli dla tego zdarzenia; zgodność modułów z "

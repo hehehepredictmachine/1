@@ -58,6 +58,8 @@ class RunnerSHModels(Base):
         from masterquo.sh import tpmodel as TM
         self.assertIsNone(TM.status("XAUUSD", "SCALPING").get("version"))              # no active model from synthetic data
         self.assertFalse((Path(self.td.dir) / "sh" / "validation" / "XAUUSD_SCALPING.json").exists())   # synthetic report not used live
+        from masterquo.sh.service import SHService
+        self.assertFalse(SHService.netting_reduce_validation("XAUUSD")["ok"])           # O3: synthetic replay never enables REDUCE on netting
         # comparison with itself: no changes
         self.assertTrue(all(not row["changed"] for row in panel.compare(rid, rid)["tasks"]))
 

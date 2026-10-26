@@ -161,6 +161,7 @@ class TestExecution(unittest.TestCase):
         self.td = TempData()
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.bus, self.log, self.fake, self.worker, self.b = cfg, db, bus, log, fake, worker, b
+        cfg.update({"execution": {"primary_path": {"XAUUSD": "ACTIVE"}}})   # O1: the S01-S12 path is the chosen primary path
         cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5},
                     "execution": {"lock": "UNLOCKED_BY_USER"}})      # order machinery on FakeMT5 only; default is LOCKED
         b.start()

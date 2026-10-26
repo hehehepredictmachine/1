@@ -49,9 +49,20 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
         chk("model_mode", setup.get("model_mode") == "PEŁNA",
             "tryb OGRANICZONY (brak skalibrowanego modelu zdarzenia) – dozwolone tylko SIGNALS/PAPER")
         chk("commission_known", ic.get("commission_per_lot_side") is not None, "prowizja instrumentu nieznana – koszt nie jest pełny")
-    if strat == "HEDGING":
-        chk("account_hedging", account.get("margin_mode") == "HEDGING",
-            f"rachunek {account.get('margin_mode')} – HEDGING wymaga rachunku typu hedging (brak cichego zastępowania)")
+    netting_reduce = False
+    if strat == "HEDGING" and account.get("margin_mode") != "HEDGING":
+        # decision O3: on a NETTING account the basket runs without the opposite leg - the hedge event becomes a REDUCE
+        # (partial close of the primary). Allowed only with netting_alternative = REDUCE AND a passed replay validation of the
+        # REDUCE variant on the client's own data (state["netting_reduce_validation"], read by the service).
+        alt = (prof.get("hedge") or {}).get("netting_alternative", "BLOCK")
+        val = state.get("netting_reduce_validation") or {"ok": False, "reason": "brak wyniku walidacji wariantu REDUCE"}
+        if account.get("margin_mode") == "NETTING" and alt == "REDUCE" and val.get("ok"):
+            netting_reduce = True
+            warn.append("rachunek NETTING: zamiast pozycji przeciwnej redukcja części pozycji (REDUCE), " + str(val.get("source")))
+        else:
+            why = ("wariant REDUCE wyłączony w konfiguracji" if alt != "REDUCE" else "wariant REDUCE niezwalidowany: " + str(val.get("reason"))) \
+                if account.get("margin_mode") == "NETTING" else "typ rachunku nieobsługiwany dla HEDGING"
+            chk("account_hedging", False, f"rachunek {account.get('margin_mode')} – HEDGING wymaga rachunku typu hedging; {why}")
     # --- data ------------------------------------------------------------------------------------------------------------
     q_age = (quote or {}).get("age_s")
     chk("quote_fresh", q_age is not None and q_age <= r["max_quote_age_s"], f"wiek notowania {q_age} s (limit {r['max_quote_age_s']})")
@@ -66,7 +77,7 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     chk("daily_loss", float(state.get("daily_realized_money") or 0) > dl, f"dzienny wynik {state.get('daily_realized_money')} ≤ limit {dl:.2f}")
     opens = [p for p in state.get("open_plans") or [] if p.get("state") not in ("CLOSED",)]
     npos = sum(1 + (1 if p.get("hedge_volume") else 0) for p in opens)
-    chk("max_positions", npos + (2 if strat == "HEDGING" else 1) <= r["max_open_positions"],
+    chk("max_positions", npos + (2 if strat == "HEDGING" and not netting_reduce else 1) <= r["max_open_positions"],
         f"otwarte pozycje SH {npos} + nowe > limit {r['max_open_positions']}")
     lc = (state.get("last_close_at") or {}).get(strat)
     chk("cooldown", lc is None or now - lc >= 60 * r["cooldown_minutes"], f"cooldown {r['cooldown_minutes']} min po ostatnim zamknięciu")
@@ -89,7 +100,7 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     vol = spec.floor_volume(risk_budget / loss_per_lot) if loss_per_lot > 0 else 0.0
     if spec.volume_max:
         vol = min(vol, spec.floor_volume(spec.volume_max))
-    hedge_mult = 1.0 + ((prof.get("hedge") or {}).get("max_ratio", 0.0) if strat == "HEDGING" else 0.0)
+    hedge_mult = 1.0 + ((prof.get("hedge") or {}).get("max_ratio", 0.0) if strat == "HEDGING" and not netting_reduce else 0.0)
     cur_expo = sum(float(p.get("volume") or 0) + float(p.get("hedge_volume") or 0) for p in opens)
     max_expo = (r.get("max_exposure_lots") or {}).get(inst)
     if max_expo is not None:
@@ -117,7 +128,8 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     risk_money = vol * loss_per_lot
     out.update(volume=vol, legs=sp["legs"], shares_used={"variant": used, "shares": shares}, loss_per_lot=round(loss_per_lot, 4),
                risk_money=round(risk_money, 2), risk_pct=round(100 * risk_money / eq, 4), money_per_price_per_lot=mpp,
-               margin_required=round(mpl * vol * hedge_mult, 2) if mpl else None, gross_exposure_after=round(cur_expo + vol * hedge_mult, 4))
+               margin_required=round(mpl * vol * hedge_mult, 2) if mpl else None, gross_exposure_after=round(cur_expo + vol * hedge_mult, 4),
+               netting_reduce=netting_reduce)
     if strat == "HEDGING":
         h = prof["hedge"]
         basket_budget = eq * r["risk_per_basket_pct"] / 100.0

@@ -438,6 +438,9 @@ class TestConfigAndService(unittest.TestCase):
 
             db = Database()
             svc = ScalpService(Cfg(), Bridge(), db, Bus(), Log(), news=None)
+            from masterquo.evaluation.service import EvaluationService
+            ev = EvaluationService(Cfg(), Bridge(), db, data_dir=Path(td.dir) / "evaluation")      # O6: third SHADOW source of the ledger
+            svc.listeners.append(ev.on_scalp_setup)
             import masterquo.scalp.service as mod
             orig = mod.time.time
             mod.time.time = lambda: now.timestamp()
@@ -452,6 +455,11 @@ class TestConfigAndService(unittest.TestCase):
             self.assertTrue(any("kalendarz" in r for r in rows[0]["reasons"]))
             self.assertFalse(next(g for g in rows[0]["gates"] if g["name"] == "uprawnienie wykonania")["ok"])
             self.assertEqual(svc.state["statuses"]["EXECUTION_AUTHORIZED"]["value"], False)
+            it = ev.assessments("SCALP_SHADOW")
+            self.assertEqual(len(it), 1)                                     # the BLOCKED candidate is evaluated too (no gate-filtered sample)
+            self.assertEqual((it[0]["direction"], it[0]["event"]), ("LONG", "TP1 przed SL w horyzoncie"))
+            self.assertEqual(it[0]["entry"], rows[0]["plan"]["fill_shadow"])
+            ev.ledger.c.close()
             svc.tick()                                                      # same bar again: idempotent, no duplicate record
             self.assertEqual(len(svc.recent()), 1)
             self.assertFalse(hasattr(svc, "gateway"))                       # no executor reference in the module

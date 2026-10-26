@@ -65,7 +65,8 @@
         "tp_model_min_prob": 0.55,
         "hedge": {"trigger_fraction_of_sl": 0.5, "ratio": 0.5, "max_ratio": 0.5, "max_activations": 1, "max_hedge_minutes": 60,
                   "unwind_recovery_atr_m5": 1.0, "basket_loss_limit_x_risk": 1.0, "reduce_fraction": 0.5,
-                  "max_hedge_cost_fraction_of_sl": 0.25, "variant": "AUTO_BY_VALIDATION"}
+                  "max_hedge_cost_fraction_of_sl": 0.25, "variant": "AUTO_BY_VALIDATION",
+                  "netting_alternative": "REDUCE"}
       }
     },
     "BTC": {
@@ -85,7 +86,8 @@
                   "allow_regimes": ["TREND"], "tp_model_min_prob": 0.55,
                   "hedge": {"trigger_fraction_of_sl": 0.5, "ratio": 0.5, "max_ratio": 0.5, "max_activations": 1, "max_hedge_minutes": 60,
                             "unwind_recovery_atr_m5": 1.0, "basket_loss_limit_x_risk": 1.0, "reduce_fraction": 0.5,
-                  "max_hedge_cost_fraction_of_sl": 0.25, "variant": "AUTO_BY_VALIDATION"}}
+                  "max_hedge_cost_fraction_of_sl": 0.25, "variant": "AUTO_BY_VALIDATION",
+                  "netting_alternative": "REDUCE"}}
     }
   }
 }

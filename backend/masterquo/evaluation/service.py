@@ -3,7 +3,12 @@
 Inputs (listeners, read-only):
   * ActiveEngine scan events: S01-S12 setups at the CONFIRMED stage (new, promoted or revised - every version once);
   * SHService cycles: SCALPING / HEDGING setups that carry levels (status READY), including the ones the coordinator, the risk
-    engine or STOP blocked afterwards - logging is never conditional on a gate (no filter-dependent sample).
+    engine or STOP blocked afterwards - logging is never conditional on a gate (no filter-dependent sample);
+  * ScalpService (SHADOW machine Range->Sweep->Retest, decision O6): every recorded candidate with an executable entry,
+    READY_SHADOW, BLOCKED and MISSED alike.
+Every assessment also records the regime of BOTH definitions at that moment (decision O4: ACTIVE MarketRegimeEngine and SH
+RegimeMachine v2), so the canonical regime can be chosen on data. ASSIST readiness (decision O2) is reported, never applied:
+the evaluation stays SHADOW until the user switches it after >= 200 matured assessments per engine with checked calibration.
 Each setup -> SetupCandidate (common contract) -> assess() (P of the named event, net EV, p*, uncertainty, execution, portfolio)
 -> one row in the shared prediction-ledger format (mm.ledger, own file data/evaluation/ledger.sqlite).
 Outcomes mature from CLOSED M1 bars after the horizon (evaluation/outcome.py). The report compares the SHADOW decision with what
@@ -26,7 +31,8 @@ from . import engine as E
 from . import exposure as X
 from . import outcome as O
 
-VERSION = "PMW-EVAL-SERVICE-1"
+VERSION = "PMW-EVAL-SERVICE-2"
+ASSIST_MIN_MATURED = 200                   # decision O2: evidence needed before the user may consider ASSIST
 ACTIVE_KINDS = ("NEW_CONFIRMED", "STAGE_CONFIRMED", "PLAN_REVISED")
 log = logging.getLogger("masterquo.evaluation")
 
@@ -44,6 +50,7 @@ class EvaluationService:
         self.last_error: str | None = None
         self.last_assessment: dict | None = None
         self._last_mature = 0.0
+        self.regime_sources: dict = {}           # {"ACTIVE": fn() -> regime dict, "SH": fn() -> regime dict} set by the runtime (O4)
 
     # ------------------------------------------------------------------ inputs
     def on_active_events(self, events: list, view) -> None:
@@ -60,6 +67,24 @@ class EvaluationService:
             if su.get("status") == "READY":
                 self._guard(self._sh, su, inst, snap, now)
         self.mature(now)
+
+    def on_scalp_setup(self, plan: dict, *, status: str, reasons: list, instrument: str, symbol: str, f1: float, horizon_s: float,
+                       extra_cost: float | None = None, commission_known: bool | None = None) -> None:
+        if plan.get("fill_shadow") is None:
+            self.counters["no_entry"] = self.counters.get("no_entry", 0) + 1     # no executable price -> nothing to evaluate
+            return
+        self._guard(self._scalp, plan, status, reasons, instrument, symbol, f1, horizon_s, extra_cost, commission_known)
+
+    def _scalp(self, plan, status, reasons, instrument, symbol, f1, horizon_s, extra_cost, commission_known) -> None:
+        c = K.from_scalp_plan(plan, status=status, reasons=reasons, instrument=instrument, symbol=symbol, f1=f1, horizon_s=horizon_s,
+                              commission_known=commission_known, extra_cost=extra_cost).validate()
+        mb = plan.get("model_b") or {}
+        prob = None
+        if mb.get("p") is not None:
+            prob = {"value": float(mb["p"]), "calibrated": bool(mb.get("calibrated")), "event": "TP1 przed SL w horyzoncie",
+                    "source": mb.get("model_id") or "scalp_model_B", "version": mb.get("version"), "event_matches": True,
+                    "n_calibration": mb.get("n_calibration")}
+        self._log(c, prob, extra_cost)
 
     def _guard(self, fn, *a) -> None:
         try:
@@ -149,7 +174,18 @@ class EvaluationService:
         except Exception:  # noqa: BLE001
             return ""
 
+    def _regimes(self) -> dict:
+        out = {}
+        for k, fn in (self.regime_sources or {}).items():
+            try:
+                r = fn() or {}
+            except Exception:  # noqa: BLE001 - a missing view is recorded as unknown
+                r = {}
+            out[k] = r.get("state")
+        return out
+
     def _log(self, c: K.SetupCandidate, prob: dict | None, extra_cost: float | None) -> dict:
+        c.market_regime = dict(c.market_regime, both=self._regimes())     # O4: both definitions at the decision moment
         items = X.positions(self.db, c.symbol)
         a = E.assess(c, prob=prob, extra_cost=extra_cost, exposure=X.for_candidate(items, c.symbol, c.direction))
         ad = a.to_dict()
@@ -222,13 +258,27 @@ class EvaluationService:
         """Matured rows per engine x SHADOW decision: event rate, mean plan R (net), Brier where a probability existed."""
         with self.ledger._lock:
             rows = [dict(r) for r in self.ledger.c.execute(
-                "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT' AND outcome IS NOT NULL").fetchall()]
+                "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
         groups: dict = {}
+        ready: dict = {}
+        regimes: dict = {}
         for r in rows:
-            pl, out = json.loads(r["payload"]), json.loads(r["outcome"])
+            pl = json.loads(r["payload"])
+            out = json.loads(r["outcome"]) if r["outcome"] else {}
+            a = pl["assessment"]
+            both = (pl["candidate"].get("market_regime") or {}).get("both") or {}
+            rg = regimes.setdefault((both.get("ACTIVE"), both.get("SH")), {"n": 0, "matured": 0, "r": []})
+            rg["n"] += 1
             if out.get("status") != "MATURED":
                 continue
-            a = pl["assessment"]
+            rg["matured"] += 1
+            rg["r"].append(out["plan_r_net"])
+            rd = ready.setdefault(a["engine"], {"matured": 0, "with_probability": 0, "y": [], "p": []})
+            rd["matured"] += 1
+            if a.get("probability") is not None and out.get("event_hit") is not None:
+                rd["with_probability"] += 1
+                rd["p"].append(a["probability"])
+                rd["y"].append(1.0 if out["event_hit"] else 0.0)
             g = groups.setdefault((a["engine"], a["decision"]), {"n": 0, "events": 0, "r": [], "brier": [], "ambiguous": 0})
             g["n"] += 1
             g["events"] += 1 if out.get("event_hit") else 0
@@ -245,7 +295,23 @@ class EvaluationService:
                         "mean_plan_r_net": round(mean_r, 4), "mean_plan_r_se": round(sd / math.sqrt(n), 4) if sd is not None else None,
                         "brier": round(sum(g["brier"]) / len(g["brier"]), 4) if g["brier"] else None, "with_probability": len(g["brier"]),
                         "ambiguous_share": round(g["ambiguous"] / n, 4), "status": "OK" if n >= 30 else "SMALL_SAMPLE"})
-        return {"groups": res, "matured": sum(g["n"] for g in groups.values()), "mode": "SHADOW",
+        readiness = {}
+        for eng, rd in sorted(ready.items()):
+            n = rd["with_probability"]
+            brier = sum((p - y) ** 2 for p, y in zip(rd["p"], rd["y"])) / n if n else None
+            base = sum(rd["y"]) / n if n else None
+            brier0 = base * (1 - base) if base is not None else None                   # base-rate forecast
+            cal_ok = brier is not None and brier0 is not None and brier < brier0
+            readiness[eng] = {"matured": rd["matured"], "with_probability": n, "target": ASSIST_MIN_MATURED,
+                              "progress": round(min(1.0, n / ASSIST_MIN_MATURED), 4), "brier": None if brier is None else round(brier, 4),
+                              "brier_base_rate": None if brier0 is None else round(brier0, 4),
+                              "evidence_sufficient": n >= ASSIST_MIN_MATURED and cal_ok,
+                              "note": "tylko informacja – przejście do ASSIST wymaga decyzji użytkownika"}
+        reg = [{"active_regime": k[0], "sh_regime": k[1], "n": v["n"], "matured": v["matured"],
+                "mean_plan_r_net": round(sum(v["r"]) / len(v["r"]), 4) if v["r"] else None}
+               for k, v in sorted(regimes.items(), key=lambda kv: -kv[1]["n"])]
+        return {"groups": res, "matured": sum(g["n"] for g in groups.values()), "mode": "SHADOW", "assist_readiness": readiness,
+                "regimes": reg, "regimes_note": "reżim obu definicji w chwili oceny (O4); wybór kanonicznego reżimu po zebraniu danych",
                 "note": "wynik planu bez BE i bez realnego wypełnienia (BINARY_PLAN_APPROX); mała próba nie pozwala wnioskować o skuteczności"}
 
     def exposure(self) -> dict:

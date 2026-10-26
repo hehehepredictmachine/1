@@ -19,7 +19,8 @@ Zastępuje opis 1.13. Źródła: statyczny graf importów (`ast`, 281 modułów 
 Runtime
  ├─ MT5Worker ◄─ lock_fn = cfg.execution_locked (Execution Lock dla każdego wywołania handlowego)
  ├─ MarketBridge(worker) ◄─ AssetRegistry
- ├─ ModeManager(account_provider = bridge)          ◄── używany przez EngineService, gateway, manager, SHService (AR-01)
+ ├─ ModeManager(account_provider = bridge)          ◄── używany przez EngineService, gateway, manager, SHService (AR-01);
+ │                                                      gate(path=ACTIVE|SH) = reguła ścieżki głównej (O1)
  ├─ EngineService(bridge, modes, news, pcclock)
  │    ├─ ActiveEngine (S01–S12, tracker, selector) ─ listeners: BotSignalService, EvaluationService (SHADOW)
  │    ├─ gateway  = ExecutionGateway(engine, paper)   ──► PositionManager
@@ -27,7 +28,8 @@ Runtime
  │    ├─ ml       = MLRouter                          (bramka tylko w ASSIST)
  │    └─ si / liquidity / extind / mm_provider        (kontekst dla agenta, tylko odczyt)
  ├─ SHService(bridge, modes)  ── własne: context, setup, coordinator, risk, executor, store ─ listeners: EvaluationService (SHADOW)
- ├─ EvaluationService(cfg, bridge, db) ── tylko odczyt: managed_positions, sh_plans, ml_predictions, bufor M1; własny ledger
+ ├─ EvaluationService(cfg, bridge, db) ── tylko odczyt: managed_positions, sh_plans, ml_predictions, bufor M1; własny ledger;
+ │     źródła: ActiveEngine, SHService, ScalpService (O6); regime_sources: widok A + snapshot SH (O4)
  ├─ SHADOW: ForecastService, ScalpService(+nss, mtf, liquidity, extind, ml), LabService, NSS, SI, Liquidity, Analytics,
  │          MarketScanner+BotSignalService, MMService (na żądanie API), WallsService
  └─ API (FastAPI) – czyta wszystkie serwisy; zapisuje tylko konfigurację, tryb, STOP, ręczne akcje i trening

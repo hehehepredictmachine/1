@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.20.0 – Decyzje po audycie: ścieżka główna (O1), REDUCE na netting (O3), ocena SHADOW rozszerzona (O2, O4, O6)
+* **Zmiana zachowania (O1):** na każdym instrumencie nowe wejścia otwiera tylko wybrana ścieżka główna – S01–S12 albo SCALPING/HEDGING
+  (okno Tryb → „4. Ścieżka główna”, `POST /api/v1/mode/primary-path`, zapis w konfiguracji i w `settings_audit`). Druga ścieżka nadal
+  analizuje setupy, ale ich nie wykonuje (`NOT_PRIMARY_PATH_*`). **Dopóki ścieżka nie jest wybrana, żadna nie otwiera nowych wejść**
+  (`PRIMARY_PATH_NOT_SELECTED`, baner w panelu). Otwarte pozycje obu ścieżek są zarządzane; transakcje ręczne bez zmian.
+* **O3:** HEDGING na rachunku NETTING działa bez pozycji przeciwnej – zdarzenie hedge kończy się częściowym zamknięciem (REDUCE).
+  Dopuszczone dopiero po zaliczonej walidacji replay wariantu REDUCE na historii klienta (REAL_USER_DATA, n ≥ 30, wynik oczekiwany > 0);
+  bez niej HEDGING na netting pozostaje zablokowany z podanym powodem. Profil: `hedge.netting_alternative` (REDUCE | BLOCK).
+* **O2:** raport oceny pokazuje gotowość do ASSIST per silnik (cel 200 dojrzałych ocen z prawdopodobieństwem, Brier vs wskaźnik bazowy);
+  ocena pozostaje SHADOW.
+* **O4:** każda ocena zapisuje reżim obu definicji (MarketRegimeEngine i RegimeMachine v2); raport zestawia pary reżimów z wynikiem planu.
+* **O6:** maszyna scalp Range→Sweep→Retest (SHADOW) jest trzecim źródłem ledgera ocen (zdarzenie TP1 przed SL; także kandydaci BLOCKED/MISSED).
+* Test `test_ui_lab` (Swing Inspector): czekał na pojawienie się ramki, a nie na treść dociąganą osobnym zapytaniem – pod obciążeniem
+  odczytywał „…”; czeka teraz na identyfikator swingu.
+
 ## 1.19.0 – Audyt architektury (Faza A) + wspólna ocena setupów (SHADOW)
 * **Poprawka bezpieczeństwa (AR-01):** SCALPING/HEDGING respektuje STOP (kill switch), Execution Lock i powody wiązania rachunku z
   `ModeManager` – wcześniej czytał tylko nazwę trybu i po STOP otwierał nowe plany. Otwarte plany są nadal zarządzane. Test: `tests/test_arch_fixes.py`.

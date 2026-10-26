@@ -85,7 +85,7 @@ class ExecutionGateway:
         b = self.bridge
         if d["account_key"] != b.account_key or d["session_epoch"] != b.session_epoch:
             raise ExecutionError("ACCOUNT_OR_SESSION_CHANGED")
-        gate = self.modes.gate(b.account_key)
+        gate = self.modes.gate(b.account_key, path="ACTIVE")       # bot decisions = path ACTIVE (O1)
         if not gate["allowed"]:
             raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
         if gate.get("mode") in ("AUTO_DEMO", "AUTO_LIVE") and self.cfg_store.execution_locked():

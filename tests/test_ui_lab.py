@@ -392,6 +392,9 @@ class TestLabUI(unittest.TestCase):
             sid = p.get_attribute("[data-testid=market-story] [data-swing-row]", "data-swing-row")
             p.click(f"[data-swing-row='{sid}']")
             p.wait_for_selector("[data-testid=swing-inspector]")
+            # the inspector renders "…" first and fills in after its own request: wait for the content, not just the box
+            p.wait_for_function("([sel, id]) => (document.querySelector(sel)?.innerText || '').includes(id)",
+                                arg=["[data-testid=swing-inspector]", sid], timeout=20000)
             self.assertIn(sid, p.inner_text("[data-testid=swing-inspector]"))
             p.uncheck("[data-testid=market-story] input[type=checkbox] >> nth=1")       # labels off: display only
             p.wait_for_selector("[data-testid=swing-inspector]")

@@ -191,6 +191,18 @@ class ExecutionConfig(_Strict):
     # position manager, trade pad, direct API). Enforced in the MT5 worker proxy. Only the user can unlock (typed phrase).
     lock: Literal["LOCKED", "UNLOCKED_BY_USER"] = "LOCKED"
     lock_changed_at: str | None = None
+    # 1.20 (decision O1): ONE execution path opens new entries per instrument - ACTIVE (S01-S12) or SH (SCALPING/HEDGING);
+    # the other path only analyses (as SIGNALS). Missing/UNSET = neither opens new entries until the user chooses. Open
+    # positions of both paths are always managed. Manual trades are not affected.
+    primary_path: dict[str, Literal["UNSET", "ACTIVE", "SH"]] = Field(default_factory=dict)
+
+    @field_validator("primary_path")
+    @classmethod
+    def _primary_keys(cls, v: dict) -> dict:
+        bad = [k for k in v if k not in ("XAUUSD", "BTC")]
+        if bad:
+            raise ValueError("ASSET_NOT_ALLOWED:" + ",".join(bad))
+        return v
 
 
 class MLPromotion(_Strict):

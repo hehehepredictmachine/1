@@ -69,7 +69,20 @@ API (wszystkie tylko do odczytu): `/api/v1/eval/status`, `/api/v1/eval/assessmen
 | H5 Effectiveness | walidacja porównuje HEDGE / NO_HEDGE / REDUCE na tych samych setupach | `sh/replay.py`, raport walidacji SH |
 | §16 netting | kontrola typu rachunku jest; na netting HEDGING jest blokowany w całości – brak alternatywy | O3 |
 
-## 4. Decyzje do zatwierdzenia (zmieniają zachowanie bota)
+## 4. Decyzje (zatwierdzone 26.10.2026) i wdrożenie w 1.20.0
+
+| ID | Wybór użytkownika | Wdrożenie | Zmiana zachowania |
+|---|---|---|---|
+| **O1** | (c) jedna ścieżka główna na instrument | `execution.primary_path` per instrument (`ACTIVE` / `SH` / brak), reguła w `ModeManager.gate(path=…)` dla decyzji S01–S12 (`engine/service.py`, `execution/gateway.py`) i planów SH (`sh/service.py`); okno Tryb → „4. Ścieżka główna”, `POST /api/v1/mode/primary-path`, wpis w `settings_audit` | **tak**: ścieżka niegłówna analizuje, ale nie otwiera wejść (`NOT_PRIMARY_PATH_*`); **bez wyboru żadna ścieżka nie otwiera nowych wejść** (`PRIMARY_PATH_NOT_SELECTED`). Otwarte pozycje obu ścieżek są zarządzane; transakcje ręczne bez zmian |
+| **O2** | (a) SHADOW do 200 ocen | `report.assist_readiness` per silnik: dojrzałe oceny z prawdopodobieństwem, cel 200, Brier vs wskaźnik bazowy | nie: tylko licznik; przejście do ASSIST wymaga osobnej decyzji |
+| **O3** | (b) REDUCE zamiast hedge na netting | `hedge.netting_alternative = REDUCE` w profilu HEDGING; `sh/risk.py` dopuszcza HEDGING na NETTING tylko po zaliczonej walidacji replay wariantu REDUCE (`SHService.netting_reduce_validation`: raport na REAL_USER_DATA, n ≥ 30, wynik oczekiwany > 0); bez nogi hedge w ekspozycji i depozycie; zdarzenie hedge → częściowe zamknięcie (istniejąca ścieżka REDUCE) | **tak, po walidacji**: do czasu treningu SH na Twojej historii HEDGING na netting pozostaje zablokowany (z podanym powodem) |
+| **O4** | (c) oba reżimy w ledgerze | każda ocena zapisuje reżim `MarketRegimeEngine` (A) i `RegimeMachine v2` (B); `report.regimes` – tabela par z wynikiem planu | nie |
+| **O6** | (b) scalp Sweep→Retest w ledgerze | słuchacz `ScalpService.listeners` → `EvaluationService.on_scalp_setup` (silnik `SCALP_SHADOW`, zdarzenie TP1 przed SL, także kandydaci BLOCKED/MISSED) | nie |
+| O5, O7, O8 | nie wybrane | bez zmian | – |
+
+Odpowiedź „Something else” w ankiecie przyszła bez treści – nie realizowano nic poza powyższym.
+
+### 4.1 Opcje przedstawione do decyzji (stan sprzed wyboru)
 
 Każda opcja ma wariant domyślny „bez zmian”. Rekomendacja jest moja, decyzja należy do użytkownika.
 
@@ -96,19 +109,20 @@ Do archiwum (treść zachowana): `ARCHITEKTURA.md` (1.13), `AUDIT.md`, `AUDIT_RE
 |---|---|---|---|
 | 1 | Kompletna mapa rzeczywistej architektury | **SPEŁNIONY** | `ARCHITECTURE.md` + pomiar wywołań + `INTEGRATION_MAP.md` |
 | 2 | Każdy aktywny model ma rolę i interfejs | **SPEŁNIONY** | rejestr `sh/models.py` (35 wpisów, rola i status), `COMPONENT_INVENTORY.md` §2 |
-| 3 | Silniki strategii korzystają z centralnego systemu oceny setupów | **NIEUKOŃCZONY** | oba silniki są oceniane centralnie, ale tylko w SHADOW – ocena nie wpływa na decyzję (O2) |
+| 3 | Silniki strategii korzystają z centralnego systemu oceny setupów | **NIEUKOŃCZONY** | wszystkie trzy źródła (S01–S12, SH, scalp SHADOW) są oceniane centralnie, ale tylko w SHADOW – zgodnie z decyzją O2 ocena nie wpływa na decyzję przed zebraniem 200 ocen |
 | 4 | Prawdopodobieństwa mają cel predykcji i metodę walidacji | **CZĘŚCIOWY** | każde P ma nazwane zdarzenie i źródło; S01–S12 nie mają modelu zdarzenia TP-przed-SL; żaden model nie jest wytrenowany na danych klienta |
 | 5 | Niepewność i konflikty modeli | **CZĘŚCIOWY** | przedział Wilsona, REDUCE przy nieznanej/szerokiej niepewności; zgodność modeli: brak dwóch niezależnych skalibrowanych modeli tego samego zdarzenia |
 | 6 | Scalping: realistyczne koszty i warunki wykonania | **CZĘŚCIOWY** | wejście po Ask/Bid, prowizja, poślizg, jakość spreadu; spread liczony podwójnie w SH (O7); brak danych o poślizgu brokera |
-| 7 | Hedging ocenia ekspozycję i koszt zabezpieczenia | **CZĘŚCIOWY** | koszyk porównuje koszt hedge z redukcją, walidacja HEDGE/NO_HEDGE/REDUCE; łączna ekspozycja tylko do odczytu (O1) |
-| 8 | Wszystkie strategie korzystają ze wspólnego Risk Engine | **NIEUKOŃCZONY** | dwa silniki ryzyka (AR-02); wspólny jest tylko STOP i wiązanie rachunku (AR-01) |
+| 7 | Hedging ocenia ekspozycję i koszt zabezpieczenia | **CZĘŚCIOWY** | koszyk porównuje koszt hedge z redukcją, walidacja HEDGE/NO_HEDGE/REDUCE; na netting REDUCE zamiast hedge po walidacji (O3); brak wytrenowanych modeli na danych klienta |
+| 8 | Wszystkie strategie korzystają ze wspólnego Risk Engine | **NIEUKOŃCZONY** | nadal dwa silniki ryzyka; od O1 na instrumencie wejścia otwiera tylko jedna ścieżka, więc ich ryzyko się nie sumuje; wspólne są STOP, wiązanie rachunku i wybór ścieżki |
 | 9 | Trening i walidacja odseparowane od danych testowych | **SPEŁNIONY** | chronologiczne podziały z embargo, holdout oceniany raz (`sh/tpmodel.py`, `ml/validation.py`, master models) |
 | 10 | Backtest uwzględnia ograniczenia egzekucji | **CZĘŚCIOWY** | konserwatywne świece niejednoznaczne, koszty; brak odrzuceń/requote i częściowych wypełnień brokera |
-| 11 | Testy jednostkowe, integracyjne i regresyjne | **SPEŁNIONY** | pełny zestaw testów; nowe: `test_arch_fixes.py`, `test_evaluation.py` |
+| 11 | Testy jednostkowe, integracyjne i regresyjne | **SPEŁNIONY** | pełny zestaw testów; nowe: `test_arch_fixes.py` (AR-01, O1, O3), `test_evaluation.py` (B, D, O2, O4, O6) |
 | 12 | Dokumentacja odpowiada implementacji | **SPEŁNIONY dla dokumentów tego audytu** | starsze raporty – O5 |
-| 13 | Nowe moduły podłączone do przepływu decyzyjnego | **CZĘŚCIOWY** | `EvaluationService` jest podłączony do obu ścieżek (słuchacze w działającym kodzie), ale jako obserwator – nie decyduje (O2) |
+| 13 | Nowe moduły podłączone do przepływu decyzyjnego | **CZĘŚCIOWY** | wybór ścieżki głównej (O1) i wariant REDUCE (O3) działają w przepływie decyzji; `EvaluationService` jest obserwatorem trzech źródeł (O2) |
 | 14 | Bot potrafi bezpiecznie odmówić | **SPEŁNIONY** | pomiar 12 min: 21/21 decyzji zablokowanych z powodami; STOP w obu ścieżkach (AR-01); DEFER/REJECT oceny |
 | 15 | LIVE nieaktywny bez zgody | **SPEŁNIONY** | Execution Lock `LOCKED`, SH odmawia AUTO_LIVE, żaden test ani trening nie zmienia trybu |
 
-**Projekt nie jest ukończony w rozumieniu §26** – warunki 3 i 8 są nieukończone, a 4–7, 10 i 13 częściowe. Ich domknięcie zależy od decyzji
-O1/O2 i od treningu na historii klienta (B-DATA).
+**Projekt nie jest ukończony w rozumieniu §26** – warunki 3 i 8 są nieukończone, a 4–7, 10 i 13 częściowe. Domknięcie 3 i 13 zależy od
+zebrania 200 ocen per silnik i decyzji o ASSIST (O2); 4–7 i 10 – od treningu i walidacji na historii klienta (B-DATA); 8 – od połączenia
+silników ryzyka (osobna decyzja, poza O1).

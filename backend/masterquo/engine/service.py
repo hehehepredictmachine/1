@@ -291,7 +291,7 @@ class EngineService:
         now_iso = iso(utcnow())
         agent_gate = self.agent.gate_for(setup, session_epoch=epoch, account_key=account_key, now_iso=now_iso) if self.agent \
             else {"status": "UNAVAILABLE", "reason_codes": ["AGENT_NOT_RUNNING"]}
-        mode_gate = self.modes.gate(account_key)
+        mode_gate = self.modes.gate(account_key, path="ACTIVE")
         macro = self.news.macro() if self.news else {"status": "DISABLED"}
         d = decision_mod.build(snapshot_id=full["snapshot_id"], as_of=now_iso, symbol=sym, account_key=account_key, session_epoch=epoch,
                                dq=dq, legacy=legacy_out, setup=setup, levels=levels, risk=risk, agent_gate=agent_gate, mode_gate=mode_gate,

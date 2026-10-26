@@ -205,6 +205,45 @@ class ServiceAndExposure(unittest.TestCase):
         self.assertEqual(items[0]["horizon_s"], 12 * 900)
         self.assertEqual(items[0]["decision"], "DEFER")                 # no ML prediction for this version -> no probability
 
+    def scalp_plan(self, **kw):
+        plan = {"setup_id": "SC-1", "direction": "BUY", "decision_ts": NOW, "sl": 1999.0, "tp1": 2001.0, "tp2": 2002.0, "fill_shadow": 2000.2,
+                "spread_fill": 0.2, "entry_mode": "MARKET", "model_b": {"status": "UNAVAILABLE", "pass": False}}
+        plan.update(kw)
+        return plan
+
+    def test_scalp_shadow_candidates_logged_with_their_own_event(self):
+        """O6: the Range->Sweep->Retest SHADOW machine is a third source; blocked candidates are evaluated too."""
+        self.svc.on_scalp_setup(self.scalp_plan(), status="BLOCKED", reasons=["kalendarz makro: brak"], instrument="XAUUSD", symbol="XAUUSD-",
+                                f1=0.5, horizon_s=1800, extra_cost=0.07, commission_known=True)
+        self.svc.on_scalp_setup(self.scalp_plan(setup_id="SC-2", fill_shadow=None), status="BLOCKED", reasons=[], instrument="XAUUSD",
+                                symbol="XAUUSD-", f1=0.5, horizon_s=1800)
+        self.assertEqual(self.svc.counters["no_entry"], 1)                     # no executable price -> nothing invented
+        it = self.svc.assessments("SCALP_SHADOW")
+        self.assertEqual(len(it), 1)
+        self.assertEqual((it[0]["event"], it[0]["decision"]), ("TP1 przed SL w horyzoncie", "DEFER"))
+        self.assertEqual([t["weight"] for t in it[0]["targets"]], [0.5, 0.5])
+        self.bars = m1(NOW, [(2000.4, 2000.0, 2000.2), (2001.1, 2000.1, 2000.9), (2000.9, 1998.9, 1999.0)] + [(2000.0, 1999.5, 1999.8)] * 30)
+        self.svc.mature(NOW + 3600)
+        out = self.svc.assessments("SCALP_SHADOW")[0]["outcome"]
+        self.assertEqual((out["targets_hit"], out["exit"]), ([True, False], "SL"))
+        self.assertTrue(out["event_hit"])                                       # TP1 before SL = the scalp model's event
+
+    def test_both_regimes_recorded_and_readiness_reported(self):
+        """O4: the regime of both definitions is stored with every assessment; O2: ASSIST readiness is reported, never applied."""
+        self.svc.regime_sources = {"ACTIVE": lambda: {"state": "TREND_UP"}, "SH": lambda: {"state": "TRANSITION"},
+                                   "BROKEN": lambda: 1 / 0}
+        su = mk_setup(self.spec, "SCALPING", "BUY", ref=2000.2)
+        self.svc.on_sh_cycle({"SCALPING": su}, inst="XAUUSD", symbol=su["symbol"], snap=None, now=NOW)
+        row = self.svc.ledger.rows(f"{E.VERSION}/SH_SCALPING")[0]
+        self.assertEqual(row["payload"]["candidate"]["market_regime"]["both"], {"ACTIVE": "TREND_UP", "SH": "TRANSITION", "BROKEN": None})
+        rep = self.svc.report()
+        self.assertEqual((rep["regimes"][0]["active_regime"], rep["regimes"][0]["sh_regime"], rep["regimes"][0]["n"]), ("TREND_UP", "TRANSITION", 1))
+        tp = [t["price"] for t in su["tps"]]
+        self.bars = m1(NOW + 60, [(tp[1] + 0.05, 2000.1, tp[1])] + [(2000.5, 2000.0, 2000.3)] * 30)
+        self.svc.mature(NOW + 60 * 40)
+        r = self.svc.report()["assist_readiness"]["SH_SCALPING"]
+        self.assertEqual((r["matured"], r["with_probability"], r["target"], r["evidence_sufficient"]), (1, 0, 200, False))
+
     def test_exposure_detects_cross_engine_conflict(self):
         from masterquo.evaluation import exposure as X
         self.db.execute("""INSERT INTO managed_positions(position_key, mode, symbol, side, volume_initial, volume_open, entry_price, sl, state, opened_at)

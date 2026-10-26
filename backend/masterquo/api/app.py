@@ -48,6 +48,11 @@ class ModeReq(BaseModel):
     confirm: str = ""
 
 
+class PrimaryPathReq(BaseModel):
+    instrument: str
+    path: str
+
+
 class OnReq(BaseModel):
     on: bool
     reason: str = "user"
@@ -1426,6 +1431,15 @@ def create_app(rt, port: int) -> FastAPI:
         try:
             return rt.modes.set_mode(req.mode, confirm=req.confirm, account=rt.bridge.account_status(), account_key=rt.bridge.account_key,
                                      synthetic=rt.bridge.synthetic)
+        except ModeError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            rt.engine.mark_dirty()
+
+    @app.post("/api/v1/mode/primary-path")
+    def set_primary_path(req: PrimaryPathReq):
+        try:
+            return rt.modes.set_primary_path(req.instrument, req.path)
         except ModeError as exc:
             raise HTTPException(400, str(exc)) from exc
         finally:

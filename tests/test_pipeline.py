@@ -26,6 +26,7 @@ class TestPipeline(unittest.TestCase):
         self.td = TempData()
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.b, self.worker = cfg, db, b, worker
+        cfg.update({"execution": {"primary_path": {"XAUUSD": "ACTIVE"}}})   # O1: the S01-S12 path is the chosen primary path
         cfg.update({"risk": {"risk_per_trade_pct": 1.0, "max_total_open_risk_pct": 3.0, "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0,
                              "max_open_positions": 3, "macro_block_high_impact": False},
                     "costs": {"slippage_stress_points": 5, "commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.5},
@@ -104,6 +105,31 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(self.db.query("SELECT * FROM order_attempts")), 1)
         stored = self.db.one("SELECT record_json FROM decisions WHERE decision_id=?", (d["decision_id"],))
         self.assertIsNotNone(stored)                                    # decision persisted
+
+    def test_not_primary_path_blocks_new_entry(self):
+        """O1: with SCALPING/HEDGING chosen as the primary path the S01-S12 decision is analysed but never executed."""
+        from masterquo.engine import service as svc
+        rec, bid = self._confirmed_setup()
+        svc.targets.derive_levels = lambda plan, m03, atr, **kw: {
+            "rule_version": "TEST", "status": "AVAILABLE", "side": "SHORT", "stop_loss": round(bid + 8.12, 2), "invalidation_level": bid + 8,
+            "entry_zone": {"low": bid, "high": bid + 1}, "reasons": [],
+            "targets": [{"price": round(bid - 12, 2), "weight": 0.5}, {"price": round(bid - 24, 2), "weight": 0.5}]}
+        self.engine.full_cycle()
+        self.engine.last_full["legacy"]["m02"]["structural_direction"] = "BEARISH"
+        self.engine.agent = StubAgent("PASS")
+        self.modes.set_mode("PAPER", confirm="PAPER", account=self.b.account_status(), account_key=self.b.account_key, synthetic=True)
+        self.modes.set_primary_path("XAUUSD", "SH")
+        self.engine.mark_dirty()
+        self.engine.light_cycle()
+        self.engine.light_cycle()
+        d = self.engine.current_decision()
+        self.assertEqual(d["execution_permission"], "BLOCKED")
+        self.assertIn("NOT_PRIMARY_PATH_SH", d["reason_codes"])
+        self.assertEqual(self.db.query("SELECT * FROM order_attempts"), [])
+        self.modes.set_primary_path("XAUUSD", "ACTIVE")                     # the user's choice applies at the next cycle
+        self.engine.mark_dirty()
+        self.engine.light_cycle()
+        self.assertEqual(self.engine.current_decision()["execution_permission"], "ALLOWED")
 
     def test_ai_unavailable_blocks_entry_but_shows_direction(self):
         from masterquo.engine import service as svc

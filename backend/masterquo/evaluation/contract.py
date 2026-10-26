@@ -16,7 +16,7 @@ import math
 from dataclasses import asdict, dataclass, field
 
 VERSION = "PMW-EVAL-CONTRACT-1"
-ENGINES = ("ACTIVE_S01_S12", "SH_SCALPING", "SH_HEDGING")
+ENGINES = ("ACTIVE_S01_S12", "SH_SCALPING", "SH_HEDGING", "SCALP_SHADOW")     # SCALP_SHADOW: Range->Sweep->Retest (never trades)
 DECISIONS = ("ACCEPT", "REDUCE", "DEFER", "REJECT")
 TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "H8": 28800, "D1": 86400}
 
@@ -208,3 +208,27 @@ def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
         engine_probability={"value": prob.get("value"), "status": prob.get("status"), "event": prob.get("event"),
                             "model_version": prob.get("model_version")} if prob else None,
         source_ref={"sh_signal_id": su.get("signal_id")})
+
+
+def from_scalp_plan(plan: dict, *, status: str, reasons: list, instrument: str, symbol: str, f1: float, horizon_s: float,
+                    commission_known: bool | None = None, extra_cost: float | None = None, regime: dict | None = None) -> SetupCandidate:
+    """Scalp Range->Sweep->Retest candidate (SHADOW machine, decision O6). Entry = the shadow fill (Ask/Bid or the limit price),
+    TP1 share = the profile's tp1_fraction, horizon = max hold. Its own gate status is kept for traceability only."""
+    side = {"BUY": "LONG", "SELL": "SHORT"}.get(plan.get("direction"), plan.get("direction"))
+    f1 = min(1.0, max(0.0, float(f1)))
+    tg = [{"price": float(plan["tp1"]), "weight": f1, "basis": "TP1"}]
+    if f1 < 1.0 and plan.get("tp2") is not None:
+        tg.append({"price": float(plan["tp2"]), "weight": 1.0 - f1, "basis": "TP2"})
+    else:
+        tg[0]["weight"] = 1.0
+    entry = plan.get("fill_shadow")
+    ts = float(plan["decision_ts"])
+    return SetupCandidate(
+        setup_id=str(plan.get("setup_id")), engine="SCALP_SHADOW", strategy_id="RANGE_SWEEP_RETEST", symbol=symbol, instrument=instrument,
+        timeframe="M1", decision_ts=ts, direction=side, entry_type=plan.get("entry_mode") or "MARKET",
+        entry_price=float(entry) if entry is not None else float("nan"), stop_loss=float(plan["sl"]), targets=tg, horizon_s=float(horizon_s),
+        stage=status, market_regime={"state": (regime or {}).get("state"), "source": "scalp (kontekst M15/M30/H1)"},
+        features={"range_id": plan.get("range_id"), "confirmation": plan.get("confirmation"), "tv_ratio": plan.get("tv_ratio")},
+        features_as_of=ts, data_quality={"status": "OK", "data_as_of": None, "reasons": []},
+        execution_context={"spread": plan.get("spread_fill"), "quote_age_s": None, "cost_price": extra_cost, "commission_known": commission_known},
+        engine_probability=None, source_ref={"scalp_setup_id": plan.get("setup_id"), "scalp_status": status, "scalp_reasons": list(reasons)[:4]})

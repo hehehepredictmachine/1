@@ -64,6 +64,7 @@ export const REASON_PL: Record<string, string> = {
   M10A_CONFIRMED: "Setup niepotwierdzony (M10A)",
   QUOTE_STALE: "Kwotowanie nieświeże",
   NEW_ENTRIES_STOPPED: "Nowe wejścia zatrzymane",
+  PRIMARY_PATH_NOT_SELECTED: "Nie wybrano ścieżki głównej (okno Tryb → 4)",
   COST_MODEL_UNKNOWN_COMMISSION: "Nieznana prowizja",
   SLIPPAGE_STRESS_NOT_CONFIGURED: "Nieustawiony stres poślizgu",
   SIZE_BELOW_BROKER_MIN_LOT: "Wielkość poniżej min. lota brokera (nie zaokrąglamy w górę)",
@@ -77,6 +78,7 @@ export const REASON_PL: Record<string, string> = {
 
 export function reasonPl(code: string): string {
   if (REASON_PL[code]) return REASON_PL[code];
+  if (code.startsWith("NOT_PRIMARY_PATH_")) return "Ta ścieżka tylko analizuje – wejścia otwiera ścieżka główna " + (code.endsWith("_SH") ? "SCALPING/HEDGING" : "S01–S12");
   if (code.startsWith("RR_NET_BELOW")) return "RR netto poniżej progu blokady";
   if (code.startsWith("RR_NET_CONDITIONAL_REDUCED_RISK")) return "RR netto warunkowy – wejście z mniejszym ryzykiem (x" + code.split("_X").pop() + ")";
   if (code.startsWith("RR_NET_CONDITIONAL")) return "RR netto warunkowy – bez wykonania";

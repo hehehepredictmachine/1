@@ -98,10 +98,11 @@ class SHService:
 
     def gate(self) -> dict:
         """Execution mode + reasons that forbid NEW plans now, from the shared ModeManager: the user's STOP (kill switch), the
-        Execution Lock, a missing / unconfirmed / wrong-type account in AUTO_DEMO. Open plans are always managed. Not applied:
+        Execution Lock, a missing / unconfirmed / wrong-type account in AUTO_DEMO, SH not being the primary path (O1). Open plans
+        are always managed. Not applied:
         SIGNALS (never opens plans) and the legacy RiskLimits of the S01-S12 engine (SH enforces its own limits, sh/risk.py)."""
         try:
-            g = self.modes.gate(self.bridge.account_key)
+            g = self.modes.gate(self.bridge.account_key, path="SH")
         except Exception as exc:  # noqa: BLE001 - unknown gate state = no new entries
             return {"mode": "SIGNALS", "entry_block": [f"MODE_GATE_ERROR:{type(exc).__name__}"]}
         return {"mode": g["mode"], "entry_block": [r for r in g.get("reason_codes") or [] if r not in NOT_SH_GATE_REASONS]}
@@ -273,7 +274,8 @@ class SHService:
         recent = [s for s in self.store.recent_signals(since=now - 60 * r["duplicate_window_minutes"])
                   if s["status"] == "READY" and self.store.db.one("SELECT 1 FROM sh_plans WHERE signal_id=?", (s["signal_id"],))]
         return {"open_plans": plans, "daily_realized_money": self.store.realized_since(day_start(now)),
-                "last_close_at": self.store.last_close_at(symbol), "recent_signals": recent, "foreign_positions": foreign}
+                "last_close_at": self.store.last_close_at(symbol), "recent_signals": recent, "foreign_positions": foreign,
+                "netting_reduce_validation": self.netting_reduce_validation(self.instrument()) if strat == "HEDGING" else None}
 
     def foreign_positions(self, symbol: str, magic: int) -> int:
         try:
@@ -422,6 +424,28 @@ class SHService:
                 return [{"action_id": f"{row['plan_id']}:REDUCE:R{b.activations}", "plan_id": row["plan_id"], "kind": "CLOSE_PRIMARY_PART",
                          "volume": vol, "reason": dec["reason"]}]
         return []
+
+    @staticmethod
+    def netting_reduce_validation(inst: str) -> dict:
+        """O3: HEDGING on a NETTING account (hedge event -> REDUCE) only after the REDUCE variant passed the replay validation on
+        the client's own history: report on REAL_USER_DATA, n >= 30 cycles, positive net expectancy (R, after costs)."""
+        p = paths.data_dir() / "sh" / "validation" / f"{inst}_HEDGING.json"
+        if not p.exists():
+            return {"ok": False, "reason": "brak raportu walidacji replay HEDGING (panel Trening → walidacja SCALPING/HEDGING)"}
+        try:
+            v = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": f"raport walidacji nieczytelny ({type(exc).__name__})"}
+        kind = (v.get("dataset") or {}).get("data_kind")
+        red = (v.get("variants") or {}).get("REDUCE") or {}
+        n, e = int(red.get("n") or 0), red.get("expectancy")
+        if kind != "REAL_USER_DATA":
+            return {"ok": False, "reason": f"walidacja na danych {kind or 'nieznanego pochodzenia'} – wymagana historia klienta (REAL_USER_DATA)"}
+        if n < 30:
+            return {"ok": False, "reason": f"wariant REDUCE: {n} cykli < 30"}
+        if e is None or e <= 0:
+            return {"ok": False, "reason": f"wariant REDUCE: oczekiwany wynik {e} R ≤ 0"}
+        return {"ok": True, "source": f"walidacja {v.get('created_at')}: n={n}, wynik oczekiwany {e:.3f} R"}
 
     @staticmethod
     def validated_variant(inst: str) -> dict | None:

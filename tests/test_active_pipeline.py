@@ -12,6 +12,7 @@ class TestActivePipeline(unittest.TestCase):
         self.td = TempData()
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.b, self.worker, self.fake = cfg, db, b, worker, fake
+        cfg.update({"execution": {"primary_path": {"XAUUSD": "ACTIVE"}}})   # O1: the S01-S12 path is the chosen primary path
         cfg.update({"risk": {"risk_per_trade_pct": 1.0, "max_total_open_risk_pct": 3.0, "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0,
                              "max_open_positions": 3},
                     "costs": {"slippage_stress_points": 5, "commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.5},

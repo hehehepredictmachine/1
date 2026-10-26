@@ -64,6 +64,8 @@ def validate(cfg: dict) -> list[str]:
             h = p.get("hedge") or {}
             if h and (h.get("ratio", 0) <= 0 or h.get("ratio", 0) > h.get("max_ratio", 1.0) or h.get("max_ratio", 1.0) > 1.0):
                 errs.append(f"{inst}/HEDGING: 0 < ratio ≤ max_ratio ≤ 1 (brak martingale)")
+            if h and h.get("netting_alternative", "BLOCK") not in ("BLOCK", "REDUCE"):
+                errs.append(f"{inst}/HEDGING: netting_alternative = BLOCK | REDUCE")
             if h and int(h.get("max_activations", 1)) > 3:
                 errs.append(f"{inst}/HEDGING: max_activations ≤ 3")
     return errs

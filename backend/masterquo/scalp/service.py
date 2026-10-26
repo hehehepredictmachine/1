@@ -30,6 +30,7 @@ class ScalpService:
         self.nss = None                               # runtime sets the NeuralScalpService (PMW-UPD-04)
         self.dashboard = None                         # runtime sets the MTFDashboard (PMW-UPD-05)
         self.liquidity = None                         # runtime sets the LiquidityService (PMW-UPD-06)
+        self.listeners: list = []                     # read-only observers of every recorded candidate (evaluation ledger, O6)
         self.prof = st.load_profile()
         self.hedge = hedge_mod.HedgeController(self.prof)
         self._stop = threading.Event()
@@ -178,7 +179,7 @@ class ScalpService:
         cs = float(info.get("trade_contract_size") or 0)
         com = cfg.scalp.commission_per_lot_side
         gate("prowizja znana", com is not None, "ustaw scalp.commission_per_lot_side (Zero ≠ 0 kosztów)" if com is None else f"{com}/lot/stronę")
-        eco = None
+        eco = extra = None
         if fill is not None and cs > 0:
             extra = 2 * (com or 0.0) / cs + 2 * cfg.scalp.slippage_ticks * tick
             eco = st.economics(plan, fill, sp, extra, self.prof)
@@ -226,6 +227,14 @@ class ScalpService:
                          json.dumps(hd, ensure_ascii=False), "PENDING" if status == "READY_SHADOW" else "NOT_APPLICABLE", self.inst))
         self.machine.close_direction(plan["direction"], status, "; ".join(reasons) or "wszystkie bramki SHADOW spełnione", plan["decision_ts"])
         self.log.info("SCALP", status, f"{plan['direction']} {plan['setup_id']}: {status}" + (f" – {reasons[0]}" if reasons else ""))
+        for fn in list(self.listeners):
+            try:
+                fn(plan, status=status, reasons=reasons, instrument=self.inst, symbol=info.get("name") or "",
+                   f1=st.V(self.prof, "exits", "tp1_fraction") if (sz or {}).get("split", True) else 1.0,
+                   horizon_s=st.V(self.prof, "exits", "max_hold_minutes") * 60, extra_cost=extra if eco else None, commission_known=com is not None)
+            except Exception:  # noqa: BLE001 - an observer never stops the SHADOW machine
+                import logging
+                logging.getLogger("masterquo.scalp").exception("scalp listener failed")
 
     def _loss_limits(self, acc: dict) -> tuple[bool, str]:
         eq = acc.get("equity")

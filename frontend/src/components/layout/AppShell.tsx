@@ -39,6 +39,7 @@ function FailureBanner() {
       : `MT5: ${con.state}${con.reason ? ` – ${con.reason}` : ""}. Dane z terminala nie są aktualne.`);
   if (s.engine?.last_error) items.push(`Błąd silnika: ${String(s.engine.last_error).slice(0, 140)}`);
   if (s.mode?.kill_switch) items.push("Nowe wejścia ZATRZYMANE (STOP). Otwarte pozycje pozostają z SL/TP po stronie brokera.");
+  if (s.mode?.primary_path === "UNSET" && s.mode?.mode !== "SIGNALS") items.push("Nie wybrano ścieżki głównej (S01–S12 albo SCALPING/HEDGING) – nowe wejścia wstrzymane. Wybór: okno Tryb → 4. Ścieżka główna.");
   if (!items.length) return null;
   return <div className="fail-banner" role="status" data-testid="fail-banner">{items.map((t) => <span key={t}>⚠ {t}</span>)}</div>;
 }

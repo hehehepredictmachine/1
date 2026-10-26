@@ -43,6 +43,9 @@ Launcher uruchamia te same pliki `.bat` co poniżej. Nie wysyła zleceń i nie z
 Lokalna aplikacja Windows: Twój terminal MetaTrader 5 → silnik MasterQUO → agent Claude → ryzyko → monitor w przeglądarce
 `http://127.0.0.1:8765`. Tryb wykonania wybierasz sam (SIGNALS „Analiza warunków” / PAPER / AUTO DEMO / AUTO LIVE) i program go pamięta;
 przy pierwszym starcie jest **PAPER** (symulacja – żadnych zleceń do brokera).
+Od wersji 1.20 wybierasz też **ścieżkę główną** dla instrumentu (okno Tryb → „4. Ścieżka główna”): **S01–S12** albo **SCALPING / HEDGING**.
+Tylko ścieżka główna otwiera nowe wejścia, druga jedynie analizuje. **Dopóki jej nie wybierzesz, bot nie otwiera żadnych nowych wejść**
+(baner na górze panelu przypomina o wyborze); otwarte pozycje są dalej prowadzone.
 
 ## Wymagania
 * Windows 10/11 64-bit, **Python 3.13 x64** (albo 3.12) z python.org z zaznaczonym „py launcher”.
@@ -159,6 +162,9 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
 * Typ rachunku jest czytany z terminala. Gdy terminal przełączy się na inny rachunek albo typ się nie zgadza (np. AUTO DEMO na rachunku REAL),
   zlecenia są blokowane z dokładnym powodem – wybrany tryb zostaje zapamiętany.
 * **STOP** zatrzymuje tylko nowe wejścia; zamykanie pozycji to osobny przycisk (⏻).
+4. **Ścieżka główna** (per instrument): S01–S12 albo SCALPING / HEDGING – tylko ona otwiera nowe wejścia; bez wyboru żadna.
+   Na rachunku typu NETTING strategia HEDGING działa dopiero po walidacji replay na Twojej historii (zamiast pozycji przeciwnej
+   częściowo zamyka pozycję – REDUCE); do tego czasu jest zablokowana z podanym powodem.
 
 ## Jak czytać monitor
 * Pełna checklista konkretnego setupu jest na stronie **Warunki setupu**; checklista 12A silnika – tamże, sekcja „Sygnał silnika”.

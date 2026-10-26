@@ -298,6 +298,14 @@ export function ModeDialog({ onClose }: { onClose: () => void }) {
       {need && <label className="field"><span>Jednorazowe potwierdzenie przełączenia (nie każdej transakcji) – wpisz: <code>{need}</code></span>
         <input value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>}
       <div className="row"><button className="btn" onClick={() => run(() => apiSend("POST", "/api/v1/mode", { mode, confirm }), "Tryb wykonania zmieniony.")}>Zastosuj tryb wykonania</button></div>
+      <b>4. Ścieżka główna – {s.mode?.instrument || "instrument"}</b>
+      <div className="row">
+        {[["ACTIVE", "S01–S12", "strategie profilu ACTIVE otwierają wejścia; SCALPING/HEDGING tylko analizuje"],
+          ["SH", "SCALPING / HEDGING", "SCALPING/HEDGING otwiera wejścia; S01–S12 tylko analizuje"]].map(([p, l, d]) => (
+          <button key={p} title={d} className={cls("btn", s.mode?.primary_path === p ? "" : "ghost")}
+            onClick={() => run(() => apiSend("POST", "/api/v1/mode/primary-path", { instrument: s.mode?.instrument, path: p }), `Ścieżka główna: ${l}`)}>{l}</button>))}
+      </div>
+      {s.mode?.primary_path === "UNSET" && <div className="note warn">Nie wybrano ścieżki głównej – żadna ścieżka nie otwiera nowych wejść (otwarte pozycje są zarządzane).</div>}
       {(s.decision?.mode_gate?.reason_codes || []).length > 0 && <div className="note warn">Wysyłka zleceń teraz niedozwolona: {(s.decision.mode_gate.reason_codes || []).join(", ")}</div>}
       <div className="note">STOP (przycisk ⏻) zatrzymuje tylko nowe wejścia; zamykanie pozycji to osobna operacja w tym samym oknie.</div>
       {msg && <div className="note">{msg}</div>}

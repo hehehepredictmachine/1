@@ -19,6 +19,10 @@ Three independent settings (never derived from each other):
 * Switching to AUTO_DEMO / AUTO_LIVE is confirmed once by typing the login (LIVE: "LIVE <login>");
   individual trades are not confirmed. Risk limits, data quality, broker restrictions and STOP still apply.
 * STOP (kill switch) stops NEW entries only; closing positions is a separate operation.
+* 1.20 primary path (decision O1): per instrument the user chooses which execution path opens new entries - ACTIVE
+  (S01-S12) or SH (SCALPING/HEDGING). The other path keeps analysing but is blocked like SIGNALS (reason NOT_PRIMARY_PATH_*);
+  without a choice both are blocked (PRIMARY_PATH_NOT_SELECTED). Applied only when a caller names its path, so manual trades
+  and the management of open positions are unaffected.
 """
 from __future__ import annotations
 
@@ -29,6 +33,8 @@ from ..risk.engine import limits_configured
 from ..timeutil import iso, utcnow
 
 MODES = ("SIGNALS", "PAPER", "AUTO_DEMO", "AUTO_LIVE")
+PATHS = ("ACTIVE", "SH")
+PATH_LABEL = {"ACTIVE": "S01–S12 (profil ACTIVE)", "SH": "SCALPING / HEDGING", "UNSET": "nie wybrano"}
 ORDER_MODES = ("AUTO_DEMO", "AUTO_LIVE")          # modes that talk to the broker
 LABEL_PL = {"SIGNALS": "Analiza warunków", "PAPER": "PAPER (symulacja)", "AUTO_DEMO": "AUTO DEMO", "AUTO_LIVE": "AUTO LIVE"}
 LEGACY = {"READ_ONLY": "SIGNALS", "DEMO_EXECUTION": "AUTO_DEMO", "LIVE_EXECUTION": "AUTO_LIVE"}
@@ -61,10 +67,34 @@ class ModeManager:
 
     def status(self) -> dict:
         with self._lock:
+            cfg = self.cfg_store.get()
+            prim = self.primary_path()
             return {"mode": self.mode, "mode_label": LABEL_PL.get(self.mode, self.mode), "auto_trading": self.auto_trading,
                     "bound_account": self.bound_account, "kill_switch": self.kill_switch, "kill_reason": self.kill_reason,
-                    "changed_at": self.changed_at, "strategy_mode": self.cfg_store.get().active.strategy_mode,
-                    "ml_mode": self.cfg_store.get().ml.mode}
+                    "changed_at": self.changed_at, "strategy_mode": cfg.active.strategy_mode, "ml_mode": cfg.ml.mode,
+                    "instrument": cfg.assets.active, "primary_path": prim, "primary_path_label": PATH_LABEL[prim],
+                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")}}
+
+    def primary_path(self, instrument: str | None = None) -> str:
+        cfg = self.cfg_store.get()
+        return cfg.execution.primary_path.get(instrument or cfg.assets.active, "UNSET")
+
+    def set_primary_path(self, instrument: str, path: str) -> dict:
+        if instrument not in ("XAUUSD", "BTC"):
+            raise ModeError("ASSET_NOT_ALLOWED")
+        if path not in PATHS + ("UNSET",):
+            raise ModeError("UNKNOWN_PATH")
+        paths = dict(self.cfg_store.get().execution.primary_path)
+        paths[instrument] = path
+        self.cfg_store.update({"execution": {"primary_path": paths}})
+        self.log.warn("MODE", "PRIMARY_PATH", f"Ścieżka główna {instrument}: {PATH_LABEL[path]}"
+                      + ("" if path == "UNSET" else f"; druga ścieżka tylko analizuje (bez nowych wejść)"))
+        self.changed_at = iso(utcnow())
+        st = self.status()
+        self.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)",
+                        (self.changed_at, dumps({"primary_path": {instrument: path}, "why": "user"})))
+        self.bus.publish("mode", st)
+        return st
 
     def _persist_and_publish(self, why: str) -> None:
         self.changed_at = iso(utcnow())
@@ -124,7 +154,9 @@ class ModeManager:
         return st
 
     # ------------------------------------------------------------ gate
-    def gate(self, account_key: str | None, account: dict | None = None, synthetic: bool | None = None) -> dict:
+    def gate(self, account_key: str | None, account: dict | None = None, synthetic: bool | None = None, *, path: str | None = None) -> dict:
+        """path = the execution path asking (ACTIVE / SH) - adds the primary-path rule; None (manual trades, position
+        management, mode display) leaves it out."""
         if account is None and self.account_provider is not None:
             account, _k, synth = self.account_provider()
             synthetic = synth if synthetic is None else synthetic
@@ -152,6 +184,12 @@ class ModeManager:
             missing = limits_configured(self.cfg_store.get().risk)
             if missing and mode != "SIGNALS":
                 reasons.append("RISK_LIMITS_NOT_CONFIGURED")
+            prim = self.primary_path()
+            if path is not None and mode != "SIGNALS":
+                if prim == "UNSET":
+                    reasons.append("PRIMARY_PATH_NOT_SELECTED")
+                elif prim != path:
+                    reasons.append("NOT_PRIMARY_PATH_" + prim)
             return {"mode": mode, "allowed": not reasons, "auto_trading": self.auto_trading and not reasons,
-                    "kill_switch": self.kill_switch, "reason_codes": reasons,
+                    "kill_switch": self.kill_switch, "reason_codes": reasons, "primary_path": prim, "path": path,
                     "execution_lock": "LOCKED" if self.cfg_store.execution_locked() else "UNLOCKED_BY_USER"}

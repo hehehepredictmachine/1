@@ -78,11 +78,13 @@ def label(cand: dict, bars: list[dict], *, cost_r: float = 0.0) -> dict:
 
 
 def event_hit(engine: str, out: dict) -> bool | None:
-    """Did the event the probability refers to occur? SH: TP2 (second target, or the last one) before the SL.
-    S01-S12 legacy ML event: net R > 0 under the plan."""
+    """Did the event the probability refers to occur? SH: TP2 (second target, or the last one) before the SL. Scalp SHADOW:
+    TP1 before the SL. S01-S12 legacy ML event: net R > 0 under the plan."""
     if out.get("status") != "MATURED":
         return None
+    h = out["targets_hit"]
     if engine.startswith("SH_"):
-        h = out["targets_hit"]
         return bool(h[min(1, len(h) - 1)]) if h else None
+    if engine == "SCALP_SHADOW":                                    # scalp model B event: TP1 before SL
+        return bool(h[0]) if h else None
     return out["plan_r_net"] > 0

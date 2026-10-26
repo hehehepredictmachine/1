@@ -122,6 +122,9 @@ class Runtime:
         self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
         self.engine.active.listeners.append(self.evaluation.on_active_events)
         self.sh.listeners.append(self.evaluation.on_sh_cycle)
+        self.scalp.listeners.append(self.evaluation.on_scalp_setup)                               # O6: third SHADOW source
+        self.evaluation.regime_sources = {"ACTIVE": lambda: getattr(getattr(self.engine.active, "view", None), "regime", None),
+                                          "SH": lambda: (self.sh.snapshot or {}).get("regime")}             # O4: both definitions
         self.scalp.extind = self.extind
         self.scalp.ml = self.ml
         self.engine.extind = self.extind
