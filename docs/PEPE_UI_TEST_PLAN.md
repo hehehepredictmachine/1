@@ -10,7 +10,8 @@ Narzędzia – wyłącznie istniejące w projekcie (bez nowego frameworka testow
 Zasady: test nieuruchomiony nie jest „zaliczony”; testy egzekucji tylko na symulatorze / mockach / PAPER – **nigdy rachunek LIVE**;
 wartości testowe sekretów tylko z listy fikcyjnych wartości używanych już w testach.
 
-Statusy w kolumnie „Stan”: `ISTNIEJE` (test już jest i przechodzi), `PLAN` (do napisania w podanym etapie).
+Statusy w kolumnie „Stan”: `ISTNIEJE` (test już jest i przechodzi), `PLAN` (do napisania w podanym etapie), `OK (n)` (test napisany
+w etapie n i uruchomiony z wynikiem pozytywnym), `CZĘŚCIOWO (n)` (pokryta tylko opisana część – reszta wskazana w kolumnie).
 
 ## 1. Bazowa regresja (przed każdym etapem i po nim)
 
@@ -26,17 +27,17 @@ Statusy w kolumnie „Stan”: `ISTNIEJE` (test już jest i przechodzi), `PLAN` 
 
 | # | Przypadek | Test | Stan |
 |---|---|---|---|
-| F1 | `#/trading-intelligence`, `#/ai-neural-lab`, `#/system-control` renderują się w nowym shellu | `test_ui_terminal_shell` | PLAN (1) |
-| F2 | wszystkie dotychczasowe trasy nadal renderują się w starym shellu; link „Istniejące widoki” działa | `test_ui_terminal_shell` + `test_ui_pages` | PLAN (1) |
-| F3 | sidebar: zwijanie/rozwijanie, stan zapamiętany po przeładowaniu, `aria-expanded` | `test_ui_terminal_shell` | PLAN (1) |
-| F4 | header: środowisko z backendu (demo → `SYNTHETIC`, brak rachunku → `UNKNOWN`), nigdy wartość domyślna z UI | `test_ui_terminal_shell` | PLAN (1) |
-| F5 | status MT5 i panel szczegółów z `state.connection` (stan, heartbeat, epoka, błąd) | `test_ui_terminal_shell` | PLAN (1) |
-| F6 | stany `loading / empty / error / stale / disconnected / permission denied` – każdy komponent wyświetla się dla odpowiedniego wejścia (wymuszenie przez przechwycenie żądań w Playwright: 500, 401, brak WS) | `test_ui_terminal_shell` | PLAN (1) |
-| F7 | wartości nieznane jako `N/A` / `UNKNOWN`, nie `0` | `test_ui_terminal_shell` | PLAN (1) |
-| F8 | klawiatura: Tab przechodzi przez sidebar → header → treść, widoczny fokus, skip-link | `test_ui_terminal_shell` | PLAN (1) |
-| F9 | responsywność: 1600×1000, 1366×768, 760×900 – brak poziomego przewijania strony, sidebar zwinięty na wąskim ekranie | `test_ui_terminal_shell` | PLAN (1) |
-| F10 | brak błędów konsoli na nowych trasach | `test_ui_terminal_shell` | PLAN (1) |
-| F11 | jedno połączenie WS po nawigacji między starymi i nowymi trasami (liczba otwartych WebSocket = 1) | `test_ui_terminal_shell` | PLAN (1) |
+| F1 | `#/trading-intelligence`, `#/ai-neural-lab`, `#/system-control` renderują się w nowym shellu | `test_ui_terminal_shell` test_01 | OK (1) |
+| F2 | wszystkie dotychczasowe trasy nadal renderują się w starym shellu; link „Istniejące widoki” działa | `test_ui_terminal_shell` test_02 + `test_ui_pages` | OK (1) |
+| F3 | sidebar: zwijanie/rozwijanie, stan zapamiętany po przeładowaniu, `aria-expanded` | `test_ui_terminal_shell` test_05 | OK (1) |
+| F4 | header: środowisko z backendu (demo → `SYNTHETIC`, brak rachunku → `UNKNOWN`), nigdy wartość domyślna z UI | `test_ui_terminal_shell` test_03 | CZĘŚCIOWO (1): `SYNTHETIC` i `HISTORY` (`as_of`) w przeglądarce; `LIVE` / `DEMO` / `UNKNOWN` tylko w kodzie `envOf` – backend demo zawsze zgłasza symulator, a w repo nie ma testów jednostkowych frontendu |
+| F5 | status MT5 i panel szczegółów z `state.connection` (stan, heartbeat, epoka, błąd); bez połączenia z backendem MT5 = `UNKNOWN` | `test_ui_terminal_shell` test_03, test_04, test_10 | OK (1) |
+| F6 | stany `loading / empty / error / stale / disconnected / permission denied` – każdy komponent wyświetla się dla odpowiedniego wejścia (wymuszenie przez przechwycenie żądań w Playwright: 500, 401, brak WS) | `test_ui_terminal_shell` test_01, test_10 | CZĘŚCIOWO (1): `empty` (sekcje „nie zintegrowane”) oraz `disconnected` / `stale` (brak WS → `data-stale=1`, ostrzeżenie, MT5 `UNKNOWN`); `loading / error / permission denied` – komponenty są, ale w etapie 1 panele nie pobierają danych, więc nie ma czego przechwycić (500 / 401) → **etap 2** |
+| F7 | wartości nieznane jako `N/A` / `UNKNOWN`, nie `0` | `test_ui_terminal_shell` test_04, test_06 | OK (1) |
+| F8 | klawiatura: skip-link jako pierwszy element, Enter przenosi fokus do treści; kolejność DOM: header → sidebar → treść; widoczny fokus | `test_ui_terminal_shell` test_07 | OK (1) |
+| F9 | responsywność: 1600×1000, 1366×768, 760×900, 390×844 – brak poziomego przewijania strony, sidebar zwinięty na wąskim ekranie, nagłówek w jednym wierszu od 1366 px | `test_ui_terminal_shell` test_08 | OK (1) |
+| F10 | brak błędów konsoli na nowych trasach | `test_ui_terminal_shell` test_01, test_09 | OK (1) |
+| F11 | jedno połączenie WS po nawigacji między starymi i nowymi trasami (liczba otwartych WebSocket = 1) | `test_ui_terminal_shell` test_09 | OK (1) |
 
 ## 3. Integracja – kontrakty (etap 2 i dalej)
 

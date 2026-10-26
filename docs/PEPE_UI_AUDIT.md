@@ -172,8 +172,8 @@ roli; `MISSING` – brak implementacji; `BLOCKED` – wymaga decyzji, danych lub
 | Polecenie | Wynik |
 |---|---|
 | `cd frontend && npm run typecheck` | exit 0 |
-| testy UI i procesu aplikacji (`test_ui_pages`, `test_ui_monitor`, `test_nc_panel`, `test_ui_lab`, `test_ui_analytics`, `test_ui_signal_card`, `test_ui_setup_panel`, `test_ui_scalp`, `test_app_process`) | 64 testy: 61 OK, 3 niepowodzenia czasowe (brak świec M1 w chwili zapytania, zadanie lab > 600 s, panel FFT bez danych) w przebiegu równoległym z dwoma innymi ciężkimi zestawami – do powtórzenia osobno (wynik w raporcie etapu 1) |
-| `tests/gold_candles` z `.venv_candles` (w tym trening MLP) | przebieg w toku – wynik w raporcie etapu 1 |
+| testy UI i procesu aplikacji (`test_ui_pages`, `test_ui_monitor`, `test_nc_panel`, `test_ui_lab`, `test_ui_analytics`, `test_ui_signal_card`, `test_ui_setup_panel`, `test_ui_scalp`, `test_app_process`) | 64 testy: 61 OK, 3 niepowodzenia w przebiegu równoległym z dwoma innymi ciężkimi zestawami (brak świec M1 w chwili zapytania, zadanie lab > 600 s, panel FFT bez danych). **Powtórzone osobno w etapie 1:** `test_ui_lab` i `test_app_process` OK (przyczyna: obciążenie CPU); `test_ui_analytics` ujawnił rzeczywisty wyścig w bibliotece formacji (status `COMPLETED` zapisywany przed raportem, panel kończył odpytywanie i mógł nie pokazać raportu) – poprawka `854f611`, potem 4/4 OK |
+| `tests/gold_candles` z `.venv_candles` (w tym trening MLP) | 39 testów: 38 OK, `test_scalp_train` – `setUpClass` przekroczył limit 1800 s przy równoległym obciążeniu; powtórzony osobno: 10/10 OK w 244 s |
 | ostatni pełny `tools/run_tests.py` (commit `6bca89e`, kod jak w `161950b`) | 895 testów OK, 4 pominięte; gold_candles w tamtym przebiegu: `SKIPPED_NO_CANDLE_ENV` |
 
 ## 16. Decyzje wymagane przed implementacją

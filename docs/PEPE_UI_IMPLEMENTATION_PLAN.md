@@ -57,6 +57,21 @@ Nie zmieniane: cały `backend/`, strony i komponenty istniejących widoków, `st
 `npm run typecheck`, `npm run build`, `test_ui_terminal_shell` + regresja UI (`test_ui_pages`, `test_ui_monitor`, `test_nc_panel` i pozostałe
 `test_ui_*`), pełny `tools/run_tests.py`, przegląd UI (zrzuty 1600×1000 i 760×900), lint wg decyzji D7.
 
+### Wynik bramki etapu 1
+
+| Sprawdzenie | Wynik |
+|---|---|
+| `npm run typecheck` (lint wg D7 = `tsc` strict) | exit 0 |
+| `npm run build` | OK; jeden chunk JS ~0,99 MB (ostrzeżenie Vite > 900 kB, jak przed etapem 1) – podział / leniwe ładowanie w etapie 3 |
+| `test_ui_terminal_shell` (10 testów, F1–F11) | 10/10 OK; F4 i F6 częściowo – szczegóły w PEPE_UI_TEST_PLAN §2 |
+| regresja: `test_ui_lab`, `test_ui_analytics`, `test_app_process` (osobno) | OK (27 + 4 testy po poprawce wyścigu w bibliotece formacji) |
+| `tests/gold_candles` (`.venv_candles`) | 38/39 w przebiegu pod obciążeniem; `test_scalp_train` osobno 10/10 OK |
+| pełny `tools/run_tests.py` | PEŁNY_PRZEBIEG |
+| przegląd zrzutów (`data/logs/ui_terminal/`) | wykonany; poprawione: nagłówek łamał się na 2 wiersze przy 1366/1600 px, MT5 pokazywał „CONNECTED” mimo zerwanego połączenia z backendem (teraz `UNKNOWN`, ostatni znany stan jako opis) |
+
+Poza zakresem etapu 1, ale wykryte przez bramkę: wyścig w istniejącej stronie „Formacje” (`AnalyticsPages.tsx`, osobny commit
+`854f611`) – jedyna zmiana w istniejącym widoku poza pozycją „Nowe panele” w menu.
+
 ## Etap 2 – Trading Intelligence
 
 1. Market Overview 2×2 (M5/M15/H1/H4) na istniejącym `ChartPanel` (lightweight-charts) i `/api/v1/candles`, wspólne dane stref
