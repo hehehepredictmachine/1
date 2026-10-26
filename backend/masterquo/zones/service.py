@@ -122,7 +122,8 @@ class ZoneService:
         return ZE.compute_map(instrument=inst, symbol=symbol, tick=tick, bars=self._bars(symbol), cfg=self.cfg_store.get().zones, as_of=as_of)
 
     def _persist(self, zm: dict) -> None:
-        with self._lock:
+        with self._lock, self.db:                                        # one transaction (autocommit would commit every event row)
+            self.db.execute("BEGIN")
             self.db.execute("INSERT OR IGNORE INTO zone_maps(map_id, instrument, as_of, created_at, payload) VALUES (?,?,?,?,?)",
                             (zm["map_id"], zm["instrument"], zm["as_of"], time.time(), json.dumps(zm, default=float)))
             self.db.execute("DELETE FROM zone_maps WHERE instrument=? AND map_id NOT IN (SELECT map_id FROM zone_maps WHERE instrument=? "

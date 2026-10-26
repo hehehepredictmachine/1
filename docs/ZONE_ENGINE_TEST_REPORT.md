@@ -33,12 +33,13 @@ identyczne po dodaniu do widoku 10 h przyszłych świec) – wynik w pełnym prz
 | Sprawdzenie | Wynik |
 |---|---|
 | ZoneService w pętli bota | 2 przeliczenia w pierwszych minutach (raz na zamkniętą M5), `data_state` OK, 2015 M5 / 671 M15 / 306 D1 z odczytu historii, 33 strefy (1 prowizoryczna) |
-| Czas | 2,8 s na przebieg w bocie (odczyt historii przez kolejkę MT5 + CPU dzielony z równolegle działającym pełnym zestawem testów); samo `compute_map` offline 0,24–0,27 s na tej samej ilości danych. Status pokazuje teraz osobno `last_read_ms` i `last_compute_ms` |
+| Czas | pierwszy przebieg: 2,8 s na przebieg (odczyt historii przez kolejkę MT5 + CPU dzielony z równolegle działającym pełnym zestawem testów). Rozbicie po dodaniu pomiaru: odczyt 1,4 s, obliczenie 0,64 s (offline 0,24–0,27 s na tej samej ilości danych), reszta – zapis. Zapis był liczony jako osobna transakcja na każdy wiersz zdarzenia (tryb autocommit); po zmianie na jedną transakcję trwa ok. 4 ms |
 | Źródło wolumenu | `TICK_VOLUME`, 2015/2015 świec z tick volume, 0 z real volume; order flow / footprint / arkusz UNAVAILABLE |
-| Dziennik zdarzeń | 65 zdarzeń, 65 różnych par (strefa, status) – bez duplikatów |
+| Dziennik zdarzeń | 65 zdarzeń, 65 różnych par (strefa, status) – bez duplikatów (drugi przebieg demo po restarcie: 66/66) |
+| Rozmiar odpowiedzi wykresu | `tf=M5` ≈ 15 KB, `tf=ALL` ≈ 17 KB (po ograniczeniu pól; wcześniej ≈ 55–62 KB), pełna mapa ≈ 210 KB |
 | Widok historyczny `as_of=10:00` | 28 stref, najpóźniejsze potwierdzenie 09:55 – nic z przyszłości |
 | Profile | 12 zakończonych, rozwijający się NEW_YORK (DEVELOPING), wolumen względny 0,988, cena poniżej VA poprzedniego profilu |
-| `/api/v1/zones/context` (LONG) | strefa przeciwna SWING_HIGH 0,127 R po kosztach; brak flagi, bo jej wynik < 60 (strefa prowizoryczna) |
+| `/api/v1/zones/context` (LONG) | przebieg 1: strefa przeciwna SWING_HIGH 0,127 R po kosztach, bez flagi (wynik < 60, strefa prowizoryczna); przebieg 2: 0,11 R, flaga `ZONE_ROOM_INSUFFICIENT` (silna strefa przeciwna) |
 | Ocena setupów | w oknie demo żaden setup nie doszedł do oceny – `zone_context` w ledgerze sprawdzony tylko testami (§1) |
 
 ## 4. Wykres (Chromium, 1600×1000, strona „Wykresy bota”)
@@ -47,7 +48,9 @@ identyczne po dodaniu do widoku 10 h przyszłych świec) – wynik w pełnym prz
 * Strefy rysowane od chwili potwierdzenia z etykietą `typ TF status wynik`; prowizoryczne – przerywana ramka i dopisek „PROW.”
   (rozróżnienie nie tylko kolorem); POC/VAH/VAL ostatniej zakończonej sesji ciągłe, rozwijającej się – przerywane z dopiskiem „rozw.”.
 * Podpowiedź pod kursorem na strefie: `SWING_LOW M15/M5 ACTIVE 65 | 3456,63–3457,16 | testy 0 | potw. 14:25 | wolumen: TICK_VOLUME
-  (wynik nie jest prawdopodobieństwem)`; po wyłączeniu warstwy podpowiedź i strefy znikają.
+  (wynik nie jest prawdopodobieństwem)`; dla strefy prowizorycznej: `PROW. SWING_LOW M5 PROVISIONAL 36 | … | niepotwierdzona | … [PROVISIONAL]`
+  (poprawione: wcześniej puste pole czasu potwierdzenia). Po wyłączeniu warstwy podpowiedź i strefy znikają. Kontrola powtórzona po
+  restarcie demo na końcowym kodzie – bez błędów konsoli.
 * Na D1/H8 strefy M5 są cienkimi liniami (skala) – warstwa jest przeznaczona głównie dla M5/M15.
 
 ## 5. Czego NIE sprawdzono

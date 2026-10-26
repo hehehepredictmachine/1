@@ -805,6 +805,6 @@ function zoneTipAt(zm: any, price: number | null): string | null {
     const rm = z.reaction_metrics || {};
     const fl = (z.flags || []).length ? ` [${z.flags.join(",")}]` : "";
     return `${zoneLabel(z)} | ${fmtNum(z.lower_price)}–${fmtNum(z.upper_price)} | testy ${rm.retests ?? 0}${rm.swept ? ", sweep" : ""}`
-      + ` | potw. ${String(z.confirmed_at || "—").slice(11, 16)} | wolumen: ${(zm.volume_source || {}).source ?? "?"}${fl}`;
+      + ` | ${z.confirmed_at ? "potw. " + String(z.confirmed_at).slice(11, 16) : "niepotwierdzona"} | wolumen: ${(zm.volume_source || {}).source ?? "?"}${fl}`;
   }).join("  ·  ") + "  (wynik nie jest prawdopodobieństwem)";
 }
