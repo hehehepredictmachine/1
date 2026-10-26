@@ -21,7 +21,7 @@ w etapie n i uruchomiony z wynikiem pozytywnym), `CZĘŚCIOWO (n)` (pokryta tylk
 | build | `npm run build` | ISTNIEJE |
 | stare trasy renderują się | `test_ui_pages`, `test_ui_monitor`, `test_nc_panel`, `test_ui_lab`, `test_ui_analytics`, `test_ui_signal_card`, `test_ui_setup_panel`, `test_ui_scalp` | ISTNIEJE (wynik bazowy w PEPE_UI_AUDIT §15) |
 | proces aplikacji, sesja, WS resync | `test_app_process` | ISTNIEJE |
-| pełny zestaw | `tools/run_tests.py` | ISTNIEJE (895 OK / 4 pominięte w ostatnim pełnym przebiegu) |
+| pełny zestaw | `tools/run_tests.py` | ISTNIEJE (etap 0: 895 OK / 4 pominięte; po etapie 1: 907 testów, 904 OK, 2 pominięte, 1 błąd `test_nc_panel` nieodtworzony w osobnym przebiegu – PEPE_UI_IMPLEMENTATION_PLAN „Wynik bramki etapu 1”; gold_candles 46/46 OK) |
 
 ## 2. Frontend – shell i routing (etap 1)
 

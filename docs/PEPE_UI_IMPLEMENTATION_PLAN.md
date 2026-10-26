@@ -66,7 +66,7 @@ Nie zmieniane: cały `backend/`, strony i komponenty istniejących widoków, `st
 | `test_ui_terminal_shell` (10 testów, F1–F11) | 10/10 OK; F4 i F6 częściowo – szczegóły w PEPE_UI_TEST_PLAN §2 |
 | regresja: `test_ui_lab`, `test_ui_analytics`, `test_app_process` (osobno) | OK (27 + 4 testy po poprawce wyścigu w bibliotece formacji) |
 | `tests/gold_candles` (`.venv_candles`) | 38/39 w przebiegu pod obciążeniem; `test_scalp_train` osobno 10/10 OK |
-| pełny `tools/run_tests.py` | PEŁNY_PRZEBIEG |
+| pełny `tools/run_tests.py` (z `MQ_CANDLES_PYTHON`) | `tests/`: 907 testów – 904 OK, 2 pominięte (opcjonalne ONNX / OpenCL), 1 błąd: `test_nc_panel` (Playwright: `nc-root` znaleziony i widoczny, ale `wait_for_selector` przekroczył 30 s); powtórzony osobno: 1/1 OK w 96 s – przyczyna przekroczenia nieustalona, nie odtworzono jej. `tests/gold_candles`: 46/46 OK |
 | przegląd zrzutów (`data/logs/ui_terminal/`) | wykonany; poprawione: nagłówek łamał się na 2 wiersze przy 1366/1600 px, MT5 pokazywał „CONNECTED” mimo zerwanego połączenia z backendem (teraz `UNKNOWN`, ostatni znany stan jako opis) |
 
 Poza zakresem etapu 1, ale wykryte przez bramkę: wyścig w istniejącej stronie „Formacje” (`AnalyticsPages.tsx`, osobny commit
