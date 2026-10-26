@@ -298,10 +298,16 @@ export function PatternsPage() {
   };
   useEffect(load, [flt.tf, flt.status, s.analytics?.updated_at]);
   useEffect(() => {
-    if (!job || job.status !== "RUNNING") return;
-    const t = setInterval(() => apiGet(`/api/v1/patterns/jobs/${job.job_id}`).then((j) => { setJob(j); if (j.status !== "RUNNING") load(); }).catch(() => undefined), 700);
+    // the report (report_id / export_status) is written just AFTER the final status - keep polling until it lands (bounded)
+    const settled = (j: any) => j.status !== "RUNNING" && (j.report_id || j.export_status);
+    if (!job || settled(job)) return;
+    let after = 0;
+    const t = setInterval(() => apiGet(`/api/v1/patterns/jobs/${job.job_id}`).then((j) => {
+      setJob(j);
+      if (j.status !== "RUNNING" && (settled(j) || ++after >= 15)) { clearInterval(t); load(); }
+    }).catch(() => undefined), 700);
     return () => clearInterval(t);
-  }, [job?.job_id, job?.status]);
+  }, [job?.job_id, job?.status, job?.report_id, job?.export_status]);
   const run = async (ids: number[] | null) => {
     setMsg(null);
     try { const r = await apiSend("POST", "/api/v1/patterns/validate", { ids }); setJob({ job_id: r.job_id, status: "RUNNING", progress: 0, total: r.total }); }
