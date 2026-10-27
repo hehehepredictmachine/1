@@ -1,0 +1,123 @@
+{
+ "source": "SYNTHETIC",
+ "step_tf": "M15",
+ "cost_model": {
+  "spread": 0.12,
+  "slip": 0.05,
+  "commission": 0.035
+ },
+ "seed": 3,
+ "status": "FUNCTIONAL_REPLAY_SYNTHETIC - wyniki nie są dowodem skuteczności",
+ "segments_cut": [
+  "2026-08-10T16:54:00Z",
+  "2026-09-18T15:27:00Z"
+ ],
+ "before": {
+  "portfolio_auto_selected": {
+   "trades": 820,
+   "not_closed": {},
+   "expectancy_r": 0.144,
+   "total_r": 118.26,
+   "profit_factor": 1.27,
+   "win_rate": "419/820 (51%)",
+   "max_drawdown_r": 52.56,
+   "avg_mae_r": 0.88,
+   "avg_mfe_r": 1.86,
+   "avg_hold_m5_bars": 35.4
+  },
+  "portfolio_segments": {
+   "DEV": {
+    "trades": 499,
+    "not_closed": {},
+    "expectancy_r": 0.196,
+    "total_r": 97.56,
+    "profit_factor": 1.41,
+    "win_rate": "260/499 (52%)",
+    "max_drawdown_r": 11.31,
+    "avg_mae_r": 0.78,
+    "avg_mfe_r": 1.41,
+    "avg_hold_m5_bars": 35.1
+   },
+   "VAL": {
+    "trades": 178,
+    "not_closed": {},
+    "expectancy_r": -0.09,
+    "total_r": -16.02,
+    "profit_factor": 0.88,
+    "win_rate": "82/178 (46%)",
+    "max_drawdown_r": 52.56,
+    "avg_mae_r": 1.28,
+    "avg_mfe_r": 3.49,
+    "avg_hold_m5_bars": 32.1
+   },
+   "OOS": {
+    "trades": 143,
+    "not_closed": {},
+    "expectancy_r": 0.257,
+    "total_r": 36.71,
+    "profit_factor": 1.56,
+    "win_rate": "77/143 (54%)",
+    "max_drawdown_r": 6.28,
+    "avg_mae_r": 0.74,
+    "avg_mfe_r": 1.42,
+    "avg_hold_m5_bars": 40.8
+   }
+  },
+  "selected_but_signal_only": 358,
+  "selection_changes": 6019
+ },
+ "after": {
+  "portfolio_auto_selected": {
+   "trades": 913,
+   "not_closed": {},
+   "expectancy_r": 0.144,
+   "total_r": 131.69,
+   "profit_factor": 1.27,
+   "win_rate": "465/913 (51%)",
+   "max_drawdown_r": 48.43,
+   "avg_mae_r": 0.85,
+   "avg_mfe_r": 1.77,
+   "avg_hold_m5_bars": 33.9
+  },
+  "portfolio_segments": {
+   "DEV": {
+    "trades": 545,
+    "not_closed": {},
+    "expectancy_r": 0.192,
+    "total_r": 104.5,
+    "profit_factor": 1.39,
+    "win_rate": "277/545 (51%)",
+    "max_drawdown_r": 15.78,
+    "avg_mae_r": 0.77,
+    "avg_mfe_r": 1.38,
+    "avg_hold_m5_bars": 34.3
+   },
+   "VAL": {
+    "trades": 202,
+    "not_closed": {},
+    "expectancy_r": -0.049,
+    "total_r": -9.88,
+    "profit_factor": 0.93,
+    "win_rate": "98/202 (49%)",
+    "max_drawdown_r": 48.43,
+    "avg_mae_r": 1.13,
+    "avg_mfe_r": 3.19,
+    "avg_hold_m5_bars": 30.4
+   },
+   "OOS": {
+    "trades": 166,
+    "not_closed": {},
+    "expectancy_r": 0.223,
+    "total_r": 37.07,
+    "profit_factor": 1.49,
+    "win_rate": "90/166 (54%)",
+    "max_drawdown_r": 10.47,
+    "avg_mae_r": 0.76,
+    "avg_mfe_r": 1.35,
+    "avg_hold_m5_bars": 36.6
+   }
+  },
+  "selected_but_signal_only": 0,
+  "selection_changes": 6520
+ }
+}

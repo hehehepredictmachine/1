@@ -1,6 +1,23 @@
 # CHANGELOG
 
-## 1.24.0 (w toku) – PepeMarketWizard Desktop
+## 1.24.0 – PepeMarketWizard Desktop: aplikacja Windows, trzy panele na danych, Telegram EN+ZH, Execution Lock wycofany
+* **Aplikacja Windows `PepeMarketWizardDesktop.exe`** (Go + WebView2, `desktop/`): własne okno, wbudowany Python (NuGet, hash),
+  zależności instalowane przy pierwszym starcie (`--require-hashes`, wariant OFFLINE z kołami), dane w `%LOCALAPPDATA%\PepeMarketWizard`
+  (tryb przenośny `portable.txt`), import poprzedniej instalacji (kopia; AUTO → PAPER), kopia danych przed nową wersją, nadzór silnika
+  (podłączenie zamiast duplikatu, restart po awarii z limitem, restart na żądanie, Job Object), pytanie przy zamykaniu / praca w tle /
+  zakończenie, ikona przy zegarze, autostart HKCU tylko po włączeniu. Budowa: `tools/build_desktop.py`; opis: `docs/DESKTOP_ARCHITEKTURA.md`.
+  **Nie uruchomiono jeszcze na rzeczywistym Windows** (kompilacja krzyżowa i testy na Linuksie).
+* **Trading Intelligence / AI Neural Lab / Centrum sterowania** na danych silnika i MT5 (wg zatwierdzonych makiet): rachunek i ROI
+  (modified Dietz), 1/4/6 wykresów z zapisem układu, Signal Intelligence z osobnymi odpowiedziami „brak sygnału” / „brak zlecenia”,
+  rejestr modeli, trening, walidacja i wdrożenia, grafika sieci oznaczona jako przykład, tryby z konsekwencjami i potwierdzeniem
+  rachunku, STOP, ścieżka główna, ryzyko i koszty, praca aplikacji, diagnostyka, przełącznik XAUUSD-/BTC, ustawienia „Wygląd”.
+* **Telegram:** wiadomości dwujęzyczne EN + 中文 (lub jeden język), sygnały, otwarcie / zamknięcie pozycji (ścieżka główna i SH),
+  dzienne podsumowanie, rzeczywisty stan połączenia i wiadomość testowa; błąd wysyłki nigdy nie wpływa na handel.
+* **Bramki strategii (`docs/STRATEGIE_BRAMKI_DESKTOP.md`):** wybór AUTO do wykonania tylko spośród strategii z prawem handlu
+  (S11/S12 „tylko sygnały” nie blokują już setupu strategii dopuszczonej); bramka AI (VETO) bez klucza = „nie wymagane” na każdym
+  etapie; SH AUTO DEMO bez skalibrowanego modelu (AUTO LIVE nadal wymaga modelu i walidacji). Porównanie przed/po w dokumencie.
+* **Poprawka:** okno Ustawień wysyłało tryb wykonania przy zapisie (od DK1 → błąd 400); teraz go nie wysyła, a backend pomija
+  niezmienione wartości.
 Realizacja `docs/desktop_handoff/00_PROMPT_WYKONAWCZY.md`; audyt: `docs/DESKTOP_AUDIT.md`; punkt powrotu: tag `pre-desktop-1.23.0`.
 * **Execution Lock wycofany (decyzja użytkownika).** Worker MT5 przekazuje terminal bez proxy blokującego; z gateway, menedżera pozycji,
   ręcznego padu, bramki trybu i SH usunięto warunek `EXECUTION_LOCKED`; trasa z frazą odblokowania zwraca 410. Nie ma nowej blokady pod

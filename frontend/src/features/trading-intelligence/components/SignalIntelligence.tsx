@@ -71,11 +71,12 @@ export default function SignalIntelligence() {
       <label className="t-field">Setup
         <select value={view} onChange={(e) => setView(e.target.value)} data-testid="ti-setup-select">
           <option value="">{setup ? `${setup.strategy_id} ${setup.strategy_name} · ${SIDE_PL[setup.direction] ?? setup.direction} · ${setup.setup_tf} (wybrany przez silnik)` : "brak setupu silnika"}</option>
-          {cands.map((c) => <option key={c.setup_id} value={c.setup_id}>{c.strategy_id} {c.strategy_name} · {SIDE_PL[c.direction] ?? c.direction} · {c.timeframe} · {fmtNum(c.setup_score, 1)} pkt</option>)}
+          {cands.map((c) => <option key={c.setup_id} value={c.setup_id}>{c.strategy_id} {c.strategy_name} · {SIDE_PL[c.direction] ?? c.direction} · {c.timeframe} · {fmtNum(c.setup_score, 1)} pkt{c.trade === false ? " · tylko sygnał" : ""}</option>)}
         </select>
       </label>
       {other && <p className="t-note" data-testid="ti-setup-other">Podgląd kandydata – nie zmienia wyboru silnika. Plan, warunki i bramki poniżej dotyczą tylko setupu wybranego przez silnik;
-        kandydat: etap {STAGE_PL[other.stage] ?? other.stage}, wynik {fmtNum(other.setup_score, 1)}, dopasowanie strategii {fmtNum(other.strategy_fit_score, 1)}.</p>}
+        kandydat: etap {STAGE_PL[other.stage] ?? other.stage}, wynik {fmtNum(other.setup_score, 1)}, dopasowanie strategii {fmtNum(other.strategy_fit_score, 1)}.
+        {other.trade === false ? " Strategia tylko sygnalizuje (bez zgody na handel w ustawieniach) – nie jest wybierana do wykonania." : ""}</p>}
       <div className="t-sig-head">
         <b className={cls("t-sig-side", side === "BUY" && "t-pos", side === "SELL" && "t-neg")} data-testid="ti-direction">{side ?? "—"} · {d.symbol ?? "—"}</b>
         <span className="t-dim">etap: {STAGE_PL[d.signal_stage] ?? d.signal_stage ?? "—"} · decyzja: {d.decision ?? "—"} · {fmtTime(d.as_of_utc)}</span>

@@ -13,6 +13,10 @@ Method (fixed BEFORE looking at results; see docs/RAPORT_TESTOW.md):
     (OHLC does not reveal the intrabar order - conservative rule); target + new BE stop in one bar -> AMBIGUOUS
   * results in R (initial risk), net of costs; chronological split DEV 60% / VAL 20% / OOS 20% by signal time
   * portfolio = only the AUTO-selected setup, one position at a time, common to all strategies
+  * --trade-policy (1.24): ALL = every scanned strategy may be selected and traded (research, the pre-1.24 replay);
+    LIVE_BEFORE = the 1.23 live rules (selection among all strategies, but a selected signal-only strategy - default S11/S12 -
+    cannot trade, so nothing is opened); LIVE_AFTER = the 1.24 live rules (selection only among strategies allowed to trade);
+    BOTH = LIVE_BEFORE and LIVE_AFTER on the same data, with the comparison
 Ten strategies x variants form a multiple-testing problem: a good DEV number is not evidence; the OOS
 segment must not be used for tuning. Synthetic data proves only that the pipeline runs.
 """
@@ -33,6 +37,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from masterquo.config import AppConfig  # noqa: E402
 from masterquo.db.database import Database  # noqa: E402
+from masterquo.engine.active import trade_allowed  # noqa: E402
 from masterquo.strategies import adapter, registry  # noqa: E402
 from masterquo.strategies.base import TF_SECONDS  # noqa: E402
 from masterquo.strategies.selector import StrategyAutoSelector  # noqa: E402
@@ -223,7 +228,7 @@ class ReplayWalls:
 
 
 def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: bool, max_steps: int | None,
-        walls: "ReplayWalls | None" = None, overrides: dict | None = None) -> dict:
+        walls: "ReplayWalls | None" = None, overrides: dict | None = None, trade_policy: str = "ALL") -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="mq_replay_"))
     db = Database(tmp / "replay.sqlite")
     tr, sel = SetupTracker(db), StrategyAutoSelector(db)
@@ -286,7 +291,8 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
             if kind in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY", "CANCELLED"):
                 terminal[(rec["strategy_id"], kind)] += 1
         st = sel.select(tr.active("XAUUSD-", "replay"), cfg=cfg, regime=view.regime, data_ok=True, new_data=True, now=t, snapshot_id=None,
-                        account_key="replay", per_strategy=res["per_strategy"])
+                        account_key="replay", per_strategy=res["per_strategy"],
+                        tradable=(lambda s: trade_allowed(cfg, s)) if trade_policy == "LIVE_AFTER" else None)
         cur = (st.get("selected") or {}).get("setup_id")
         if cur != prev_sel:
             sel_changes += 1
@@ -333,8 +339,12 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
                     "no_levels": sum(1 for x in trades[sid] if x.get("status") == "NO_LEVELS")}
     # portfolio: AUTO-selected only, one position at a time
     port, busy_until = [], None
+    blocked_signal_only = 0
     for t, sid_, rec in selected_confirmed:
         if busy_until and t < busy_until:
+            continue
+        if trade_policy in ("LIVE_BEFORE", "LIVE_AFTER") and not trade_allowed(cfg, rec["strategy_id"]):
+            blocked_signal_only += 1           # live: PERMISSION refuses a signal-only strategy - no position
             continue
         sim = simulate(rec, t, m5, m5_index, cost)
         if sim and sim.get("status") == "CLOSED":
@@ -349,6 +359,8 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
            "ms_per_step": round(1000 * elapsed / max(1, len(steps)), 1), "cost_model": cost, "regimes": dict(regimes),
            "selection_changes": sel_changes, "selection_change_reasons": dict(reasons), "events_shared_by_several_strategies": len(multi),
            "max_strategies_per_event": max(multi) if multi else 1, "per_strategy": per, "portfolio_auto_selected": stats(port),
+           "trade_policy": trade_policy, "selected_but_signal_only": blocked_signal_only,
+           "portfolio_segments": {name: stats(seg(port, name)) for name in ("DEV", "VAL", "OOS")},
            "segments_cut": [iso(cut1), iso(cut2)] if cut1 else None,
            "method": "closed-bar replay, next-M5-open entry, SL-first on ambiguous bars, costs in R; DEV/VAL/OOS 60/20/20",
            "status": "FUNCTIONAL_REPLAY_" + source + (" - wyniki nie są dowodem skuteczności" if source == "SYNTHETIC" else " - OOS do oceny wg z góry ustalonych kryteriów")}
@@ -408,6 +420,26 @@ def to_markdown(r: dict) -> str:
     return "\n".join(L) + "\n"
 
 
+def compare_markdown(c: dict) -> str:
+    def row(name, s):
+        return (f"| {name} | {s.get('trades')} | {s.get('expectancy_r', '—')} | {s.get('profit_factor', '—')} | {s.get('win_rate', '—')} | "
+                f"{s.get('max_drawdown_r', '—')} |")
+    L = [f"# Bramki 1.24 – porównanie przed / po ({c['source']})", "",
+         f"Te same dane, ten sam model kosztów {json.dumps(c['cost_model'])}, krok {c['step_tf']}, wynik w R po kosztach, podział "
+         f"chronologiczny DEV/VAL/OOS 60/20/20 (cięcia {c['segments_cut']}). Status: **{c['status']}**.", "",
+         "| Wariant / segment | Transakcje | Expectancy R | PF | Win | Maks. DD R |", "|---|---|---|---|---|---|"]
+    for key, label in (("before", "PRZED (1.23)"), ("after", "PO (1.24)")):
+        v = c[key]
+        L.append(row(f"{label} – całość", v["portfolio_auto_selected"]))
+        for seg in ("DEV", "VAL", "OOS"):
+            L.append(row(f"{label} – {seg}", v["portfolio_segments"][seg]))
+    L += ["", f"Wybór AUTO trzymający strategię „tylko sygnały” (brak pozycji): przed {c['before']['selected_but_signal_only']}, "
+          f"po {c['after']['selected_but_signal_only']}. Zmiany wyboru: przed {c['before']['selection_changes']}, po {c['after']['selection_changes']}.",
+          "", "Uwaga: wynik na danych syntetycznych pokazuje tylko działanie łańcucha i różnicę w liczbie wejść – nie jest dowodem skuteczności."
+          if c["source"] == "SYNTHETIC" else "Ocena tylko na segmencie OOS; mała liczba transakcji nie pozwala wnioskować o przewadze."]
+    return "\n".join(L) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group(required=True)
@@ -423,6 +455,8 @@ def main() -> int:
     ap.add_argument("--iv-csv", help="historical IV file (format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md); used only from available_at")
     ap.add_argument("--params-json", help='strategy parameter overrides, e.g. {"S12": {"use_walls": false}} (ablation)')
     ap.add_argument("--max-steps", type=int)
+    ap.add_argument("--trade-policy", choices=["ALL", "LIVE_BEFORE", "LIVE_AFTER", "BOTH"], default="ALL",
+                    help="ALL = research (every strategy trades); LIVE_BEFORE / LIVE_AFTER = 1.23 / 1.24 live selection rules; BOTH = comparison")
     ap.add_argument("--out", default=str(ROOT / "data" / "reports"))
     a = ap.parse_args()
     data, source = load_csv(Path(a.csv_dir)) if a.csv_dir else load_synthetic(a.synthetic, a.seed)
@@ -439,13 +473,26 @@ def main() -> int:
         if bad:
             print(f"[UWAGA] odrzucone wiersze IV: {len(bad)} (pierwsze: {bad[:3]})")
     overrides = json.loads(a.params_json) if a.params_json else {}
-    r = run(data, source, a.step_tf, {"spread": a.spread, "slip": a.slippage, "commission": a.commission}, a.compare_original, a.max_steps,
-            walls=ReplayWalls(a.walls, iv_rows), overrides=overrides)
-    r["walls_mode"] = a.walls
-    r["overrides"] = overrides
+    cost = {"spread": a.spread, "slip": a.slippage, "commission": a.commission}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    if a.trade_policy == "BOTH":
+        res = {pol: run(data, source, a.step_tf, cost, False, a.max_steps, walls=ReplayWalls(a.walls, iv_rows), overrides=overrides, trade_policy=pol)
+               for pol in ("LIVE_BEFORE", "LIVE_AFTER")}
+        cmp = {"source": source, "step_tf": a.step_tf, "cost_model": cost, "seed": a.seed if not a.csv_dir else None,
+               "status": res["LIVE_AFTER"]["status"], "segments_cut": res["LIVE_AFTER"]["segments_cut"],
+               "before": {k: res["LIVE_BEFORE"][k] for k in ("portfolio_auto_selected", "portfolio_segments", "selected_but_signal_only", "selection_changes")},
+               "after": {k: res["LIVE_AFTER"][k] for k in ("portfolio_auto_selected", "portfolio_segments", "selected_but_signal_only", "selection_changes")}}
+        (out / f"gates_compare_{source.lower()}_{stamp}.json").write_text(json.dumps(cmp, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
+        md = compare_markdown(cmp)
+        (out / f"gates_compare_{source.lower()}_{stamp}.md").write_text(md, encoding="utf-8")
+        print(md)
+        return 0
+    r = run(data, source, a.step_tf, cost, a.compare_original, a.max_steps, walls=ReplayWalls(a.walls, iv_rows), overrides=overrides,
+            trade_policy=a.trade_policy)
+    r["walls_mode"] = a.walls
+    r["overrides"] = overrides
     (out / f"replay_{source.lower()}_{stamp}.json").write_text(json.dumps(r, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     md = to_markdown(r)
     (out / f"replay_{source.lower()}_{stamp}.md").write_text(md, encoding="utf-8")

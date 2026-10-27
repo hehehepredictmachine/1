@@ -144,6 +144,9 @@ class TestAgent(unittest.TestCase):
         g = self.agent.gate_for(CTX["setup"], session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:01:00Z")
         self.assertEqual(g["status"], "NOT_REQUIRED")                    # default VETO: no key never blocks
         self.assertIn("AI_NO_VETO_AI_UNAVAILABLE_NO_KEY", g["reason_codes"])
+        early = dict(CTX["setup"], state="EARLY")                       # 1.24: also before confirmation (no misleading PENDING)
+        g = self.agent.gate_for(early, session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:01:00Z")
+        self.assertEqual(g["status"], "NOT_REQUIRED")
         self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})
         g = self.agent.gate_for(CTX["setup"], session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:01:00Z")
         self.assertEqual(g["status"], "UNAVAILABLE")

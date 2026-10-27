@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-const version = "1.23.0"
+const version = "1.24.0"
 
 var required = []string{
 	`tools\check_python.py`, `tools\trening.cmd`, `backend\masterquo\__main__.py`, `backend\mq_instruments.py`,

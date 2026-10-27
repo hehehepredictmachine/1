@@ -60,9 +60,14 @@ class StrategyAutoSelector:
         self.state = {"system_state": "SCANNING", "selected": None, "ranking": [], "reason_codes": [reason]}
 
     def select(self, rows: list[dict], *, cfg, regime: dict, data_ok: bool, new_data: bool, now: datetime, snapshot_id: str | None,
-               account_key: str | None, per_strategy: dict, ml_bonus=None) -> dict:
+               account_key: str | None, per_strategy: dict, ml_bonus=None, tradable=None) -> dict:
         """`ml_bonus(row) -> float` (ml_mode ASSIST only): re-orders candidates by the calibrated model probability;
-        the setup score itself is not changed (no double counting)."""
+        the setup score itself is not changed (no double counting).
+
+        `tradable(strategy_id) -> bool` (1.24): in AUTO the selection - the setup the bot may EXECUTE - is made only among strategies
+        allowed to trade. Signal-only strategies (default S11, S12) still scan, publish signals and stay in the ranking with
+        trade=False, but can no longer hold the selection and block a tradable setup. MANUAL is the user's explicit choice and is
+        not filtered. None = every scanned strategy is selectable (research replays)."""
         now_s = iso(now)
         mode = cfg.strategy_mode
         manual = cfg.manual_strategy_id if mode == "MANUAL" else None
@@ -88,16 +93,27 @@ class StrategyAutoSelector:
                 ranked[-1]["ml_rank_adjust"] = b
                 ranked[-1]["rank_score"] = round(ranked[-1]["rank_score"] + b, 2)
         ranked.sort(key=lambda x: (-x["rank_score"], x["strategy_id"], x["setup_id"]))
-        # group by event_id
-        by_event: dict[str, dict] = {}
-        grouped = []
         for x in ranked:
-            ev = x["event_id"]
-            if ev in by_event:
-                by_event[ev]["grouped_with"].append(x["strategy_id"] + ":" + x["timeframe"])
-                continue
-            by_event[ev] = x
-            grouped.append(x)
+            x["trade"] = True if tradable is None else bool(tradable(x["strategy_id"]))
+        exec_filter = tradable is not None and not manual
+
+        def group(items: list[dict]) -> list[dict]:          # one entry per market event (the best-ranked strategy)
+            by_event: dict[str, dict] = {}
+            out = []
+            for x in items:
+                ev = x["event_id"]
+                if ev in by_event:
+                    by_event[ev]["grouped_with"].append(x["strategy_id"] + ":" + x["timeframe"])
+                    continue
+                by_event[ev] = x
+                out.append(x)
+            return out
+        if exec_filter:
+            # selection only among tradable strategies; signal-only setups are listed after them (display, never selected)
+            grouped = group([x for x in ranked if x["trade"]])
+            signal_only = group([x for x in ranked if not x["trade"]])
+        else:
+            grouped, signal_only = group(ranked), []
         reasons: list[str] = []
         if not data_ok:
             prev = self.selected
@@ -106,7 +122,7 @@ class StrategyAutoSelector:
                 self._log(now=now_s, mode=mode, account_key=account_key, prev=prev, new=None, snapshot_id=snapshot_id,
                           reason="DATA_STALE_OR_UNAVAILABLE", ranking=grouped)
             self.state.update(system_state="STALE", ranking=grouped)
-            return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, ["DATA_STALE_OR_UNAVAILABLE"])
+            return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, ["DATA_STALE_OR_UNAVAILABLE"], signal_only)
         best = grouped[0] if grouped else None
         # same-horizon LONG/SHORT conflict
         if best and len(grouped) > 1:
@@ -148,9 +164,11 @@ class StrategyAutoSelector:
                 self.selected = None
         if not self.selected:
             reasons.append("NO_VALID_CANDIDATE" if not grouped else "NO_SELECTION")
-        return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons)
+            if signal_only and not grouped:
+                reasons.append("ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS")
+        return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only)
 
-    def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons) -> dict:
+    def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=()) -> dict:
         sel = next((x for x in grouped if self.selected and x["setup_id"] == self.selected["setup_id"]), None)
         if sel is None and self.state.get("system_state") == "STALE":
             st = "STALE"
@@ -169,7 +187,8 @@ class StrategyAutoSelector:
             f = STRATEGIES[manual].regime_fit.get(regime.get("state"), 0.3)
             manual_fit = {"strategy_id": manual, "fit": round(f * 100, 1), "mismatch": f < 0.5}
         self.state = {"engine": VERSION, "strategy_mode": mode, "manual_strategy_id": manual, "manual_fit": manual_fit, "system_state": st,
-                      "regime": regime, "selected": sel, "selected_at": (self.selected or {}).get("at"), "candidate_ranking": grouped[:10],
+                      "regime": regime, "selected": sel, "selected_at": (self.selected or {}).get("at"),
+                      "candidate_ranking": (list(grouped) + list(signal_only))[:10],
                       "alternative": alt, "reason_codes": reasons, "last_evaluated_at": now_s, "snapshot_id": snapshot_id,
                       "last_change": self.last_change, "per_strategy": per_strategy}
         return self.state

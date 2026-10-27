@@ -4,6 +4,25 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.24 – aplikacja Windows `PepeMarketWizardDesktop.exe`
+Paczka `PepeMarketWizard_DESKTOP_1_24_0.zip`: rozpakuj do **nowego** folderu (np. `C:\PepeMarketWizard_Desktop`) i uruchom
+`PepeMarketWizardDesktop.exe`. Nie instalujesz Pythona ani Node.js – Python jest w paczce, składniki silnika aplikacja pobiera sama
+przy pierwszym starcie (ok. 110 MB z PyPI, sprawdzane sumami SHA-256; wariant OFFLINE ma je w paczce).
+* **Własne okno** z panelem: Trading Intelligence, AI Neural Lab, Centrum sterowania (plus wszystkie dotychczasowe widoki w menu).
+* **Pierwszy start:** jeśli obok jest poprzednia instalacja, możesz skopiować jej dane (oryginał zostaje bez zmian) albo zacząć od
+  zera. Tryb AUTO z kopii zamienia się na PAPER – tryb automatyczny wybierasz ponownie w Centrum sterowania.
+* **Dane** są w `%LOCALAPPDATA%\PepeMarketWizard\data` (aktualizacja programu ich nie nadpisuje; przed nową wersją aplikacja robi
+  kopię w `...\backups`). Tryb przenośny: plik `portable.txt` obok EXE.
+* **Zamknięcie okna:** pytanie „działać w tle?” (ikona przy zegarze; tam „Zamknij aplikację”). Domyślne zachowanie i **autostart
+  z Windows (domyślnie wyłączony)** ustawisz w Centrum sterowania → Praca aplikacji.
+* **Telegram (opcjonalnie):** Centrum sterowania → MT5 i połączenia → Telegram – token bota (zapisywany lokalnie, szyfrowany), chat ID,
+  język EN + 中文, sygnały / otwarcie i zamknięcie pozycji / dzienne podsumowanie, przycisk testu. Stan pokazuje, czy Telegram naprawdę
+  przyjął wiadomość.
+* Okno potrzebuje składnika Microsoft Edge **WebView2** (Windows 11 – wbudowany). Brak = aplikacja zaproponuje instalator albo otworzy
+  panel w przeglądarce. EXE nie jest podpisany – SmartScreen może zapytać przy pierwszym uruchomieniu („Więcej informacji → Uruchom”).
+* Dotychczasowe `PepeMarketWizard.exe` i pliki `.bat` nadal działają (trening, diagnostyka) – to wcześniejszy launcher, nie nowa aplikacja.
+  Szczegóły: `docs/DESKTOP_ARCHITEKTURA.md`.
+
 ## Najprościej: `PepeMarketWizard.exe` (1.16)
 Uruchom `PepeMarketWizard.exe` z rozpakowanego folderu. Do wyboru masz:
 - **1** – instalacja lub naprawa środowiska;
@@ -23,7 +42,7 @@ Launcher uruchamia te same pliki `.bat` co poniżej. Sam nie wysyła zleceń. Sz
 * **Aktualizacja z wcześniejszej wersji:** jeśli zapisany był tryb AUTO DEMO / AUTO LIVE, który blokada dotąd wstrzymywała, program
   ustawia **PAPER** i pokazuje komunikat – tryb automatyczny wybierasz ponownie świadomie. Kopia starej konfiguracji:
   `data\config.v11.bak.json`. Tryb AUTO, który był już odblokowany, działa jak wcześniej.
-* Tryb wykonania nie zmienia się przez zwykły zapis ustawień – tylko przez przycisk „Wykonanie” (z potwierdzeniem).
+* Tryb wykonania nie zmienia się przez zwykły zapis ustawień – tylko w Centrum sterowania → Tryb pracy lub przyciskiem „Wykonanie” (z potwierdzeniem).
 * SCALPING / HEDGING w AUTO LIVE: nowe plany dopiero po zaliczonej walidacji tej strategii na Twojej historii (raport z
   `30_SH_WALIDACJA.bat`: dane z Twojego terminala, znana prowizja, co najmniej 30 cykli, dodatni wynik po kosztach). Bez tego panel
   pokazuje dokładny powód. Otwarte plany są zawsze prowadzone.

@@ -201,6 +201,11 @@ class ClaudeAgent:
         g = self._strict_gate(setup, session_epoch=session_epoch, account_key=account_key, now_iso=now_iso)
         if pol == "REQUIRED" or g["status"] in ("PASS", "DISAGREE"):
             return g
+        if g["status"] == "UNAVAILABLE":
+            # 1.24: no key / agent off / no model - under VETO no objection can ever come, so the gate is "not required" at every
+            # stage (before, it showed PENDING until the setup was confirmed, which looked like a block although it never was one)
+            codes = g.get("reason_codes") or []
+            return {"status": "NOT_REQUIRED", "reason_codes": ["AI_NO_VETO_" + (codes[0] if codes else "UNAVAILABLE")]}
         if not setup or setup["state"] != "CONFIRMED":
             return g
         codes = g.get("reason_codes") or []

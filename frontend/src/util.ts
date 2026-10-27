@@ -78,6 +78,7 @@ export const REASON_PL: Record<string, string> = {
   TIME_OFFSET_STORED_UNVERIFIED: "Offset czasu z poprzedniej sesji (niezweryfikowany)",
   // conditions of the decision tree (unmet = what is still missing)
   RISK_GATE_PASS: "bramka ryzyka nie przepuszcza",
+  ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS: "setupy mają tylko strategie „tylko sygnał” – brak kandydata do wykonania",
   EXECUTION_MODE_ALLOWS_ORDERS: "tryb wykonania nie pozwala teraz na zlecenia",
   STRATEGY_ALLOWED_TO_TRADE: "strategia nie ma zgody na wykonywanie zleceń",
   AI_ASSESSMENT_VALID_AND_AGREES: "brak zgodnej oceny agenta AI",

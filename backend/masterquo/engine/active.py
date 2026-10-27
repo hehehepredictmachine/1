@@ -22,6 +22,12 @@ from ..timeutil import TIMEFRAMES, iso, utcnow
 CONTRACT = "mq-auto-1.0.0"
 
 
+
+def trade_allowed(active_cfg, strategy_id: str) -> bool:
+    """May a setup of this strategy be executed: the user's toggle, else the registry default (S11/S12 signal-only)."""
+    toggle = active_cfg.strategies.get(strategy_id)
+    return (strategy_id not in registry.DEFAULT_NO_TRADE) if toggle is None else toggle.trade
+
 class ActiveEngine:
     def __init__(self, db, cfg_store, bridge, applog, bus):
         self.db = db
@@ -130,7 +136,8 @@ class ActiveEngine:
                 self.selector.reset("USER_SELECTED_OTHER_STRATEGY")   # user's choice applies at once (no hysteresis)
             self.selector.select(rows, cfg=sel_cfg, regime=view.regime, data_ok=data_ok, new_data=new_data, now=now, snapshot_id=snapshot_id,
                                  account_key=account_key, per_strategy=res["per_strategy"],
-                                 ml_bonus=(lambda r: self.ml.rank_adjust(r, view)) if self.ml is not None and self.ml.cfg.mode == "ASSIST" else None)
+                                 ml_bonus=(lambda r: self.ml.rank_adjust(r, view)) if self.ml is not None and self.ml.cfg.mode == "ASSIST" else None,
+                                 tradable=lambda sid: trade_allowed(ac, sid))
             cur_sel = (self.selector.selected or {}).get("setup_id")
             if cur_sel != prev_sel:
                 events.append(("SELECTION_CHANGED", self.tracker.get(cur_sel) if cur_sel else {"setup_id": None}))
@@ -192,9 +199,7 @@ class ActiveEngine:
                  "invalidation_level": rec.get("invalidation_level"), "missing_confirmations": rec.get("missing_confirmations"),
                  "entry_plan": rec.get("entry_plan"), "event_id": rec.get("event_id"), "synthetic": rec.get("synthetic")}
         levels = levels_for(rec)
-        toggle = cfg.strategies.get(rec["strategy_id"])
-        default_trade = rec["strategy_id"] not in registry.DEFAULT_NO_TRADE
-        return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": default_trade if toggle is None else toggle.trade,
+        return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": trade_allowed(cfg, rec["strategy_id"]),
                                "reason_codes": st.get("reason_codes")}
 
     def hypothetical_entry(self) -> float | None:

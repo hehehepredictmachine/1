@@ -48,9 +48,12 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
         # (state["live_validation"], read by the service: REAL_USER_DATA, known commission, n >= 30, positive net expectancy).
         lv = state.get("live_validation") or {"ok": False, "reason": "brak wyniku walidacji ścieżki SH na danych klienta"}
         chk("live_validation", lv.get("ok"), f"AUTO_LIVE {strat}: " + str(lv.get("source") if lv.get("ok") else lv.get("reason")))
-    if exec_mode in REAL_MODES:
+    if exec_mode == "AUTO_LIVE":
+        # 1.24: a calibrated event model is required for real money only; AUTO_DEMO may run on the score (OGRANICZONY) - a demo
+        # account risks no money and the path must be testable on demo before any LIVE validation exists
         chk("model_mode", setup.get("model_mode") == "PEŁNA",
-            "tryb OGRANICZONY (brak skalibrowanego modelu zdarzenia) – dozwolone tylko SIGNALS/PAPER")
+            "tryb OGRANICZONY (brak skalibrowanego modelu zdarzenia) – AUTO LIVE wymaga modelu; SIGNALS/PAPER/AUTO DEMO dostępne")
+    if exec_mode in REAL_MODES:
         chk("commission_known", ic.get("commission_per_lot_side") is not None, "prowizja instrumentu nieznana – koszt nie jest pełny")
     netting_reduce = False
     if strat == "HEDGING" and account.get("margin_mode") != "HEDGING":

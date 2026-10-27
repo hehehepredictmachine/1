@@ -89,8 +89,10 @@ class Risk(Base):
 
     def test_real_modes(self):
         r = self.risk(mode="AUTO_DEMO")
-        self.assertTrue(any("model_mode" in x for x in r["reasons"]))                   # LIMITED mode: no AUTO
+        self.assertFalse(any("model_mode" in x for x in r["reasons"]))                  # 1.24: demo may run on the score (no money at risk)
         self.assertTrue(any("commission_known" in x for x in r["reasons"]))
+        lim = self.risk(mode="AUTO_LIVE")["reasons"]
+        self.assertTrue(any("model_mode" in x for x in lim), lim)                       # real money: calibrated model required
         live = self.risk(mode="AUTO_LIVE", setup=_setup(model_mode="PEŁNA"))["reasons"]
         self.assertTrue(any(x.startswith("live_validation") for x in live), live)     # 1.24: LIVE needs a passed validation (reason shown)
 
