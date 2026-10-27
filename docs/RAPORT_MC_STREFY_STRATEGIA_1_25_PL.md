@@ -118,9 +118,12 @@ OpenCL (pakietów nie ma w środowisku). Cztery nieudane – przyczyna i stan:
 | Test | Przyczyna | Naprawa | Po naprawie |
 |---|---|---|---|
 | `test_time_and_data` … `no_wrong_default_symbol` | nowe polecenie `montecarlo status/rollback` miało `--instrument` z wartością domyślną `XAUUSD` (zakazane w aktywnym kodzie) | `--instrument` wymagany, wybór XAUUSD / BTC | 4/4 OK |
-| `test_train_all` … `both_instruments_end_to_end` | test oczekiwał 18 zadań runnera; 1.25 dodaje zadanie `monte_carlo` (19) – sam run się udał: XAUUSD 18/19, BTC 17/19 ukończonych, pominięte tylko kroki nie dotyczące demo | oczekiwanie 19 zadań | ponowny przebieg poniżej |
+| `test_train_all` … `both_instruments_end_to_end` | test oczekiwał 18 zadań runnera; 1.25 dodaje zadanie `monte_carlo` (19); sam run zakończył się poprawnie (XAUUSD 18/19, BTC 17/19 zadań ukończonych – szczegóły pominięć w raporcie runu) | oczekiwanie 19 zadań | OK |
 | `test_ui_analytics` … `pattern_library_flow` | wyścig istniejący przed 1.25: zadanie walidacji ma stan COMPLETED chwilę przed zapisem raportu (eksport raportu to osobny krok); pod pełnym obciążeniem panel trafił w tę chwilę | test czeka także na raport | 4/4 OK osobno |
-| `test_sh_api` … `panels_in_browser` | w trakcie pełnego zestawu uruchomiłem równolegle ten sam moduł (ten sam port 8794) – kolizja moich przebiegów | brak zmian w kodzie; w teście kolejności: edycja prowizji dopiero po odświeżeniu panelu | 6/6 OK w osobnych przebiegach |
+| `test_sh_api` … `panels_in_browser` | w trakcie pełnego zestawu uruchomiłem równolegle ten sam moduł (ten sam port 8794) – kolizja moich przebiegów | brak zmian w kodzie; w teście kolejności: edycja prowizji dopiero po odświeżeniu panelu | OK (6/6 osobnych przebiegów) |
+
+**Ponowny przebieg czterech modułów po naprawach** (`test_train_all.TestTrainingRun`, `test_ui_analytics`, `test_sh_api`,
+`test_time_and_data`): **24 testy w 1027 s – OK**.
 
 **Wcześniejsze przebiegi modułów zmienianych w 1.25** (wszystkie zielone): `test_export_mt5` 10/10, `test_ui_export` 4/4,
 `test_montecarlo` 13/13, `test_zones` 42/42, `test_sh_scenario` 10/10, `test_ui_terminal_shell` 13/13, moduły SH (`test_sh_*`,
