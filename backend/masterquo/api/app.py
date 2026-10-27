@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .. import paths, stats
+from .. import desktop, paths, stats
 from ..execution.modes import ModeError
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
@@ -36,6 +36,12 @@ class AssetConfirmReq(BaseModel):
 
 class AssetActiveReq(BaseModel):
     asset: str
+
+
+class DesktopPrefsReq(BaseModel):
+    close_action: str
+    autostart: bool = False
+    start_minimized: bool = False
 
 
 class ModeReq(BaseModel):
@@ -2285,6 +2291,33 @@ def create_app(rt, port: int) -> FastAPI:
                 "worker": {"calls": rt.worker.calls, "failures": rt.worker.failures, "module_error": rt.worker.module_error},
                 "db_schema": rt.db.schema_versions(), "agent": rt.agent.status(), "news": {k: v for k, v in rt.news.summary().items() if k in ("status", "error", "failed_sources")},
                 "engine": {"last_error": rt.engine.last_error, "cycle_ms": rt.engine.cycle_ms, "required_bars": rt.engine.required}}
+
+    # ------------------------------------------------------------ desktop application (Windows shell): window, autostart, restart
+    @app.get("/api/v1/desktop")
+    def desktop_get():
+        return desktop.info()
+
+    @app.post("/api/v1/desktop/prefs")
+    def desktop_prefs(req: DesktopPrefsReq):
+        try:
+            out = desktop.save_prefs(req.close_action, req.autostart, req.start_minimized)
+        except desktop.DesktopError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"AUTOSTART_REGISTRY_ERROR: {exc}") from exc
+        rt.log.info("APP", "DESKTOP_PREFS", f"Praca aplikacji: zamknięcie okna={req.close_action}, autostart={req.autostart}, "
+                    f"start w tle={req.start_minimized}")
+        return out
+
+    @app.post("/api/v1/desktop/restart-engine")
+    async def desktop_restart():
+        try:
+            desktop.request_restart()
+        except desktop.DesktopError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        rt.log.info("APP", "ENGINE_RESTART_REQUEST", "Ponowne uruchomienie silnika na żądanie panelu")
+        asyncio.get_running_loop().call_later(0.5, rt.request_shutdown)
+        return {"ok": True}
 
     @app.post("/api/v1/admin/shutdown")
     async def shutdown():

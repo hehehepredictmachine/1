@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>PepeMarketWizard</title>
+<style>
+  :root {
+    --bg: #0b1210; --panel: #111b18; --line: #1f2f2a; --text: #e6efe9; --muted: #93a79d;
+    --green: #3ddc84; --gold: #d8b45a; --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: radial-gradient(1200px 600px at 30% 20%, #12261d 0%, var(--bg) 60%); }
+  main { width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 28px 32px; box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+  header { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; }
+  header img { width: 84px; height: 84px; border-radius: 14px; border: 1px solid #3a3320; background: #0d1512; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: .3px; }
+  h1 span { color: var(--gold); }
+  .ver { color: var(--muted); font-size: 13px; }
+  #msg { font-size: 17px; margin: 6px 0 12px; display: flex; gap: 10px; align-items: center; }
+  .spin { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--green); border-radius: 50%;
+    animation: r 1s linear infinite; flex: none; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--gold); } }
+  pre { background: #0a110f; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0;
+    font: 12px/1.45 Consolas, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-all; max-height: 170px; overflow: auto; }
+  .err { border: 1px solid #5a2a2a; background: #1d1212; color: #ffd6d6; border-radius: 8px; padding: 10px 12px; margin: 10px 0;
+    white-space: pre-wrap; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  label.cand { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 8px; margin: 6px 0; cursor: pointer; word-break: break-all; }
+  input[type=text] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #0a110f;
+    color: var(--text); font: inherit; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  button { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: #17241f;
+    color: var(--text); cursor: pointer; }
+  button.primary { background: #1f4a33; border-color: #2f6e4b; }
+  button.gold { border-color: #6a5826; color: var(--gold); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .hidden { display: none !important; }
+  .path { color: var(--muted); font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img id="icon" alt="Pepe Czarodziej – logo aplikacji">
+    <div>
+      <h1>Pepe<span>Market</span>Wizard</h1>
+      <div class="ver" id="ver">aplikacja Windows</div>
+    </div>
+  </header>
+
+  <div id="msg" role="status" aria-live="polite"><span class="spin" id="spin"></span><span id="msgText">Przygotowanie…</span></div>
+
+  <section id="progress">
+    <pre id="lines" aria-label="Szczegóły instalacji" class="hidden"></pre>
+    <p class="hint">Pierwsze uruchomienie instaluje składniki silnika w folderze użytkownika (nic nie trafia do systemu).
+      Bot nie składa zleceń, dopóki w Centrum sterowania nie wybierzesz trybu automatycznego.</p>
+  </section>
+
+  <section id="choose" class="hidden">
+    <p>Aplikacja przechowuje dane w <span class="path" id="dataDir"></span>. Możesz skopiować dane poprzedniej instalacji
+      (ustawienia, bazę, historię, modele) – <b>oryginał pozostaje bez zmian</b> i nadal działa jako punkt powrotu.
+      Tryb automatyczny z kopii zostanie zamieniony na PAPER.</p>
+    <div id="cands"></div>
+    <label class="cand"><input type="radio" name="src" value="__custom"> <span>Inny folder:</span></label>
+    <input type="text" id="custom" placeholder="np. C:\PepeMarketWizard" aria-label="Folder poprzedniej instalacji">
+    <div class="err hidden" id="chooseErr"></div>
+    <div class="row">
+      <button class="primary" id="btnImport">Skopiuj dane i uruchom</button>
+      <button id="btnFresh">Zacznij od zera</button>
+    </div>
+  </section>
+
+  <section id="error" class="hidden">
+    <div class="err" id="errText"></div>
+    <p class="hint">Szczegóły: <span class="path" id="logPath"></span></p>
+    <div class="row">
+      <button class="primary" id="btnRetry">Spróbuj ponownie</button>
+      <button class="gold" id="btnLogs">Otwórz folder logów</button>
+      <button id="btnExit">Zamknij aplikację</button>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function call(action, arg) {
+    if (typeof window.pmw !== "function") return Promise.reject("brak połączenia z aplikacją");
+    return window.pmw(action, arg || "");
+  }
+  function show(id, on) { $(id).classList.toggle("hidden", !on); }
+  var lastPhase = "";
+  window.pmwRender = function (s) {
+    if (!s) return;
+    if (s.icon) $("icon").src = s.icon;
+    if (s.version) $("ver").textContent = "wersja " + s.version + " · aplikacja Windows";
+    $("msgText").textContent = s.message || "";
+    show("spin", s.phase === "progress");
+    show("progress", s.phase === "progress");
+    show("choose", s.phase === "choose");
+    show("error", s.phase === "error");
+    var lines = s.lines || [];
+    $("lines").textContent = lines.join("\n");
+    show("lines", lines.length > 0);
+    $("dataDir").textContent = s.data_dir || "";
+    $("logPath").textContent = s.log_path || "";
+    if (s.phase === "error") $("errText").textContent = s.error || "";
+    if (s.phase === "choose") {
+      $("chooseErr").textContent = s.error || "";
+      show("chooseErr", !!s.error);
+      if (lastPhase !== "choose") {
+        var box = $("cands");
+        box.textContent = "";
+        (s.candidates || []).forEach(function (c, i) {
+          var l = document.createElement("label"); l.className = "cand";
+          var r = document.createElement("input"); r.type = "radio"; r.name = "src"; r.value = c; r.checked = i === 0;
+          var t = document.createElement("span"); t.textContent = c;
+          l.appendChild(r); l.appendChild(t); box.appendChild(l);
+        });
+      }
+    }
+    lastPhase = s.phase;
+  };
+  $("custom").addEventListener("focus", function () {
+    document.querySelector('input[value="__custom"]').checked = true;
+  });
+  $("btnImport").onclick = function () {
+    var sel = document.querySelector('input[name="src"]:checked');
+    var v = sel ? sel.value : "";
+    if (v === "__custom") v = $("custom").value.trim();
+    if (!v) { $("chooseErr").textContent = "Wybierz folder poprzedniej instalacji."; show("chooseErr", true); return; }
+    call("import", v);
+  };
+  $("btnFresh").onclick = function () { call("fresh"); };
+  $("btnRetry").onclick = function () { call("retry"); };
+  $("btnLogs").onclick = function () { call("logs"); };
+  $("btnExit").onclick = function () { call("exit"); };
+  function init(n) {
+    call("state").then(window.pmwRender, function () { if (n < 50) setTimeout(function () { init(n + 1); }, 100); });
+  }
+  init(0);
+})();
+</script>
+</body>
+</html>

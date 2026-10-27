@@ -14,3 +14,6 @@ release/*.tmp
 *.sqlite3
 *.pem
 secrets.env
+
+# desktop build output (tools/build_desktop.py)
+/build/
