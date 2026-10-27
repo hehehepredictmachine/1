@@ -66,7 +66,33 @@ Nie odtworzono (wymaga Windows / Twojego MT5): limit „Maks. słupków na wykre
 MT5, uprawnienia NTFS, antywirus.
 
 ### 3.2 Model → wymagane dane MT5 → faktyczny eksport → wynik treningu
-_W toku: przebieg treningu TEST_INSTALACJI na eksporcie syntetycznym – tabela zostanie uzupełniona wynikami runu._
+Przebieg rzeczywisty (nie opis): eksport syntetyczny 2 mies. XAUUSD- (wszystkie interwały + ticki 1 dzień) →
+`python -m masterquo training run --demo --profile TEST_INSTALACJI --instruments XAUUSD --dataset-xauusd <eksport>`.
+Run `TR-20261027T193553Z-d334`: **18/19 zadań ukończonych, 0 modeli dopuszczonych do SHADOW, brak aktywacji** (dane syntetyczne =
+modele techniczne). Pominięte: przekazanie do bota (bot nie działał). Prowizja w eksporcie: nieznana.
+
+Faktyczny eksport: M1 87 570 · M5 17 514 · M15 5 838 · M30 2 919 · H1 1 459 · H4 364 · D1 59 świec; ticki 16 559 (2 072 o tym samym
+czasie – zachowane); rewizje 0, błędna geometria 0. Gotowość: wszystkie 13 zadań `GOTOWE`, przy M5 uwaga „< 20 000 zalecanych”.
+
+| Model (zadanie) | Wymagane dane MT5 (zalecane wiersze) | Eksport (stan) | Wynik treningu na danych syntetycznych |
+|---|---|---|---|
+| Prognozy gold_candles (`forecast`) | M5 + M30 (20 000 M5) | GOTOWE, M5 poniżej zalecanych | ukończone; horyzont 1 świeca: SHADOW_UNVALIDATED, 3 i 6: odrzucone; loader zgodny |
+| Scalp A / B / C (`scalp`) | M1 (60 000) | GOTOWE | A: SHADOW_UNVALIDATED (1/3/5 min); B: za mało danych (0 cykli z cechami); C: za mało danych (0 decyzji w holdout) |
+| Legacy ML DT + XGBoost (`ml`) | M1, M5, M15, H1, H4, D1 (60 000) | GOTOWE | 1 356 etykiet; oba modele odrzucone przez walidację |
+| Lab (`lab`) | M5 (20 000) | GOTOWE, M5 poniżej zalecanych | NO_VALIDATED_EDGE; 2 rodziny zapisane tylko do badań |
+| Kontekst SAR + IQ (`indicator_context`) | M1, M5, M15 (60 000) | GOTOWE | za mało danych (0 cykli); warianty SAR/IQ wymagają archiwum wskaźników z MT5 |
+| Scalp ML XGBoost (`ml_scalp`) | M1 (60 000) | GOTOWE | za mało dowodów (0 kandydatów) |
+| Neural Scalp TCN (`neural_scalp`) | M1, M5, M15, H1 (60 000) | GOTOWE | za mało dowodów (0 próbek) |
+| Structure Intelligence (`structure_intelligence`) | M1, M5, M15, H1 (60 000) | GOTOWE | wszystkie zadania: za mało dowodów |
+| Flow context (`flow_context`) | M1 (60 000) | GOTOWE | za mało dowodów / brak przewagi |
+| Context indicators (`context_indicators`) | M5 (20 000) | GOTOWE, M5 poniżej zalecanych | kalibracja wykonana; brak zwalidowanej przewagi |
+| SCALPING / HEDGING (`sh_models`) | M1 (+ M5/M15/H1 opcjonalnie, ticki opcjonalnie) (60 000) | GOTOWE | replay ograniczony w profilu testowym do 6 000 M1: SCALPING 3 setupy, HEDGING 1 – model zdarzenia: za mało danych → **sh_tp_model nie powstał** |
+| Master models (`master_models`) | M1, M5 (+ M15, M30) (60 000) | GOTOWE | 6 modeli wytrenowanych technicznie; żaden nie przeszedł walidacji |
+| Monte Carlo (`monte_carlo`) | M1 (+ ticki) (40 000) | GOTOWE | wariant BLOCK; Brier skalibrowany 0,2134 vs bazowy 0,2048, CI95 różnicy [0,0007; 0,0167] – **gorzej od modelu bazowego** → kalibracja nieaktywna |
+
+Wniosek: łańcuch eksport → dataset → trening → zapis w rejestrze → raport działa dla wszystkich 13 rodzin; na danych syntetycznych
+żaden model nie ma przewagi (tak powinno być – symulator nie zawiera przewidywalnej struktury). Wynik na Twoich danych wymaga
+eksportu z Twojego MT5 i profilu `PELNY_TRENING` (12 mies.).
 
 ## 4. Jak uruchomić
 
