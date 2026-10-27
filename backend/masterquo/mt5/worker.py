@@ -40,27 +40,6 @@ class MT5WorkerUnavailable(RuntimeError):
     pass
 
 
-class ExecutionLocked(PermissionError):
-    """Execution Lock (1.14): order_send is refused below every application path."""
-
-
-class _LockedTerminal:
-    """Proxy of the MetaTrader5 module handed to jobs while the Execution Lock is LOCKED: reading (quotes, bars,
-    order_check, positions) passes through, `order_send` raises. Applies to every caller of the worker."""
-    __slots__ = ("_m", "_worker")
-
-    def __init__(self, module, worker):
-        object.__setattr__(self, "_m", module)
-        object.__setattr__(self, "_worker", worker)
-
-    def order_send(self, *a, **kw):
-        self._worker.locked_attempts += 1
-        raise ExecutionLocked("EXECUTION_LOCKED")
-
-    def __getattr__(self, name):
-        return getattr(self._m, name)
-
-
 class MT5Worker:
     def __init__(self, module_factory: Callable[[], Any], name: str = "mt5-worker"):
         self._factory = module_factory
@@ -76,8 +55,6 @@ class MT5Worker:
         self._lock = threading.Lock()
         self.calls = 0
         self.failures = 0
-        self.lock_fn: Callable[[], bool] = lambda: True     # Execution Lock state (runtime binds the config); default LOCKED
-        self.locked_attempts = 0
 
     def start(self) -> None:
         self._thread.start()
@@ -109,12 +86,7 @@ class MT5Worker:
             try:
                 if self.module is None:
                     raise MT5WorkerUnavailable(self.module_error or "MT5_MODULE_UNAVAILABLE")
-                locked = True
-                try:
-                    locked = bool(self.lock_fn())
-                except Exception:          # unreadable lock state = locked
-                    locked = True
-                fut.set_result(fn(_LockedTerminal(self.module, self) if locked else self.module))
+                fut.set_result(fn(self.module))
             except BaseException as exc:
                 self.failures += 1
                 fut.set_exception(exc)

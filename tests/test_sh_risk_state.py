@@ -91,7 +91,8 @@ class Risk(Base):
         r = self.risk(mode="AUTO_DEMO")
         self.assertTrue(any("model_mode" in x for x in r["reasons"]))                   # LIMITED mode: no AUTO
         self.assertTrue(any("commission_known" in x for x in r["reasons"]))
-        self.assertTrue(any("exec_mode" in x for x in self.risk(mode="AUTO_LIVE", setup=_setup(model_mode="PEŁNA"))["reasons"]))
+        live = self.risk(mode="AUTO_LIVE", setup=_setup(model_mode="PEŁNA"))["reasons"]
+        self.assertTrue(any(x.startswith("live_validation") for x in live), live)     # 1.24: LIVE needs a passed validation (reason shown)
 
 
 class Coordinator(Base):
@@ -184,12 +185,14 @@ class Executor(Base):
             self.assertEqual(r["status"], "BLOCKED")
         self.assertEqual(self.fake.positions_get(), ())
 
-    def test_lock_blocks_terminal(self):
+    def test_live_entry_requires_validation(self):
         ex = self.make()
-        ex.locked = lambda: True
+        ex.is_live = lambda: True                                               # REAL account, no validation report on the client's history
         q = self.quote()
-        self.assertEqual(ex.open(self.plan(), role="P", side="BUY", volume=0.1, sl=q["bid"] - 3, tp=0, mode="AUTO_DEMO", quote=q, tag="P")["reason"],
-                         "EXECUTION_LOCKED")
+        r = ex.open(self.plan(), role="P", side="BUY", volume=0.1, sl=q["bid"] - 3, tp=0, mode="AUTO_LIVE", quote=q, tag="P")
+        self.assertEqual(r["status"], "BLOCKED")
+        self.assertTrue(r["reason"].startswith("SH_LIVE_WYMAGA_WALIDACJI"), r["reason"])
+        self.assertEqual(self.fake.positions_get(), ())
 
     def test_demo_open_partial_modify_idempotent(self):
         ex = self.make()

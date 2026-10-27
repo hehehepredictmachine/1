@@ -17,7 +17,7 @@ Zastępuje opis 1.13. Źródła: statyczny graf importów (`ast`, 281 modułów 
 
 ```
 Runtime
- ├─ MT5Worker ◄─ lock_fn = cfg.execution_locked (Execution Lock dla każdego wywołania handlowego)
+ ├─ MT5Worker (jedyny wątek wywołań terminala; Execution Lock wycofany w 1.24)
  ├─ MarketBridge(worker) ◄─ AssetRegistry
  ├─ ModeManager(account_provider = bridge)          ◄── używany przez EngineService, gateway, manager, SHService (AR-01);
  │                                                      gate(path=ACTIVE|SH) = reguła ścieżki głównej (O1) + strażnik portfela (risk/portfolio.py)

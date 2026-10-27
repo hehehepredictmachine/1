@@ -81,7 +81,7 @@ export default function ScalpMtfPage({ params }: { params?: URLSearchParams }) {
         · <span className={cls("chip", health.overall === "OK" ? "ok" : "bad")} data-testid="mtf-health">dane: {STATUS_PL[health.overall] ?? health.overall ?? "—"}</span>
         · MT5 {health.connection ?? "—"} · Bid {fmtNum(health.quote?.bid, snap?.digits ?? 2)} / Ask {fmtNum(health.quote?.ask, snap?.digits ?? 2)} (spread {fmtNum(health.quote?.spread, snap?.digits ?? 2)}, wiek {health.quote?.age_s ?? "—"} s / TTL {health.quote?.ttl_s} s)
         · sesja: {health.market_session_status ?? "—"} · serwer {health.server_now ? health.server_now.slice(11, 19) + " UTC" : "—"} (lokalnie {new Date().toLocaleTimeString()})
-        · Execution Lock: <b>{s.execution_lock ?? "—"}</b>
+        · wykonanie: <b>{s.mode?.kill_switch ? "STOP nowych wejść" : s.mode?.mode_label ?? s.mode?.mode ?? "—"}</b>
         {snap?.data_mode === "DANE SYNTETYCZNE" && <span className="chip bad"> DANE SYNTETYCZNE</span>}
         <br />Analiza: as-of <b>{snap?.as_of ? snap.as_of.slice(11, 16) + " UTC" : "—"}</b>, policzona {snap ? fmtTime(snap.computed_at, true) : "—"}, snapshot <span className="mono" data-testid="mtf-snapshot-id">{snap?.snapshot_id ?? "—"}</span>
         {" "}{health.analysis_valid === false && live ? <span className="chip bad">analiza nieważna wg heartbeat (bez przeliczenia)</span> : null}

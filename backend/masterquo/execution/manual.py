@@ -9,10 +9,10 @@ commission + slippage buffer) fits the budget, checked again at the final volume
 Commission source BROKER_OBSERVED / USER_CONFIGURED / PACKAGE_DEFAULT / UNKNOWN - UNKNOWN is never turned into 0: the plan shows the
 gap and is not eligible for execution. Plan TTL default 5 s; a fresh check is always done again before execution.
 Intent / gateway: ManualTradeIntent (own id + version). Source validator MANUAL_USER (no fabricated strategy CONFIRMED or agent ALLOWED);
-common controls shared with BOT_SETUP via ExecutionGateway.common_checks (mode gate, Execution Lock, STOP, reconciliation, quote).
+common controls shared with BOT_SETUP via ExecutionGateway.common_checks (mode gate, STOP, reconciliation, quote).
 The ONLY order_send path stays in the gateway (_send). Idempotency key mode|account|context|intent|action|revision, persisted PREPARED
-before any call; a timeout leaves UNKNOWN (reconciled by tag, never re-sent). PAPER uses the shared paper engine. LOCKED blocks every
-real account mutation. PRICE_BREAK_EVEN moves SL to entry +- offset and never worsens a better SL (not a zero-cost guarantee).
+before any call; a timeout leaves UNKNOWN (reconciled by tag, never re-sent). PAPER uses the shared paper engine.
+PRICE_BREAK_EVEN moves SL to entry +- offset and never worsens a better SL (not a zero-cost guarantee).
 """
 from __future__ import annotations
 
@@ -199,7 +199,7 @@ class ManualPad:
         p.update(plan_id=pid, instrument=cfg.mt5.symbol, account_key=b.account_key, session_epoch=b.session_epoch, quote_time=q.get("time_utc"),
                  frozen_at=iso(now), expires_at=iso(now + timedelta(seconds=float(body.get("ttl_s") or self.ttl_s))),
                  settings_version=prefs.settings_version() if prefs is not None else None, source_pattern_id=body.get("source_pattern_id"),
-                 mode=self.modes.gate(b.account_key)["mode"], execution_lock=cfg.execution.lock)
+                 mode=self.modes.gate(b.account_key)["mode"])
         with self._lock:
             self._plans[pid] = p
         return p
@@ -320,9 +320,6 @@ class ManualPad:
         point, vmin, vstep = float(meta.get("point") or 0.01), float(meta.get("volume_min") or 0.01), float(meta.get("volume_step") or 0.01)
         out = []
         for mp in pos:
-            if mp["mode"] != "PAPER" and self.cfg_store.execution_locked():
-                out.append({"ticket": mp["position_ticket"], "status": "BLOCKED", "reason": "EXECUTION_LOCKED"})
-                continue
             if mp["mode"] != "PAPER":
                 out.append({"ticket": mp["position_ticket"], **self.gateway.manual_modify(mp, action, offset_points=offset_points, volume=volume)})
                 continue

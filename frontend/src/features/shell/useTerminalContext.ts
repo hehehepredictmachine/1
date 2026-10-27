@@ -18,7 +18,6 @@ export interface TerminalContext {
   brokerSymbol: string | null;
   mode: string | null;                // SIGNALS / PAPER / AUTO_DEMO / AUTO_LIVE
   modeLabel: string | null;
-  executionLock: string | null;
   killSwitch: boolean;
   backend: string;                    // WebSocket status of the single live connection
   opsBlocked: boolean;                // new operations must stay blocked in the UI (the backend keeps its own gates)
@@ -79,7 +78,7 @@ export function useTerminalContext(asOf?: string | null): TerminalContext {
     freshness: fr.state, freshnessDetail: fr.detail,
     instrument: s.assets?.active ?? null, brokerSymbol: s.symbol?.symbol ?? null,
     mode: s.mode?.mode ?? null, modeLabel: s.mode?.mode_label ?? null,
-    executionLock: s.execution_lock ?? null, killSwitch: !!s.mode?.kill_switch, backend: s.ws ?? "UNKNOWN",
+    killSwitch: !!s.mode?.kill_switch, backend: s.ws ?? "UNKNOWN",
     opsBlocked: s.ws !== "OPEN" || mt5 !== "CONNECTED" || fr.state !== "FRESH" || !!s.mode?.kill_switch,
     warnings: warningsOf(s),
     alerts: (s.logs || []).filter((l: any) => l.level === "WARNING" || l.level === "ERROR"),

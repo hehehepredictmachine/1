@@ -4,7 +4,7 @@ letters and '!'. Windows + a real MT5 are not available here - those runs are re
 Covers: plan -> export per instrument (exact symbol, USD vs USDT kept) -> quality -> gold_candles / scalp A-B-C / legacy ML /
 lab for XAUUSD and BTC with separate datasets, registries and artefacts (no instrument mixing); three-axis statuses; synthetic
 models never activated; lab artefact = the development-only fit (no refit inheriting the verdict) with loader parity;
-bot config untouched (use_backfill_approx stays false, Execution Lock LOCKED); cancel + resume without repeating finished
+bot config untouched (use_backfill_approx stays false, execution mode unchanged); cancel + resume without repeating finished
 tasks; 22_TRENUJ_WSZYSTKIE_MODELE (train-all) uses the same mechanism; report HTML/JSON with counts from the run."""
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ class TestTrainingRun(_Base):
         # bot config untouched by the installer
         cfg = json.loads((self.data / "config.json").read_text(encoding="utf-8"))
         self.assertFalse((cfg.get("ml") or {}).get("use_backfill_approx", False))
-        self.assertNotEqual((cfg.get("execution") or {}).get("lock"), "UNLOCKED_BY_USER")             # Execution Lock never touched
+        self.assertNotIn((cfg.get("execution") or {}).get("mode"), ("AUTO_DEMO", "AUTO_LIVE"))          # execution mode never touched
         rep = json.loads((self.data / "training" / "runs" / st["run_id"] / "report.json").read_text(encoding="utf-8"))
         line = rep["summary"]["line"]
         self.assertRegex(line, r"XAUUSD: \d+/18 zadań ukończonych; BTC: \d+/18")

@@ -153,7 +153,7 @@ export function LabDashboardTop() {
       <div className="card asset-card" data-testid="asset-card">
         <div className="nn-head"><h3>{active ?? "…"} <small className="muted">→ {it.broker_symbol ?? "niezmapowane"}</small></h3>
           <Badge k={s.synthetic ? "warn" : "ok"}>{lab?.data_mode === "fixture" || s.synthetic ? "dane: fixture (syntetyczne)" : "dane: live MT5"}</Badge>
-          <Badge k={(s.execution_lock ?? "LOCKED") === "LOCKED" ? "ok" : "bad"}>{(s.execution_lock ?? "LOCKED") === "LOCKED" ? "Execution Lock: aktywny" : "Execution Lock: ODBLOKOWANY"}</Badge></div>
+          <Badge k={s.mode?.kill_switch ? "bad" : s.mode?.mode === "AUTO_LIVE" ? "warn" : "ok"}>{s.mode?.kill_switch ? "STOP nowych wejść" : `Tryb: ${s.mode?.mode_label ?? s.mode?.mode ?? "—"}`}</Badge></div>
         <div className="kv-grid">
           <div><label>Bid / Ask</label><b className="mono">{q ? `${q.bid} / ${q.ask}` : "—"}</b></div>
           <div><label>Spread</label><b className="mono">{q?.spread_points != null ? `${q.spread_points} pkt` : q?.spread ?? "—"}</b></div>
@@ -203,7 +203,6 @@ function AllModels({ lab }: { lab: any }) {
 
 // ------------------------------------------------------------------------------------------- Setupy
 function TradePad({ lab }: { lab: any }) {
-  const { s } = useStore();
   const [f, setF] = useState({ side: "BUY", entry: "", sl: "", tp: "", lots: "0.01" });
   const [r, setR] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -216,7 +215,7 @@ function TradePad({ lab }: { lab: any }) {
   return (
     <div className="card" data-testid="tradepad">
       <h3>Trade Pad – plan i symulacja (M42)</h3>
-      <p className="muted small">Tylko symulacja z parametrów kontraktu {lab?.symbol ?? ""}. Brak przycisku zlecenia – backend odrzuca wykonanie (Execution Lock: {s.execution_lock ?? "LOCKED"}).</p>
+      <p className="muted small">Tylko symulacja z parametrów kontraktu {lab?.symbol ?? ""}. Ta karta nie wysyła zleceń – rzeczywiste zlecenie składa się w Manual Trade Pad (plan → intencja → wykonanie, zgodnie z trybem).</p>
       <div className="form-row">
         <select aria-label="Strona" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value })}><option>BUY</option><option>SELL</option></select>
         {(["entry", "sl", "tp", "lots"] as const).map((k) => <input key={k} aria-label={k} placeholder={k} value={(f as any)[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode="decimal" />)}
@@ -601,9 +600,6 @@ export function LabSettingsPage() {
   const a = s.assets;
   const [cands, setCands] = useState<Record<string, any[]>>({});
   const [msg, setMsg] = useState<string | null>(null);
-  const [phrase, setPhrase] = useState("");
-  const [lock, setLock] = useState<any>(null);
-  useEffect(() => { apiGet("/api/v1/execution/lock").then(setLock).catch(() => undefined); }, [s.execution_lock]);
   const find = async (asset: string) => {
     setMsg(null);
     try { setCands({ ...cands, [asset]: (await apiGet(`/api/v1/assets/${asset}/candidates`)).candidates }); } catch (e: any) { setMsg(String(e?.message || e)); }
@@ -611,10 +607,6 @@ export function LabSettingsPage() {
   const confirm = async (asset: string, sym: string) => {
     setMsg(null);
     try { await apiSend("POST", "/api/v1/assets/confirm", { asset, broker_symbol: sym }); await refresh(); setMsg(`${asset} → ${sym} potwierdzone.`); } catch (e: any) { setMsg(String(e?.message || e)); }
-  };
-  const setL = async (l: string) => {
-    setMsg(null);
-    try { setLock(await apiSend("POST", "/api/v1/execution/lock", { lock: l, phrase })); await refresh(); } catch (e: any) { setMsg(String(e?.message || e)); }
   };
   return (
     <div className="lab-page" data-testid="page-ustawienia">
@@ -634,14 +626,13 @@ export function LabSettingsPage() {
             <span key={c.broker_symbol} className="cand">{c.broker_symbol} ({c.currency_base}/{c.currency_profit}, kontrakt {c.contract_size}{c.conflicts.length ? `, ${c.conflicts.join(",")}` : ""})
               {c.eligible && <button className="btn" onClick={() => confirm(asset, c.broker_symbol)}>Użyj</button>}</span>))}</div>))}
       </div>
-      <div className="card" data-testid="lock-card">
-        <h3>Execution Lock</h3>
-        <p>Stan: <b className={lock?.lock === "LOCKED" ? "ok" : "bad"}>{lock?.lock ?? s.execution_lock}</b> · zablokowane próby wysłania: {lock?.blocked_attempts ?? 0}</p>
-        <p className="muted small">{lock?.note} Odblokowanie wymaga wpisania frazy: <span className="mono">{lock?.unlock_phrase_required}</span>. Testy programu nigdy go nie zmieniają.</p>
-        {lock?.lock === "LOCKED" ? (
-          <div className="form-row"><input aria-label="Fraza odblokowania" value={phrase} onChange={(e) => setPhrase(e.target.value)} placeholder="fraza" />
-            <button className="btn danger" onClick={() => setL("UNLOCKED_BY_USER")}>Odblokuj</button></div>)
-          : <button className="btn" onClick={() => setL("LOCKED")}>Zablokuj wykonanie</button>}
+      <div className="card" data-testid="exec-card">
+        <h3>Wykonanie zleceń</h3>
+        <p>Tryb: <b>{s.mode?.mode_label ?? s.mode?.mode ?? "—"}</b>{s.mode?.bound_account ? <> · rachunek <span className="mono">{s.mode.bound_account}</span></> : null}
+          {" "}· nowe wejścia: <b className={s.mode?.kill_switch ? "bad" : "ok"}>{s.mode?.kill_switch ? "STOP" : "dozwolone wg trybu"}</b></p>
+        {s.mode?.mode_note && <p className="warn small" data-testid="mode-note">{s.mode.mode_note}</p>}
+        <p className="muted small">Execution Lock został wycofany (1.24, decyzja użytkownika). O wysyłce decydują: tryb wykonania (zmiana przyciskiem „Wykonanie” –
+          tryby AUTO z potwierdzeniem rachunku), STOP nowych wejść, limity ryzyka, aktualne dane i warunki brokera.</p>
       </div>
       <div className="card"><h3>Pozostałe ustawienia</h3>
         <p className="muted small">MT5, ryzyko, koszty, AI, Telegram, motyw i paleta – w dotychczasowym oknie ustawień.</p>

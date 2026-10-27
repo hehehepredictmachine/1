@@ -139,7 +139,7 @@ class TestTerminalShell(unittest.TestCase):
         con = st["connection"]["state"]
         self.assertEqual(self.page.locator("[data-testid=t-mt5]").get_attribute("data-mt5"), "CONNECTED" if con == "CONNECTED" else "DISCONNECTED")
         self.assertIn(st["assets"]["active"], self.page.locator("[data-testid=t-instrument]").inner_text())
-        self.assertIn(st["execution_lock"], self.page.locator("[data-testid=t-lock]").inner_text())
+        self.assertIn("STOP" if st["mode"]["kill_switch"] else "AKTYWNE", self.page.locator("[data-testid=t-entries]").inner_text())
         want = lambda: {"GOOD": "FRESH", "DEGRADED": "DEGRADED", "STALE": "STALE", "BAD": "STALE", "NO_DATA": "STALE"}.get(
             (self.state().get("decision") or {}).get("data_quality"), "UNKNOWN")
         got = lambda: self.page.locator("[data-testid=t-fresh]").get_attribute("data-fresh")

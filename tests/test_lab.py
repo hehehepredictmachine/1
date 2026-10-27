@@ -1,5 +1,5 @@
 """1.14 lab / two-asset tests (prompt B16). Synthetic data and the synthetic terminal ONLY test the code - no result here is
-a market result. Covered: symbol lock, Execution Lock, causality (prefix invariance), multi-TF availability, model pipeline (fit
+a market result. Covered: symbol lock, trade pad plan, causality (prefix invariance), multi-TF availability, model pipeline (fit
 isolation, artifact reload, schema/asset rejection), streaming == replay (incl. SNN state), pattern/zone persistence, data edge
 cases (gaps, duplicates, DST, missing ticks, short history) and one end-to-end run for XAUUSD and one for BTC."""
 from __future__ import annotations
@@ -69,7 +69,7 @@ class TestSymbolLock(unittest.TestCase):
         with self.assertRaises(Exception):
             AppConfig.model_validate({"assets": {"mappings": {"BTC": {"broker_symbol": "XAUUSD-", "status": "CONFIRMED"}}}})
 
-    def test_migration_keeps_user_symbol_and_locks(self):
+    def test_migration_keeps_user_symbol(self):
         from masterquo.config import AppConfig, migrate
         raw = {"config_version": 10, "mt5": {"symbol": "XAUUSD-"}, "execution": {"mode": "AUTO_DEMO"}}
         self.assertTrue(migrate(raw))
@@ -77,7 +77,8 @@ class TestSymbolLock(unittest.TestCase):
         self.assertEqual(c.assets.mappings["XAUUSD"].broker_symbol, "XAUUSD-")
         self.assertEqual(c.assets.mappings["XAUUSD"].status, "USER_SPECIFIED")
         self.assertEqual(c.assets.mappings["BTC"].status, "UNMAPPED")
-        self.assertEqual(c.execution.lock, "LOCKED")
+        self.assertFalse(hasattr(c.execution, "lock"))                          # 1.24: Execution Lock withdrawn (config v12)
+        self.assertEqual(c.execution.mode, "PAPER")                             # the AUTO mode the old lock held back is not started silently
 
     def test_no_symbol_blocking_and_account_symbols(self):
         """1.14.1: nothing is blocked by symbol - other enabled symbols work; BTC is taken from the account automatically."""
@@ -127,41 +128,13 @@ def SymbolNotAllowedT():
     return SymbolNotAllowed
 
 
-# ------------------------------------------------------------------------------------------------ Execution Lock
-class TestExecutionLock(unittest.TestCase):
-    def setUp(self):
-        self.td = TempData()
-
-    def tearDown(self):
-        self.td.close()
-
-    def test_worker_refuses_order_send_on_every_path(self):
-        cfg, db, bus, log, fake, worker, b, reg = connected()
-        try:
-            from masterquo.mt5.worker import PRIO_TRADE, ExecutionLocked
-            from masterquo.execution.modes import ModeManager
-            self.assertEqual(cfg.get().execution.lock, "LOCKED")
-            req = lambda m: {"action": m.TRADE_ACTION_DEAL, "symbol": "XAUUSD-", "volume": 0.01, "type": m.ORDER_TYPE_BUY,  # noqa: E731
-                             "price": m.symbol_info_tick("XAUUSD-").ask, "deviation": 20, "magic": 1, "type_filling": m.ORDER_FILLING_IOC}
-            with self.assertRaises(ExecutionLocked):
-                b.raw_call(lambda m: m.order_send(req(m)), PRIO_TRADE)
-            self.assertEqual(len(fake._positions), 0)                                  # nothing reached the terminal
-            self.assertEqual(worker.locked_attempts, 1)
-            self.assertIsNotNone(b.raw_call(lambda m: m.order_check(req(m)), PRIO_TRADE))   # read-only check still allowed
-            modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
-            cfg.update({"execution": {"mode": "AUTO_DEMO", "bound_account": b.account_key}})
-            modes2 = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
-            self.assertIn("EXECUTION_LOCKED", modes2.gate(b.account_key)["reason_codes"])
-            self.assertEqual(modes.gate(b.account_key)["execution_lock"], "LOCKED")
-        finally:
-            b.stop()
-            worker.stop()
-
+# ------------------------------------------------------------------------------------------------ Trade Pad (M42)
+class TestTradePadPlan(unittest.TestCase):
     def test_trade_pad_is_simulation_only(self):
         from masterquo.lab.edge import trade_pad_plan
         r = trade_pad_plan(side="BUY", entry=2400, sl=2395, tp=2410, lots=0.1, meta={"trade_contract_size": 100, "volume_min": 0.01, "volume_step": 0.01},
                            quote={"bid": 2399.9, "ask": 2400.1}, commission_per_lot_side=0.5)
-        self.assertEqual(r["execution"], "BLOCKED_BY_EXECUTION_LOCK")
+        self.assertEqual(r["execution"], "VIA_MANUAL_PAD")        # the plan never sends; real orders: Manual Pad (1.24: no Execution Lock)
         self.assertAlmostEqual(r["pnl_at_tp"], 10 * 100 * 0.1 - 0.1, places=6)
         self.assertAlmostEqual(r["pnl_at_sl"], -5 * 100 * 0.1 - 0.1, places=6)
         with self.assertRaises(ValueError):

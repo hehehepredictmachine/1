@@ -83,7 +83,6 @@ class Base(unittest.TestCase):
             from masterquo.mt5.fake import FakeMT5
             self.fake = FakeMT5(**(self.fake_kw or {}))
             self.fake.initialize()
-            self.cfg_store.update({"execution": {"lock": "UNLOCKED_BY_USER"}})      # simulated terminal only
             term = lambda fn: fn(self.fake)  # noqa: E731
         self.bridge = Bridge(self.fake, self.margin_mode)
         self.t = NOW
@@ -297,14 +296,14 @@ class DemoTerminal(Base):
         self.assertEqual(b.activations, 1)
         self.assertEqual(len(self.fake.positions_get()), 1)
 
-    def test_lock_blocks_new_actions(self):
+    def test_management_runs_without_any_lock(self):
+        """1.24: the Execution Lock is withdrawn - a reached TP1 of an open terminal plan is executed on the (simulated) terminal."""
         self.open(volume=0.3)
         row = self.row()
-        self.cfg_store.update({"execution": {"lock": "LOCKED"}})
         e = row["fsm_obj"].entry
         row = self.step(e + 2.6)
-        self.assertAlmostEqual(self.fake.positions_get(ticket=row["primary_ticket"])[0].volume, 0.3)   # nothing sent while locked
-        self.assertEqual(row["fsm_obj"].legs[0].status, "PENDING")                      # retried once the lock is released
+        self.assertLess(self.fake.positions_get(ticket=row["primary_ticket"])[0].volume, 0.3)                   # TP1 part closed
+        self.assertEqual(row["fsm_obj"].legs[0].status, "DONE")
 
 
 if __name__ == "__main__":

@@ -38,11 +38,6 @@ class AssetActiveReq(BaseModel):
     asset: str
 
 
-class LockReq(BaseModel):
-    lock: str
-    phrase: str | None = None
-
-
 class ModeReq(BaseModel):
     mode: str
     confirm: str = ""
@@ -236,7 +231,7 @@ def create_app(rt, port: int) -> FastAPI:
                 "auto": rt.engine.active.status(compact=True), "active_config": cfg.active.model_dump(mode="json"),
                 "ml": rt.ml.status(compact=True), "markets": rt.scanner.summary(),
                 "bot_signals": {**rt.signals.status(), **rt.signals.list(limit=40)},
-                "assets": rt.assets.state(), "execution_lock": cfg.execution.lock, "lab": rt.lab.summary(cfg.assets.active),
+                "assets": rt.assets.state(), "lab": rt.lab.summary(cfg.assets.active),
                 "lab_neural": _nss_compact(cfg.assets.active)}
 
     def logs_list(limit: int) -> list[dict]:
@@ -499,11 +494,11 @@ def create_app(rt, port: int) -> FastAPI:
                                   commission_per_lot_side=float(rt.cfg.get().scalp.commission_per_lot_side or 0))
         except (KeyError, ValueError) as exc:
             raise HTTPException(400, f"INVALID_PLAN: {exc}") from exc
-        return {"asset": a, "broker_symbol": sym, **plan, "execution_lock": rt.cfg.get().execution.lock}
+        return {"asset": a, "broker_symbol": sym, **plan}
 
     @app.post("/api/v1/lab/tradepad/execute")
     def lab_tradepad_execute(body: dict = Body(default={})):
-        """Compatibility adapter: explicit routing to the Manual Pad gates (intent required; LOCKED still blocks real mutations)."""
+        """Compatibility adapter: explicit routing to the Manual Pad gates (intent required)."""
         iid = body.get("intent_id")
         if not iid:
             raise HTTPException(400, "INTENT_REQUIRED: POST /api/v1/manual/plan → /api/v1/manual/intents → /execute")
@@ -1191,27 +1186,17 @@ def create_app(rt, port: int) -> FastAPI:
         rt.bus.publish("assets", st)
         return st
 
-    UNLOCK_PHRASE = "ODBLOKUJ WYKONANIE ZLECEN"
+    LOCK_NOTE = ("Execution Lock został wycofany (1.24, decyzja użytkownika). O wysyłce zleceń decydują: tryb wykonania, potwierdzony "
+                 "rachunek (DEMO / REAL), STOP nowych wejść, limity ryzyka użytkownika, aktualne dane i warunki brokera.")
 
     @app.get("/api/v1/execution/lock")
     def exec_lock():
-        c = rt.cfg.get().execution
-        return {"lock": c.lock, "changed_at": c.lock_changed_at, "blocked_attempts": rt.worker.locked_attempts,
-                "unlock_phrase_required": UNLOCK_PHRASE,
-                "note": "LOCKED: żadna ścieżka (AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła order_send do terminala."}
+        """Compatibility read for older monitors: the lock no longer exists and blocks nothing."""
+        return {"lock": "WITHDRAWN", "note": LOCK_NOTE}
 
     @app.post("/api/v1/execution/lock")
-    def exec_lock_set(req: LockReq):
-        if req.lock not in ("LOCKED", "UNLOCKED_BY_USER"):
-            raise HTTPException(400, "INVALID_LOCK")
-        if req.lock == "UNLOCKED_BY_USER" and (req.phrase or "").strip().upper() != UNLOCK_PHRASE:
-            raise HTTPException(403, "UNLOCK_PHRASE_REQUIRED")
-        rt.cfg.update({"execution": {"lock": req.lock, "lock_changed_at": iso(utcnow())}})
-        rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"execution_lock": req.lock})))
-        rt.log.warn("EXECUTION", "LOCK_" + req.lock, "Execution Lock: " + ("ZABLOKOWANE" if req.lock == "LOCKED" else "odblokowane przez użytkownika"))
-        rt.engine.mark_dirty()
-        rt.bus.publish("execution_lock", {"lock": req.lock})
-        return exec_lock()
+    def exec_lock_set():
+        raise HTTPException(410, "EXECUTION_LOCK_WITHDRAWN")
 
     @app.get("/api/v1/markets")
     def markets():
@@ -1346,8 +1331,10 @@ def create_app(rt, port: int) -> FastAPI:
         m5.pop("analytical_alias", None)
         if m5.get("symbol"):                       # symbol typed in Ustawienia -> becomes the active asset's broker symbol
             patch.setdefault("assets", {})["mappings"] = {rt.cfg.get().assets.active: {"broker_symbol": m5["symbol"], "status": "USER_SPECIFIED"}}
-        if isinstance(patch.get("execution"), dict) and ({"lock", "lock_changed_at"} & set(patch["execution"])):
-            raise HTTPException(400, "USE_EXECUTION_LOCK_ENDPOINT")
+        if isinstance(patch.get("execution"), dict) and ({"mode", "bound_account", "mode_note"} & set(patch["execution"])):
+            # the execution mode and its account binding change only through POST /api/v1/mode (account confirmation) -
+            # never through a generic config write, so automatic orders cannot be switched on silently
+            raise HTTPException(400, "USE_MODE_ENDPOINT")
         try:
             old = rt.cfg.get()
             new = rt.cfg.update(patch)

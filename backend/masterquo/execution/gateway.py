@@ -88,8 +88,6 @@ class ExecutionGateway:
         gate = self.modes.gate(b.account_key, path="ACTIVE")       # bot decisions = path ACTIVE (O1)
         if not gate["allowed"]:
             raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
-        if gate.get("mode") in ("AUTO_DEMO", "AUTO_LIVE") and self.cfg_store.execution_locked():
-            raise ExecutionError("EXECUTION_LOCKED")
 
         if self.manager is not None and self.manager.reconciled_epoch != b.session_epoch:
             raise ExecutionError("RECONCILIATION_WITH_TERMINAL_PENDING")
@@ -122,7 +120,7 @@ class ExecutionGateway:
 
     # ------------------------------------------------------------ common controls (shared by BOT_SETUP and MANUAL_USER sources)
     def common_checks(self, *, side: str, entry: float, require_real: bool = False) -> str:
-        """Mode gate (account / DEMO-LIVE / Execution Lock / STOP / risk limits), reconciliation, quote freshness and drift.
+        """Mode gate (account / DEMO-LIVE / STOP / risk limits), reconciliation, quote freshness and drift.
         Returns the mode; raises ExecutionError with the concrete reason. Source-specific checks stay in each validator."""
         b = self.bridge
         gate = self.modes.gate(b.account_key)
@@ -131,8 +129,6 @@ class ExecutionGateway:
             return mode
         if not gate["allowed"]:
             raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
-        if mode != "PAPER" and self.cfg_store.execution_locked():
-            raise ExecutionError("EXECUTION_LOCKED")
         if require_real and mode == "PAPER":
             raise ExecutionError("REAL_MODE_REQUIRED")
         if mode != "PAPER" and self.manager is not None and self.manager.reconciled_epoch != b.session_epoch:
@@ -148,9 +144,7 @@ class ExecutionGateway:
         return mode
 
     def manual_modify(self, mp: dict, action: str, *, offset_points: float = 0.0, volume: float | None = None) -> dict:
-        """Real-account management of ONE managed position (own ticket only; netting share is refused). LOCKED -> refused."""
-        if self.cfg_store.execution_locked():
-            return {"status": "BLOCKED", "reason": "EXECUTION_LOCKED"}
+        """Real-account management of ONE managed position (own ticket only; netting share is refused)."""
         b = self.bridge
         if mp["account_key"] != b.account_key:
             return {"status": "REJECTED", "reason": "OTHER_ACCOUNT"}
@@ -193,7 +187,7 @@ class ExecutionGateway:
                 r = b.raw_call(lambda m: m.order_send(req(m)), PRIO_TRADE, timeout=cfg.execution.order_timeout_seconds)
         except MT5CallTimeout:
             return {"status": "UNKNOWN", "reason": "TIMEOUT_CHECK_TERMINAL"}
-        except Exception as exc:  # noqa: BLE001 - ExecutionLocked / worker unavailable: refused, nothing was sent
+        except Exception as exc:  # noqa: BLE001 - worker unavailable / validation: refused, nothing was sent
             return {"status": "REJECTED", "reason": type(exc).__name__}
         rc = getattr(r, "retcode", None)
         return {"status": "DONE" if rc in OK_CODES else "REJECTED", "retcode": RETCODES.get(rc, rc)}

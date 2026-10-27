@@ -11,7 +11,7 @@ export default function SystemControlPage() {
       </div>
       <div className="t-two">
         <NotIntegrated title="LIVE / DEMO" stage={4} testId="sc-live"
-          sources={["POST /api/v1/mode (fraza „LIVE <login>” sprawdzana w backendzie)", "GET /api/v1/execution/lock"]} />
+          sources={["POST /api/v1/mode (fraza „LIVE <login>” sprawdzana w backendzie)", "POST /api/v1/kill (STOP nowych wejść)"]} />
         <NotIntegrated title="MT5 – szczegóły połączenia" stage={4} testId="sc-mt5"
           sources={["WS connection / clock", "GET /api/v1/diagnostics"]} />
       </div>

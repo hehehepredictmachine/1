@@ -1,7 +1,7 @@
 """1.14 panel in a real browser (Chromium + demo backend on the SYNTHETIC terminal): seven-section menu, XAUUSD/BTC switch
 (every lab page answers for the active asset; a response for the other asset is never shown), scenario card + checklist,
 Neural Network Activity drawn from the SAME inference_id as the backend result (and 'sieć nieaktywna' without an artefact),
-Execution Lock enforced by the backend (trade pad execute, unlock without phrase, config bypass), no symbol blocking (1.14.1),
+execution guarded by the backend (trade pad execute needs an intent, Execution Lock withdrawn - 410, mode only via POST /mode), no symbol blocking (1.14.1),
 390 px without horizontal scroll. Screenshots: data/logs/ui_lab/. Skipped without Playwright."""
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class TestLabUI(unittest.TestCase):
         wait_for(lambda: nn.get_attribute("data-state") != "waiting", 30, 0.5)
         self.assertEqual(nn.get_attribute("data-state"), "inactive")                       # no artefact -> no fake activity
         self.assertIn("Sieć nieaktywna", nn.inner_text())
-        self.assertIn("Execution Lock", p.locator("[data-testid=chip-lock]").inner_text())
+        self.assertIn("Tryb", p.locator("[data-testid=chip-exec]").inner_text())                  # real mode from the backend
         for sec in SECTIONS:
             p.click(f"[data-testid=sidenav] [data-section={sec}]")
             p.wait_for_selector(f"main.page[data-page={sec}]", timeout=20000)
@@ -118,16 +118,18 @@ class TestLabUI(unittest.TestCase):
         st, j = self.send("POST", "/api/v1/lab/tradepad/execute", {"side": "BUY"})
         self.assertEqual(st, 400)                                   # PMW-UPD-07: explicit routing - an intent is required (no blind order)
         st, _ = self.send("POST", "/api/v1/execution/lock", {"lock": "UNLOCKED_BY_USER", "phrase": "zle"})
-        self.assertEqual(st, 403)
+        self.assertEqual(st, 410)                                   # 1.24: Execution Lock withdrawn - nothing to unlock
         st, _ = self.send("PUT", "/api/v1/config", {"execution": {"lock": "UNLOCKED_BY_USER"}})
-        self.assertEqual(st, 400)
+        self.assertEqual(st, 400)                                   # unknown field
+        st, j = self.send("PUT", "/api/v1/config", {"execution": {"mode": "AUTO_LIVE"}})
+        self.assertEqual(st, 400)                                   # the mode changes only through POST /mode (account confirmation)
         self.assertEqual(self.page.request.get(BASE + "/api/v1/lab?asset=DOGE").status, 403)   # asset id must be XAUUSD / BTC
         self.assertEqual(self.page.request.get(BASE + "/api/v1/markets/detail?symbol=EURUSD-").status, 200)   # no symbol blocking
         self.assertTrue(wait_for(lambda: self.api("/api/v1/assets")["assets"]["BTC"]["broker_symbol"] == "BTCUSD-", 30, 0.5))  # from the account
         st, j = self.send("POST", "/api/v1/lab/tradepad", {"side": "BUY", "entry": 100, "sl": 99, "tp": 102, "lots": 0.01})
         self.assertEqual(st, 200)
-        self.assertEqual(j["execution"], "BLOCKED_BY_EXECUTION_LOCK")
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertEqual(j["execution"], "VIA_MANUAL_PAD")
+        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "WITHDRAWN")
 
     def test_03_model_telemetry_same_inference(self):
         p = self.page
@@ -218,7 +220,7 @@ class TestLabUI(unittest.TestCase):
         p.goto(BASE + "/#/modele")
         p.wait_for_selector("[data-testid=ind-modules] tr[data-adapter=PAL02M]")
         self.assertIn("wymagana identyfikacja", p.locator("[data-testid=ind-modules] tr[data-adapter=PAL02M]").inner_text())
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_07_neural_system(self):
@@ -244,7 +246,7 @@ class TestLabUI(unittest.TestCase):
         p.wait_for_timeout(300)
         self.assertTrue(self.no_hscroll())
         p.set_viewport_size({"width": 1366, "height": 900})
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_08_scalp_mtf_dashboard(self):
@@ -271,12 +273,12 @@ class TestLabUI(unittest.TestCase):
         self.assertTrue(self.no_hscroll())
         self.assertEqual(p.eval_on_selector_all(".mtf-chart", "els => els.length"), 1)       # one chart + matrix on mobile
         p.set_viewport_size({"width": 1366, "height": 900})
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_09_liquidity_layers(self):
         """PMW-UPD-06: file fixture (SYNTHETIC_TEST, XAUT source) -> validator -> archive -> API -> heatmap panel on the SOURCE axis;
-        session boxes + OBSERVE context card; XAUT never presented as XAUUSD- prices; Execution Lock untouched."""
+        session boxes + OBSERVE context card; XAUT never presented as XAUUSD- prices; execution mode untouched."""
         st, m = self.send("PUT", "/api/v1/liquidity/source", {"asset": "XAUUSD", "source_symbol": "XAUT", "variant": "AGGREGATED", "range": "24h"})
         self.assertEqual(st, 200, m)
         st, _ = self.send("PUT", "/api/v1/liquidity/source", {"asset": "XAUUSD", "mapping": "VALIDATED_BASIS"})
@@ -303,12 +305,12 @@ class TestLabUI(unittest.TestCase):
         self.assertIn("XAUT", txt)
         p.wait_for_selector("[data-testid=liq-context] [data-testid=liq-codes]")
         self.assertIn("OBSERVE", p.inner_text("[data-testid=liq-context]"))
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_10_structure_intelligence(self):
         """PMW-UPD-07: structure cells attached to the SAME parent MTF snapshot; Structure page; Manual Pad PAPER plan->intent->execute
-        (synthetic feed, no order_send), duplicate click; Execution Lock untouched."""
+        (synthetic feed, no order_send), duplicate click; execution mode untouched."""
         self.assertTrue(wait_for(lambda: ((self.api("/api/v1/scalp/dashboard").get("snapshot") or {}).get("structure_intelligence") or {}).get("snapshot_id"), 90, 1.0))
         snap = self.api("/api/v1/scalp/dashboard")["snapshot"]
         si = snap["structure_intelligence"]
@@ -338,7 +340,7 @@ class TestLabUI(unittest.TestCase):
         p.goto(BASE + "/#/pozycje")
         p.click("text=Manual Trade Pad (jawne akcje użytkownika)")
         p.wait_for_selector("[data-testid=manual-pad]")
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_11_neutral_sew_quotes(self):
@@ -356,7 +358,7 @@ class TestLabUI(unittest.TestCase):
         p.wait_for_selector("[data-testid=quotes-card] table")
         p.wait_for_selector("[data-testid=neutral-card]")
         p.screenshot(path=str(SHOTS / "struktura_quotes_1366.png"))
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_12_market_story_regime_smma_z_native(self):
@@ -401,7 +403,7 @@ class TestLabUI(unittest.TestCase):
         p.screenshot(path=str(SHOTS / "struktura_market_1366.png"), full_page=True)
         p.goto(BASE + "/#/scalp-mtf")
         p.wait_for_selector("[data-testid=mtf-structure] tr[data-tf=M5]")
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_13_flow_context(self):
@@ -424,7 +426,7 @@ class TestLabUI(unittest.TestCase):
         p.wait_for_selector("[data-testid=flow-markov]")
         self.assertIn("MODEL_MISSING", p.inner_text("[data-testid=flow-markov]"))
         p.locator("[data-testid=flow-context-card]").screenshot(path=str(SHOTS / "flow_context_1366.png"))
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_14_context_indicators(self):
@@ -463,7 +465,7 @@ class TestLabUI(unittest.TestCase):
         self.assertTrue(self.no_hscroll(), "struktura 390")
         p.locator("[data-testid=ctx-ind-card]").screenshot(path=str(SHOTS / "context_indicators_390.png"))
         p.set_viewport_size({"width": 1366, "height": 900})
-        self.assertEqual(self.api("/api/v1/execution/lock")["lock"], "LOCKED")
+        self.assertNotIn(self.api("/api/v1/state")["mode"]["mode"], ("AUTO_DEMO", "AUTO_LIVE"))   # no automatic orders switched on
         self.assertEqual(self.errors, [])
 
     def test_05_mobile(self):

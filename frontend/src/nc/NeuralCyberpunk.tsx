@@ -163,7 +163,7 @@ function NeuralSystem({ inst }: { inst: string }) {
 
 // ------------------------------------------------------------------------------------------------ screens
 function Dashboard({ ctx }: { ctx: Ctx }) {
-  const { s, sh, lock, strat } = ctx;
+  const { s, sh, strat } = ctx;
   const card = (k: string) => {
     const ev = sh?.last_eval?.[k];
     const ready = ev?.status === "READY";
@@ -181,7 +181,7 @@ function Dashboard({ ctx }: { ctx: Ctx }) {
       <Kpi label="POŁĄCZENIE MT5" value={s.connection?.state} tone={s.connection?.state === "CONNECTED" ? "green" : "red"} st={feedStatus(s)} />
       <Kpi label="AKTYWNY SYMBOL" value={s.symbol?.symbol} tone="purple" st={s.symbol?.status === "OK" || s.symbol?.status === "READY" ? (s.synthetic ? "DEMO" : "VERIFIED") : s.symbol?.status} />
       <Kpi label="STRATEGIA" value={strat} tone="cyan" st={sh?.models?.mode === "PEŁNA" ? "VERIFIED" : "PARTIAL"} />
-      <Kpi label="WYKONANIE" value={lock?.lock === "LOCKED" ? "ZABLOKOWANE" : "ODBLOKOWANE"} tone={lock?.lock === "LOCKED" ? "red" : "gold"} st={lock?.lock === "LOCKED" ? "LOCKED" : "VERIFIED"} />
+      <Kpi label="WYKONANIE" value={execView(s).label} tone={execView(s).tone} st={execView(s).st} />
     </div>
     <div className="nc-gap"><NeuralSystem inst={sh?.instrument || "XAUUSD"} /></div>
     <div className="nc-two nc-gap">
@@ -335,7 +335,7 @@ function Validation({ ctx }: { ctx: Ctx }) {
 }
 
 function Decision({ ctx }: { ctx: Ctx }) {
-  const { s, sh, strat, lock } = ctx;
+  const { s, sh, strat } = ctx;
   const ev = sh?.last_eval?.[strat];
   const info = s.symbol?.info || {};
   const [entry, setEntry] = useState<string>("");
@@ -354,7 +354,7 @@ function Decision({ ctx }: { ctx: Ctx }) {
     <div className="nc-grid">
       <Kpi label="SYGNAŁ" value={ev ? `${ev.status} ${ev.side || ""}` : "—"} tone="cyan" st={ev ? (s.synthetic ? "DEMO" : "VERIFIED") : "NOT_RUN"} />
       <Kpi label="STRATEGIA" value={strat} tone="purple" /><Kpi label="MT5" value={s.connection?.state} st={feedStatus(s)} />
-      <Kpi label="WYKONANIE" value={lock?.lock === "LOCKED" ? "ZABLOKOWANE" : "ODBLOKOWANE"} tone="red" st={lock?.lock === "LOCKED" ? "LOCKED" : "VERIFIED"} />
+      <Kpi label="WYKONANIE" value={execView(s).label} tone={execView(s).tone} st={execView(s).st} />
     </div>
     <div className="nc-two nc-gap">
       <Panel id="nc-risk" title="PLAN CENOWY I RYZYKO" right={<St s={info.trade_tick_value ? (s.synthetic ? "DEMO" : "VERIFIED") : "UNAVAILABLE"}>specyfikacja z terminala</St>}>
@@ -371,8 +371,8 @@ function Decision({ ctx }: { ctx: Ctx }) {
       </Panel>
       <Panel id="nc-exec" title="CHECKLISTA I WYKONANIE">
         {(ev?.checklist || []).map((c: any) => <Line key={c.id} a={c.label} b={<span className={c.status === "PASS" ? "green" : c.status === "FAIL" ? "red" : "gold"}>{c.status}</span>} />)}
-        <Note><b className="red">EXECUTION LOCK: {lock?.lock}.</b> Ten panel nie wysyła zleceń. Wykonanie odbywa się wyłącznie w bocie (tryb PAPER/AUTO_DEMO),
-          po bramkach ryzyka, koordynatora i Execution Lock. AUTO_LIVE dla SH jest zablokowane.</Note>
+        <Note>Ten panel nie wysyła zleceń. Wykonanie odbywa się w bocie zgodnie z trybem ({s.mode?.mode_label || s.mode?.mode || "—"}), po bramkach
+          ryzyka i koordynatora; nowe wejścia SH w AUTO LIVE dopiero po zaliczonej walidacji ścieżki na Twojej historii.</Note>
         <button className="nc-btn" onClick={() => setMsg(ev ? `Symulacja: status ${ev.status} – ${ev.status_reason}${ev.risk ? `; ryzyko ${ev.risk.status}${(ev.risk.reasons || []).length ? ": " + ev.risk.reasons.join("; ") : ""}` : ""}. Żadne zlecenie nie zostało wysłane.` : "Brak oceny setupu.")}
           data-testid="nc-dry">Symuluj decyzję (bez zlecenia)</button>
         {msg && <p className="nc-small" data-testid="nc-dry-msg">{msg}</p>}
@@ -389,7 +389,7 @@ function Decision({ ctx }: { ctx: Ctx }) {
 }
 
 function Mt5({ ctx }: { ctx: Ctx }) {
-  const { s, sh, lock } = ctx;
+  const { s, sh } = ctx;
   const info = s.symbol?.info || {};
   const [busy, setBusy] = useState(false);
   const kill = s.mode?.kill_switch;
@@ -419,10 +419,10 @@ function Mt5({ ctx }: { ctx: Ctx }) {
         <Line a="Rekonsyliacja SH po restarcie" b={sh?.recovery ? `przejęte ${sh.recovery.adopted.length}, odrzucone ${sh.recovery.rejected.length}, sieroty ${sh.recovery.orphans.length}` : "—"} />
       </Panel>
       <Panel id="nc-safety" title="BEZPIECZEŃSTWO">
-        <Line a="Execution Lock" b={<St s={lock?.lock === "LOCKED" ? "LOCKED" : "VERIFIED"}>{lock?.lock}</St>} />
         <Line a="Tryb wykonania" b={s.mode?.mode_label || s.mode?.mode} />
-        <Line a="Zablokowane próby" b={lock?.blocked_attempts} />
-        <Note>Odblokowanie Execution Lock odbywa się tylko w klasycznym panelu (Ustawienia → frazą potwierdzającą). Ten panel tego nie umożliwia.</Note>
+        <Line a="Nowe wejścia" b={<St s={kill ? "LOCKED" : "VERIFIED"}>{kill ? "STOP" : "dozwolone wg trybu"}</St>} />
+        <Note>Execution Lock został wycofany (1.24). O zleceniach decyduje tryb, potwierdzony rachunek, STOP i limity ryzyka. STOP zatrzymuje
+          tylko nowe wejścia – otwarte pozycje są dalej prowadzone.</Note>
         <button className={`nc-btn ${kill ? "" : "danger"}`} disabled={busy} onClick={toggleKill} data-testid="nc-kill">{kill ? "Wznów nowe wejścia" : "STOP – zatrzymaj nowe wejścia"}</button>
       </Panel>
     </div>
@@ -528,7 +528,15 @@ class Guard extends Component<{ page: string; children: ReactNode }, { err: stri
   }
 }
 
-type Ctx = { s: any; sh: any; lock: any; tf: string; setTf: (x: string) => void; strat: string };
+type Ctx = { s: any; sh: any; tf: string; setTf: (x: string) => void; strat: string };
+
+/** Execution state shown instead of the withdrawn Execution Lock: the real mode and the user's STOP, both from the backend. */
+function execView(s: any): { label: string; tone: string; st: string } {
+  const m = s.mode?.mode;
+  if (s.mode?.kill_switch) return { label: "STOP NOWYCH WEJŚĆ", tone: "red", st: "LOCKED" };
+  if (!m) return { label: "—", tone: "red", st: "NOT_RUN" };
+  return { label: s.mode?.mode_label || m, tone: m === "AUTO_LIVE" ? "gold" : "cyan", st: m === "AUTO_DEMO" || m === "AUTO_LIVE" ? "VERIFIED" : "PARTIAL" };
+}
 
 export default function NeuralCyberpunk({ route }: { route: Route }) {
   const { s } = useStore();
@@ -537,14 +545,13 @@ export default function NeuralCyberpunk({ route }: { route: Route }) {
   const [tf, setTf] = useGlobal("nc.tf", "M15");
   const [strat, setStrat] = useGlobal("sh.strategy", "SCALPING");
   const [sh] = usePoll<any>("/api/v1/sh", 3000);
-  const [lock] = usePoll<any>("/api/v1/execution/lock", 5000);
   const [assetMsg, setAssetMsg] = useState<string | null>(null);
   const go = (p: string) => navigate("nc", { params: { p } });
   const switchAsset = async (a: string) => {
     const r: any = await apiSend("POST", "/api/v1/assets/active", { asset: a }).catch((e) => ({ error: String(e?.message || e) }));
     setAssetMsg(r?.error ? `Nie przełączono: ${r.error}` : `Aktywny instrument: ${a}`);
   };
-  const ctx: Ctx = { s, sh, lock, tf, setTf, strat };
+  const ctx: Ctx = { s, sh, tf, setTf, strat };
   const fs = feedStatus(s);
   return (
     <div className="nc" data-testid="nc-root" data-page={page}>
@@ -556,7 +563,7 @@ export default function NeuralCyberpunk({ route }: { route: Route }) {
           <label>TF <select value={tf} onChange={(e) => setTf(e.target.value)} data-testid="nc-tf">{TFS.map((x) => <option key={x}>{x}</option>)}</select></label>
           <label>STRATEGIA <select value={strat} onChange={(e) => setStrat(e.target.value)} data-testid="nc-strategy"><option>SCALPING</option><option>HEDGING</option></select></label>
           <St s={fs}>{fs === "DEMO" ? "● DANE DEMO (symulator)" : fs === "VERIFIED" ? "● MT5 NA ŻYWO" : `● ${fs}`}</St>
-          <St s={lock?.lock === "LOCKED" ? "LOCKED" : "VERIFIED"}>EXECUTION {lock?.lock || "—"}</St>
+          <St s={execView(s).st}>WYKONANIE {execView(s).label}</St>
           <span className="nc-st y">{s.mode?.mode || "—"}</span>
         </div>
       </header>
@@ -566,7 +573,7 @@ export default function NeuralCyberpunk({ route }: { route: Route }) {
           <div className="nc-small nc-sidehead">WORKSPACE</div>
           <nav data-testid="nc-nav">{NC_PAGES.map((p) => <button key={p.id} className={p.id === page ? "on" : ""} onClick={() => go(p.id)} data-nc={p.id}
             aria-current={p.id === page ? "page" : undefined}>{p.icon} {p.label}</button>)}</nav>
-          <div className="nc-sideinfo">Execution Lock <strong>{lock?.lock === "LOCKED" ? "WŁĄCZONY" : "WYŁĄCZONY"}</strong>
+          <div className="nc-sideinfo">Wykonanie <strong>{execView(s).label}</strong>
             <p>Panel nie wysyła zleceń. Wartości bez statusu VERIFIED nie są danymi rachunku rzeczywistego.</p>
             <button className="nc-btn" onClick={() => navigate("pulpit")} data-testid="nc-classic">← Klasyczny panel</button></div>
         </aside>

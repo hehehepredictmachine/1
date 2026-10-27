@@ -69,7 +69,6 @@ def core(fake_kwargs: dict | None = None, symbol: str = "XAUUSD-"):
     log = AppLog(db, bus)
     fake = FakeMT5(**(fake_kwargs or {}))
     worker = MT5Worker(lambda: fake)
-    worker.lock_fn = cfg.execution_locked
     worker.start()
     bridge = MarketBridge(cfg, worker, db, bus, log)
     return cfg, db, bus, log, fake, worker, bridge

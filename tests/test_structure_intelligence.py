@@ -521,10 +521,12 @@ class TestManualPadRuntime(unittest.TestCase):
         acct = self.b.account_status()
         self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
         it = self.pad.create_intent(self.plan()["plan_id"])
+        self.modes.set_kill(True, "TEST")                                       # STOP: no new manual entry either
         r = self.pad.execute(it["intent_id"])
         self.assertEqual(r["status"], "BLOCKED")
-        self.assertIn("EXECUTION_LOCKED", r["reason"])                        # LOCKED blocks every real mutation
+        self.assertIn("NEW_ENTRIES_STOPPED", r["reason"])
         self.assertEqual(self.sent, [])
+        self.modes.set_kill(False, "TEST")
         self.modes.set_mode("PAPER", account=None, account_key=None, synthetic=True)
         it = self.pad.create_intent(self.plan()["plan_id"])
         r1 = self.pad.execute(it["intent_id"])
@@ -541,7 +543,6 @@ class TestManualPadRuntime(unittest.TestCase):
         self.assertEqual(bad["items"][0]["status"], "DONE")                   # rounded down to the step 0.04, remaining 0.01 >= min
         self.assertAlmostEqual(bad["items"][0]["remaining"], 0.01)
         self.assertEqual(self.pad.manage(it["intent_id"], "PARTIAL_CLOSE", 1, volume=0.01)["status"], "DUPLICATE")
-        self.assertEqual(self.cfg.get().execution.lock, "LOCKED")
 
     def test_t45_stale_plan_and_settings(self):
         self.modes.set_mode("PAPER", account=None, account_key=None, synthetic=True)

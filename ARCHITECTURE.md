@@ -28,7 +28,7 @@ oznaczam osobno, na podstawie kodu.
 ## 2. Rzeczywisty przepływ: od ceny do decyzji
 
 ```
-MT5 terminal ──► MT5Worker (1 wątek; Execution Lock na każdym order_send / modyfikacji)
+MT5 terminal ──► MT5Worker (1 wątek; serializacja wszystkich wywołań; od 1.24 bez Execution Lock)
                    │
                    ▼
                 MarketBridge (bufory M1…D1, świeca otwarta osobno, zegar serwera→UTC, konto, deale, ticki)

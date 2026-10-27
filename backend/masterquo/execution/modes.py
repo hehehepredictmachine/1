@@ -74,7 +74,8 @@ class ModeManager:
                     "bound_account": self.bound_account, "kill_switch": self.kill_switch, "kill_reason": self.kill_reason,
                     "changed_at": self.changed_at, "strategy_mode": cfg.active.strategy_mode, "ml_mode": cfg.ml.mode,
                     "instrument": cfg.assets.active, "primary_path": prim, "primary_path_label": PATH_LABEL[prim],
-                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")}}
+                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")},
+                    "mode_note": cfg.execution.mode_note}
 
     def primary_path(self, instrument: str | None = None) -> str:
         cfg = self.cfg_store.get()
@@ -99,7 +100,7 @@ class ModeManager:
 
     def _persist_and_publish(self, why: str) -> None:
         self.changed_at = iso(utcnow())
-        self.cfg_store.update({"execution": {"mode": self.mode, "bound_account": self.bound_account}})
+        self.cfg_store.update({"execution": {"mode": self.mode, "bound_account": self.bound_account, "mode_note": None}})
         st = self.status()
         self.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (self.changed_at, dumps({"mode_change": st, "why": why})))
         self.bus.publish("mode", st)
@@ -178,8 +179,6 @@ class ModeManager:
                     reasons.append(f"AUTO_LIVE_BUT_ACCOUNT_IS_{tm}")
                 if mode == "AUTO_LIVE" and synthetic:
                     reasons.append("AUTO_LIVE_ON_SYNTHETIC_DATA")
-                if self.cfg_store.execution_locked():
-                    reasons.append("EXECUTION_LOCKED")
             if self.kill_switch:
                 reasons.append("NEW_ENTRIES_STOPPED")
             missing = limits_configured(self.cfg_store.get().risk)
@@ -202,5 +201,4 @@ class ModeManager:
                 except Exception as exc:  # noqa: BLE001 - unknown portfolio state = no new entry
                     reasons.append(f"PORTFOLIO_GUARD_ERROR:{type(exc).__name__}")
             return {"mode": mode, "allowed": not reasons, "auto_trading": self.auto_trading and not reasons,
-                    "kill_switch": self.kill_switch, "reason_codes": reasons, "primary_path": prim, "path": path, "portfolio": portfolio,
-                    "execution_lock": "LOCKED" if self.cfg_store.execution_locked() else "UNLOCKED_BY_USER"}
+                    "kill_switch": self.kill_switch, "reason_codes": reasons, "primary_path": prim, "path": path, "portfolio": portfolio}

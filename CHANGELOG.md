@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.24.0 (w toku) – PepeMarketWizard Desktop
+Realizacja `docs/desktop_handoff/00_PROMPT_WYKONAWCZY.md`; audyt: `docs/DESKTOP_AUDIT.md`; punkt powrotu: tag `pre-desktop-1.23.0`.
+* **Execution Lock wycofany (decyzja użytkownika).** Worker MT5 przekazuje terminal bez proxy blokującego; z gateway, menedżera pozycji,
+  ręcznego padu, bramki trybu i SH usunięto warunek `EXECUTION_LOCKED`; trasa z frazą odblokowania zwraca 410. Nie ma nowej blokady pod
+  inną nazwą. Pozostają: tryb (SIGNALS / PAPER / AUTO_DEMO / AUTO_LIVE), potwierdzony rachunek, STOP nowych wejść, limity ryzyka, świeżość
+  danych, uzgodnienie z terminalem, idempotencja, serializacja przez worker.
+* **Migracja konfiguracji v12:** pola `lock` usunięte; zapisany tryb AUTO, który stara blokada wstrzymywała, → PAPER + komunikat
+  (`execution.mode_note`) – brak cichego uruchomienia zleceń; tryb AUTO odblokowany wcześniej przez użytkownika działa dalej. Kopia:
+  `config.v11.bak.json`. Tryb zmienia się wyłącznie przez `POST /api/v1/mode` (zapis konfiguracji z `execution.mode` → 400).
+* **SCALPING / HEDGING:** bezwarunkowa odmowa AUTO_LIVE zastąpiona warunkiem: rachunek REAL + zaliczona walidacja strategii na historii
+  klienta (REAL_USER_DATA, znana prowizja, n ≥ 30, dodatni wynik po kosztach) – inaczej jawny powód `SH_LIVE_WYMAGA_WALIDACJI`.
+  Zarządzanie otwartymi planami nie jest blokowane regułami trybu (wymaga terminala i tego samego rachunku). Uzgadnianie z terminalem,
+  odzyskiwanie po restarcie i liczenie obcych pozycji obejmują teraz AUTO_DEMO i AUTO_LIVE.
+* Panel: zamiast stanu blokady – rzeczywisty tryb wykonania i STOP z backendu (stary monitor, Neural Cyberpunk, nowy shell).
+
 ## 1.23.0 – Nowy monitor PMW (etap 1): Trading Intelligence / AI Neural Lab / System Control Center
 Paczka klienta wydana na prośbę użytkownika po etapie 1. Nowy monitor zawiera szkielet (shell, nagłówek ze stanem z backendu, puste
 sekcje oznaczone „nie zintegrowane”); integracja paneli – etapy 2–4. Backend, strategia, modele, ryzyko i wykonanie bez zmian

@@ -4,7 +4,7 @@
 1. Rozpakuj `PepeMarketWizard_TRENING_XAUUSD_BTCUSDT.zip` (wersja 1.15.0; suma SHA256 w pliku `.sha256` obok ZIP). Dane z wcześniejszej wersji (`data/`) zostają.
    - Konfiguracja migruje się sama do wersji 11.
    - XAUUSD dostaje symbol, który był wpisany wcześniej (domyślnie `XAUUSD-`).
-   - **Execution Lock = LOCKED.**
+   - Od 1.24 konfiguracja migruje do wersji 12: Execution Lock wycofany; wstrzymywany dotąd tryb AUTO → PAPER (wybierz ponownie).
 2. Uruchom `03_START_MASTERQUO.bat` (MT5 musi być uruchomiony i zalogowany).
 3. Pulpit pokazuje:
    - aktywo i symbol brokera;
@@ -55,7 +55,7 @@
 - Instrukcja: `docs/STRUCTURE_INTELLIGENCE_PL.md`, launcher `26_STRUCTURE_INTELLIGENCE.bat`, panel: Modele i trening → Structure Intelligence (`#/struktura`),
   Wykresy → Scalping MTF (karta „Struktura, formacje, świece i MITP”), Setupy → Pozycje i ryzyko → „Manual Trade Pad”.
 - Holdout tylko przez `structure-intelligence evaluate-holdout` (jednorazowo). Wybór SHADOW ręcznie; nigdy wykonanie automatyczne.
-- Manual Pad: plan → intencja → wykonanie przez wspólny gateway; Execution Lock LOCKED blokuje każdą zmianę rachunku.
+- Manual Pad: plan → intencja → wykonanie przez wspólny gateway, zgodnie z trybem (PAPER = symulacja, AUTO = potwierdzony rachunek).
 
 ## Neutralizacja, operatory SEW, kinematyka Bid/Ask (PMW-UPD-08)
 - Instrukcja: `docs/NEUTRALIZATION_SEW_NEWTONIAN_PL.md`, launcher `26_STRUCTURE_INTELLIGENCE.bat` (10–14), panel Structure Intelligence.
@@ -66,9 +66,11 @@
 - Dane i diagnostyka: ticki (ACD, kinematyka), repaint, strefy, archiwum prognoz, źródła i licencje.
 - Diagnostyka systemu – jak w 1.13.
 
-## Execution Lock
-- Domyślnie LOCKED. Żadna ścieżka nie wysyła `order_send`, a pozycje nie są modyfikowane (odczyt i rozliczenie działają).
-- Odblokowanie: Ustawienia → Execution Lock → wpisz frazę `ODBLOKUJ WYKONANIE ZLECEN`. Twoja decyzja – testy programu tego nie robią.
+## Wykonanie zleceń (1.24: Execution Lock wycofany)
+- Brak osobnej blokady i frazy. Wysyłkę kontrolują: tryb (SIGNALS / PAPER / AUTO DEMO / AUTO LIVE z potwierdzeniem rachunku), STOP nowych
+  wejść, limity ryzyka, aktualne notowania i warunki brokera. Otwarte pozycje są prowadzone także przy STOP.
+- Tryb zmienia tylko przycisk „Wykonanie” (`POST /api/v1/mode`); zapis ustawień nie przełącza trybu.
+- SCALPING / HEDGING w AUTO LIVE: nowe plany tylko po zaliczonej walidacji strategii na Twojej historii (`30_SH_WALIDACJA.bat`).
 
 ## Odzyskanie po awarii
 - **Strefy S/D:**

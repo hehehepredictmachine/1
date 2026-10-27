@@ -72,8 +72,6 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, lab_neural: { ...d, seq: ev.seq } } as any;
     case "assets":
       return { ...s, assets: d };
-    case "execution_lock":
-      return { ...s, execution_lock: d?.lock };
     case "markets":
       return { ...s, markets: d };
     case "bot_signal": {

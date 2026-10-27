@@ -1,8 +1,11 @@
-"""Order execution for SCALPING / HEDGING plans. Honors the execution mode and the Execution Lock:
+"""Order execution for SCALPING / HEDGING plans. Honors the execution mode:
 * SIGNALS  - nothing is executed (signals only; no plan is opened).
 * PAPER    - simulated fills on the executable side of the current quote (+ configured slippage); no terminal call.
-* AUTO_DEMO - terminal orders through the MT5 worker (Execution Lock checked before EVERY call); demo account required.
-* AUTO_LIVE - refused for SH (risk engine) until validation on client data passes.
+* AUTO_DEMO - terminal orders through the MT5 worker; a NEW plan needs a demo account.
+* AUTO_LIVE - a NEW plan needs a REAL account AND a passed validation of that SH strategy on the client's own history
+  (`live_check`, see SHService.live_validation); without it the entry is refused with the concrete reason.
+Management of an existing plan (hedge leg, partials, SL/TP, closing) is never refused by the mode rules - it needs the terminal and
+the same account the plan was opened on (the 1.14 Execution Lock is withdrawn, user decision 1.24).
 
 Every action is claimed in sh_actions before the terminal is touched (idempotency): a repeated event reuses the stored result,
 an action whose outcome is unknown (timeout) is never resent - reconciliation with the terminal decides.
@@ -17,15 +20,16 @@ OK_CODES = (10008, 10009, 10010)
 
 class SHExecutor:
     def __init__(self, store, *, terminal=None, account_key: str | None = None, magic: int = 41082100, comment_prefix: str = "SH",
-                 deviation_points: int = 30, locked=lambda: False, is_demo=lambda: True, symbol_info=None, log=None):
+                 deviation_points: int = 30, is_demo=lambda: True, is_live=lambda: False, live_check=None, symbol_info=None, log=None):
         self.store = store
         self.terminal = terminal                 # callable(fn) -> runs fn(mt5) on the MT5 worker thread (PRIO_TRADE)
         self.account_key = account_key or "PAPER"
         self.magic = int(magic)
         self.prefix = comment_prefix
         self.deviation = int(deviation_points)
-        self.locked = locked
         self.is_demo = is_demo
+        self.is_live = is_live
+        self.live_check = live_check or (lambda strategy: {"ok": False, "reason": "brak walidacji ścieżki SH na danych klienta"})
         self.symbol_info = symbol_info or {}
         self.log = log or (lambda *a, **k: None)
 
@@ -33,18 +37,26 @@ class SHExecutor:
         return f"{self.prefix}:{plan_id[-8:]}:{tag}"[:31]
 
     # ------------------------------------------------------------------ gate
-    def _gate(self, mode: str) -> str | None:
+    def _gate(self, mode: str, plan: dict, *, entry: bool) -> str | None:
+        """entry = a NEW plan (primary leg). Management of an existing plan only needs the terminal and the plan's own account."""
         if mode == "SIGNALS":
             return "TRYB_SIGNALS_BEZ_WYKONANIA"
+        if mode == "PAPER":
+            return None
+        if self.terminal is None:
+            return "BRAK_TERMINALA"
+        if plan.get("account_key") not in (None, self.account_key):
+            return f"INNY_RACHUNEK_NIZ_PLANU ({plan.get('account_key')})"
+        if not entry:
+            return None
+        if mode == "AUTO_DEMO" and not self.is_demo():
+            return "RACHUNEK_NIE_DEMO"
         if mode == "AUTO_LIVE":
-            return "AUTO_LIVE_ZABLOKOWANE_DLA_SH"
-        if mode == "AUTO_DEMO":
-            if self.terminal is None:
-                return "BRAK_TERMINALA"
-            if self.locked():
-                return "EXECUTION_LOCKED"
-            if not self.is_demo():
-                return "RACHUNEK_NIE_DEMO"
+            if not self.is_live():
+                return "RACHUNEK_NIE_REAL"
+            v = self.live_check(plan.get("strategy")) or {}
+            if not v.get("ok"):
+                return "SH_LIVE_WYMAGA_WALIDACJI: " + str(v.get("reason") or "brak raportu")
         return None
 
     # ------------------------------------------------------------------ public
@@ -53,19 +65,19 @@ class SHExecutor:
         """Open the PRIMARY (role P) or the HEDGE (role H) position. Returns status FILLED / PARTIAL / REJECTED / UNKNOWN / BLOCKED."""
         action = {"action_id": f"{plan['plan_id']}:OPEN:{tag}", "plan_id": plan["plan_id"], "kind": "OPEN_" + role,
                   "side": side, "volume": volume, "sl": sl, "tp": tp}
-        return self._run(action, mode, quote, slippage, now, lambda: self._paper_open(action, quote, slippage),
+        return self._run(plan, role == "P", action, mode, quote, slippage, now, lambda: self._paper_open(action, quote, slippage),
                          lambda: self._mt5_open(plan, action, tag))
 
     def perform(self, plan: dict, action: dict, *, mode: str, quote: dict, ticket: int | None, side_of_position: str,
                 slippage: float = 0.0, now: float | None = None) -> dict:
         """Execute one state-machine action (CLOSE_PARTIAL / CLOSE_RUNNER / CLOSE_PRIMARY / CLOSE_HEDGE / MODIFY_SL / MODIFY_TP)."""
-        return self._run(action, mode, quote, slippage, now,
+        return self._run(plan, False, action, mode, quote, slippage, now,
                          lambda: self._paper_action(action, quote, side_of_position, slippage),
                          lambda: self._mt5_action(plan, action, ticket, side_of_position))
 
     # ------------------------------------------------------------------ core
-    def _run(self, action, mode, quote, slippage, now, paper, real) -> dict:
-        g = self._gate(mode)
+    def _run(self, plan, entry, action, mode, quote, slippage, now, paper, real) -> dict:
+        g = self._gate(mode, plan or {}, entry=entry)
         if g:
             return {"status": "BLOCKED", "reason": g}
         cl = self.store.claim_action(action, now)

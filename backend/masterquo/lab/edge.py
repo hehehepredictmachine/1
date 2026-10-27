@@ -100,7 +100,7 @@ def edge_drift(values: list[float], baseline_mean: float | None, label_delay: in
 def trade_pad_plan(*, side: str, entry: float, sl: float, tp: float, lots: float, meta: dict, quote: dict | None,
                    commission_per_lot_side: float, account_ccy_per_profit_ccy: float = 1.0) -> dict:
     """Plan + simulation only. P&L from the terminal contract (contract size, tick size/value), bid/ask side and commission.
-    Never sends anything; the execution request goes through the gateway which refuses while Execution Lock is LOCKED."""
+    Never sends anything; a real order goes through the Manual Pad (plan -> intent -> execute) and its gateway checks."""
     if side not in ("BUY", "SELL") or lots <= 0:
         raise ValueError("INVALID_PLAN")
     cs = float(meta.get("trade_contract_size") or 0)
@@ -115,7 +115,7 @@ def trade_pad_plan(*, side: str, entry: float, sl: float, tp: float, lots: float
     loss = sgn * (sl - entry) * cs * lots * account_ccy_per_profit_ccy - comm
     vmin, vstep = float(meta.get("volume_min") or 0.01), float(meta.get("volume_step") or 0.01)
     ok_lot = lots >= vmin and abs(round(lots / vstep) * vstep - lots) < 1e-9
-    return {"mode": "SIMULATION_ONLY", "execution": "BLOCKED_BY_EXECUTION_LOCK", "side": side, "entry": entry, "sl": sl, "tp": tp,
+    return {"mode": "SIMULATION_ONLY", "execution": "VIA_MANUAL_PAD", "side": side, "entry": entry, "sl": sl, "tp": tp,
             "lots": lots, "lot_valid": ok_lot, "rr": round(abs(tp - entry) / abs(entry - sl), 3), "spread_now": spread,
             "pnl_at_tp": round(win, 2), "pnl_at_sl": round(loss, 2), "commission_round_turn": round(comm, 2),
             "contract_size": cs, "note": "symulacja z parametrów kontraktu; rzeczywiste warunki brokera są nadrzędne"}

@@ -44,7 +44,10 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     if not chk("not_expired", now <= float(setup.get("valid_until") or 0), "setup wygasł (TTL)"):
         return done()
     if exec_mode == "AUTO_LIVE":
-        chk("exec_mode", False, "AUTO_LIVE dla SCALPING/HEDGING zablokowane – brak zaliczonej walidacji na danych klienta")
+        # 1.24 (user decision): instead of the unconditional refusal - a passed validation of this strategy on the client's own history
+        # (state["live_validation"], read by the service: REAL_USER_DATA, known commission, n >= 30, positive net expectancy).
+        lv = state.get("live_validation") or {"ok": False, "reason": "brak wyniku walidacji ścieżki SH na danych klienta"}
+        chk("live_validation", lv.get("ok"), f"AUTO_LIVE {strat}: " + str(lv.get("source") if lv.get("ok") else lv.get("reason")))
     if exec_mode in REAL_MODES:
         chk("model_mode", setup.get("model_mode") == "PEŁNA",
             "tryb OGRANICZONY (brak skalibrowanego modelu zdarzenia) – dozwolone tylko SIGNALS/PAPER")

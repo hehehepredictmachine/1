@@ -63,11 +63,10 @@ export function ManualPadCard() {
   const doIntent = () => run(async () => setIntent(await apiSend("POST", "/api/v1/manual/intents", { plan_id: plan.plan_id })));
   const doExec = () => run(async () => setRes(await apiSend("POST", `/api/v1/manual/intents/${intent.intent_id}/execute`, { action_revision: 1 })));
   const manage = (action: string, extra: any = {}) => run(async () => { setRes(await apiSend("POST", `/api/v1/manual/intents/${intent.intent_id}/manage`, { action, action_revision: rev, ...extra })); setRev(rev + 1); });
-  const lock = s.execution_lock ?? "LOCKED";
   return (
     <div className="card" data-testid="manual-pad">
-      <h3>Manual Trade Pad <span className="muted small">(jawne akcje użytkownika; tryb {s.mode?.mode ?? "—"}; Execution Lock: {lock})</span></h3>
-      <p className="small muted">Plan → intencja → wykonanie przez wspólny gateway. LOCKED blokuje każdą rzeczywistą zmianę rachunku; PAPER używa silnika PAPER. Brak ukrytego „ponów”.</p>
+      <h3>Manual Trade Pad <span className="muted small">(jawne akcje użytkownika; tryb {s.mode?.mode ?? "—"})</span></h3>
+      <p className="small muted">Plan → intencja → wykonanie przez wspólny gateway, zgodnie z trybem: PAPER = symulacja, AUTO DEMO / AUTO LIVE = rachunek potwierdzony przy wyborze trybu, SIGNALS = bez zleceń. Brak ukrytego „ponów”.</p>
       <div className="form-row">
         <select aria-label="Strona" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value })}><option>BUY</option><option>SELL</option></select>
         <input aria-label="SL (cena)" placeholder="SL" value={f.sl} onChange={(e) => setF({ ...f, sl: e.target.value })} inputMode="decimal" />

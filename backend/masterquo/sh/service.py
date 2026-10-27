@@ -2,10 +2,10 @@
 
 Per new CLOSED M1 bar: snapshot -> setup per strategy -> signal persisted (READY / WAIT / NO_TRADE / INVALIDATED / EXPIRED)
 -> coordinator -> shared risk engine -> plan (frozen with the config hash) -> execution in the CURRENT mode (SIGNALS: nothing;
-PAPER: simulated; AUTO_DEMO: terminal; AUTO_LIVE: refused).
+PAPER: simulated; AUTO_DEMO: terminal; AUTO_LIVE: terminal, new plans only after a passed validation on the client's history).
 Every tick (quote): open plans are managed by their state machines - partials, BE after the CONFIRMED TP2, runner, time limit,
-hedge decision / unwind / basket exits - from CONFIRMED fills only. AUTO_DEMO plans are reconciled with the terminal on every
-tick (broker-side SL/TP, external closes, unknown outcomes) and after a restart / reconnect.
+hedge decision / unwind / basket exits - from CONFIRMED fills only. Terminal plans (AUTO_DEMO / AUTO_LIVE) are reconciled with the
+terminal on every tick (broker-side SL/TP, external closes, unknown outcomes) and after a restart / reconnect.
 """
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ class SHService:
 
     def gate(self) -> dict:
         """Execution mode + reasons that forbid NEW plans now, from the shared ModeManager: the user's STOP (kill switch), the
-        Execution Lock, a missing / unconfirmed / wrong-type account in AUTO_DEMO, SH not being the primary path (O1). Open plans
+        a missing / unconfirmed / wrong-type account in AUTO_DEMO / AUTO_LIVE, SH not being the primary path (O1). Open plans
         are always managed. Not applied:
         SIGNALS (never opens plans) and the legacy RiskLimits of the S01-S12 engine (SH enforces its own limits, sh/risk.py)."""
         try:
@@ -137,7 +137,8 @@ class SHService:
         acc = self.bridge.account_status() or {}
         return SHExecutor(self.store, terminal=self.terminal(), account_key=self.bridge.account_key or "PAPER", magic=sh["magic_number"],
                           comment_prefix=sh["comment_prefix"], deviation_points=int(cfg.execution.deviation_points),
-                          locked=self.cfg_store.execution_locked, is_demo=lambda: acc.get("trade_mode") == "DEMO",
+                          is_demo=lambda: acc.get("trade_mode") == "DEMO", is_live=lambda: acc.get("trade_mode") == "REAL",
+                          live_check=lambda strategy: self.live_validation(self.instrument(), strategy),
                           symbol_info=self.bridge.symbol_info or {})
 
     # ------------------------------------------------------------------ main step
@@ -224,7 +225,7 @@ class SHService:
             evals[strat] = su
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
-        foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode == "AUTO_DEMO" else 0
+        foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
         coord = {d["strategy"]: d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"], "side": p["side"],
                                                                           "state": p["state"]} for p in opens],
                                                    foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
@@ -233,8 +234,11 @@ class SHService:
             if strat in coord:
                 su["coordination"] = coord[strat]
                 if coord[strat]["decision"] == "PROCEED":
+                    rstate = self.risk_state(spec.symbol, strat, now, foreign)
+                    if mode == "AUTO_LIVE":
+                        rstate["live_validation"] = self.live_validation(inst, strat)
                     risk = RK.evaluate(setup=su, spec=spec, prof=C.profile(shc, inst, strat), cfg=shc, inst=inst, account=acc,
-                                       state=self.risk_state(spec.symbol, strat, now, foreign), exec_mode=mode, now=now, quote=q)
+                                       state=rstate, exec_mode=mode, now=now, quote=q)
                     su["risk"] = risk
                 else:
                     su["status_reason"] = "koordynator: " + coord[strat]["reason"]
@@ -243,7 +247,7 @@ class SHService:
                 su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
             self.persist_signal(su, risk, coord.get(strat), now)
             self.last_eval[strat] = su                                     # full setup (checklist, levels, models) for the panel
-            if risk and risk["status"] == "PASS" and mode in ("PAPER", "AUTO_DEMO") and not entry_block:
+            if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block:
                 self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
         for fn in list(self.listeners):
             try:
@@ -363,7 +367,7 @@ class SHService:
             if obj is None:
                 continue
             mode = row["exec_mode"]
-            if mode == "AUTO_DEMO":
+            if mode in RK.REAL_MODES:
                 self.reconcile(ex, row, obj, spec, now)
             elif mode == "PAPER":
                 self.paper_stops(ex, row, obj, spec, q, now)
@@ -446,6 +450,33 @@ class SHService:
         if e is None or e <= 0:
             return {"ok": False, "reason": f"wariant REDUCE: oczekiwany wynik {e} R ≤ 0"}
         return {"ok": True, "source": f"walidacja {v.get('created_at')}: n={n}, wynik oczekiwany {e:.3f} R"}
+
+    @staticmethod
+    def live_validation(inst: str, strategy: str | None) -> dict:
+        """AUTO_LIVE entries of an SH strategy (user decision 1.24, replaces the unconditional refusal): only after its replay validation
+        on the client's own history passed - report on REAL_USER_DATA, known commission, n >= 30 cycles, positive net expectancy (R, after
+        costs). Without it the entry is refused with this reason (shown in the panel); management of open plans is not affected."""
+        if strategy not in ("SCALPING", "HEDGING"):
+            return {"ok": False, "reason": f"nieznana strategia SH: {strategy}"}
+        p = paths.data_dir() / "sh" / "validation" / f"{inst}_{strategy}.json"
+        if not p.exists():
+            return {"ok": False, "reason": f"brak raportu walidacji {strategy} {inst} na danych z terminala (30_SH_WALIDACJA.bat)"}
+        try:
+            v = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": f"raport walidacji nieczytelny ({type(exc).__name__})"}
+        kind = v.get("data_kind") or (v.get("dataset") or {}).get("data_kind")
+        if kind != "REAL_USER_DATA":
+            return {"ok": False, "reason": f"walidacja na danych {kind or 'nieznanego pochodzenia'} – wymagana historia klienta (REAL_USER_DATA)"}
+        if v.get("commission_source") == "NIEZNANA":
+            return {"ok": False, "reason": "prowizja nieznana w walidacji – wynik zawyżony; ustaw prowizję i powtórz walidację"}
+        m = v.get("metrics") or {}
+        n, e = int(m.get("n") or 0), m.get("expectancy")
+        if n < 30:
+            return {"ok": False, "reason": f"{strategy}: {n} cykli < 30"}
+        if e is None or e <= 0:
+            return {"ok": False, "reason": f"{strategy}: oczekiwany wynik {e} R ≤ 0 po kosztach"}
+        return {"ok": True, "source": f"walidacja {v.get('created_at')}: n={n}, wynik oczekiwany {e:.3f} R po kosztach"}
 
     @staticmethod
     def validated_variant(inst: str) -> dict | None:
@@ -594,7 +625,7 @@ class SHService:
             self.store.event(row["plan_id"], "PAPER_STOP", {"price": fill, "reason": reason}, now)
             self.process(ex, row, obj, acts, spec, q, now)
 
-    # ------------------------------------------------------------------ AUTO_DEMO: reconciliation with the terminal
+    # ------------------------------------------------------------------ AUTO_DEMO / AUTO_LIVE: reconciliation with the terminal
     def reconcile(self, ex, row, obj, spec, now) -> None:
         b = obj if isinstance(obj, Basket) else None
         pos = b.primary if b else obj
@@ -634,7 +665,7 @@ class SHService:
         or rejected; terminal positions with the SH magic and no owner are reported as ORPHANS (never managed implicitly)."""
         out = {"adopted": [], "rejected": [], "orphans": []}
         rows = self.store.open_plans(spec.symbol)
-        demo = [r for r in rows if r["exec_mode"] == "AUTO_DEMO"]
+        demo = [r for r in rows if r["exec_mode"] in RK.REAL_MODES]
         if not demo and not rows:
             return out
         try:
@@ -650,7 +681,7 @@ class SHService:
                     self.store.own(ex.account_key, hit["ticket"], r["plan_id"], "OPEN_P", now)
                     self.store.event(r["plan_id"], "ADOPTED", hit, now)
                     self.bind_fill(ex, r["plan"], {"status": "FILLED", "price": hit["price_open"], "volume": hit["volume"], "ticket": hit["ticket"]},
-                                   spec, self.quote(now) or {"bid": hit["price_open"], "ask": hit["price_open"], "spread": 0.0}, "AUTO_DEMO", now)
+                                   spec, self.quote(now) or {"bid": hit["price_open"], "ask": hit["price_open"], "spread": 0.0}, r["exec_mode"], now)
                     out["adopted"].append(r["plan_id"])
                 else:
                     self.store.update_plan(r["plan_id"], state="REJECTED", result={"reason": "brak pozycji w terminalu po wyniku UNKNOWN"}, now=now)

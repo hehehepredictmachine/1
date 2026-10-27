@@ -107,8 +107,8 @@ export default function TerminalHeader({ ctx, quoteAge }: { ctx: TerminalContext
       <span className={cls("t-chip", ctx.mode === "AUTO_LIVE" ? "bad" : ctx.mode === "SIGNALS" ? "muted" : "warn")} data-testid="t-mode"
         title={`Tryb wykonania bota${ctx.modeLabel ? `: ${ctx.modeLabel}` : ""} (zmiana w obecnym panelu: przycisk „Wykonanie”)`}>
         Tryb <b>{fmtUnknown(ctx.mode, undefined, "UNKNOWN")}</b></span>
-      <span className={cls("t-chip", ctx.executionLock === "LOCKED" ? "ok" : ctx.executionLock ? "bad" : "muted")} data-testid="t-lock"
-        title="Execution Lock: LOCKED = żadna ścieżka nie wysyła zleceń do terminala">Lock <b>{fmtUnknown(ctx.executionLock, undefined, "UNKNOWN")}</b></span>
+      <span className={cls("t-chip", ctx.killSwitch ? "bad" : ctx.mode ? "ok" : "muted")} data-testid="t-entries"
+        title="STOP zatrzymuje tylko nowe wejścia; otwarte pozycje są dalej prowadzone">Wejścia <b>{ctx.mode ? (ctx.killSwitch ? "STOP" : "AKTYWNE") : "UNKNOWN"}</b></span>
       {ctx.backend !== "OPEN" && <span className="t-chip bad" data-testid="t-backend">Backend <b>{ctx.backend}</b></span>}
       <span className="t-spacer" />
       <div className="t-pop-anchor">

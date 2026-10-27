@@ -556,8 +556,7 @@ def make_fake_module(**kw) -> FakeMT5:
 
 
 def is_fake(module) -> bool:
-    # the worker may hand over the Execution Lock proxy (_LockedTerminal) - look through it
-    return isinstance(getattr(module, "_m", module), FakeMT5)
+    return isinstance(module, FakeMT5)
 
 
 # Expose module-level constants as attributes, like the real MetaTrader5 module.

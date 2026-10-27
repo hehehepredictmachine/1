@@ -118,9 +118,9 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
       </a>
       <AssetSwitch />
       <div className="tb-chips">
-        <span className={cls("chip", (s.execution_lock ?? "LOCKED") === "LOCKED" ? "ok" : "bad")} data-testid="chip-lock"
-          title="Execution Lock: LOCKED = żadna ścieżka nie wysyła zleceń do terminala (zmiana tylko w Ustawieniach, z frazą potwierdzenia)">
-          <i className="dot" />{(s.execution_lock ?? "LOCKED") === "LOCKED" ? "Execution Lock" : "ZLECENIA ODBLOKOWANE"}</span>
+        <span className={cls("chip", s.mode?.kill_switch ? "bad" : s.mode?.mode === "AUTO_LIVE" ? "warn" : "ok")} data-testid="chip-exec"
+          title="Tryb wykonania z backendu; STOP zatrzymuje tylko nowe wejścia">
+          <i className="dot" />{s.mode?.kill_switch ? "STOP nowych wejść" : `Tryb ${s.mode?.mode_label ?? s.mode?.mode ?? "—"}`}</span>
         <span className={cls("chip", s.symbol?.status === "OK" ? "ok" : "warn")} title="Dokładny symbol brokera i jego status handlu"><i className="dot" />{s.symbol?.symbol ?? "?"}</span>
         <span className={cls("chip", tone(con.state))} title={con.reason || con.module_error || ""} data-testid="chip-mt5"><i className="dot" />MT5 <b>{con.state === "CONNECTED" ? "połączony" : con.state ?? "…"}</b></span>
         <span className={cls("chip", engineOk ? tone(dq) : "bad")} title={(s.engine?.last_error || "") + (tickAge != null ? ` · tick ${Math.round(tickAge)} s` : "")}>

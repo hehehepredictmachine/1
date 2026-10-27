@@ -187,10 +187,9 @@ class ExecutionConfig(_Strict):
     deviation_points: int = Field(20, ge=0, le=1000)
     order_timeout_seconds: float = Field(10.0, ge=2, le=60)
     paper_starting_balance: float = Field(10000.0, gt=0)
-    # 1.14 Execution Lock: LOCKED = no order_send / position modification reaches the terminal from ANY path (gateway,
-    # position manager, trade pad, direct API). Enforced in the MT5 worker proxy. Only the user can unlock (typed phrase).
-    lock: Literal["LOCKED", "UNLOCKED_BY_USER"] = "LOCKED"
-    lock_changed_at: str | None = None
+    # 1.24 (user decision): the 1.14 Execution Lock is withdrawn - nothing below the mode, the confirmed account, STOP and the
+    # user's risk limits holds orders back. mode_note explains a mode reset done by the config migration (shown in the panel).
+    mode_note: str | None = None
     # 1.20 (decision O1): ONE execution path opens new entries per instrument - ACTIVE (S01-S12) or SH (SCALPING/HEDGING);
     # the other path only analyses (as SIGNALS). Missing/UNSET = neither opens new entries until the user chooses. Open
     # positions of both paths are always managed. Manual trades are not affected.
@@ -557,7 +556,7 @@ class ZonesConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 11
+    config_version: int = 12
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -639,10 +638,6 @@ class ConfigStore:
         with self._lock:
             return self._cfg.model_copy(deep=True)
 
-    def execution_locked(self) -> bool:
-        """Cheap read (no copy) for the MT5 worker: True unless the user unlocked execution."""
-        return self._cfg.execution.lock != "UNLOCKED_BY_USER"
-
     def update(self, patch: dict) -> AppConfig:
         """Deep-merge a partial dict, validate the whole result, persist atomically."""
         with self._lock:
@@ -671,20 +666,43 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 11:
+    if v >= 12:
         return False
+    if v < 11:
+        _to_v11_chain(raw, v)
+    _to_v12(raw)
+    return True
+
+
+def _to_v12(raw: dict) -> None:
+    """v11 -> v12 (1.24, user decision): Execution Lock withdrawn. The `lock` fields are dropped and enforce nothing.
+    An automatic mode the old lock was still holding back (lock not UNLOCKED_BY_USER) is reset to PAPER: removing the lock must
+    never start automatic orders silently - the user selects AUTO_DEMO / AUTO_LIVE again (the usual account confirmation).
+    An automatic mode the user had already unlocked keeps working exactly as before."""
+    ex = raw.setdefault("execution", {})
+    old = ex.pop("lock", "LOCKED")
+    ex.pop("lock_changed_at", None)
+    if ex.get("mode") in ("AUTO_DEMO", "AUTO_LIVE", "DEMO_EXECUTION", "LIVE_EXECUTION") and old != "UNLOCKED_BY_USER":
+        ex["mode_note"] = (f"Execution Lock został wycofany. Zapisany tryb {ex['mode']} był wstrzymywany przez blokadę, więc ustawiono "
+                           "PAPER – wybierz tryb automatyczny ponownie w Centrum sterowania (z potwierdzeniem rachunku).")
+        ex["mode"] = "PAPER"
+    raw["config_version"] = 12
+
+
+def _to_v11_chain(raw: dict, v: int) -> None:
+    """Every pre-v11 upgrade step (unchanged since 1.14)."""
     if v == 10:
         _to_v11(raw)
-        return True
+        return
     if v >= 3:
         _to_v5(raw)
         _to_v11(raw)
-        return True
+        return
     if v == 2:
         _to_v3(raw)
         _to_v5(raw)
         _to_v11(raw)
-        return True
+        return
     for (sec, key), old, new in _V2_CHANGES:
         part = raw.get(sec)
         if isinstance(part, dict) and part.get(key, old) == old:
@@ -695,7 +713,6 @@ def migrate(raw: dict) -> bool:
     _to_v3(raw)
     _to_v5(raw)
     _to_v11(raw)
-    return True
 
 
 def _to_v11(raw: dict) -> None:

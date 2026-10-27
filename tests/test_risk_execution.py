@@ -162,8 +162,7 @@ class TestExecution(unittest.TestCase):
         cfg, db, bus, log, fake, worker, b = core()
         self.cfg, self.db, self.bus, self.log, self.fake, self.worker, self.b = cfg, db, bus, log, fake, worker, b
         cfg.update({"execution": {"primary_path": {"XAUUSD": "ACTIVE"}}})   # O1: the S01-S12 path is the chosen primary path
-        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5},
-                    "execution": {"lock": "UNLOCKED_BY_USER"}})      # order machinery on FakeMT5 only; default is LOCKED
+        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5}})   # order machinery on FakeMT5 only
         b.start()
         self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.quote_status() and b.symbol_info, 40))
         from masterquo.engine.lifecycle import LifecycleStore

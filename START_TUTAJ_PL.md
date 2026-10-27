@@ -12,13 +12,24 @@ Uruchom `PepeMarketWizard.exe` z rozpakowanego folderu. Do wyboru masz:
 - **8 / 9** – start / stop bota;
 - **R** – budżet RAM treningu (domyślnie 8 GB).
 
-Launcher uruchamia te same pliki `.bat` co poniżej. Nie wysyła zleceń i nie zmienia Execution Lock. Szczegóły i lista napraw: `docs/AUDYT_PACZKI_1_16_PL.md`.
+Launcher uruchamia te same pliki `.bat` co poniżej. Sam nie wysyła zleceń. Szczegóły i lista napraw: `docs/AUDYT_PACZKI_1_16_PL.md`.
 
-## Nowe w 1.14 – dwa aktywa (XAUUSD i BTC), Execution Lock, laboratorium modeli
-* **Execution Lock jest domyślnie WŁĄCZONY.**
-  * Żadna ścieżka (tryby AUTO, zarządzanie pozycją, Trade Pad, API) nie wysyła zleceń do MT5.
-  * Pozycje są tylko odczytywane.
-  * Odblokowanie: Ustawienia → Execution Lock → fraza `ODBLOKUJ WYKONANIE ZLECEN` (Twoja decyzja).
+## Nowe w 1.24 – Execution Lock wycofany (Twoja decyzja)
+* Nie ma już osobnej blokady wykonania ani frazy odblokowania. O wysyłce zleceń decydują wyłącznie:
+  * **tryb wykonania** – SIGNALS (bez zleceń), PAPER (symulacja), AUTO DEMO, AUTO LIVE; tryby AUTO wybierasz raz, z potwierdzeniem
+    rachunku (AUTO LIVE: wpisz `LIVE <login>`), wybór jest pamiętany po restarcie;
+  * **STOP** – zatrzymuje tylko nowe wejścia; otwarte pozycje są dalej prowadzone (BE, częściowe zamknięcia, zamknięcie);
+  * limity ryzyka, aktualne notowania i warunki brokera.
+* **Aktualizacja z wcześniejszej wersji:** jeśli zapisany był tryb AUTO DEMO / AUTO LIVE, który blokada dotąd wstrzymywała, program
+  ustawia **PAPER** i pokazuje komunikat – tryb automatyczny wybierasz ponownie świadomie. Kopia starej konfiguracji:
+  `data\config.v11.bak.json`. Tryb AUTO, który był już odblokowany, działa jak wcześniej.
+* Tryb wykonania nie zmienia się przez zwykły zapis ustawień – tylko przez przycisk „Wykonanie” (z potwierdzeniem).
+* SCALPING / HEDGING w AUTO LIVE: nowe plany dopiero po zaliczonej walidacji tej strategii na Twojej historii (raport z
+  `30_SH_WALIDACJA.bat`: dane z Twojego terminala, znana prowizja, co najmniej 30 cykli, dodatni wynik po kosztach). Bez tego panel
+  pokazuje dokładny powód. Otwarte plany są zawsze prowadzone.
+
+## Nowe w 1.14 – dwa aktywa (XAUUSD i BTC), laboratorium modeli
+* *(Execution Lock z wersji 1.14 został wycofany w 1.24 – patrz wyżej.)*
 * **1.14.2: `22_TRENUJ_WSZYSTKIE_MODELE.bat`** – jeden plik trenuje wszystkie modele (prognozy, scalp, ML, sieci lab XAUUSD/BTC) i uruchamia je w bocie.
 * **1.14.1: bez blokad symboli.** Bot bierze symbole włączone na Twoim rachunku; gdy zapisanego nie ma, wybiera pasujący z Market Watch. BTC wykrywa się sam.
 * **Aktywa w przełączniku: XAUUSD i BTC** (moduły lab, scenariusze i modele liczone per aktywo).
@@ -183,7 +194,7 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
   `docs/ZONE_ENGINE_ARCHITECTURE.md`.
 * Od 1.23 jest **nowy monitor** (Trading Intelligence, AI Neural Lab, System Control Center): w bocznym menu kliknij **„Nowe panele”**
   albo otwórz adres monitora z końcówką `#/trading-intelligence`. Nagłówek pokazuje środowisko (LIVE / DEMO / SYNTHETIC / HISTORY /
-  UNKNOWN), stan MT5 (kliknij, by zobaczyć szczegóły połączenia), świeżość danych, instrument, tryb wykonania i Execution Lock – wszystko
+  UNKNOWN), stan MT5 (kliknij, by zobaczyć szczegóły połączenia), świeżość danych, instrument, tryb wykonania i stan STOP – wszystko
   z backendu bota; bez połączenia z botem stany zmieniają się na DISCONNECTED / UNKNOWN zamiast pokazywać stare wartości. To **etap 1**:
   sekcje paneli są jeszcze puste i oznaczone „etap N – nie zintegrowane” (wykresy, sygnały, modele 3D i sterowanie dochodzą w kolejnych
   etapach). Nowy monitor niczego nie zmienia w pracy bota; dotychczasowy monitor działa jak wcześniej (link „Istniejące widoki”).

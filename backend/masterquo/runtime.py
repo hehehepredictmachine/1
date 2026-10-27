@@ -53,7 +53,6 @@ class Runtime:
             else:
                 mt5_factory = real_mt5_factory
         self.worker = MT5Worker(mt5_factory)
-        self.worker.lock_fn = self.cfg.execution_locked                     # Execution Lock below every order path
         required = Profiles().required_closed_bars()
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         self.bridge.secrets = self.secrets

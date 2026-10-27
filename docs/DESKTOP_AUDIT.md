@@ -74,6 +74,22 @@ idempotencja i serializacja przez worker.
   i **zaliczonej walidacji ścieżki SH** dla instrumentu (`sh/validation` – dziś `NOT_RUN`); inaczej jawny powód
   `SH_LIVE_WYMAGA_WALIDACJI` widoczny w panelu. LIVE SH **nie jest gotowy** bez tej walidacji na danych użytkownika.
 
+### Wykonano w DK1 (1.24.0)
+
+* `execution.lock` / `lock_changed_at` usunięte z modelu konfiguracji; migracja v12 zdejmuje je z pliku (kopia `config.v11.bak.json`).
+  Zapisany tryb AUTO, który stara blokada wstrzymywała (`lock` ≠ `UNLOCKED_BY_USER`), wraca do PAPER z widoczną notatką `mode_note` –
+  usunięcie blokady nie uruchamia po cichu wykonania. Tryb AUTO wybrany świadomie (rachunek odblokowany) pozostaje.
+* Worker przekazuje moduł MT5 bez proxy; z bramek gateway/manager/manual/modes/SH zniknął warunek `EXECUTION_LOCKED`.
+* `GET /api/v1/execution/lock` → `{"lock":"WITHDRAWN"}`, `POST` → 410 `EXECUTION_LOCK_WITHDRAWN` (fraza nie istnieje).
+* `PUT /api/v1/config` odrzuca `execution.mode/bound_account/mode_note` (400 `USE_MODE_ENDPOINT`) – wcześniej dało się tak ustawić AUTO_LIVE
+  bez potwierdzenia rachunku (neutralizowała to blokada); jedyną drogą zmiany trybu jest `POST /api/v1/mode` z potwierdzeniem.
+* SH: bramka wejścia (tryb, typ rachunku, przy AUTO_LIVE raport walidacji `data/sh/validation/<instr>_<strategia>.json` z danymi
+  `REAL_USER_DATA`, znaną prowizją, n ≥ 30 i dodatnią wartością oczekiwaną) oddzielona od zarządzania (tylko terminal i rachunek planu).
+  Zarządzanie korzysta z trybu zamrożonego w planie, więc późniejsze przełączenie na SIGNALS/STOP nie odcina prowadzenia pozycji.
+* Pozostałe pola `execution_lock` w `gold_candles/analysis.py`, `gold_candles/cli.py` i `forecast/double_retest.py` są **opisowe**
+  (raport prognozy SHADOW: „ta prognoza nie składa zleceń”) – nic ich nie czyta jako warunku wykonania; zostawione bez zmian.
+* Testy: `tests/test_execution_lock_withdrawn.py` + zaktualizowane testy jednostkowe i UI (56 testów UI/API OK).
+
 ## 5. Aplikacja Windows – stan i wybór technologii
 
 | Pozycja | Stan |
