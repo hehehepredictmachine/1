@@ -556,7 +556,9 @@ def make_fake_module(**kw) -> FakeMT5:
 
 
 def is_fake(module) -> bool:
-    return isinstance(module, FakeMT5)
+    # training processes hand over the read-only proxy (forecast.export.NoOrders) - look through it, otherwise synthetic data
+    # would be labelled REAL_USER_DATA
+    return isinstance(getattr(module, "_m", module), FakeMT5)
 
 
 # Expose module-level constants as attributes, like the real MetaTrader5 module.

@@ -70,7 +70,7 @@ class NoOrders:
     BLOCKED = ("order_send", "order_check", "order_calc_margin_send")
 
     def __init__(self, m):
-        self._m = m                                   # same attribute as the bot's lock proxy (is_fake() unwraps it)
+        self._m = m                                   # is_fake() unwraps this attribute
 
     def __getattr__(self, name):
         if name in self.BLOCKED:

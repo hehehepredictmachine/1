@@ -95,6 +95,12 @@ class TestNoLockOnSimulator(unittest.TestCase):
         from masterquo.mt5.worker import PRIO_TRADE
         self.assertIs(self.b.raw_call(lambda m: m, PRIO_TRADE), self.fake)       # no proxy between the app and the terminal module
 
+    def test_synthetic_terminal_is_recognised_behind_the_training_read_only_proxy(self):
+        from masterquo.forecast.export import NoOrders
+        from masterquo.mt5.fake import is_fake
+        self.assertTrue(is_fake(NoOrders(self.fake)))       # export of a --demo run must be SYNTHETIC_TEST, never REAL_USER_DATA
+        self.assertFalse(is_fake(NoOrders(object())))
+
     def test_gate_has_no_lock_and_live_needs_only_the_account_confirmation(self):
         acct = dict(self.b.account_status(), trade_mode="REAL")
         st = self.modes.set_mode("AUTO_LIVE", confirm=f"LIVE {acct['login']}", account=acct, account_key=self.b.account_key, synthetic=False)
