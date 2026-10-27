@@ -174,7 +174,7 @@ export function NeuralPage({ params }: { params?: URLSearchParams }) {
     <div className="lab-page" data-testid="page-neural">
       <h2>Neural System — Scalping ({d.asset})</h2>
       <p className="muted small">{d.architecture_id} · zadanie {d.task_id} · parametry {d.architecture?.params_total} · MACs {d.architecture?.macs_per_inference} · pole recepcyjne M1 {d.architecture?.receptive_field?.M1} / M5 {d.architecture?.receptive_field?.M5}
-        · rola {d.selected?.role ?? "brak"} · bez wpływu na zlecenia i Execution Lock.</p>
+        · rola {d.selected?.role ?? "brak"} · bez wpływu na zlecenia i tryb wykonania.</p>
       <div className="chips-row">
         <button className="btn ghost" data-testid="nss-doctor" onClick={() => apiSend("POST", "/api/v1/lab/neural/doctor", { asset }).then(setDoc)}>Sprawdź gotowość</button>
         <button className="btn ghost" onClick={() => act("/api/v1/lab/neural/prepare")}>Przygotuj dane</button>

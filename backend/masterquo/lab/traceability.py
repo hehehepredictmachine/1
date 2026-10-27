@@ -147,7 +147,7 @@ ROWS: list[dict] = [
     {"id": "M41", "element": "Edge or Luck / bootstrap", "source": "R35", "function": "bootstrap blokowy średniej (zależne transakcje)",
      "io": "R → CI", "deps": "numpy", "platform": "Python", "files": "lab/edge.py::block_bootstrap_mean", "integration": "protokół (kryteria promocji), Badania",
      "implementation_status": "verified", "availability": "available", "decision_role": "research", "evidence": f"{T}::TestEdge", "limits": "—"},
-    {"id": "M42", "element": "Manual Trade Pad MT5", "source": "R39", "function": "plan + symulacja P&L z kontraktu; wykonanie zawsze przez bramkę i Execution Lock",
+    {"id": "M42", "element": "Manual Trade Pad MT5", "source": "R39", "function": "plan + symulacja P&L z kontraktu; wykonanie zawsze przez bramkę, tryb wykonania i potwierdzenie",
      "io": "plan → symulacja", "deps": "—", "platform": "Python+TS", "files": "lab/edge.py::trade_pad_plan, /api/v1/lab/tradepad", "integration": "Setupy",
      "implementation_status": "verified", "availability": "available", "decision_role": "visual_only", "evidence": f"{T}::TestExecutionLock", "limits": "brak przycisku realnego zlecenia"},
 ]

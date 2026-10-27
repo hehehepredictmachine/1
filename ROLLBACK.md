@@ -47,3 +47,16 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 * Powrót: rozpakuj ZIP 1.9.0 do osobnego folderu, przywróć `data\config.json` z kopii sprzed 1.10 (albo usuń sekcję `walls`, wpis `S12`
   i ustaw `"config_version": 9`) oraz bazę z `data\backups\` – 1.9 nie zna statusu OPEN_PARTIAL/UNSETTLED i liczyłaby je jak zamknięte.
 * Preferencje monitora 1.10 (strony, układy, widoki `ai-*`/`bot-*`) są w przeglądarce; 1.9 ich nie używa, a jej widoki `panelN` zostały zachowane.
+
+## 10. Wersja 1.24.0 → 1.23.x
+* Punkt powrotu w repozytorium: tag `pre-desktop-1.23.0` (stan przed przebudową desktop). 1.24 nie dodaje migracji bazy.
+* Konfiguracja: 1.24 zapisuje `config_version: 12` (Execution Lock wycofany, pole `execution.mode_note`, Telegram: `send_trades`,
+  `send_stats`, `stats_hour_utc`, `language`). Kopia sprzed migracji: `data\config.v11.bak.json` – przed uruchomieniem 1.23 przywróć ją
+  jako `data\config.json` (1.23 odrzuca nieznane pola).
+* Aplikacja `PepeMarketWizardDesktop.exe` pracuje na kopii danych w `%LOCALAPPDATA%\PepeMarketWizard\data` – stary folder
+  instalacji zostaje bez zmian, więc powrót = uruchomienie poprzedniej wersji z tamtego folderu. Kopie danych sprzed aktualizacji
+  aplikacji: `%LOCALAPPDATA%\PepeMarketWizard\backups\<RRRRMMDD_GGMMSS>_<etykieta>`. Usunięcie aplikacji: Centrum sterowania → Praca aplikacji →
+  wyłącz autostart, zamknij aplikację (ikona przy zegarze → Zamknij aplikację) i usuń jej folder; dane w `%LOCALAPPDATA%` usuń ręcznie,
+  jeśli nie są potrzebne.
+* Bez cofania wersji: strategie „tylko sygnały” (S11, S12) i przełączniki handlu per strategia – Ustawienia → AUTO / ACTIVE;
+  polityka AI – Ustawienia → Agent Claude (`VETO` / `REQUIRED`); Telegram – Centrum sterowania → MT5 i połączenia (wyłącz).

@@ -1,6 +1,6 @@
 """Liquidity context policy + knowledge (PMW-UPD-06 LS-08 / LS-09): a PURE rule function over the frozen session boxes and the
 heatmap snapshot available at the decision time. OBSERVE only - it never creates a signal, never changes the scalp trigger, TP1
-(M5 range MID), SL, sizing, costs or Execution Lock. The same rules feed the panel ("Dlaczego bot tak odczytuje warstwy"), the
+(M5 range MID), SL, sizing, costs or the execution mode. The same rules feed the panel ("Dlaczego bot tak odczytuje warstwy"), the
 frozen engine context and the agent tool; the knowledge text below is loaded into the agent system prompt (versioned).
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ RULES = {
     "LQ-K09": "Nazwa sweep opisuje geometrię – nie dowodzi faktycznego uruchomienia stopów ani intencji uczestników.",
     "LQ-K10": "Sesja i zakres konsolidacji M5 są odrębne; trigger, poziomy (TP1 = MID zakresu M5) i ważność pochodzą z istniejącego setupu.",
     "LQ-K11": "Kilka narzędzi opisujących ten sam ruch (sweep sesji, sweep M03, strefa M5, heatmapa) nie tworzy kilku niezależnych dowodów.",
-    "LQ-K12": "Znane koszty, bramki ryzyka i Execution Lock obowiązują niezależnie od atrakcyjnego wyglądu warstw.",
+    "LQ-K12": "Znane koszty, bramki ryzyka, tryb wykonania i STOP obowiązują niezależnie od atrakcyjnego wyglądu warstw.",
     "LQ-K13": "Historyczny wygląd dzisiejszej mapy nie dowodzi, co było dostępne w chwili dawnego wejścia (liczy się first_received_at).",
     "LQ-K14": "Przydatność narzędzi ocenia się poza próbą strojenia i po kosztach; integracja techniczna sama nie potwierdza przewagi.",
 }

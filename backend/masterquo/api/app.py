@@ -1777,7 +1777,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/training/start")
     def training_start(body: dict):
-        """Starts `masterquo training run` as a separate process (never inside the bot process; no orders, lock untouched)."""
+        """Starts `masterquo training run` as a separate process (never inside the bot process; no orders, execution mode untouched)."""
         import subprocess
         from ..training import core as tc
         insts = ",".join(i for i in ("XAUUSD", "BTC") if i in (body.get("instruments") or []))

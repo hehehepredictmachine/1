@@ -1,5 +1,5 @@
 // 1.14 pages: two assets (XAUUSD / BTC), scenarios + checklist, models and training, research & validation, data & sources,
-// settings (asset mapping + Execution Lock) and the Neural Network Activity view. Everything comes from the backend lab
+// settings (asset mapping + execution state; the Execution Lock was withdrawn in 1.24) and the Neural Network Activity view. Everything comes from the backend lab
 // (/api/v1/lab*); the browser computes nothing. A response for another asset than the active one is discarded (stale guard).
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../api";
@@ -378,7 +378,7 @@ export function TrainingCard() {
   return (
     <div className="card" data-testid="training-card">
       <h3>Trening XAUUSD / BTC (ten sam mechanizm co 00_TRENING_START.bat)</h3>
-      <p className="muted small">Offline, bez zleceń; Execution Lock bez zmian. Aktywowane są tylko modele dopuszczone walidacją; odrzucone zostają do badań. Strona modeli lab: LONG.</p>
+      <p className="muted small">Offline, bez zleceń; tryb wykonania bez zmian. Aktywowane są tylko modele dopuszczone walidacją; odrzucone zostają do badań. Strona modeli lab: LONG.</p>
       <div className="chips-row">
         {["XAUUSD", "BTC"].map((k) => <label key={k} className="chk"><input type="checkbox" checked={inst.includes(k)} onChange={() => tog(k)} data-testid={`tr-inst-${k}`} />{k}</label>)}
         <select aria-label="Profil" value={prof} onChange={(e) => setProf(e.target.value)} data-testid="tr-profile">

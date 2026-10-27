@@ -151,7 +151,7 @@ poniżej komponenty etapu 1.
 | `TerminalHeader` – MT5 + panel szczegółów | `mt5Of` | `state.connection`, WS `connection`, `clock`, `quote` | stan, przyczyna, heartbeat, epoka, próby, błędy, offset | MarketBridge | sesja | brak WS → `UNKNOWN` („ostatnio …”) | test_03, test_04, test_10 | zintegrowane |
 | `TerminalHeader` – świeżość | `freshnessOf` | `decision.data_quality`, `quote.age_seconds`, `ws` | enum | silnik (bramka jakości danych) | sesja | brak → `UNKNOWN`; brak WS → `DISCONNECTED` | test_03, test_10 | zintegrowane |
 | `TerminalHeader` – instrument | `useTerminalContext` | `state.assets.active`, `state.symbol` | `XAUUSD` / `BTC` + symbol brokera | AssetRegistry | sesja | brak → `UNKNOWN` | test_03 | **tylko wyświetlenie** – wybór: §6.2 |
-| `TerminalHeader` – tryb, Execution Lock | `useTerminalContext` | `state.mode`, `state.execution_lock` | enum | ModeManager, config | sesja | brak → `UNKNOWN` | test_03 | zintegrowane (odczyt) |
+| `TerminalHeader` – tryb, STOP, wejścia | `useTerminalContext` | `state.mode` (Execution Lock wycofany w 1.24 – pole `execution_lock` usunięte) | enum | ModeManager, config | sesja | brak → `UNKNOWN` | test_03 | zintegrowane (odczyt) |
 | `TerminalHeader` – powiadomienia | `warningsOf`, `alerts` | WS `log` | poziom, kategoria, komunikat | Logger | sesja | – | test_04 | zintegrowane (bez statusu alertu – N6) |
 | `TerminalShell` – pasek SYNTHETIC / ostrzeżenia / `data-stale` | `useTerminalContext` | j.w. | – | j.w. | sesja | – | test_03, test_10 | zintegrowane |
 
@@ -173,3 +173,24 @@ brokera jest kwotowany w USDT (inaczej sugerowałoby inny instrument – `assets
 | PnL zamknięty, historia transakcji | `GET /api/v1/stats?mode=` (`trades`), `GET /api/v1/signals` (`trades`, ostatnie 50), WS `trade_settled` | `EXISTS_VERIFIED` |
 | Filtry dat / instrumentów | backend: brak parametrów (`/stats` przyjmuje tylko `mode`) | `MISSING` – w etapie 2: filtr w kliencie na pobranej historii albo kompatybilne rozszerzenie `/stats` (`from`, `to`, `instrument`) |
 | Notatki dziennika (wpisy użytkownika) | brak tabeli i trasy | `MISSING` – poza zakresem, chyba że zostanie zamówione (nowa tabela + trasa) |
+
+## 7. Komponenty 1.24 (DK2–DK5) – zaimplementowane
+
+Autoryzacja wszystkich tras: sesja monitora; zmiany stanu dodatkowo CSRF + Origin (strażnik w `api/app.py`). W aplikacji desktop to samo
+API na `127.0.0.1` w oknie WebView2 (bez osobnego IPC sterującego; okno ma wyłącznie powiązanie `pmw` na ekranie startowym).
+
+| Ekran → komponent | Endpoint / event | Źródło prawdy | Błędy / brak danych | Test |
+|---|---|---|---|---|
+| TI → `AccountCards` (saldo, equity, wynik otwartych/zamkniętych, ROI, win rate) | `state.account`, WS `positions`, `GET /api/v1/stats?mode=` (`account_roi` – zmodyfikowana metoda Dietza, `win_rate` w %) | MT5 (rachunek), SQLite `trades` | brak rachunku / WS → `—`, nigdy 0; okres i tryb podpisane | `test_ui_terminal_shell` test_06b |
+| TI → `MarketCharts` (1/4/6, TF per wykres M1–D1, zapis układu) | `GET /api/v1/candles` (+ warstwy `structure`, `zones/map`, `liquidity/sessions`, `indicator-context/chart`) przez istniejący `ChartPanel` | MT5 bridge | brak świec → komunikat w wykresie; `synthetic` → znacznik SYMULATOR | test_06b (układ zapisany po odświeżeniu) |
+| TI → `SignalIntelligence` (setup, kierunek, warunki, trigger, plan, „dlaczego brak sygnału” vs „dlaczego brak zlecenia”) | `state.decision` (węzły DATA/MARKET/STRATEGY/TRIGGER vs RISK/AI/ML/PERMISSION), `state.auto` (`candidate_ranking`, `trade`) | silnik (`engine/decision.py`, `strategies/selector.py`) | brak decyzji → `N/A`; kody przez `REASON_PL` | `test_ui_terminal_shell`, `test_gates_dk6` |
+| TI → „Pełny plan i ręczna akcja” | link do istniejącego widoku planu (`warunki`) – podgląd nie wysyła zlecenia | gateway wykonania | backend ponownie sprawdza warunki | istniejące testy planu |
+| Neural Lab → Universe / Trening / Walidacja / Wdrożenia | `GET /api/v1/training/models?instrument=`, `/training`, `/training/readiness`, `/training/runs`, `/training/active`, `POST /training/start` (potwierdzenie), `/training/cancel` | rejestr treningu | animacja oznaczona „PRZYKŁAD · NIE DANE MODELU”; brak modeli → pusta lista z powodem | `test_ui_control_center` (rejestr Neural Lab) |
+| Centrum sterowania → `ModePanel` | `POST /api/v1/mode` (`confirm`: login / `LIVE <login>`), `POST /api/v1/mode/primary-path` | ModeManager | 400/409 → komunikat PL (`ERR_PL`), np. `LIVE_NOT_AVAILABLE_ON_SYNTHETIC_DATA` | `test_ui_control_center`, `test_execution_lock_withdrawn` |
+| Centrum sterowania → `StopPanel` | `POST /api/v1/kill` | ModeManager | błąd → komunikat | `test_ui_control_center` |
+| Centrum sterowania → `RiskCostsCard` | `PUT /api/v1/config` (sekcje `risk`, `costs`; zmiana trybu tym endpointem → 400 `USE_MODE_ENDPOINT`) | config | walidacja Pydantic → komunikat | `test_ui_control_center`, `test_ui_lab` |
+| Centrum sterowania → `TelegramCard` | `GET /api/v1/telegram`, `POST /api/v1/secrets` (token, DPAPI), `PUT /api/v1/config` (`telegram`), `POST /api/v1/telegram/test`, `/telegram/stats-now` | `notify/telegram.py` | stany NOT_CONFIGURED/DISABLED/UNTESTED/OK/ERROR; błąd = opis Telegrama bez tokenu | `test_telegram`, `test_ui_control_center` |
+| Centrum sterowania → `AppPrefsCard` | `GET /api/v1/desktop`, `POST /api/v1/desktop/prefs`, `POST /api/v1/desktop/restart-engine` | `desktop.py` (prefs + HKCU Run), nadzorca w EXE | autostart niedostępny poza aplikacją desktop → `AUTOSTART_NEEDS_DESKTOP_APP` | `test_desktop_app` |
+| Centrum sterowania → `Mt5Card`, `DiagnosticsCard` | `state.connection/account/quote/symbol`, `decision.risk.commission`, `GET /api/v1/diagnostics` | MT5 bridge | brak → `—` / `NIEZNANY` | `test_ui_control_center` |
+| Oprawa → `LookDialog` (paleta, tekst, ruch, kontrast) | tylko przeglądarka (`localStorage` `mq.terminal.look`) – brak wpływu na silnik | klient | niepoprawne wartości → domyślne | `test_ui_terminal_shell` test_06c |
+| Aplikacja desktop → ekran startowy | powiązanie WebView2 `pmw("state"|"import"|"fresh"|"retry"|"logs"|"exit")` tylko na ekranie startowym; potem `GET /api/v1/health` | `desktop/*.go` | brak WebView2 → okno z instalatorem lub przeglądarka; błąd silnika → ekran błędu z logiem | testy Go (`desktop_test.go`) |

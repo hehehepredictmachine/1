@@ -309,7 +309,7 @@ export function TrainingPanel({ instrument }: { instrument?: string }) {
         {run && <span className="small">ostatni run <span className="mono">{run.run_id}</span>: <b data-testid="tp-run-status">{RUN_PL[status] ?? status}</b>
           {pr && <> · {pr.tasks_done}/{pr.tasks_total} zadań</>}</span>}
       </div>
-      <p className="muted small">Trening działa w osobnym procesie, bez zleceń i bez zmiany Execution Lock. Postęp to liczba ukończonych zadań i licznik raportowany przez trener –
+      <p className="muted small">Trening działa w osobnym procesie, bez zleceń i bez zmiany trybu wykonania. Postęp to liczba ukończonych zadań i licznik raportowany przez trener –
         bez szacowania. Model w użyciu nigdy nie jest nadpisywany: promocja jest atomowa i odwracalna (rollback).</p>
       {msg && <p className="small" data-testid="tp-msg">{msg}</p>}
 

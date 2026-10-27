@@ -8,7 +8,7 @@ activation of admitted models only -> reload of a running bot (never a second bo
   --months           history of the single export (--scalp-months is accepted and ignored)
   --ml-days, --lab-bars, --min-events, --ml-no-approx, --skip-candles (forecast + scalp), --skip-ml, --skip-lab,
   --quick (= profile TEST_INSTALACJI), --demo (synthetic terminal; technical models, never activated), --mt5-wait (ignored)
-Nothing here sends orders; Execution Lock is not touched; the bot's config is not changed (no persistent use_backfill_approx).
+Nothing here sends orders; the execution mode is not touched; the bot's config is not changed (no persistent use_backfill_approx).
 """
 from __future__ import annotations
 

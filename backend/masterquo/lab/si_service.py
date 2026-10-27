@@ -232,7 +232,7 @@ class StructureIntelligenceService:
                 "compile": st, "feed": {k: v for k, v in res.items() if k != "scores"} if isinstance(res, dict) else res,
                 "scores": (res or {}).get("scores") if isinstance(res, dict) else None,
                 "parity_scope": "sktime 1.2.0 frozen-state fixture (tests/fixtures/minirocket); native NOT_EXECUTED bez terminala",
-                "role": "SHADOW_AUDIT – nie nadpisuje głównej prognozy ani Execution Lock"}
+                "role": "SHADOW_AUDIT – nie nadpisuje głównej prognozy ani trybu wykonania"}
 
     def start(self) -> None:
         if self._qthread is None:

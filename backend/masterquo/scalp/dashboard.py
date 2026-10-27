@@ -220,7 +220,7 @@ class MTFDashboard:
                     overall_data_quality=quality, market_session_status=self._session(tnow, q_ok),
                     quote={"bid": q.get("bid"), "ask": q.get("ask"), "quote_time": q.get("time_utc"), "age": q.get("age_seconds"), "ttl": ttl,
                            "status": "OK" if q_ok else "STALE_OR_MISSING", "note": "kwotowanie ma własny zegar – nie odmładza analizy"},
-                    execution={"permission": False, "status": "SHADOW – EXECUTION_AUTHORIZED=false; Execution Lock bez zmian"},
+                    execution={"permission": False, "status": "SHADOW – EXECUTION_AUTHORIZED=false; tryb wykonania bez zmian"},
                     chart_refs=[{"chart_id": f"mtf-{tf}", "tf": tf, "snapshot_id": sid, "revision": revs[tf]["revision"], "cutoff": body["as_of"],
                                  "endpoint": f"/api/v1/scalp/dashboard/chart?tf={tf}&snapshot_id={sid}"} for tf, _ in TFS],
                     warnings=[w for w in (["DANE SYNTETYCZNE"] if body["source"] == "SYNTHETIC" else []) + (["zegar serwera niezweryfikowany"] if clock.get("status") not in (None, "OK", "VERIFIED") else [])],
