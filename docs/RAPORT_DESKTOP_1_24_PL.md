@@ -1,6 +1,6 @@
 # PepeMarketWizard 1.24.0 – aplikacja Windows, trzy panele, wycofanie Execution Lock: raport końcowy
 
-Punkt powrotu: tag `pre-desktop-1.23.0`. Gałąź: `claude/masterquo-ai-bot-mt5-f7uaht`. Etapy: DK0 audyt (`docs/DESKTOP_AUDIT.md`),
+Punkt powrotu: commit `ba7a5d5` (lokalny tag `pre-desktop-1.23.0`). Gałąź: `claude/masterquo-ai-bot-mt5-f7uaht`. Etapy: DK0 audyt (`docs/DESKTOP_AUDIT.md`),
 DK1 Execution Lock, DK2 aplikacja Windows, DK3–DK5 panele i Telegram, DK6 bramki strategii, DK7 testy, paczka, raport.
 
 ## 1. Co działa i które pliki zmieniono
@@ -16,7 +16,7 @@ DK1 Execution Lock, DK2 aplikacja Windows, DK3–DK5 panele i Telegram, DK6 bram
 | Execution Lock wycofany | działa, testy na atrapie MT5 | `config.py` (migracja v12), `mt5/worker.py`, `execution/*`, `sh/*`, `api/app.py`, panel |
 | Bramki strategii: wybór AUTO tylko spośród strategii z prawem handlu, AI bez klucza = „nie wymagane”, SH AUTO DEMO bez pełnego modelu | działa, replay przed/po | `strategies/selector.py`, `engine/active.py`, `agent/service.py`, `sh/risk.py`, `tools/replay_strategies.py`, `docs/STRATEGIE_BRAMKI_DESKTOP.md` |
 
-Pełna lista zmian: `git diff --stat pre-desktop-1.23.0..HEAD` (ok. 130 plików). Wersja: `backend/masterquo/version.py` = 1.24.0.
+Pełna lista zmian: `git diff --stat ba7a5d5..HEAD` (ok. 130 plików). Wersja: `backend/masterquo/version.py` = 1.24.0.
 
 ## 2. Execution Lock, tryby, STOP i filtry
 
@@ -113,4 +113,4 @@ Wariant offline (koła Pythona w paczce, ok. 150 MB): `python tools/build_deskto
 
 **Rollback:** `ROLLBACK.md` §10 – poprzednia wersja z jej folderu (aplikacja desktop pracuje na kopii danych w
 `%LOCALAPPDATA%\PepeMarketWizard`), konfiguracja sprzed migracji `data\config.v11.bak.json`, kopie danych aplikacji w
-`%LOCALAPPDATA%\PepeMarketWizard\backups\`, w repozytorium tag `pre-desktop-1.23.0`.
+`%LOCALAPPDATA%\PepeMarketWizard\backups\`, w repozytorium commit `ba7a5d5`.

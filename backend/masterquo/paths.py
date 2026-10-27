@@ -21,9 +21,14 @@ DEFAULTS_FILE = ROOT_DIR / "config" / "masterquo.defaults.json"
 
 
 def data_dir() -> Path:
-    """Data folder; MASTERQUO_DATA_DIR allows isolated test/demo instances."""
+    """Data folder; MASTERQUO_DATA_DIR allows isolated test/demo instances. Without it: <root>/data, or the data folder of the
+    Windows app when the program runs from its folder (mq_instruments.default_data_dir - same rules as desktop/layout.go)."""
     override = os.environ.get("MASTERQUO_DATA_DIR")
-    path = Path(override).resolve() if override else ROOT_DIR / "data"
+    if override:
+        path = Path(override).resolve()
+    else:
+        from mq_instruments import default_data_dir
+        path = default_data_dir(ROOT_DIR)
     path.mkdir(parents=True, exist_ok=True)
     return path
 

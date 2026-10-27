@@ -21,6 +21,9 @@ przy pierwszym starcie (ok. 110 MB z PyPI, sprawdzane sumami SHA-256; wariant OF
 * Okno potrzebuje składnika Microsoft Edge **WebView2** (Windows 11 – wbudowany). Brak = aplikacja zaproponuje instalator albo otworzy
   panel w przeglądarce. EXE nie jest podpisany – SmartScreen może zapytać przy pierwszym uruchomieniu („Więcej informacji → Uruchom”).
 * Dotychczasowe `PepeMarketWizard.exe` i pliki `.bat` nadal działają (trening, diagnostyka) – to wcześniejszy launcher, nie nowa aplikacja.
+  W folderze aplikacji Windows używają **Pythona z paczki** (`runtime\python`, bez instalowania Pythona) i **tych samych danych co
+  aplikacja** (`%LOCALAPPDATA%\PepeMarketWizard\data`; przy `portable.txt` – folder programu). Bota uruchamiaj przez
+  `PepeMarketWizardDesktop.exe`; `03_START_MASTERQUO.bat` przy działającej aplikacji tylko otworzy jej panel.
   Szczegóły: `docs/DESKTOP_ARCHITEKTURA.md`.
 
 ## Najprościej: `PepeMarketWizard.exe` (1.16)

@@ -12,13 +12,16 @@ if "%TS%"=="" set "TS=candles"
 set "LOG=%ROOT%data\logs\instalacja_prognoz_%TS%.log"
 echo [PepeMarketWizard] Srodowisko prognoz - log: "%LOG%"
 set "PYEXE="
+rem Python z paczki aplikacji Windows (runtime\python) ma pierwszenstwo - paczka DESKTOP nie wymaga osobnej instalacji Pythona
+if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
 for %%V in (3.13 3.12) do (
   if not defined PYEXE (
     py -%%V -c "import sys" >nul 2>&1 && for /f "delims=" %%P in ('py -%%V -c "import sys;print(sys.executable)"') do set "PYEXE=%%P"
   )
 )
 if not defined PYEXE (
-  echo [BLAD] Brak Python 3.13/3.12 x64 ^(py launcher^). Zainstaluj z python.org i uruchom ponownie.
+  echo [BLAD] Brak Python 3.13/3.12 x64 ^(py launcher^) i brak sprawnego runtime\python z paczki. Zainstaluj Python 3.13 x64
+  echo        z python.org i uruchom ponownie.
   %MQ_PAUSE%
   exit /b 1
 )

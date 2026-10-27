@@ -137,6 +137,11 @@ def main() -> None:
             for w in sorted(wheels.glob("*.whl")):
                 z.write(w, TOP + "runtime/wheels/" + w.name)
                 manifest.append(f"{sha256(w)}  runtime/wheels/{w.name}")
+        # the launcher PepeMarketWizard.exe and the .bat installers check for MANIFEST_SHA256.txt (complete unpacking) - same
+        # file as in the client package (program files); MANIFEST_DESKTOP_SHA256.txt below lists every file of this package
+        mtext = build_release.manifest_text(files, "aplikacja Windows").encode("utf-8")
+        z.writestr(TOP + "MANIFEST_SHA256.txt", mtext)
+        manifest.append(f"{hashlib.sha256(mtext).hexdigest()}  MANIFEST_SHA256.txt")
         z.writestr(TOP + "MANIFEST_DESKTOP_SHA256.txt",
                    f"# PepeMarketWizard {ver} - aplikacja Windows - SHA-256 każdego pliku paczki (format sha256sum)\n"
                    + "\n".join(manifest) + "\n")

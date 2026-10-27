@@ -3,8 +3,9 @@
 // the execution mode: every action runs the corresponding .bat from the program folder in this console window.
 //
 // Usage: PepeMarketWizard.exe                -> menu
-//        PepeMarketWizard.exe trening XAUUSD -> install if needed, then calibration + training (XAUUSD | BTC | OBA)
-//        PepeMarketWizard.exe install | kontekst | diagnostyka | start | stop
+//
+//	PepeMarketWizard.exe trening XAUUSD -> install if needed, then calibration + training (XAUUSD | BTC | OBA)
+//	PepeMarketWizard.exe install | kontekst | diagnostyka | start | stop
 package main
 
 import (
@@ -17,7 +18,7 @@ import (
 	"strings"
 )
 
-const version = "1.24.0"
+const version = "1.24.1"
 
 var required = []string{
 	`tools\check_python.py`, `tools\trening.cmd`, `backend\masterquo\__main__.py`, `backend\mq_instruments.py`,
@@ -158,6 +159,11 @@ func main() {
 		pause()
 		os.Exit(2)
 	}
+	if exists(filepath.Join(r, "PepeMarketWizardDesktop.exe")) {
+		fmt.Println("Folder aplikacji Windows: bota i panel uruchamiaj przez PepeMarketWizardDesktop.exe. Ten launcher sluzy do")
+		fmt.Println("instalacji skladnikow treningu, kalibracji, treningu i diagnostyki - dane sa wspolne z aplikacja")
+		fmt.Println("(%LOCALAPPDATA%\\PepeMarketWizard\\data, albo folder programu przy portable.txt). Python jest w paczce (runtime\\python).")
+	}
 	if len(os.Args) > 1 {
 		os.Exit(action(r, &s, os.Args[1], os.Args[2:]))
 	}
@@ -168,7 +174,7 @@ func main() {
 			state = "zainstalowane"
 		}
 		fmt.Printf("\n=== PepeMarketWizard %s === srodowisko: %s, budzet RAM treningu: %d MB\n", version, state, s.RAMBudgetMB)
-		fmt.Println(" 1. Instalacja / naprawa srodowiska (Python 3.13/3.12 x64, .venv + .venv_candles)")
+		fmt.Println(" 1. Instalacja / naprawa srodowiska (Python z paczki albo 3.13/3.12 x64, .venv + .venv_candles)")
 		fmt.Println(" 2. Kalibracja + trening modeli XAUUSD (eksport z MT5 -> wszystkie zadania -> raport)")
 		fmt.Println(" 3. Kalibracja + trening modeli BTC")
 		fmt.Println(" 4. Kalibracja + trening XAUUSD i BTC")

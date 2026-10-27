@@ -26,8 +26,17 @@ set "LOG=%ROOT%data\logs\instalacja_%TS%.log"
 echo [PepeMarketWizard] Instalacja - log: "%LOG%"
 echo PepeMarketWizard install %DATE% %TIME% > "%LOG%"
 
-rem ---- 1. wybor sprawnego interpretera: preferowany Python 3.13 x64, potem 3.12 (bez automatycznego najnowszego)
+rem ---- 1. wybor sprawnego interpretera: Python z paczki aplikacji Windows (runtime\python), potem Python 3.13 x64, potem 3.12
+rem      (bez automatycznego najnowszego). Paczka DESKTOP ma wlasny Python - wtedy nie trzeba instalowac go osobno.
 set "PYEXE="
+if exist "%ROOT%runtime\python\python.exe" (
+  "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1
+  if !errorlevel! EQU 0 (
+    set "PYEXE=%ROOT%runtime\python\python.exe"
+  ) else (
+    echo [UWAGA] Python z paczki ^(runtime\python^) nie przeszedl kontroli - szukam Pythona w systemie.
+  )
+)
 for %%V in (3.13 3.12) do (
   if not defined PYEXE (
     py -%%V -c "import sys" >nul 2>&1 && (

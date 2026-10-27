@@ -1,7 +1,7 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/PepeMarketWizard_KLIENT_1_24_0.zip         bot 1.24.0 (Execution Lock wycofany, panele Trading Intelligence / AI Neural Lab / Centrum sterowania na danych, Telegram EN+ZH) + training installers for Windows (no license, no secrets)
-  release/PepeMarketWizard_KLIENT_1_24_0.zip.sha256  SHA-256 of the ZIP (outside the ZIP)
+  release/PepeMarketWizard_KLIENT_1_24_1.zip         bot 1.24.1 (1.24.0 + folder aplikacji Windows: manifest, Python z paczki dla .bat, wspólne dane) + training installers for Windows (no license, no secrets)
+  release/PepeMarketWizard_KLIENT_1_24_1.zip.sha256  SHA-256 of the ZIP (outside the ZIP)
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.24.0"
+VERSION = "1.24.1"
 CLIENT_ZIP = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
@@ -60,14 +60,17 @@ def write_zip(name, top, files):
     print(f"{name}: {len(files)} files, {out.stat().st_size} bytes, sha256 {digest}")
 
 
+def manifest_text(files, label: str = "klient") -> str:
+    """MANIFEST_SHA256.txt of the program files - required by the launcher and the installers (complete unpacking check)."""
+    lines = [f"{hashlib.sha256((ROOT / f).read_bytes()).hexdigest()}  {f}" for f in files]
+    return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
+
+
 def main():
     files = tracked()
     client = files
     scan(client)
-    lines = [f"{hashlib.sha256((ROOT / f).read_bytes()).hexdigest()}  {f}" for f in client]
-    (ROOT / "MANIFEST_SHA256.txt").write_text(
-        f"# PepeMarketWizard {VERSION} (klient) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n",
-        encoding="utf-8", newline="\n")
+    (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(client), encoding="utf-8", newline="\n")
     write_zip(CLIENT_ZIP, "PepeMarketWizard/", client + ["MANIFEST_SHA256.txt"])
 
 

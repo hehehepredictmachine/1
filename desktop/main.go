@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-var version = "1.24.0" // overridden by the build: -ldflags "-X main.version=..."
+var version = "1.24.1" // overridden by the build: -ldflags "-X main.version=..."
 
 type options struct {
 	autostart bool   // started by the Windows autostart entry (may start minimized to the tray)

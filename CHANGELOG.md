@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.24.1 – poprawka folderu aplikacji Windows
+
+* **Błąd (zgłoszony):** w folderze `PepeMarketWizard_Desktop` stary launcher `PepeMarketWizard.exe` i instalatory `01_INSTALUJ.bat`,
+  `INSTALUJ_TRENING.bat`, `00_TRENING_START.bat` kończyły się komunikatem „Niekompletny folder programu – brak: MANIFEST_SHA256.txt”.
+  Paczka aplikacji ma teraz `MANIFEST_SHA256.txt` (jak paczka klienta) – test sprawdza listy plików launchera i instalatorów.
+* Instalatory `.bat` w folderze aplikacji używają **Pythona z paczki** (`runtime\python`) – bez instalowania Pythona w systemie
+  (Python w systemie pozostaje zapasowym wyborem; klasyczna paczka bez zmian).
+* `.bat`, launcher i aplikacja pracują na **tych samych danych**: w folderze aplikacji `%LOCALAPPDATA%\PepeMarketWizard\data`
+  (przy `portable.txt` – folder programu), wcześniej skrypty zapisywałyby trening do `data\` w folderze programu, niewidocznego dla aplikacji.
+* Launcher w folderze aplikacji wyjaśnia, że bota uruchamia się przez `PepeMarketWizardDesktop.exe`.
+* Poprawka 1.24.0 (przed wydaniem): eksport na symulatorze był oznaczany `REAL_USER_DATA` (regresja wycofania Execution Lock) – naprawione.
+
 ## 1.24.0 – PepeMarketWizard Desktop: aplikacja Windows, trzy panele na danych, Telegram EN+ZH, Execution Lock wycofany
 * **Aplikacja Windows `PepeMarketWizardDesktop.exe`** (Go + WebView2, `desktop/`): własne okno, wbudowany Python (NuGet, hash),
   zależności instalowane przy pierwszym starcie (`--require-hashes`, wariant OFFLINE z kołami), dane w `%LOCALAPPDATA%\PepeMarketWizard`
@@ -18,7 +30,7 @@
   etapie; SH AUTO DEMO bez skalibrowanego modelu (AUTO LIVE nadal wymaga modelu i walidacji). Porównanie przed/po w dokumencie.
 * **Poprawka:** okno Ustawień wysyłało tryb wykonania przy zapisie (od DK1 → błąd 400); teraz go nie wysyła, a backend pomija
   niezmienione wartości.
-Realizacja `docs/desktop_handoff/00_PROMPT_WYKONAWCZY.md`; audyt: `docs/DESKTOP_AUDIT.md`; punkt powrotu: tag `pre-desktop-1.23.0`.
+Realizacja `docs/desktop_handoff/00_PROMPT_WYKONAWCZY.md`; audyt: `docs/DESKTOP_AUDIT.md`; punkt powrotu: commit `ba7a5d5`.
 * **Execution Lock wycofany (decyzja użytkownika).** Worker MT5 przekazuje terminal bez proxy blokującego; z gateway, menedżera pozycji,
   ręcznego padu, bramki trybu i SH usunięto warunek `EXECUTION_LOCKED`; trasa z frazą odblokowania zwraca 410. Nie ma nowej blokady pod
   inną nazwą. Pozostają: tryb (SIGNALS / PAPER / AUTO_DEMO / AUTO_LIVE), potwierdzony rachunek, STOP nowych wejść, limity ryzyka, świeżość

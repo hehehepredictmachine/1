@@ -49,7 +49,7 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 * Preferencje monitora 1.10 (strony, układy, widoki `ai-*`/`bot-*`) są w przeglądarce; 1.9 ich nie używa, a jej widoki `panelN` zostały zachowane.
 
 ## 10. Wersja 1.24.0 → 1.23.x
-* Punkt powrotu w repozytorium: tag `pre-desktop-1.23.0` (stan przed przebudową desktop). 1.24 nie dodaje migracji bazy.
+* Punkt powrotu w repozytorium: commit `ba7a5d5` (stan przed przebudową desktop; lokalny tag `pre-desktop-1.23.0`). 1.24 nie dodaje migracji bazy.
 * Konfiguracja: 1.24 zapisuje `config_version: 12` (Execution Lock wycofany, pole `execution.mode_note`, Telegram: `send_trades`,
   `send_stats`, `stats_hour_utc`, `language`). Kopia sprzed migracji: `data\config.v11.bak.json` – przed uruchomieniem 1.23 przywróć ją
   jako `data\config.json` (1.23 odrzuca nieznane pola).

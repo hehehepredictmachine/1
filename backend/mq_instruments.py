@@ -33,7 +33,22 @@ def current(inst: str | None = None) -> str:
 
 
 def data_dir() -> Path:
-    return Path(os.environ.get("MASTERQUO_DATA_DIR") or (ROOT / "data"))
+    return Path(os.environ.get("MASTERQUO_DATA_DIR") or default_data_dir())
+
+
+def default_data_dir(root: Path = ROOT) -> Path:
+    """Data folder without MASTERQUO_DATA_DIR. In the folder of the Windows app (PepeMarketWizardDesktop.exe next to the program)
+    the same rules as desktop/layout.go apply, so .bat scripts, the launcher and the app share one data folder:
+    PMW_HOME, then portable.txt (data next to the program), then %LOCALAPPDATA%\\PepeMarketWizard. Classic folder: <root>/data."""
+    if not (root / "PepeMarketWizardDesktop.exe").exists():
+        return root / "data"
+    if os.environ.get("PMW_HOME"):
+        return Path(os.environ["PMW_HOME"]) / "data"
+    if (root / "portable.txt").exists():
+        return root / "data"
+    if os.environ.get("LOCALAPPDATA"):
+        return Path(os.environ["LOCALAPPDATA"]) / "PepeMarketWizard" / "data"
+    return Path(os.environ.get("HOME") or Path.home()) / ".local" / "share" / "PepeMarketWizard" / "data"
 
 
 def root(kind: str, inst: str | None = None) -> Path:
