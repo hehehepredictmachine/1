@@ -81,7 +81,15 @@ Telegram nie był połączony z prawdziwym botem; nie było terminala MT5 ani da
 
 ## 6. Paczka i rollback
 
-PACZKA
+Zbudowane w tym środowisku (Linux, kompilacja krzyżowa; **nie uruchomione na Windows**):
+
+| Plik | Zawartość | Rozmiar | Suma kontrolna |
+|---|---|---|---|
+| `release/PepeMarketWizard_DESKTOP_1_24_0.zip` | folder `PepeMarketWizard_Desktop/`: **nowe** `PepeMarketWizardDesktop.exe` (Windows x64 GUI, wersja 1.24.0.0, ikona, manifest DPI), Python 3.13.17 (`runtime/python/`), silnik, panel, launchery, dokumentacja | ok. 36 MB | obok: `.zip.sha256` |
+| `release/PepeMarketWizard_KLIENT_1_24_0.zip` | klasyczna paczka klienta (pliki `.bat`, wcześniejszy launcher `PepeMarketWizard.exe`) | ok. 18,5 MB | obok: `.zip.sha256` |
+
+`PepeMarketWizard.exe` (konsolowy launcher z wersji 1.16) **nie jest** nową aplikacją – nowa aplikacja to `PepeMarketWizardDesktop.exe`.
+Wariant offline (koła Pythona w paczce, ok. 150 MB): `python tools/build_desktop.py --offline` – nie budowano.
 
 **Rollback:** `ROLLBACK.md` §10 – poprzednia wersja z jej folderu (aplikacja desktop pracuje na kopii danych w
 `%LOCALAPPDATA%\PepeMarketWizard`), konfiguracja sprzed migracji `data\config.v11.bak.json`, kopie danych aplikacji w
