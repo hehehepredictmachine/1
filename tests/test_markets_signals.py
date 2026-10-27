@@ -216,7 +216,7 @@ class TestRecordAndDedupe(unittest.TestCase):
         self.cfg, self.db, self.bus, self.log, self.fake, self.worker, self.bridge = _env.core()
         self.sent = []
         self.svc = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log,
-                                    telegram=NS(notify=lambda k, t: self.sent.append((k, t))))
+                                    telegram=NS(signal=lambda k, d: self.sent.append((k, d))))
         bars = [{"open_utc": f"2026-10-08T{8 + i // 12:02d}:{(i % 12) * 5:02d}:00Z", "o": 1.1, "h": 1.1010, "l": 1.0990, "c": 1.1, "closed": True}
                 for i in range(30)]
         self.view = NS(symbol="EURUSD-", bid=1.1000, ask=1.1001, synthetic=False, tfs={"M5": TFView("M5", bars)})

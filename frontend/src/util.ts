@@ -76,6 +76,14 @@ export const REASON_PL: Record<string, string> = {
   TIME_OFFSET_UNKNOWN: "Nieznany offset czasu serwera",
   TIME_OFFSET_MEASURING: "Pomiar offsetu czasu serwera",
   TIME_OFFSET_STORED_UNVERIFIED: "Offset czasu z poprzedniej sesji (niezweryfikowany)",
+  // conditions of the decision tree (unmet = what is still missing)
+  RISK_GATE_PASS: "bramka ryzyka nie przepuszcza",
+  EXECUTION_MODE_ALLOWS_ORDERS: "tryb wykonania nie pozwala teraz na zlecenia",
+  STRATEGY_ALLOWED_TO_TRADE: "strategia nie ma zgody na wykonywanie zleceń",
+  AI_ASSESSMENT_VALID_AND_AGREES: "brak zgodnej oceny agenta AI",
+  ML_SHADOW_NOT_GATING: "ML w trybie SHADOW – nie blokuje",
+  ANALYSIS_DATA_VALID: "dane do analizy niepełne",
+  ENTRY_DATA_FRESH: "dane do wejścia nieświeże",
 };
 
 export function reasonPl(code: string): string {
@@ -90,6 +98,9 @@ export function reasonPl(code: string): string {
   if (code.startsWith("STRUCTURE_H1_LEADS_")) return "Kierunek z H1 (H4: " + code.split("_").pop() + ")";
   if (code.endsWith("_INSUFFICIENT_HISTORY")) return `${code.split("_")[0]}: za mało historii (WARMING_UP)`;
   if (code.startsWith("SETUP_STATE_")) return "Etap setupu: " + code.slice(12);
+  if (code.startsWith("STRATEGY_TRADE_DISABLED_")) return `Strategia ${code.slice(24)}: wykonywanie wyłączone w ustawieniach (tylko sygnały)`;
+  if (code.startsWith("REGIME_")) return "Reżim rynku: " + code.slice(7);
+  if (code.startsWith("SELECTED_")) return "Wybrana strategia: " + code.slice(9).replace(/_/g, " ");
   if (code.startsWith("AI_")) return "Agent: " + code.slice(3).replace(/_/g, " ").toLowerCase();
   return code;
 }

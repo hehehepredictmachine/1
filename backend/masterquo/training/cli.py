@@ -343,7 +343,7 @@ def cmd_diag(a) -> int:
     from ..train_all import _health
     from ..__main__ import _port
     h = _health(_port())
-    print(f"Bot: {'działa – ' + str(h.get('app')) + ' ' + str(h.get('version')) if h else 'nie działa'}; Execution Lock bez zmian (trening go nie dotyka).")
+    print(f"Bot: {'działa – ' + str(h.get('app')) + ' ' + str(h.get('version')) if h else 'nie działa'}; trening nie zmienia trybu wykonania ani nie składa zleceń.")
     rid = core.Run.latest()
     if rid:
         st = core.Run.load(rid).state
@@ -356,7 +356,7 @@ def cmd_diag(a) -> int:
 MENU = """
 ==============================================================
   PepeMarketWizard – TRENING MODELI (XAUUSD / BTC)
-  Trening nie wysyła zleceń i nie zmienia Execution Lock.
+  Trening nie wysyła zleceń i nie zmienia trybu wykonania.
 ==============================================================
   1) Instalacja / naprawa środowiska
   2) Trenuj XAUUSD

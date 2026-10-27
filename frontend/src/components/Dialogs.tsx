@@ -39,7 +39,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     setMsg(null);
     try {
       const { strategies: _st, ...activeRest } = cfg.active || {};
-      const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: cfg.execution,
+      // the execution mode and its account binding are changed only through POST /api/v1/mode (account confirmation)
+      const { mode: _m, bound_account: _b, mode_note: _n, ...execRest } = cfg.execution || {};
+      const patch = { mt5: cfg.mt5, strategy: cfg.strategy, risk: cfg.risk, costs: cfg.costs, agent: cfg.agent, news: cfg.news, telegram: cfg.telegram, execution: execRest,
         active: activeRest, volatility: cfg.volatility, markets: cfg.markets, signals: cfg.signals, ...extra };
       const r = await apiSend("PUT", "/api/v1/config", patch);
       setCfg(r.config);

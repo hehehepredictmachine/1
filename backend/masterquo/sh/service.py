@@ -306,6 +306,9 @@ class SHService:
         res = ex.open(plan, role="P", side=su["side"], volume=risk["volume"], sl=su["sl"], tp=tp3, mode=mode, quote=q, tag="P",
                       slippage=float(prof["_instrument"].get("slippage_usd") or 0) if mode == "PAPER" else 0.0, now=now)
         self.store.event(pid, "OPEN_RESULT", res, now)
+        if res["status"] in ("FILLED", "PARTIAL"):
+            self._notify("trade_opened", {"key": pid, "mode": mode, "symbol": spec.symbol, "side": su["side"], "volume": res.get("volume"),
+                                              "price": res.get("price"), "sl": su["sl"], "tp": tp3, "strategy": f"SH {su['strategy']}"})
         if res["status"] not in ("FILLED", "PARTIAL"):
             st = "ENTRY_UNKNOWN" if res["status"] == "UNKNOWN" else "REJECTED"
             self.store.update_plan(pid, state=st, result={"reason": res.get("reason"), "retcode": res.get("retcode")}, now=now)
@@ -571,6 +574,15 @@ class SHService:
                 continue
         self.finish(row, obj, spec, now)
 
+    def _notify(self, kind: str, data: dict) -> None:
+        """Opened / closed SH plan for notifications (Telegram). Never allowed to affect the plan or its execution."""
+        if self.bus is None:
+            return
+        try:
+            self.bus.publish(kind, data)
+        except Exception:
+            logging.getLogger("masterquo.sh").exception("SH %s notification failed", kind)
+
     def finish(self, row, obj, spec, now) -> None:
         pid = row["plan_id"]
         b = obj if isinstance(obj, Basket) else None
@@ -584,6 +596,14 @@ class SHService:
         if closed:
             res = self.cycle_result(row, obj, spec)
         self.store.update_plan(pid, state="CLOSED" if closed else state, fsm=obj, result=res, now=now)
+        if closed and res and self.bus is not None:
+            try:
+                cur = (self.account() or {}).get("currency")
+            except Exception:
+                cur = None
+            self._notify("trade_closed", {"key": pid, "mode": row["exec_mode"], "symbol": row.get("symbol") or spec.symbol, "side": row.get("side"),
+                                          "volume": pos.volume, "net": res["net_money"], "currency": cur, "r_multiple": res["r_multiple"],
+                                          "commission_known": res["commission_known"], "strategy": f"SH {row.get('strategy')}"})
 
     def cycle_result(self, row, obj, spec) -> dict:
         """Whole-cycle accounting: one plan = one result (partials are not separate wins). Spread/slippage are inside the fill

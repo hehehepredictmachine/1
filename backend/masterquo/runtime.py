@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import threading
+from datetime import timedelta
 
 from . import paths
 from .agent.service import ClaudeAgent
@@ -25,6 +26,7 @@ from .mt5.bridge import MarketBridge
 from .mt5.worker import MT5Worker
 from .news.service import NewsService
 from .notify.telegram import TelegramNotifier
+from .timeutil import iso, utcnow
 from .secrets_store import SecretStore
 
 log = logging.getLogger("masterquo.runtime")
@@ -76,7 +78,7 @@ class Runtime:
         self.ml = MLRouter(self.cfg, self.db, self.bridge, self.bus, self.log)      # legacy ML: own database per instrument
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
-        self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db)
+        self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db, stats_fn=self._telegram_day_stats)
         self.scanner = MarketScanner(self.cfg, self.bridge, self.bus, self.log)
         self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
         self.scanner.signals = self.signals
@@ -162,9 +164,43 @@ class Runtime:
             d = ev["data"]
             s = d.get("setup") or {}
             if s and d.get("signal_stage") in ("EARLY", "CONFIRMED") and s.get("state") in ("EARLY_SETUP", "CONFIRMED"):
-                self.telegram.notify(f"{s['setup_id']}:{s['state']}",
-                                     f"MasterQUO AI {'[DANE SYNTETYCZNE] ' if d.get('synthetic') else ''}{d['symbol']} {s['direction']} "
-                                     f"{s['strategy_id']} etap {s['state']} | decyzja {d['decision']} | wykonanie {d['execution_permission']}")
+                risk = d.get("risk") or {}
+                self.telegram.signal(f"{s['setup_id']}:{s['state']}", {
+                    "symbol": d.get("symbol"), "side": s.get("direction"), "strategy": f"{s.get('strategy_id')} {s.get('strategy_name') or ''}".strip(),
+                    "timeframe": s.get("setup_tf"), "stage": d.get("signal_stage"), "entry": risk.get("entry"), "sl": risk.get("stop_loss"),
+                    "tps": [t.get("price") for t in (risk.get("targets") or [])], "synthetic": d.get("synthetic")})
+        try:
+            self._telegram_trades(ev)
+        except Exception:
+            logging.getLogger("masterquo.telegram").exception("trade notification failed")
+
+    def _telegram_trades(self, ev: dict) -> None:
+        """Opened / closed positions of the bot -> Telegram (only when send_trades is on; deduplicated per order / position)."""
+        t, d = ev["type"], ev.get("data")
+        if t == "orders":
+            fresh = iso(utcnow() - timedelta(minutes=10))          # enabling notifications later must not replay old fills
+            for a in d or []:
+                if a.get("state") in ("FILLED", "PARTIAL") and a.get("attempt_id") and str(a.get("updated_at") or a.get("created_at") or "") >= fresh:
+                    self.telegram.trade_opened(a["attempt_id"], {"mode": a.get("mode"), "symbol": a.get("symbol"), "side": a.get("side"),
+                                                                 "volume": a.get("filled_volume") or a.get("volume"), "price": a.get("fill_price"),
+                                                                 "sl": a.get("sl"), "tp": a.get("tp"), "strategy": a.get("initiated_by")})
+        elif t == "trade_settled" and d:
+            row = self.db.one("SELECT * FROM trades WHERE position_ticket=? AND status IN ('CLOSED','UNSETTLED') ORDER BY closed_at DESC LIMIT 1",
+                              (d.get("position"),))
+            if row:
+                self.telegram.trade_closed(str(row["trade_id"]), {"mode": row["mode"], "symbol": row["symbol"], "side": row["side"],
+                                                                  "volume": row["volume"], "net": row["net_pnl"], "currency": row["currency"],
+                                                                  "r_multiple": row["r_multiple"], "strategy": row["strategy_id"]})
+        elif t == "trade_opened" and d:
+            self.telegram.trade_opened(str(d.get("key")), d)
+        elif t == "trade_closed" and d:
+            self.telegram.trade_closed(str(d.get("key")), d)
+
+    def _telegram_day_stats(self):
+        from . import stats as _stats
+        mode = self.modes.mode if self.modes.mode in ("AUTO_DEMO", "AUTO_LIVE") else "PAPER"
+        st = _stats.bot_stats(self.db, mode, self.bridge.account_key)
+        return mode, st.get("day") or {}, (self.bridge.account_status() or {}).get("currency")
 
     def start(self) -> None:
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
@@ -173,6 +209,7 @@ class Runtime:
         self.news.start()
         self.engine.start()
         self.manager.start()
+        self.telegram.start()
         self.ml.start()
         self.scanner.start()
         self.forecast.start()
@@ -206,6 +243,7 @@ class Runtime:
         self.agent.attach(loop)
 
     def stop(self) -> None:
+        self.telegram.stop()
         self._stop.set()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
         self.ml.stop()

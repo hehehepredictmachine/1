@@ -209,7 +209,10 @@ class BotSignalService:
         self.bus.publish("bot_signal", out)
         if st == "OPEN" and self.telegram is not None and self.cfg.telegram:
             try:
-                self.telegram.notify(f"signal:{rec['setup_id']}", f"MasterQUO {'[DANE SYNTETYCZNE] ' if view.synthetic else ''}{txt}")
+                self.telegram.signal(f"signal:{rec['setup_id']}", {
+                    "symbol": symbol, "side": action, "strategy": f"{rec['strategy_id']} {rec.get('strategy_name') or ''}".strip(),
+                    "timeframe": rec["timeframe"], "stage": "OPEN", "entry": entry, "sl": rec.get("stop_loss"),
+                    "tps": [t.get("price") if isinstance(t, dict) else t for t in (tps or [])], "synthetic": bool(view.synthetic)})
             except Exception:
                 log.exception("telegram notify failed")
         return out

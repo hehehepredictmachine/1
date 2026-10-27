@@ -1,7 +1,10 @@
-// Global header of the new panels: branding, environment, MT5 status with a details panel, data freshness, instrument,
-// execution mode, notifications, diagnostics and settings. Read-only: nothing here changes the state of the bot.
+// Global header of the new panels (approved mockups): page title, environment, MT5 status with a details panel, last update and
+// data freshness, execution mode, STOP state, XAUUSD-/BTC switch, notifications, diagnostics and settings. The only action that
+// changes the bot is the instrument switch (existing endpoint; in an automatic mode it asks first).
 import { useEffect, useRef, useState } from "react";
-import { href } from "../../router";
+import { apiSend } from "../../api";
+import { href, type Page } from "../../router";
+import { useStore } from "../../store";
 import { useUi } from "../../ui";
 import { cls, fmtNum, fmtTime } from "../../util";
 import { fmtUnknown } from "./StateView";
@@ -77,42 +80,106 @@ function AlertsList({ alerts, onClose }: { alerts: any[]; onClose: () => void })
     </div>);
 }
 
-export default function TerminalHeader({ ctx, quoteAge }: { ctx: TerminalContext; quoteAge: number | null }) {
+const TITLES: Partial<Record<Page, string>> = {
+  "trading-intelligence": "Trading Intelligence", "ai-neural-lab": "AI Neural Lab", "system-control": "Centrum sterowania",
+};
+
+/** XAUUSD- / BTC: broker symbols of the two assets. Switching changes what the bot analyses and trades (existing endpoint); the mode
+ *  stays. In an automatic mode the switch asks first. */
+function InstrumentSwitch({ ctx }: { ctx: TerminalContext }) {
+  const { s, refresh } = useStore();
+  const a = s.assets;
+  const [ask, setAsk] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const ref = usePopover(!!ask || !!err, () => { setAsk(null); setErr(null); });
+  const go = async (asset: string) => {
+    setAsk(null);
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiSend("POST", "/api/v1/assets/active", { asset });
+      await refresh();
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = (asset: string) => {
+    if (!a || asset === a.active || busy) return;
+    if (ctx.mode === "AUTO_DEMO" || ctx.mode === "AUTO_LIVE") setAsk(asset);
+    else go(asset);
+  };
+  const ids: string[] = a?.allowed || [];
+  return (
+    <div className="t-pop-anchor">
+      <div className="t-seg-switch" role="group" aria-label="Instrument" data-testid="t-instrument" data-broker-symbol={ctx.brokerSymbol ?? ""}
+        data-active={a?.active ?? ""}>
+        {ids.length === 0 && <span className="t-dim">Instrument UNKNOWN</span>}
+        {ids.map((id) => {
+          const it = a?.assets?.[id] || {};
+          return (
+            <button key={id} className={cls(a?.active === id && "on")} aria-pressed={a?.active === id} data-asset={id} data-pop-toggle
+              disabled={!it.usable || busy || ctx.backend !== "OPEN"} onClick={() => pick(id)}
+              title={it.usable ? `${id} → symbol brokera ${it.broker_symbol} (${it.mapping_status})` :
+                `${id}: niedostępne – ${it.blocked_reason ?? "brak mapowania"} (Ustawienia → mapowanie aktywów)`}>
+              {it.broker_symbol ?? id}</button>);
+        })}
+      </div>
+      {(ask || err) && (
+        <div className="t-pop t-pop-wide" ref={ref} role="dialog" aria-label="Zmiana instrumentu" data-testid="t-instrument-confirm">
+          {err ? <p className="t-bad-text" role="alert">Nie zmieniono instrumentu: {err}</p> : (
+            <>
+              <p>Tryb <b>{ctx.mode}</b> jest aktywny. Przełączenie na <b>{a?.assets?.[ask!]?.broker_symbol ?? ask}</b> zmieni instrument, który bot
+                analizuje i na którym otwiera nowe pozycje. Tryb pozostaje bez zmian; dane terminala zostaną przeładowane.</p>
+              <div className="t-row">
+                <button className="t-btn t-btn-acc" onClick={() => go(ask!)} data-testid="t-instrument-yes">Przełącz</button>
+                <button className="t-btn" onClick={() => setAsk(null)}>Anuluj</button>
+              </div>
+            </>)}
+        </div>)}
+    </div>);
+}
+
+export default function TerminalHeader({ ctx, page, quoteAge }: { ctx: TerminalContext; page: Page; quoteAge: number | null }) {
   const ui = useUi();
+  const { s } = useStore();
   const [pop, setPop] = useState<Pop>(null);
   const toggle = (p: Pop) => setPop(pop === p ? null : p);
   const close = () => setPop(null);
+  const updated = s.quote?.time_utc ?? s.decision?.as_of_utc ?? null;
   return (
     <header className="t-header" data-testid="t-header">
-      <a className="t-brand" href={href("trading-intelligence")} aria-label="Pepe Market Wizard – Trading Intelligence">
-        <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="7" fill="none" stroke="currentColor" />
-          <path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
-        <span>Pepe Market <em>Wizard</em></span>
-      </a>
-      <span className={cls("t-badge", `t-badge-${ENV_TONE[ctx.env]}`)} title={ctx.envDetail} data-testid="t-env" data-env={ctx.env}>
-        Środowisko: <b>{ctx.env}</b></span>
+      <div className="t-title">
+        <b>Terminal</b>
+        <span>{TITLES[page] ?? page}</span>
+      </div>
+      <span className="t-spacer" />
+      <span className={cls("t-chip", `t-env-${ENV_TONE[ctx.env]}`)} title={ctx.envDetail} data-testid="t-env" data-env={ctx.env}>
+        <b>{ctx.env === "SYNTHETIC" ? "SYMULATOR" : ctx.env}</b></span>
       <div className="t-pop-anchor">
         <button className={cls("t-chip", ctx.mt5 === "CONNECTED" ? "ok" : ctx.mt5 === "UNKNOWN" ? "muted" : "bad")} data-pop-toggle aria-expanded={pop === "mt5"}
           aria-haspopup="dialog" onClick={() => toggle("mt5")} data-testid="t-mt5" data-mt5={ctx.mt5}>
-          <i className="t-dot" aria-hidden="true" />MT5 <b>{ctx.mt5}</b>{ctx.mt5State && ctx.mt5State !== ctx.mt5
+          <i className="t-dot" aria-hidden="true" />MT5: <b>{ctx.mt5 === "CONNECTED" ? "POŁĄCZONY" : ctx.mt5 === "UNKNOWN" ? "NIEZNANY" : "ROZŁĄCZONY"}</b>
+          {ctx.mt5State && ctx.mt5State !== ctx.mt5 && ctx.mt5State !== "CONNECTED"
             ? <span className="t-dim"> ({ctx.backend === "OPEN" ? ctx.mt5State : `ostatnio ${ctx.mt5State}`})</span> : null}
         </button>
         {pop === "mt5" && <Mt5Details ctx={ctx} quoteAge={quoteAge} onClose={close} />}
       </div>
-      <span className={cls("t-chip", FRESH_TONE[ctx.freshness])} title={ctx.freshnessDetail} data-testid="t-fresh" data-fresh={ctx.freshness}>
-        <i className="t-dot" aria-hidden="true" />Dane <b>{ctx.freshness}</b></span>
-      <span className="t-chip muted" data-testid="t-instrument" data-broker-symbol={ctx.brokerSymbol ?? ""}
-        title={`Instrument aktywny w bocie${ctx.brokerSymbol ? ` (symbol brokera: ${ctx.brokerSymbol})` : ""}. Przełączanie zmienia pracę bota (reset trybu) – w nowych panelach dostępne od etapu 2, po decyzji D1.`}>
-        Instrument <b>{fmtUnknown(ctx.instrument, undefined, "UNKNOWN")}</b></span>
-      <span className={cls("t-chip", ctx.mode === "AUTO_LIVE" ? "bad" : ctx.mode === "SIGNALS" ? "muted" : "warn")} data-testid="t-mode"
-        title={`Tryb wykonania bota${ctx.modeLabel ? `: ${ctx.modeLabel}` : ""} (zmiana w obecnym panelu: przycisk „Wykonanie”)`}>
-        Tryb <b>{fmtUnknown(ctx.mode, undefined, "UNKNOWN")}</b></span>
+      <span className={cls("t-chip", FRESH_TONE[ctx.freshness])} title={`Dane: ${ctx.freshness} – ${ctx.freshnessDetail}`} data-testid="t-fresh"
+        data-fresh={ctx.freshness}>
+        <i className="t-dot" aria-hidden="true" /><span className="t-lbl">Aktualizacja: </span><b>{updated && ctx.backend === "OPEN" ? fmtTime(updated) : "—"}</b>
+        <span className="t-sr">Dane {ctx.freshness}</span></span>
+      <span className={cls("t-chip", ctx.mode === "AUTO_LIVE" ? "bad" : ctx.mode === "SIGNALS" || !ctx.mode ? "muted" : "warn")} data-testid="t-mode"
+        title={`Tryb wykonania bota${ctx.modeLabel ? `: ${ctx.modeLabel}` : ""} – zmiana w Centrum sterowania`}>
+        <span className="t-lbl">Tryb: </span><b>{fmtUnknown(ctx.mode?.replace("_", " "), undefined, "NIEZNANY")}</b></span>
       <span className={cls("t-chip", ctx.killSwitch ? "bad" : ctx.mode ? "ok" : "muted")} data-testid="t-entries"
-        title="STOP zatrzymuje tylko nowe wejścia; otwarte pozycje są dalej prowadzone">Wejścia <b>{ctx.mode ? (ctx.killSwitch ? "STOP" : "AKTYWNE") : "UNKNOWN"}</b></span>
+        title="STOP zatrzymuje tylko nowe wejścia; otwarte pozycje są dalej prowadzone">Wejścia: <b>{ctx.mode ? (ctx.killSwitch ? "STOP" : "AKTYWNE") : "UNKNOWN"}</b></span>
+      <InstrumentSwitch ctx={ctx} />
       {ctx.backend !== "OPEN" && <span className="t-chip bad" data-testid="t-backend">Backend <b>{ctx.backend}</b></span>}
-      <span className="t-spacer" />
       <div className="t-pop-anchor">
-        <button className={cls("t-btn", ctx.alerts.length > 0 && "t-btn-warn")} data-pop-toggle aria-expanded={pop === "alerts"} aria-haspopup="dialog"
+        <button className={cls("t-btn", "t-icon-btn", ctx.alerts.length > 0 && "t-btn-warn")} data-pop-toggle aria-expanded={pop === "alerts"} aria-haspopup="dialog"
           onClick={() => toggle("alerts")} data-testid="t-alerts" aria-label={`Powiadomienia: ${ctx.alerts.length}`} title="Powiadomienia (ostrzeżenia i błędy)">
           <Icon d={BELL} /><b>{ctx.alerts.length}</b></button>
         {pop === "alerts" && <AlertsList alerts={ctx.alerts} onClose={close} />}

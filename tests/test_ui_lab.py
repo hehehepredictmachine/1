@@ -123,6 +123,10 @@ class TestLabUI(unittest.TestCase):
         self.assertEqual(st, 400)                                   # unknown field
         st, j = self.send("PUT", "/api/v1/config", {"execution": {"mode": "AUTO_LIVE"}})
         self.assertEqual(st, 400)                                   # the mode changes only through POST /mode (account confirmation)
+        cur = self.api("/api/v1/state")["mode"]["mode"]
+        st, j = self.send("PUT", "/api/v1/config", {"execution": {"mode": cur, "bound_account": None}})
+        self.assertEqual(st, 200)                                   # a settings form sending the unchanged section back still saves
+        self.assertEqual(self.api("/api/v1/state")["mode"]["mode"], cur)
         self.assertEqual(self.page.request.get(BASE + "/api/v1/lab?asset=DOGE").status, 403)   # asset id must be XAUUSD / BTC
         self.assertEqual(self.page.request.get(BASE + "/api/v1/markets/detail?symbol=EURUSD-").status, 200)   # no symbol blocking
         self.assertTrue(wait_for(lambda: self.api("/api/v1/assets")["assets"]["BTC"]["broker_symbol"] == "BTCUSD-", 30, 0.5))  # from the account

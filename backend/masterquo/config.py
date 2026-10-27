@@ -171,6 +171,10 @@ class TelegramConfig(_Strict):
     enabled: bool = False
     chat_id: str | None = None
     send_signals: bool = False
+    send_trades: bool = False                  # opened / closed positions of the bot (all modes; the mode is in the message)
+    send_stats: bool = False                   # daily summary of closed trades
+    stats_hour_utc: int = Field(21, ge=0, le=23)
+    language: Literal["EN_ZH", "EN", "ZH"] = "EN_ZH"   # English + Simplified Chinese by default
 
 
 class ServerConfig(_Strict):

@@ -1044,7 +1044,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/sh/plans/{pid}/close")
     def sh_plan_close(pid: str):
-        """Explicit, user-confirmed close of one SH plan (primary + hedge) through its state machine; Execution Lock applies."""
+        """Explicit, user-confirmed close of one SH plan (primary + hedge) through its state machine (no Execution Lock since 1.24; the plan account must match)."""
         r = rt.sh.close_plan(pid, "MANUAL_CLOSE")
         rt.log.warn("SH", "MANUAL_CLOSE", f"Zamknięcie planu {pid} na żądanie: {r}")
         return r
@@ -1337,10 +1337,17 @@ def create_app(rt, port: int) -> FastAPI:
         m5.pop("analytical_alias", None)
         if m5.get("symbol"):                       # symbol typed in Ustawienia -> becomes the active asset's broker symbol
             patch.setdefault("assets", {})["mappings"] = {rt.cfg.get().assets.active: {"broker_symbol": m5["symbol"], "status": "USER_SPECIFIED"}}
-        if isinstance(patch.get("execution"), dict) and ({"mode", "bound_account", "mode_note"} & set(patch["execution"])):
+        ex_patch = patch.get("execution")
+        if isinstance(ex_patch, dict):
             # the execution mode and its account binding change only through POST /api/v1/mode (account confirmation) -
-            # never through a generic config write, so automatic orders cannot be switched on silently
-            raise HTTPException(400, "USE_MODE_ENDPOINT")
+            # never through a generic config write, so automatic orders cannot be switched on silently. Values equal to the
+            # current ones (a settings form sending the section back unchanged) are dropped; a different value is refused.
+            cur_ex = rt.cfg.get().execution
+            for k in ("mode", "bound_account", "mode_note"):
+                if k in ex_patch:
+                    if ex_patch[k] != getattr(cur_ex, k, None):
+                        raise HTTPException(400, "USE_MODE_ENDPOINT")
+                    ex_patch.pop(k)
         try:
             old = rt.cfg.get()
             new = rt.cfg.update(patch)
@@ -2291,6 +2298,21 @@ def create_app(rt, port: int) -> FastAPI:
                 "worker": {"calls": rt.worker.calls, "failures": rt.worker.failures, "module_error": rt.worker.module_error},
                 "db_schema": rt.db.schema_versions(), "agent": rt.agent.status(), "news": {k: v for k, v in rt.news.summary().items() if k in ("status", "error", "failed_sources")},
                 "engine": {"last_error": rt.engine.last_error, "cycle_ms": rt.engine.cycle_ms, "required_bars": rt.engine.required}}
+
+    # ------------------------------------------------------------ Telegram (information only; token = local secret, never returned)
+    @app.get("/api/v1/telegram")
+    def telegram_status():
+        return rt.telegram.status()
+
+    @app.post("/api/v1/telegram/test")
+    def telegram_test():
+        r = rt.telegram.send_test()
+        rt.log.info("TELEGRAM", "TEST", "Wiadomość testowa Telegram: " + ("dostarczona" if r["ok"] else f"błąd – {r['error']}"))
+        return r
+
+    @app.post("/api/v1/telegram/stats-now")
+    def telegram_stats_now():
+        return {"sent": rt.telegram.send_daily_stats(force=True), "status": rt.telegram.status()}
 
     # ------------------------------------------------------------ desktop application (Windows shell): window, autostart, restart
     @app.get("/api/v1/desktop")

@@ -281,7 +281,7 @@ class ManualPad:
             res = self.paper.open(attempt_id=attempt_id, decision=d, side=p["side"], lots=p["lots"], sl=p["sl"], targets=d["risk"]["targets"],
                                   exit_policy=None)
         else:
-            res = self.gateway._send(attempt_id, d, p["side"], d["risk"], p["tp"])     # the single order_send path (worker + Execution Lock)
+            res = self.gateway._send(attempt_id, d, p["side"], d["risk"], p["tp"])     # the single order_send path (MT5 worker; mode / account / STOP checked above)
         st = res.get("status")
         self._act(key, st if st in ("FILLED", "PARTIAL", "REJECTED", "UNKNOWN") else "REJECTED", dict(res, attempt_id=attempt_id))
         self._intent_state(iid, {"FILLED": "OPEN", "PARTIAL": "OPEN_PARTIAL", "UNKNOWN": "UNKNOWN_RECONCILE"}.get(st, "REJECTED"))

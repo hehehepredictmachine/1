@@ -64,7 +64,7 @@ td,th{{border:1px solid var(--line);padding:6px;vertical-align:top;text-align:le
 <p class="mut">Profil: {html.escape(plan['profile'])} · instrumenty: {html.escape(', '.join(plan['instruments']))} · symbole: {html.escape(json.dumps(plan['symbols'], ensure_ascii=False))}
  · historia: {plan['months']} mies. · dane: {'SYNTETYCZNE (test)' if plan['synthetic'] else 'rzeczywiste z terminala'} · status runu: {html.escape(st.get('status', ''))}</p>
 <p class="mut">Trzy osie statusu: wykonanie / jakość / integracja. Ukończone zadanie nie oznacza dobrego modelu. Żadna liczba tutaj nie jest win rate ani
-gwarancją wyniku. Trening nie wysyła zleceń i nie zmienia Execution Lock.</p>
+gwarancją wyniku. Trening nie wysyła zleceń i nie zmienia trybu wykonania.</p>
 <div class="wrap"><table><tr><th>Instrument</th><th>Zadanie</th><th>Wykonanie</th><th>Jakość</th><th>Integracja</th><th>Model / run</th><th>Szczegóły</th></tr>
 {''.join(rows)}</table></div>
 <h2>Zasady planu (zamrożone przed treningiem)</h2><pre>{html.escape(json.dumps(plan.get('rules'), indent=1, ensure_ascii=False))}</pre>

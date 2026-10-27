@@ -21,6 +21,9 @@ BASE = f"http://127.0.0.1:{PORT}"
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_terminal"
 ROUTES = {"trading-intelligence": "page-trading-intelligence", "ai-neural-lab": "page-ai-neural-lab", "system-control": "page-system-control"}
+INTEGRATED = {"trading-intelligence": ["ti-account", "ti-market", "ti-signals", "ti-positions", "ti-banner"],
+              "ai-neural-lab": ["nl-banner", "nl-models", "nl-canvas", "nl-details", "nl-cycle"],
+              "system-control": ["sc-banner", "sc-status", "sc-mode", "sc-stop", "sc-mt5", "sc-app"]}
 try:
     from playwright.sync_api import sync_playwright
     HAVE_PW = True
@@ -109,8 +112,13 @@ class TestTerminalShell(unittest.TestCase):
             self.go(route)
             self.assertEqual(self.page.locator("[data-testid=topbar]").count(), 0, route)             # the old shell is not mixed in
             self.assertEqual(self.page.locator(f"[data-testid=t-sidebar] [data-page={route}]").get_attribute("aria-current"), "page")
-            sections = self.page.locator(f"[data-testid={tid}] [data-integration=NOT_INTEGRATED]")
-            self.assertGreater(sections.count(), 0, route)                                           # stage 1: honestly not integrated
+            if route in INTEGRATED:                                                                     # 1.24: panels on real data
+                for part in INTEGRATED[route]:
+                    self.assertTrue(self.page.locator(f"[data-testid={part}]").first.is_visible(), f"{route}: {part}")
+                self.assertEqual(self.page.locator(f"[data-testid={tid}] [data-integration=NOT_INTEGRATED]").count(), 0, route)
+            else:
+                sections = self.page.locator(f"[data-testid={tid}] [data-integration=NOT_INTEGRATED]")
+                self.assertGreater(sections.count(), 0, route)                                       # not integrated yet - said honestly
             self.page.screenshot(path=str(SHOTS / f"{route}_1600.png"))
         self.assertEqual(self.errors, [])
 
@@ -189,10 +197,52 @@ class TestTerminalShell(unittest.TestCase):
         for route, tid in ROUTES.items():
             self.go(route)
             text = self.page.locator(f"[data-testid={tid}]").inner_text()
-            self.assertIsNone(re.search(r"\d+[.,]\d+", text), route)                                 # no prices / metrics invented
+            if route not in INTEGRATED:
+                self.assertIsNone(re.search(r"\d+[.,]\d+", text), route)                             # no prices / metrics invented
             for bad in ("undefined", "null", "NaN"):
                 self.assertNotIn(bad, self.page.locator("[data-testid=terminal-shell]").inner_text(), route)
         self.assertEqual([u for u in self.posts[n0:] if "/api/" in u], [])                          # navigation never changes bot state
+
+    def test_06b_trading_intelligence_shows_backend_values(self):
+        self.go("trading-intelligence")
+        st = self.state()
+        acc = st["account"]
+        num = lambda t: float(re.sub(r"[^0-9,\-]", "", t.split("USD")[0]).replace(",", "."))
+        wait_for(lambda: self.page.locator("[data-testid=ti-balance] b").inner_text() != "—", 20, 0.3)
+        self.assertAlmostEqual(num(self.page.locator("[data-testid=ti-balance] b").inner_text()), acc["balance"], delta=0.01)
+        self.assertAlmostEqual(num(self.page.locator("[data-testid=ti-equity] b").inner_text()), self.state()["account"]["equity"], delta=50)
+        sig = self.page.locator("[data-testid=ti-signals]")
+        dec = self.state()["decision"]
+        self.assertTrue(self.page.locator("[data-testid=ti-why-signal]").is_visible())               # signal and order answered separately
+        self.assertTrue(self.page.locator("[data-testid=ti-why-order]").is_visible())
+        if dec.get("setup"):
+            side = {"LONG": "BUY", "SHORT": "SELL"}.get(dec["setup"]["direction"], dec["setup"]["direction"])
+            self.assertIn(side, sig.locator("[data-testid=ti-direction]").inner_text())
+        self.assertIn(dec["symbol"], self.page.locator("[data-testid=ti-market]").inner_text())
+        # layout 1/4/6 + save: remembered after a reload
+        self.page.locator("[data-testid=ti-layout-6]").click()
+        wait_for(lambda: self.page.locator("[data-testid=ti-chart]").count() == 6, 10, 0.2)
+        self.assertTrue(self.page.locator("[data-testid=ti-layout-dirty]").is_visible())
+        self.page.locator("[data-testid=ti-layout-save]").click()
+        self.page.reload()
+        self.page.wait_for_selector("[data-testid=ti-charts]", timeout=20000)
+        self.assertEqual(self.page.locator("[data-testid=ti-charts]").get_attribute("data-n"), "6")
+        self.page.locator("[data-testid=ti-layout-4]").click()
+        self.page.locator("[data-testid=ti-layout-save]").click()
+
+    def test_06c_look_dialog_changes_only_this_client(self):
+        self.go("trading-intelligence")
+        n0 = len(self.posts)
+        self.page.locator("[data-testid=t-look-open]").first.click()
+        self.assertTrue(self.page.locator("[data-testid=t-look]").is_visible())
+        self.page.locator("[data-testid=t-look-preset]").select_option("contrast")
+        style = self.page.locator("[data-testid=terminal-shell]").get_attribute("style")
+        self.assertIn("--t-bg: #000000", style)
+        self.assertEqual(self.page.locator("[data-testid=t-look-contrast] [data-contrast=low]").count(), 0)   # high-contrast preset passes
+        self.page.locator("[data-testid=t-look-reset]").click()
+        self.page.locator("[data-testid=t-look-close]").click()
+        self.assertEqual(self.page.locator("[data-testid=t-look]").count(), 0)
+        self.assertEqual([u for u in self.posts[n0:] if "/api/" in u], [])                          # appearance never reaches the bot
 
     # ------------------------------------------------------------------ F8
     def test_07_keyboard_skip_link_and_focus(self):

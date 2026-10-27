@@ -1,5 +1,5 @@
-"""M39 Repaint Inspector, M40 Edge Drift Detector, M41 Edge-or-Luck block bootstrap, M42 Trade Pad (simulation under
-Execution Lock) - MQ-LAB-EDGE-1.0.0."""
+"""M39 Repaint Inspector, M40 Edge Drift Detector, M41 Edge-or-Luck block bootstrap, M42 Trade Pad (plan / simulation; real
+orders only through the manual pad of the execution path) - MQ-LAB-EDGE-1.0.0."""
 from __future__ import annotations
 
 import json
