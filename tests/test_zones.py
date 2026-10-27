@@ -480,6 +480,29 @@ class ServiceRestart(unittest.TestCase):
         self.assertEqual(s2.status()["mode"], "ANALYTICAL_ONLY")
         s2.db.close()
 
+    def test_restart_shows_the_saved_map_as_stale_until_recomputed(self):
+        s1 = self.svc()
+        m1 = s1.refresh()
+        self.assertEqual(m1["data"]["state"], "OK")
+        s1.db.close()
+        s2 = self.svc()                                               # restart: map available at once, before any bar is read
+        r = s2.current()
+        self.assertIsNotNone(r)
+        self.assertTrue(r["restored"])
+        self.assertEqual(r["data"]["state"], "STALE")                 # never treated as current by decisions / features
+        self.assertEqual(r["data"]["state_before_restart"], "OK")
+        self.assertEqual([z["zone_id"] for z in r["zones"]], [z["zone_id"] for z in m1["zones"]])
+        self.assertEqual(s2.status()["restored_map"]["map_id"], m1["map_id"])
+        ctx = s2.context_for(direction="LONG", entry=r["zones"][0]["upper_price"], stop=None)
+        self.assertIsNotNone(ctx)
+        self.assertEqual(ctx["data_state"], "STALE")                     # restored map: no confirmation from zones
+        self.assertEqual(ctx["features"]["zone_data_ok"], 0.0)
+        m2 = s2.current_or_refresh()                                  # first recomputation replaces it
+        self.assertFalse(m2.get("restored", False))
+        self.assertEqual(m2["data"]["state"], "OK")
+        self.assertNotIn("restored_map", s2.status())
+        s2.db.close()
+
     def test_historical_view_and_chart_payload(self):
         from masterquo.zones.service import ZoneService
         s = self.svc()

@@ -53,6 +53,29 @@ class ZoneService:
         self.last_bar: str | None = None
         self.state = {"version": VERSION, "runs": 0, "last_error": None, "last_ms": None, "mode": "ANALYTICAL_ONLY"}
         self.poll_s = 5.0
+        self._restore()
+
+    def _restore(self) -> None:
+        """Last saved map of the active instrument, shown after a restart until the first recomputation. It is marked RESTORED and its
+        data state is STALE, so nothing downstream treats it as current (zone context, features and decisions require state OK)."""
+        try:
+            inst = self.cfg_store.get().assets.active
+            row = self.db.execute("SELECT payload FROM zone_maps WHERE instrument=? ORDER BY as_of DESC LIMIT 1", (inst,)).fetchone()
+        except Exception:  # noqa: BLE001 - a damaged store must not stop the bot; the map is recomputed from bars anyway
+            return
+        if not row:
+            return
+        try:
+            zm = json.loads(row["payload"])
+        except ValueError:
+            return
+        data = dict(zm.get("data") or {})
+        data["state_before_restart"] = data.get("state")
+        data["state"] = "STALE"
+        data["reasons"] = list(data.get("reasons") or []) + ["mapa odtworzona z zapisu po restarcie – czeka na przeliczenie z bieżących świec"]
+        zm.update(data=data, restored=True)
+        self.map = zm
+        self.state["restored_map"] = {"map_id": zm.get("map_id"), "as_of": zm.get("as_of")}
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -105,6 +128,7 @@ class ZoneService:
         t2 = time.perf_counter()
         with self._lock:
             self.map = zm
+        self.state.pop("restored_map", None)
         self._persist(zm)
         self.state.update(runs=self.state["runs"] + 1, last_ms=round((time.perf_counter() - t0) * 1000, 1), last_error=None,
                           last_read_ms=round((t1 - t0) * 1000, 1), last_compute_ms=round((t2 - t1) * 1000, 1),
@@ -143,13 +167,13 @@ class ZoneService:
     def current_or_refresh(self) -> dict | None:
         """The live map, computed on demand when none exists yet; None (reason in status.last_error) when the inputs are unavailable."""
         zm = self.current()
-        if zm is not None:
+        if zm is not None and not zm.get("restored"):
             return zm
         try:
             return self.refresh()
-        except Exception as exc:  # noqa: BLE001 - e.g. terminal not connected: the API answers NO_MAP, never a 500
+        except Exception as exc:  # noqa: BLE001 - e.g. terminal not connected: the API answers NO_MAP (or the restored STALE map), never a 500
             self.state["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
-            return None
+            return zm                                       # None, or the restored map flagged STALE / restored
 
     def status(self) -> dict:
         zm = self.current()
