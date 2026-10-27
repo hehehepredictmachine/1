@@ -27,6 +27,7 @@ _TF_SEC = {TIMEFRAME_M1: 60, TIMEFRAME_M5: 300, TIMEFRAME_M15: 900, TIMEFRAME_M3
            TIMEFRAME_H8: 28800, TIMEFRAME_D1: 86400}
 
 ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
+COPY_TICKS_ALL, COPY_TICKS_INFO, COPY_TICKS_TRADE = -1, 1, 2              # official MetaTrader5 values
 TRADE_ACTION_DEAL, TRADE_ACTION_SLTP = 1, 6
 ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
 ORDER_TIME_GTC = 0
@@ -389,6 +390,46 @@ class FakeMT5:
             if len(rows) >= count:
                 break
         return np.array(rows[:count], dtype=self.TICK_DTYPE)
+
+    def copy_ticks_range(self, symbol, date_from, date_to, flags=0):
+        """Quotes of [date_from, date_to] (SYNTHETIC). Same per-minute generator as copy_ticks_from, millisecond times, and every
+        quote whose millisecond time is a multiple of 7 (about every 7th) is followed by a second quote with the SAME time_msc (real
+        feeds do that) - an export must keep both."""
+        if not self._guard() or not self._known(symbol):
+            return None
+        raw = self._raw_now()
+        f = date_from.timestamp() if isinstance(date_from, datetime) else float(date_from)
+        t = min(raw, date_to.timestamp() if isinstance(date_to, datetime) else float(date_to))
+        if symbol in self._markets:
+            mins, m1 = self._market_series(symbol)
+            conv = lambda x: self._to_market(symbol, x)  # noqa: E731
+            d = self._markets[symbol]["digits"]
+            spr = self._markets[symbol]["spread"] * 10.0 ** -d
+        else:
+            mins, m1 = self._mins, self._m1
+            conv, d, spr = (lambda x: x), 2, 0.12  # noqa: E731
+        i0 = int(np.searchsorted(mins, f - 60, side="left"))
+        i1 = min(int(np.searchsorted(mins, t, side="right")), self._m1_upto(raw, mins))
+        rows, n = [], 0
+        for i in range(i0, i1):
+            t0 = float(mins[i])
+            rng = np.random.default_rng((self.seed * 1_000_003 + int(t0)) % (2 ** 32))
+            k = int(min(60, max(1, m1["tick_volume"][i] // 20)))
+            ts_ = np.sort(rng.uniform(0, 60, k)) + t0
+            path = m1["open"][i] + (m1["close"][i] - m1["open"][i]) * (ts_ - t0) / 60.0
+            noise = rng.normal(0, max(1e-9, (m1["high"][i] - m1["low"][i]) / 6), k)
+            px = np.clip(path + noise, m1["low"][i], m1["high"][i])
+            for tt, pp in zip(ts_, px):
+                if tt < f or tt > t:
+                    continue
+                ms = int(tt * 1000)
+                b = round(float(conv(pp)), d)
+                rows.append((int(tt), b, round(b + spr, d), 0.0, 0, ms, 6, 0.0))
+                n += 1
+                if ms % 7 == 0:                                        # property of the quote itself: same for every request window
+                    b2 = round(b + 10.0 ** -d, d)
+                    rows.append((int(tt), b2, round(b2 + spr, d), 0.0, 0, ms, 2, 0.0))
+        return np.array(rows, dtype=self.TICK_DTYPE)
 
     def copy_rates_range(self, symbol, timeframe, date_from, date_to):
         if not self._guard():

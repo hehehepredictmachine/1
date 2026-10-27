@@ -1797,6 +1797,12 @@ def create_app(rt, port: int) -> FastAPI:
                         ("commission_xauusd", "--commission-xauusd"), ("commission_btc", "--commission-btc")):
             if body.get(k) not in (None, ""):
                 cmd += [flag, str(body[k])]
+        for k, flag in (("dataset_xauusd", "--dataset-xauusd"), ("dataset_btc", "--dataset-btc")):   # export made in the panel
+            if body.get(k):
+                d = Path(str(body[k])).resolve()
+                if paths.data_dir().resolve() not in d.parents:
+                    raise HTTPException(400, "BAD_DIR")
+                cmd += [flag, str(d)]
         if rt.demo:
             cmd.append("--demo")
         held = None
@@ -1812,6 +1818,45 @@ def create_app(rt, port: int) -> FastAPI:
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
         subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, MQ_NO_BROWSER="1"), stdout=log, stderr=subprocess.STDOUT, **kw)
         return {"started": True}
+
+    # ------------------------------------------------------------ 1.25 export of MT5 history for training (own process, read only)
+    def _default_symbol(inst: str):
+        c = rt.cfg.get()
+        m = c.assets.mappings.get(inst)
+        return m.broker_symbol if m and m.broker_symbol else (c.mt5.symbol if inst == "XAUUSD" else None)
+
+    @app.post("/api/v1/export/start")
+    def export_start(body: dict):
+        from ..training import export_job as EJ
+        try:
+            return EJ.start(body, demo=rt.demo, default_symbol=_default_symbol)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/v1/export/status")
+    def export_status():
+        from ..training import export_job as EJ
+        return EJ.status()
+
+    @app.post("/api/v1/export/cancel")
+    def export_cancel():
+        from ..training import export_job as EJ
+        return EJ.cancel()
+
+    @app.get("/api/v1/export/datasets")
+    def export_datasets(instrument: str = Query(...)):
+        from ..training import export_job as EJ
+        if instrument not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        return {"instrument": instrument, "datasets": EJ.datasets(instrument), "default_symbol": _default_symbol(instrument)}
+
+    @app.get("/api/v1/export/readiness")
+    def export_readiness(dataset: str = Query(...)):
+        from ..training import requirements as RQ
+        d = Path(dataset).resolve()
+        if paths.data_dir().resolve() not in d.parents:
+            raise HTTPException(400, "BAD_DIR")
+        return RQ.check_dataset(d)
 
     @app.post("/api/v1/training/cancel")
     def training_cancel():

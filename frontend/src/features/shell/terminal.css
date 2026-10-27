@@ -353,3 +353,14 @@ button.t-chip { cursor: pointer; }
 .t-stat-warn { border-color: color-mix(in srgb, var(--t-warn) 45%, var(--t-line)); }
 @media (max-width: 1200px) { .t-sc-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .t-mode-grid, .t-grid2 { grid-template-columns: minmax(0, 1fr); } }
+
+/* 1.25 export card */
+.t-form { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; }
+.t-form fieldset { border: 0; padding: 0; margin: 0; flex-wrap: wrap; }
+.t-form legend { margin-right: 8px; }
+.t-mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; word-break: break-all; }
+.t-progress { position: relative; height: 18px; border-radius: 9px; background: var(--t-panel-2, rgba(255, 255, 255, 0.06)); overflow: hidden; margin: 8px 0; }
+.t-progress > i { position: absolute; inset: 0 auto 0 0; background: var(--t-accent); opacity: 0.55; transition: width 0.4s; }
+.t-progress > span { position: relative; padding: 0 8px; font-size: 0.8em; line-height: 18px; }
+.t-log { max-height: 220px; overflow: auto; font-size: 0.78em; white-space: pre-wrap; background: rgba(0, 0, 0, 0.25); padding: 8px; border-radius: 6px; }
+.t-table-wrapcells td { white-space: normal; }

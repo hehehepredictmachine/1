@@ -8,6 +8,7 @@ import { useStore } from "../../../store";
 import { cls, fmtNum, fmtTime } from "../../../util";
 import PageBanner from "../../shell/PageBanner";
 import { StateView, stateOfError } from "../../shell/StateView";
+import ExportCard, { useExports } from "../components/ExportCard";
 import NeuralCanvas, { buildGraph, type Shape, type ViewMode } from "../components/NeuralCanvas";
 
 type Tab = "universe" | "training" | "validation" | "deploy";
@@ -160,12 +161,17 @@ function Training({ instrument }: { instrument: string }) {
   const [profile, setProfile] = useState("PELNY_TRENING");
   const [ask, setAsk] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [dataset, setDataset] = useState("");                // "" = new export inside the training run
+  const ex = useExports(instrument);
+  const usable = (ex.d?.datasets || []).filter((d: any) => d.usable);
   const run = tr.d?.run;
   const start = async () => {
     setAsk(false);
     setMsg(null);
     try {
-      const r: any = await apiSend("POST", "/api/v1/training/start", { instruments: [instrument], profile });
+      const body: any = { instruments: [instrument], profile };
+      if (dataset) body[`dataset_${instrument.toLowerCase()}`] = dataset;
+      const r: any = await apiSend("POST", "/api/v1/training/start", body);
       setMsg(r.started ? "Trening uruchomiony w osobnym procesie." : `Nie uruchomiono: ${r.reason}`);
       tr.reload();
     } catch (e: any) {
@@ -175,7 +181,10 @@ function Training({ instrument }: { instrument: string }) {
   const cancel = async () => {
     try { await apiSend("POST", "/api/v1/training/cancel", {}); tr.reload(); } catch (e: any) { setMsg(`Błąd: ${e?.message || e}`); }
   };
+  const useExport = (dir: string) => { ex.reload(); setDataset(dir); setMsg("Wybrano eksport do treningu – sprawdź profil i uruchom trening."); };
   return (
+    <div className="t-col-stack">
+    <ExportCard instrument={instrument} onUse={useExport} />
     <div className="t-two">
       <section className="t-card" aria-label="Trening" data-testid="nl-training">
         <header className="t-card-head"><h2>Trening – {instrument}</h2>
@@ -193,13 +202,18 @@ function Training({ instrument }: { instrument: string }) {
             <select value={profile} onChange={(e) => setProfile(e.target.value)}>
               {Object.entries(tr.d?.profiles || {}).map(([k, v]) => <option key={k} value={k}>{String(v)}</option>)}
             </select></label>
-          <button className="t-btn t-btn-acc" disabled={!rd.d?.ready || run?.status === "RUNNING"} onClick={() => setAsk(true)} data-testid="nl-train-start">Rozpocznij trening</button>
+          <label className="t-field t-inline">Dane
+            <select value={dataset} onChange={(e) => setDataset(e.target.value)} data-testid="nl-train-dataset">
+              <option value="">nowy eksport z MT5 w treningu</option>
+              {usable.map((d: any) => <option key={d.dir} value={d.dir}>{d.name} · {d.symbol} · {(d.range_utc || []).map((x: string) => x?.slice(0, 10)).join("–")}{d.data_kind === "SYNTHETIC_TEST" ? " · SYNTETYCZNE" : ""}</option>)}
+            </select></label>
+          <button className="t-btn t-btn-acc" disabled={(!rd.d?.ready && !dataset) || run?.status === "RUNNING"} onClick={() => setAsk(true)} data-testid="nl-train-start">Rozpocznij trening</button>
           {run?.status === "RUNNING" && <button className="t-btn" onClick={cancel}>Przerwij</button>}
         </div>
         {ask && (
           <div className="t-confirm" role="alertdialog" aria-label="Potwierdź trening">
             <p>Trening {instrument} ({profile}) działa w osobnym procesie, może trwać długo i obciąża komputer. Nie składa zleceń; nowy model zostaje aktywowany
-              tylko po walidacji poza próbą.</p>
+              tylko po walidacji poza próbą. Dane: {dataset ? `gotowy eksport ${dataset.split(/[\\/]/).pop()}` : "nowy eksport z MT5"}.</p>
             <div className="t-row"><button className="t-btn t-btn-acc" onClick={start} data-testid="nl-train-yes">Uruchom</button>
               <button className="t-btn" onClick={() => setAsk(false)}>Anuluj</button></div>
           </div>)}
@@ -218,6 +232,7 @@ function Training({ instrument }: { instrument: string }) {
           <table className="t-table"><thead><tr><th>Uruchomienie</th><th>Status</th><th>Start</th></tr></thead>
             <tbody>{runs.d.items.slice(0, 10).map((r: any) => <tr key={r.run_id}><td>{r.run_id}</td><td>{r.status}</td><td>{fmtTime(r.started_at, true)}</td></tr>)}</tbody></table>)}
       </section>
+    </div>
     </div>);
 }
 

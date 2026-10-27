@@ -263,17 +263,23 @@ def main(argv=None) -> int:
     e = sub.add_parser("export", help="eksport 8 TF (z M30 i H8) w formacie M06R z czasem UTC")
     e.add_argument("--from-utc", required=True)
     e.add_argument("--to-utc", required=True)
-    e.add_argument("--out", default=str(paths.ROOT_DIR / "data" / "export_mt5_utc"))
+    e.add_argument("--out", default=None, help="folder wyniku (domyślnie <dane>/export_mt5_utc)")
     e.add_argument("--dst-model", choices=["UNIFORM", "NY_CLOSE"], default="UNIFORM",
                    help="UNIFORM = jeden offset (dzisiejszy) dla całego zakresu; NY_CLOSE = offset per świeca (Nowy Jork + 7 h)")
     ec = sub.add_parser("export-candles", help="eksport zamkniętych M5/M30 XAUUSD- do treningu prognoz (CSV + metadane + raport jakości)")
     ec.add_argument("--months", type=int, default=12)
     ec.add_argument("--out")
     ec.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
+    ec.add_argument("--from", dest="date_from", help="początek zakresu UTC (zastępuje --months)")
+    ec.add_argument("--to", dest="date_to", help="koniec zakresu UTC")
+    ec.add_argument("--ticks-days", type=float, default=0.0, help="ticki Bid/Ask z ostatnich N dni (max 31)")
     es = sub.add_parser("export-scalp", help="eksport zamkniętych M1/M5/M15/M30/H1 XAUUSD- do profilu scalp (data/scalp/history)")
     es.add_argument("--months", type=int, default=6)
     es.add_argument("--out")
     es.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
+    es.add_argument("--from", dest="date_from", help="początek zakresu UTC (zastępuje --months)")
+    es.add_argument("--to", dest="date_to", help="koniec zakresu UTC")
+    es.add_argument("--ticks-days", type=float, default=0.0, help="ticki Bid/Ask z ostatnich N dni (max 31)")
     sr = sub.add_parser("scalp-replay", help="replay profilu scalp na wyeksportowanej historii M1 (OHLC, przybliżony – bez ticków)")
     sr.add_argument("--history", help="katalog eksportu (domyślnie najnowszy w data/scalp/history)")
     sr.add_argument("--commission-per-lot-side", type=float, default=None, help="prowizja za 1 lot na stronę w walucie konta; domyślnie scalp.commission_per_lot_side z config.json (paczka: 0.50)")
@@ -313,15 +319,15 @@ def main(argv=None) -> int:
     if a.cmd == "set-key":
         return diagnostics.set_key()
     if a.cmd == "export":
-        return diagnostics.export_history(a.from_utc, a.to_utc, a.out, a.dst_model)
+        return diagnostics.export_history(a.from_utc, a.to_utc, a.out or str(paths.data_dir() / "export_mt5_utc"), a.dst_model)
     if a.cmd == "profile":
         return cmd_profile(a.name)
     if a.cmd == "export-candles":
         from .forecast.export import export_candles
-        return export_candles(a.months, a.out, a.dst_model)
+        return export_candles(a.months, a.out, a.dst_model, date_from=a.date_from, date_to=a.date_to, tick_days=a.ticks_days)
     if a.cmd == "export-scalp":
         from .forecast.export import SCALP_TFS, export_candles
-        return export_candles(a.months, a.out, a.dst_model, SCALP_TFS, "scalp")
+        return export_candles(a.months, a.out, a.dst_model, SCALP_TFS, "scalp", date_from=a.date_from, date_to=a.date_to, tick_days=a.ticks_days)
     if a.cmd == "scalp-replay":
         from .scalp.cli import replay_cmd
         return replay_cmd(a)

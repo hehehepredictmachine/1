@@ -33,9 +33,10 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
 
 def build_plan(*, instruments: list[str], profile: str, symbols: dict, commissions: dict, months: int | None, synthetic: bool,
                tasks: list[str] | None = None, include_approx: bool = True, lab_bars: int | None = None, threads: int | None = None,
-               ml_days: int | None = None, min_events: int | None = None, origin: str = "menu") -> tuple[dict, list[dict]]:
+               ml_days: int | None = None, min_events: int | None = None, origin: str = "menu", datasets: dict | None = None) -> tuple[dict, list[dict]]:
     prof = dict(core.profiles()[profile])
     plan = {"run_id": core.new_run_id(), "profile": profile, "profile_params": prof, "instruments": instruments, "symbols": symbols,
+            "datasets": dict(datasets or {}),
             "commissions": commissions, "months": int(months or prof["months"]), "synthetic": synthetic, "include_approx": include_approx,
             "lab_bars": int(lab_bars or prof["lab_bars"]), "threads": int(threads or prof["threads"]), "ml_days": int(ml_days or prof["ml_days"]),
             "lab_min_events": int(min_events or prof["lab_min_events"]), "activate": bool(prof["activate"]) and not synthetic,
@@ -78,19 +79,27 @@ def _fail(run: Run, tid: str, why: str) -> None:
 
 # ------------------------------------------------------------------ tasks
 def t_export(run: Run, inst: str) -> None:
+    from ..forecast.export import dataset_state
     tid, plan = f"{inst}:export", run.state["plan"]
     sym = plan["symbols"].get(inst)
     if not sym:
         return _skip(run, tid, f"brak wybranego symbolu brokera dla {inst} – wybierz go w kreatorze (Diagnostyka pokaże kandydatów)")
-    out = _dataset(run, inst)
-    cmd = [core.bot_python(), "-m", "masterquo", "training", "export", "--instrument", inst, "--symbol", sym, "--months", str(plan["months"]),
-           "--out", str(out), "--tfs", ",".join(plan["profile_params"]["timeframes"])] + (["--synthetic"] if plan["synthetic"] else [])
-    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), 6 * 3600, f"{inst}_export")
-    if rc is None:
-        return run.set(tid, execution="ANULOWANE")
+    given = (plan.get("datasets") or {}).get(inst)
+    if given:                                         # export made earlier (panel / 11_, 16_ .bat): checked, never re-exported silently
+        out = Path(given)
+        rc, tail = 0, f"użyto gotowego eksportu {out}"
+        run.set(tid, execution="W_TOKU", started_at=now())
+    else:
+        out = _dataset(run, inst)
+        cmd = [core.bot_python(), "-m", "masterquo", "training", "export", "--instrument", inst, "--symbol", sym, "--months", str(plan["months"]),
+               "--out", str(out), "--tfs", ",".join(plan["profile_params"]["timeframes"])] + (["--synthetic"] if plan["synthetic"] else [])
+        rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), 6 * 3600, f"{inst}_export")
+        if rc is None:
+            return run.set(tid, execution="ANULOWANE")
     meta = _json(out / "source_metadata.json")
-    if rc != 0 or not meta:
-        return _fail(run, tid, f"eksport zakończony kodem {rc}: {tail}")
+    state = dataset_state(out)
+    if rc != 0 or not meta or not state["usable"]:
+        return _fail(run, tid, f"eksport zakończony kodem {rc}, stan {state['state']}: {state.get('reason') or tail}")
     if meta.get("instrument") != inst or meta.get("symbol") != sym:
         return _fail(run, tid, f"metadane eksportu {meta.get('instrument')}/{meta.get('symbol')} ≠ {inst}/{sym}")
     run.set(tid, execution="UKONCZONE", quality="TEST_TECHNICZNY" if meta["data_kind"] != "REAL_USER_DATA" else "NIE_DOTYCZY",
@@ -122,9 +131,15 @@ def t_quality(run: Run, inst: str) -> None:
     suff = (dq.get("sufficiency") or {}).get("status")
     if suff and suff != "OK":
         warn.append(f"krótka historia: {suff}")
+    from . import requirements as RQ
+    rd = RQ.check_dataset(Path(ex["dataset_dir"]))
+    no_data = [f"{m['kind']} ({m['reason']})" for m in rd["models"] if m["status"] != "GOTOWE"]
+    if no_data:
+        warn.append("modele bez danych w tym eksporcie: " + "; ".join(no_data))
     q = "ODRZUCONY" if problems else ("TEST_TECHNICZNY" if ex.get("data_kind") != "REAL_USER_DATA" else "NIE_DOTYCZY")
     run.set(tid, execution="UKONCZONE", quality=q, detail="; ".join(problems + warn) or "bez uwag (duplikaty/geometria/luki/DST sprawdzone)",
-            reasons=problems + warn, artifacts=[str(Path(ex["dataset_dir"]) / "DATA_QUALITY_REPORT.json")])
+            reasons=problems + warn, readiness=[{k: m[k] for k in ("kind", "status", "reason", "samples", "range_utc")} for m in rd["models"]],
+            artifacts=[str(Path(ex["dataset_dir"]) / "DATA_QUALITY_REPORT.json")])
 
 
 def _ready(run: Run, inst: str, tid: str, need_candles: bool = False) -> Path | None:

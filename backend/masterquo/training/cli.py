@@ -132,7 +132,21 @@ def cmd_run(a) -> int:
         a.months = int(ans) if ans.isdigit() and 1 <= int(ans) <= 36 else None
     insts = [x.strip().upper().replace("BTCUSDT", "BTC") for x in a.instruments.split(",") if x.strip()]
     insts = [i for i in INSTR if i in insts]                      # fixed order: XAUUSD -> BTC
-    info = detect(a.demo) if not a.no_detect else {}
+    datasets, ds_synthetic = {}, False
+    for inst in insts:                                            # an export made earlier (panel "Eksportuj dane z MT5") instead of a new one
+        d = getattr(a, f"dataset_{inst.lower()}", None)
+        if not d:
+            continue
+        from ..forecast.export import dataset_state
+        stt = dataset_state(Path(d))
+        meta = json.loads((Path(d) / "source_metadata.json").read_text(encoding="utf-8")) if stt["usable"] else None
+        if not meta or meta.get("instrument") != inst:
+            print(f"[BLAD] {inst}: eksport {d} nie nadaje się do treningu ({stt['state']}{'' if not meta else ', instrument ' + str(meta.get('instrument'))})")
+            return 2
+        datasets[inst] = str(Path(d).resolve())
+        setattr(a, f"symbol_{inst.lower()}", meta["symbol"])
+        ds_synthetic = ds_synthetic or meta.get("data_kind") != "REAL_USER_DATA"
+    info = detect(a.demo) if not (a.no_detect or (datasets and set(datasets) == set(insts))) else {}
     if info.get("error") and not a.demo:
         print(f"[BLAD] MT5: {info['error']}")
     symbols, sources = {}, {}
@@ -150,7 +164,8 @@ def cmd_run(a) -> int:
             v = float(raw) if raw else None
         if v is not None:
             comm[inst] = v
-    plan, tasks = runner.build_plan(instruments=insts, profile=a.profile, symbols=symbols, commissions=comm, months=a.months, synthetic=a.demo,
+    plan, tasks = runner.build_plan(instruments=insts, profile=a.profile, symbols=symbols, commissions=comm, months=a.months,
+                                    synthetic=a.demo or ds_synthetic, datasets=datasets,
                                     tasks=a.tasks.split(",") if a.tasks else None, include_approx=not a.no_approx, lab_bars=a.lab_bars,
                                     threads=a.threads, ml_days=a.ml_days, min_events=a.min_events, origin=a.origin)
     plan["symbol_sources"] = sources
@@ -186,7 +201,8 @@ def cmd_export(a) -> int:
         from ..mt5.fake import BTCUSDT_SYN, SYN_MARKETS, FakeMT5
         sys.modules["MetaTrader5"] = FakeMT5(markets=dict(SYN_MARKETS, **BTCUSDT_SYN))
     from ..forecast.export import export_candles
-    return export_candles(a.months, a.out, a.dst_model, tuple(a.tfs.split(",")), "training", a.instrument, a.symbol)
+    return export_candles(a.months, a.out, a.dst_model, tuple(t.strip().upper() for t in a.tfs.split(",") if t.strip()), "training",
+                          a.instrument, a.symbol, date_from=a.date_from, date_to=a.date_to, tick_days=a.ticks_days)
 
 
 def cmd_ml_offline(a) -> int:
@@ -444,6 +460,8 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--interactive", action="store_true")
     r.add_argument("--no-detect", action="store_true")
     r.add_argument("--demo", action="store_true", help="TEST: syntetyczny terminal; modele techniczne, nigdy aktywowane")
+    r.add_argument("--dataset-xauusd", dest="dataset_xauusd", help="użyj gotowego eksportu (folder) zamiast nowego eksportu XAUUSD")
+    r.add_argument("--dataset-btc", dest="dataset_btc", help="użyj gotowego eksportu (folder) zamiast nowego eksportu BTC")
     r.add_argument("--origin", default="cli")
     for n in ("resume", "cancel", "status", "report"):
         s = sub.add_parser(n)
@@ -460,6 +478,9 @@ def parser() -> argparse.ArgumentParser:
     ex.add_argument("--out", required=True)
     ex.add_argument("--tfs", default="M1,M5,M15,M30,H1,H4,D1")
     ex.add_argument("--dst-model", choices=["AUTO", "UNIFORM", "NY_CLOSE"], default="AUTO")
+    ex.add_argument("--from", dest="date_from", help="początek zakresu UTC (np. 2026-01-01) – zastępuje --months")
+    ex.add_argument("--to", dest="date_to", help="koniec zakresu UTC (domyślnie ostatnia zamknięta świeca)")
+    ex.add_argument("--ticks-days", type=float, default=0.0, help="dodaj ticki Bid/Ask z ostatnich N dni zakresu (0 = bez ticków, max 31)")
     ex.add_argument("--synthetic", action="store_true")
     mo = sub.add_parser("ml-offline")
     mo.add_argument("--instrument", choices=INSTR, required=True)

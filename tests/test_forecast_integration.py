@@ -201,9 +201,9 @@ class TestCandleExport(unittest.TestCase):
         orig = fake.copy_rates_range
         state = {"n": 0}
 
-        def broken(*a):                                                          # one bar with impossible geometry
+        def broken(*a):                                                          # one exported bar with impossible geometry
             r = orig(*a)
-            if r is not None and len(r) and state["n"] == 0:
+            if r is not None and len(r) and state["n"] == 0 and a[1] != fake.TIMEFRAME_H1:   # H1 = time-convention probe (1.25)
                 r = r.copy()
                 r["high"][len(r) // 2] = r["low"][len(r) // 2] - 1
                 state["n"] += 1
