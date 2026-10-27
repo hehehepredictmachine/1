@@ -1,6 +1,6 @@
 // PepeMarketWizard.exe - launcher of the existing, tested Windows scripts (install, calibration + training, context
 // indicator calibration, diagnostics, bot start/stop). It contains no trading logic, never sends orders and never changes
-// the Execution Lock: every action runs the corresponding .bat from the program folder in this console window.
+// the execution mode: every action runs the corresponding .bat from the program folder in this console window.
 //
 // Usage: PepeMarketWizard.exe                -> menu
 //        PepeMarketWizard.exe trening XAUUSD -> install if needed, then calibration + training (XAUUSD | BTC | OBA)
@@ -150,7 +150,7 @@ func main() {
 	r := root()
 	s := loadSettings(r)
 	fmt.Printf("PepeMarketWizard %s - launcher (folder: %s)\n", version, r)
-	fmt.Println("Trening i kalibracja dzialaja offline/SHADOW: nie wysylaja zlecen i nie zmieniaja Execution Lock.")
+	fmt.Println("Trening i kalibracja dzialaja offline/SHADOW: nie wysylaja zlecen i nie zmieniaja trybu wykonania.")
 	if miss := missingFiles(r); len(miss) > 0 {
 		fmt.Println("\n[BLAD] Niekompletny folder programu - brak:", strings.Join(miss, ", "))
 		fmt.Println("       Rozpakuj CALY plik ZIP (prawy klik - Wyodrebnij wszystkie) do nowego, pustego folderu")
