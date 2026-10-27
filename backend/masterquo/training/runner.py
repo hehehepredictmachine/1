@@ -26,6 +26,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
          ("context_indicators", "Kontekst VAMD / FD / Pullback+SMC: kalibracja dev (<=24 konfiguracje), model CONTEXT_MOVE_M5_V1 + ablacje"),
          ("sh_models", "SCALPING/HEDGING: replay strategii + model zdarzenia P(TP2 przed SL) + raport walidacji"),
+         ("monte_carlo", "Monte Carlo ścieżek: walidacja wariantów IID/BLOCK/REGIME, P(TP przed SL) i kalibracja poza próbą"),
          ("master_models", "Master models (XXX.rar): HDC/GPR/event engine+STFS/STE-FlowNet + ewaluacja Kalman/Breakout/SMC/Multi-Indicator/TSVP/BUZOA"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
@@ -475,6 +476,35 @@ def t_context_indicators(run: Run, inst: str) -> None:
                   "side": "kierunek ruchu (nie zlecenie)"})
 
 
+def t_monte_carlo(run: Run, inst: str) -> None:
+    """PMW-MC-1: walk-forward validation of the path Monte Carlo on THIS run's export; a calibrator becomes active only on the user's
+    data with an out-of-sample edge over the baseline (otherwise saved for research)."""
+    tid, plan = f"{inst}:monte_carlo", run.state["plan"]
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    out = run.dir / f"{inst}_montecarlo.json"
+    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    cmd = [core.bot_python(), "-m", "masterquo", "montecarlo", "validate", "--dataset", str(ds), "--out", str(out)]
+    cmd += ["--max-points", "200", "--n-paths", "300"] if quick else []
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_montecarlo")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    rep = _json(out)
+    if not rep:
+        return _fail(run, tid, f"montecarlo kod {rc}: {tail}")
+    if rep.get("status") != "DONE":
+        return _skip(run, tid, rep.get("reason") or rep.get("status") or "brak wyniku", quality="BRAK_PRZESLANEK")
+    saved = rep.get("saved") or {}
+    t = rep["test"]
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if saved.get("activated") else "BRAK_PRZESLANEK")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="AKTYWNY_W_REJESTRZE" if saved.get("activated") else "ZAPISANY_DO_BADAN",
+            model_id=saved.get("run_id"), artifacts=[str(out)],
+            detail=f"wariant {rep['chosen_variant']}, werdykt {rep['verdict']}; TEST n={t['n']}: Brier skalibrowany {t['calibrated']['brier']:.4f} "
+                   f"vs bazowy {t['base']['brier']:.4f}, CI95 różnicy {[round(x, 4) for x in rep['brier_diff_calibrated_minus_base_ci95']]}, "
+                   f"niejednoznaczne świece {t['ambiguous_share']:.1%}")
+
+
 def t_sh_models(run: Run, inst: str) -> None:
     """PMW-SH-1: replay of both strategies with the live code, event labels of their OWN setups, sh_tp_model (holdout gate;
     promoted atomically only on real data), validation reports (whole cycle, baseline, HEDGE vs NO_HEDGE vs REDUCE)."""
@@ -646,7 +676,7 @@ STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scal
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "structure_intelligence": t_structure_intelligence,
          "flow_context": t_flow_context, "context_indicators": t_context_indicators,
-         "sh_models": t_sh_models, "master_models": t_master_models, "activate": t_activate, "bot": t_bot}
+         "sh_models": t_sh_models, "monte_carlo": t_monte_carlo, "master_models": t_master_models, "activate": t_activate, "bot": t_bot}
 
 
 def execute(run: Run) -> int:

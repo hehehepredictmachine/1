@@ -1858,6 +1858,39 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "BAD_DIR")
         return RQ.check_dataset(d)
 
+    # ------------------------------------------------------------ 1.25 Monte Carlo of price paths (own thread, closed M1 bars of the bridge)
+    @app.get("/api/v1/montecarlo/status")
+    def montecarlo_status():
+        return rt.montecarlo.status()
+
+    @app.get("/api/v1/montecarlo/scenarios")
+    def montecarlo_scenarios(horizon: int = Query(60, ge=5, le=240)):
+        """P(price reaches +X / -X within the horizon) for X = 2.5 / 3 / 5 / 7.5 / 10 (price move, not account profit)."""
+        return rt.montecarlo.compute(None, horizon=horizon)            # sync endpoint: FastAPI thread pool, computation in the MC thread
+
+    @app.post("/api/v1/montecarlo/run")
+    def montecarlo_run(body: dict):
+        side = str(body.get("side") or "").upper()
+        if side not in ("BUY", "SELL"):
+            raise HTTPException(400, "BAD_SIDE")
+        try:
+            sl = float(body["sl_distance"])
+            tps = [float(x) for x in (body.get("tp_distances") or [])]
+            horizon = int(body.get("horizon") or 60)
+            n_paths = int(body.get("n_paths") or 2000)
+            entry = float(body["entry"]) if body.get("entry") not in (None, "") else None
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(400, "BAD_PLAN")
+        if not (0 < sl <= 1e6 and tps and len(tps) <= 8 and all(0 < x <= 1e6 for x in tps) and 5 <= horizon <= 240 and 200 <= n_paths <= 20000):
+            raise HTTPException(400, "BAD_PLAN")
+        variant = body.get("variant")
+        if variant not in (None, "IID", "BLOCK", "REGIME"):
+            raise HTTPException(400, "BAD_VARIANT")
+        plan = rt.montecarlo.plan_for(side, sl, tps, entry=entry, horizon=horizon)
+        if plan is None:
+            return {"status": "NO_QUOTE", "reason": "brak aktualnego notowania Bid/Ask – podaj cenę wejścia albo połącz MT5"}
+        return rt.montecarlo.compute([plan], horizon=horizon, variant=variant, n_paths=n_paths)
+
     @app.post("/api/v1/training/cancel")
     def training_cancel():
         from ..training import core as tc

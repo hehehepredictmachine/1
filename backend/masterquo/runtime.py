@@ -126,6 +126,8 @@ class Runtime:
         self.scalp.listeners.append(self.evaluation.on_scalp_setup)                               # O6: third SHADOW source
         from .zones.service import ZoneService
         self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
+        from .montecarlo.service import MonteCarloService
+        self.montecarlo = MonteCarloService(self.cfg, self.bridge, synthetic=demo)                 # PMW-MC-1: path simulation, own thread
         self.evaluation.zone_provider = self.zones
         self.evaluation.regime_sources = {"ACTIVE": lambda: getattr(getattr(self.engine.active, "view", None), "regime", None),
                                           "SH": lambda: (self.sh.snapshot or {}).get("regime")}             # O4: both definitions
@@ -252,6 +254,7 @@ class Runtime:
         self.sh.stop()
         self.mm.stop()
         self.zones.stop()
+        self.montecarlo.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()
