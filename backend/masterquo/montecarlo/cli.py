@@ -25,7 +25,7 @@ def main(argv: list[str]) -> int:
     v.add_argument("--out")
     for n in ("rollback", "status"):
         s = sub.add_parser(n)
-        s.add_argument("--instrument", default="XAUUSD")
+        s.add_argument("--instrument", choices=("XAUUSD", "BTC"), required=True)     # instrument id of the allowlist, never an MT5 symbol
     a = ap.parse_args(argv)
     if a.cmd == "validate":
         try:

@@ -85,7 +85,7 @@ REGISTRY: list[dict] = [
      "group": "MM_ZONES", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "mm_multi_indicator", "name": "Multi-Indicator Strategy (RSI/SAR/HA/Stoch/CCI/W%R/Power)", "kind": "DETERMINISTIC",
      "output": "decyzja z pełnym śladem reguł", "group": "MM_RULES", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
-    {"id": "mm_smc_fvg", "name": "SMC BoS/IDM/FVG continuation (73%)", "kind": "DETERMINISTIC", "output": "setup entry/SL/2R (obserwacja)",
+    {"id": "mm_smc_fvg", "name": "SMC BoS/IDM/FVG continuation (głębokość cofnięcia 73% – parametr, nie skuteczność)", "kind": "DETERMINISTIC", "output": "setup entry/SL/2R (obserwacja)",
      "group": "STRUCTURE", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "mm_gpr", "name": "GPR Matérn 3/2 – prognoza log-zwrotu z niepewnością", "kind": "TRAINED", "output": "N(mean, observed var) log-zwrotu 3 świec M5",
      "group": "MM_RETURN_DIST", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},

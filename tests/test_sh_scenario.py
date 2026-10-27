@@ -190,6 +190,11 @@ class TestScenario(unittest.TestCase):
         bad = {"instruments": {"XAUUSD": {"SCALPING": dict(sc, scenario_levels_usd=[2.5, 10.0, 5.0])}}}
         self.assertTrue(any("scenariusza" in e for e in C.validate(bad)))
         self.assertEqual(C.validate(cfg), [])
+        with self.assertRaises(ValueError):                         # negative commission refused
+            C.save_override({"instruments": {"XAUUSD": {"commission_per_lot_side": -1}}})
+        C.save_override({"instruments": {"XAUUSD": {"commission_per_lot_side": 3.5}}})
+        C.save_override({"instruments": {"XAUUSD": {"commission_per_lot_side": None}}})   # back to unknown (panel: empty field)
+        self.assertIsNone(C.load()["instruments"]["XAUUSD"]["commission_per_lot_side"])
 
 
 class TestScenarioApi(unittest.TestCase):

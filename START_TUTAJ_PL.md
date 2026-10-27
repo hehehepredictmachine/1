@@ -4,6 +4,31 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.25 – eksport MT5 do treningu, Monte Carlo, scenariusz XAUUSD- 2,5–10 USD
+Kolejność pracy (wszystko na rachunku DEMO albo w trybie SIGNALS / PAPER, dopóki sam nie zdecydujesz inaczej):
+1. **Diagnostyka:** `02_DIAGNOSTYKA.bat` (terminal, symbol, czas serwera) i `DIAGNOSTYKA_TRENINGU.bat` (środowisko treningu).
+2. **Eksport:** panel **AI Neural Lab → Trening → „Eksportuj dane z MT5”**: symbol brokera dokładnie taki jak w MT5 (np. `XAUUSD-`),
+   okres (miesiące albo daty od–do), interwały (dla wszystkich modeli: M1, M5, M15, M30, H1, H4, D1), opcjonalnie ticki Bid/Ask z
+   ostatnich dni. Postęp i „Przerwij” w karcie. Po zakończeniu tabela pokazuje dla każdego modelu: wymagane dane, plik, liczbę
+   wierszy i stan (`GOTOWE` / `BRAK_DANYCH` / …). Przerwany eksport ma stan „przerwany” i **nie** jest proponowany do treningu – uruchom
+   go ponownie do tego samego folderu, a dokończy się od miejsca przerwania. Wiersz poleceń (z folderu `backend`, `.venv`):
+   `python -m masterquo training export --instrument XAUUSD --symbol XAUUSD- --months 12 --out "<folder>" [--from 2026-01-01 --to 2026-06-30] [--ticks-days 5]`.
+3. **Trening na tym eksporcie:** w karcie „Użyj do treningu” (albo wybór eksportu w formularzu treningu), z wiersza poleceń
+   `tools\trening.cmd run --instruments XAUUSD --dataset-xauusd "<folder eksportu>"`. Bez wskazania eksportu trening robi własny eksport
+   jak dotąd (`00_TRENING_START.bat`). Modele aktywują się tylko po walidacji na Twoich danych.
+4. **Walidacja Monte Carlo:** `31_MONTE_CARLO_WALIDACJA.bat` (przeciągnij folder eksportu na plik). Raport: wybrany wariant, Brier /
+   log loss wobec modelu bazowego, krzywa kalibracji, werdykt. Kalibracja włącza się tylko przy przewadze na prawdziwych danych;
+   cofnięcie: `python -m masterquo montecarlo rollback --instrument XAUUSD`. Bez kalibracji panel pisze „prawdopodobieństwo w modelu –
+   nieskalibrowane”.
+5. **Scenariusz XAUUSD- 2,5–10 USD:** **Trading Intelligence → „Scenariusz ruchu 2,5–10 USD”**. Poziomy 2,5 / 3 / 5 USD to TP1–TP3
+   strategii SCALPING (zlecenia częściowe), 7,5 i 10 USD – tylko analiza. Osobno: ruch ceny, wolumen części, wynik w walucie rachunku,
+   spread, prowizja, poślizg, P(TP przed SL) jako przedział (świeca, która dotknęła TP i SL, nie ma znanej kolejności), BE po
+   potwierdzonym TP2. **Ruch ceny to nie zysk rachunku.** Prowizja nieznana = wynik netto „N/A” – wpisz prowizję swojego konta
+   (Strategie → Ustawienia SCALPING → „Prowizja … na 1 lot na stronę”; AUTO DEMO / AUTO LIVE SCALPING i tak jej wymaga), konto Zero
+   nie oznacza zerowych kosztów. TP3 SCALPING wybierzesz z 5 / 7,5 / 10 USD (Strategie →
+   Ustawienia SCALPING). Karta niczego nie zleca – zlecenia składa cykl SCALPING zgodnie z wybranym trybem, przyciskiem STOP i limitami.
+6. **Strefy High/Low M5/M15** po restarcie pokazują ostatnią zapisaną mapę z oznaczeniem „odtworzona / nieaktualna” do pierwszego przeliczenia.
+
 ## Nowe w 1.24 – aplikacja Windows `PepeMarketWizardDesktop.exe`
 Paczka `PepeMarketWizard_DESKTOP_1_24_0.zip`: rozpakuj do **nowego** folderu (np. `C:\PepeMarketWizard_Desktop`) i uruchom
 `PepeMarketWizardDesktop.exe`. Nie instalujesz Pythona ani Node.js – Python jest w paczce, składniki silnika aplikacja pobiera sama

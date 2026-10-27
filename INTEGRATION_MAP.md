@@ -1,4 +1,4 @@
-# INTEGRATION_MAP – PepeMarketWizard 1.18 · mapa zależności (DEPENDENCY_MAP), 26.10.2026
+# INTEGRATION_MAP – PepeMarketWizard 1.18 (+ uzupełnienia 1.25) · mapa zależności (DEPENDENCY_MAP), 26.10.2026
 
 Zastępuje opis 1.13. Źródła: statyczny graf importów (`ast`, 281 modułów `backend/`, importy modułowe i wewnątrz funkcji), okablowanie w
 `backend/masterquo/runtime.py` i pomiar działania (`ARCHITECTURE.md` §1).
@@ -11,6 +11,8 @@ Zastępuje opis 1.13. Źródła: statyczny graf importów (`ast`, 281 modułów 
 | worker prognoz | potomny `.venv_candles` (`gold_candles_runtime.worker`) | inferencja gold_candles / Scalp A-B | stdin/stdout JSON (`forecast/service.py`) |
 | trening | `python -m masterquo training run` (proces potomny na zadanie) | 17 zadań, artefakty | pliki w `data/`; bot przeładowuje rejestry |
 | CLI modułów | `mm`, `structure-intelligence`, `flow-context`, `context-indicators`, `ml-scalp`, `neural-scalp`, `indicator-context` | dataset, trening, ewaluacja | pliki w `data/` |
+| eksport MT5 (1.25) | panel „Eksportuj dane z MT5” → `training/export_job.py` uruchamia `python -m masterquo training export` (proces potomny, terminal przez `NoOrders`) | dataset + `EXPORT_STATUS.json` + `MODEL_DATA_READINESS.json` | stan z plików eksportu (`/api/v1/export/*`); bot nie czeka na eksport |
+| walidacja Monte Carlo (1.25) | `python -m masterquo montecarlo validate` / `31_MONTE_CARLO_WALIDACJA.bat` / zadanie runnera `monte_carlo` | raport + kalibrator | `data/montecarlo/<INST>/registry.json`; bot czyta aktywny kalibrator |
 | terminal MT5 | użytkownik | dane, konto, zlecenia | tylko przez `MT5Worker` |
 
 ## 2. Okablowanie w runtime (kto ma referencję do kogo)
@@ -32,6 +34,10 @@ Runtime
  │     źródła: ActiveEngine, SHService, ScalpService (O6); regime_sources: widok A + snapshot SH (O4); zone_provider = ZoneService (1.22)
  ├─ ZoneService(cfg, bridge, bus) ── 1.22: mapa stref PMW (HLZE + DSVIE + UZICE) na każdej zamkniętej M5, tylko odczyt świec
  │     (bridge.symbol_bars M5/M15, bufory H1/D1), własna baza data/zones/zones.sqlite; ANALYTICAL_ONLY
+ │     1.25: po restarcie ostatnia mapa z bazy jako RESTORED + STALE do pierwszego przeliczenia
+ ├─ MonteCarloService(cfg, bridge) ── 1.25: własny wątek (1 worker), tylko zamknięte świece M1 bufora bota; cache per świeca i plan;
+ │     kalibrator z data/montecarlo (aktywny tylko po walidacji na danych użytkownika); bez referencji do gateway / SHExecutor
+ │     sh/scenario.build(rt) (API /api/v1/sh/scenario) = SHService.last_eval + MonteCarloService + SymbolSpec + rejestr modeli – tylko odczyt
  ├─ SHADOW: ForecastService, ScalpService(+nss, mtf, liquidity, extind, ml), LabService, NSS, SI, Liquidity, Analytics,
  │          MarketScanner+BotSignalService, MMService (na żądanie API), WallsService
  └─ API (FastAPI) – czyta wszystkie serwisy; zapisuje tylko konfigurację, tryb, STOP, ręczne akcje i trening

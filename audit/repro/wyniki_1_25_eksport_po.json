@@ -1,0 +1,118 @@
+{
+ "backend": "kod po zmianach: gałąź claude/masterquo-ai-bot-mt5-f7uaht",
+ "data": "SYNTHETIC_TEST (FakeMT5)",
+ "scenarios": {
+  "S1_complete": {
+   "rc": 0,
+   "exception": null,
+   "status_file": "COMPLETE",
+   "source_metadata": true,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M15.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": true,
+   "looks_complete_to_old_reader": true,
+   "dataset_state": {
+    "state": "COMPLETE",
+    "usable": true
+   },
+   "real_volume_column": true
+  },
+  "S2_failed_reexport_into_used_folder": {
+   "rc": 8,
+   "exception": null,
+   "status_file": "FAILED",
+   "source_metadata": false,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M15.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": true,
+   "looks_complete_to_old_reader": false,
+   "dataset_state": {
+    "state": "FAILED",
+    "usable": false
+   }
+  },
+  "S3_crash_damaged_checkpoint_resume": {
+   "crash_run": {
+    "rc": 8,
+    "exception": null
+   },
+   "damaged_checkpoint": "M5_20260927_20261027T1900.json",
+   "resume_run": {
+    "rc": 0,
+    "exception": null
+   },
+   "status_file": "COMPLETE",
+   "source_metadata": true,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M15.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": true,
+   "looks_complete_to_old_reader": true,
+   "dataset_state": {
+    "state": "COMPLETE",
+    "usable": true
+   }
+  },
+  "S4_date_range": {
+   "rc": 0,
+   "exception": null,
+   "supported": true
+  },
+  "S5_bid_ask_ticks": {
+   "rc": 0,
+   "exception": null,
+   "supported": true,
+   "manifest": {
+    "symbol": "XAUUSD-",
+    "requested_utc": [
+     "2026-10-27T16:36:00Z",
+     "2026-10-27T19:00:00Z"
+    ],
+    "received_utc": [
+     "2026-10-27T16:36:21.125000Z",
+     "2026-10-27T18:59:49.089000Z"
+    ],
+    "ticks": 1558,
+    "hours": 3,
+    "empty_hours": 0,
+    "same_time_msc_neighbours": 183,
+    "non_monotonic_steps": 0,
+    "files": {
+     "ticks_20261027T16.npz": {
+      "ticks": 265,
+      "sha256": "a73100247de9d17d323019a3c8f4d7ddd7c5603203b8bdd280f64a15d808dbf4"
+     },
+     "ticks_20261027T17.npz": {
+      "ticks": 699,
+      "sha256": "d6f4f0cb5461f8e8230391c62a83d31451b51c79f9ca019c8696b53f1c01f853"
+     },
+     "ticks_20261027T18.npz": {
+      "ticks": 594,
+      "sha256": "bd1658a93701f1d529bdde6935fb08bbb4c122c95847c24f9eec16a540665dcb"
+     }
+    },
+    "chunk": "1 h UTC, półotwarte [od, do) – bez usuwania ticków o tym samym czasie",
+    "fields": {
+     "time_msc_utc": "czas UTC [ms]",
+     "time_msc_server": "czas serwera z terminala [ms]",
+     "bid": "Bid",
+     "ask": "Ask",
+     "last": "Last (dla CFD/FX zwykle 0)",
+     "volume": "wolumen ticku (dla CFD zwykle 0)",
+     "volume_real": "wolumen rzeczywisty, jeśli broker podaje",
+     "flags": "flagi MT5 TICK_FLAG_* (2 BID, 4 ASK, 8 LAST, 16 VOLUME, ...)",
+     "ord": "kolejność w odpowiedzi terminala"
+    },
+    "note": "Ticki to notowania brokera, nie książka zleceń i nie wolumen giełdowy."
+   }
+  }
+ }
+}

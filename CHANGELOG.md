@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 1.25.0 – eksport MT5 → trening, Monte Carlo ścieżek, strefy po restarcie, scenariusz XAUUSD- 2,5–10 USD
+Realizacja `PepeMarketWizard_PROMPT_MONTE_CARLO_STREFY_STRATEGIA.md`; audyt: `docs/AUDYT_MC_STREFY_EKSPORT_PL.md`; raport:
+`docs/RAPORT_MC_STREFY_STRATEGIA_1_25_PL.md`; punkt powrotu: commit `a10d97a` (1.24.1).
+* **Eksport MT5 do treningu (priorytet 4A):** plik stanu `EXPORT_STATUS.json` (W TOKU / UKOŃCZONY / BŁĄD / PRZERWANY), zapis atomowy
+  wszystkich plików, `source_metadata.json` usuwany na starcie i zapisywany na końcu – **przerwany lub nieudany eksport nigdy nie wygląda
+  na kompletny**; wznowienie po uszkodzonej partii (partia pobierana ponownie zamiast błędu `JSONDecodeError`); kolumna `real_volume`
+  (gdy broker ją podaje; `tick_volume` to liczba ticków, nie wolumen giełdowy); opcjonalne ticki Bid/Ask (`--ticks-days`, partie
+  godzinowe, ticki o tym samym czasie zachowane); zakres dat `--from/--to`; sprawdzenie konwencji czasu serwera (DST) na historii,
+  nie tylko na dzisiejszym offsecie; czytelne błędy (brak terminala, symbolu, uprawnień, miejsca).
+* **Gotowość danych per model:** `MODEL_DATA_READINESS.json` w każdym eksporcie – model → wymagane interwały / ticki → plik → wiersze →
+  `GOTOWE / BRAK_DANYCH / NIEZGODNY_FORMAT / NIEKOMPLETNY_EKSPORT`. Runner treningu może użyć gotowego eksportu
+  (`--dataset-xauusd`, `--dataset-btc`, w panelu wybór eksportu).
+* **Panel AI Neural Lab → Trening:** karta „Eksportuj dane z MT5” (symbol, okres lub daty, interwały, ticki, postęp, przerwanie, tabela
+  gotowości modeli, „Użyj do treningu”). Eksport działa jako osobny proces tylko do odczytu (bez zleceń).
+* **Monte Carlo ścieżek (nowe, `masterquo/montecarlo`):** losowanie całych świec (IID / blokowe / warunkowane reżimem ATR i godziną
+  sesji), tylko dane sprzed chwili oceny, zdarzenia „TP przed SL w horyzoncie” po stronie Bid/Ask, świeca dotykająca TP i SL =
+  przedział ostrożny–optymistyczny (kolejność nie jest zgadywana; ticki rozstrzygają, gdy są), błąd z liczby ścieżek. Walidacja
+  walk-forward z embargo względem klimatologii (Brier, log loss, krzywa kalibracji, CI bootstrap), kalibrator izotoniczny, rejestr z
+  rollbackiem; aktywny tylko po walidacji na Twoich danych z przewagą. Bez kalibracji wynik jest opisany jako „prawdopodobieństwo w
+  modelu”. API `/api/v1/montecarlo/*`, CLI `python -m masterquo montecarlo validate|status|rollback`, zadanie runnera `monte_carlo`.
+* **Strefy High/Low M5/M15:** po restarcie ostatnia mapa jest odtwarzana z bazy i oznaczona `RESTORED` + `STALE` do pierwszego
+  przeliczenia (nie potwierdza decyzji).
+* **Scenariusz SCALPING XAUUSD- 2,5–10 USD:** dla poziomów 2,5 / 3 / 5 (TP1–TP3, zlecenia częściowe) oraz 7,5 / 10 (tylko analiza)
+  osobno: ruch ceny, wolumen części na siatce brokera, wynik w walucie rachunku z wartości ticka terminala, spread, prowizja (nieznana =
+  „nieznana”, wynik netto N/A – nigdy 0), poślizg, P(TP przed SL) z Monte Carlo (ostrożnie–optymistycznie, niejednoznaczne, błąd,
+  skalibrowane tylko po walidacji), BE po POTWIERDZONYM TP2 = wejście + koszty, modele – każdy ze swoim zdarzeniem, **bez łączenia
+  i uśredniania procentów**, powód braku zlecenia. Karta w Trading Intelligence, API `GET /api/v1/sh/scenario`. TP3 SCALPING XAUUSD
+  można wybrać z 5 / 7,5 / 10 USD (domyślnie 5 – bez zmian); progi XAUUSD nie są kopiowane na BTC. Zlecenia składa wyłącznie istniejący
+  cykl SCALPING (tryb, STOP, limity, broker) – nie powstał drugi system handlu.
+* Bez zmian: tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP nowych wejść, limity użytkownika; Execution Lock nie wraca.
+* **Nie wykonano w tym środowisku:** eksportu z Twojego MT5, treningu na Twojej historii, testu rachunku DEMO, uruchomienia na Windows –
+  wszystkie wyniki liczbowe w raporcie pochodzą z symulatora (dane `SYNTHETIC_TEST`).
+
 ## 1.24.1 – poprawka folderu aplikacji Windows
 
 * **Błąd (zgłoszony):** w folderze `PepeMarketWizard_Desktop` stary launcher `PepeMarketWizard.exe` i instalatory `01_INSTALUJ.bat`,

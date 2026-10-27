@@ -49,6 +49,9 @@ ALLOWED_TOP = {"risk", "instruments", "priority", "allow_parallel_same_symbol"}
 def validate(cfg: dict) -> list[str]:
     errs = []
     for inst, ic in (cfg.get("instruments") or {}).items():
+        c = ic.get("commission_per_lot_side")
+        if c is not None and (isinstance(c, bool) or not isinstance(c, (int, float)) or c < 0):
+            errs.append(f"{inst}: prowizja na lot na stronę ≥ 0 albo brak (nieznana – nigdy nie zakładam 0)")
         for strat in ("SCALPING", "HEDGING"):
             p = ic.get(strat) or {}
             sh = p.get("shares") or []

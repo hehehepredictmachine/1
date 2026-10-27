@@ -144,6 +144,20 @@ class TestSHApi(unittest.TestCase):
                 self.assertIn(p.locator("[data-testid=sh-mode]").inner_text(), ("SIGNALS", "PAPER"))
                 self.assertTrue(p.locator("[data-testid=sh-models] tbody tr").count() >= 20)
                 self.assertIn("heurystyka", p.locator("[data-testid=sh-setup]").inner_text())
+                # 1.25: SCALPING TP3 chosen from 5 / 7.5 / 10 USD; commission editable, empty = unknown (never 0)
+                p.wait_for_selector("[data-testid=sh-tp3]")
+                self.assertEqual([o.get_attribute("value") for o in p.locator("[data-testid=sh-tp3] option").all()], ["5", "7.5", "10"])
+                self.assertEqual(p.locator("[data-testid=sh-commission]").input_value(), "")
+                if w == 1366:
+                    comm = lambda: call("/api/v1/sh/config")[1]["instruments"]["XAUUSD"]["commission_per_lot_side"]
+                    p.fill("[data-testid=sh-commission]", "3,5")
+                    p.click("[data-testid=sh-config-save]")
+                    self.assertTrue(wait_for(lambda: comm() == 3.5, 10, 0.3))
+                    # the panel reloads the saved config and shows the stored value - edit again only after that, like a user
+                    self.assertTrue(wait_for(lambda: p.locator("[data-testid=sh-commission]").input_value() == "3.5", 10, 0.2))
+                    p.fill("[data-testid=sh-commission]", "")
+                    p.click("[data-testid=sh-config-save]")
+                    self.assertTrue(wait_for(lambda: comm() is None, 10, 0.3))
                 p.wait_for_selector("[data-testid=sh-chart] canvas", timeout=20000)
                 p.click("[data-testid=sh-sel-HEDGING]")
                 p.wait_for_selector("[data-testid=sh-tp3]")

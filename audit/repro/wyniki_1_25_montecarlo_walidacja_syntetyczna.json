@@ -1,0 +1,278 @@
+{
+ "version": "PMW-MC-1",
+ "dataset": "<eksport syntetyczny 3 mies. XAUUSD- (FakeMT5), M1+M5+M15+H1, ticki 2 dni>",
+ "dataset_id": "XAUUSD_20261027T1900Z_3m",
+ "data_kind": "SYNTHETIC_TEST",
+ "instrument": "XAUUSD",
+ "symbol": "XAUUSD-",
+ "tf": "M1",
+ "horizon_bars": 60,
+ "window_bars": 3000,
+ "stride_bars": 30,
+ "n_paths": 500,
+ "seed": 7,
+ "events": [
+  {
+   "side": "BUY",
+   "tp": 2.5,
+   "sl": 3.0
+  },
+  {
+   "side": "BUY",
+   "tp": 5.0,
+   "sl": 3.0
+  },
+  {
+   "side": "SELL",
+   "tp": 2.5,
+   "sl": 3.0
+  },
+  {
+   "side": "SELL",
+   "tp": 5.0,
+   "sl": 3.0
+  }
+ ],
+ "variants": [
+  "IID",
+  "BLOCK",
+  "REGIME"
+ ],
+ "ticks_available": true,
+ "protocol": "walk-forward: CAL 50% / TEST 50% punktów, embargo H, wybór wariantu i kalibracja tylko na CAL",
+ "status": "DONE",
+ "chosen_variant": "IID",
+ "cal": {
+  "n": 1200,
+  "positives": 426,
+  "ambiguous_share": 0.0,
+  "IID": {
+   "brier": 0.22221006000000001,
+   "logloss": 0.6362723318398343
+  },
+  "BLOCK": {
+   "brier": 0.2231692366666667,
+   "logloss": 0.6391925936740203
+  },
+  "REGIME": {
+   "brier": 0.24604315333333332,
+   "logloss": 0.7523878813321597
+  },
+  "base": {
+   "brier": 0.22245281201004094,
+   "logloss": 0.6378033710238445
+  }
+ },
+ "test": {
+  "n": 1200,
+  "positives": 421,
+  "ambiguous_share": 0.0,
+  "IID": {
+   "brier": 0.2201499766666667,
+   "logloss": 0.6319985535242458
+  },
+  "BLOCK": {
+   "brier": 0.21797612333333333,
+   "logloss": 0.6263327969159205
+  },
+  "REGIME": {
+   "brier": 0.2394142,
+   "logloss": 0.7476285331180323
+  },
+  "base": {
+   "brier": 0.21817498442970162,
+   "logloss": 0.6268545442817489
+  },
+  "calibrated": {
+   "brier": 0.2152530309617754,
+   "logloss": 0.6200333229067407
+  }
+ },
+ "test_per_event": {
+  "BUY_TP2.5_SL3.0": {
+   "n": 300,
+   "freq": 0.48333333333333334,
+   "brier_calibrated": 0.24987196697069008,
+   "brier_base": 0.25432734711674226
+  },
+  "BUY_TP5.0_SL3.0": {
+   "n": 300,
+   "freq": 0.22666666666666666,
+   "brier_calibrated": 0.1771977915050731,
+   "brier_base": 0.17765145022381496
+  },
+  "SELL_TP2.5_SL3.0": {
+   "n": 300,
+   "freq": 0.44666666666666666,
+   "brier_calibrated": 0.2502352136893216,
+   "brier_base": 0.25302614264755696
+  },
+  "SELL_TP5.0_SL3.0": {
+   "n": 300,
+   "freq": 0.24666666666666667,
+   "brier_calibrated": 0.18370715168201676,
+   "brier_base": 0.18769499773069237
+  }
+ },
+ "reliability_test": [
+  {
+   "bin": [
+    0.0,
+    0.1
+   ],
+   "n": 3,
+   "mean_p": 0.0,
+   "freq": 0.0
+  },
+  {
+   "bin": [
+    0.1,
+    0.2
+   ],
+   "n": 5,
+   "mean_p": 0.125,
+   "freq": 0.4
+  },
+  {
+   "bin": [
+    0.2,
+    0.3
+   ],
+   "n": 560,
+   "mean_p": 0.2444466991341991,
+   "freq": 0.23392857142857143
+  },
+  {
+   "bin": [
+    0.3,
+    0.4
+   ],
+   "n": 28,
+   "mean_p": 0.3125,
+   "freq": 0.2857142857142857
+  },
+  {
+   "bin": [
+    0.4,
+    0.5
+   ],
+   "n": 598,
+   "mean_p": 0.46363618097212245,
+   "freq": 0.46321070234113715
+  },
+  {
+   "bin": [
+    0.5,
+    0.6
+   ],
+   "n": 1,
+   "mean_p": 0.5412186379928315,
+   "freq": 0.0
+  },
+  {
+   "bin": [
+    0.7,
+    0.8
+   ],
+   "n": 1,
+   "mean_p": 0.7132616487455197,
+   "freq": 1.0
+  },
+  {
+   "bin": [
+    0.8,
+    0.9
+   ],
+   "n": 2,
+   "mean_p": 0.8566308243727598,
+   "freq": 0.0
+  },
+  {
+   "bin": [
+    0.9,
+    1.0
+   ],
+   "n": 2,
+   "mean_p": 1.0,
+   "freq": 1.0
+  }
+ ],
+ "brier_diff_calibrated_minus_base_ci95": [
+  -0.005659268871970197,
+  -3.538392916464055e-05
+ ],
+ "verdict": "TEST_TECHNICZNY",
+ "calibrator": {
+  "variant": "IID",
+  "calibrator": {
+   "kind": "ISOTONIC",
+   "x": [
+    0.112,
+    0.136,
+    0.138,
+    0.142,
+    0.144,
+    0.298,
+    0.3,
+    0.316,
+    0.318,
+    0.354,
+    0.356,
+    0.36,
+    0.546,
+    0.548,
+    0.556,
+    0.558,
+    0.608,
+    0.626
+   ],
+   "y": [
+    0.0,
+    0.0,
+    0.125,
+    0.125,
+    0.24242424242424243,
+    0.24242424242424243,
+    0.2916666666666667,
+    0.2916666666666667,
+    0.3125,
+    0.3125,
+    0.3333333333333333,
+    0.4613899613899614,
+    0.4613899613899614,
+    0.47368421052631576,
+    0.47368421052631576,
+    0.4838709677419355,
+    0.4838709677419355,
+    1.0
+   ]
+  },
+  "fitted_on": "CAL",
+  "events": [
+   {
+    "side": "BUY",
+    "tp": 2.5,
+    "sl": 3.0
+   },
+   {
+    "side": "BUY",
+    "tp": 5.0,
+    "sl": 3.0
+   },
+   {
+    "side": "SELL",
+    "tp": 2.5,
+    "sl": 3.0
+   },
+   {
+    "side": "SELL",
+    "tp": 5.0,
+    "sl": 3.0
+   }
+  ],
+  "horizon_bars": 60
+ },
+ "endpoint_reference": "MarkovDiff (flow_context) symuluje tylko zamknięcia – nie ocenia TP/SL; porównanie ścieżek dotyczy wariantów IID/BLOCK/REGIME",
+ "seconds": 15.6,
+ "command": "python -m masterquo montecarlo validate --dataset <eksport>"
+}

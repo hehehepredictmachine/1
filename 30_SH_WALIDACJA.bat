@@ -6,7 +6,11 @@ chcp 65001 >nul
 title PepeMarketWizard - SCALPING / HEDGING walidacja
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 set "PY=%ROOT%\.venv\Scripts\python.exe"
-if not exist "%PY%" (echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat ^& pause ^& exit /b 2)
+if not exist "%PY%" (
+  echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat
+  pause
+  exit /b 2
+)
 set "PYTHONIOENCODING=utf-8"
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"

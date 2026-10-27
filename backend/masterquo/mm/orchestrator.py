@@ -29,7 +29,7 @@ GRAPH = [
     ("kalman_calibration", "BUZOA: kalibracja Q/R/confirm Kalmana (train->val, test raz)", "OPTIMIZER", ["kalman"]),
     ("breakout_zones", "Breakout zones (VWAP/SMA/SMMA/NONE) + robust volatility vs ATR/std/MAD", "DETERMINISTIC_INDICATOR", ["snapshot"]),
     ("multi_indicator", "Multi-Indicator Strategy - dziennik SHADOW + ablacje", "RULE_STRATEGY", ["snapshot"]),
-    ("smc_fvg", "SMC BoS/IDM/FVG - setupy 73% (+ jawnie profil 50%)", "RULE_STRATEGY", ["snapshot"]),
+    ("smc_fvg", "SMC BoS/IDM/FVG - setupy z głębokością cofnięcia 73% (+ jawnie profil 50%)", "RULE_STRATEGY", ["snapshot"]),
     ("tsvp", "Tick Session Volume Profile - rebuild vs inkrementalnie, POC", "VISUALIZATION", ["snapshot"]),
     ("buzoa", "BUZOA vs PSO/DE/Random - funkcje testowe, równy budżet", "OPTIMIZER", []),
     ("hdc", "HDC - kwantyzator(train), akumulatory, korekcje, baseline, null", "ONLINE_LEARNER", ["snapshot"]),

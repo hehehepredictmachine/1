@@ -308,6 +308,22 @@ Jednostka modelu: instrument × zadanie × TF × horyzont × strona. Każdy inst
 - **Instrumenty:** XAUUSD, BTC
 - **Status:** EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout
 
+## MONTE_CARLO_PATHS – Monte Carlo ścieżek cen (PMW-MC-1) – P(TP przed SL w horyzoncie)
+
+- **Implementacja:** masterquo/montecarlo/engine.py, validate.py, service.py
+- **Zadanie:** prawdopodobieństwo, że cena dojdzie do TP przed SL w H świecach M1 (każdy poziom osobno) + zasięg ruchu ±X; świeca z TP i SL = przedział ostrożny–optymistyczny
+- **Źródło danych:** zamknięte świece M1 bota (na żywo) / eksport MT5 M1 (+ opcjonalne ticki Bid/Ask rozstrzygające kolejność w świecy) – walidacja
+- **TF:** M1
+- **Horyzont:** H świec M1 (domyślnie 60; scenariusz SCALPING 30)
+- **Strona:** BUY i SELL – strona Bid/Ask, spread ze świecy
+- **Cechy:** brak cech uczonych: losowanie całych świec (OHLC względem otwarcia) – IID / blokowe / warunkowane reżimem ATR i godziną sesji, skalowane do bieżącego ATR
+- **Etykieta:** rzeczywiste TP przed SL w H świecach (walidacja; ticki, gdy są) – dane wyłącznie sprzed chwili oceny
+- **Trainer:** `python -m masterquo montecarlo validate` / 31_MONTE_CARLO_WALIDACJA.bat / zadanie runnera monte_carlo: walk-forward CAL/TEST z embargo H, model bazowy = klimatologia, Brier / log loss / kalibracja, CI bootstrap, kalibrator izotoniczny
+- **Loader:** MonteCarloService (własny wątek; bufor zamkniętych świec bota) → /api/v1/montecarlo/*, /api/v1/sh/scenario
+- **Artefakt:** data/montecarlo/<INST>/registry.json + runs/<run>/report.json (aktywny kalibrator tylko z REAL_USER_DATA z przewagą; rollback: montecarlo rollback)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** ZAIMPLEMENTOWANE_I_ZINTEGROWANE; bez kalibracji = prawdopodobieństwo w modelu (tak opisane w panelu); walidacja tylko na danych syntetycznych w tym środowisku (werdykt TEST_TECHNICZNY)
+
 ## LAB_MARKOV – Macierz Markowa 3 stanów (moduł estymowany)
 
 - **Implementacja:** masterquo/lab/market.py markov()

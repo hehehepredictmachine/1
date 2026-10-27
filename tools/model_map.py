@@ -72,6 +72,18 @@ for fam, name, st in (("DUMMY", "Lab DUMMY – częstość bazowa", "MODEL_KONTR
     ELEMENTS.append({"id": f"LAB_{fam}", "name": name, "implementation": f"masterquo/lab/protocol.py fit_family('{fam}'), lab/nets.py, lab/minirocket.py",
                      **LAB_COMMON, "status": st + "; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"})
 ELEMENTS += [
+    {"id": "MONTE_CARLO_PATHS", "name": "Monte Carlo ścieżek cen (PMW-MC-1) – P(TP przed SL w horyzoncie)",
+     "implementation": "masterquo/montecarlo/engine.py, validate.py, service.py",
+     "task": "prawdopodobieństwo, że cena dojdzie do TP przed SL w H świecach M1 (każdy poziom osobno) + zasięg ruchu ±X; świeca z TP i SL = przedział ostrożny–optymistyczny",
+     "data_source": "zamknięte świece M1 bota (na żywo) / eksport MT5 M1 (+ opcjonalne ticki Bid/Ask rozstrzygające kolejność w świecy) – walidacja",
+     "tf": "M1", "horizon": "H świec M1 (domyślnie 60; scenariusz SCALPING 30)", "side": "BUY i SELL – strona Bid/Ask, spread ze świecy",
+     "features": "brak cech uczonych: losowanie całych świec (OHLC względem otwarcia) – IID / blokowe / warunkowane reżimem ATR i godziną sesji, skalowane do bieżącego ATR",
+     "label": "rzeczywiste TP przed SL w H świecach (walidacja; ticki, gdy są) – dane wyłącznie sprzed chwili oceny",
+     "trainer": "`python -m masterquo montecarlo validate` / 31_MONTE_CARLO_WALIDACJA.bat / zadanie runnera monte_carlo: walk-forward CAL/TEST z embargo H, model bazowy = klimatologia, Brier / log loss / kalibracja, CI bootstrap, kalibrator izotoniczny",
+     "loader": "MonteCarloService (własny wątek; bufor zamkniętych świec bota) → /api/v1/montecarlo/*, /api/v1/sh/scenario",
+     "artifact": "data/montecarlo/<INST>/registry.json + runs/<run>/report.json (aktywny kalibrator tylko z REAL_USER_DATA z przewagą; rollback: montecarlo rollback)",
+     "instruments": BOTH,
+     "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; bez kalibracji = prawdopodobieństwo w modelu (tak opisane w panelu); walidacja tylko na danych syntetycznych w tym środowisku (werdykt TEST_TECHNICZNY)"},
     {"id": "LAB_MARKOV", "name": "Macierz Markowa 3 stanów (moduł estymowany)", "implementation": "masterquo/lab/market.py markov()", "task": "rozkład stanu następnej świecy",
      "data_source": "bary bota", "tf": "M5", "horizon": "1 świeca", "side": "nie dotyczy", "features": "zwrot close-to-close", "label": "stan DOWN/FLAT/UP",
      "trainer": "estymacja w oknie 500 świec kończącym się na ostatniej zamkniętej (wygładzanie Laplace'a) – bez osobnego treningu",

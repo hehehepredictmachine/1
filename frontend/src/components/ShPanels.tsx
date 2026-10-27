@@ -186,7 +186,7 @@ export function StrategyPage() {
           <p className="small">Reżim M5: <b>{snap.regime?.state || snap.regime?.status || "—"}</b> · ATR M1 {fmtNum(snap.vol?.atr_m1, 2)} / M5 {fmtNum(snap.vol?.atr_m5, 2)} USD
             {" "}· struktura H1/M15/M5: {snap.structure_H1?.major || "—"} / {snap.structure_M15?.internal || "—"} / {snap.structure_M5?.internal || "—"}</p>
           <p className="small">Model zdarzenia: {Object.entries(st.tp_model?.per_strategy || {}).map(([k, v]: any) => `${k}: ${v.status}`).join(" · ") || st.tp_model?.status}</p>
-          <ConfigEditor cfg={cfg} strat={strat} inst={st.instrument} onSaved={(m) => { setMsg(m); load(); }} />
+          <ConfigEditor cfg={cfg} ic={ic} strat={strat} inst={st.instrument} onSaved={(m) => { setMsg(m); load(); }} />
         </div>
       </div>
     </div>);
@@ -217,13 +217,18 @@ function PlanView({ p, onClose }: { p: any; onClose: () => void }) {
   </>);
 }
 
-function ConfigEditor({ cfg, strat, inst, onSaved }: { cfg: any; strat: string; inst: string; onSaved: (m: string) => void }) {
+function ConfigEditor({ cfg, ic, strat, inst, onSaved }: { cfg: any; ic: any; strat: string; inst: string; onSaved: (m: string) => void }) {
   const [tp3, setTp3] = useState<string>("");
   const [shares, setShares] = useState<string>("");
+  const [comm, setComm] = useState<string>("");
   useEffect(() => { setTp3(String(cfg?.tp_usd?.[2] ?? "")); setShares((cfg?.shares || []).map((x: number) => Math.round(x * 100)).join("/")); }, [JSON.stringify(cfg)]);
+  useEffect(() => { setComm(ic?.commission_per_lot_side == null ? "" : String(ic.commission_per_lot_side)); }, [ic?.commission_per_lot_side]);
   const save = async () => {
     const sh = shares.split("/").map((x) => Number(x) / 100);
-    const patch: any = { instruments: { [inst]: { [strat]: { shares: sh, tp_usd: [cfg.tp_usd[0], cfg.tp_usd[1], Number(tp3)] } } } };
+    const c = comm.trim() === "" ? null : Number(comm.replace(",", "."));
+    if (c !== null && !(c >= 0)) { onSaved("Odrzucono: prowizja musi być liczbą ≥ 0 albo pusta (nieznana)."); return; }
+    // empty = unknown (never 0); the commission is per instrument and shared by SCALPING and HEDGING
+    const patch: any = { instruments: { [inst]: { commission_per_lot_side: c, [strat]: { shares: sh, tp_usd: [cfg.tp_usd[0], cfg.tp_usd[1], Number(tp3)] } } } };
     const r: any = await apiSend("POST", "/api/v1/sh/config", patch).catch((e) => ({ error: String(e?.message || e) }));
     onSaved(r.error ? `Odrzucono: ${r.error}` : `Zapisano wersję ${r._override_version} (hash ${r._hash}); otwarte pozycje zachowują swój plan.`);
   };
@@ -238,6 +243,9 @@ function ConfigEditor({ cfg, strat, inst, onSaved }: { cfg: any; strat: string; 
         {(cfg.tp3_choices || []).map((x: number) => <option key={x} value={String(x)}>{x}</option>)}</select> :
         <input aria-label="TP3" value={tp3} onChange={(e) => setTp3(e.target.value)} size={4} />} USD
       {" "}· udziały % <input aria-label="Udziały" value={shares} onChange={(e) => setShares(e.target.value)} size={9} data-testid="sh-shares" /></p>
+    <p>Prowizja {inst} na 1 lot na stronę (waluta rachunku, wspólna dla SCALPING i HEDGING){" "}
+      <input aria-label="Prowizja" value={comm} onChange={(e) => setComm(e.target.value)} size={6} placeholder="nieznana" data-testid="sh-commission" />
+      {" "}<span className="muted">puste = nieznana (wynik netto N/A, AUTO wymaga znanej prowizji); konto „Zero” też może mieć prowizję – sprawdź specyfikację brokera</span></p>
     <p>SL {cfg.sl_min_usd}–{cfg.sl_max_usd} USD · horyzont {cfg.horizon_minutes} min · TTL {cfg.setup_ttl_minutes} min · BE po {cfg.be_after} ({cfg.be_rule})
       {cfg.hedge && <> · hedge: ratio {cfg.hedge.ratio} (max {cfg.hedge.max_ratio}), aktywacje {cfg.hedge.max_activations}, wariant {cfg.hedge.variant}</>}</p>
     <button className="btn tiny" onClick={save} data-testid="sh-config-save">Zapisz</button>{" "}

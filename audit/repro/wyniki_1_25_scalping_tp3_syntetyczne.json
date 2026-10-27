@@ -1,0 +1,388 @@
+{
+ "dataset": "XAUUSD_20261027T1900Z_3m",
+ "data_kind": "SYNTHETIC_TEST",
+ "m1_bars": 30000,
+ "commission_per_lot_side": null,
+ "slippage_usd": 0.05,
+ "unit": "R = wynik całego cyklu / ryzyko planu; wynik netto po spreadzie i poślizgu (prowizja NIEZNANA – nieuwzględniona)",
+ "variants": {
+  "TP3=5": {
+   "counts": {
+    "WAIT": 28780,
+    "INVALIDATED": 1041,
+    "NO_TRADE": 93,
+    "READY": 26,
+    "READY_SKIPPED_OPEN_PLAN": 10
+   },
+   "trades": 16,
+   "metrics_R": {
+    "n": 16,
+    "total": 6.639584723242782,
+    "expectancy": 0.4149740452026739,
+    "ci90": [
+     -0.15947369341924,
+     1.0125930437547364
+    ],
+    "win_rate": 0.5,
+    "profit_factor": 1.8052323596027053,
+    "max_drawdown": 3.0965511846370646,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 20.6875,
+    "avg_mae_price": -1.2908720034768066,
+    "avg_mfe_price": 2.855138930133876,
+    "avg_cost_price": 0.22
+   },
+   "metrics_price_usd": {
+    "n": 16,
+    "total": 10.297859602292554,
+    "expectancy": 0.6436162251432846,
+    "ci90": [
+     -0.2963575646262939,
+     1.575626549500731
+    ],
+    "win_rate": 0.5,
+    "profit_factor": 1.7576529284429727,
+    "max_drawdown": 5.570036481522038,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 20.6875,
+    "avg_mae_price": -1.2908720034768066,
+    "avg_mfe_price": 2.855138930133876,
+    "avg_cost_price": 0.22
+   },
+   "hit_rates": {
+    "TP1": 0.5,
+    "TP2": 0.5,
+    "TP3": 0.4375,
+    "event_TP2_before_SL_in_horizon": 0.5
+   },
+   "by_exit": {
+    "BE": {
+     "n": 1,
+     "total": 1.3873259706197871,
+     "expectancy": 1.3873259706197871,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 51.0,
+     "avg_mae_price": -0.2941590986342817,
+     "avg_mfe_price": 3.0243681519377787,
+     "avg_cost_price": 0.22
+    },
+    "SL": {
+     "n": 8,
+     "total": -8.245551292199304,
+     "expectancy": -1.030693911524913,
+     "ci90": [
+      -1.0321851312450319,
+      -1.0287408150495265
+     ],
+     "win_rate": 0.0,
+     "profit_factor": 0.0,
+     "max_drawdown": 8.245551292199304,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 14.375,
+     "avg_mae_price": -2.070679462134194,
+     "avg_mfe_price": 0.6792378081907486,
+     "avg_cost_price": 0.22
+    },
+    "TP3": {
+     "n": 7,
+     "total": 13.497810044822298,
+     "expectancy": 1.928258577831757,
+     "ci90": [
+      1.7901032127258727,
+      2.000057963964587
+     ],
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 23.571428571428573,
+     "avg_mae_price": -0.5420510371315815,
+     "avg_mfe_price": 5.317707466382607,
+     "avg_cost_price": 0.22
+    }
+   },
+   "baseline_R": {
+    "n": 446,
+    "total": -8.325361544555943,
+    "expectancy": -0.018666729920529018,
+    "ci90": [
+     -0.12583029979860286,
+     0.08628152461864899
+    ],
+    "win_rate": 0.3744394618834081,
+    "profit_factor": 0.9710487836028598,
+    "max_drawdown": 18.08246339402659,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 25.295964125560538,
+    "avg_mae_price": -1.4951868914042652,
+    "avg_mfe_price": 2.0895174494473046,
+    "avg_cost_price": 0.22
+   },
+   "seconds": 180.4
+  },
+  "TP3=7.5": {
+   "counts": {
+    "WAIT": 28780,
+    "INVALIDATED": 1041,
+    "NO_TRADE": 93,
+    "READY": 26,
+    "READY_SKIPPED_OPEN_PLAN": 11
+   },
+   "trades": 15,
+   "metrics_R": {
+    "n": 15,
+    "total": 8.391775511601972,
+    "expectancy": 0.5594517007734648,
+    "ci90": [
+     -0.11055608092715873,
+     1.220503588744528
+    ],
+    "win_rate": 0.5333333333333333,
+    "profit_factor": 2.1629239319242815,
+    "max_drawdown": 3.0965511846370646,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 38.733333333333334,
+    "avg_mae_price": -1.26356008305429,
+    "avg_mfe_price": 3.816717077344462,
+    "avg_cost_price": 0.22
+   },
+   "metrics_price_usd": {
+    "n": 15,
+    "total": 13.253471649510448,
+    "expectancy": 0.8835647766340299,
+    "ci90": [
+     -0.19689931469062985,
+     1.9543311144446427
+    ],
+    "win_rate": 0.5333333333333333,
+    "profit_factor": 2.118996822088366,
+    "max_drawdown": 4.810754311055462,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 38.733333333333334,
+    "avg_mae_price": -1.26356008305429,
+    "avg_mfe_price": 3.816717077344462,
+    "avg_cost_price": 0.22
+   },
+   "hit_rates": {
+    "TP1": 0.5333333333333333,
+    "TP2": 0.5333333333333333,
+    "TP3": 0.2,
+    "event_TP2_before_SL_in_horizon": 0.5333333333333333
+   },
+   "by_exit": {
+    "BE": {
+     "n": 2,
+     "total": 2.7706970935276303,
+     "expectancy": 1.3853485467638151,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 35.0,
+     "avg_mae_price": -0.2996695582930897,
+     "avg_mfe_price": 4.334045937596102,
+     "avg_cost_price": 0.22
+    },
+    "SL": {
+     "n": 7,
+     "total": -7.216100108728663,
+     "expectancy": -1.0308714441040947,
+     "ci90": [
+      -1.0322023624324739,
+      -1.028284598317183
+     ],
+     "win_rate": 0.0,
+     "profit_factor": 0.0,
+     "max_drawdown": 7.216100108728663,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 13.714285714285714,
+     "avg_mae_price": -2.123554983894142,
+     "avg_mfe_price": 0.5929040038812283,
+     "avg_cost_price": 0.22
+    },
+    "TIME_LIMIT": {
+     "n": 3,
+     "total": 5.8786275682218,
+     "expectancy": 1.9595425227406,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 90.0,
+     "avg_mae_price": -0.5399698045748664,
+     "avg_mfe_price": 6.977884674901209,
+     "avg_cost_price": 0.22
+    },
+    "TP3": {
+     "n": 3,
+     "total": 6.958550958581204,
+     "expectancy": 2.319516986193735,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 48.333333333333336,
+     "avg_mae_price": -0.6230892760815246,
+     "avg_mfe_price": 7.832894077700833,
+     "avg_cost_price": 0.22
+    }
+   },
+   "baseline_R": {
+    "n": 407,
+    "total": 4.558964779902031,
+    "expectancy": 0.011201387665606957,
+    "ci90": [
+     -0.09518147317144111,
+     0.12788754702852873
+    ],
+    "win_rate": 0.3759213759213759,
+    "profit_factor": 1.0174161531993597,
+    "max_drawdown": 14.395819462777373,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 31.72972972972973,
+    "avg_mae_price": -1.5024346465279796,
+    "avg_mfe_price": 2.5138904000259896,
+    "avg_cost_price": 0.22000000000000003
+   },
+   "seconds": 182.2
+  },
+  "TP3=10": {
+   "counts": {
+    "WAIT": 28780,
+    "INVALIDATED": 1041,
+    "NO_TRADE": 93,
+    "READY": 26,
+    "READY_SKIPPED_OPEN_PLAN": 11
+   },
+   "trades": 15,
+   "metrics_R": {
+    "n": 15,
+    "total": 8.09608278523612,
+    "expectancy": 0.5397388523490747,
+    "ci90": [
+     -0.13430203674176475,
+     1.1905595827626894
+    ],
+    "win_rate": 0.5333333333333333,
+    "profit_factor": 2.1219471270143577,
+    "max_drawdown": 3.0965511846370646,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 42.86666666666667,
+    "avg_mae_price": -1.26356008305429,
+    "avg_mfe_price": 4.166359752358948,
+    "avg_cost_price": 0.22
+   },
+   "metrics_price_usd": {
+    "n": 15,
+    "total": 12.796014370648482,
+    "expectancy": 0.8530676247098988,
+    "ci90": [
+     -0.19906063570693125,
+     1.925332364323161
+    ],
+    "win_rate": 0.5333333333333333,
+    "profit_factor": 2.08037348966462,
+    "max_drawdown": 4.810754311055462,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 42.86666666666667,
+    "avg_mae_price": -1.26356008305429,
+    "avg_mfe_price": 4.166359752358948,
+    "avg_cost_price": 0.22
+   },
+   "hit_rates": {
+    "TP1": 0.5333333333333333,
+    "TP2": 0.5333333333333333,
+    "TP3": 0.13333333333333333,
+    "event_TP2_before_SL_in_horizon": 0.5333333333333333
+   },
+   "by_exit": {
+    "BE": {
+     "n": 3,
+     "total": 4.155259647477622,
+     "expectancy": 1.3850865491592073,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 50.666666666666664,
+     "avg_mae_price": -0.35302887308186354,
+     "avg_mfe_price": 5.592342845030392,
+     "avg_cost_price": 0.22
+    },
+    "SL": {
+     "n": 7,
+     "total": -7.216100108728663,
+     "expectancy": -1.0308714441040947,
+     "ci90": [
+      -1.0322023624324739,
+      -1.028284598317183
+     ],
+     "win_rate": 0.0,
+     "profit_factor": 0.0,
+     "max_drawdown": 7.216100108728663,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 13.714285714285714,
+     "avg_mae_price": -2.123554983894142,
+     "avg_mfe_price": 0.5929040038812283,
+     "avg_cost_price": 0.22
+    },
+    "TIME_LIMIT": {
+     "n": 3,
+     "total": 5.8786275682218,
+     "expectancy": 1.9595425227406,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 90.0,
+     "avg_mae_price": -0.5399698045748664,
+     "avg_mfe_price": 6.977884674901209,
+     "avg_cost_price": 0.22
+    },
+    "TP3": {
+     "n": 2,
+     "total": 5.278295678265361,
+     "expectancy": 2.6391478391326806,
+     "ci90": null,
+     "win_rate": 1.0,
+     "profit_factor": null,
+     "max_drawdown": 0.0,
+     "ambiguous_share": 0.0,
+     "avg_hold_min": 62.5,
+     "avg_mae_price": -0.7047601627925815,
+     "avg_mfe_price": 10.317192849210414,
+     "avg_cost_price": 0.22
+    }
+   },
+   "baseline_R": {
+    "n": 384,
+    "total": 12.728284602760533,
+    "expectancy": 0.03314657448635556,
+    "ci90": [
+     -0.08273841868599775,
+     0.15254025402815585
+    ],
+    "win_rate": 0.3854166666666667,
+    "profit_factor": 1.052339168818907,
+    "max_drawdown": 12.479901676586987,
+    "ambiguous_share": 0.0,
+    "avg_hold_min": 35.833333333333336,
+    "avg_mae_price": -1.4957632492534358,
+    "avg_mfe_price": 2.788387447196586,
+    "avg_cost_price": 0.22
+   },
+   "seconds": 181.5
+  }
+ },
+ "note": "Dane SYNTETYCZNE (symulator terminala, 30 000 ostatnich świec M1 eksportu 3 mies.) – test techniczny ścieżki replay, NIE ocena rynku. Ten sam kod co na żywo (sh/replay.py), zmienia się tylko TP3. Przy 15–16 cyklach CI90 obejmuje 0 – brak dowodu przewagi którejkolwiek opcji.",
+ "command": "python audit/repro/porownanie_przed_po_1_25.py scalping --dataset <eksport> --last-m1 30000 --out <plik>"
+}

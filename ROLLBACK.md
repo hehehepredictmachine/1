@@ -48,6 +48,17 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
   i ustaw `"config_version": 9`) oraz bazę z `data\backups\` – 1.9 nie zna statusu OPEN_PARTIAL/UNSETTLED i liczyłaby je jak zamknięte.
 * Preferencje monitora 1.10 (strony, układy, widoki `ai-*`/`bot-*`) są w przeglądarce; 1.9 ich nie używa, a jej widoki `panelN` zostały zachowane.
 
+## 11. Wersja 1.25.0 → 1.24.1
+* Punkt powrotu w repozytorium: commit `a10d97a` (wydanie 1.24.1). Kod eksportu sprzed zmian (użyty w porównaniu przed/po): `0a57370`.
+  1.25 nie zmienia schematu konfiguracji (`config_version` 12) ani nie dodaje migracji bazy – powrót = uruchomienie paczki 1.24.1 na tych
+  samych danych.
+* Nowe pliki danych, które 1.24.1 ignoruje: `data\montecarlo\` (walidacje i kalibracje Monte Carlo), w eksportach `EXPORT_STATUS.json`,
+  `MODEL_DATA_READINESS.json`, `ticks\`. Eksport 1.25 ma dodatkową kolumnę `real_volume` na końcu CSV – czytniki 1.24 biorą kolumny po
+  nazwie i jej nie używają.
+* Bez cofania wersji: kalibracja Monte Carlo – `python -m masterquo montecarlo rollback --instrument XAUUSD` (wraca do poprzedniej
+  aktywnej albo do „bez kalibracji”); TP3 SCALPING – Strategie → Ustawienia SCALPING → TP3 5 USD albo „Przywróć poprzednią”
+  (`POST /api/v1/sh/config/rollback`). Scenariusz 2,5–10 USD niczego nie zleca – nie wymaga wyłączania.
+
 ## 10. Wersja 1.24.0 → 1.23.x
 * Punkt powrotu w repozytorium: commit `ba7a5d5` (stan przed przebudową desktop; lokalny tag `pre-desktop-1.23.0`). 1.24 nie dodaje migracji bazy.
 * Konfiguracja: 1.24 zapisuje `config_version: 12` (Execution Lock wycofany, pole `execution.mode_note`, Telegram: `send_trades`,

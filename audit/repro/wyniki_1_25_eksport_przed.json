@@ -1,0 +1,66 @@
+{
+ "backend": "kod przed zmianami: commit 0a57370 (git archive)",
+ "data": "SYNTHETIC_TEST (FakeMT5)",
+ "scenarios": {
+  "S1_complete": {
+   "rc": 0,
+   "exception": null,
+   "status_file": null,
+   "source_metadata": true,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M15.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": false,
+   "looks_complete_to_old_reader": true,
+   "dataset_state": "brak funkcji (kod przed zmianami)",
+   "real_volume_column": false
+  },
+  "S2_failed_reexport_into_used_folder": {
+   "rc": null,
+   "exception": "OSError: symulowana awaria w trakcie eksportu (zanik zasilania / zamknięcie terminala)",
+   "status_file": null,
+   "source_metadata": true,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M15.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": false,
+   "looks_complete_to_old_reader": true,
+   "dataset_state": "brak funkcji (kod przed zmianami)"
+  },
+  "S3_crash_damaged_checkpoint_resume": {
+   "crash_run": {
+    "rc": null,
+    "exception": "OSError: symulowana awaria w trakcie eksportu (zanik zasilania / zamknięcie terminala)"
+   },
+   "damaged_checkpoint": "M5_20260927_20261027T1900.json",
+   "resume_run": {
+    "rc": null,
+    "exception": "JSONDecodeError: Expecting ',' delimiter: line 1 column 301 (char 300)"
+   },
+   "status_file": null,
+   "source_metadata": false,
+   "csv": [
+    "XAUUSD_M1.csv",
+    "XAUUSD_M5.csv"
+   ],
+   "readiness_file": false,
+   "looks_complete_to_old_reader": false,
+   "dataset_state": "brak funkcji (kod przed zmianami)"
+  },
+  "S4_date_range": {
+   "rc": null,
+   "exception": "TypeError: export_candles() got an unexpected keyword argument 'date_from'",
+   "supported": false
+  },
+  "S5_bid_ask_ticks": {
+   "rc": null,
+   "exception": "TypeError: export_candles() got an unexpected keyword argument 'tick_days'",
+   "supported": false,
+   "manifest": null
+  }
+ }
+}
