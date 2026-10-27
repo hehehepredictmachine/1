@@ -57,7 +57,27 @@ Pełna lista zmian: `git diff --stat pre-desktop-1.23.0..HEAD` (ok. 130 plików)
 
 ## 4. Testy faktycznie wykonane, porównanie strategii, ograniczenia
 
-WYNIKI_TESTOW
+Wszystko uruchomione w tym środowisku (Linux, Python 3.13, Chromium/Playwright, Go 1.24) – **bez Windows, bez terminala MT5, bez
+prawdziwego rachunku i bez połączenia z Telegramem** (atrapy MT5 i HTTP).
+
+| Zestaw | Wynik |
+|---|---|
+| Pełny zestaw offline `tools/run_tests.py` (944 testy, w tym testy UI w Chromium) | 1. przebieg: 926 OK, 9 FAIL + 5 ERROR w 10 modułach, 4 pominięte. Przyczyny (obie w kodzie 1.24): **(a)** regresja DK1 – `is_fake()` przestał rozpoznawać symulator za proxy tylko-do-odczytu treningu, więc eksport `--demo` był oznaczany `REAL_USER_DATA` (9 testów); **(b)** skrypt reprodukcji audytu ustawiał usunięte pole `execution.lock` (5 błędów). Obie naprawione, dodany test regresji |
+| Ponownie 10 modułów z błędami (po poprawkach) | 153 testy OK, 4 pominięte. Pozostałe moduły przeszły w 1. przebiegu; całego zestawu po poprawce nie powtarzano (poprawki dotyczą tylko `is_fake`, skryptu audytu i tekstów) |
+| Pominięte (4) | brak `onnx`/`onnxruntime`, brak `pyopencl`, 2× brak `.venv_candles` (trening prognoz – środowisko tworzy `10_PROGNOZY_INSTALUJ.bat`); zestaw `gold_candles`: pominięty z tego samego powodu |
+| Aplikacja desktop (Go) | `go test` (układ folderów, argumenty pip, import/kopia/neutralizacja AUTO, decyzje startu, **test integracyjny z prawdziwym silnikiem**: start, podłączenie do działającego, restart po awarii, restart na żądanie, zatrzymanie) – OK; `go vet` dla Windows – OK; kompilacja Windows x64 GUI + odczyt zasobów PE – OK |
+| Panel | `tsc --noEmit` OK, `vite build` OK; po przebudowie paczki panelu ponownie `test_ui_control_center` – 5 OK |
+
+Pokrycie scenariuszy obowiązkowych (atrapy): stara konfiguracja `LOCKED`, nowa instalacja w PAPER, AUTO DEMO/LIVE z potwierdzeniem
+rachunku, STOP tylko nowych wejść + prowadzenie i zamknięcie otwartej pozycji – `test_execution_lock_withdrawn`; PAPER/SIGNALS bez
+`order_send` i idempotencja – `test_risk_execution`; nieznany wynik wysyłki bez ponownego wysłania i uzgodnienie – `test_risk_execution`
+(`test_timeout_unknown_no_resend_then_reconciled`), `test_sh_risk_state` (`test_rejection_and_unknown_not_resent`, właściciel pozycji);
+netting/hedging – `test_risk_execution`, `test_sh_risk_state`; rozłączenie i ponowne połączenie – `test_bridge_engine`, `test_app_process`;
+brak klucza AI / modelu – `test_agent`, `test_gates_dk6`, `test_relaxed_gates`; XAUUSD / BTC – `test_lab`; nieznane koszty blokują –
+`test_risk_execution`; tryby i STOP z panelu, limity, Telegram, Neural Lab – `test_ui_control_center`; puste/nieaktualne dane, utrata
+połączenia, klawiatura, brak przewijania poziomego przy 4 szerokościach, wygląd – `test_ui_terminal_shell`; Telegram (formaty EN/ZH,
+uczciwy stan, brak tokenu w błędach, deduplikacja) – `test_telegram`; endpointy desktop – `test_desktop_app`.
+Nie sprawdzono: skalowania Windows 100–200 %, pracy na wolniejszym komputerze, okna/zasobnika/rejestru Windows, prawdziwego MT5 i Telegrama.
 
 **Porównanie przed/po (DK6):** wyłącznie dane syntetyczne (symulator), ten sam kod skanera/selektora, koszty w R, podział 60/20/20.
 Całość: 820 → 913 transakcji, wartość oczekiwana 0,144 R w obu wariantach; OOS: 0,257 R (143) → 0,223 R (166), maks. obsunięcie OOS
