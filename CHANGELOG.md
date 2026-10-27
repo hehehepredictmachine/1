@@ -1,6 +1,11 @@
 # CHANGELOG
 
-## Nowe panele PMW – w toku (bez nowej wersji do etapu 5)
+## 1.23.0 – Nowy monitor PMW (etap 1): Trading Intelligence / AI Neural Lab / System Control Center
+Paczka klienta wydana na prośbę użytkownika po etapie 1. Nowy monitor zawiera szkielet (shell, nagłówek ze stanem z backendu, puste
+sekcje oznaczone „nie zintegrowane”); integracja paneli – etapy 2–4. Backend, strategia, modele, ryzyko i wykonanie bez zmian
+względem 1.22.0 (zmienione tylko numery wersji i launcher przebudowany z nowym numerem).
+* **Poprawka (stary monitor, strona „Formacje”):** po walidacji biblioteki link do raportu mógł się nie pojawić – panel kończył
+  odpytywanie tuż przed zapisem raportu; teraz czeka na raport (najwyżej ok. 10 s).
 * **Etap 0 – audyt:** `docs/PEPE_UI_AUDIT.md`, `docs/PEPE_UI_API_MAP.md`, `docs/PEPE_UI_IMPLEMENTATION_PLAN.md`,
   `docs/PEPE_UI_TEST_PLAN.md` (specyfikacja: `docs/PEPE_UI_IMPLEMENTATION_SPEC.md`).
 * **Etap 1 – szkielet:** nowe trasy `#/trading-intelligence`, `#/ai-neural-lab`, `#/system-control` w osobnym shellu

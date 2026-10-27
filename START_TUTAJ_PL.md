@@ -181,6 +181,12 @@ To poziomy informacyjne – nie zmieniają strategii ani zleceń. Szczegóły: `
   Najedź kursorem na strefę, by zobaczyć typ, status, wynik, testy i źródło wolumenu. Wolumen to aktywność tickowa brokera (nie wolumen
   giełdowy), a wynik 0–100 to opis zbieżności, **nie** prawdopodobieństwo. Strefy nie składają zleceń – szczegóły w
   `docs/ZONE_ENGINE_ARCHITECTURE.md`.
+* Od 1.23 jest **nowy monitor** (Trading Intelligence, AI Neural Lab, System Control Center): w bocznym menu kliknij **„Nowe panele”**
+  albo otwórz adres monitora z końcówką `#/trading-intelligence`. Nagłówek pokazuje środowisko (LIVE / DEMO / SYNTHETIC / HISTORY /
+  UNKNOWN), stan MT5 (kliknij, by zobaczyć szczegóły połączenia), świeżość danych, instrument, tryb wykonania i Execution Lock – wszystko
+  z backendu bota; bez połączenia z botem stany zmieniają się na DISCONNECTED / UNKNOWN zamiast pokazywać stare wartości. To **etap 1**:
+  sekcje paneli są jeszcze puste i oznaczone „etap N – nie zintegrowane” (wykresy, sygnały, modele 3D i sterowanie dochodzą w kolejnych
+  etapach). Nowy monitor niczego nie zmienia w pracy bota; dotychczasowy monitor działa jak wcześniej (link „Istniejące widoki”).
 
 ## Gdy coś nie działa
 * „Brak .venv” → uruchom `01_INSTALUJ.bat`.
