@@ -72,6 +72,40 @@ Nie zmieniane: cały `backend/`, strony i komponenty istniejących widoków, `st
 Poza zakresem etapu 1, ale wykryte przez bramkę: wyścig w istniejącej stronie „Formacje” (`AnalyticsPages.tsx`, osobny commit
 `854f611`) – jedyna zmiana w istniejącym widoku poza pozycją „Nowe panele” w menu.
 
+## Uzupełnienie po master prompcie „COMPLETE” (27.10.2026)
+
+Polecenie: [PEPE_UI_MASTER_PROMPT.md](PEPE_UI_MASTER_PROMPT.md) – ta sama treść co specyfikacja, z doprecyzowaniami (audyt §17).
+Etap 0 i etap 1 są wykonane; prompt dodaje do **etapu 1** dwa wymagania, których obecny shell nie spełnia:
+
+1. **Globalny wybór instrumentu `XAUUSD` / `BTCUSDT` w headerze** (dziś tylko wyświetlenie).
+2. **Lint** jako bramka etapu (w repo brak narzędzia).
+
+### Etap 1 – uzupełnienie (do akceptacji, po decyzjach D1, D7, D9)
+
+| Plik | Zmiana | Wariant |
+|---|---|---|
+| `frontend/src/features/shell/useTerminalContext.ts` | `viewInstrument` (wybrany instrument nowych paneli) obok `instrument` (aktywny w bocie); lista i symbole brokera z `GET /api/v1/assets`; dla (a) zapamiętanie w przeglądarce + parametr URL `?instrument=` | D1-a i D1-b |
+| `frontend/src/features/shell/InstrumentSelect.tsx` (nowy) | przełącznik `XAUUSD` / `BTC…` w headerze z symbolem brokera; dla (b) dialog z podsumowaniem skutków (reset trybu, reconnect) i wywołanie `POST /api/v1/assets/active` | D1-a / D1-b |
+| `frontend/src/features/shell/TerminalHeader.tsx` | `InstrumentSelect` zamiast chipa instrumentu; plakietka „podgląd – instrument nieaktywny w bocie”, gdy widok ≠ aktywny | D1-a |
+| `frontend/src/features/shell/terminal.css` | style przełącznika i dialogu (w zakresie `.pmw-terminal`) | – |
+| `frontend/src/router.ts` | odczyt / zapis `?instrument=` dla nowych tras (stare trasy bez zmian) | D1-a |
+| `tests/test_ui_terminal_shell.py` | testy F12–F14 (TEST_PLAN §2a) | – |
+| `frontend/package.json`, `frontend/eslint.config.js` (nowy) | tylko dla D7-b: ESLint jako narzędzie deweloperskie + skrypt `npm run lint` | D7-b |
+| `docs/PEPE_UI_*.md`, `CHANGELOG.md` | stan po uzupełnieniu | – |
+
+Bez zmian: backend (oba warianty korzystają z istniejących tras), store, `api.ts`, stare widoki. Bramka jak dla etapu 1 + `npm run lint`
+(D7-b) albo `tsc` strict (D7-a).
+
+### Doprecyzowania dalszych etapów
+
+* **Etap 2:** sekcja „Risk & Performance” = „Performance & Journal” z promptu – PnL zamknięty i niezrealizowany osobno, filtry dat i
+  instrumentów (API_MAP §6.3); Order Preview na ręcznym padzie z odczytem statusu po timeoucie (`GET /manual/intents/{iid}`) zamiast
+  ponawiania (D5).
+* **Etap 3:** Neural Forest – po akceptacji N7 (Random Forest w istniejącym treningu ML, rola CANDIDATE / SHADOW); do tego czasu stan
+  `MISSING`. Styl Neural Universe 3D wg GIF-u użytkownika – animacje bez telemetrii oznaczone jako ilustracyjne.
+* **Etap 4:** ustawienia zatwierdzone w prompcie (LIVE z podsumowaniem, stały panel MT5, auto-wdrożenie do testów + ręczna akceptacja
+  LIVE, blokada operacji po rozłączeniu) – N5 zmienia auto-promocję `ml` i `sh_tp_model` na „SHADOW automatycznie, LIVE ręcznie”.
+
 ## Etap 2 – Trading Intelligence
 
 1. Market Overview 2×2 (M5/M15/H1/H4) na istniejącym `ChartPanel` (lightweight-charts) i `/api/v1/candles`, wspólne dane stref
@@ -123,10 +157,11 @@ kontrast), wydajność (rozmiar chunków, pamięć sceny 3D), raport końcowy wg
 
 | ID | Wymagana przed | Treść |
 |---|---|---|
-| D1 | etapem 1 (wyświetlanie) / 2 (przełączanie) | semantyka globalnego wyboru instrumentu; `BTC` vs `BTCUSDT` |
+| D1 | uzupełnieniem etapu 1 (prompt wymaga wyboru w headerze) | semantyka globalnego wyboru instrumentu: (a) widok nowych paneli / (b) przełączenie bota |
 | D2 | etapem 1 | mapowanie środowiska (LIVE / DEMO / SYNTHETIC / HISTORY / UNKNOWN) |
 | D7 | etapem 1 | lint: `tsc` strict czy ESLint |
 | D8 | etapem 1 | zakres motywu (tylko nowe trasy) |
 | D5 | etapem 2 | Order Preview na istniejących kontraktach |
-| D4, D6 | etapem 3 | Random Forest; zależności 3D |
-| D3 | etapem 4 | auto-promocja modeli |
+| D4, D6 | etapem 3 | Random Forest (propozycja N7); zależności 3D |
+| D3 | etapem 4 | auto-promocja modeli – co do zasady rozstrzygnięta w prompcie (testy automatycznie, LIVE ręcznie) |
+| D9 | uzupełnieniem etapu 1 | etykieta instrumentu `BTCUSDT` vs `BTC` + symbol brokera |

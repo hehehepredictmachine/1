@@ -39,6 +39,16 @@ w etapie n i uruchomiony z wynikiem pozytywnym), `CZĘŚCIOWO (n)` (pokryta tylk
 | F10 | brak błędów konsoli na nowych trasach | `test_ui_terminal_shell` test_01, test_09 | OK (1) |
 | F11 | jedno połączenie WS po nawigacji między starymi i nowymi trasami (liczba otwartych WebSocket = 1) | `test_ui_terminal_shell` test_09 | OK (1) |
 
+### 2a. Uzupełnienie etapu 1 wg master promptu „COMPLETE” (po decyzjach D1, D7, D9)
+
+| # | Przypadek | Test | Stan |
+|---|---|---|---|
+| F12 | przełącznik instrumentu w headerze: lista i symbole brokera z `GET /api/v1/assets`, nie ze stałej w UI; etykieta wg D9 | `test_ui_terminal_shell` | PLAN (1+) |
+| F13 | D1-a: wybór innego instrumentu **nie** wysyła żadnego żądania zmieniającego stan (brak POST w ruchu sieciowym); plakietka „podgląd – instrument nieaktywny w bocie”; wybór przetrwa przeładowanie i jest w URL | `test_ui_terminal_shell` | PLAN (1+) |
+| F14 | D1-b: przełączenie bota tylko po potwierdzeniu w dialogu (anulowanie = brak POST); po potwierdzeniu `POST /api/v1/assets/active`, WS `assets` aktualizuje header, tryb bota zresetowany przez backend | `test_ui_terminal_shell` (symulator) | PLAN (1+) |
+| F15 | lint: `npm run lint` (D7-b) albo `npm run typecheck` (D7-a) – exit 0 | bramka | PLAN (1+) |
+| F16 | trasa `GET /api/v1/markets/chart` (używana przez D1-a w etapie 2) – kształt odpowiedzi, 400 / 404 | nowy test HTTP | PLAN (1+ / 2) |
+
 ## 3. Integracja – kontrakty (etap 2 i dalej)
 
 | # | Przypadek | Test | Stan |
@@ -59,7 +69,7 @@ w etapie n i uruchomiony z wynikiem pozytywnym), `CZĘŚCIOWO (n)` (pokryta tylk
 |---|---|---|---|
 | A1 | struktura Decision Tree == `tree_structure.json` (liczba węzłów, cechy, progi, liście) | test N3 | PLAN (3) |
 | A2 | XGBoost: liczba drzew / limit, węzły z `get_dump` zgodne z modelem | test N3 | PLAN (3) |
-| A3 | Random Forest: widok `MISSING`, żadnej wygenerowanej struktury | UI | PLAN (3) |
+| A3 | Random Forest: bez N7 – widok `MISSING`, żadnej wygenerowanej struktury; po N7 – liczba drzew, węzły, progi i liście w `forest_structure.json` == `estimators_` modelu, rola CANDIDATE / SHADOW, brak wpływu na decyzje | UI + test N7 | PLAN (3) |
 | A4 | NSS: warstwy zgodne z manifestem; impulsy tylko z telemetrii; bez telemetrii – etykieta `Illustrative visualization` | UI + test jednostkowy | PLAN (3) |
 | A5 | Monte Carlo: liczba ścieżek i kwantyle z odpowiedzi backendu (N4 zgodne z pełną symulacją) | test N4 | PLAN (3) |
 | A6 | Replay nie pokazuje danych późniejszych niż wybrany czas | UI + `as_of` | PLAN (3) |
@@ -82,6 +92,7 @@ w etapie n i uruchomiony z wynikiem pozytywnym), `CZĘŚCIOWO (n)` (pokryta tylk
 | R8 | logi i decyzje bez sekretów | `test_agent`, `test_app_process` | ISTNIEJE |
 | R9 | trening nie wdraża modelu LIVE bez zatwierdzenia | **obecnie niespełnione** dla `ml` i `sh_tp_model` (audyt §9) – test po decyzji D3 | PLAN (4) |
 | R10 | idempotencja (podwójne kliknięcie → `DUPLICATE`) | `test_risk_execution` + nowy UI | ISTNIEJE / PLAN (2) |
+| R11 | Order Preview po timeoucie: UI najpierw czyta `GET /api/v1/manual/intents/{iid}` (stan akcji po kluczu idempotencji), nie wysyła ponownie `…/execute`; ponowienie tylko jako nowa, jawna akcja użytkownika | Playwright (przechwycona odpowiedź z opóźnieniem) na symulatorze | PLAN (2) |
 
 ## 6. Regresja końcowa (etap 5)
 

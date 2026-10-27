@@ -9,6 +9,9 @@
   są puste i oznaczone „etap N – nie zintegrowane”. Bez połączenia z backendem stan MT5 = UNKNOWN (ostatni znany tylko jako opis).
   Jeden store i jedno połączenie WS ze starym UI; stare trasy bez zmian; jedyna zmiana starego UI – pozycja „Nowe panele” w menu.
   **Backend, strategia, modele, ryzyko i wykonanie bez zmian.**
+* **Etap 0 – uzupełnienie wg master promptu „COMPLETE”** (`docs/PEPE_UI_MASTER_PROMPT.md`): audyt §17 (zgodność, globalny wybór
+  instrumentu bez nowych endpointów, status zlecenia po timeoucie, Performance & Journal, propozycja Random Forest N7, decyzja D9),
+  mapa API §6, plan „Etap 1 – uzupełnienie”, testy F12–F16 i R11. Kod funkcjonalny bez zmian.
 
 ## 1.22.0 – Mapa stref PMW: High/Low Zone Engine + Daily Session Volume Intelligence + jedna mapa stref (ANALYTICAL_ONLY)
 * **HLZE** (`zones/hlze.py`): strefy swingów M5/M15 (pivoty z `strategies/indicators`, istotność w ATR), pivoty prowizoryczne

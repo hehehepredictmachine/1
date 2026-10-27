@@ -36,7 +36,7 @@ Konwencje obsługi błędów w nowych panelach (dla każdego wiersza, o ile nie 
 | Funkcja UI | Endpoint / event | Typ danych | Właściciel | Status | Obsługa błędu | Test |
 |---|---|---|---|---|---|---|
 | Świece OHLC aktywnego instrumentu | `GET /api/v1/candles?tf=` + WS `bar`, `bar_closed`, `bars_reloaded` | `{tf, symbol, bars[{open_utc,o,h,l,c,tv,closed}], overlays, clock, synthetic}` | EngineService / MarketBridge | `EXISTS_VERIFIED` | 400 `INVALID_TIMEFRAME`; brak świec → `WARMING_UP` z liczbą świec | `test_bridge_engine`, `test_ui_monitor` |
-| Świece innego instrumentu (tryb podglądu, D1-a) | `GET /api/v1/markets/chart?symbol=&tf=&bars=` | `{bars, meta}` | MarketBridge (multi-symbol) | `EXISTS_VERIFIED`; bez nakładek silnika | `SYMBOL_NOT_FOUND` → `error` | `test_markets_signals` |
+| Świece innego instrumentu (tryb podglądu, D1-a) | `GET /api/v1/markets/chart?symbol=&tf=&bars=` | `{symbol, tf, meta, bars, volatility, bot_signals, synthetic}` | MarketBridge (multi-symbol) | `bridge.symbol_bars`: `EXISTS_VERIFIED`; trasa HTTP: `EXISTS_UNVERIFIED`; bez nakładek silnika (strefy, sesje, plan) | 404 `SYMBOL_UNAVAILABLE`, 400 `INVALID_TIMEFRAME` → `error` | `test_markets_signals` (bridge); test trasy – nowy |
 | Wolumen | `bars[].tv` = **tick volume** (aktywność) | liczba | MT5 | `EXISTS_VERIFIED` | etykieta „tick volume”, nie „volume” | – |
 | High / low, strefy H/L, profil sesji | `GET /api/v1/zones/map?tf=` (+ WS `zones`) | mapa `PMW-ZONE-1.0` (wycinek wykresu) | ZoneService | `EXISTS_VERIFIED` | `NO_MAP` / `data.state ≠ OK` → `stale`/`degraded` | `test_zones` |
 | Sesje (boksy, sweepy) | `GET /api/v1/liquidity/sessions?tf=` | boksy z `known_at` | LiquidityService / session_engine | `EXISTS_VERIFIED` | `INCOMPLETE` jako niepełny | `test_liquidity` |
@@ -96,6 +96,7 @@ Status ze źródła jest zawsze pokazywany obok statusu prezentacyjnego (mapowan
 | 5. Ponowna walidacja tuż przed wysłaniem | gateway: ta sama decyzja, ALLOWED, nieprzeterminowana, ten sam rachunek i `session_epoch`, setup nadal CONFIRMED, świeże kwotowanie, dryf ceny ≤ deviation, `order_check`; pad: świeży plan | `EXISTS_VERIFIED` (`test_risk_execution`, `TestManualPadRuntime`) |
 | 6. Wynik po potwierdzeniu backendu | odpowiedź `status` + WS `orders`, `positions`; timeout → `UNKNOWN` uzgadniany po tagu, **nigdy ponawiany** | `EXISTS_VERIFIED` |
 | Idempotencja | gateway: UNIQUE (tryb, rachunek, setup) → `DUPLICATE`; pad: klucz idempotencji + PREPARED przed wywołaniem | `EXISTS_VERIFIED` |
+| Po timeoucie: najpierw status, potem ewentualnie nowa akcja | pad: `GET /api/v1/manual/intents/{iid}` (akcje z `idempotency_key` i stanem) + `POST /api/v1/manual/reconcile`; ścieżka `POST /api/v1/execute`: tylko lista prób (`state.attempts`, `/api/v1/signals`) – brak odczytu po `decision_id` | pad: `EXISTS_VERIFIED`; decyzja: częściowo (powód rekomendacji D5) |
 
 Wniosek: **żadna nowa ścieżka wysyłania nie jest potrzebna** (D5). Order Preview to nowy widok na istniejące kontrakty.
 
@@ -125,6 +126,7 @@ Wniosek: **żadna nowa ścieżka wysyłania nie jest potrzebna** (D5). Order Pre
 | N4 (etap 3) | `GET /api/v1/flow-context/markov/paths?n=` | próbka trajektorii MC z rzeczywistego wykonania (to samo ziarno) | `{n_paths_total, sample:[[...]], quantiles, seed, as_of}` | sesja; `n ≤ 200` | 404 gdy model niegotowy | zgodność kwantyli próbki z pełną symulacją | rozszerzenie istniejącego modułu |
 | N5 (etap 4, po D3) | `POST /api/v1/models/{family}/{model_id}/approve-live`, `POST …/reject` | ręczna akceptacja LIVE zamiast auto-promocji | `{confirm: "LIVE <model_id>"}` → `{status, previous, audit_id}` | sesja + CSRF + fraza; zapis w `settings_audit` | 409 gdy model nie przeszedł walidacji | brak auto-promocji po treningu; rollback | zmiana zachowania `ml` i `sh_tp_model` – osobna akceptacja |
 | N6 (etap 4) | `GET /api/v1/ui/alerts`, `POST /api/v1/ui/alerts/{id}/ack` | alerty ze statusem (otwarty / potwierdzony / rozwiązany) na bazie `app_events` | lista + osobna tabela statusów | sesja + CSRF | – | brak wpływu na handel | nowa tabela (migracja) |
+| N7 (etap 3, po D4) | brak nowej trasy UI – rodzina `RANDOM_FOREST` w istniejącym treningu ML (`ml/models.py`, rejestr `ml/registry.py`), struktura przez N3 | model do wizualizacji Neural Forest z **prawdziwych** drzew | artefakt: model + `forest_structure.json` (każde drzewo z `export_tree`), metryki walidacji jak DT/XGB | trening tylko z istniejących tras treningu ML (sesja + CSRF); rola najwyżej CANDIDATE / SHADOW | limit drzew i głębokości w eksporcie | struktura == `estimators_` (liczba węzłów, progi, liście); brak wpływu na decyzje | nowy model – osobna akceptacja |
 
 ## 5. WebSocket – zasady dla nowych paneli
 
@@ -133,3 +135,41 @@ Wniosek: **żadna nowa ścieżka wysyłania nie jest potrzebna** (D5). Order Pre
 * Duplikaty i luki już obsługiwane (`seq`, `boot_id`, `resync`). Nowe: walidacja kształtu payloadu przed zapisem do store
   (odrzucenie z wpisem diagnostycznym, bez wyjątku w UI).
 * `stale`: po `ws ≠ OPEN` lub po przekroczeniu progu wieku danych; po ponownym połączeniu dane pozostają `stale` do pierwszego `resync`.
+
+## 6. Uzupełnienie wg master promptu „COMPLETE” (27.10.2026)
+
+Prompt wymaga mapy w układzie: komponent UI → istniejący moduł → endpoint/event → schemat danych → źródło prawdy → autoryzacja →
+obsługa błędów → test → status. Tabele §1–§3 zawierają te informacje (kolumna „Właściciel” = moduł i źródło prawdy; autoryzacja
+domyślna z nagłówka dokumentu: sesja, a dla zmian stanu dodatkowo CSRF). Kolumna „komponent UI” jest wypełniana, gdy komponent powstaje –
+poniżej komponenty etapu 1.
+
+### 6.1 Komponenty etapu 1 (zaimplementowane)
+
+| Komponent UI | Moduł | Endpoint / event | Schemat | Źródło prawdy | Autoryzacja | Błędy | Test | Status |
+|---|---|---|---|---|---|---|---|---|
+| `TerminalHeader` – środowisko | `useTerminalContext.envOf` | `GET /api/v1/state` + WS | `account.trade_mode`, `synthetic`, `as_of` (URL) | MarketBridge | sesja | brak → `UNKNOWN` | `test_ui_terminal_shell` test_03 | zintegrowane |
+| `TerminalHeader` – MT5 + panel szczegółów | `mt5Of` | `state.connection`, WS `connection`, `clock`, `quote` | stan, przyczyna, heartbeat, epoka, próby, błędy, offset | MarketBridge | sesja | brak WS → `UNKNOWN` („ostatnio …”) | test_03, test_04, test_10 | zintegrowane |
+| `TerminalHeader` – świeżość | `freshnessOf` | `decision.data_quality`, `quote.age_seconds`, `ws` | enum | silnik (bramka jakości danych) | sesja | brak → `UNKNOWN`; brak WS → `DISCONNECTED` | test_03, test_10 | zintegrowane |
+| `TerminalHeader` – instrument | `useTerminalContext` | `state.assets.active`, `state.symbol` | `XAUUSD` / `BTC` + symbol brokera | AssetRegistry | sesja | brak → `UNKNOWN` | test_03 | **tylko wyświetlenie** – wybór: §6.2 |
+| `TerminalHeader` – tryb, Execution Lock | `useTerminalContext` | `state.mode`, `state.execution_lock` | enum | ModeManager, config | sesja | brak → `UNKNOWN` | test_03 | zintegrowane (odczyt) |
+| `TerminalHeader` – powiadomienia | `warningsOf`, `alerts` | WS `log` | poziom, kategoria, komunikat | Logger | sesja | – | test_04 | zintegrowane (bez statusu alertu – N6) |
+| `TerminalShell` – pasek SYNTHETIC / ostrzeżenia / `data-stale` | `useTerminalContext` | j.w. | – | j.w. | sesja | – | test_03, test_10 | zintegrowane |
+
+### 6.2 Globalny wybór instrumentu (wymóg etapu 1 w prompcie) – bez nowych endpointów
+
+| Wariant (D1) | Zachowanie | Endpointy | Konsekwencje |
+|---|---|---|---|
+| (a) wybór widoku | wybór zapamiętany w przeglądarce / URL; dla instrumentu aktywnego – jak dziś; dla innego – wykresy z `GET /api/v1/markets/chart`, a strefy, sesje, plan wejścia i sygnały silnika: `N/A – instrument nieaktywny w bocie` | `GET /api/v1/assets` (mapowanie na symbol brokera), `GET /api/v1/markets/chart` | **nie zmienia pracy bota**; brak żądań zmieniających stan |
+| (b) przełączenie bota | dialog z podsumowaniem skutków → `POST /api/v1/assets/active` → WS `assets` | `POST /api/v1/assets/active` (sesja + CSRF), 409 przy niedozwolonej zmianie | reset trybu bota (`ACTIVE_ASSET_CHANGED`), ponowne łączenie z MT5, wpis w `settings_audit` |
+
+Etykieta (D9): identyfikator bota `XAUUSD` / `BTC` + symbol brokera z `assets`; `BTCUSDT` wyświetlane tylko wtedy, gdy zmapowany symbol
+brokera jest kwotowany w USDT (inaczej sugerowałoby inny instrument – `assets/registry.py:6`).
+
+### 6.3 Performance & Journal
+
+| Funkcja UI | Endpoint / event | Status |
+|---|---|---|
+| PnL niezrealizowany | WS `positions`, `state.positions` (zysk bieżący z terminala) | `EXISTS_VERIFIED` |
+| PnL zamknięty, historia transakcji | `GET /api/v1/stats?mode=` (`trades`), `GET /api/v1/signals` (`trades`, ostatnie 50), WS `trade_settled` | `EXISTS_VERIFIED` |
+| Filtry dat / instrumentów | backend: brak parametrów (`/stats` przyjmuje tylko `mode`) | `MISSING` – w etapie 2: filtr w kliencie na pobranej historii albo kompatybilne rozszerzenie `/stats` (`from`, `to`, `instrument`) |
+| Notatki dziennika (wpisy użytkownika) | brak tabeli i trasy | `MISSING` – poza zakresem, chyba że zostanie zamówione (nowa tabela + trasa) |

@@ -188,3 +188,97 @@ roli; `MISSING` – brak implementacji; `BLOCKED` – wymaga decyzji, danych lub
 | D6 | Zależności 3D: `three` + `@react-three/fiber@9` + `@react-three/drei`, leniwie ładowane | 3 |
 | D7 | Lint: `tsc` strict jako bramka czy dodanie ESLint (tylko narzędzie deweloperskie) | 1 |
 | D8 | Motyw nowego shella (grafit/szmaragd) ograniczony do nowych tras; stary UI zachowuje swój motyw | 1 |
+
+---
+
+## 17. Uzupełnienie audytu – master prompt „COMPLETE” (27.10.2026)
+
+Nowe polecenie nadrzędne: [PEPE_UI_MASTER_PROMPT.md](PEPE_UI_MASTER_PROMPT.md). Treść pokrywa się ze specyfikacją
+[PEPE_UI_IMPLEMENTATION_SPEC.md](PEPE_UI_IMPLEMENTATION_SPEC.md) (ten sam podział na etapy 0–5, te same panele i zasady) – audyt §1–§16
+pozostaje aktualny. Ten rozdział zawiera wyłącznie to, co prompt doprecyzowuje, oraz fakty sprawdzone ponownie w kodzie. Kod funkcjonalny
+nie był zmieniany.
+
+### 17.1 Stan repozytorium i możliwość rollbacku
+
+| Pozycja | Stan |
+|---|---|
+| Gałąź / commit | `claude/masterquo-ai-bot-mt5-f7uaht` @ `0761d26` = `origin` (sprawdzone `git fetch`); drzewo robocze czyste |
+| Etap 0 (dokumenty) | `1b9d77d` (+ uzupełnienia wyników w `62654e1`, `0761d26`) |
+| Etap 1 (shell, trasy, puste widoki) | `1b9d77d` + `4967368` – kod wyłącznie w `frontend/src/features/`, 3 trasy w `router.ts`, rozgałęzienie w `App.tsx`, jedna pozycja menu w `AppShell.tsx`; **zaimplementowany, czeka na akceptację** |
+| Poprawka poza zakresem paneli | `854f611` (wyścig odpytywania w stronie „Formacje”) |
+| Rollback etapu 1 | `git revert 4967368 1b9d77d` (stary UI działa równolegle przez cały czas; backend nietknięty) – bez `reset`/`push --force` |
+
+### 17.2 Zgodność z promptem – co już spełnione, co nie
+
+| Wymaganie promptu | Stan | Dowód / brak |
+|---|---|---|
+| Etap 0: audyt + 4 dokumenty | spełnione | §1–§16, API_MAP, PLAN, TEST_PLAN |
+| Etap 1: nowy shell, zwijany sidebar, header, routing, puste widoki, stare trasy zachowane | spełnione | `test_ui_terminal_shell` 10/10, pełny zestaw (PLAN „Wynik bramki etapu 1”) |
+| Etap 1: stany loading / empty / error / stale / disconnected | komponenty są; `empty`, `stale`, `disconnected` sprawdzone w przeglądarce; `loading`, `error` – dopiero gdy panele zaczną pobierać dane (etap 2) | TEST_PLAN F6 |
+| Etap 1: header LIVE / DEMO / HISTORY / UNKNOWN z backendu | spełnione (+ jawny `SYNTHETIC` dla symulatora, D2) | `envOf` ← `state.account.trade_mode`, `state.synthetic`, `as_of` |
+| Etap 1: **globalny wybór instrumentu `XAUUSD` / `BTCUSDT` w headerze** | **niespełnione** – w etapie 1 instrument jest tylko wyświetlany (domyślna odpowiedź D1) | §17.3 a; lista zmian: PLAN „Etap 1 – uzupełnienie” |
+| Etap 1: build, typecheck, **lint** | build + typecheck: tak; lint: **brak narzędzia w repo** (D7 – domyślnie `tsc` strict) | `frontend/package.json` – brak ESLint |
+| Etap 2: Order Preview z kontrolą statusu po timeoucie, idempotencją, bez ślepych ponowień | backend spełnia (ręczny pad) | §17.3 b |
+| Etap 2: Performance & Journal (PnL zamknięty vs niezrealizowany, filtry dat / instrumentów) | dane są; filtry i notatki dziennika – brak | §17.3 c |
+| Etap 3: Random Forest – Neural Forest z prawdziwych drzew | **model nie istnieje** | §17.3 d (propozycja minimalnej implementacji N7) |
+| Etap 3: Three.js + React Three Fiber | niezainstalowane | §17.3 e (D6) |
+| Etap 4: ustawienia „zatwierdzone przez użytkownika” | **rozstrzygają częściowo D3**: automatyczne wdrożenie do testów, ręczna akceptacja LIVE | §17.4 |
+
+### 17.3 Fakty sprawdzone ponownie (27.10.2026)
+
+**a) Instrument – co backend pozwala zrobić**
+
+| Ścieżka | Zachowanie | Status |
+|---|---|---|
+| `GET /api/v1/candles?tf=` (`api/app.py:249`) | świece **wyłącznie aktywnego** instrumentu bota (`rt.engine.chart(tf)`), z nakładkami silnika | `EXISTS_VERIFIED` |
+| `GET /api/v1/markets/chart?symbol=&tf=&bars≤1500` (`api/app.py:1245`) | świece **dowolnego** symbolu brokera + strefy zmienności + ostatnie sygnały bota dla tego symbolu; **bez** mapy stref, sesji i planu wejścia (to liczy tylko silnik aktywnego instrumentu) | `bridge.symbol_bars`: `EXISTS_VERIFIED` (`test_markets_signals`); sama trasa HTTP: `EXISTS_UNVERIFIED` (brak testu – do dodania w etapie, który jej użyje) |
+| `POST /api/v1/assets/active {asset}` (`api/app.py:1178`) | przełącza instrument **bota**: wpis w `settings_audit`, reset trybu (`ACTIVE_ASSET_CHANGED`), ponowne łączenie z MT5, zdarzenie WS `assets` | `EXISTS_VERIFIED` – zmienia pracę bota |
+| Identyfikatory | kanoniczne `XAUUSD` / `BTC` (`assets/registry.py:18`); `BTCUSDT` występuje tylko jako alias w CLI treningu (`training/cli.py:133`: `BTCUSDT → BTC`) i jako symbol symulatora `BTCUSDT-` (`mt5/fake.py:71`); rejestr zastrzega, że symbol kwotowany w USDT **nie jest** BTCUSD (`assets/registry.py:6`) | etykieta `BTCUSDT` w UI wymaga decyzji D9 |
+
+Wniosek: globalny wybór instrumentu w headerze jest wykonalny **bez nowych endpointów** w dwóch wariantach (D1): (a) wybór
+widoku nowych paneli – dla instrumentu innego niż aktywny wykresy z `markets/chart`, a nakładki silnika jako `N/A – instrument nieaktywny
+w bocie`; (b) przełączenie instrumentu bota przez `POST /assets/active` z jawnym potwierdzeniem skutków (reset trybu, reconnect).
+
+**b) Order Preview – kontrola statusu po timeoucie**
+
+| Krok promptu | Mechanizm | Status |
+|---|---|---|
+| walidacja backendowa | `POST /api/v1/manual/plan` (TTL 5 s, wyrównanie do ticka, wolumen z ryzyka, koszty) | `EXISTS_VERIFIED` |
+| jawne potwierdzenie → ponowna walidacja | `POST /manual/intents` → `POST /manual/intents/{iid}/execute {action_revision}` (świeże bramki przed wysłaniem) | `EXISTS_VERIFIED` |
+| idempotencja | klucz akcji zapisywany jako `PREPARED` przed wywołaniem (`execution/manual.py:257`) | `EXISTS_VERIFIED` |
+| **po timeoucie: najpierw status** | `GET /api/v1/manual/intents/{iid}` zwraca akcje z `idempotency_key` i stanem (`execution/manual.py:223`); `POST /manual/reconcile` uzgadnia z terminalem (`execution/manual.py:366`) | `EXISTS_VERIFIED` |
+| ścieżka decyzji S01–S12 (`POST /api/v1/execute`) | idempotencja UNIQUE (`execution/gateway.py:6`); status próby tylko na liście (`state.attempts`, `/api/v1/signals` → `attempts`) – **brak** odczytu statusu po `decision_id` | częściowo – dlatego D5 rekomenduje ręczny pad |
+
+**c) Performance & Journal**
+
+* PnL niezrealizowany: pozycje (WS `positions`, `state.positions`); PnL zamknięty: `trades` (`/api/v1/stats`, `/api/v1/signals` – ostatnie 50).
+  Rozdzielenie jest możliwe po stronie danych – `EXISTS_VERIFIED`.
+* Filtry dat / instrumentów po stronie backendu: `MISSING` (`/api/v1/stats` przyjmuje tylko `mode`).
+* „Dziennik” jako notatki użytkownika do transakcji: `MISSING` (brak tabeli i trasy). Dziennik = historia transakcji – `EXISTS_VERIFIED`.
+
+**d) Random Forest**
+
+* W backendzie brak (`RandomForest` – 0 wystąpień). `scikit-learn==1.9.1` jest już w zależnościach (`requirements/requirements-win.txt:49`),
+  a ML ma gotowy schemat dla drzew: `train_dt` (`ml/models.py:81`) na tych samych foldach walk-forward i eksport prawdziwej struktury
+  `export_tree` (`ml/models.py:208`).
+* Minimalna implementacja zgodna z architekturą (propozycja **N7**, osobna akceptacja – to nowy model, nie zmiana UI): rodzina
+  `RANDOM_FOREST` w `ml/models.py` obok DT/XGB, ten sam zbiór cech, etykiety i walidacja, zapis `forest_structure.json` (każde drzewo
+  przez `export_tree`, z limitem liczby drzew/głębokości), rola w rejestrze najwyżej CANDIDATE / SHADOW, **bez** udziału w decyzjach i bez
+  auto-promocji. Do czasu akceptacji: Neural Forest pokazuje stan `MISSING` (bez atrapy lasu).
+
+**e) Biblioteki** – `frontend/package.json`: `react 19.3.0`, `lightweight-charts 5.2.1`; brak `three`, `@react-three/fiber`, `@react-three/drei`,
+brak ESLint.
+
+### 17.4 Decyzje – stan po nowym prompcie
+
+| ID | Stan | Uwagi |
+|---|---|---|
+| D1 | **otwarta, wymagana przed uzupełnieniem etapu 1** | prompt wymaga *wyboru* w headerze; warianty (a) widok / (b) przełączenie bota – §17.3 a |
+| D2 | przyjęta (etap 1) | LIVE / DEMO / HISTORY / UNKNOWN + jawny SYNTHETIC |
+| D3 | **rozstrzygnięta co do zasady** przez „ustawienia zatwierdzone przez użytkownika”: auto-wdrożenie do testów (SHADOW), ręczna akceptacja LIVE | implementacja N5 w etapie 4; dotyczy `ml` (auto-CHAMPION, `ml/registry.py:111`) i `sh_tp_model` (auto-promocja bramkująca READY, `sh/tpmodel.py:136`, `sh/setup.py:238`) |
+| D4 | **zmieniona**: prompt wymaga Neural Forest → propozycja N7 (§17.3 d) | do akceptacji przed etapem 3 |
+| D5 | rekomendacja bez zmian: ręczny pad | jedyna ścieżka z odczytem statusu po timeoucie |
+| D6 | otwarta (etap 3) | `three` + `@react-three/fiber@9` + `@react-three/drei`, chunk ładowany leniwie |
+| D7 | otwarta – prompt wymaga lintu | (a) `tsc` strict jako lint (stan obecny) albo (b) ESLint jako narzędzie deweloperskie |
+| D8 | przyjęta (etap 1) | motyw tylko na nowych trasach |
+| **D9** | **nowa** | etykieta instrumentu: `BTCUSDT` (jak w prompcie) czy identyfikator bota `BTC` + symbol brokera; rekomendacja: `BTC` z symbolem brokera, `BTCUSDT` tylko gdy zmapowany symbol jest kwotowany w USDT |
