@@ -111,7 +111,23 @@ Wszystko na rachunku **DEMO** albo w trybie SIGNALS / PAPER. Nie wklejaj nigdzie
 
 ## 5. Testy uruchomione, porównanie przed / po, ograniczenia
 
-_W toku: pełny zestaw `tools/run_tests.py` – wynik zostanie uzupełniony po zakończeniu przebiegu._
+**Pełny zestaw `tools/run_tests.py`** (wszystkie `tests/test_*.py`, w tym testy panelu w Chromium; gold_candles w `.venv_candles`):
+**987 testów w 2650 s – 981 OK, 3 FAIL, 1 ERROR, 2 pominięte**; gold_candles: **46/46 OK**. Pominięte: opcjonalne backendy ONNX i
+OpenCL (pakietów nie ma w środowisku). Cztery nieudane – przyczyna i stan:
+
+| Test | Przyczyna | Naprawa | Po naprawie |
+|---|---|---|---|
+| `test_time_and_data` … `no_wrong_default_symbol` | nowe polecenie `montecarlo status/rollback` miało `--instrument` z wartością domyślną `XAUUSD` (zakazane w aktywnym kodzie) | `--instrument` wymagany, wybór XAUUSD / BTC | 4/4 OK |
+| `test_train_all` … `both_instruments_end_to_end` | test oczekiwał 18 zadań runnera; 1.25 dodaje zadanie `monte_carlo` (19) – sam run się udał: XAUUSD 18/19, BTC 17/19 ukończonych, pominięte tylko kroki nie dotyczące demo | oczekiwanie 19 zadań | ponowny przebieg poniżej |
+| `test_ui_analytics` … `pattern_library_flow` | wyścig istniejący przed 1.25: zadanie walidacji ma stan COMPLETED chwilę przed zapisem raportu (eksport raportu to osobny krok); pod pełnym obciążeniem panel trafił w tę chwilę | test czeka także na raport | 4/4 OK osobno |
+| `test_sh_api` … `panels_in_browser` | w trakcie pełnego zestawu uruchomiłem równolegle ten sam moduł (ten sam port 8794) – kolizja moich przebiegów | brak zmian w kodzie; w teście kolejności: edycja prowizji dopiero po odświeżeniu panelu | 6/6 OK w osobnych przebiegach |
+
+**Wcześniejsze przebiegi modułów zmienianych w 1.25** (wszystkie zielone): `test_export_mt5` 10/10, `test_ui_export` 4/4,
+`test_montecarlo` 13/13, `test_zones` 42/42, `test_sh_scenario` 10/10, `test_ui_terminal_shell` 13/13, moduły SH (`test_sh_*`,
+`test_finish_plan`) 98/98, `test_mm_core` 38/38, `test_launchers` + `test_desktop_app` + `test_time_and_data` 52/52.
+
+**Porównanie przed / po** – §3.1 (eksport), §5.1 (Monte Carlo), §5.2 (SCALPING); logika zleceń SCALPING bez zmian, więc replay z
+domyślnym TP3 = 5 USD daje ten sam wynik w kodzie przed i po.
 
 ### 5.1 Monte Carlo – walidacja na danych syntetycznych
 Polecenie `python -m masterquo montecarlo validate` na eksporcie syntetycznym 3 mies. (M1 + M5 + M15 + H1, ticki 2 dni), zdarzenia

@@ -123,6 +123,8 @@ class TestAnalyticsUI(unittest.TestCase):
         wait_for(lambda: p.locator("[data-testid=db-table] tbody tr").count() >= 1 and "Biblioteka pusta" not in p.locator("[data-testid=db-table]").inner_text(), 20, 0.5)
         p.click("[data-testid=db-validate-all]")
         wait_for(lambda: "COMPLETED" in p.locator("[data-testid=db-job]").inner_text(), 30, 0.5)
+        # the job is marked COMPLETED first and the report is exported right after (export is a separate step by design)
+        wait_for(lambda: "raport DBR-" in p.locator("[data-testid=db-job]").inner_text(), 15, 0.3)
         self.assertIn("raport DBR-", p.locator("[data-testid=db-job]").inner_text())
         p.click("text=SHOW ON CHART")
         p.wait_for_selector("[data-testid=sample-chart] canvas", timeout=15000)
