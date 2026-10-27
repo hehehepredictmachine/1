@@ -21,7 +21,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_terminal"
 ROUTES = {"trading-intelligence": "page-trading-intelligence", "ai-neural-lab": "page-ai-neural-lab", "system-control": "page-system-control"}
-INTEGRATED = {"trading-intelligence": ["ti-account", "ti-market", "ti-signals", "ti-positions", "ti-banner"],
+INTEGRATED = {"trading-intelligence": ["ti-account", "ti-market", "ti-signals", "ti-positions", "ti-banner", "ti-scenario"],
               "ai-neural-lab": ["nl-banner", "nl-models", "nl-canvas", "nl-details", "nl-cycle"],
               "system-control": ["sc-banner", "sc-status", "sc-mode", "sc-stop", "sc-mt5", "sc-app"]}
 try:
@@ -113,8 +113,9 @@ class TestTerminalShell(unittest.TestCase):
             self.assertEqual(self.page.locator("[data-testid=topbar]").count(), 0, route)             # the old shell is not mixed in
             self.assertEqual(self.page.locator(f"[data-testid=t-sidebar] [data-page={route}]").get_attribute("aria-current"), "page")
             if route in INTEGRATED:                                                                     # 1.24: panels on real data
-                for part in INTEGRATED[route]:
-                    self.assertTrue(self.page.locator(f"[data-testid={part}]").first.is_visible(), f"{route}: {part}")
+                for part in INTEGRATED[route]:                                                          # panels fill from async API calls
+                    loc = self.page.locator(f"[data-testid={part}]").first
+                    self.assertTrue(wait_for(loc.is_visible, 20, 0.2), f"{route}: {part}")
                 self.assertEqual(self.page.locator(f"[data-testid={tid}] [data-integration=NOT_INTEGRATED]").count(), 0, route)
             else:
                 sections = self.page.locator(f"[data-testid={tid}] [data-integration=NOT_INTEGRATED]")
@@ -229,6 +230,26 @@ class TestTerminalShell(unittest.TestCase):
         self.assertEqual(self.page.locator("[data-testid=ti-charts]").get_attribute("data-n"), "6")
         self.page.locator("[data-testid=ti-layout-4]").click()
         self.page.locator("[data-testid=ti-layout-save]").click()
+
+    def test_06b2_scenario_card_shows_the_backend_scenario(self):
+        """SCALPING 2.5-10 USD: five levels, Monte Carlo labelled as model probability (no calibration on demo data), unknown
+        commission shown as unknown (net N/A, never 0), models listed separately, no combined probability."""
+        self.go("trading-intelligence")
+        card = self.page.locator("[data-testid=ti-scenario]")
+        self.assertTrue(wait_for(lambda: card.locator("[data-testid=ti-scenario-table] tbody tr").count() == 5, 60, 0.5))
+        api = self.page.request.get(BASE + "/api/v1/sh/scenario?strategy=SCALPING").json()
+        self.assertEqual(card.get_attribute("data-status"), api["status"])
+        self.assertEqual([r.get_attribute("data-level") for r in card.locator("[data-testid=ti-scenario-table] tbody tr").all()],
+                         ["2.5", "3", "5", "7.5", "10"])
+        self.assertTrue(wait_for(lambda: "nieskalibrowane" in card.locator("[data-testid=ti-scenario-kind]").inner_text(), 60, 0.5))
+        self.assertIn("N/A", card.locator("[data-testid=ti-scenario-combined]").inner_text())
+        txt = card.inner_text()
+        self.assertIn("to nie jest zysk rachunku", txt)
+        self.assertIn("nieznana", txt)                                       # commission of the default profile is not known
+        self.assertIn("DANE SYNTETYCZNE", txt)
+        self.assertTrue(card.locator("[data-testid=ti-scenario-why]").inner_text().strip())
+        card.locator("[data-testid=ti-scenario-vol]").fill("0.1")
+        self.assertTrue(wait_for(lambda: card.locator("[data-testid=ti-scenario-volume]").inner_text().startswith("0,10"), 30, 0.5))
 
     def test_06c_look_dialog_changes_only_this_client(self):
         self.go("trading-intelligence")

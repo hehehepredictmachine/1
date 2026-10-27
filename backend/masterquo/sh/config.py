@@ -57,8 +57,11 @@ def validate(cfg: dict) -> list[str]:
             tp = p.get("tp_usd") or []
             if tp and any(b <= a for a, b in zip(tp, tp[1:])):
                 errs.append(f"{inst}/{strat}: TP muszą rosnąć (TP1 < TP2 < TP3)")
-            if strat == "HEDGING" and tp and p.get("tp3_choices") and tp[-1] not in p["tp3_choices"]:
-                errs.append(f"{inst}/HEDGING: TP3 musi być jedną z wartości {p['tp3_choices']}")
+            if tp and p.get("tp3_choices") and tp[-1] not in p["tp3_choices"]:
+                errs.append(f"{inst}/{strat}: TP3 musi być jedną z wartości {p['tp3_choices']}")
+            lv = p.get("scenario_levels_usd") or []
+            if lv and (any(x <= 0 for x in lv) or any(b <= a for a, b in zip(lv, lv[1:]))):
+                errs.append(f"{inst}/{strat}: poziomy scenariusza muszą być dodatnie i rosnące")
             if p.get("sl_min_usd") and p.get("sl_max_usd") and p["sl_min_usd"] > p["sl_max_usd"]:
                 errs.append(f"{inst}/{strat}: sl_min > sl_max")
             h = p.get("hedge") or {}

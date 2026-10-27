@@ -27,6 +27,8 @@
       "slippage_usd": 0.05,
       "SCALPING": {
         "tp_usd": [2.50, 3.00, 5.00],
+        "tp3_choices": [5.00, 7.50, 10.00],
+        "scenario_levels_usd": [2.50, 3.00, 5.00, 7.50, 10.00],
         "shares": [0.5, 0.3, 0.2],
         "shares_fallback_two": [0.6, 0.4],
         "be_after": "TP2",

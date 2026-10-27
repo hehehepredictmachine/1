@@ -1014,6 +1014,16 @@ def create_app(rt, port: int) -> FastAPI:
         return {**{k: v for k, v in st.items() if k != "snapshot"}, "config": SHC.load(), "config_errors": SHC.validate(SHC.load()),
                 "models": SHM.matrix(rt, inst), "tp_model": SHT.status(inst), "snapshot": rt.sh.snapshot, "server_time": time.time()}
 
+    @app.get("/api/v1/sh/scenario")
+    def sh_scenario(strategy: str = Query("SCALPING"), volume: float | None = Query(None, gt=0, le=1000)):
+        """Price-move scenario 2.5-10 USD on top of the strategy's setup: per level the move, leg volume, account result from the tick
+        value, spread / commission / slippage separately, Monte Carlo P(TP before SL) (model or calibrated) and the models each
+        with its own event. Analysis only - orders stay with the SCALPING cycle."""
+        if strategy not in ("SCALPING", "HEDGING"):
+            raise HTTPException(400, "BAD_STRATEGY")
+        from ..sh import scenario as SHS
+        return SHS.build(rt, strategy, volume)
+
     @app.get("/api/v1/sh/signals")
     def sh_signals(strategy: str | None = None, limit: int = Query(100, ge=1, le=1000)):
         return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit)}

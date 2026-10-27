@@ -224,9 +224,6 @@ class TestService(unittest.TestCase):
             td.close()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestMonteCarloApi(unittest.TestCase):
     """Demo server (simulator): endpoints answer from the bot's own M1 buffer, in the MC thread, with the probability kind stated."""
@@ -263,3 +260,7 @@ class TestMonteCarloApi(unittest.TestCase):
                     {"side": "BUY", "sl_distance": 3, "tp_distances": []}, {"side": "BUY", "sl_distance": 3, "tp_distances": [2], "n_paths": 10 ** 7}):
             self.assertEqual(self.S.call("/api/v1/montecarlo/run", bad)[0], 400, bad)
         self.assertEqual(self.S.call("/api/v1/montecarlo/run", {"side": "BUY", "sl_distance": 3, "tp_distances": [2]}, csrf=False)[0], 403)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,11 +1,12 @@
 // Trading Intelligence (approved mockup 01): account, market overview (1/4/6 charts), Signal Intelligence with the separate answers
-// "why no signal" / "why no order", positions and results. Every value comes from the engine and the MT5 terminal; missing = "—".
+// "why no signal" / "why no order", the SCALPING 2.5-10 USD move scenario, positions and results. Every value comes from the engine and the MT5 terminal; missing = "—".
 import { useState } from "react";
 import { useStore } from "../../../store";
 import PageBanner from "../../shell/PageBanner";
 import AccountCards from "../components/AccountCards";
 import MarketCharts from "../components/MarketCharts";
 import PositionsStrip from "../components/PositionsStrip";
+import ScenarioCard from "../components/ScenarioCard";
 import SignalIntelligence from "../components/SignalIntelligence";
 
 export default function TradingIntelligencePage() {
@@ -24,6 +25,7 @@ export default function TradingIntelligencePage() {
         <MarketCharts modeOpen={chartMode} onModeClose={() => setChartMode(false)} />
         <SignalIntelligence />
       </div>
+      <ScenarioCard />
       <PositionsStrip />
     </div>);
 }

@@ -34,7 +34,7 @@ class MonteCarloService:
         return (cal["variant"], cal) if cal else ("BLOCK", None)
 
     def compute(self, plans: list[E.Plan] | None = None, *, horizon: int = 60, variant: str | None = None, n_paths: int | None = None,
-                timeout: float = 20.0) -> dict:
+                timeout: float = 20.0, levels: tuple | None = None) -> dict:
         inst, point = self._ctx()
         bars = [b for b in self.bridge.bars("M1", include_forming=False) if b.get("open_utc")]   # UTC time verified (clock) only
         if not bars:
@@ -43,14 +43,15 @@ class MonteCarloService:
         last = bars[-1].get("open_utc")
         chosen, cal = self._variant(inst)
         v = variant or chosen
-        key = (inst, last, v, horizon, n_paths or self.n_paths, tuple((p.side, round(p.entry, 5), round(p.sl, 5), tuple(round(x, 5) for x in p.tps), p.horizon)
+        levels = tuple(float(x) for x in levels) if levels else (2.5, 3.0, 5.0, 7.5, 10.0)
+        key = (inst, last, v, horizon, n_paths or self.n_paths, levels, tuple((p.side, round(p.entry, 5), round(p.sl, 5), tuple(round(x, 5) for x in p.tps), p.horizon)
                                                                    for p in plans or []))
         with self._lock:
             if key in self._cache:
                 return self._cache[key]
         as_of = E._ts(last) + 60
         fut = self._pool.submit(E.run, bars, as_of, plans, tf="M1", point=point, variant=v, n_paths=n_paths or self.n_paths, horizon=horizon,
-                                synthetic=self.synthetic, calibrator=cal)
+                                synthetic=self.synthetic, calibrator=cal, levels=levels)
         try:
             res = fut.result(timeout=timeout)
         except FutTimeout:

@@ -234,7 +234,7 @@ function ConfigEditor({ cfg, strat, inst, onSaved }: { cfg: any; strat: string; 
   return (<div className="small" data-testid="sh-config">
     <h4>Ustawienia {strat} (jedno źródło konfiguracji)</h4>
     <p>TP1 {cfg.tp_usd?.[0]} · TP2 {cfg.tp_usd?.[1]} · TP3{" "}
-      {strat === "HEDGING" ? <select aria-label="TP3" value={tp3} onChange={(e) => setTp3(e.target.value)} data-testid="sh-tp3">
+      {(cfg.tp3_choices || []).length ? <select aria-label="TP3" value={tp3} onChange={(e) => setTp3(e.target.value)} data-testid="sh-tp3">
         {(cfg.tp3_choices || []).map((x: number) => <option key={x} value={String(x)}>{x}</option>)}</select> :
         <input aria-label="TP3" value={tp3} onChange={(e) => setTp3(e.target.value)} size={4} />} USD
       {" "}· udziały % <input aria-label="Udziały" value={shares} onChange={(e) => setShares(e.target.value)} size={9} data-testid="sh-shares" /></p>
