@@ -408,15 +408,46 @@ class TestContractAndAggregation(unittest.TestCase):
         c = C.make(**self.base(model_name="TH_HGB", task="DIRECTION_H12_M5", horizon_bars=12, extra={"model_key": "TH_HGB_M5_H12"}))
         e = C.make(**self.base(model_name="TH_XGB", state="ERROR", unavailable_reason="brak danych", extra={"model_key": "TH_XGB_M5_H6"}))
         ev = AG.evidence([a, b, c, e], "SCALPING", "XAUUSD")
-        g6 = [g for g in ev["groups"] if g["horizon_bars"] == 6]
-        g12 = [g for g in ev["groups"] if g["horizon_bars"] == 12]
-        self.assertEqual((len(g6), len(g12)), (1, 1))                                          # same group = ONE speaker; H6 and H12 separate
-        self.assertEqual(len(g6[0]["silenced_same_group"]), 1)
+        self.assertEqual(len(ev["groups"]), 1)                                                 # same correlation group = ONE speaker
+        g = ev["groups"][0]
+        self.assertEqual(len(g["silenced_same_group"]), 2)
+        self.assertEqual(sorted(x["horizon_bars"] for x in g["silenced_same_group"] + [{"horizon_bars": g["horizon_bars"]}]), [6, 6, 12])
+        self.assertEqual(set(g), {"group", "task", "horizon_bars", "unit", "role", "use", "speaker", "version", "dev_skill", "weight",
+                                  "direction_edge", "silenced_same_group", "data_time"})   # no averaged value across members
         self.assertEqual(ev["excluded"][0]["state"], "ERROR")
         self.assertTrue(all(g["use"] == "OBSERVATION" for g in ev["groups"]))
         src = (_env.ROOT / "backend" / "masterquo" / "modelhub" / "aggregate.py").read_text(encoding="utf-8")
         self.assertIn("dev_skill_vs_baseline", src)                                            # weights from development walk-forward
         self.assertNotIn("holdout", src.split("def dev_skill")[1].split("def evidence")[0])
+
+
+class TestForecastAdapter(unittest.TestCase):
+    """Existing gold_candles forecast in the unified contract: every service status maps to a state; only SHADOW with probabilities is READY;
+    the same M5 direction group as the Training Center M5 models -> one speaker per group."""
+
+    def rt(self, state):
+        fs = type("FS", (), {"public": lambda self_: state})()
+        return type("RT", (), {"forecast": fs, "trainhub_inference": None})()
+
+    def test_states_and_values(self):
+        from masterquo.modelhub import adapters as AD
+        for status, exp in (("NO_MODEL", "NOT_TRAINED"), ("CONTRACT_MISMATCH", "INCOMPATIBLE"), ("STALE_DATA", "ERROR"), ("DISABLED", "DISABLED")):
+            p = AD.forecast_predictions(self.rt({"status": status, "status_pl": "x", "instrument": "XAUUSD"}), "XAUUSD")[0]
+            self.assertEqual((p["state"], p["result"]), (exp, None))
+            self.assertTrue(p["unavailable_reason"])
+        rep = {"forecast": {"feature_time_utc": "2026-11-02T10:00:00Z", "probabilities": {
+            "5": {"horizon_minutes": 5, "probabilities": {"DOWN": 0.3, "FLAT": 0.4, "UP": 0.3}},
+            "15": {"horizon_minutes": 15, "probabilities": {"DOWN": 0.25, "FLAT": 0.35, "UP": 0.4}}}}}
+        ps = AD.forecast_predictions(self.rt({"status": "SHADOW", "instrument": "XAUUSD", "report": rep, "model": {"run_id": "R1"}}), "XAUUSD")
+        self.assertEqual([p["state"] for p in ps], ["READY", "READY"])
+        self.assertEqual(sorted(p["horizon"]["bars"] for p in ps), [1, 3])
+        self.assertEqual(ps[0]["calibration"]["status"], "UNCALIBRATED")
+        th = C.make(instrument="XAUUSD", symbol="X", timeframe="M5", model_name="TH_LOGREG", model_version="v", task_type="CLASS_PROBABILITIES",
+                    task="DIRECTION_H3_M5", horizon_bars=3, unit="probability", state="READY", result={"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5},
+                    data_time="2026-11-02T10:00:00Z", calibration={"method": "t", "status": "CALIBRATED_DEV"}, extra={"model_key": "TH_LOGREG_M5_H3"})
+        ev = AG.evidence(ps + [th], "SCALPING", "XAUUSD")
+        self.assertEqual([g["group"] for g in ev["groups"]], ["M5_DIRECTION"])               # gold_candles + TH M5: one voice, not three
+        self.assertEqual(len(ev["groups"][0]["silenced_same_group"]), 2)
 
 
 class TestIsolationFromTrading(unittest.TestCase):

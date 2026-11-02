@@ -1950,8 +1950,9 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/models/predictions")
     def models_predictions(instrument: str = Query("XAUUSD")):
+        from ..modelhub import adapters as _AD
         i = _th_inst(instrument)
-        return {"instrument": i, "items": rt.trainhub_inference.predictions(i), "contract": "PMW-PRED-1"}
+        return {"instrument": i, "items": _AD.all_predictions(rt, i), "contract": "PMW-PRED-1"}
 
     @app.get("/api/v1/models/evidence")
     def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
@@ -1959,7 +1960,8 @@ def create_app(rt, port: int) -> FastAPI:
         i = _th_inst(instrument)
         if strategy not in ("SCALPING", "HEDGING"):
             raise HTTPException(400, "INVALID_STRATEGY")
-        return _AG.evidence(rt.trainhub_inference.predictions(i), strategy, i)
+        from ..modelhub import adapters as _AD
+        return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
     @app.get("/api/v1/zones/status")
     def zones_status():

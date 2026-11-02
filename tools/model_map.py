@@ -95,6 +95,30 @@ ELEMENTS += [
     {"id": "INDICATORS_FFT_VMD_EMD", "name": "Wskaźniki, FFT/VMD/EMD, BB/MA, Double Bottom", "implementation": "masterquo/analytics/*, strategies/indicators.py",
      "task": "obliczenia – nie są sieciami i nie mają przycisku „trenuj”", "data_source": "bary bota", "tf": "różne", "horizon": "—", "side": "—", "features": "—",
      "label": "—", "trainer": "brak", "loader": "AnalyticsService", "artifact": "—", "instruments": BOTH, "status": "OBLICZENIA"},
+    {"id": "MARKET_ZONES_MZ1", "name": "Strefy rynkowe M1/M5/M15/M30 (PMW-MZ-1) – S/R, popyt/podaż, FVG, order blocks, EQH/EQL, konfluencja",
+     "implementation": "masterquo/zones/market.py, zones/market_service.py (panel Wykresy → Strefy rynkowe)",
+     "task": "detekcja stref z jawnymi regułami potwierdzenia, testów i unieważnienia – nie jest modelem do trenowania",
+     "data_source": "zamknięte świece M1/M5/M15/M30 dokładnego symbolu przez bridge (XAUUSD-, BTCUSDT-)", "tf": "M1, M5, M15, M30", "horizon": "—",
+     "side": "kierunek strefy (wzrostowa / spadkowa / neutralna)", "features": "—", "label": "—", "trainer": "brak (reguły; parametry skalowane ATR i profilem instrumentu)",
+     "loader": "MarketZonesService (zadania na przycisk / aktualizacja po zamknięciu świecy)", "artifact": "data/zones/market_zones.sqlite (historia stref i zdarzeń)",
+     "instruments": BOTH, "status": "REGUŁY – zaimplementowane i zintegrowane; jakość 0–100 nie jest prawdopodobieństwem; EQH/EQL = płynność wnioskowana z OHLC"},
+]
+for _mid, _nm in (("TH_BASELINE", "bazowy – częstości klas"), ("TH_LOGREG", "regresja logistyczna wieloklasowa"),
+                  ("TH_HGB", "gradient boosting histogramowy"), ("TH_XGB", "XGBoost (CPU, gdy pakiet dostępny)")):
+    ELEMENTS.append({
+        "id": _mid, "name": f"Centrum treningu – {_nm}: kierunek ruchu po kosztach",
+        "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+        "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+        "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+        "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy", "horizon": "H świec (domyślnie 6 × M5)", "side": "oba (klasy)",
+        "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+        "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+        "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+        "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+        "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+        "instruments": BOTH,
+        "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"})
+ELEMENTS += [
     {"id": "STRATEGIES_S01_S12", "name": "Strategie S01–S12", "implementation": "masterquo/strategies/*", "task": "reguły setupów (strumień dla legacy ML)",
      "data_source": "bary bota / backfill z eksportu z symbolem instrumentu", "tf": "M5–D1", "horizon": "—", "side": "oba", "features": "—", "label": "—",
      "trainer": "brak", "loader": "ActiveEngine", "artifact": "—", "instruments": BOTH, "status": "REGUŁY"},

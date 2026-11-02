@@ -380,14 +380,18 @@ class TestService(unittest.TestCase):
         self.assertEqual(len(self.svc.live), 1)
         self.assertTrue(wait_for(lambda: all(("XAUUSD", t) in self.svc.tf for t in MZ.TFS), 60, 0.05))
         self.assertTrue(wait_for(lambda: self.svc.current_job["XAUUSD"].status not in ("QUEUED", "RUNNING"), 60, 0.05))
+        def idle():                                                                       # the live job must finish before time moves on
+            self.assertTrue(wait_for(lambda: self.svc.current_job["XAUUSD"].status not in ("QUEUED", "RUNNING"), 60, 0.05))
         self.assertEqual(self.svc.poll_once("XAUUSD", list(MZ.TFS)), [])                  # nothing new closed
         self.br.now += 60                                                                 # one more M1 close only
         self.assertEqual(self.svc.poll_once("XAUUSD", list(MZ.TFS)), ["M1"])
+        idle()
         self.br.now += 4 * 60                                                             # M5 closes (and M1)
         self.assertEqual(sorted(self.svc.poll_once("XAUUSD", list(MZ.TFS))), ["M1", "M5"])
+        idle()
         self.br.now += 10 * 60                                                            # :15 -> M15 closes
-        self.assertIn("M15", self.svc.poll_once("XAUUSD", list(MZ.TFS)))
-        self.assertTrue(wait_for(lambda: self.svc.current_job["XAUUSD"].status not in ("QUEUED", "RUNNING"), 60, 0.05))
+        self.assertEqual(sorted(self.svc.poll_once("XAUUSD", list(MZ.TFS))), ["M1", "M15", "M5"])
+        idle()
         self.assertEqual(self.svc.view("XAUUSD")["timeframes"]["M15"]["last_closed"], iso((self.br.now // 900) * 900))
         self.assertEqual(self.svc.view("XAUUSD")["quote"]["preliminary"], True)
         self.svc.stop("XAUUSD")

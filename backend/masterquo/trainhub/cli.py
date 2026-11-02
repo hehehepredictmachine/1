@@ -1,6 +1,6 @@
 """python -m masterquo trainhub <command>  (also 32_CENTRUM_TRENINGU.bat)
 
-  export        --instrument XAUUSD|BTC [--mode incremental|historical] [--from ISO] [--to ISO] [--lookback-days 90] [--tf M1,M5,M15,M30]
+  export        --instrument XAUUSD|BTC (always explicit) [--mode incremental|historical] [--from ISO] [--to ISO] [--lookback-days 90] [--tf M1,M5,M15,M30]
                 (own MT5 connection - Windows with a logged-in terminal; --demo = terminal simulator, SYNTHETIC data)
   import-data   --instrument X <folder|zip>     merge candles exported on another machine (checksums verified first)
   dataset       --instrument X [--base-tf M5] [--horizon 6] [--k-atr 0.25] [--from] [--to]
@@ -28,7 +28,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo trainhub", description="Centrum treningu – eksport, dataset, trening, ocena, aktywacja")
     ap.add_argument("cmd", choices=["export", "import-data", "dataset", "train", "evaluate", "full", "list", "activate", "rollback", "package-zip"])
     ap.add_argument("path", nargs="?")
-    ap.add_argument("--instrument", default="XAUUSD")
+    ap.add_argument("--instrument", required=True, choices=["XAUUSD", "BTC"], type=str.upper, help="XAUUSD albo BTC – zawsze jawnie")
     ap.add_argument("--mode", default="incremental", choices=["incremental", "historical"])
     ap.add_argument("--from", dest="start")
     ap.add_argument("--to", dest="end")

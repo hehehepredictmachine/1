@@ -76,6 +76,7 @@ export default function WizardShell({ page, bg, children, accent }: { page: Page
         <div className="wz-strip bad" role="status" data-testid="wz-warnings">{ctx.warnings.map((w) => <span key={w}>⚠ {w}</span>)}</div>)}
       <main id="wz-main" className="wz-main" tabIndex={-1} data-page={page}>{children}</main>
       <footer className="wz-footer">PepeMarketWizard {s.app_version} · notowania wyłącznie z Twojego terminala MT5 · narzędzie analityczne – nie gwarantuje zysków ·
-        <a href={href("trading-intelligence")}> pełny terminal</a> · <a href={href("pulpit")}>dotychczasowe menu</a></footer>
+        <a href={href("trading-intelligence")}> pełny terminal</a> · <a href={href("strefy")} data-testid="wz-link-strefy">strefy rynkowe</a> ·{" "}
+        <a href={href("trening")} data-testid="wz-link-trening">centrum treningu</a> · <a href={href("pulpit")}>dotychczasowe menu</a></footer>
     </div>);
 }

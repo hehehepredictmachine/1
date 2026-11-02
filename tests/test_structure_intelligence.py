@@ -390,8 +390,10 @@ class TestLibraryV2(unittest.TestCase):
     def wait(self, jid):
         for _ in range(200):
             j = self.lib.job(jid)
-            if j["status"] != "RUNNING":
-                return j
+            # finished = status written AND the job thread gone (it still writes the report after the status; a test that
+            # simulates an interruption right after the status change would otherwise see a live thread)
+            if j["status"] != "RUNNING" and jid not in self.lib._jobs:
+                return self.lib.job(jid)
             time.sleep(0.05)
         self.fail("job")
 

@@ -372,6 +372,86 @@ Jednostka modelu: instrument × zadanie × TF × horyzont × strona. Każdy inst
 - **Instrumenty:** XAUUSD, BTC
 - **Status:** OBLICZENIA
 
+## MARKET_ZONES_MZ1 – Strefy rynkowe M1/M5/M15/M30 (PMW-MZ-1) – S/R, popyt/podaż, FVG, order blocks, EQH/EQL, konfluencja
+
+- **Implementacja:** masterquo/zones/market.py, zones/market_service.py (panel Wykresy → Strefy rynkowe)
+- **Zadanie:** detekcja stref z jawnymi regułami potwierdzenia, testów i unieważnienia – nie jest modelem do trenowania
+- **Źródło danych:** zamknięte świece M1/M5/M15/M30 dokładnego symbolu przez bridge (XAUUSD-, BTCUSDT-)
+- **TF:** M1, M5, M15, M30
+- **Horyzont:** —
+- **Strona:** kierunek strefy (wzrostowa / spadkowa / neutralna)
+- **Cechy:** —
+- **Etykieta:** —
+- **Trainer:** brak (reguły; parametry skalowane ATR i profilem instrumentu)
+- **Loader:** MarketZonesService (zadania na przycisk / aktualizacja po zamknięciu świecy)
+- **Artefakt:** data/zones/market_zones.sqlite (historia stref i zdarzeń)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** REGUŁY – zaimplementowane i zintegrowane; jakość 0–100 nie jest prawdopodobieństwem; EQH/EQL = płynność wnioskowana z OHLC
+
+## TH_BASELINE – Centrum treningu – bazowy – częstości klas: kierunek ruchu po kosztach
+
+- **Implementacja:** masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py
+- **Zadanie:** klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)
+- **Źródło danych:** magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)
+- **TF:** bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy
+- **Horyzont:** H świec (domyślnie 6 × M5)
+- **Strona:** oba (klasy)
+- **Cechy:** PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)
+- **Etykieta:** PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone
+- **Trainer:** Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)
+- **Loader:** TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)
+- **Artefakt:** data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych
+
+## TH_LOGREG – Centrum treningu – regresja logistyczna wieloklasowa: kierunek ruchu po kosztach
+
+- **Implementacja:** masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py
+- **Zadanie:** klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)
+- **Źródło danych:** magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)
+- **TF:** bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy
+- **Horyzont:** H świec (domyślnie 6 × M5)
+- **Strona:** oba (klasy)
+- **Cechy:** PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)
+- **Etykieta:** PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone
+- **Trainer:** Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)
+- **Loader:** TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)
+- **Artefakt:** data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych
+
+## TH_HGB – Centrum treningu – gradient boosting histogramowy: kierunek ruchu po kosztach
+
+- **Implementacja:** masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py
+- **Zadanie:** klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)
+- **Źródło danych:** magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)
+- **TF:** bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy
+- **Horyzont:** H świec (domyślnie 6 × M5)
+- **Strona:** oba (klasy)
+- **Cechy:** PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)
+- **Etykieta:** PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone
+- **Trainer:** Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)
+- **Loader:** TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)
+- **Artefakt:** data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych
+
+## TH_XGB – Centrum treningu – XGBoost (CPU, gdy pakiet dostępny): kierunek ruchu po kosztach
+
+- **Implementacja:** masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py
+- **Zadanie:** klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)
+- **Źródło danych:** magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)
+- **TF:** bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy
+- **Horyzont:** H świec (domyślnie 6 × M5)
+- **Strona:** oba (klasy)
+- **Cechy:** PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)
+- **Etykieta:** PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone
+- **Trainer:** Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)
+- **Loader:** TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)
+- **Artefakt:** data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)
+- **Instrumenty:** XAUUSD, BTC
+- **Status:** ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych
+
 ## STRATEGIES_S01_S12 – Strategie S01–S12
 
 - **Implementacja:** masterquo/strategies/*
