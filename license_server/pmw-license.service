@@ -1,0 +1,18 @@
+[Unit]
+Description=PepeMarketWizard License API
+After=network-online.target
+
+[Service]
+User=pmwlicense
+Group=pmwlicense
+WorkingDirectory=/opt/pmw-license
+EnvironmentFile=/etc/pmw-license.env
+ExecStart=/opt/pmw-license/venv/bin/python -m pmw_license serve
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pmw-license
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
