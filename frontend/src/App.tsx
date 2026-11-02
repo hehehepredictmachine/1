@@ -35,6 +35,7 @@ const DyscyplineView = lazy(() => import("./features/wizard/DyscyplineView"));
 const ProfitsView = lazy(() => import("./features/wizard/ProfitsView"));
 const LicenseManager = lazy(() => import("./features/license/LicenseManager"));
 const MarketZonesPage = lazy(() => import("./features/market-zones/MarketZonesPage"));
+const TrainingCenterPage = lazy(() => import("./features/training-center/TrainingCenterPage"));
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
 
@@ -111,6 +112,7 @@ export default function App() {
           {route.page === "diagnostyka" && <DiagnosticsPage />}
           {route.page === "licencje" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><LicenseManager /></Suspense>}
           {route.page === "strefy" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><MarketZonesPage /></Suspense>}
+          {route.page === "trening" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><TrainingCenterPage /></Suspense>}
         </AppShell>}
         {settings && <SettingsModal onClose={() => setSettings(false)} />}
         {mode && <ModeDialog onClose={() => setMode(false)} />}

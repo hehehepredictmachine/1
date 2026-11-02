@@ -146,6 +146,10 @@ class Runtime:
         self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
+        from .trainhub.inference import TrainhubInference
+        from .trainhub.jobs import TrainingCenter
+        self.trainhub = TrainingCenter(self.cfg, self.bridge, bus=self.bus, log=self.log)         # 1.28: Centrum treningu (kolejka, proces obok)
+        self.trainhub_inference = TrainhubInference(self.cfg, self.bridge, bus=self.bus, log=self.log)   # aktywne paczki, zamknięte świece
         from .montecarlo.service import MonteCarloService
         self.montecarlo = MonteCarloService(self.cfg, self.bridge, synthetic=demo)                 # PMW-MC-1: path simulation, own thread
         self.evaluation.zone_provider = self.zones
@@ -248,6 +252,8 @@ class Runtime:
         self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
         self.zones.start()                      # PMW-ZONES: zone map on every closed M5
         self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
+        self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
+        self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -278,6 +284,8 @@ class Runtime:
         self.mm.stop()
         self.zones.stop()
         self.market_zones.stop_service()
+        self.trainhub.stop()
+        self.trainhub_inference.stop()
         self.montecarlo.stop()
         self.analytics.stop()
         self.lab.stop()

@@ -201,10 +201,14 @@ def _finish(source, store: Store, inst: str, symbol: str, tfs, frozen: dict, sum
         commission = source.call(lambda m: _commission(m, symbol))
     except Exception as exc:  # noqa: BLE001
         commission = {"source": "UNKNOWN", "reason": f"{type(exc).__name__}"}
-    point = None
+    point = contract = None
+    spec = {}
     try:
         info = source.call(lambda m: m.symbol_info(symbol))
         point = float(getattr(info, "point", 0) or 0) or None
+        contract = float(getattr(info, "trade_contract_size", 0) or 0) or None
+        spec = {k: getattr(info, k, None) for k in ("digits", "point", "trade_tick_size", "trade_tick_value", "trade_contract_size", "currency_base",
+                                                    "currency_profit", "currency_margin", "volume_min", "volume_step")}
     except Exception:  # noqa: BLE001
         point = None
     costs_cfg = getattr(cfg, "costs", None) if cfg is not None else None
@@ -216,12 +220,13 @@ def _finish(source, store: Store, inst: str, symbol: str, tfs, frozen: dict, sum
     lists = {tf: {"conflicts": acc.get("conflict_list"), "invalid": acc.get("invalid_list")} for tf, acc in (summary.get("timeframes") or {}).items()
              if acc.get("conflict_list") or acc.get("invalid_list")}
     store.write_manifest(inst, {
-        "instrument": inst, "symbol": symbol, "source": source.describe(), "data_kind": "SYNTHETIC_TEST" if source.synthetic() else "REAL_USER_DATA",
+        "instrument": inst, "symbol": symbol, "source": source.describe(), "data_kind": _kind(source),
         "time_model": frozen["time_model"], "time_basis": "UTC (czas serwera MT5 przeliczony offsetem i konwencją DST)",
         "timeframes": {tf: {k: q.get(k) for k in ("rows", "first_utc", "last_utc", "trading_days", "status", "coverage_of_continuous_range")}
                        | {"gaps": {k: q["gaps"].get(k) for k in ("WEEKEND", "SESSION_BREAK", "NO_TICKS_SHORT", "MISSING", "missing_bars")}
                           if q.get("gaps") else None} for tf, q in quality.items()},
-        "costs": {"spread": {"status": "MEASURED_PER_BAR", "column": "spread", "unit": "punkty", "point": point,
+        "symbol_spec": spec,
+        "costs": {"spread": {"status": "MEASURED_PER_BAR", "column": "spread", "unit": "punkty", "point": point, "contract_size": contract,
                              "note": "spread zapisany przez terminal dla świecy – nie jest historycznym bid/ask (nie rekonstruujemy go)"},
                   "commission": commission | {"note": "prowizja tylko z historii transakcji tego symbolu na rachunku; konto 'Zero' nie oznacza zerowych kosztów"},
                   "commission_user": {"value": getattr(costs_cfg, "commission_per_lot_per_side", None), "status": "ASSUMPTION_USER_CONFIG"},
@@ -231,6 +236,14 @@ def _finish(source, store: Store, inst: str, symbol: str, tfs, frozen: dict, sum
         "params": {"chunk_bars": CHUNK_BARS, "retry": "3 próby, backoff 0,5/1/2 s", "closed_candles_only": True, "dedup_key": "(instrument, timeframe, time)"},
         "exports": hist, "last_export": {k: summary.get(k) for k in ("run_id", "status", "mode", "resumed", "reason")},
         "last_export_rejected_rows": lists})
+
+
+def _kind(source) -> str:
+    try:
+        syn = source.synthetic()
+    except Exception:  # noqa: BLE001
+        syn = None
+    return "SYNTHETIC_TEST" if syn else ("REAL_USER_DATA" if syn is False else "UNKNOWN_SOURCE")
 
 
 def _ts(x) -> float | None:

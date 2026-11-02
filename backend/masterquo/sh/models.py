@@ -95,6 +95,10 @@ REGISTRY: list[dict] = [
      "group": "EVENT_DIRECTION", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
     {"id": "mm_ste_flownet", "name": "STE-FlowNet (adaptacja finansowa) – log-zwrot h zdarzeń", "kind": "TRAINED", "output": "prognoza log-zwrotu",
      "group": "EVENT_DIRECTION", "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "master_models"},
+    # --- 1.28 Training Center (trainhub) - OBSERVATION until validated in SHADOW on real data; never a vote by default --------------
+    {"id": "th_direction", "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)", "kind": "TRAINED",
+     "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)", "group": "TH_DIRECTION",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "trainhub"},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
      "group": "AGENT", "roles": {"SCALPING": "SUPERVISION", "HEDGING": "SUPERVISION"}, "train": None},
 ]
@@ -171,6 +175,17 @@ def probe(item: dict, rt, inst: str) -> dict:
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
+        if mid == "th_direction":
+            from ..trainhub import registry as TR
+            act = TR.registry(inst).get("active") or {}
+            if not act:
+                return {"status": "NOT_TRAINED", "reason": "brak aktywnej paczki Centrum treningu (trening + ręczna aktywacja)"}
+            inf = getattr(rt, "trainhub_inference", None) if rt else None
+            ps = [p for p in (inf.predictions(inst) if inf else []) if p.get("model_key") in act]
+            bad = [p for p in ps if p["state"] != "READY"]
+            if bad:
+                return {"status": "INCOMPATIBLE" if bad[0]["state"] == "INCOMPATIBLE" else "ERROR", "reason": bad[0]["unavailable_reason"]}
+            return {"status": "SHADOW_ONLY", "reason": "aktywne: " + ", ".join(f"{k}={v}" for k, v in act.items()) + " – obserwacja, nie głos"}
         if mid == "context_move":
             runs = list((base / "context_ind" / inst / "runs").glob("*/report.json"))
             return {"status": "NOT_CONNECTED", "reason": f"{len(runs)} runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania"}

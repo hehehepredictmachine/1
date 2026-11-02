@@ -1,0 +1,32 @@
+/* Centrum treningu - the AppShell panel language (panels, chips, small tables). */
+.tc-page { gap: 10px; }
+.tc-head h2 { margin: 0; font-size: 15px; }
+.tc-insts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; }
+.tc-msg { margin: 0 10px 8px; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid var(--line); }
+.tc-msg.ok { border-color: var(--line2); }
+.tc-msg.bad { border-color: var(--bad-line); color: var(--bad-text); }
+.tc-msg ul { margin: 4px 0 0; padding-left: 16px; }
+.tc-msg li.ok { color: var(--neon); }
+.tc-msg li.bad { color: var(--bad-text); }
+.tc-table-wrap { overflow-x: auto; }
+.tc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tc-table th, .tc-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); vertical-align: top; }
+.tc-table th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.tc-table td.ok { color: var(--neon); }
+.tc-table td.bad { color: var(--bad-text); }
+.tc-table td.warn { color: var(--warn-text); }
+.tc-table tr.active td { background: color-mix(in srgb, var(--neon) 7%, transparent); }
+.tc-form { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 10px; font-size: 12px; }
+.tc-form label { display: inline-flex; gap: 5px; align-items: center; }
+.tc-form input[type="number"] { width: 72px; }
+.tc-tfs, .tc-models { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.tc-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px 10px; }
+.tc-progress { width: 110px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--line) 60%, transparent); overflow: hidden; margin-top: 4px; }
+.tc-progress i { display: block; height: 100%; background: var(--neon); transition: width .3s; }
+.tc-row-actions { white-space: nowrap; }
+.tc-row-actions .btn { margin-right: 4px; }
+.tc-log { margin: 6px 10px 10px; max-height: 260px; overflow: auto; font-size: 11px; background: rgba(0, 0, 0, .35); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
+.tc-model { padding: 6px 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent); }
+.tc-model-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
+.tc-compare { padding: 8px 10px; }
+@media (max-width: 760px) { .tc-table { display: block; overflow-x: auto; } }

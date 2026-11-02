@@ -63,6 +63,18 @@ class MarketZonesLiveReq(MarketZonesReq):
     enabled: bool
 
 
+class TrainJobReq(BaseModel):
+    kind: str = Field(max_length=16)
+    instrument: str = Field(max_length=16)
+    params: dict = Field(default_factory=dict)
+
+
+class TrainVersionReq(BaseModel):
+    instrument: str = Field(max_length=16)
+    model_key: str = Field(max_length=64)
+    version: str | None = Field(default=None, max_length=64)
+
+
 class LicenseKeyReq(BaseModel):
     license_key: str = Field(max_length=64)
 
@@ -1801,6 +1813,153 @@ def create_app(rt, port: int) -> FastAPI:
             return rt.market_zones.at(instrument, t, _mz_tfs([tf]) if tf else None)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(503, f"{type(exc).__name__}: {exc}"[:200]) from exc
+
+    # ---------------------------------------------------------------- 1.28 Centrum treningu + rejestr modeli (wspólny kontrakt)
+    def _th_inst(x: str) -> str:
+        x = (x or "").upper()
+        if x not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "INSTRUMENT_NOT_ALLOWED")
+        return x
+
+    _SAFE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+    @app.get("/api/v1/trainhub/status")
+    def trainhub_status():
+        from ..marketdata.store import Store
+        from ..trainhub import learn as _L
+        from ..trainhub import pipeline as _P
+        st = Store()
+        data = {}
+        for i in ("XAUUSD", "BTC"):
+            man = st.manifest(i)
+            data[i] = {"symbol": man.get("symbol") or rt.market_zones.symbol_for(i), "data_kind": man.get("data_kind"),
+                       "timeframes": man.get("timeframes") or {}, "last_export": man.get("last_export"), "costs": man.get("costs"),
+                       "time_model": man.get("time_model"), "updated_at": man.get("updated_at"), "parquet": man.get("parquet")}
+        return {"jobs": rt.trainhub.list(30), "queue": rt.trainhub.status(), "data": data, "models": {k: {"name": v["name"], "available": _L.available()[k]}
+                                                                                                         for k, v in _L.MODELS.items()},
+                "defaults": _P.DEFAULTS, "note": "trening nie aktywuje modeli; aktywacja ręczna po teście zgodności i predykcji"}
+
+    @app.post("/api/v1/trainhub/jobs")
+    def trainhub_submit(req: TrainJobReq):
+        try:
+            return rt.trainhub.submit(req.kind, _th_inst(req.instrument), req.params)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/v1/trainhub/jobs")
+    def trainhub_jobs(limit: int = Query(50, ge=1, le=500)):
+        return {"items": rt.trainhub.list(limit)}
+
+    @app.get("/api/v1/trainhub/jobs/{jid}")
+    def trainhub_job(jid: str):
+        j = rt.trainhub.get(jid)
+        if j is None:
+            raise HTTPException(404, "JOB_NOT_FOUND")
+        return {**j, "log_tail": rt.trainhub.log_tail(jid, 120)}
+
+    @app.post("/api/v1/trainhub/jobs/{jid}/cancel")
+    def trainhub_cancel(jid: str):
+        try:
+            return rt.trainhub.cancel(jid)
+        except KeyError as exc:
+            raise HTTPException(404, "JOB_NOT_FOUND") from exc
+
+    @app.get("/api/v1/trainhub/data")
+    def trainhub_data(instrument: str = Query("XAUUSD")):
+        from ..marketdata.store import Store, read_json
+        st = Store()
+        i = _th_inst(instrument)
+        return {"manifest": st.manifest(i), "quality": read_json(st.inst_dir(i) / "quality_report.json", None), "verify": st.verify(i)}
+
+    @app.get("/api/v1/trainhub/registry")
+    def trainhub_registry(instrument: str = Query("XAUUSD")):
+        from ..trainhub import registry as _R
+        return _R.summary(_th_inst(instrument))
+
+    @app.get("/api/v1/trainhub/version")
+    def trainhub_version(instrument: str, model_key: str, version: str):
+        from ..marketdata.store import read_json
+        from ..trainhub import registry as _R
+        i = _th_inst(instrument)
+        if not (_SAFE.match(model_key) and _SAFE.match(version)):
+            raise HTTPException(400, "INVALID_ID")
+        d = _R.package_dir(i, model_key, version)
+        if not d.exists():
+            raise HTTPException(404, "VERSION_NOT_FOUND")
+        return {"config": read_json(d / "config.json", {}), "metrics": read_json(d / "metrics.json", {}), "deps": read_json(d / "deps.json", {}),
+                "data_manifest": read_json(d / "data_manifest.json", {}), "compatibility": _R.compatibility(i, model_key, version),
+                "evaluations": read_json(d.parent / f"{version}.evaluations.json", [])}
+
+    @app.post("/api/v1/trainhub/activate")
+    def trainhub_activate(req: TrainVersionReq):
+        from ..trainhub import registry as _R
+        i = _th_inst(req.instrument)
+        if not req.version:
+            raise HTTPException(400, "VERSION_REQUIRED")
+        out = _R.activate(i, req.model_key, req.version, reason="panel – Centrum treningu")
+        rt.trainhub_inference.invalidate(i)
+        return out
+
+    @app.post("/api/v1/trainhub/rollback")
+    def trainhub_rollback(req: TrainVersionReq):
+        from ..trainhub import registry as _R
+        i = _th_inst(req.instrument)
+        out = _R.rollback(i, req.model_key)
+        rt.trainhub_inference.invalidate(i)
+        return out
+
+    @app.post("/api/v1/trainhub/deactivate")
+    def trainhub_deactivate(req: TrainVersionReq):
+        from ..trainhub import registry as _R
+        i = _th_inst(req.instrument)
+        out = _R.deactivate(i, req.model_key)
+        rt.trainhub_inference.invalidate(i)
+        return out
+
+    @app.get("/api/v1/trainhub/package.zip")
+    def trainhub_package_zip(instrument: str, model_key: str, version: str):
+        from ..trainhub import registry as _R
+        i = _th_inst(instrument)
+        if not (_SAFE.match(model_key) and _SAFE.match(version)):
+            raise HTTPException(400, "INVALID_ID")
+        out = _R.root() / "exports" / f"{i}_{model_key}_{version}.zip"
+        try:
+            _R.export_zip(i, model_key, version, out)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(409, f"{type(exc).__name__}: {exc}"[:200]) from exc
+        return FileResponse(out, media_type="application/zip", filename=out.name)
+
+    @app.get("/api/v1/trainhub/dataset.zip")
+    def trainhub_dataset_zip(instrument: str, base_tf: str = "M5", horizon: int = 6):
+        from ..trainhub import pipeline as _P
+        from ..trainhub import registry as _R
+        i = _th_inst(instrument)
+        if base_tf not in ("M1", "M5", "M15", "M30"):
+            raise HTTPException(400, "INVALID_TF")
+        out = _R.root() / "exports" / f"{i}_dataset_{base_tf}_H{int(horizon)}.zip"
+        try:
+            _P.export_dataset_zip(i, {"base_tf": base_tf, "horizon": int(horizon)}, out)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return FileResponse(out, media_type="application/zip", filename=out.name)
+
+    @app.get("/api/v1/models/catalog")
+    def models_catalog(instrument: str = Query("XAUUSD")):
+        from ..modelhub import catalog as _CAT
+        return _CAT.build(rt, _th_inst(instrument))
+
+    @app.get("/api/v1/models/predictions")
+    def models_predictions(instrument: str = Query("XAUUSD")):
+        i = _th_inst(instrument)
+        return {"instrument": i, "items": rt.trainhub_inference.predictions(i), "contract": "PMW-PRED-1"}
+
+    @app.get("/api/v1/models/evidence")
+    def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
+        from ..modelhub import aggregate as _AG
+        i = _th_inst(instrument)
+        if strategy not in ("SCALPING", "HEDGING"):
+            raise HTTPException(400, "INVALID_STRATEGY")
+        return _AG.evidence(rt.trainhub_inference.predictions(i), strategy, i)
 
     @app.get("/api/v1/zones/status")
     def zones_status():

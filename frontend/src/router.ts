@@ -7,14 +7,14 @@ import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
-  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje" | "strefy";
+  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje" | "strefy" | "trening";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit", "nc"] },
   { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
   { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "strategie", "warunki", "ai", "pozycje", "dziennik"] },
-  { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
+  { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "trening", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
   { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
   { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia", "licencje"] },
@@ -41,6 +41,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "ai", label: "Analiza AI", short: "AI", icon: "✧" },
   { id: "pozycje", label: "Pozycje i ryzyko", short: "Pozycje", icon: "⚖" },
   { id: "dziennik", label: "Dziennik i wyniki", short: "Dziennik", icon: "☰" },
+  { id: "trening", label: "Centrum treningu (eksport → trening → aktywacja)", short: "Trening", icon: "⚙" },
   { id: "modele", label: "Modele i trening", short: "Modele", icon: "✦" },
   { id: "neural", label: "Neural System", short: "Neural", icon: "⟁" },
   { id: "struktura", label: "Structure Intelligence", short: "Struktura", icon: "⌗" },

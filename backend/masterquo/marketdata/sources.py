@@ -33,11 +33,15 @@ class BridgeSource:
         off = getattr(self.bridge.clock, "offset", None)
         return (float(off), "BRIDGE_CLOCK_MEASURED") if off is not None else (None, "UNKNOWN")
 
-    def synthetic(self) -> bool:
+    def synthetic(self) -> bool | None:
+        """True = terminal simulator, False = a real MetaTrader5 terminal, None = could not tell (then the data is never labelled real)."""
+        from ..mt5.fake import is_fake
         try:
-            return bool(self.bridge.synthetic())
+            return bool(self.call(lambda m: is_fake(m)))
         except Exception:  # noqa: BLE001
-            return False
+            flag = getattr(self.bridge, "synthetic", None)
+            flag = flag() if callable(flag) else flag
+            return bool(flag) if flag is not None else None
 
     def describe(self) -> dict:
         return {"kind": self.kind, "note": "bridge bota (ten sam terminal i połączenie co bot; zapytania o niskim priorytecie)"}

@@ -248,6 +248,10 @@ def main(argv=None) -> int:
     if argv[:1] == ["montecarlo"]:                   # PMW-MC-1: path Monte Carlo validation / calibration (masterquo/montecarlo/cli.py)
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
+    if argv[:1] == ["trainhub"]:                     # 1.28 Centrum treningu: export -> dataset -> train -> evaluate -> activate (trainhub/cli.py)
+        _load_dotenv()
+        from .trainhub.cli import main as trainhub_main
+        return trainhub_main(argv[1:])
     if argv[:1] == ["training"]:                     # training installer / orchestrator (masterquo/training/cli.py)
         _load_dotenv()
         from .training.cli import main as training_main
