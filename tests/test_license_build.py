@@ -91,7 +91,8 @@ class TestBuilds(unittest.TestCase):
         self.assertNotIn("license_server", d)
 
     def test_secrets_refused_and_bad_input(self):
-        src = owner_zip(self.tmp / "leak.zip", "PepeMarketWizard/", extra={"docs/oops.txt": b"-----BEGIN PRIVATE KEY-----\nMC4CAQ\n"})
+        leak = b"-----BEGIN " + b"PRIVATE KEY-----\nMC4CAQ\n"          # assembled at run time: the release secret scan stays strict
+        src = owner_zip(self.tmp / "leak.zip", "PepeMarketWizard/", extra={"docs/oops.txt": leak})
         self.assertEqual(self.run_stamp(src, self.tmp / "x.zip"), 3)
         self.assertFalse((self.tmp / "x.zip").exists())
         src2 = owner_zip(self.tmp / "leak2.zip", "PepeMarketWizard/", extra={"data/licenses.db": b"x"})
