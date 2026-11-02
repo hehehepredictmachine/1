@@ -181,7 +181,24 @@ Paczki CLIENT nie są w `release/` repozytorium, bo wymagają adresu i klucza pu
 | `test_ui_license` (Chromium) | KEY FOR MAGIC: zły klucz, aktywacja, cofnięcie → okno wraca; OWNER: logowanie, klucz raz, lista, cofnięcie | 2 / 2 OK |
 | `test_strategy_signals` | S01–S12 oba kierunki, SCALPING/HEDGING/R→S→R/Double Retest BUY i SELL, przełączniki, deduplikacja | 6 / 6 OK |
 
-Testy regresji zmienionych modułów i pełne liczby: CHANGELOG 1.27.0.
+**Zbiorczo (16 plików testów):** licencje, sygnały, wykonanie, SCALPING/HEDGING, API, launchery, aplikacja Windows, telemetria,
+ocena, prognozy, bramki – **169 / 169 OK**. Testy UI na końcowej wersji:
+
+| Test UI | Wynik |
+|---|---|
+| `test_ui_pages` | 8 / 8 |
+| `test_ui_terminal_shell` | 13 / 13 |
+| `test_ui_wizard` (menu z wieżami) | 12 / 12 |
+
+**Ręczny test end-to-end na zbudowanej paczce:**
+1. `tools/stamp_client_edition.py` zrobił z `release/PepeMarketWizard_OWNER_1_27_0.zip` paczkę CLIENT dla lokalnego serwera
+   licencji: 1135 plików, bez `owner.py` i `license_server/`.
+2. Bot uruchomiony z tej paczki:
+   - wystartował jako CLIENT (`NOT_ACTIVATED`, konfiguracja poprawna);
+   - aktywował klucz 24h (`ACTIVE`);
+   - endpointy OWNER zwróciły 403.
+
+Pełnego zestawu wszystkich testów repozytorium nie uruchamiano – tylko testy powiązane ze zmienionymi plikami.
 
 ## 9. Ograniczenia
 - **Program działa na komputerze klienta.** Zdeterminowana osoba może zmienić pliki Pythona (np. `edition.json` albo kod strażnika).
