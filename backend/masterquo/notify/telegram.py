@@ -203,6 +203,9 @@ class TelegramNotifier:
         self._deliver("send_signals", dedup_key, text)
 
     def signal(self, dedup_key: str, d: dict) -> bool:
+        gate = getattr(self, "signal_gate", None)            # 1.27: CLIENT edition without a valid license -> no new-signal messages
+        if gate is not None and not gate():
+            return False
         return self._deliver("send_signals", dedup_key, fmt_signal(d, self.cfg_store.get().telegram.language))
 
     def trade_opened(self, dedup_key: str, d: dict) -> bool:

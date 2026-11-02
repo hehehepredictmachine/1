@@ -4,6 +4,17 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.27 – licencje (OWNER / CLIENT) i sygnały BUY/SELL wszystkich strategii
+* **Twoja paczka to OWNER EDITION** – bot działa bez klucza; nowa zakładka **Ustawienia → Licencje** (License Manager) generuje klucze
+  24h / 72h / 7d / 31d dla klientów, pokazuje listę, cofa licencje i resetuje przypisane urządzenie. Wymaga własnego serwera licencji
+  (paczka `PepeMarketWizard_LICENSE_SERVER_1_27_0.zip`, instrukcja w `license_server/README.md`).
+* **Paczka dla klienta (CLIENT EDITION):** w folderze programu uruchom `PRZYGOTUJ_PACZKE_KLIENTA.bat https://adres-twojego-serwera`
+  i porównaj wyświetlony identyfikator klucza (kid) z tym z serwera. Klient wpisuje klucz w oknie **KEY FOR MAGIC**. Bez ważnej
+  licencji jego bot nie otwiera nowych pozycji, ale **nigdy nie zamyka otwartych** – SL/TP i zarządzanie działają dalej.
+* **Sygnały:** oprócz S01–S12 sygnały BUY / SELL nadają teraz także SCALPING, HEDGING, Range→Sweep→Retest i Double Retest v2
+  (dwie ostatnie oznaczone jako niezweryfikowane). Sygnał to informacja – nie składa zlecenia.
+* Szczegóły i ograniczenia: `docs/LICENCJE_SYSTEM_1_27_PL.md`.
+
 ## Nowe w 1.26 – menu główne z trzema wieżami
 Panel otwiera się na **menu głównym**: trzy wieże 3D na platformie z magicznym kręgiem, po bokach mapy przepływu danych i modeli.
 * **Precision** – wykresy świecowe z Twojego MT5 (interwały, siatka, warstwy analiz, strefy, reżim rynku).

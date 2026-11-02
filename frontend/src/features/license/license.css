@@ -1,0 +1,57 @@
+/* KEY FOR MAGIC (CLIENT) and License Manager (OWNER). Solid panels, the bot's amethyst / emerald palette. */
+.kfm-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto;
+  background: radial-gradient(ellipse at 50% 30%, rgba(60, 30, 120, 0.92), rgba(4, 4, 14, 0.97) 70%); color: #e7e9ff;
+  font-family: Inter, "Segoe UI", sans-serif; }
+.kfm-card { width: min(560px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 26px 26px 20px; border-radius: 18px;
+  background: rgba(8, 8, 24, 0.94); border: 1px solid rgba(180, 107, 255, 0.55); box-shadow: 0 0 60px rgba(150, 90, 255, 0.35), inset 0 0 40px rgba(47, 230, 160, 0.06); }
+.kfm-brand { display: flex; align-items: center; gap: 12px; font: 700 20px/1 "Cinzel", Georgia, serif; letter-spacing: 0.6px; }
+.kfm-brand b { color: #b46bff; }
+.kfm-title { margin: 4px 0 0; text-align: center; font: 800 34px/1.1 "Cinzel", Georgia, serif; letter-spacing: 6px; color: #2fe6a0;
+  text-shadow: 0 0 18px rgba(47, 230, 160, 0.55), 0 0 40px rgba(180, 107, 255, 0.45); }
+.kfm-form { display: flex; flex-direction: column; gap: 8px; }
+.kfm-form label { font-size: 13px; color: #a5abd0; }
+.kfm-form input { font: 600 18px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 1.5px; padding: 12px 14px; border-radius: 10px; text-align: center;
+  color: #fff; background: rgba(14, 14, 34, 0.95); border: 1px solid rgba(150, 120, 255, 0.5); }
+.kfm-form input:focus { outline: 2px solid #3fe6ff; outline-offset: 2px; }
+.kfm-btn { font: 800 16px/1 "Cinzel", Georgia, serif; letter-spacing: 3px; padding: 14px; border-radius: 10px; cursor: pointer; color: #08051a;
+  background: linear-gradient(90deg, #2fe6a0, #b46bff); border: 0; box-shadow: 0 0 22px rgba(150, 90, 255, 0.45); }
+.kfm-btn:disabled { opacity: 0.55; cursor: default; }
+.kfm-msg { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid; }
+.kfm-msg.info { border-color: rgba(63, 230, 255, 0.5); background: rgba(10, 40, 60, 0.5); }
+.kfm-msg.warn { border-color: rgba(255, 207, 92, 0.6); background: rgba(70, 50, 10, 0.55); color: #ffe7a6; }
+.kfm-msg.bad { border-color: rgba(255, 95, 122, 0.7); background: rgba(70, 12, 28, 0.6); color: #ffd0d7; }
+.kfm-dim { color: #a5abd0; font-weight: 400; }
+.kfm-actions { display: flex; gap: 14px; justify-content: center; }
+.kfm-link { background: none; border: 0; color: #3fe6ff; cursor: pointer; font-size: 13.5px; text-decoration: underline; }
+.kfm-note { margin: 0; font-size: 12.5px; color: #a5abd0; }
+.kfm-positions { font-size: 13px; padding: 10px 12px; border-radius: 10px; background: rgba(14, 14, 34, 0.9); border: 1px solid rgba(124, 108, 220, 0.25); }
+.kfm-positions ul { margin: 6px 0 0; padding-left: 18px; }
+
+.lm-page { display: flex; flex-direction: column; gap: 12px; }
+.lm-panel h2 { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.lm-dim { color: var(--muted, #a5abd0); font-size: 12.5px; font-weight: 400; }
+.lm-err { color: #ff8fa0; }
+.lm-login { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+.lm-login label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.lm-bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.lm-counts { display: flex; flex-wrap: wrap; gap: 10px; }
+.lm-count { display: flex; flex-direction: column; min-width: 110px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line, #444); }
+.lm-count b { font-size: 22px; }
+.lm-count.active b { color: #2fe6a0; }
+.lm-count.revoked b, .lm-count.expired b { color: #ff8fa0; }
+.lm-gen { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lm-durs { display: flex; gap: 6px; }
+.lm-durs .btn[aria-checked="true"] { border-color: #2fe6a0; color: #2fe6a0; box-shadow: 0 0 10px rgba(47, 230, 160, 0.35); }
+.lm-key { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px solid #2fe6a0;
+  background: rgba(10, 50, 35, 0.45); }
+.lm-key code { font-size: 18px; letter-spacing: 1.5px; user-select: all; }
+.lm-filters { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.lm-table-wrap { overflow-x: auto; }
+.lm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.lm-table th, .lm-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line, #333); white-space: nowrap; }
+.lm-st.active { color: #2fe6a0; }
+.lm-st.revoked, .lm-st.expired { color: #ff8fa0; }
+.lm-actions { display: flex; gap: 6px; }
+.lm-audit { margin: 0; padding-left: 18px; font-size: 12.5px; max-height: 300px; overflow: auto; }
+.lm-audit li.bad { color: #ff8fa0; }
+@media (max-width: 600px) { .kfm-title { font-size: 26px; letter-spacing: 3px; } .kfm-card { padding: 18px 14px; } }

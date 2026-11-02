@@ -1,7 +1,11 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/PepeMarketWizard_KLIENT_1_26_0.zip         bot 1.26.0 (menu główne z trzema wieżami 3D, widoki Precision / Dyscypline / Profits, mapy przepływu modeli) + training installers for Windows (no license, no secrets)
-  release/PepeMarketWizard_KLIENT_1_26_0.zip.sha256  SHA-256 of the ZIP (outside the ZIP)
+  release/PepeMarketWizard_OWNER_<ver>.zip            OWNER EDITION: bot (all strategies, signals, panel) + License Manager +
+                                                      training installers for Windows; no license gate, no secrets
+  release/PepeMarketWizard_LICENSE_SERVER_<ver>.zip   License API for your server (license_server/ + docs); no keys / database
+  (+ .sha256 of each ZIP, outside the ZIP)
+CLIENT EDITION packages are made by the owner from an OWNER package with tools/stamp_client_edition.py
+(PRZYGOTUJ_PACZKE_KLIENTA.bat) - they need the address and the PUBLIC key of the owner's license server.
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -14,8 +18,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.26.0"
-CLIENT_ZIP = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
+VERSION = "1.27.0"
+OWNER_ZIP = f"PepeMarketWizard_OWNER_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
+SERVER_ZIP = f"PepeMarketWizard_LICENSE_SERVER_{VERSION.replace('.', '_')}.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
@@ -29,7 +34,13 @@ SECRET_PATTERNS = [
 def tracked():
     out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True).stdout
     files = sorted(f for f in out.decode().split("\0") if f)
-    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/")) and f != "MANIFEST_SHA256.txt"]   # Frog Wizard = separate product
+    # Frog Wizard and the License API are separate products (the license server never ships inside the bot)
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "license_server/")) and f != "MANIFEST_SHA256.txt"]
+
+
+def server_files():
+    out = subprocess.run(["git", "ls-files", "-z", "license_server"], cwd=ROOT, check=True, capture_output=True).stdout
+    return sorted(f for f in out.decode().split("\0") if f) + ["docs/LICENCJE_SYSTEM_1_27_PL.md"]
 
 
 def scan(files):
@@ -68,10 +79,16 @@ def manifest_text(files, label: str = "klient") -> str:
 
 def main():
     files = tracked()
-    client = files
+    client = files                     # the bot's program files (OWNER edition; CLIENT packages are stamped from them)
     scan(client)
-    (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(client), encoding="utf-8", newline="\n")
-    write_zip(CLIENT_ZIP, "PepeMarketWizard/", client + ["MANIFEST_SHA256.txt"])
+    import json
+    if json.loads((ROOT / "edition.json").read_text(encoding="utf-8")).get("edition") != "OWNER":
+        sys.exit("edition.json of the repository must be OWNER (CLIENT packages: tools/stamp_client_edition.py)")
+    (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(client, "OWNER"), encoding="utf-8", newline="\n")
+    write_zip(OWNER_ZIP, "PepeMarketWizard/", client + ["MANIFEST_SHA256.txt"])
+    srv = server_files()
+    scan(srv)
+    write_zip(SERVER_ZIP, "PepeMarketWizard_LicenseServer/", srv)
 
 
 if __name__ == "__main__":

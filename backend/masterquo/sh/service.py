@@ -53,6 +53,7 @@ class SHService:
         self.last_eval: dict = {}
         self.last_saved: dict = {}
         self.listeners: list = []                  # fn(evals, inst=, symbol=, snap=, now=) after each cycle - read-only observers
+        self.license = None                        # LicenseGuard (1.27) - checked before every NEW primary entry
         self.snapshot: dict | None = None
         self.snap_cache: dict = {}                    # per (instrument, session epoch): no M5 analysis carried across a switch
         self.state: dict = {"status": "STARTING", "updated_at": None, "warnings": []}
@@ -139,7 +140,8 @@ class SHService:
                           comment_prefix=sh["comment_prefix"], deviation_points=int(cfg.execution.deviation_points),
                           is_demo=lambda: acc.get("trade_mode") == "DEMO", is_live=lambda: acc.get("trade_mode") == "REAL",
                           live_check=lambda strategy: self.live_validation(self.instrument(), strategy),
-                          symbol_info=self.bridge.symbol_info or {})
+                          symbol_info=self.bridge.symbol_info or {},
+                          license_check=(lambda: self.license.authorize_new_order("SCALPING/HEDGING")) if self.license is not None else None)
 
     # ------------------------------------------------------------------ main step
     def tick(self) -> None:

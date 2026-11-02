@@ -10,6 +10,7 @@ import { useTerminalContext } from "../shell/useTerminalContext";
 import "../shell/terminal.css";
 import { TOWERS, type WizardAsset } from "./assets";
 import WizardLogo from "./WizardLogo";
+import { LicenseChip } from "../license/KeyForMagic";
 import "./wizard.css";
 
 const FRESH: Record<string, [string, string]> = {
@@ -46,6 +47,7 @@ export function WizardTopBar({ page }: { page: Page }) {
       <span className={cls("wz-chip", botTone)} data-testid="wz-bot" title={`${envLabel(ctx.env)} – ${ctx.envDetail}`}>
         Bot: <b>{ctx.backend !== "OPEN" ? "brak łącza" : ctx.mode ? `${ctx.mode.replace("_", " ")}${ctx.killSwitch ? " · STOP" : ""}` : "nieznany"}</b>
         <span className="wz-env"> · {envLabel(ctx.env)}</span></span>
+      <LicenseChip />
       {ctx.backend !== "OPEN" && <span className="wz-chip bad" role="status" data-testid="wz-backend">Backend <b>{ctx.backend}</b> – ponowne łączenie</span>}
     </header>);
 }

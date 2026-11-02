@@ -23,6 +23,7 @@ import TerminalShell from "./features/shell/TerminalShell";
 import TradingIntelligencePage from "./features/trading-intelligence/pages/TradingIntelligencePage";
 import AiNeuralLabPage from "./features/ai-neural-lab/pages/AiNeuralLabPage";
 import SystemControlPage from "./features/system-control/pages/SystemControlPage";
+import KeyForMagic from "./features/license/KeyForMagic";
 import { useStore } from "./store";
 import { UiCtx } from "./ui";
 import { cls } from "./util";
@@ -32,6 +33,7 @@ const WizardMenu = lazy(() => import("./features/wizard/WizardMenu"));
 const PrecisionView = lazy(() => import("./features/wizard/PrecisionView"));
 const DyscyplineView = lazy(() => import("./features/wizard/DyscyplineView"));
 const ProfitsView = lazy(() => import("./features/wizard/ProfitsView"));
+const LicenseManager = lazy(() => import("./features/license/LicenseManager"));
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
 
@@ -68,6 +70,7 @@ export default function App() {
             </Suspense>
           </WizardShell>
           {settings && <SettingsModal onClose={() => setSettings(false)} />}
+          <KeyForMagic />
         </div>
       </UiCtx.Provider>);
   }
@@ -105,11 +108,13 @@ export default function App() {
           {route.page === "dziennik" && <JournalPage />}
           {route.page === "testy" && <TestsPage />}
           {route.page === "diagnostyka" && <DiagnosticsPage />}
+          {route.page === "licencje" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><LicenseManager /></Suspense>}
         </AppShell>}
         {settings && <SettingsModal onClose={() => setSettings(false)} />}
         {mode && <ModeDialog onClose={() => setMode(false)} />}
         {power && <PowerDialog onClose={() => setPower(false)} />}
         {look && <ThemeDialog onClose={() => setLook(false)} />}
+        <KeyForMagic />
         <footer className="footer">
           PepeMarketWizard {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
           Narzędzie analityczne – nie gwarantuje zysków.

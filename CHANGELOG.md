@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 1.27.0 – system licencji v1 (OWNER / CLIENT) i sygnały BUY/SELL wszystkich strategii
+Realizacja paczki „PepeMarketWizard License System v1.0” (na Twoje polecenie – licencje usunięte w 1.9 wracają w nowej formie) oraz
+„niech wszystkie strategie mogą nadawać sygnały buy/sell”. Pełny opis, audyt, uruchomienie i ograniczenia: `docs/LICENCJE_SYSTEM_1_27_PL.md`.
+* **Sygnały BUY/SELL wszystkich strategii:** S01–S12 jak dotąd (oba kierunki, także skaner innych rynków); nowe źródła tych samych
+  sygnałów bota: SCALPING i HEDGING (READY), Range→Sweep→Retest (READY_SHADOW) i Double Retest v2 (RESEARCH_SETUP_COMPLETE) – BUY i
+  SELL, walidacja wobec bieżącej ceny, jeden sygnał na setup, śledzenie WIN/LOSS/TIMEOUT, WebSocket, Telegram; strategie SHADOW /
+  badawcze oznaczone jako niezweryfikowane; przełączniki `signals.strategy_sources`. Sygnał nigdy nie składa zlecenia.
+* **Serwer licencji** (`license_server/`, osobna paczka): FastAPI + SQLite, klucze 24h / 72h / 7d / 31d pokazywane raz (w bazie tylko
+  HMAC), okres od pierwszej aktywacji (UTC), wiązanie z urządzeniem, `DEVICE_MISMATCH`, cofnięcie, reset HWID tylko przez
+  administratora, podpisane Ed25519 odpowiedzi z nonce, logowanie administratora (scrypt, sesje bearer), limity zapytań, dziennik
+  audytu bez kluczy i tokenów, CLI (init-keys / hash-password / new-pepper / serve / create-license), przykłady Caddy i systemd.
+* **OWNER EDITION** (Twoje paczki `PepeMarketWizard_OWNER_1_27_0.zip`, `PepeMarketWizard_DESKTOP_OWNER_1_27_0.zip`): bot bez bramki
+  licencji + **License Manager** (Ustawienia → Licencje): logowanie do serwera, generowanie kluczy, lista, cofnięcie, reset HWID,
+  audyt. Hasło nie jest zapisywane.
+* **CLIENT EDITION** (paczki dla klientów z `PRZYGOTUJ_PACZKE_KLIENTA.bat` / `tools/stamp_client_edition.py` – adres i klucz
+  publiczny Twojego serwera): okno **KEY FOR MAGIC** (bez logowania klienta), jeden `LicenseGuard`: walidacja online przy starcie, co
+  5 min i tuż przed każdym nowym wejściem (S01–S12, ręczne, SCALPING/HEDGING; także PAPER), bez okresu offline; bez ważnej licencji
+  brak nowych wejść i powiadomień o nowych sygnałach – **otwarte pozycje nie są zamykane**, zarządzanie nimi i noga hedge działają.
+  Token urządzenia w DPAPI, klucz licencji nie jest zapisywany; odcisk urządzenia: MachineGuid + SMBIOS UUID + wolumin (bez MAC).
+* Zależności Windows: `cryptography`, `cffi`, `pycparser` (z hashami) – weryfikacja podpisów po stronie klienta.
+* Bez zmian: strategie i ich progi, modele, tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP, limity; Execution Lock nie wraca
+  (licencja to jawna bramka edycji CLIENT, widoczna w panelu – w OWNER nie blokuje niczego).
+* Testy: `test_license_server` 10/10, `test_license_client` 12/12, `test_license_build` 5/5, `test_ui_license` 2/2,
+  `test_strategy_signals` 6/6 (pozostałe uruchomione testy: `docs/LICENCJE_SYSTEM_1_27_PL.md` §8). Nie wykonano: uruchomienia na
+  Windows i z prawdziwym MT5, wdrożenia serwera na VPS, testów bezpieczeństwa serwera.
+
 ## 1.26.0 – menu główne „trzy wieże” (Precision / Dyscypline / Profits) i mapy przepływu modeli
 Realizacja specyfikacji „PEPEMARKETWIZARD — NEURO MAGIC CYBERPUNK”. Opis, kontrole, zrzuty i luki: `docs/MENU_WIEZE_1_26_PL.md`.
 * **Menu główne (`#/menu`, pierwszy start):** logo Pepe-czarodzieja (powrót do menu), górny pasek z instrumentem, stanem MT5, świeżością

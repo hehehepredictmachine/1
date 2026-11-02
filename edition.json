@@ -1,0 +1,4 @@
+{
+  "edition": "OWNER",
+  "note": "OWNER EDITION: bot bez bramki licencji + License Manager. Paczka CLIENT ma tu edition=CLIENT oraz adres serwera i klucz publiczny (tools/stamp_client_edition.py)."
+}

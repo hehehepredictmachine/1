@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
-  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits";
+  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
@@ -17,7 +17,7 @@ export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[
   { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
   { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
-  { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia"] },
+  { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia", "licencje"] },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
   { id: "menu", label: "Menu główne – trzy wieże", short: "Menu", icon: "✶" },
@@ -49,6 +49,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "dane", label: "Dane i źródła", short: "Dane", icon: "⚙" },
   { id: "diagnostyka", label: "Diagnostyka systemu", short: "Diag.", icon: "⚕" },
   { id: "ustawienia", label: "Ustawienia", short: "Ustaw.", icon: "⚑" },
+  { id: "licencje", label: "Licencje – License Manager (OWNER)", short: "Licencje", icon: "⚿" },
 ];
 export const SECTION_OF: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.pages.map((p) => [p, g.id])));
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
