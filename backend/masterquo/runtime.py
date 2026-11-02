@@ -144,6 +144,8 @@ class Runtime:
         self.forecast.listeners.append(lambda setup_v2, symbol: self.signals.on_double_retest(setup_v2, symbol=symbol))
         from .zones.service import ZoneService
         self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
+        from .zones.market_service import MarketZonesService
+        self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .montecarlo.service import MonteCarloService
         self.montecarlo = MonteCarloService(self.cfg, self.bridge, synthetic=demo)                 # PMW-MC-1: path simulation, own thread
         self.evaluation.zone_provider = self.zones
@@ -245,6 +247,7 @@ class Runtime:
         self.sh.start()
         self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
         self.zones.start()                      # PMW-ZONES: zone map on every closed M5
+        self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -274,6 +277,7 @@ class Runtime:
         self.sh.stop()
         self.mm.stop()
         self.zones.stop()
+        self.market_zones.stop_service()
         self.montecarlo.stop()
         self.analytics.stop()
         self.lab.stop()

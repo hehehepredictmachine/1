@@ -7,12 +7,12 @@ import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
-  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje";
+  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje" | "strefy";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
 export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit", "nc"] },
-  { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
+  { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
   { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "strategie", "warunki", "ai", "pozycje", "dziennik"] },
   { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "neural", "struktura", "testy"] },
   { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
@@ -30,6 +30,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "pulpit", label: "Pulpit", short: "Pulpit", icon: "◈" },
   { id: "nc", label: "Neural Cyberpunk (11 ekranów)", short: "Neural", icon: "◎" },
   { id: "wykresy", label: "Wykresy MTF", short: "Wykresy", icon: "▦" },
+  { id: "strefy", label: "Strefy rynkowe M1/M5/M15/M30", short: "Strefy", icon: "▥" },
   { id: "scalp-mtf", label: "Scalping MTF", short: "MTF", icon: "▤" },
   { id: "kontekst", label: "Kontekst rynku", short: "Kontekst", icon: "◎" },
   { id: "indykatory", label: "Indykatory BB/MA", short: "BB/MA", icon: "≋" },
