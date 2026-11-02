@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 1.28.0 – Strefy rynkowe M1/M5/M15/M30, rejestr modeli, pipeline MT5 → trening → bot (Centrum treningu)
+Pełny opis, audyt, rejestr modeli, instrukcje, wyniki testów i luki: `docs/STREFY_MODELE_TRENING_1_28_PL.md`.
+* **Strefy rynkowe** (Wykresy → Strefy rynkowe): instrument XAUUSD / BTC, niezależny wybór M1/M5/M15/M30 (domyślnie wszystkie cztery),
+  „Wyznacz strefy teraz”, „Aktualizacja na żywo” (przeliczenie interwału dopiero po zamknięciu jego świecy; dotknięcia z ceny na żywo
+  wstępne), „Zatrzymaj”, status źródła na interwał (połączone / dane nieaktualne / brak danych / błąd), czas danych i przeliczenia, postęp.
+  Silnik PMW-MZ-1: S/R ze swingów, popyt/podaż, FVG, order blocks (jawna reguła BOS), równe szczyty/dołki jako płynność WNIOSKOWANA z OHLC,
+  konfluencja interwałów; pełny rekord strefy (id, granice, czas źródła i wykrywalności, kierunek, stan wstępna/aktywna/testowana/
+  unieważniona/wygasła, niezależne testy, powód, reguła unieważnienia, jakość 0–100 ze składnikami – nie prawdopodobieństwo, wersja);
+  brak danych z przyszłości, historia „na chwilę”, łączenie z zachowaniem pochodzenia, limit widocznych stref, parametry skalowane ATR
+  i profilem złoto/BTC; odporność na wielokrotny klik, rozłączenie, zmianę instrumentu; starszy wynik nie nadpisuje nowszego.
+* **Eksport MT5** (`marketdata/`): historyczny i przyrostowy, partiami z ponawianiem i wznawianiem, deduplikacja (instrument, TF, czas),
+  UTC z konwencją DST serwera, tylko zamknięte świece, Parquet + CSV + manifest (parametry, źródło, liczności, zakresy, wersja schematu,
+  SHA-256), kontrola kolejności / duplikatów / OHLC, luki sesji odróżnione od braków danych, raport realnej historii; koszty: spread ze
+  świec (zmierzony), prowizja tylko z historii transakcji, poślizg = założenie; historycznego bid/ask nie rekonstruujemy. Import danych
+  z innej maszyny z weryfikacją sum (MT5 na innym komputerze).
+* **Pipeline i Centrum treningu** (Modele i trening → Centrum treningu, `32_CENTRUM_TRENINGU.bat`, `python -m masterquo trainhub`):
+  wspólne cechy dla treningu i inferencji, wyższe TF dołączane od zamknięcia, etykiety po kosztach, walk-forward z purgingiem i embargo,
+  nietknięty zbiór końcowy, model bazowy, kalibracja, stabilność, ocena po kosztach; modele bazowy / regresja logistyczna / gradient
+  boosting / XGBoost osobno dla XAUUSD i BTC; paczki z manifestem; trening w osobnym procesie (kolejka, postęp, logi, anulowanie);
+  porównanie wersji, eksport datasetu i paczki; aktywacja wyłącznie ręczna po teście zgodności i predykcji, rollback.
+* **Modele**: wspólny kontrakt predykcji PMW-PRED-1 (stan + powód zamiast wartości przy błędzie), rejestr 54 modułów z kategorią i
+  stanem na żywo (gotowy / niewytrenowany / trening / błąd / niezgodny / wyłączony), jawne mapowanie na role strategii, jedna grupa
+  korelacji = jeden głos, wagi z walidacji rozwojowej; nowe modele = OBSERVATION (nie głosują w strategiach).
+* Naprawione w trakcie: dane z symulatora pobierane przez bridge mogły zostać oznaczone jako rzeczywiste (flaga odczytywana jako metoda);
+  wspólne połączenie SQLite kolejki zadań używane z dwóch wątków (błąd pod obciążeniem) – jedna blokada; istniejący wyścig w teście
+  biblioteki formacji (Structure Intelligence).
+* Testy: regresja 83 moduły / 988 testów + 14 modułów UI / 92 testy (Chromium) – szczegóły i poprawki w dokumencie 1.28 §6.
+* Zależność Windows: `pyarrow` 26.0.0 (z hashami) – zapis Parquet.
+* Bez zmian: strategie, progi, system ryzyka, tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP, licencje; Execution Lock nie wraca.
+* Wszystkie treningi w tym środowisku: dane SYNTETYCZNE (symulator). Brak testu z prawdziwym MT5 i Windows; brak dowodu przewagi modeli.
+
 ## 1.27.0 – system licencji v1 (OWNER / CLIENT) i sygnały BUY/SELL wszystkich strategii
 Realizacja paczki „PepeMarketWizard License System v1.0” (na Twoje polecenie – licencje usunięte w 1.9 wracają w nowej formie) oraz
 „niech wszystkie strategie mogą nadawać sygnały buy/sell”. Pełny opis, audyt, uruchomienie i ograniczenia: `docs/LICENCJE_SYSTEM_1_27_PL.md`.

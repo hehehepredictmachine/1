@@ -41,6 +41,30 @@ def db_path() -> Path:
     return p
 
 
+class _Res:
+    def __init__(self, rows: list, rowcount: int):
+        self.rows, self.rowcount = rows, rowcount
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class SafeDB:
+    """One SQLite connection shared by the API threads and the queue thread: every statement runs under one lock and its rows are
+    fetched inside it (a shared connection used concurrently raises 'bad parameter or other API misuse')."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.c, self.lock = conn, threading.RLock()
+
+    def execute(self, sql: str, params=()) -> _Res:
+        with self.lock:
+            cur = self.c.execute(sql, params)
+            return _Res(cur.fetchall() if cur.description else [], cur.rowcount)
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     c = sqlite3.connect(str(path or db_path()), timeout=30, isolation_level=None, check_same_thread=False)
     c.row_factory = sqlite3.Row
@@ -83,7 +107,7 @@ class TrainingCenter:
     def __init__(self, cfg_store, bridge, *, bus=None, log=None, poll_s: float = 0.5, python: str | None = None):
         self.cfg_store, self.bridge, self.bus, self.log, self.poll_s = cfg_store, bridge, bus, log, poll_s
         self.python = python or sys.executable
-        self.db = connect()
+        self.db = SafeDB(connect())
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._wake = threading.Event()

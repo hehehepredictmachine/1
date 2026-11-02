@@ -4,6 +4,16 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.28 – strefy rynkowe M1/M5/M15/M30 i Centrum treningu
+* **Wykresy → Strefy rynkowe:** wybierz XAUUSD albo BTC i interwały M1/M5/M15/M30, kliknij **Wyznacz strefy teraz**. Strefy pojawią się
+  na czterech wykresach; kliknięcie strefy pokazuje szczegóły i checklistę. **Aktualizacja na żywo** przelicza każdy interwał po
+  zamknięciu jego świecy. Przycisk niczego nie otwiera i nie zmienia ustawień handlu.
+* **Modele i trening → Centrum treningu:** **Eksportuj dane** (z MT5, przyrostowo) → **Uruchom cały proces** (dataset, trening, ocena,
+  paczki). Trening działa w tle; aktywacja modelu tylko ręcznie (**Aktywuj** – test zgodności i predykcji), **Rollback** cofa. Bez bota:
+  `32_CENTRUM_TRENINGU.bat`.
+* Modele są trenowane osobno dla XAUUSD i BTC. Wynik na danych syntetycznych nic nie mówi o rynku; trafność to nie zysk.
+* Szczegóły i ograniczenia: `docs/STREFY_MODELE_TRENING_1_28_PL.md`.
+
 ## Nowe w 1.27 – licencje (OWNER / CLIENT) i sygnały BUY/SELL wszystkich strategii
 * **Twoja paczka to OWNER EDITION** – bot działa bez klucza; nowa zakładka **Ustawienia → Licencje** (License Manager) generuje klucze
   24h / 72h / 7d / 31d dla klientów, pokazuje listę, cofa licencje i resetuje przypisane urządzenie. Wymaga własnego serwera licencji

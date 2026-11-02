@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.27.0"
+VERSION = "1.28.0"
 OWNER_ZIP = f"PepeMarketWizard_OWNER_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 SERVER_ZIP = f"PepeMarketWizard_LICENSE_SERVER_{VERSION.replace('.', '_')}.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}

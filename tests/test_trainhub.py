@@ -375,6 +375,44 @@ class TestJobsOutOfProcess(unittest.TestCase):
         self.assertIn("brak danych BTC", r["error"])
 
 
+class TestJobsDbConcurrency(unittest.TestCase):
+    """Regression (found by the UI test): the queue thread writes progress while API threads list jobs - one shared connection must
+    never raise 'bad parameter or other API misuse'."""
+
+    def test_parallel_reads_and_writes(self):
+        import threading
+        td = TempData()
+        try:
+            from masterquo.trainhub import jobs as J
+            db = J.SafeDB(J.connect())
+            db.execute("INSERT INTO jobs(id, kind, instrument, params, status, created_at) VALUES ('J1','EXPORT','XAUUSD','{}','RUNNING',0)")
+            errors = []
+
+            def writer():
+                try:
+                    for k in range(400):
+                        J.update(db, "J1", progress=k / 400, stage=f"partia {k}")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            def reader():
+                try:
+                    for _ in range(400):
+                        [J.public(dict(r)) for r in db.execute("SELECT * FROM jobs").fetchall()]
+                        J.row(db, "J1")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+            ts = [threading.Thread(target=writer)] + [threading.Thread(target=reader) for _ in range(3)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(60)
+            self.assertEqual(errors, [])
+            self.assertEqual(J.row(db, "J1")["stage"], "partia 399")
+        finally:
+            td.close()
+
+
 class TestContractAndAggregation(unittest.TestCase):
     def base(self, **kw):
         d = dict(instrument="XAUUSD", symbol="XAUUSD-", timeframe="M5", model_name="TH_LOGREG", model_version="v1", task_type="CLASS_PROBABILITIES",
