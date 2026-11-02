@@ -4,6 +4,20 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.26 – menu główne z trzema wieżami
+Panel otwiera się na **menu głównym**: trzy wieże 3D na platformie z magicznym kręgiem, po bokach mapy przepływu danych i modeli.
+* **Precision** – wykresy świecowe z Twojego MT5 (interwały, siatka, warstwy analiz, strefy, reżim rynku).
+* **Dyscypline** – setupy i sygnały: stan (obserwacja → formujący się → gotowy → sygnał aktywny / unieważniony / wygasły), warunki,
+  trigger, unieważnienie, wejście / SL / TP, sprzeczności modeli, ryzyko i wykres. „Ocena setupu” to heurystyka 0–100, **nie**
+  prawdopodobieństwo wygranej.
+* **Profits** – saldo, equity, wynik netto, ROI z metodą liczenia, win rate, koszty, wpłaty i wypłaty (osobno – to nie zysk),
+  krzywa kapitału i historia.
+* Wieżę otwierasz kliknięciem, dotknięciem albo klawiaturą (strzałki ←/→ + Enter). **Kliknięcie wieży tylko otwiera widok** – nie
+  składa zleceń i nie zmienia trybu. Logo w lewym górnym rogu wraca do menu.
+* Słabszy komputer bez grafiki 3D (albo grafika 3D poniżej 5 klatek/s, np. pulpit zdalny lub maszyna wirtualna): menu samo pokaże wieże
+  jako przyciski, żeby nie zabierać procesora botowi (wymuszenie przycisków: `#/menu?webgl=0`, wymuszenie 3D: `#/menu?webgl=1`).
+* Dotychczasowe widoki są dalej dostępne: stopka „pełny terminal” / „dotychczasowe menu”. Szczegóły: `docs/MENU_WIEZE_1_26_PL.md`.
+
 ## Nowe w 1.25 – eksport MT5 do treningu, Monte Carlo, scenariusz XAUUSD- 2,5–10 USD
 Kolejność pracy (wszystko na rachunku DEMO albo w trybie SIGNALS / PAPER, dopóki sam nie zdecydujesz inaczej):
 1. **Diagnostyka:** `02_DIAGNOSTYKA.bat` (terminal, symbol, czas serwera) i `DIAGNOSTYKA_TRENINGU.bat` (środowisko treningu).

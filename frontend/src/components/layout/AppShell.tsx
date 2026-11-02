@@ -100,7 +100,7 @@ function AccountSummary({ stats, onClose }: { stats: any; onClose: () => void })
   );
 }
 
-function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, setOverlay }: {
+function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverlay }: {
   page: Page; stats: any; onSettings: () => void; onPower: () => void; onMode: () => void; onLook: () => void; overlay: Overlay; setOverlay: (o: Overlay) => void;
 }) {
   const { s } = useStore();
@@ -112,7 +112,7 @@ function TopBar({ page, stats, onSettings, onPower, onMode, onLook, overlay, set
   const tickAge = s.quote?.age_seconds;
   return (
     <header className="topbar2" data-testid="topbar">
-      <a className="brand" href={href(page)} aria-label="PepeMarketWizard">
+      <a className="brand" href={href("menu")} aria-label="PepeMarketWizard – menu główne" data-testid="brand-menu">
         <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--panel)" stroke="var(--neon)" /><path d="M8 22V11m5 11V7m5 15v-8m5 8V13" stroke="var(--neon)" strokeWidth="2.6" strokeLinecap="round" /></svg>
         <span>PepeMarket<em>Wizard</em></span>
       </a>

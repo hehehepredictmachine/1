@@ -205,3 +205,19 @@ API na `127.0.0.1` w oknie WebView2 (bez osobnego IPC sterującego; okno ma wył
 | TI → `ScenarioCard` (ruch 2,5–10 USD: rola poziomu, cena, wolumen części, wynik brutto, spread, prowizja, poślizg, netto, P(TP przed SL) ostrożnie–optymistycznie, „ta sama świeca”, błąd, skalibrowane; BE; modele użyte / pominięte; łączne P = N/A; powód braku zlecenia) | `GET /api/v1/sh/scenario?strategy=SCALPING&volume=` (co 15 s) | `sh/scenario.py`: `SHService.last_eval`, `SymbolSpec` z terminala, `MonteCarloService`, `sh/models.matrix` | brak wartości ticka → wynik „—”; prowizja nieznana → netto „N/A”; brak setupu → tylko zasięg ±X | `test_sh_scenario`, `test_ui_terminal_shell` test_06b2 |
 | Strategie → Ustawienia SCALPING (TP3 5 / 7,5 / 10 USD, prowizja na lot na stronę – puste = nieznana) | `POST /api/v1/sh/config`, `POST /api/v1/sh/config/rollback` | `config/sh_strategies_v1.json` + `data/sh/config_override.json` (walidacja, historia wersji) | TP3 spoza listy / prowizja < 0 → 400 z opisem | `test_sh_scenario`, `test_sh_api` |
 
+
+---
+
+## 1.26 – menu główne „trzy wieże” i widoki Precision / Dyscypline / Profits
+Opis całości: [MENU_WIEZE_1_26_PL.md](MENU_WIEZE_1_26_PL.md).
+
+| Funkcja UI | Endpoint / zdarzenie | Uwagi | Test |
+|---|---|---|---|
+| Górny pasek (instrument, MT5, świeżość, tryb, rachunek) | `state` + WS (`connection`, `quote`, `mode`, `account`) – ten sam kontekst co terminal | „LIVE” tylko dla potwierdzonego rachunku REAL; symulator = „SYMULATOR” | `test_ui_wizard` 04, 09 |
+| Mapa przepływu danych (lewa) | zdarzenia jedynego WS (`quote`, `clock`, `account`, `bar`/`bar_closed` z `tf`, `dq`, `decision`, `zones`, `analytics`, `liquidity`, `forecast`, `scalp`, `markets`, `lab`, `extind`, …) przez `telemetry.ts` | impuls = rzeczywiste zdarzenie; brak łącza = brak impulsów | `test_ui_wizard` 07, 09 |
+| Mapa modeli i decyzji (prawa) | **nowy `GET /api/v1/telemetry`** (aktywność tematów magistrali, rejestr modeli z rolami SCALPING/HEDGING, stan SH, drzewo decyzji) co 15 s + WS `decision`, `sh` | tylko odczyt; brak części = `null`, nie wymyślona wartość | `test_telemetry_api`, `test_ui_wizard` 07 |
+| Precision – wykresy | `GET /api/v1/candles?tf=…` + WS `bar` (istniejące `ChartPanel`) | warstwy analiz jak w terminalu | `test_ui_wizard` 04 |
+| Precision – reżim, strefy, notowanie | WS `decision` (reżim per TF), `GET /api/v1/zones/status`, WS `quote` | konfluencja stref ≠ prawdopodobieństwo | `test_ui_wizard` 04 |
+| Dyscypline – setupy | WS `decision` (setup silnika, drzewo, checklista), `auto` (ranking kandydatów), `GET /api/v1/sh` + WS `sh`, WS `bot_signals` | wybór w adresie `?setup=`; ocena setupu ≠ prawdopodobieństwo | `test_ui_wizard` 05 |
+| Dyscypline – pasek ryzyka | `state.mode` + WS `mode` | tylko odczyt; zmiany trybu wyłącznie w Centrum sterowania | `test_ui_wizard` 03, 05 |
+| Profits | `GET /api/v1/stats?mode=…` (konto MT5, ROI Dietz, `deposits` / `withdrawals`, deale vs transakcje, `per_engine`, `per_strategy`, **`per_symbol`**, miesiące, krzywa equity), WS `account` | wpłaty/wypłaty osobno – nie zysk; brak danych napisany wprost | `test_ui_wizard` 06, `test_telemetry_api` |

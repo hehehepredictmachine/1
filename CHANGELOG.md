@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 1.26.0 – menu główne „trzy wieże” (Precision / Dyscypline / Profits) i mapy przepływu modeli
+Realizacja specyfikacji „PEPEMARKETWIZARD — NEURO MAGIC CYBERPUNK”. Opis, kontrole, zrzuty i luki: `docs/MENU_WIEZE_1_26_PL.md`.
+* **Menu główne (`#/menu`, pierwszy start):** logo Pepe-czarodzieja (powrót do menu), górny pasek z instrumentem, stanem MT5, świeżością
+  danych i trybem bota (z prawdziwych danych; na symulatorze „SYMULATOR”, nigdy „LIVE”), tło – wieża z fioletowymi błyskawicami z
+  warstwą na żywo (parallax, mgła, pył, błyskawice, światło kursora w kolorze wieży; statyczne przy ograniczonych animacjach).
+* **Trzy wieże 3D (three.js, geometria proceduralna):** Precision (obserwatorium, cyjan/fiolet, kryształ, pierścienie pomiarowe),
+  Dyscypline (cytadela, ametyst/szmaragd, runy, brama energii), Profits (skarbiec, złoto/szmaragd, kula energii, orbitujące cząstki).
+  Przyciski HTML przy wieżach (klawiatura, dotyk, czytnik ekranu), ruch kamery + portal ~0,56 s, opis wieży. **Kliknięcie wieży
+  wyłącznie nawiguje.** Bez WebGL (albo `#/menu?webgl=0`) – te same przyciski z rysunkami wież; tak samo
+  automatycznie, gdy scena rysuje się poniżej 5 kl./s przy najniższej rozdzielczości (renderowanie bez GPU – bot potrzebuje procesora;
+  wymuszenie 3D: `#/menu?webgl=1`). FPS zmierzony w teście na rendererze programowym SwiftShader: 0,7–1,2 kl./s (bez GPU; na GPU nie mierzono). Ograniczone animacje w systemie = statyczna scena rysowana tylko przy zmianie.
+  Adaptacyjna rozdzielczość, pauza
+  w tle, zwalnianie zasobów.
+* **Mapy przepływu modeli po bokach menu:** dane i analizy (MT5 → świece 7 interwałów → jakość danych → moduły) oraz modele z rejestru
+  → SCALPING / HEDGING / drzewo decyzji → decyzje. Impulsy wyłącznie z rzeczywistych zdarzeń jedynego WebSocket, kolor = stan,
+  offline = brak impulsów; tooltip, szczegóły, lista modułów, filtry, obrót i zoom. Nowy endpoint `GET /api/v1/telemetry` (stan
+  tematów magistrali zdarzeń, rejestr modeli, SH, drzewo decyzji – tylko odczyt).
+* **Widoki z własnym tłem:** Precision (wykresy świecowe z MT5, interwały, siatka, warstwy analiz, notowanie, reżim per interwał,
+  strefy), Dyscypline (setupy i sygnały: stany obserwacja / formujący się / gotowy / sygnał aktywny / unieważniony / wygasły /
+  zakończony, warunki, trigger, unieważnienie, wejście/SL/TP, sprzeczności modeli, ryzyko, wykres; wybór w adresie; „ocena setupu”
+  nigdy jako prawdopodobieństwo), Profits (saldo, equity, wynik otwartych, zrealizowany netto, ROI z metodą, win rate W/L/BE,
+  prowizje/swapy, wpłaty i wypłaty jako „nie zysk”, obsunięcie tylko z krzywej, deale MT5 vs transakcje, krzywa kapitału, historia,
+  porównania ścieżek / strategii / instrumentów / miesięcy). Statystyki: nowe pola `deposits`, `withdrawals`, `per_symbol`.
+* **Zasoby:** jedna konfiguracja `frontend/src/features/wizard/assets.ts` (plik → przeznaczenie → pochodzenie), pliki w
+  `frontend/public/assets/wizard/`, generator `tools/wizard_assets.py`.
+* Dotychczasowe widoki (terminal, pulpit, AI Neural Lab, Centrum sterowania) bez zmian – dostępne z paska terminala (sekcja „Wieże”
+  prowadzi do menu) i ze stopki nowych widoków. Bez zmian: tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP nowych wejść, limity
+  użytkownika; Execution Lock nie wraca (decyzja z 1.24).
+* Testy: nowy `tests/test_ui_wizard.py` (Chromium + WebGL SwiftShader); `test_ui_pages` / `test_ui_analytics` – pierwszy start to
+  teraz menu. Wyniki: `docs/MENU_WIEZE_1_26_PL.md` §6.
+
 ## 1.25.0 – eksport MT5 → trening, Monte Carlo ścieżek, strefy po restarcie, scenariusz XAUUSD- 2,5–10 USD
 Realizacja `PepeMarketWizard_PROMPT_MONTE_CARLO_STREFY_STRATEGIA.md`; audyt: `docs/AUDYT_MC_STREFY_EKSPORT_PL.md`; raport:
 `docs/RAPORT_MC_STREFY_STRATEGIA_1_25_PL.md`; punkt powrotu: commit `a10d97a` (1.24.1).

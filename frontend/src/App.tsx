@@ -1,6 +1,6 @@
 // PepeMarketWizard: routable pages (grouped menu) inside one shared frame. The store (one WebSocket) is provided ABOVE this component (main.tsx),
 // so switching pages never reconnects; pages only choose what to show.
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BackgroundLayer, useAppearance } from "./appearance";
 import { migrateLegacyViews } from "./chartview";
 import { ModeDialog, PowerDialog, SettingsModal } from "./components/Dialogs";
@@ -16,7 +16,9 @@ import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
 import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
-import { PAGES, TERMINAL_PAGE_IDS, useRoute } from "./router";
+import { PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
+import WizardShell from "./features/wizard/WizardShell";
+import { TOWERS } from "./features/wizard/assets";
 import TerminalShell from "./features/shell/TerminalShell";
 import TradingIntelligencePage from "./features/trading-intelligence/pages/TradingIntelligencePage";
 import AiNeuralLabPage from "./features/ai-neural-lab/pages/AiNeuralLabPage";
@@ -24,6 +26,12 @@ import SystemControlPage from "./features/system-control/pages/SystemControlPage
 import { useStore } from "./store";
 import { UiCtx } from "./ui";
 import { cls } from "./util";
+
+// 1.26 main menu and tower views: lazy chunks (three.js is loaded only by the menu)
+const WizardMenu = lazy(() => import("./features/wizard/WizardMenu"));
+const PrecisionView = lazy(() => import("./features/wizard/PrecisionView"));
+const DyscyplineView = lazy(() => import("./features/wizard/DyscyplineView"));
+const ProfitsView = lazy(() => import("./features/wizard/ProfitsView"));
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
 
@@ -46,6 +54,23 @@ export default function App() {
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
   const terminal = TERMINAL_PAGE_IDS.includes(route.page);
+  if (WIZARD_PAGE_IDS.includes(route.page)) {
+    const tower = TOWERS.find((t) => t.id === route.page);
+    return (
+      <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
+        <div className={cls("app", "app-wizard", s.synthetic && "synthetic")}>
+          <WizardShell page={route.page} bg={tower ? tower.bg : null} accent={tower?.accent}>
+            <Suspense fallback={<div className="wz-loading" role="status">Ładowanie widoku…</div>}>
+              {route.page === "menu" && <WizardMenu />}
+              {route.page === "precision" && <PrecisionView />}
+              {route.page === "dyscypline" && <DyscyplineView route={route} />}
+              {route.page === "profits" && <ProfitsView />}
+            </Suspense>
+          </WizardShell>
+          {settings && <SettingsModal onClose={() => setSettings(false)} />}
+        </div>
+      </UiCtx.Provider>);
+  }
   return (
     <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
       <div className={cls("app", s.synthetic && "synthetic", "anim-" + prefs.mode.toLowerCase(), terminal && "app-terminal")}>

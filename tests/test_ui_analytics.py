@@ -61,7 +61,7 @@ class TestAnalyticsUI(unittest.TestCase):
         cls.errors, cls.posts = [], []
         cls.page.on("pageerror", lambda e: cls.errors.append(str(e)))
         cls.page.on("request", lambda r: cls.posts.append((r.method, r.url)) if r.method != "GET" else None)
-        cls.page.goto(BASE + "/")
+        cls.page.goto(BASE + "/#/pulpit")
         cls.page.wait_for_selector("[data-testid=page-pulpit]", timeout=30000)
 
     @classmethod

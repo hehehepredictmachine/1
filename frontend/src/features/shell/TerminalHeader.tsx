@@ -86,7 +86,7 @@ const TITLES: Partial<Record<Page, string>> = {
 
 /** XAUUSD- / BTC: broker symbols of the two assets. Switching changes what the bot analyses and trades (existing endpoint); the mode
  *  stays. In an automatic mode the switch asks first. */
-function InstrumentSwitch({ ctx }: { ctx: TerminalContext }) {
+export function InstrumentSwitch({ ctx }: { ctx: TerminalContext }) {
   const { s, refresh } = useStore();
   const a = s.assets;
   const [ask, setAsk] = useState<string | null>(null);

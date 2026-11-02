@@ -1004,6 +1004,35 @@ def create_app(rt, port: int) -> FastAPI:
         return {**rt.scalp.public(), "config": rt.cfg.get().scalp.model_dump(), "profile": rt.scalp.prof, "registry": rt.scalp.registry()}
 
     # ------------------------------------------------------------------ PMW-SH-1 SCALPING / HEDGING
+    _telemetry_cache: dict = {"t": 0.0, "models": None}
+
+    @app.get("/api/v1/telemetry")
+    def telemetry():
+        """Compact, read-only view for the main menu's model-flow maps: real publishing activity per event topic (count, last time),
+        the model registry with each module's status (cached 15 s - probing is not free), the SCALPING / HEDGING service state and
+        the engine's decision nodes. No values are invented: a missing part is null."""
+        from ..sh import models as SHM
+        inst = rt.sh.instrument()
+        now = time.time()
+        if _telemetry_cache["models"] is None or now - _telemetry_cache["t"] > 15 or _telemetry_cache.get("inst") != inst:
+            try:
+                mx = SHM.matrix(rt, inst)
+                _telemetry_cache.update(t=now, inst=inst, models={"mode": mx.get("mode"), "rows": [
+                    {k: r.get(k) for k in ("id", "name", "kind", "output", "group", "train", "status", "reason")} |
+                    {"roles": {st: (r.get(st) or {}) for st in ("SCALPING", "HEDGING")}} for r in mx["rows"]]})
+            except Exception as exc:  # noqa: BLE001 - the menu shows the error instead of a fake registry
+                _telemetry_cache.update(t=now, inst=inst, models={"mode": None, "rows": [], "error": f"{type(exc).__name__}: {exc}"[:200]})
+        sh = rt.sh.public()
+        ev = {k: {"status": v.get("status"), "status_reason": v.get("status_reason"), "side": v.get("side"),
+                  "score": (v.get("score") or {}).get("value") if isinstance(v.get("score"), dict) else v.get("score")}
+              for k, v in (sh.get("last_eval") or {}).items()}
+        d = getattr(rt.engine, "decision", None) or {}
+        return {"server_time": time.time(), "boot_id": rt.bus.boot_id, "seq": rt.bus.seq, "instrument": inst, "topics": rt.bus.activity(),
+                "models": _telemetry_cache["models"],
+                "sh": {"status": sh.get("status"), "reason": sh.get("reason"), "mode": sh.get("mode"), "last_eval": ev},
+                "engine": {"decision": d.get("decision"), "signal_stage": d.get("signal_stage"), "data_quality": d.get("data_quality"),
+                           "tree": [{"node": n.get("node"), "status": n.get("status")} for n in (d.get("decision_tree") or [])]} if d else None}
+
     @app.get("/api/v1/sh")
     def sh_get():
         """Strategy panel: service state, last evaluation per strategy (checklist, levels, models, risk, coordination), open plans

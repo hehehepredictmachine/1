@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- Procedural background of the Profits view (vault, emerald crystals, gold light) - drawn on a canvas, no external image.
+     Rendered to a WebP by tools/wizard_assets.py (headless Chromium). Deterministic: fixed pseudo-random seed. -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+const c = document.getElementById("c"), g = c.getContext("2d"), W = c.width, H = c.height;
+let seed = 7;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+// sky / depth
+let bg = g.createLinearGradient(0, 0, 0, H);
+bg.addColorStop(0, "#03070a"); bg.addColorStop(0.55, "#06140f"); bg.addColorStop(1, "#020604");
+g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+// distant glow behind the vault door
+let glow = g.createRadialGradient(W / 2, H * 0.47, 20, W / 2, H * 0.47, 720);
+glow.addColorStop(0, "rgba(255,214,120,0.55)"); glow.addColorStop(0.25, "rgba(40,190,120,0.30)"); glow.addColorStop(1, "rgba(0,0,0,0)");
+g.fillStyle = glow; g.fillRect(0, 0, W, H);
+
+// receding arches (three depth layers)
+function arch(cx, base, w, h, depth) {
+  const shade = 14 + depth * 10;
+  g.save();
+  g.fillStyle = `rgb(${shade - 6},${shade + 4},${shade - 2})`;
+  // pillars
+  const pw = w * 0.12;
+  for (const x of [cx - w / 2, cx + w / 2 - pw]) {
+    const pg = g.createLinearGradient(x, 0, x + pw, 0);
+    pg.addColorStop(0, `rgba(10,20,16,1)`); pg.addColorStop(0.5, `rgba(${shade + 14},${shade + 24},${shade + 18},1)`); pg.addColorStop(1, `rgba(6,12,10,1)`);
+    g.fillStyle = pg; g.fillRect(x, base - h, pw, h);
+    g.fillStyle = "rgba(212,168,74,0.35)"; g.fillRect(x, base - h * 0.62, pw, 3); g.fillRect(x, base - 26, pw, 3);   // gold bands
+  }
+  // arch band
+  g.lineWidth = pw * 0.9; g.strokeStyle = `rgb(${shade},${shade + 12},${shade + 6})`;
+  g.beginPath(); g.ellipse(cx, base - h, w / 2 - pw / 2, h * 0.32, 0, Math.PI, 2 * Math.PI); g.stroke();
+  g.lineWidth = 2; g.strokeStyle = "rgba(220,178,90,0.45)";
+  g.beginPath(); g.ellipse(cx, base - h, w / 2 - pw * 0.05, h * 0.34, 0, Math.PI, 2 * Math.PI); g.stroke();
+  g.restore();
+}
+arch(W / 2, H * 0.80, 1500, 560, 0);
+arch(W / 2, H * 0.74, 1060, 420, 1);
+arch(W / 2, H * 0.69, 720, 300, 2);
+
+// floor with reflection
+let fl = g.createLinearGradient(0, H * 0.68, 0, H);
+fl.addColorStop(0, "rgba(14,34,26,1)"); fl.addColorStop(1, "rgba(2,8,5,1)");
+g.fillStyle = fl; g.fillRect(0, H * 0.68, W, H * 0.32);
+g.strokeStyle = "rgba(120,200,150,0.07)"; g.lineWidth = 1;
+for (let i = -20; i <= 20; i++) { g.beginPath(); g.moveTo(W / 2 + i * 18, H * 0.68); g.lineTo(W / 2 + i * 140, H); g.stroke(); }
+for (let y = H * 0.70; y < H; y += (y - H * 0.66) * 0.18 + 6) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+
+// vault door
+const dx = W / 2, dy = H * 0.47;
+for (let r = 230; r > 30; r -= 22) {
+  const rg = g.createRadialGradient(dx - r * 0.2, dy - r * 0.3, r * 0.1, dx, dy, r);
+  rg.addColorStop(0, r % 44 ? "#2c3b33" : "#5a4a24"); rg.addColorStop(1, r % 44 ? "#0d1712" : "#2a210c");
+  g.fillStyle = rg; g.beginPath(); g.arc(dx, dy, r, 0, 2 * Math.PI); g.fill();
+  g.strokeStyle = "rgba(232,190,96,0.55)"; g.lineWidth = 2; g.beginPath(); g.arc(dx, dy, r, 0, 2 * Math.PI); g.stroke();
+}
+for (let k = 0; k < 24; k++) {                                // bolts on the rim
+  const a = (k / 24) * 2 * Math.PI, x = dx + Math.cos(a) * 214, y = dy + Math.sin(a) * 214;
+  const bgr = g.createRadialGradient(x - 2, y - 2, 1, x, y, 8);
+  bgr.addColorStop(0, "#ffe6a0"); bgr.addColorStop(1, "#6b5016");
+  g.fillStyle = bgr; g.beginPath(); g.arc(x, y, 7, 0, 2 * Math.PI); g.fill();
+}
+for (let k = 0; k < 6; k++) {                                 // handle spokes
+  const a = (k / 6) * 2 * Math.PI;
+  g.strokeStyle = "rgba(240,200,110,0.8)"; g.lineWidth = 7;
+  g.beginPath(); g.moveTo(dx, dy); g.lineTo(dx + Math.cos(a) * 110, dy + Math.sin(a) * 110); g.stroke();
+}
+let core = g.createRadialGradient(dx, dy, 2, dx, dy, 60);
+core.addColorStop(0, "rgba(180,255,210,1)"); core.addColorStop(0.4, "rgba(40,210,130,0.9)"); core.addColorStop(1, "rgba(10,60,40,0)");
+g.fillStyle = core; g.beginPath(); g.arc(dx, dy, 60, 0, 2 * Math.PI); g.fill();
+
+// light rays from above
+g.save(); g.globalCompositeOperation = "lighter";
+for (let i = 0; i < 7; i++) {
+  const x0 = W * (0.3 + 0.4 * rnd()), w0 = 40 + 80 * rnd();
+  const rg = g.createLinearGradient(0, 0, 0, H * 0.9);
+  rg.addColorStop(0, "rgba(255,210,120,0.10)"); rg.addColorStop(1, "rgba(255,210,120,0)");
+  g.fillStyle = rg; g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0 + w0, 0); g.lineTo(x0 + w0 * 4 + 200 * (rnd() - 0.5), H * 0.9); g.lineTo(x0 - w0 * 2, H * 0.9); g.closePath(); g.fill();
+}
+g.restore();
+
+// emerald crystal clusters
+function crystal(x, y, h, w, tilt) {
+  g.save(); g.translate(x, y); g.rotate(tilt);
+  const cg = g.createLinearGradient(-w, -h, w, 0);
+  cg.addColorStop(0, "rgba(170,255,210,0.95)"); cg.addColorStop(0.45, "rgba(30,190,110,0.9)"); cg.addColorStop(1, "rgba(4,60,36,0.95)");
+  g.fillStyle = cg; g.shadowColor = "rgba(40,230,140,0.8)"; g.shadowBlur = 30;
+  g.beginPath(); g.moveTo(0, -h); g.lineTo(w, -h * 0.72); g.lineTo(w * 0.8, 0); g.lineTo(-w * 0.8, 0); g.lineTo(-w, -h * 0.72); g.closePath(); g.fill();
+  g.shadowBlur = 0; g.strokeStyle = "rgba(210,255,230,0.5)"; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(0, -h); g.lineTo(0, 0); g.stroke();
+  g.restore();
+}
+for (const side of [-1, 1]) {
+  const bx = W / 2 + side * 640;
+  for (let k = 0; k < 9; k++) crystal(bx + side * (rnd() * 220 - 60), H * 0.86 + rnd() * 50, 90 + rnd() * 210, 16 + rnd() * 26, side * (rnd() * 0.5 - 0.1));
+}
+
+// floating gold motes
+g.save(); g.globalCompositeOperation = "lighter";
+for (let i = 0; i < 260; i++) {
+  const x = rnd() * W, y = rnd() * H * 0.9, r = 0.8 + rnd() * 3.2;
+  const mg = g.createRadialGradient(x, y, 0, x, y, r * 4);
+  const gold = rnd() > 0.3;
+  mg.addColorStop(0, gold ? "rgba(255,220,140,0.9)" : "rgba(120,255,190,0.85)"); mg.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = mg; g.beginPath(); g.arc(x, y, r * 4, 0, 2 * Math.PI); g.fill();
+}
+g.restore();
+
+// vignette
+let vg = g.createRadialGradient(W / 2, H * 0.5, H * 0.35, W / 2, H * 0.5, W * 0.75);
+vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.78)");
+g.fillStyle = vg; g.fillRect(0, 0, W, H);
+document.title = "done";
+</script></body></html>

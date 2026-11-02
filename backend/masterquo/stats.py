@@ -126,7 +126,7 @@ def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
         q += " AND account_key=?"
         args.append(account_key)
     legacy = db.query(q + " ORDER BY closed_at", args)
-    sq = "SELECT strategy, state, result, closed_at FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
+    sq = "SELECT strategy, symbol, state, result, closed_at FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
     sargs: list = [mode]
     if mode != "PAPER" and account_key:
         sq += " AND account_key=?"
@@ -142,16 +142,19 @@ def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
         comm_unknown += 0 if res.get("commission_known") else 1
         sh.setdefault(r["strategy"], []).append({"net_pnl": float(res["net_money"]), "r_multiple": res.get("r_multiple"),
                                                   "commission": float(res.get("commission_money") or 0.0), "swap": 0.0,
-                                                  "strategy_id": r["strategy"], "closed_at": iso(_from_epoch(r["closed_at"]))})
+                                                  "strategy_id": r["strategy"], "symbol": r.get("symbol"), "closed_at": iso(_from_epoch(r["closed_at"]))})
     per = {"ACTIVE_S01_S12": _agg(legacy), **{"SH_" + k: _agg(v) for k, v in sh.items()}}
     allr = sorted(legacy + [x for v in sh.values() for x in v], key=lambda r: str(r.get("closed_at") or ""))
     by_strategy: dict[str, list] = {}
     by_month: dict[str, list] = {}
+    by_symbol: dict[str, list] = {}
     for r in allr:
         by_strategy.setdefault(str(r.get("strategy_id") or "?"), []).append(r)
+        by_symbol.setdefault(str(r.get("symbol") or "?"), []).append(r)
         by_month.setdefault(str(r.get("closed_at") or "")[:7] or "?", []).append(r)
     return {"mode": mode, "per_engine": per, "combined": _agg(allr),
             "per_strategy": {k: _agg(v) for k, v in sorted(by_strategy.items())},
+            "per_symbol": {k: _agg(v) for k, v in sorted(by_symbol.items())},
             "per_month": {k: {x: _agg(v)[x] for x in ("trades", "net", "expectancy_r", "win_rate", "max_drawdown")} for k, v in sorted(by_month.items())},
             "sh_unsettled_or_error_closed": unsettled, "sh_commission_unknown_plans": comm_unknown,
             "note": "S01–S12 z tabeli trades, SCALPING/HEDGING z zamkniętych planów sh_plans (cały cykl = jeden wynik). "
@@ -185,6 +188,8 @@ def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -
     return {"trading_net_all_symbols": net(trading), "trading_net_symbol": net([d for d in trading if d.get("symbol") == symbol]),
             "trading_net_today": net(today) if day_start_raw is not None else None,
             "balance_operations": round(sum(float(d.get("profit") or 0) for d in balance_ops), 2),
+            "deposits": round(sum(float(d.get("profit") or 0) for d in balance_ops if float(d.get("profit") or 0) > 0), 2),
+            "withdrawals": round(sum(float(d.get("profit") or 0) for d in balance_ops if float(d.get("profit") or 0) < 0), 2),
             "balance_operations_count": len(balance_ops), "deals": len(trading),
             "credit_bonus_other_flows": round(sum(float(d.get("profit") or 0) for d in other_flows), 2),
             "note": "Wpłaty/wypłaty (operacje balance) są wykazane osobno i nie są zyskiem strategii."}

@@ -23,6 +23,7 @@ class EventBus:
         self._seq = 0
         self._buf: collections.deque[dict] = collections.deque(maxlen=capacity)
         self._subscribers: list[Callable[[dict], None]] = []
+        self._activity: dict[str, dict] = {}            # topic -> count / last time / last seq (telemetry of the panel's model map)
         self.boot_id = utcnow().strftime("%Y%m%d%H%M%S%f")
 
     @property
@@ -35,6 +36,8 @@ class EventBus:
             self._seq += 1
             ev = {"seq": self._seq, "boot_id": self.boot_id, "type": type_, "ts": iso(utcnow()), "data": data}
             self._buf.append(ev)
+            a = self._activity.setdefault(type_, {"count": 0})
+            a.update(count=a["count"] + 1, last_ts=ev["ts"], last_seq=self._seq)
             subs = list(self._subscribers)
         for s in subs:
             try:
@@ -42,6 +45,11 @@ class EventBus:
             except Exception:  # a broken consumer must not stop producers
                 log.exception("event subscriber failed")
         return ev
+
+    def activity(self) -> dict[str, dict]:
+        """Real publishing activity per topic since the start of this process (count, last time, last sequence)."""
+        with self._lock:
+            return {k: dict(v) for k, v in self._activity.items()}
 
     def since(self, seq: int) -> list[dict] | None:
         with self._lock:

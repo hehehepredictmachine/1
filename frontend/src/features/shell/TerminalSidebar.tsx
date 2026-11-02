@@ -12,6 +12,9 @@ export const TERMINAL_PAGES: { id: Page; label: string; icon: string }[] = [
 ];
 
 const SECTIONS: { title: string; items: { id: Page; label: string; icon: string; existing?: boolean }[] }[] = [
+  { title: "Wieże", items: [
+    { id: "menu", label: "Menu główne", icon: "✶" },
+  ] },
   { title: "Rynek", items: [
     { id: "trading-intelligence", label: "Trading Intelligence", icon: "◈" },
     { id: "wykresy", label: "Wykresy MTF", icon: "▦", existing: true },

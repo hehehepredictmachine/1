@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { apiGet, initSession, LiveSocket } from "./api";
+import { telemetry } from "./telemetry";
 
 export type AppState = Record<string, any> & { loaded: boolean; ws: string; barTick: Record<string, any>; analysisSeq: number };
 
@@ -104,7 +105,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await initSession();
         await refresh();
         if (!alive) return;
-        sock.current = new LiveSocket((m) => dispatch({ type: "ev", ev: m }), (st) => dispatch({ type: "ws", status: st }));
+        sock.current = new LiveSocket((m) => { dispatch({ type: "ev", ev: m }); telemetry.emit(m); },
+          (st) => { dispatch({ type: "ws", status: st }); telemetry.status(st); });
         sock.current.start();
       } catch (e: any) {
         setError(String(e?.message || e));

@@ -95,7 +95,7 @@ class TestThreePagesUI(unittest.TestCase):
             server.on_message(lambda msg: ws.send(msg))
         cls.page.route_web_socket(re.compile(r".*/api/v1/ws$"), on_ws)
         cls.page.goto(BASE + "/")
-        cls.page.wait_for_selector("[data-testid=page-pulpit]", timeout=30000)     # 1.13: first start = Pulpit
+        cls.page.wait_for_selector("[data-testid=page-menu]", timeout=30000)       # 1.26: first start = main menu (three towers)
         cls.first_url = cls.page.url
         cls.page.goto(BASE + "/#/ai")
         cls.page.wait_for_selector("[data-testid=page-ai]", timeout=30000)
@@ -133,7 +133,7 @@ class TestThreePagesUI(unittest.TestCase):
     # ------------------------------------------------------------ 1. default page, nav, Back/Forward, direct link, refresh
     def test_01_navigation_history_direct_link_refresh(self):
         p = self.page
-        self.assertTrue(self.first_url.endswith("#/pulpit"), self.first_url)                   # first start: "Pulpit" (1.13)
+        self.assertTrue(self.first_url.endswith("#/menu"), self.first_url)                     # first start: main menu (1.26)
         self.assertEqual(p.locator("[data-testid=sidenav] [aria-current=page]").get_attribute("data-page"), "ai")
         p.evaluate("location.hash = '#/wykresy'")          # 1.14: section + sub-tab clicks add their own history entries; Back/Forward
         p.wait_for_selector("[data-testid=page-bot]")      # is checked on plain page-to-page navigation
