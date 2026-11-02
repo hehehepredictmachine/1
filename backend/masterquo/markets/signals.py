@@ -1,8 +1,11 @@
-"""Bot signals - CONFIRMED setups of the MasterQUO strategies S01-S11, on every market.
+"""Bot signals - BUY / SELL setups of every strategy of the bot.
 
-Sources (both run the same strategy code, thresholds, parameters and per-strategy switches as the bot):
-  MAIN     - the bot's own engine on the main symbol (ActiveEngine events NEW_CONFIRMED / STAGE_CONFIRMED);
-  SCANNER  - the market scanner runs S01-S10 on each other scanned symbol (M5/M15/H1/H4/D1 bars from the terminal).
+Sources (all run the same strategy code, thresholds, parameters and switches as the bot):
+  MAIN     - the bot's own engine on the main symbol (ActiveEngine events NEW_CONFIRMED / STAGE_CONFIRMED, S01-S12);
+  SCANNER  - the market scanner runs S01-S12 on each other scanned symbol (M5/M15/H1/H4/D1 bars from the terminal);
+  SH       - 1.27: SCALPING and HEDGING (status READY) on the main symbol;
+  SHADOW   - 1.27: scalp profile Range -> Sweep -> Retest (READY_SHADOW) and Double Retest v2 (RESEARCH_SETUP_COMPLETE); these
+             strategies are not validated - the signal says so and never changes their SHADOW / research status.
 
 A signal = direction, entry at the confirmation price (Ask for BUY, Bid for SELL - the strategies' plan is
 MARKET_ON_CONFIRMATION), the strategy's stop loss and targets. Deterministic checks: stop/targets on the right side,
@@ -19,6 +22,7 @@ import logging
 import threading
 import uuid
 from datetime import timedelta
+from types import SimpleNamespace
 
 from ..db.database import dumps
 from ..strategies import adapter, registry
@@ -181,7 +185,8 @@ class BotSignalService:
             atr = None
             if tfv is not None and len(tfv):
                 atr = tfv.atr()[tfv.last]
-            v = validate(rec, view.bid, view.ask, atr, self.cfg_store.get().risk.rr_block_below)
+            # the bot's R:R floor belongs to the S01-S12 plans; SCALPING / HEDGING / SHADOW machines size their own targets and costs
+            v = validate(rec, view.bid, view.ask, atr, self.cfg_store.get().risk.rr_block_below if source in ("MAIN", "SCANNER") else None)
             now = utcnow()
             nowi = iso(now)
             sid = "BOT-" + uuid.uuid4().hex[:14]
@@ -216,6 +221,87 @@ class BotSignalService:
             except Exception:
                 log.exception("telegram notify failed")
         return out
+
+    # ------------------------------------------------------------ 1.27: the other strategies of the bot (main symbol)
+    def _main_view(self, symbol: str):
+        q = self.bridge.quote_status() or {}
+        return SimpleNamespace(symbol=symbol or (self.cfg_store.get().mt5.symbol), bid=q.get("bid"), ask=q.get("ask"), tfs={},
+                               synthetic=bool(self.bridge.synthetic))
+
+    def record_strategy(self, *, source: str, strategy_id: str, strategy_name: str, symbol: str, side: str, sl: float | None,
+                        targets: list[dict], timeframe: str, setup_id: str, horizon: str | None = None, validation_status: str | None = None,
+                        facts: dict | None = None) -> dict | None:
+        """A BUY / SELL setup of a strategy outside S01-S12 -> the same bot signal (validation against the live quote, one signal
+        per setup, tracking WIN / LOSS / TIMEOUT, WebSocket, Telegram). Information for the user - it never places an order."""
+        if not self.cfg.enabled or side not in ("BUY", "SELL") or sl is None or not setup_id:
+            return None
+        rec = {"direction": "LONG" if side == "BUY" else "SHORT", "stop_loss": float(sl), "setup_id": f"{source}:{setup_id}",
+               "targets": [t for t in (targets or []) if t.get("price") is not None], "entry_plan": {}, "strategy_id": strategy_id,
+               "strategy_name": strategy_name, "timeframe": timeframe, "horizon": horizon, "validation_status": validation_status,
+               "facts": facts or {}, "event_id": None}
+        return self.record(rec, self._main_view(symbol), source=source)
+
+    def on_sh_cycle(self, evals: dict, *, inst: str, symbol: str, snap: dict | None = None, now: float | None = None) -> None:
+        """SH listener: READY SCALPING / HEDGING setups -> signals (TP weights = the strategy's partial shares)."""
+        src = self.cfg.strategy_sources
+        for su in (evals or {}).values():
+            strat = su.get("strategy")
+            if su.get("status") != "READY" or not su.get("side") or not ({"SCALPING": src.scalping, "HEDGING": src.hedging}.get(strat)):
+                continue
+            tps = su.get("tps") or []
+            shares = [float(t.get("share") or 0.0) for t in tps]
+            tot = sum(shares) or 1.0
+            try:
+                self.record_strategy(source="SH", strategy_id=strat, strategy_name=f"{strat} ({inst})", symbol=symbol, side=su["side"],
+                                     sl=su.get("sl"), targets=[{"price": t.get("price"), "weight": sh / tot, "basis": t.get("name")} for t, sh in zip(tps, shares)],
+                                     timeframe="M1", setup_id=str(su.get("signal_id")), horizon="SCALP",
+                                     validation_status=(su.get("model_mode") or "strategia SH"),
+                                     facts={"net_rr": su.get("net_rr"), "score": (su.get("score") or {}).get("value") if isinstance(su.get("score"), dict) else su.get("score")})
+            except Exception:  # noqa: BLE001 - a signal never breaks the strategy cycle
+                log.exception("SH signal failed")
+
+    def on_scalp_setup(self, plan: dict, *, status: str, reasons: list, instrument: str, symbol: str, f1: float = 1.0, **_kw) -> None:
+        """Scalp profile listener (SHADOW): READY_SHADOW with an executable price -> signal marked as unvalidated."""
+        if status != "READY_SHADOW" or plan.get("fill_shadow") is None or not self.cfg.strategy_sources.range_sweep_retest:
+            return
+        tg = [{"price": plan.get("tp1"), "weight": f1 if plan.get("tp2") is not None and f1 < 1.0 else 1.0, "basis": "TP1"}]
+        if plan.get("tp2") is not None and f1 < 1.0:
+            tg.append({"price": plan.get("tp2"), "weight": 1.0 - f1, "basis": "TP2"})
+        try:
+            self.record_strategy(source="SHADOW", strategy_id="RANGE_SWEEP_RETEST", strategy_name="Range→Sweep→Retest (SHADOW, niezweryfikowana)",
+                                 symbol=symbol, side=plan.get("direction"), sl=plan.get("sl"), targets=tg, timeframe="M1",
+                                 setup_id=str(plan.get("setup_id")), horizon="SCALP", validation_status="SHADOW – bez walidacji wyniku",
+                                 facts={"range_id": plan.get("range_id"), "confirmation": plan.get("confirmation")})
+        except Exception:  # noqa: BLE001
+            log.exception("scalp signal failed")
+
+    def on_double_retest(self, setup_v2: dict | None, *, symbol: str, max_age_minutes: float = 15.0) -> int:
+        """Double Retest v2 (research): a setup that just reached RESEARCH_SETUP_COMPLETE -> signal. Entry = close of the trigger
+        candle, SL = beyond the deep zone by epsilon (the machine's invalidation), TP = the machine's L + 5 / L + 10 USD targets.
+        Only setups completed in the last `max_age_minutes` (a restart replays old ones - they are not re-announced)."""
+        if not setup_v2 or not self.cfg.strategy_sources.double_retest:
+            return 0
+        n = 0
+        cutoff = utcnow() - timedelta(minutes=max_age_minutes)
+        for side, st in (setup_v2.get("states") or {}).items():
+            for s in st.get("recent") or []:
+                if s.get("state") != "RESEARCH_SETUP_COMPLETE" or not s.get("ended_at") or parse_iso(s["ended_at"]) < cutoff:
+                    continue
+                z, eps = s.get("deep_zone") or [None, None], float(s.get("epsilon") or 0.0)
+                if None in z:
+                    continue
+                sl = (z[0] - eps) if side == "BUY" else (z[1] + eps)
+                tps = [x for x in (s.get("targets_hypothetical") or []) if x is not None]
+                try:
+                    if self.record_strategy(source="SHADOW", strategy_id="DOUBLE_RETEST_V2", strategy_name="Double Retest v2 (badawcza, niezweryfikowana)",
+                                            symbol=symbol, side=side, sl=sl, targets=[{"price": p, "weight": 1.0 / len(tps), "basis": f"L+{5 * (i + 1)}"}
+                                                                                    for i, p in enumerate(tps)],
+                                            timeframe="M5", setup_id=str(s.get("setup_id")), horizon="INTRADAY",
+                                            validation_status="badawcza – brak backtestu wyniku", facts={"L": s.get("L"), "trigger": s.get("trigger")}):
+                        n += 1
+                except Exception:  # noqa: BLE001
+                    log.exception("double retest signal failed")
+        return n
 
     # ------------------------------------------------------------ AI qualification (measured separately from the strategy)
     def set_ai_verdict(self, setup_id: str, verdict: str) -> None:
@@ -284,4 +370,8 @@ class BotSignalService:
     def status(self) -> dict:
         c = self.cfg
         return {"enabled": c.enabled, "scan_other_markets": c.scan_other_markets, "rr_limit": self.cfg_store.get().risk.rr_block_below,
-                "max_hold_hours": c.max_hold_hours}
+                "max_hold_hours": c.max_hold_hours, "strategy_sources": c.strategy_sources.model_dump(),
+                "strategies": ["S01-S12 (silnik + skaner)"] + [k for k, on in (("SCALPING", c.strategy_sources.scalping),
+                                                                               ("HEDGING", c.strategy_sources.hedging),
+                                                                               ("RANGE_SWEEP_RETEST", c.strategy_sources.range_sweep_retest),
+                                                                               ("DOUBLE_RETEST_V2", c.strategy_sources.double_retest)) if on]}

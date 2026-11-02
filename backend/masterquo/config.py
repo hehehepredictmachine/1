@@ -371,14 +371,25 @@ class MarketsConfig(_Strict):
         return out[:200]
 
 
+class StrategySignalSources(_Strict):
+    """1.27: strategies outside S01-S12 that also publish their BUY / SELL setups as bot signals (information for the user,
+    never an order - orders keep their own unchanged paths)."""
+    scalping: bool = True                    # SCALPING (SH) - status READY
+    hedging: bool = True                     # HEDGING (SH) - status READY (primary leg; the hedge stays a plan detail)
+    range_sweep_retest: bool = True          # scalp profile Range -> Sweep -> Retest (SHADOW) - READY_SHADOW with an executable price
+    double_retest: bool = True               # Double Retest v2 (research machine) - RESEARCH_SETUP_COMPLETE
+
+
 class BotSignalsConfig(_Strict):
-    """Signals of the bot (markets/signals.py): CONFIRMED setups of strategies S01-S10 on the main symbol (engine) and on
-    every scanned market (same strategies, thresholds and switches). Validated and tracked; only the main symbol's
+    """Signals of the bot (markets/signals.py): CONFIRMED setups of strategies S01-S12 on the main symbol (engine) and on
+    every scanned market (same strategies, thresholds and switches), plus (1.27) the BUY / SELL setups of SCALPING, HEDGING,
+    Range -> Sweep -> Retest and Double Retest v2 on the main symbol. Validated and tracked; only the main symbol's
     execution path can trade (unchanged)."""
     enabled: bool = True
-    scan_other_markets: bool = True          # run S01-S10 on the scanner's symbols (not only the main symbol)
+    scan_other_markets: bool = True          # run S01-S12 on the scanner's symbols (not only the main symbol)
     max_hold_hours: int = Field(72, ge=1, le=720)
     telegram: bool = True                    # notify new signals (only when Telegram is configured)
+    strategy_sources: StrategySignalSources = Field(default_factory=StrategySignalSources)
 
 
 class ForecastConfig(_Strict):

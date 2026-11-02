@@ -12,6 +12,7 @@ duplicate) and scored later from the bot's closed M5 bars of the exact target ti
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import subprocess
@@ -50,6 +51,7 @@ class ForecastService:
         self.last_key: str | None = None
         self.retry_at = 0.0
         self.machine = double_retest.DoubleRetest()
+        self.listeners: list = []                     # fn(setup_v2, symbol) after each Double Retest update - read-only observers (1.27 signals)
         self.inst = "XAUUSD"                          # instrument of the running worker (registry/model space)
         self.state: dict = {"status": "STARTING", "status_pl": STATUS_PL["STARTING"], "mode": "SHADOW", "execution_permission": False,
                             "report": None, "model": None, "setup_v2": None, "updated_at": None, "latency_ms": None, "worker": None}
@@ -183,6 +185,11 @@ class ForecastService:
         self.last_key = key
         status = ans.get("status") or "FORECAST_UNAVAILABLE"
         setup = self.machine.update(m5, m30, {f["time_open_utc"]: f["names"] for f in ans.get("flags_tail") or []}, tick)
+        for fn in list(self.listeners):
+            try:
+                fn(setup, cfg.mt5.symbol)
+            except Exception:  # noqa: BLE001 - an observer never stops the SHADOW forecast
+                logging.getLogger("masterquo.forecast").exception("forecast listener failed")
         self._set(status, ans.get("reason") or ans.get("error"), report=ans.get("report"), model=ans.get("model"), setup_v2=setup,
                   latency_ms={"worker": ans.get("latency_ms"), "round_trip": rt_ms}, worker_peak_rss_mb=ans.get("peak_rss_mb"),
                   bars={"m5_last_open_utc": m5[-1]["open_utc"], "m30_last_open_utc": m30[-1]["open_utc"], "m5": len(m5), "m30": len(m30)},

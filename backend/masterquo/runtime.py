@@ -124,6 +124,10 @@ class Runtime:
         self.engine.active.listeners.append(self.evaluation.on_active_events)
         self.sh.listeners.append(self.evaluation.on_sh_cycle)
         self.scalp.listeners.append(self.evaluation.on_scalp_setup)                               # O6: third SHADOW source
+        # 1.27: every strategy publishes its BUY / SELL setups as bot signals (information - orders keep their own paths)
+        self.sh.listeners.append(self.signals.on_sh_cycle)
+        self.scalp.listeners.append(self.signals.on_scalp_setup)
+        self.forecast.listeners.append(lambda setup_v2, symbol: self.signals.on_double_retest(setup_v2, symbol=symbol))
         from .zones.service import ZoneService
         self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
         from .montecarlo.service import MonteCarloService
