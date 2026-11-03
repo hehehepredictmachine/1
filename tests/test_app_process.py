@@ -101,7 +101,11 @@ class TestAppProcess(unittest.TestCase):
         self.assertEqual(s["agent"]["state"], "AI_UNAVAILABLE_NO_KEY")
         self.assertEqual(s["decision"]["execution_permission"], "BLOCKED")
         for tf in ("M1", "M5", "M15", "H1", "H4", "D1"):
+            # the first decision can exist before every TF has UTC-stamped bars (clock offset measured a moment later): wait, same bar
+            # requirement (a single read right after the first decision failed once in the 1.29 full regression, 0 M1 bars)
+            got = wait_for(lambda tf=tf: len(json.loads(req(f"/api/v1/candles?tf={tf}", opener=self.op)[1])["bars"]) > 100, 30, 0.5)
             c = json.loads(req(f"/api/v1/candles?tf={tf}", opener=self.op)[1])
+            self.assertTrue(got, f"{tf}: {len(c['bars'])} bars")
             self.assertGreater(len(c["bars"]), 100, tf)
             self.assertIn("overlays", c)
 
