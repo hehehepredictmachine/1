@@ -94,8 +94,11 @@ def check_zip(path: Path, top: str | None = None) -> list[str]:
         for rel in files:
             parts = PurePosixPath(rel).parts
             name = parts[-1]
-            if FORBIDDEN_PARTS & set(parts) or rel.startswith("data/") or name in FORBIDDEN_NAMES or name.endswith(FORBIDDEN_SUFFIX) \
-                    or name.startswith("secrets."):
+            runtime = rel.startswith("runtime/python/")          # bundled CPython: stdlib secrets.py, pip's public CA bundle (cacert.pem)
+            secret_store = name.startswith("secrets.") and name.endswith((".json", ".dpapi"))   # the app's own secret store (data/secrets.*)
+            suffix_bad = name.endswith(FORBIDDEN_SUFFIX) and not (runtime and name.endswith((".pem", ".pyc")))
+            if FORBIDDEN_PARTS & set(parts) - ({"__pycache__"} if runtime else set()) or rel.startswith("data/") or name in FORBIDDEN_NAMES \
+                    or suffix_bad or secret_store:
                 problems.append(f"{rel}: plik zabroniony w paczce")
         for rel, info in files.items():
             if info.file_size > 20_000_000 or rel.endswith((".png", ".jpg", ".gif", ".webp", ".exe", ".dll", ".pyd", ".whl", ".zip", ".ico", ".woff2", ".ttf")):

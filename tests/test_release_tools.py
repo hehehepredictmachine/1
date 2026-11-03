@@ -138,6 +138,17 @@ class TestVerifyRelease(unittest.TestCase):
         (self.dir / "m3.zip.sha256").write_text(f"{sha(p3.read_bytes())}  m3.zip\n", encoding="utf-8")
         self.assertTrue(any("spoza manifestu" in x for x in VR.check_zip(p3)))
 
+    def test_bundled_runtime_files_are_not_secrets_but_are_scanned(self):
+        ok = self.make("rt.zip", {"runtime/python/Lib/secrets.py": b"# stdlib\n", "runtime/python/Lib/site-packages/certifi/cacert.pem":
+                                  b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"})
+        self.assertEqual(VR.check_zip(ok), [])
+        bad = self.make("rt2.zip", {"runtime/python/x.pem": b"-----BEGIN " + b"PRIVATE KEY-----\nabc\n", "data/secrets.dpapi.json": b"{}",
+                                    "secrets.json": b"{}"})
+        probs = " | ".join(VR.check_zip(bad))
+        self.assertIn("PRIVATE_KEY", probs)
+        self.assertIn("data/secrets.dpapi.json: plik zabroniony", probs)
+        self.assertIn("secrets.json: plik zabroniony", probs)
+
     def test_client_package_without_owner_module(self):
         p = self.make("c.zip", {"backend/masterquo/license/owner.py": b"# owner\n", "backend/a.py": b"1\n"}, edition="CLIENT")
         self.assertTrue(any("moduł OWNER w paczce CLIENT" in x for x in VR.check_zip(p)))
