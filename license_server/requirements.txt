@@ -1,5 +1,0 @@
-# License API (Linux server). Versions tested with the repository's tests; install into a dedicated virtualenv.
-fastapi==0.141.1
-uvicorn==0.53.0
-pydantic==2.13.5
-cryptography==46.0.3

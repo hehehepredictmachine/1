@@ -10,7 +10,6 @@ import { useTerminalContext } from "../shell/useTerminalContext";
 import "../shell/terminal.css";
 import { TOWERS, type WizardAsset } from "./assets";
 import WizardLogo from "./WizardLogo";
-import { LicenseChip } from "../license/KeyForMagic";
 import "./wizard.css";
 
 const FRESH: Record<string, [string, string]> = {
@@ -26,7 +25,6 @@ export function envLabel(env: string): string {
 export function WizardTopBar({ page }: { page: Page }) {
   const ctx = useTerminalContext();
   const { s } = useStore();
-  const owner = s.license?.edition?.edition === "OWNER";
   const qt = s.quote?.time_utc;
   const fr = FRESH[ctx.freshness] ?? FRESH.UNKNOWN;
   const botTone = ctx.backend !== "OPEN" ? "muted" : ctx.killSwitch ? "bad" : ctx.mode === "AUTO_LIVE" ? "bad" : ctx.mode ? "ok" : "muted";
@@ -43,7 +41,6 @@ export function WizardTopBar({ page }: { page: Page }) {
       <nav className="wz-tabs wz-areas" aria-label="Pozostałe obszary">
         <a href={href("modele")} className="wz-tab" style={{ "--tw": "#2fe6a0" } as CSSProperties} data-testid="wz-area-modele">Modele i trening</a>
         <a href={href("ustawienia")} className="wz-tab" style={{ "--tw": "#a5abd0" } as CSSProperties} data-testid="wz-area-ustawienia">Ustawienia</a>
-        {owner && <a href={href("licencje")} className="wz-tab" style={{ "--tw": "#ffcf5c" } as CSSProperties} data-testid="wz-area-licencje">Licencje</a>}
       </nav>
       <span className="wz-spacer" />
       <InstrumentSwitch ctx={ctx} />
@@ -55,7 +52,6 @@ export function WizardTopBar({ page }: { page: Page }) {
       <span className={cls("wz-chip", botTone)} data-testid="wz-bot" title={`${envLabel(ctx.env)} – ${ctx.envDetail}`}>
         Bot: <b>{ctx.backend !== "OPEN" ? "brak łącza" : ctx.mode ? `${ctx.mode.replace("_", " ")}${ctx.killSwitch ? " · STOP" : ""}` : "nieznany"}</b>
         <span className="wz-env"> · {envLabel(ctx.env)}</span></span>
-      <LicenseChip />
       {ctx.backend !== "OPEN" && <span className="wz-chip bad" role="status" data-testid="wz-backend">Backend <b>{ctx.backend}</b> – ponowne łączenie</span>}
     </header>);
 }

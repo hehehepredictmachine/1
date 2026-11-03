@@ -1,6 +1,6 @@
 """Verifies release archives before they are handed out (1.29, §5 of the update package).
 
-  python tools/verify_release.py release/PepeMarketWizard_DESKTOP_OWNER_1_29_0.zip [more.zip ...]
+  python tools/verify_release.py release/PepeMarketWizard_DESKTOP_1_30_0.zip [more.zip ...]
   python tools/verify_release.py --all          every ZIP of the current VERSION in release/
 
 Per archive:
@@ -9,14 +9,13 @@ Per archive:
   * the <zip>.sha256 next to the archive matches;
   * MANIFEST_SHA256.txt / MANIFEST_DESKTOP_SHA256.txt inside: every listed file exists in the archive with that SHA-256 (and, for the
     desktop manifest, every file of the archive is listed);
-  * no forbidden files (data/, databases, .env, keys, OWNER device key, the owner's License Manager config) and no private key /
-    API key / token assignment in text entries; a CLIENT archive must not contain the owner module.
+  * no forbidden files (data/, databases, .env, keys, leftovers of the removed 1.27-1.29 license system) and no private key /
+    API key / token assignment in text entries; no license server or license module (removed in 1.30).
 Exit code 0 only when every archive passes. Nothing is extracted to disk.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import stat
 import sys
@@ -28,7 +27,6 @@ FORBIDDEN_NAMES = {"licenses.db", "license_owner.json", "signing_key.pem", ".env
                    "secrets.json", "secrets.dpapi", "masterquo.sqlite", "config.json"}
 FORBIDDEN_SUFFIX = (".sqlite", ".sqlite3", ".db", ".pem", ".key", ".log", ".pyc")
 FORBIDDEN_PARTS = {".git", ".venv", "node_modules", "__pycache__"}
-OWNER_ONLY = ("backend/masterquo/license/owner.py", "backend/masterquo/license/owner_key.py")
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
 SECRETS = [
     (re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
@@ -130,17 +128,9 @@ def check_zip(path: Path, top: str | None = None) -> list[str]:
                 unlisted = [r for r in files if r not in m and r != mname]
                 if unlisted:
                     problems.append(f"{mname}: pliki spoza manifestu {unlisted[:5]}")
-        ed = files.get("edition.json")
-        if ed is not None:
-            try:
-                edition = json.loads(z.read(ed)).get("edition")
-            except ValueError:
-                edition = None
-                problems.append("edition.json nieczytelny")
-            if edition == "CLIENT":
-                problems += [f"{p}: moduł OWNER w paczce CLIENT" for p in OWNER_ONLY if p in files]
-            if any(r.startswith("license_server/") for r in files):
-                problems.append("serwer licencji w paczce bota")
+        removed = [r for r in files if r.startswith(("license_server/", "backend/masterquo/license/")) or r == "edition.json"]
+        if removed:
+            problems.append(f"elementy usuniętego systemu licencji w paczce: {removed[:5]}")
     return problems
 
 

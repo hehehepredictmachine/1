@@ -69,7 +69,6 @@ class ExecutionGateway:
         self.engine = engine
         self.paper = paper
         self.manager = None
-        self.license = None                 # LicenseGuard (1.27): online check right before every NEW position (CLIENT edition)
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ validation
@@ -203,11 +202,6 @@ class ExecutionGateway:
                     self.log.warn("EXECUTION", "BLOCKED", f"Wykonanie zablokowane: {exc}")
                 return {"status": "BLOCKED", "reason": str(exc)}
             mode = self.modes.gate(self.bridge.account_key)["mode"]
-            if self.license is not None:                    # last check before the order: license (CLIENT edition, online)
-                ok, why = self.license.authorize_new_order("S01–S12")
-                if not ok:
-                    self.log.warn("EXECUTION", "LICENSE_BLOCKED", f"Nowe wejście zablokowane przez licencję: {why}")
-                    return {"status": "BLOCKED", "reason": why}
             setup = d["setup"]
             risk = d["risk"]
             side = "BUY" if d["analysis_direction"] == "LONG" else "SELL"

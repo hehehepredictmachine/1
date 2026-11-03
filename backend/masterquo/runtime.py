@@ -68,19 +68,7 @@ class Runtime:
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
         self.engine = EngineService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.news, self.pcclock)
         self.paper = PaperBroker(self.cfg, self.bridge, self.db, self.bus, self.log)
-        from .license.guard import LicenseGuard
-        from .license.tokenstore import TokenStore
-        try:                                   # MASTERQUO_LICENSE_INTERVAL can only make checks MORE frequent (5..300 s; tests)
-            lic_iv = min(300.0, max(5.0, float(os.environ.get("MASTERQUO_LICENSE_INTERVAL", "300"))))
-        except ValueError:
-            lic_iv = 300.0
-        self.license = LicenseGuard(bus=self.bus, applog=self.log, store=TokenStore(), interval=lic_iv)   # 1.27: OWNER = no gate, CLIENT = online
-        self.license_owner = None
-        if self.license.is_owner:
-            from .license.owner import OwnerLicenseManager
-            self.license_owner = OwnerLicenseManager()
         self.gateway = ExecutionGateway(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.engine, self.paper)
-        self.gateway.license = self.license
         self.manager = PositionManager(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.paper)
         self.gateway.manager = self.manager
         self.engine.gateway = self.gateway
@@ -91,7 +79,6 @@ class Runtime:
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
         self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db, stats_fn=self._telegram_day_stats)
-        self.telegram.signal_gate = lambda: self.license.authorized()
         self.scanner = MarketScanner(self.cfg, self.bridge, self.bus, self.log)
         self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
         self.scanner.signals = self.signals
@@ -132,7 +119,6 @@ class Runtime:
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
         self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
-        self.sh.license = self.license
         from .evaluation.service import EvaluationService
         self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
         self.engine.active.listeners.append(self.evaluation.on_active_events)
@@ -230,7 +216,6 @@ class Runtime:
 
     def start(self) -> None:
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
-        self.license.start()                    # CLIENT: validation at start, then every 5 minutes (OWNER: nothing)
         self.worker.start()
         self.bridge.start()
         self.news.start()
@@ -273,7 +258,6 @@ class Runtime:
         self.agent.attach(loop)
 
     def stop(self) -> None:
-        self.license.stop()
         self.telegram.stop()
         self._stop.set()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")

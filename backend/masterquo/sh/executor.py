@@ -20,8 +20,7 @@ OK_CODES = (10008, 10009, 10010)
 
 class SHExecutor:
     def __init__(self, store, *, terminal=None, account_key: str | None = None, magic: int = 41082100, comment_prefix: str = "SH",
-                 deviation_points: int = 30, is_demo=lambda: True, is_live=lambda: False, live_check=None, symbol_info=None, log=None,
-                 license_check=None):
+                 deviation_points: int = 30, is_demo=lambda: True, is_live=lambda: False, live_check=None, symbol_info=None, log=None):
         self.store = store
         self.terminal = terminal                 # callable(fn) -> runs fn(mt5) on the MT5 worker thread (PRIO_TRADE)
         self.account_key = account_key or "PAPER"
@@ -33,7 +32,6 @@ class SHExecutor:
         self.live_check = live_check or (lambda strategy: {"ok": False, "reason": "brak walidacji ścieżki SH na danych klienta"})
         self.symbol_info = symbol_info or {}
         self.log = log or (lambda *a, **k: None)
-        self.license_check = license_check       # 1.27: () -> (allowed, reason); only NEW primary entries, never plan management
 
     def comment(self, plan_id: str, tag: str) -> str:
         return f"{self.prefix}:{plan_id[-8:]}:{tag}"[:31]
@@ -44,7 +42,7 @@ class SHExecutor:
         if mode == "SIGNALS":
             return "TRYB_SIGNALS_BEZ_WYKONANIA"
         if mode == "PAPER":
-            return self._license_gate() if entry else None
+            return None
         if self.terminal is None:
             return "BRAK_TERMINALA"
         if plan.get("account_key") not in (None, self.account_key):
@@ -59,13 +57,7 @@ class SHExecutor:
             v = self.live_check(plan.get("strategy")) or {}
             if not v.get("ok"):
                 return "SH_LIVE_WYMAGA_WALIDACJI: " + str(v.get("reason") or "brak raportu")
-        return self._license_gate()
-
-    def _license_gate(self) -> str | None:
-        if self.license_check is None:
-            return None
-        ok, why = self.license_check()
-        return None if ok else why
+        return None
 
     # ------------------------------------------------------------------ public
     def open(self, plan: dict, *, role: str, side: str, volume: float, sl: float, tp: float, mode: str, quote: dict, tag: str,

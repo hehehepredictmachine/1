@@ -21,8 +21,8 @@ PORT = 8798
 BASE = f"http://127.0.0.1:{PORT}"
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_lab"
-SECTIONS = ["precision", "dyscypline", "profits", "modele", "ustawienia", "licencje"]      # 1.29: areas of the three towers (OWNER repo)
-FIRST = {"precision": "pulpit", "dyscypline": "setupy", "profits": "pozycje", "modele": "modele", "ustawienia": "ustawienia", "licencje": "licencje"}
+SECTIONS = ["precision", "dyscypline", "profits", "modele", "ustawienia"]      # areas of the three towers (1.30: license system removed)
+FIRST = {"precision": "pulpit", "dyscypline": "setupy", "profits": "pozycje", "modele": "modele", "ustawienia": "ustawienia"}
 try:
     from playwright.sync_api import sync_playwright
     HAVE_PW = True

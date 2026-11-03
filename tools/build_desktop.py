@@ -114,7 +114,7 @@ def main() -> None:
     wheels = fetch_wheels() if a.offline else None
 
     suffix = "_OFFLINE" if a.offline else ""
-    name = f"PepeMarketWizard_DESKTOP_OWNER_{ver.replace('.', '_')}{suffix}.zip"   # CLIENT: tools/stamp_client_edition.py
+    name = f"PepeMarketWizard_DESKTOP_{ver.replace('.', '_')}{suffix}.zip"
     out = ROOT / "release" / name
     out.parent.mkdir(exist_ok=True)
     manifest = []
@@ -138,8 +138,8 @@ def main() -> None:
                 z.write(w, TOP + "runtime/wheels/" + w.name)
                 manifest.append(f"{sha256(w)}  runtime/wheels/{w.name}")
         # the launcher PepeMarketWizard.exe and the .bat installers check for MANIFEST_SHA256.txt (complete unpacking) - same
-        # file as in the client package (program files); MANIFEST_DESKTOP_SHA256.txt below lists every file of this package
-        mtext = build_release.manifest_text(files, "aplikacja Windows, OWNER").encode("utf-8")
+        # file as in the folder package (program files); MANIFEST_DESKTOP_SHA256.txt below lists every file of this package
+        mtext = build_release.manifest_text(files, "aplikacja Windows").encode("utf-8")
         z.writestr(TOP + "MANIFEST_SHA256.txt", mtext)
         manifest.append(f"{hashlib.sha256(mtext).hexdigest()}  MANIFEST_SHA256.txt")
         z.writestr(TOP + "MANIFEST_DESKTOP_SHA256.txt",

@@ -4,17 +4,18 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
-## Nowe w 1.29 – licencje bez logowania, „Wyznacz strefy” na wykresie, menu według wież
+## Nowe w 1.30 – bez licencji
+* **System licencji został usunięty** (na Twoją prośbę). Program działa bez klucza, nie ma okna KEY FOR MAGIC, zakładki Licencje,
+  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich: `PepeMarketWizard_DESKTOP_1_30_0.zip`.
+* Opisy licencji w sekcjach 1.27 i 1.29 poniżej są historyczne.
+
+## Nowe w 1.29 – „Wyznacz strefy” na wykresie, menu według wież
 * **Menu** jest ułożone jak trzy wieże: **Precision** (wykresy i rynek), **Dyscypline** (setupy i sygnały), **Profits** (wyniki),
-  **Modele i trening**, **Ustawienia i diagnostyka**, **Licencje** (tylko OWNER). Stare zakładki są w tych obszarach – tabela
-  „gdzie co jest”: **Ustawienia → Mapa ekranów 1.29**. U góry każdego ekranu: instrument, MT5, czas ostatnich danych, DEMO / LIVE /
-  SYNTETYCZNE, tryb, STOP, OWNER / CLIENT.
+  **Modele i trening**, **Ustawienia i diagnostyka**. Stare zakładki są w tych obszarach – tabela „gdzie co jest”:
+  **Ustawienia → Mapa ekranów**. U góry każdego ekranu: instrument, MT5, czas ostatnich danych, DEMO / LIVE / SYNTETYCZNE, tryb, STOP.
 * **Precision → Wykresy MTF:** nad wykresami **Wyznacz strefy** (domyślnie M1 + M5 + M15; też M30) i **LIVE**. Przycisk ⚙ na każdym
   wykresie: kolory, siatka, tekst, wolumen, strefa czasu, kolor i krycie stref, szablony, „Przywróć domyślne”. **Warstwy** ukrywają
   FVG / OB / popyt-podaż / wsparcie-opór / płynność / etykiety. Analiza stref niczego nie otwiera i nie zmienia ustawień handlu.
-* **Licencje (OWNER) bez hasła:** wpisz adres serwera `https://…` → **Zapisz i sprawdź** → wykonaj pokazane polecenie
-  `python -m pmw_license admin-keys add …` w powłoce serwera → **Sprawdź parowanie**. Gotowe – generowanie kluczy 72h / 7d / 31d.
-  Serwer licencji: `PepeMarketWizard_LICENSE_SERVER_1_29_0.zip` (wersja 1.1.0).
 * Szczegóły, powrót do 1.28 i ograniczenia: `docs/AKTUALIZACJA_1_29_PL.md`.
 
 ## Nowe w 1.28 – strefy rynkowe M1/M5/M15/M30 i Centrum treningu

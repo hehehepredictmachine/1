@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { Frog } from "../../appearance";
-import { GROUPS, PAGES, SECTION_OF, areasFor, href, type Page, usePersisted } from "../../router";
+import { GROUPS, PAGES, SECTION_OF, href, type Page, usePersisted } from "../../router";
 import { envOf } from "../../features/shell/useTerminalContext";
 import { useStore } from "../../store";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../../util";
@@ -128,7 +128,6 @@ function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverla
           <i className="dot" />Dane <b>{engineOk ? dq ?? "…" : "BŁĄD"}{tickAge != null ? ` · ${Math.round(tickAge)} s` : ""}</b></span>
         <LastDataChip />
         <EnvChip />
-        <EditionChip />
         {s.ws !== "OPEN" && <span className="chip warn" title="Połączenie z lokalnym backendem (jedno WebSocket)"><i className="dot" />Backend {s.ws}</span>}
         <button className={cls("chip mode", mode.mode === "AUTO_LIVE" ? "bad" : mode.mode === "SIGNALS" ? "muted" : "warn")} onClick={onMode} data-testid="chip-mode"
           title="Tryb wykonania – kliknij, aby zmienić (osobno od wyboru strategii i trybu ML)">Wykonanie <b>{mode.mode_label ?? mode.mode ?? "…"}</b></button>
@@ -150,16 +149,13 @@ function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverla
   );
 }
 
-export const isOwner = (s: any) => s.license?.edition?.edition === "OWNER";
-
 function SideNav({ page }: { page: Page }) {
-  const { s } = useStore();
   const [collapsed, setCollapsed] = usePersisted<boolean>("nav.collapsed", false, (v) => typeof v === "boolean");
   const cur = SECTION_OF[page];
   return (
     <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Menu główne" data-testid="sidenav">
       <a href={href("menu")} className="nav-item nav-main nav-menu" data-testid="nav-menu" title="Menu główne – trzy wieże"><i aria-hidden="true">✶</i><span>Menu – trzy wieże</span></a>
-      {areasFor(isOwner(s)).map((g) => (
+      {GROUPS.map((g) => (
         <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id} style={{ "--area": g.accent } as React.CSSProperties}>
           <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")}
             aria-current={cur === g.id ? (g.pages.length > 1 ? "location" : "page") : undefined} data-page={g.pages.length === 1 ? g.pages[0] : undefined}
@@ -193,11 +189,10 @@ function SubTabs({ page }: { page: Page }) {
 }
 
 function MobileNav({ page }: { page: Page }) {
-  const { s } = useStore();
   const cur = SECTION_OF[page];
   return (
     <nav className="mobnav" aria-label="Menu główne (mobilne)" data-testid="mobnav">
-      {areasFor(isOwner(s)).map((g) => (
+      {GROUPS.map((g) => (
         <a key={g.id} href={href(g.pages[0])} className={cls("nav-item", cur === g.id && "on")} aria-current={cur === g.id ? "page" : undefined} data-section={g.id}>
           <i aria-hidden="true">{g.icon}</i><span>{g.label.split(" ")[0]}</span>
         </a>
@@ -224,17 +219,6 @@ function EnvChip() {
   const label = e.env === "LIVE" ? "LIVE (REAL)" : e.env === "DEMO" ? "DEMO" : e.env === "SYNTHETIC" ? "SYNTETYCZNE" : "rachunek ?";
   return <span className={cls("chip", e.env === "LIVE" ? "bad" : e.env === "DEMO" ? "ok" : "warn")} data-testid="chip-env" data-env={e.env} title={e.detail}>
     <i className="dot" />{label}</span>;
-}
-
-/** Edition and licence: OWNER (License Manager) or CLIENT with the licence state from the backend. */
-function EditionChip() {
-  const { s } = useStore();
-  const lic = s.license;
-  if (!lic) return null;
-  if (isOwner(s)) return <a className="chip ok" href={href("licencje")} data-testid="chip-edition" data-edition="OWNER" title="OWNER EDITION – License Manager">
-    <i className="dot" />OWNER</a>;
-  return <span className={cls("chip", lic.authorized ? "ok" : "bad")} data-testid="chip-edition" data-edition="CLIENT" title={lic.status_pl || ""}>
-    <i className="dot" />CLIENT · licencja <b>{lic.authorized ? `do ${fmtTime(lic.expires_at, true)}` : "nieaktywna"}</b></span>;
 }
 
 /** XAUUSD / BTC switch: the only two assets of the application. Unmapped / unconfirmed asset -> disabled with the reason. */

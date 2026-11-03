@@ -1,12 +1,11 @@
-"""1.29 release tooling (§5): build without .git from the explicit list of MANIFEST_SHA256.txt, the license server packed from its
-folder (or skipped when the copy has none), and tools/verify_release.py: ZIP-slip paths, manifest hashes, forbidden files, secrets,
-owner module in a CLIENT package, the .sha256 sidecar. Temporary trees only - the repository and release/ are not touched."""
+"""Release tooling: build without .git from the explicit list of MANIFEST_SHA256.txt and tools/verify_release.py: ZIP-slip paths,
+manifest hashes, forbidden files, secrets, no element of the license system removed in 1.30, the .sha256 sidecar.
+Temporary trees only - the repository and release/ are not touched."""
 from __future__ import annotations
 
 import contextlib
 import hashlib
 import io
-import json
 import sys
 import tempfile
 import unittest
@@ -47,14 +46,14 @@ class TreeCase(unittest.TestCase):
 
 class TestBuildWithoutGit(TreeCase):
     def test_manifest_list_is_used_without_git(self):
-        for r in ("backend/masterquo/a.py", "docs/b.md", "frontend/dist/index.html", "edition.json"):
+        for r in ("backend/masterquo/a.py", "docs/b.md", "frontend/dist/index.html", "START_TUTAJ_PL.md"):
             self.put(r)
-        self.manifest(["backend/masterquo/a.py", "docs/b.md", "frontend/dist/index.html", "edition.json"])
+        self.manifest(["backend/masterquo/a.py", "docs/b.md", "frontend/dist/index.html", "START_TUTAJ_PL.md"])
         self.put("backend/masterquo/new_untracked.py")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             files = BR.tracked()
-        self.assertEqual(files, ["backend/masterquo/a.py", "docs/b.md", "edition.json", "frontend/dist/index.html"])
+        self.assertEqual(files, ["START_TUTAJ_PL.md", "backend/masterquo/a.py", "docs/b.md", "frontend/dist/index.html"])
         self.assertIn("brak .git", out.getvalue())
         self.assertIn("new_untracked.py", out.getvalue())                       # reported, not packed
 
@@ -72,16 +71,12 @@ class TestBuildWithoutGit(TreeCase):
         with self.assertRaises(SystemExit):
             BR.manifest_list()
 
-    def test_license_server_from_folder_or_skipped(self):
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertIsNone(BR.server_files())                               # unpacked bot package: no server folder
-        for r in ("license_server/pmw_license/app.py", "license_server/README.md", "license_server/.env", "license_server/data/licenses.db",
-                  "license_server/pmw_license/__pycache__/app.cpython-313.pyc", "license_server/signing_key.pem", "license_server/x.log",
-                  "docs/LICENCJE_SYSTEM_1_27_PL.md"):
+    def test_license_server_folder_never_enters_the_package(self):
+        for r in ("backend/a.py", "license_server/pmw_license/app.py"):
             self.put(r)
+        self.manifest(["backend/a.py"])
         with contextlib.redirect_stdout(io.StringIO()):
-            files = BR.server_files()
-        self.assertEqual(files, ["license_server/README.md", "license_server/pmw_license/app.py", "docs/LICENCJE_SYSTEM_1_27_PL.md"])
+            self.assertEqual(BR.tracked(), ["backend/a.py"])
 
 
 class TestVerifyRelease(unittest.TestCase):
@@ -92,11 +87,8 @@ class TestVerifyRelease(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def make(self, name: str, entries: dict[str, bytes], manifest: bool = True, sidecar: bool = True, edition: str | None = "OWNER",
-             desktop: bool = False) -> Path:
+    def make(self, name: str, entries: dict[str, bytes], manifest: bool = True, sidecar: bool = True, desktop: bool = False) -> Path:
         files = dict(entries)
-        if edition:
-            files["edition.json"] = json.dumps({"edition": edition}).encode()
         if manifest:
             files["MANIFEST_SHA256.txt"] = ("# m\n" + "\n".join(f"{sha(b)}  {k}" for k, b in files.items()) + "\n").encode()
         if desktop:
@@ -149,13 +141,12 @@ class TestVerifyRelease(unittest.TestCase):
         self.assertIn("data/secrets.dpapi.json: plik zabroniony", probs)
         self.assertIn("secrets.json: plik zabroniony", probs)
 
-    def test_client_package_without_owner_module(self):
-        p = self.make("c.zip", {"backend/masterquo/license/owner.py": b"# owner\n", "backend/a.py": b"1\n"}, edition="CLIENT")
-        self.assertTrue(any("moduł OWNER w paczce CLIENT" in x for x in VR.check_zip(p)))
-        p2 = self.make("c2.zip", {"backend/a.py": b"1\n"}, edition="CLIENT")
-        self.assertEqual(VR.check_zip(p2), [])
-        p3 = self.make("o.zip", {"backend/masterquo/license/owner.py": b"# owner\n"}, edition="OWNER")
-        self.assertEqual(VR.check_zip(p3), [])                                  # OWNER may contain it
+    def test_removed_license_system_is_refused(self):
+        for extra in ({"backend/masterquo/license/guard.py": b"# old\n"}, {"license_server/pmw_license/app.py": b"# old\n"},
+                      {"edition.json": b'{"edition": "CLIENT"}'}):
+            p = self.make(f"old{abs(hash(str(extra)))}.zip", {"backend/a.py": b"1\n", **extra})
+            self.assertTrue(any("usuniętego systemu licencji" in x for x in VR.check_zip(p)), extra)
+        self.assertEqual(VR.check_zip(self.make("clean.zip", {"backend/a.py": b"1\n"})), [])
 
 
 if __name__ == "__main__":

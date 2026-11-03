@@ -14,7 +14,6 @@ package main
 // <home> = %LOCALAPPDATA%\PepeMarketWizard. Portable mode (file portable.txt next to the EXE): <home> = the program folder.
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -70,23 +69,7 @@ func detectLayout(exe string, env func(string) string) Layout {
 	return l
 }
 
-// Edition of this installation from <program>\edition.json (written by the build). A missing or unreadable file = CLIENT, exactly
-// like the engine (backend/masterquo/license/edition.py). Used only for labels (window title, tray tip) - never for any permission.
-func (l Layout) Edition() string {
-	b, err := os.ReadFile(filepath.Join(l.AppDir, "edition.json"))
-	if err != nil {
-		return "CLIENT"
-	}
-	var e struct {
-		Edition string `json:"edition"`
-	}
-	if json.Unmarshal(b, &e) != nil || (e.Edition != "OWNER" && e.Edition != "CLIENT") {
-		return "CLIENT"
-	}
-	return e.Edition
-}
-
-// WindowTitle: product, edition and version - the edition is always visible in the window and on the taskbar.
+// WindowTitle: product and version (1.30: no OWNER / CLIENT editions any more - the license system was removed).
 func (l Layout) WindowTitle(version string) string {
-	return "PepeMarketWizard " + l.Edition() + " " + version
+	return "PepeMarketWizard " + version
 }

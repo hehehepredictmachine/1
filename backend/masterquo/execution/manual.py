@@ -261,11 +261,6 @@ class ManualPad:
             return {"status": "DUPLICATE", "reason": "ACTION_ALREADY_ATTEMPTED", "state": ex["state"], "result": json.loads(ex["result"] or "null")}
         try:
             mode, p = self._validate_manual(it)
-            lic = getattr(self.gateway, "license", None)
-            if lic is not None and mode != "SIGNALS":         # 1.27: the same single license check as the bot's entries
-                ok, why = lic.authorize_new_order("ręczne")
-                if not ok:
-                    raise PlanError(why)
         except (PlanError, ValueError) as exc:
             self._act(key, "BLOCKED", {"reason": str(exc)})
             self._intent_state(iid, "BLOCKED")

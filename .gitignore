@@ -18,6 +18,3 @@ secrets.env
 # desktop build output (tools/build_desktop.py)
 /build/
 # 1.27 License API run locally from the repository: database, signing key and env file never go to git
-license_server/data/
-license_server/secrets/
-license_server/.env

@@ -7,12 +7,12 @@ import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
-  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje" | "strefy" | "trening";
+  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "strefy" | "trening";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.29 one interface in the style of the three towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
-// market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka, Licencje (OWNER
-// only). Every earlier page keeps its id and its hash link (#/wykresy, #/ai, #/warunki/<id>, ...); SCREEN_MAP says where it lives now.
-export type Area = { id: string; label: string; icon: string; pages: Page[]; accent: string; tower?: "precision" | "dyscypline" | "profits"; ownerOnly?: boolean };
+// market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka.
+// 1.30: the license system was removed at the user's request - #/licencje (1.27-1.29) opens Ustawienia. Every earlier page keeps its id and its hash link (#/wykresy, #/ai, #/warunki/<id>, ...); SCREEN_MAP says where it lives now.
+export type Area = { id: string; label: string; icon: string; pages: Page[]; accent: string; tower?: "precision" | "dyscypline" | "profits" };
 export const GROUPS: Area[] = [
   { id: "precision", label: "Precision – wykresy i rynek", icon: "◎", accent: "#3fe6ff", tower: "precision",
     pages: ["pulpit", "wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal", "nc", "precision"] },
@@ -21,7 +21,6 @@ export const GROUPS: Area[] = [
   { id: "profits", label: "Profits – wyniki i rachunek", icon: "◆", accent: "#ffcf5c", tower: "profits", pages: ["pozycje", "dziennik", "profits"] },
   { id: "modele", label: "Modele i trening", icon: "✦", accent: "#2fe6a0", pages: ["modele", "trening", "neural", "struktura", "testy", "badania"] },
   { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka"] },
-  { id: "licencje", label: "Licencje (OWNER)", icon: "⚿", accent: "#ffcf5c", pages: ["licencje"], ownerOnly: true },
 ];
 /** Old screen -> where it is now (shown in Ustawienia → "Mapa ekranów" and in the documentation). The hash links did not change. */
 export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
@@ -37,12 +36,10 @@ export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
   { old: "Badania i walidacja (osobna sekcja)", hash: "#/badania", now: "Modele i trening → Badania i walidacja" },
   { old: "Dane, Diagnostyka (sekcja „Dane”)", hash: "#/dane · #/diagnostyka", now: "Ustawienia i diagnostyka → te same zakładki" },
   { old: "Ustawienia", hash: "#/ustawienia", now: "Ustawienia i diagnostyka → Ustawienia" },
-  { old: "Licencje (w sekcji „Ustawienia”)", hash: "#/licencje", now: "Licencje (OWNER) – osobny obszar; w wersji CLIENT ukryty, link prowadzi do Ustawień" },
+  { old: "Licencje (1.27–1.29)", hash: "#/licencje", now: "usunięte w 1.30 (na Twoją prośbę) – link otwiera Ustawienia" },
   { old: "Menu – trzy wieże, Precision, Dyscypline, Profits", hash: "#/menu · #/precision · #/dyscypline · #/profits", now: "bez zmian (logo prowadzi do menu)" },
   { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
 ];
-/** Areas visible in this edition: Licencje only in OWNER (the CLIENT build has no License Manager at all). */
-export const areasFor = (owner: boolean) => GROUPS.filter((g) => owner || !g.ownerOnly);
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
   { id: "menu", label: "Menu główne – trzy wieże", short: "Menu", icon: "✶" },
   { id: "precision", label: "Precision – wykresy i analiza rynku", short: "Precision", icon: "◎" },
@@ -75,7 +72,6 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "dane", label: "Dane i źródła", short: "Dane", icon: "⚙" },
   { id: "diagnostyka", label: "Diagnostyka systemu", short: "Diag.", icon: "⚕" },
   { id: "ustawienia", label: "Ustawienia", short: "Ustaw.", icon: "⚑" },
-  { id: "licencje", label: "Licencje – License Manager (OWNER)", short: "Licencje", icon: "⚿" },
 ];
 export const SECTION_OF: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.pages.map((p) => [p, g.id])));
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
@@ -89,7 +85,8 @@ export function parse(hash: string): Route {
   const h = (hash || "").replace(/^#\/?/, "");
   const [path, query] = h.split("?");
   const parts = path.split("/").filter(Boolean);
-  const page = (PAGE_IDS.includes(parts[0]) ? parts[0] : "pulpit") as Page;
+  const first = parts[0] === "licencje" ? "ustawienia" : parts[0];          // 1.30: license system removed - the old link opens Ustawienia
+  const page = (PAGE_IDS.includes(first) ? first : "pulpit") as Page;
   const setupId = page === "warunki" && parts[1] ? decodeURIComponent(parts[1]) : null;
   return { page, setupId, params: new URLSearchParams(query || "") };
 }

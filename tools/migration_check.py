@@ -1,19 +1,14 @@
-"""Upgrade 1.28 -> 1.29 and rollback, checked on COPIES of the data (never the user's own folder) - §5 of the update package.
+"""Upgrade from the previous release and rollback, checked on COPIES of the data (never the user's own folder).
 
-  python tools/migration_check.py [--old-ref 165bd5d] [--keep]
+  python tools/migration_check.py [--old-ref 5298ec2] [--keep]          (default: 1.29.0 -> this repository, 1.30.0)
 
-What it does (everything in a temporary folder, terminal simulator = SYNTHETIC data, no MT5, no orders):
- Bot (OWNER):
-  1. 1.28 (git worktree of --old-ref) starts on a fresh data folder, computes market zones, saves the License Manager address,
-     then stops - this is "the user's 1.28 data";
+Everything in a temporary folder, terminal simulator = SYNTHETIC data, no MT5, no orders:
+  1. the old version (git worktree of --old-ref) starts on a fresh data folder, computes market zones and - when it still has the
+     License Manager (1.27-1.29) - saves a license-server address, so the folder holds leftovers of the removed license system;
   2. a copy is kept as the backup made before the upgrade (the desktop app does this itself in <home>/backups);
-  3. 1.29 (this repository) starts on a second copy: version, configuration kept, database migrations, zones restored (marked
-     stale), License Manager keeps the server address and now uses the device key (no password);
-  4. rollback: 1.28 starts on the backup copy (restore = copy the backup back) and works; for information also 1.28 started directly
-     on the folder already used by 1.29.
- License API:
-  5. the 1.28 server creates a database with a licence; 1.29 opens a copy -> schema v2 (admin_keys, admin_nonces), licence kept,
-     backup-db works; rollback: the 1.28 server reads the v2 database (the new tables are ignored).
+  3. this version starts on a second copy: version, configuration kept, database migrations kept, zones restored (marked stale),
+     no license API / state any more, leftover license files are not touched (the user may delete them);
+  4. rollback: the old version starts on the backup copy; for information also directly on the folder used by the new version.
 Prints one line per check (PASS / FAIL) and exits 1 when anything failed. Requires git (worktree) and the Python of the bot.
 """
 from __future__ import annotations
@@ -27,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -106,23 +102,34 @@ def wait(fn, timeout: float, step: float = 0.5):
     return None
 
 
+def version_of(tree: Path) -> str:
+    import re
+    return re.search(r'APP_VERSION = "([^"]+)"', (tree / "backend" / "masterquo" / "version.py").read_text(encoding="utf-8")).group(1)
+
+
 def bot_part(old: Path, tmp: Path) -> None:
-    d_old = tmp / "data_128"
+    ov, nv = version_of(old), version_of(ROOT)
+    d_old = tmp / "data_old"
     d_old.mkdir()
     cfg = {"server": {"port": 8811, "open_browser": False}, "news": {"enabled": False}, "clock": {"reference_url": None}, "first_run_completed": True,
            "assets": {"active": "XAUUSD", "mappings": {"XAUUSD": {"broker_symbol": "XAUUSD-", "status": "USER_SPECIFIED"}}}}
     (d_old / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
-    (d_old / "license_owner.json").write_text(json.dumps({"server_url": "https://licencje.example.invalid"}), encoding="utf-8")   # 1.28 format
     with Bot(old, d_old, 8811) as b:
         h = b.http
         v = h.get("/api/v1/state")
-        check("1.28 startuje na świeżych danych", v.get("app_version", "").startswith("1.28"), v.get("app_version", "?"))
+        check(f"{ov} startuje na świeżych danych", v.get("app_version") == ov, v.get("app_version", "?"))
         wait(lambda: h.get("/api/v1/market-zones/bars?instrument=XAUUSD&tf=M5&count=40")["bars"], 60)
         h.post("/api/v1/market-zones/compute", {"instrument": "XAUUSD", "timeframes": ["M5", "M15"]})
         z = wait(lambda: h.get("/api/v1/market-zones?instrument=XAUUSD")["timeframes"]["M5"].get("computed"), 60)
-        check("1.28 wyznaczył strefy M5 (dane do migracji)", bool(z))
+        check(f"{ov} wyznaczył strefy M5 (dane do migracji)", bool(z))
+        try:                       # 1.27-1.29 OWNER: License Manager address + device key -> leftovers of the license system in data/
+            h.post("/api/v1/owner/license-server", {"server_url": "https://licencje.example.invalid"})
+        except Exception:  # noqa: BLE001 - the example address does not exist; the address is saved anyway
+            pass
         mig_old = sorted(r[0] for r in sqlite3.connect(str(d_old / "masterquo.sqlite")).execute("SELECT version FROM schema_migrations"))
-    backup = tmp / "backup_before_1_29"
+    leftovers = sorted(p.name for p in d_old.glob("license*"))
+    print(f"  pozostałości licencji w danych {ov}: {leftovers or 'brak'}")
+    backup = tmp / "backup_before_upgrade"
     shutil.copytree(d_old, backup)
     d_new = tmp / "data_upgraded"
     shutil.copytree(d_old, d_new)
@@ -132,83 +139,54 @@ def bot_part(old: Path, tmp: Path) -> None:
     with Bot(ROOT, d_new, 8812) as b:
         h = b.http
         v = h.get("/api/v1/state")
-        check("1.29 startuje na kopii danych 1.28", v.get("app_version") == "1.29.0", v.get("app_version", "?"))
+        check(f"{nv} startuje na kopii danych {ov}", v.get("app_version") == nv, v.get("app_version", "?"))
+        check("stan bez sekcji licencji", "license" not in v)
         c = h.get("/api/v1/config")["config"]
         check("konfiguracja zachowana (aktywa, mapowanie, port)", c.get("assets", {}).get("mappings", {}).get("XAUUSD", {}).get("broker_symbol") == "XAUUSD-"
               and c.get("server", {}).get("port") == 8812 and c.get("first_run_completed") is True)
         mz = h.get("/api/v1/market-zones?instrument=XAUUSD")["timeframes"]["M5"]
-        check("strefy z 1.28 odtworzone po aktualizacji (oznaczone jako nieaktualne do przeliczenia)",
-              mz.get("computed") and (mz.get("restored") or mz.get("stale")) is not None, f"computed={mz.get('computed')} restored={mz.get('restored')}")
-        try:
-            own = h.post("/api/v1/owner/license-server/check", {})
-        except Exception as e:  # noqa: BLE001 - the example address does not exist: the state must say so, not crash
-            own = {"error": str(e)}
-        check("License Manager 1.29: adres z 1.28, uwierzytelnianie kluczem urządzenia", own.get("server_url") == "https://licencje.example.invalid"
-              and own.get("auth") == "DEVICE_KEY", f"paired={own.get('paired')} reason={str(own.get('reason'))[:60]}")
+        check(f"strefy z {ov} odtworzone po aktualizacji (oznaczone jako nieaktualne do przeliczenia)",
+              bool(mz.get("computed")) and bool(mz.get("restored") or mz.get("stale")), f"computed={mz.get('computed')} restored={mz.get('restored')}")
+        codes = []
+        for path in ("/api/v1/license", "/api/v1/owner/license-server"):
+            try:
+                h.get(path)
+                codes.append(200)
+            except urllib.error.HTTPError as e:
+                codes.append(e.code)
+        check("API licencji usunięte (404)", codes == [404, 404], str(codes))
         db = d_new / "masterquo.sqlite"
         mig_new = sorted(r[0] for r in sqlite3.connect(str(db)).execute("SELECT version FROM schema_migrations"))
-        check("migracje bazy: wszystkie z 1.28 zachowane", set(mig_old) <= set(mig_new), f"{len(mig_old)} -> {len(mig_new)}")
-    owner_cfg = json.loads((d_new / "license_owner.json").read_text(encoding="utf-8"))
-    check("adres serwera licencji z 1.28 zachowany", owner_cfg.get("server_url") == "https://licencje.example.invalid")
-    check("brak hasła/sesji administratora w danych 1.29", not ({"password", "session", "token"} & set(owner_cfg)))
-    # rollback = restore the backup folder, then start 1.28
+        check(f"migracje bazy: wszystkie z {ov} zachowane", set(mig_old) <= set(mig_new), f"{len(mig_old)} -> {len(mig_new)}")
+    check("pozostałe pliki licencji nietknięte (użytkownik może je usunąć)", sorted(p.name for p in d_new.glob("license*")) == leftovers, str(leftovers))
+    # rollback = restore the backup folder, then start the old version
     cfg_b = json.loads((backup / "config.json").read_text(encoding="utf-8"))
     cfg_b["server"]["port"] = 8813
     (backup / "config.json").write_text(json.dumps(cfg_b), encoding="utf-8")
     with Bot(old, backup, 8813) as b:
         v = b.http.get("/api/v1/state")
-        check("powrót: 1.28 działa na kopii zapasowej sprzed aktualizacji", v.get("app_version", "").startswith("1.28"))
+        check(f"powrót: {ov} działa na kopii zapasowej sprzed aktualizacji", v.get("app_version") == ov)
     cfg_n = json.loads((d_new / "config.json").read_text(encoding="utf-8"))
     cfg_n["server"]["port"] = 8814
     (d_new / "config.json").write_text(json.dumps(cfg_n), encoding="utf-8")
     try:
         with Bot(old, d_new, 8814) as b:
             v = b.http.get("/api/v1/state")
-            check("(informacyjnie) 1.28 uruchomiony wprost na danych po 1.29", v.get("app_version", "").startswith("1.28"))
+            check(f"(informacyjnie) {ov} uruchomiony wprost na danych po {nv}", v.get("app_version") == ov)
     except RuntimeError as e:
-        check("(informacyjnie) 1.28 uruchomiony wprost na danych po 1.29", False, f"{e} – użyj kopii zapasowej")
-
-
-def server_part(old: Path, tmp: Path) -> None:
-    s = tmp / "server"
-    (s / "secrets").mkdir(parents=True)
-    env = dict(os.environ, PMW_LIC_DATABASE=str(s / "data" / "licenses.db"), PMW_LIC_SIGNING_KEY=str(s / "secrets" / "signing_key.pem"),
-               PMW_LIC_KEY_PEPPER="migration-check-pepper-" + "x" * 30, PYTHONPATH=str(old / "license_server"))
-    run = lambda tree, *a: subprocess.run([sys.executable, "-m", "pmw_license", *a], cwd=str(s),  # noqa: E731
-                                          env={**env, "PYTHONPATH": str(tree / "license_server")}, capture_output=True, text=True, timeout=120)
-    r1 = run(old, "init-keys")
-    r2 = run(old, "create-license", "--duration", "72h", "--note", "migracja")
-    check("serwer 1.28: baza + licencja", r1.returncode == 0 and r2.returncode == 0, (r2.stderr or "")[-200:])
-    db = s / "data" / "licenses.db"
-    v1 = sqlite3.connect(str(db)).execute("SELECT version FROM schema_version").fetchone()[0]
-    n1 = sqlite3.connect(str(db)).execute("SELECT COUNT(*) FROM licenses").fetchone()[0]
-    shutil.copy2(db, s / "licenses_backup_1_28.db")
-    r3 = run(ROOT, "admin-keys", "list")
-    con = sqlite3.connect(str(db))
-    v2 = con.execute("SELECT version FROM schema_version").fetchone()[0]
-    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    n2 = con.execute("SELECT COUNT(*) FROM licenses").fetchone()[0]
-    con.close()
-    check("serwer 1.29: schemat v1 -> v2 (admin_keys, admin_nonces), licencje zachowane",
-          r3.returncode == 0 and v1 == 1 and v2 == 2 and {"admin_keys", "admin_nonces"} <= tables and n1 == n2 == 1, f"v{v1}->v{v2}, {n1}->{n2}")
-    r4 = run(ROOT, "backup-db", "--out", str(s / "backup_after.db"))
-    check("serwer 1.29: backup-db", r4.returncode == 0 and (s / "backup_after.db").exists())
-    r5 = run(old, "create-license", "--duration", "7d")
-    n3 = sqlite3.connect(str(db)).execute("SELECT COUNT(*) FROM licenses").fetchone()[0]
-    check("powrót serwera: 1.28 pracuje na bazie v2 (nowe tabele pomijane)", r5.returncode == 0 and n3 == 2, (r5.stderr or "")[-200:])
+        check(f"(informacyjnie) {ov} uruchomiony wprost na danych po {nv}", False, f"{e} – użyj kopii zapasowej")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--old-ref", default="165bd5d", help="commit / tag of 1.28.0")
+    ap.add_argument("--old-ref", default="5298ec2", help="commit / tag of the previous release (default: 1.29.0)")
     ap.add_argument("--keep", action="store_true", help="keep the temporary folder")
     a = ap.parse_args()
     tmp = Path(tempfile.mkdtemp(prefix="pmw_migration_"))
-    old = tmp / "pmw_1_28"
+    old = tmp / "pmw_old"
     try:
         subprocess.run(["git", "worktree", "add", "-f", "--detach", str(old), a.old_ref], cwd=str(ROOT), check=True, capture_output=True)
         bot_part(old, tmp)
-        server_part(old, tmp)
     finally:
         subprocess.run(["git", "worktree", "remove", "--force", str(old)], cwd=str(ROOT), capture_output=True)
         if not a.keep:

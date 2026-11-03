@@ -509,7 +509,7 @@ function Settings(_p: { ctx: Ctx }) {
     <Panel id="nc-users" title="UŻYTKOWNICY, LICENCJE, POWIADOMIENIA">
       <Line a="Sesja panelu" b={<St s="VERIFIED">lokalna sesja + CSRF (tylko 127.0.0.1)</St>} />
       <Line a="Role / RBAC administratora" b={<St s="NOT_IMPLEMENTED">aplikacja jednoużytkownikowa</St>} />
-      <Line a="System licencji 48 h" b={<St s="UNAVAILABLE">usunięty z bota na prośbę użytkownika (wersja 1.4)</St>} />
+      <Line a="System licencji 48 h" b={<St s="UNAVAILABLE">usunięty z bota na prośbę użytkownika (1.4; system 1.27–1.29 usunięty ponownie w 1.30)</St>} />
       <Line a="Telegram" b={<St s={tg.enabled ? "VERIFIED" : "UNAVAILABLE"}>{tg.enabled ? "włączony" : "wyłączony / nieskonfigurowany"}</St>} />
       <Line a="Telegram EN + 简体中文 w jednej wiadomości" b={<St s="NOT_IMPLEMENTED">obecnie komunikaty po polsku</St>} />
       <Line a="Sekrety" b="tylko w magazynie sekretów bota (DPAPI) – nigdy w przeglądarce" />

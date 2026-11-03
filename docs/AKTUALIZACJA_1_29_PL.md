@@ -1,3 +1,7 @@
+> **1.30.0:** system licencji opisany w §2 i §5 (License Manager, serwer licencji, wersja CLIENT, KEY FOR MAGIC) został **usunięty**
+> na Twoją prośbę – program działa bez klucza. Wykresy, strefy, interfejs i narzędzia wydania z 1.29 zostają. Paczki 1.30:
+> `PepeMarketWizard_DESKTOP_1_30_0.zip`, `PepeMarketWizard_1_30_0.zip`. Raport: `release/RAPORT_KONCOWY.md`.
+
 # PepeMarketWizard 1.29.0 – licencje bez logowania, wykresy z własnymi ustawieniami, jeden interfejs w stylu wież
 
 Realizacja pakietu aktualizacji „PepeMarketWizard – pakiet aktualizacji dla Claude” (CLAUDE_WDROZENIE.md, §0–§6). Ten dokument opisuje,

@@ -1,8 +1,0 @@
-# HTTPS termination (automatic Let's Encrypt certificate). Replace the domain with yours.
-licencje.twoja-domena.pl {
-    encode gzip
-    request_body {
-        max_size 8KB
-    }
-    reverse_proxy 127.0.0.1:8740
-}

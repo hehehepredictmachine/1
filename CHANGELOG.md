@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.30.0 – system licencji usunięty (na Twoją prośbę)
+* **Program działa bez klucza** – usunięte: strażnik licencji przed nowymi wejściami (S01–S12, ręczne, SCALPING/HEDGING), blokada
+  powiadomień Telegram o nowych sygnałach, okno KEY FOR MAGIC, License Manager (OWNER), obszar „Licencje”, oznaczenia OWNER/CLIENT
+  (pasek stanu, tytuł okna i aplikacji Windows), API `/api/v1/license*` i `/api/v1/owner/*`, moduł `backend/masterquo/license`,
+  serwer licencji `license_server/`, `edition.json`, narzędzie wydania wersji CLIENT (`tools/stamp_client_edition.py`,
+  `PRZYGOTUJ_PACZKE_KLIENTA.bat`) i zależności Windows dodane tylko dla licencji (`cryptography`, `cffi`, `pycparser`).
+* Jedna wersja programu: paczki `PepeMarketWizard_DESKTOP_1_30_0.zip` (aplikacja Windows) i `PepeMarketWizard_1_30_0.zip` (folder).
+* Dawny link `#/licencje` otwiera Ustawienia. Pliki licencji pozostałe w folderze danych z 1.27–1.29 (`license_owner.json`,
+  `license_owner_key.*`, token licencji) nie są używane ani usuwane automatycznie – można je skasować.
+* Bez zmian: strategie, progi, ryzyko, koszty, tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP, wykresy i strefy 1.29, interfejs
+  w stylu wież. System licencji 1.27–1.29 pozostaje w historii repozytorium.
+
 ## 1.29.0 – licencje bez logowania, wykresy z własnymi ustawieniami i „Wyznacz strefy”, jeden interfejs w stylu wież
 Realizacja pakietu aktualizacji (CLAUDE_WDROZENIE.md). Opis, procedury i blokady: `docs/AKTUALIZACJA_1_29_PL.md`; wyniki testów:
 `release/RAPORT_KONCOWY.md`.

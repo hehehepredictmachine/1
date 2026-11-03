@@ -394,23 +394,10 @@ func tail(p string) string {
 	return string(b)
 }
 
-func TestEditionLabelFromEditionJSON(t *testing.T) {
+func TestWindowTitleHasNoEdition(t *testing.T) {
 	dir := t.TempDir()
-	l := Layout{AppDir: dir}
-	if got := l.Edition(); got != "CLIENT" { // no file -> CLIENT (same rule as the engine)
-		t.Fatalf("missing edition.json: %q", got)
-	}
-	for body, want := range map[string]string{`{"edition":"OWNER"}`: "OWNER", `{"edition":"CLIENT","license_api":"https://x"}`: "CLIENT",
-		`{"edition":"ROOT"}`: "CLIENT", `not json`: "CLIENT"} {
-		if err := os.WriteFile(filepath.Join(dir, "edition.json"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if got := l.Edition(); got != want {
-			t.Fatalf("%s: got %q want %q", body, got, want)
-		}
-	}
-	_ = os.WriteFile(filepath.Join(dir, "edition.json"), []byte(`{"edition":"OWNER"}`), 0o644)
-	if got := l.WindowTitle("1.29.0"); got != "PepeMarketWizard OWNER 1.29.0" {
+	_ = os.WriteFile(filepath.Join(dir, "edition.json"), []byte(`{"edition":"OWNER"}`), 0o644) // a leftover 1.27-1.29 file changes nothing
+	if got := (Layout{AppDir: dir}).WindowTitle("1.30.0"); got != "PepeMarketWizard 1.30.0" {
 		t.Fatalf("title %q", got)
 	}
 }

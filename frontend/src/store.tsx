@@ -38,8 +38,6 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, agent_last: d.status === "OK" ? d : s.agent_last, agent_last_any: d };
     case "mode":
       return { ...s, mode: d };
-    case "license":
-      return { ...s, license: d };
     case "news":
       return { ...s, news: d };
     case "orders":

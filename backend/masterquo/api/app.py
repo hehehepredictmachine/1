@@ -75,28 +75,6 @@ class TrainVersionReq(BaseModel):
     version: str | None = Field(default=None, max_length=64)
 
 
-class LicenseKeyReq(BaseModel):
-    license_key: str = Field(max_length=64)
-
-
-class OwnerServerReq(BaseModel):
-    server_url: str = Field(max_length=200)
-    label: str | None = Field(None, max_length=60)
-
-
-class OwnerRotationReq(BaseModel):
-    action: str = Field(pattern=r"^(begin|commit|cancel)$")
-
-
-class OwnerCreateReq(BaseModel):
-    duration: str = Field(pattern=r"^(24h|72h|7d|31d)$")
-    note: str | None = Field(None, max_length=200)
-
-
-class OwnerReasonReq(BaseModel):
-    reason: str | None = Field(None, max_length=200)
-
-
 class OnReq(BaseModel):
     on: bool
     reason: str = "user"
@@ -270,7 +248,6 @@ def create_app(rt, port: int) -> FastAPI:
                 "prefs": {**rt.prefs.all(), "exposure": rt.prefs.exposure_limit()},
                 "engine": {"last_error": rt.engine.last_error, "cycle_ms": rt.engine.cycle_ms, "full_cycles": rt.engine.full_count},
                 "agent": rt.agent.status(), "agent_last": rt.agent.public_result(rt.agent.last_result), "mode": mode,
-                "license": rt.license.public(),
                 "risk_config": cfg.risk.model_dump(), "costs_config": cfg.costs.model_dump(), "strategy_config": cfg.strategy.model_dump(),
                 "news": rt.news.summary(), "positions": {"positions": b.positions, "orders": b.orders},
                 "managed": rt.db.query("SELECT * FROM managed_positions WHERE state='OPEN'"),
@@ -1509,80 +1486,6 @@ def create_app(rt, port: int) -> FastAPI:
         return {"ok": True}
 
     # ------------------------------------------------------------ modes & execution
-    # ------------------------------------------------------------------ 1.27 license (CLIENT: KEY FOR MAGIC; OWNER: License Manager)
-    @app.get("/api/v1/license")
-    def license_status():
-        return rt.license.public()
-
-    @app.post("/api/v1/license/activate")
-    def license_activate(req: LicenseKeyReq):
-        return rt.license.activate(req.license_key)            # the key is sent to the license server only; never stored or logged
-
-    @app.post("/api/v1/license/check")
-    def license_check():
-        return rt.license.validate_now(trigger="ręcznie (panel)")
-
-    @app.post("/api/v1/license/forget")
-    def license_forget():
-        return rt.license.forget()
-
-    def _owner():
-        if rt.license_owner is None:
-            raise HTTPException(403, "LICENSE_MANAGER_OWNER_EDITION_ONLY")
-        return rt.license_owner
-
-    def _owner_call(fn, *a, **kw):
-        from ..license.owner import OwnerError
-        try:
-            return fn(*a, **kw)
-        except OwnerError as exc:
-            raise HTTPException(401 if exc.code == "UNAUTHORIZED" else 502 if exc.code == "SERVER_UNAVAILABLE" else 400,
-                                f"{exc.code}: {exc.message}") from None
-
-    @app.get("/api/v1/owner/license-server")
-    def owner_status():
-        return _owner().status()
-
-    @app.post("/api/v1/owner/license-server")
-    def owner_set_server(req: OwnerServerReq):
-        return _owner_call(_owner().set_server, req.server_url, req.label)         # address + check; no password anywhere
-
-    @app.post("/api/v1/owner/license-server/check")
-    def owner_check():
-        return _owner_call(_owner().check)
-
-    @app.post("/api/v1/owner/license-server/rotate")
-    def owner_rotate(req: OwnerRotationReq):
-        return _owner_call(_owner().rotation, req.action)
-
-    @app.get("/api/v1/owner/admin-keys")
-    def owner_admin_keys():
-        return _owner_call(_owner().admin_keys)
-
-    @app.get("/api/v1/owner/licenses")
-    def owner_list(status: str | None = None, duration: str | None = None, q: str | None = None, limit: int = 100, offset: int = 0):
-        return _owner_call(_owner().list, status=status, duration=duration, q=q, limit=limit, offset=offset)
-
-    @app.post("/api/v1/owner/licenses")
-    def owner_create(req: OwnerCreateReq):
-        return _owner_call(_owner().create, req.duration, req.note)
-
-    @app.post("/api/v1/owner/licenses/{license_id}/revoke")
-    def owner_revoke(license_id: str, req: OwnerReasonReq):
-        return _owner_call(_owner().revoke, license_id, req.reason)
-
-    @app.post("/api/v1/owner/licenses/{license_id}/reset-device")
-    def owner_reset(license_id: str, req: OwnerReasonReq):
-        return _owner_call(_owner().reset_device, license_id, req.reason)
-
-    @app.get("/api/v1/owner/stats")
-    def owner_stats():
-        return _owner_call(_owner().stats)
-
-    @app.get("/api/v1/owner/audit")
-    def owner_audit(limit: int = 100):
-        return _owner_call(_owner().audit, limit)
-
     @app.post("/api/v1/mode")
     def set_mode(req: ModeReq):
         try:
