@@ -79,10 +79,13 @@ class LicenseKeyReq(BaseModel):
     license_key: str = Field(max_length=64)
 
 
-class OwnerLoginReq(BaseModel):
+class OwnerServerReq(BaseModel):
     server_url: str = Field(max_length=200)
-    username: str = Field(max_length=64)
-    password: str = Field(max_length=256)
+    label: str | None = Field(None, max_length=60)
+
+
+class OwnerRotationReq(BaseModel):
+    action: str = Field(pattern=r"^(begin|commit|cancel)$")
 
 
 class OwnerCreateReq(BaseModel):
@@ -1540,13 +1543,21 @@ def create_app(rt, port: int) -> FastAPI:
     def owner_status():
         return _owner().status()
 
-    @app.post("/api/v1/owner/license-server/login")
-    def owner_login(req: OwnerLoginReq):
-        return _owner_call(_owner().login, req.server_url, req.username, req.password)   # password forwarded once, not stored
+    @app.post("/api/v1/owner/license-server")
+    def owner_set_server(req: OwnerServerReq):
+        return _owner_call(_owner().set_server, req.server_url, req.label)         # address + check; no password anywhere
 
-    @app.post("/api/v1/owner/license-server/logout")
-    def owner_logout():
-        return _owner().logout()
+    @app.post("/api/v1/owner/license-server/check")
+    def owner_check():
+        return _owner_call(_owner().check)
+
+    @app.post("/api/v1/owner/license-server/rotate")
+    def owner_rotate(req: OwnerRotationReq):
+        return _owner_call(_owner().rotation, req.action)
+
+    @app.get("/api/v1/owner/admin-keys")
+    def owner_admin_keys():
+        return _owner_call(_owner().admin_keys)
 
     @app.get("/api/v1/owner/licenses")
     def owner_list(status: str | None = None, duration: str | None = None, q: str | None = None, limit: int = 100, offset: int = 0):

@@ -1,6 +1,8 @@
-"""License API (FastAPI). Public: health, public key, activate, validate. Admin (bearer session after login): create / list /
-get / revoke / reset-device, stats, audit, logout. Every privileged action is authorized here - nothing is trusted from a
-client UI. JSON errors: {"error": {"code", "message"}}; plaintext keys / tokens / passwords are never logged."""
+"""License API (FastAPI). Public: health, public key, activate, validate. Admin: create / list / get / revoke / reset-device,
+stats, audit, admin keys, whoami - authorized by a signed request of a TRUSTED OWNER DEVICE KEY (PMW-ADMIN-v1, admin_auth.py; no
+login screen) or, for recovery only, a bearer session after a password login (only when a password hash is configured).
+Every privileged action is authorized here - nothing is trusted from a client UI. JSON errors: {"error": {"code", "message"}};
+plaintext keys / tokens / passwords are never logged."""
 from __future__ import annotations
 
 import hmac
@@ -13,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import VERSION
+from . import admin_auth as AA
 from . import protocol as P
 from .config import Settings
 from .security import RateLimiter, new_token, token_hash, verify_password
@@ -129,6 +132,9 @@ def create_app(settings: Settings | None = None, *, clock=time.time, signer: Sig
     def login(body: LoginReq, req: Request):
         limit(req, "login", s.rate_login_per_min)
         now = clock()
+        if not s.admin_password_hash:
+            store.audit(now, body.username[:64] or "?", "ADMIN_LOGIN", ok=False, ip=ip_of(req), details={"why": "password_login_disabled"})
+            raise LicenseError(P.UNAUTHORIZED, "logowanie hasłem wyłączone – administrator używa klucza urządzenia OWNER")
         user_ok = bool(s.admin_user) and hmac.compare_digest(body.username.encode(), s.admin_user.encode())
         pass_ok = verify_password(body.password, s.admin_password_hash) if s.admin_password_hash else False
         if not (user_ok and pass_ok):
@@ -143,7 +149,19 @@ def create_app(settings: Settings | None = None, *, clock=time.time, signer: Sig
             store.audit(now, s.admin_user, "ADMIN_LOGIN", ok=True, ip=ip_of(req), conn=c)
         return {"token": tok, "expires_at": P.utc_iso(exp), "username": s.admin_user}
 
-    def admin(req: Request, authorization: str | None = Header(None)) -> str:
+    async def admin(req: Request, authorization: str | None = Header(None)) -> str:
+        if req.headers.get(P.ADMIN_HEADERS[3]):                         # OWNER device signature (normal path, no login)
+            path_qs = req.url.path + (("?" + req.url.query) if req.url.query else "")
+            body = await req.body()
+            try:
+                dev = AA.verify(store, req.headers, req.method, path_qs, body, clock())
+            except LicenseError as exc:
+                limit(req, "admin_fail", s.rate_login_per_min * 4)
+                store.audit(clock(), "?", "ADMIN_UNAUTHORIZED", ok=False, ip=ip_of(req),
+                            details={"path": req.url.path, "why": exc.message[:120], "kid": (req.headers.get(P.ADMIN_HEADERS[0]) or "")[:24]})
+                raise
+            req.state.admin_kid = dev["kid"]
+            return f"owner-device:{dev['label'] or dev['kid']}"[:64]
         if not authorization or not authorization.startswith("Bearer ") or len(authorization) > 300:
             store.audit(clock(), "?", "ADMIN_UNAUTHORIZED", ok=False, ip=ip_of(req), details={"path": req.url.path})
             raise LicenseError(P.UNAUTHORIZED)
@@ -152,6 +170,23 @@ def create_app(settings: Settings | None = None, *, clock=time.time, signer: Sig
             store.audit(clock(), "?", "ADMIN_UNAUTHORIZED", ok=False, ip=ip_of(req), details={"path": req.url.path, "why": "session"})
             raise LicenseError(P.UNAUTHORIZED, "sesja administratora wygasła – zaloguj się ponownie")
         return r["username"]
+
+    @app.get("/api/v1/admin/whoami")
+    def whoami(req: Request, user: str = Depends(admin)):
+        return {"actor": user, "kid": getattr(req.state, "admin_kid", None), "server_time": P.utc_iso(clock()), "version": VERSION,
+                "license_signing_kid": signer.kid}
+
+    @app.get("/api/v1/admin/keys")
+    def admin_keys(user: str = Depends(admin)):
+        return {"items": AA.list_keys(store), "note": "klucze dodaje się tylko z powłoki serwera: python -m pmw_license admin-keys add"}
+
+    @app.post("/api/v1/admin/keys/{kid}/revoke")
+    def admin_key_revoke(kid: str, req: Request, body: ReasonReq | None = None, user: str = Depends(admin)):
+        if not P.ADMIN_KID_RE.match(kid):
+            raise LicenseError(P.NOT_FOUND)
+        if kid == getattr(req.state, "admin_kid", None):
+            raise LicenseError(P.INVALID_REQUEST, "nie można odwołać klucza, którym podpisano to żądanie (najpierw sparuj nowy klucz)")
+        return AA.revoke_key(store, kid, user, clock(), body.reason if body else None)
 
     @app.post("/api/v1/admin/logout")
     def logout(req: Request, user: str = Depends(admin), authorization: str | None = Header(None)):

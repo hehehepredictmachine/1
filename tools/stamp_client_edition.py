@@ -5,7 +5,7 @@
 
 What changes (everything else - engine, strategies, models, panel, launchers - stays byte-identical):
   * edition.json -> {"edition": "CLIENT", "license_api": <url>, "public_key": <server PUBLIC key>, "kid": <key id>};
-  * backend/masterquo/license/owner.py (License Manager client) and license_server/ are left out;
+  * backend/masterquo/license/owner.py + owner_key.py (License Manager, OWNER device key) and license_server/ are left out;
   * MANIFEST_SHA256.txt / MANIFEST_DESKTOP_SHA256.txt are recomputed for the changed / removed files.
 Only files listed in the package manifest are copied (never data/, keys, logs, databases, .venv). The public key comes from
 --public-key or from the server (GET /api/v1/public-key) - then compare the printed key id (kid) with the one printed by
@@ -30,12 +30,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from masterquo.license.url import valid_license_url
 from masterquo.license import client as license_client
-DROP = ("backend/masterquo/license/owner.py",)
+DROP = ("backend/masterquo/license/owner.py", "backend/masterquo/license/owner_key.py")
 DROP_PREFIX = ("license_server/",)
 FORBIDDEN = [(re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
              (re.compile(rb"PMW_LIC_ADMIN_PASSWORD_HASH=scrypt\$"), "ADMIN_PASSWORD_HASH"),
              (re.compile(rb"PMW_LIC_KEY_PEPPER=[A-Za-z0-9_\-]{20,}"), "KEY_PEPPER")]
-FORBIDDEN_NAMES = ("licenses.db", "license_owner.json", "signing_key.pem", ".env")
+FORBIDDEN_NAMES = ("licenses.db", "license_owner.json", "signing_key.pem", ".env", "license_owner_key.dpapi", "license_owner_key.local.json")
 
 
 def kid_of(pub_raw: bytes) -> str:

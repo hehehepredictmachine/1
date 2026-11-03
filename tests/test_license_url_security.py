@@ -41,7 +41,7 @@ class TestLicenseUrlSecurity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             owner = OwnerLicenseManager(Path(tmp), request=lambda *a, **k: called.append(a))
             with self.assertRaises(OwnerError):
-                owner.login("http://127.0.0.1.evil.example", "owner", "secret")
+                owner.set_server("http://127.0.0.1.evil.example")
         self.assertEqual(called, [])
 
     def test_redirect_does_not_forward_token(self):

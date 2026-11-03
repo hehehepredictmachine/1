@@ -12,6 +12,13 @@ Assertion (compact, JWS-like but fixed algorithm, no header to negotiate):
 Payload fields: v, typ, kid, lid (license id), hwid (device fingerprint hash), st (status), dur, act / exp (activation /
 expiry, UTC), iat (server time, UTC), nonce (the client's fresh challenge - proves the answer is new, independent of the
 local clock).
+
+Administrator requests (PMW-ADMIN-v1, OWNER app -> admin endpoints, no login screen): the OWNER device holds its own Ed25519
+key (separate from the server's license-signing key; private part protected by DPAPI on Windows). Every admin request carries
+X-PMW-Admin-Key (kid), X-PMW-Admin-Timestamp (UTC seconds), X-PMW-Admin-Nonce (random) and X-PMW-Admin-Signature over
+    ADMIN_DOMAIN + METHOD \n path?query \n sha256(exact body bytes) \n timestamp \n nonce \n kid
+The server trusts a device key only after it was added from the server's own shell (out-of-band pairing), checks the clock
+skew and rejects a reused nonce (stored persistently - also after a restart).
 """
 from __future__ import annotations
 
@@ -112,6 +119,23 @@ def b64u_dec(s: str) -> bytes:
 
 def key_id(public_key_raw: bytes) -> str:
     return hashlib.sha256(public_key_raw).hexdigest()[:16]
+
+
+ADMIN_DOMAIN = b"PMW-ADMIN-v1\n"
+ADMIN_HEADERS = ("X-PMW-Admin-Key", "X-PMW-Admin-Timestamp", "X-PMW-Admin-Nonce", "X-PMW-Admin-Signature")
+ADMIN_MAX_SKEW_S = 120
+ADMIN_KID_RE = re.compile(r"^adm-[0-9a-f]{16}$")
+ADMIN_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")
+
+
+def admin_key_id(public_key_raw: bytes) -> str:
+    return "adm-" + hashlib.sha256(public_key_raw).hexdigest()[:16]
+
+
+def admin_canonical(method: str, path_qs: str, body: bytes, ts: int, nonce: str, kid: str) -> bytes:
+    """Bytes signed by the OWNER device for one admin request (path relative to the API root, query exactly as sent)."""
+    parts = [method.upper(), path_qs, hashlib.sha256(body or b"").hexdigest(), str(int(ts)), nonce, kid]
+    return ADMIN_DOMAIN + "\n".join(parts).encode("utf-8")
 
 
 def canonical(payload: dict) -> bytes:

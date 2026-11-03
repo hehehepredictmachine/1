@@ -6,6 +6,10 @@
   new-pepper       print a random PMW_LIC_KEY_PEPPER
   serve            run the API (behind the HTTPS reverse proxy)
   create-license   emergency key generation on the server itself (--duration 24h|72h|7d|31d); the key is shown once
+  admin-keys add --public-key B64 --label NAME    trust an OWNER device key (out-of-band pairing - the only way to add one)
+  admin-keys list                                 trusted / revoked OWNER device keys
+  admin-keys revoke KID [--reason TEXT]           revoke a device key (lost / replaced computer)
+  backup-db --out FILE                            consistent snapshot of the database while the API runs (keep it offline)
 """
 from __future__ import annotations
 
@@ -29,6 +33,17 @@ def main(argv: list[str] | None = None) -> int:
     cl = sub.add_parser("create-license")
     cl.add_argument("--duration", required=True, choices=["24h", "72h", "7d", "31d"])
     cl.add_argument("--note", default=None)
+    ak = sub.add_parser("admin-keys")
+    aks = ak.add_subparsers(dest="sub", required=True)
+    a_add = aks.add_parser("add")
+    a_add.add_argument("--public-key", required=True)
+    a_add.add_argument("--label", default="OWNER")
+    aks.add_parser("list")
+    a_rev = aks.add_parser("revoke")
+    a_rev.add_argument("kid")
+    a_rev.add_argument("--reason", default=None)
+    bk = sub.add_parser("backup-db")
+    bk.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     s = Settings()
     if a.cmd == "init-keys":
@@ -60,6 +75,40 @@ def main(argv: list[str] | None = None) -> int:
         import uvicorn
         from .app import create_app
         uvicorn.run(create_app(s), host=s.host, port=s.port, server_header=False, log_level="info")
+        return 0
+    if a.cmd == "admin-keys":
+        import time
+        from . import admin_auth as AA
+        from .store import Store
+        st = Store(s.database)
+        if a.sub == "add":
+            try:
+                out = AA.add_key(st, a.public_key, a.label, actor="server-shell", now=time.time())
+            except ValueError as exc:
+                print(f"[BŁĄD] {exc}", file=sys.stderr)
+                return 2
+            print(f"{out['status']}: {out['kid']} ({a.label}) – aplikacja OWNER z tym kluczem może teraz zarządzać licencjami bez logowania")
+            return 0
+        if a.sub == "list":
+            from .protocol import utc_iso
+            for k in AA.list_keys(st):
+                state = f"ODWOŁANY {utc_iso(k['revoked_at'])}" if k["revoked_at"] else "ZAUFANY"
+                used = utc_iso(k["last_used_at"]) if k["last_used_at"] else "—"
+                print(f"{k['kid']}  {state:<32} {k['label'] or '':<24} dodany {utc_iso(k['created_at'])}  ostatnio {used}")
+            return 0
+        if a.sub == "revoke":
+            from .service import LicenseError
+            try:
+                AA.revoke_key(st, a.kid, "server-shell", time.time(), a.reason)
+            except LicenseError as exc:
+                print(f"[BŁĄD] {exc.message}", file=sys.stderr)
+                return 2
+            print(f"Odwołano {a.kid}")
+            return 0
+    if a.cmd == "backup-db":
+        from .store import Store
+        out = Store(s.database).backup(a.out)
+        print(f"Kopia bazy: {out} (chmod 600). Klucz podpisu {s.signing_key} i plik konfiguracji kopiuj osobno, offline.")
         return 0
     if a.cmd == "create-license":
         from .service import LicenseService

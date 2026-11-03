@@ -218,18 +218,21 @@ class TestGuardAgainstServer(unittest.TestCase):
         self.assertEqual(g2.validate_now()["status"], "REVOKED")
         self.assertFalse(g2.authorize_new_order()[0])
 
-    def test_06_owner_license_manager(self):
+    def test_06_owner_license_manager_device_key(self):
+        """1.29: no login screen - the OWNER app signs admin requests with its device key; the server trusts the key only after
+        it was added from the server's shell. The test clock of the server is months ahead: the skew is measured and compensated."""
         from masterquo.license.owner import OwnerError, OwnerLicenseManager
         om = OwnerLicenseManager(self.tmp("owner"))
+        st = om.set_server(self.srv.base)
+        self.assertIs(st["paired"], False)                                            # unknown device key -> not trusted
+        self.assertIn("admin-keys add --public-key", st["pairing_command"])
         with self.assertRaises(OwnerError):
-            om.login(self.srv.base, "owner", "wrong-password-xx")
-        with self.assertRaises(OwnerError):
-            om.create("31d")                                                          # not logged in
-        st = om.login(self.srv.base, "owner", PASSWORD)
-        self.assertTrue(st["logged_in"])
-        self.assertNotIn(PASSWORD, (self.tmp("owner") / "license_owner.json").read_text(encoding="utf-8"))
-        made = {d: om.create(d, note=f"test {d}") for d in ("24h", "72h", "7d", "31d")}
+            om.create("31d")
+        pair(self.srv, st["device"]["public_key"])                                     # out-of-band, on the server
+        self.assertIs(om.check()["paired"], True)
+        made = {d: om.create(d, note=f"test {d}") for d in ("72h", "7d", "31d", "24h")}
         self.assertTrue(all(m["license_key"].startswith("PMW-") for m in made.values()))
+        self.assertEqual(om.status()["durations"], ["72h", "7d", "31d"])
         lst = om.list(q="test")
         self.assertGreaterEqual(lst["total"], 4)
         self.assertNotIn(made["31d"]["license_key"], json.dumps(lst))
@@ -238,7 +241,19 @@ class TestGuardAgainstServer(unittest.TestCase):
         self.assertEqual(om.revoke(lid, "x")["status"], "REVOKED")
         self.assertIn("by_status", om.stats())
         self.assertTrue(om.audit(20)["items"])
-        self.assertFalse(om.logout()["logged_in"])
+        om2 = OwnerLicenseManager(self.tmp("owner"))                                   # restart: no login, same device key
+        self.assertIs(om2.check()["paired"], True)
+        self.assertEqual(om2.status()["device"]["kid"], st["device"]["kid"])
+        saved = b"".join(p.read_bytes() for p in self.tmp("owner").iterdir() if p.is_file())
+        self.assertNotIn(PASSWORD.encode(), saved)
+        for lic in made.values():
+            self.assertNotIn(lic["license_key"].encode(), saved)
+
+
+def pair(srv, public_b64: str, label: str = "OWNER test") -> str:
+    """What `python -m pmw_license admin-keys add` does on the server (same function, same database)."""
+    from pmw_license import admin_auth as AA
+    return AA.add_key(srv.app.state.store, public_b64, label, "server-shell", time.time())["kid"]
 
 
 class TestOrdersBlockedPositionsKept(unittest.TestCase):

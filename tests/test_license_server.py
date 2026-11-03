@@ -47,16 +47,17 @@ def free_port() -> int:
 
 
 class Server:
-    def __init__(self, tmp: Path, clock: Clock, rate_public: int = 1000, rate_login: int = 100):
+    def __init__(self, tmp: Path, clock: Clock, rate_public: int = 1000, rate_login: int = 100, password: bool = True,
+                 signer: Signer | None = None, port: int | None = None):
         import uvicorn
         from pmw_license.app import create_app
-        self.signer = Signer.generate()
+        self.signer = signer or Signer.generate()
         self.db_path = tmp / "licenses.db"
-        self.settings = Settings(database=self.db_path, signing_key=tmp / "none.pem", key_pepper="p" * 48, admin_user="owner",
-                                 admin_password_hash=hash_password(PASSWORD), env="development", rate_public_per_min=rate_public,
-                                 rate_login_per_min=rate_login)
+        self.settings = Settings(database=self.db_path, signing_key=tmp / "none.pem", key_pepper="p" * 48, admin_user="owner" if password else "",
+                                 admin_password_hash=hash_password(PASSWORD) if password else "", env="development",
+                                 rate_public_per_min=rate_public, rate_login_per_min=rate_login)
         self.app = create_app(self.settings, clock=clock, signer=self.signer, store=Store(self.db_path), limiter=RateLimiter())
-        self.port = free_port()
+        self.port = port or free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         self.server = uvicorn.Server(uvicorn.Config(self.app, host="127.0.0.1", port=self.port, log_level="warning"))
         self.thread = threading.Thread(target=self.server.run, daemon=True)

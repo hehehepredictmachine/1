@@ -1,6 +1,7 @@
-// OWNER EDITION - License Manager: log in to the License API (server address + admin login; the password is forwarded once and not
-// stored), dashboard counts, generate 24h / 72h / 7d / 31d keys (the full key is shown ONCE with a copy button - the server keeps only
-// a hash), list / search, revoke, reset the device binding, audit log. Every action is authorized by the server, not by this page.
+// OWNER EDITION - License Manager (1.29: no login screen). The backend signs every admin request with this computer's device key; the
+// server trusts it after a one-time pairing done in the server's shell. Dashboard counts, 72h / 7d / 31d keys (24h under "zaawansowane";
+// the full key is shown ONCE with a copy button - the server keeps only a hash), list / search, revoke, device reset, audit log,
+// device keys + rotation. Every action is authorized by the server, not by this page.
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { useStore } from "../../store";
@@ -8,23 +9,24 @@ import { cls, fmtTime } from "../../util";
 import "./license.css";
 
 const ST_PL: Record<string, string> = { CREATED: "utworzona", ACTIVE: "aktywna", EXPIRED: "wygasła", REVOKED: "cofnięta" };
-const DUR = ["24h", "72h", "7d", "31d"];
 
 export default function LicenseManager() {
   const { s } = useStore();
   const [srv, setSrv] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [login, setLogin] = useState({ server_url: "", username: "", password: "" });
+  const [url, setUrl] = useState("");
   const [stats, setStats] = useState<any>(null);
   const [list, setList] = useState<any>(null);
   const [filter, setFilter] = useState({ status: "", q: "" });
   const [dur, setDur] = useState("31d");
   const [note, setNote] = useState("");
   const [created, setCreated] = useState<any>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [audit, setAudit] = useState<any[] | null>(null);
+  const [keys, setKeys] = useState<any[] | null>(null);
   const owner = s.license?.edition?.edition === "OWNER";
+  const paired = srv?.paired === true;
 
   const wrap = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     setBusy(true);
@@ -33,7 +35,7 @@ export default function LicenseManager() {
       return await fn();
     } catch (e: any) {
       setErr(String(e?.message || e));
-      if (String(e?.message || "").startsWith("UNAUTHORIZED")) setSrv((x: any) => ({ ...(x || {}), logged_in: false }));
+      if (String(e?.message || "").startsWith("UNAUTHORIZED")) setSrv((x: any) => ({ ...(x || {}), paired: false }));
       return null;
     } finally {
       setBusy(false);
@@ -45,15 +47,19 @@ export default function LicenseManager() {
     setStats(st);
     setList(ls);
   }, [filter]);
+  const copy = async (text: string, what: string) => {
+    try { await navigator.clipboard.writeText(text); setCopied(what); } catch { setCopied(null); }
+  };
 
   useEffect(() => {
     if (!owner) return;
-    apiGet("/api/v1/owner/license-server").then((x) => { setSrv(x); setLogin((l) => ({ ...l, server_url: x.server_url || "" })); }).catch((e) => setErr(String(e)));
+    // no login: the page asks the backend to check the device key against the server (signed whoami)
+    apiSend("POST", "/api/v1/owner/license-server/check").then((x) => { setSrv(x); setUrl(x.server_url || ""); }).catch((e) => setErr(String(e)));
   }, [owner]);
   useEffect(() => {
-    if (srv?.logged_in) void wrap(reload);
+    if (paired) void wrap(reload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srv?.logged_in, reload]);
+  }, [paired, reload]);
 
   if (!owner) {
     return (
@@ -69,32 +75,52 @@ export default function LicenseManager() {
     const ok = await wrap(() => apiSend("POST", path, { reason: reason || null }));
     if (ok) await wrap(reload);
   };
+  const rotate = async (action: string) => {
+    const out = await wrap(() => apiSend("POST", "/api/v1/owner/license-server/rotate", { action }));
+    if (out) setSrv(out);
+  };
+  const durations: string[] = srv?.durations || ["72h", "7d", "31d"];
+  const advanced: string[] = srv?.durations_advanced || ["24h"];
   return (
     <main className="page lm-page" data-testid="page-licencje">
-      <section className="panel lm-panel">
-        <h2>License Manager <span className="lm-dim">OWNER EDITION · serwer licencji {srv?.server_url || "nie ustawiony"}</span></h2>
+      <section className="panel lm-panel" data-testid="lm-connection" data-paired={paired ? "1" : "0"}>
+        <h2>License Manager <span className="lm-dim">OWNER EDITION · bez logowania – żądania podpisuje klucz tego komputera</span></h2>
         {err && <p className="lm-err" role="alert" data-testid="lm-error">{err}</p>}
-        {!srv?.logged_in ? (
-          <form className="lm-login" data-testid="lm-login" onSubmit={async (e) => {
-            e.preventDefault();
-            const out = await wrap(() => apiSend("POST", "/api/v1/owner/license-server/login", login));
-            if (out) { setSrv(out); setLogin((l) => ({ ...l, password: "" })); }
-          }}>
-            <label>Adres serwera licencji<input value={login.server_url} placeholder="https://licencje.twoja-domena.pl" data-testid="lm-url"
-              onChange={(e) => setLogin({ ...login, server_url: e.target.value })} /></label>
-            <label>Login administratora<input value={login.username} autoComplete="username" data-testid="lm-user"
-              onChange={(e) => setLogin({ ...login, username: e.target.value })} /></label>
-            <label>Hasło<input type="password" value={login.password} autoComplete="current-password" data-testid="lm-pass"
-              onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
-            <button className="btn primary" disabled={busy || !login.server_url || !login.username || !login.password} data-testid="lm-login-btn">Zaloguj</button>
-            <p className="lm-dim">Hasło jest przekazywane tylko do serwera licencji i nie jest zapisywane. Sesja trwa do wylogowania albo jej wygaśnięcia na serwerze.</p>
-          </form>) : (
-          <div className="lm-bar">
-            <span>Zalogowano: <b>{srv.username}</b> · sesja do {fmtTime(srv.session_expires_at, true)}</span>
-            <button className="btn" onClick={async () => setSrv(await apiSend("POST", "/api/v1/owner/license-server/logout"))}>Wyloguj</button>
+        <form className="lm-login" onSubmit={async (e) => {
+          e.preventDefault();
+          const out = await wrap(() => apiSend("POST", "/api/v1/owner/license-server", { server_url: url }));
+          if (out) setSrv(out);
+        }}>
+          <label>Adres serwera licencji<input value={url} placeholder="https://licencje.twoja-domena.pl" data-testid="lm-url"
+            onChange={(e) => setUrl(e.target.value)} /></label>
+          <button className="btn primary" disabled={busy || !url} data-testid="lm-save-url">Zapisz i sprawdź</button>
+          <button type="button" className="btn" disabled={busy || !srv?.server_url} data-testid="lm-check"
+            onClick={async () => { const out = await wrap(() => apiSend("POST", "/api/v1/owner/license-server/check")); if (out) setSrv(out); }}>Sprawdź połączenie</button>
+        </form>
+        <p className={cls("lm-state", paired ? "ok" : srv?.paired === false ? "warn" : "bad")} data-testid="lm-state">
+          {paired ? <>Połączono – serwer ufa temu komputerowi (klucz <code>{srv.device?.kid}</code>{srv.server_version ? `, serwer ${srv.server_version}` : ""}).</>
+            : srv?.paired === false ? <>Ten komputer nie jest jeszcze sparowany z serwerem.</>
+              : <>Brak połączenia z serwerem licencji{srv?.reason ? ` – ${srv.reason}` : ""}.</>}
+          {srv?.checked_at && <span className="lm-dim"> · sprawdzono {fmtTime(srv.checked_at, true)}</span>}
+          {srv?.clock_offset_s ? <span className="lm-dim"> · korekta zegara {srv.clock_offset_s} s</span> : null}</p>
+        {srv && srv.paired === false && (
+          <div className="lm-pair" data-testid="lm-pair">
+            <b>Jednorazowe parowanie (bez hasła):</b>
+            <ol>
+              <li>Zaloguj się do powłoki SWOJEGO serwera licencji (SSH) – tam, gdzie działa usługa.</li>
+              <li>W folderze usługi uruchom polecenie (zawiera tylko klucz PUBLICZNY tego komputera):</li>
+            </ol>
+            <code className="lm-cmd" data-testid="lm-pair-cmd">{srv.pairing_command}</code>
+            <div className="lm-bar">
+              <button className="btn" onClick={() => void copy(srv.pairing_command, "pair")}>{copied === "pair" ? "Skopiowano" : "Kopiuj polecenie"}</button>
+              <button className="btn primary" disabled={busy} data-testid="lm-pair-check"
+                onClick={async () => { const out = await wrap(() => apiSend("POST", "/api/v1/owner/license-server/check")); if (out) setSrv(out); }}>Sprawdź parowanie</button>
+            </div>
+            <p className="lm-dim">Klucz prywatny zostaje na tym komputerze (Windows: DPAPI bieżącego użytkownika). Po sparowaniu ta strona działa od razu, także po
+              restarcie – bez logowania. Klient nigdy nie dostaje tego klucza ani tej zakładki.</p>
           </div>)}
       </section>
-      {srv?.logged_in && (<>
+      {paired && (<>
         <section className="panel lm-panel" data-testid="lm-stats">
           <h2>Licencje</h2>
           <div className="lm-counts">
@@ -107,22 +133,26 @@ export default function LicenseManager() {
           <h2>Nowy klucz</h2>
           <div className="lm-gen">
             <div className="lm-durs" role="radiogroup" aria-label="Okres licencji">
-              {DUR.map((d) => (
+              {durations.map((d) => (
                 <button key={d} type="button" role="radio" aria-checked={dur === d} className={cls("btn", dur === d && "primary")} onClick={() => setDur(d)}
                   data-testid={`lm-dur-${d}`}>{srv.durations_pl?.[d] ?? d}</button>))}
             </div>
+            <details className="lm-adv"><summary>zaawansowane</summary>
+              {advanced.map((d) => (
+                <button key={d} type="button" role="radio" aria-checked={dur === d} className={cls("btn", dur === d && "primary")} onClick={() => setDur(d)}
+                  data-testid={`lm-dur-${d}`}>{srv.durations_pl?.[d] ?? d}</button>))}
+            </details>
             <input placeholder="notatka (np. imię klienta)" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} data-testid="lm-note" />
             <button className="btn primary" disabled={busy} data-testid="lm-create" onClick={async () => {
               const out = await wrap(() => apiSend("POST", "/api/v1/owner/licenses", { duration: dur, note: note || null }));
-              if (out) { setCreated(out); setCopied(false); setNote(""); await wrap(reload); }
+              if (out) { setCreated(out); setCopied(null); setNote(""); await wrap(reload); }
             }}>Generuj klucz</button>
           </div>
           {created && (
             <div className="lm-key" role="alert" data-testid="lm-new-key">
               <span>Klucz ({created.duration_pl}) – <b>pokazany tylko teraz</b>, serwer przechowuje wyłącznie jego skrót:</span>
               <code data-testid="lm-key-value">{created.license_key}</code>
-              <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(created.license_key); setCopied(true); } catch { setCopied(false); } }}>
-                {copied ? "Skopiowano" : "Kopiuj"}</button>
+              <button className="btn" onClick={() => void copy(created.license_key, "key")}>{copied === "key" ? "Skopiowano" : "Kopiuj"}</button>
               <button className="btn" onClick={() => setCreated(null)}>Zamknij (klucz zniknie)</button>
             </div>)}
         </section>
@@ -158,6 +188,24 @@ export default function LicenseManager() {
           {audit && (
             <ul className="lm-audit">{audit.map((a, i) => (
               <li key={i} className={cls(!a.ok && "bad")}>{fmtTime(a.ts, true)} · {a.actor} · {a.action}{a.license_id ? ` · ${a.license_id}` : ""}</li>))}</ul>)}
+        </section>
+        <section className="panel lm-panel" data-testid="lm-keys">
+          <h2>Klucze urządzeń OWNER <button className="btn" onClick={async () => { const k = await wrap(() => apiGet("/api/v1/owner/admin-keys")); if (k) setKeys((k as any).items); }}>Pokaż</button></h2>
+          <p className="lm-dim">Ten komputer: <code>{srv.device?.kid}</code> ({srv.label}). Nowy komputer albo podejrzenie wycieku: rotacja – nowy klucz parujesz na serwerze,
+            stary zostaje odwołany. Zgubiony komputer: na serwerze <code>python -m pmw_license admin-keys revoke &lt;kid&gt;</code>.</p>
+          {keys && (
+            <ul className="lm-audit">{keys.map((k) => (
+              <li key={k.kid} className={cls(k.revoked_at && "bad")}>{k.kid} · {k.label || "—"} · dodany {fmtTime(k.created_at, true)}
+                {k.revoked_at ? ` · odwołany ${fmtTime(k.revoked_at, true)}` : " · zaufany"}{k.kid === srv.device?.kid ? " · ten komputer" : ""}</li>))}</ul>)}
+          {!srv.rotation ? <button className="btn" disabled={busy} onClick={() => void rotate("begin")} data-testid="lm-rotate-begin">Rozpocznij rotację klucza</button> : (
+            <div className="lm-pair">
+              <b>Nowy klucz oczekuje na sparowanie:</b> <code className="lm-cmd">{srv.rotation.pairing_command}</code>
+              <div className="lm-bar">
+                <button className="btn" onClick={() => void copy(srv.rotation.pairing_command, "rot")}>{copied === "rot" ? "Skopiowano" : "Kopiuj polecenie"}</button>
+                <button className="btn primary" disabled={busy} onClick={() => void rotate("commit")} data-testid="lm-rotate-commit">Zakończ rotację</button>
+                <button className="btn" disabled={busy} onClick={() => void rotate("cancel")}>Anuluj</button>
+              </div>
+            </div>)}
         </section>
       </>)}
     </main>);

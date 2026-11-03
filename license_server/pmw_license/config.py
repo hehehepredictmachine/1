@@ -3,8 +3,9 @@
 PMW_LIC_DATABASE          path of the SQLite file (default ./data/licenses.db; keep it outside any web root, chmod 600)
 PMW_LIC_SIGNING_KEY       path of the Ed25519 PRIVATE key (PEM, PKCS8) - server only (default ./secrets/signing_key.pem)
 PMW_LIC_KEY_PEPPER        server-side secret mixed into the license-key hash (HMAC-SHA256); required in production
-PMW_LIC_ADMIN_USER        administrator user name
-PMW_LIC_ADMIN_PASSWORD_HASH  scrypt hash from `python -m pmw_license hash-password` (never the password itself)
+PMW_LIC_ADMIN_USER        administrator user name (only for the optional recovery password login)
+PMW_LIC_ADMIN_PASSWORD_HASH  OPTIONAL scrypt hash from `python -m pmw_license hash-password` - empty = password login disabled
+                          (normal administration: OWNER device keys, `python -m pmw_license admin-keys add`)
 PMW_LIC_ENV               production | development (production refuses to start with missing secrets)
 PMW_LIC_HOST / PMW_LIC_PORT  bind address (default 127.0.0.1:8740 - expose only through the HTTPS reverse proxy)
 PMW_LIC_TRUST_PROXY       1 = take the client IP from X-Forwarded-For (only behind your own proxy)
@@ -37,8 +38,8 @@ class Settings:
     def problems(self) -> list[str]:
         """Missing / unsafe settings. In production any problem stops the server."""
         out = []
-        if not self.admin_user or not self.admin_password_hash.startswith("scrypt$"):
-            out.append("PMW_LIC_ADMIN_USER / PMW_LIC_ADMIN_PASSWORD_HASH nie są ustawione (hash z: python -m pmw_license hash-password)")
+        if self.admin_password_hash and (not self.admin_user or not self.admin_password_hash.startswith("scrypt$")):
+            out.append("PMW_LIC_ADMIN_PASSWORD_HASH ustawiony niepoprawnie (pusty = logowanie hasłem wyłączone; inaczej hash scrypt i PMW_LIC_ADMIN_USER)")
         if len(self.key_pepper) < 32:
             out.append("PMW_LIC_KEY_PEPPER musi mieć co najmniej 32 znaki (np. python -m pmw_license new-pepper)")
         if not self.signing_key.exists():

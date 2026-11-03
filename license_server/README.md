@@ -19,10 +19,14 @@ Not part of the client package – it runs on your server (VPS) behind HTTPS.
 - **Validation** at client startup, every 5 minutes and before every new entry.
   - Each response carries an **Ed25519 signature** and the client's nonce, so an old response cannot be replayed.
   - The private key never leaves the server.
-- **Administrator:**
-  - login → bearer session (8 h), stored as a hash on the server;
-  - password stored as scrypt;
-  - every privileged operation is checked server-side.
+- **Administrator (1.1, no login screen):**
+  - the OWNER app has its own Ed25519 **device key** (private part only on the OWNER computer, DPAPI on Windows);
+  - the server trusts a device key only after you add it **from the server's shell** (one-time pairing, outside the public API);
+  - every admin request is signed: method, path + query, SHA-256 of the exact body, UTC time (±120 s) and a random nonce;
+  - a reused nonce is rejected (stored in the database - also after a restart); the device key never signs licenses and the
+    license-signing key never authenticates an administrator;
+  - optional password login (scrypt, bearer session) exists only for OWNER apps older than 1.29 and is **disabled** when
+    `PMW_LIC_ADMIN_PASSWORD_HASH` is empty.
 - **Rate limits:**
   - activation / validation – per IP address;
   - administrator login – per IP address.
@@ -42,7 +46,7 @@ cd /opt/pmw-license && sudo python3 -m venv venv && sudo venv/bin/pip install -r
 # secrets (once)
 sudo -u pmwlicense env PMW_LIC_SIGNING_KEY=/etc/pmw-license/signing_key.pem venv/bin/python -m pmw_license init-keys
 venv/bin/python -m pmw_license new-pepper        # -> PMW_LIC_KEY_PEPPER
-venv/bin/python -m pmw_license hash-password     # -> PMW_LIC_ADMIN_PASSWORD_HASH (the password is never stored)
+# administrator: NO password needed - after the service runs, pair the OWNER app (see "Pairing the OWNER app" below)
 sudo cp .env.example /etc/pmw-license.env && sudo chmod 600 /etc/pmw-license.env   # fill in the values
 
 sudo cp pmw-license.service /etc/systemd/system/ && sudo systemctl enable --now pmw-license
@@ -65,7 +69,9 @@ Contract: `docs/LICENCJE_SYSTEM_1_27_PL.md` in the bot repository.
 | `GET /api/v1/public-key` | public key (Ed25519) and its `kid` |
 | `POST /api/v1/licenses/activate` | `license_key, hwid_hash, nonce, client_version` → status, expiry, device token, signed assertion |
 | `POST /api/v1/licenses/validate` | `license_id, hwid_hash, token, nonce` → fresh signed assertion |
-| `POST /api/v1/admin/login` / `logout` | administrator session |
+| `GET /api/v1/admin/whoami` | signed check: which OWNER device key is calling (pairing test) |
+| `GET /api/v1/admin/keys`, `POST /api/v1/admin/keys/{kid}/revoke` | trusted OWNER device keys; revoke another key (never the calling one) |
+| `POST /api/v1/admin/login` / `logout` | legacy password session - only when `PMW_LIC_ADMIN_PASSWORD_HASH` is set |
 | `POST /api/v1/admin/licenses` | `{"duration": "24h|72h|7d|31d", "note"}` → key **once** |
 | `GET /api/v1/admin/licenses` | list (`status`, `duration`, `q`, `limit`, `offset`) – no keys or hashes |
 | `POST /api/v1/admin/licenses/{id}/revoke` | revoke |
@@ -87,3 +93,31 @@ Errors use the shape `{"error": {"code", "message"}}`. Codes:
 - **SQLite** suits a small deployment.
   - Requires: a file outside the web directory, chmod 600, backups.
   - Moving to PostgreSQL means a new `store.py` with the same methods.
+
+## Pairing the OWNER app (once per OWNER computer)
+1. OWNER app → **Ustawienia → Licencje**: enter the server address (`https://…`) and click *Zapisz i sprawdź*.
+2. The page shows a command with the computer's PUBLIC key. Run it on the server, in the service folder, as the service user:
+   ```bash
+   sudo -u pmwlicense env $(grep -v '^#' /etc/pmw-license.env | xargs) venv/bin/python -m pmw_license admin-keys add --public-key <KEY> --label "OWNER PC"
+   ```
+3. Click *Sprawdź parowanie*. From now on the page works without any login, also after restarts.
+
+Key management on the server: `admin-keys list`, `admin-keys revoke <kid> --reason "…"`.
+- **New / replaced OWNER computer:** pair the new computer the same way, then revoke the old kid.
+- **Rotation from the app:** *Rozpocznij rotację klucza* → pair the shown new key → *Zakończ rotację* (the old key is revoked).
+- **Lost computer / leaked key:** `admin-keys revoke <kid>` immediately; pair a new key.
+- **Lost access to every OWNER computer:** only the server shell can add a key - that is the recovery path.
+
+## Backup and restore
+- Database (online, consistent): `python -m pmw_license backup-db --out /var/backups/pmw-license/licenses-$(date +%F).db`
+- Copy **offline** also: the signing key (`PMW_LIC_SIGNING_KEY`) and `/etc/pmw-license.env` (pepper!). Without the same pepper
+  existing keys cannot be verified; without the same signing key every CLIENT package must be rebuilt.
+- Restore: stop the service, put the database file at `PMW_LIC_DATABASE`, the key at `PMW_LIC_SIGNING_KEY`, the same env file,
+  start the service (`systemctl start pmw-license`), check `GET /health` and a signed `whoami` from the OWNER app.
+- Database schema: v2 (1.1) adds `admin_keys` and `admin_nonces` in place on first start; a 1.0 server can still read the
+  database (the new tables are only additional).
+
+## Update / restart
+`systemctl restart pmw-license` (the service starts again after a reboot: `systemctl enable pmw-license`). Before an update
+make a database backup. Never expose port 8740 directly - only the HTTPS reverse proxy (Caddyfile.example) with a valid
+certificate; do not enable any debug mode.

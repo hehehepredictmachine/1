@@ -1,7 +1,7 @@
 """License System v1 in the panel (Chromium): a real License API (uvicorn thread) + two demo bots.
 CLIENT edition: KEY FOR MAGIC covers the panel until a valid key is activated (wrong key -> clear error; the right key -> the panel
 opens, license chip "do <expiry>"), a revocation by the administrator brings the window back at the next periodic check (here every
-5 s) with the open-position note. OWNER edition: License Manager - login to the license server, one-time key display, list, revoke.
+5 s) with the open-position note. OWNER edition: License Manager without login - device-key pairing, one-time key display, list, revoke, reload without login.
 Screenshots: data/logs/ui_license/. Skipped (never "passed") without Playwright/Chromium."""
 from __future__ import annotations
 
@@ -129,15 +129,19 @@ class TestLicenseUI(unittest.TestCase):
             p.goto(f"http://127.0.0.1:{self.owner.port}/#/licencje")
             p.wait_for_selector("[data-testid=page-licencje]", timeout=60000)
             self.assertEqual(p.locator("[data-testid=license-overlay]").count(), 0)               # OWNER: no gate
-            p.wait_for_selector("[data-testid=lm-login]", timeout=20000)
+            p.wait_for_selector("[data-testid=lm-connection]", timeout=20000)
+            self.assertEqual(p.locator("input[type=password]").count(), 0)                       # 1.29: no login screen at all
             p.fill("[data-testid=lm-url]", self.srv.base)
-            p.fill("[data-testid=lm-user]", "owner")
-            p.fill("[data-testid=lm-pass]", "zle-haslo-123456")
-            p.click("[data-testid=lm-login-btn]")
-            self.assertTrue(wait_for(lambda: p.locator("[data-testid=lm-error]").count() > 0, 20, 0.2))
-            p.fill("[data-testid=lm-pass]", PASSWORD)
-            p.click("[data-testid=lm-login-btn]")
+            p.click("[data-testid=lm-save-url]")
+            p.wait_for_selector("[data-testid=lm-pair-cmd]", timeout=20000)                     # not trusted yet -> pairing wizard
+            cmd = p.locator("[data-testid=lm-pair-cmd]").inner_text()
+            p.screenshot(path=str(SHOTS / "05a_owner_pairing.png"), full_page=True)
+            from test_license_acceptance import pair
+            pair(self.srv, re.search(r"--public-key (\S+)", cmd).group(1))                     # what the owner runs on the server
+            p.click("[data-testid=lm-pair-check]")
             p.wait_for_selector("[data-testid=lm-stats]", timeout=20000)
+            self.assertEqual(p.locator("[data-testid=lm-connection]").get_attribute("data-paired"), "1")
+            self.assertEqual(p.locator("[data-testid=lm-durs] button, .lm-durs button").count() >= 3, True)
             p.click("[data-testid=lm-dur-72h]")
             p.fill("[data-testid=lm-note]", "klient testowy")
             p.click("[data-testid=lm-create]")
@@ -151,7 +155,7 @@ class TestLicenseUI(unittest.TestCase):
             row.locator("button", has_text="Cofnij").click()
             self.assertTrue(wait_for(lambda: p.locator("[data-testid=lm-row][data-status=REVOKED]").count() == n_rev + 1, 20, 0.2))
             p.reload()
-            p.wait_for_selector("[data-testid=page-licencje]", timeout=30000)
+            p.wait_for_selector("[data-testid=lm-stats]", timeout=30000)                         # after a reload: still no login
             self.assertEqual(p.locator("[data-testid=lm-key-value]").count(), 0)                 # the key is never shown again
             body = p.locator("body").inner_text()
             self.assertNotIn(key, body)

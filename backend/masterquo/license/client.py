@@ -36,12 +36,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def request(base: str, path: str, body: dict | None = None, *, token: str | None = None, method: str | None = None,
-            timeout: float = TIMEOUT_S) -> dict:
+            timeout: float = TIMEOUT_S, raw: bytes | None = None, headers: dict | None = None) -> dict:
+    """raw: exact body bytes (signed admin requests sign these bytes); headers: extra headers (admin signature)."""
     if not valid_license_url(base) or not path.startswith("/") or path.startswith("//"):
         raise ApiError("INVALID_REQUEST", "nieprawidłowy adres serwera licencji")
     url = base.rstrip("/") + path
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "PepeMarketWizard-License/1"}
+    data = raw if raw is not None else (json.dumps(body).encode("utf-8") if body is not None else None)
+    extra = headers or {}
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "PepeMarketWizard-License/1", **extra}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"), headers=headers)

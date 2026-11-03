@@ -1,6 +1,7 @@
 """Persistence behind a small repository (SQLite now; the same methods can be backed by PostgreSQL later).
 
 Only hashes are stored: license keys (HMAC-SHA256 with the server pepper), device tokens and admin session tokens (SHA-256).
+Administrator device keys are PUBLIC keys only (their private parts never leave the OWNER computer).
 Plaintext keys exist only in the one response that creates them. Writes are transactions (BEGIN IMMEDIATE), activation is
 protected by a conditional UPDATE so two concurrent activations cannot both bind a device.
 """
@@ -38,8 +39,15 @@ SCHEMA = [
         id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, license_id TEXT,
         ok INTEGER NOT NULL, ip TEXT, details TEXT)""",
     "CREATE INDEX IF NOT EXISTS ix_audit_ts ON audit_log(ts)",
+    # v2 (1.29): administrator device keys (OWNER app, Ed25519 public keys added from the server shell) + replay store of their nonces
+    """CREATE TABLE IF NOT EXISTS admin_keys (
+        kid TEXT PRIMARY KEY, public_key TEXT NOT NULL UNIQUE, label TEXT, created_at REAL NOT NULL, created_by TEXT NOT NULL,
+        revoked_at REAL, revoke_reason TEXT, last_used_at REAL)""",
+    """CREATE TABLE IF NOT EXISTS admin_nonces (
+        kid TEXT NOT NULL, nonce TEXT NOT NULL, ts REAL NOT NULL, PRIMARY KEY (kid, nonce))""",
+    "CREATE INDEX IF NOT EXISTS ix_admin_nonces_ts ON admin_nonces(ts)",
 ]
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PUBLIC_COLUMNS = ("license_id", "key_hint", "duration", "status", "note", "created_at", "created_by", "activated_at", "expires_at",
                   "bound_at", "last_seen_at", "client_version", "revoked_at", "revoke_reason")
 
@@ -59,6 +67,8 @@ class Store:
                 self.conn.execute(stmt)
             if self.conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 0:
                 self.conn.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,))
+            else:                                                # upgrade in place (only additive tables - a v1 server can still read it)
+                self.conn.execute("UPDATE schema_version SET version=? WHERE version<?", (SCHEMA_VERSION, SCHEMA_VERSION))
         try:
             if str(path) != ":memory:":
                 self.path.chmod(0o600)
@@ -102,3 +112,19 @@ class Store:
         else:
             with self.lock:
                 self.conn.execute(sql, args)
+
+    def backup(self, dest: Path | str) -> Path:
+        """Consistent online snapshot of the database (SQLite backup API) - safe while the API is running."""
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        out = sqlite3.connect(str(dest))
+        try:
+            with self.lock:
+                self.conn.backup(out)
+        finally:
+            out.close()
+        try:
+            dest.chmod(0o600)
+        except OSError:
+            pass
+        return dest
