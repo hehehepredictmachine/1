@@ -149,6 +149,10 @@ class AnalyticsService:
         return (now - last_close).total_seconds() > 3 * ta.TF_SEC.get(tf, 60) + 120
 
     def _worker(self) -> None:
+        try:
+            SG.warmup()                                         # one-time library load outside the timed computations
+        except Exception as exc:                                # pragma: no cover - scipy missing: each module reports its own error
+            self._err("warmup", exc)
         while not self._stop.is_set():
             with self._cv:
                 while not self.pending and not self._stop.is_set():

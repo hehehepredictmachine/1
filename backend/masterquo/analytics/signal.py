@@ -66,6 +66,14 @@ def _prep(bars, tf, cfg, module, version, symbol):
     return seg, c, None, t0
 
 
+def warmup() -> None:
+    """Loads the scipy submodules used below once, before the first timed computation. The first import takes ~1-2 s and much longer
+    while the whole application is starting (threads competing for the GIL); it must not count against the per-module timeout, or the
+    first FFT after start shows TIMEOUT until the next bar."""
+    from scipy.interpolate import CubicSpline  # noqa: F401
+    from scipy.signal import periodogram as _pg  # noqa: F401
+
+
 # ------------------------------------------------------------------ FFT
 def periodogram(x: np.ndarray, detrend: str, window: str = "hann"):
     from scipy.signal import periodogram as _pg

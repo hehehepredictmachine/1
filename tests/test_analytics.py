@@ -330,6 +330,72 @@ class TestServiceIntegration(unittest.TestCase):
         finally:
             td.close()
 
+    def test_library_load_is_not_counted_in_the_timeout(self):
+        """1.30.1: the first FFT after start showed 'TIMEOUT > 10s' because the one-time scipy import (much slower while the whole
+        app starts) was timed with the computation. The worker loads the libraries first; a slow load must not turn into TIMEOUT."""
+        import threading
+        from masterquo.analytics import service as S
+        from masterquo.config import AppConfig
+        from masterquo.db.database import Database
+        td = TempData()
+        calls: list[str] = []
+        orig_warm, orig_fft = SG.warmup, SG.fft_analysis
+        try:
+            bars = {"M5": sine_bars(300, ((32, 3.0),))}
+
+            class Bridge:
+                def bars(self, tf, limit, include_forming=False):
+                    return bars.get(tf, [])[-(limit or 10 ** 9):]
+
+            class Cfg:
+                def get(self):
+                    c = AppConfig()
+                    c.analytics.timeframes = ["M5"]
+                    c.analytics.signal_timeframes = ["M5"]
+                    c.analytics.db_timeframes = ["M5"]
+                    return c
+
+            class Bus:
+                def publish(self, *a):
+                    pass
+
+            def slow_warmup():
+                calls.append("warmup")
+                time.sleep(1.3)                                   # a slow first import, longer than the timeout below
+                orig_warm()
+
+            def fft(*a, **k):
+                calls.append("fft")
+                return orig_fft(*a, **k)
+            SG.warmup, SG.fft_analysis = slow_warmup, fft
+            svc = S.AnalyticsService(Cfg(), Bridge(), Database(), Bus(), None)
+            svc.tick()
+            key, b0, sym, cfg, _ = svc.pending["M5"]
+            svc.pending["M5"] = (key, b0, sym, cfg, 1.0)             # 1 s timeout per module
+            th = threading.Thread(target=svc._worker)
+            th.start()
+            self.assertTrue(_wait(lambda: "vmd" in svc.state.get("M5", {}), 20))
+            svc._stop.set()
+            with svc._cv:
+                svc._cv.notify_all()
+            th.join(5)
+            self.assertEqual(calls[:2], ["warmup", "fft"])          # libraries loaded once, before the first timed module
+            self.assertEqual(calls.count("warmup"), 1)
+            self.assertEqual(svc.state["M5"]["fft"]["status"], "ready", svc.state["M5"]["fft"].get("reason"))
+            self.assertEqual(svc.counters["timeouts"], 0)
+        finally:
+            SG.warmup, SG.fft_analysis = orig_warm, orig_fft
+            td.close()
+
+
+def _wait(pred, timeout):
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(0.1)
+    return False
+
 
 if __name__ == "__main__":
     unittest.main()

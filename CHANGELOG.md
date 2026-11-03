@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 1.30.1 – panel Neural Cyberpunk bez zawieszania na komputerach bez akceleracji GPU
+## 1.30.1 – poprawki po pełnej regresji: panel Neural Cyberpunk bez zawieszania (bez GPU), FFT bez fałszywego TIMEOUT po starcie
 * **Naprawa:** animowany „mózg” na pulpicie Neural Cyberpunk przerysowywał statyczną warstwę (ok. 700 linii, każda z osobnym
   rozmyciem `shadowBlur` w trybie `lighter`) przy każdym odświeżeniu rejestru modeli, czyli co kilka sekund. Bez akceleracji GPU
   (rysowanie programowe, np. Windows VPS / maszyna wirtualna, przeglądarka testowa) każde takie przerysowanie blokowało całe okno
@@ -8,6 +8,10 @@
   a poświata powstaje w jednym przejściu rozmycia; dane z rejestru i tryb są czytane bez restartu animacji. Pomiar w Chromium bez
   GPU (1440×900): otwarcie panelu ok. 1 s zamiast 20–40 s, płynna animacja (ok. 58 klatek/s zamiast ok. 2). Wygląd bez zmian.
   Usterka była już w 1.17–1.30.0; wykrył ją test `test_nc_panel` w pełnej regresji 1.30.
+* **Naprawa:** pierwsze obliczenie FFT po starcie programu wliczało do limitu 10 s jednorazowe ładowanie biblioteki `scipy.signal`
+  (ok. 1–1,5 s, a gdy cały program dopiero startuje – ponad 10 s). Karta „Analiza sygnału → FFT” pokazywała wtedy „TIMEOUT > 10s”
+  aż do następnej świecy. Wątek analityki ładuje teraz biblioteki raz, przed pierwszym obliczeniem; limit dotyczy samego obliczenia
+  (nowy test `test_library_load_is_not_counted_in_the_timeout`; wykryte przez `test_ui_analytics` w pełnej regresji 1.30).
 * Bez zmian w logice bota, strategiach, ryzyku, trybach, danych i API.
 
 ## 1.30.0 – system licencji usunięty (na Twoją prośbę)
