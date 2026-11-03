@@ -7,6 +7,8 @@ import ssl
 import urllib.error
 import urllib.request
 
+from .url import valid_license_url
+
 TIMEOUT_S = 8.0
 
 
@@ -26,8 +28,17 @@ def _ctx() -> ssl.SSLContext:
         return ssl.create_default_context()
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward license keys or bearer tokens to a redirect destination."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def request(base: str, path: str, body: dict | None = None, *, token: str | None = None, method: str | None = None,
             timeout: float = TIMEOUT_S) -> dict:
+    if not valid_license_url(base) or not path.startswith("/") or path.startswith("//"):
+        raise ApiError("INVALID_REQUEST", "nieprawidłowy adres serwera licencji")
     url = base.rstrip("/") + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "PepeMarketWizard-License/1"}
@@ -35,11 +46,14 @@ def request(base: str, path: str, body: dict | None = None, *, token: str | None
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"), headers=headers)
     try:
-        kw = {"context": _ctx()} if url.startswith("https://") else {}
-        with urllib.request.urlopen(req, timeout=timeout, **kw) as r:
+        opener = urllib.request.build_opener(_NoRedirect(), urllib.request.HTTPSHandler(context=_ctx()))
+        with opener.open(req, timeout=timeout) as r:
             raw = r.read(65536)
         return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:                        # redirects are never followed (a key / token must not reach another host)
+            raise ApiError("REDIRECT_REFUSED", f"serwer licencji odpowiedział przekierowaniem {e.code} – adres musi wskazywać bezpośrednio "
+                                               "usługę (bez przekierowań); popraw adres w konfiguracji", e.code) from None
         try:
             err = (json.loads(e.read(8192) or b"{}").get("error") or {})
         except ValueError:

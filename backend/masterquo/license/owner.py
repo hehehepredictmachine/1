@@ -14,6 +14,7 @@ from pathlib import Path
 from .. import paths
 from . import client as C
 from . import protocol as P
+from .url import valid_license_url
 
 
 class OwnerError(Exception):
@@ -43,7 +44,7 @@ class OwnerLicenseManager:
 
     def login(self, url: str, username: str, password: str) -> dict:
         url = (url or "").strip().rstrip("/")
-        if not (url.startswith("https://") or url.startswith("http://127.0.0.1") or url.startswith("http://localhost")):
+        if not valid_license_url(url):
             raise OwnerError("INVALID_REQUEST", "adres serwera licencji musi zaczynać się od https://")
         try:
             out = self.request(url, "/api/v1/admin/login", {"username": username, "password": password})

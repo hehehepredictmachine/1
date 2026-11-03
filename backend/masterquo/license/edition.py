@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from .. import paths
 from . import protocol as P
+from .url import valid_license_url
 
 EDITION_FILE = paths.ROOT_DIR / "edition.json"
 
@@ -53,7 +54,8 @@ def load(path=None) -> Edition:
     env_file = os.environ.get("MASTERQUO_EDITION_FILE")
     path = path or env_file or EDITION_FILE
     try:
-        d = json.loads(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
     except (OSError, ValueError):
         d = {}
     ed = str(d.get("edition") or "").upper()
@@ -67,7 +69,7 @@ def load(path=None) -> Edition:
         problem = "brak pliku edition.json – instalacja traktowana jako CLIENT"
     if not api or not pub:
         problem = "paczka CLIENT nie jest przygotowana (brak adresu serwera licencji lub klucza publicznego) – poproś dostawcę o paczkę"
-    elif not (api.startswith("https://") or api.startswith("http://127.0.0.1") or api.startswith("http://localhost")):
+    elif not valid_license_url(api):
         problem = "adres serwera licencji musi używać HTTPS"
     elif e.public_key_raw is None:
         problem = "nieprawidłowy klucz publiczny serwera licencji w edition.json"

@@ -27,6 +27,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+from masterquo.license.url import valid_license_url
+from masterquo.license import client as license_client
 DROP = ("backend/masterquo/license/owner.py",)
 DROP_PREFIX = ("license_server/",)
 FORBIDDEN = [(re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
@@ -40,8 +43,7 @@ def kid_of(pub_raw: bytes) -> str:
 
 
 def fetch_public_key(url: str) -> tuple[str, str]:
-    with urllib.request.urlopen(url.rstrip("/") + "/api/v1/public-key", timeout=15) as r:
-        d = json.loads(r.read())
+    d = license_client.request(url, "/api/v1/public-key", timeout=15)
     raw = base64.b64decode(d["public_key"], validate=True)
     if len(raw) != 32 or d.get("alg") != "Ed25519" or d.get("kid") != kid_of(raw):
         raise SystemExit("serwer zwrócił nieprawidłowy klucz publiczny")
@@ -125,7 +127,7 @@ def main(argv=None) -> int:
     ap.add_argument("--yes", action="store_true", help="bez pytania o potwierdzenie identyfikatora klucza")
     a = ap.parse_args(argv)
     url = a.license_url.strip().rstrip("/")
-    if not (url.startswith("https://") or url.startswith("http://127.0.0.1") or url.startswith("http://localhost")):
+    if not valid_license_url(url):
         print("Adres serwera licencji musi zaczynać się od https://", file=sys.stderr)
         return 2
     if a.public_key:
