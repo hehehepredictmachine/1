@@ -6,6 +6,7 @@ import { ACTION_PL, aiState, DIR_PL, STAGE_PL, STATE_PL, type AiRecord } from ".
 import { apiGet, apiSend } from "../api";
 import { NewsPanel } from "../components/BottomPanels";
 import ChartPanel, { type AiLevels } from "../components/ChartPanel";
+import ZonesControl from "../features/market-zones/ZonesControl";
 import ChartToolbar, { useChartOpts } from "../components/ChartToolbar";
 import SignalTop, { blockPl } from "../components/SignalTop";
 import { href, usePersisted } from "../router";
@@ -254,8 +255,9 @@ export default function AiAnalysisPage() {
         <div className="tabs small mob-only" role="group" aria-label="Skupienie na TF (mały ekran)">
           {AI_TFS.map((t) => <button key={t} className={cls(focus === t && "on")} onClick={() => setFocus(t)}>{t}</button>)}
         </div>
-        <ChartToolbar opts={opts} set={setOpt} show={["showAiLevels", "showPatterns", "showZoneMap", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
+        <ChartToolbar opts={opts} set={setOpt} show={["showAiLevels", "showPatterns", "showZoneMap", "showStructure", "showZones", "showMarketZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
       </div>
+      <ZonesControl chartSymbol={s.symbol?.symbol ?? null} />
       <div className={cls("ai-grid", "lay-" + layout)} data-focus={focus}>
         <div className="ai-col" style={{ gridArea: "card" }}>
           <AiSignalCard onAsk={actions} />

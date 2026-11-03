@@ -25,6 +25,9 @@ import {
   type Time,
 } from "lightweight-charts";
 import { apiGet } from "../api";
+import { layerOf, loadPrefs, prefsKey, resetPrefs, rgba, savePrefs, type ChartPrefs } from "../chartprefs";
+import { MZ_TFS, useMarketZones } from "../features/market-zones/mzStore";
+import { ChartSettingsDialog, LayerMenu } from "./ChartSettings";
 import { loadView, saveView, SYNC, viewKey, type ChartView, type SyncGroup, type SyncMsg } from "../chartview";
 import { useStore } from "../store";
 import { parseColor, toHex, useTheme, type Tokens } from "../theme";
@@ -46,6 +49,7 @@ export interface ChartOpts {
   showSessions?: boolean;        // PMW-UPD-06: session sweep boxes (shared engine, time-bounded) + edge events
   showHeatmap?: boolean;         // PMW-UPD-06: liquidation heatmap panel (separate source price axis unless mapping is validated)
   showZoneMap?: boolean;         // PMW zone map (HLZE + DSVIE + UZICE) from /api/v1/zones/map - backend values only
+  showMarketZones?: boolean;     // 1.29: market zones M1/M5/M15/M30 (/api/v1/market-zones) of the chart's own instrument + TF (default on)
 }
 
 export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
@@ -82,7 +86,14 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const chartId = idProp ?? `panel${index}`;
   const symbol = s.symbol?.symbol ?? "XAUUSD-";
   const vkey = viewKey(chartId, symbol, tf);
-  const tk: Tokens = { ...theme.chartTokens(`tf:${tf}`), ...(idProp ? {} : theme.chartTokens(chartId)) };
+  const pkey = prefsKey(chartId, symbol, tf);
+  const [prefs, setPrefsState] = useState<ChartPrefs>(() => loadPrefs(pkey));
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  useEffect(() => { setPrefsState(loadPrefs(pkey)); }, [pkey]);
+  const setPrefs = useCallback((p: ChartPrefs) => { savePrefs(pkey, p); setPrefsState(loadPrefs(pkey)); }, [pkey]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const tk: Tokens = { ...theme.chartTokens(`tf:${tf}`), ...(idProp ? {} : theme.chartTokens(chartId)), ...prefTokens(prefs) };
   const tkRef = useRef(tk);
   tkRef.current = tk;
   const box = useRef<HTMLDivElement>(null);
@@ -105,6 +116,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const sessBoxes = useRef<BoundedBoxesPrimitive | null>(null);
   const [sessions, setSessions] = useState<any>(null);
   const zmBoxes = useRef<BoundedBoxesPrimitive | null>(null);
+  const mzBoxes = useRef<BoundedBoxesPrimitive | null>(null);
+  const mzDrawn = useRef<BoundedBox[]>([]);
   const [zoneMap, setZoneMap] = useState<any>(null);
   const zoneMapRef = useRef<any>(null);
   zoneMapRef.current = zoneMap;
@@ -124,7 +137,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const [legend, setLegend] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const offset = s.connection?.clock?.offset_seconds ?? null;
-  const shift = chartShift(opts.tz, offset);
+  const tzMode = prefs.tz === "PAGE" ? opts.tz : prefs.tz;
+  const shift = chartShift(tzMode, offset);
   const shiftRef = useRef(shift);
   shiftRef.current = shift;
   const optsRef = useRef(opts);
@@ -166,6 +180,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     candles.current.attachPrimitive(sessBoxes.current);
     zmBoxes.current = new BoundedBoxesPrimitive();
     candles.current.attachPrimitive(zmBoxes.current);
+    mzBoxes.current = new BoundedBoxesPrimitive();
+    candles.current.attachPrimitive(mzBoxes.current);
     markers.current = createSeriesMarkers(candles.current, []);
     const el = box.current;
     const onUser = () => markUser();
@@ -209,6 +225,12 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       aiLines: () => aiLines.current.map((p) => p.options().title),
       structLines: () => structLines.current.map((p) => p.options().title),
       highlight: () => hlLines.current.map((p) => p.options().title),
+      mz: () => mzDrawn.current.map((b) => ({ ...b })),
+      // pixel geometry of the drawn market zones (tests: boxes stay glued to time/price after zoom, pan and resize)
+      mzGeom: () => mzDrawn.current.map((b) => ({ x1: c.timeScale().timeToCoordinate(b.from as Time), y1: candles.current?.priceToCoordinate(b.high) ?? null,
+        y2: candles.current?.priceToCoordinate(b.low) ?? null, from: b.from, high: b.high, low: b.low })),
+      prefs: () => ({ ...prefsRef.current }),
+      options: () => c.options(),
       creations: (window.__mqCharts?.[chartId]?.creations ?? 0) + 1,
     };
     return () => {
@@ -242,9 +264,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     const c = chart.current;
     if (!c || !candles.current) return;
     c.applyOptions({
-      layout: { background: { type: ColorType.Solid, color: String(tk.chartBg) }, textColor: String(tk.chartLabels),
+      layout: { background: { type: ColorType.Solid, color: String(tk.chartBg) }, textColor: String(tk.chartLabels), fontSize: prefs.fontSize,
         panes: { separatorColor: String(tk.chartSeparator), separatorHoverColor: String(tk.chartAxis) } },
-      grid: { vertLines: { color: String(tk.chartGrid) }, horzLines: { color: String(tk.chartGrid) } },
+      grid: { vertLines: { color: String(tk.chartGrid), visible: prefs.showGrid }, horzLines: { color: String(tk.chartGrid), visible: prefs.showGrid } },
       rightPriceScale: { borderColor: String(tk.chartAxis) },
       timeScale: { borderColor: String(tk.chartAxis) },
       crosshair: { vertLine: { color: String(tk.chartCrosshair), labelBackgroundColor: String(tk.chartAxis) },
@@ -258,9 +280,10 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     rsiLevels.current.forEach((pl) => pl.applyOptions({ color: String(tk.rsiLevels) }));
     macd.current?.line.applyOptions({ color: String(tk.macd) });
     macd.current?.sig.applyOptions({ color: String(tk.macdSignal) });
+    volume.current?.applyOptions({ visible: prefs.showVolume });
     if (data) paint(data, false);              // per-point colours (volume, histogram, forming candle), view preserved
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(tk)]);
+  }, [JSON.stringify(tk), prefs.fontSize, prefs.showGrid, prefs.showVolume, prefs.layers.FVG, prefs.layers.OB, prefs.labels]);
 
   // ---------------------------------------------------------------- receive sync messages (no re-broadcast -> no loops)
   useEffect(() => {
@@ -420,12 +443,15 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     const first = newTimes.length ? newTimes[0] : 0;
     baseMarkers.current = mk.filter((x) => (x.time as number) >= first);
     setAllMarkers();
+    const pf = prefsRef.current;
     zones.current?.setZones(o.showZones ? [
-      ...(ov.fvgs || []).slice(-6).map((f: any) => {
+      ...(pf.layers.FVG ? (ov.fvgs || []).slice(-6) : []).map((f: any) => {
         const col = String(f.direction === "BULLISH" ? t.fvgBull : t.fvgBear);
-        return { from: TT(f.formed_at) as number, low: f.low, high: f.high, color: col, border: withAlpha(col, 0.55), label: `FVG ${f.status === "PARTIAL" ? Math.round(f.mitigated * 100) + "%" : ""}` };
+        return { from: TT(f.formed_at) as number, low: f.low, high: f.high, color: col, border: withAlpha(col, 0.55),
+          label: pf.labels ? `FVG ${f.status === "PARTIAL" ? Math.round(f.mitigated * 100) + "%" : ""}` : "" };
       }),
-      ...(ov.order_blocks || []).slice(-3).map((ob: any) => ({ from: TT(ob.confirmed_at) as number, low: ob.low, high: ob.high, color: String(t.ob), border: withAlpha(String(t.ob), 0.5), label: "OB?" })),
+      ...(pf.layers.OB ? (ov.order_blocks || []).slice(-3) : []).map((ob: any) => ({ from: TT(ob.confirmed_at) as number, low: ob.low, high: ob.high, color: String(t.ob),
+        border: withAlpha(String(t.ob), 0.5), label: pf.labels ? "OB?" : "" })),
     ] : []);
     paintVol(d.volatility, o.showVol !== false, TT);
     if (isNewData || !initialized.current) restoreView(prevTimes, prevLogical, newTimes);
@@ -638,6 +664,34 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoneMap, opts.showZoneMap, data, shift]);
 
+  // ---------------------------------------------------------------- 1.29 market zones (M1/M5/M15/M30): backend values of THIS chart's
+  // instrument and TF only (shared store, no recomputation here); hidden when the zones belong to another broker symbol.
+  const mzOn = opts.showMarketZones !== false && prefs.marketZones && MZ_TFS.includes(tf);
+  const mzInst: string | null = mzOn ? (s.assets?.active || null) : null;
+  const mz = useMarketZones(mzInst);
+  const mzTf = mz.view && mz.view.instrument === mzInst && (!mz.view.symbol || mz.view.symbol === symbol) ? mz.view.timeframes?.[tf] : null;
+  useEffect(() => {
+    const pr = mzBoxes.current;
+    if (!pr) return;
+    if (!mzOn || !mzTf?.computed) { pr.set([]); mzDrawn.current = []; return; }
+    const TT = (iso: string) => epochSec(iso) + shiftRef.current;
+    const nowT = (times.current[times.current.length - 1] ?? 0) + 60;
+    const boxes: BoundedBox[] = [];
+    for (const z of mzTf.zones || []) {
+      const layer = layerOf(String(z.type || ""));
+      if (!layer || !prefs.layers[layer]) continue;
+      const st = prefs.zones[layer];
+      const base = mzTf.stale ? "#8a8a8a" : z.direction === "BEARISH" ? st.down : st.up;
+      const end = z.invalidated_at || z.expired_at;
+      boxes.push({ from: TT(z.origin_time), to: end ? TT(end) : nowT, low: z.lower, high: z.upper, color: rgba(base, st.opacity), border: base,
+        dashed: !!(z.preliminary || z.state === "PRELIMINARY"),
+        label: prefs.labels ? `${tf} ${z.type_pl || z.type}${z.preliminary ? " (wst.)" : ""}${mzTf.stale ? " · nieakt." : ""}` : undefined });
+    }
+    mzDrawn.current = boxes;
+    pr.set(boxes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mzTf, mzOn, JSON.stringify(prefs.layers), JSON.stringify(prefs.zones), prefs.labels, data, shift]);
+
   // ---------------------------------------------------------------- AI levels (marked "AI:" - never merged with the engine plan)
   useEffect(() => {
     const ser = candles.current;
@@ -774,6 +828,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
         <select value={viewUi.group} onChange={(e) => setGroup(e.target.value as SyncGroup)} title="Synchronizacja zakresu czasu tylko w wybranej grupie (domyślnie brak)">
           <option value="">bez sync</option><option value="A">grupa A</option><option value="B">grupa B</option>
         </select>
+        <LayerMenu prefs={prefs} onChange={setPrefs} />
+        <button className="icon" data-act="settings" title="Ustawienia tego wykresu (kolory, siatka, tekst, warstwy, szablony)" aria-label="Ustawienia wykresu"
+          onClick={() => setSettingsOpen(true)}>⚙</button>
         <span className="spacer" />
         {!viewUi.follow && <span className="badge muted" title="Widok ręczny – nowe świece nie przesuwają wykresu">widok ręczny</span>}
         {onMain && !isMain && <button className="icon" data-act="main" title="Przenieś ten interwał na wykres główny" onClick={onMain}>Wykres główny</button>}
@@ -786,8 +843,30 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       {opts.showZoneMap && zoneMap && zoneMap.status === "OK" && zoneMap.data?.state !== "OK" &&
         <div className="chart-hint" title={(zoneMap.data?.reasons || []).join(", ")}>Mapa stref: dane {zoneMap.data?.state} – strefy tylko informacyjnie</div>}
       {opts.showZoneMap && zoneTip && <div className="chart-ztip">{zoneTip}</div>}
+      {mzOn && mzTf && ["NO_DATA", "ERROR"].includes(mzTf.status?.status) &&
+        <div className="chart-hint" data-testid="chart-mz-hint">Strefy {tf}: {mzTf.status.status_pl}{mzTf.computed ? " – pokazano ostatni udany wynik (nieaktualny)" : ""}</div>}
+      {settingsOpen && <ChartSettingsDialog title={`${symbol} ${tf}`} prefs={prefs} onChange={setPrefs} fallback={themeFallback(theme.chartTokens(`tf:${tf}`))}
+        onReset={() => { resetPrefs(pkey); setPrefsState(loadPrefs(pkey)); }} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
+}
+
+/** Theme tokens overridden by the chart's own colours (null = keep the theme). */
+function prefTokens(p: ChartPrefs): Tokens {
+  const o: Record<string, string> = {};
+  if (p.upColor) { o.upBody = p.upColor; o.upBorder = p.upColor; }
+  if (p.downColor) { o.downBody = p.downColor; o.downBorder = p.downColor; }
+  if (p.wickUp) o.upWick = p.wickUp;
+  if (p.wickDown) o.downWick = p.wickDown;
+  if (p.background) o.chartBg = p.background;
+  if (p.gridColor) o.chartGrid = p.gridColor;
+  if (p.textColor) o.chartLabels = p.textColor;
+  return o;
+}
+
+function themeFallback(t: Tokens): Record<string, string> {
+  return { upColor: String(t.upBody), downColor: String(t.downBody), wickUp: String(t.upWick), wickDown: String(t.downWick), background: String(t.chartBg),
+    gridColor: String(t.chartGrid), textColor: String(t.chartLabels) };
 }
 
 /** Text label of a unified zone: type, TFs, status and score - the provisional state is spelled out, not only shown by the dash. */

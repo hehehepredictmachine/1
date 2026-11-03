@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiGet } from "../api";
 import { AutoPanel, StrategiesPanel, useAutoFull } from "../components/AutoPanels";
 import ChartPanel, { type Highlight } from "../components/ChartPanel";
+import ZonesControl from "../features/market-zones/ZonesControl";
 import ChartToolbar, { useChartOpts } from "../components/ChartToolbar";
 import LiquidityHeatmapPanel from "../components/LiquidityHeatmapPanel";
 import LiquidityContextCard from "../components/LiquidityContextCard";
@@ -75,8 +76,9 @@ export default function BotChartsPage({ route }: { route: Route }) {
           <div className="tabs small" role="group" aria-label="Liczba kolumn">
             {[1, 2, 3].map((c) => <button key={c} className={cls(cols === c && "on", c === 3 && "wide-only")} aria-pressed={cols === c} data-cols={c} onClick={() => setCols(c)}>{c} kol.</button>)}
           </div>)}
-        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showZoneMap", "showSessions", "showHeatmap", "showSar", "showExtInd", "showStructure", "showZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
+        <ChartToolbar opts={opts} set={setOpt} show={["showPatterns", "showZoneMap", "showSessions", "showHeatmap", "showSar", "showExtInd", "showStructure", "showZones", "showMarketZones", "showVol", "showRsi", "showMacd", "syncCrosshair"]} />
       </div>
+      <ZonesControl chartSymbol={s.symbol?.symbol ?? null} />
       <div className="tf-bar" role="navigation" aria-label="Interwały" data-testid="tf-bar">
         {ordered.map((t) => (
           <button key={t.tf} className={cls("tf-chip", need?.has(t.tf) && "need", t.data && t.data !== "OK" && "nodata", view === "focus" && focusTf === t.tf && "on")}

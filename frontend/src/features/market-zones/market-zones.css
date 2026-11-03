@@ -47,3 +47,19 @@
 .mz-rules summary { cursor: pointer; font-weight: 700; }
 @media (max-width: 1100px) { .mz-body.with-detail { grid-template-columns: 1fr; } .mz-detail { position: static; } }
 @media (max-width: 760px) { .mz-grid { grid-template-columns: 1fr; } .mz-status { display: block; overflow-x: auto; } }
+
+/* 1.29: per-chart tools of the zone charts */
+.mz-chart-tools { gap: 6px; }
+
+/* 1.29: "Wyznacz strefy" bar in the main chart area */
+.mzbar { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: color-mix(in srgb, var(--panel, #06140c) 88%, transparent); }
+.mzbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }
+.mzbar-title { font-size: 12.5px; }
+.mzbar .btn.primary { font-weight: 700; }
+.mzbar-live { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.mzbar-meta { color: var(--text-dim); }
+.mzbar-job { display: inline-flex; align-items: center; gap: 6px; }
+.mzbar-job .mz-progress { width: 90px; display: inline-block; }
+.mzbar-job.bad { color: var(--bad); }
+.mzbar-job.warn { color: var(--warn-text, var(--warn)); }

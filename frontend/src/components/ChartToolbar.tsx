@@ -4,7 +4,7 @@ import { usePersisted } from "../router";
 import type { TimeZoneMode } from "../util";
 
 const BASE: ChartOpts = { showRsi: false, showMacd: false, showStructure: false, showZones: false, showVol: false, syncCrosshair: false, tz: "LOCAL",
-  showPatterns: false, showAiLevels: true, showSar: false, showExtInd: false, showSessions: false, showHeatmap: false, showZoneMap: false };
+  showPatterns: false, showAiLevels: true, showSar: false, showExtInd: false, showSessions: false, showHeatmap: false, showZoneMap: false, showMarketZones: true };
 
 /** Per-page chart options. `legacy` = the 1.9 key (one set for the whole monitor) used once as the starting point. */
 export function useChartOpts(page: string, defaults: Partial<ChartOpts>, legacy?: string): [ChartOpts, (k: keyof ChartOpts, v: any) => void] {
@@ -30,6 +30,7 @@ const LABELS: [keyof ChartOpts, string, string][] = [
   ["showHeatmap", "Heatmapa likwidacji", "szacowane poziomy likwidacji dostawcy (CoinGlass model1) – osobny panel z osią ceny źródła; brak źródła = brak mapy"],
   ["showStructure", "BOS/CHoCH", "struktura rynku"],
   ["showZones", "FVG/OB", "strefy FVG i order block"],
+  ["showMarketZones", "Strefy M1–M30", "strefy rynkowe M1/M5/M15/M30 wyznaczone przyciskiem „Wyznacz strefy” (backend, zamknięte świece) – rysowane tylko na wykresie tego samego instrumentu i interwału"],
   ["showVol", "Walls dzienne / Daily", "pasma zmienności dnia (źródło: HV_PROXY = przybliżenie z historii brokera, IV tylko z importu) i daily open/high/low"],
   ["showRsi", "RSI", "panel RSI"],
   ["showMacd", "MACD", "panel MACD"],

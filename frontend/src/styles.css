@@ -899,3 +899,20 @@ tr.sel td { outline: 1px solid var(--accent, #d4a017); }
 pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--card); border: 1px solid var(--line); padding: 6px; }
 .wrap-cell { white-space: normal !important; }
 .checklist li { overflow-wrap: anywhere; }
+
+/* 1.29: per-chart settings dialog + layer menu */
+.layer-menu { position: relative; display: inline-block; }
+.layer-pop { position: absolute; z-index: 40; top: 100%; left: 0; margin-top: 3px; min-width: 210px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px;
+  background: var(--modal-bg); border: 1px solid var(--line2); border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.45); font-size: 12px; }
+.layer-pop label { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.layer-pop .sw, .cs-zones .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.chart-settings .cs-group { border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: 8px; padding: 6px 10px 8px; margin: 0; }
+.chart-settings legend { font-weight: 700; font-size: 12px; padding: 0 4px; }
+.cs-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 12px; }
+.cs-color { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.cs-color input[type="color"], .cs-zones input[type="color"] { width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; }
+.cs-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.cs-zones { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cs-zones th, .cs-zones td { text-align: left; padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent); }
+.chart-settings .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+@media (prefers-reduced-motion: reduce) { .mz-progress i { transition: none; } }
