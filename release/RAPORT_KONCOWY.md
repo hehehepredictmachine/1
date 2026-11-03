@@ -3,9 +3,9 @@
 Wypełniony według `06_RAPORT_KONCOWY/SZABLON_ODBIORU.md` z pakietu aktualizacji. Wszystkie liczby poniżej pochodzą z rzeczywiście
 uruchomionych komend w tym środowisku; czego nie uruchomiono – jest oznaczone jako BLOCKED / „nie sprawdzono”.
 
-**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki zbudowane z commitu
-`207aa0f361c6e28a4f24ce057bceed97be9c3abc` (punkt wyjścia: 1.28.0 = `165bd5d`). `MANIFEST_SHA256.txt` (lista i sumy 1187 plików
-programu): SHA-256 `6d617a7204de81a51fdf3fa6047ed4783f057055d07448aaf844c321f93299ed`.
+**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki (wydanie 2, po poprawce testu) zbudowane z commitu
+`6d928addfe6b3b0e0dfbf7faf8e4d601cc4ca481` (punkt wyjścia: 1.28.0 = `165bd5d`). `MANIFEST_SHA256.txt` (lista i sumy 1187 plików
+programu): SHA-256 `afe6727c80f216b13dba5d7bfba696d5829d71028e2d1cb28cb41d4e212f9a0c`.
 **Wersja wydania:** aplikacja 1.29.0 (OWNER), serwer licencji 1.1.0.
 **Data i środowisko:** 2026-11-03; kontener Linux 6.18 (x86_64), Python 3.13.16, Node 22.22, Go 1.24.7, Chromium (Playwright).
 Bez Windows, bez terminala MT5 (symulator terminala = dane SYNTETYCZNE), bez publicznego serwera licencji. Żadnych zleceń LIVE.
@@ -39,17 +39,24 @@ Bez Windows, bez terminala MT5 (symulator terminala = dane SYNTETYCZNE), bez pub
 
 ## Testy – komendy i liczby
 
-**W TOKU** – pełna regresja (moduły nie-UI i UI) jest uruchomiona; wyniki zostaną wpisane tutaj po jej zakończeniu. Do tej pory uruchomione i zaliczone: `test_license_url_security`, `test_license_client`, `test_license_build`, `test_license_server`, `test_license_acceptance`, `test_release_tools` – 44 testy OK; `go test ./...` (desktop) OK; UI (Chromium): `test_ui_chart_prefs` 6 OK, `test_ui_interface_129` 4 OK, `test_ui_analytics` 4 OK, `test_ui_lab` 14 OK, `test_ui_pages` 8 OK, `test_ui_terminal_shell` 13 OK, `test_ui_market_zones` 1 OK, `test_ui_monitor` 11 OK, `test_ui_license` 2 OK; `tools/migration_check.py` 15/15 PASS.
+**W TOKU** – pełna regresja jest uruchomiona (`regress.sh`: każdy moduł testów osobno, potem `regress_ui.sh`). Stan w chwili
+wydania paczek: moduły nie-UI 82/84 zakończone – jedyny błąd: `test_app_process.test_03_state_and_charts` (0 świec M1 odczytanych
+jednorazowo zaraz po pierwszej decyzji silnika – wyścig w teście; w izolacji 2/2 OK; test poprawiony – czeka na świece, wymóg >100
+świec bez zmian – commit `6d928ad`, potem 9/9 OK). Pozostałe uruchomione w tej pracy: licencje + narzędzia wydania 44 OK; `go test ./...`
+OK; UI (Chromium, po zmianie motywu): `test_ui_analytics` 4, `test_ui_lab` 14, `test_ui_pages` 8, `test_ui_terminal_shell` 13,
+`test_ui_wizard` 12, `test_ui_license` 2, `test_ui_chart_prefs` 6, `test_ui_training_center` 1, `test_ui_interface_129` 4 – wszystkie OK;
+`tools/migration_check.py` 15/15 PASS. Ostateczne liczby zostaną wpisane po zakończeniu regresji.
 
 ## Paczki, SHA-256, podpis
 
 | Plik | Rozmiar (B) | SHA-256 | Podpis Authenticode |
 |---|---|---|---|
-| `PepeMarketWizard_DESKTOP_OWNER_1_29_0.zip` | 39 763 443 | `6fe8f9e95c0559301e231a066a8ba08bbef467cac8f05c4a60ad0763a5554b85` | **niepodpisany cyfrowo** (brak certyfikatu) |
-| `PepeMarketWizard_OWNER_1_29_0.zip` | 22 303 865 | `413f6aedf7b2f211ca241fedf343f23879cfcd3d71a78d68fa247df9c3c0798f` | nie dotyczy (bez EXE aplikacji Windows) |
+| `PepeMarketWizard_DESKTOP_OWNER_1_29_0.zip` | 39 763 630 | `494a664abbb71fdebadb28d0c0b0010cf57d06215903dea2460cde82893af753` | **niepodpisany cyfrowo** (brak certyfikatu) |
+| `PepeMarketWizard_OWNER_1_29_0.zip` | 22 304 048 | `7c57ec5366951080f94dcc522c0853468402d1ae04581495d61b15edb5431a28` | nie dotyczy (bez EXE aplikacji Windows) |
 | `PepeMarketWizard_LICENSE_SERVER_1_29_0.zip` | 35 767 | `18fef2acd933b9d6b490e1eb4973f64f1c658f3cbeb4617b47dcb822598fc3c7` | nie dotyczy (Python) |
 | `PepeMarketWizard_DESKTOP_CLIENT_1_29_0.zip` | – | – | **BLOCKED – nie wydano** |
-| `Instrukcja_Administrator_PepeMarketWizard.pdf`, `Instrukcja_Klient_PepeMarketWizard.pdf` | – | (wersja robocza – zostaną odświeżone ze zrzutami w nowym motywie) | nie dotyczy |
+| `Instrukcja_Administrator_PepeMarketWizard.pdf` | 568 669 | `d04fbb5f62a09a7334742e3e1ea302f5650f9e01e8d5aceb7899088279380839` | nie dotyczy |
+| `Instrukcja_Klient_PepeMarketWizard.pdf` | 732 528 | `3efb933ced5e49dc91ee54ebbacd8504749f298655389460a376249dcac83b52` | nie dotyczy |
 
 Weryfikacja paczek:
 * `python tools/verify_release.py --all` → `OK` dla trzech archiwów (rc=0).
