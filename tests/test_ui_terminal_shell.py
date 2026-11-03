@@ -125,7 +125,7 @@ class TestTerminalShell(unittest.TestCase):
 
     def test_02_existing_views_stay_and_link_both_ways(self):
         self.go("trading-intelligence")
-        self.page.locator("[data-testid=t-existing] [data-section=pulpit]").click()
+        self.page.locator("[data-testid=t-existing] [data-section=precision]").click()       # 1.29: area Precision opens Pulpit
         self.page.wait_for_selector("[data-testid=page-pulpit]", timeout=20000)
         self.assertEqual(self.page.locator("[data-testid=terminal-shell]").count(), 0)
         self.assertTrue(self.page.locator("[data-testid=topbar]").is_visible())                    # old shell, unchanged

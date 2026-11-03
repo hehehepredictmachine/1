@@ -116,7 +116,7 @@ class TestThreePagesUI(unittest.TestCase):
     def api(self, path):
         return self.page.request.get(BASE + path).json()
 
-    SECTION = {"wykresy": "wykresy", "warunki": "setupy", "ai": "setupy", "pulpit": "pulpit"}
+    SECTION = {"wykresy": "precision", "warunki": "dyscypline", "ai": "dyscypline", "pulpit": "precision"}      # 1.29: areas of the towers
 
     def nav(self, page_id):
         """1.14 menu: section in the side menu, then the sub-page tab."""

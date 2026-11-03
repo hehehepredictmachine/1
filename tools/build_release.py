@@ -9,6 +9,11 @@ CLIENT EDITION packages are made by the owner from an OWNER package with tools/s
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
+
+1.29: a copy WITHOUT .git (GitHub "Download ZIP", an unpacked package) builds from the explicit file list of MANIFEST_SHA256.txt
+(the previous build's list; files on disk that are not in it are reported, not packed). The license server is a separate product:
+without git it is packed from license_server/ with the same exclusions, and a copy without that folder skips it with a message.
+After writing, every ZIP is verified (tools/verify_release.py rules: no absolute / ../ paths, manifest hashes, no secrets).
 """
 import hashlib
 import re
@@ -18,7 +23,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.28.0"
+VERSION = "1.29.0"
 OWNER_ZIP = f"PepeMarketWizard_OWNER_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 SERVER_ZIP = f"PepeMarketWizard_LICENSE_SERVER_{VERSION.replace('.', '_')}.zip"
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
@@ -31,16 +36,70 @@ SECRET_PATTERNS = [
 ]
 
 
+SAFE_REL = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[^\\\0]+$")      # relative, forward slashes, no '..'
+SERVER_DOCS = ["docs/LICENCJE_SYSTEM_1_27_PL.md"]
+
+
+def _git_list(*paths):
+    """git ls-files, or None when this copy has no git metadata or git is not installed (then the explicit list is used)."""
+    if not (ROOT / ".git").exists():
+        return None
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", *paths], cwd=ROOT, check=True, capture_output=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return sorted(f for f in out.decode().split("\0") if f)
+
+
+def manifest_list(name: str = "MANIFEST_SHA256.txt") -> list[str]:
+    """Explicit file list of a copy without git: the paths of MANIFEST_SHA256.txt (format sha256sum). Every path must be a safe
+    relative path and exist; anything else stops the build (an incomplete copy must not become a release)."""
+    p = ROOT / name
+    if not p.exists():
+        sys.exit(f"brak .git i brak {name} – nie wiadomo, które pliki należą do paczki (pobierz kopię z historią git albo pełną paczkę)")
+    files, missing = [], []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        digest, sep, f = line.partition("  ")
+        if not sep or not re.fullmatch(r"[0-9a-f]{64}", digest) or not SAFE_REL.match(f):
+            sys.exit(f"{name}: nieprawidłowy wiersz: {line[:100]!r}")
+        if not (ROOT / f).is_file():
+            missing.append(f)
+        files.append(f)
+    if missing:
+        sys.exit(f"{name}: brak {len(missing)} plików z listy, np. {missing[:5]} – kopia jest niekompletna")
+    listed = set(files)
+    extra = [str(q.relative_to(ROOT)).replace("\\", "/") for d in ("backend", "frontend/src", "docs", "tools", "desktop") if (ROOT / d).is_dir()
+             for q in (ROOT / d).rglob("*") if q.is_file() and not (FORBIDDEN_PARTS & set(q.relative_to(ROOT).parts))]
+    extra = sorted(x for x in extra if x not in listed and not x.endswith((".pyc", ".log", ".sqlite", ".tsbuildinfo")))
+    if extra:
+        print(f"UWAGA: {len(extra)} plików na dysku nie ma na liście {name} – nie wejdą do paczki (np. {extra[:8]})")
+    return sorted(listed)
+
+
 def tracked():
-    out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True).stdout
-    files = sorted(f for f in out.decode().split("\0") if f)
+    files = _git_list()
+    if files is None:
+        print("brak .git – lista plików z MANIFEST_SHA256.txt (jawna lista poprzedniego wydania)")
+        files = manifest_list()
     # Frog Wizard and the License API are separate products (the license server never ships inside the bot)
     return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "license_server/")) and f != "MANIFEST_SHA256.txt"]
 
 
 def server_files():
-    out = subprocess.run(["git", "ls-files", "-z", "license_server"], cwd=ROOT, check=True, capture_output=True).stdout
-    return sorted(f for f in out.decode().split("\0") if f) + ["docs/LICENCJE_SYSTEM_1_27_PL.md"]
+    """Files of the License API package, or None when this copy has no license_server/ (an unpacked bot package)."""
+    files = _git_list("license_server")
+    if files is None:
+        d = ROOT / "license_server"
+        if not d.is_dir():
+            return None
+        print("brak .git – serwer licencji z katalogu license_server/ (bez danych, baz, .env, logów, kluczy)")
+        files = sorted(str(q.relative_to(ROOT)).replace("\\", "/") for q in d.rglob("*") if q.is_file()
+                       and not (FORBIDDEN_PARTS & set(q.relative_to(ROOT).parts)) and "data" not in q.relative_to(d).parts
+                       and not q.name.endswith((".pyc", ".sqlite", ".sqlite3", ".db", ".log", ".pem", ".key")) and q.name != ".env"
+                       and not q.name.startswith("secrets."))
+    return files + [f for f in SERVER_DOCS if (ROOT / f).is_file()]
 
 
 def scan(files):
@@ -86,9 +145,23 @@ def main():
         sys.exit("edition.json of the repository must be OWNER (CLIENT packages: tools/stamp_client_edition.py)")
     (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(client, "OWNER"), encoding="utf-8", newline="\n")
     write_zip(OWNER_ZIP, "PepeMarketWizard/", client + ["MANIFEST_SHA256.txt"])
+    verify(ROOT / "release" / OWNER_ZIP, "PepeMarketWizard/")
     srv = server_files()
+    if srv is None:
+        print(f"{SERVER_ZIP}: pominięto – w tej kopii nie ma katalogu license_server/ (serwer licencji jest osobną paczką)")
+        return
     scan(srv)
     write_zip(SERVER_ZIP, "PepeMarketWizard_LicenseServer/", srv)
+    verify(ROOT / "release" / SERVER_ZIP, "PepeMarketWizard_LicenseServer/")
+
+
+def verify(path: Path, top: str) -> None:
+    sys.path.insert(0, str(ROOT / "tools"))
+    import verify_release
+    problems = verify_release.check_zip(path, top)
+    if problems:
+        sys.exit(f"{path.name}: weryfikacja nieudana: {problems[:10]}")
+    print(f"{path.name}: weryfikacja OK (ścieżki, manifest, sekrety, plik .sha256)")
 
 
 if __name__ == "__main__":

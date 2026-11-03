@@ -16,7 +16,7 @@ import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
 import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
-import { PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
+import { PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, navigate, useRoute } from "./router";
 import WizardShell from "./features/wizard/WizardShell";
 import { TOWERS } from "./features/wizard/assets";
 import TerminalShell from "./features/shell/TerminalShell";
@@ -52,9 +52,13 @@ export default function App() {
     if (s.loaded && s.first_run_completed === false) setSettings(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.loaded]);
+  const edition: string | null = s.license?.edition?.edition ?? null;
   useEffect(() => {
-    document.title = `PepeMarketWizard – ${PAGES.find((p) => p.id === route.page)?.label ?? ""}`;
-  }, [route.page]);
+    document.title = `PepeMarketWizard${edition ? " " + edition : ""} – ${PAGES.find((p) => p.id === route.page)?.label ?? ""}`;
+  }, [route.page, edition]);
+  useEffect(() => {      // 1.29: Licencje exists only in OWNER; in CLIENT the old link leads to Ustawienia (the backend refuses owner calls anyway)
+    if (route.page === "licencje" && s.license && edition !== "OWNER") navigate("ustawienia", { replace: true });
+  }, [route.page, s.license, edition]);
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
   const terminal = TERMINAL_PAGE_IDS.includes(route.page);
@@ -120,7 +124,7 @@ export default function App() {
         {look && <ThemeDialog onClose={() => setLook(false)} />}
         <KeyForMagic />
         <footer className="footer">
-          PepeMarketWizard {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
+          PepeMarketWizard {edition ?? ""} {s.app_version} · kontrakt API {s.contract} · wykresy: TradingView Lightweight Charts™ (Apache-2.0) – źródło notowań: wyłącznie Twój terminal MT5 ·
           Narzędzie analityczne – nie gwarantuje zysków.
         </footer>
       </div>

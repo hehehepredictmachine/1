@@ -9,16 +9,40 @@ export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" |
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
   | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "licencje" | "strefy" | "trening";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
-// 1.14 main menu: seven sections (prompt B13); each section keeps the earlier pages as its sub-pages (old links keep working).
-export const GROUPS: { id: string; label: string; icon: string; pages: Page[] }[] = [
-  { id: "pulpit", label: "Pulpit", icon: "◈", pages: ["pulpit", "nc"] },
-  { id: "wykresy", label: "Wykresy", icon: "▦", pages: ["wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal"] },
-  { id: "setupy", label: "Setupy", icon: "☑", pages: ["setupy", "strategie", "warunki", "ai", "pozycje", "dziennik"] },
-  { id: "modele", label: "Modele i trening", icon: "✦", pages: ["modele", "trening", "neural", "struktura", "testy"] },
-  { id: "badania", label: "Badania i walidacja", icon: "⚗", pages: ["badania", "formacje"] },
-  { id: "dane", label: "Dane i diagnostyka", icon: "⚙", pages: ["dane", "diagnostyka"] },
-  { id: "ustawienia", label: "Ustawienia", icon: "⚑", pages: ["ustawienia", "licencje"] },
+// 1.29 one interface in the style of the three towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
+// market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka, Licencje (OWNER
+// only). Every earlier page keeps its id and its hash link (#/wykresy, #/ai, #/warunki/<id>, ...); SCREEN_MAP says where it lives now.
+export type Area = { id: string; label: string; icon: string; pages: Page[]; accent: string; tower?: "precision" | "dyscypline" | "profits"; ownerOnly?: boolean };
+export const GROUPS: Area[] = [
+  { id: "precision", label: "Precision – wykresy i rynek", icon: "◎", accent: "#3fe6ff", tower: "precision",
+    pages: ["pulpit", "wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal", "nc", "precision"] },
+  { id: "dyscypline", label: "Dyscypline – setupy i sygnały", icon: "⟐", accent: "#b46bff", tower: "dyscypline",
+    pages: ["setupy", "warunki", "strategie", "ai", "formacje", "dyscypline"] },
+  { id: "profits", label: "Profits – wyniki i rachunek", icon: "◆", accent: "#ffcf5c", tower: "profits", pages: ["pozycje", "dziennik", "profits"] },
+  { id: "modele", label: "Modele i trening", icon: "✦", accent: "#2fe6a0", pages: ["modele", "trening", "neural", "struktura", "testy", "badania"] },
+  { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka"] },
+  { id: "licencje", label: "Licencje (OWNER)", icon: "⚿", accent: "#ffcf5c", pages: ["licencje"], ownerOnly: true },
 ];
+/** Old screen -> where it is now (shown in Ustawienia → "Mapa ekranów" and in the documentation). The hash links did not change. */
+export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
+  { old: "Pulpit (sekcja „Pulpit”)", hash: "#/pulpit", now: "Precision → Pulpit" },
+  { old: "Neural Cyberpunk (sekcja „Pulpit”)", hash: "#/nc", now: "Precision → Neural Cyberpunk" },
+  { old: "Wykresy MTF (sekcja „Wykresy”)", hash: "#/wykresy", now: "Precision → Wykresy MTF (z przyciskiem „Wyznacz strefy”)" },
+  { old: "Strefy rynkowe (sekcja „Wykresy”)", hash: "#/strefy", now: "Precision → Strefy rynkowe" },
+  { old: "Scalping MTF / Kontekst / Indykatory / Analiza sygnału", hash: "#/scalp-mtf · #/kontekst · #/indykatory · #/sygnal", now: "Precision → te same zakładki" },
+  { old: "Setupy, Setup silnika, SCALPING/HEDGING, Analiza AI (sekcja „Setupy”)", hash: "#/setupy · #/warunki · #/strategie · #/ai", now: "Dyscypline → te same zakładki" },
+  { old: "Formacje (sekcja „Badania”)", hash: "#/formacje", now: "Dyscypline → Formacje i biblioteka" },
+  { old: "Pozycje i ryzyko, Dziennik (sekcja „Setupy”)", hash: "#/pozycje · #/dziennik", now: "Profits → te same zakładki" },
+  { old: "Modele, Centrum treningu, Neural, Structure, Testy (sekcja „Modele”)", hash: "#/modele · #/trening · #/neural · #/struktura · #/testy", now: "Modele i trening → te same zakładki" },
+  { old: "Badania i walidacja (osobna sekcja)", hash: "#/badania", now: "Modele i trening → Badania i walidacja" },
+  { old: "Dane, Diagnostyka (sekcja „Dane”)", hash: "#/dane · #/diagnostyka", now: "Ustawienia i diagnostyka → te same zakładki" },
+  { old: "Ustawienia", hash: "#/ustawienia", now: "Ustawienia i diagnostyka → Ustawienia" },
+  { old: "Licencje (w sekcji „Ustawienia”)", hash: "#/licencje", now: "Licencje (OWNER) – osobny obszar; w wersji CLIENT ukryty, link prowadzi do Ustawień" },
+  { old: "Menu – trzy wieże, Precision, Dyscypline, Profits", hash: "#/menu · #/precision · #/dyscypline · #/profits", now: "bez zmian (logo prowadzi do menu)" },
+  { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
+];
+/** Areas visible in this edition: Licencje only in OWNER (the CLIENT build has no License Manager at all). */
+export const areasFor = (owner: boolean) => GROUPS.filter((g) => owner || !g.ownerOnly);
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
   { id: "menu", label: "Menu główne – trzy wieże", short: "Menu", icon: "✶" },
   { id: "precision", label: "Precision – wykresy i analiza rynku", short: "Precision", icon: "◎" },

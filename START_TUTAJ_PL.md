@@ -4,6 +4,19 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.29 – licencje bez logowania, „Wyznacz strefy” na wykresie, menu według wież
+* **Menu** jest ułożone jak trzy wieże: **Precision** (wykresy i rynek), **Dyscypline** (setupy i sygnały), **Profits** (wyniki),
+  **Modele i trening**, **Ustawienia i diagnostyka**, **Licencje** (tylko OWNER). Stare zakładki są w tych obszarach – tabela
+  „gdzie co jest”: **Ustawienia → Mapa ekranów 1.29**. U góry każdego ekranu: instrument, MT5, czas ostatnich danych, DEMO / LIVE /
+  SYNTETYCZNE, tryb, STOP, OWNER / CLIENT.
+* **Precision → Wykresy MTF:** nad wykresami **Wyznacz strefy** (domyślnie M1 + M5 + M15; też M30) i **LIVE**. Przycisk ⚙ na każdym
+  wykresie: kolory, siatka, tekst, wolumen, strefa czasu, kolor i krycie stref, szablony, „Przywróć domyślne”. **Warstwy** ukrywają
+  FVG / OB / popyt-podaż / wsparcie-opór / płynność / etykiety. Analiza stref niczego nie otwiera i nie zmienia ustawień handlu.
+* **Licencje (OWNER) bez hasła:** wpisz adres serwera `https://…` → **Zapisz i sprawdź** → wykonaj pokazane polecenie
+  `python -m pmw_license admin-keys add …` w powłoce serwera → **Sprawdź parowanie**. Gotowe – generowanie kluczy 72h / 7d / 31d.
+  Serwer licencji: `PepeMarketWizard_LICENSE_SERVER_1_29_0.zip` (wersja 1.1.0).
+* Szczegóły, powrót do 1.28 i ograniczenia: `docs/AKTUALIZACJA_1_29_PL.md`.
+
 ## Nowe w 1.28 – strefy rynkowe M1/M5/M15/M30 i Centrum treningu
 * **Wykresy → Strefy rynkowe:** wybierz XAUUSD albo BTC i interwały M1/M5/M15/M30, kliknij **Wyznacz strefy teraz**. Strefy pojawią się
   na czterech wykresach; kliknięcie strefy pokazuje szczegóły i checklistę. **Aktualizacja na żywo** przelicza każdy interwał po
@@ -15,7 +28,7 @@
 * Szczegóły i ograniczenia: `docs/STREFY_MODELE_TRENING_1_28_PL.md`.
 
 ## Nowe w 1.27 – licencje (OWNER / CLIENT) i sygnały BUY/SELL wszystkich strategii
-* **Twoja paczka to OWNER EDITION** – bot działa bez klucza; nowa zakładka **Ustawienia → Licencje** (License Manager) generuje klucze
+* **Twoja paczka to OWNER EDITION** – bot działa bez klucza; zakładka **Licencje** (License Manager; w 1.27–1.28 w Ustawieniach) generuje klucze
   24h / 72h / 7d / 31d dla klientów, pokazuje listę, cofa licencje i resetuje przypisane urządzenie. Wymaga własnego serwera licencji
   (paczka `PepeMarketWizard_LICENSE_SERVER_1_27_0.zip`, instrukcja w `license_server/README.md`).
 * **Paczka dla klienta (CLIENT EDITION):** w folderze programu uruchom `PRZYGOTUJ_PACZKE_KLIENTA.bat https://adres-twojego-serwera`

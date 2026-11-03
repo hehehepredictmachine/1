@@ -21,7 +21,8 @@ PORT = 8798
 BASE = f"http://127.0.0.1:{PORT}"
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_lab"
-SECTIONS = ["pulpit", "wykresy", "setupy", "modele", "badania", "dane", "ustawienia"]
+SECTIONS = ["precision", "dyscypline", "profits", "modele", "ustawienia", "licencje"]      # 1.29: areas of the three towers (OWNER repo)
+FIRST = {"precision": "pulpit", "dyscypline": "setupy", "profits": "pozycje", "modele": "modele", "ustawienia": "ustawienia", "licencje": "licencje"}
 try:
     from playwright.sync_api import sync_playwright
     HAVE_PW = True
@@ -108,7 +109,7 @@ class TestLabUI(unittest.TestCase):
         self.assertIn("Tryb", p.locator("[data-testid=chip-exec]").inner_text())                  # real mode from the backend
         for sec in SECTIONS:
             p.click(f"[data-testid=sidenav] [data-section={sec}]")
-            p.wait_for_selector(f"main.page[data-page={sec}]", timeout=20000)
+            p.wait_for_selector(f"main.page[data-page={FIRST[sec]}]", timeout=20000)
             p.wait_for_timeout(500)
             p.screenshot(path=str(SHOTS / f"{sec}_1366.png"))
             self.assertTrue(self.no_hscroll(), sec)

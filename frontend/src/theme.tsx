@@ -138,8 +138,26 @@ const GOLD: Tokens = {
   checkMet: "#57ab5a", checkMissing: "#d4a72c", checkNoData: "#8a96a3", tp: "#57ab5a", sl: "#e5534b", entry: "#d8b45f",
   gifOpacity: 0, overlayDim: 0.9,                   // clean dark background (the matrix GIF can be brought back in Wygląd)
 };
+// 1.29 one interface in the style of the three towers (main menu): near-black navy, amethyst accent, emerald = OK / up,
+// gold = results and important values, cyan = information. Text on solid panels only (contrast checked by contrastWarnings).
+const TOWERS: Tokens = {
+  ...GOLD, bg: "#05060d", bgGlow: "#17113a", gridLine: "#8a7bff08", panel: "#0b0d1ff5", card: "#0d1024", header: "#06071af2", modal: "#0d0f24", input: "#080a19",
+  tableHead: "#121433", text: "#e7e9ff", textStrong: "#ffffff", textDim: "#c3c7e8", muted: "#a5abd0", muted2: "#868cb5", number: "#f4f5ff", icon: "#ffcf5c",
+  line: "#2c2756", line2: "#b46bff", accent: "#b98bff", accent2: "#2fe6a0", accentInk: "#12062b", info: "#3fe6ff",
+  btnBg: "#1b1740", btnHover: "#251f52", btnActive: "#312866", btnText: "#eef0ff", btnDisabledBg: "#0e0f24", btnDisabledText: "#6f7499",
+  bad: "#ff5f7a", warn: "#ffcf5c", badText: "#ffb8c4", warnText: "#ffe39a", badLine: "#7a2238", warnLine: "#6b5a1d", pnlPos: "#2fe6a0", pnlNeg: "#ff5f7a",
+  connOk: "#2fe6a0", connWarn: "#ffcf5c", connBad: "#ff5f7a",
+  chartBg: "#00000000", chartGrid: "#8a7bff12", chartAxis: "#2c2756", chartLabels: "#b7bce0", chartCrosshair: "#ffcf5caa", chartSeparator: "#2c2756",
+  upBody: "#2fe6a0", downBody: "#ff5f7a", upWick: "#2fe6a0", downWick: "#ff5f7a", upBorder: "#2fe6a0", downBorder: "#ff5f7a",
+  formingUp: "#2fe6a066", formingDown: "#ff5f7a66", volUp: "#2fe6a02e", volDown: "#ff5f7a2e",
+  ind1: "#ffcf5c", ind2: "#3fe6ff", ind3: "#b98bff", ind4: "#ff9f43", ind5: "#2fe6a0", ind6: "#ff7ab8", rsi: "#b98bff", macd: "#3fe6ff", macdSignal: "#ffcf5c",
+  checkMet: "#2fe6a0", checkMissing: "#ffcf5c", checkNoData: "#a5abd0", tp: "#2fe6a0", sl: "#ff5f7a", entry: "#ffcf5c", bos: "#3fe6ff", choch: "#ffcf5c", sweep: "#b98bff",
+  fvgBull: "#2fe6a01a", fvgBear: "#ff5f7a1a", ob: "#3fe6ff12", gifOpacity: 0, overlayDim: 0.9,
+};
+
 export const PRESETS: Record<string, { label: string; scheme: "dark" | "light"; tokens: Tokens }> = {
-  gold: { label: "PepeMarketWizard – złoty (domyślny)", scheme: "dark", tokens: GOLD },
+  wieze: { label: "PepeMarketWizard – trzy wieże (domyślny)", scheme: "dark", tokens: TOWERS },
+  gold: { label: "PepeMarketWizard – złoty (1.13–1.28)", scheme: "dark", tokens: GOLD },
   matrix: { label: "Matrix zielony", scheme: "dark", tokens: MATRIX },
   dark: { label: "Ciemny", scheme: "dark", tokens: DARK },
   light: { label: "Jasny", scheme: "light", tokens: LIGHT },
@@ -295,7 +313,7 @@ export function parseThemeFile(text: string): { name: string; tokens: Tokens; ov
 type Stored = { version: number; preset: string; tokens: Tokens; custom: Record<string, Tokens>; overrides: Record<string, Tokens> };
 
 function load(): Stored {
-  const def: Stored = { version: VERSION, preset: "gold", tokens: { ...GOLD }, custom: {}, overrides: {} };
+  const def: Stored = { version: VERSION, preset: "wieze", tokens: { ...TOWERS }, custom: {}, overrides: {} };
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return def;
@@ -313,10 +331,18 @@ function load(): Stored {
         if (!overrides[tfk]) overrides[tfk] = validateTokens(v, CHART_KEYS).tokens;
       }
     }
+    // 1.29: an untouched 1.13–1.28 default ("gold" with the original tokens) moves to the three-tower look once; any own colours stay
+    if (j.preset === "gold" && sameTokens(t, GOLD) && !localStorage.getItem("mq.theme.towers_1_29")) {
+      localStorage.setItem("mq.theme.towers_1_29", "1");
+      return { version: VERSION, preset: "wieze", tokens: { ...TOWERS }, custom, overrides };
+    }
     return { version: VERSION, preset: typeof j.preset === "string" ? j.preset : "matrix", tokens: { ...MATRIX, ...t }, custom, overrides };
   } catch {
     return def;
   }
+}
+function sameTokens(a: Tokens, b: Tokens): boolean {
+  return Object.keys(b).every((k) => String(a[k] ?? "").toLowerCase() === String(b[k]).toLowerCase());
 }
 function save(st: Stored) {
   try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* storage unavailable: theme works for this session */ }
@@ -370,7 +396,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setDraftS(null);
     },
     cancel: () => setDraftS(null),
-    resetDefaults: () => setDraftS({ tokens: { ...GOLD }, overrides: {}, preset: "gold" }),
+    resetDefaults: () => setDraftS({ tokens: { ...TOWERS }, overrides: {}, preset: "wieze" }),
     saveCustom: (name) => {
       const n = { ...stored, custom: { ...stored.custom, [name]: { ...(draft?.tokens ?? stored.tokens) } } };
       setStored(n);

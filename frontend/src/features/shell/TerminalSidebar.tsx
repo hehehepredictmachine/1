@@ -1,7 +1,7 @@
 // Sidebar of the new panels (approved mockups): Pepe brand, RYNEK and SYSTEM sections, every existing view of the bot (they open in
 // the existing shell, unchanged) and the engine status card. Collapsing is a per-client preference only.
 import pepe from "../../assets/pepe-wizard.webp";
-import { GROUPS, href, type Page, usePersisted } from "../../router";
+import { areasFor, href, type Page, usePersisted } from "../../router";
 import { useStore } from "../../store";
 import { cls } from "../../util";
 
@@ -43,6 +43,7 @@ function EngineCard() {
 
 export default function TerminalSidebar({ page }: { page: Page }) {
   const [collapsed, setCollapsed] = usePersisted<boolean>("terminal.sidebar.collapsed", false, (v) => typeof v === "boolean");
+  const { s } = useStore();
   return (
     <nav className={cls("t-sidebar", collapsed && "collapsed")} aria-label="Nawigacja" data-testid="t-sidebar" data-collapsed={collapsed ? "1" : "0"}>
       <div className="t-side-brand">
@@ -68,7 +69,7 @@ export default function TerminalSidebar({ page }: { page: Page }) {
           </div>))}
         <p className="t-nav-title">Wszystkie widoki</p>
         <ul className="t-nav t-nav-existing" aria-label="Wszystkie dotychczasowe widoki" data-testid="t-existing">
-          {GROUPS.map((g) => (
+          {areasFor(s.license?.edition?.edition === "OWNER").map((g) => (
             <li key={g.id}>
               <a href={href(g.pages[0])} className="t-nav-item" data-section={g.id} title={`${g.label} (dotychczasowy panel)`}>
                 <i aria-hidden="true">{g.icon}</i><span>{g.label}</span></a>

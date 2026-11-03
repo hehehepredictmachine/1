@@ -916,3 +916,17 @@ pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: 
 .cs-zones th, .cs-zones td { text-align: left; padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent); }
 .chart-settings .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 @media (prefers-reduced-motion: reduce) { .mz-progress i { transition: none; } }
+
+/* 1.29: areas of the three towers in the side menu (accent of the area: Precision cyan, Dyscypline amethyst, Profits gold, ...) */
+.nav-group { --area: var(--neon); }
+.nav-group .nav-main i { color: var(--area); }
+.nav-group.cur > .nav-main { border-left: 3px solid var(--area); }
+.nav-group .nav-sub.on { border-left: 2px solid var(--area); }
+.nav-menu i { color: #ffcf5c; }
+.subtabs[data-area] a.on { border-bottom-color: var(--area); color: var(--text-strong); }
+.wz-areas .wz-tab { font-size: 12px; }
+:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+/* reduced motion: no animation or long transitions anywhere (the tower menu has its own static fallback) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

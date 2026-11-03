@@ -176,6 +176,10 @@ export default function TerminalHeader({ ctx, page, quoteAge }: { ctx: TerminalC
         <span className="t-lbl">Tryb: </span><b>{fmtUnknown(ctx.mode?.replace("_", " "), undefined, "NIEZNANY")}</b></span>
       <span className={cls("t-chip", ctx.killSwitch ? "bad" : ctx.mode ? "ok" : "muted")} data-testid="t-entries"
         title="STOP zatrzymuje tylko nowe wejścia; otwarte pozycje są dalej prowadzone">Wejścia: <b>{ctx.mode ? (ctx.killSwitch ? "STOP" : "AKTYWNE") : "UNKNOWN"}</b></span>
+      {s.license && (s.license.edition?.edition === "OWNER"
+        ? <a className="t-chip ok" href={href("licencje")} data-testid="t-edition" data-edition="OWNER" title="OWNER EDITION – License Manager">OWNER</a>
+        : <span className={cls("t-chip", s.license.authorized ? "ok" : "bad")} data-testid="t-edition" data-edition="CLIENT" title={s.license.status_pl || ""}>
+          CLIENT · licencja <b>{s.license.authorized ? `do ${fmtTime(s.license.expires_at, true)}` : "nieaktywna"}</b></span>)}
       <InstrumentSwitch ctx={ctx} />
       {ctx.backend !== "OPEN" && <span className="t-chip bad" data-testid="t-backend">Backend <b>{ctx.backend}</b></span>}
       <div className="t-pop-anchor">

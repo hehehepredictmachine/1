@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { Frog } from "../../appearance";
-import { GROUPS, PAGES, SECTION_OF, href, type Page, usePersisted } from "../../router";
+import { GROUPS, PAGES, SECTION_OF, areasFor, href, type Page, usePersisted } from "../../router";
+import { envOf } from "../../features/shell/useTerminalContext";
 import { useStore } from "../../store";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../../util";
 import SignalsPanel from "../SignalsPanel";
@@ -125,6 +126,9 @@ function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverla
         <span className={cls("chip", tone(con.state))} title={con.reason || con.module_error || ""} data-testid="chip-mt5"><i className="dot" />MT5 <b>{con.state === "CONNECTED" ? "połączony" : con.state ?? "…"}</b></span>
         <span className={cls("chip", engineOk ? tone(dq) : "bad")} title={(s.engine?.last_error || "") + (tickAge != null ? ` · tick ${Math.round(tickAge)} s` : "")}>
           <i className="dot" />Dane <b>{engineOk ? dq ?? "…" : "BŁĄD"}{tickAge != null ? ` · ${Math.round(tickAge)} s` : ""}</b></span>
+        <LastDataChip />
+        <EnvChip />
+        <EditionChip />
         {s.ws !== "OPEN" && <span className="chip warn" title="Połączenie z lokalnym backendem (jedno WebSocket)"><i className="dot" />Backend {s.ws}</span>}
         <button className={cls("chip mode", mode.mode === "AUTO_LIVE" ? "bad" : mode.mode === "SIGNALS" ? "muted" : "warn")} onClick={onMode} data-testid="chip-mode"
           title="Tryb wykonania – kliknij, aby zmienić (osobno od wyboru strategii i trybu ML)">Wykonanie <b>{mode.mode_label ?? mode.mode ?? "…"}</b></button>
@@ -146,13 +150,17 @@ function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverla
   );
 }
 
+export const isOwner = (s: any) => s.license?.edition?.edition === "OWNER";
+
 function SideNav({ page }: { page: Page }) {
+  const { s } = useStore();
   const [collapsed, setCollapsed] = usePersisted<boolean>("nav.collapsed", false, (v) => typeof v === "boolean");
   const cur = SECTION_OF[page];
   return (
     <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Menu główne" data-testid="sidenav">
-      {GROUPS.map((g) => (
-        <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id}>
+      <a href={href("menu")} className="nav-item nav-main nav-menu" data-testid="nav-menu" title="Menu główne – trzy wieże"><i aria-hidden="true">✶</i><span>Menu – trzy wieże</span></a>
+      {areasFor(isOwner(s)).map((g) => (
+        <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id} style={{ "--area": g.accent } as React.CSSProperties}>
           <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")}
             aria-current={cur === g.id ? (g.pages.length > 1 ? "location" : "page") : undefined} data-page={g.pages.length === 1 ? g.pages[0] : undefined}
             data-section={g.id} title={g.label}><i aria-hidden="true">{g.icon}</i><span>{g.label}</span></a>
@@ -178,23 +186,55 @@ function SubTabs({ page }: { page: Page }) {
   const g = GROUPS.find((x) => x.id === SECTION_OF[page]);
   if (!g || g.pages.length < 2) return null;
   return (
-    <div className="subtabs" role="tablist" aria-label={g.label} data-testid="subtabs">
+    <div className="subtabs" role="tablist" aria-label={g.label} data-testid="subtabs" data-area={g.id} style={{ "--area": g.accent } as React.CSSProperties}>
       {g.pages.map((id) => (
         <a key={id} role="tab" aria-selected={page === id} className={cls(page === id && "on")} href={href(id)} data-page={id}>{PAGE_BY_ID[id].label}</a>))}
     </div>);
 }
 
 function MobileNav({ page }: { page: Page }) {
+  const { s } = useStore();
   const cur = SECTION_OF[page];
   return (
     <nav className="mobnav" aria-label="Menu główne (mobilne)" data-testid="mobnav">
-      {GROUPS.map((g) => (
+      {areasFor(isOwner(s)).map((g) => (
         <a key={g.id} href={href(g.pages[0])} className={cls("nav-item", cur === g.id && "on")} aria-current={cur === g.id ? "page" : undefined} data-section={g.id}>
           <i aria-hidden="true">{g.icon}</i><span>{g.label.split(" ")[0]}</span>
         </a>
       ))}
     </nav>
   );
+}
+
+/** Time of the last quote received from MT5 (the terminal's own tick time, shown in local time) - "Dane GOOD · n s" says how old it is. */
+function LastDataChip() {
+  const { s } = useStore();
+  const t = s.quote?.time_utc;
+  const age = s.quote?.source_age_seconds;
+  return (
+    <span className={cls("chip", !t ? "muted" : age != null && age > 120 ? "warn" : "ok")} data-testid="chip-data-time"
+      title={t ? `ostatnie notowanie z MT5: ${t} (UTC)${age != null ? ` · ${Math.round(age)} s temu` : ""}` : "brak notowań z terminala"}>
+      <i className="dot" />Ostatnie dane <b>{t ? fmtTime(t, true) : "—"}</b></span>);
+}
+
+/** Account kind confirmed by the terminal: REAL / DEMO; the simulator is always SYNTETYCZNE; otherwise unknown. */
+function EnvChip() {
+  const { s } = useStore();
+  const e = envOf(s);
+  const label = e.env === "LIVE" ? "LIVE (REAL)" : e.env === "DEMO" ? "DEMO" : e.env === "SYNTHETIC" ? "SYNTETYCZNE" : "rachunek ?";
+  return <span className={cls("chip", e.env === "LIVE" ? "bad" : e.env === "DEMO" ? "ok" : "warn")} data-testid="chip-env" data-env={e.env} title={e.detail}>
+    <i className="dot" />{label}</span>;
+}
+
+/** Edition and licence: OWNER (License Manager) or CLIENT with the licence state from the backend. */
+function EditionChip() {
+  const { s } = useStore();
+  const lic = s.license;
+  if (!lic) return null;
+  if (isOwner(s)) return <a className="chip ok" href={href("licencje")} data-testid="chip-edition" data-edition="OWNER" title="OWNER EDITION – License Manager">
+    <i className="dot" />OWNER</a>;
+  return <span className={cls("chip", lic.authorized ? "ok" : "bad")} data-testid="chip-edition" data-edition="CLIENT" title={lic.status_pl || ""}>
+    <i className="dot" />CLIENT · licencja <b>{lic.authorized ? `do ${fmtTime(lic.expires_at, true)}` : "nieaktywna"}</b></span>;
 }
 
 /** XAUUSD / BTC switch: the only two assets of the application. Unmapped / unconfirmed asset -> disabled with the reason. */

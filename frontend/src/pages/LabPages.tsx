@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import Section from "../components/Section";
-import { href, usePersisted } from "../router";
+import { SCREEN_MAP, href, usePersisted } from "../router";
 import { useStore } from "../store";
 import { useUi } from "../ui";
 import { cls, fmtMoney, fmtNum, fmtTime, tone } from "../util";
@@ -637,6 +637,11 @@ export function LabSettingsPage() {
       <div className="card"><h3>Pozostałe ustawienia</h3>
         <p className="muted small">MT5, ryzyko, koszty, AI, Telegram, motyw i paleta – w dotychczasowym oknie ustawień.</p>
         <button className="btn" onClick={openSettings}>Otwórz ustawienia MT5 / ryzyko / koszty</button></div>
+      <details className="card" data-testid="screen-map">
+        <summary><b>Mapa ekranów 1.29 – gdzie co jest</b> <span className="muted small">(menu ułożone według obszarów trzech wież; stare linki działają)</span></summary>
+        <div className="tbl-wrap"><table className="tbl small"><thead><tr><th>Dotychczas</th><th>Link</th><th>Teraz</th></tr></thead>
+          <tbody>{SCREEN_MAP.map((r) => <tr key={r.hash}><td>{r.old}</td><td className="mono">{r.hash}</td><td>{r.now}</td></tr>)}</tbody></table></div>
+      </details>
       {msg && <p className="small" role="status">{msg}</p>}
     </div>);
 }

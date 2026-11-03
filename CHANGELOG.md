@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.29.0 – licencje bez logowania, wykresy z własnymi ustawieniami i „Wyznacz strefy”, jeden interfejs w stylu wież
+Realizacja pakietu aktualizacji (CLAUDE_WDROZENIE.md). Opis, procedury i blokady: `docs/AKTUALIZACJA_1_29_PL.md`; wyniki testów:
+`release/RAPORT_KONCOWY.md`.
+* **Licencje 1.1 (serwer) / OWNER bez logowania:** klucz urządzenia Ed25519 (Windows DPAPI), podpisane żądania administracyjne
+  (PMW-ADMIN-v1, ±120 s, trwała ochrona przed powtórzeniem), parowanie poleceniem `admin-keys add` w powłoce serwera, rotacja
+  i odwołanie kluczy, `backup-db`; License Manager z kreatorem parowania; okresy 72h / 7d / 31d (24h – zaawansowane); hasło
+  administratora opcjonalne (tylko dla OWNER < 1.29). Adres serwera: tylko HTTPS (localhost do testów), przekierowania odrzucane.
+* **Wykresy:** „Wyznacz strefy” w głównym obszarze wykresów (M1 + M5 + M15 domyślnie, pojedynczo, M30, wszystkie cztery), LIVE,
+  postęp, błąd, ostatnie udane przeliczenie, stan źródła; strefy tylko na wykresie tego samego instrumentu, symbolu i interwału.
+  Własne ustawienia każdego wykresu (kolory, siatka, tekst, wolumen, strefa czasu, kolor i krycie typów stref, etykiety, szablony,
+  reset) zapamiętane lokalnie; menu warstw FVG / OB / popyt-podaż / S/R / płynność (hipoteza) / etykiety – także na stronie Strefy.
+* **Interfejs:** motyw „trzy wieże” (domyślny; własne kolory nienaruszone), menu według obszarów Precision / Dyscypline / Profits /
+  Modele i trening / Ustawienia i diagnostyka / Licencje (tylko OWNER), stan na każdym ekranie (instrument, symbol, MT5, czas ostatnich
+  danych, DEMO / LIVE / SYNTETYCZNE, tryb, STOP, edycja i licencja), edycja w tytule okna i aplikacji Windows, mapa ekranów
+  (stare linki działają), `prefers-reduced-motion`, fokus klawiatury.
+* **Wydania:** build bez `.git` (jawna lista z manifestu), `tools/verify_release.py` (ZIP-slip, sumy, pliki zabronione, sekrety),
+  `tools/migration_check.py` (1.28 → 1.29 i powrót na kopiach danych). Paczka CLIENT: **BLOKADA** do czasu prawdziwego serwera HTTPS.
+* Bez zmian: strategie, progi, ryzyko, koszty, tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP; Execution Lock nie wraca.
+* Niepodpisane cyfrowo (brak certyfikatu). Nie sprawdzono: Windows, prawdziwy MT5, publiczny serwer licencji.
+
 ## 1.28.0 – Strefy rynkowe M1/M5/M15/M30, rejestr modeli, pipeline MT5 → trening → bot (Centrum treningu)
 Pełny opis, audyt, rejestr modeli, instrukcje, wyniki testów i luki: `docs/STREFY_MODELE_TRENING_1_28_PL.md`.
 * **Strefy rynkowe** (Wykresy → Strefy rynkowe): instrument XAUUSD / BTC, niezależny wybór M1/M5/M15/M30 (domyślnie wszystkie cztery),

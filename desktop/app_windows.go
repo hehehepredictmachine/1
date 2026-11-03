@@ -632,7 +632,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 		AutoFocus: true,
 		DataPath:  filepath.Join(l.Home, "webview2"),
 		WindowOptions: webview2.WindowOptions{
-			Title: "PepeMarketWizard", Width: w, Height: h, IconId: iconResourceID, Center: true,
+			Title: l.WindowTitle(version), Width: w, Height: h, IconId: iconResourceID, Center: true,
 		},
 	})
 	if wv == nil {
@@ -647,7 +647,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	a.icon, _, _ = pLoadImageW.Call(hinst, iconResourceID, 1 /* IMAGE_ICON */, 16, 16, 0)
 	a.taskbarCreated, _, _ = pRegisterWindowMessageW.Call(utf16p("TaskbarCreated"))
 	a.oldProc, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlpWndProc, windows.NewCallback(a.wndProc))
-	wv.SetTitle("PepeMarketWizard " + version)
+	wv.SetTitle(l.WindowTitle(version))
 	_ = wv.Bind("pmw", a.bridge)
 	wv.SetHtml(splashHTML)
 	a.addTray()
