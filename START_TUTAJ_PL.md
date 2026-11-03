@@ -6,7 +6,7 @@
 
 ## Nowe w 1.30 – bez licencji
 * **System licencji został usunięty** (na Twoją prośbę). Program działa bez klucza, nie ma okna KEY FOR MAGIC, zakładki Licencje,
-  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich: `PepeMarketWizard_DESKTOP_1_30_0.zip`.
+  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich: `PepeMarketWizard_DESKTOP_1_30_1.zip`.
 * Opisy licencji w sekcjach 1.27 i 1.29 poniżej są historyczne.
 
 ## Nowe w 1.29 – „Wyznacz strefy” na wykresie, menu według wież

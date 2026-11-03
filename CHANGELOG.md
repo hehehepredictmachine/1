@@ -1,12 +1,22 @@
 # CHANGELOG
 
+## 1.30.1 – panel Neural Cyberpunk bez zawieszania na komputerach bez akceleracji GPU
+* **Naprawa:** animowany „mózg” na pulpicie Neural Cyberpunk przerysowywał statyczną warstwę (ok. 700 linii, każda z osobnym
+  rozmyciem `shadowBlur` w trybie `lighter`) przy każdym odświeżeniu rejestru modeli, czyli co kilka sekund. Bez akceleracji GPU
+  (rysowanie programowe, np. Windows VPS / maszyna wirtualna, przeglądarka testowa) każde takie przerysowanie blokowało całe okno
+  na ok. 10 s, a przy 1440 px panel otwierał się po 20–40 s. Teraz warstwa statyczna rysuje się tylko przy zmianie rozmiaru,
+  a poświata powstaje w jednym przejściu rozmycia; dane z rejestru i tryb są czytane bez restartu animacji. Pomiar w Chromium bez
+  GPU (1440×900): otwarcie panelu ok. 1 s zamiast 20–40 s, płynna animacja (ok. 58 klatek/s zamiast ok. 2). Wygląd bez zmian.
+  Usterka była już w 1.17–1.30.0; wykrył ją test `test_nc_panel` w pełnej regresji 1.30.
+* Bez zmian w logice bota, strategiach, ryzyku, trybach, danych i API.
+
 ## 1.30.0 – system licencji usunięty (na Twoją prośbę)
 * **Program działa bez klucza** – usunięte: strażnik licencji przed nowymi wejściami (S01–S12, ręczne, SCALPING/HEDGING), blokada
   powiadomień Telegram o nowych sygnałach, okno KEY FOR MAGIC, License Manager (OWNER), obszar „Licencje”, oznaczenia OWNER/CLIENT
   (pasek stanu, tytuł okna i aplikacji Windows), API `/api/v1/license*` i `/api/v1/owner/*`, moduł `backend/masterquo/license`,
   serwer licencji `license_server/`, `edition.json`, narzędzie wydania wersji CLIENT (`tools/stamp_client_edition.py`,
   `PRZYGOTUJ_PACZKE_KLIENTA.bat`) i zależności Windows dodane tylko dla licencji (`cryptography`, `cffi`, `pycparser`).
-* Jedna wersja programu: paczki `PepeMarketWizard_DESKTOP_1_30_0.zip` (aplikacja Windows) i `PepeMarketWizard_1_30_0.zip` (folder).
+* Jedna wersja programu: paczki `PepeMarketWizard_DESKTOP_1_30_x.zip` (aplikacja Windows) i `PepeMarketWizard_1_30_x.zip` (folder).
 * Dawny link `#/licencje` otwiera Ustawienia. Pliki licencji pozostałe w folderze danych z 1.27–1.29 (`license_owner.json`,
   `license_owner_key.*`, token licencji) nie są używane ani usuwane automatycznie – można je skasować.
 * Bez zmian: strategie, progi, ryzyko, koszty, tryby SIGNALS / PAPER / AUTO DEMO / AUTO LIVE, STOP, wykresy i strefy 1.29, interfejs

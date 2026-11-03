@@ -1,6 +1,6 @@
 """Upgrade from the previous release and rollback, checked on COPIES of the data (never the user's own folder).
 
-  python tools/migration_check.py [--old-ref 5298ec2] [--keep]          (default: 1.29.0 -> this repository, 1.30.0)
+  python tools/migration_check.py [--old-ref 5298ec2] [--keep]          (default: 1.29.0 -> this repository, 1.30.x)
 
 Everything in a temporary folder, terminal simulator = SYNTHETIC data, no MT5, no orders:
   1. the old version (git worktree of --old-ref) starts on a fresh data folder, computes market zones and - when it still has the

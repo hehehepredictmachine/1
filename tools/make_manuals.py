@@ -26,7 +26,8 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.30.0"
+VERSION = "1.30.1"
+TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
 DARK = colors.HexColor("#14261b")
@@ -158,7 +159,7 @@ def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
                P("Obsługa bota PepeMarketWizard 1.30: uruchomienie, interfejs trzech wież, wykresy i strefy, trening modeli, "
                  "wydawanie paczek, aktualizacja i powrót.", "lead"),
-               box("<b>Stan:</b> instrukcja odpowiada wersji <b>1.30.0</b>. Opisane ekrany i polecenia zostały uruchomione "
+               box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
                    "i sprawdzone testami w Chromium na symulatorze terminala. Czego nie dało się sprawdzić – oznaczono "
                    "„nie sprawdzono”. <b>System licencji został usunięty</b> (na Twoją prośbę): program działa bez klucza, "
                    "nie ma License Managera, okna KEY FOR MAGIC, wersji CLIENT ani serwera licencji."),
@@ -171,12 +172,12 @@ def admin(shots: Path | None) -> list:
                PageBreak()]
     # 1
     s += [P("1 / Pierwsze uruchomienie", "h1"), P("Przygotowanie", "h2"),
-          bullets(["Rozpakuj paczkę <b>PepeMarketWizard_DESKTOP_1_30_0.zip</b> do nowego folderu (nie nadpisuj starej wersji). "
+          bullets(["Rozpakuj paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> do nowego folderu (nie nadpisuj starej wersji). "
                    "Zachowaj kopię danych sprzed aktualizacji (rozdział 6).",
                    "Uruchom MT5 i zaloguj się do właściwego rachunku. Symbol brokera (np. <b>XAUUSD-</b>) musi być widoczny w Market Watch.",
                    "Windows potrzebuje WebView2. Pierwszy start instaluje zależności z Internetu (lub z paczki OFFLINE)."]),
           P("Start aplikacji", "h2"),
-          P("Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard 1.30.0</b>). Klucz licencji nie jest potrzebny. "
+          P("Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Klucz licencji nie jest potrzebny. "
             "Przy problemie uruchom <b>02_DIAGNOSTYKA.bat</b> i zachowaj wynik."),
           P("Dane aplikacji Windows: <b>%LOCALAPPDATA%\\PepeMarketWizard\\data</b> (tryb portable: folder programu). Kopie sprzed "
             "aktualizacji: <b>%LOCALAPPDATA%\\PepeMarketWizard\\backups</b>."),
@@ -237,8 +238,8 @@ def admin(shots: Path | None) -> list:
     s += [P("5 / Paczki do przekazania", "h1"),
           P("Od 1.30 jest jedna wersja programu – bez licencji, bez podziału na OWNER i CLIENT. Inna osoba dostaje tę samą paczkę co Ty:"),
           table([["Paczka", "Dla kogo"],
-                 ["PepeMarketWizard_DESKTOP_1_30_0.zip", "aplikacja Windows: EXE + wbudowany Python + program (główna paczka)"],
-                 ["PepeMarketWizard_1_30_0.zip", "sam folder programu (uruchamianie plikami .bat, własny Python)"]], [70, 100]),
+                 ["PepeMarketWizard_DESKTOP_" + TAG + ".zip", "aplikacja Windows: EXE + wbudowany Python + program (główna paczka)"],
+                 ["PepeMarketWizard_" + TAG + ".zip", "sam folder programu (uruchamianie plikami .bat, własny Python)"]], [70, 100]),
           steps(["Przekaż paczkę razem z plikiem <b>.sha256</b> i <b>Instrukcją użytkownika</b>.",
                  "Paczka nie zawiera Twoich danych, kluczy API, haseł MT5, bazy ani dziennika – każdy użytkownik konfiguruje swój MT5 sam.",
                  "Sprawdzenie paczki: <b>python tools\\verify_release.py &lt;paczka&gt;</b> (ścieżki, sumy, brak plików zabronionych)."]),
@@ -276,13 +277,13 @@ def client(shots: Path | None) -> list:
                    "na symulatorze terminala; jeśli Twoja paczka wygląda inaczej, zapytaj osobę, od której ją dostałeś, o aktualną wersję."),
                P("Co przygotować", "h2"),
                bullets(["Komputer z Windows 10/11 i połączeniem z Internetem (pierwsze uruchomienie pobiera składniki).",
-                        "Paczkę <b>PepeMarketWizard_DESKTOP_1_30_0.zip</b> i jej plik <b>.sha256</b>.",
+                        "Paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> i jej plik <b>.sha256</b>.",
                         "Terminal MetaTrader 5 z dostępem do własnego rachunku."]),
                box("Nie wysyłaj nikomu hasła do MT5 ani kodów bezpieczeństwa.", "warn"),
                PageBreak()]
     s += [P("1 / Instalacja", "h1"), P("Pierwsze uruchomienie", "h2"),
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",
-                 "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard 1.30.0</b>). Pierwszy start pobiera "
+                 "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
                  "wymagane składniki – może potrwać kilka minut.",
                  "Panel otwiera się na menu głównym z trzema wieżami. Przy pierwszym starcie kreator prosi o limity ryzyka i koszty."]),
           *shot(shots, "ui_interface_129/menu_1280x720@1x.png", "Menu główne – trzy wieże.", width_mm=150),

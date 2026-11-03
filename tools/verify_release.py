@@ -1,6 +1,6 @@
 """Verifies release archives before they are handed out (1.29, §5 of the update package).
 
-  python tools/verify_release.py release/PepeMarketWizard_DESKTOP_1_30_0.zip [more.zip ...]
+  python tools/verify_release.py release/PepeMarketWizard_DESKTOP_1_30_1.zip [more.zip ...]
   python tools/verify_release.py --all          every ZIP of the current VERSION in release/
 
 Per archive:

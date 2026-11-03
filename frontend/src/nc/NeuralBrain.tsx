@@ -118,6 +118,10 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
       return { m, x, y };
     });
   }, [models]);
+  const modsRef = useRef(mods);
+  modsRef.current = mods;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const hub = { x: 0.52, y: 0.5 };
   const col = (m: Mod) => (m.readiness === "READY" || m.readiness === "DETERMINISTIC_OK" ? [70, 226, 182] : m.readiness === "SHADOW" ? [118, 220, 252] :
     m.status === "ERROR" || m.status === "INCOMPATIBLE" ? [255, 129, 159] : [150, 135, 210]);
@@ -127,6 +131,7 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
     if (!c) return;
     const g = c.getContext("2d")!;
     const stat = document.createElement("canvas");
+    const glow = document.createElement("canvas");
     let W = 0, H = 0, S = 1, Kf = 1, SX = 1, SY = 1, ox = 0, oy = 0, dpr = 1, raf = 0;
     const P = (x: number, y: number) => [ox + x * SX, oy + y * SY] as const;
     const layout = () => {
@@ -139,32 +144,39 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
       ox = (W - SX) / 2; oy = (H - SY * 0.95) / 2;
       // static layer: dendrites + somata of the decorative network
       stat.width = c.width; stat.height = c.height;
+      glow.width = c.width; glow.height = c.height;
       const s = stat.getContext("2d")!;
-      s.setTransform(dpr, 0, 0, dpr, 0, 0);
-      s.clearRect(0, 0, W, H);
-      s.globalCompositeOperation = "lighter";
+      const gl = glow.getContext("2d")!;
+      gl.setTransform(dpr, 0, 0, dpr, 0, 0);
+      gl.clearRect(0, 0, W, H);
+      gl.globalCompositeOperation = "lighter";
       const path = (pts: [number, number][], close = false) => {
-        s.beginPath();
-        pts.forEach(([x, y], i) => { const [X, Y] = P(x, y); if (i === 0) s.moveTo(X, Y); else s.lineTo(X, Y); });
-        if (close) s.closePath();
+        gl.beginPath();
+        pts.forEach(([x, y], i) => { const [X, Y] = P(x, y); if (i === 0) gl.moveTo(X, Y); else gl.lineTo(X, Y); });
+        if (close) gl.closePath();
       };
-      s.shadowColor = "rgba(170,150,255,0.9)"; s.shadowBlur = 14 * Kf;
-      s.strokeStyle = "rgba(190,175,255,0.55)"; s.lineWidth = 2.2; path(net.outline, true); s.stroke();          // brain outline
-      s.shadowBlur = 8 * Kf;
-      net.folds.forEach((f) => { s.strokeStyle = "rgba(170,160,255,0.32)"; s.lineWidth = 1.3; path(f); s.stroke(); });   // folds
-      s.shadowBlur = 10 * Kf; s.shadowColor = "rgba(120,170,255,0.8)";
+      gl.strokeStyle = "rgba(190,175,255,0.55)"; gl.lineWidth = 2.2; path(net.outline, true); gl.stroke();       // brain outline
+      net.folds.forEach((f) => { gl.strokeStyle = "rgba(170,160,255,0.32)"; gl.lineWidth = 1.3; path(f); gl.stroke(); });   // folds
+      gl.strokeStyle = "rgba(170,185,255,0.55)"; gl.lineCap = "round";
       net.heroes.forEach((h) => h.br.forEach(([x1, y1, x2, y2, w]) => {                                              // hero dendrites
         const [a, b] = P(x1, y1), [c2, d] = P(x2, y2);
-        s.strokeStyle = "rgba(170,185,255,0.55)"; s.lineWidth = Math.max(0.5, w * Kf); s.lineCap = "round";
-        s.beginPath(); s.moveTo(a, b); s.lineTo(c2, d); s.stroke();
+        gl.lineWidth = Math.max(0.5, w * Kf);
+        gl.beginPath(); gl.moveTo(a, b); gl.lineTo(c2, d); gl.stroke();
       }));
+      s.setTransform(1, 0, 0, 1, 0, 0);
+      s.clearRect(0, 0, stat.width, stat.height);
+      s.globalCompositeOperation = "lighter";
+      s.filter = `blur(${(9 * Kf * dpr).toFixed(1)}px)`;                                                            // glow: one blur pass
+      s.drawImage(glow, 0, 0); s.drawImage(glow, 0, 0);
+      s.filter = "none";
+      s.drawImage(glow, 0, 0);                                                                                       // sharp lines on top
+      s.setTransform(dpr, 0, 0, dpr, 0, 0);
       net.heroes.forEach((h) => {
         const [X, Y] = P(h.x, h.y), rr = 13 * Kf;
         const gr = s.createRadialGradient(X, Y, 0, X, Y, rr * 2.6);
         gr.addColorStop(0, "rgba(245,240,255,0.95)"); gr.addColorStop(0.35, "rgba(170,160,255,0.65)"); gr.addColorStop(1, "rgba(90,100,255,0)");
         s.fillStyle = gr; s.beginPath(); s.arc(X, Y, rr * 2.6, 0, Math.PI * 2); s.fill();
       });
-      s.shadowBlur = 0;
       net.edges.forEach((e) => {
         const a = net.nodes[e.a], b = net.nodes[e.b];
         const [x1, y1] = P(a.x, a.y), [x2, y2] = P(b.x, b.y), [cx, cy] = P(e.cx, e.cy);
@@ -231,7 +243,7 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
       // module neurons (registry data) and their link to the decision hub
       const [hx, hy] = P(hub.x, hub.y);
       const pulse = reduce ? 1 : 0.75 + 0.25 * Math.sin(time / 600);
-      mods.forEach(({ m, x, y }) => {
+      modsRef.current.forEach(({ m, x, y }) => {
         const [X, Y] = P(x, y);
         const [r, gg, b] = col(m);
         const use = m.SCALPING?.use || "NONE";
@@ -253,7 +265,7 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
       g.fillStyle = hg; g.beginPath(); g.arc(hx, hy, 34 * Kf * pulse, 0, Math.PI * 2); g.fill();
       g.globalCompositeOperation = "source-over";
       g.fillStyle = "#e7edff"; g.font = "11px system-ui"; g.textAlign = "center"; g.fillText("DECYZJA SH", hx, hy + 30);
-      if (mode) { g.fillStyle = "#94a3bf"; g.font = "10px system-ui"; g.fillText(`tryb ${mode}`, hx, hy + 44); }
+      if (modeRef.current) { g.fillStyle = "#94a3bf"; g.font = "10px system-ui"; g.fillText(`tryb ${modeRef.current}`, hx, hy + 44); }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -261,7 +273,7 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
       const r = c.getBoundingClientRect();
       const x = ev.clientX - r.left, y = ev.clientY - r.top;
       mouse.current = { x, y, on: true };
-      const hit = mods.find(({ x: mx, y: my }) => Math.hypot(ox + mx * SX - x, oy + my * SY - y) < 16);
+      const hit = modsRef.current.find(({ x: mx, y: my }) => Math.hypot(ox + mx * SX - x, oy + my * SY - y) < 16);
       if ((hit?.m.id || null) !== (hoverRef.current?.id || null)) setHover(hit ? hit.m : null);
       c.style.cursor = hit ? "pointer" : "crosshair";
     };
@@ -271,7 +283,7 @@ export default function NeuralBrain({ models, mode, height }: { models: Mod[]; m
     c.addEventListener("pointerleave", leave);
     c.addEventListener("click", click);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); c.removeEventListener("pointermove", pick); c.removeEventListener("pointerleave", leave); c.removeEventListener("click", click); };
-  }, [net, mods, mode]);
+  }, [net]);
   const show = hover || pinned;
   return (
     <div className="nc-brain-wrap">
