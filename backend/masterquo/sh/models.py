@@ -99,6 +99,9 @@ REGISTRY: list[dict] = [
     {"id": "th_direction", "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)", "kind": "TRAINED",
      "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)", "group": "TH_DIRECTION",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "trainhub"},
+    {"id": "kronos", "name": "Kronos-small (NeoQuasar, przetrenowany) – prognoza świec OHLC", "kind": "TRAINED",
+     "output": "ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)", "group": "KRONOS_PRICE_PATH",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
      "group": "AGENT", "roles": {"SCALPING": "SUPERVISION", "HEDGING": "SUPERVISION"}, "train": None},
 ]
@@ -175,6 +178,19 @@ def probe(item: dict, rt, inst: str) -> dict:
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
+        if mid == "kronos":
+            kr = getattr(rt, "kronos", None) if rt else None
+            if kr is None:
+                return {"status": "UNAVAILABLE", "reason": "stan Kronos: osobny kontekst w ocenie setupu (su.kronos) i panel Kronos AI Forecast"}
+            st = kr.state.get("status")
+            use = {k: v.use for k, v in kr.settings.get().strategy_use.items()}
+            if st in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
+                return {"status": "UNAVAILABLE" if st != "NO_WEIGHTS" else "NOT_CONNECTED", "reason": kr.state.get("reason") or st}
+            if st == "ERROR":
+                code = kr.state.get("code")
+                return {"status": "INCOMPATIBLE" if code in ("INCOMPATIBLE", "CHECKSUM", "CHECKSUM_MISMATCH") else "ERROR", "reason": kr.state.get("reason")}
+            return {"status": "SHADOW_ONLY", "reason": f"przetrenowany model NeoQuasar (bez treningu w bocie); użycie w strategiach: {use} – "
+                    "OBSERVE = obserwacja, REQUIRED = warunek po walidacji walk-forward", "detail": {"use": use, "service": st}}
         if mid == "th_direction":
             from ..trainhub import registry as TR
             act = TR.registry(inst).get("active") or {}

@@ -44,7 +44,9 @@ def evidence(preds: list[dict], strategy: str, inst: str) -> dict:
             continue
         route = ROUTES.get((_task_family(p), p["timeframe"]))
         if route is None:
-            excluded.append({"model": p.get("model_key"), "state": "READY", "reason": "brak jawnego mapowania zadania na rolę strategii"})
+            why = ("prognoza ceny (regresja, jednostka: cena) – osobny kontekst Kronos w strategii; nie łączona z prawdopodobieństwami"
+                   if p.get("unit") == "price" else "brak jawnego mapowania zadania na rolę strategii")
+            excluded.append({"model": p.get("model_key"), "state": "READY", "reason": why})
             continue
         groups.setdefault(route["group"], []).append((p, route))
     out = []

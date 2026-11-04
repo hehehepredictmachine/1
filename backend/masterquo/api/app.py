@@ -1877,6 +1877,108 @@ def create_app(rt, port: int) -> FastAPI:
         from ..modelhub import adapters as _AD
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
+    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small, SHADOW)
+    _KR_TF = ("M1", "M5", "M15", "M30", "H1")
+
+    def _kr_tf(tf: str) -> str:
+        tf = (tf or "").upper()
+        if tf not in _KR_TF:
+            raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
+        return tf
+
+    @app.get("/api/v1/kronos")
+    def kronos_status():
+        from kronos_runtime import lock as _KL
+        kr = rt.kronos
+        return {**kr.public(), "env": kr.env_status(), "settings": kr.settings.get().model_dump(mode="json"),
+                "model": {"repo": _KL.MODEL["repo"], "revision": _KL.MODEL["revision"], "max_context": _KL.MAX_CONTEXT},
+                "tokenizer": {"repo": _KL.TOKENIZER["repo"], "revision": _KL.TOKENIZER["revision"]}, "license": _KL.LICENSE,
+                "data_kind": kr.data_kind()[0], "data_source": kr.data_kind()[1]}
+
+    @app.get("/api/v1/kronos/forecast")
+    def kronos_forecast(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.kronos.forecast(_th_inst(instrument), _kr_tf(tf))
+
+    @app.get("/api/v1/kronos/history")
+    def kronos_history(instrument: str = Query("XAUUSD"), tf: str | None = Query(None), limit: int = Query(100, ge=1, le=2000)):
+        return {"items": rt.kronos.history(_th_inst(instrument), _kr_tf(tf) if tf else None, limit)}
+
+    @app.put("/api/v1/kronos/settings")
+    def kronos_settings_put(body: dict = Body(...)):
+        if "strategy_use" in body:
+            raise HTTPException(400, "STRATEGY_USE_ONLY_VIA_/api/v1/kronos/strategy-use")
+        try:
+            s = rt.kronos.settings.update(body)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_SETTINGS: {exc}"[:500]) from exc
+        rt.log.info("KRONOS", "SETTINGS", "Zmieniono ustawienia Kronos: " + ", ".join(sorted(body))[:200])
+        return {"ok": True, "settings": s.model_dump(mode="json")}
+
+    @app.post("/api/v1/kronos/enable")
+    def kronos_enable(body: dict = Body(...)):
+        on = bool(body.get("on"))
+        rt.kronos.settings.update({"enabled": on})
+        rt.log.info("KRONOS", "ENABLE", f"Kronos {'włączony' if on else 'wyłączony'} (tryb SHADOW).")
+        return {"ok": True, "enabled": on}
+
+    @app.post("/api/v1/kronos/install")
+    def kronos_install(body: dict = Body(default={})):
+        cuda = body.get("cuda")
+        if cuda not in (None, "", "cu126", "cu128"):
+            raise HTTPException(400, "CUDA_VARIANT_NOT_ALLOWED")
+        r = rt.kronos.start_install(cuda or None)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/kronos/verify")
+    def kronos_verify():
+        r = rt.kronos.start_verify(reference=True)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/kronos/job/{name}")
+    def kronos_job(name: str):
+        if name not in ("install", "verify", "validation"):
+            raise HTTPException(404, "UNKNOWN_JOB")
+        return {"job": rt.kronos.job(name)}
+
+    @app.post("/api/v1/kronos/refresh")
+    def kronos_refresh(body: dict = Body(...)):
+        r = rt.kronos.refresh(_th_inst(str(body.get("instrument", ""))), _kr_tf(str(body.get("tf", ""))))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/kronos/validate")
+    def kronos_validate(body: dict = Body(...)):
+        n = int(body.get("max_origins", 300))
+        if not 20 <= n <= 2000:
+            raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
+        r = rt.kronos.start_validation(_th_inst(str(body.get("instrument", ""))), _kr_tf(str(body.get("tf", ""))), n)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/kronos/validation")
+    def kronos_validation(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        from ..kronos import validation as _KV
+        rep = _KV.latest_report(_th_inst(instrument), _kr_tf(tf))
+        if rep:
+            rep = {k: v for k, v in rep.items() if k != "rows"} | {"rows_tail": (rep.get("rows") or [])[-50:]}
+        return {"report": rep}
+
+    @app.post("/api/v1/kronos/strategy-use")
+    def kronos_strategy_use(body: dict = Body(...)):
+        strat = str(body.get("strategy", "")).upper()
+        use = str(body.get("use", "")).upper()
+        tf = body.get("timeframe")
+        r = rt.kronos.set_strategy_use(strat, use, timeframe=_kr_tf(tf) if tf else None, confirm=bool(body.get("confirm")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
     @app.get("/api/v1/zones/status")
     def zones_status():
         return rt.zones.status()

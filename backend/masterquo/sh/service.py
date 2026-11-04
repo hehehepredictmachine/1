@@ -222,7 +222,7 @@ class SHService:
             if su["status"] == "READY" and TM.status(inst, strat).get("status") == "READY":
                 pr = TM.predict(inst, strat, TM.features(su, snap))
                 su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
-            evals[strat] = su
+            evals[strat] = self._kronos(su, inst, strat, snap)
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
@@ -255,6 +255,24 @@ class SHService:
             except Exception:  # noqa: BLE001 - an observer never stops the cycle
                 logging.getLogger("masterquo.sh").exception("sh listener failed")
         return evals
+
+    def _kronos(self, su: dict, inst: str, strat: str, snap: dict) -> dict:
+        """Kronos context (separate, described). OBSERVE = information only; REQUIRED (after validation + confirmation) can only turn
+        READY into WAIT. Any failure here keeps the evaluation as it was in OBSERVE and as WAIT in REQUIRED - never a permission."""
+        kr = getattr(self, "kronos", None)
+        if kr is None:
+            return su
+        from ..kronos import predictions as KP
+        try:
+            preds = self.predictions_provider(inst) if getattr(self, "predictions_provider", None) else []
+            ctx = KP.context(kr, inst, strat, side=su.get("side"), other_preds=preds, snap=snap)
+        except Exception as exc:  # noqa: BLE001
+            use = kr.settings.get().strategy_use[strat].use
+            ctx = {"model": "Kronos-small", "timeframe": kr.settings.get().strategy_use[strat].timeframe, "use": use, "use_pl": KP.USE_PL[use],
+                   "available": False, "state": "ERROR", "reason": f"kontekst Kronos: {type(exc).__name__}: {exc}"[:200], "forecast": None,
+                   "setup_side": su.get("side"), "relation": "BRAK", "vs_models": [], "vs_structure": None, "knows_only": KP.KNOWS_ONLY,
+                   "independence": KP.INDEPENDENCE, "validation_report": None}
+        return KP.apply_to_setup(su, ctx)
 
     def persist_signal(self, su, risk, coord, now) -> None:
         k = su["strategy"]

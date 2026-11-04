@@ -930,3 +930,9 @@ pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Kronos AI Forecast */
+.kronos-panel .kronos-chart { width: 100%; margin: 8px 0; border: 1px solid var(--border, #333); border-radius: 6px; }
+.kronos-panel .kronos-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px; }
+.kronos-panel .kronos-log { max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: rgba(0, 0, 0, .25); padding: 6px; border-radius: 4px; }
+.kronos-panel h4 { margin: 10px 0 4px; }
