@@ -1,4 +1,60 @@
-# Raport końcowy – PepeMarketWizard 1.30.1 (bez licencji)
+# Raport końcowy – PepeMarketWizard 1.31.0 (Kronos AI Forecast)
+
+**Co nowego:** 1.31.0 = 1.30.1 + integracja modelu **Kronos** (NeoQuasar/Kronos-small + Kronos-Tokenizer-base, MIT, rewizje
+przypięte). Kronos działa w trybie obserwacji (SHADOW) i nie ma zgody na zlecenia. Pełny raport wdrożenia:
+`docs/KRONOS_RAPORT_WDROZENIA.md`. Instrukcja dla Ciebie: `INSTRUKCJA_KRONOS.md`. Obie są w paczkach.
+
+**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki 1.31.0 zbudowane z commitu
+`45ee591cab80ca75a96a8b8cb2ea6de068e2887a`. `MANIFEST_SHA256.txt` (1198 plików programu): SHA-256
+`c2947777c0eee00e59b645b63582d6a4caeadfa01aa316a8debbfc9a276924f4`.
+**Data i środowisko:** 2026-11-04; kontener Linux 6.18 (x86_64, 4 rdzenie, bez GPU), Python 3.13.16, PyTorch 2.14.1 CPU (osobne
+środowisko testowe), Node 22, Go 1.24.7, Chromium. Bez Windows i bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń.
+
+## Najważniejsze ograniczenie
+`huggingface.co` i `download.pytorch.org` są zablokowane w tym środowisku (403). Dlatego tutaj **nie** zostały pobrane ani
+uruchomione oficjalne wagi i **nie** przeszedł na nich test regresji autorów. Przepływ sprawdziłem na prawdziwym PyTorch z losowymi
+wagami tej samej architektury (24 741 376 parametrów). To wyłącznie test, nie prognoza rynku: bot odrzuca takie wagi poza testami.
+Pobranie i sprawdzenie wag robisz u siebie przyciskami **Zainstaluj model Kronos** i **Sprawdź instalację**.
+
+## Paczki 1.31.0
+| Plik | Rozmiar (B) | SHA-256 |
+|---|---|---|
+| `PepeMarketWizard_DESKTOP_1_31_0.zip` (2266 plików) | 39 849 513 | `b9ad38a06134d1a635eab502a8c255533053ecd2e56f9468c9bea21bdfba907b` |
+| `PepeMarketWizard_1_31_0.zip` (1198 plików) | 22 389 605 | `4993672aa3834235b015bb2807343d7803896d7c54ab4a3315546fc0e37433d0` |
+| `Instrukcja_Administrator_PepeMarketWizard.pdf` (8 stron, Kronos na s. 6) | 377 807 | `8233d45b3e4c36c2cd4c9eb323ae70dbb2c3e7a0e4475596567752d9686fd2c9` |
+| `Instrukcja_Klient_PepeMarketWizard.pdf` (5 stron) | 1 457 251 | `ed91c15eae2fa4066bb00b557e22fd22682b2baab44818033e2d0f1f0a43e5e2` |
+
+`tools/verify_release.py --all`: OK dla obu paczek (ścieżki, manifest, brak sekretów, plik `.sha256`).
+Wagi Kronosa **nie** są w paczkach (ok. 115 MB: model ok. 99 MB + tokenizer ok. 16 MB w float32; licencja i źródło autorów). Instalator pobiera je z przypiętej rewizji i sprawdza ich sumy.
+
+## Testy 1.31.0 – komendy i liczby
+| Komenda | Wynik |
+|---|---|
+| `python -m unittest test_kronos_bot` | 16/16 OK |
+| `.venv_kronos python -m unittest test_kronos_runtime` (PyTorch 2.14.1 CPU) | 7 OK, 1 pominięty (oficjalne wagi – brak dostępu) |
+| `python -m unittest test_ui_kronos` (serwer + Chromium) | 2/2 OK |
+| 18 modułów (launchery, SH, MM, trainhub, aplikacja, desktop, narzędzia wydania, Execution Lock wycofany, Telegram, ewaluacja, Kronos) | 209 OK, 10 pominiętych |
+| UI: monitor 11, nc_panel 1, training_center 1, interface_129 4, ui_scalp 3, ui_kronos 2 | OK |
+| UI: `test_ui_pages` | po poprawce CSS: 2 przebiegi z różnymi jednorazowymi błędami czasowymi, potem 3/3 OK (1.30.1: 3/3 OK) |
+| `tools/migration_check.py --old-ref 30cb0cf` (1.30.1 → 1.31.0) | 11/11 PASS (migracje 22 → 23, rollback działa) |
+| Instalator na żywo (`tools/kronos_setup.py`) | pakiety z PyPI OK; wagi: błąd NETWORK z czytelną wskazówką (blokada HF) |
+
+Wydajność na tym CPU (2 wątki, model wielkości Kronos-small): ładowanie 0,39–0,55 s; prognoza 12 świec z 400: 1,42–1,57 s;
+8 ścieżek niepewności: +11,1 s. **Brak jakichkolwiek wyników skuteczności:** gotowość do prognozowania to nie przewaga handlowa.
+
+## Czego nie sprawdzono w 1.31.0
+* Oficjalne wagi (pobranie, sumy, regresja autorów, prawdziwa prognoza) – blokada sieci.
+* Windows: `33_KRONOS_INSTALUJ.bat`, PyTorch z PyPI na Windows, WebView2.
+* CUDA – brak GPU. Kod przechodzi na CPU z podaniem przyczyny.
+* MT5: symbole, sesje, czas serwera, wolumen brokera, walidacja na Twoich danych.
+
+## Procedura rollbacku 1.31.0 → 1.30.1
+Zamknij aplikację i uruchom 1.30.1 z jej folderu. Migracja 0024 tylko dodaje tabelę `kronos_forecasts`, a 1.30.1 działa na tych
+danych (sprawdzone przez `migration_check`). Folder `.venv_kronos` i wagi w `data\kronos` możesz usunąć ręcznie.
+
+---
+
+# Archiwum: raport 1.30.1
 
 Wypełniony według `06_RAPORT_KONCOWY/SZABLON_ODBIORU.md` z pakietu aktualizacji. Wersja 1.30 = 1.29 (wykresy, strefy, interfejs w stylu
 wież, narzędzia wydania) **minus system licencji**, usunięty na Twoje polecenie „Usuń mi te licencje”. **1.30.1** = 1.30.0 + dwie
@@ -13,7 +69,7 @@ oznaczone jako BLOCKED / „nie sprawdzono”.
 **Data i środowisko:** 2026-11-03; kontener Linux 6.18 (x86_64, 4 rdzenie), Python 3.13.16, Node 22.22, Go 1.24.7, Chromium
 (Playwright, rysowanie programowe bez GPU). Bez Windows, bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń LIVE.
 
-## Co usunięto w 1.30
+### Co usunięto w 1.30
 * Backend: strażnik licencji przed każdym nowym wejściem (`execution/gateway.py` – S01–S12, `execution/manual.py` – ręczne,
   `sh/executor.py` + `sh/service.py` – SCALPING/HEDGING), blokada Telegrama dla nowych sygnałów (`notify/telegram.py`), API
   `/api/v1/license*` i `/api/v1/owner/*`, sekcja `license` w stanie, cały moduł `backend/masterquo/license/`. Bramki wróciły do stanu
@@ -27,7 +83,7 @@ oznaczone jako BLOCKED / „nie sprawdzono”.
 * Dane użytkownika: pliki po licencjach (`license_owner.json`, `license_owner_key.*`, token licencji) nie są używane ani usuwane
   automatycznie – można je skasować ręcznie z folderu `data`.
 
-## Poprawki 1.30.1 (z pełnej regresji 1.30)
+### Poprawki 1.30.1 (z pełnej regresji 1.30)
 1. **Panel Neural Cyberpunk zawieszał okno bez akceleracji GPU** (`test_nc_panel`). Animowany „mózg” przerysowywał statyczną warstwę
    (ok. 700 linii, każda z osobnym rozmyciem w trybie `lighter`) przy każdym odświeżeniu rejestru modeli – co kilka sekund. Przy
    rysowaniu programowym (np. Windows VPS / maszyna wirtualna) każde przerysowanie blokowało okno na ok. 10 s. Ten sam wynik na 1.29.0
@@ -42,7 +98,7 @@ oznaczone jako BLOCKED / „nie sprawdzono”.
 
 Bez zmian w logice bota, strategiach, progach, ryzyku, kosztach, trybach, danych i API.
 
-## Tabela odbioru
+### Tabela odbioru
 
 | Wymaganie | Status | Dowód / wynik / plik |
 |---|---|---|
@@ -63,7 +119,7 @@ Bez zmian w logice bota, strategiach, progach, ryzyku, kosztach, trybach, danych
 | Migracja danych, backup i rollback | PASS (kopie danych) | `python tools/migration_check.py` → **11/11 PASS** (1.29.0 worktree `5298ec2` ↔ 1.30.1; pozostałe pliki licencji nietknięte; powrót z kopii) |
 | Instrukcje PDF zgodne ze stanem aplikacji | PASS | administrator 8 str., użytkownik 5 str. (`tools/make_manuals.py`, wersja 1.30.1); tylko osadzone DejaVu Sans; strony obejrzane; bez rozdziałów o licencjach |
 
-## Testy – komendy i liczby
+### Testy – komendy i liczby
 
 **Pełna regresja 1.30** (każdy moduł osobno, `tests/test_*.py`):
 * bez UI: **82 moduły, 969 testów** – wszystkie OK poza `test_nc_panel` (usterka 1 → poprawiona); pominięte 4 testy wymagające
@@ -80,7 +136,7 @@ Bez zmian w logice bota, strategiach, progach, ryzyku, kosztach, trybach, danych
 * `go vet ./...`, `GOOS=windows go vet ./...`, `go test ./...` (desktop) → OK.
 * `tools/migration_check.py` → 11/11 PASS. `tools/verify_release.py --all` → OK ×2.
 
-## Paczki, SHA-256, podpis
+### Paczki, SHA-256, podpis
 
 | Plik | Rozmiar (B) | SHA-256 | Podpis Authenticode |
 |---|---|---|---|
@@ -92,13 +148,13 @@ Bez zmian w logice bota, strategiach, progach, ryzyku, kosztach, trybach, danych
 Manifest wewnątrz paczki Windows (`MANIFEST_SHA256.txt`) zawiera te same pliki i sumy co manifest paczki folderu (różni się tylko
 pierwszy wiersz-opis).
 
-## Gotowość
+### Gotowość
 
 | Produkt | Status | Uzasadnienie |
 |---|---|---|
 | PepeMarketWizard 1.30.1 (folder + aplikacja Windows) | **READY do testu na Windows / DEMO** | zbudowany i zweryfikowany, pełna regresja na symulatorze przechodzi (po poprawkach); nie uruchomiony na Windows ani z MT5 – pierwszy start na rachunku DEMO |
 
-## Procedura bezpiecznego rollbacku
+### Procedura bezpiecznego rollbacku
 
 1. STOP nowych wejść, zamknij aplikację 1.30.1.
 2. Przywróć `data\` z `%LOCALAPPDATA%\PepeMarketWizard\backups\<data>_…` (kopia robiona automatycznie przed aktualizacją) albo z własnej
@@ -106,7 +162,7 @@ pierwszy wiersz-opis).
 3. Sprawdzone (`tools/migration_check.py`): 1.29 startuje na kopii sprzed aktualizacji; informacyjnie także wprost na danych po 1.30.1.
    Przejście 1.30.0 → 1.30.1 nie zmienia danych ani bazy (te same migracje).
 
-## Czego nie sprawdzono
+### Czego nie sprawdzono
 
 * Windows 10/11: start EXE, WebView2, tytuł okna, czysta instalacja, SmartScreen (EXE niepodpisany).
 * Prawdziwy MT5 (dane, czas serwera, symbole brokera, koszty), rachunek DEMO, eksport → trening na danych rzeczywistych.
