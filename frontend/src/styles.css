@@ -936,3 +936,6 @@ pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: 
 .kronos-panel .kronos-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px; }
 .kronos-panel .kronos-log { max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: rgba(0, 0, 0, .25); padding: 6px; border-radius: 4px; }
 .kronos-panel h4 { margin: 10px 0 4px; }
+.kronos-panel { overflow-wrap: anywhere; min-width: 0; }
+.kronos-panel .badge { white-space: normal; max-width: 100%; }
+.kronos-panel .kronos-grid .card { min-width: 0; }

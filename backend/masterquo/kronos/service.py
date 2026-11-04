@@ -339,8 +339,8 @@ class KronosService:
         self.settle(inst, tf, [b for b in bars if b.get("closed")])
         last = q["bars"][-1] if q["bars"] else None
         if last and last.get("open_utc"):
-            nxt = parse_iso(last["open_utc"]).timestamp() + 2 * tf_sec + 3
-            t["next_check"] = min(max(now + 5, nxt), now + 60)
+            nxt = parse_iso(last["open_utc"]).timestamp() + 2 * tf_sec + 3       # a few seconds after the next bar is expected to close
+            t["next_check"] = min(max(now + 5, nxt), now + tf_sec)             # at most one read per bar (+ the stale / closed-market case)
         else:
             t["next_check"] = now + 30
         if cal is None:

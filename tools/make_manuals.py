@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.30.1"
+VERSION = "1.31.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -233,6 +233,13 @@ def admin(shots: Path | None) -> list:
           P("Bez bota: <b>32_CENTRUM_TRENINGU.bat</b>."),
           box("Wytrenowany model nie jest dowodem przewagi. Nowe modele działają w trybie OBSERVATION (nie głosują w strategiach). "
               "Wynik na danych syntetycznych nic nie mówi o rynku.", "warn"),
+          P("Kronos AI Forecast (1.31) – przetrenowany model, bez treningu w bocie", "h2"),
+          bullets(["Instalacja: Wykresy bota → <b>Kronos AI Forecast</b> → <b>Zainstaluj model Kronos</b> albo <b>33_KRONOS_INSTALUJ.bat</b> "
+                   "(osobne .venv_kronos, PyTorch CPU, oficjalne wagi NeoQuasar w przypiętych rewizjach, sumy sprawdzane ze źródłem).",
+                   "<b>Sprawdź instalację</b> naprawdę ładuje model i robi prognozę testową. Po instalacji działa bez internetu.",
+                   "Domyślnie SHADOW (obserwacja) na M5 i M15 dla XAUUSD i BTC (BTC po potwierdzeniu symbolu). Prognoza nie składa zleceń.",
+                   "Warunek w strategiach (REQUIRED) tylko po pozytywnej walidacji walk-forward na danych rzeczywistych – może jedynie wstrzymać setup.",
+                   "Szczegóły, statusy i rozwiązywanie problemów: <b>INSTRUKCJA_KRONOS.md</b>."]),
           PageBreak()]
     # 5
     s += [P("5 / Paczki do przekazania", "h1"),

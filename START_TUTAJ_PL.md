@@ -4,9 +4,14 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.31 – Kronos AI Forecast
+* Przetrenowany model **Kronos-small** (NeoQuasar) prognozuje świece XAUUSD i BTC lokalnie, w trybie **SHADOW** (bez zleceń).
+  Instalacja: Wykresy bota → **Kronos AI Forecast** → **Zainstaluj model Kronos** albo `33_KRONOS_INSTALUJ.bat`. Szczegóły:
+  `INSTRUKCJA_KRONOS.md`. Paczka: `PepeMarketWizard_DESKTOP_1_31_0.zip`.
+
 ## Nowe w 1.30 – bez licencji
 * **System licencji został usunięty** (na Twoją prośbę). Program działa bez klucza, nie ma okna KEY FOR MAGIC, zakładki Licencje,
-  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich: `PepeMarketWizard_DESKTOP_1_30_1.zip`.
+  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich (od 1.31: `PepeMarketWizard_DESKTOP_1_31_0.zip`).
 * Opisy licencji w sekcjach 1.27 i 1.29 poniżej są historyczne.
 
 ## Nowe w 1.29 – „Wyznacz strefy” na wykresie, menu według wież

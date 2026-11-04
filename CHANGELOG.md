@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.31.0 – Kronos AI Forecast (przetrenowany Kronos-small, lokalnie, SHADOW)
+* **Model:** NeoQuasar/Kronos-small + Kronos-Tokenizer-base (oficjalne wagi, przypięte rewizje `901c26c…` / `0e01173…`), kod Kronos (MIT)
+  w `backend/kronos_runtime/vendor/kronos` – zmieniony tylko import (własna przestrzeń nazw zamiast ogólnego `model`). Bez treningu w bocie.
+* **Osobne środowisko i proces:** `.venv_kronos` (PyTorch 2.14.1 CPU z PyPI, pakiety tylko z sumami SHA-256 –
+  `requirements/requirements-kronos-win.txt`), proces `kronos_runtime.worker`: model ładowany raz, tryb eval, bez gradientów, GPU tylko
+  gdy CUDA działa (test), inaczej CPU z przyczyną. Instalacja: przycisk **Zainstaluj model Kronos** albo `33_KRONOS_INSTALUJ.bat`
+  (`cu126`/`cu128` dla GPU). Wagi sprawdzane z metadanymi źródła (LFS sha256 / git blob sha1), tylko safetensors, manifest z sumami;
+  **Sprawdź instalację** – sumy, ładowanie, prognoza testowa i porównanie z wynikiem autorów. Po instalacji działa offline.
+* **Dane:** zamknięte świece z istniejącego mostu MT5 (bez drugiego połączenia), XAUUSD i BTC przez mapowanie symboli (BTC dopiero po
+  potwierdzeniu), M1–H1 (domyślnie M5 i M15, M30 natywnie). Kontrola jakości (kolejność, duplikaty, geometria OHLC, braki, luki w sesji,
+  świeżość), kalendarz sesji mierzony na świecach brokera (przerwy dzienne i weekendy) do czasów przyszłych świec – niepewny kalendarz
+  wstrzymuje prognozę. Wolumen: real_volume / tick_volume (oznaczony: to nie obrót) / bez wolumenu; amount = syntetyczne przybliżenie.
+* **Serwis:** prognoza po nowej zamkniętej świecy albo na żądanie, kolejka z deduplikacją i limitem, limit czasu z restartem procesu,
+  stan i przyczyna zamiast pozornej prognozy; prognozy zapisywane przed wynikiem i rozliczane prawdziwymi świecami (MAE vs „ostatnia
+  cena”, kierunek); osobno dane rzeczywiste i syntetyczne.
+* **Integracja:** kontrakt PMW-PRED-1 (REGRESSION, jednostka cena, kalibracja „nie dotyczy”), rejestr modeli, osobny kontekst w ocenie
+  SCALPING/HEDGING (zgodność/konflikt z innymi modelami i strukturą, bez uśredniania). Domyślnie **OBSERVE** – bez wpływu na decyzje;
+  **REQUIRED** tylko po pozytywnej walidacji walk-forward na danych rzeczywistych i potwierdzeniu – może wyłącznie wstrzymać setup.
+* **Walidacja walk-forward** na świecach użytkownika (DEV/TEST chronologicznie, horyzonty bez nakładania, odniesienia: ostatnia cena
+  i momentum, test dwumianowy, zastrzeżenie o możliwym nakładaniu z pretreningiem).
+* **Panel „Kronos AI Forecast”** (Wykresy bota), instrukcja `INSTRUKCJA_KRONOS.md`, raport `docs/KRONOS_RAPORT_WDROZENIA.md`, migracja
+  bazy 0024 (tabela `kronos_forecasts`, addytywnie), ustawienia w osobnym pliku `data/kronos/settings.json` (config.json bez zmian).
+* Bez zmian: strategie, progi, ryzyko, koszty, tryby, STOP, TP/SL, pozostałe modele.
+
 ## 1.30.1 – poprawki po pełnej regresji: panel Neural Cyberpunk bez zawieszania (bez GPU), FFT bez fałszywego TIMEOUT po starcie
 * **Naprawa:** animowany „mózg” na pulpicie Neural Cyberpunk przerysowywał statyczną warstwę (ok. 700 linii, każda z osobnym
   rozmyciem `shadowBlur` w trybie `lighter`) przy każdym odświeżeniu rejestru modeli, czyli co kilka sekund. Bez akceleracji GPU

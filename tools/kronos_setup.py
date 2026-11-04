@@ -70,11 +70,21 @@ def result(out: Out, step: int, ok: bool, code: str | None = None, **kw) -> int:
     return 0 if ok else 1
 
 
+CHILD = {"result": None}
+HINT = {"NETWORK": "brak połączenia z huggingface.co (internet, zapora albo proxy) – odblokuj huggingface.co i powtórz",
+        "REVISION_NOT_FOUND": "przypięta rewizja nie istnieje w źródle", "REVISION_MISMATCH": "źródło zwróciło inną rewizję niż przypięta",
+        "REPO_NOT_FOUND": "repozytorium modelu niedostępne", "FILE_MISSING": "brak wymaganego pliku w przypiętej rewizji",
+        "CHECKSUM_MISMATCH": "plik niezgodny z sumą ze źródła – nic nie zostało zainstalowane",
+        "MISSING_DEPENDENCY": "brak pakietu w .venv_kronos – powtórz instalację", "CHECKSUM": "pliki wag zmienione na dysku – zainstaluj ponownie",
+        "INCOMPATIBLE": "model i tokenizer nie pasują do siebie", "NO_WEIGHTS": "brak zweryfikowanych wag"}
+
+
 def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[int, str]:
-    """Run a child process, stream its output (prefixed), return (rc, last line)."""
+    """Run a child process, stream its output (prefixed), return (rc, last line); the child's RESULT is kept in CHILD."""
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=env,
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     last = ""
+    CHILD["result"] = None
     for line in p.stdout:
         line = line.rstrip()
         if not line:
@@ -82,9 +92,20 @@ def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[i
         last = line
         if line.startswith("RESULT "):
             emit(line.replace("RESULT ", "CHILD_RESULT ", 1))
+            try:
+                CHILD["result"] = json.loads(line[7:])
+            except ValueError:
+                pass
         else:
             emit("    " + line[-400:])
     return p.wait(), last
+
+
+def child_error(last: str) -> tuple[str | None, str]:
+    r = CHILD["result"] or {}
+    code = r.get("code")
+    msg = (r.get("error") or last or "")[:300]
+    return code, (f"{HINT[code]}. " if code in HINT else "") + msg
 
 
 def default_weights_dir(root: Path) -> Path:
@@ -189,14 +210,18 @@ def main(argv=None) -> int:
     out.say(4, "pobieram oficjalne wagi NeoQuasar/Kronos-small i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy")
     rc, last = run([str(vpy), "-m", "kronos_runtime.install", "download", "--weights-dir", a.weights_dir], out, 4, env)
     if rc != 0:
-        return result(out, 4, False, "DOWNLOAD", error=last[-400:])
+        code, msg = child_error(last)
+        return result(out, 4, False, "DOWNLOAD", error=msg, detail_code=code)
     # 5. verify
     out.say(5, "sprawdzam instalację: sumy, ładowanie, prognoza testowa, porównanie z wynikiem autorów")
     env["HF_HUB_OFFLINE"] = "1"
     rc, last = run([str(vpy), "-m", "kronos_runtime.install", "verify", "--weights-dir", a.weights_dir, "--reference"], out, 5, env)
     if rc != 0:
-        return result(out, 5, False, "VERIFY", error=last[-400:])
-    return result(out, 5, True, None, venv=str(venv), python=str(vpy), weights_dir=a.weights_dir, cuda=a.cuda)
+        code, msg = child_error(last)
+        return result(out, 5, False, "VERIFY", error=msg, detail_code=code)
+    ref = ((CHILD["result"] or {}).get("selftest") or {}).get("reference") or {}
+    return result(out, 5, True, None, venv=str(venv), python=str(vpy), weights_dir=a.weights_dir, cuda=a.cuda,
+                  reference_comparison=ref.get("status"), device=((CHILD["result"] or {}).get("load") or {}).get("device"))
 
 
 if __name__ == "__main__":
