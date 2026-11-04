@@ -4,7 +4,8 @@ MetaTrader 5 does not expose the symbol's trading sessions through the Python AP
 closed bars, in SERVER time (the broker defines sessions, the daily break and the weekend in server time; DST shifts of the server are
 therefore already inside the data):
   slot = (weekday, time-of-day // slot_seconds); for every weekday the dates with at least one bar are counted;
-  occupancy(slot) = dates on which the slot had a bar / dates of that weekday with trading;
+  occupancy(slot) = dates on which the slot had a bar / dates of that weekday with trading whose slot time had already passed when
+  the history ends (the current, unfinished day counts only for its earlier slots);
   OPEN if occupancy >= OPEN_MIN, CLOSED if <= CLOSED_MAX or the weekday never traded, otherwise AMBIGUOUS.
 Future times are generated bar by bar after the last closed bar, skipping CLOSED slots (daily break, weekend). An AMBIGUOUS slot inside
 the horizon, a history shorter than MIN_DAYS or no open slot within MAX_SKIP_DAYS -> no timestamps, with the reason: the forecast is
@@ -34,6 +35,7 @@ class Calendar:
             wd = (day + 3) % 7                                       # 1970-01-01 was a Thursday -> Monday = 0
             dates_wd[wd].add(day)
             slot_dates[(wd, (t % DAY) // self.slot)].add(day)
+        self.dates_wd = {wd: sorted(v) for wd, v in dates_wd.items()}
         self.n_dates = {wd: len(v) for wd, v in dates_wd.items()}
         self.counts = {k: len(v) for k, v in slot_dates.items()}
 
@@ -47,10 +49,13 @@ class Calendar:
     def state(self, t_raw: int) -> tuple[str, float | None]:
         day = int(t_raw) // DAY
         wd = (day + 3) % 7
-        nd = self.n_dates.get(wd, 0)
+        slot = (int(t_raw) % DAY) // self.slot
+        # only dates on which this slot had already happened when the history ends count (the current, unfinished day does not
+        # count for its later slots - otherwise every future slot of today would look "half open")
+        nd = sum(1 for d in self.dates_wd.get(wd, ()) if d * DAY + slot * self.slot <= (self.last or 0))
         if nd == 0:
             return "CLOSED", 0.0                                     # this weekday never traded in the measured history
-        occ = self.counts.get((wd, (int(t_raw) % DAY) // self.slot), 0) / nd
+        occ = self.counts.get((wd, slot), 0) / nd
         if occ >= OPEN_MIN:
             return "OPEN", occ
         if occ <= CLOSED_MAX:

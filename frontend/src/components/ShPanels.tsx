@@ -8,9 +8,9 @@ import { useTheme } from "../theme";
 import { fmtNum } from "../util";
 
 const ST_TONE: Record<string, string> = { READY: "ok", WAIT: "warn", NO_TRADE: "bad", INVALIDATED: "bad", EXPIRED: "muted", PASS: "ok", BLOCK: "bad",
-  PROCEED: "ok", FAIL: "bad" };
+  PROCEED: "ok", FAIL: "bad", INFO: "muted" };
 const ST_PL: Record<string, string> = { READY: "GOTOWY", WAIT: "CZEKA", NO_TRADE: "BRAK TRANSAKCJI", INVALIDATED: "UNIEWAŻNIONY", EXPIRED: "WYGASŁ",
-  PASS: "OK", FAIL: "nie", PROCEED: "realizuj", BLOCK: "blokada" };
+  PASS: "OK", FAIL: "nie", PROCEED: "realizuj", BLOCK: "blokada", INFO: "info" };
 const tsl = (t?: number | null) => (t ? new Date(t * 1000).toISOString().slice(0, 19).replace("T", " ") + " UTC" : "—");
 const age = (t?: number | null, now?: number) => (t && now ? Math.max(0, Math.round(now - t)) : null);
 const Badge = ({ s, children }: { s?: string; children?: any }) => <span className={`badge ${ST_TONE[s || ""] || ""}`}>{children ?? ST_PL[s || ""] ?? s ?? "—"}</span>;
@@ -126,6 +126,9 @@ export function StrategyPage() {
                 <span className="muted">{ev.probability?.status === "BRAK_MODELU_ZDARZENIA" ? "brak skalibrowanego modelu" : ev.probability?.status}</span>}</p>
             <ol className="checklist small" data-testid="sh-checklist">
               {(ev.checklist || []).map((c: any) => <li key={c.id} data-status={c.status}><Badge s={c.status} /> {c.label}: <span className="muted">{c.detail}</span></li>)}
+              {ev.kronos && <li data-testid="sh-kronos" className="small muted">Kronos {ev.kronos.timeframe}: {ev.kronos.use_pl}; relacja do setupu: {ev.kronos.relation}
+                {(ev.kronos.vs_models || []).length > 0 && ` · inne modele: ${ev.kronos.vs_models.map((m: any) => `${m.model} ${m.relation}`).join(", ")}`}
+                {ev.kronos.vs_structure && ` · struktura ${ev.kronos.vs_structure.timeframe}: ${ev.kronos.vs_structure.relation}`}. {ev.kronos.independence}</li>}
             </ol>
             {ev.status === "READY" && <div className="tbl-wrap"><table className="tbl small" data-testid="sh-levels"><thead><tr><th>Poziom</th><th>Cena</th><th>Żądane (USD)</th>
               <th>Po zaokrągleniu do ticka</th><th>Różnica</th><th>Udział</th></tr></thead><tbody>

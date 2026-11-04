@@ -1,7 +1,8 @@
 """Walk-forward check of Kronos on the user's own closed bars (MT5 history through the bridge) - honest comparison with simple baselines.
 
 Procedure (one instrument, one timeframe):
-* bars: closed bars from the bridge (one call, up to `max_bars`), quality-checked (order, duplicates, OHLC geometry);
+* bars: closed bars from the bridge (one call, up to 8000 - at least 4 weeks when available), quality-checked (order, duplicates,
+  OHLC geometry); the session calendar is measured only on bars up to the end of the DEV period;
 * origins every H bars (horizons do NOT overlap): context = the `lookback` bars before the origin, target = the close H bars later;
   future candle times come from the session calendar measured on the DEV part only (no knowledge of the test period), and an origin
   whose real next H bars do not sit on those times (session break the calendar did not foresee) is skipped and counted;
@@ -104,7 +105,7 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
         return _save({**base, "status": "BLOCKED", "verdict": {"positive": False, "reason": why}})
     H, L = int(s.horizon_bars[tf]), int(s.lookback)
     tf_sec = TF_SECONDS[tf]
-    need = min(8000, L + H * (max_origins + 2) + 50)
+    need = min(8000, max(L + H * (max_origins + 2) + 50, 28 * 86400 // tf_sec))   # >= 4 weeks also feed the session calendar
     bars = [b for b in svc.bridge.symbol_bars(sym, tf, need) if b.get("closed")]
     q = Q.check(bars, tf_sec, now_utc=time.time(), lookback=len(bars), min_context=L + 2 * H, volume_setting=s.volume_source,
                 max_staleness_bars=1e9)
@@ -121,7 +122,7 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
     if not py and client_factory is None:
         return _save({**base, "status": "BLOCKED", "verdict": {"positive": False, "reason": "brak środowiska .venv_kronos"}})
     cli = client_factory() if client_factory else _Client(py, s.cpu_threads or 2)
-    rows, skipped = [], {"calendar": 0, "error": 0}
+    rows, skipped = [], {"calendar": 0, "error": 0, "calendar_reasons": {}}
     t0 = time.time()
     try:
         cli.ask({"cmd": "hello"}, 120)
@@ -136,6 +137,8 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
             y_raw, info = cal.future(int(ctx[-1]["t_raw"]), tf_sec, H)
             if y_raw is None or [int(b["t_raw"]) for b in fut] != y_raw:
                 skipped["calendar"] += 1
+                why = info["status"] if y_raw is None else "REAL_BARS_NOT_ON_CALENDAR_TIMES"
+                skipped["calendar_reasons"][why] = skipped["calendar_reasons"].get(why, 0) + 1
                 continue
             off = int(ctx[-1]["t_raw"]) - int(datetime.fromisoformat(ctx[-1]["open_utc"].replace("Z", "+00:00")).timestamp())
 
