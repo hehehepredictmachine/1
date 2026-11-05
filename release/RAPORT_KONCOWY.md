@@ -7,15 +7,43 @@ zapis ustawień, czego bot nie ma, pytania do doprecyzowania): `docs/CULT_UI_WDR
 koszty, tryby wykonania, STOP, modele, MT5 i Telegram działają jak w 1.31.0. Przerwana praca „menu czterech wież i baniek” nie weszła
 do wydania.
 
-@@SOURCE@@
+**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki 1.32.0 zbudowane z commitu
+`0f737eca7a26caaf8232e60935ccc8b102a30522` (kod CULT UI: `5135884`, zasoby EXE i manifest: `0f737ec`). `MANIFEST_SHA256.txt`
+(1301 plików programu): SHA-256 `e88f8d841bf0f377fe5fc2cdf450980bddfd7d042a4d7fb5639f55b70adeb954`.
 **Data i środowisko:** 2026-11-05; kontener Linux 6.18 (x86_64, 4 rdzenie, bez GPU), Python 3.13.16, Node 22, Go 1.24.7, Chromium.
 Bez Windows i bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń.
 
 ## Paczki 1.32.0
-@@PACKAGES@@
+| Plik | Rozmiar (B) | SHA-256 |
+|---|---|---|
+| `PepeMarketWizard_DESKTOP_1_32_0.zip` (2369 plików) | 43 104 414 | `149e2efc9b8dc58d4a78c0f8bf2d861e3f3cc730f1c7ffb4636840631f198626` |
+| `PepeMarketWizard_1_32_0.zip` (1301 plików) | 25 579 777 | `35d93390e90fba3873c62c307fd98d53b43a99ffa4d0b68554278ec2aaf42e22` |
+| `Instrukcja_Administrator_PepeMarketWizard.pdf` (9 stron, launcher i menu na s. 2–3) | 745 239 | `ca5196c598b495d8e0fd5e552cf4ef766adb9dedae7b3e9e5a19788697a8c9ea` |
+| `Instrukcja_Klient_PepeMarketWizard.pdf` (5 stron) | 505 297 | `21dc4ce4e2468dd946bbdb0f02a8cb9ffe3e2fa757d3ff62a3ff2d198cf9c700` |
+
+`tools/verify_release.py --all`: OK dla obu paczek (ścieżki, manifest, brak sekretów, plik `.sha256`). EXE w paczce DESKTOP zawiera
+nowy launcher (sprawdzone: tekst „JOIN THE CULT”, adres panelu `?pmw_joined=1`, wersja 1.32.0). Instrukcje PDF są mniejsze niż
+w 1.31 – zrzuty ekranu są teraz osadzane jako zmniejszone JPEG.
 
 ## Testy 1.32.0 – komendy i liczby
-@@TESTS@@
+| Komenda | Wynik |
+|---|---|
+| 85 plików testów bez UI (`python -m unittest <plik>`, po 3 równolegle) | 1003 testy: 84 pliki OK za pierwszym razem; `test_risk_execution` 1 błąd – nieaktualna lista migracji (brak 0024 dodanej w 1.31, czerwony już na 1.31.0) – poprawiony test, potem 21/21 OK; 12 pominiętych (8 Kronos bez osobnego środowiska PyTorch, 2 mm_integration, 2 train_all) |
+| `test_cult_backend` + `test_telegram` | 14/14 OK |
+| `test_ui_cult` (nowy, 9 testów: launcher, intro, 6 wież, nawigacja i znaczniki danych, panele w 1920/1366/390, zapis konfiguracji, potwierdzenia, ograniczone animacje, jeden WebSocket) | po poprawkach testu (niżej) dwa pełne przebiegi z rzędu 9/9 OK |
+| 16 pozostałych plików UI (dwie kolejki równolegle) | 15 OK za pierwszym razem; `test_ui_lab` 1 błąd czasu (zadanie treningu nie skończyło się w 600 s przy obciążeniu dwiema kolejkami) – uruchomiony sam: 14/14 OK |
+| zaktualizowane: `test_ui_wizard` 7, `test_ui_pages` 8, `test_ui_interface_129` 4 | OK |
+| `desktop`: `go test ./...`, `GOOS=windows go vet ./...`, `gofmt -l` | OK (nowe testy: rozmiary okna, środek ekranu, adres panelu, strona launchera) |
+| `splash.html` w Chromium z atrapą mostka (postęp / wybór danych / błąd / READY, 960×660 i 716×618) | wszystko się mieści; JOIN aktywny tylko w READY, kliknięcie wysyła akcję `join` |
+| `tools/migration_check.py --old-ref da076c8` (1.31.0 → 1.32.0) | 11/11 PASS (migracje 23 → 23, konfiguracja i strefy zachowane, powrót działa, 1.31.0 działa także wprost na danych po 1.32.0) |
+| konfiguracja zapisana przez 1.32 wczytana kodem 1.31 | OK (szablon Telegram i presety w osobnych plikach) |
+| `npm run build` (TypeScript + Vite) | OK |
+
+**Poprawki testów w trakcie (wyścigi w samych testach, nie w programie):** odczyt przełączników strategii przed dotarciem zapytania
+(brak wpisu w konfiguracji = scan i trade włączone, tak jak traktuje to bot i panel); podgląd Telegram sprawdzany przed odświeżeniem
+(teraz czeka na własny szablon i akceptuje przykład albo prawdziwy sygnał z oznaczeniem SYMULATOR); długość intro mierzona w stronie,
+a nie zegarem testu ze zrzutami ekranu; licznik WebSocket – sprawdza, że nigdy nie są otwarte dwa naraz (ponowne połączenie tego
+samego gniazda po luce w numeracji zdarzeń jest zamierzonym mechanizmem odzyskiwania).
 
 ## Czego nie sprawdzono w 1.32.0
 * **Okno Windows (WebView2):** launcher jako małe okno, powiększenie do 85 % po JOIN THE CULT, wyśrodkowanie na monitorze z paskiem
