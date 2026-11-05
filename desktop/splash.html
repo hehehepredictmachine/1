@@ -2,68 +2,119 @@
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<title>PepeMarketWizard</title>
+<title>PepeMarketWizard – Launcher</title>
+<!-- The separate small start window of the Windows app ("JOIN THE CULT", launcher.jpg). The bot engine is started and checked
+     here; only after JOIN THE CULT does the window grow and load the panel (with the intro). All earlier functions of the start
+     screen stay: progress of the first start, choice of the data of an earlier installation, error + retry, logs, exit. -->
 <style>
-  :root {
-    --bg: #0b1210; --panel: #111b18; --line: #1f2f2a; --text: #e6efe9; --muted: #93a79d;
-    --green: #3ddc84; --gold: #d8b45a; --red: #ff6b6b;
-  }
+  :root { --bg: #020403; --panel: rgba(4, 9, 7, 0.92); --line: rgba(214, 165, 72, 0.55); --gold: #d6a548; --gold2: #f4d48a;
+    --text: #ece6d2; --muted: #a8a28c; --green: #39ff8f; --warn: #ffcc4d; --red: #ff6b6b;
+    --serif: "Cinzel", "Trajan Pro", "Palatino Linotype", "Book Antiqua", Georgia, serif; --sans: "Segoe UI", system-ui, sans-serif; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
-  body { display: flex; align-items: center; justify-content: center; padding: 24px;
-    background: radial-gradient(1200px 600px at 30% 20%, #12261d 0%, var(--bg) 60%); }
-  main { width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: 28px 32px; box-shadow: 0 20px 60px rgba(0,0,0,.45); }
-  header { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; }
-  header img { width: 84px; height: 84px; border-radius: 14px; border: 1px solid #3a3320; background: #0d1512; }
-  h1 { margin: 0; font-size: 24px; letter-spacing: .3px; }
-  h1 span { color: var(--gold); }
-  .ver { color: var(--muted); font-size: 13px; }
-  #msg { font-size: 17px; margin: 6px 0 12px; display: flex; gap: 10px; align-items: center; }
-  .spin { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--green); border-radius: 50%;
-    animation: r 1s linear infinite; flex: none; }
-  @keyframes r { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--gold); } }
-  pre { background: #0a110f; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0;
-    font: 12px/1.45 Consolas, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-all; max-height: 170px; overflow: auto; }
-  .err { border: 1px solid #5a2a2a; background: #1d1212; color: #ffd6d6; border-radius: 8px; padding: 10px 12px; margin: 10px 0;
-    white-space: pre-wrap; }
-  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
-  label.cand { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line);
-    border-radius: 8px; margin: 6px 0; cursor: pointer; word-break: break-all; }
-  input[type=text] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #0a110f;
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); overflow: hidden; }
+  body { display: grid; place-items: center; padding: 14px;
+    background: radial-gradient(ellipse at 50% 60%, #08170d 0%, #020403 68%); }
+  .swirl { position: fixed; inset: -25%; pointer-events: none; opacity: .7;
+    background: conic-gradient(from 0deg, transparent 0 20%, rgba(57, 255, 143, .07) 26%, transparent 34% 62%, rgba(214, 165, 72, .08) 70%, transparent 78%);
+    animation: spin 60s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .win { position: relative; width: min(100%, calc((100vh - 28px) * 1.5)); max-height: 100%; display: flex; flex-direction: column; align-items: center;
+    padding: 8px 12px 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 0 0 0 4px rgba(214, 165, 72, .12), 0 0 40px rgba(214, 165, 72, .25), inset 0 0 50px rgba(0, 0, 0, .7);
+    animation: in .7s ease both; }
+  @keyframes in { from { opacity: 0; transform: scale(.97); } }
+  .crown { position: absolute; top: -2px; left: 50%; transform: translate(-50%, -40%); height: 30px; filter: drop-shadow(0 0 8px var(--gold2)); }
+  header { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; min-height: 40px; }
+  .ver { position: absolute; left: 0; top: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font: 600 10.5px/1 var(--sans);
+    letter-spacing: .06em; color: var(--text); background: rgba(0, 0, 0, .45); }
+  .brand { display: flex; flex-direction: column; align-items: center; }
+  .brand b { font: 600 clamp(15px, 2.6vw, 24px)/1.1 var(--serif); letter-spacing: .22em; color: var(--gold2); text-shadow: 0 0 12px rgba(214, 165, 72, .6); }
+  .brand small { margin-top: 2px; font: 500 clamp(8px, 1vw, 10.5px)/1 var(--serif); letter-spacing: .42em; color: var(--text); }
+  .scene { position: relative; width: 100%; aspect-ratio: 1256 / 434; border-radius: 10px; overflow: hidden; margin-top: 6px; background: #050b07; }
+  .scene img { width: 100%; height: 100%; object-fit: cover; display: block;
+    -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 100%); mask-image: linear-gradient(180deg, #000 70%, transparent 100%); }
+  .halo { position: absolute; left: 50%; top: 10%; width: 34%; aspect-ratio: 3 / 1; transform: translateX(-50%); border-radius: 50%; pointer-events: none;
+    background: radial-gradient(ellipse, rgba(255, 231, 166, .35), transparent 70%); animation: pulse 3.2s ease-in-out infinite; mix-blend-mode: screen; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  h1 { position: relative; margin: -3.5% 0 0; font: 700 clamp(26px, 6.4vw, 58px)/1 var(--serif); letter-spacing: .08em; color: var(--gold2);
+    text-shadow: 0 2px 0 #4a3510, 0 0 22px rgba(214, 165, 72, .55); }
+  .orn { margin: 3px 0 0; display: flex; align-items: center; gap: 8px; color: var(--gold); font-size: 11px; }
+  .orn i { width: 120px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold)); }
+  .orn i:last-child { transform: scaleX(-1); }
+  ul.feat { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px;
+    font: 600 clamp(9.5px, 1.2vw, 12px)/1 var(--sans); letter-spacing: .08em; color: var(--text); }
+  ul.feat li + li { padding-left: 18px; border-left: 1px solid rgba(214, 165, 72, .5); }
+  ul.feat li::before { content: "◆"; color: var(--green); margin-right: 6px; font-size: .8em; }
+  .join { margin: 12px 0 4px; display: inline-flex; align-items: center; gap: 16px; padding: 11px 46px; cursor: pointer;
+    font: 700 clamp(15px, 2.2vw, 20px)/1 var(--serif); letter-spacing: .16em; color: var(--text); border-radius: 12px;
+    background: linear-gradient(180deg, rgba(20, 44, 28, .95), rgba(6, 16, 10, .95)); border: 1px solid var(--gold);
+    box-shadow: 0 0 0 3px rgba(214, 165, 72, .15), 0 0 22px rgba(57, 255, 143, .25); transition: filter .2s, transform .2s; }
+  .join .p { font: 700 1.2em/1 var(--serif); color: var(--gold2); text-shadow: 0 0 8px var(--gold); }
+  .join .arr { color: var(--green); }
+  .join:hover:not(:disabled) { filter: brightness(1.25); transform: scale(1.02); }
+  .join:disabled { cursor: wait; filter: grayscale(.6) brightness(.7); }
+  .status { align-self: stretch; display: flex; align-items: center; gap: 8px; margin: 4px 2px 0; font: 600 12px/1.2 var(--sans); letter-spacing: .05em; }
+  .status i { width: 9px; height: 9px; flex: none; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .status.ok { color: var(--green); } .status.wait { color: var(--warn); } .status.bad { color: var(--red); }
+  .status.wait i { animation: pulse 1s ease-in-out infinite; }
+  section { align-self: stretch; margin-top: 8px; }
+  pre { background: rgba(0, 0, 0, .55); border: 1px solid rgba(214, 165, 72, .3); border-radius: 8px; padding: 7px 10px; margin: 0;
+    font: 11.5px/1.4 Consolas, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-all; max-height: 92px; overflow: auto; }
+  .err { border: 1px solid #6a2a2a; background: rgba(40, 10, 12, .9); color: #ffd6d6; border-radius: 8px; padding: 8px 10px; margin: 6px 0;
+    white-space: pre-wrap; max-height: 110px; overflow: auto; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 6px 0 0; }
+  label.cand { display: flex; gap: 10px; align-items: flex-start; padding: 6px 9px; border: 1px solid rgba(214, 165, 72, .3);
+    border-radius: 8px; margin: 5px 0; cursor: pointer; word-break: break-all; }
+  input[type=text] { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid rgba(214, 165, 72, .35); background: rgba(0, 0, 0, .5);
     color: var(--text); font: inherit; }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-  button { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: #17241f;
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button.b { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(214, 165, 72, .4); background: rgba(14, 26, 19, .95);
     color: var(--text); cursor: pointer; }
-  button.primary { background: #1f4a33; border-color: #2f6e4b; }
-  button.gold { border-color: #6a5826; color: var(--gold); }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button.b.primary { background: #1f4a33; border-color: #2f6e4b; }
+  button.b.gold { color: var(--gold2); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--gold2); outline-offset: 2px; }
   .hidden { display: none !important; }
-  .path { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .path { color: var(--muted); font-size: 11.5px; word-break: break-all; }
+  footer { align-self: stretch; display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  footer button { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 0; text-decoration: underline dotted; }
+  footer button:hover { color: var(--gold2); }
+  .win { overflow-y: auto; }
+  .ph-choose .scene, .ph-error .scene { aspect-ratio: 1256 / 230; }          /* decisions need the room: smaller scene */
+  .ph-choose .scene img, .ph-error .scene img { object-position: 50% 30%; }
+  .ph-choose h1, .ph-error h1 { margin-top: 6px; font-size: clamp(22px, 4vw, 36px); }
+  .ph-choose ul.feat, .ph-error ul.feat { display: none; }
+  @media (max-height: 560px) { ul.feat { display: none; } .join { margin-top: 8px; } }
+  @media (prefers-reduced-motion: reduce) { .swirl, .halo, .win, .status.wait i { animation: none; } }
 </style>
 </head>
 <body>
-<main>
+<div class="swirl" aria-hidden="true"></div>
+<div class="win" role="dialog" aria-label="PepeMarketWizard – launcher">
+  <img class="crown hidden" id="crown" alt="">
   <header>
-    <img id="icon" alt="Pepe Czarodziej – logo aplikacji">
-    <div>
-      <h1>Pepe<span>Market</span>Wizard</h1>
-      <div class="ver" id="ver">aplikacja Windows</div>
-    </div>
+    <span class="ver" id="ver">LAUNCHER</span>
+    <div class="brand"><b>PEPEMARKETWIZARD</b><small>AI TRADING INTELLIGENCE</small></div>
   </header>
+  <div class="scene" id="scene"><img id="sceneImg" alt="Pepe przemawia do zgromadzenia" class="hidden"><i class="halo" aria-hidden="true"></i></div>
+  <h1>JOIN THE CULT</h1>
+  <p class="orn" aria-hidden="true"><i></i>◆<i></i></p>
+  <ul class="feat"><li>AI SIGNALS</li><li>QUANT ANALYTICS</li><li>STRATEGY LAB</li><li>AUTO TRADING</li></ul>
 
-  <div id="msg" role="status" aria-live="polite"><span class="spin" id="spin"></span><span id="msgText">Przygotowanie…</span></div>
+  <button type="button" class="join" id="btnJoin" disabled><span class="p">P</span>JOIN THE CULT<span class="arr">»</span></button>
+  <div class="status wait" id="status" role="status" aria-live="polite"><i></i><span id="msgText">Przygotowanie…</span></div>
 
   <section id="progress">
-    <pre id="lines" aria-label="Szczegóły instalacji" class="hidden"></pre>
+    <pre id="lines" aria-label="Szczegóły uruchamiania" class="hidden"></pre>
     <p class="hint">Pierwsze uruchomienie instaluje składniki silnika w folderze użytkownika (nic nie trafia do systemu).
-      Bot nie składa zleceń, dopóki w Centrum sterowania nie wybierzesz trybu automatycznego.</p>
+      Bot nie składa zleceń, dopóki w panelu nie wybierzesz trybu automatycznego.</p>
+  </section>
+
+  <section id="ready" class="hidden">
+    <p class="hint">Silnik bota działa w tle. JOIN THE CULT otwiera panel (menu główne) w tym oknie.</p>
   </section>
 
   <section id="choose" class="hidden">
-    <p>Aplikacja przechowuje dane w <span class="path" id="dataDir"></span>. Możesz skopiować dane poprzedniej instalacji
+    <p class="hint">Aplikacja przechowuje dane w <span class="path" id="dataDir"></span>. Możesz skopiować dane poprzedniej instalacji
       (ustawienia, bazę, historię, modele) – <b>oryginał pozostaje bez zmian</b> i nadal działa jako punkt powrotu.
       Tryb automatyczny z kopii zostanie zamieniony na PAPER.</p>
     <div id="cands"></div>
@@ -71,8 +122,8 @@
     <input type="text" id="custom" placeholder="np. C:\PepeMarketWizard" aria-label="Folder poprzedniej instalacji">
     <div class="err hidden" id="chooseErr"></div>
     <div class="row">
-      <button class="primary" id="btnImport">Skopiuj dane i uruchom</button>
-      <button id="btnFresh">Zacznij od zera</button>
+      <button class="b primary" id="btnImport">Skopiuj dane i uruchom</button>
+      <button class="b" id="btnFresh">Zacznij od zera</button>
     </div>
   </section>
 
@@ -80,12 +131,14 @@
     <div class="err" id="errText"></div>
     <p class="hint">Szczegóły: <span class="path" id="logPath"></span></p>
     <div class="row">
-      <button class="primary" id="btnRetry">Spróbuj ponownie</button>
-      <button class="gold" id="btnLogs">Otwórz folder logów</button>
-      <button id="btnExit">Zamknij aplikację</button>
+      <button class="b primary" id="btnRetry">Spróbuj ponownie</button>
+      <button class="b gold" id="btnLogs">Otwórz folder logów</button>
+      <button class="b" id="btnExit">Zamknij aplikację</button>
     </div>
   </section>
-</main>
+
+  <footer><span id="footData"></span><span><button type="button" id="lnkLogs">Logi</button> · <button type="button" id="lnkExit">Zamknij</button></span></footer>
+</div>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -94,20 +147,27 @@
     return window.pmw(action, arg || "");
   }
   function show(id, on) { $(id).classList.toggle("hidden", !on); }
-  var lastPhase = "";
+  var lastPhase = "", joining = false;
   window.pmwRender = function (s) {
     if (!s) return;
-    if (s.icon) $("icon").src = s.icon;
-    if (s.version) $("ver").textContent = "wersja " + s.version + " · aplikacja Windows";
-    $("msgText").textContent = s.message || "";
-    show("spin", s.phase === "progress");
+    if (s.scene && !$("sceneImg").src) { $("sceneImg").src = s.scene; show("sceneImg", true); }
+    if (s.crown && !$("crown").src) { $("crown").src = s.crown; show("crown", true); }
+    if (s.version) $("ver").textContent = "v" + s.version + " LAUNCHER";
+    var ready = s.phase === "ready";
+    document.body.className = "ph-" + s.phase;
+    $("msgText").textContent = ready ? "SYSTEM READY – " + (s.message || "silnik bota działa") : (s.message || "");
+    $("status").className = "status " + (ready ? "ok" : s.phase === "error" ? "bad" : "wait");
+    $("btnJoin").disabled = !ready || joining;
+    show("btnJoin", s.phase === "progress" || ready);
     show("progress", s.phase === "progress");
+    show("ready", ready);
     show("choose", s.phase === "choose");
     show("error", s.phase === "error");
     var lines = s.lines || [];
     $("lines").textContent = lines.join("\n");
     show("lines", lines.length > 0);
     $("dataDir").textContent = s.data_dir || "";
+    $("footData").textContent = s.data_dir ? "Dane: " + s.data_dir : "";
     $("logPath").textContent = s.log_path || "";
     if (s.phase === "error") $("errText").textContent = s.error || "";
     if (s.phase === "choose") {
@@ -124,11 +184,19 @@
         });
       }
     }
+    if (ready && lastPhase !== "ready") setTimeout(function () { $("btnJoin").focus(); }, 50);
     lastPhase = s.phase;
   };
   $("custom").addEventListener("focus", function () {
     document.querySelector('input[value="__custom"]').checked = true;
   });
+  $("btnJoin").onclick = function () {
+    if (joining) return;
+    joining = true;
+    $("btnJoin").disabled = true;
+    $("msgText").textContent = "Otwieranie panelu…";
+    call("join").then(null, function (e) { joining = false; $("btnJoin").disabled = false; $("msgText").textContent = String(e); });
+  };
   $("btnImport").onclick = function () {
     var sel = document.querySelector('input[name="src"]:checked');
     var v = sel ? sel.value : "";
@@ -138,8 +206,8 @@
   };
   $("btnFresh").onclick = function () { call("fresh"); };
   $("btnRetry").onclick = function () { call("retry"); };
-  $("btnLogs").onclick = function () { call("logs"); };
-  $("btnExit").onclick = function () { call("exit"); };
+  $("btnLogs").onclick = $("lnkLogs").onclick = function () { call("logs"); };
+  $("btnExit").onclick = $("lnkExit").onclick = function () { call("exit"); };
   function init(n) {
     call("state").then(window.pmwRender, function () { if (n < 50) setTimeout(function () { init(n + 1); }, 100); });
   }

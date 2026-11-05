@@ -7,9 +7,10 @@ import { useEffect, useState } from "react";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
-  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "strefy" | "trening";
+  | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "strefy" | "trening"
+  | "lightning" | "wind" | "control" | "strategy-lab";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
-// 1.29 one interface in the style of the three towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
+// 1.29 one interface in the style of the towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
 // market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka.
 // 1.30: the license system was removed at the user's request - #/licencje (1.27-1.29) opens Ustawienia. Every earlier page keeps its id and its hash link (#/wykresy, #/ai, #/warunki/<id>, ...); SCREEN_MAP says where it lives now.
 export type Area = { id: string; label: string; icon: string; pages: Page[]; accent: string; tower?: "precision" | "dyscypline" | "profits" };
@@ -17,10 +18,10 @@ export const GROUPS: Area[] = [
   { id: "precision", label: "Precision – wykresy i rynek", icon: "◎", accent: "#3fe6ff", tower: "precision",
     pages: ["pulpit", "wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal", "nc", "precision"] },
   { id: "dyscypline", label: "Dyscypline – setupy i sygnały", icon: "⟐", accent: "#b46bff", tower: "dyscypline",
-    pages: ["setupy", "warunki", "strategie", "ai", "formacje", "dyscypline"] },
+    pages: ["setupy", "warunki", "strategie", "ai", "formacje", "dyscypline", "lightning", "strategy-lab"] },
   { id: "profits", label: "Profits – wyniki i rachunek", icon: "◆", accent: "#ffcf5c", tower: "profits", pages: ["pozycje", "dziennik", "profits"] },
-  { id: "modele", label: "Modele i trening", icon: "✦", accent: "#2fe6a0", pages: ["modele", "trening", "neural", "struktura", "testy", "badania"] },
-  { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka"] },
+  { id: "modele", label: "Modele i trening", icon: "✦", accent: "#2fe6a0", pages: ["modele", "trening", "neural", "struktura", "testy", "badania", "wind"] },
+  { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka", "control"] },
 ];
 /** Old screen -> where it is now (shown in Ustawienia → "Mapa ekranów" and in the documentation). The hash links did not change. */
 export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
@@ -37,11 +38,17 @@ export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
   { old: "Dane, Diagnostyka (sekcja „Dane”)", hash: "#/dane · #/diagnostyka", now: "Ustawienia i diagnostyka → te same zakładki" },
   { old: "Ustawienia", hash: "#/ustawienia", now: "Ustawienia i diagnostyka → Ustawienia" },
   { old: "Licencje (1.27–1.29)", hash: "#/licencje", now: "usunięte w 1.30 (na Twoją prośbę) – link otwiera Ustawienia" },
-  { old: "Menu – trzy wieże, Precision, Dyscypline, Profits", hash: "#/menu · #/precision · #/dyscypline · #/profits", now: "bez zmian (logo prowadzi do menu)" },
+  { old: "Menu – trzy wieże (1.26–1.31)", hash: "#/menu", now: "1.32: menu główne – miasto sześciu wież (launcher JOIN THE CULT na starcie, intro)" },
+  { old: "Precision, Dyscypline, Profits", hash: "#/precision · #/dyscypline · #/profits", now: "bez zmian; Ice Tower w menu = Precision" },
+  { old: "(nowe 1.32) Lightning / Wind / Control / Strategy Lab", hash: "#/lightning · #/wind · #/control · #/strategy-lab", now: "wieże menu głównego" },
   { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
-  { id: "menu", label: "Menu główne – trzy wieże", short: "Menu", icon: "✶" },
+  { id: "menu", label: "Menu główne – miasto wież", short: "Menu", icon: "✶" },
+  { id: "lightning", label: "Lightning Tower – Live Signals Center", short: "Lightning", icon: "⚡" },
+  { id: "wind", label: "Wind Portal – AI Engine Core", short: "Wind", icon: "✦" },
+  { id: "control", label: "Control Tower – Bot Management Center", short: "Control", icon: "⚙" },
+  { id: "strategy-lab", label: "Strategy Lab – Quant Strategy Chamber", short: "Strategy Lab", icon: "⚗" },
   { id: "precision", label: "Precision – wykresy i analiza rynku", short: "Precision", icon: "◎" },
   { id: "dyscypline", label: "Dyscypline – setupy i sygnały", short: "Dyscypline", icon: "⟐" },
   { id: "profits", label: "Profits – wyniki i rachunek", short: "Profits", icon: "◆" },
@@ -77,8 +84,10 @@ export const SECTION_OF: Record<string, string> = Object.fromEntries(GROUPS.flat
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
 /** Pages rendered in the new terminal shell (features/shell); every other page keeps the existing AppShell. */
 export const TERMINAL_PAGE_IDS: Page[] = ["trading-intelligence", "ai-neural-lab", "system-control"];
-/** 1.26: main menu (three towers) and the three tower views - their own frame (features/wizard). */
-export const WIZARD_PAGE_IDS: Page[] = ["menu", "precision", "dyscypline", "profits"];
+/** 1.26: the three tower views Precision / Dyscypline / Profits - their own frame (features/wizard). */
+export const WIZARD_PAGE_IDS: Page[] = ["precision", "dyscypline", "profits"];
+/** 1.32 CULT interface: main menu (city of towers) and the four tower panels - their own frame (features/cult). */
+export const CULT_PAGE_IDS: Page[] = ["menu", "lightning", "wind", "control", "strategy-lab"];
 const LAST = "mq.lastPage";
 
 export function parse(hash: string): Route {

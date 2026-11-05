@@ -254,9 +254,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 }
 
 // ------------------------------------------------------------------ mode
-export function ModeDialog({ onClose }: { onClose: () => void }) {
+export function ModeDialog({ onClose, initial }: { onClose: () => void; initial?: string }) {
   const { s, refresh } = useStore();
-  const [mode, setMode] = useState(s.mode?.mode ?? "PAPER");
+  const [mode, setMode] = useState(initial ?? s.mode?.mode ?? "PAPER");    // 1.32: Control Tower autopilot tiles preselect a mode
   const [confirm, setConfirm] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const a = s.account;

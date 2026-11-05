@@ -1,4 +1,4 @@
-// Central configuration of the graphic assets of the main menu and its three tower views: one place that says which file is used
+// Central configuration of the graphic assets of the three tower views (1.32: the main menu has its own - features/cult/assets.ts): one place that says which file is used
 // where, for what, and where it came from. Files live in frontend/public/assets/wizard (built by tools/wizard_assets.py).
 export type WizardAsset = { file: string; url: string; purpose: string; source: string };
 
@@ -6,10 +6,6 @@ const BASE = "/assets/wizard/";
 const a = (file: string, purpose: string, source: string): WizardAsset => ({ file, url: BASE + file, purpose, source });
 
 export const WIZARD_ASSETS = {
-  menuBackground: a("menu-tower-lightning.webp", "tło menu głównego – wieża z fioletowymi błyskawicami (podstawa wizualna menu)",
-    "załącznik użytkownika 8c995888…gif – dostarczony jako jedna klatka; animację błyskawic dodaje warstwa renderowana na żywo"),
-  menuBackgroundSource: a("menu-tower-lightning-source.webp", "statyczny fallback / oryginalna klatka tła menu",
-    "załącznik użytkownika (bez obróbki)"),
   precision: a("precision-observatory.webp", "tło widoku Precision – obserwatorium, nocne niebo, chłodny cyjan",
     "załącznik użytkownika (wieża pod niebieskim księżycem), kadr 1920×1080 bez deformacji + korekta barwna w stronę cyjanu"),
   dyscypline: a("dyscypline-citadel.webp", "tło widoku Dyscypline – cytadela, portal, fioletowo-szmaragdowa energia",
@@ -22,8 +18,7 @@ export const WIZARD_ASSETS = {
 
 /** Reference attachments used only as inspiration for procedural geometry / effects (not shipped as files). */
 export const WIZARD_REFERENCES = [
-  { what: "wieże (ciemny kamień, iglice, okna, kula energii, cytadela)", used_for: "proceduralne modele 3D wież Precision / Dyscypline / Profits" },
-  { what: "sieci neuronowe, filamenty, cząstki, film z rotującym grafem", used_for: "boczne mapy przepływu modeli (węzły, połączenia, impulsy)" },
+  { what: "sieci neuronowe, filamenty, cząstki, film z rotującym grafem", used_for: "mapa przepływu danych i modeli (Wind Portal → Neural Data Flow)" },
   { what: "magiczne oczy", used_for: "rdzenie bocznych map (oko / kryształ w centrum grafu)" },
 ];
 

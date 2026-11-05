@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.31.0"
+VERSION = "1.32.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -119,6 +119,15 @@ def shot(shots: Path | None, rel: str, caption: str, width_mm: float = 170, crop
         src = tmp / (p.stem + f"_{abs(hash(crop)) % 10**6}.png")
         im.crop(box_).save(src)
     from PIL import Image as PILImage
+    im = PILImage.open(src)
+    if im.width > 1400 or p.stat().st_size > 400_000:   # artwork screenshots (1.32): embedded as a smaller JPEG, not a multi-MB PNG
+        tmp = Path(ROOT / "build" / "manual_img")
+        tmp.mkdir(parents=True, exist_ok=True)
+        im = im.convert("RGB")
+        if im.width > 1400:
+            im = im.resize((1400, round(im.height * 1400 / im.width)), PILImage.LANCZOS)
+        src = tmp / (src.stem + "_s.jpg")
+        im.save(src, quality=84, optimize=True)
     w, h = PILImage.open(src).size
     width = width_mm * mm
     return [KeepTogether([Image(str(src), width=width, height=width * h / w), P(caption + " <i>(symulator – dane syntetyczne)</i>", "cap")])]
@@ -157,14 +166,16 @@ def build(path: Path, role: str, story: list, title: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------- administrator
 def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
-               P("Obsługa bota PepeMarketWizard 1.30: uruchomienie, interfejs trzech wież, wykresy i strefy, trening modeli, "
-                 "wydawanie paczek, aktualizacja i powrót.", "lead"),
+               P("Obsługa bota PepeMarketWizard 1.32: uruchomienie (launcher JOIN THE CULT), menu główne – miasto sześciu wież, "
+                 "panele Lightning / Wind / Control / Strategy Lab, wykresy i strefy, trening modeli, wydawanie paczek, aktualizacja "
+                 "i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
                    "i sprawdzone testami w Chromium na symulatorze terminala. Czego nie dało się sprawdzić – oznaczono "
                    "„nie sprawdzono”. <b>System licencji został usunięty</b> (na Twoją prośbę): program działa bez klucza, "
                    "nie ma License Managera, okna KEY FOR MAGIC, wersji CLIENT ani serwera licencji."),
                P("Co znajdziesz w instrukcji", "h2"),
-               bullets(["Uruchomienie aplikacji i połączenie z MT5.", "Menu według obszarów wież i pasek stanu.",
+               bullets(["Uruchomienie aplikacji (launcher JOIN THE CULT) i połączenie z MT5.",
+                        "Menu główne (sześć wież), panele Lightning / Wind / Control / Strategy Lab, menu boczne i pasek stanu.",
                         "Wykresy: „Wyznacz strefy”, własne ustawienia wykresu, warstwy.", "Eksport danych i trening modeli.",
                         "Paczki do przekazania innym osobom (bez licencji).", "Aktualizacja z 1.29, kopia i powrót, typowe problemy."]),
                box("Nie przeprowadzono tutaj testu na Twoim Windows ani połączenia z prawdziwym MT5. Zrzuty ekranu pochodzą "
@@ -179,22 +190,44 @@ def admin(shots: Path | None) -> list:
           P("Start aplikacji", "h2"),
           P("Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Klucz licencji nie jest potrzebny. "
             "Przy problemie uruchom <b>02_DIAGNOSTYKA.bat</b> i zachowaj wynik."),
+          P("Najpierw otwiera się małe okno <b>JOIN THE CULT</b> (launcher): pokazuje postęp pierwszego startu, wybór danych poprzedniej "
+            "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij</b>. Gdy silnik działa, "
+            "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. <b>JOIN THE CULT</b> powiększa okno do 85 % ekranu i otwiera "
+            "menu główne z 6-sekundowym intro (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
+            "W przeglądarce (bez aplikacji Windows) ten sam launcher pojawia się na początku sesji."),
+          *shot(shots, "ui_cult/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
           P("Dane aplikacji Windows: <b>%LOCALAPPDATA%\\PepeMarketWizard\\data</b> (tryb portable: folder programu). Kopie sprzed "
             "aktualizacji: <b>%LOCALAPPDATA%\\PepeMarketWizard\\backups</b>."),
           box("Pliki EXE nie są podpisane cyfrowo (brak certyfikatu Authenticode) – Windows SmartScreen może pokazać ostrzeżenie. "
               "Uruchamiaj tylko paczkę, której sumę SHA-256 porównałeś z plikiem .sha256 / raportem.", "warn"),
           PageBreak()]
     # 2
-    s += [P("2 / Interfejs: obszary trzech wież i pasek stanu", "h1"),
-          P("Menu boczne jest ułożone według obszarów menu głównego. Kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są "
-            "na pasku zakładek nad stroną."),
+    s += [P("2 / Interfejs: menu główne (sześć wież), panele i pasek stanu", "h1"),
+          P("Menu główne to miasto z sześcioma wieżami. Najechanie na wieżę pokazuje jej opis i bieżącą wartość z bota, kliknięcie "
+            "(albo Enter) przybliża kamerę i otwiera panel. Pasek na dole: wynik, win rate, aktywne sygnały i equity rachunku – każda "
+            "wartość ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>, <b>nieaktualne</b>, "
+            "<b>błąd synchronizacji</b>)."),
+          table([["Wieża", "Panel"],
+                 ["Lightning Tower", "Live Signals Center: sygnały bota, plan wejścia, cykl życia sygnału, alerty rynku"],
+                 ["Ice Tower", "widok Precision (wykresy, reżim, strefy)"],
+                 ["Wind Portal", "AI Engine Core: modele, macierz konsensusu, ślad decyzji, Monte Carlo, mapy przepływu modułów"],
+                 ["Control Tower", "Bot Management Center: wyniki, sterowanie strategią, limity ryzyka, STOP, Telegram, jakość danych, "
+                  "autopilot (tryby), infrastruktura (CPU/RAM), dziennik"],
+                 ["Strategy Lab", "silnik strategii, ustawienia, podgląd potoku decyzji, TEST STRATEGY / DEPLOY TO BOT, biblioteka, porównanie"],
+                 ["Fire Tower", "Trading Intelligence (terminal)"]], [40, 130]),
+          *shot(shots, "ui_cult/03_menu_1920.png", "Menu główne – sześć wież.", width_mm=160),
+          P("Menu boczne obszarów (bez zmian) – kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są na pasku zakładek."),
           table([["Obszar", "Zawartość"],
-                 ["Menu – trzy wieże", "menu główne z wieżami (logo w lewym górnym rogu również tu prowadzi)"],
+                 ["Menu główne", "miasto sześciu wież (logo w lewym górnym rogu również tu prowadzi)"],
                  ["Precision", "Pulpit, Wykresy MTF, Strefy rynkowe, Scalping MTF, Kontekst rynku, Indykatory, Analiza sygnału, Neural Cyberpunk"],
-                 ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje"],
+                 ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje, Lightning Tower, Strategy Lab"],
                  ["Profits", "Pozycje i ryzyko, Dziennik i wyniki, widok Profits"],
-                 ["Modele i trening", "Modele, Centrum treningu, Neural System, Structure Intelligence, Testy, Badania i walidacja"],
-                 ["Ustawienia i diagnostyka", "Ustawienia (z mapą ekranów), Dane i źródła, Diagnostyka"]], [45, 125]),
+                 ["Modele i trening", "Modele, Centrum treningu, Neural System, Structure Intelligence, Testy, Badania i walidacja, Wind Portal"],
+                 ["Ustawienia i diagnostyka", "Ustawienia (z mapą ekranów), Dane i źródła, Diagnostyka, Control Tower"]], [45, 125]),
+          box("Control Tower zapisuje ustawienia w konfiguracji bota (progi, filtry, limity ryzyka, szablon i przełączniki Telegram, "
+              "presety strategii) – obowiązują od następnej decyzji. Nieprawidłową wartość bot odrzuca i panel to pokazuje. "
+              "STOP nowych wejść oraz TEST / DEPLOY strategii wymagają potwierdzenia; tryb wykonania zmienia się tylko w oknie "
+              "trybów z potwierdzeniem rachunku.", "warn"),
           P("Pasek stanu (każdy ekran)", "h2"),
           P("U góry każdego ekranu (zwykłego, wież i terminala): instrument i symbol brokera, MT5, jakość i <b>czas ostatnich danych</b>, "
             "rodzaj danych <b>DEMO / LIVE / SYNTETYCZNE</b>, tryb wykonania i STOP."),
@@ -291,9 +324,12 @@ def client(shots: Path | None) -> list:
     s += [P("1 / Instalacja", "h1"), P("Pierwsze uruchomienie", "h2"),
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",
                  "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
-                 "wymagane składniki – może potrwać kilka minut.",
-                 "Panel otwiera się na menu głównym z trzema wieżami. Przy pierwszym starcie kreator prosi o limity ryzyka i koszty."]),
-          *shot(shots, "ui_interface_129/menu_1280x720@1x.png", "Menu główne – trzy wieże.", width_mm=150),
+                 "wymagane składniki – może potrwać kilka minut. Postęp widać w małym oknie <b>JOIN THE CULT</b>.",
+                 "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b>. Okno się powiększy i po krótkim intro "
+                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne – miasto z sześcioma wieżami. Przy pierwszym starcie kreator prosi o "
+                 "limity ryzyka i koszty."]),
+          *shot(shots, "ui_cult/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
+          *shot(shots, "ui_cult/03_menu_1920.png", "Menu główne – sześć wież.", width_mm=150),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
               "z plikiem .sha256."),
           PageBreak()]
@@ -311,8 +347,13 @@ def client(shots: Path | None) -> list:
                  ["Tryb, STOP", "SIGNALS / PAPER / AUTO DEMO / AUTO LIVE; STOP zatrzymuje nowe wejścia"]], [55, 115]),
           PageBreak()]
     s += [P("3 / Korzystanie z panelu", "h1"),
-          P("Menu jest ułożone jak trzy wieże: <b>Precision</b> (wykresy i rynek), <b>Dyscypline</b> (setupy i sygnały), <b>Profits</b> "
-            "(rachunek i wyniki), oraz <b>Modele i trening</b> i <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
+          P("Menu główne to miasto sześciu wież: <b>Lightning</b> (sygnały na żywo), <b>Ice</b> (analiza – widok Precision), "
+            "<b>Wind</b> (silnik AI i modele), <b>Control</b> (zarządzanie botem), <b>Strategy Lab</b> (strategie) i <b>Fire</b> "
+            "(terminal). Najedź na wieżę – zobaczysz opis, kliknij – otworzysz panel. Menu boczne obszarów: <b>Precision</b>, "
+            "<b>Dyscypline</b>, <b>Profits</b>, <b>Modele i trening</b>, <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
+          box("Znaczniki przy wartościach mówią, skąd pochodzą: <b>DEMO · symulator</b> (dane syntetyczne), <b>DEMO</b> (rachunek "
+              "demonstracyjny), <b>REAL</b>, <b>brak danych</b>, <b>nieaktualne</b>, <b>błąd synchronizacji</b>. Wynik, win rate czy "
+              "ROI z symulatora nie są wynikami Twojego rachunku."),
           P("Strefy na wykresie", "h2"),
           steps(["Otwórz <b>Precision → Wykresy MTF</b>.",
                  "Na pasku <b>Strefy</b> wybierz M1 + M5 + M15 (domyślnie) albo pojedynczy interwał; M30 też jest dostępny.",

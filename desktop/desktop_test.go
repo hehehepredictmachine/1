@@ -401,3 +401,64 @@ func TestWindowTitleHasNoEdition(t *testing.T) {
 		t.Fatalf("title %q", got)
 	}
 }
+
+// 1.32: the launcher "JOIN THE CULT" is a small window; JOIN grows it to 85 % and opens the panel with the intro.
+func TestLauncherAndPanelGeometry(t *testing.T) {
+	for _, c := range []struct{ sw, sh, w, h int }{
+		{1920, 1040, 960, 660}, {1366, 728, 956, 618}, {1024, 728, 716, 618}, {800, 560, 640, 476}, {0, 0, 960, 660},
+	} {
+		if w, h := launcherSize(c.sw, c.sh); w != c.w || h != c.h {
+			t.Errorf("launcherSize(%d,%d) = %dx%d, want %dx%d", c.sw, c.sh, w, h, c.w, c.h)
+		}
+	}
+	if w, h := panelSize(1920, 1040); w != 1632 || h != 884 {
+		t.Errorf("panelSize = %dx%d", w, h)
+	}
+	if w, h := panelSize(0, 0); w != 1440 || h != 900 {
+		t.Errorf("panelSize fallback = %dx%d", w, h)
+	}
+	if x, y := centred(976, 699, 0, 0, 1920, 1040); x != 472 || y != 170 {
+		t.Errorf("centred = %d,%d", x, y)
+	}
+	if x, y := centred(976, 699, 1920, 0, 3840, 1040); x != 2392 || y != 170 { // second monitor on the right
+		t.Errorf("centred (2nd monitor) = %d,%d", x, y)
+	}
+	if x, y := centred(3000, 2000, 0, 0, 1920, 1040); x != 0 || y != 0 { // never above / left of the work area
+		t.Errorf("centred (too big) = %d,%d", x, y)
+	}
+}
+
+func TestPanelURLSkipsBrowserLauncher(t *testing.T) {
+	if u := panelURL("http://127.0.0.1:8765/", true); u != "http://127.0.0.1:8765/?pmw_joined=1#/menu?intro=1" {
+		t.Errorf("after JOIN: %s", u)
+	}
+	if u := panelURL("http://127.0.0.1:8765", false); u != "http://127.0.0.1:8765/?pmw_joined=1" { // reload after an engine restart
+		t.Errorf("reload: %s", u)
+	}
+}
+
+func TestLauncherPageKeepsStartFunctions(t *testing.T) {
+	b, err := os.ReadFile("splash.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(b)
+	for _, want := range []string{"JOIN THE CULT", `id="btnJoin"`, `call("join")`, `call("state")`, `call("import"`, `call("fresh")`,
+		`call("retry")`, `call("logs")`, `call("exit")`, `s.phase === "ready"`, "SYSTEM READY", "prefers-reduced-motion"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("splash.html: missing %q", want)
+		}
+	}
+	if strings.Contains(page, "http://") || strings.Contains(page, "https://") { // nothing is loaded from the network
+		t.Error("splash.html must not load anything from the network")
+	}
+	for _, n := range []string{"assets/launcher-scene-small.webp", "assets/crown.webp"} {
+		st, err := os.Stat(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Size() == 0 || st.Size() > 200*1024 {
+			t.Errorf("%s: %d bytes (embedded in the EXE, keep it small)", n, st.Size())
+		}
+	}
+}

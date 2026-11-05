@@ -78,7 +78,8 @@ class Runtime:
         self.ml = MLRouter(self.cfg, self.db, self.bridge, self.bus, self.log)      # legacy ML: own database per instrument
         self.engine.ml = self.ml
         self.engine.active.ml = self.ml
-        self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db, stats_fn=self._telegram_day_stats)
+        self.telegram = TelegramNotifier(self.cfg, self.secrets, self.db, stats_fn=self._telegram_day_stats,
+                                         template_path=paths.data_dir() / "telegram" / "signal_template.json")
         self.scanner = MarketScanner(self.cfg, self.bridge, self.bus, self.log)
         self.signals = BotSignalService(self.cfg, self.bridge, self.db, self.bus, self.log, telegram=self.telegram)
         self.scanner.signals = self.signals

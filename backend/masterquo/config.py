@@ -167,6 +167,31 @@ class NewsConfig(_Strict):
     poll_seconds: int = Field(300, ge=60, le=86400)
 
 
+# 1.32 Telegram Message Studio: variables of the signal template (anything else is refused when the template is saved).
+TELEGRAM_TEMPLATE_MAX = 1500
+TELEGRAM_TEMPLATE_VARS: dict[str, str] = {
+    "symbol": "symbol brokera", "direction": "BUY / SELL", "entry": "cena wejścia", "sl": "stop loss", "tp": "wszystkie TP (TP1 / TP2 …)",
+    "tp1": "pierwszy TP", "strategy": "strategia", "timeframe": "interwał", "stage": "etap sygnału (EARLY / CONFIRMED / OPEN)",
+}
+
+
+def telegram_template_errors(tpl: str) -> list[str]:
+    """Only {name} placeholders from TELEGRAM_TEMPLATE_VARS - no attribute / index access, no format specs or conversions."""
+    import string
+    errs: list[str] = []
+    try:
+        for _lit, field, spec, conv in string.Formatter().parse(tpl):
+            if field is None:
+                continue
+            if conv or spec:
+                errs.append(f"{{{field}}}: formatowanie niedozwolone")
+            elif field not in TELEGRAM_TEMPLATE_VARS:
+                errs.append(f"nieznana zmienna {{{field}}}")
+    except ValueError as exc:
+        errs.append(f"nawiasy klamrowe: {exc} (dosłowny nawias zapisz jako {{{{ albo }}}})")
+    return errs
+
+
 class TelegramConfig(_Strict):
     enabled: bool = False
     chat_id: str | None = None
@@ -175,6 +200,8 @@ class TelegramConfig(_Strict):
     send_stats: bool = False                   # daily summary of closed trades
     stats_hour_utc: int = Field(21, ge=0, le=23)
     language: Literal["EN_ZH", "EN", "ZH"] = "EN_ZH"   # English + Simplified Chinese by default
+    # 1.32: the own text of the SIGNAL message is NOT stored here but in data/telegram/signal_template.json (notify.telegram.
+    # SignalTemplateStore) - the models are strict, so a new key in config.json would stop 1.31 from reading it after a rollback.
 
 
 class ServerConfig(_Strict):

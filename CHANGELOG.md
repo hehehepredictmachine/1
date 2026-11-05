@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 1.32.0 – CULT UI: launcher JOIN THE CULT, intro, Main Menu (6 wież), Lightning / Wind / Control / Strategy Lab
+* **Launcher „JOIN THE CULT”** (launcher.jpg): w aplikacji Windows osobne małe okno startowe (`desktop/splash.html`, grafika wbudowana
+  w EXE) z dotychczasowymi funkcjami (postęp, wybór danych, błąd + ponów, logi, zamknij) i nowym stanem **SYSTEM READY**; dopiero JOIN
+  THE CULT powiększa okno do 85 % obszaru roboczego monitora i ładuje panel (`?pmw_joined=1#/menu?intro=1`). Silnik działa w tle także
+  przed kliknięciem; jego awaria w trakcie oczekiwania pokazuje błąd zamiast „gotowe”. W przeglądarce: launcher na początku sesji,
+  panel montowany dopiero po kliknięciu (przycisk czeka na stan bota i WebSocket).
+* **Main Menu – miasto sześciu wież** (menu.jpg): Lightning, Ice (→ Precision), Wind, Control, Strategy Lab, Fire (→ Trading
+  Intelligence); podgląd po najechaniu (opis + bieżąca wartość z bota), kliknięcie / Enter → przybliżenie kamery → panel; animacja
+  postaci i efektów żywiołów; pasek: wynik, win rate, aktywne sygnały, equity – ze znacznikiem źródła. **Intro 6 s** (storyboard
+  0,0–6,0 s), raz po JOIN, „Pomiń intro” / Esc; ograniczone animacje → bez intro i bez przybliżenia.
+* **Lightning Tower – Live Signals Center**, **Wind Portal – AI Engine Core** (rodziny modeli z katalogu, macierz konsensusu bez
+  uśredniania różnych jednostek, ślad decyzji, Monte Carlo nieskalibrowane, kontekst MTF, dryf; mapy przepływu modułów z dawnego menu),
+  **Control Tower – Bot Management Center**, **Strategy Lab** – na istniejących endpointach bota.
+* **Dane:** rodzaj każdej wartości: REAL / DEMO / DEMO · symulator / brak danych / nieaktualne / błąd synchronizacji; dane rynkowe na
+  symulatorze nigdy jako REAL; brak łącza z botem → pasek „nieaktualne”. Bez wymyślonych ROI, win ratio, sald ani skuteczności AI.
+* **Zapis ustawień (Control Tower):** progi CONFIRMED / EARLY, filtry (makro, konflikt D1, max spread), wybór strategii, limity ryzyka,
+  szablon wiadomości Telegram (walidowane zmienne, podgląd na ostatnim sygnale albo oznaczonym przykładzie, zawsze „Analysis only –
+  not an order.”), przełączniki wiadomości, **presety strategii** (`data/presets/strategy.json`, tylko pola sterowania strategią).
+  Nowe API: `/api/v1/system/resources` (CPU/RAM komputera bota), `/api/v1/telegram/preview`, szablon w `/api/v1/telegram/test`,
+  `/api/v1/presets/strategy` (lista, zapis, wczytanie, reset), `/api/v1/telegram/template` (GET / PUT). Szablon i presety są w
+  osobnych plikach (`data/telegram/signal_template.json`, `data/presets/strategy.json`) – `config.json` bez nowych kluczy, więc 1.31
+  nadal go czyta po powrocie (sprawdzone).
+* **Usunięte:** menu trzech wież 3D z 1.26 (three.js wypada z zależności); widoki Precision / Dyscypline / Profits bez zmian.
+* **Testy:** `tests/test_ui_cult.py` (launcher, intro, 6 wież, nawigacja, znaczniki danych, panele w 3 szerokościach, zapis konfiguracji,
+  potwierdzenia, ograniczone animacje, jeden WebSocket), `tests/test_cult_backend.py`, testy okna w `desktop/desktop_test.go`;
+  zaktualizowane `test_ui_pages`, `test_ui_wizard`, `test_ui_interface_129`.
+* Bez zmian: strategie, progi domyślne, ryzyko, koszty, tryby SIGNALS/PAPER/AUTO DEMO/AUTO LIVE, STOP, TP/SL, modele, MT5, Telegram.
+
 ## 1.31.0 – Kronos AI Forecast (przetrenowany Kronos-small, lokalnie, SHADOW)
 * **Model:** NeoQuasar/Kronos-small + Kronos-Tokenizer-base (oficjalne wagi, przypięte rewizje `901c26c…` / `0e01173…`), kod Kronos (MIT)
   w `backend/kronos_runtime/vendor/kronos` – zmieniony tylko import (własna przestrzeń nazw zamiast ogólnego `model`). Bez treningu w bocie.

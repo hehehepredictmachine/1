@@ -16,7 +16,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
+from ..config import TELEGRAM_TEMPLATE_MAX, TELEGRAM_TEMPLATE_VARS, telegram_template_errors
 from ..timeutil import iso, utcnow
 
 log = logging.getLogger("masterquo.telegram")
@@ -58,8 +60,35 @@ def _side(lang: str, side: str | None) -> str:
     return _lbl(lang, side, {"BUY": "买入", "SELL": "卖出"}.get(side, side))
 
 
-def fmt_signal(d: dict, lang: str = "EN_ZH") -> str:
-    """Signal of the bot (analytical; not an order)."""
+EXAMPLE_SIGNAL = {"symbol": "XAUUSD-", "side": "BUY", "strategy": "S01 TREND_PULLBACK", "timeframe": "M15", "stage": "CONFIRMED",
+                  "entry": 2682.0, "sl": 2678.5, "tps": [2688.5, 2692.0], "synthetic": False}
+
+
+def signal_vars(d: dict, lang: str = "EN_ZH") -> dict:
+    tps = [t for t in (d.get("tps") or []) if t is not None]
+    return {"symbol": d.get("symbol") or "—", "direction": _side(lang, d.get("side")), "entry": _num(d.get("entry")), "sl": _num(d.get("sl")),
+            "tp": " / ".join(_num(t) for t in tps) or "—", "tp1": _num(tps[0]) if tps else "—", "strategy": d.get("strategy") or "—",
+            "timeframe": d.get("timeframe") or "—", "stage": d.get("stage") or "—"}
+
+
+def render_signal(template: str, d: dict, lang: str = "EN_ZH") -> str:
+    """User template (validated: only TELEGRAM_TEMPLATE_VARS). The simulator tag and the "not an order" line are always added."""
+    errs = telegram_template_errors(template)
+    if errs:
+        raise ValueError("; ".join(errs))
+    import string
+    body = string.Formatter().vformat(template, (), signal_vars(d, lang)).strip()
+    syn = _lbl(lang, "[SYNTHETIC DATA]", "[模拟数据]") + "\n" if d.get("synthetic") else ""
+    return (syn + body + "\n" + _pick(lang, "Analysis only – not an order.", "仅供分析 – 并非下单指令。"))[:4000]
+
+
+def fmt_signal(d: dict, lang: str = "EN_ZH", template: str | None = None) -> str:
+    """Signal of the bot (analytical; not an order). 1.32: an own template from the Message Studio, when saved."""
+    if template:
+        try:
+            return render_signal(template, d, lang)
+        except Exception:
+            log.warning("telegram: szablon sygnału nieprawidłowy – użyto formatu wbudowanego")
     syn = _lbl(lang, "[SYNTHETIC DATA]", "[模拟数据]") + " " if d.get("synthetic") else ""
     return "\n".join([
         f"📡 {syn}{_lbl(lang, 'Signal', '信号')}: {d.get('symbol')} {_side(lang, d.get('side'))}",
@@ -100,8 +129,61 @@ def fmt_stats(day: dict, mode: str, currency: str | None, date: str, lang: str =
     return "\n".join(lines)
 
 
+class SignalTemplateStore:
+    """1.32 Message Studio: the own text of the SIGNAL message, kept in its own file (data/telegram/signal_template.json) so that
+    config.json stays readable by 1.31 after a rollback (strict models refuse unknown keys). None = the built-in format. A damaged or
+    invalid file is ignored (built-in format) and reported in info(); it never stops the bot. path=None: memory only (tests)."""
+
+    def __init__(self, path: Path | None):
+        self.path = path
+        self._lock = threading.Lock()
+        self._tpl: str | None = None
+        self.updated_at: str | None = None
+        self.load_error: str | None = None
+        if path is not None and path.exists():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                tpl = raw.get("template") if isinstance(raw, dict) else None
+                if tpl is None or (isinstance(tpl, str) and not tpl.strip()):
+                    pass
+                elif not isinstance(tpl, str) or len(tpl) > TELEGRAM_TEMPLATE_MAX or telegram_template_errors(tpl):
+                    self.load_error = "zapisany szablon jest nieprawidłowy – używany jest format wbudowany"
+                else:
+                    self._tpl, self.updated_at = tpl, raw.get("updated_at")
+            except Exception as exc:  # noqa: BLE001 - a damaged file must not stop the bot
+                self.load_error = f"nie można odczytać pliku szablonu ({type(exc).__name__}) – używany jest format wbudowany"
+
+    def get(self) -> str | None:
+        with self._lock:
+            return self._tpl
+
+    def info(self) -> dict:
+        with self._lock:
+            return {"template": self._tpl, "updated_at": self.updated_at, "load_error": self.load_error, "max_length": TELEGRAM_TEMPLATE_MAX,
+                    "variables": TELEGRAM_TEMPLATE_VARS, "storage": "data/telegram/signal_template.json"}
+
+    def set(self, template: str | None) -> str | None:
+        """Validates and saves (atomically); blank / None = back to the built-in format. ValueError on an invalid template."""
+        tpl = template if template is not None and template.strip() else None
+        if tpl is not None:
+            if len(tpl) > TELEGRAM_TEMPLATE_MAX:
+                raise ValueError(f"szablon dłuższy niż {TELEGRAM_TEMPLATE_MAX} znaków")
+            errs = telegram_template_errors(tpl)
+            if errs:
+                raise ValueError("; ".join(errs))
+        with self._lock:
+            now = iso(utcnow())
+            if self.path is not None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self.path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps({"format": 1, "template": tpl, "updated_at": now}, ensure_ascii=False, indent=1), encoding="utf-8")
+                tmp.replace(self.path)
+            self._tpl, self.updated_at, self.load_error = tpl, now, None
+            return tpl
+
+
 class TelegramNotifier:
-    def __init__(self, cfg_store, secrets, db, *, stats_fn=None, clock=time.time):
+    def __init__(self, cfg_store, secrets, db, *, stats_fn=None, clock=time.time, template_path: Path | None = None):
         self.cfg_store = cfg_store
         self.secrets = secrets
         self.db = db
@@ -112,6 +194,8 @@ class TelegramNotifier:
         self.last_error: str | None = None
         self.last_error_at: str | None = None
         self.sent = 0
+        self._last_signal: dict | None = None
+        self.templates = SignalTemplateStore(template_path)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -175,13 +259,29 @@ class TelegramNotifier:
             self._record(ok, err)
         threading.Thread(target=run, daemon=True).start()
 
-    def send_test(self) -> dict:
+    def preview(self, template: str | None = None) -> dict:
+        """Signal message as it would be sent: the last real signal of this session, else an example clearly marked as such."""
+        cfg = self.cfg_store.get().telegram
+        d, source = (self._last_signal, "LAST_SIGNAL") if self._last_signal else (EXAMPLE_SIGNAL, "EXAMPLE")
+        tpl = self.templates.get() if template is None else (template.strip() or None)
+        text = render_signal(tpl, d, cfg.language) if tpl else fmt_signal(d, cfg.language)
+        if source == "EXAMPLE":
+            text = _lbl(cfg.language, "[EXAMPLE – not a signal]", "[示例 – 非信号]") + "\n" + text
+        return {"text": text, "source": source, "template": tpl, "variables": TELEGRAM_TEMPLATE_VARS}
+
+    def send_test(self, template: str | None = None) -> dict:
         """Synchronous test message (works also while notifications are disabled - it checks the token and the chat)."""
+        if template is not None and template.strip():
+            errs = telegram_template_errors(template)
+            if errs:                                   # a broken template is reported before anything is checked or sent
+                raise ValueError("; ".join(errs))
         cfg = self.cfg_store.get().telegram
         token = self._token()
         if not token or not cfg.chat_id:
             return {"ok": False, "error": "NOT_CONFIGURED: zapisz token bota i chat_id"}
         text = _pick(cfg.language, "✅ PepeMarketWizard: test message – notifications are configured.", "✅ PepeMarketWizard：测试消息 – 通知已配置。")
+        if template is not None:                   # 1.32 Message Studio: the edited signal template, marked as a test
+            text = "🧪 TEST\n" + self.preview(template)["text"]
         ok, err = self._post(token, cfg.chat_id, text)
         self._record(ok, err)
         return {"ok": ok, "error": err, "status": self.status()}
@@ -203,7 +303,9 @@ class TelegramNotifier:
         self._deliver("send_signals", dedup_key, text)
 
     def signal(self, dedup_key: str, d: dict) -> bool:
-        return self._deliver("send_signals", dedup_key, fmt_signal(d, self.cfg_store.get().telegram.language))
+        self._last_signal = dict(d)
+        cfg = self.cfg_store.get().telegram
+        return self._deliver("send_signals", dedup_key, fmt_signal(d, cfg.language, self.templates.get()))
 
     def trade_opened(self, dedup_key: str, d: dict) -> bool:
         return self._deliver("send_trades", "open:" + dedup_key, fmt_opened(d, self.cfg_store.get().telegram.language))

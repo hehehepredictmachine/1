@@ -4,14 +4,29 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.32 – CULT UI: launcher JOIN THE CULT, miasto sześciu wież i cztery nowe panele
+* **Start:** aplikacja Windows otwiera najpierw małe okno **JOIN THE CULT** (postęp startu, wybór danych, błąd + „Spróbuj ponownie”,
+  logi). Gdy pokaże **SYSTEM READY**, bot już działa w tle – **JOIN THE CULT** powiększa okno i otwiera panel z 6-sekundowym intro
+  (**Pomiń intro** / Esc). W przeglądarce ten sam launcher pojawia się na początku sesji; bezpośredni link do ekranu go pomija.
+* **Menu główne** to miasto z sześcioma wieżami: **Lightning** (sygnały na żywo), **Ice** (= Precision), **Wind** (silnik AI),
+  **Control** (zarządzanie botem), **Strategy Lab** i **Fire** (= Trading Intelligence). Najedź – podgląd, kliknij – panel.
+  Dawne menu trzech wież z 1.26 zostało zastąpione; widoki Precision / Dyscypline / Profits działają dalej, mapy przepływu modułów
+  są teraz w **Wind Portal → NEURAL DATA FLOW**.
+* **Control Tower** zapisuje ustawienia w konfiguracji bota (progi, filtry, limity ryzyka, szablon i przełączniki Telegram, presety
+  strategii). STOP i TEST / DEPLOY strategii wymagają potwierdzenia. Wartości mają znaczniki **DEMO · symulator / DEMO / REAL /
+  brak danych / nieaktualne / błąd synchronizacji** – wyniki z symulatora nie są wynikami rachunku.
+* Czego bot nie ma (oznaczone w panelach, nie udawane): Random Forest, zapasowe źródło danych, Strategy Evolution / Advanced Editor /
+  AI Assistant, raport „Performance Report”, okresy 90D/YTD, Sharpe / Stability. Szczegóły: `docs/CULT_UI_WDROZENIE_1_32_PL.md`.
+  Paczka: `PepeMarketWizard_DESKTOP_1_32_0.zip`.
+
 ## Nowe w 1.31 – Kronos AI Forecast
 * Przetrenowany model **Kronos-small** (NeoQuasar) prognozuje świece XAUUSD i BTC lokalnie, w trybie **SHADOW** (bez zleceń).
   Instalacja: Wykresy bota → **Kronos AI Forecast** → **Zainstaluj model Kronos** albo `33_KRONOS_INSTALUJ.bat`. Szczegóły:
-  `INSTRUKCJA_KRONOS.md`. Paczka: `PepeMarketWizard_DESKTOP_1_31_0.zip`.
+  `INSTRUKCJA_KRONOS.md`.
 
 ## Nowe w 1.30 – bez licencji
 * **System licencji został usunięty** (na Twoją prośbę). Program działa bez klucza, nie ma okna KEY FOR MAGIC, zakładki Licencje,
-  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich (od 1.31: `PepeMarketWizard_DESKTOP_1_31_0.zip`).
+  wersji CLIENT ani serwera licencji. Jest jedna paczka dla wszystkich (od 1.32: `PepeMarketWizard_DESKTOP_1_32_0.zip`).
 * Opisy licencji w sekcjach 1.27 i 1.29 poniżej są historyczne.
 
 ## Nowe w 1.29 – „Wyznacz strefy” na wykresie, menu według wież
@@ -44,8 +59,8 @@
   (dwie ostatnie oznaczone jako niezweryfikowane). Sygnał to informacja – nie składa zlecenia.
 * Szczegóły i ograniczenia: `docs/LICENCJE_SYSTEM_1_27_PL.md`.
 
-## Nowe w 1.26 – menu główne z trzema wieżami
-Panel otwiera się na **menu głównym**: trzy wieże 3D na platformie z magicznym kręgiem, po bokach mapy przepływu danych i modeli.
+## Nowe w 1.26 – menu główne z trzema wieżami (od 1.32 zastąpione miastem sześciu wież – opis historyczny)
+Panel otwierał się na **menu głównym**: trzy wieże 3D na platformie z magicznym kręgiem, po bokach mapy przepływu danych i modeli.
 * **Precision** – wykresy świecowe z Twojego MT5 (interwały, siatka, warstwy analiz, strefy, reżim rynku).
 * **Dyscypline** – setupy i sygnały: stan (obserwacja → formujący się → gotowy → sygnał aktywny / unieważniony / wygasły), warunki,
   trigger, unieważnienie, wejście / SL / TP, sprzeczności modeli, ryzyko i wykres. „Ocena setupu” to heurystyka 0–100, **nie**

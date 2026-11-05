@@ -16,7 +16,8 @@ import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
 import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
-import { PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
+import { CULT_PAGE_IDS, PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
+import Launcher, { launcherNeeded } from "./features/cult/Launcher";
 import WizardShell from "./features/wizard/WizardShell";
 import { TOWERS } from "./features/wizard/assets";
 import TerminalShell from "./features/shell/TerminalShell";
@@ -27,8 +28,12 @@ import { useStore } from "./store";
 import { UiCtx } from "./ui";
 import { cls } from "./util";
 
-// 1.26 main menu and tower views: lazy chunks (three.js is loaded only by the menu)
-const WizardMenu = lazy(() => import("./features/wizard/WizardMenu"));
+// tower views and the 1.32 CULT screens: lazy chunks
+const CultMenu = lazy(() => import("./features/cult/CultMenu"));
+const LightningTower = lazy(() => import("./features/cult/LightningTower"));
+const WindPortal = lazy(() => import("./features/cult/WindPortal"));
+const ControlTower = lazy(() => import("./features/cult/ControlTower"));
+const StrategyLab = lazy(() => import("./features/cult/StrategyLab"));
 const PrecisionView = lazy(() => import("./features/wizard/PrecisionView"));
 const DyscyplineView = lazy(() => import("./features/wizard/DyscyplineView"));
 const ProfitsView = lazy(() => import("./features/wizard/ProfitsView"));
@@ -36,8 +41,15 @@ const MarketZonesPage = lazy(() => import("./features/market-zones/MarketZonesPa
 const TrainingCenterPage = lazy(() => import("./features/training-center/TrainingCenterPage"));
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
+const NEED_LAUNCHER = launcherNeeded();   // decided once, before the router fills in an empty address
 
 export default function App() {
+  const [gate, setGate] = useState(NEED_LAUNCHER);
+  if (gate) return <Launcher onJoin={() => setGate(false)} />;      // 1.32: the full panel is not mounted before JOIN THE CULT
+  return <Panel />;
+}
+
+function Panel() {
   const { s } = useStore();
   const route = useRoute();
   const [settings, setSettings] = useState(false);
@@ -56,6 +68,21 @@ export default function App() {
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
   const terminal = TERMINAL_PAGE_IDS.includes(route.page);
+  if (CULT_PAGE_IDS.includes(route.page)) {
+    return (
+      <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
+        <div className={cls("app", "app-cult", s.synthetic && "synthetic")}>
+          <Suspense fallback={<div className="cu-loading" role="status">Ładowanie…</div>}>
+            {route.page === "menu" && <CultMenu route={route} />}
+            {route.page === "lightning" && <LightningTower />}
+            {route.page === "wind" && <WindPortal />}
+            {route.page === "control" && <ControlTower />}
+            {route.page === "strategy-lab" && <StrategyLab />}
+          </Suspense>
+          {settings && <SettingsModal onClose={() => setSettings(false)} />}
+        </div>
+      </UiCtx.Provider>);
+  }
   if (WIZARD_PAGE_IDS.includes(route.page)) {
     const tower = TOWERS.find((t) => t.id === route.page);
     return (
@@ -63,7 +90,6 @@ export default function App() {
         <div className={cls("app", "app-wizard", s.synthetic && "synthetic")}>
           <WizardShell page={route.page} bg={tower ? tower.bg : null} accent={tower?.accent}>
             <Suspense fallback={<div className="wz-loading" role="status">Ładowanie widoku…</div>}>
-              {route.page === "menu" && <WizardMenu />}
               {route.page === "precision" && <PrecisionView />}
               {route.page === "dyscypline" && <DyscyplineView route={route} />}
               {route.page === "profits" && <ProfitsView />}

@@ -2,7 +2,9 @@
 
 package main
 
-// The window: WebView2 with the start screen (setup, data choice, errors) and then the engine's panel. One instance per Windows
+// The window: WebView2 with the start screen (setup, data choice, errors) and then the engine's panel. 1.32: the start screen is
+// the small launcher window "JOIN THE CULT" - when the engine is ready it waits for JOIN THE CULT, then the window grows to 85 % of
+// the monitor and loads the panel (main menu with the intro). One instance per Windows
 // session (a second start brings the window to the front). Closing the window follows the preference from Centrum sterowania →
 // Praca aplikacji: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
 // through one bound function that only works while the start screen is shown; the panel uses the engine's protected HTTP API.
@@ -35,6 +37,12 @@ var splashHTML string
 //go:embed winres/icon256.png
 var iconPNG []byte
 
+//go:embed assets/launcher-scene-small.webp
+var launcherScene []byte // launcher.jpg, the scene inside the gold frame (tools/cult_assets.py)
+
+//go:embed assets/crown.webp
+var launcherCrown []byte
+
 var (
 	user32                  = windows.NewLazySystemDLL("user32.dll")
 	shell32                 = windows.NewLazySystemDLL("shell32.dll")
@@ -53,6 +61,10 @@ var (
 	pIsIconic               = user32.NewProc("IsIconic")
 	pPostMessageW           = user32.NewProc("PostMessageW")
 	pGetSystemMetrics       = user32.NewProc("GetSystemMetrics")
+	pGetWindowRect          = user32.NewProc("GetWindowRect")
+	pSetWindowPos           = user32.NewProc("SetWindowPos")
+	pMonitorFromWindow      = user32.NewProc("MonitorFromWindow")
+	pGetMonitorInfoW        = user32.NewProc("GetMonitorInfoW")
 	pShellNotifyIconW       = shell32.NewProc("Shell_NotifyIconW")
 	pShellExecuteW          = shell32.NewProc("ShellExecuteW")
 )
@@ -90,6 +102,9 @@ const (
 	tpmRightButton, tpmReturnCmd    = 0x2, 0x100
 
 	smCxScreen, smCyScreen = 0, 1
+
+	monitorDefaultToNearest           = 2
+	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
 	mutexName      = `Local\PepeMarketWizardDesktop`
@@ -141,7 +156,7 @@ func shellOpen(target string) {
 }
 
 type splashState struct {
-	Phase      string   `json:"phase"` // progress | choose | error
+	Phase      string   `json:"phase"` // progress | choose | error | ready (engine running, waiting for JOIN THE CULT)
 	Message    string   `json:"message"`
 	Lines      []string `json:"lines"`
 	Candidates []string `json:"candidates,omitempty"`
@@ -150,6 +165,17 @@ type splashState struct {
 	DataDir    string   `json:"data_dir"`
 	Version    string   `json:"version"`
 	Icon       string   `json:"icon,omitempty"`
+	Scene      string   `json:"scene,omitempty"` // data URLs of the launcher art - only in the answer to "state"
+	Crown      string   `json:"crown,omitempty"`
+}
+
+type rect struct{ Left, Top, Right, Bottom int32 }
+
+type monitorInfo struct {
+	CbSize    uint32
+	RcMonitor rect
+	RcWork    rect
+	DwFlags   uint32
 }
 
 type winApp struct {
@@ -172,6 +198,9 @@ type winApp struct {
 	splash       splashState
 	choice       chan dataChoice
 	retry        chan struct{}
+	join         chan struct{} // JOIN THE CULT on the launcher
+	joinAbort    chan struct{} // the engine failed while the launcher waited for JOIN
+	awaiting     bool          // the launcher waits for JOIN THE CULT
 	tip          string
 	quitting     bool
 	balloonShown bool
@@ -235,7 +264,18 @@ func (a *winApp) bridge(action, arg string) (any, error) {
 	switch action {
 	case "state":
 		st.Icon = "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
+		st.Scene = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherScene)
+		st.Crown = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherCrown)
 		return st, nil
+	case "join":
+		if st.Phase != "ready" {
+			return nil, errors.New("silnik bota jeszcze nie jest gotowy")
+		}
+		select {
+		case a.join <- struct{}{}:
+		default:
+		}
+		return true, nil
 	case "import", "fresh":
 		select {
 		case a.choice <- dataChoice{src: arg, fresh: action == "fresh"}:
@@ -299,8 +339,14 @@ func (a *winApp) bootLoop(waitFirst bool) {
 			return
 		}
 		if err == nil {
-			a.openApp()
-			return
+			if a.awaitJoin() {
+				a.openApp()
+				return
+			}
+			if a.ctx.Err() != nil {
+				return
+			}
+			continue // the engine failed while the launcher waited: the error is shown, "Spróbuj ponownie" starts it again
 		}
 		a.logf("start: BŁĄD " + err.Error())
 		a.showError(err.Error())
@@ -322,13 +368,88 @@ func (a *winApp) showError(msg string) {
 	a.showWindow()
 }
 
+// readyMessage: the line under JOIN THE CULT while the engine runs.
+func (a *winApp) readyMessage() string {
+	if a.eng.Owned() {
+		return fmt.Sprintf("silnik bota działa (port %d)", a.eng.Port())
+	}
+	return fmt.Sprintf("podłączono do działającego silnika (port %d)", a.eng.Port())
+}
+
+// awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for JOIN THE CULT (true), the engine failing
+// meanwhile (false, the error is already shown) or the app quitting (false). The bot works in the background meanwhile.
+func (a *winApp) awaitJoin() bool {
+	msg := a.readyMessage() // engine calls stay outside a.mu
+	a.mu.Lock()
+	a.awaiting = true
+	a.splash.Phase, a.splash.Error, a.splash.Message = "ready", "", msg
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.awaiting = false
+		a.mu.Unlock()
+	}()
+	for _, ch := range []chan struct{}{a.joinAbort, a.join} { // stale signals of an earlier wait are dropped first
+		select {
+		case <-ch:
+		default:
+		}
+	}
+	a.push()
+	a.logf("start: silnik gotowy – oczekiwanie na JOIN THE CULT")
+	select {
+	case <-a.join:
+		return true
+	case <-a.joinAbort:
+		return false
+	case <-a.ctx.Done():
+		return false
+	}
+}
+
+// workArea: the work area (without the taskbar) of the monitor that shows the window.
+func (a *winApp) workArea() rect {
+	mon, _, _ := pMonitorFromWindow.Call(a.hwnd, monitorDefaultToNearest)
+	mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if mon != 0 {
+		if ok, _, _ := pGetMonitorInfoW.Call(mon, uintptr(unsafe.Pointer(&mi))); ok != 0 && mi.RcWork.Right > mi.RcWork.Left {
+			return mi.RcWork
+		}
+	}
+	sw, _, _ := pGetSystemMetrics.Call(smCxScreen)
+	sh, _, _ := pGetSystemMetrics.Call(smCyScreen)
+	return rect{0, 0, int32(sw), int32(sh)}
+}
+
+// resizeCentred (UI thread): client area w x h, resizable or fixed, the outer window centred in the work area.
+func (a *winApp) resizeCentred(w, h int, fixed bool) {
+	hint := webview2.HintNone
+	if fixed {
+		hint = webview2.HintFixed
+	}
+	a.wv.SetSize(w, h, hint)
+	var r rect
+	if ok, _, _ := pGetWindowRect.Call(a.hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
+		return
+	}
+	wa := a.workArea()
+	x, y := centred(int(r.Right-r.Left), int(r.Bottom-r.Top), int(wa.Left), int(wa.Top), int(wa.Right), int(wa.Bottom))
+	_, _, _ = pSetWindowPos.Call(a.hwnd, 0, uintptr(int32(x)), uintptr(int32(y)), 0, 0, swpNoSize|swpNoZOrder|swpNoActv)
+}
+
 func (a *winApp) openApp() {
 	a.mu.Lock()
 	a.phase, a.appShown = "app", true
 	a.mu.Unlock()
-	url := a.eng.URL()
-	a.logf("okno: panel " + url)
-	a.wv.Dispatch(func() { a.wv.Navigate(url) })
+	url := panelURL(a.eng.URL(), true)
+	a.logf("okno: JOIN THE CULT → panel " + url)
+	a.wv.Dispatch(func() {
+		wa := a.workArea()
+		w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
+		a.resizeCentred(w, h, false)
+		a.wv.SetTitle(a.l.WindowTitle(version))
+		a.wv.Navigate(url)
+	})
 }
 
 func (a *winApp) onEngineState(s EngineState, detail string) {
@@ -348,15 +469,38 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 		a.setTip("PepeMarketWizard – silnik zatrzymany")
 	}
 	a.mu.Lock()
-	inApp, shown, quitting := a.phase == "app", a.appShown, a.quitting
+	inApp, shown, quitting, awaiting := a.phase == "app", a.appShown, a.quitting, a.awaiting
 	a.mu.Unlock()
 	if quitting {
 		return
 	}
+	if awaiting { // the launcher waits for JOIN THE CULT: it always tells the true state of the engine
+		switch s {
+		case EngineRunning, EngineExternal:
+			msg := a.readyMessage()
+			a.mu.Lock()
+			a.splash.Phase, a.splash.Message = "ready", msg
+			a.mu.Unlock()
+			a.push()
+		case EngineStarting, EngineCrashed:
+			a.mu.Lock()
+			a.splash.Phase, a.splash.Message = "progress", "Silnik bota uruchamia się ponownie…"
+			a.mu.Unlock()
+			a.push()
+		case EngineFailed:
+			a.showError(detail)
+			select {
+			case a.joinAbort <- struct{}{}:
+			default:
+			}
+		}
+		return
+	}
 	switch {
 	case s == EngineRunning && inApp && shown:
-		// the engine came back (restart from the panel or after a crash): its sessions are new - reload the panel
-		url := a.eng.URL()
+		// the engine came back (restart from the panel or after a crash): its sessions are new - reload the panel (no launcher,
+		// no intro: ?pmw_joined=1 and the last screen)
+		url := panelURL(a.eng.URL(), false)
 		a.wv.Dispatch(func() { a.wv.Navigate(url) })
 	case s == EngineFailed && inApp:
 		a.showError(detail)
@@ -615,17 +759,16 @@ func runApp(l Layout, o options, logf func(string)) int {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &winApp{l: l, o: o, logf: logf, ctx: ctx, cancel: cancel, phase: "splash",
-		choice: make(chan dataChoice, 1), retry: make(chan struct{}, 1), tip: "PepeMarketWizard – uruchamianie…"}
+		choice: make(chan dataChoice, 1), retry: make(chan struct{}, 1), join: make(chan struct{}, 1), joinAbort: make(chan struct{}, 1),
+		tip: "PepeMarketWizard – uruchamianie…"}
 	a.splash = splashState{Phase: "progress", Message: "Przygotowanie…", LogPath: filepath.Join(l.LogsDir(), "engine_console.log"),
 		DataDir: l.DataDir, Version: version}
 	a.eng = newEngine(l, "", logf, a.onEngineState)
 
 	sw, _, _ := pGetSystemMetrics.Call(smCxScreen)
 	sh, _, _ := pGetSystemMetrics.Call(smCyScreen)
-	w, h := uint(1440), uint(900)
-	if sw > 0 && sh > 0 { // 85 % of the screen: readable on any resolution and scaling
-		w, h = uint(float64(sw)*0.85), uint(float64(sh)*0.85)
-	}
+	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; JOIN THE CULT grows it to 85 %
+	w, h := uint(lw), uint(lh)
 	_ = os.MkdirAll(l.Home, 0o755)
 	wv := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     os.Getenv("PMW_DEBUG") == "1",
@@ -648,6 +791,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	a.taskbarCreated, _, _ = pRegisterWindowMessageW.Call(utf16p("TaskbarCreated"))
 	a.oldProc, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlpWndProc, windows.NewCallback(a.wndProc))
 	wv.SetTitle(l.WindowTitle(version))
+	a.resizeCentred(lw, lh, true) // the launcher is a fixed, centred window (the panel is resizable)
 	_ = wv.Bind("pmw", a.bridge)
 	wv.SetHtml(splashHTML)
 	a.addTray()

@@ -1,4 +1,40 @@
-# Raport końcowy – PepeMarketWizard 1.31.0 (Kronos AI Forecast)
+# Raport końcowy – PepeMarketWizard 1.32.0 (CULT UI)
+
+**Co nowego:** 1.32.0 = 1.31.0 + interfejs CULT według „UI IMPLEMENTATION MASTER PROMPT” i grafik z `projekt.zip`, tylko siedem
+zaprojektowanych elementów: launcher **JOIN THE CULT** (w aplikacji Windows osobne małe okno), intro 6 s, **Main Menu** – miasto
+sześciu wież, **Lightning Tower**, **Wind Portal**, **Control Tower**, **Strategy Lab**. Pełny raport wdrożenia (mapa źródeł danych,
+zapis ustawień, czego bot nie ma, pytania do doprecyzowania): `docs/CULT_UI_WDROZENIE_1_32_PL.md`. Strategie, progi domyślne, ryzyko,
+koszty, tryby wykonania, STOP, modele, MT5 i Telegram działają jak w 1.31.0. Przerwana praca „menu czterech wież i baniek” nie weszła
+do wydania.
+
+@@SOURCE@@
+**Data i środowisko:** 2026-11-05; kontener Linux 6.18 (x86_64, 4 rdzenie, bez GPU), Python 3.13.16, Node 22, Go 1.24.7, Chromium.
+Bez Windows i bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń.
+
+## Paczki 1.32.0
+@@PACKAGES@@
+
+## Testy 1.32.0 – komendy i liczby
+@@TESTS@@
+
+## Czego nie sprawdzono w 1.32.0
+* **Okno Windows (WebView2):** launcher jako małe okno, powiększenie do 85 % po JOIN THE CULT, wyśrodkowanie na monitorze z paskiem
+  zadań, skalowanie DPI, zachowanie przy starcie zminimalizowanym. Sprawdzono: kompilację krzyżową i `go vet` dla Windows, testy Go
+  logiki rozmiarów / adresu / strony launchera, stronę `splash.html` w Chromium z atrapą mostka (stany postęp / wybór danych / błąd /
+  READY, kliknięcie JOIN → akcja `join`).
+* **MT5:** rzeczywiste wartości paneli na Twoim rachunku (znaczniki REAL / DEMO), czas serwera, spread brokera.
+* **Telegram:** wysyłka z własnym szablonem do prawdziwego czatu (tu brak tokena – test zgłasza NOT_CONFIGURED, nic nie udaje).
+* Wydajność animacji na słabym komputerze bez GPU (tu Chromium bez GPU: intro i przybliżenie działają, testy przechodzą).
+
+## Procedura rollbacku 1.32.0 → 1.31.0
+Zamknij aplikację i uruchom 1.31.0 z jej folderu (paczka `PepeMarketWizard_DESKTOP_1_31_0.zip`). 1.32 nie zmienia bazy danych ani
+kluczy `config.json` (sprawdzone: konfiguracja zapisana przez 1.32 wczytuje się w kodzie 1.31). Szablon Telegram
+(`data\telegram\signal_template.json`) i presety (`data\presets\strategy.json`) leżą w osobnych plikach – 1.31 ich nie czyta
+(wiadomości wracają do formatu wbudowanego); możesz je zostawić albo usunąć.
+
+---
+
+# Archiwum: raport 1.31.0
 
 **Co nowego:** 1.31.0 = 1.30.1 + integracja modelu **Kronos** (NeoQuasar/Kronos-small + Kronos-Tokenizer-base, MIT, rewizje
 przypięte). Kronos działa w trybie obserwacji (SHADOW) i nie ma zgody na zlecenia. Pełny raport wdrożenia:

@@ -1,0 +1,617 @@
+{
+ "sources": {
+  "menu.jpg": {
+   "sha256": "5b3d1c7cede17f2876f56376a68d03868adc02872c2dab314df883af34da1ca2",
+   "size": [
+    1536,
+    864
+   ]
+  },
+  "launcher.jpg": {
+   "sha256": "c64305553232e79f1237378ffa1763eb1075da31ad54e4679977892aca92422f",
+   "size": [
+    1536,
+    864
+   ]
+  },
+  "lig.jpg": {
+   "sha256": "c92866c9c3b0296f8d11df52977f2ba664d794d71e64c7d947c12bc34e5ff958",
+   "size": [
+    1536,
+    864
+   ]
+  },
+  "wind.jpg": {
+   "sha256": "996fe6e11ee5f989e6beac812abec4f166654f48585a5812be7d6ab0a8929d57",
+   "size": [
+    1536,
+    864
+   ]
+  },
+  "ai.jpg": {
+   "sha256": "07396327ac6b119967dd49265df420f96ed661ba25acbb427a2177155600a6d0",
+   "size": [
+    1536,
+    864
+   ]
+  },
+  "controltower.jpg": {
+   "sha256": "56154667d59c32d59f50f8b2d07ba919156fb4413a6a4a8f6365972d6a83d888",
+   "size": [
+    1536,
+    865
+   ]
+  },
+  "strategy.png": {
+   "sha256": "77cadd569dea67f40977ffbb251c10b25932b1747f4a436105da736ae3365d04",
+   "size": [
+    1672,
+    941
+   ]
+  },
+  "Obraz ChatGPT 5 lis 2026, 10_39_59.jpg": {
+   "sha256": "4b3a83a2d8446ab0097b14fce9823b5fa3f6d83c656527b575488d0c6ea5cea3",
+   "size": [
+    1024,
+    1024
+   ]
+  },
+  "Obraz ChatGPT 5 lis 2026, 10_40_03.jpg": {
+   "sha256": "197cb4dfc14eca8cd00be2e4468603a241c8baabd62961f081ea1c53ee3a488a",
+   "size": [
+    1200,
+    1200
+   ]
+  },
+  "Obraz ChatGPT 5 lis 2026, 10_40_07.jpg": {
+   "sha256": "5e23a1c934607bad0ca338e0e3734f2f7cb26866bfa47277dcad51da08e119ab",
+   "size": [
+    1024,
+    1024
+   ]
+  },
+  "Obraz ChatGPT 5 lis 2026, 10_40_11.jpg": {
+   "sha256": "df02429ff05ca214b7244569588d9f17e1b695ca8082ce4fe44f5be1a0eeb3a3",
+   "size": [
+    941,
+    1672
+   ]
+  }
+ },
+ "outputs": {
+  "menu-scene.webp": {
+   "from": "menu.jpg",
+   "box": [
+    236,
+    0,
+    1536,
+    708
+   ],
+   "size": [
+    1300,
+    708
+   ],
+   "sha256": "633357d300b13927010b573927d3cbeb84255c692e6e8ec9c73c12753837bd8d"
+  },
+  "menu-scene-blur.webp": {
+   "from": "menu.jpg",
+   "box": [
+    236,
+    0,
+    1536,
+    708
+   ],
+   "size": [
+    1300,
+    708
+   ],
+   "sha256": "62fd7eed3e11502b9f4985a9d9b12a4812ba83b026a43ba0d7fb4ba65234eadc"
+  },
+  "tower-lightning.webp": {
+   "from": "menu.jpg",
+   "box": [
+    452,
+    376,
+    594,
+    594
+   ],
+   "size": [
+    142,
+    218
+   ],
+   "sha256": "cfa0abef7f2568575351b2d562a832f016e8582aa2e0f70c53bcafa2b9739f3c"
+  },
+  "tower-ice.webp": {
+   "from": "menu.jpg",
+   "box": [
+    598,
+    366,
+    748,
+    578
+   ],
+   "size": [
+    150,
+    212
+   ],
+   "sha256": "c63b423f74c876e711a9616cf3aa38051a730c9352c03d710ff91ad5da1a27b5"
+  },
+  "tower-wind.webp": {
+   "from": "menu.jpg",
+   "box": [
+    744,
+    330,
+    888,
+    568
+   ],
+   "size": [
+    144,
+    238
+   ],
+   "sha256": "cc60a2f9f5a8af44c41072c54bc50f8db3649550320a71f2c725cb629d216585"
+  },
+  "tower-control.webp": {
+   "from": "menu.jpg",
+   "box": [
+    890,
+    360,
+    1031,
+    568
+   ],
+   "size": [
+    141,
+    208
+   ],
+   "sha256": "3536174eefaf891328a4c7e2f1a4669ccf6b2c79bb81c1aed72581f5c73c361b"
+  },
+  "tower-strategy.webp": {
+   "from": "menu.jpg",
+   "box": [
+    1030,
+    340,
+    1188,
+    578
+   ],
+   "size": [
+    158,
+    238
+   ],
+   "sha256": "8279e8afe320dec1461fd4aee3df98e1af1a607f2265d4eb65034cc42dd27bc5"
+  },
+  "tower-fire.webp": {
+   "from": "menu.jpg",
+   "box": [
+    1188,
+    370,
+    1328,
+    588
+   ],
+   "size": [
+    140,
+    218
+   ],
+   "sha256": "c02e358e7ead50e47eb177b046f386a230b21e06c44892f86c1691c34b61a5e7"
+  },
+  "char-lightning.webp": {
+   "from": "menu.jpg",
+   "box": [
+    262,
+    212,
+    508,
+    470
+   ],
+   "size": [
+    246,
+    258
+   ],
+   "sha256": "ec9115bdf0296df541ea192a863db3d19cb0b2f937e3c984af19578742edd0a3"
+  },
+  "char-ice.webp": {
+   "from": "menu.jpg",
+   "box": [
+    500,
+    150,
+    805,
+    430
+   ],
+   "size": [
+    305,
+    280
+   ],
+   "sha256": "8bde3862491414b71585a3cd1b4d3b2293897b7decbbb394aad642b95222a422"
+  },
+  "char-wind.webp": {
+   "from": "menu.jpg",
+   "box": [
+    840,
+    150,
+    1120,
+    405
+   ],
+   "size": [
+    280,
+    255
+   ],
+   "sha256": "868b2b77d85c14108f8aa94aaeea39f6c8222fb40b7f3db76d1323f273bc0009"
+  },
+  "char-fire.webp": {
+   "from": "menu.jpg",
+   "box": [
+    1170,
+    200,
+    1510,
+    500
+   ],
+   "size": [
+    340,
+    300
+   ],
+   "sha256": "351cccc6ab910ed3d8abb700b748c8119bca59db7a7669a1bae7762081c090a5"
+  },
+  "char-king.webp": {
+   "from": "menu.jpg",
+   "box": [
+    1338,
+    28,
+    1502,
+    246
+   ],
+   "size": [
+    164,
+    218
+   ],
+   "sha256": "c89bdc88d6dbbf4314508c52ff03013520581209f05f066b23607a55c95d18e2"
+  },
+  "fx-lightning.webp": {
+   "from": "menu.jpg",
+   "box": [
+    420,
+    205,
+    512,
+    312
+   ],
+   "size": [
+    92,
+    107
+   ],
+   "sha256": "268b8aa807fe3de671dd863f263e5f66041823e1754f7febbb07b9f497a3ce18"
+  },
+  "fx-fire.webp": {
+   "from": "menu.jpg",
+   "box": [
+    1180,
+    210,
+    1272,
+    336
+   ],
+   "size": [
+    92,
+    126
+   ],
+   "sha256": "91e825843fc5a99a4f25d30d5353deb0de64d92284cc0abab2b3aeb902057413"
+  },
+  "fx-core.webp": {
+   "from": "menu.jpg",
+   "box": [
+    730,
+    582,
+    972,
+    708
+   ],
+   "size": [
+    242,
+    126
+   ],
+   "sha256": "b838dbdd4056c00f8c3fe0e492b68d35731ca4900ad953baaa34390b1c17282d"
+  },
+  "fx-ice_crystal.webp": {
+   "from": "menu.jpg",
+   "box": [
+    712,
+    150,
+    800,
+    262
+   ],
+   "size": [
+    88,
+    112
+   ],
+   "sha256": "3b6c4777f30275c2cfb05526f6d8553cb56bca4f32c9b37402641476491ea13d"
+  },
+  "fx-wind_swirl.webp": {
+   "from": "menu.jpg",
+   "box": [
+    818,
+    140,
+    1186,
+    312
+   ],
+   "size": [
+    368,
+    172
+   ],
+   "sha256": "bd6e267b7004c880d5e993c0cbaa7322572e1c4b67344915aeaf295dc442888b"
+  },
+  "fx-city.webp": {
+   "from": "menu.jpg",
+   "box": [
+    236,
+    420,
+    1536,
+    708
+   ],
+   "size": [
+    1300,
+    288
+   ],
+   "sha256": "3e7b0a2776b88372759af096312be9ef5964f3e5e353ae4c6142ea3ab7c30860"
+  },
+  "logo.webp": {
+   "from": "menu.jpg",
+   "box": [
+    84,
+    27,
+    161,
+    97
+   ],
+   "size": [
+    77,
+    70
+   ],
+   "sha256": "411df0bb8d2c36477a4a432168b73c9e5ae54bdeb927e874864bae87c7607a66"
+  },
+  "medallion.webp": {
+   "from": "menu.jpg",
+   "box": [
+    796,
+    690,
+    954,
+    852
+   ],
+   "size": [
+    158,
+    162
+   ],
+   "sha256": "80f1ac9ba96f88c6b7d703b5cb5ba17aeaba9402d6f2ebeda7a872a6c4c6d93c"
+  },
+  "launcher-scene.webp": {
+   "from": "launcher.jpg",
+   "box": [
+    140,
+    112,
+    1396,
+    546
+   ],
+   "size": [
+    1256,
+    434
+   ],
+   "sha256": "545206965847ed1b695af4230f94a0dd8d21579c05346870b9aeec404bcef83a"
+  },
+  "crown.webp": {
+   "from": "launcher.jpg",
+   "box": [
+    733,
+    14,
+    806,
+    54
+   ],
+   "size": [
+    73,
+    40
+   ],
+   "sha256": "9bde3c8102214efb9036f0ea875160727d4c5f3839a0923610b1c39bf0787d3d"
+  },
+  "launcher-scene-small.webp": {
+   "from": "launcher.jpg",
+   "box": [
+    140,
+    112,
+    1396,
+    546
+   ],
+   "size": [
+    880,
+    304
+   ],
+   "sha256": "af536dfa253a62617198185ae5bc3d2473c8f49cc5c9178ebb2b763bc65b7955"
+  },
+  "panel-lightning-pepe.webp": {
+   "from": "lig.jpg",
+   "box": [
+    180,
+    392,
+    428,
+    762
+   ],
+   "size": [
+    248,
+    370
+   ],
+   "sha256": "df453bd39d1d31bad3d1e96d3feabe40d82a485a54d28a80da432ac4db6b998f"
+  },
+  "panel-lightning-centre.webp": {
+   "from": "lig.jpg",
+   "box": [
+    694,
+    712,
+    856,
+    864
+   ],
+   "size": [
+    162,
+    152
+   ],
+   "sha256": "bfb470d27c59e5df8a25e17db42445d31396a4a2ef69e40fcfa8b7957a22fe03"
+  },
+  "panel-lightning-bg.webp": {
+   "from": "lig.jpg",
+   "box": null,
+   "size": [
+    768,
+    432
+   ],
+   "sha256": "1019df1816f405f368237f8c3a623b8be8337f1b2d449673cf941e16cf558a38"
+  },
+  "panel-wind-pepe.webp": {
+   "from": "wind.jpg",
+   "box": [
+    150,
+    380,
+    402,
+    752
+   ],
+   "size": [
+    252,
+    372
+   ],
+   "sha256": "f1056bfdd9a42ee0b767a59fb9de093de1c715754e87356e1661263991b90141"
+  },
+  "panel-wind-centre.webp": {
+   "from": "wind.jpg",
+   "box": [
+    596,
+    84,
+    1112,
+    484
+   ],
+   "size": [
+    516,
+    400
+   ],
+   "sha256": "ae49bd6b74b28b1c3b06859557f651fa84bcc27fa10224badbd3ea418f2ca373"
+  },
+  "panel-wind-bg.webp": {
+   "from": "wind.jpg",
+   "box": null,
+   "size": [
+    768,
+    432
+   ],
+   "sha256": "ce9e232b65e63f286bc45ad755140e1de034478c797b3d4caf61eee34be211cf"
+  },
+  "panel-control-pepe.webp": {
+   "from": "controltower.jpg",
+   "box": [
+    163,
+    360,
+    400,
+    602
+   ],
+   "size": [
+    237,
+    242
+   ],
+   "sha256": "2611e3193c98990733b0199002f99c0e32cb6dc88e81a0d5fce4cb62ba4c79bb"
+  },
+  "panel-control-centre.webp": {
+   "from": "controltower.jpg",
+   "box": [
+    712,
+    756,
+    830,
+    865
+   ],
+   "size": [
+    118,
+    109
+   ],
+   "sha256": "0c28922da24874af2c2c30341c78c3e0468f3b89a1cd79937e7120e6242cb815"
+  },
+  "panel-control-bg.webp": {
+   "from": "controltower.jpg",
+   "box": null,
+   "size": [
+    768,
+    432
+   ],
+   "sha256": "390dab0604522e028524d4884efb93deff79f862923cc04de96b4181f07ae968"
+  },
+  "panel-strategy-pepe.webp": {
+   "from": "strategy.png",
+   "box": [
+    170,
+    470,
+    480,
+    846
+   ],
+   "size": [
+    310,
+    376
+   ],
+   "sha256": "b05ce09db7e991d9ba3771b39d3a412ad2a84e820962e4fe2c68758cc86fb7c7"
+  },
+  "panel-strategy-centre.webp": {
+   "from": "strategy.png",
+   "box": [
+    594,
+    106,
+    1176,
+    422
+   ],
+   "size": [
+    582,
+    316
+   ],
+   "sha256": "b4230a74ba3c0ea6c23c5467f9325978c1561585b31169d359ba5a73d9ca71fb"
+  },
+  "panel-strategy-bg.webp": {
+   "from": "strategy.png",
+   "box": null,
+   "size": [
+    836,
+    470
+   ],
+   "sha256": "fa945ddc11a8a0c3ec34f2ea46c9328689d18f9a69c3d22f9d37e96639e0f78c"
+  },
+  "wind-core-tree.webp": {
+   "from": "ai.jpg",
+   "box": [
+    688,
+    128,
+    1012,
+    724
+   ],
+   "size": [
+    324,
+    596
+   ],
+   "sha256": "8ede84541dde68b87ee02d728c06e589bdf3a3e11d2ab1b2e5381f070dd2c273"
+  },
+  "tex-xgboost.webp": {
+   "from": "Obraz ChatGPT 5 lis 2026, 10_39_59.jpg",
+   "box": null,
+   "size": [
+    640,
+    640
+   ],
+   "sha256": "3c3f9e8cf4eb237b9f4c038872a32c651fcedcda5049b20f9713d2bb6a68fc47"
+  },
+  "tex-ml.webp": {
+   "from": "Obraz ChatGPT 5 lis 2026, 10_40_03.jpg",
+   "box": null,
+   "size": [
+    640,
+    640
+   ],
+   "sha256": "7c7af5222f693d8b33129d13a506cf7e796c968155ceceb235bbbb2ad0eebdbb"
+  },
+  "tex-forest.webp": {
+   "from": "Obraz ChatGPT 5 lis 2026, 10_40_07.jpg",
+   "box": null,
+   "size": [
+    640,
+    640
+   ],
+   "sha256": "4be214a5cb7c9cdacaee364058bdff3f68f28017d01383fa13c1e96d98a4982d"
+  },
+  "tex-flow.webp": {
+   "from": "Obraz ChatGPT 5 lis 2026, 10_40_11.jpg",
+   "box": null,
+   "size": [
+    360,
+    640
+   ],
+   "sha256": "24a810c75106c80b931de582c641fc9fe628df71fac58da7574ac75f8069f4f8"
+  }
+ }
+}

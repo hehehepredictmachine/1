@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .. import desktop, paths, stats
+from .. import desktop, paths, presets, stats, sysres
 from ..execution.modes import ModeError
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
@@ -125,6 +125,14 @@ class MLFlagReq(BaseModel):
 class StrategyModeReq(BaseModel):
     strategy_mode: str = Field(pattern="^(AUTO|MANUAL)$")
     manual_strategy_id: str | None = Field(default=None, max_length=4)
+
+
+class TelegramTemplateReq(BaseModel):
+    template: str | None = Field(default=None, max_length=1500)
+
+
+class PresetReq(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
 
 
 class StrategyToggleReq(BaseModel):
@@ -2769,9 +2777,34 @@ def create_app(rt, port: int) -> FastAPI:
     def telegram_status():
         return rt.telegram.status()
 
+    @app.get("/api/v1/telegram/template")
+    def telegram_template_get():
+        """1.32 Message Studio: the saved signal template (own file, not config.json) and the allowed variables."""
+        return rt.telegram.templates.info()
+
+    @app.put("/api/v1/telegram/template")
+    def telegram_template_put(req: TelegramTemplateReq):
+        try:
+            tpl = rt.telegram.templates.set(req.template)
+        except ValueError as exc:
+            raise HTTPException(400, f"TEMPLATE: {exc}") from exc
+        rt.log.info("TELEGRAM", "TEMPLATE_SAVED", "Szablon sygnału Telegram: " + ("własny" if tpl else "format wbudowany"))
+        return rt.telegram.templates.info()
+
+    @app.post("/api/v1/telegram/preview")
+    def telegram_preview(req: TelegramTemplateReq):
+        """1.32 Message Studio: the signal message as it would be sent (last real signal, else an example marked as such)."""
+        try:
+            return rt.telegram.preview(req.template)
+        except ValueError as exc:
+            raise HTTPException(400, f"TEMPLATE: {exc}") from exc
+
     @app.post("/api/v1/telegram/test")
-    def telegram_test():
-        r = rt.telegram.send_test()
+    def telegram_test(req: TelegramTemplateReq | None = None):
+        try:
+            r = rt.telegram.send_test(req.template if req and req.template is not None else None)
+        except ValueError as exc:
+            raise HTTPException(400, f"TEMPLATE: {exc}") from exc
         rt.log.info("TELEGRAM", "TEST", "Wiadomość testowa Telegram: " + ("dostarczona" if r["ok"] else f"błąd – {r['error']}"))
         return r
 
@@ -2780,6 +2813,57 @@ def create_app(rt, port: int) -> FastAPI:
         return {"sent": rt.telegram.send_daily_stats(force=True), "status": rt.telegram.status()}
 
     # ------------------------------------------------------------ desktop application (Windows shell): window, autostart, restart
+    # ---------------------------------------------------------------- 1.32 Control Tower: resources, strategy presets
+    @app.get("/api/v1/system/resources")
+    def system_resources():
+        return sysres.snapshot()
+
+    preset_store = presets.PresetStore(paths.data_dir())
+
+    @app.get("/api/v1/presets/strategy")
+    def presets_list():
+        cur = rt.cfg.get().model_dump(mode="json")
+        return {"items": preset_store.list(), "current": presets.snapshot(cur), "defaults": presets.defaults(),
+                "fields": [f"{a}.{b}" for a, b in presets.FIELDS],
+                "note": "Preset = nazwana kopia ustawień wyboru strategii, progów setupu i filtrów wejść. Wczytanie zapisuje je tą samą drogą co "
+                        "Ustawienia (walidacja); tryb wykonania, limity ryzyka i dane rachunku nie są częścią presetu."}
+
+    @app.post("/api/v1/presets/strategy")
+    def presets_save(req: PresetReq):
+        try:
+            item = preset_store.save(req.name, rt.cfg.get().model_dump(mode="json"))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        rt.log.info("CONFIG", "PRESET_SAVED", f"Zapisano preset strategii „{item['name']}”.")
+        return item
+
+    @app.post("/api/v1/presets/strategy/load")
+    def presets_load(req: PresetReq):
+        item = preset_store.get(req.name)
+        if not item:
+            raise HTTPException(404, "PRESET_NOT_FOUND")
+        out = _apply_preset(item.get("values") or {})
+        rt.log.info("CONFIG", "PRESET_LOADED", f"Wczytano preset strategii „{req.name}”.")
+        return out
+
+    @app.post("/api/v1/presets/strategy/reset")
+    def presets_reset():
+        out = _apply_preset(presets.defaults())
+        rt.log.info("CONFIG", "PRESET_RESET", "Przywrócono domyślne ustawienia sterowania strategią.")
+        return out
+
+    def _apply_preset(values: dict) -> dict:
+        """Strategy selection goes through its own endpoint (setup view + selector reset, as the panel switch does); the other
+        fields through the validated config write."""
+        values = dict(values)
+        mode, manual = values.pop("active.strategy_mode", None), values.pop("active.manual_strategy_id", None)
+        out = put_config(presets.patch_of(values))
+        cur = rt.cfg.get().active
+        if mode in ("AUTO", "MANUAL") and (mode, manual if mode == "MANUAL" else None) != (cur.strategy_mode, cur.manual_strategy_id):
+            strategy_mode(StrategyModeReq(strategy_mode=mode, manual_strategy_id=manual if mode == "MANUAL" else None))
+            out = get_config()
+        return out
+
     @app.get("/api/v1/desktop")
     def desktop_get():
         return desktop.info()
