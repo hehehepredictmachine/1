@@ -138,6 +138,9 @@ class Runtime:
         from .svp.service import SVPService
         self.svp = SVPService(self.cfg, self.bridge, agent=self.agent, bus=self.bus)               # PMW-SVP-1 profiles + MANUAL/ALGORITHM/AI zones
         self.engine.svp_provider = self.svp                                                         # agent: frozen SVP profiles + zones
+        from .modelhub.families.service import FamilyService
+        self.families = FamilyService(self.cfg, self.bridge, indicators=self.indicators, news=self.news)   # PMW-FAM-1: 15 model families
+        self.sh.families = self.families                                                            # SH receiver: context + ASSIST hold
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService

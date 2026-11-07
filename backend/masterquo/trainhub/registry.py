@@ -55,12 +55,20 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     import joblib
     res = trained["result"]
     key = model_key(res["model_id"], cfg["base_tf"], cfg["horizon"])
-    version = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + hashlib.sha256(json.dumps(res["params"], sort_keys=True).encode()).hexdigest()[:6]
+    import uuid
+    # unique run id: timestamp + params hash + random suffix; the directory is created exclusively (two trainings in the same second
+    # with the same parameters can never write into one package)
+    version = (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + hashlib.sha256(json.dumps(res["params"], sort_keys=True).encode()).hexdigest()[:6]
+               + "-" + uuid.uuid4().hex[:6])
     d = root() / "models" / inst / key / version
-    d.mkdir(parents=True, exist_ok=True)
+    d.parent.mkdir(parents=True, exist_ok=True)
+    d.mkdir(exist_ok=False)
     tmp = d / "model.joblib.tmp"
     joblib.dump({"estimator": trained["model"], "temperature": res["temperature"]}, tmp)
     tmp.replace(d / "model.joblib")
+    if res["model_id"] == "TH_XGB" and hasattr(trained["model"], "get_booster"):
+        # native XGBoost model next to the full inference package (features + temperature calibration stay in config / joblib)
+        trained["model"].get_booster().save_model(str(d / "model_xgb.json"))
     sch = F.schema(cfg["base_tf"])
     atomic_json(d / "feature_order.json", sch["names"])
     atomic_json(d / "feature_schema.json", sch)
@@ -185,7 +193,12 @@ def prediction_test(inst: str, key: str, version: str) -> dict:
         return {"ok": False, "reason": "brak próbki inferencji w paczce"}
     got = proba3(obj["estimator"], X)
     diff = float(np.max(np.abs(got - np.asarray(smp["p_raw"], dtype=float))))
-    return {"ok": diff <= 1e-9, "max_abs_diff": diff, "rows": int(len(X))}
+    out = {"ok": diff <= 1e-9, "max_abs_diff": diff, "rows": int(len(X))}
+    if smp.get("p_final") is not None:                     # the FINAL output (raw -> temperature calibration) is compared too
+        fin = predict_loaded(obj, X)
+        dfin = float(np.max(np.abs(fin - np.asarray(smp["p_final"], dtype=float))))
+        out.update(max_abs_diff_final=dfin, ok=out["ok"] and dfin <= 1e-9)
+    return out
 
 
 def activate(inst: str, key: str, version: str, *, reason: str = "panel") -> dict:

@@ -4,7 +4,14 @@ Trainable models of this pipeline (task DIRECTION_H, 3 classes after costs; one 
   TH_BASELINE - class frequencies of the training rows (the baseline every model is compared with);
   TH_LOGREG   - standardisation + multinomial logistic regression, C chosen on purged walk-forward folds;
   TH_HGB      - histogram gradient boosting (depth / learning rate chosen on the folds);
-  TH_XGB      - XGBoost (CPU), only when the xgboost package is installed.
+  TH_XGB      - XGBoost (CPU), only when the xgboost package is installed (no early stopping: n_estimators is a grid parameter chosen
+                on the walk-forward folds, so no validation rows are used inside a fit); native JSON booster saved with the package;
+  TH_RF       - random forest (bounded depth / leaf size, class_weight balanced_subsample); permutation importance on the HOLDOUT
+                (rows never used by the fit); OOB is not used as validation;
+  TH_SVM      - pipeline StandardScaler + SVM (linear for large sets, small RBF grid only up to `RBF_MAX_ROWS` rows); the decision
+                function is NOT a probability: an explicit chronological calibration block (last 20 % of each training window) fits a
+                multinomial logistic map decision_function -> P(DOWN/FLAT/UP); the temperature step of the pipeline follows as for
+                every model.
 Procedure: hyper-parameters by mean walk-forward log loss on DEVELOPMENT rows -> temperature calibration fitted on the
 out-of-fold predictions -> decision threshold for the cost-aware evaluation chosen on the out-of-fold predictions -> final fit on all
 development rows -> ONE evaluation on the untouched final test (holdout): log loss, Brier, accuracy, balanced accuracy, skill vs the
@@ -26,7 +33,50 @@ MODELS = {
                                                                     {"max_depth": 5, "learning_rate": 0.05, "max_iter": 200}]},
     "TH_XGB": {"name": "XGBoost (CPU)", "grid": [{"max_depth": 3, "learning_rate": 0.05, "n_estimators": 200},
                                                   {"max_depth": 5, "learning_rate": 0.05, "n_estimators": 250}]},
+    "TH_RF": {"name": "Random Forest", "grid": [{"n_estimators": 200, "max_depth": 6, "min_samples_leaf": 50},
+                                                {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 20}]},
+    "TH_SVM": {"name": "SVM (skalowanie + kalibracja chronologiczna)", "grid": [{"kernel": "linear", "C": 0.1}, {"kernel": "linear", "C": 1.0},
+                                                                                  {"kernel": "rbf", "C": 1.0}]},
 }
+RBF_MAX_ROWS = 6000
+
+
+class SVMProb:
+    """Scaler + SVM fitted on the first part of the (chronological) training window; a multinomial logistic map from the decision
+    function to class probabilities fitted on the LAST part (calibration block). Missing classes keep the prior via proba3."""
+
+    def __init__(self, kernel: str = "linear", C: float = 1.0, seed: int = 7, calib_share: float = 0.2):
+        self.kernel, self.C, self.seed, self.calib_share = kernel, C, seed, calib_share
+
+    def fit(self, X, y):
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.svm import SVC, LinearSVC
+        n = len(y)
+        cut = max(10, int(n * (1 - self.calib_share)))
+        kern = self.kernel if (self.kernel != "rbf" or cut <= RBF_MAX_ROWS) else "linear"
+        svm = LinearSVC(C=self.C, max_iter=5000, random_state=self.seed) if kern == "linear" else SVC(C=self.C, kernel="rbf", gamma="scale",
+                                                                                                    random_state=self.seed)
+        self.used_kernel = kern
+        Xa, ya, Xb, yb = X[:cut], y[:cut], X[cut:], y[cut:]
+        if len(np.unique(ya)) < 2 or len(yb) < 5 or len(np.unique(yb)) < 2:
+            self.svm, self.cal, self.prior = None, None, Prior().fit(X, y)
+            self.classes_ = np.arange(3)
+            return self
+        self.svm = make_pipeline(StandardScaler(), svm).fit(Xa, ya)
+        self.cal = LogisticRegression(max_iter=500).fit(self._df(Xb), yb)
+        self.classes_ = self.cal.classes_
+        return self
+
+    def _df(self, X):
+        d = np.asarray(self.svm.decision_function(X), dtype=float)
+        return d.reshape(-1, 1) if d.ndim == 1 else d
+
+    def predict_proba(self, X):
+        if self.svm is None:
+            return self.prior.predict_proba(X)
+        return self.cal.predict_proba(self._df(X))
 
 
 def available() -> dict[str, bool]:
@@ -35,7 +85,7 @@ def available() -> dict[str, bool]:
         xgb = True
     except Exception:  # noqa: BLE001
         xgb = False
-    return {"TH_BASELINE": True, "TH_LOGREG": True, "TH_HGB": True, "TH_XGB": xgb}
+    return {"TH_BASELINE": True, "TH_LOGREG": True, "TH_HGB": True, "TH_XGB": xgb, "TH_RF": True, "TH_SVM": True}
 
 
 class Prior:
@@ -71,6 +121,14 @@ def make(model_id: str, params: dict, seed: int):
         return XGBClassifier(max_depth=params["max_depth"], learning_rate=params["learning_rate"], n_estimators=params["n_estimators"],
                              subsample=0.8, colsample_bytree=0.8, objective="multi:softprob", num_class=3, tree_method="hist",
                              random_state=seed, n_jobs=1, verbosity=0)
+    if model_id == "TH_RF":
+        from sklearn.ensemble import RandomForestClassifier
+        return RandomForestClassifier(n_estimators=params["n_estimators"], max_depth=params["max_depth"], min_samples_leaf=params["min_samples_leaf"],
+                                      class_weight="balanced_subsample", oob_score=False, n_jobs=1, random_state=seed)
+    if model_id == "TH_SVM":
+        if params.get("kernel") not in ("linear", "rbf"):
+            raise ValueError("TH_SVM: kernel linear|rbf")
+        return SVMProb(kernel=params["kernel"], C=params["C"], seed=seed)
     raise ValueError(f"nieznany model {model_id}")
 
 
@@ -176,9 +234,9 @@ def choose_threshold(p, fwd, cost, atr) -> float:
 
 
 # ------------------------------------------------------------------------------------------------ procedure
-def train_one(model_id: str, ds: dict, sp: dict, seed: int = 7, progress=None, cancel=None) -> dict:
+def train_one(model_id: str, ds: dict, sp: dict, seed: int = 7, progress=None, cancel=None, grid_limit: int | None = None) -> dict:
     X, y = ds["X"], ds["y"]
-    grid = MODELS[model_id]["grid"]
+    grid = MODELS[model_id]["grid"][: grid_limit] if grid_limit else MODELS[model_id]["grid"]
     t0 = time.time()
     cv = []
     for gi, params in enumerate(grid):
@@ -227,5 +285,26 @@ def train_one(model_id: str, ds: dict, sp: dict, seed: int = 7, progress=None, c
            "trading_eval_holdout": trade_eval(p_cal, ds["fwd"][hold], ds["cost"][hold], ds["atr"][hold], thr),
            "class_counts_holdout": {c: int((y[hold] == i).sum()) for i, c in enumerate(("DOWN", "FLAT", "UP"))},
            "train_seconds": round(time.time() - t0, 2),
-           "sample": {"X": X[hold][:40].tolist(), "p_raw": p_raw[:40].tolist()}}
+           "sample": {"X": X[hold][:40].tolist(), "p_raw": p_raw[:40].tolist(), "p_final": p_cal[:40].tolist()}}
+    if model_id == "TH_RF":
+        res["feature_importance_holdout"] = _perm_importance(final, X[hold], y[hold], ds.get("names"), seed)
+    if model_id == "TH_SVM":
+        res["svm_kernel_used"] = getattr(final, "used_kernel", None)
     return {"result": res, "model": final}
+
+
+def _perm_importance(m, X, y, names, seed: int, repeats: int = 3) -> list[dict]:
+    """Permutation importance (increase of log loss) on rows the model never saw in fit."""
+    if len(y) < 30:
+        return []
+    rng = np.random.default_rng(seed)
+    base = logloss(proba3(m, X), y)
+    out = []
+    for j in range(X.shape[1]):
+        inc = []
+        for _ in range(repeats):
+            Xp = X.copy()
+            Xp[:, j] = rng.permutation(Xp[:, j])
+            inc.append(logloss(proba3(m, Xp), y) - base)
+        out.append({"feature": (names[j] if names and j < len(names) else f"f{j}"), "log_loss_increase": round(float(np.mean(inc)), 6)})
+    return sorted(out, key=lambda r: -r["log_loss_increase"])[:25]

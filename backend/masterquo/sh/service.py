@@ -231,6 +231,14 @@ class SHService:
                 ictx = {"indicators": {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:160]}, "dxy": {"status": "ERROR"}}
             for su in evals.values():
                 su["indicator_context"] = dict(ictx, role="OBSERVE", horizon_note="DXY = kontekst H1, nie trigger M1")
+        fam = getattr(self, "families", None)
+        if fam is not None:                                               # 1.33 families: context; ASSIST may only hold READY -> WAIT
+            from ..modelhub.families.service import apply_to_setup
+            for k, su in list(evals.items()):
+                try:
+                    evals[k] = apply_to_setup(su, fam.setup_context(su, inst))
+                except Exception as exc:  # noqa: BLE001
+                    su["family_context"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0

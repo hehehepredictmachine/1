@@ -17,10 +17,21 @@ from . import registry as R
 DEFAULTS = {"base_tf": "M5", "horizon": 6, "k_atr": 0.25, "holdout_frac": 0.2, "n_folds": 4, "embargo_bars": None, "min_samples": 2000,
             "min_train": 500, "seed": 7, "models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB"], "start": None, "end": None}
 INSTRUMENTS = ("XAUUSD", "BTC")
+# 1.33 training profiles: budgets, not quality promises. smoke = the process runs end to end (one grid point, 2 folds) - it says
+# nothing about investment skill; research = every available tabular model with its grid; full = more folds and the whole grid.
+PROFILES = {
+    "smoke": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_RF", "TH_SVM"], "n_folds": 2, "grid_limit": 1, "time_budget_s": 600},
+    "research": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 4, "grid_limit": None, "time_budget_s": 3600},
+    "full": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 6, "grid_limit": None, "time_budget_s": 6 * 3600},
+}
 
 
 def config(params: dict | None, store_manifest: dict | None = None, cost_cfg=None) -> dict:
-    cfg = {**DEFAULTS, **{k: v for k, v in (params or {}).items() if v is not None}}
+    prof = (params or {}).get("profile")
+    if prof is not None and prof not in PROFILES:
+        raise ValueError(f"profil {prof} – dozwolone: {', '.join(PROFILES)}")
+    base = {**DEFAULTS, **(PROFILES[prof] if prof else {}), "profile": prof}
+    cfg = {**base, **{k: v for k, v in (params or {}).items() if v is not None and k != "profile"}}
     if cfg["base_tf"] not in F.HTF_OF:
         raise ValueError(f"interwał bazowy {cfg['base_tf']} – dozwolone: {', '.join(F.HTF_OF)}")
     cfg["horizon"] = int(cfg["horizon"])
@@ -91,7 +102,8 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
     avail = L.available()
     out = {"instrument": inst, "dataset": desc, "split": {"dev": int(len(sp["dev"])), "holdout": int(len(sp["holdout"])), "folds": len(sp["folds"]),
                                                           "holdout_start_utc": iso(sp["holdout_start"]), "embargo_s": sp["embargo_s"]},
-           "packages": [], "skipped": []}
+           "packages": [], "skipped": [], "profile": cfg.get("profile")}
+    t_start = time.time()
     for mid in cfg["models"]:
         if not avail.get(mid):
             out["skipped"].append({"model": mid, "reason": "biblioteka niedostępna w tym środowisku (np. xgboost)"})
@@ -100,7 +112,10 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
             raise InterruptedError("anulowano")
         if progress:
             progress({"stage": "trening", "model": mid, "instrument": inst})
-        tr = L.train_one(mid, ds, sp, seed=int(cfg["seed"]), progress=progress, cancel=cancel)
+        if cfg.get("time_budget_s") and time.time() - t_start > float(cfg["time_budget_s"]):
+            out["skipped"].append({"model": mid, "reason": f"budżet czasu profilu {cfg.get('profile')} wyczerpany ({cfg['time_budget_s']} s)"})
+            continue
+        tr = L.train_one(mid, ds, sp, seed=int(cfg["seed"]), progress=progress, cancel=cancel, grid_limit=cfg.get("grid_limit"))
         pkg = R.save_package(inst, cfg, tr, desc, man)
         out["packages"].append({**pkg, "holdout": tr["result"]["holdout"], "walk_forward": {k: v for k, v in tr["result"]["walk_forward"].items()
                                                                                            if k != "folds"},

@@ -64,6 +64,14 @@ def all_predictions(rt, inst: str) -> list[dict]:
             out.append(C.make(instrument=inst, symbol=None, timeframe="M5", model_name="Kronos-small", model_version=None, task_type="REGRESSION",
                               task="KRONOS_CLOSE_PATH_H1_M5", horizon_bars=1, unit="price", state="ERROR",
                               unavailable_reason=f"adapter Kronos: {type(exc).__name__}: {exc}"[:200]))
+    fam = getattr(rt, "families", None) if rt is not None else None
+    if fam is not None:
+        try:
+            out += fam.predictions(inst)                                   # 1.33 model families (only use SHADOW / ASSIST + measurements)
+        except Exception as exc:  # noqa: BLE001
+            out.append(C.make(instrument=inst, symbol=None, timeframe=None, model_name="families", model_version=None, task_type="STATE",
+                              task="FAMILIES", horizon_bars=None, unit="state", state="ERROR",
+                              unavailable_reason=f"adapter rodzin: {type(exc).__name__}: {exc}"[:200]))
     try:
         out += forecast_predictions(rt, inst)
     except Exception as exc:  # noqa: BLE001 - an adapter failure is shown as an ERROR prediction, never as silence or a value

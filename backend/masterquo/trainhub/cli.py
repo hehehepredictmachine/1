@@ -38,6 +38,8 @@ def main(argv=None) -> int:
     ap.add_argument("--horizon", type=int, default=None)
     ap.add_argument("--k-atr", type=float, default=None)
     ap.add_argument("--models", default=None)
+    ap.add_argument("--profile", default=None, choices=["smoke", "research", "full"],
+                    help="budżet treningu: smoke = test techniczny (nie ocena skuteczności), research, full")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--commission-price", type=float, default=None, help="prowizja round-trip na 1 lot w jednostkach ceny (zastępuje historię transakcji)")
     ap.add_argument("--model-key")
@@ -58,7 +60,7 @@ def main(argv=None) -> int:
     cfg_all = ConfigStore().get()
     store = Store()
     params = {k: v for k, v in {"base_tf": a.base_tf, "horizon": a.horizon, "k_atr": a.k_atr, "seed": a.seed, "start": a.start, "end": a.end,
-                                "commission_price": a.commission_price,
+                                "commission_price": a.commission_price, "profile": a.profile,
                                 "models": a.models.split(",") if a.models else None}.items() if v is not None}
     try:
         if a.cmd in ("export", "full"):

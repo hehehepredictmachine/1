@@ -630,6 +630,15 @@ class IndicatorsConfig(_Strict):
     book_keep_days: int = Field(14, ge=1, le=365)
 
 
+class FamiliesConfig(_Strict):
+    """1.33 model families (PMW-FAM-1). Pairs / basket are EXPLICIT - nothing is assumed (no automatic XAUUSD-BTC pair)."""
+    enabled: bool = True
+    pairs: list[list[str]] = Field(default_factory=list, description="[[instrumentA, instrumentB]] from the marketdata store")
+    basket: list[str] = Field(default_factory=list, description=">= 3 instruments for STATARB")
+    assist_hold_threshold: float = Field(0.60, gt=0.34, lt=1.0, description="ASSIST direction model can hold READY -> WAIT when P(opposite) >= this")
+    nlp_transformer_path: str | None = Field(None, description="local transformer checkpoint directory (licensed by the user); never downloaded")
+
+
 class AppConfig(_Strict):
     config_version: int = 12
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -655,6 +664,7 @@ class AppConfig(_Strict):
     liquidity: LiquidityConfig = Field(default_factory=LiquidityConfig)
     zones: ZonesConfig = Field(default_factory=ZonesConfig)
     indicators: IndicatorsConfig = Field(default_factory=IndicatorsConfig)
+    families: FamiliesConfig = Field(default_factory=FamiliesConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

@@ -22,12 +22,16 @@ echo  3 - Tylko eksport danych XAUUSD i BTC (przyrostowo, M1/M5/M15/M30)
 echo  4 - Lista wersji modeli XAUUSD
 echo  5 - Lista wersji modeli BTC
 echo  6 - Aktywuj wersje (test zgodnosci i predykcji)
+echo  7 - Rodziny modeli 1.33 (lista XAUUSD)
+echo  8 - Rodziny modeli 1.33 - trening smoke XAUUSD (wszystkie gotowe)
 echo  0 - Koniec
 set "CH="
 set /p "CH=Wybor: "
 pushd "%ROOT%backend"
 if "%CH%"=="1" "%PY%" -m masterquo trainhub full --instrument XAUUSD
 if "%CH%"=="2" "%PY%" -m masterquo trainhub full --instrument BTC
+if "%CH%"=="7" "%PY%" -m masterquo families list --instrument XAUUSD
+if "%CH%"=="8" "%PY%" -m masterquo families train-all --instrument XAUUSD --profile smoke
 if "%CH%"=="3" "%PY%" -m masterquo trainhub export --instrument XAUUSD
 if "%CH%"=="3" "%PY%" -m masterquo trainhub export --instrument BTC
 if "%CH%"=="4" "%PY%" -m masterquo trainhub list --instrument XAUUSD

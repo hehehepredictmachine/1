@@ -2055,6 +2055,63 @@ def create_app(rt, port: int) -> FastAPI:
     def indicators_manifest():
         return rt.indicators.manifest()
 
+    # ---------------------------------------------------------------- PMW-FAM-1 model families (1.33)
+    def _fam_inst(instrument):
+        i = str(instrument or rt.cfg.get().assets.active).upper()
+        if i not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "INSTRUMENT_INVALID")
+        return i
+
+    def _fam(fn, *a, **k):
+        try:
+            return fn(*a, **k)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc).strip("'")) from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.get("/api/v1/families")
+    def families_catalog(instrument: str | None = Query(None)):
+        inst = _fam_inst(instrument)
+        return {"instrument": inst, "items": rt.families.catalog(inst),
+                "axes": {"implementation": "dostępność kodu/zależności", "artifact": "artefakt i walidacja", "use": "OFF / SHADOW / ASSIST"},
+                "note": "READY = zdolność zwrócenia wyniku, nie zgoda na handel ani dowód rentowności"}
+
+    @app.get("/api/v1/families/{fid}/runs")
+    def families_runs(fid: str, instrument: str | None = Query(None)):
+        return {"items": _fam(rt.families.runs, fid, _fam_inst(instrument))}
+
+    @app.post("/api/v1/families/{fid}/train")
+    def families_train(fid: str, body: dict = Body(default={})):
+        return _fam(rt.families.submit, fid, _fam_inst(body.get("instrument")), str(body.get("profile") or "smoke"))
+
+    @app.post("/api/v1/families/train-all")
+    def families_train_all(body: dict = Body(default={})):
+        return _fam(rt.families.train_all, _fam_inst(body.get("instrument")), str(body.get("profile") or "smoke"))
+
+    @app.post("/api/v1/families/{fid}/cancel")
+    def families_cancel(fid: str, body: dict = Body(default={})):
+        return _fam(rt.families.cancel, fid, _fam_inst(body.get("instrument")))
+
+    @app.post("/api/v1/families/{fid}/activate")
+    def families_activate(fid: str, body: dict = Body(...)):
+        r = _fam(rt.families.activate, fid, _fam_inst(body.get("instrument")), str(body.get("run_id") or ""))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/families/{fid}/rollback")
+    def families_rollback(fid: str, body: dict = Body(default={})):
+        return _fam(rt.families.rollback, fid, _fam_inst(body.get("instrument")))
+
+    @app.post("/api/v1/families/{fid}/use")
+    def families_use(fid: str, body: dict = Body(...)):
+        return _fam(rt.families.set_use, fid, _fam_inst(body.get("instrument")), str(body.get("use") or "").upper())
+
+    @app.get("/api/v1/families/predictions")
+    def families_predictions(instrument: str | None = Query(None)):
+        return {"items": rt.families.predictions(_fam_inst(instrument))}
+
     # ---------------------------------------------------------------- PMW-SVP-1 Session Volume Profile + zones (1.33) - analytical
     def _svp(fn, *a, **k):
         try:
