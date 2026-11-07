@@ -36,7 +36,7 @@ class TestConfigMigration(unittest.TestCase):
     def test_locked_auto_live_is_reset_to_paper_with_note(self):
         cfg, p = self._load({"mode": "AUTO_LIVE", "bound_account": "srv:1", "lock": "LOCKED", "lock_changed_at": None})
         ex = cfg.get().execution
-        self.assertEqual(cfg.get().config_version, 12)
+        self.assertEqual(cfg.get().config_version, 13)
         self.assertEqual(ex.mode, "PAPER")                                   # removing the lock never starts orders silently
         self.assertIn("Execution Lock został wycofany", ex.mode_note or "")
         self.assertFalse(hasattr(ex, "lock"))

@@ -1,0 +1,3089 @@
+{
+  "version": "PMW-STUDIO-REG-1",
+  "rows": [
+    {
+      "task_key": "TH_BASELINE:XAUUSD:M5:H6:5119a57463840595",
+      "model_id": "TH_BASELINE",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_LOGREG:XAUUSD:M5:H6:88aeb0106dd1369c",
+      "model_id": "TH_LOGREG",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_HGB:XAUUSD:M5:H6:73c48ba194bc2f95",
+      "model_id": "TH_HGB",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_XGB:XAUUSD:M5:H6:c531b2b27f9a9613",
+      "model_id": "TH_XGB",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_RF:XAUUSD:M5:H6:11e93099b4d7353b",
+      "model_id": "TH_RF",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_SVM:XAUUSD:M5:H6:589601245c9c4830",
+      "model_id": "TH_SVM",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TS_ARIMA:XAUUSD:M5:H1:8cde5b0cf293db44",
+      "model_id": "TS_ARIMA",
+      "task_id": "LOG_RETURN_H",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "TS_ARIMA-1",
+      "label_schema_version": "LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TS_SARIMAX:XAUUSD:H1:H1:49b18b29ffef25e5",
+      "model_id": "TS_SARIMAX",
+      "task_id": "LOG_RETURN_H",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "TS_SARIMAX-1",
+      "label_schema_version": "LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "VOL_GARCH:XAUUSD:M5:H1:25be844412bd7d06",
+      "model_id": "VOL_GARCH",
+      "task_id": "SIGMA_LOG_RETURN_H",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "VOL_GARCH-1",
+      "label_schema_version": "SIGMA_LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "MICROSTRUCTURE:XAUUSD:NONE:HNone:996ed5d02b487985",
+      "model_id": "MICROSTRUCTURE",
+      "task_id": "BOOK_STATE_AND_REACTION_10S",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "NONE",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BOOK_SNAPSHOTS",
+          "mandatory": true,
+          "note": "archiwum arkusza bota (book_snapshots)"
+        }
+      ],
+      "feature_schema_version": "MICROSTRUCTURE-1",
+      "label_schema_version": "BOOK_STATE_AND_REACTION_10S",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "PAIR_COINT:XAUUSD:H1:H1:006771a2f06ac021",
+      "model_id": "PAIR_COINT",
+      "task_id": "PAIR_SPREAD_Z",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS_MULTI",
+          "tf": "H1",
+          "mandatory": true,
+          "config": "families.pairs = [[symbolA, symbolB]]"
+        }
+      ],
+      "feature_schema_version": "PAIR_COINT-1",
+      "label_schema_version": "PAIR_SPREAD_Z",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "STATARB:XAUUSD:H1:H1:4bee3d3944a355b9",
+      "model_id": "STATARB",
+      "task_id": "BASKET_RESIDUAL_S",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS_MULTI",
+          "tf": "H1",
+          "mandatory": true,
+          "config": "families.basket = [s1, s2, s3, ...]"
+        }
+      ],
+      "feature_schema_version": "STATARB-1",
+      "label_schema_version": "BASKET_RESIDUAL_S",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "KALMAN_LS:XAUUSD:M5:H1:0ab4571200280f3a",
+      "model_id": "KALMAN_LS",
+      "task_id": "TREND_STATE",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "FITTABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "KALMAN_LS-1",
+      "label_schema_version": "TREND_STATE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "FIT",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "BREAKOUT:XAUUSD:M5:H1:8929069e53994629",
+      "model_id": "BREAKOUT",
+      "task_id": "BREAKOUT_STATE",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BREAKOUT-1",
+      "label_schema_version": "BREAKOUT_STATE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_LSTM:XAUUSD:M5:H6:4577b33958154a40",
+      "model_id": "SEQ_LSTM",
+      "task_id": "DIRECTION_H6_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BAR_SEQ_V1",
+      "label_schema_version": "DIRECTION_H6_AFTER_COST",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_GRU:XAUUSD:M5:H6:fa745160c7aacc1b",
+      "model_id": "SEQ_GRU",
+      "task_id": "DIRECTION_H6_AFTER_COST",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BAR_SEQ_V1",
+      "label_schema_version": "DIRECTION_H6_AFTER_COST",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "RL_PPO:XAUUSD:M5:HNone:d6ae99c061a3658e",
+      "model_id": "RL_PPO",
+      "task_id": "TARGET_EXPOSURE",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "RL_PPO-1",
+      "label_schema_version": "TARGET_EXPOSURE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "NLP_SENTIMENT:XAUUSD:NONE:HNone:f9ab3c9f60335583",
+      "model_id": "NLP_SENTIMENT",
+      "task_id": "TEXT_SENTIMENT_3",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "NONE",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "TEXT_CORPUS",
+          "mandatory": true,
+          "note": "import JSONL/CSV"
+        }
+      ],
+      "feature_schema_version": "NLP_SENTIMENT-1",
+      "label_schema_version": "TEXT_SENTIMENT_3",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_GRU_EVENT:XAUUSD:EVENT:H1:5a3b0af189c72e74",
+      "model_id": "SEQ_GRU_EVENT",
+      "task_id": "EVENT_UNITS_DIR3",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "EVENT",
+      "horizon": 1,
+      "side": null,
+      "category": "EXTERNAL",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "EVENTS",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "EVENT_UNITS_V1",
+      "label_schema_version": "EVENT_UNITS_DIR3",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "EXTERNAL",
+      "reason": "trening w Centrum MM (mm/event_engine) – Studio pokazuje stan, nie trenuje drugi raz",
+      "transfer": "FAMILY_STORE",
+      "operations": []
+    },
+    {
+      "task_key": "RUNNER:forecast:XAUUSD:M5:HNone:273c8bef05a467d3",
+      "model_id": "RUNNER:forecast",
+      "task_id": "forecast",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:forecast",
+      "label_schema_version": "runner:forecast",
+      "trainer": "training.runner STEPS['forecast'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv_candles",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:scalp_A:XAUUSD:M1:HNone:1c633c3681e9be1e",
+      "model_id": "RUNNER:scalp_A",
+      "task_id": "scalp_A",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:scalp_A",
+      "label_schema_version": "runner:scalp_A",
+      "trainer": "training.runner STEPS['scalp_A'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:ml:XAUUSD:M5:HNone:77a23b5dd1d8e759",
+      "model_id": "RUNNER:ml",
+      "task_id": "ml",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:ml",
+      "label_schema_version": "runner:ml",
+      "trainer": "training.runner STEPS['ml'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:lab:XAUUSD:M1:HNone:1ffdad7860dc79a3",
+      "model_id": "RUNNER:lab",
+      "task_id": "lab",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:lab",
+      "label_schema_version": "runner:lab",
+      "trainer": "training.runner STEPS['lab'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:indicator_context:XAUUSD:M1:HNone:eb10b0068f14d37c",
+      "model_id": "RUNNER:indicator_context",
+      "task_id": "indicator_context",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:indicator_context",
+      "label_schema_version": "runner:indicator_context",
+      "trainer": "training.runner STEPS['indicator_context'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:ml_scalp:XAUUSD:M1:HNone:b352211ae705dbe4",
+      "model_id": "RUNNER:ml_scalp",
+      "task_id": "ml_scalp",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:ml_scalp",
+      "label_schema_version": "runner:ml_scalp",
+      "trainer": "training.runner STEPS['ml_scalp'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:neural_scalp:XAUUSD:M1:HNone:8b0601d3142034cb",
+      "model_id": "RUNNER:neural_scalp",
+      "task_id": "neural_scalp",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:neural_scalp",
+      "label_schema_version": "runner:neural_scalp",
+      "trainer": "training.runner STEPS['neural_scalp'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:structure_intelligence:XAUUSD:M1:HNone:5f88068b5854ee0b",
+      "model_id": "RUNNER:structure_intelligence",
+      "task_id": "structure_intelligence",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:structure_intelligence",
+      "label_schema_version": "runner:structure_intelligence",
+      "trainer": "training.runner STEPS['structure_intelligence'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:flow_context:XAUUSD:M1:HNone:e3fa85676b8cf6f5",
+      "model_id": "RUNNER:flow_context",
+      "task_id": "flow_context",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:flow_context",
+      "label_schema_version": "runner:flow_context",
+      "trainer": "training.runner STEPS['flow_context'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:context_indicators:XAUUSD:M5:HNone:4085cf73ec9ed23b",
+      "model_id": "RUNNER:context_indicators",
+      "task_id": "context_indicators",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:context_indicators",
+      "label_schema_version": "runner:context_indicators",
+      "trainer": "training.runner STEPS['context_indicators'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:sh_models:XAUUSD:M1:HNone:0546117f9aa96d1b",
+      "model_id": "RUNNER:sh_models",
+      "task_id": "sh_models",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:sh_models",
+      "label_schema_version": "runner:sh_models",
+      "trainer": "training.runner STEPS['sh_models'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:monte_carlo:XAUUSD:M1:HNone:7f068b1ce35d9f84",
+      "model_id": "RUNNER:monte_carlo",
+      "task_id": "monte_carlo",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "SIMULATION",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:monte_carlo",
+      "label_schema_version": "runner:monte_carlo",
+      "trainer": "training.runner STEPS['monte_carlo'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:master_models:XAUUSD:M5:HNone:15696ea5dfe34db2",
+      "model_id": "RUNNER:master_models",
+      "task_id": "master_models",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:master_models",
+      "label_schema_version": "runner:master_models",
+      "trainer": "training.runner STEPS['master_models'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "IND_AVWAP_SESSION:XAUUSD:M5:HNone:4f6bba7c469057b3",
+      "model_id": "IND_AVWAP_SESSION",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_AVWAP_SESSION",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "IND_SEMIVAR:XAUUSD:M1:HNone:808a37092cb48f30",
+      "model_id": "IND_SEMIVAR",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_SEMIVAR",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "IND_XAU_DXY:XAUUSD:H1:HNone:d5f30654db5a4010",
+      "model_id": "IND_XAU_DXY",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "H1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_DXY",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_XAU_DXY",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "KRONOS_SMALL:XAUUSD:M5:HNone:a16f8c8cc280395c",
+      "model_id": "KRONOS_SMALL",
+      "task_id": "CANDLE_PATH",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "PRETRAINED",
+      "adapter": "PRETRAINED",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "kronos-tokenizer-base",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": "kronos_runtime (.venv_kronos)",
+      "env": ".venv_kronos",
+      "resume": {},
+      "state": "EXTERNAL",
+      "reason": "ewaluacja i instalacja w panelu Kronos bota; fine-tuning nie jest obsługiwany przez projekt",
+      "transfer": null,
+      "operations": []
+    },
+    {
+      "task_key": "TH_BASELINE:BTC:M5:H6:125696ff2818ec51",
+      "model_id": "TH_BASELINE",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_LOGREG:BTC:M5:H6:497c0ce3ab9a731a",
+      "model_id": "TH_LOGREG",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_HGB:BTC:M5:H6:dcb0be3cc2376035",
+      "model_id": "TH_HGB",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_XGB:BTC:M5:H6:52a586f31436a69a",
+      "model_id": "TH_XGB",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_RF:BTC:M5:H6:d423a2e748cfb828",
+      "model_id": "TH_RF",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TH_SVM:BTC:M5:H6:c88d06cfae87bb13",
+      "model_id": "TH_SVM",
+      "task_id": "DIRECTION_H_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "TRAINHUB",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "PMW-TH-FEAT-1",
+      "label_schema_version": "PMW-TH-LABEL-1",
+      "trainer": "trainhub.pipeline.stage_train",
+      "loader": "trainhub.registry.load + prediction_test",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "TRAINHUB_REGISTRY",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TS_ARIMA:BTC:M5:H1:33ed879eb6994ad0",
+      "model_id": "TS_ARIMA",
+      "task_id": "LOG_RETURN_H",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "TS_ARIMA-1",
+      "label_schema_version": "LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "TS_SARIMAX:BTC:H1:H1:2e1984a9ae8855b9",
+      "model_id": "TS_SARIMAX",
+      "task_id": "LOG_RETURN_H",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "TS_SARIMAX-1",
+      "label_schema_version": "LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "VOL_GARCH:BTC:M5:H1:e6c646012319dbf8",
+      "model_id": "VOL_GARCH",
+      "task_id": "SIGMA_LOG_RETURN_H",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "VOL_GARCH-1",
+      "label_schema_version": "SIGMA_LOG_RETURN_H",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "MICROSTRUCTURE:BTC:NONE:HNone:9ca2b3ee462d68e5",
+      "model_id": "MICROSTRUCTURE",
+      "task_id": "BOOK_STATE_AND_REACTION_10S",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "NONE",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BOOK_SNAPSHOTS",
+          "mandatory": true,
+          "note": "archiwum arkusza bota (book_snapshots)"
+        }
+      ],
+      "feature_schema_version": "MICROSTRUCTURE-1",
+      "label_schema_version": "BOOK_STATE_AND_REACTION_10S",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "PAIR_COINT:BTC:H1:H1:b1bf697d6fc9c1fc",
+      "model_id": "PAIR_COINT",
+      "task_id": "PAIR_SPREAD_Z",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS_MULTI",
+          "tf": "H1",
+          "mandatory": true,
+          "config": "families.pairs = [[symbolA, symbolB]]"
+        }
+      ],
+      "feature_schema_version": "PAIR_COINT-1",
+      "label_schema_version": "PAIR_SPREAD_Z",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "STATARB:BTC:H1:H1:0260acd266efaa8a",
+      "model_id": "STATARB",
+      "task_id": "BASKET_RESIDUAL_S",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": 1,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS_MULTI",
+          "tf": "H1",
+          "mandatory": true,
+          "config": "families.basket = [s1, s2, s3, ...]"
+        }
+      ],
+      "feature_schema_version": "STATARB-1",
+      "label_schema_version": "BASKET_RESIDUAL_S",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "KALMAN_LS:BTC:M5:H1:54a0c7fa84c06880",
+      "model_id": "KALMAN_LS",
+      "task_id": "TREND_STATE",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "FITTABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "KALMAN_LS-1",
+      "label_schema_version": "TREND_STATE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "FIT",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "BREAKOUT:BTC:M5:H1:4e7df6819c413872",
+      "model_id": "BREAKOUT",
+      "task_id": "BREAKOUT_STATE",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 1,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BREAKOUT-1",
+      "label_schema_version": "BREAKOUT_STATE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_LSTM:BTC:M5:H6:8dbdbb6d56e0e833",
+      "model_id": "SEQ_LSTM",
+      "task_id": "DIRECTION_H6_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BAR_SEQ_V1",
+      "label_schema_version": "DIRECTION_H6_AFTER_COST",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_GRU:BTC:M5:H6:17863fb06c9edba5",
+      "model_id": "SEQ_GRU",
+      "task_id": "DIRECTION_H6_AFTER_COST",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": 6,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "BAR_SEQ_V1",
+      "label_schema_version": "DIRECTION_H6_AFTER_COST",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "RL_PPO:BTC:M5:HNone:7a2eca3bf6bc4b15",
+      "model_id": "RL_PPO",
+      "task_id": "TARGET_EXPOSURE",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "RL_PPO-1",
+      "label_schema_version": "TARGET_EXPOSURE",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv_deep",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "NLP_SENTIMENT:BTC:NONE:HNone:90c6eff1bf50f318",
+      "model_id": "NLP_SENTIMENT",
+      "task_id": "TEXT_SENTIMENT_3",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "NONE",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "TEXT_CORPUS",
+          "mandatory": true,
+          "note": "import JSONL/CSV"
+        }
+      ],
+      "feature_schema_version": "NLP_SENTIMENT-1",
+      "label_schema_version": "TEXT_SENTIMENT_3",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "FAMILY_STORE",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS",
+        "TRANSFER"
+      ]
+    },
+    {
+      "task_key": "SEQ_GRU_EVENT:BTC:EVENT:H1:d3b33efa4ab7e1c7",
+      "model_id": "SEQ_GRU_EVENT",
+      "task_id": "EVENT_UNITS_DIR3",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "EVENT",
+      "horizon": 1,
+      "side": null,
+      "category": "EXTERNAL",
+      "adapter": "FAMILY",
+      "sources": [
+        {
+          "kind": "EVENTS",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "EVENT_UNITS_V1",
+      "label_schema_version": "EVENT_UNITS_DIR3",
+      "trainer": "modelhub.families.run.train",
+      "loader": "FamilyService.activate (próbka inferencji)",
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "EXTERNAL",
+      "reason": "trening w Centrum MM (mm/event_engine) – Studio pokazuje stan, nie trenuje drugi raz",
+      "transfer": "FAMILY_STORE",
+      "operations": []
+    },
+    {
+      "task_key": "RUNNER:forecast:BTC:M5:HNone:880d7cb989027567",
+      "model_id": "RUNNER:forecast",
+      "task_id": "forecast",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M30",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:forecast",
+      "label_schema_version": "runner:forecast",
+      "trainer": "training.runner STEPS['forecast'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv_candles",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:scalp_A:BTC:M1:HNone:dde4a78776a7b7f1",
+      "model_id": "RUNNER:scalp_A",
+      "task_id": "scalp_A",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:scalp_A",
+      "label_schema_version": "runner:scalp_A",
+      "trainer": "training.runner STEPS['scalp_A'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:ml:BTC:M5:HNone:95f1f4f13acab967",
+      "model_id": "RUNNER:ml",
+      "task_id": "ml",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:ml",
+      "label_schema_version": "runner:ml",
+      "trainer": "training.runner STEPS['ml'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:lab:BTC:M1:HNone:6ad6622e264ff430",
+      "model_id": "RUNNER:lab",
+      "task_id": "lab",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:lab",
+      "label_schema_version": "runner:lab",
+      "trainer": "training.runner STEPS['lab'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:indicator_context:BTC:M1:HNone:5aa0098c9e609ee3",
+      "model_id": "RUNNER:indicator_context",
+      "task_id": "indicator_context",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:indicator_context",
+      "label_schema_version": "runner:indicator_context",
+      "trainer": "training.runner STEPS['indicator_context'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:ml_scalp:BTC:M1:HNone:dee0b271c01171a8",
+      "model_id": "RUNNER:ml_scalp",
+      "task_id": "ml_scalp",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:ml_scalp",
+      "label_schema_version": "runner:ml_scalp",
+      "trainer": "training.runner STEPS['ml_scalp'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:neural_scalp:BTC:M1:HNone:32d28ade7d3e14cf",
+      "model_id": "RUNNER:neural_scalp",
+      "task_id": "neural_scalp",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:neural_scalp",
+      "label_schema_version": "runner:neural_scalp",
+      "trainer": "training.runner STEPS['neural_scalp'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:structure_intelligence:BTC:M1:HNone:a839c0ad28976b80",
+      "model_id": "RUNNER:structure_intelligence",
+      "task_id": "structure_intelligence",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:structure_intelligence",
+      "label_schema_version": "runner:structure_intelligence",
+      "trainer": "training.runner STEPS['structure_intelligence'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:flow_context:BTC:M1:HNone:6827ad57c1290a3a",
+      "model_id": "RUNNER:flow_context",
+      "task_id": "flow_context",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:flow_context",
+      "label_schema_version": "runner:flow_context",
+      "trainer": "training.runner STEPS['flow_context'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:context_indicators:BTC:M5:HNone:268e36181278b7e2",
+      "model_id": "RUNNER:context_indicators",
+      "task_id": "context_indicators",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "CALIBRATABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:context_indicators",
+      "label_schema_version": "runner:context_indicators",
+      "trainer": "training.runner STEPS['context_indicators'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:sh_models:BTC:M1:HNone:62bdc64fa4d6e6e8",
+      "model_id": "RUNNER:sh_models",
+      "task_id": "sh_models",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:sh_models",
+      "label_schema_version": "runner:sh_models",
+      "trainer": "training.runner STEPS['sh_models'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:monte_carlo:BTC:M1:HNone:6b75f1c23c856b8e",
+      "model_id": "RUNNER:monte_carlo",
+      "task_id": "monte_carlo",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "SIMULATION",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:monte_carlo",
+      "label_schema_version": "runner:monte_carlo",
+      "trainer": "training.runner STEPS['monte_carlo'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "RUNNER:master_models:BTC:M5:HNone:fa524c04e1486341",
+      "model_id": "RUNNER:master_models",
+      "task_id": "master_models",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "TRAINABLE",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:master_models",
+      "label_schema_version": "runner:master_models",
+      "trainer": "training.runner STEPS['master_models'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "TRAIN",
+        "FULL_PROCESS"
+      ]
+    },
+    {
+      "task_key": "IND_AVWAP_SESSION:BTC:M5:HNone:2028f3e2ad87e8e4",
+      "model_id": "IND_AVWAP_SESSION",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_AVWAP_SESSION",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "IND_SEMIVAR:BTC:M1:HNone:3d72fcc9949d12b1",
+      "model_id": "IND_SEMIVAR",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_SEMIVAR",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "IND_XAU_DXY:BTC:H1:HNone:b359f1870f8fd3ea",
+      "model_id": "IND_XAU_DXY",
+      "task_id": "FEATURE_EXPORT",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "H1",
+      "horizon": null,
+      "side": null,
+      "category": "DETERMINISTIC",
+      "adapter": "DETERMINISTIC",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "H1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_DXY",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "IND_XAU_DXY",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": null,
+      "env": ".venv",
+      "resume": {
+        "export": "CHUNK_CHECKPOINT",
+        "training": "NOT_APPLICABLE"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": null,
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "EXPORT_FEATURES"
+      ]
+    },
+    {
+      "task_key": "KRONOS_SMALL:BTC:M5:HNone:3d61aa01889835c5",
+      "model_id": "KRONOS_SMALL",
+      "task_id": "CANDLE_PATH",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M5",
+      "horizon": null,
+      "side": null,
+      "category": "PRETRAINED",
+      "adapter": "PRETRAINED",
+      "sources": [
+        {
+          "kind": "BARS",
+          "tf": "M5",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "kronos-tokenizer-base",
+      "label_schema_version": "NOT_APPLICABLE",
+      "trainer": null,
+      "loader": "kronos_runtime (.venv_kronos)",
+      "env": ".venv_kronos",
+      "resume": {},
+      "state": "EXTERNAL",
+      "reason": "ewaluacja i instalacja w panelu Kronos bota; fine-tuning nie jest obsługiwany przez projekt",
+      "transfer": null,
+      "operations": []
+    }
+  ],
+  "count": 72,
+  "note": "jeden wiersz = jedno zadanie = jeden eksport = jedna paczka; grupy runnera to istniejące zadania z własnymi rejestrami"
+}

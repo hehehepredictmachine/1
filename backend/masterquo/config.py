@@ -649,7 +649,7 @@ class DecisionConfig(_Strict):
 
 
 class AppConfig(_Strict):
-    config_version: int = 12
+    config_version: int = 13
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -762,12 +762,21 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 12:
+    if v >= 13:
         return False
-    if v < 11:
-        _to_v11_chain(raw, v)
-    _to_v12(raw)
+    if v < 12:
+        if v < 11:
+            _to_v11_chain(raw, v)
+        _to_v12(raw)
+    _to_v13(raw)
     return True
+
+
+def _to_v13(raw: dict) -> None:
+    """v12 -> v13 (1.33): new sections `indicators`, `families`, `decision` (defaults) and new keys in `zones`. Nothing existing changes;
+    the bump exists so that the FIRST start of 1.33 keeps the untouched 1.32 file as config.v12.bak.json - 1.32 refuses unknown sections
+    (strict model), so a rollback to 1.32 restores that copy (ROLLBACK / AKTUALIZACJA_1_33_PL.md)."""
+    raw["config_version"] = 13
 
 
 def _to_v12(raw: dict) -> None:

@@ -40,6 +40,18 @@ def _fit(endog, order, trend, exog=None, seasonal=(0, 0, 0, 0)):
     return res, conv
 
 
+def _scale(x: np.ndarray) -> float:
+    """Fit on returns scaled to unit variance: raw M5/H1 log returns (~1e-3) make the MLE optimiser fail to converge (1.33 audit:
+    SARIMAX on H1 data with volatility clustering did not converge in most fits; scaled - all converged). Stored in the artifact;
+    forecasts and error metrics are converted back to log-return units. Old artifacts without 'scale' = 1.0 (unchanged)."""
+    sd = float(np.std(x)) if len(x) else 0.0
+    return 1.0 / sd if sd > 0 and math.isfinite(sd) else 1.0
+
+
+def _unscale(ev: dict, k: float) -> dict:
+    return {**ev, **{m: ev[m] / k for m in ("mae", "rmse", "baseline_zero_mae", "mean_width_90") if ev.get(m) is not None}}
+
+
 def _diag(res) -> dict:
     out = {"aic": float(res.aic), "converged": bool((getattr(res, "mle_retvals", None) or {}).get("converged", True))}
     try:
@@ -120,9 +132,10 @@ class ARIMA(B.Family):
         sp = B.chrono_split(n, holdout_frac=0.2, val_frac=0.25, embargo=0)
         tr_end, va0, va1, h0 = sp["train"][1], sp["val"][0], sp["val"][1], sp["holdout"][0]
         grid = SMOKE_GRID if budget.get("profile") == "smoke" else GRID
+        k = _scale(ret[:tr_end])
         cands = []
         for transform in ("RETURNS", "LOGPRICE"):
-            endog = ret[:tr_end] if transform == "RETURNS" else logp[1:tr_end + 1]
+            endog = (ret[:tr_end] if transform == "RETURNS" else logp[1:tr_end + 1]) * k
             best = None
             for p, q in grid:
                 order = (p, 0, q) if transform == "RETURNS" else (p, 1, q)
@@ -138,21 +151,21 @@ class ARIMA(B.Family):
             if best is None:
                 continue
             res, order, trend = best
-            full = ret[:va1] if transform == "RETURNS" else logp[1:va1 + 1]
-            ev = _one_step_eval(full, va0, order, trend, res.params, transform=transform)
+            full = (ret[:va1] if transform == "RETURNS" else logp[1:va1 + 1]) * k
+            ev = _unscale(_one_step_eval(full, va0, order, trend, res.params, transform=transform), k)
             cands.append({"transform": transform, "order": order, "trend": trend, "params": [float(x) for x in res.params],
                           "param_names": list(res.param_names), "diag": _diag(res), "val": ev})
         if not cands:
             raise B.Unavailable("VALIDATION_FAILED", "żadne dopasowanie ARIMA nie zbiegło")
         pick = min(cands, key=lambda c: c["val"]["mae"])
         # holdout: parameters re-estimated on train+val (development), evaluated ONCE on the untouched end
-        endog_dev = ret[:h0] if pick["transform"] == "RETURNS" else logp[1:h0 + 1]
+        endog_dev = (ret[:h0] if pick["transform"] == "RETURNS" else logp[1:h0 + 1]) * k
         res_dev, conv = _fit(endog_dev, tuple(pick["order"]), pick["trend"])
-        full = ret if pick["transform"] == "RETURNS" else logp[1:]
-        hold = _one_step_eval(full, h0, tuple(pick["order"]), pick["trend"], res_dev.params, transform=pick["transform"])
+        full = (ret if pick["transform"] == "RETURNS" else logp[1:]) * k
+        hold = _unscale(_one_step_eval(full, h0, tuple(pick["order"]), pick["trend"], res_dev.params, transform=pick["transform"]), k)
         diag = _diag(res_dev)
         art = {"transform": pick["transform"], "order": list(pick["order"]), "trend": pick["trend"], "params": [float(x) for x in res_dev.params],
-               "param_names": list(res_dev.param_names), "window": WINDOW}
+               "param_names": list(res_dev.param_names), "window": WINDOW, "scale": k}
         (tmp / "arima.json").write_text(json.dumps(art), encoding="utf-8")
         sample_in = data["bars"][-(WINDOW + 1):]
         sample = self._forecast(art, B.closes(sample_in))
@@ -168,12 +181,13 @@ class ARIMA(B.Family):
 
     def _forecast(self, art, c: np.ndarray) -> dict:
         logp = np.log(c[-(art["window"] + 1):])
-        endog = np.diff(logp) if art["transform"] == "RETURNS" else logp[1:]
+        k = float(art.get("scale") or 1.0)
+        endog = (np.diff(logp) if art["transform"] == "RETURNS" else logp[1:]) * k
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             res = _arima(endog, tuple(art["order"]), art["trend"]).filter(np.asarray(art["params"]))
             fc = res.get_forecast(max(self.HORIZONS))
-            m, ci = np.asarray(fc.predicted_mean), np.asarray(fc.conf_int(alpha=0.1))
+            m, ci = np.asarray(fc.predicted_mean) / k, np.asarray(fc.conf_int(alpha=0.1)) / k
         out = {}
         for h in self.HORIZONS:
             if art["transform"] == "RETURNS":
@@ -220,10 +234,12 @@ class SARIMAX(ARIMA):
         acf24 = float(np.corrcoef(ret[24:tr_end], ret[:tr_end - 24])[0, 1]) if tr_end > 100 else 0.0
         seasonal = (1, 0, 0, 24) if abs(acf24) > 2 / math.sqrt(max(tr_end, 1)) else (0, 0, 0, 0)
         grid = [(1, 0), (0, 1)] if budget.get("profile") == "smoke" else [(0, 0), (1, 0), (0, 1), (1, 1)]
+        k = _scale(ret[:tr_end])
+        z = ret * k
         best = None
         for p, q in grid:
             try:
-                res, conv = _fit(ret[:tr_end], (p, 0, q), "c", X[:tr_end], seasonal)
+                res, conv = _fit(z[:tr_end], (p, 0, q), "c", X[:tr_end], seasonal)
             except Exception:  # noqa: BLE001
                 continue
             if conv and np.all(np.isfinite(res.params)) and (best is None or res.aic < best[0].aic):
@@ -231,11 +247,11 @@ class SARIMAX(ARIMA):
         if best is None:
             raise B.Unavailable("VALIDATION_FAILED", "żadne dopasowanie SARIMAX nie zbiegło")
         res, order = best
-        ev = _one_step_eval(ret[:va1], va0, order, "c", res.params, X[:va1], seasonal)
-        res_dev, conv = _fit(ret[:h0], order, "c", X[:h0], seasonal)
-        hold = _one_step_eval(ret, h0, order, "c", res_dev.params, X, seasonal)
+        ev = _unscale(_one_step_eval(z[:va1], va0, order, "c", res.params, X[:va1], seasonal), k)
+        res_dev, conv = _fit(z[:h0], order, "c", X[:h0], seasonal)
+        hold = _unscale(_one_step_eval(z, h0, order, "c", res_dev.params, X, seasonal), k)
         art = {"transform": "RETURNS", "order": list(order), "trend": "c", "seasonal": list(seasonal), "params": [float(x) for x in res_dev.params],
-               "param_names": list(res_dev.param_names), "window": WINDOW, "profile_id": prof, "tf_s": 3600,
+               "param_names": list(res_dev.param_names), "window": WINDOW, "profile_id": prof, "tf_s": 3600, "scale": k,
                "exog": "kalendarz: flagi sesji + sin/cos godziny (UTC) – znane z góry"}
         (tmp / "arima.json").write_text(json.dumps(art), encoding="utf-8")
         tail = bars[-(WINDOW + 1):]
@@ -247,7 +263,8 @@ class SARIMAX(ARIMA):
                 "sample": {"closes_tail": B.closes(tail).tolist(), "t_tail": [b["t"] for b in tail], "expected": sample, "tolerance": 1e-8}}
 
     def _forecast_x(self, art, c, t):
-        ret = np.diff(np.log(c[-(art["window"] + 1):]))
+        k = float(art.get("scale") or 1.0)
+        ret = np.diff(np.log(c[-(art["window"] + 1):])) * k
         tt = t[-(art["window"]):]
         X = calendar_exog(tt, art["profile_id"])
         H = max(self.HORIZONS)
@@ -256,7 +273,7 @@ class SARIMAX(ARIMA):
             warnings.simplefilter("ignore")
             res = _arima(ret, tuple(art["order"]), art["trend"], X, tuple(art["seasonal"])).filter(np.asarray(art["params"]))
             fc = res.get_forecast(H, exog=fut)
-            m, ci = np.asarray(fc.predicted_mean), np.asarray(fc.conf_int(alpha=0.1))
+            m, ci = np.asarray(fc.predicted_mean) / k, np.asarray(fc.conf_int(alpha=0.1)) / k
         out = {}
         for h in self.HORIZONS:
             mean = float(np.sum(m[:h]))

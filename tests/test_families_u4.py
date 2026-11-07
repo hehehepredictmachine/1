@@ -99,6 +99,17 @@ class TestStatisticalFamilies(Base):
         X = arima.calendar_exog(np.asarray([T0 + 9 * 3600.0]), "LAB_XAU_REFERENCE_V1")
         self.assertEqual(X.shape, (1, 5))                                          # 3 sessions + sin/cos
 
+    def test_sarimax_converges_on_h1_with_volatility_clustering(self):
+        """1.33 audit: raw H1 log returns (~1e-3) with GARCH-like volatility made every SARIMAX fit fail to converge (BLOCKED);
+        fitting on returns scaled to unit variance converges; forecasts come back in log-return units."""
+        bars = synth(2000, tf_s=3600, phi=0.2, garch=True, seed=2)
+        r, res, art = self.roundtrip("TS_SARIMAX", data_for(bars), {"bars": bars})
+        self.assertEqual(r["state"], "DONE", r)
+        m = self.store.runs("TS_SARIMAX", "XAUUSD")[-1]
+        self.assertGreater(m["metrics"]["val"]["mae"], 0)
+        self.assertLess(m["metrics"]["val"]["mae"], 0.05)                       # log-return units, not the scaled ones
+        self.assertLess(abs(res["mean"]), 0.05)
+
     def test_garch_scale_and_persistence(self):
         bars = synth(3000, seed=5)
         r, res, a = self.roundtrip("VOL_GARCH", data_for(bars), {"bars": bars})

@@ -1,0 +1,1038 @@
+{
+  "report": "PMW-FAM-VALIDATION-SYNTHETIC-1",
+  "generated_at": "2026-11-07T19:34:06Z",
+  "profile": "smoke",
+  "data_kind": "SYNTHETIC",
+  "python": "3.13.18",
+  "platform": "Linux-6.18.44-fc-v310-x86_64-with-glibc2.39",
+  "deep_python": "/tmp/claude-0/-home-user-1/8bce07ae-728e-58d9-ad38-3f74986983fd/scratchpad/venv_kronos/bin/python",
+  "families": [
+    {
+      "family": "TS_ARIMA",
+      "task_type": "REGRESSION",
+      "task": "LOG_RETURN_H",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193348Z-caf0e73d",
+      "seconds": 1.2,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "converged",
+            "op": ">",
+            "threshold": 0.5,
+            "value": 1.0,
+            "passed": true
+          },
+          {
+            "metric": "stable",
+            "op": ">",
+            "threshold": 0.5,
+            "value": 1.0,
+            "passed": true
+          },
+          {
+            "metric": "val_skill_vs_zero",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.03586174358703398,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "candidates": [
+          {
+            "transform": "RETURNS",
+            "order": [
+              1,
+              0,
+              1
+            ],
+            "trend": "c",
+            "params": [
+              -0.02899534585155449,
+              0.44039279851753016,
+              -0.2194391836661895,
+              0.9430272231046093
+            ],
+            "param_names": [
+              "intercept",
+              "ar.L1",
+              "ma.L1",
+              "sigma2"
+            ],
+            "diag": {
+              "aic": 5007.893243951572,
+              "converged": true,
+              "ljung_box_p10": 0.5313092527296471,
+              "min_ar_root": 2.2707001644128706,
+              "min_ma_root": 4.557071272745884,
+              "stable": 1
+            },
+            "val": {
+              "mae": 0.0009845145859578642,
+              "rmse": 0.0012872387653701464,
+              "baseline_zero_mae": 0.0010189773607544679,
+              "skill_vs_zero": 0.033820942568426604,
+              "coverage_90": 0.925,
+              "mean_width_90": 0.004871147408989863,
+              "n": 600
+            }
+          },
+          {
+            "transform": "LOGPRICE",
+            "order": [
+              1,
+              1,
+              1
+            ],
+            "trend": "n",
+            "params": [
+              0.44780381179388734,
+              -0.2254464633385132,
+              0.9448911867062247
+            ],
+            "param_names": [
+              "ar.L1",
+              "ma.L1",
+              "sigma2"
+            ],
+            "diag": {
+              "aic": 5006.654401017766,
+              "converged": true,
+              "ljung_box_p10": 0.5276126975077983,
+              "min_ar_root": 2.233120785627154,
+              "min_ma_root": 4.435642880316451,
+              "stable": 1
+            },
+            "val": {
+              "mae": 0.000982435055922109,
+              "rmse": 0.001287277705859026,
+              "baseline_zero_mae": 0.0010189773607544787,
+              "skill_vs_zero": 0.03586174358703398,
+              "coverage_90": 0.9266666666666666,
+              "mean_width_90": 0.004875959125586993,
+              "n": 600
+            }
+          }
+        ],
+        "chosen": {
+          "transform": "LOGPRICE",
+          "order": [
+            1,
+            1,
+            1
+          ],
+          "trend": "n"
+        },
+        "holdout": {
+          "mae": 0.0006534577623500596,
+          "rmse": 0.0008353540802345954,
+          "baseline_zero_mae": 0.0006760636952364649,
+          "skill_vs_zero": 0.03343757850878015,
+          "coverage_90": 0.9916666666666667,
+          "mean_width_90": 0.004723617374529448,
+          "n": 600
+        },
+        "diag_dev": {
+          "aic": 6523.154029707484,
+          "converged": true,
+          "ljung_box_p10": 0.6293402997030444,
+          "min_ar_root": 2.1662112192095164,
+          "min_ma_root": 4.114069894359319,
+          "stable": 1
+        },
+        "baseline": "zerowy zwrot / random walk"
+      },
+      "rows": 4000,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "mean": 0.0004999330194737084,
+          "lo": -0.0018618756677906134,
+          "hi": 0.0028617417067389184,
+          "price_now": 1562.5002015422729,
+          "price_mean": 1563.2815422787014,
+          "horizons": {
+            "1": {
+              "mean": 0.0004999330194737084,
+              "lo": -0.0018618756677906134,
+              "hi": 0.0028617417067389184
+            },
+            "3": {
+              "mean": 0.0008372592425915926,
+              "lo": -0.004017906802051385,
+              "hi": 0.00569242528723457
+            },
+            "5": {
+              "mean": 0.0009091459350818454,
+              "lo": -0.005778258185841878,
+              "hi": 0.007596550056005569
+            }
+          },
+          "interval": "90% (model)",
+          "transform": "LOGPRICE"
+        }
+      }
+    },
+    {
+      "family": "TS_SARIMAX",
+      "task_type": "REGRESSION",
+      "task": "LOG_RETURN_H",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193349Z-ec19be59",
+      "seconds": 0.7,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "converged",
+            "op": ">",
+            "threshold": 0.5,
+            "value": 1.0,
+            "passed": true
+          },
+          {
+            "metric": "val_skill_vs_zero",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.023709558913582063,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "val": {
+          "mae": 0.0007489624214620196,
+          "rmse": 0.0009519759493609282,
+          "baseline_zero_mae": 0.000767151238957715,
+          "skill_vs_zero": 0.023709558913582063,
+          "coverage_90": 0.9575,
+          "mean_width_90": 0.003688824409304001,
+          "n": 400
+        },
+        "holdout": {
+          "mae": 0.0007958646988233578,
+          "rmse": 0.0010638363245968627,
+          "baseline_zero_mae": 0.0007878399623430778,
+          "skill_vs_zero": -0.010185744394602514,
+          "coverage_90": 0.92,
+          "mean_width_90": 0.0035566509800712205,
+          "n": 400
+        },
+        "seasonal": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "seasonal_acf24_train": 0.013342157180678424,
+        "diag_dev": {
+          "aic": 4352.299530108861,
+          "converged": true,
+          "ljung_box_p10": 0.42842716845188683,
+          "min_ar_root": 4.439174921408171,
+          "min_ma_root": null,
+          "stable": 1
+        },
+        "exog_scenario": "CALENDAR_KNOWN"
+      },
+      "rows": 2000,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "mean": -0.00020186698514668144,
+          "lo": -0.001980192475182292,
+          "hi": 0.001576458504888929,
+          "price_now": 1796.6875828113618,
+          "horizons": {
+            "1": {
+              "mean": -0.00020186698514668144,
+              "lo": -0.001980192475182292,
+              "hi": 0.001576458504888929
+            },
+            "3": {
+              "mean": -0.00047714941081928187,
+              "lo": -0.003610267032016584,
+              "hi": 0.0026559682103780204
+            },
+            "5": {
+              "mean": -0.000701633371690147,
+              "lo": -0.004761116284003321,
+              "hi": 0.0033578495406230272
+            }
+          },
+          "interval": "90% (model)",
+          "exog_scenario": "CALENDAR_KNOWN"
+        }
+      }
+    },
+    {
+      "family": "VOL_GARCH",
+      "task_type": "VOLATILITY",
+      "task": "SIGMA_LOG_RETURN_H",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193350Z-b392844a",
+      "seconds": 0.1,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "converged",
+            "op": ">",
+            "threshold": 0.5,
+            "value": 1.0,
+            "passed": true
+          },
+          {
+            "metric": "val_qlike_gain_vs_ewma",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.017662146262993783,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "candidates": [
+          {
+            "dist": "normal",
+            "omega": 0.00046628443469824476,
+            "alpha": 0.1,
+            "beta": 0.88,
+            "nu": null,
+            "converged": true,
+            "val_qlike": 1.1417298880986044,
+            "persistence": 0.98
+          },
+          {
+            "dist": "t",
+            "omega": 0.00023631492056164235,
+            "alpha": 0.11651082160039461,
+            "beta": 0.8775586068081276,
+            "nu": 54.36140020642906,
+            "converged": true,
+            "val_qlike": 1.1272339847146013,
+            "persistence": 0.9940694284085222
+          }
+        ],
+        "baselines": {
+          "val_qlike_ewma": 1.1448961309775951,
+          "val_qlike_hist": 1.415834282625797
+        },
+        "holdout": {
+          "qlike": 1.2316211171836986,
+          "mse_var": 1.2445524928094169e-12,
+          "qlike_ewma": 1.248166997708963,
+          "proxy": "kwadrat log-zwrotu (zaszumione proxy wariancji zrealizowanej)"
+        },
+        "chosen_dist": "t"
+      },
+      "rows": 4000,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "sigma": 0.0035933768924537226,
+          "variance": 1.2912357491220372e-05,
+          "scale": "decimal",
+          "sigma_bar": 0.0014616784474756688,
+          "horizon_bars": 6,
+          "price_move_1sigma": 5.614652118676288,
+          "horizons": {
+            "1": {
+              "variance": 2.1365038838148817e-06,
+              "sigma": 0.0014616784474756688
+            },
+            "6": {
+              "variance": 1.2912357491220372e-05,
+              "sigma": 0.0035933768924537226
+            },
+            "12": {
+              "variance": 2.6043192399872728e-05,
+              "sigma": 0.0051032531193222945
+            }
+          },
+          "note": "sigma log-zwrotu (ułamek dziesiętny) na horyzont; ruch ceny = sigma × cena"
+        }
+      }
+    },
+    {
+      "family": "MICROSTRUCTURE",
+      "task_type": "MICROSTRUCTURE",
+      "task": "BOOK_STATE_AND_REACTION_10S",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193350Z-07bca3a9",
+      "seconds": 0.1,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "val_skill",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.03677034003920554,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "val_log_loss": 0.6678214196906463,
+        "val_baseline_log_loss": 0.6933148421922848,
+        "holdout": {
+          "log_loss": 0.660826001331184,
+          "baseline_log_loss": 0.6922858701331024,
+          "n": 1198
+        },
+        "features": [
+          "best_imbalance",
+          "depth_imbalance",
+          "ofi_window",
+          "microprice_dev/spread"
+        ]
+      },
+      "rows": 0,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "capability": "L2_BOOK",
+          "best_imbalance": 0.23076923076923078,
+          "depth_imbalance": 0.15789473684210525,
+          "ofi_window": 0.0,
+          "microprice_dev": 0.011538461538521005,
+          "mid": 1999.9767200531737,
+          "ofi_mode": null,
+          "p_down_10s": 0.44667440939870323,
+          "p_flat_10s": 9.99999999e-10,
+          "p_up_10s": 0.5533255896012967
+        }
+      }
+    },
+    {
+      "family": "PAIR_COINT",
+      "task_type": "PAIR_RELATION",
+      "task": "PAIR_SPREAD_Z",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193350Z-13157336",
+      "seconds": 0.0,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "p_value_train",
+            "op": "<",
+            "threshold": 0.05,
+            "value": 0.0,
+            "passed": true
+          },
+          {
+            "metric": "val_std_ratio",
+            "op": "<",
+            "threshold": 2.0,
+            "value": 0.9159173323576485,
+            "passed": true
+          },
+          {
+            "metric": "sd_train",
+            "op": ">",
+            "threshold": 1e-09,
+            "value": 0.0031097400787581217,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "p_value_train": 0.0,
+        "val_std_ratio": 0.9159173323576485,
+        "sd_train": 0.0031097400787581217,
+        "eg_stat": -25.394156098052026,
+        "return_correlation_train": 0.8797416367647422,
+        "half_life_bars": 0.23539454422088069,
+        "note": "korelacja ≠ kointegracja; p-value nie jest prawdopodobieństwem zysku"
+      },
+      "rows": 0,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "z": -0.04910241226716993,
+          "spread": -0.00015269573939047376,
+          "hedge_ratio_log": 0.8007150315409681,
+          "half_life_bars": 0.23539454422088069,
+          "p_value_train": 0.0,
+          "last_common_time": 1776726000
+        }
+      }
+    },
+    {
+      "family": "STATARB",
+      "task_type": "PAIR_RELATION",
+      "task": "BASKET_RESIDUAL_S",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193350Z-1428c5f5",
+      "seconds": 0.1,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "val_residual_std_ratio",
+            "op": "<",
+            "threshold": 2.0,
+            "value": 1.0208135579012765,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "val_residual_std_ratio": 1.0208135579012765,
+        "explained_var": 0.9574846290249197
+      },
+      "rows": 0,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "s_scores": [
+            -1.1630553470588914,
+            -1.1630553471011618,
+            1.1630553471016771
+          ],
+          "weights": [
+            0.3333333333252076,
+            0.33333333333732235,
+            -0.33333333333747006
+          ],
+          "gross": 1.0,
+          "net": 0.3333333333250599,
+          "assets": [
+            "A",
+            "B",
+            "C"
+          ],
+          "neutrality": "wagi w jednostkach ryzyka (zwroty standaryzowane) – neutralność nominalna wymaga przeliczenia nóg"
+        }
+      }
+    },
+    {
+      "family": "KALMAN_LS",
+      "task_type": "FILTER_STATE",
+      "task": "TREND_STATE",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193350Z-be719f95",
+      "seconds": 1.2,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "z_std_ok",
+            "op": ">",
+            "threshold": 0.5,
+            "value": 1.0,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "train_ll": -4363.326132695944,
+        "val_innov_z_std": 0.6190484835804004,
+        "val_ll_per_obs": -2.19168753819269,
+        "estimation": "maksimum wiarygodności innowacji (siatka log)",
+        "note": "standaryzowane innowacje ~1 na walidacji = spójna estymacja Q/R"
+      },
+      "rows": 4000,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "state": "FLAT",
+          "level": 1562.2327877489909,
+          "slope": -0.16809785830923207,
+          "innovation": 3.2886239027932334,
+          "innovation_var": 8.681611712982374,
+          "slope_var": 0.2274321613246479,
+          "slope_z": -0.3524814293879377,
+          "resets": 0
+        }
+      }
+    },
+    {
+      "family": "BREAKOUT",
+      "task_type": "FILTER_STATE",
+      "task": "BREAKOUT_STATE",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193351Z-6fed8cf8",
+      "seconds": 0.1,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "dev_expectancy_after_cost",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.593507774321976,
+            "passed": true
+          },
+          {
+            "metric": "dev_trades",
+            "op": ">",
+            "threshold": 19.0,
+            "value": 24.0,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "grid": [
+          {
+            "N": 12,
+            "k_comp": 2.0,
+            "trades": 1,
+            "expectancy": 1.1908265968009346,
+            "win_rate": 1.0,
+            "profit_factor": null
+          },
+          {
+            "N": 12,
+            "k_comp": 3.0,
+            "trades": 17,
+            "expectancy": -0.5838735810288519,
+            "win_rate": 0.47058823529411764,
+            "profit_factor": 0.6502421899829056
+          },
+          {
+            "N": 12,
+            "k_comp": 4.5,
+            "trades": 61,
+            "expectancy": 0.28462953539608554,
+            "win_rate": 0.4918032786885246,
+            "profit_factor": 1.1218367049117086
+          },
+          {
+            "N": 20,
+            "k_comp": 2.0,
+            "trades": 0,
+            "expectancy": null,
+            "win_rate": null,
+            "profit_factor": null
+          },
+          {
+            "N": 20,
+            "k_comp": 3.0,
+            "trades": 2,
+            "expectancy": 0.30830261334067455,
+            "win_rate": 0.5,
+            "profit_factor": 1.3051374823866153
+          },
+          {
+            "N": 20,
+            "k_comp": 4.5,
+            "trades": 24,
+            "expectancy": 0.593507774321976,
+            "win_rate": 0.5833333333333334,
+            "profit_factor": 1.2759221569772956
+          },
+          {
+            "N": 36,
+            "k_comp": 2.0,
+            "trades": 0,
+            "expectancy": null,
+            "win_rate": null,
+            "profit_factor": null
+          },
+          {
+            "N": 36,
+            "k_comp": 3.0,
+            "trades": 1,
+            "expectancy": 3.4797572862594732,
+            "win_rate": 1.0,
+            "profit_factor": null
+          },
+          {
+            "N": 36,
+            "k_comp": 4.5,
+            "trades": 4,
+            "expectancy": -1.9764830589918005,
+            "win_rate": 0.5,
+            "profit_factor": 0.4076676731406806
+          }
+        ],
+        "chosen": {
+          "N": 20,
+          "k_comp": 4.5
+        },
+        "holdout": {
+          "trades": 11,
+          "expectancy": 2.1545402114693015,
+          "win_rate": 0.8181818181818182,
+          "profit_factor": 10.09306019324198
+        },
+        "note": "wynik po koszcie spreadu, wyjście po H świecach; wejście na kolejnej świecy"
+      },
+      "rows": 4000,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "state": "CONFIRMED",
+          "direction": "DOWN",
+          "edge": 1568.4509375796426,
+          "opposite_edge": 1576.0312705636672,
+          "compression": 5.0492097915927925,
+          "bars_since": 20,
+          "event_time": 1773603300
+        }
+      }
+    },
+    {
+      "family": "TH_RF",
+      "state": "DELEGATED",
+      "reason": "trainhub (test_trainhub) / centrum MM",
+      "seconds": 0
+    },
+    {
+      "family": "TH_XGB",
+      "state": "DELEGATED",
+      "reason": "trainhub (test_trainhub) / centrum MM",
+      "seconds": 0
+    },
+    {
+      "family": "TH_SVM",
+      "state": "DELEGATED",
+      "reason": "trainhub (test_trainhub) / centrum MM",
+      "seconds": 0
+    },
+    {
+      "family": "SEQ_LSTM",
+      "task_type": "CLASS_PROBABILITIES",
+      "task": "DIRECTION_H6_AFTER_COST",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193353Z-237d7a6e",
+      "seconds": 3.9,
+      "validation": {
+        "status": "VALIDATION_FAILED",
+        "criteria": [
+          {
+            "metric": "val_skill",
+            "op": ">",
+            "threshold": 0.0,
+            "value": -0.18535260105278084,
+            "passed": false
+          },
+          {
+            "metric": "param_change_l1",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 17.294435266405344,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "ok": true,
+        "history": [
+          {
+            "epoch": 1,
+            "val_log_loss": 1.1342262029647827
+          },
+          {
+            "epoch": 2,
+            "val_log_loss": 1.123047947883606
+          },
+          {
+            "epoch": 3,
+            "val_log_loss": 1.1135203838348389
+          }
+        ],
+        "val_log_loss": 1.103373408317566,
+        "val_baseline_log_loss": 0.9308398254979957,
+        "holdout_log_loss": 1.1020042896270752,
+        "holdout_baseline_log_loss": 0.948818165174407,
+        "holdout_accuracy": 0.23208191126279865,
+        "temperature": 3.0,
+        "param_change_l1": 17.294435266405344,
+        "device": "cpu",
+        "torch": "2.14.1+cu130",
+        "elapsed_s": 1.839
+      },
+      "rows": 3500,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "DOWN": 0.3254835605621338,
+          "FLAT": 0.34345343708992004,
+          "UP": 0.33106300234794617
+        }
+      }
+    },
+    {
+      "family": "SEQ_GRU",
+      "task_type": "CLASS_PROBABILITIES",
+      "task": "DIRECTION_H6_AFTER_COST",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193357Z-7e122a14",
+      "seconds": 2.8,
+      "validation": {
+        "status": "VALIDATION_FAILED",
+        "criteria": [
+          {
+            "metric": "val_skill",
+            "op": ">",
+            "threshold": 0.0,
+            "value": -0.18284839100071437,
+            "passed": false
+          },
+          {
+            "metric": "param_change_l1",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 12.327070251107216,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "ok": true,
+        "history": [
+          {
+            "epoch": 1,
+            "val_log_loss": 1.1151189804077148
+          },
+          {
+            "epoch": 2,
+            "val_log_loss": 1.1120463609695435
+          },
+          {
+            "epoch": 3,
+            "val_log_loss": 1.1070791482925415
+          }
+        ],
+        "val_log_loss": 1.10104238986969,
+        "val_baseline_log_loss": 0.9308398254979957,
+        "holdout_log_loss": 1.1004180908203125,
+        "holdout_baseline_log_loss": 0.948818165174407,
+        "holdout_accuracy": 0.2713310580204778,
+        "temperature": 3.0,
+        "param_change_l1": 12.327070251107216,
+        "device": "cpu",
+        "torch": "2.14.1+cu130",
+        "elapsed_s": 2.137
+      },
+      "rows": 3500,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "DOWN": 0.32709479331970215,
+          "FLAT": 0.34256866574287415,
+          "UP": 0.3303365111351013
+        }
+      }
+    },
+    {
+      "family": "RL_PPO",
+      "task_type": "RL_ACTION",
+      "task": "TARGET_EXPOSURE",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193401Z-3e916a27",
+      "seconds": 3.3,
+      "validation": {
+        "status": "VALIDATION_FAILED",
+        "criteria": [
+          {
+            "metric": "val_ppo_minus_flat",
+            "op": ">",
+            "threshold": 0.0,
+            "value": -20.46598186783558,
+            "passed": false
+          },
+          {
+            "metric": "val_ppo_minus_momentum",
+            "op": ">",
+            "threshold": 0.0,
+            "value": -128.89264324305486,
+            "passed": false
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "ok": true,
+        "seeds": [
+          {
+            "seed": 1,
+            "val": {
+              "ppo": {
+                "net_pnl": -20.46598186783558,
+                "max_drawdown": 48.087433478392086,
+                "trades": 344,
+                "costs": 70.19999999999973,
+                "steps": 582
+              },
+              "flat": {
+                "net_pnl": 0.0,
+                "max_drawdown": 0.0,
+                "trades": 0,
+                "costs": 0.0,
+                "steps": 582
+              },
+              "momentum": {
+                "net_pnl": 108.42666137521928,
+                "max_drawdown": 31.614235968585263,
+                "trades": 255,
+                "costs": 76.19999999999965,
+                "steps": 582
+              }
+            }
+          }
+        ],
+        "chosen_seed": 1,
+        "test": {
+          "ppo": {
+            "net_pnl": 55.25791238995225,
+            "max_drawdown": 31.604701707960885,
+            "trades": 341,
+            "costs": 68.69999999999978,
+            "steps": 582
+          },
+          "flat": {
+            "net_pnl": 0.0,
+            "max_drawdown": 0.0,
+            "trades": 0,
+            "costs": 0.0,
+            "steps": 582
+          },
+          "momentum": {
+            "net_pnl": 198.95907805546221,
+            "max_drawdown": 23.57204766237419,
+            "trades": 246,
+            "costs": 73.49999999999967,
+            "steps": 582
+          }
+        },
+        "val_ppo_minus_flat": -20.46598186783558,
+        "val_ppo_minus_momentum": -128.89264324305486,
+        "elapsed_s": 2.625
+      },
+      "rows": 3200,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "action": "SHORT",
+          "action_probabilities": {
+            "SHORT": 0.3552987575531006,
+            "FLAT": 0.3011745512485504,
+            "LONG": 0.3435266613960266
+          },
+          "note": "propozycja docelowej ekspozycji – nie zlecenie; prawdopodobieństwo akcji ≠ prawdopodobieństwo zysku"
+        }
+      }
+    },
+    {
+      "family": "NLP_SENTIMENT",
+      "task_type": "NLP_SENTIMENT",
+      "task": "TEXT_SENTIMENT_3",
+      "state": "DONE",
+      "reason": null,
+      "run_id": "20261107T193406Z-b8ca7ffc",
+      "seconds": 0.0,
+      "validation": {
+        "status": "APPROVED",
+        "criteria": [
+          {
+            "metric": "val_skill",
+            "op": ">",
+            "threshold": 0.0,
+            "value": 0.9999989759148232,
+            "passed": true
+          }
+        ],
+        "evaluated_on": "development (validation) only"
+      },
+      "metrics": {
+        "val_macro_f1": 1.0,
+        "val_log_loss": 1.1250725598339295e-06,
+        "val_baseline_log_loss": 1.0986122886681096,
+        "holdout": {
+          "macro_f1": 1.0,
+          "log_loss": 5.31100293267125e-07,
+          "confusion": [
+            [
+              39,
+              0,
+              0
+            ],
+            [
+              0,
+              41,
+              0
+            ],
+            [
+              0,
+              0,
+              40
+            ]
+          ],
+          "n": 120
+        },
+        "dedup": "hash znormalizowanego tekstu",
+        "split": "chronologiczny wg first_seen_at",
+        "label_note": "sentyment tekstu ≠ ruch XAUUSD; wpływ na rynek wymaga osobnej walidacji"
+      },
+      "rows": 0,
+      "prediction": {
+        "contract": "PMW-PRED-2",
+        "state": "READY",
+        "result": {
+          "sentiment": {
+            "NEGATIVE": 1.6100303757687686e-08,
+            "NEUTRAL": 1.4820542087455524e-08,
+            "POSITIVE": 0.9999999690791542
+          },
+          "texts": 1,
+          "decay_half_life_h": 4.1588830833596715,
+          "topic_share": {
+            "GOLD": 1.0,
+            "USD": 0.0,
+            "FED": 0.0,
+            "BTC": 0.0
+          },
+          "input": "nagłówki (bez pełnej treści)"
+        }
+      }
+    },
+    {
+      "family": "SEQ_GRU_EVENT",
+      "state": "DELEGATED",
+      "reason": "trainhub (test_trainhub) / centrum MM",
+      "seconds": 0
+    }
+  ],
+  "note": "dane syntetyczne o znanej strukturze – sprawdzenie potoku trening→zapis→ładowanie→predykcja i bramki walidacji, nie rentowności"
+}

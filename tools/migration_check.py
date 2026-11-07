@@ -1,6 +1,7 @@
 """Upgrade from the previous release and rollback, checked on COPIES of the data (never the user's own folder).
 
   python tools/migration_check.py [--old-ref 5298ec2] [--keep]          (default: 1.29.0 -> this repository, 1.30.x)
+  (1.33: on a weekend set MQ_FAKE_MARKET_ALWAYS_OPEN=1 - the simulator is closed Fri 23:00 .. Mon 00:00 and computes no zones)
 
 Everything in a temporary folder, terminal simulator = SYNTHETIC data, no MT5, no orders:
   1. the old version (git worktree of --old-ref) starts on a fresh data folder, computes market zones and - when it still has the
@@ -175,6 +176,19 @@ def bot_part(old: Path, tmp: Path) -> None:
             check(f"(informacyjnie) {ov} uruchomiony wprost na danych po {nv}", v.get("app_version") == ov)
     except RuntimeError as e:
         check(f"(informacyjnie) {ov} uruchomiony wprost na danych po {nv}", False, f"{e} – użyj kopii zapasowej")
+    # 1.33: config v13 - the first start keeps the untouched previous file; restoring it is the documented rollback of the settings
+    baks = sorted(d_new.glob("config.v*.bak.json"))
+    check(f"kopia konfiguracji sprzed {nv} zachowana przy pierwszym starcie", bool(baks), ", ".join(p.name for p in baks) or "brak")
+    if baks:
+        cfg_r = json.loads(baks[-1].read_text(encoding="utf-8"))
+        cfg_r.setdefault("server", {})["port"] = 8815
+        (d_new / "config.json").write_text(json.dumps(cfg_r), encoding="utf-8")
+        try:
+            with Bot(old, d_new, 8815) as b:
+                v = b.http.get("/api/v1/state")
+                check(f"powrót: {ov} działa na danych po {nv} z przywróconą {baks[-1].name}", v.get("app_version") == ov)
+        except RuntimeError as e:
+            check(f"powrót: {ov} działa na danych po {nv} z przywróconą {baks[-1].name}", False, str(e))
 
 
 def main() -> int:
