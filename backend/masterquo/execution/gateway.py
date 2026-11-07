@@ -69,6 +69,7 @@ class ExecutionGateway:
         self.engine = engine
         self.paper = paper
         self.manager = None
+        self.arc = None            # DecisionCoordinator (PMW-ARC-1): intent + shared atomic risk reservation before any NEW entry
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ validation
@@ -210,6 +211,19 @@ class ExecutionGateway:
             targets = risk["targets"]
             tp_final = targets[-1]["price"]
             now = iso(utcnow())
+            intent = None
+            if self.arc is not None:
+                op = self.arc.intents.open(path="ACTIVE", mode=mode, account_key=self.bridge.account_key, subject=setup["setup_id"],
+                                           reserve_subject=attempt_id, symbol=d["symbol"], side=side, volume=float(risk["lots"]),
+                                           risk_money=risk.get("modeled_loss"), record_id=(d.get("decision_record") or {}).get("record_id"),
+                                           equity=(self.bridge.account or {}).get("equity"))
+                if op["status"] == "DUPLICATE":
+                    return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXISTS_FOR_THIS_SETUP", "intent": op["intent"]["intent_id"]}
+                if op["status"] == "BLOCKED":
+                    if initiated_by == "USER":
+                        self.log.warn("EXECUTION", "BLOCKED", f"Wykonanie zablokowane (rezerwacja ryzyka): {','.join(op['reasons'])}")
+                    return {"status": "BLOCKED", "reason": "RESERVATION:" + ",".join(op["reasons"])}
+                intent = op["intent"]["intent_id"]
             try:
                 with self.db.tx() as c:
                     c.execute("""INSERT INTO order_attempts(attempt_id, entry_key, decision_id, setup_id, created_at, updated_at, mode, account_key, symbol,
@@ -218,7 +232,11 @@ class ExecutionGateway:
                                side, risk["lots"], risk["entry"], risk["stop_loss"], tp_final, client_tag(setup["setup_id"]), "PREPARED", initiated_by))
             except sqlite3.IntegrityError:
                 ex = self.db.one("SELECT attempt_id, state FROM order_attempts WHERE entry_key=?", (entry_key,))
+                if intent:
+                    self.arc.intents.outcome(intent, {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP"})
                 return {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP", "attempt": ex}
+            if intent:
+                self.arc.intents.sent(intent, attempt_id)
             self.log.info("EXECUTION", "PREPARED", f"{mode}: {side} {risk['lots']} {d['symbol']} SL {risk['stop_loss']} TP {tp_final} ({initiated_by})",
                           {"attempt_id": attempt_id, "decision_id": d["decision_id"]})
             if mode == "PAPER":
@@ -226,6 +244,11 @@ class ExecutionGateway:
                                       exit_policy=self.plan_policy(d))
             else:
                 res = self._send(attempt_id, d, side, risk, tp_final)
+            if intent:
+                try:
+                    self.arc.intents.outcome(intent, res)
+                except Exception as exc:  # noqa: BLE001 - the order outcome itself is already persisted in order_attempts
+                    self.log.warn("EXECUTION", "INTENT_OUTCOME_FAILED", f"{type(exc).__name__}: {exc}"[:200])
             if res.get("status") in ("FILLED", "PARTIAL"):
                 self.engine.mark_entered(setup["setup_id"], f"{mode}_{res['status']}")
             self.bus.publish("orders", self.recent_attempts(10))

@@ -36,7 +36,7 @@ def structural_direction(m02: dict | None) -> str:
 def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None, session_epoch: int, dq: dict,
           legacy: dict, setup: dict | None, levels: dict | None, risk: dict | None, agent_gate: dict, mode_gate: dict,
           macro: dict, strategy_cfg, risk_cfg, dxy_status: str, synthetic: bool, active: dict | None = None,
-          ml_gate: dict | None = None) -> dict:
+          ml_gate: dict | None = None, model_gate: dict | None = None) -> dict:
     """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes"} - the STRATEGY node then
     validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule."""
     nodes = []
@@ -134,6 +134,10 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
     if ml_gate is not None:
         nodes.append(_node("ML", ml_gate["status"], met=["ML_" + ml_gate["mode"]] if ml_gate["status"] == "PASS" else [],
                            unmet=[] if ml_gate["status"] == "PASS" else ["ML_PROBABILITY_ABOVE_THRESHOLD"], codes=ml_gate.get("codes", [])))
+    # 7b MODELS (PMW-ARC-1 coordinator): ASSIST families may hold, REQUIRED models must be READY/fresh/not contrary; OBSERVE never block
+    if model_gate is not None:
+        nodes.append(_node("MODELS", model_gate["status"], met=["MODELS_ROLES_OK"] if model_gate["status"] == "PASS" else [],
+                           unmet=[] if model_gate["status"] == "PASS" else ["MODEL_ROLES_ALLOW_ENTRY"], codes=model_gate.get("codes", [])))
     # 8 PERMISSION
     perm_ok = mode_gate["allowed"]
     perm_unmet = [] if mode_gate["allowed"] else ["EXECUTION_MODE_ALLOWS_ORDERS"]
@@ -150,7 +154,7 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
     direction_basis = "SETUP" if setup and direction == setup["direction"] and setup["state"] not in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY", "CANCELLED") \
         else (("REGIME_OBSERVATION" if active is not None else "STRUCTURE_OBSERVATION") if sdir != "NEUTRAL" else "NONE")
     actionable = (by["DATA"] == "PASS" and by["MARKET"] == "PASS" and by["STRATEGY"] == "PASS" and by["TRIGGER"] == "PASS"
-                  and by["RISK"] == "PASS" and by["AI"] == "PASS" and by.get("ML", "PASS") == "PASS")
+                  and by["RISK"] == "PASS" and by["AI"] == "PASS" and by.get("ML", "PASS") == "PASS" and by.get("MODELS", "PASS") == "PASS")
     if actionable:
         decision = "BUY" if direction == "LONG" else "SELL"
     elif by["DATA"] == "FAIL" or (setup and setup["state"] == "CONFIRMED" and by["RISK"] == "FAIL"):

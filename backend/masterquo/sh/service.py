@@ -261,9 +261,22 @@ class SHService:
             if risk and risk["status"] == "PASS" and entry_block:
                 su["entry_block"] = list(entry_block)
                 su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
+            model_block = None
+            arc = getattr(self, "arc", None)
+            if arc is not None and (su.get("status") == "READY" or self.last_saved.get(strat, (None,))[0] != su.get("status")):
+                try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
+                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, coord.get(strat))
+                    su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
+                    req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith("MODEL_REQUIRED")]
+                    if req and su.get("status") == "READY":
+                        model_block = req
+                        su["status"], su["status_reason"] = "WAIT", "model REQUIRED: " + ", ".join(req)
+                except Exception as exc:  # noqa: BLE001 - audit trail; REQUIRED configured -> no entry on a coordinator error
+                    if getattr(getattr(self.cfg_store.get(), "decision", None), "required_models", None):
+                        model_block = [f"MODEL_COORDINATOR_ERROR_{type(exc).__name__}"]
             self.persist_signal(su, risk, coord.get(strat), now)
             self.last_eval[strat] = su                                     # full setup (checklist, levels, models) for the panel
-            if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block:
+            if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block and not model_block:
                 self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
         for fn in list(self.listeners):
             try:
@@ -334,11 +347,33 @@ class SHService:
                                                   "basket_loss_limit_money", "loss_per_lot")},
                 "profile": {k: v for k, v in prof.items() if k != "_instrument"}, "instrument_profile": prof["_instrument"],
                 "atr_m5": (snap.get("vol") or {}).get("atr_m5"), "created_at": now}
+        arc = getattr(self, "arc", None)
+        intent = None
+        if arc is not None and mode != "SIGNALS":     # PMW-ARC-1: intent (dedup) + shared atomic risk reservation of BOTH paths
+            rec = arc.last.get("SH") if (arc.last.get("SH") or {}).get("source_id") == su["signal_id"] else None
+            op = arc.intents.open(path="SH", mode=mode, account_key=self.bridge.account_key, subject=pid, symbol=spec.symbol, side=su["side"],
+                                  volume=float(risk["volume"]), risk_money=risk.get("risk_money"), record_id=(rec or {}).get("record_id"),
+                                  equity=(getattr(self.bridge, "account", None) or {}).get("equity"))
+            if op["status"] == "DUPLICATE":
+                return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXISTS"}
+            if op["status"] == "BLOCKED":
+                self.log.info("SH", "ENTRY_RESERVATION_BLOCKED", f"{su['strategy']} {su['side']}: {','.join(op['reasons'])}")
+                return {"status": "BLOCKED", "reason": "RESERVATION:" + ",".join(op["reasons"])}
+            intent = op["intent"]["intent_id"]
         if not self.store.create_plan(plan, now):
+            if intent:
+                arc.intents.outcome(intent, {"status": "DUPLICATE"})
             return {"status": "DUPLICATE"}
         tp3 = su["tps"][-1]["price"]
+        if intent:
+            arc.intents.sent(intent, pid)
         res = ex.open(plan, role="P", side=su["side"], volume=risk["volume"], sl=su["sl"], tp=tp3, mode=mode, quote=q, tag="P",
                       slippage=float(prof["_instrument"].get("slippage_usd") or 0) if mode == "PAPER" else 0.0, now=now)
+        if intent:
+            try:
+                arc.intents.outcome(intent, res)
+            except Exception as exc:  # noqa: BLE001 - the plan state is the source of truth; sync() settles the intent later
+                self.log.warn("SH", "INTENT_OUTCOME_FAILED", f"{type(exc).__name__}: {exc}"[:200])
         self.store.event(pid, "OPEN_RESULT", res, now)
         if res["status"] in ("FILLED", "PARTIAL"):
             self._notify("trade_opened", {"key": pid, "mode": mode, "symbol": spec.symbol, "side": su["side"], "volume": res.get("volume"),

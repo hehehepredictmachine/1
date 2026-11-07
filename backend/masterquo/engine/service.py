@@ -45,6 +45,7 @@ class EngineService:
         self.agent = None          # set by runtime
         self.gateway = None        # set by runtime
         self.ml = None             # MLService, set by runtime
+        self.arc = None            # DecisionCoordinator (PMW-ARC-1), set by runtime
         self.legacy = LegacyEngines(paths.data_dir() / "legacy_m07_plan_lock.sqlite")
         self.required = self.legacy.profiles.required_closed_bars()
         self.lifecycle = lifecycle.LifecycleStore(db)
@@ -293,10 +294,17 @@ class EngineService:
             else {"status": "UNAVAILABLE", "reason_codes": ["AGENT_NOT_RUNNING"]}
         mode_gate = self.modes.gate(account_key, path="ACTIVE")
         macro = self.news.macro() if self.news else {"status": "DISABLED"}
+        model_gate = None
+        if self.arc is not None:
+            try:                                     # PMW-ARC-1: model roles -> decision-tree node MODELS (only stricter, never upgrades)
+                model_gate = self.arc.model_gate_active(setup)
+            except Exception as exc:  # noqa: BLE001 - a coordinator error never freezes the decision; REQUIRED models -> no entry
+                req = list(getattr(getattr(cfg, "decision", None), "required_models", []) or [])
+                model_gate = {"status": "FAIL", "codes": [f"MODEL_COORDINATOR_ERROR_{type(exc).__name__}"]} if req else None
         d = decision_mod.build(snapshot_id=full["snapshot_id"], as_of=now_iso, symbol=sym, account_key=account_key, session_epoch=epoch,
                                dq=dq, legacy=legacy_out, setup=setup, levels=levels, risk=risk, agent_gate=agent_gate, mode_gate=mode_gate,
                                macro=macro, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status=self.bridge.dxy_status,
-                               synthetic=self.bridge.synthetic, active=active_ctx, ml_gate=self._ml_gate(setup))
+                               synthetic=self.bridge.synthetic, active=active_ctx, ml_gate=self._ml_gate(setup), model_gate=model_gate)
         if active_ctx is not None:
             try:
                 from . import checklist as checklist_mod
@@ -339,6 +347,11 @@ class EngineService:
         if d["content_hash"] != self._last_decision_hash or force_publish or view_changed:
             changed = d["content_hash"] != self._last_decision_hash
             self._last_decision_hash = d["content_hash"]
+            if changed and self.arc is not None:
+                try:
+                    self.arc.record_active(d, mode_gate.get("mode", "SIGNALS"), model_gate)
+                except Exception as exc:  # noqa: BLE001 - audit trail only
+                    self.log.warn("DECISION", "RECORD_FAILED", f"DecisionRecord nie zapisany: {type(exc).__name__}: {exc}"[:200])
             if changed:
                 self.db.execute("""INSERT OR IGNORE INTO decisions(decision_id, created_at, snapshot_id, setup_id, account_key, session_epoch, symbol, synthetic,
                                    analysis_direction, signal_stage, decision, execution_permission, expires_at, record_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",

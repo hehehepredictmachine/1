@@ -2092,6 +2092,21 @@ def create_app(rt, port: int) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
 
+    @app.get("/api/v1/decision/status")
+    def decision_status():
+        """PMW-ARC-1: last decision of each path, live risk reservations, recent execution intents and decision records."""
+        arc = getattr(rt, "arc", None)
+        if arc is None:
+            raise HTTPException(503, "DECISION_COORDINATOR_NOT_RUNNING")
+        return arc.status()
+
+    @app.get("/api/v1/decision/records/{record_id}")
+    def decision_record(record_id: str):
+        r = rt.db.one("SELECT record_json FROM decision_records WHERE record_id=?", (record_id,))
+        if not r:
+            raise HTTPException(404, "RECORD_NOT_FOUND")
+        return json.loads(r["record_json"])
+
     @app.get("/api/v1/families")
     def families_catalog(instrument: str | None = Query(None)):
         inst = _fam_inst(instrument)

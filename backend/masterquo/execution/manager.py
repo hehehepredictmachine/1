@@ -74,6 +74,9 @@ class PositionManager:
                 self.reconciled_epoch = b.session_epoch
                 self.log.info("EXECUTION", "RECONCILED", "Stan pozycji uzgodniony z terminalem po połączeniu.")
         self._manage_paper()
+        arc = getattr(self, "arc", None)
+        if arc is not None:                     # PMW-ARC-1: settle UNKNOWN/SENT intents from both paths' reconciliation (never re-sent)
+            arc.sync()
         if time.monotonic() - self._last_equity >= 60:
             self._last_equity = time.monotonic()
             self._equity_snapshot()

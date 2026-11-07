@@ -639,6 +639,15 @@ class FamiliesConfig(_Strict):
     nlp_transformer_path: str | None = Field(None, description="local transformer checkpoint directory (licensed by the user); never downloaded")
 
 
+class DecisionConfig(_Strict):
+    """1.33 decision architecture (PMW-ARC-1): one coordinator, model roles, shared risk reservation, execution intents."""
+    enabled: bool = True
+    required_models: list[str] = Field(default_factory=list, description="family ids in role REQUIRED (missing/stale/contrary -> no new entry)")
+    required_max_age_s: float = Field(900.0, ge=10, le=86400, description="REQUIRED forecast older than this -> MODEL_REQUIRED_STALE")
+    assist_on_active: bool = Field(True, description="ASSIST families may also hold the main (ACTIVE) path: ALLOWED -> BLOCKED with reason")
+    reservation_ttl_s: float = Field(180.0, ge=10, le=3600, description="an un-settled reservation (crash) is released after this; UNKNOWN never")
+
+
 class AppConfig(_Strict):
     config_version: int = 12
     mt5: MT5Config = Field(default_factory=MT5Config)
@@ -665,6 +674,7 @@ class AppConfig(_Strict):
     zones: ZonesConfig = Field(default_factory=ZonesConfig)
     indicators: IndicatorsConfig = Field(default_factory=IndicatorsConfig)
     families: FamiliesConfig = Field(default_factory=FamiliesConfig)
+    decision: DecisionConfig = Field(default_factory=DecisionConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

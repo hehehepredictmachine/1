@@ -141,6 +141,9 @@ class Runtime:
         from .modelhub.families.service import FamilyService
         self.families = FamilyService(self.cfg, self.bridge, indicators=self.indicators, news=self.news)   # PMW-FAM-1: 15 model families
         self.sh.families = self.families                                                            # SH receiver: context + ASSIST hold
+        from .decision.coordinator import DecisionCoordinator
+        self.arc = DecisionCoordinator(self.db, self.cfg, families=self.families, instrument_fn=self.sh.instrument)   # PMW-ARC-1
+        self.engine.arc = self.gateway.arc = self.sh.arc = self.manager.arc = self.arc                  # one coordinator + ledger for both paths
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
