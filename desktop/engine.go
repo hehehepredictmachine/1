@@ -77,6 +77,15 @@ func (e *Engine) State() (EngineState, string) {
 
 // Port of the engine: data\config.json server.port, else the engine's default.
 func (e *Engine) Port() int {
+	if isStudio() {
+		var st struct {
+			Port int `json:"port"`
+		}
+		if b, err := os.ReadFile(filepath.Join(e.l.StudioDir(), "settings.json")); err == nil && json.Unmarshal(b, &st) == nil && st.Port >= 1024 {
+			return st.Port
+		}
+		return 8780
+	}
 	var c struct {
 		Server struct {
 			Port int `json:"port"`
@@ -92,7 +101,7 @@ func (e *Engine) URL() string { return fmt.Sprintf("http://127.0.0.1:%d/", e.Por
 
 // healthy = this app answers on the port (another program on the port is not mistaken for the engine).
 func (e *Engine) healthy() bool {
-	r, err := e.client.Get(e.URL() + "api/v1/health")
+	r, err := e.client.Get(e.URL() + healthPath())
 	if err != nil {
 		return false
 	}
@@ -101,11 +110,25 @@ func (e *Engine) healthy() bool {
 		OK  bool   `json:"ok"`
 		App string `json:"app"`
 	}
-	return r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, appName)
+	return r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, expectedApp())
+}
+
+func healthPath() string {
+	if isStudio() {
+		return "api/studio/health"
+	}
+	return "api/v1/health"
+}
+
+func expectedApp() string {
+	if isStudio() {
+		return "PepeTrainingStudio"
+	}
+	return appName
 }
 
 func (e *Engine) portTakenByOther() bool {
-	r, err := e.client.Get(e.URL() + "api/v1/health")
+	r, err := e.client.Get(e.URL() + healthPath())
 	if err != nil {
 		return false
 	}
@@ -127,11 +150,19 @@ func (e *Engine) env() []string {
 		}
 		env = append(env, kv)
 	}
+	if isStudio() { // own data folder; the bot's data folder only as the read-only candle source / inbox / shared export lock
+		return append(env, "PYTHONPATH="+pp, "PYTHONNOUSERSITE=1", "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8",
+			"MASTERQUO_DATA_DIR="+e.l.StudioDir(), "MQ_STUDIO_DATA_DIR="+e.l.StudioDir(), "MQ_BOT_DATA_DIR="+e.l.DataDir,
+			"PMW_DESKTOP=1", "PMW_DESKTOP_EXE="+e.l.Exe)
+	}
 	return append(env, "PYTHONPATH="+pp, "PYTHONNOUSERSITE=1", "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8",
 		"MASTERQUO_DATA_DIR="+e.l.DataDir, "PMW_DESKTOP=1", "PMW_DESKTOP_EXE="+e.l.Exe)
 }
 
 func (e *Engine) args() []string {
+	if isStudio() {
+		return append([]string{"-m", "masterquo", "studio"}, e.extra...)
+	}
 	return append([]string{"-m", "masterquo", "serve", "--no-browser"}, e.extra...)
 }
 

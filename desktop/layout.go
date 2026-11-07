@@ -71,5 +71,11 @@ func detectLayout(exe string, env func(string) string) Layout {
 
 // WindowTitle: product and version (1.30: no OWNER / CLIENT editions any more - the license system was removed).
 func (l Layout) WindowTitle(version string) string {
+	if isStudio() {
+		return "Pepe Data & Training Studio " + version
+	}
 	return "PepeMarketWizard " + version
 }
+
+// StudioDir: data folder of Pepe Data & Training Studio (separate from the bot's data folder, same home).
+func (l Layout) StudioDir() string { return filepath.Join(l.Home, "data_studio") }

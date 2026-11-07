@@ -7,5 +7,6 @@ export default defineConfig({
   plugins: [react()],
   base: "/",
   publicDir: "public",
-  build: { outDir: "dist", assetsDir: "assets", sourcemap: false, chunkSizeWarningLimit: 900 },
+  build: { outDir: "dist", assetsDir: "assets", sourcemap: false, chunkSizeWarningLimit: 900,
+           rollupOptions: { input: { main: "index.html", studio: "studio.html" } } },   // 1.33: separate Pepe Data & Training Studio entry
 });

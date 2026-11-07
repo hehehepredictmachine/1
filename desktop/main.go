@@ -12,6 +12,12 @@ import (
 
 var version = "1.25.0" // overridden by the build: -ldflags "-X main.version=..."
 
+// appMode "studio" (-ldflags "-X main.appMode=studio") builds PepeTrainingStudio.exe from the same sources: the window supervises
+// `python -m masterquo studio` (own port, own data folder data_studio, no trading engine) instead of the bot.
+var appMode = "bot"
+
+func isStudio() bool { return appMode == "studio" }
+
 type options struct {
 	autostart bool   // started by the Windows autostart entry (may start minimized to the tray)
 	headless  bool   // no window: start the engine and keep it running until Ctrl+C

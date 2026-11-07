@@ -462,3 +462,31 @@ func TestLauncherPageKeepsStartFunctions(t *testing.T) {
 		}
 	}
 }
+
+func TestStudioModeLaunchesStudioWithOwnData(t *testing.T) {
+	old := appMode
+	appMode = "studio"
+	defer func() { appMode = old }()
+	home := filepath.Join(t.TempDir(), "home with space")
+	l := detectLayout(filepath.Join(t.TempDir(), "PepeTrainingStudio.exe"), func(k string) string {
+		if k == "PMW_HOME" {
+			return home
+		}
+		return ""
+	})
+	e := newEngine(l, "", func(string) {}, nil)
+	if got := strings.Join(e.args(), " "); got != "-m masterquo studio" {
+		t.Fatalf("args %q", got)
+	}
+	env := strings.Join(e.env(), "\n")
+	if !strings.Contains(env, "MQ_STUDIO_DATA_DIR="+l.StudioDir()) || !strings.Contains(env, "MASTERQUO_DATA_DIR="+l.StudioDir()) ||
+		!strings.Contains(env, "MQ_BOT_DATA_DIR="+l.DataDir) {
+		t.Fatalf("env %s", env)
+	}
+	if e.Port() != 8780 || healthPath() != "api/studio/health" || expectedApp() != "PepeTrainingStudio" {
+		t.Fatal("studio port / health")
+	}
+	if !strings.HasPrefix(l.WindowTitle("1.33.0"), "Pepe Data & Training Studio") {
+		t.Fatal("title")
+	}
+}

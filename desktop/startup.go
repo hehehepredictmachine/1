@@ -106,7 +106,11 @@ func doImport(l Layout, st *State, src string, logf func(string)) error {
 // boot prepares everything and starts (or attaches to) the engine. It can be called again with the same engine after an error.
 func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(string), eng *Engine) error {
 	st := loadState(l.Home)
-	if err := prepareData(l, &st, ui, importArg, logf); err != nil {
+	if isStudio() { // Studio: own data folder only; the bot's data folder is never migrated or modified here
+		if err := os.MkdirAll(l.StudioDir(), 0o755); err != nil {
+			return err
+		}
+	} else if err := prepareData(l, &st, ui, importArg, logf); err != nil {
 		return err
 	}
 	if eng.Owned() && !eng.healthy() { // an earlier attempt left a process that never answered
