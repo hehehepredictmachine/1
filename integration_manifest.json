@@ -1,0 +1,1778 @@
+{
+  "manifest": "PMW-INTEGRATION-1.33",
+  "version": "1.33.0",
+  "base": {
+    "version": "1.32.0",
+    "commit": "5e5d82a"
+  },
+  "commit_at_generation": "da87dc3fec64f2c350c6d146b3e2b830240e30f8",
+  "specs": {
+    "AUD": "audyt modeli, 15 rodzin, trening",
+    "IND": "wskaźniki, DXY, plany Scalp/Hedge, SVP",
+    "STU": "Data & Training Studio",
+    "ARC": "architektura analizy i decyzji"
+  },
+  "requirements": [
+    {
+      "id": "AUD-01",
+      "spec": "AUD",
+      "title": "Kontrakt predykcji PMW-PRED-2 (liczby skończone, schematy wyników per zadanie, horyzont, proweniencja)",
+      "modules": [
+        {
+          "path": "backend/masterquo/modelhub/contract.py",
+          "exists": true
+        }
+      ],
+      "runtime": "każdy producent prognoz (modelhub.adapters, families, kronos, trainhub)",
+      "receivers": "panel / SH / agent / koordynator",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_integration_u1",
+          "exists": true,
+          "run": {
+            "ran": 8,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_families_u4",
+          "exists": true,
+          "run": {
+            "ran": 19,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-02",
+      "spec": "AUD",
+      "title": "Interwał M3 w całym łańcuchu (rejestr TF, most MT5, fallback M1→M3, eksport, TrainHub, Kronos)",
+      "modules": [
+        {
+          "path": "backend/masterquo/timeutil.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/mt5/bridge.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/mt5/fake.py",
+          "exists": true
+        }
+      ],
+      "runtime": "bridge TF_POLL / rejestr TF",
+      "receivers": "analiza, wykresy, trening",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_integration_u1",
+          "exists": true,
+          "run": {
+            "ran": 8,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_bridge_engine",
+          "exists": true,
+          "run": {
+            "ran": 17,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_pages",
+          "exists": true,
+          "run": {
+            "ran": 8,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_signal_card",
+          "exists": true,
+          "run": {
+            "ran": 9,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-03",
+      "spec": "AUD",
+      "title": "dxy_missing = rzeczywista dostępność DXY (MQ-FEAT-1.2.0 + adapter starszych modeli)",
+      "modules": [
+        {
+          "path": "backend/masterquo/ml/features.py",
+          "exists": true
+        }
+      ],
+      "runtime": "MLService",
+      "receivers": "bramka ML ścieżki ACTIVE",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_integration_u1",
+          "exists": true,
+          "run": {
+            "ran": 8,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-04",
+      "spec": "AUD",
+      "title": "Kronos REQUIRED powiązany z odciskiem (symbol, horyzont, ustawienia, pasmo, rewizje) – nieaktualne dopuszczenie wstrzymuje",
+      "modules": [
+        {
+          "path": "backend/masterquo/kronos/predictions.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/kronos/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "runtime.kronos → sh.kronos",
+      "receivers": "SCALPING / HEDGING",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_kronos_bot",
+          "exists": true,
+          "run": {
+            "ran": 17,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_integration_u1",
+          "exists": true,
+          "run": {
+            "ran": 8,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-05",
+      "spec": "AUD",
+      "title": "Wspólny adapter rodzin PMW-FAM-1: 3 osie stanu, magazyn artefaktów (manifest, sumy, próbka), aktywacja, rollback, role OFF/SHADOW/ASSIST",
+      "modules": [
+        {
+          "path": "backend/masterquo/modelhub/families/base.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/modelhub/families/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "runtime.families (FamilyService)",
+      "receivers": "SH (kontekst + ASSIST), ACTIVE (węzeł MODELS), panel, agent",
+      "routes": [
+        {
+          "route": "/api/v1/families",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/families/{fid}/activate",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/families/{fid}/rollback",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/families/{fid}/use",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_families_u4",
+          "exists": true,
+          "run": {
+            "ran": 19,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-06",
+      "spec": "AUD",
+      "title": "Izolowane środowisko .venv_deep i proces roboczy (PyTorch / Gymnasium / SB3)",
+      "modules": [
+        {
+          "path": "backend/deep_runtime/worker.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/modelhub/families/deep.py",
+          "exists": true
+        },
+        {
+          "path": "tools/deep_setup.py",
+          "exists": true
+        },
+        {
+          "path": "requirements/requirements-deep-win.txt",
+          "exists": true
+        },
+        {
+          "path": "34_DEEP_INSTALUJ.bat",
+          "exists": true
+        }
+      ],
+      "runtime": "FamilyService → deep worker (MQ_DEEP_PYTHON)",
+      "receivers": "trening / inferencja LSTM, GRU, PPO",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_families_u4",
+          "exists": true,
+          "run": {
+            "ran": 19,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-07",
+      "spec": "AUD",
+      "title": "TrainHub: TH_RF, TH_SVM (kalibrowane), XGB natywny JSON, profile smoke/research/full, unikalne wersje, test wyniku po kalibracji",
+      "modules": [
+        {
+          "path": "backend/masterquo/trainhub/learn.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/trainhub/pipeline.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/trainhub/cli.py",
+          "exists": true
+        }
+      ],
+      "runtime": "runtime.trainhub / trainhub_inference",
+      "receivers": "Centrum treningu, SH",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_trainhub",
+          "exists": true,
+          "run": {
+            "ran": 22,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-08",
+      "spec": "AUD",
+      "title": "Instrukcje i skrypty treningu (35_RODZINY_MODELI.bat, menu 32 opcje 7 i 8, CLI families)",
+      "modules": [
+        {
+          "path": "35_RODZINY_MODELI.bat",
+          "exists": true
+        },
+        {
+          "path": "32_CENTRUM_TRENINGU.bat",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/modelhub/families/cli.py",
+          "exists": true
+        },
+        {
+          "path": "docs/INSTRUKCJA_TRENINGU_PL.md",
+          "exists": true
+        }
+      ],
+      "runtime": "–",
+      "receivers": "użytkownik",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_families_u4",
+          "exists": true,
+          "run": {
+            "ran": 19,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "AUD-09",
+      "spec": "AUD",
+      "title": "Sekcja „Rodziny modeli 1.33” w Centrum treningu (stan, trening, aktywacja, rollback, użycie)",
+      "modules": [
+        {
+          "path": "frontend/src/features/pmw133/FamiliesSection.tsx",
+          "exists": true
+        }
+      ],
+      "runtime": "panel → /api/v1/families/*",
+      "receivers": "panel",
+      "routes": [
+        {
+          "route": "/api/v1/families/train-all",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/families/predictions",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_training_center",
+          "exists": true,
+          "run": {
+            "ran": 1,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-01",
+      "spec": "IND",
+      "title": "Kontrakt wskaźników PMW-IND-1 (wartości, jednostki, czas źródła/dostępności, hash konfiguracji)",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/contract.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService",
+      "receivers": "kontekst analizy / SH / agent",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-02",
+      "spec": "IND",
+      "title": "AVWAP SESSION / EVENT / MANUAL z pasmami σ, zdarzenia CROSS/RETEST, wersje kotwic",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/avwap.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService.compute",
+      "receivers": "kontekst ACTIVE (view.context), SH OBSERVE, wykres",
+      "routes": [
+        {
+          "route": "/api/v1/indicators/chart",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/indicators/anchors",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-03",
+      "spec": "IND",
+      "title": "Spread względem tych samych slotów wcześniejszych sesji (próbkowanie stałym zegarem, percentyl)",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/spread.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService (próbki spread_samples)",
+      "receivers": "kontekst / panel",
+      "routes": [
+        {
+          "route": "/api/v1/indicators/snapshot",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-04",
+      "spec": "IND",
+      "title": "Semiwariancja 20/60 M1 z obsługą luk",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/semivar.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService",
+      "receivers": "kontekst / panel",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-05",
+      "spec": "IND",
+      "title": "Relacja XAUUSD × DXY na zwrotach H1 bez forward-fill (korelacja, beta bez bieżącej obserwacji, reszta z)",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/dxy.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService (dxy_bars)",
+      "receivers": "kontekst, agent get_dxy_relation, panel #/dxy",
+      "routes": [
+        {
+          "route": "/api/v1/indicators/dxy",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-06",
+      "spec": "IND",
+      "title": "Mikrostruktura: OFI, nierównowaga, microprice z arkusza MT5 (market_book_* przez kolejkę MT5) + archiwum",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/ofi.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/mt5/fake.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService BookAdapter",
+      "receivers": "rodzina MICROSTRUCTURE, panel",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_families_u4",
+          "exists": true,
+          "run": {
+            "ran": 19,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-07",
+      "spec": "IND",
+      "title": "Cechy profilu sesji z DSVIE + RVOL z kontrolą historii i pokrycia",
+      "modules": [
+        {
+          "path": "backend/masterquo/indicators/profile.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/zones/dsvie.py",
+          "exists": true
+        }
+      ],
+      "runtime": "IndicatorService / ZonesService",
+      "receivers": "kontekst / strefy",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_zones",
+          "exists": true,
+          "run": {
+            "ran": 42,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-08",
+      "spec": "IND",
+      "title": "Plany Pepe Scalp Plan / Pepe Hedge Plan (PMW-PLAN-1): plan vs fill, SL v2 po BE, noga HEDGE, NETTING = niedostępne",
+      "modules": [
+        {
+          "path": "backend/masterquo/plans/contract.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/plans/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "SHService → plans.collect",
+      "receivers": "panel (warstwy wykresu)",
+      "routes": [
+        {
+          "route": "/api/v1/plans/chart",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_plans_svp_u3",
+          "exists": true,
+          "run": {
+            "ran": 21,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-09",
+      "spec": "IND",
+      "title": "SVP PMW-SVP-1: profile SESSION/RANGE/VISIBLE/LIVE/FROZEN, strefy MANUAL/ALGORITHM/AI z wersjami, AI z walidacją snapshotu",
+      "modules": [
+        {
+          "path": "backend/masterquo/svp/engine.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/svp/zones.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/svp/service.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/agent/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "runtime.svp (SVPService)",
+      "receivers": "agent get_svp_profiles, panel #/svp, warstwa SVP",
+      "routes": [
+        {
+          "route": "/api/v1/svp/profiles",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/svp/zones",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/svp/profiles/{pid}/ai-propose",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_plans_svp_u3",
+          "exists": true,
+          "run": {
+            "ran": 21,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-10",
+      "spec": "IND",
+      "title": "Narzędzia agenta: get_pmw_indicators, get_dxy_relation, get_svp_profiles (zamrożony snapshot)",
+      "modules": [
+        {
+          "path": "backend/masterquo/agent/tools.py",
+          "exists": true
+        }
+      ],
+      "runtime": "engine.indicators_provider / svp_provider",
+      "receivers": "agent Claude",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_indicators_u2",
+          "exists": true,
+          "run": {
+            "ran": 30,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_plans_svp_u3",
+          "exists": true,
+          "run": {
+            "ran": 21,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "IND-11",
+      "spec": "IND",
+      "title": "Panel: #/dxy (XAUUSD × DXY i wskaźniki), #/svp (narzędzie SVP), warstwy Scalp Plan / Hedge Plan / AVWAP / SVP w każdym wykresie",
+      "modules": [
+        {
+          "path": "frontend/src/features/pmw133/DxyPage.tsx",
+          "exists": true
+        },
+        {
+          "path": "frontend/src/features/pmw133/SvpPage.tsx",
+          "exists": true
+        },
+        {
+          "path": "frontend/src/features/pmw133/overlays.tsx",
+          "exists": true
+        },
+        {
+          "path": "frontend/src/components/ChartPanel.tsx",
+          "exists": true
+        }
+      ],
+      "runtime": "panel",
+      "receivers": "użytkownik",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_ui_chart_prefs",
+          "exists": true,
+          "run": {
+            "ran": 6,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-01",
+      "spec": "STU",
+      "title": "Osobna aplikacja Studio (proces, port 8780, własny katalog danych), bez Runtime bota i bez zleceń",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/app.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/studio/settings.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/__main__.py",
+          "exists": true
+        },
+        {
+          "path": "36_STUDIO.bat",
+          "exists": true
+        }
+      ],
+      "runtime": "`python -m masterquo studio`",
+      "receivers": "trening / dane",
+      "routes": [
+        {
+          "route": "/api/studio/health",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-02",
+      "spec": "STU",
+      "title": "Blokada międzyprocesowa (O_EXCL + heartbeat) i wspólna blokada eksportu bota i Studio",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/lock.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/marketdata/export.py",
+          "exists": true
+        }
+      ],
+      "runtime": "Studio + eksport bota",
+      "receivers": "dane",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_export_mt5",
+          "exists": true,
+          "run": {
+            "ran": 10,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-03",
+      "spec": "STU",
+      "title": "Rejestr 72 zadań (TRAINHUB / FAMILY / RUNNER_GROUP / DETERMINISTIC / PRETRAINED) + MODEL_DATA_MATRIX.json",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/registry.py",
+          "exists": true
+        },
+        {
+          "path": "docs/MODEL_DATA_MATRIX.json",
+          "exists": true
+        }
+      ],
+      "runtime": "Studio",
+      "receivers": "trening",
+      "routes": [
+        {
+          "route": "/api/studio/matrix",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-04",
+      "spec": "STU",
+      "title": "Kolejka zadań (pauza, anulowanie, wznowienie, przesunięcie, przeniesienie) z trwałym stanem",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/queue.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/studio/jobrun.py",
+          "exists": true
+        }
+      ],
+      "runtime": "Studio",
+      "receivers": "trening",
+      "routes": [
+        {
+          "route": "/api/studio/jobs",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-05",
+      "spec": "STU",
+      "title": "Paczka per model: etapy RAW → walidacja → dataset → trening → ocena → test ładowania, atomowe zatwierdzenia i sumy",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/package.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/studio/pipeline.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/studio/verify.py",
+          "exists": true
+        }
+      ],
+      "runtime": "Studio",
+      "receivers": "trening",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-06",
+      "spec": "STU",
+      "title": "Import paczki do bota (kandydat, nigdy auto-aktywacja), rollback, inbox przy starcie",
+      "modules": [
+        {
+          "path": "backend/masterquo/studio/importer.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/api/app.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/runtime.py",
+          "exists": true
+        }
+      ],
+      "runtime": "Runtime: process_inbox() przy starcie",
+      "receivers": "modele bota",
+      "routes": [
+        {
+          "route": "/api/v1/studio/import",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/studio/imports",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-07",
+      "spec": "STU",
+      "title": "PepeTrainingStudio.exe (tryb studio launchera Go) w paczce DESKTOP",
+      "modules": [
+        {
+          "path": "desktop/main.go",
+          "exists": true
+        },
+        {
+          "path": "desktop/engine.go",
+          "exists": true
+        },
+        {
+          "path": "desktop/layout.go",
+          "exists": true
+        },
+        {
+          "path": "tools/build_desktop.py",
+          "exists": true
+        }
+      ],
+      "runtime": "launcher Go",
+      "receivers": "użytkownik",
+      "routes": [],
+      "tests": [
+        {
+          "test": "go test ./desktop",
+          "exists": true
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-08",
+      "spec": "STU",
+      "title": "Przycisk „Studio” ze stanem w menu bota (pasek górny, menu CULT), uruchomienie jako osobny proces",
+      "modules": [
+        {
+          "path": "frontend/src/features/pmw133/StudioButton.tsx",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/api/app.py",
+          "exists": true
+        }
+      ],
+      "runtime": "API bota",
+      "receivers": "panel",
+      "routes": [
+        {
+          "route": "/api/v1/studio/status",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/studio/launch",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "STU-09",
+      "spec": "STU",
+      "title": "Frontend Studio (studio.html, 6 obszarów)",
+      "modules": [
+        {
+          "path": "frontend/studio.html",
+          "exists": true
+        },
+        {
+          "path": "frontend/src/studio/main.tsx",
+          "exists": true
+        }
+      ],
+      "runtime": "Studio",
+      "receivers": "użytkownik",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_studio_u5",
+          "exists": true,
+          "run": {
+            "ran": 7,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-01",
+      "spec": "ARC",
+      "title": "10 kontraktów typowanych (InstrumentSpec … ExecutionOutcome)",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/contracts.py",
+          "exists": true
+        }
+      ],
+      "runtime": "decision/*",
+      "receivers": "koordynator / ledger",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-02",
+      "spec": "ARC",
+      "title": "Role modeli OBSERVE / ASSIST / REQUIRED dla obu ścieżek (węzeł MODELS w drzewie ACTIVE, REQUIRED w SH)",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/coordinator.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/engine/decision.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/engine/service.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/sh/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "engine.arc / sh.arc",
+      "receivers": "strategie ACTIVE i SH",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-03",
+      "spec": "ARC",
+      "title": "Jeden Decision Coordinator i DecisionRecord obu ścieżek",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/coordinator.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/db/migrations/0025_decision_arc.sql",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/runtime.py",
+          "exists": true
+        }
+      ],
+      "runtime": "runtime.arc (wspólny dla engine/gateway/SH/manager)",
+      "receivers": "audyt, panel #/decyzje",
+      "routes": [
+        {
+          "route": "/api/v1/decision/status",
+          "registered": true
+        },
+        {
+          "route": "/api/v1/decision/records/{record_id}",
+          "registered": true
+        }
+      ],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_risk_execution",
+          "exists": true,
+          "run": {
+            "ran": 21,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-04",
+      "spec": "ARC",
+      "title": "Wspólny portfel/ryzyko z atomową rezerwacją (BEGIN IMMEDIATE) obu ścieżek",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/ledger.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/execution/gateway.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/sh/service.py",
+          "exists": true
+        }
+      ],
+      "runtime": "gateway.arc / sh.arc",
+      "receivers": "wykonanie nowych wejść",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-05",
+      "spec": "ARC",
+      "title": "Intencje wykonania: deduplikacja, UNKNOWN liczony do rekonsyliacji, rozliczanie z adapterów (bez ponownej wysyłki)",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/ledger.py",
+          "exists": true
+        },
+        {
+          "path": "backend/masterquo/execution/manager.py",
+          "exists": true
+        }
+      ],
+      "runtime": "manager.tick → arc.sync()",
+      "receivers": "wykonanie",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_risk_execution",
+          "exists": true,
+          "run": {
+            "ran": 21,
+            "result": "OK"
+          }
+        },
+        {
+          "test": "test_sh_service",
+          "exists": true,
+          "run": {
+            "ran": 13,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-06",
+      "spec": "ARC",
+      "title": "Replay stary (1.32) vs nowy (1.33): zapisane decyzje + scenariusz wyścigu",
+      "modules": [
+        {
+          "path": "backend/masterquo/decision/replay.py",
+          "exists": true
+        }
+      ],
+      "runtime": "`python -m masterquo.decision.replay`",
+      "receivers": "walidacja",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_decision_arc_u6",
+          "exists": true,
+          "run": {
+            "ran": 18,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-07",
+      "spec": "ARC",
+      "title": "Panel #/decyzje: ostatnie decyzje, rezerwacje, intencje, rekordy z rolami modeli",
+      "modules": [
+        {
+          "path": "frontend/src/features/pmw133/DecisionPage.tsx",
+          "exists": true
+        }
+      ],
+      "runtime": "panel",
+      "receivers": "użytkownik",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_ui_pmw133",
+          "exists": true,
+          "run": {
+            "ran": 3,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "ARC-08",
+      "spec": "ARC",
+      "title": "Execution Lock NIE przywrócony; tryby SIGNALS/PAPER/AUTO DEMO/AUTO LIVE, STOP i limity bez zmian",
+      "modules": [
+        {
+          "path": "backend/masterquo/execution/modes.py",
+          "exists": true
+        }
+      ],
+      "runtime": "ModeManager",
+      "receivers": "wykonanie",
+      "routes": [],
+      "tests": [
+        {
+          "test": "test_execution_lock_withdrawn",
+          "exists": true,
+          "run": {
+            "ran": 11,
+            "result": "OK"
+          }
+        }
+      ],
+      "status": "IMPLEMENTED"
+    }
+  ],
+  "families": [
+    {
+      "family": "TS_ARIMA",
+      "registered": true
+    },
+    {
+      "family": "TS_SARIMAX",
+      "registered": true
+    },
+    {
+      "family": "VOL_GARCH",
+      "registered": true
+    },
+    {
+      "family": "MICROSTRUCTURE",
+      "registered": true
+    },
+    {
+      "family": "PAIR_COINT",
+      "registered": true
+    },
+    {
+      "family": "STATARB",
+      "registered": true
+    },
+    {
+      "family": "KALMAN_LS",
+      "registered": true
+    },
+    {
+      "family": "BREAKOUT",
+      "registered": true
+    },
+    {
+      "family": "TH_RF",
+      "registered": true
+    },
+    {
+      "family": "TH_SVM",
+      "registered": true
+    },
+    {
+      "family": "TH_XGB",
+      "registered": true
+    },
+    {
+      "family": "SEQ_LSTM",
+      "registered": true
+    },
+    {
+      "family": "SEQ_GRU",
+      "registered": true
+    },
+    {
+      "family": "RL_PPO",
+      "registered": true
+    },
+    {
+      "family": "NLP_SENTIMENT",
+      "registered": true
+    }
+  ],
+  "migrations": [
+    "0001_init.sql",
+    "0002_active_strategies.sql",
+    "0003_modes_and_ml.sql",
+    "0005_ai_signals.sql",
+    "0006_bot_signals.sql",
+    "0007_signal_history.sql",
+    "0008_account_prefs.sql",
+    "0009_exit_policy_and_settlement.sql",
+    "0010_walls_iv.sql",
+    "0011_forecast_shadow.sql",
+    "0012_scalp_shadow.sql",
+    "0013_analytics_pattern_library.sql",
+    "0014_lab_two_assets.sql",
+    "0015_instrument_columns.sql",
+    "0016_extind_archive.sql",
+    "0017_ml_scalp.sql",
+    "0018_nss_inferences.sql",
+    "0019_mtf_snapshots.sql",
+    "0020_liquidity.sql",
+    "0021_structure_intelligence.sql",
+    "0022_neutral_quotes.sql",
+    "0023_sh_strategies.sql",
+    "0024_kronos.sql",
+    "0025_decision_arc.sql"
+  ],
+  "new_migration": "0025_decision_arc.sql",
+  "config_sections_new": [
+    "indicators",
+    "families",
+    "decision"
+  ],
+  "files": [
+    {
+      "path": "32_CENTRUM_TRENINGU.bat",
+      "sha256": "774a613922014c5b8ce4f1f16ab5f4aa447f0ff68e2dd6e9ed69b68ee5da0759"
+    },
+    {
+      "path": "34_DEEP_INSTALUJ.bat",
+      "sha256": "d987f241fa4174b565d7c54a99b4b44284922059b30c813eacf54a265cada9e2"
+    },
+    {
+      "path": "35_RODZINY_MODELI.bat",
+      "sha256": "bb070e418bb311a76e357311f25a8ad83a6180f70caf6e9c484f6393a36bff74"
+    },
+    {
+      "path": "36_STUDIO.bat",
+      "sha256": "3eb13884ed0c3da131ee12fa3fa9fba69b155a66fe42be28869ec7b863d25928"
+    },
+    {
+      "path": "backend/deep_runtime/worker.py",
+      "sha256": "41d3aef7f400d14eb322484f3e7b228b6311afd5b55bacab0d1c212211ba9544"
+    },
+    {
+      "path": "backend/masterquo/__main__.py",
+      "sha256": "6d5494598bc8f74762d0709b12fe5cde5bcbd11b5ab25f305d55a036eef6bdff"
+    },
+    {
+      "path": "backend/masterquo/agent/service.py",
+      "sha256": "878e849806dfb847f5134274157e31620c5a423aefdff29ce8fe1481a479fe3e"
+    },
+    {
+      "path": "backend/masterquo/agent/tools.py",
+      "sha256": "a3fe1f81f26ae937cd7d917ffe64ea676966ba386ce617ba6e6759702655aa3c"
+    },
+    {
+      "path": "backend/masterquo/api/app.py",
+      "sha256": "1c590be17b6f229bf0a79e0f82e96b0fee3b390da7e292320a5f4568dc89d7da"
+    },
+    {
+      "path": "backend/masterquo/db/migrations/0025_decision_arc.sql",
+      "sha256": "b6941db5547f8b8f9b4cbcdc1f7dc9b59ff424677b09754783716abff02cc7f4"
+    },
+    {
+      "path": "backend/masterquo/decision/contracts.py",
+      "sha256": "35849a11455c357d35f8f8033dd5b59a26ff6250bebc3121e2d981fc8fc2ea4c"
+    },
+    {
+      "path": "backend/masterquo/decision/coordinator.py",
+      "sha256": "933f06a02fcb533136fe997bb106f0fc496486fb5f6cc0b7a896ba93c078dc2d"
+    },
+    {
+      "path": "backend/masterquo/decision/ledger.py",
+      "sha256": "0a2482299eec347fd081e85d6e519dc236a1902ef626909d0e992b4ca3c7e317"
+    },
+    {
+      "path": "backend/masterquo/decision/replay.py",
+      "sha256": "0095cabfd160abbf0ba0fe612a59c4040e00ad0b24cdedd9de361c31a3d77a83"
+    },
+    {
+      "path": "backend/masterquo/engine/decision.py",
+      "sha256": "ca8cad0e9b5d58ec9010fe03092b4f61cd477e7f4b6a784f8f70b40440105cb1"
+    },
+    {
+      "path": "backend/masterquo/engine/service.py",
+      "sha256": "96b300fc9f2ec4fdd3d3c87a51b0f5409b88e67a1d9b490ea051363f2a52fe83"
+    },
+    {
+      "path": "backend/masterquo/execution/gateway.py",
+      "sha256": "95b1f4f6cd2672b3944a9cefbd4a0e23b7820bfff58a978fed4463b91822fc60"
+    },
+    {
+      "path": "backend/masterquo/execution/manager.py",
+      "sha256": "e02cd48109c6dad3d13e83893a89388095862c90c4c535a0aea594b90acb1e10"
+    },
+    {
+      "path": "backend/masterquo/execution/modes.py",
+      "sha256": "56459037c9d62d34438b3e735a7411f0beb490e00fb114ecdd3e3ac844c75cf9"
+    },
+    {
+      "path": "backend/masterquo/indicators/avwap.py",
+      "sha256": "be3968e7292625f9344c3cfc57a6db10d25d9187602037036511ac7f9ea6d599"
+    },
+    {
+      "path": "backend/masterquo/indicators/contract.py",
+      "sha256": "fc33b70b84af7d40db434a329c191652cd7fd4377b6599dc51bcd5d39151567e"
+    },
+    {
+      "path": "backend/masterquo/indicators/dxy.py",
+      "sha256": "f36ffc2a976cdd53f0c911894e28665096ba49b6061d84d60c02488741983f05"
+    },
+    {
+      "path": "backend/masterquo/indicators/ofi.py",
+      "sha256": "1dcf43f1b70ffb6863ff5395879384b150a02a2fff16998b5f906a8177181865"
+    },
+    {
+      "path": "backend/masterquo/indicators/profile.py",
+      "sha256": "c2986a301c596b90560785137713483e802ce33792a98bc3eed533f10bfc5a4e"
+    },
+    {
+      "path": "backend/masterquo/indicators/semivar.py",
+      "sha256": "b82f52e0944a4d91d43b62041933d205b5830a0b13fafeba91067b857fdaeff4"
+    },
+    {
+      "path": "backend/masterquo/indicators/spread.py",
+      "sha256": "b91c603c9eb24cd10f3371697ec26243aff67efa04b287c1ca48fb7d8902161c"
+    },
+    {
+      "path": "backend/masterquo/kronos/predictions.py",
+      "sha256": "d992aa3abbd1a18678f82aade993c3a95e7159574b74e3e8e4263cdd56c48ced"
+    },
+    {
+      "path": "backend/masterquo/kronos/service.py",
+      "sha256": "2edc402cd5c094138075b72e511ddfaf2967138183281a3cbe8870eae6ce43fb"
+    },
+    {
+      "path": "backend/masterquo/marketdata/export.py",
+      "sha256": "ba894756bbd9d214917530995b102c6ae5f1ace6cf4847039ad36b102e5d095d"
+    },
+    {
+      "path": "backend/masterquo/ml/features.py",
+      "sha256": "4f0a87b0080a5226aa859780817b7a6e1e102868929c0f605b080aa96a46ebed"
+    },
+    {
+      "path": "backend/masterquo/modelhub/contract.py",
+      "sha256": "c03d2f28d06463c9315b87255aada4ba99ff89cc53ca5001602a57ac481d6da9"
+    },
+    {
+      "path": "backend/masterquo/modelhub/families/base.py",
+      "sha256": "4398b92007785052262124112aa29d2a8d2ae2f0ca50cd325096b60dfee15b9d"
+    },
+    {
+      "path": "backend/masterquo/modelhub/families/cli.py",
+      "sha256": "1399854668e043032a9ea1a787c27925e8a4c3a82334073c7369b68fb35915ae"
+    },
+    {
+      "path": "backend/masterquo/modelhub/families/deep.py",
+      "sha256": "2915530f28fead4a007add4d3d09b13e7b0ef9416b1115e936fe53978b622174"
+    },
+    {
+      "path": "backend/masterquo/modelhub/families/service.py",
+      "sha256": "202a548b47a37684015056ddba8a41a8f8f79281d98d120a756b7f516c1bf89b"
+    },
+    {
+      "path": "backend/masterquo/mt5/bridge.py",
+      "sha256": "a1c73cf58b656b7438de11f47c3689b5b6d0176c4e5c88ea265ee2f9d0a41572"
+    },
+    {
+      "path": "backend/masterquo/mt5/fake.py",
+      "sha256": "ba35dc3f42caeeac3d6bb2a143936d30fd645f7c597a1f8f10b237b9ab978630"
+    },
+    {
+      "path": "backend/masterquo/plans/contract.py",
+      "sha256": "6d5ec38506496f5fd1461a6781745ea556e81236ccba6f421bf25ae930a7dbe7"
+    },
+    {
+      "path": "backend/masterquo/plans/service.py",
+      "sha256": "a69bc92aa55cc057f75490039a75ea32a657aacc79a96b83bcdb9cbc6b747adc"
+    },
+    {
+      "path": "backend/masterquo/runtime.py",
+      "sha256": "cdb1bec8619fb65d91d7b1be6d8940391b229baf75a9d6440b05b0d25fc518eb"
+    },
+    {
+      "path": "backend/masterquo/sh/service.py",
+      "sha256": "c2a6f574ae24ecd3a047b453b3672e13b1e17de98a8ec444be78d4ddf5e548f9"
+    },
+    {
+      "path": "backend/masterquo/studio/app.py",
+      "sha256": "5a938078de26c1410d19b1e2cf02692ea6cff69ad32fef92e180277a4059d7f5"
+    },
+    {
+      "path": "backend/masterquo/studio/importer.py",
+      "sha256": "7dd89021465474b45fee6d8824ff0171abadfb85ddb7c57cd62578c29f1e3771"
+    },
+    {
+      "path": "backend/masterquo/studio/jobrun.py",
+      "sha256": "e812e0609c8b907fe823a3559ef735bb37bc5cd54c9d2450c986881ded545d9c"
+    },
+    {
+      "path": "backend/masterquo/studio/lock.py",
+      "sha256": "f061b6f0ee153f5c394728b1247c1922e4f4a25a630e826a2732805c7cd768e8"
+    },
+    {
+      "path": "backend/masterquo/studio/package.py",
+      "sha256": "f1f30212a932edd82b7430e400dfef2bc98051f7470c99f9d0da9b66d583c47e"
+    },
+    {
+      "path": "backend/masterquo/studio/pipeline.py",
+      "sha256": "6f178ed4ab45aa463022b20f9bc98bd0e529de7e88bc4140c9efe3ed95aceea7"
+    },
+    {
+      "path": "backend/masterquo/studio/queue.py",
+      "sha256": "3efba584dd81725e50fd6e10885d15813c6900d5670c12e47a96679105aad3d6"
+    },
+    {
+      "path": "backend/masterquo/studio/registry.py",
+      "sha256": "06576b588fdebfa3c00477cdbe9c36c0c9d32dea9a4da573c108edbce1800cc2"
+    },
+    {
+      "path": "backend/masterquo/studio/settings.py",
+      "sha256": "cd2ceb888efbaacdeb205870e13aab577fd84246336ef35b015963bb645951c1"
+    },
+    {
+      "path": "backend/masterquo/studio/verify.py",
+      "sha256": "50775158a88201278df9eb0f02710769e079efec81a01472f64cb1d2e1f9db10"
+    },
+    {
+      "path": "backend/masterquo/svp/engine.py",
+      "sha256": "f565a8839a6013dae1e71b260358d9ded5f9732718f7b0238f357549147ad0c4"
+    },
+    {
+      "path": "backend/masterquo/svp/service.py",
+      "sha256": "2c116b4f7afdb615604d2530c4c71f0cba93bfdd4ff8f50924920b823cf4fc12"
+    },
+    {
+      "path": "backend/masterquo/svp/zones.py",
+      "sha256": "79aa4faeb3cafe834132078b8acc455fc1f053b4750050090194335e9631ea3b"
+    },
+    {
+      "path": "backend/masterquo/timeutil.py",
+      "sha256": "d14171f148e4db8dd38cd4b07cdd3de25c7633f6f45e02e42db8de85228d0488"
+    },
+    {
+      "path": "backend/masterquo/trainhub/cli.py",
+      "sha256": "90a856280495cdc5ffa094e8d3ed1d2fefea5b6ff377686de35bc8865c3eb461"
+    },
+    {
+      "path": "backend/masterquo/trainhub/learn.py",
+      "sha256": "05d52b5392c27601e1347df3118c7ed3d697f9e8e96f581fee7f3bc380b21810"
+    },
+    {
+      "path": "backend/masterquo/trainhub/pipeline.py",
+      "sha256": "a9f70018e4bae47ae7667e012da5aaa7ed2a2c02c4a685b6a92d25009c859baf"
+    },
+    {
+      "path": "backend/masterquo/zones/dsvie.py",
+      "sha256": "cf238f787cdd9d38149dc436a5d89b093482aaa92e1b2cf4aa90f90b8a911074"
+    },
+    {
+      "path": "desktop/engine.go",
+      "sha256": "bb1415c16223d184c2684d6dc4fcecd70559a5d2022ba7fb5e470e2e88ee8888"
+    },
+    {
+      "path": "desktop/layout.go",
+      "sha256": "6b8b0415d8e8a19bd5993c8c6e35294695ef506228b1565a820c47a02d0d4e83"
+    },
+    {
+      "path": "desktop/main.go",
+      "sha256": "36095f346ade3fff978ca3d7ca7cb5eabe7673b1002428c763da34da20cd50a3"
+    },
+    {
+      "path": "docs/INSTRUKCJA_TRENINGU_PL.md",
+      "sha256": "b8afa0f17a38a440de2b45136397584d98b4ddecde15b0d7e81bbe1c547aae25"
+    },
+    {
+      "path": "docs/MODEL_DATA_MATRIX.json",
+      "sha256": "73a7a2061b3d77562c7d9b056719049457d9165350185ccb1b4d160594bb155c"
+    },
+    {
+      "path": "frontend/src/components/ChartPanel.tsx",
+      "sha256": "8f8e10de6050d8e8e0ed43f412ed11ab329049ae9439aed36f555166ece491ed"
+    },
+    {
+      "path": "frontend/src/features/pmw133/DecisionPage.tsx",
+      "sha256": "17eb82064b7184edaad3f18a9c1170f2433c69d74800c1e722c66ac03fb39409"
+    },
+    {
+      "path": "frontend/src/features/pmw133/DxyPage.tsx",
+      "sha256": "c3a981e35febbdb87c962a3c07debf2bb0406918f0cd6c3df946c86e78d0248e"
+    },
+    {
+      "path": "frontend/src/features/pmw133/FamiliesSection.tsx",
+      "sha256": "6e9fec36e1e9c240001df71160959432775a7ad95ae2ea07100b08edd177b094"
+    },
+    {
+      "path": "frontend/src/features/pmw133/StudioButton.tsx",
+      "sha256": "7fad8479da35e07255bedb807f24f9e6f4870b34ce6881cc93a6235e5bdd7970"
+    },
+    {
+      "path": "frontend/src/features/pmw133/SvpPage.tsx",
+      "sha256": "28c61de3bae770a543f63e383efa8caa13821c30aa1defde70fbff0a44fb5e71"
+    },
+    {
+      "path": "frontend/src/features/pmw133/overlays.tsx",
+      "sha256": "2a3b4f91a15f800afda637d92ced09591bfa068f2a4109071262ef266b44e38a"
+    },
+    {
+      "path": "frontend/src/studio/main.tsx",
+      "sha256": "915c12e64d36d329575c50337840095e04c464c9e78355f82d7a97d2af68a003"
+    },
+    {
+      "path": "frontend/studio.html",
+      "sha256": "d7d1a86488c4de68c75b24a34b357e2ce2c7194a72b4ac0e77bf23693014c5ab"
+    },
+    {
+      "path": "requirements/requirements-deep-win.txt",
+      "sha256": "ee6907e8e541090b94d7f49c00574a60137b0ad6e5326976ae2388fe6493209d"
+    },
+    {
+      "path": "tools/build_desktop.py",
+      "sha256": "36b986fcbb20cb36cd8e633702b350a08839458e67cb5296cc443b868917b85b"
+    },
+    {
+      "path": "tools/deep_setup.py",
+      "sha256": "b374b7bd5bc10864950aaa64a546bc054aadf5fc24cb33f244496828fdc82d67"
+    }
+  ],
+  "summary": {
+    "requirements": 37,
+    "implemented": 37,
+    "missing": [],
+    "by_spec": {
+      "AUD": 9,
+      "IND": 11,
+      "STU": 9,
+      "ARC": 8
+    }
+  }
+}
