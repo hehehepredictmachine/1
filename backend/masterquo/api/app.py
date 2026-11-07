@@ -2055,6 +2055,28 @@ def create_app(rt, port: int) -> FastAPI:
     def indicators_manifest():
         return rt.indicators.manifest()
 
+    # ---------------------------------------------------------------- Pepe Data & Training Studio import (1.33) - candidates only
+    @app.post("/api/v1/studio/import")
+    def studio_import(body: dict = Body(...)):
+        from ..studio import importer as _IM
+        r = _IM.import_package(str(body.get("package") or ""))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/studio/imports")
+    def studio_imports():
+        from ..studio import importer as _IM
+        return {"items": _IM.history(), "startup_inbox": getattr(rt, "studio_imports", [])}
+
+    @app.delete("/api/v1/studio/import/{import_id}")
+    def studio_import_rollback(import_id: str):
+        from ..studio import importer as _IM
+        r = _IM.rollback(import_id)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
     # ---------------------------------------------------------------- PMW-FAM-1 model families (1.33)
     def _fam_inst(instrument):
         i = str(instrument or rt.cfg.get().assets.active).upper()

@@ -254,6 +254,11 @@ class Runtime:
         self.zones.start()                      # PMW-ZONES: zone map on every closed M5
         self.indicators.start()                 # PMW-IND-1: indicator snapshot on every closed M1, spread sampling, market depth
         self.svp.start()                        # PMW-SVP-1: LIVE profiles / zones (only profiles switched to LIVE)
+        try:                                    # Studio packages handed over while the bot was off (candidates, inactive)
+            from .studio import importer as _IM
+            self.studio_imports = _IM.process_inbox()
+        except Exception as exc:  # noqa: BLE001
+            self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
         self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
         self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
         self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)

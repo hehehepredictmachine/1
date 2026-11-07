@@ -70,9 +70,11 @@ def fetch_python() -> Path:
     return p
 
 
-def build_exe(ver: str) -> Path:
+def build_exe(ver: str, mode: str = "bot") -> Path:
+    """mode 'bot' -> PepeMarketWizardDesktop.exe, 'studio' -> PepeTrainingStudio.exe (same sources, -X main.appMode=studio:
+    window + supervision of `python -m masterquo studio`, own port and data folder)."""
     desk = ROOT / "desktop"
-    out = ROOT / "build" / "PepeMarketWizardDesktop.exe"
+    out = ROOT / "build" / ("PepeTrainingStudio.exe" if mode == "studio" else "PepeMarketWizardDesktop.exe")
     out.parent.mkdir(parents=True, exist_ok=True)
     winres = shutil.which("go-winres") or str(Path(subprocess.run(["go", "env", "GOPATH"], capture_output=True, text=True,
                                                                      check=True).stdout.strip()) / "bin" / "go-winres")
@@ -83,9 +85,11 @@ def build_exe(ver: str) -> Path:
     elif not (desk / "rsrc_windows_amd64.syso").exists():
         sys.exit("go-winres missing and no committed rsrc_windows_amd64.syso (go install github.com/tc-hib/go-winres@v0.3.3)")
     env = dict(os.environ, GOOS="windows", GOARCH="amd64", CGO_ENABLED="0")
-    subprocess.run(["go", "test", "./..."], cwd=desk, check=True, env=dict(os.environ))  # host platform unit tests
-    subprocess.run(["go", "vet", "./..."], cwd=desk, check=True, env=env)
-    subprocess.run(["go", "build", "-trimpath", "-ldflags", f"-s -w -H windowsgui -X main.version={ver}", "-o", str(out), "."],
+    if mode == "bot":
+        subprocess.run(["go", "test", "./..."], cwd=desk, check=True, env=dict(os.environ))  # host platform unit tests
+        subprocess.run(["go", "vet", "./..."], cwd=desk, check=True, env=env)
+    flags = f"-s -w -H windowsgui -X main.version={ver}" + (" -X main.appMode=studio" if mode == "studio" else "")
+    subprocess.run(["go", "build", "-trimpath", "-ldflags", flags, "-o", str(out), "."],
                    cwd=desk, check=True, env=env)
     head = out.read_bytes()[:2]
     if head != b"MZ":
@@ -110,6 +114,7 @@ def main() -> None:
     files = build_release.tracked()
     build_release.scan(files)
     exe = build_exe(ver)
+    studio_exe = build_exe(ver, "studio")
     nupkg = fetch_python()
     wheels = fetch_wheels() if a.offline else None
 
@@ -124,6 +129,8 @@ def main() -> None:
             manifest.append(f"{sha256(ROOT / f)}  {f}")
         z.write(exe, TOP + "PepeMarketWizardDesktop.exe")
         manifest.append(f"{sha256(exe)}  PepeMarketWizardDesktop.exe")
+        z.write(studio_exe, TOP + "PepeTrainingStudio.exe")
+        manifest.append(f"{sha256(studio_exe)}  PepeTrainingStudio.exe")
         with zipfile.ZipFile(nupkg) as nz:
             for info in nz.infolist():
                 n = info.filename
