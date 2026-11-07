@@ -1,5 +1,66 @@
 # CHANGELOG
 
+## 1.33.0 – wszystkie aktualizacje: audyt i 15 rodzin modeli, wskaźniki + DXY + plany Scalp/Hedge + SVP, Data & Training Studio, architektura decyzji
+* **Audyt modeli (AUD):**
+  * kontrakt prognoz PMW-PRED-2: liczby skończone (nigdy bool), schematy wyników per zadanie, horyzont bez wymyślania, JSON bez NaN;
+  * interwał M3 w całym łańcuchu;
+  * `dxy_missing` = rzeczywista dostępność DXY;
+  * Kronos REQUIRED powiązany z odciskiem ustawień;
+  * ARIMA / SARIMAX dopasowywane na zwrotach skalowanych do wariancji 1, bo SARIMAX na H1 nie zbiegał.
+
+  Lista znalezisk i napraw: `docs/AUDYT_I_NAPRAWY_MODELI.md`.
+* **15 rodzin modeli (PMW-FAM-1):** TS_ARIMA, TS_SARIMAX, VOL_GARCH, MICROSTRUCTURE, PAIR_COINT, STATARB, KALMAN_LS, BREAKOUT, TH_RF, TH_SVM,
+  TH_XGB, SEQ_LSTM, SEQ_GRU, RL_PPO, NLP_SENTIMENT oraz adapter SEQ_GRU_EVENT.
+  * Każda ma trzy osie stanu, magazyn artefaktów (manifest, sumy, próbka inferencji), aktywację wyłącznie ręczną, rollback i role
+    OFF / SHADOW / ASSIST. ASSIST wymaga walidacji APPROVED na danych REAL.
+  * LSTM / GRU / PPO działają w osobnym środowisku `.venv_deep` (`34_DEEP_INSTALUJ.bat`).
+  * Nowe pliki: `35_RODZINY_MODELI.bat`, `python -m masterquo families`; sekcja „Rodziny modeli 1.33” w Centrum treningu.
+  * Karty modeli: `MODEL_CARDS/families/`.
+* **Wskaźniki PMW-IND-1:**
+  * AVWAP sesja / zdarzenie / ręczny (pasma σ, wersje kotwic);
+  * spread względem sesji;
+  * semiwariancja;
+  * XAUUSD × DXY na zwrotach H1 bez forward-fill;
+  * OFI / arkusz MT5;
+  * cechy profilu sesji.
+
+  Zakładka **Precision → XAUUSD × DXY i wskaźniki PMW** (`#/dxy`). Narzędzia agenta: `get_pmw_indicators`, `get_dxy_relation`.
+* **Plany Pepe Scalp Plan / Pepe Hedge Plan (PMW-PLAN-1):** plan vs fill, SL v2 po BE, noga hedge z poziomem aktywacji; konto NETTING
+  oznaczone jako „niedostępne”. Warstwy **Scalp Plan / Hedge Plan / AVWAP / SVP** są na każdym wykresie, a przełączanie nie zmienia zleceń.
+* **SVP (PMW-SVP-1):**
+  * profile SESSION / RANGE / VISIBLE / LIVE / FROZEN;
+  * strefy MANUAL / ALGORITHM / AI z wersjami;
+  * propozycja AI walidowana względem snapshotu.
+
+  Narzędzie **Precision → SVP** (`#/svp`); agent `get_svp_profiles`.
+* **Pepe Data & Training Studio:** osobna aplikacja (`PepeTrainingStudio.exe`, `36_STUDIO.bat`, przycisk **Studio** ze stanem w górnym pasku
+  i w menu CULT).
+  * Rejestr 72 zadań (`docs/MODEL_DATA_MATRIX.json`).
+  * Eksport BOT_CACHE / MT5_DIRECT (pełna historia) pod wspólną blokadą eksportu z botem.
+  * Paczka per zadanie z atomowymi etapami i sumami, test ładowania w czystym procesie.
+  * Import do bota jako nieaktywny kandydat (rollback, skrzynka odbiorcza przy starcie). Studio nigdy nie składa zleceń.
+* **Architektura decyzji (PMW-ARC-1):**
+  * 10 kontraktów typowanych;
+  * jeden Decision Coordinator dla ścieżek ACTIVE i SCALPING/HEDGING;
+  * role modeli OBSERVE / ASSIST / REQUIRED (`config.decision.required_models`, domyślnie puste);
+  * węzeł MODELS w drzewie decyzji ACTIVE;
+  * DecisionRecord obu ścieżek (migracja 0025);
+  * wspólna **atomowa rezerwacja** limitów portfela, przez co dwie ścieżki naraz nie przekroczą `max_open_positions`;
+  * intencje wykonania z deduplikacją i rozliczaniem UNKNOWN z rekonsyliacji, bez ponownej wysyłki;
+  * replay stary/nowy (`python -m masterquo.decision.replay`);
+  * panel **Koordynator decyzji** (`#/decyzje`).
+
+  Opis: `docs/DECISION_LOGIC.md`, `docs/ARCHITECTURE_BEFORE_AFTER.md`.
+* **Konfiguracja v13:** nowe sekcje `indicators`, `families`, `decision`. Pierwszy start zostawia nietknięty plik 1.32 jako
+  `data\config.v12.bak.json`, potrzebny do rollbacku (1.32 odrzuca nowe sekcje). Baza: migracja 0025 jest addytywna.
+* **Nowe API:**
+  * `/api/v1/indicators/*`, `/api/v1/plans/chart`, `/api/v1/svp/*`, `/api/v1/families/*`;
+  * `/api/v1/studio/import|imports|status|launch`, `/api/v1/decision/status|records/{id}`.
+* **Testy:** `test_integration_u1`, `test_indicators_u2`, `test_plans_svp_u3`, `test_families_u4`, `test_studio_u5`, `test_decision_arc_u6`,
+  `test_ui_pmw133`, `test_config_v13`. Zaktualizowane oczekiwania: M3 w rejestrze TF, PMW-PRED-2, lista migracji, config v13.
+* Bez zmian: tryby SIGNALS/PAPER/AUTO DEMO/AUTO LIVE, STOP nowych wejść, limity użytkownika, wymagania brokera, strategie S01–S12 i SH
+  (gdy żaden model nie ma roli ASSIST/REQUIRED, decyzje są identyczne jak w 1.32, co potwierdza replay). Execution Lock nie wraca.
+
 ## 1.32.0 – CULT UI: launcher JOIN THE CULT, intro, Main Menu (6 wież), Lightning / Wind / Control / Strategy Lab
 * **Launcher „JOIN THE CULT”** (launcher.jpg): w aplikacji Windows osobne małe okno startowe (`desktop/splash.html`, grafika wbudowana
   w EXE) z dotychczasowymi funkcjami (postęp, wybór danych, błąd + ponów, logi, zamknij) i nowym stanem **SYSTEM READY**; dopiero JOIN

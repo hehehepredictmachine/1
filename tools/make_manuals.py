@@ -274,6 +274,27 @@ def admin(shots: Path | None) -> list:
                    "Warunek w strategiach (REQUIRED) tylko po pozytywnej walidacji walk-forward na danych rzeczywistych – może jedynie wstrzymać setup.",
                    "Szczegóły, statusy i rozwiązywanie problemów: <b>INSTRUKCJA_KRONOS.md</b>."]),
           PageBreak()]
+    # 4b - 1.33
+    s += [P("4b / Nowe w 1.33: rodziny modeli, Studio, koordynator decyzji", "h1"),
+          P("Rodziny modeli (Centrum treningu → Rodziny modeli 1.33)", "h2"),
+          bullets(["15 rodzin: ARIMA, SARIMAX, GARCH, mikrostruktura, para, koszyk, Kalman, breakout, RF, SVM, XGBoost, LSTM, GRU, PPO, NLP. "
+                   "Każda ma trzy osie stanu (implementacja / artefakt / użycie), przyciski Trenuj, Aktywuj ostatni, Rollback i wybór OFF / SHADOW / ASSIST.",
+                   "Profil treningu: <b>smoke</b> (szybki test), <b>research</b>, <b>full</b>. Trening nie aktywuje modelu.",
+                   "LSTM / GRU / PPO potrzebują osobnego środowiska: <b>34_DEEP_INSTALUJ.bat</b>. Plik <b>35_RODZINY_MODELI.bat</b> – lista i trening z wiersza poleceń.",
+                   "ASSIST tylko po walidacji APPROVED na Twoich danych REAL – model może wtedy wyłącznie <b>wstrzymać</b> wejście."]),
+          *shot(shots, "ui_pmw133/decyzje.png", "Koordynator decyzji (Ustawienia i diagnostyka → Koordynator decyzji).", width_mm=160),
+          P("Koordynator decyzji", "h2"),
+          bullets(["Jedna logika dla ścieżek S01–S12 i SCALPING/HEDGING. Role modeli: OBSERVE (bez wpływu), ASSIST (tylko wstrzymanie), "
+                   "REQUIRED (lista <b>decision.required_models</b> w config.json – domyślnie pusta).",
+                   "Wspólna <b>rezerwacja limitów</b> portfela: dwie ścieżki naraz nie przekroczą Twojego limitu pozycji ani dziennej straty.",
+                   "Intencje wykonania: podwójne kliknięcie = DUPLICATE; brak odpowiedzi brokera (UNKNOWN) nie jest wysyłany ponownie – rozstrzyga rekonsyliacja."]),
+          P("Pepe Data & Training Studio", "h2"),
+          bullets(["Osobna aplikacja do eksportu historii i treningu wszystkich modeli: przycisk <b>Studio</b> w górnym pasku lub w menu, "
+                   "<b>PepeTrainingStudio.exe</b> albo <b>36_STUDIO.bat</b>. Studio nigdy nie składa zleceń.",
+                   "Gdy bot działa, Studio bierze dane z jego magazynu świec; gdy nie działa – eksportuje pełną historię własnym połączeniem tylko do odczytu.",
+                   "Gotową paczkę przenosisz do bota przyciskiem „Przenieś” – w bocie jest nieaktywnym kandydatem do ręcznej aktywacji."]),
+          box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
+          PageBreak()]
     # 5
     s += [P("5 / Paczki do przekazania", "h1"),
           P("Od 1.30 jest jedna wersja programu – bez licencji, bez podziału na OWNER i CLIENT. Inna osoba dostaje tę samą paczkę co Ty:"),
@@ -287,17 +308,19 @@ def admin(shots: Path | None) -> list:
               "wersji 1.27–1.29 jest zachowany w historii repozytorium (git)."),
           PageBreak()]
     # 6
-    s += [P("6 / Aktualizacja z 1.29, kopia i powrót", "h1"),
-          P("Aktualizację i powrót sprawdzono na kopiach danych (narzędzie <b>tools/migration_check.py</b>): 1.30 uruchamia się na danych "
-            "1.29, zachowuje konfigurację, migracje bazy i strefy. Pliki pozostałe po licencjach (license_owner.json, "
-            "license_owner_key.*, token licencji) nie są używane ani usuwane – możesz je skasować z folderu <b>data</b>."),
+    s += [P("6 / Aktualizacja z 1.32, kopia i powrót", "h1"),
+          P("Aktualizację i powrót sprawdzono na kopiach danych (<b>tools/migration_check.py --old-ref 5e5d82a</b>): 1.33 uruchamia się na danych "
+            "1.32, zachowuje konfigurację, migracje bazy i strefy; 1.32 działa na kopii sprzed aktualizacji oraz na danych po 1.33 z przywróconą "
+            "kopią konfiguracji."),
           P("Aktualizacja", "h2"),
           steps(["Zatrzymaj aplikację (STOP nowych wejść → zamknij). Zapisz kopię folderu danych.",
-                 "Rozpakuj 1.30 do nowego folderu i uruchom; aplikacja Windows sama robi kopię danych przed migracją.",
-                 "Serwer licencji (jeśli go uruchomiłeś) nie jest już potrzebny – możesz go zatrzymać."]),
-          P("Powrót do 1.29", "h2"),
-          steps(["Zatrzymaj 1.30. Przywróć folder <b>data</b> z kopii sprzed aktualizacji (backups).",
-                 "Uruchom program 1.29 z jego folderu (wraca wtedy też system licencji z 1.29)."]),
+                 "Rozpakuj 1.33 do nowego folderu i uruchom; aplikacja Windows sama robi kopię danych przed migracją.",
+                 "Pierwszy start: migracja bazy 0025 (nowe tabele) i konfiguracja v13 – oryginał 1.32 zostaje jako <b>data\\config.v12.bak.json</b>."]),
+          P("Powrót do 1.32", "h2"),
+          steps(["Zatrzymaj 1.33. W folderze <b>data</b> zmień nazwę config.json na config.v13.json i skopiuj <b>config.v12.bak.json</b> jako config.json "
+                 "(1.32 odrzuca nowe sekcje konfiguracji). Albo przywróć cały folder danych z kopii (backups).",
+                 "Uruchom program 1.32 z jego folderu. Baza może zostać – 1.32 ignoruje tabele dodane w 1.33.",
+                 "Pełna instrukcja: <b>docs/AKTUALIZACJA_1_33_PL.md</b>."]),
           P("7 / Typowe problemy", "h1"),
           table([["Objaw", "Co zrobić"],
                  ["MT5 rozłączony / dane nieaktualne", "uruchom terminal, sprawdź logowanie, symbol, historię i 02_DIAGNOSTYKA.bat"],
@@ -365,6 +388,17 @@ def client(shots: Path | None) -> list:
                    "<b>Warstwy</b>: pokaż / ukryj FVG, OB, popyt/podaż, wsparcie/opór, płynność (hipoteza) i etykiety."]),
           box("Strefy to informacja analityczna – przycisk nie otwiera pozycji i nie zmienia ustawień handlu. Płynność EQH/EQL to "
               "hipoteza wyznaczona z OHLC, nie zmierzone zlecenia.", "warn"),
+          PageBreak()]
+    s += [P("3b / Nowe w 1.33: DXY, SVP, plany Scalp/Hedge, Studio", "h1"),
+          bullets(["<b>Precision → XAUUSD × DXY i wskaźniki PMW</b>: korelacja i beta złota do DXY na zwrotach H1 (okna 24/72/240 h), AVWAP sesji, "
+                   "spread względem sesji, semiwariancja, arkusz zleceń MT5. Symbol DXY brokera ustawisz w Ustawieniach.",
+                   "<b>Precision → SVP</b>: profil wolumenu sesji albo zakresu dat (POC, VAH/VAL), zamrożenie, LIVE, strefy ręczne, z algorytmu i propozycje AI.",
+                   "Na każdym wykresie przyciski <b>Scalp Plan</b>, <b>Hedge Plan</b>, <b>AVWAP</b> i <b>SVP</b> dorysowują poziomy planu SCALPING / HEDGING "
+                   "(wejście, SL, TP, cena wykonania, SL po BE, aktywacja hedge), linię AVWAP i granice stref. Przełączanie warstw nie zmienia zleceń.",
+                   "Przycisk <b>Studio</b> (górny pasek / menu) otwiera Pepe Data & Training Studio – osobny program do danych i treningu modeli."]),
+          *shot(shots, "ui_pmw133/dxy.png", "XAUUSD × DXY i wskaźniki PMW (symulator: DXY wyłączony, bo nie ustawiono symbolu).", width_mm=150),
+          *shot(shots, "ui_pmw133/wykresy_layers.png", "Przyciski warstw 1.33 na wykresach.", width_mm=150, crop=(0, 0, 1, 0.55)),
+          box("Wskaźniki, profile i strefy to informacja analityczna; pasma σ nie są przedziałami prawdopodobieństwa.", "warn"),
           PageBreak()]
     s += [P("4 / Tryby i pomoc", "h1"), P("Tryb pracy", "h2"),
           P("<b>SIGNALS</b> – analiza bez nowych zleceń. <b>PAPER</b> – symulacja. <b>AUTO DEMO</b> i <b>AUTO LIVE</b> – zlecenia na "

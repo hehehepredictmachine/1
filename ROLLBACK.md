@@ -1,5 +1,12 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0. Wersja 1.33.0 → 1.32.0
+Pełna instrukcja: `docs/AKTUALIZACJA_1_33_PL.md`. W skrócie:
+1. Zamknij 1.33.
+2. W folderze danych zmień nazwę `config.json` na `config.v13.json` i skopiuj `config.v12.bak.json` jako `config.json`. 1.32 odrzuca nowe
+   sekcje `indicators` / `families` / `decision`.
+3. Uruchom 1.32.0. Baza może zostać: migracja 0025 jest addytywna, a 1.32 ignoruje nowe tabele.
+
 ## 1. Profil ORIGINAL (bez reinstalacji)
 Wykrywanie wraca do dotychczasowego M07/M10A (jak w wersji 1.1). Tryb pracy, limity i historia zostają.
 * w monitorze: ⚙ Ustawienia → **AUTO / ACTIVE** → Profil wykrywania = `ORIGINAL` → Zapisz, albo
