@@ -167,29 +167,50 @@ def session_profiles(s: Series, profile_id: str, instrument: str, cfg, as_of: fl
                     poc_migration_bins=(path[-1][1] - path[len(path) // 2][1]) if len(path) >= 4 else 0,
                     histogram=[{"price": round((b + 0.5) * bin_size, 10), "volume": round(v, 3)} for b, v in sorted(hist.items())])
         out.append(prof)
-    _relative_volume(out, s, src)
+    _relative_volume(out, s, src, cfg)
     return out
 
 
-def _relative_volume(profiles: list[dict], s: Series, src: str) -> None:
-    """Relative volume vs the same session of previous days over the same elapsed time (COMPLETED baselines only)."""
+def _relative_volume(profiles: list[dict], s: Series, src: str, cfg=None) -> None:
+    """Relative volume vs the same session of previous days over the same elapsed time (COMPLETED baselines only).
+    History (relvol_lookback_sessions) and minimum sample (relvol_min_sessions) are configurable; a reference session whose bars cover
+    less than relvol_min_coverage of the elapsed slots is REJECTED (incomplete reference period), the count used is reported.
+    interval_relative_volume (separate name): volume of the newest single bar vs the bar in the same slot of the reference sessions."""
+    look = int(getattr(cfg, "relvol_lookback_sessions", 5) or 5)
+    min_n = int(getattr(cfg, "relvol_min_sessions", 1) or 1)
+    min_cov = float(getattr(cfg, "relvol_min_coverage", 0.8) or 0.0)
     for i, p in enumerate(profiles):
         if p["state"] == "INVALID" or "total_volume" not in p:
             continue
         s0 = datetime.fromisoformat(p["start"].replace("Z", "+00:00")).timestamp()
         elapsed = datetime.fromisoformat(p["known_at"].replace("Z", "+00:00")).timestamp() - s0
-        base = []
+        need = max(1, int(round(elapsed / s.tf_s)))
+        last_slot = need - 1
+        base, slot_base, rejected = [], [], 0
         for q in profiles[:i][::-1]:
             if q["session"] != p["session"] or q["state"] != "COMPLETED":
                 continue
             q0 = datetime.fromisoformat(q["start"].replace("Z", "+00:00")).timestamp()
-            vol = sum(_vol(s, j, src) for j in range(len(s)) if s.t[j] >= q0 and s.close_time(j) <= q0 + elapsed)
-            base.append(vol)
-            if len(base) >= 5:
+            js = [j for j in range(len(s)) if s.t[j] >= q0 and s.close_time(j) <= q0 + elapsed]
+            if len(js) < min_cov * need:
+                rejected += 1
+                continue
+            base.append(sum(_vol(s, j, src) for j in js))
+            sb = [_vol(s, j, src) for j in js if int(round((s.t[j] - q0) / s.tf_s)) == last_slot]
+            if sb:
+                slot_base.append(sb[0])
+            if len(base) >= look:
                 break
-        so_far = sum(_vol(s, j, src) for j in range(len(s)) if s.t[j] >= s0 and s.close_time(j) <= s0 + elapsed)
-        p["relative_volume"] = round(so_far / statistics.mean(base), 3) if base and statistics.mean(base) > 0 else None
+        cur = [j for j in range(len(s)) if s.t[j] >= s0 and s.close_time(j) <= s0 + elapsed]
+        so_far = sum(_vol(s, j, src) for j in cur)
+        ok = len(base) >= min_n and base and statistics.mean(base) > 0
+        p["relative_volume"] = round(so_far / statistics.mean(base), 3) if ok else None
         p["relative_volume_baseline_sessions"] = len(base)
+        p["relative_volume_rejected_sessions"] = rejected
+        p["relative_volume_reason"] = None if ok else f"sesje referencyjne {len(base)} < {min_n}"
+        last_v = _vol(s, cur[-1], src) if cur else None
+        p["interval_relative_volume"] = (round(last_v / statistics.mean(slot_base), 3)
+                                         if (last_v is not None and len(slot_base) >= min_n and statistics.mean(slot_base) > 0) else None)
 
 
 def context(profiles: list[dict], price: float, s: Series) -> dict:

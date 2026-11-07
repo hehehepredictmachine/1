@@ -490,6 +490,51 @@ class ClaudeAgent:
                 raise
             return await self._create(client, model, system, messages, structured and model not in self.no_structured, tools, schema)
 
+    # ------------------------------------------------------------ SVP zone proposals (1.33, PMW-SVP-ZONES-1)
+    async def propose_zones(self, payload: dict) -> dict:
+        """One structured request: the agent reads the frozen profile snapshot in `payload` and returns zone proposals as JSON.
+        No tools, no orders, no secrets. The backend validates every proposal against the source snapshot (svp/zones.validate_ai)."""
+        if not self.cfg.enabled:
+            return {"ok": False, "error": "AGENT_DISABLED", "proposals": []}
+        client = self._client_get()
+        model = self.model()
+        if client is None:
+            return {"ok": False, "error": "AI_UNAVAILABLE_NO_KEY", "proposals": []}
+        if not model:
+            return {"ok": False, "error": "MODEL_NOT_CONFIGURED", "proposals": []}
+        if self.cfg.daily_budget_usd and self.spent_today() >= self.cfg.daily_budget_usd:
+            return {"ok": False, "error": "DAILY_BUDGET_REACHED", "proposals": []}
+        system = ("Jesteś analitykiem profilu wolumenu PepeMarketWizard. Dostajesz zamrożony snapshot Session Volume Profile (POC, VAH, VAL, "
+                  "HVN, LVN, histogram koszyków, źródło wolumenu). Zaproponuj 1-5 stref analitycznych WYŁĄCZNIE z poziomów tego profilu. "
+                  "Nie wymyślaj cen spoza profilu. Odpowiedz tylko JSON: {\"proposals\": [{\"profile_id\", \"snapshot_id\", \"lower\", \"upper\", "
+                  "\"type\" (POC|HVN|LVN|VA_EDGE|VALUE_AREA|ACCEPTANCE|REJECTION), \"justification\", \"confirmation\", \"invalidation\", "
+                  "\"valid_until\" (ISO UTC)}]}. Strefy to informacja analityczna, nie zlecenia i nie dowód zleceń instytucjonalnych.")
+        started = utcnow()
+        t0 = time.monotonic()
+        run_id = "AGZ-" + uuid.uuid4().hex[:16]
+        status, err, usage, out = "OK", None, {}, {"proposals": []}
+        try:
+            msg = await client.messages.create(model=model, max_tokens=1500, system=system,
+                                               messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}])
+            text = "".join(getattr(b, "text", "") for b in msg.content)
+            usage = {"input_tokens": getattr(msg.usage, "input_tokens", 0), "output_tokens": getattr(msg.usage, "output_tokens", 0)}
+            out = json.loads(_extract_json(text))
+            if not isinstance(out, dict) or not isinstance(out.get("proposals"), list):
+                status, err, out = "ERROR", "SCHEMA", {"proposals": []}
+        except Exception as exc:  # noqa: BLE001 - a failed AI call never stops the bridge or the profiles
+            status, err = "ERROR", type(exc).__name__
+        cost = self._cost(model, usage) if usage else None
+        try:
+            self.db.execute("""INSERT INTO agent_runs(run_id, started_at, finished_at, trigger, snapshot_id, setup_id, model_requested, model_id,
+                               prompt_version, status, error_code, latency_ms, input_tokens, output_tokens, est_cost_usd, tool_calls, output_json)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (run_id, iso(started), iso(utcnow()), "SVP_ZONES", payload.get("snapshot_id"), None, model, model, "PMW-SVP-AI-1",
+                             status, err, int((time.monotonic() - t0) * 1000), usage.get("input_tokens"), usage.get("output_tokens"), cost, 0,
+                             json.dumps(out, ensure_ascii=False, default=str)[:20000]))
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": status == "OK", "error": err, "proposals": out.get("proposals") or [], "run_id": run_id, "cost_usd_estimate": cost}
+
     # ------------------------------------------------------------ config tests
     async def list_models(self) -> dict:
         import anthropic

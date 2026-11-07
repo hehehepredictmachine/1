@@ -21,7 +21,7 @@ class TestBridge(unittest.TestCase):
         try:
             self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.clock.verified, 40))
             meta = b.tf_meta()
-            self.assertEqual(set(meta), {"M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"})   # one registry incl. M30/H8
+            self.assertEqual(set(meta), {"M1", "M3", "M5", "M15", "M30", "H1", "H4", "H8", "D1"})   # one registry incl. M3/M30/H8
             for tf, m in meta.items():
                 self.assertTrue(m["loaded"], tf)
                 self.assertGreater(m["closed"], 200, tf)

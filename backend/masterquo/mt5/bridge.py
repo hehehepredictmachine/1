@@ -27,7 +27,7 @@ log = logging.getLogger("masterquo.mt5.bridge")
 
 TF_CONST = {tf: v["mt5"] for tf, v in TF_REGISTRY.items()}       # MetaTrader5 constants (never minutes as an enum)
 # Poll cadence per timeframe (seconds). Higher TFs change rarely.
-TF_POLL = {"M1": 1.0, "M5": 2.0, "M15": 3.0, "M30": 4.0, "H1": 5.0, "H4": 10.0, "H8": 12.0, "D1": 15.0}
+TF_POLL = {"M1": 1.0, "M3": 1.5, "M5": 2.0, "M15": 3.0, "M30": 4.0, "H1": 5.0, "H4": 10.0, "H8": 12.0, "D1": 15.0}
 # Controlled fallback when the terminal returns no native bars for a timeframe: (source TF, bars per bucket).
 # Buckets are anchored on the broker server day (raw server epochs), like MT5's own H8 bars (00/08/16 server time).
 RESAMPLE_FROM = {"H8": ("H1", 8), "M3": ("M1", 3)}     # fallback only when the terminal has no native series

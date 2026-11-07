@@ -223,6 +223,14 @@ class SHService:
                 pr = TM.predict(inst, strat, TM.features(su, snap))
                 su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
             evals[strat] = self._kronos(su, inst, strat, snap)
+        ind = getattr(self, "indicators", None)
+        if ind is not None:                                               # PMW-IND-1 context (role OBSERVE: shown + logged, never a gate)
+            try:
+                ictx = ind.context(None, bars)
+            except Exception as exc:  # noqa: BLE001
+                ictx = {"indicators": {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:160]}, "dxy": {"status": "ERROR"}}
+            for su in evals.values():
+                su["indicator_context"] = dict(ictx, role="OBSERVE", horizon_note="DXY = kontekst H1, nie trigger M1")
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0

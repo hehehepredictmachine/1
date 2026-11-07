@@ -45,6 +45,7 @@ TerminalInfo = namedtuple("TerminalInfo", "connected trade_allowed tradeapi_disa
 AccountInfo = namedtuple("AccountInfo", "login server company name currency trade_mode margin_mode leverage balance equity margin margin_free margin_level profit trade_allowed trade_expert")
 SymbolInfo = namedtuple("SymbolInfo", "name visible select point digits trade_tick_size trade_tick_value trade_contract_size volume_min volume_max volume_step trade_stops_level trade_freeze_level trade_mode filling_mode currency_base currency_profit currency_margin spread spread_float description path bid ask time")
 Tick = namedtuple("Tick", "time bid ask last volume time_msc flags volume_real")
+BookInfo = namedtuple("BookInfo", "type price volume volume_dbl")   # MT5 BOOK_TYPE_SELL = 1, BOOK_TYPE_BUY = 2
 Position = namedtuple("Position", "ticket time time_msc type magic identifier volume price_open sl tp price_current swap profit symbol comment")
 Deal = namedtuple("Deal", "ticket order time time_msc type entry magic position_id volume price commission swap profit fee symbol comment reason")
 OrderResult = namedtuple("OrderResult", "retcode deal order volume price bid ask comment request_id retcode_external request")
@@ -255,6 +256,37 @@ class FakeMT5:
                                round(eq / margin * 100, 2) if margin else 0.0, round(profit, 2), True, True)
 
     # ------------------------------------------------------------- symbols
+    # ---- market depth (synthetic demo book: sizes derived deterministically from the synthetic tick; DOM can be switched off with
+    #      book_available = False to exercise the "no book" path)
+    book_available = True
+
+    def market_book_add(self, symbol):
+        if not self._guard() or not self._known(symbol) or not self.book_available:
+            return False
+        self._books = getattr(self, "_books", set()) | {symbol}
+        return True
+
+    def market_book_release(self, symbol):
+        self._books = getattr(self, "_books", set()) - {symbol}
+        return True
+
+    def market_book_get(self, symbol):
+        if symbol not in getattr(self, "_books", set()):
+            return None
+        t = self.symbol_info_tick(symbol)
+        if t is None:
+            return None
+        info = self.symbol_info(symbol)
+        pt = info.point if info else 0.01
+        k = int(t.time_msc // 1000)
+        out = []
+        for lvl in range(5):
+            qa = 1.0 + ((k * 7 + lvl * 3) % 11) / 2.0
+            qb = 1.0 + ((k * 5 + lvl * 13) % 11) / 2.0
+            out.append(BookInfo(1, round(t.ask + lvl * 10 * pt, 10), int(qa), qa))
+            out.append(BookInfo(2, round(t.bid - lvl * 10 * pt, 10), int(qb), qb))
+        return tuple(sorted(out, key=lambda b: -b.price))
+
     def symbol_select(self, name, enable=True):
         if not self._guard():
             return False

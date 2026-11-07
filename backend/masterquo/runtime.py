@@ -131,6 +131,13 @@ class Runtime:
         self.forecast.listeners.append(lambda setup_v2, symbol: self.signals.on_double_retest(setup_v2, symbol=symbol))
         from .zones.service import ZoneService
         self.zones = ZoneService(self.cfg, self.bridge, bus=self.bus, log=self.log)                # PMW-ZONES: one zone map (analytical)
+        from .indicators.service import IndicatorService
+        self.indicators = IndicatorService(self.cfg, self.bridge, zones=self.zones, bus=self.bus, log=self.log)   # PMW-IND-1 (1.33)
+        self.sh.indicators = self.indicators                                                        # SCALPING / HEDGING: context (OBSERVE)
+        self.engine.indicators_provider = self.indicators                                           # agent: frozen PMW-IND-1 snapshot
+        from .svp.service import SVPService
+        self.svp = SVPService(self.cfg, self.bridge, agent=self.agent, bus=self.bus)               # PMW-SVP-1 profiles + MANUAL/ALGORITHM/AI zones
+        self.engine.svp_provider = self.svp                                                         # agent: frozen SVP profiles + zones
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
@@ -150,7 +157,7 @@ class Runtime:
         self.scalp.extind = self.extind
         self.scalp.ml = self.ml
         self.engine.extind = self.extind
-        self.engine.active.context_fn = self.walls.context
+        self.engine.active.context_fn = lambda view, bars: {**self.walls.context(view, bars), **self.indicators.context(view, bars)}
         self.prefs.listeners.append(lambda name, v: (self.engine.mark_dirty(), self._publish_prefs()))
         # another account (server:login) = its own preferences; broker parameters are re-read by the bridge
         self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)
@@ -242,6 +249,8 @@ class Runtime:
         self.sh.start()
         self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
         self.zones.start()                      # PMW-ZONES: zone map on every closed M5
+        self.indicators.start()                 # PMW-IND-1: indicator snapshot on every closed M1, spread sampling, market depth
+        self.svp.start()                        # PMW-SVP-1: LIVE profiles / zones (only profiles switched to LIVE)
         self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
         self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
         self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
@@ -274,6 +283,8 @@ class Runtime:
         self.sh.stop()
         self.mm.stop()
         self.zones.stop()
+        self.indicators.stop()
+        self.svp.stop()
         self.market_zones.stop_service()
         self.trainhub.stop()
         self.trainhub_inference.stop()

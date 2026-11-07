@@ -590,11 +590,44 @@ class ZonesConfig(_Strict):
     hvn_min_share_of_poc: float = Field(0.6, gt=0, le=1)
     lvn_max_share_of_peaks: float = Field(0.35, gt=0, lt=1)
     relvol_lookback_sessions: int = Field(5, ge=1, le=60)
+    relvol_min_sessions: int = Field(1, ge=1, le=60, description="relative volume needs at least this many complete reference sessions")
+    relvol_min_coverage: float = Field(0.8, ge=0, le=1, description="reference session with fewer bars than this share of the slots = rejected")
     merge_tol_atr: float = Field(0.15, ge=0, le=2)
     score_weights: dict[str, float] = Field(default_factory=lambda: {"structure": 25, "volume": 25, "reaction": 20, "mtf": 15,
                                                                       "freshness": 10, "data_quality": 5})
     strong_zone_score: float = Field(60.0, ge=0, le=100)
     min_room_r: float = Field(1.0, ge=0, le=20, description="SHADOW evaluation: strong opposing zone closer than this (R, after costs)")
+
+
+class IndicatorsConfig(_Strict):
+    """PMW-IND-1 (1.33): analytical indicators - AVWAP, spread percentile, semivariance, session profile features, order-book
+    microstructure, XAUUSD-DXY relation. Starting variants, NOT optimised parameters. Nothing here blocks a strategy by itself."""
+    enabled: bool = True
+    avwap_tfs: list[str] = Field(default_factory=lambda: ["M1", "M5"])
+    avwap_price: Literal["TYPICAL", "CLOSE"] = "TYPICAL"
+    avwap_session: str = Field("CURRENT", description="session name of the session profile or CURRENT (latest started session)")
+    avwap_event_kinds: list[str] = Field(default_factory=lambda: ["BOS", "CHOCH", "X_"])
+    avwap_retest_tol_atr: float = Field(0.10, ge=0, le=2)
+    avwap_slope_bars: int = Field(5, ge=1, le=100)
+    avwap_history_bars: int = Field(600, ge=50, le=5000)
+    spread_sample_s: float = Field(10.0, ge=1, le=600, description="fixed sampling clock of the quote spread (not per tick)")
+    spread_slot_minutes: int = Field(30, ge=5, le=240)
+    spread_min_sessions: int = Field(5, ge=1, le=200)
+    spread_max_sessions: int = Field(20, ge=1, le=500)
+    spread_unusual_pct: float = Field(90.0, ge=50, le=100, description="panel note only - not a trading block")
+    semivar_windows: list[int] = Field(default_factory=lambda: [20, 60])
+    semivar_gap_mode: Literal["SKIP", "FLAG"] = "SKIP"
+    semivar_gap_factor: float = Field(1.5, ge=1.0, le=100)
+    dxy_windows: list[int] = Field(default_factory=lambda: [24, 72, 240])
+    dxy_min_obs: int = Field(20, ge=5, le=1000)
+    dxy_max_age_s: float = Field(3 * 3600, ge=600, le=7 * 86400)
+    dxy_history_bars: int = Field(400, ge=50, le=5000)
+    book_enabled: bool = Field(True, description="subscribe to MT5 market depth of the active symbol (read-only)")
+    book_period_s: float = Field(1.0, ge=0.2, le=60)
+    book_levels: int = Field(5, ge=1, le=50)
+    book_max_gap_s: float = Field(5.0, ge=0.5, le=600)
+    book_record: bool = Field(True, description="archive book snapshots for replay (data/indicators/book.sqlite)")
+    book_keep_days: int = Field(14, ge=1, le=365)
 
 
 class AppConfig(_Strict):
@@ -621,6 +654,7 @@ class AppConfig(_Strict):
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
     liquidity: LiquidityConfig = Field(default_factory=LiquidityConfig)
     zones: ZonesConfig = Field(default_factory=ZonesConfig)
+    indicators: IndicatorsConfig = Field(default_factory=IndicatorsConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 

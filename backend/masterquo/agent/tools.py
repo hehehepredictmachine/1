@@ -60,6 +60,17 @@ TOOL_DEFS = [
           "SMC BoS/IDM/FVG, rozkład log-zwrotu GPR 3×M5 z kalibracją z ledgera oraz tablica dowodów bez łączenia wyników. To obserwacja: nie bramka, "
           "nie głos w strategii, nie prawdopodobieństwo setupu; moduły liczą z tego samego feedu cen (zgodność nie jest niezależnym potwierdzeniem).",
           {}, []),
+    _tool("get_pmw_indicators", "Wskaźniki PMW-IND-1 zamrożone w snapshocie (1.33): AVWAP od sesji / ostatniego potwierdzonego BOS-CHoCH-sweepu "
+          "(czas punktu źródłowego i potwierdzenia, pasma ±1σ/±2σ = rozproszenie cen, nie przedział prawdopodobieństwa), percentyl spreadu "
+          "względem tych samych części wcześniejszych sesji, semiwariancja dodatnia/ujemna (udział spadkowej zmienności nie jest prawdopodobieństwem "
+          "spadku), cechy profilu sesji (POC/VAH/VAL w ATR, RVOL), mikrostruktura z arkusza brokera (lub 'Brak danych arkusza'). Każdy wynik ma "
+          "status; brak liczby = null z przyczyną.", {}, []),
+    _tool("get_dxy_relation", "Relacja XAUUSD × DXY na zwrotach H1 (bez forward-fill): korelacja i beta dla okien 24/72/240, reszta oceniona "
+          "parametrami z wcześniejszych obserwacji, liczebność próby, wiek danych DXY i stan (READY / STALE / NO_DATA / DISABLED). Kontekst H1 – "
+          "nie trigger M1; nie zakładaj stałej odwrotnej korelacji.", {}, []),
+    _tool("get_svp_profiles", "Profile Session Volume Profile użytkownika (ostatni zapisany snapshot: snapshot_id, POC/VAH/VAL/HVN/LVN, zakres, "
+          "źródło wolumenu i metoda – estymata z OHLC, nie footprint) oraz aktywne strefy z rozdzielonym źródłem MANUAL / ALGORITHM / AI. "
+          "Strefy MANUAL są nienaruszalne; propozycja strefy musi wskazywać profile_id i snapshot_id oraz opierać się na poziomach profilu.", {}, []),
 ]
 
 
@@ -227,6 +238,30 @@ class Toolbox:
             out["s12_selected_setup"] = {"variant": f.get("variant"), "arbiter": f.get("arbiter"), "alternatives": f.get("alternatives"),
                                          "missing": row["record"].get("missing_confirmations"), "checklist": f.get("checklist")}
         return out
+
+    def t_get_pmw_indicators(self) -> dict:
+        s = self.ctx.get("pmw_indicators")
+        if not s:
+            return {"status": "UNAVAILABLE", "reason": "brak snapshotu wskaźników w kontekście"}
+        out = {k: s.get(k) for k in ("version", "contract", "instrument", "broker_symbol", "as_of", "snapshot_id")}
+        for k in ("semivar", "spread", "profile", "microstructure"):
+            r = s.get(k) or {}
+            out[k] = {kk: r.get(kk) for kk in ("status", "reason", "values", "units", "data_time", "available_at", "volume_source", "sample_count")}
+        out["avwap"] = {tf: {m: ({kk: r.get(kk) for kk in ("status", "reason", "values", "anchor", "volume_source", "events")} if isinstance(r, dict)
+                                 else [{kk: x.get(kk) for kk in ("status", "values", "anchor")} for x in r])
+                             for m, r in modes.items()} for tf, modes in (s.get("avwap") or {}).items()}
+        return out
+
+    def t_get_svp_profiles(self) -> dict:
+        v = self.ctx.get("svp")
+        return v if v else {"status": "UNAVAILABLE", "reason": "brak profili SVP w snapshocie"}
+
+    def t_get_dxy_relation(self) -> dict:
+        s = (self.ctx.get("pmw_indicators") or {}).get("dxy")
+        if not s:
+            return {"status": "UNAVAILABLE", "reason": "brak relacji DXY w snapshocie"}
+        return {k: s.get(k) for k in ("status", "reason", "values", "units", "dxy", "windows", "equation", "data_time", "available_at",
+                                       "sample_count", "snapshot_id")}
 
     def t_get_indicator_context(self) -> dict:
         c = self.ctx.get("indicator_context")

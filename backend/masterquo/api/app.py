@@ -1093,6 +1093,15 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(404)
         return r
 
+    @app.get("/api/v1/plans/chart")
+    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100)):
+        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills."""
+        from ..plans import service as _PS
+        strat = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get(layer.upper())
+        if strat is None:
+            raise HTTPException(400, "LAYER_INVALID")
+        return _PS.collect(rt.sh, strat, history=history)
+
     @app.get("/api/v1/sh/plans")
     def sh_plans(open_only: bool = False, limit: int = Query(50, ge=1, le=500)):
         q = rt.sh.quote(time.time())
@@ -1986,6 +1995,166 @@ def create_app(rt, port: int) -> FastAPI:
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
+
+    # ---------------------------------------------------------------- PMW-IND-1 indicators (1.33) - analytical, read-only
+    def _ind_tf(tf):
+        t = str(tf or "M5").upper()
+        if t not in rt.cfg.get().indicators.avwap_tfs:
+            raise HTTPException(400, f"TF_NOT_ENABLED_FOR_AVWAP:{t}")
+        return t
+
+    @app.get("/api/v1/indicators/status")
+    def indicators_status():
+        return rt.indicators.status()
+
+    @app.get("/api/v1/indicators/snapshot")
+    def indicators_snapshot(full: bool = Query(False)):
+        s = rt.indicators.current_or_refresh()
+        if s is None:
+            return {"status": "NO_SNAPSHOT", "reason": rt.indicators.state.get("last_error")}
+        return s if full else rt.indicators.compact(s)
+
+    @app.post("/api/v1/indicators/refresh")
+    def indicators_refresh():
+        return rt.indicators.compact(rt.indicators.refresh())
+
+    @app.get("/api/v1/indicators/chart")
+    def indicators_chart(tf: str = Query("M5")):
+        return rt.indicators.chart(_ind_tf(tf))
+
+    @app.get("/api/v1/indicators/dxy")
+    def indicators_dxy():
+        s = rt.indicators.current_or_refresh() or {}
+        return s.get("dxy") or {"status": "NO_SNAPSHOT"}
+
+    @app.get("/api/v1/indicators/anchors")
+    def indicators_anchors(tf: str | None = Query(None)):
+        return {"items": rt.indicators.manual_anchors(_ind_tf(tf) if tf else None)}
+
+    @app.post("/api/v1/indicators/anchors")
+    def indicators_anchor_add(body: dict = Body(...)):
+        tf = _ind_tf(body.get("tf"))
+        st = body.get("source_time")
+        if not st:
+            raise HTTPException(400, "SOURCE_TIME_REQUIRED")
+        try:
+            from ..indicators import contract as _IC
+            _IC.ts(st)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "SOURCE_TIME_INVALID") from None
+        label = str(body.get("label") or "")[:40] or None
+        return rt.indicators.add_manual_anchor(tf, st, label)
+
+    @app.delete("/api/v1/indicators/anchors/{anchor_id}")
+    def indicators_anchor_del(anchor_id: str):
+        if not rt.indicators.remove_manual_anchor(anchor_id):
+            raise HTTPException(404, "ANCHOR_NOT_FOUND")
+        return {"ok": True}
+
+    @app.get("/api/v1/indicators/manifest")
+    def indicators_manifest():
+        return rt.indicators.manifest()
+
+    # ---------------------------------------------------------------- PMW-SVP-1 Session Volume Profile + zones (1.33) - analytical
+    def _svp(fn, *a, **k):
+        try:
+            return fn(*a, **k)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc).strip("'")) from None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.get("/api/v1/svp/status")
+    def svp_status():
+        return rt.svp.status()
+
+    @app.get("/api/v1/svp/profiles")
+    def svp_profiles():
+        return {"items": rt.svp.profiles()}
+
+    @app.post("/api/v1/svp/profiles")
+    def svp_profile_create(body: dict = Body(...)):
+        return _svp(rt.svp.create_profile, body)
+
+    @app.patch("/api/v1/svp/profiles/{pid}")
+    def svp_profile_update(pid: str, body: dict = Body(...)):
+        return _svp(rt.svp.update_profile, pid, body)
+
+    @app.delete("/api/v1/svp/profiles/{pid}")
+    def svp_profile_delete(pid: str):
+        if not rt.svp.delete_profile(pid):
+            raise HTTPException(404, "PROFILE_NOT_FOUND")
+        return {"ok": True}
+
+    @app.post("/api/v1/svp/profiles/{pid}/copy-settings")
+    def svp_profile_copy(pid: str, body: dict = Body(...)):
+        return _svp(rt.svp.copy_settings, str(body.get("from") or ""), pid)
+
+    @app.get("/api/v1/svp/profiles/{pid}/compute")
+    def svp_profile_compute(pid: str):
+        return _svp(rt.svp.compute, pid)
+
+    @app.post("/api/v1/svp/profiles/{pid}/freeze")
+    def svp_profile_freeze(pid: str):
+        return _svp(rt.svp.freeze, pid)
+
+    @app.post("/api/v1/svp/profiles/{pid}/live")
+    def svp_profile_live(pid: str, body: dict = Body(...)):
+        return _svp(rt.svp.set_live, pid, bool(body.get("on")))
+
+    @app.post("/api/v1/svp/profiles/{pid}/ai-live")
+    def svp_profile_ai_live(pid: str, body: dict = Body(...)):
+        return _svp(rt.svp.set_ai_live, pid, bool(body.get("on")))
+
+    @app.post("/api/v1/svp/profiles/{pid}/zones-now")
+    def svp_zones_now(pid: str):
+        return _svp(rt.svp.algo_now, pid)
+
+    @app.post("/api/v1/svp/profiles/{pid}/ai-propose")
+    async def svp_ai_propose(pid: str):
+        if rt.svp.profile(pid) is None:
+            raise HTTPException(404, "PROFILE_NOT_FOUND")
+        return await rt.svp.ai_propose(pid)
+
+    @app.get("/api/v1/svp/visible")
+    def svp_visible(tf: str = Query("M5"), t0: str = Query(...), t1: str = Query(...), bin_ticks: int = Query(50, ge=1, le=100000),
+                    va_pct: float = Query(0.70, gt=0.3, lt=1.0)):
+        if tf not in TIMEFRAMES:
+            raise HTTPException(400, "TF_INVALID")
+        return _svp(rt.svp.visible, tf, t0, t1, bin_ticks=bin_ticks, va_pct=va_pct)
+
+    @app.get("/api/v1/svp/zones")
+    def svp_zones(source: str | None = Query(None), profile_id: str | None = Query(None), as_of: str | None = Query(None)):
+        if source and source not in ("MANUAL", "ALGORITHM", "AI"):
+            raise HTTPException(400, "SOURCE_INVALID")
+        from ..svp import engine as _SE
+        return {"items": rt.svp.zones(source=source, profile_id=profile_id, as_of=_SE._ts(as_of) if as_of else None)}
+
+    @app.post("/api/v1/svp/zones")
+    def svp_zone_create(body: dict = Body(...)):
+        return _svp(rt.svp.create_manual, body)
+
+    @app.patch("/api/v1/svp/zones/{zid}")
+    def svp_zone_edit(zid: str, body: dict = Body(...)):
+        return _svp(rt.svp.edit_zone, zid, body)
+
+    @app.delete("/api/v1/svp/zones/{zid}")
+    def svp_zone_delete(zid: str):
+        if not rt.svp.delete_zone(zid):
+            raise HTTPException(404, "ZONE_NOT_FOUND")
+        return {"ok": True}
+
+    @app.get("/api/v1/svp/zones/{zid}/history")
+    def svp_zone_history(zid: str):
+        return {"items": rt.svp.zone_history(zid)}
+
+    @app.post("/api/v1/svp/clear-auto")
+    def svp_clear_auto(body: dict = Body(default={})):
+        return {"deactivated": rt.svp.clear_auto(body.get("profile_id"))}
+
+    @app.get("/api/v1/svp/ai-jobs")
+    def svp_ai_jobs(limit: int = Query(50, ge=1, le=500)):
+        return {"items": rt.svp.ai_jobs(limit)}
 
     @app.get("/api/v1/zones/status")
     def zones_status():

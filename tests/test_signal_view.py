@@ -108,7 +108,7 @@ class TestSignalView(unittest.TestCase):
         self.assertIn("informacyjnie", h4["conflict_impact"])
         m1 = next(r for r in rows if r["tf"] == "M1")
         self.assertEqual((m1["direction"], m1["data"]), (None, "BRAK_DANYCH"))
-        self.assertEqual(len(rows), 8)
+        self.assertEqual(len(rows), 9)                                       # M1 M3 M5 M15 M30 H1 H4 H8 D1
 
 
 if __name__ == "__main__":

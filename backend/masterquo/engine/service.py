@@ -524,13 +524,42 @@ class EngineService:
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
                "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
-               "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None)}
+               "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None),
+               "pmw_indicators": self._pmw_indicators(), "svp": self._svp_view()}
         with self._lock:
             if sid in self.contexts:
                 self.contexts.move_to_end(sid)
             self.contexts[sid] = ctx
             while len(self.contexts) > 12:
                 self.contexts.popitem(last=False)
+
+    def _pmw_indicators(self) -> dict | None:
+        """PMW-IND-1 snapshot frozen with the agent context (full results incl. DXY relation; the agent never recomputes)."""
+        ind = getattr(self, "indicators_provider", None)
+        if ind is None:
+            return None
+        try:
+            return ind.current()
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _svp_view(self) -> dict | None:
+        """Latest stored SVP snapshots of the user's profiles + active zones (MANUAL / ALGORITHM / AI), frozen with the agent context."""
+        svp = getattr(self, "svp_provider", None)
+        if svp is None:
+            return None
+        try:
+            profs = []
+            for p in svp.profiles()[:8]:
+                sn = svp.latest_snapshot(p["profile_id"]) or {}
+                profs.append({"profile_id": p["profile_id"], "name": p["name"], "mode": p["mode"],
+                              **{k: sn.get(k) for k in ("snapshot_id", "geometry_id", "start", "end", "known_at", "state", "poc", "vah", "val",
+                                                        "hvn", "lvn", "high", "low", "bin_size", "volume_source", "method", "coverage")}})
+            zs = [{k: z.get(k) for k in ("zone_id", "version", "source", "kind", "lower", "upper", "name", "pinned", "snapshot_id", "available_at",
+                                         "valid_until", "justification")} for z in svp.zones()[:60]]
+            return {"profiles": profs, "zones": zs}
+        except Exception:  # noqa: BLE001
+            return None
 
     def _structure_snapshot(self, sid: str) -> dict | None:
         """PMW-UPD-07: frozen Structure Intelligence snapshot by id ('latest' = the newest one); read-only."""
