@@ -1,235 +1,132 @@
-# Raport końcowy – PepeMarketWizard 1.32.0 (CULT UI)
+# Raport końcowy – PepeMarketWizard 1.33.0 (wszystkie aktualizacje)
 
-**Co nowego:** 1.32.0 = 1.31.0 + interfejs CULT według „UI IMPLEMENTATION MASTER PROMPT” i grafik z `projekt.zip`, tylko siedem
-zaprojektowanych elementów: launcher **JOIN THE CULT** (w aplikacji Windows osobne małe okno), intro 6 s, **Main Menu** – miasto
-sześciu wież, **Lightning Tower**, **Wind Portal**, **Control Tower**, **Strategy Lab**. Pełny raport wdrożenia (mapa źródeł danych,
-zapis ustawień, czego bot nie ma, pytania do doprecyzowania): `docs/CULT_UI_WDROZENIE_1_32_PL.md`. Strategie, progi domyślne, ryzyko,
-koszty, tryby wykonania, STOP, modele, MT5 i Telegram działają jak w 1.31.0. Przerwana praca „menu czterech wież i baniek” nie weszła
-do wydania.
+**Zadanie:** wdrożenie pakietu `PepeMarketWizard_Prompty_Wdrozenia_Wszystkich_Aktualizacji.zip` (SHA-256 `6ca0e387…a3dc99`): START + specyfikacje
+AUD (audyt, 15 rodzin modeli, trening), IND (wskaźniki, DXY, plany Scalp/Hedge, SVP), STU (Data & Training Studio), ARC (architektura
+decyzji). Baza: 1.32.0 (`5e5d82a`). Gałąź `claude/masterquo-ai-bot-mt5-f7uaht`. Paczki zbudowane z commitu
+`e365c2005fff27b3d7d823ec1e5ad769b4541842`.
 
-**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki 1.32.0 zbudowane z commitu
-`0f737eca7a26caaf8232e60935ccc8b102a30522` (kod CULT UI: `5135884`, zasoby EXE i manifest: `0f737ec`). `MANIFEST_SHA256.txt`
-(1301 plików programu): SHA-256 `e88f8d841bf0f377fe5fc2cdf450980bddfd7d042a4d7fb5639f55b70adeb954`.
-**Data i środowisko:** 2026-11-05; kontener Linux 6.18 (x86_64, 4 rdzenie, bez GPU), Python 3.13.16, Node 22, Go 1.24.7, Chromium.
-Bez Windows i bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń.
+**Środowisko:** 2026-11-07, kontener Linux 6.18 x86_64 (bez GPU), Python 3.13.18, Node 22, Go 1.24.7, Chromium. Brak Windows, terminala MT5 i
+konta brokera: zamiast terminala działa symulator (dane SYNTETYCZNE). Nie złożono żadnych zleceń.
 
-## Paczki 1.32.0
-| Plik | Rozmiar (B) | SHA-256 |
+**Uwaga o źródle wymagań:** po U5 kontener został zresetowany i rozpakowane specyfikacje przepadły. Etapy U6–U8 (ARC, panel, wydanie) wykonałem
+według notatek z pierwszego czytania. Jeśli chcesz porównania punkt po punkcie z oryginałem (np. numeracji scenariuszy testowych 1–13),
+prześlij pakiet ponownie.
+
+## 1. Co wdrożono i jak jest połączone
+Pełna macierz: `docs/INTEGRATION_MATRIX.md` + `integration_manifest.json` (generator `tools/integration_matrix.py`). Każdy wiersz zawiera
+wymaganie, moduł, podłączenie w Runtime, odbiorców i testy. Generator sprawdza ścieżki, trasy API i pliki testów: **37/37 wymagań
+zaimplementowanych i podłączonych**, braków 0.
+
+| Spec | Najważniejsze | Runtime / analiza / strategie / panel / trening |
 |---|---|---|
-| `PepeMarketWizard_DESKTOP_1_32_0.zip` (2369 plików) | 43 104 414 | `149e2efc9b8dc58d4a78c0f8bf2d861e3f3cc730f1c7ffb4636840631f198626` |
-| `PepeMarketWizard_1_32_0.zip` (1301 plików) | 25 579 777 | `35d93390e90fba3873c62c307fd98d53b43a99ffa4d0b68554278ec2aaf42e22` |
-| `Instrukcja_Administrator_PepeMarketWizard.pdf` (9 stron, launcher i menu na s. 2–3) | 745 239 | `ca5196c598b495d8e0fd5e552cf4ef766adb9dedae7b3e9e5a19788697a8c9ea` |
-| `Instrukcja_Klient_PepeMarketWizard.pdf` (5 stron) | 505 297 | `21dc4ce4e2468dd946bbdb0f02a8cb9ffe3e2fa757d3ff62a3ff2d198cf9c700` |
+| AUD | <ul><li>PMW-PRED-2</li><li>M3 w całym łańcuchu</li><li>`dxy_missing` z rzeczywistej dostępności</li><li>Kronos REQUIRED z odciskiem</li><li>15 rodzin PMW-FAM-1 z magazynem artefaktów, aktywacją, rollbackiem i rolami</li><li>`.venv_deep`</li><li>trainhub RF/SVM/XGB i profile</li></ul> | FamilyService w Runtime → SH (kontekst + ASSIST), ACTIVE (węzeł MODELS), agent, Centrum treningu „Rodziny modeli 1.33” |
+| IND | <ul><li>PMW-IND-1: AVWAP, spread vs sesja, semiwariancja, XAUUSD×DXY bez forward-fill, OFI/arkusz, profil sesji</li><li>PMW-PLAN-1 Pepe Scalp / Hedge Plan</li><li>PMW-SVP-1 (profile, strefy MANUAL/ALGORITHM/AI)</li></ul> | IndicatorService / SVPService w Runtime → kontekst ACTIVE, SH (OBSERVE), narzędzia agenta, `#/dxy`, `#/svp`, warstwy Scalp Plan / Hedge Plan / AVWAP / SVP na każdym wykresie |
+| STU | <ul><li>osobna aplikacja Studio: proces, port 8780, blokada O_EXCL z heartbeat, wspólna blokada eksportu z botem</li><li>rejestr 72 zadań, kolejka</li><li>paczki per zadanie z atomowymi etapami</li><li>test ładowania w czystym procesie</li><li>import do bota jako kandydat (rollback, inbox)</li><li>`PepeTrainingStudio.exe`</li></ul> | przycisk **Studio** ze stanem (górny pasek, menu CULT) uruchamia osobny proces; `process_inbox()` przy starcie bota |
+| ARC | <ul><li>10 kontraktów</li><li>jeden DecisionCoordinator obu ścieżek</li><li>role OBSERVE / ASSIST / REQUIRED</li><li>DecisionRecord (migracja 0025)</li><li>atomowa rezerwacja limitów portfela obu ścieżek</li><li>intencje wykonania z deduplikacją i rozliczaniem UNKNOWN</li><li>replay</li></ul> | engine / gateway / SH / manager dzielą jeden koordynator; panel `#/decyzje` |
 
-`tools/verify_release.py --all`: OK dla obu paczek (ścieżki, manifest, brak sekretów, plik `.sha256`). EXE w paczce DESKTOP zawiera
-nowy launcher (sprawdzone: tekst „JOIN THE CULT”, adres panelu `?pmw_joined=1`, wersja 1.32.0). Instrukcje PDF są mniejsze niż
-w 1.31 – zrzuty ekranu są teraz osadzane jako zmniejszone JPEG.
+Execution Lock **nie** został przywrócony. Tryby SIGNALS/PAPER/AUTO DEMO/AUTO LIVE, STOP nowych wejść, limity użytkownika i wymagania
+brokera działają bez zmian.
 
-## Testy 1.32.0 – komendy i liczby
+## 2. Modele (15 rodzin + adapter)
+Walidacja kontrolna: dane SYNTETYCZNE o znanej strukturze, profil smoke (`tools/validate_families_synthetic.py`). Sprawdza potok i bramkę,
+**nie rentowność**. Szczegóły: `docs/RAPORT_WALIDACJI_MODELI.md`, karty modeli: `MODEL_CARDS/families/`.
+
+| Rodzina | Zadanie | Środowisko | Odbiorcy | Trening → zapis → ładowanie → predykcja | Bramka (smoke, SYNTHETIC) |
+|---|---|---|---|---|---|
+| TS_ARIMA | log-zwrot H1/3/5 (M5) | główne | SH, panel, agent | OK | APPROVED |
+| TS_SARIMAX | log-zwrot H1 + kalendarz | główne | SH H1 | OK (po naprawie A8) | APPROVED |
+| VOL_GARCH | zmienność | główne (`arch`) | SH / ryzyko | OK | APPROVED |
+| MICROSTRUCTURE | stan arkusza 10 s | główne | SH jakość wejścia | OK | APPROVED |
+| PAIR_COINT | relacja pary | główne (wymaga `families.pairs`) | SH | OK | APPROVED |
+| STATARB | koszyk ≥3 | główne (wymaga `families.basket`) | panel | OK | APPROVED |
+| KALMAN_LS | poziom + nachylenie | główne | SH | OK | APPROVED |
+| BREAKOUT | stan wybicia | główne | SH | OK | APPROVED |
+| TH_RF / TH_SVM / TH_XGB | kierunek po kosztach | trainhub | SH / panel | `test_trainhub` 22 OK | (trainhub) |
+| SEQ_LSTM / SEQ_GRU | rozkład kierunku H6 | `.venv_deep` | SH | OK (rzeczywisty trening torch) | VALIDATION_FAILED – budżet smoke; zgodnie z projektem bramka nie dopuszcza |
+| RL_PPO | propozycja akcji | `.venv_deep` (SB3) | panel / SH kontekst | OK | VALIDATION_FAILED (smoke) |
+| NLP_SENTIMENT | sentyment nagłówków | główne / lokalny transformer | SH, agent | OK | APPROVED |
+| SEQ_GRU_EVENT (adapter) | zdarzenia MM | centrum MM | SH | `test_mm_*` OK | (MM) |
+
+Domyślnie każda rodzina ma rolę OFF albo SHADOW, a `decision.required_models` jest puste. Rola ASSIST wymaga walidacji APPROVED na
+Twoich danych REAL.
+
+## 3. Testy – komendy i wyniki (końcowy przebieg na kodzie wydania)
+
 | Komenda | Wynik |
 |---|---|
-| 85 plików testów bez UI (`python -m unittest <plik>`, po 3 równolegle) | 1003 testy: 84 pliki OK za pierwszym razem; `test_risk_execution` 1 błąd – nieaktualna lista migracji (brak 0024 dodanej w 1.31, czerwony już na 1.31.0) – poprawiony test, potem 21/21 OK; 12 pominiętych (8 Kronos bez osobnego środowiska PyTorch, 2 mm_integration, 2 train_all) |
-| `test_cult_backend` + `test_telegram` | 14/14 OK |
-| `test_ui_cult` (nowy, 9 testów: launcher, intro, 6 wież, nawigacja i znaczniki danych, panele w 1920/1366/390, zapis konfiguracji, potwierdzenia, ograniczone animacje, jeden WebSocket) | po poprawkach testu (niżej) dwa pełne przebiegi z rzędu 9/9 OK |
-| 16 pozostałych plików UI (dwie kolejki równolegle) | 15 OK za pierwszym razem; `test_ui_lab` 1 błąd czasu (zadanie treningu nie skończyło się w 600 s przy obciążeniu dwiema kolejkami) – uruchomiony sam: 14/14 OK |
-| zaktualizowane: `test_ui_wizard` 7, `test_ui_pages` 8, `test_ui_interface_129` 4 | OK |
-| `desktop`: `go test ./...`, `GOOS=windows go vet ./...`, `gofmt -l` | OK (nowe testy: rozmiary okna, środek ekranu, adres panelu, strona launchera) |
-| `splash.html` w Chromium z atrapą mostka (postęp / wybór danych / błąd / READY, 960×660 i 716×618) | wszystko się mieści; JOIN aktywny tylko w READY, kliknięcie wysyła akcję `join` |
-| `tools/migration_check.py --old-ref da076c8` (1.31.0 → 1.32.0) | 11/11 PASS (migracje 23 → 23, konfiguracja i strefy zachowane, powrót działa, 1.31.0 działa także wprost na danych po 1.32.0) |
-| konfiguracja zapisana przez 1.32 wczytana kodem 1.31 | OK (szablon Telegram i presety w osobnych plikach) |
+| 89 plików testów bez UI (`python -m unittest <plik>`, 3 równolegle) | **89/89 OK**, 1090 testów, 12 pominiętych: 8 Kronos bez osobnego PyTorch, 2 `mm_integration`, 2 `train_all` |
+| 21 plików UI (Chromium, serwer `--demo`, 3 kolejki bez kolizji portów) | **21/21 OK**, 127 testów, w tym nowy `test_ui_pmw133` (strony `#/dxy`, `#/svp`, `#/decyzje`, sekcja rodzin, 4 warstwy wykresu bez żądań zapisu, przycisk Studio, uruchomienie Studio z bota) |
+| nowe w 1.33 | `test_integration_u1` 9, `test_indicators_u2` 30, `test_plans_svp_u3` 21, `test_families_u4` 19, `test_studio_u5` 7, `test_decision_arc_u6` 18, `test_config_v13` 1 – OK |
+| `desktop`: `go test -count=1 ./...`, `GOOS=windows go vet ./...`, `gofmt -l` | OK |
 | `npm run build` (TypeScript + Vite) | OK |
+| `tools/migration_check.py --old-ref 5e5d82a` (z `MQ_FAKE_MARKET_ALWAYS_OPEN=1`, bo symulator ma weekend) | **13/13 PASS**: 1.33 na danych 1.32 (konfiguracja, migracje, strefy), powrót na kopii, kopia `config.v12.bak.json`, 1.32.0 na danych po 1.33 z przywróconą kopią |
+| `tools/verify_release.py --all` | OK dla obu paczek |
+| start z wygenerowanych paczek (`pkg_launch`) | **13/13 PASS dla każdej paczki** – szczegóły w sekcji 5 |
 
-**Poprawki testów w trakcie (wyścigi w samych testach, nie w programie):** odczyt przełączników strategii przed dotarciem zapytania
-(brak wpisu w konfiguracji = scan i trade włączone, tak jak traktuje to bot i panel); podgląd Telegram sprawdzany przed odświeżeniem
-(teraz czeka na własny szablon i akceptuje przykład albo prawdziwy sygnał z oznaczeniem SYMULATOR); długość intro mierzona w stronie,
-a nie zegarem testu ze zrzutami ekranu; licznik WebSocket – sprawdza, że nigdy nie są otwarte dwa naraz (ponowne połączenie tego
-samego gniazda po luce w numeracji zdarzeń jest zamierzonym mechanizmem odzyskiwania).
+Zaktualizowane oczekiwania starych testów, wszystkie wynikające z zamierzonych zmian:
+* M3 w rejestrze TF (`test_ui_pages`, `test_ui_signal_card`);
+* kontrakt PMW-PRED-2 (`test_ui_training_center`);
+* lista migracji z 0025 (`test_risk_execution`);
+* config v13 (`test_relaxed_gates`, `test_execution_lock_withdrawn`, `test_volzones`).
 
-## Czego nie sprawdzono w 1.32.0
-* **Okno Windows (WebView2):** launcher jako małe okno, powiększenie do 85 % po JOIN THE CULT, wyśrodkowanie na monitorze z paskiem
-  zadań, skalowanie DPI, zachowanie przy starcie zminimalizowanym. Sprawdzono: kompilację krzyżową i `go vet` dla Windows, testy Go
-  logiki rozmiarów / adresu / strony launchera, stronę `splash.html` w Chromium z atrapą mostka (stany postęp / wybór danych / błąd /
-  READY, kliknięcie JOIN → akcja `join`).
-* **MT5:** rzeczywiste wartości paneli na Twoim rachunku (znaczniki REAL / DEMO), czas serwera, spread brokera.
-* **Telegram:** wysyłka z własnym szablonem do prawdziwego czatu (tu brak tokena – test zgłasza NOT_CONFIGURED, nic nie udaje).
-* Wydajność animacji na słabym komputerze bez GPU (tu Chromium bez GPU: intro i przybliżenie działają, testy przechodzą).
+**Błędy znalezione i naprawione w trakcie** (pełna lista A1–A10: `docs/AUDYT_I_NAPRAWY_MODELI.md`):
+* **SARIMAX nie zbiegał na H1.** Model był BLOCKED, a ARIMA często nie zbiegała. Poprawka: zwroty skalowane do wariancji 1.
+* **Powrót do 1.32 kończył się odmową startu.** 1.32 nie przyjmuje `config.json` zapisanego przez 1.33. Poprawka: konfiguracja v13
+  zostawia nietknięty plik 1.32 jako kopię.
+* **Studio szukało danych bota w innym katalogu niż bot w Windows.**
+* **Limit pozycji portfela dało się przekroczyć,** gdy obie ścieżki działały naraz.
+* **Pętla mostu MT5 przerywała się na nowym interwale M3** (regresja z U1).
 
-## Procedura rollbacku 1.32.0 → 1.31.0
-Zamknij aplikację i uruchom 1.31.0 z jej folderu (paczka `PepeMarketWizard_DESKTOP_1_31_0.zip`). 1.32 nie zmienia bazy danych ani
-kluczy `config.json` (sprawdzone: konfiguracja zapisana przez 1.32 wczytuje się w kodzie 1.31). Szablon Telegram
-(`data\telegram\signal_template.json`) i presety (`data\presets\strategy.json`) leżą w osobnych plikach – 1.31 ich nie czyta
-(wiadomości wracają do formatu wbudowanego); możesz je zostawić albo usunąć.
+## 4. Replay: stara (1.32) i nowa (1.33) logika decyzji
+`python -m masterquo.decision.replay [--db kopia.sqlite] [--required RODZINA]`:
 
----
+| Scenariusz | 1.32 | 1.33 |
+|---|---|---|
+| wyścig obu ścieżek: 6 wejść w jednym oknie wysyłki, `max_open_positions = 2` | **6 przechodzi** (limit przekroczony) | **2 przechodzi**, 4 × `PORTFOLIO_MAX_OPEN_POSITIONS_RESERVED` |
+| zapisane decyzje bez ról ASSIST/REQUIRED (test: 3 decyzje; baza z testu paczki: 2) | – | identyczne werdykty, 0 zmian |
+| te same decyzje z REQUIRED bez prognozy (test) | ALLOWED | BLOCKED `MODEL_REQUIRED_UNAVAILABLE` (2 z 2 wejść) |
 
-# Archiwum: raport 1.31.0
+W tym środowisku zapisanych decyzji było mało (krótkie przebiegi demo). Zalecam replay na kopii Twojej bazy z MT5, żeby zobaczyć wpływ
+konkretnej roli REQUIRED przed jej włączeniem.
 
-**Co nowego:** 1.31.0 = 1.30.1 + integracja modelu **Kronos** (NeoQuasar/Kronos-small + Kronos-Tokenizer-base, MIT, rewizje
-przypięte). Kronos działa w trybie obserwacji (SHADOW) i nie ma zgody na zlecenia. Pełny raport wdrożenia:
-`docs/KRONOS_RAPORT_WDROZENIA.md`. Instrukcja dla Ciebie: `INSTRUKCJA_KRONOS.md`. Obie są w paczkach.
+## 5. Paczki 1.33.0 i start z paczki
 
-**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki 1.31.0 zbudowane z commitu
-`45ee591cab80ca75a96a8b8cb2ea6de068e2887a`. `MANIFEST_SHA256.txt` (1198 plików programu): SHA-256
-`c2947777c0eee00e59b645b63582d6a4caeadfa01aa316a8debbfc9a276924f4`.
-**Data i środowisko:** 2026-11-04; kontener Linux 6.18 (x86_64, 4 rdzenie, bez GPU), Python 3.13.16, PyTorch 2.14.1 CPU (osobne
-środowisko testowe), Node 22, Go 1.24.7, Chromium. Bez Windows i bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń.
-
-## Najważniejsze ograniczenie
-`huggingface.co` i `download.pytorch.org` są zablokowane w tym środowisku (403). Dlatego tutaj **nie** zostały pobrane ani
-uruchomione oficjalne wagi i **nie** przeszedł na nich test regresji autorów. Przepływ sprawdziłem na prawdziwym PyTorch z losowymi
-wagami tej samej architektury (24 741 376 parametrów). To wyłącznie test, nie prognoza rynku: bot odrzuca takie wagi poza testami.
-Pobranie i sprawdzenie wag robisz u siebie przyciskami **Zainstaluj model Kronos** i **Sprawdź instalację**.
-
-## Paczki 1.31.0
 | Plik | Rozmiar (B) | SHA-256 |
 |---|---|---|
-| `PepeMarketWizard_DESKTOP_1_31_0.zip` (2266 plików) | 39 849 513 | `b9ad38a06134d1a635eab502a8c255533053ecd2e56f9468c9bea21bdfba907b` |
-| `PepeMarketWizard_1_31_0.zip` (1198 plików) | 22 389 605 | `4993672aa3834235b015bb2807343d7803896d7c54ab4a3315546fc0e37433d0` |
-| `Instrukcja_Administrator_PepeMarketWizard.pdf` (8 stron, Kronos na s. 6) | 377 807 | `8233d45b3e4c36c2cd4c9eb323ae70dbb2c3e7a0e4475596567752d9686fd2c9` |
-| `Instrukcja_Klient_PepeMarketWizard.pdf` (5 stron) | 1 457 251 | `ed91c15eae2fa4066bb00b557e22fd22682b2baab44818033e2d0f1f0a43e5e2` |
+| `PepeMarketWizard_DESKTOP_1_33_0.zip` (2497 plików: `PepeMarketWizardDesktop.exe`, `PepeTrainingStudio.exe`, Python 3.13.17 dla Windows, program) | 46 628 131 | `147a72c54b5dde772e8386d8038310b97b040823f62ee20466533db32060961a` |
+| `PepeMarketWizard_1_33_0.zip` (1428 plików programu) | 25 947 114 | `cf85dc32d97e6177367eb18e35e190068bb835211645b85d00b439b95dc025da` |
+| `Instrukcja_Administrator_PepeMarketWizard.pdf` (11 stron, rozdziały 4b i 6 dla 1.33) | 956 457 | `c53d66eb34dc719d14de4457dfa9c15a165e0e03840bbdac363be4ee23c42201` |
+| `Instrukcja_Klient_PepeMarketWizard.pdf` (7 stron, rozdział 3b dla 1.33) | 863 585 | `7ac278d8b23e7e144bb0072211f55eaec146ab8b562ee322217bcbfcc5651379` |
 
-`tools/verify_release.py --all`: OK dla obu paczek (ścieżki, manifest, brak sekretów, plik `.sha256`).
-Wagi Kronosa **nie** są w paczkach (ok. 115 MB: model ok. 99 MB + tokenizer ok. 16 MB w float32; licencja i źródło autorów). Instalator pobiera je z przypiętej rewizji i sprawdza ich sumy.
+`MANIFEST_SHA256.txt` (1428 plików): `1b114fdbecf6eb185f772b59be19f98a1ad5d6f67b7ad89749265d9b12a97d7f`.
+Zasoby EXE mają wersję 1.33.0.0. Pliki `PepeMarketWizardDesktop.exe` i `PepeTrainingStudio.exe` to różne pliki binarne (tryb ustawiany
+przy linkowaniu).
 
-## Testy 1.31.0 – komendy i liczby
-| Komenda | Wynik |
-|---|---|
-| `python -m unittest test_kronos_bot` | 16/16 OK |
-| `.venv_kronos python -m unittest test_kronos_runtime` (PyTorch 2.14.1 CPU) | 7 OK, 1 pominięty (oficjalne wagi – brak dostępu) |
-| `python -m unittest test_ui_kronos` (serwer + Chromium) | 2/2 OK |
-| 18 modułów (launchery, SH, MM, trainhub, aplikacja, desktop, narzędzia wydania, Execution Lock wycofany, Telegram, ewaluacja, Kronos) | 209 OK, 10 pominiętych |
-| UI: monitor 11, nc_panel 1, training_center 1, interface_129 4, ui_scalp 3, ui_kronos 2 | OK |
-| UI: `test_ui_pages` | po poprawce CSS: 2 przebiegi z różnymi jednorazowymi błędami czasowymi, potem 3/3 OK (1.30.1: 3/3 OK) |
-| `tools/migration_check.py --old-ref 30cb0cf` (1.30.1 → 1.31.0) | 11/11 PASS (migracje 22 → 23, rollback działa) |
-| Instalator na żywo (`tools/kronos_setup.py`) | pakiety z PyPI OK; wagi: błąd NETWORK z czytelną wskazówką (blokada HF) |
+**Start z wygenerowanej paczki** (obie paczki rozpakowane do ścieżki „…/Pepe Market Wizard 1.33 (test)/…”). Folder danych „Dane użytkownika
+z 1.32” zawierał istniejącą konfigurację v12 (port, limity, mapowanie). Wynik dla każdej paczki **13/13 PASS**:
+* wersja 1.33.0;
+* konfiguracja zachowana;
+* v13 i `config.v12.bak.json` równy oryginałowi;
+* migracja 0025;
+* rekordy koordynatora decyzji;
+* 16 rodzin modeli;
+* `index.html` i `studio.html`;
+* Studio uruchomione z menu bota jako osobny proces (health `PepeTrainingStudio`);
+* restart: ten sam tryb i konfiguracja, kopia v12 nienadpisana, rekordy decyzji zachowane.
 
-Wydajność na tym CPU (2 wątki, model wielkości Kronos-small): ładowanie 0,39–0,55 s; prognoza 12 świec z 400: 1,42–1,57 s;
-8 ścieżek niepewności: +11,1 s. **Brak jakichkolwiek wyników skuteczności:** gotowość do prognozowania to nie przewaga handlowa.
+Paczkę DESKTOP uruchomiono plikami aplikacji przez Pythona Linux. Samego EXE z oknem WebView2 nie da się tu uruchomić (patrz sekcja 6).
 
-## Czego nie sprawdzono w 1.31.0
-* Oficjalne wagi (pobranie, sumy, regresja autorów, prawdziwa prognoza) – blokada sieci.
-* Windows: `33_KRONOS_INSTALUJ.bat`, PyTorch z PyPI na Windows, WebView2.
-* CUDA – brak GPU. Kod przechodzi na CPU z podaniem przyczyny.
-* MT5: symbole, sesje, czas serwera, wolumen brokera, walidacja na Twoich danych.
-
-## Procedura rollbacku 1.31.0 → 1.30.1
-Zamknij aplikację i uruchom 1.30.1 z jej folderu. Migracja 0024 tylko dodaje tabelę `kronos_forecasts`, a 1.30.1 działa na tych
-danych (sprawdzone przez `migration_check`). Folder `.venv_kronos` i wagi w `data\kronos` możesz usunąć ręcznie.
-
----
-
-# Archiwum: raport 1.30.1
-
-Wypełniony według `06_RAPORT_KONCOWY/SZABLON_ODBIORU.md` z pakietu aktualizacji. Wersja 1.30 = 1.29 (wykresy, strefy, interfejs w stylu
-wież, narzędzia wydania) **minus system licencji**, usunięty na Twoje polecenie „Usuń mi te licencje”. **1.30.1** = 1.30.0 + dwie
-poprawki znalezione w pełnej regresji 1.30 (niżej). Liczby pochodzą z rzeczywiście uruchomionych komend; czego nie uruchomiono –
-oznaczone jako BLOCKED / „nie sprawdzono”.
-
-**Wersja źródła i SHA-256:** gałąź `claude/masterquo-ai-bot-mt5-f7uaht`; paczki 1.30.1 zbudowane z commitu
-`82633b581c896d439bdc15de8f735f74accdc74c` (usunięcie licencji: `5505eb1`; wydanie 1.30.0: `dba6216`; 1.29.0: `5298ec2`).
-`MANIFEST_SHA256.txt` (lista i sumy 1163 plików programu): SHA-256 `5d5ece4d1d2860ab33a30f006d4be86bb1c8a1f84a4279b415e484aaf740675f`.
-**Wersja wydania:** 1.30.1 – jedna wersja programu (bez OWNER / CLIENT, bez serwera licencji). Paczki 1.30.0 zostają w `release/`
-(już je masz); **używaj 1.30.1**.
-**Data i środowisko:** 2026-11-03; kontener Linux 6.18 (x86_64, 4 rdzenie), Python 3.13.16, Node 22.22, Go 1.24.7, Chromium
-(Playwright, rysowanie programowe bez GPU). Bez Windows, bez terminala MT5 (symulator = dane SYNTETYCZNE). Żadnych zleceń LIVE.
-
-### Co usunięto w 1.30
-* Backend: strażnik licencji przed każdym nowym wejściem (`execution/gateway.py` – S01–S12, `execution/manual.py` – ręczne,
-  `sh/executor.py` + `sh/service.py` – SCALPING/HEDGING), blokada Telegrama dla nowych sygnałów (`notify/telegram.py`), API
-  `/api/v1/license*` i `/api/v1/owner/*`, sekcja `license` w stanie, cały moduł `backend/masterquo/license/`. Bramki wróciły do stanu
-  sprzed 1.27 (tryb, STOP, ścieżka główna, ryzyko, rachunek – bez zmian).
-* Panel: okno KEY FOR MAGIC, License Manager, obszar „Licencje”, chipy OWNER/CLIENT (pasek zwykły, wieże, terminal), edycja w tytule.
-  Dawny link `#/licencje` otwiera Ustawienia.
-* Aplikacja Windows: tytuł okna „PepeMarketWizard 1.30.1” (bez edycji).
-* Repozytorium: `license_server/`, `edition.json`, `tools/stamp_client_edition.py`, `PRZYGOTUJ_PACZKE_KLIENTA.bat`,
-  `docs/LICENCJE_SYSTEM_1_27_PL.md`, testy licencji (6 modułów); zależności Windows dodane tylko dla licencji: `cryptography`, `cffi`,
-  `pycparser`. Historia 1.27–1.29 zostaje w git.
-* Dane użytkownika: pliki po licencjach (`license_owner.json`, `license_owner_key.*`, token licencji) nie są używane ani usuwane
-  automatycznie – można je skasować ręcznie z folderu `data`.
-
-### Poprawki 1.30.1 (z pełnej regresji 1.30)
-1. **Panel Neural Cyberpunk zawieszał okno bez akceleracji GPU** (`test_nc_panel`). Animowany „mózg” przerysowywał statyczną warstwę
-   (ok. 700 linii, każda z osobnym rozmyciem w trybie `lighter`) przy każdym odświeżeniu rejestru modeli – co kilka sekund. Przy
-   rysowaniu programowym (np. Windows VPS / maszyna wirtualna) każde przerysowanie blokowało okno na ok. 10 s. Ten sam wynik na 1.29.0
-   (usterka od 1.17, nie skutek usunięcia licencji). Teraz warstwa rysuje się tylko przy zmianie rozmiaru, poświata w jednym
-   przejściu rozmycia. Pomiar 1440×900 bez GPU: otwarcie panelu **ok. 1 s (było 20–40 s)**, **ok. 58 klatek/s (było ok. 2)**,
-   wygląd bez zmian (zrzuty porównane).
-2. **Fałszywy „TIMEOUT > 10s” w karcie FFT tuż po starcie** (`test_ui_analytics`, odtworzone przy osobnym uruchomieniu). Do limitu
-   pierwszego obliczenia wliczał się jednorazowy import `scipy.signal`, który przy starcie wszystkich usług trwał ponad 10 s. Wątek
-   analityki ładuje teraz biblioteki raz, przed pierwszym obliczeniem. Nowy test `test_library_load_is_not_counted_in_the_timeout`
-   (bez poprawki kończy się „TIMEOUT”); `test_late_result_discarded_and_snapshots_kept` czeka na warunek zamiast stałych 1,5 s
-   (pod obciążeniem 4 rdzeni 6/6 OK).
-
-Bez zmian w logice bota, strategiach, progach, ryzyku, kosztach, trybach, danych i API.
-
-### Tabela odbioru
-
-| Wymaganie | Status | Dowód / wynik / plik |
-|---|---|---|
-| Inwentaryzacja przepływu danych i modeli | PASS | `docs/AKTUALIZACJA_1_29_PL.md` §1 (bez zmian w 1.30 poza usunięciem bramki licencji przed wykonaniem) |
-| Logika, ryzyko i nowe zlecenia | PASS | strategie, progi, ryzyko, koszty bez zmian; nowe wejścia: tryb, STOP, ścieżka główna, ryzyko, rachunek – bez licencji; `test_sh_*`, `test_app_process`, `test_execution_lock_withdrawn`, `test_telegram` OK |
-| Zarządzanie otwartymi pozycjami | PASS (symulator) | bez zmian; moduły zarządzania pozycjami w pełnej regresji OK |
-| Jednolity UI i dawne linki | PASS (Chromium) | `test_ui_interface_129` 4/4: obszary wież (bez Licencji), pasek stanu w 3 ramach, 30 dawnych linków + `#/warunki/S01`, `#/licencje` → Ustawienia, 1280×720 / 1920×1080 / 2×, fokus klawiatury, `prefers-reduced-motion`; **brak śladów licencji** (API 404, brak okien i chipów, pozostawiony `edition.json` bez wpływu) |
-| Personalizacja wykresów, trwały zoom | PASS (Chromium) | `test_ui_chart_prefs` 6/6 |
-| Strefy M1/M5/M15 + LIVE + brak look-ahead | PASS (symulator) | `test_ui_chart_prefs`, `test_ui_market_zones`, `test_market_zones` OK |
-| Panel Neural Cyberpunk bez GPU | PASS (Chromium, 1.30.1) | `test_nc_panel` 1/1 (12 ekranów × 1440 / 390 px); pomiar otwarcia i klatek – sekcja „Poprawki 1.30.1” |
-| Serwer licencji + TLS | **N/D – usunięty** | system licencji usunięty na Twoje polecenie |
-| OWNER bez ekranu logowania, autoryzacja admina | **N/D – usunięty** | j.w. |
-| CLIENT: 72h/7d/31d i brak funkcji admin | **N/D – usunięty** | jedna wersja dla wszystkich, bez klucza |
-| Brak sekretów w każdej paczce | PASS | `python tools/verify_release.py --all` → OK ×2 (ZIP-slip, sumy manifestów, pliki zabronione, skan kluczy/tokenów, `.sha256`, brak elementów usuniętego systemu licencji) |
-| Testy backend / frontend / end-to-end | PASS | pełna regresja + powtórki po poprawkach – sekcja „Testy” |
-| Windows + WebView2 + czysta instalacja | **BLOCKED** | brak Windows w tym środowisku; EXE zbudowany, `GOOS=windows go vet` OK |
-| MT5 DEMO: eksport → trening → walidacja | **BLOCKED** | brak terminala MT5; pipeline sprawdzony na symulatorze |
-| Migracja danych, backup i rollback | PASS (kopie danych) | `python tools/migration_check.py` → **11/11 PASS** (1.29.0 worktree `5298ec2` ↔ 1.30.1; pozostałe pliki licencji nietknięte; powrót z kopii) |
-| Instrukcje PDF zgodne ze stanem aplikacji | PASS | administrator 8 str., użytkownik 5 str. (`tools/make_manuals.py`, wersja 1.30.1); tylko osadzone DejaVu Sans; strony obejrzane; bez rozdziałów o licencjach |
-
-### Testy – komendy i liczby
-
-**Pełna regresja 1.30** (każdy moduł osobno, `tests/test_*.py`):
-* bez UI: **82 moduły, 969 testów** – wszystkie OK poza `test_nc_panel` (usterka 1 → poprawiona); pominięte 4 testy wymagające
-  opcjonalnych składników (`onnxruntime`, `pyopencl`, `.venv_candles` ×2).
-* UI (Chromium): **15 modułów, 100 testów** – OK poza `test_ui_analytics` (usterka 2 → poprawiona) i `test_ui_lab` (zadanie treningu
-  SEW_SNN nie skończyło się w 600 s; w tym czasie uruchamiałem równolegle pomiary przeglądarką i budowanie panelu).
-
-**Powtórki po poprawkach (każda osobno, bez innych obciążeń):**
-* `test_nc_panel` **1/1 OK**, `test_ui_analytics` **4/4 OK**, `test_ui_lab` **14/14 OK** (641 s – długi moduł; zadanie SEW_SNN zajmuje
-  w tym kontenerze dużą część limitu 600 s).
-* `test_analytics` 25/25; `TestServiceIntegration` pod obciążeniem 4 rdzeni 6/6.
-* Po zmianie wersji: `test_analytics test_app_process test_desktop_app test_release_tools test_launchers test_execution_lock_withdrawn`
-  → 68 testów OK (×2; w pierwszym przebiegu 1 błąd – niestabilny test analityki, przyczyna usunięta wyżej).
-* `go vet ./...`, `GOOS=windows go vet ./...`, `go test ./...` (desktop) → OK.
-* `tools/migration_check.py` → 11/11 PASS. `tools/verify_release.py --all` → OK ×2.
-
-### Paczki, SHA-256, podpis
-
-| Plik | Rozmiar (B) | SHA-256 | Podpis Authenticode |
-|---|---|---|---|
-| `PepeMarketWizard_DESKTOP_1_30_1.zip` | 39 685 534 | `1d51b4d5dba07c8e2501519105a6ad5864d7934022f9e2a46cf15396726502e3` | **niepodpisany cyfrowo** (brak certyfikatu) |
-| `PepeMarketWizard_1_30_1.zip` | 22 227 879 | `2486829bb806fb976bbd66c7af1d2a1e65ef0176a7fe4f054a9a6c5a9806fc90` | nie dotyczy (bez EXE aplikacji) |
-| `Instrukcja_Administrator_PepeMarketWizard.pdf` | 377 322 | `863d15bd71822f8a30694db16f6ae4460c5a8056f1e3df1a9d106661232c7409` | nie dotyczy |
-| `Instrukcja_Klient_PepeMarketWizard.pdf` (instrukcja użytkownika) | 1 415 925 | `43a8e8b4b0727d4a1db8bb401dce4b9190c39888e92219db55d30288036b9a77` | nie dotyczy |
-
-Manifest wewnątrz paczki Windows (`MANIFEST_SHA256.txt`) zawiera te same pliki i sumy co manifest paczki folderu (różni się tylko
-pierwszy wiersz-opis).
-
-### Gotowość
-
-| Produkt | Status | Uzasadnienie |
-|---|---|---|
-| PepeMarketWizard 1.30.1 (folder + aplikacja Windows) | **READY do testu na Windows / DEMO** | zbudowany i zweryfikowany, pełna regresja na symulatorze przechodzi (po poprawkach); nie uruchomiony na Windows ani z MT5 – pierwszy start na rachunku DEMO |
-
-### Procedura bezpiecznego rollbacku
-
-1. STOP nowych wejść, zamknij aplikację 1.30.1.
-2. Przywróć `data\` z `%LOCALAPPDATA%\PepeMarketWizard\backups\<data>_…` (kopia robiona automatycznie przed aktualizacją) albo z własnej
-   kopii; uruchom program 1.29 z jego folderu (wraca wtedy system licencji 1.29).
-3. Sprawdzone (`tools/migration_check.py`): 1.29 startuje na kopii sprzed aktualizacji; informacyjnie także wprost na danych po 1.30.1.
-   Przejście 1.30.0 → 1.30.1 nie zmienia danych ani bazy (te same migracje).
-
-### Czego nie sprawdzono
-
-* Windows 10/11: start EXE, WebView2, tytuł okna, czysta instalacja, SmartScreen (EXE niepodpisany).
-* Prawdziwy MT5 (dane, czas serwera, symbole brokera, koszty), rachunek DEMO, eksport → trening na danych rzeczywistych.
-* Płynność panelu Neural Cyberpunk zmierzona w Chromium bez GPU w kontenerze – nie na Windows (WebView2) ani na komputerze z GPU.
-* Skuteczność stref, modeli i strategii – nie oceniano; wyniki na danych syntetycznych nie są dowodem przewagi. Nie obiecuję
-  win rate, ROI ani zysku.
+## 6. Aktualizacja, rollback i czego nie sprawdzono
+* **Aktualizacja i powrót:** `docs/AKTUALIZACJA_1_33_PL.md` (skrót w `ROLLBACK.md` §0 i w instrukcji administratora, rozdział 6).
+  * Rollback do 1.32: zamień `config.json` na `config.v12.bak.json`. Baza może zostać, bo migracja 0025 jest addytywna, a 1.32 ignoruje
+    nowe tabele.
+  * Sprawdzone narzędziem `migration_check` (patrz sekcja 3).
+* **Nie sprawdzono (brak zasobu w środowisku):**
+  * okna Windows (WebView2) obu EXE ani pierwszej instalacji zależności na Windows; sprawdzono: kompilację krzyżową, `go vet`, testy Go
+    trybu studio, start plików aplikacji z paczki;
+  * rzeczywistego MT5: arkusza zleceń brokera, symbolu DXY, eksportu MT5_DIRECT pełnej historii, czasu serwera;
+  * treningu na Twoich danych REAL (oceny jakości i rentowności modeli) oraz profili research/full dla LSTM/GRU/PPO;
+  * wydajności `.venv_deep` na Windows (testowane na Linux CPU, torch 2.14).
+* **Weekend:** w sobotę symulator jest zamknięty, a w świeżym folderze danych przesunięcie zegara serwera nie jest znane, więc wykresy i
+  wskaźniki w demo pokazują NO_DATA / WARMUP. Tak jest zaprojektowane (to nie jest błąd). Testy wymagające rynku używają
+  `MQ_FAKE_MARKET_ALWAYS_OPEN=1`.
