@@ -46,6 +46,42 @@ def reports_dir() -> Path:
     return p
 
 
+BINDING_SCHEMA = "PMW-KRONOS-BIND-1"
+
+
+def binding(svc, inst: str, tf: str) -> dict:
+    """Everything a walk-forward approval is valid for (1.33, AUD 3.3): symbol / source, timeframe, horizon, sampling settings, neutral
+    band, model + tokenizer revisions, time basis and the validation code version. A REQUIRED approval is usable only while the CURRENT
+    binding equals the one stored in the report - any change needs a new validation."""
+    from kronos_runtime import lock as LK
+    s = svc.settings.get()
+    sym, _ = svc.symbol(inst)
+    kind, _ = svc.data_kind()
+    return {"schema": BINDING_SCHEMA, "instrument": inst, "symbol": sym, "data_kind": kind, "timeframe": tf,
+            "horizon_bars": int(s.horizon_bars[tf]) if tf in s.horizon_bars else None, "lookback": s.lookback,
+            "temperature": s.temperature, "top_k": s.top_k, "top_p": s.top_p, "volume_source": s.volume_source,
+            "timestamp_basis": s.timestamp_basis, "direction_band_atr": s.direction_band_atr,
+            "direction_band_min_points": s.direction_band_min_points, "model_revision": LK.MODEL["revision"],
+            "tokenizer_revision": LK.TOKENIZER["revision"], "validation_code": "PMW-KRONOS-WF-1"}
+
+
+def binding_diff(stored: dict | None, current: dict) -> list[str]:
+    if not stored:
+        return ["raport bez powiązania (sprzed 1.33) – wymagana nowa walidacja"]
+    return [f"{k}: {stored.get(k)!r} → {current.get(k)!r}" for k in current if k != "schema" and stored.get(k) != current.get(k)]
+
+
+def report_by_id(rid: str) -> dict | None:
+    for f in sorted(reports_dir().glob("*.json")):
+        try:
+            r = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if r.get("report_id") == rid:
+            return r
+    return None
+
+
 def latest_report(inst: str, tf: str) -> dict | None:
     files = sorted(reports_dir().glob(f"{inst}_{tf}_*.json"))
     for f in reversed(files):
@@ -100,7 +136,8 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
     kind, kind_pl = svc.data_kind()
     base = {"schema": "PMW-KRONOS-WF-1", "instrument": inst, "symbol": sym, "timeframe": tf, "started_at": started, "data_kind": kind,
             "data_source": kind_pl, "caveat": CAVEAT, "settings": {k: getattr(s, k) for k in ("lookback", "temperature", "top_k", "top_p",
-                                                                                               "volume_source", "timestamp_basis")}}
+                                                                                               "volume_source", "timestamp_basis")},
+            "binding": binding(svc, inst, tf)}
     if not sym:
         return _save({**base, "status": "BLOCKED", "verdict": {"positive": False, "reason": why}})
     H, L = int(s.horizon_bars[tf]), int(s.lookback)

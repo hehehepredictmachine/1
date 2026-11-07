@@ -342,11 +342,48 @@ class TestServiceWithStub(unittest.TestCase):
         self.assertIn("SYNTETYCZNE", r["reason"])
         rep.update(report_id="XAUUSD_M5_y", data_kind="MT5_DEMO", verdict={"positive": True, "reason": "ok"})
         (V.reports_dir() / "XAUUSD_M5_20260102T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        r = svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)          # 1.33: a report without a binding is stale
+        self.assertFalse(r["ok"])
+        self.assertIn("VALIDATION_STALE", r["reason"])
+        rep.update(binding=V.binding(svc, "XAUUSD", "M5"), dev={"chosen_band_k": svc.settings.get().direction_band_atr})
+        (V.reports_dir() / "XAUUSD_M5_20260102T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
         r = svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)
         self.assertTrue(r["ok"], r)
         self.assertEqual(svc.settings.get().strategy_use["SCALPING"].use, "REQUIRED")
         self.assertTrue(svc.set_strategy_use("SCALPING", "OBSERVE")["ok"])
         self.assertEqual(svc.settings.get().strategy_use["SCALPING"].use, "OBSERVE")
+
+
+    def test_required_approval_invalid_after_binding_change(self):
+        """1.33 (AUD 3.3): an approval is valid only for the exact symbol / horizon / settings / weights it was validated on."""
+        from masterquo.kronos import validation as V
+        svc = self.make()
+        rep = {"report_id": "XAUUSD_M5_b", "instrument": "XAUUSD", "timeframe": "M5", "data_kind": "MT5_DEMO", "verdict": {"positive": True},
+               "binding": V.binding(svc, "XAUUSD", "M5"), "dev": {"chosen_band_k": 0.5}}
+        (V.reports_dir() / "XAUUSD_M5_20260103T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        r = svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)        # validated band 0.5 != settings 0.25
+        self.assertFalse(r["ok"])
+        self.assertIn("pasmo neutralne", r["reason"])
+        svc.settings.update({"direction_band_atr": 0.5})
+        rep["binding"] = V.binding(svc, "XAUUSD", "M5")
+        (V.reports_dir() / "XAUUSD_M5_20260103T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        self.assertTrue(svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)["ok"])
+        orig = KP._state
+        KP._state = lambda _svc, _k: ("READY", None)
+        try:
+            svc.latest[("XAUUSD", "M5")] = {"id": "f1", "direction": "UP", "direction_pl": "wzrost", "delta_price": 1.0, "delta_pct": 0.04,
+                                            "last_close": 2650.0, "pred_close_h": 2651.0, "horizon_bars": 12, "last_bar_open_utc": "x",
+                                            "created_at": "x", "neutral_band": 0.2, "data_source": "MT5"}
+            ok = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+            self.assertTrue(ok["available"], ok)
+            svc.settings.update({"horizon_bars": {**svc.settings.get().horizon_bars, "M5": 6}})     # the approval no longer matches
+            ctx = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+            self.assertFalse(ctx["available"])
+            self.assertEqual(ctx["state"], "STALE_APPROVAL")
+            su = KP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)
+            self.assertEqual(su["status"], "WAIT")                                     # REQUIRED may only hold the setup
+        finally:
+            KP._state = orig
 
 
 class _InProcStub:

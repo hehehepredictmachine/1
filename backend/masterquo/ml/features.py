@@ -17,10 +17,15 @@ from ..strategies import indicators as ind
 from ..strategies import regime as regime_mod
 from ..strategies.base import TF_SECONDS, MarketView, TFView
 
-FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.1.0"
+FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.2.0"
+# 1.2.0 (1.33): `dxy_missing` carries the REAL availability of the DXY context at decision time (view.context["dxy"]: last closed
+# DXY H1 bar known at or before `asof`, not older than DXY_MAX_AGE_S); up to 1.1.0 it was the constant 1.0. Models trained on 1.0.0 /
+# 1.1.0 keep their training semantics through Bundle.raw (ml/models.py: dxy_missing forced to 1.0 for those schemas).
+DXY_MAX_AGE_S = 3 * 3600
 # 1.1.0 = 1.0.0 + the zone block (PMW-ZONE-FEAT-1). Strict superset: 1.0.0 samples are read with the zone features missing (NaN) and
 # the preprocessor keeps a feature only where enough values exist; models trained on 1.0.0 ignore the extra keys at inference.
-COMPATIBLE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0")
+COMPATIBLE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0", "MQ-FEAT-1.2.0")
+LEGACY_CONSTANT_DXY = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0")
 NAN = float("nan")
 
 # documented categories (the encoder uses the categories SEEN IN TRAINING - prep.py - so new strategies / TFs are encoded
@@ -216,7 +221,7 @@ def compute(view: MarketView, cand: dict, asof: datetime) -> dict:
         f[f"pts_{k}"] = _safe(pts.get(k))
     f["countertrend"] = float(bool(cand.get("countertrend")))
     f["conflicts"] = float(len((reg or {}).get("conflicts") or []))
-    f["dxy_missing"] = 1.0
+    f["dxy_missing"] = dxy_missing(view, asof)
     f["htf_missing"] = float(not tfs.get("H4") or not tfs.get("D1"))
     f["strategy_id"] = cand["strategy_id"]
     f["direction"] = cand["direction"]
@@ -237,6 +242,21 @@ def to_json_safe(feats: dict) -> dict:
 
 def from_json(d: dict) -> dict:
     return {k: (NAN if v is None and k not in CATEGORICAL else v) for k, v in d.items()}
+
+
+def dxy_missing(view: MarketView, asof: datetime) -> float:
+    """0.0 when a closed DXY H1 bar was AVAILABLE at or before `asof` and is at most DXY_MAX_AGE_S old, else 1.0 (missing / stale /
+    not configured). Uses only the availability time of the bar - a later DXY value is never attached to an earlier sample."""
+    d = (view.context or {}).get("dxy") or {}
+    av = d.get("last_available_at")
+    if d.get("status") not in ("OK", "READY") or not av:
+        return 1.0
+    try:
+        t = datetime.fromisoformat(str(av).replace("Z", "+00:00"))
+    except ValueError:
+        return 1.0
+    age = (asof - t).total_seconds()
+    return 0.0 if 0 <= age <= DXY_MAX_AGE_S else 1.0
 
 
 def zone_block(view: MarketView, tfs: dict, cand: dict, entry, stop, asof: datetime) -> dict:

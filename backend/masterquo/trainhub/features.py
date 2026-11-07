@@ -18,8 +18,8 @@ import math
 import numpy as np
 
 FEATURE_SCHEMA = "PMW-TH-FEAT-1"
-TF_S = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
-HTF_OF = {"M1": ("M5", "M15", "M30"), "M5": ("M15", "M30"), "M15": ("M30",), "M30": ()}
+TF_S = {"M1": 60, "M3": 180, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
+HTF_OF = {"M1": ("M5", "M15", "M30"), "M3": ("M15", "M30"), "M5": ("M15", "M30"), "M15": ("M30",), "M30": ()}
 BASE_NAMES = ("r1", "r3", "r6", "r12", "atr_rel", "rng_atr", "body_atr", "uwick_atr", "lwick_atr", "vol12", "vol48", "rsi14", "ema20_atr",
               "ema50_atr", "z48", "tick_ratio", "spread_atr", "tod_sin", "tod_cos", "dow_sin", "dow_cos", "gap_before")
 HTF_NAMES = ("r1", "rsi14", "ema20_atr", "atr_rel", "pos20")

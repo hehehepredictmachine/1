@@ -528,7 +528,7 @@ class ServiceRestart(unittest.TestCase):
 class MLSchema(unittest.TestCase):
     def test_superset_schema(self):
         from masterquo.ml import features as fe
-        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.1.0")
+        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.2.0")
         self.assertIn("MQ-FEAT-1.0.0", fe.COMPATIBLE_SCHEMAS)
         self.assertTrue(set(ZF.NAMES) <= set(fe.FEATURE_NAMES))
 

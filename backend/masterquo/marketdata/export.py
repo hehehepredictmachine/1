@@ -21,7 +21,7 @@ from . import quality as Q
 from .sources import SourceError, retry
 from .store import SCHEMA_VERSION, TF_SECONDS, Store, atomic_json, iso, read_json
 
-EXPORT_TFS = ("M1", "M5", "M15", "M30")
+EXPORT_TFS = ("M1", "M3", "M5", "M15", "M30")
 CHUNK_BARS = 7200
 MARGIN_S = 4 * 3600
 LOCK_STALE_S = 600

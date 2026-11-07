@@ -133,6 +133,9 @@ class Bundle:
         self.family, self.model, self.prep, self.calib, self.meta = family, model, prep, calib, meta
 
     def raw(self, rows: list[dict]) -> np.ndarray:
+        from .features import LEGACY_CONSTANT_DXY
+        if self.meta.get("feature_schema_version") in LEGACY_CONSTANT_DXY:    # compatibility adapter: these models saw dxy_missing=1
+            rows = [{**r, "dxy_missing": 1.0} for r in rows]
         X = self.prep.transform(rows)
         if self.family == "XGBOOST":
             it = self.meta.get("train", {}).get("best_iteration")

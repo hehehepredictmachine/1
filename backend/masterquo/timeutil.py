@@ -19,6 +19,9 @@ _MS_THRESHOLD = 10_000_000_000
 #   role  - what the timeframe contributes to decisions
 TF_REGISTRY = {
     "M1": {"seconds": 60, "mt5": "TIMEFRAME_M1", "pine": "1", "core": True, "role": "TRIGGER"},
+    # 1.33: M3 - trigger timeframe of the scalping / candle models; native MT5 series first, else built from COMPLETE triples of M1
+    # (mt5/bridge.RESAMPLE_FROM, `complete` flag) - an incomplete triple is never served as a full M3 candle
+    "M3": {"seconds": 180, "mt5": "TIMEFRAME_M3", "pine": "3", "core": False, "role": "TRIGGER"},
     "M5": {"seconds": 300, "mt5": "TIMEFRAME_M5", "pine": "5", "core": True, "role": "TRIGGER"},
     "M15": {"seconds": 900, "mt5": "TIMEFRAME_M15", "pine": "15", "core": True, "role": "SETUP"},
     "M30": {"seconds": 1800, "mt5": "TIMEFRAME_M30", "pine": "30", "core": False, "role": "SETUP_CONTEXT"},

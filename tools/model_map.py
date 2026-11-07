@@ -55,7 +55,7 @@ ELEMENTS = [
      "artifact": "XAUUSD: data/ml/models + masterquo.sqlite; BTC: data/instruments/BTC/ml/{models,ml.sqlite}", "instruments": BOTH,
      "status": "ZINTEGROWANE per instrument; model z próbek APPROX = RESEARCH_APPROX (nigdy champion automatycznie)"},
     {"id": "LEGACY_ML_XGB", "name": "Legacy ML – XGBoost (CPU)", "implementation": "jak LEGACY_ML_DT", "task": "jak LEGACY_ML_DT", "data_source": "jak LEGACY_ML_DT", "tf": "TF setupu",
-     "horizon": "do wyjścia setupu", "side": "oba", "features": "MQ-FEAT-1.1.0", "label": "MQ-LABEL-1.1.0", "trainer": "ml/trainer.py", "loader": "ml/registry.py",
+     "horizon": "do wyjścia setupu", "side": "oba", "features": "MQ-FEAT-1.2.0", "label": "MQ-LABEL-1.1.0", "trainer": "ml/trainer.py", "loader": "ml/registry.py",
      "artifact": "jak LEGACY_ML_DT", "instruments": BOTH, "status": "jak LEGACY_ML_DT"},
 ]
 for fam, name, st in (("DUMMY", "Lab DUMMY – częstość bazowa", "MODEL_KONTROLNY (nie zapisywany jako artefakt)"),

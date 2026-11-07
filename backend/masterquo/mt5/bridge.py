@@ -30,7 +30,7 @@ TF_CONST = {tf: v["mt5"] for tf, v in TF_REGISTRY.items()}       # MetaTrader5 c
 TF_POLL = {"M1": 1.0, "M5": 2.0, "M15": 3.0, "M30": 4.0, "H1": 5.0, "H4": 10.0, "H8": 12.0, "D1": 15.0}
 # Controlled fallback when the terminal returns no native bars for a timeframe: (source TF, bars per bucket).
 # Buckets are anchored on the broker server day (raw server epochs), like MT5's own H8 bars (00/08/16 server time).
-RESAMPLE_FROM = {"H8": ("H1", 8)}
+RESAMPLE_FROM = {"H8": ("H1", 8), "M3": ("M1", 3)}     # fallback only when the terminal has no native series
 TRADE_MODE = {0: "DEMO", 1: "CONTEST", 2: "REAL"}
 MARGIN_MODE = {0: "NETTING", 1: "EXCHANGE", 2: "HEDGING"}
 
@@ -60,6 +60,7 @@ class Bar:
     revision: int = 0
     source: str = "native"                       # native | resampled (see RESAMPLE_FROM)
     parts: int | None = None                     # resampled: number of source bars in the bucket
+    complete: bool | None = None                 # resampled: all source bars of the bucket present (None = native bar)
 
     def same_values(self, other: "Bar") -> bool:
         return (self.o, self.h, self.l, self.c, self.tv) == (other.o, other.h, other.l, other.c, other.tv)
@@ -449,6 +450,8 @@ class MarketBridge:
                 x.parts = (x.parts or 0) + 1
             else:
                 out.append(Bar(k, b.o, b.h, b.l, b.c, b.tv, b.rv, b.spread, source="resampled", parts=1))
+        for x in out:
+            x.complete = x.parts == per                 # M3 from M1: a triple with a missing minute is marked, never padded
         return out[-count:]
 
     def buffer_size(self, tf: str) -> int:
@@ -778,7 +781,7 @@ class MarketBridge:
                 "spread": b.spread, "closed": b.closed,
                 "close_confirmed_utc": iso(from_epoch(b.available_raw_next_open - off)) if (b.closed and off is not None and b.available_raw_next_open) else None,
                 "available_at": iso(avail), "basis": b.basis, "revision": b.revision, "source": b.source,
-                **({"parts": b.parts} if b.parts is not None else {})}
+                **({"parts": b.parts, "complete": b.complete} if b.parts is not None else {})}
 
     def bars(self, tf: str, limit: int | None = None, include_forming: bool = True) -> list[dict]:
         with self._lock:

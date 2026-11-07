@@ -31,7 +31,7 @@ COLUMN_DOC = {
     "real_volume": "wolumen rzeczywisty, jeśli broker go podaje (CFD: zwykle 0)", "server_time": "surowy czas serwera brokera (epoch)",
     "dst_ambiguous": "1 = konwersja czasu serwera na UTC niejednoznaczna przy zmianie czasu",
 }
-TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
+TF_SECONDS = {"M1": 60, "M3": 180, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 
 
 def have_parquet() -> bool:

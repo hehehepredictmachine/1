@@ -751,6 +751,16 @@ class KronosService:
         if missing:
             why = "; ".join(f"{i} {tf}: " + ((reps[i] or {}).get("verdict", {}).get("reason") or "brak raportu walidacji walk-forward") for i in missing)
             return {"ok": False, "reason": "VALIDATION_REQUIRED: " + why}
+        stale = {}
+        for i, r in reps.items():                    # 1.33: the approval must match the CURRENT symbol / horizon / settings / weights
+            d = V.binding_diff(r.get("binding"), V.binding(self, i, tf))
+            k = ((r.get("dev") or {}).get("chosen_band_k"))
+            if k is not None and abs(float(k) - float(s.direction_band_atr)) > 1e-9:
+                d.append(f"pasmo neutralne: zwalidowano k={k}, w ustawieniach {s.direction_band_atr} – ustaw zwalidowane pasmo albo powtórz walidację")
+            if d:
+                stale[i] = d
+        if stale:
+            return {"ok": False, "reason": "VALIDATION_STALE: " + "; ".join(f"{i}: {', '.join(d)}" for i, d in stale.items())}
         ids = ",".join(r["report_id"] for r in reps.values())
         self.settings.update({"strategy_use": {strategy: {"use": "REQUIRED", "timeframe": tf, "validation_report": ids, "confirmed_at": iso(utcnow())}}})
         self.applog.info("KRONOS", "STRATEGY_USE", f"{strategy}: Kronos {tf} ustawiony jako obowiązkowy warunek (raporty {ids}).")

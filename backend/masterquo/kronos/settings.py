@@ -16,8 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import paths
 
-TF = Literal["M1", "M5", "M15", "M30", "H1"]
-TF_ALL = ("M1", "M5", "M15", "M30", "H1")
+TF = Literal["M1", "M3", "M5", "M15", "M30", "H1"]
+TF_ALL = ("M1", "M3", "M5", "M15", "M30", "H1")
 STRATEGIES = ("SCALPING", "HEDGING")
 
 
@@ -38,7 +38,7 @@ class KronosSettings(BaseModel):
     enabled: bool = True                                   # no effect until the model is installed (status NOT_INSTALLED)
     instruments: list[Literal["XAUUSD", "BTC"]] = Field(default_factory=lambda: ["XAUUSD", "BTC"])
     timeframes: list[TF] = Field(default_factory=lambda: ["M5", "M15"])
-    horizon_bars: dict[str, int] = Field(default_factory=lambda: {"M1": 15, "M5": 12, "M15": 8, "M30": 8, "H1": 6})
+    horizon_bars: dict[str, int] = Field(default_factory=lambda: {"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6})
     lookback: int = Field(400, ge=64, le=512)
     max_context: int = Field(512, ge=64, le=512)
     min_context: int = Field(128, ge=32, le=512)
@@ -70,7 +70,7 @@ class KronosSettings(BaseModel):
             if not 1 <= int(n) <= 64:
                 raise ValueError(f"HORIZON_OUT_OF_RANGE:{k}={n} (1..64)")
         for k in TF_ALL:
-            v.setdefault(k, {"M1": 15, "M5": 12, "M15": 8, "M30": 8, "H1": 6}[k])
+            v.setdefault(k, {"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6}[k])
         return {k: int(n) for k, n in v.items()}
 
     @field_validator("strategy_use")
