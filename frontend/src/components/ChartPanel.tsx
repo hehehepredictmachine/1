@@ -33,6 +33,7 @@ import { useStore } from "../store";
 import { parseColor, toHex, useTheme, type Tokens } from "../theme";
 import { chartShift, cls, epochSec, fmtNum, type TimeZoneMode } from "../util";
 import { BoundedBoxesPrimitive, type BoundedBox, type BoxMarker, ZonesPrimitive } from "../zones";
+import { PmwLayerButtons, usePmwLayers, usePmwOverlays } from "../features/pmw133/overlays";
 
 export interface ChartOpts {
   showRsi: boolean;
@@ -708,6 +709,10 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(aiLevels), opts.showAiLevels, data]);
 
+  // ---------------------------------------------------------------- 1.33 layers: Pepe Scalp/Hedge Plan, AVWAP, SVP zones (backend values only)
+  const [pmw, setPmw] = usePmwLayers();
+  const pmwInfo = usePmwOverlays({ chart, candles, tf, layers: pmw, shift, dataKey: data });
+
   // ---------------------------------------------------------------- "Pokaż na wykresie" highlight from the setup page
   useEffect(() => {
     const ser = candles.current;
@@ -829,6 +834,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
           <option value="">bez sync</option><option value="A">grupa A</option><option value="B">grupa B</option>
         </select>
         <LayerMenu prefs={prefs} onChange={setPrefs} />
+        <PmwLayerButtons layers={pmw} onChange={setPmw} info={pmwInfo} />
         <button className="icon" data-act="settings" title="Ustawienia tego wykresu (kolory, siatka, tekst, warstwy, szablony)" aria-label="Ustawienia wykresu"
           onClick={() => setSettingsOpen(true)}>⚙</button>
         <span className="spacer" />

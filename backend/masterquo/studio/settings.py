@@ -20,8 +20,14 @@ def bot_data_dir(s: dict | None = None) -> Path:
     s = s or load()
     if s.get("bot_data_dir"):
         return Path(s["bot_data_dir"])
+    if os.environ.get("MQ_BOT_DATA_DIR"):
+        return Path(os.environ["MQ_BOT_DATA_DIR"])
     from .. import paths
-    return Path(os.environ.get("MQ_BOT_DATA_DIR") or (paths.ROOT_DIR / "data"))
+    try:                                         # the SAME rule as the bot (paths.data_dir without an override) - never a guessed folder
+        from mq_instruments import default_data_dir
+        return Path(default_data_dir(paths.ROOT_DIR))
+    except Exception:  # noqa: BLE001 - development checkout without the helper
+        return paths.ROOT_DIR / "data"
 
 
 def load() -> dict:

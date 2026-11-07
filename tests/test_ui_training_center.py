@@ -145,7 +145,7 @@ class TestTrainingCenterUI(unittest.TestCase):
             # 5. live prediction in the unified contract (READY or a state WITH a reason - never a silent value)
             self.assertTrue(wait_for(lambda: self.api(p, "/api/v1/models/predictions?instrument=XAUUSD")["items"], 60, 0.5))
             pr = self.api(p, "/api/v1/models/predictions?instrument=XAUUSD")["items"][0]
-            self.assertEqual(pr["contract"], "PMW-PRED-1")
+            self.assertEqual(pr["contract"], "PMW-PRED-2")                     # 1.33: PMW-PRED-2 (compatible superset of PMW-PRED-1)
             if pr["state"] == "READY":
                 self.assertAlmostEqual(sum(pr["result"].values()), 1.0, places=5)
                 self.assertEqual(pr["unit"], "probability")

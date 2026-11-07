@@ -1,6 +1,7 @@
 // Shared frame of the three pages: compact top bar, navigation (collapsible side menu on desktop, three buttons on small
 // screens), global failure banner, and ONE global side panel at a time (positions + statistics, or logs). The store and
 // the single WebSocket live in StoreProvider ABOVE this component, so switching pages never opens a new connection.
+import StudioButton from "../../features/pmw133/StudioButton";
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { Frog } from "../../appearance";
@@ -138,6 +139,7 @@ function TopBar({ stats, onSettings, onPower, onMode, onLook, overlay, setOverla
           Konto<span className="tb-long"> {s.account ? fmtMoney(s.account.equity, s.account.currency) : "—"}</span> ▾</button>
         <button className={cls("tb-btn", overlay === "side" && "on")} data-testid="open-side" onClick={() => setOverlay(overlay === "side" ? null : "side")}
           title="Pozycje, zlecenia i statystyki">Pozycje<span className="tb-long"> i statystyki</span></button>
+        <StudioButton />
         <button className={cls("tb-btn", overlay === "logs" && "on")} data-testid="open-logs" onClick={() => setOverlay(overlay === "logs" ? null : "logs")} title="Pełny dziennik bota">Logi</button>
         <button className="icon big" title="Wygląd – kolory i motywy" aria-label="Wygląd" onClick={onLook}>🎨</button>
         <button className="icon big" title="Ustawienia" aria-label="Ustawienia" onClick={onSettings}>⚙</button>

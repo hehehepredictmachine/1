@@ -6,6 +6,7 @@ import { apiGet, apiSend } from "../../api";
 import { telemetry } from "../../telemetry";
 import { cls, fmtNum, fmtTime } from "../../util";
 import "./training-center.css";
+import FamiliesSection from "../pmw133/FamiliesSection";
 
 const INSTS = ["XAUUSD", "BTC"];
 const TFS = ["M1", "M5", "M15", "M30"];
@@ -139,6 +140,7 @@ export default function TrainingCenterPage() {
         </div>
       </section>
 
+      <FamiliesSection inst={inst} />
       <section className="panel" data-testid="tc-jobs">
         <div className="panel-head"><b>3. Zadania</b><span className="muted small">{st?.queue?.note}</span></div>
         <table className="tc-table"><thead><tr><th>Zadanie</th><th>Instrument</th><th>Status</th><th>Etap</th><th>Postęp</th><th>Czas</th><th /></tr></thead>

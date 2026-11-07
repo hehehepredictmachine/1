@@ -2055,6 +2055,61 @@ def create_app(rt, port: int) -> FastAPI:
     def indicators_manifest():
         return rt.indicators.manifest()
 
+    # ---------------------------------------------------------------- Pepe Data & Training Studio: status + launch from the bot menu (1.33)
+    def _studio_dirs() -> tuple[Path, Path]:
+        bot = paths.data_dir()
+        return bot, (bot.parent / "data_studio") if bot.name == "data" else (bot / "studio_data")
+
+    def _studio_port(sdir: Path) -> int:
+        try:
+            return int(json.loads((sdir / "settings.json").read_text(encoding="utf-8")).get("port") or 8780)
+        except (OSError, ValueError, TypeError):
+            return 8780
+
+    def _studio_probe() -> dict:
+        import urllib.request
+        _, sdir = _studio_dirs()
+        port = _studio_port(sdir)
+        out = {"port": port, "url": f"http://127.0.0.1:{port}/", "running": False, "health": None}
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/studio/health", timeout=0.8) as r:
+                h = json.loads(r.read().decode("utf-8"))
+            out.update(running=h.get("app") == "PepeTrainingStudio", health={k: h.get(k) for k in ("app", "studio", "version", "orders")})
+        except Exception:  # noqa: BLE001 - not running / port taken by something else
+            pass
+        exe = os.environ.get("PMW_DESKTOP_EXE")
+        st_exe = Path(exe).with_name("PepeTrainingStudio.exe") if exe else None
+        out["launcher"] = "EXE" if st_exe is not None and st_exe.exists() else "PYTHON"
+        return out
+
+    @app.get("/api/v1/studio/status")
+    def studio_status():
+        return _studio_probe()
+
+    @app.post("/api/v1/studio/launch")
+    def studio_launch():
+        """Start Pepe Training Studio as a SEPARATE process (never inside the bot). Already running -> its address."""
+        import subprocess
+        st = _studio_probe()
+        if st["running"]:
+            return {**st, "started": False, "note": "Studio już działa"}
+        bot, sdir = _studio_dirs()
+        sdir.mkdir(parents=True, exist_ok=True)
+        flags = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+        if st["launcher"] == "EXE":
+            cmd, env = [str(Path(os.environ["PMW_DESKTOP_EXE"]).with_name("PepeTrainingStudio.exe"))], dict(os.environ)
+        else:
+            env = {k: v for k, v in os.environ.items() if k not in ("MASTERQUO_DATA_DIR",)}
+            env.update(MQ_BOT_DATA_DIR=str(bot), MQ_STUDIO_DATA_DIR=str(sdir), MASTERQUO_DATA_DIR=str(sdir))
+            cmd = [sys.executable, "-m", "masterquo", "studio", "--port", str(st["port"])]
+        try:
+            p = subprocess.Popen(cmd, cwd=str(paths.BACKEND_DIR), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, creationflags=flags, start_new_session=os.name != "nt")
+        except OSError as exc:
+            raise HTTPException(500, f"STUDIO_START_FAILED:{type(exc).__name__}") from None
+        rt.log.info("STUDIO", "LAUNCH", f"Uruchomiono Pepe Training Studio ({st['launcher']}, pid {p.pid}, port {st['port']})")
+        return {**st, "started": True, "pid": p.pid}
+
     # ---------------------------------------------------------------- Pepe Data & Training Studio import (1.33) - candidates only
     @app.post("/api/v1/studio/import")
     def studio_import(body: dict = Body(...)):

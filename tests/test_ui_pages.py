@@ -278,7 +278,7 @@ class TestThreePagesUI(unittest.TestCase):
         self.assertTrue(set(ctx) <= {"D1", "H8", "H4", "H1"} and ctx, ctx)
         p.locator("[data-view=setup]").click()
         st = p.locator("[data-testid=bot-grid] .chart-panel").evaluate_all("els => els.map(e => e.dataset.tf)")
-        self.assertTrue(set(st) <= {"M30", "M15", "M5", "M1"} and st, st)
+        self.assertTrue(set(st) <= {"M30", "M15", "M5", "M3", "M1"} and st, st)          # M3: TF registry since 1.33
         p.locator("[data-cols='1']").click()
         p.locator("[data-cols='2']").click()
         p.locator("[data-testid=tf-bar] .tf-chip[data-tf=H8]").click()

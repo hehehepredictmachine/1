@@ -39,6 +39,9 @@ const DyscyplineView = lazy(() => import("./features/wizard/DyscyplineView"));
 const ProfitsView = lazy(() => import("./features/wizard/ProfitsView"));
 const MarketZonesPage = lazy(() => import("./features/market-zones/MarketZonesPage"));
 const TrainingCenterPage = lazy(() => import("./features/training-center/TrainingCenterPage"));
+const DxyPage = lazy(() => import("./features/pmw133/DxyPage"));
+const SvpPage = lazy(() => import("./features/pmw133/SvpPage"));
+const DecisionPage = lazy(() => import("./features/pmw133/DecisionPage"));
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
 const NEED_LAUNCHER = launcherNeeded();   // decided once, before the router fills in an empty address
@@ -135,6 +138,9 @@ function Panel() {
           {route.page === "diagnostyka" && <DiagnosticsPage />}
           {route.page === "strefy" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><MarketZonesPage /></Suspense>}
           {route.page === "trening" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><TrainingCenterPage /></Suspense>}
+          {route.page === "dxy" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><DxyPage /></Suspense>}
+          {route.page === "svp" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><SvpPage /></Suspense>}
+          {route.page === "decyzje" && <Suspense fallback={<div className="loading">Ładowanie…</div>}><DecisionPage /></Suspense>}
         </AppShell>}
         {settings && <SettingsModal onClose={() => setSettings(false)} />}
         {mode && <ModeDialog onClose={() => setMode(false)} />}

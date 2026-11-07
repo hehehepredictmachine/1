@@ -180,7 +180,7 @@ class TestSignalCardUI(unittest.TestCase):
         wait_for(lambda: self.state() == self.page.request.get(BASE + "/api/v1/state").json()["decision"]["signal_view"]["state"], 20, 0.5)
         cur = self.page.request.get(BASE + "/api/v1/state").json()["decision"]["signal_view"]
         self.assertEqual(self.state(), cur["state"])
-        self.assertEqual(len(self.page.locator("[data-testid=tf-overview] .tfo").all()), 8)
+        self.assertEqual(len(self.page.locator("[data-testid=tf-overview] .tfo").all()), 9)   # 1.33: M3 in the TF registry
         self.shot("00_live_engine")
 
     def test_02_buy(self):

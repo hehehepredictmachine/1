@@ -2,6 +2,7 @@
 // and the latency; top header with the brand, the screen title, notifications and the profile. The DEMO / simulator strip and the
 // warnings of the bot are always visible. Navigation entries point only to EXISTING screens of the bot (Community / Membership /
 // Accounts of the visualisations do not exist in the bot, so they are not shown).
+import StudioButton from "../pmw133/StudioButton";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { href, type Page } from "../../router";
 import { useStore } from "../../store";
@@ -43,6 +44,7 @@ export function LeftPanel({ page, nav, emblem }: { page: Page; nav: NavItem[]; e
           <a key={n.page + n.label} href={href(n.page)} className={cls("cu-nav-i", page === n.page && "on")} aria-current={page === n.page ? "page" : undefined}
             data-testid={`cu-nav-${n.page}`}>
             <Icon n={n.icon} size={20} /><span>{n.label}{n.sub && <small>{n.sub}</small>}</span></a>))}
+        <StudioButton variant="nav" />
       </nav>
       {emblem && (
         <div className="cu-emblem" aria-hidden="true"><img src={A.tower(emblem.tower)} alt="" /><b>{emblem.title}</b><small>{emblem.sub}</small></div>)}

@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
   | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "strefy" | "trening"
-  | "lightning" | "wind" | "control" | "strategy-lab";
+  | "lightning" | "wind" | "control" | "strategy-lab" | "dxy" | "svp" | "decyzje";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.29 one interface in the style of the towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
 // market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka.
@@ -16,12 +16,12 @@ export type Route = { page: Page; setupId: string | null; params: URLSearchParam
 export type Area = { id: string; label: string; icon: string; pages: Page[]; accent: string; tower?: "precision" | "dyscypline" | "profits" };
 export const GROUPS: Area[] = [
   { id: "precision", label: "Precision – wykresy i rynek", icon: "◎", accent: "#3fe6ff", tower: "precision",
-    pages: ["pulpit", "wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "sygnal", "nc", "precision"] },
+    pages: ["pulpit", "wykresy", "strefy", "scalp-mtf", "kontekst", "indykatory", "dxy", "svp", "sygnal", "nc", "precision"] },
   { id: "dyscypline", label: "Dyscypline – setupy i sygnały", icon: "⟐", accent: "#b46bff", tower: "dyscypline",
     pages: ["setupy", "warunki", "strategie", "ai", "formacje", "dyscypline", "lightning", "strategy-lab"] },
   { id: "profits", label: "Profits – wyniki i rachunek", icon: "◆", accent: "#ffcf5c", tower: "profits", pages: ["pozycje", "dziennik", "profits"] },
   { id: "modele", label: "Modele i trening", icon: "✦", accent: "#2fe6a0", pages: ["modele", "trening", "neural", "struktura", "testy", "badania", "wind"] },
-  { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka", "control"] },
+  { id: "ustawienia", label: "Ustawienia i diagnostyka", icon: "⚙", accent: "#a5abd0", pages: ["ustawienia", "dane", "diagnostyka", "decyzje", "control"] },
 ];
 /** Old screen -> where it is now (shown in Ustawienia → "Mapa ekranów" and in the documentation). The hash links did not change. */
 export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
@@ -41,6 +41,7 @@ export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
   { old: "Menu – trzy wieże (1.26–1.31)", hash: "#/menu", now: "1.32: menu główne – miasto sześciu wież (launcher JOIN THE CULT na starcie, intro)" },
   { old: "Precision, Dyscypline, Profits", hash: "#/precision · #/dyscypline · #/profits", now: "bez zmian; Ice Tower w menu = Precision" },
   { old: "(nowe 1.32) Lightning / Wind / Control / Strategy Lab", hash: "#/lightning · #/wind · #/control · #/strategy-lab", now: "wieże menu głównego" },
+  { old: "(nowe 1.33) XAUUSD × DXY i wskaźniki, SVP, Koordynator decyzji", hash: "#/dxy · #/svp · #/decyzje", now: "Precision → DXY / SVP; Ustawienia i diagnostyka → Koordynator decyzji" },
   { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
@@ -62,6 +63,8 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "scalp-mtf", label: "Scalping MTF", short: "MTF", icon: "▤" },
   { id: "kontekst", label: "Kontekst rynku", short: "Kontekst", icon: "◎" },
   { id: "indykatory", label: "Indykatory BB/MA", short: "BB/MA", icon: "≋" },
+  { id: "dxy", label: "XAUUSD × DXY i wskaźniki PMW", short: "DXY", icon: "⇋" },
+  { id: "svp", label: "SVP – Session Volume Profile", short: "SVP", icon: "▤" },
   { id: "sygnal", label: "Analiza sygnału", short: "Sygnał", icon: "∿" },
   { id: "strategie", label: "SCALPING / HEDGING", short: "Strategie", icon: "⇅" },
   { id: "setupy", label: "Scenariusze (lab)", short: "Setupy", icon: "☑" },
@@ -78,6 +81,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "formacje", label: "Formacje i biblioteka", short: "Formacje", icon: "W" },
   { id: "dane", label: "Dane i źródła", short: "Dane", icon: "⚙" },
   { id: "diagnostyka", label: "Diagnostyka systemu", short: "Diag.", icon: "⚕" },
+  { id: "decyzje", label: "Koordynator decyzji", short: "Decyzje", icon: "⚖" },
   { id: "ustawienia", label: "Ustawienia", short: "Ustaw.", icon: "⚑" },
 ];
 export const SECTION_OF: Record<string, string> = Object.fromEntries(GROUPS.flatMap((g) => g.pages.map((p) => [p, g.id])));
