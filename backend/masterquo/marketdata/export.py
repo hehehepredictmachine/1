@@ -97,6 +97,26 @@ def run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPORT
         progress=None, cancel=None, sleep=time.sleep, now: float | None = None) -> dict:
     """mode: 'incremental' (from the last stored bar of each TF; no data yet -> `start` or `lookback_days`) or 'historical' (start..end).
     progress(dict) is called after every chunk; cancel() -> True stops after the current chunk (resumable)."""
+    import os as _os
+    if _os.environ.get("MQ_STUDIO_DATA_DIR"):        # inside a Studio job: the Studio queue already holds the shared export lock
+        return _run(source, store, instrument, symbol, timeframes=timeframes, mode=mode, start=start, end=end, lookback_days=lookback_days,
+                    cfg=cfg, progress=progress, cancel=cancel, sleep=sleep, now=now)
+    from ..paths import data_dir
+    from ..studio.lock import Lock
+    lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
+    ok, owner = lk.acquire(f"export:{instrument}")
+    if not ok:
+        raise ExportBusy(f"trwa inny eksport ({(owner or {}).get('app')}: {(owner or {}).get('job')}) – np. Pepe Data & Training Studio; spróbuj później")
+    try:
+        return _run(source, store, instrument, symbol, timeframes=timeframes, mode=mode, start=start, end=end, lookback_days=lookback_days,
+                    cfg=cfg, progress=lambda d: (lk.heartbeat(), progress(d) if progress else None), cancel=cancel, sleep=sleep, now=now)
+    finally:
+        lk.release()
+
+
+def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPORT_TFS, mode: str = "incremental",
+         start: str | float | None = None, end: str | float | None = None, lookback_days: float = 90.0, cfg=None,
+         progress=None, cancel=None, sleep=time.sleep, now: float | None = None) -> dict:
     tfs = [t for t in timeframes if t in TF_SECONDS]
     if not tfs:
         raise ValueError("brak interwałów do eksportu")
