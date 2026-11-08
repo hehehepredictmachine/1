@@ -24,14 +24,24 @@ def _p(o) -> None:
     print(json.dumps(o, indent=1, ensure_ascii=False, default=str))
 
 
+_OPENER = None
+
+
 def _server(path: str, timeout: float = 5.0):
     try:
         from ..config import ConfigStore
         port = ConfigStore().get().server.port
     except Exception:  # noqa: BLE001
         port = 8765
+    global _OPENER
+    base = f"http://127.0.0.1:{port}"
     try:
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host": f"127.0.0.1:{port}"}), timeout=timeout) as r:
+        if _OPENER is None:                            # the API needs the session cookie issued with the monitor page (same as a browser)
+            import http.cookiejar
+            op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            op.open(urllib.request.Request(base + "/"), timeout=timeout).read()
+            _OPENER = op
+        with _OPENER.open(urllib.request.Request(base + path), timeout=timeout) as r:
             return json.loads(r.read().decode())
     except (urllib.error.URLError, OSError, ValueError):
         return None

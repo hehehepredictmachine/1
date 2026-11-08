@@ -104,6 +104,21 @@ class TestQuantApi(unittest.TestCase):
             b.close()
         self.assertEqual(self.srv.call("/api/v1/state")[1]["mode"]["mode"], self.mode0)
 
+    def test_04_cli_reads_the_running_bot(self):
+        import json
+        import subprocess
+        env = dict(os.environ, MASTERQUO_DATA_DIR=self.srv.dir, PYTHONPATH=str(_env.ROOT / "backend"))
+        run = lambda *a: subprocess.run([sys.executable, "-m", "masterquo", "quant", *a], cwd=str(_env.ROOT / "backend"), env=env,  # noqa: E731
+                                        capture_output=True, text=True, timeout=300)
+        r = run("status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        st = json.loads(r.stdout)
+        self.assertTrue(st["bot"].startswith("działa"))
+        self.assertGreaterEqual(st["live"]["generation"], 1)
+        b = json.loads(run("bench", "--n", "5", "--api-n", "5").stdout)
+        self.assertIn("GET /api/v1/quant/status", b["api_quant_status"])
+        self.assertIn("_cycle", b["live_cycle"])
+
 
 if __name__ == "__main__":
     unittest.main()

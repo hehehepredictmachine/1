@@ -1,0 +1,218 @@
+{
+ "shadow": {
+  "cpu_percent_one_core": 39.6,
+  "rss_mb": 431.5,
+  "api_state": {
+   "p50_ms": 15.78,
+   "p95_ms": 35.97,
+   "p99_ms": 54.7,
+   "n": 60
+  },
+  "api_quant_status": {
+   "p50_ms": 3.0,
+   "p95_ms": 26.17,
+   "p99_ms": 71.55,
+   "n": 60
+  },
+  "cycle_timings": {
+   "snapshot": {
+    "n": 24,
+    "p50_ms": 46.754,
+    "p95_ms": 96.312,
+    "p99_ms": 107.053,
+    "max_ms": 109.755
+   },
+   "base_predictions": {
+    "n": 24,
+    "p50_ms": 4.065,
+    "p95_ms": 52.048,
+    "p99_ms": 736.596,
+    "max_ms": 940.268
+   },
+   "extended_predictions": {
+    "n": 24,
+    "p50_ms": 2.633,
+    "p95_ms": 33.106,
+    "p99_ms": 57.821,
+    "max_ms": 64.436
+   },
+   "contract_checks": {
+    "n": 24,
+    "p50_ms": 0.637,
+    "p95_ms": 10.013,
+    "p99_ms": 14.226,
+    "max_ms": 15.381
+   },
+   "_cycle": {
+    "n": 24,
+    "p50_ms": 63.617,
+    "p95_ms": 160.682,
+    "p99_ms": 765.752,
+    "max_ms": 946.249
+   }
+  },
+  "models": {
+   "eligible": 15,
+   "excluded": 7,
+   "excluded_by_reason": {
+    "STATE_DISABLED": 4,
+    "STATE_NOT_TRAINED": 3
+   },
+   "aliases_dropped": 0,
+   "ready_ids": [
+    "analysis:dxy_correlation",
+    "analysis:indicators",
+    "analysis:zones",
+    "family:MICROSTRUCTURE",
+    "mm:align_mean",
+    "mm:breakout_zones",
+    "mm:gpr_logret",
+    "mm:kalman_cross",
+    "mm:multi_indicator",
+    "mm:smc_fvg",
+    "rule:atr_vol",
+    "rule:data_quality",
+    "rule:news",
+    "rule:regime_v2",
+    "rule:structure_v2"
+   ]
+  },
+  "loop": {
+   "cycles": 24,
+   "errors": 0,
+   "last_error": null,
+   "last_cycle_at": 1794158419.5607731,
+   "matured": 0,
+   "rows_logged": 1,
+   "rows_skipped": 0
+  }
+ },
+ "bench_cli": {
+  "hardware": {
+   "platform": "Linux-6.18.44-fc-v310-x86_64-with-glibc2.39",
+   "cpu_count": 4,
+   "python": "3.13.18",
+   "numpy": "2.5.3"
+  },
+  "n": 200,
+  "components": {
+   "snapshot_qc_600_bars": {
+    "n": 200,
+    "p50_ms": 1.197,
+    "p95_ms": 1.85,
+    "p99_ms": 3.525,
+    "max_ms": 5.324
+   },
+   "contract_checks_40_preds": {
+    "n": 200,
+    "p50_ms": 0.497,
+    "p95_ms": 0.764,
+    "p99_ms": 1.213,
+    "max_ms": 4.677
+   },
+   "event_simulate_60_bars": {
+    "n": 200,
+    "p50_ms": 0.084,
+    "p95_ms": 0.128,
+    "p99_ms": 0.155,
+    "max_ms": 6.794
+   },
+   "metamodel_predict": {
+    "n": 200,
+    "p50_ms": 0.077,
+    "p95_ms": 0.125,
+    "p99_ms": 0.144,
+    "max_ms": 0.401
+   }
+  },
+  "metamodel_train_400_rows_s": 0.801,
+  "api_quant_status": {
+   "GET /api/v1/quant/status": {
+    "n": 60,
+    "p50_ms": 4.303,
+    "p95_ms": 6.259,
+    "p99_ms": 11.721,
+    "max_ms": 15.357
+   }
+  },
+  "live_cycle": {
+   "snapshot": {
+    "n": 25,
+    "p50_ms": 49.509,
+    "p95_ms": 95.747,
+    "p99_ms": 106.935,
+    "max_ms": 109.755
+   },
+   "base_predictions": {
+    "n": 25,
+    "p50_ms": 4.107,
+    "p95_ms": 51.151,
+    "p99_ms": 727.741,
+    "max_ms": 940.268
+   },
+   "extended_predictions": {
+    "n": 25,
+    "p50_ms": 2.669,
+    "p95_ms": 32.25,
+    "p99_ms": 57.533,
+    "max_ms": 64.436
+   },
+   "contract_checks": {
+    "n": 25,
+    "p50_ms": 0.655,
+    "p95_ms": 9.899,
+    "p99_ms": 14.175,
+    "max_ms": 15.381
+   },
+   "_cycle": {
+    "n": 25,
+    "p50_ms": 64.976,
+    "p95_ms": 160.416,
+    "p99_ms": 757.904,
+    "max_ms": 946.249
+   }
+  },
+  "live_models": {
+   "eligible": 15,
+   "excluded": 7,
+   "excluded_by_reason": {
+    "STATE_DISABLED": 4,
+    "STATE_NOT_TRAINED": 3
+   },
+   "aliases_dropped": 0,
+   "ready_ids": [
+    "analysis:dxy_correlation",
+    "analysis:indicators",
+    "analysis:zones",
+    "family:MICROSTRUCTURE",
+    "mm:align_mean",
+    "mm:breakout_zones",
+    "mm:gpr_logret",
+    "mm:kalman_cross",
+    "mm:multi_indicator",
+    "mm:smc_fvg",
+    "rule:atr_vol",
+    "rule:data_quality",
+    "rule:news",
+    "rule:regime_v2",
+    "rule:structure_v2"
+   ]
+  }
+ },
+ "off": {
+  "cpu_percent_one_core": 37.6,
+  "rss_mb": 442.1,
+  "api_state": {
+   "p50_ms": 19.15,
+   "p95_ms": 33.71,
+   "p99_ms": 80.06,
+   "n": 60
+  },
+  "api_quant_status": {
+   "p50_ms": 3.22,
+   "p95_ms": 15.92,
+   "p99_ms": 30.05,
+   "n": 60
+  }
+ }
+}
