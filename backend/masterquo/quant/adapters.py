@@ -16,9 +16,14 @@ import threading
 import time
 
 from ..modelhub import contract as C
-from ..timeutil import iso
+from ..timeutil import from_epoch, iso
+
 
 VERSION = "PMW-QUANT-ADAPT-1"
+
+
+def iso_ts(t: float) -> str:
+    return iso(from_epoch(float(t)))
 SETUP_SCOPED = ("sh_tp_model", "legacy_ml", "scalp_B", "ml_scalp", "nss", "indicator_context")
 
 
@@ -73,7 +78,7 @@ def rules(rt, inst: str) -> list[dict]:
             out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type="STATE", task=cid.split(":")[1].upper(),
                           horizon_bars=None, unit="state", state="BLOCKED_DATA", unavailable_reason="brak migawki kontekstu SH (pierwszy cykl po starcie / brak danych)"))
         return out
-    dt = iso(snap.get("computed_at")) if isinstance(snap.get("computed_at"), (int, float)) else snap.get("computed_at")
+    dt = iso_ts(snap.get("computed_at")) if isinstance(snap.get("computed_at"), (int, float)) else snap.get("computed_at")
     for cid, key, tf, unit in (("rule:regime_v2", "regime", "M5", "state"), ("rule:data_quality", "data", None, "state"), ("rule:atr_vol", "vol", "M5", "price")):
         v = snap.get(key)
         res = clean(v) if isinstance(v, dict) else None
@@ -94,7 +99,7 @@ def rules(rt, inst: str) -> list[dict]:
             s = news.summary() or {}
             out.append(_p(canonical_id="rule:news", instrument=inst, timeframe=None, model_name="rule:news", task_type="STATE", task="NEWS_BLACKOUT",
                           horizon_bars=None, unit="state", state="READY", result=clean({k: s.get(k) for k in ("status", "blackout", "next_event_in_s")}) or {"status": "?"},
-                          data_time=iso(time.time()), source="news", extra={"analytic_role": "GATE_EXISTING"}))
+                          data_time=iso_ts(time.time()), source="news", extra={"analytic_role": "GATE_EXISTING"}))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("rule:news", inst, None, "STATE", "NEWS_BLACKOUT", "state", exc))
     return out
@@ -169,8 +174,8 @@ def mm(rt, inst: str) -> list[dict]:
         return [_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type="REGRESSION" if cid.endswith("gpr_logret") else "STATE",
                    task=cid.split(":")[1].upper(), horizon_bars=3 if cid.endswith("gpr_logret") else None, unit="log_return" if cid.endswith("gpr_logret") else "state",
                    state="BLOCKED_DATA", unavailable_reason=why[:200]) for cid in ids]
-    dt = iso(float(v["last_closed_m5"]))
-    av = iso(float(v["last_closed_m5"]) + 300)
+    dt = iso_ts(float(v["last_closed_m5"]))
+    av = iso_ts(float(v["last_closed_m5"]) + 300)
     kind = "SYNTHETIC" if v.get("data_quality") == "SYNTHETIC_TEST" else "REAL"
     out = []
 
@@ -304,7 +309,7 @@ class EventGRU:
         else:
             t_end = float(u["t_end"][-1])
             p = _p(canonical_id=self.CID, instrument=inst, timeframe="EVENT", model_name=self.CID, model_version=aid, task_type="CLASS_PROBABILITIES",
-                   task="EVENT_UNITS_DIR3", horizon_bars=2, unit="probability", state="READY", result=res, data_time=iso(t_end), available_at=iso(t_end),
+                   task="EVENT_UNITS_DIR3", horizon_bars=2, unit="probability", state="READY", result=res, data_time=iso_ts(t_end), available_at=iso_ts(t_end),
                    data_kind="SYNTHETIC" if getattr(br, "synthetic", False) else "REAL", source=src, feature_schema=man.get("feature_schema"),
                    calibration={"method": "temperature (walidacja MM)", "status": "CALIBRATED_DEV"}, ttl_s=900.0,
                    compute_ms=round((time.perf_counter() - t0) * 1000, 2),

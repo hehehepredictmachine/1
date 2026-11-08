@@ -291,6 +291,25 @@ def _probe(entries: list[dict], rt, inst: str) -> None:
             e["runtime_state"], e["state_reason"] = "ERROR", f"{type(exc).__name__}: {exc}"[:160]
 
 
+def _live_outputs(entries: list[dict], rt) -> None:
+    """Operational readiness from what Quant Core actually PUBLISHED (eligible = valid, fresh, READY), not from the probes."""
+    pub = getattr(getattr(rt, "quant", None), "pub", None) if rt is not None else None
+    cur = pub.current() if pub is not None else None
+    for e in entries:
+        e["live_output"] = "NOT_EVALUATED" if cur is None else None
+    if cur is None:
+        return
+    ready = {p.get("canonical_id") for p in cur.get("eligible") or []}
+    why = {}
+    for p in cur.get("excluded") or []:
+        why.setdefault(p.get("canonical_id"), (p.get("eligibility") or {}).get("reason"))
+    for e in entries:
+        if e["adapter"] in (A_EXISTING, A_FAM, A_EXT):
+            e["live_output"] = "READY" if e["id"] in ready else (why.get(e["id"]) or "BRAK_REKORDU_W_GENERACJI")
+        else:
+            e["live_output"] = "NOT_APPLICABLE"
+
+
 def build(rt=None, inst: str = "XAUUSD") -> dict:
     entries = _sh_rows() + _trainhub_rows() + _family_rows() + _lab_rows()
     merges = []
@@ -317,6 +336,7 @@ def build(rt=None, inst: str = "XAUUSD") -> dict:
     if by_id.get("flow:reaction_m1"):
         by_id["flow:reaction_m1"]["variants"] = ["flow:LOGREG", "flow:XGB"]
     _probe(entries, rt, inst)
+    _live_outputs(entries, rt)
     for e in entries:
         if e["category"] == "?":
             e["category"] = "UNCLASSIFIED"
@@ -332,8 +352,9 @@ def coverage(entries: list[dict]) -> dict:
     with_adapter = [e for e in impl if e["adapter"]]
     justified = [e for e in impl if not e["adapter"] and e["not_applicable_reason"]]
     missing = [e["id"] for e in impl if not e["adapter"] and not e["not_applicable_reason"]]
-    oper = [e for e in impl if e["runtime_state"] in OPERATIONAL and e["adapter"]]
-    evaluated = [e for e in impl if e["runtime_state"] != "NOT_EVALUATED"]
+    live = any(e.get("live_output") not in (None, "NOT_EVALUATED") for e in impl)
+    oper = [e for e in impl if e.get("live_output") == "READY"] if live else []
+    evaluated = [e for e in impl if e.get("live_output") not in (None, "NOT_EVALUATED")] if live else []
     anal = [e for e in impl if e["validation"] == "VALIDATED"]
     need_val = [e for e in impl if e["validation"] != "NOT_APPLICABLE"]
     return {
@@ -343,7 +364,8 @@ def coverage(entries: list[dict]) -> dict:
         "adapters": {"implemented": len(impl), "with_adapter": len(with_adapter), "not_applicable_justified": len(justified), "missing": missing},
         "operational": {"evaluated": len(evaluated), "ready_with_live_output": len(oper), "ids": [e["id"] for e in oper],
                         "by_runtime_state": _count(impl, "runtime_state"),
-                        "note": "dane + wagi + poprawna inferencja; przy generowaniu offline stany usług nie są oceniane"},
+                        "probe_ok_with_adapter": len([e for e in impl if e["runtime_state"] in OPERATIONAL and e["adapter"]]),
+                        "note": "liczone z opublikowanej generacji Quant Core (ważny, świeży wynik READY); offline – nieoceniane"},
         "analytical": {"requiring_validation": len(need_val), "validated_for_role": len(anal), "ids": [e["id"] for e in anal],
                        "note": "pełne pokrycie katalogu nie oznacza gotowości modeli"},
     }
@@ -366,7 +388,8 @@ def to_markdown(inv: dict) -> str:
          f"rozwinięto {c['inventory']['groups_expanded']} wierszy grupowych; złożono {c['inventory']['aliases_folded']} aliasów.",
          f"* **Adaptery:** zaimplementowanych {c['adapters']['implemented']}; z adapterem/odbiorcą {c['adapters']['with_adapter']}; "
          f"uzasadnione NOT_APPLICABLE {c['adapters']['not_applicable_justified']}; brakujące: {', '.join(c['adapters']['missing']) or 'brak'}.",
-         f"* **Gotowość operacyjna:** ocenionych {c['operational']['evaluated']}; z działającym wyjściem na żywo {c['operational']['ready_with_live_output']}. {c['operational']['note']}.",
+         f"* **Gotowość operacyjna:** ocenionych {c['operational']['evaluated']}; z działającym wyjściem na żywo {c['operational']['ready_with_live_output']} "
+         f"({', '.join(c['operational']['ids']) or 'brak'}); sondy OK z adapterem: {c['operational']['probe_ok_with_adapter']}. {c['operational']['note']}.",
          f"* **Gotowość analityczna:** wymagających walidacji {c['analytical']['requiring_validation']}; zwalidowanych dla roli {c['analytical']['validated_for_role']}. "
          f"{c['analytical']['note']}.", "",
          "Kategorie: " + ", ".join(f"{k}={v}" for k, v in c["inventory"]["by_category"].items()), "",
@@ -380,6 +403,8 @@ def to_markdown(inv: dict) -> str:
         if e["horizon"]:
             tf += f"; {e['horizon']}"
         st = e["runtime_state"] + (f" ({e['state_reason']})" if e["state_reason"] else "")
+        if e.get("live_output") not in (None, "NOT_EVALUATED", "NOT_APPLICABLE"):
+            st += f"; wynik na żywo: {e['live_output']}"
         L.append("| " + " | ".join(str(x).replace("|", "/").replace("\n", " ") for x in (
             f"`{e['id']}`", ", ".join(e["aliases"]) or "–", e["category"], task, tf, e["code_state"], st[:220], e["validation"],
             ROLE_PL.get(e["quant_role"], e["quant_role"]), ad[:240])) + " |")

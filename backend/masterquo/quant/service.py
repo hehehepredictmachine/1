@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import paths
-from ..timeutil import iso
+from ..timeutil import from_epoch, iso
 from . import adapters as A
 from . import checks as CK
 from . import events as EV
@@ -35,6 +35,10 @@ from .ledger import QuantLedger
 from .scheduler import Dag, Publisher, write_json_atomic
 
 VERSION = "PMW-QUANT-SERVICE-1"
+
+
+def iso_ts(t: float) -> str:
+    return iso(from_epoch(float(t)))
 MODES = ("OFF", "SHADOW", "ASSIST")
 DEFAULT_SETTINGS = {"mode": "SHADOW", "assist": {"activated": False, "activated_at": None, "activated_by": None}, "cycle_s": 5.0,
                     "assessment_max_age_s": 300.0}
@@ -129,7 +133,7 @@ class QuantService:
                 return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
             if not confirm:
                 return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
-            s["assist"] = {"activated": True, "activated_at": iso(self.clock()), "activated_by": by, "models": act}
+            s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
         else:
             s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
         s["mode"] = mode
@@ -354,7 +358,7 @@ class QuantService:
         return [dict(p, model_id=p.get("family") or p.get("canonical_id")) for p in pub.get("eligible") or []]
 
     def coordinator_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> dict | None:
-        base = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso(self.clock())}
+        base = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock())}
         if cand is not None:
             a = self.assess(cand, mode="ASSIST")
         else:
