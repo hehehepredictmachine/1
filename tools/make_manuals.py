@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.35.0"
+VERSION = "1.36.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -166,7 +166,7 @@ def build(path: Path, role: str, story: list, title: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------- administrator
 def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
-               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne Neural City (siedem wież), "
+               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne – stół neuronowy (osiem wież), "
                  "panele Lightning / Wind / Control / Strategy Lab, wykresy i strefy, trening modeli, wydawanie paczek, aktualizacja "
                  "i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
@@ -193,7 +193,7 @@ def admin(shots: Path | None) -> list:
           P("Najpierw otwiera się małe okno <b>JOIN THE CULT</b> (launcher): pokazuje postęp pierwszego startu, wybór danych poprzedniej "
             "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij</b>. Gdy silnik działa, "
             "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. Tłem launchera jest grafika Pepe przemawiającego do zgromadzenia. "
-            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne <b>Neural City</b> po krótkim "
+            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne (<b>stół neuronowy</b>) po krótkim "
             "intro „lotu przez sieć neuronów” (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
             "W przeglądarce (bez aplikacji Windows) ten sam launcher pojawia się na początku sesji."),
           *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
@@ -203,25 +203,26 @@ def admin(shots: Path | None) -> list:
               "Uruchamiaj tylko paczkę, której sumę SHA-256 porównałeś z plikiem .sha256 / raportem.", "warn"),
           PageBreak()]
     # 2
-    s += [P("2 / Interfejs: menu główne Neural City (siedem wież), panele i pasek stanu", "h1"),
-          P("Menu główne (1.34) to <b>Neural City</b>: neuronowy Pepe przy holograficznym stole z siedmioma wieżami. Najechanie na wieżę "
-            "pokazuje jej opis, kliknięcie wieży albo przycisku na górnym pasku (ten sam cel), Enter lub dotknięcie listy na małym ekranie "
-            "otwiera istniejący panel (Esc anuluje przejście). Karty Winratio, ROI i Equity pochodzą ze statystyk bota i rachunku MT5 – "
-            "każda ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>), bez danych: <b>N/A</b>. "
-            "Scena działa w trybie <b>2.5D</b> (animowane pierścienie, cząsteczki, gest i portal na grafice – nie modele 3D); jakość "
-            "animacji: ⚙ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje."),
+    s += [P("2 / Interfejs: menu główne – stół neuronowy (osiem wież), panele i pasek stanu", "h1"),
+          P("Menu główne (1.36, Main Menu V2) to <b>stół neuronowy</b>: trzech Pepe w garniturach przy okrągłym stole z ośmioma wieżami. "
+            "Małe logo jest w lewym górnym rogu, nawigacja wszystkich ośmiu modułów na górze; ekran nie ma paneli informacyjnych ani "
+            "przycisków na dole. Najechanie na wieżę pokazuje jej opis, kliknięcie wieży albo pozycji na górnym pasku (ten sam cel), Enter "
+            "lub dotknięcie listy na małym ekranie otwiera panel (Esc anuluje przejście). Menu nie pobiera danych MT5 i nie pokazuje statystyk. "
+            "Scena działa w trybie <b>2.5D</b> (ścieżki neuronowe z impulsami, pierścienie, portal na grafice – nie modele 3D); jakość "
+            "animacji: ✧ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje, Studio – w górnym pasku."),
           table([["Wieża", "Panel"],
-                 ["PEPE$WTC (dawniej WTC PEPE)", "Trading Intelligence – terminal handlowy"],
-                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "Wind Portal – modele AI, konsensus, ślad decyzji, Monte Carlo"],
-                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – sygnały BUY/SELL, plan wejścia, cykl życia sygnału"],
-                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["PEPE$WTC (dawniej WTC PEPE)", "PEPE$WTC – Neural Market Command Center (multi-chart, Kronos, strefy, Volume Profile)"],
+                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "PEPE$SIGNAL – Signal Intelligence Center (sygnały, warunki, oceny AI)"],
+                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – pełne informacje i historia sygnałów"],
+                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"],
                  ["STRATEGIES", "Strategy Lab – silnik, ustawienia, biblioteka, porównanie"],
-                 ["SETTINGS", "Ustawienia"],
-                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"]], [55, 115]),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=160),
+                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["TRAINING LAB", "Centrum treningu – eksport, walidacja, trening, aktywacja"],
+                 ["SETTINGS", "Ustawienia"]], [55, 115]),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – stół neuronowy z ośmioma wieżami.", width_mm=160),
           P("Menu boczne obszarów (bez zmian) – kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są na pasku zakładek."),
           table([["Obszar", "Zawartość"],
-                 ["Menu główne", "Neural City – siedem wież (logo w lewym górnym rogu również tu prowadzi)"],
+                 ["Menu główne", "stół neuronowy – osiem wież (logo w lewym górnym rogu również tu prowadzi)"],
                  ["Precision", "Pulpit, Wykresy MTF, Strefy rynkowe, Scalping MTF, Kontekst rynku, Indykatory, Analiza sygnału, Neural Cyberpunk"],
                  ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje, Lightning Tower, Strategy Lab"],
                  ["Profits", "Pozycje i ryzyko, Dziennik i wyniki, widok Profits"],
@@ -299,6 +300,32 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4d - 1.36
+    s += [P("4d / Nowe w 1.36: wieże PEPE$WTC i PEPE$SIGNAL", "h1"),
+          P("PEPE$WTC – Neural Market Command Center", "h2"),
+          bullets(["Duży wykres główny aktywnego instrumentu z wyborem interwału; <b>Multi-Chart Workspace</b>: „＋ Dodaj wykres”, × usuwa, "
+                   "każdy wykres ma własny interwał, kliknięcie nazwy przenosi go na wykres główny; „Reset widoku” przywraca układ.",
+                   "<b>Indicator Manager</b> pokazuje tylko warstwy, które bot naprawdę liczy (EMA, VWAP, RSI, MACD, ATR, BOS/CHoCH, OB/FVG, sesje, "
+                   "strefy, S/R + profil sesji, SVP, walls, SAR, IQ/PAL, poziomy AI). Bollinger Bands = N/A (brak w bocie).",
+                   "<b>Kronos M1 / M5</b>: OFF / AUTO / MANUAL („Przelicz” na żądanie), prognoza jako linia na wykresie; status z backendu "
+                   "(np. NOT_INSTALLED) – bez wymyślonego confidence.",
+                   "<b>AI Live Zones</b>: AUTO = przeliczenie stref po zamknięciu każdej świecy M1–M30, MANUAL = „Wyznacz teraz”; filtr typów.",
+                   "<b>Volume Profile Auto Zones</b>: POC, VAH/VAL, HVN, LVN z silnika PMW-SVP-1 dla okna wykresu (100/200/500 świec) – "
+                   "kolumna profilu przy wykresie i typowane strefy na wykresie. Poziom VP to informacja, nie sygnał.",
+                   "<b>Smart Trade Setup Builder</b> liczy R:R = |TP − Entry| / |Entry − SL| – nie ma przycisku zlecenia."]),
+          *shot(shots, "ui_towers/01_wtc_1672.png", "PEPE$WTC (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.55)),
+          P("PEPE$SIGNAL – Signal Intelligence Center", "h2"),
+          bullets(["Strumień sygnałów wszystkich strategii bota (S01–S12, skaner rynków, SCALPING / HEDGING) z filtrami: strategia, symbol, "
+                   "interwał, kierunek, status, czas, siła. Ⅱ zamraża listę.",
+                   "Wybór sygnału (z listy albo tabeli) aktualizuje wykres (Entry / SL / TP, przewinięty do chwili sygnału), podsumowanie, "
+                   "warunki <b>ENTRY / TRIGGER / INVALIDATION</b> z checklisty strategii, narrację, oceny modeli, metryki i zgodność MTF.",
+                   "Sygnał oczekujący jest zawsze <b>WAIT</b>. Siła sygnału to heurystyka 0–100, wynik modelu nie jest prawdopodobieństwem, "
+                   "o ile model nie jest skalibrowany. Dla starych sygnałów oceny modeli są oznaczone jako bieżące.",
+                   "Zakładki: LIVE SIGNALS, ALL STRATEGIES, AI EVALUATION, SIGNAL HISTORY, PERFORMANCE (wyniki w R), SETUP BUILDER (widok setupu)."]),
+          *shot(shots, "ui_towers/02_signal_1672.png", "PEPE$SIGNAL (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.6)),
+          box("Obie wieże tylko analizują – nie otwierają ani nie zamykają pozycji. Dawne panele: Trading Intelligence i Wind Portal "
+              "są dostępne w menu bocznym wież.", "note"),
+          PageBreak()]
     # 4c - 1.35
     s += [P("4c / Nowe w 1.35: PMW Quant Core (SHADOW)", "h1"),
           bullets(["Wspólny silnik: snapshot zamkniętych świec z kontrolą jakości → wyniki wszystkich dostępnych modeli w jednym kontrakcie → "
@@ -367,10 +394,10 @@ def client(shots: Path | None) -> list:
                  "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
                  "wymagane składniki – może potrwać kilka minut. Postęp widać w małym oknie <b>JOIN THE CULT</b>.",
                  "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b> (na dole ekranu). Okno się powiększy i po krótkim intro "
-                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne <b>Neural City</b> z siedmioma wieżami. Przy pierwszym starcie kreator prosi o "
+                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne – <b>stół neuronowy</b> z ośmioma wieżami. Przy pierwszym starcie kreator prosi o "
                  "limity ryzyka i koszty."]),
           *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=150),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – osiem wież.", width_mm=150),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
               "z plikiem .sha256."),
           PageBreak()]
@@ -388,9 +415,9 @@ def client(shots: Path | None) -> list:
                  ["Tryb, STOP", "SIGNALS / PAPER / AUTO DEMO / AUTO LIVE; STOP zatrzymuje nowe wejścia"]], [55, 115]),
           PageBreak()]
     s += [P("3 / Korzystanie z panelu", "h1"),
-          P("Menu główne <b>Neural City</b> ma siedem wież: <b>PEPE$WTC</b> (terminal handlowy), <b>PEPE$SIGNAL</b> (modele AI i oceny), "
-            "<b>PEPE$BANK</b> (sygnały na żywo), <b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>STRATEGIES</b> (strategie), "
-            "<b>SETTINGS</b> (ustawienia) i <b>PEPE$ROI</b> (wyniki rachunku). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
+          P("Menu główne ma osiem wież: <b>PEPE$WTC</b> (wykresy, Kronos, strefy i Volume Profile), <b>PEPE$SIGNAL</b> (sygnały i oceny AI), "
+            "<b>PEPE$BANK</b> (historia sygnałów), <b>PEPE$ROI</b> (wyniki rachunku), <b>STRATEGIES</b> (strategie), "
+            "<b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>TRAINING LAB</b> (trening modeli) i <b>SETTINGS</b> (ustawienia). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
             "na górnym pasku – otworzysz panel (Esc anuluje). Menu boczne obszarów: <b>Precision</b>, "
             "<b>Dyscypline</b>, <b>Profits</b>, <b>Modele i trening</b>, <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
           box("Znaczniki przy wartościach mówią, skąd pochodzą: <b>DEMO · symulator</b> (dane syntetyczne), <b>DEMO</b> (rachunek "

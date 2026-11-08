@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 1.36.0 (w repozytorium, bez nowej paczki) – Main Menu V2 (8 wież) + wieże PEPE$WTC V4 i PEPE$SIGNAL V1
+## 1.36.0 – Main Menu V2 (8 wież) + wieże PEPE$WTC V4 i PEPE$SIGNAL V1
 * **Menu główne V2 – stół neuronowy**: trzech Pepe przy okrągłym stole z **ośmioma** wieżami (PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, PEPE$ROI, STRATEGIES,
   MARKET NEWS, TRAINING LAB, SETTINGS). Małe logo w lewym górnym rogu, nawigacja na górze, bez paneli informacyjnych i bez przycisków na dole.
   Wieże i pasek wywołują ten sam kontroler i otwierają istniejące sekcje; Esc, fokus, klawiatura, reduced motion, pauza, Studio w górnym pasku.

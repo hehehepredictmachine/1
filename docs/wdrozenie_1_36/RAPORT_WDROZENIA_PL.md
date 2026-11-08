@@ -108,4 +108,4 @@ Brak żądań handlowych z obu wież: testy sprawdzają, że żadne żądanie in
 
 * Brak modeli 3D (wieże, Pepe z rigiem) – menu jest 2.5D.
 * Pixel-perfect 1:1 wnętrz wież nie jest deklarowany: układ kolumn, kolejność i treść kart odpowiadają referencjom, ale wysokości sekcji wynikają z prawdziwych danych (np. wykres z panelami RSI/MACD, lista modeli bota zamiast fikcyjnych Kronos/XGBoost/CatBoost/Decision Tree/Neural – CatBoost w bocie nie istnieje).
-* Wersja aplikacji, paczki wydania, `MANIFEST_SHA256.txt` i `PepeMarketWizard.exe` nie zostały przebudowane w tym kroku.
+* Wydanie 1.36.0: wersja podbita (backend, zasób wersji Windows, narzędzia), instrukcje PDF z sekcją 4d, paczki `release/PepeMarketWizard_1_36_0.zip` i `release/PepeMarketWizard_DESKTOP_1_36_0.zip` (opis w `release/RAPORT_KONCOWY.md`). Pliki EXE nie są podpisane cyfrowo.
