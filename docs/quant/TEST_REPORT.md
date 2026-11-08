@@ -13,6 +13,9 @@ Brak Windows, WebView2, prawdziwego MT5 i danych użytkownika. Wszystko, co ich 
 | Regresja UI: 20 modułów, 117 testów | **PASS** |
 | `test_kronos_runtime` w środowisku Kronos (PyTorch) | **PASS** 7, **SKIPPED** 1 (oficjalne wagi – brak `MQ_KRONOS_WEIGHTS_DIR`) |
 | `frontend`: `npm run typecheck`, `npm run build` | **PASS** |
+| `tools/check_requirements_win.py` (w `build_release.py`): 4 pliki × Python 3.13 / 3.12 | **PASS** |
+| `tools/verify_release.py --all` (obie paczki 1.35.0) | **PASS** |
+| Start z paczki DESKTOP i folderu 1.35.0: ścieżka ze spacjami i polskimi znakami, konfiguracja v12→v13, migracje, koordynator, rodziny, Studio, **Quant SHADOW z kompletnym cyklem**, **CLI quant z paczki**, restart (tryb SHADOW bez zmian) | **PASS** 17/17 każda |
 
 Pominięcia w regresji (SKIPPED, nie PASS):
 
