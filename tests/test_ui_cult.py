@@ -1,10 +1,6 @@
-"""1.32 CULT UI in a real browser (Chromium + demo backend on the SYNTHETIC terminal - clearly marked data):
-- launcher JOIN THE CULT: shown at the start of a session on the bare address, the panel is not mounted before the click, the button
-  waits for the bot (SYSTEM READY), direct links / ?pmw_joined=1 / an earlier JOIN skip it;
-- intro (HYBRID CINEMATIC, 6 s): played once after JOIN, can be skipped (button, Esc), ends by itself, the address becomes #/menu;
-  reduced motion -> no intro and no camera zoom;
-- Main Menu: six towers (Lightning, Ice, Wind, Control, Strategy Lab, Fire), hover preview, click / Enter -> camera zoom -> panel,
-  hotspots take the click (decorative layers never do), left navigation, stats bar with data-kind tags (never REAL on the simulator);
+"""1.32 CULT tower panels in a real browser (Chromium + demo backend on the SYNTHETIC terminal - clearly marked data). 1.34: the launcher,
+the intro and the main menu (Neural City V7.0) are tested in test_ui_neural_city.py; here:
+- left navigation of the tower panels, DEMO strip, data-kind tags (never REAL on the simulator);
 - Lightning / Wind / Control / Strategy Lab render on the bot's endpoints without page errors;
 - Control Tower writes the real bot config (thresholds, filters, risk limits, Telegram template and flags, presets) and the screen
   shows the backend state after a reload; invalid values are refused by the backend and said on screen;
@@ -130,9 +126,9 @@ class TestCultUI(unittest.TestCase):
         return self.api("/api/v1/state")
 
     def menu(self, p):
-        """Main menu without the intro (a direct link skips the launcher)."""
+        """Main menu (Neural City) without the intro (a direct link skips the launcher)."""
         p.goto(BASE + "/#/menu")
-        p.wait_for_selector("[data-testid=page-menu][data-intro='0']", timeout=30000)
+        p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
 
     def no_hscroll(self, p):
         return p.evaluate("() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1")
@@ -148,131 +144,17 @@ class TestCultUI(unittest.TestCase):
         self.assertTrue(wait_for(lambda: loc.count() > 0, 15, 0.2), f"{monitor}: no result message")
         return loc.first.inner_text(), loc.first.get_attribute("class")
 
-    # ------------------------------------------------------------ 1. launcher gate, JOIN, intro, skip
-    def test_01_launcher_gate_join_and_intro(self):
-        c, p = self.ctx()
-        try:
-            p.goto(BASE + "/")
-            p.wait_for_selector("[data-testid=cult-launcher]", timeout=30000)
-            self.assertEqual(p.locator("[data-testid=page-menu]").count(), 0)                    # the panel is not mounted yet
-            self.assertEqual(p.locator("[data-testid=cu-left]").count(), 0)
-            self.assertIn("JOIN THE CULT", p.locator("[data-testid=cult-join]").inner_text())
-            p.wait_for_selector("[data-testid=cult-join]:not([disabled])", timeout=30000)        # waits for the bot (state + socket)
-            self.assertIn("SYSTEM READY", p.locator("[data-testid=cult-status]").inner_text())
-            ver = self.api("/api/v1/health").get("version") or self.state().get("app_version")
-            self.assertIn(str(ver), p.locator("[data-testid=cult-launcher-ver]").inner_text())
-            self.shot(p, "01_launcher_1920")
-            p.click("[data-testid=cult-join]")
-            p.wait_for_selector("[data-testid=page-menu][data-intro='1']", timeout=30000)        # the intro plays after JOIN
-            self.assertTrue(wait_for(lambda: p.evaluate("() => location.hash") == "#/menu", 10, 0.1))   # played once: refresh = menu
-            p.wait_for_timeout(1300)
-            self.shot(p, "01_intro_1300ms")
-            p.click("[data-testid=cm-skip]")
-            p.wait_for_selector("[data-testid=page-menu][data-intro='0']", timeout=5000)
-            self.assertTrue(p.locator("[data-testid=cm-slogan]").is_visible())
-            p.reload()                                                                          # same session: no launcher, no intro
-            p.wait_for_selector("[data-testid=page-menu][data-intro='0']", timeout=30000)
-            self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
-            p.goto(BASE + "/")                                                                  # bare address in the same session
-            p.wait_for_selector("[data-testid=cu-left], main.page, [data-testid=page-menu]", timeout=30000)
-            self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
-            self.assertEqual(self.real_errors(p), [])
-        finally:
-            c.close()
-        for url, sel in ((BASE + "/?pmw_joined=1#/menu", "[data-testid=page-menu]"), (BASE + "/#/control", "[data-testid=page-control]")):
-            c, p = self.ctx()                                                                   # Windows app / direct link: no launcher
-            try:
-                p.goto(url)
-                p.wait_for_selector(sel, timeout=30000)
-                self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0, url)
-            finally:
-                c.close()
-
-    # ------------------------------------------------------------ 2. intro ends by itself (6 s) and with Esc
-    def test_02_intro_timing_and_escape(self):
-        c, p = self.ctx()
-        # the length of the intro is measured in the page (changes of data-intro, performance.now()), not with the test's clock -
-        # the storyboard screenshots below take their own time, which must not count as intro time
-        p.add_init_script("""window.__intro = [];
-            new MutationObserver(() => { const el = document.querySelector('[data-testid=page-menu]'); if (!el) return;
-              const v = el.getAttribute('data-intro'), l = window.__intro; if (!l.length || l[l.length - 1][0] !== v) l.push([v, performance.now()]); })
-              .observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-intro'] });""")
-        try:
-            p.goto(BASE + "/#/menu?intro=1")
-            p.wait_for_selector("[data-testid=page-menu][data-intro='1']", timeout=30000)
-            t0 = time.monotonic()
-            for ms in (400, 2200, 4100, 5200):                                                  # storyboard frames
-                p.wait_for_timeout(max(0, ms - int((time.monotonic() - t0) * 1000)))
-                self.shot(p, f"02_intro_{ms}ms")
-            p.wait_for_selector("[data-testid=page-menu][data-intro='0']", timeout=15000)
-            log = p.evaluate("() => window.__intro")
-            self.assertEqual([v for v, _ in log[:2]], ["1", "0"], log)
-            dur = (log[1][1] - log[0][1]) / 1000
-            self.assertGreater(dur, 5.5, log)                                                   # 6 s storyboard (timer 6,2 s)
-            self.assertLess(dur, 8.0, log)
-            p.goto(BASE + "/#/menu?intro=1")
-            p.reload()
-            p.wait_for_selector("[data-testid=page-menu][data-intro='1']", timeout=30000)
-            p.keyboard.press("Escape")
-            p.wait_for_selector("[data-testid=page-menu][data-intro='0']", timeout=3000)
-            self.assertEqual(self.real_errors(p), [])
-        finally:
-            c.close()
-
-    # ------------------------------------------------------------ 3. six towers: hover preview, click/Enter -> panel; no orders
-    def test_03_six_towers_open_their_panels(self):
-        c, p = self.ctx()
-        try:
-            before = self.state().get("mode") or {}
-            self.menu(p)
-            self.assertEqual(p.locator(".cm-hot").count(), 6)
-            self.shot(p, "03_menu_1920")
-            for key, (route, sel) in TOWERS.items():
-                self.menu(p)
-                hot = p.locator(f"[data-testid=cm-tower-{key}]")
-                self.assertEqual(hot.get_attribute("href"), f"#/{route}")
-                b = hot.bounding_box()
-                self.assertTrue(b and b["width"] > 20 and b["height"] > 20, key)
-                hit = p.evaluate("(k) => { const b = document.querySelector(`[data-testid=cm-tower-${k}]`).getBoundingClientRect();"
-                                 " const e = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2); return e?.dataset?.testid || e?.className || ''; }", key)
-                self.assertEqual(hit, f"cm-tower-{key}")                                         # decorative layers never take the click
-                hot.hover()
-                p.wait_for_selector("[data-testid=cm-preview]", timeout=5000)
-                prev = p.locator("[data-testid=cm-preview]").inner_text()
-                self.assertTrue(prev.strip(), key)
-                if key == "lightning":
-                    self.shot(p, "03_menu_hover_lightning")
-                t0 = time.monotonic()
-                hot.click()
-                p.wait_for_selector(sel, timeout=30000)
-                self.assertTrue(p.url.endswith(f"#/{route}") or f"#/{route}" in p.url, (key, p.url))
-                self.assertLess(time.monotonic() - t0, 15)
-            self.menu(p)                                                                        # keyboard: focus + Enter
-            p.focus("[data-testid=cm-tower-wind]")
-            p.wait_for_selector("[data-testid=cm-preview]", timeout=5000)
-            p.keyboard.press("Enter")
-            p.wait_for_selector("[data-testid=page-wind]", timeout=30000)
-            self.assertEqual([s for s in p.sent if ORDER_URL.search(s[1]) or MODE_URL.search(s[1])], [])
-            after = self.state().get("mode") or {}
-            self.assertEqual((before.get("mode"), before.get("kill_switch")), (after.get("mode"), after.get("kill_switch")))
-            self.assertEqual(self.real_errors(p), [])
-        finally:
-            c.close()
-
     # ------------------------------------------------------------ 4. left navigation, status, DEMO marking
     def test_04_navigation_status_and_demo_marking(self):
         c, p = self.ctx()
         try:
-            self.menu(p)
+            p.goto(BASE + "/#/lightning")                                                       # 1.34: the left navigation lives in the tower panels
+            p.wait_for_selector("[data-testid=cu-left]", timeout=30000)
             hrefs = {a.get_attribute("data-testid"): a.get_attribute("href") for a in p.locator("[data-testid=cu-left] a[data-testid^=cu-nav-]").all()}
-            for page in ("pulpit", "lightning", "precision", "wind", "trading-intelligence", "strategy-lab", "ustawienia"):
+            for page in ("menu", "lightning", "precision", "wind", "trading-intelligence", "strategy-lab", "profits", "kontekst", "ustawienia"):
                 self.assertEqual(hrefs.get(f"cu-nav-{page}"), f"#/{page}", hrefs)
             self.assertTrue(p.locator("[data-testid=cu-demo]").is_visible())                    # SYNTHETIC terminal -> DEMO strip
             self.assertTrue(wait_for(lambda: "ms" in p.locator("[data-testid=cu-latency]").inner_text(), 20, 0.3))
-            for tid in ("cm-pl", "cm-wr", "cm-active", "cm-aum"):
-                st = p.locator(f"[data-testid={tid}]")
-                self.assertTrue(wait_for(lambda: st.locator("[data-kind]").count() == 1, 20, 0.3), tid)
-                self.assertNotEqual(st.locator("[data-kind]").get_attribute("data-kind"), "REAL", tid)   # never REAL on the simulator
             for page in PANELS:
                 p.goto(BASE + f"/#/{page}")
                 p.wait_for_selector(f"[data-testid=page-{page}]", timeout=30000)
@@ -295,12 +177,6 @@ class TestCultUI(unittest.TestCase):
         for vp in ({"width": 1920, "height": 1080}, {"width": 1366, "height": 768}, {"width": 390, "height": 844}):
             c, p = self.ctx(viewport=vp)
             try:
-                self.menu(p)
-                p.wait_for_timeout(600)
-                self.assertTrue(self.no_hscroll(p), f"menu {vp}")
-                for key in TOWERS:
-                    self.assertTrue(p.locator(f"[data-testid=cm-tower-{key}]").bounding_box()["width"] > 8, (key, vp))
-                self.shot(p, f"05_menu_{vp['width']}", full=vp["width"] < 600)
                 for page, parts in PANELS.items():
                     p.goto(BASE + f"/#/{page}")
                     p.wait_for_selector(f"[data-testid=page-{page}]", timeout=30000)
@@ -457,24 +333,6 @@ class TestCultUI(unittest.TestCase):
             self.assertTrue(wait_for(lambda: self.toggle(sid)["trade"] is True, 10, 0.2))
             self.assertEqual(self.state()["mode"]["mode"], mode0)                                  # the execution mode is untouched
             self.assertEqual([s for s in p.sent if ORDER_URL.search(s[1]) or MODE_URL.search(s[1])], [])
-            self.assertEqual(self.real_errors(p), [])
-        finally:
-            c.close()
-
-    # ------------------------------------------------------------ 8. reduced motion: no intro, no zoom
-    def test_08_reduced_motion(self):
-        c, p = self.ctx(reduced_motion="reduce")
-        try:
-            p.goto(BASE + "/")
-            p.wait_for_selector("[data-testid=cult-join]:not([disabled])", timeout=30000)
-            p.click("[data-testid=cult-join]")
-            p.wait_for_selector("[data-testid=page-menu]", timeout=30000)
-            self.assertEqual(p.locator("[data-testid=page-menu]").get_attribute("data-intro"), "0")
-            self.assertEqual(p.locator("[data-testid=cm-skip]").count(), 0)
-            t0 = time.monotonic()
-            p.click("[data-testid=cm-tower-control]")
-            p.wait_for_selector("[data-testid=page-control]", timeout=30000)
-            self.assertLess(time.monotonic() - t0, 3)
             self.assertEqual(self.real_errors(p), [])
         finally:
             c.close()

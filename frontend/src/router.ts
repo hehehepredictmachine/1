@@ -4,6 +4,7 @@
 //   #/wykresy?tf=M5&view=focus  Wykresy bota (optional TF focus + highlighted price)
 //   #/warunki/<setup_id>       Warunki setupu (the setup being VIEWED - presentation state, never the engine's choice)
 import { useEffect, useState } from "react";
+import { TOWER_ALIASES } from "./features/neural-city/towers";
 
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
@@ -42,18 +43,20 @@ export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
   { old: "Precision, Dyscypline, Profits", hash: "#/precision · #/dyscypline · #/profits", now: "bez zmian; Ice Tower w menu = Precision" },
   { old: "(nowe 1.32) Lightning / Wind / Control / Strategy Lab", hash: "#/lightning · #/wind · #/control · #/strategy-lab", now: "wieże menu głównego" },
   { old: "(nowe 1.33) XAUUSD × DXY i wskaźniki, SVP, Koordynator decyzji", hash: "#/dxy · #/svp · #/decyzje", now: "Precision → DXY / SVP; Ustawienia i diagnostyka → Koordynator decyzji" },
+  { old: "(1.34) Menu główne – Neural City V7: PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, MARKET NEWS, STRATEGIES, SETTINGS, PEPE$ROI", hash: "#/menu",
+    now: "PEPE$WTC → Trading Intelligence, PEPE$SIGNAL → Wind Portal, PEPE$BANK → Lightning Tower, MARKET NEWS → Kontekst rynku, STRATEGIES → Strategy Lab, SETTINGS → Ustawienia, PEPE$ROI → Profits; aliasy #/wtc, #/pepe-signal (#/brain-signal), #/pepe-bank (#/ai-agent), #/market-news, #/strategies, #/settings, #/pepe-roi (#/leaderboard)" },
   { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
-  { id: "menu", label: "Menu główne – miasto wież", short: "Menu", icon: "✶" },
-  { id: "lightning", label: "Lightning Tower – Live Signals Center", short: "Lightning", icon: "⚡" },
-  { id: "wind", label: "Wind Portal – AI Engine Core", short: "Wind", icon: "✦" },
+  { id: "menu", label: "Menu główne – Neural City", short: "Menu", icon: "✶" },
+  { id: "lightning", label: "PEPE$BANK – Lightning Tower (Live Signals Center)", short: "PEPE$BANK", icon: "⚡" },
+  { id: "wind", label: "PEPE$SIGNAL – Wind Portal (AI Engine Core)", short: "PEPE$SIGNAL", icon: "✦" },
   { id: "control", label: "Control Tower – Bot Management Center", short: "Control", icon: "⚙" },
-  { id: "strategy-lab", label: "Strategy Lab – Quant Strategy Chamber", short: "Strategy Lab", icon: "⚗" },
+  { id: "strategy-lab", label: "STRATEGIES – Strategy Lab (Quant Strategy Chamber)", short: "STRATEGIES", icon: "⚗" },
   { id: "precision", label: "Precision – wykresy i analiza rynku", short: "Precision", icon: "◎" },
   { id: "dyscypline", label: "Dyscypline – setupy i sygnały", short: "Dyscypline", icon: "⟐" },
-  { id: "profits", label: "Profits – wyniki i rachunek", short: "Profits", icon: "◆" },
-  { id: "trading-intelligence", label: "Trading Intelligence", short: "Trading", icon: "▦" },
+  { id: "profits", label: "PEPE$ROI – Profits (wyniki i rachunek)", short: "PEPE$ROI", icon: "◆" },
+  { id: "trading-intelligence", label: "PEPE$WTC – Trading Intelligence", short: "PEPE$WTC", icon: "▦" },
   { id: "ai-neural-lab", label: "AI Neural Lab", short: "Neural Lab", icon: "✦" },
   { id: "system-control", label: "System Control Center", short: "Control", icon: "⛨" },
   { id: "pulpit", label: "Pulpit", short: "Pulpit", icon: "◈" },
@@ -61,7 +64,7 @@ export const PAGES: { id: Page; label: string; short: string; icon: string }[] =
   { id: "wykresy", label: "Wykresy MTF", short: "Wykresy", icon: "▦" },
   { id: "strefy", label: "Strefy rynkowe M1/M5/M15/M30", short: "Strefy", icon: "▥" },
   { id: "scalp-mtf", label: "Scalping MTF", short: "MTF", icon: "▤" },
-  { id: "kontekst", label: "Kontekst rynku", short: "Kontekst", icon: "◎" },
+  { id: "kontekst", label: "MARKET NEWS – Kontekst rynku (wiadomości, makro)", short: "MARKET NEWS", icon: "◎" },
   { id: "indykatory", label: "Indykatory BB/MA", short: "BB/MA", icon: "≋" },
   { id: "dxy", label: "XAUUSD × DXY i wskaźniki PMW", short: "DXY", icon: "⇋" },
   { id: "svp", label: "SVP – Session Volume Profile", short: "SVP", icon: "▤" },
@@ -98,7 +101,8 @@ export function parse(hash: string): Route {
   const h = (hash || "").replace(/^#\/?/, "");
   const [path, query] = h.split("?");
   const parts = path.split("/").filter(Boolean);
-  const first = parts[0] === "licencje" ? "ustawienia" : parts[0];          // 1.30: license system removed - the old link opens Ustawienia
+  const first0 = parts[0] === "licencje" ? "ustawienia" : parts[0];         // 1.30: license system removed - the old link opens Ustawienia
+  const first = TOWER_ALIASES[first0] ?? first0;                             // 1.34 Neural City: #/wtc, #/pepe-signal, #/leaderboard ... -> real page
   const page = (PAGE_IDS.includes(first) ? first : "pulpit") as Page;
   const setupId = page === "warunki" && parts[1] ? decodeURIComponent(parts[1]) : null;
   return { page, setupId, params: new URLSearchParams(query || "") };

@@ -1,0 +1,41 @@
+/* JOIN THE CULT launcher (1.34 TASK 001): the delivered image is the full background - proportions kept (cover, centred on Pepe). */
+.lj { position: fixed; inset: 0; overflow: hidden; background: #050403; color: #f6f0dc; opacity: 0; transition: opacity .9s ease, filter .55s ease;
+  font-family: "Segoe UI", system-ui, sans-serif; --gold: #e2b356; --gold2: #ffe3a1; --green: #39ff8f;
+  --serif: "Cinzel", "Trajan Pro", "Palatino Linotype", "Book Antiqua", Georgia, serif; }
+.lj.in { opacity: 1; }
+.lj.out { opacity: 0; filter: brightness(1.7); transition: opacity .55s ease, filter .55s ease; }
+.lj-fill { position: absolute; inset: -40px; background: url(/assets/neural/launcher-speech-blur.webp) center / cover; filter: blur(14px) brightness(.6); }
+.lj-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; user-select: none; }
+.lj-shade { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, .55) 0%, transparent 16%, transparent 52%, rgba(0, 0, 0, .78) 88%, rgba(0, 0, 0, .9) 100%); }
+.lj-head { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: center; padding: clamp(10px, 2vh, 22px) clamp(14px, 2.4vw, 34px); }
+.lj-brand { display: flex; flex-direction: column; }
+.lj-brand b { font: 700 clamp(15px, 1.9vw, 28px)/1.1 var(--serif); letter-spacing: .22em; color: var(--gold2); text-shadow: 0 2px 8px #000, 0 0 14px rgba(226, 179, 86, .6); }
+.lj-brand small { font: 600 clamp(8px, .8vw, 12px)/1.5 var(--serif); letter-spacing: .4em; text-shadow: 0 1px 4px #000; }
+.lj-ver { padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(226, 179, 86, .55); background: rgba(0, 0, 0, .55); font: 600 11px/1 "Segoe UI", sans-serif; letter-spacing: .06em; }
+.lj-bottom { position: absolute; left: 0; right: 0; bottom: clamp(18px, 6vh, 64px); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 16px; }
+.lj-join { position: relative; display: inline-flex; align-items: center; gap: .6em; padding: .55em 1.9em; cursor: pointer; border-radius: 16px;
+  font: 700 clamp(22px, 3.4vw, 54px)/1 var(--serif); letter-spacing: .16em; color: var(--gold2); text-shadow: 0 2px 0 #3a2708, 0 0 18px rgba(226, 179, 86, .75);
+  background: linear-gradient(180deg, rgba(34, 24, 8, .9), rgba(10, 8, 4, .94)); border: 2px solid var(--gold);
+  box-shadow: 0 0 0 5px rgba(226, 179, 86, .14), 0 0 30px rgba(226, 179, 86, .45), 0 12px 34px rgba(0, 0, 0, .7);
+  transition: transform .22s ease, box-shadow .22s ease, filter .22s; animation: lj-rise .9s .3s ease both; }
+.lj-join::before { content: ""; position: absolute; inset: -12px; border-radius: 22px; pointer-events: none; border: 2px solid rgba(255, 227, 161, .45);
+  animation: lj-glow 2.4s ease-in-out infinite; }
+.lj-arr { color: var(--green); text-shadow: 0 0 10px var(--green); transition: transform .22s; }
+.lj-join:hover:not(:disabled), .lj-join:focus-visible { transform: translateY(-3px) scale(1.04); filter: brightness(1.15); outline: none;
+  box-shadow: 0 0 0 6px rgba(226, 179, 86, .22), 0 0 56px rgba(255, 210, 120, .75), 0 16px 38px rgba(0, 0, 0, .8); }
+.lj-join:hover:not(:disabled) .lj-arr { transform: translateX(8px); }
+.lj-join:active:not(:disabled), .lj-join.pressed { transform: scale(.96); filter: brightness(1.4); }
+.lj-join.pressed::after { content: ""; position: absolute; inset: 0; border-radius: 16px; border: 2px solid var(--gold2); animation: lj-wave .7s ease-out forwards; pointer-events: none; }
+.lj-join:disabled:not(.pressed) { cursor: wait; filter: grayscale(.5) brightness(.75); }
+.lj-join:disabled::before { animation: none; opacity: .3; }
+@keyframes lj-rise { from { opacity: 0; transform: translateY(16px); } }
+@keyframes lj-glow { 50% { opacity: .2; transform: scale(1.04); } }
+@keyframes lj-wave { to { transform: scale(1.5); opacity: 0; } }
+.lj-status { margin: 0; display: flex; align-items: center; gap: 8px; font: 700 13px/1.2 "Segoe UI", sans-serif; letter-spacing: .08em; text-shadow: 0 1px 4px #000; }
+.lj-status i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.lj-status.ok { color: var(--green); } .lj-status.wait { color: #ffcc4d; }
+.lj-status.wait i { animation: lj-pulse 1s ease-in-out infinite; }
+@keyframes lj-pulse { 50% { opacity: .35; } }
+.lj-err { margin: 0; max-width: 620px; padding: 8px 12px; border-radius: 10px; background: rgba(40, 10, 12, .9); border: 1px solid #ff6b7a; color: #ffd6da; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .lj, .lj.out { transition: none; } .lj-join, .lj-join::before, .lj-join.pressed::after, .lj-status.wait i { animation: none !important; } }

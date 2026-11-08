@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -24,7 +23,6 @@ from PIL import Image, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "frontend" / "public" / "assets" / "cult"
-DESK = ROOT / "desktop" / "assets"
 
 # ---------------------------------------------------------------- crop boxes (pixels of the source image)
 SCENE = (236, 0, 1536, 708)                      # menu.jpg without the left menu and the bottom stat panels
@@ -165,9 +163,7 @@ def main() -> None:
         im = Image.open(src / fn).convert("RGB")
         im.thumbnail((640, 640), Image.LANCZOS)
         save(im, f"tex-{k}.webp", report, fn, None, q=82)
-    DESK.mkdir(parents=True, exist_ok=True)                                  # the Windows launcher window embeds these two (go:embed)
-    for n in ("launcher-scene-small.webp", "crown.webp"):
-        shutil.copyfile(OUT / n, DESK / n)
+    # 1.34: the Windows launcher window embeds desktop/assets/launcher-speech.webp from tools/neural_city_assets.py (TASK 001)
     (OUT / "zrodla.json").write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     total = sum((OUT / n).stat().st_size for n in report["outputs"])
     print(f"{len(report['outputs'])} plików, {total // 1024} KB -> {OUT.relative_to(ROOT)}")

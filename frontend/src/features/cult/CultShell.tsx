@@ -15,19 +15,14 @@ import "./cult.css";
 
 export type NavItem = { page: Page; label: string; sub?: string; icon: string };
 /** Menu of the main screen - as in menu.jpg (without Community / Membership: not part of the bot). */
-export const MENU_NAV: NavItem[] = [
-  { page: "pulpit", label: "Dashboard", icon: "home" }, { page: "lightning", label: "Live Signals", icon: "bolt" },
-  { page: "precision", label: "Analytics", icon: "bars" }, { page: "wind", label: "AI Engine", icon: "brain" },
-  { page: "trading-intelligence", label: "Trading Terminal", icon: "chart" }, { page: "strategy-lab", label: "Strategy Lab", icon: "flask" },
-  { page: "ustawienia", label: "Settings", icon: "gear" },
-];
 /** Menu of the tower panels - as in wind.jpg / controltower.jpg (Backtest Lab, Accounts, Community, Membership: not part of the bot). */
 export const TOWER_NAV: NavItem[] = [
-  { page: "pulpit", label: "Dashboard", icon: "home" }, { page: "lightning", label: "Lightning Tower", sub: "Live Signals", icon: "bolt" },
-  { page: "precision", label: "Ice Tower", sub: "Analytics", icon: "snow" }, { page: "wind", label: "Wind Portal", sub: "AI Engine", icon: "wind" },
-  { page: "trading-intelligence", label: "Fire Tower", sub: "Trading Terminal", icon: "fire" },
-  { page: "control", label: "Control Tower", sub: "Bot Manager", icon: "sliders" }, { page: "strategy-lab", label: "Strategy Lab", sub: "Strategy Chamber", icon: "flask" },
-  { page: "dane", label: "Data Center", icon: "db" }, { page: "ustawienia", label: "Settings", icon: "gear" },
+  { page: "menu", label: "Neural City", sub: "Menu główne", icon: "home" }, { page: "lightning", label: "PEPE$BANK", sub: "Lightning · Live Signals", icon: "bolt" },
+  { page: "precision", label: "Ice Tower", sub: "Analytics", icon: "snow" }, { page: "wind", label: "PEPE$SIGNAL", sub: "Wind · AI Engine", icon: "wind" },
+  { page: "trading-intelligence", label: "PEPE$WTC", sub: "Trading Terminal", icon: "fire" },
+  { page: "control", label: "Control Tower", sub: "Bot Manager", icon: "sliders" }, { page: "strategy-lab", label: "STRATEGIES", sub: "Strategy Lab", icon: "flask" },
+  { page: "profits", label: "PEPE$ROI", sub: "Profits", icon: "bars" }, { page: "kontekst", label: "MARKET NEWS", sub: "Kontekst rynku", icon: "chart" },
+  { page: "dane", label: "Data Center", icon: "db" }, { page: "ustawienia", label: "SETTINGS", sub: "Ustawienia", icon: "gear" },
 ];
 
 export function LeftPanel({ page, nav, emblem }: { page: Page; nav: NavItem[]; emblem?: { tower: TowerKey; title: string; sub: string } }) {

@@ -37,11 +37,8 @@ var splashHTML string
 //go:embed winres/icon256.png
 var iconPNG []byte
 
-//go:embed assets/launcher-scene-small.webp
-var launcherScene []byte // launcher.jpg, the scene inside the gold frame (tools/cult_assets.py)
-
-//go:embed assets/crown.webp
-var launcherCrown []byte
+//go:embed assets/launcher-speech.webp
+var launcherScene []byte // 1.34 TASK 001: Pepe speaking to the crowd - the full background of the launcher (tools/neural_city_assets.py)
 
 var (
 	user32                  = windows.NewLazySystemDLL("user32.dll")
@@ -165,8 +162,7 @@ type splashState struct {
 	DataDir    string   `json:"data_dir"`
 	Version    string   `json:"version"`
 	Icon       string   `json:"icon,omitempty"`
-	Scene      string   `json:"scene,omitempty"` // data URLs of the launcher art - only in the answer to "state"
-	Crown      string   `json:"crown,omitempty"`
+	Scene      string   `json:"scene,omitempty"` // data URL of the launcher background - only in the answer to "state"
 }
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -265,7 +261,6 @@ func (a *winApp) bridge(action, arg string) (any, error) {
 	case "state":
 		st.Icon = "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
 		st.Scene = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherScene)
-		st.Crown = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherCrown)
 		return st, nil
 	case "join":
 		if st.Phase != "ready" {

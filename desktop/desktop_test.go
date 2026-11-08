@@ -452,7 +452,7 @@ func TestLauncherPageKeepsStartFunctions(t *testing.T) {
 	if strings.Contains(page, "http://") || strings.Contains(page, "https://") { // nothing is loaded from the network
 		t.Error("splash.html must not load anything from the network")
 	}
-	for _, n := range []string{"assets/launcher-scene-small.webp", "assets/crown.webp"} {
+	for _, n := range []string{"assets/launcher-speech.webp"} {
 		st, err := os.Stat(n)
 		if err != nil {
 			t.Fatal(err)
