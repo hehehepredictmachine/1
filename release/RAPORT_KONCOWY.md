@@ -1,3 +1,39 @@
+# Raport końcowy – PepeMarketWizard 1.34.2 (Neural City V7.0, launcher JOIN THE CULT, poprawki instalacji)
+
+**Paczki 1.34.2:**
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_34_2.zip` (2520 plików) | `4c2956005671c0e6089d9291f1f49410dcfe06f20851c132cfbceaebd79f7cc0` |
+| `PepeMarketWizard_1_34_2.zip` (1451 plików) | `0874f1924904c207b280ea04328b0aba36106c403828a4f0ee111f842c9f7d36` |
+
+`tools/verify_release.py --all` daje OK dla obu.
+
+**Zakres:**
+* 1.34.0 – menu główne Neural City V7.0 i launcher JOIN THE CULT (TASK 001). Opis: `docs/NEURAL_CITY_I_LAUNCHER_1_34_PL.md`.
+* 1.34.1 – instalacja na Windows: dodane brakujące zależności statsmodels (`formulaic`, `interface-meta`, `wrapt`). Błąd był od
+  1.33.0, a zgłosił go użytkownik ze zrzutem „[BLAD] Instalacja pakietow”.
+* 1.34.2 – przycisk Studio na pasku narzędzi Neural City (regresja wykryta przez końcowy test UI).
+
+**Testy:**
+
+| Co | Wynik |
+|---|---|
+| Końcowa regresja na kodzie 1.34.0 | 89 plików bez UI (1090 testów, 12 pominiętych) – wszystkie OK; 19 plików UI (132 testy) – 18 OK, `test_ui_pmw133` 1 błąd |
+| Błąd `test_ui_pmw133` | brak przycisku Studio w nowym menu – naprawione w 1.34.2; `test_ui_pmw133`, `test_ui_neural_city` i `test_ui_cult` ponownie 17/17 OK |
+| `test_families_u4` + `test_config_v13` z przypiętymi wersjami 1.34.1 | 20/20 OK |
+| `tools/check_requirements_win.py` (symulacja instalacji Windows x64, markery Windows, sumy, Python 3.13 i 3.12) | 4 pliki × 2 wersje OK; stara lista z 1.34.0 odtwarza błąd użytkownika (`formulaic`) |
+| Start z obu paczek 1.34.2 (ścieżka ze spacjami i polskimi znakami, istniejąca konfiguracja v12, Studio z menu bota, restart) | 14/14 PASS każda |
+| `go test -count=1`, `go vet` (windows) | OK |
+
+**Nie sprawdzono:**
+* okna Windows (WebView2) ani instalacji na prawdziwym Windows – tylko symulacja instalacji i start plików aplikacji przez Pythona Linux;
+* MT5.
+
+Menu działa w trybie 2.5D (bez modeli 3D wież i riga Pepe – lista brakujących zasobów jest w dokumencie Neural City).
+
+---
+
 # Raport końcowy – PepeMarketWizard 1.33.0 (wszystkie aktualizacje)
 
 **Zadanie:** wdrożenie pakietu `PepeMarketWizard_Prompty_Wdrozenia_Wszystkich_Aktualizacji.zip` (SHA-256 `6ca0e387…a3dc99`): START + specyfikacje
