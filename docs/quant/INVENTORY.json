@@ -1,0 +1,3991 @@
+{
+ "version": "PMW-QUANT-INV-1",
+ "generated_at": "2026-11-08T16:56:13+00:00",
+ "instrument": "XAUUSD",
+ "runtime": "OFFLINE (bez działającego bota – stany reguł i usług NOT_EVALUATED)",
+ "entries": [
+  {
+   "id": "rule:data_quality",
+   "aliases": [
+    "data_quality"
+   ],
+   "name": "Jakość i świeżość danych (bridge, zegar, spread)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/mt5/bridge.py"
+   ],
+   "input": null,
+   "output": "OK/BLOCK + wiek danych",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": "notowanie MT5, zegar, spread",
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji DATA"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "sh.service",
+    "engine.decision",
+    "quant.snapshot"
+   ],
+   "quant_role": "GATE_EXISTING",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:risk_engine",
+   "aliases": [
+    "risk_engine"
+   ],
+   "name": "Wspólny silnik ryzyka SH (limity, margin, spread, ekspozycja)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/sh/risk.py",
+    "backend/masterquo/risk/portfolio.py"
+   ],
+   "input": null,
+   "output": "PASS/BLOCK + powody",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji RISK"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:RISK_ANOMALY/RISK_ANOMALY"
+   ],
+   "quant_role": "GATE_EXISTING",
+   "adapter": null,
+   "not_applicable_reason": "bramka ryzyka liczona w ścieżce wykonania (RiskBook / risk/portfolio.py) – Quant jej nie dubluje",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:news",
+   "aliases": [
+    "news"
+   ],
+   "name": "Kalendarz makro (blokada wysokiego wpływu)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/news/"
+   ],
+   "input": null,
+   "output": "blackout tak/nie",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": "kalendarz makro (czas pierwszego odbioru)",
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji RISK"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:RISK_ANOMALY/RISK_ANOMALY"
+   ],
+   "quant_role": "GATE_EXISTING",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:regime_v2",
+   "aliases": [
+    "regime_v2"
+   ],
+   "name": "Reżim rynku MQ_REGIME_MULTI_V2 (market_v2)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "TREND/RANGE/TRANSITION/HIGH_VOL",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5",
+    "M15",
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji REGIME"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:REGIME/REGIME"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:structure_v2",
+   "aliases": [
+    "structure_v2"
+   ],
+   "name": "Struktura rynku structure_v2 (M5/M15/H1, BOS/CHoCH)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "trend per TF",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5",
+    "M15",
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji STRUCTURE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:DIRECTION_STRUCTURE/DIRECTION_STRUCTURE"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:smc_pullback",
+   "aliases": [
+    "smc_pullback"
+   ],
+   "name": "Pullback + SMC (BoS/CHoCH/IDM) – context_ind",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "trend SMC, aktywne poziomy",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji STRUCTURE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:DIRECTION_STRUCTURE/DIRECTION_STRUCTURE"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "stan SMC w context_ind – brak stabilnego akcesora poza panelem; cecha strukturalna z structure_v2",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:vamd",
+   "aliases": [
+    "vamd"
+   ],
+   "name": "VAMD momentum",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "y (znak = momentum)",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MOMENTUM"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:TIMING/TIMING"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "VAMD liczony per wykres w context_ind (panel); bez akcesora snapshotu – nie jest modelem „Quant Ultimate Momentum Pro”",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:fractal",
+   "aliases": [
+    "fractal"
+   ],
+   "name": "Bounded Katz FD (trend/chop bez kierunku)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "TREND/NEUTRAL/CHOP",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji REGIME"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:REGIME/REGIME"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "Katz FD liczony per wykres w context_ind; bez akcesora snapshotu",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:atr_vol",
+   "aliases": [
+    "atr_vol"
+   ],
+   "name": "Zmienność ATR(14) M1/M5 + StopDistance",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "ATR w USD",
+   "unit": "price",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M1",
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji VOLATILITY"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:VOLATILITY/VOLATILITY"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:candles_patterns",
+   "aliases": [
+    "candles_patterns"
+   ],
+   "name": "Świece i formacje (candles, chart_patterns, sci2)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "rola świecy / formacja",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji PATTERN"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:PATTERN/PATTERN"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "formacje opisowe (role świec) – kontekst panelu, bez liczbowego wyjścia",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:liquidity",
+   "aliases": [
+    "liquidity"
+   ],
+   "name": "Płynność: sesje (sweep boxes) + heatmapa likwidacji",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "poziomy płynności",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji LIQUIDITY"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:LIQUIDITY/LIQUIDITY"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "poziomy płynności (strefy) – w mapie stref; cecha odległości dostępna przez quant.snapshot",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:flow_sr",
+   "aliases": [
+    "flow_sr"
+   ],
+   "name": "Heikin Flow + kanały S/R (flow_context)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "kolor HA, pasma S/R",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji STRUCTURE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:DIRECTION_STRUCTURE/LIQUIDITY"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "pasma S/R flow_context per wykres – bez akcesora snapshotu",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "rule:decomposition",
+   "aliases": [
+    "decomposition"
+   ],
+   "name": "Dekompozycja sygnału FFT/EMD/VMD (analytics)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [],
+   "input": null,
+   "output": "cykl dominujący (obserwacja)",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji CYCLE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "obserwacja cyklu (FFT/EMD/VMD) – brak zadania predykcyjnego",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "sh:tp_model",
+   "aliases": [
+    "sh_tp_model"
+   ],
+   "name": "SH: P(TP2 przed SL w horyzoncie) – model zdarzenia strategii",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/sh/tpmodel.py"
+   ],
+   "input": null,
+   "output": "skalibrowane P dokładnie zdarzenia strategii",
+   "unit": "probability",
+   "task_type": "EVENT_PROBABILITY",
+   "task": "TP2_BEFORE_SL_H",
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (sh_models)",
+   "owner_infer": "sh.service",
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_EVENT_SH"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "SCALPING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner); HEDGING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:TARGET_PROB/TARGET_PROB"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": "evaluation.service (prawdopodobieństwo per kandydat setupu)",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "scalp:A_direction",
+   "aliases": [
+    "scalp_A"
+   ],
+   "name": "Scalp A – kierunek 1/3/5 min (LR/HGB/MLP)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/scalp/service.py"
+   ],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) po kosztach",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "SCALP_DIRECTION_H1_3_5M",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (scalp_A)",
+   "owner_infer": "forecast worker (.venv_candles)",
+   "env": ".venv_candles",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji M1_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:DIRECTION_STRUCTURE/TIMING"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "scalp:B_setup_quality",
+   "aliases": [
+    "scalp_B"
+   ],
+   "name": "Scalp B – jakość setupu Range→Sweep→Retest",
+   "category": "MODEL_TRAINED",
+   "files": [],
+   "input": null,
+   "output": "P(TP1 przed SL) INNEGO setupu (score)",
+   "unit": "probability",
+   "task_type": "EVENT_PROBABILITY",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "scalp_A",
+   "owner_infer": null,
+   "env": ".venv_candles",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_OTHER_EVENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": null,
+   "not_applicable_reason": "P(TP1 przed SL) INNEGO setupu (Range→Sweep→Retest) – liczony tylko dla planu scalp; brak modelu z replayu na danych rzeczywistych",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "forecast:gold_candles",
+   "aliases": [
+    "gold_candles",
+    "gold_candles_15m",
+    "gold_candles_30m",
+    "gold_candles_5m",
+    "gold_forecast"
+   ],
+   "name": "gold_candles – prognoza świec 5/15/30 min",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/forecast/"
+   ],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) zamknięcia",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "CANDLE_CLOSE_DIRECTION_H*_M5",
+   "horizon": "1/3/6 świec M5 (5/15/30 min)",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "forecast",
+   "owner_infer": null,
+   "env": ".venv_candles",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji M5_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:TIMING/DIRECTION_STRUCTURE"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "ml:legacy_s01_s12",
+   "aliases": [
+    "legacy_ml"
+   ],
+   "name": "Legacy ML Decision Tree + XGBoost (setupy S01–S12)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/ml/"
+   ],
+   "input": null,
+   "output": "P(net R > 0) setupu S01–S12",
+   "unit": "probability",
+   "task_type": "EVENT_PROBABILITY",
+   "task": "NET_R_POSITIVE_S01_S12",
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "ml",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_OTHER_EVENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "instrument inny niż aktywny w bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": "evaluation.service (prawdopodobieństwo per kandydat setupu)",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "group:lab",
+   "aliases": [],
+   "name": "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN",
+   "category": "GROUP",
+   "files": [],
+   "input": null,
+   "output": "score triple-barrier LONG (nieskalibrowany)",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "GROUP",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "wiersz grupowy – rozwinięty na rzeczywiste rodziny: lab:DUMMY, lab:RULE, lab:LOGREG, lab:TREE, lab:MINIROCKET, lab:XGB, lab:RESNET1D, lab:SEW_SNN",
+   "variants": [
+    "lab:DUMMY",
+    "lab:RULE",
+    "lab:LOGREG",
+    "lab:TREE",
+    "lab:MINIROCKET",
+    "lab:XGB",
+    "lab:RESNET1D",
+    "lab:SEW_SNN"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "extind:indicator_context",
+   "aliases": [
+    "indicator_context"
+   ],
+   "name": "Kontekst wskaźników SAR + IQ (reakcja)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/extind/"
+   ],
+   "input": null,
+   "output": "P(TP1 przed SL) polityki scalp (score)",
+   "unit": "probability",
+   "task_type": "SCORE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "indicator_context",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_OTHER_EVENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": null,
+   "not_applicable_reason": "score polityki scalp (TP1 przed SL innego planu) – liczony per plan w scalp.indicator_context",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "ml_scalp:xgb_net_r",
+   "aliases": [
+    "ml_scalp"
+   ],
+   "name": "Scalp ML XGBoost (net R cyklu)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/scalp/service.py"
+   ],
+   "input": null,
+   "output": "P(net_R > 0), E[net_R] innego cyklu",
+   "unit": "probability",
+   "task_type": "EVENT_PROBABILITY",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "ml_scalp",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_OTHER_EVENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": null,
+   "not_applicable_reason": "P(net R>0) innego cyklu scalp – liczony per plan w scalp.ml_scalp",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "nss:tcn",
+   "aliases": [
+    "nss"
+   ],
+   "name": "Neural Scalp System (TCN)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/nss_service.py"
+   ],
+   "input": null,
+   "output": "P(TP1_FIRST/SL_FIRST/TIMEOUT) innego setupu",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "neural_scalp",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TP_OTHER_EVENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "SETUP_EVENT",
+   "adapter": null,
+   "not_applicable_reason": "P(TP1_FIRST/SL_FIRST/TIMEOUT) innego setupu – liczony per plan w scalp.neural",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "group:si_move",
+   "aliases": [],
+   "name": "Structure Intelligence – ruch M1 h=3/5/15 (ResNeXt/SEW/SpikingBrain/MiniRocket v2…)",
+   "category": "GROUP",
+   "files": [],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) + kwantyle r_h/ATR",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "GROUP",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "wiersz grupowy – rozwinięty na rzeczywiste rodziny: si:MQ_RESNEXT1D_V2, si:MQ_SEW_RESNET1D_V2, si:MQ_SEW_RESNEXT_EB_V1, si:MQ_MINIROCKET_RIDGE_V2, si:MQ_SPIKE_BRAIN_FINANCE_V1",
+   "variants": [
+    "si:MQ_RESNEXT1D_V2",
+    "si:MQ_SEW_RESNET1D_V2",
+    "si:MQ_SEW_RESNEXT_EB_V1",
+    "si:MQ_MINIROCKET_RIDGE_V2",
+    "si:MQ_SPIKE_BRAIN_FINANCE_V1"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "flow:reaction_m1",
+   "aliases": [
+    "flow_reaction"
+   ],
+   "name": "Flow context – model reakcji M1 + Markov3",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/flow_context/"
+   ],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) M1; stany Markowa",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "flow_context",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji M1_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:TIMING/TIMING"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "model reakcji M1 liczony per wykres w flow_context (panel) – bez akcesora snapshotu poza panelem",
+   "variants": [
+    "flow:LOGREG",
+    "flow:XGB"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "context_ind:context_move_m5",
+   "aliases": [
+    "CONTEXT_MOVE_M5_V1",
+    "context_move"
+   ],
+   "name": "Context indicators – CONTEXT_MOVE_M5_V1",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/context_ind/"
+   ],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) M5",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "context_indicators",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji M5_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_CONNECTED",
+   "state_reason": "0 runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:TIMING/DIRECTION_STRUCTURE"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "NOT_CONNECTED: model badawczy bez ścieżki inferencji na żywo (F-17)",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:align_mean",
+   "aliases": [
+    "align_mean",
+    "mm_align_mean"
+   ],
+   "name": "Align Mean (wspólna średnia, odległość w ATR)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/mm/align_mean.py",
+    "mql5/MasterModels/Indicators/PMW_AlignMean.mq5"
+   ],
+   "input": "closed OHLC (any TF)",
+   "output": "odległość od średniej (kontekst)",
+   "unit": "atr",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MM_MEAN_REF"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:align_mean",
+    "mm.service (panel)"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:kalman_cross",
+   "aliases": [
+    "kalman",
+    "mm_kalman"
+   ],
+   "name": "Kalman crossover fast/slow (zamknięte świece)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/mm/kalman.py",
+    "mql5/MasterModels/Experts/PMW_KalmanShadowEA.mq5",
+    "mql5/MasterModels/Include/PMW/PMW_Kalman.mqh",
+    "mql5/MasterModels/Indicators/PMW_KalmanCross.mq5"
+   ],
+   "input": "closed close",
+   "output": "stan przecięcia + K",
+   "unit": "state",
+   "task_type": "FILTER_STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE (state estimation; Q/R calibration = separate BUZOA job)",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MM_TREND_FILTER"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:kalman",
+    "mm.service"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:breakout_zones",
+   "aliases": [
+    "breakout_zones",
+    "mm_breakout"
+   ],
+   "name": "Breakout zones + robust volatility",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/mm/breakout_zones.py",
+    "backend/masterquo/mm/robust_vol.py",
+    "mql5/MasterModels/Include/PMW/PMW_BreakoutCore.mqh",
+    "mql5/MasterModels/Indicators/PMW_BreakoutZones.mq5"
+   ],
+   "input": "closed OHLC + tick volume (VWAP proxy)",
+   "output": "kierunek ostatniego wybicia, strefy",
+   "unit": "state",
+   "task_type": "FILTER_STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MM_ZONES"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:breakout",
+    "mm.service"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:multi_indicator",
+   "aliases": [
+    "mm_multi_indicator",
+    "multi_indicator"
+   ],
+   "name": "Multi-Indicator Strategy (RSI/SAR/HA/Stoch/CCI/W%R/Power)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/mm/multi_indicator.py"
+   ],
+   "input": "closed OHLC (reuses scalp SAR + Wilder RSI)",
+   "output": "decyzja z pełnym śladem reguł",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MM_RULES"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:multi_indicator",
+    "mm.service"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:smc_fvg",
+   "aliases": [
+    "mm_smc_fvg",
+    "smc_fvg"
+   ],
+   "name": "SMC BoS/IDM/FVG continuation (głębokość cofnięcia 73% – parametr, nie skuteczność)",
+   "category": "RULE_OR_MEASUREMENT",
+   "files": [
+    "backend/masterquo/lab/context_ind/smc.py (reused)",
+    "backend/masterquo/mm/smc_fvg.py"
+   ],
+   "input": "closed OHLC",
+   "output": "setup entry/SL/2R (obserwacja)",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji STRUCTURE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:smc_fvg",
+    "mm.service"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:gpr_logret",
+   "aliases": [
+    "gpr",
+    "gpr_logret",
+    "gpr_logret:LIVE",
+    "mm_gpr"
+   ],
+   "name": "GPR Matérn 3/2 – prognoza log-zwrotu z niepewnością",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/mm/gpr.py",
+    "mql5/MasterModels/Experts/PMW_GPR_ShadowEA.mq5",
+    "mql5/MasterModels/Include/PMW/PMW_GPR.mqh",
+    "mql5/MasterModels/Indicators/PMW_GPR_Forecast.mq5"
+   ],
+   "input": "lag-1 log return",
+   "output": "N(mean, observed var) log-zwrotu 3 świec M5",
+   "unit": "log_return",
+   "task_type": "REGRESSION",
+   "task": "LOG_RETURN_H3_M5",
+   "horizon": "3 świece M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "master_models",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji MM_RETURN_DIST"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:gpr",
+    "mm.service"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:hdc_dir3",
+   "aliases": [
+    "hdc",
+    "hdc_dir3",
+    "mm_hdc"
+   ],
+   "name": "HDC – hiperwektory binarne (DOWN/FLAT/UP)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/mm/hdc.py",
+    "mql5/MasterModels/Include/PMW/PMW_HDC.mqh"
+   ],
+   "input": "feature registry FS (M5)",
+   "output": "klasa + margines (nie prawdopodobieństwo)",
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "master_models",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji M5_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:hdc",
+    "mm.service"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "margines HDC (nie prawdopodobieństwo); brak ścieżki na żywo bez artefaktu VALIDATED_SHADOW",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:event_engine_dir3",
+   "aliases": [
+    "SEQ_GRU_EVENT",
+    "event_engine",
+    "event_engine_dir3",
+    "family:SEQ_GRU_EVENT",
+    "mm_event_engine"
+   ],
+   "name": "Event engine GRU + state stack + korelacja (+STFS)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/mm/event_engine.py",
+    "backend/masterquo/mm/events.py",
+    "backend/masterquo/mm/kernels/state_stack.cl",
+    "mql5/MasterModels/Include/PMW/PMW_StateStack.mqh"
+   ],
+   "input": "REAL_TICKS (tick archive) or BAR_CLOSE_EVENTS adapter",
+   "output": "P(DOWN/FLAT/UP) jednostki zdarzeń",
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "EVENT_UNITS_DIR3",
+   "horizon": "2 jednostki zdarzeń (16 zdarzeń/jednostka)",
+   "timeframes": [
+    "EVENT"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "master_models",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji EVENT_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:event_engine"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:ste_flownet_ret",
+   "aliases": [
+    "mm_ste_flownet",
+    "ste_flownet",
+    "ste_flownet_ret"
+   ],
+   "name": "STE-FlowNet (adaptacja finansowa) – log-zwrot h zdarzeń",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/mm/ste_flownet.py"
+   ],
+   "input": "event splits (Gaussian temporal weighting)",
+   "output": "prognoza log-zwrotu",
+   "unit": "log_return",
+   "task_type": "REGRESSION",
+   "task": null,
+   "horizon": null,
+   "timeframes": [
+    "EVENT"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "master_models",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji EVENT_DIRECTION"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION",
+    "mm.orchestrator:ste_flownet"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "brak ścieżki na żywo (tylko artefakt badawczy); log-zwrot h zdarzeń",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "group:th_direction",
+   "aliases": [],
+   "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)",
+   "category": "GROUP",
+   "files": [],
+   "input": null,
+   "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "GROUP",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "wiersz grupowy – rozwinięty na rzeczywiste rodziny: trainhub:TH_BASELINE, trainhub:TH_LOGREG, trainhub:TH_HGB, trainhub:TH_XGB, trainhub:TH_RF, trainhub:TH_SVM",
+   "variants": [
+    "trainhub:TH_BASELINE",
+    "trainhub:TH_LOGREG",
+    "trainhub:TH_HGB",
+    "trainhub:TH_XGB",
+    "trainhub:TH_RF",
+    "trainhub:TH_SVM"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "kronos:Kronos-small",
+   "aliases": [
+    "KRONOS_SMALL",
+    "Kronos-small",
+    "kronos"
+   ],
+   "name": "Kronos-small (NeoQuasar, przetrenowany) – prognoza świec OHLC",
+   "category": "MODEL_PRETRAINED",
+   "files": [
+    "backend/masterquo/kronos/",
+    "backend/kronos_runtime/"
+   ],
+   "input": null,
+   "output": "ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)",
+   "unit": "price",
+   "task_type": "REGRESSION",
+   "task": "KRONOS_CLOSE_PATH_H*",
+   "horizon": null,
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv_kronos",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji KRONOS_PRICE_PATH"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "stan Kronos: osobny kontekst w ocenie setupu (su.kronos) i panel Kronos AI Forecast",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "agent:claude",
+   "aliases": [
+    "agent"
+   ],
+   "name": "Agent Claude (weto, opis)",
+   "category": "AGENT",
+   "files": [],
+   "input": null,
+   "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
+   "unit": "state",
+   "task_type": "STATE",
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji AGENT"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "SHADOW_ONLY",
+   "state_reason": "agent: ?; weto/opis, nie głos",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "SH:SUPERVISION/SUPERVISION"
+   ],
+   "quant_role": "NOT_A_VOTE",
+   "adapter": null,
+   "not_applicable_reason": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem",
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_BASELINE",
+   "aliases": [
+    "TH_BASELINE"
+   ],
+   "name": "Bazowy – częstości klas",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": "baseline częstości klas – punkt odniesienia",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_LOGREG",
+   "aliases": [
+    "TH_LOGREG"
+   ],
+   "name": "Regresja logistyczna (wieloklasowa)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_HGB",
+   "aliases": [
+    "TH_HGB"
+   ],
+   "name": "Gradient boosting (histogramowy)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_XGB",
+   "aliases": [
+    "TH_XGB",
+    "family:TH_XGB"
+   ],
+   "name": "XGBoost (CPU)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": "alias rodziny family:TH_XGB – jeden artefakt, jeden trening, jeden głos",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_RF",
+   "aliases": [
+    "TH_RF",
+    "family:TH_RF"
+   ],
+   "name": "Random Forest",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": "alias rodziny family:TH_RF – jeden artefakt, jeden trening, jeden głos",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "trainhub:TH_SVM",
+   "aliases": [
+    "TH_SVM",
+    "family:TH_SVM"
+   ],
+   "name": "SVM (skalowanie + kalibracja chronologiczna)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H<h>_<TF> po kosztach",
+   "horizon": "h świec (per paczka)",
+   "timeframes": [
+    "M1",
+    "M5",
+    "M15",
+    "M30"
+   ],
+   "data_required": null,
+   "features": "trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
+   "owner_train": "trainhub.jobs.TrainingCenter",
+   "owner_infer": "trainhub.inference.TrainhubInference",
+   "env": ".venv",
+   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_TRAINED",
+   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "notes": "alias rodziny family:TH_SVM – jeden artefakt, jeden trening, jeden głos",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:TS_ARIMA",
+   "aliases": [
+    "TS_ARIMA"
+   ],
+   "name": "ARIMA (statsmodels) – prognoza log-zwrotu",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/arima.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "log_return",
+   "task_type": "REGRESSION",
+   "task": "LOG_RETURN_H",
+   "horizon": "[1, 3, 5] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/TS_ARIMA/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:expected_move",
+    "PANEL:model_status",
+    "AGENT:context"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:TS_SARIMAX",
+   "aliases": [
+    "TS_SARIMAX"
+   ],
+   "name": "SARIMAX (statsmodels) – zwroty H1 z kalendarzem sesji jako exog",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/arima.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "log_return",
+   "task_type": "REGRESSION",
+   "task": "LOG_RETURN_H",
+   "horizon": "[1, 3, 5] świec H1",
+   "timeframes": [
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/TS_SARIMAX/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:expected_move_h1",
+    "PANEL:model_status",
+    "AGENT:context"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:VOL_GARCH",
+   "aliases": [
+    "VOL_GARCH"
+   ],
+   "name": "GARCH(1,1) (arch) – zmienność warunkowa",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/garch.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "sigma_return",
+   "task_type": "VOLATILITY",
+   "task": "SIGMA_LOG_RETURN_H",
+   "horizon": "[1, 6, 12] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/VOL_GARCH/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "RISK:volatility_scenario",
+    "SH_CONTEXT:volatility",
+    "PANEL:model_status"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:MICROSTRUCTURE",
+   "aliases": [
+    "MICROSTRUCTURE"
+   ],
+   "name": "Mikrostruktura – arkusz brokera (imbalance, OFI, microprice) + klasyfikator reakcji",
+   "category": "MEASUREMENT",
+   "files": [
+    "backend/masterquo/modelhub/families/micro.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "mixed",
+   "task_type": "MICROSTRUCTURE",
+   "task": "BOOK_STATE_AND_REACTION_10S",
+   "horizon": "brak (pomiar stanu)",
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/MICROSTRUCTURE/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:entry_quality",
+    "RISK:execution_conditions",
+    "PANEL:microstructure"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:PAIR_COINT",
+   "aliases": [
+    "PAIR_COINT"
+   ],
+   "name": "Kointegracja pary + z-score (Engle-Granger)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/pairs.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "z_score",
+   "task_type": "PAIR_RELATION",
+   "task": "PAIR_SPREAD_Z",
+   "horizon": "[1] świec H1",
+   "timeframes": [
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/PAIR_COINT/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "PANEL:pair_relation",
+    "AGENT:context",
+    "PORTFOLIO:basket_proposal (via risk/gateway)"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:STATARB",
+   "aliases": [
+    "STATARB"
+   ],
+   "name": "Arbitraż statystyczny – koszyk PCA + reszty (s-score)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/pairs.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "z_score",
+   "task_type": "PAIR_RELATION",
+   "task": "BASKET_RESIDUAL_S",
+   "horizon": "[1] świec H1",
+   "timeframes": [
+    "H1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/STATARB/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "PANEL:basket",
+    "PORTFOLIO:basket_proposal (via risk/gateway)"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:KALMAN_LS",
+   "aliases": [
+    "KALMAN_LS"
+   ],
+   "name": "Filtr Kalmana poziom + nachylenie (rozbudowa mm_kalman)",
+   "category": "MODEL_ESTIMATED",
+   "files": [
+    "backend/masterquo/modelhub/families/kalman_ls.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "mixed",
+   "task_type": "FILTER_STATE",
+   "task": "TREND_STATE",
+   "horizon": "[1] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/KALMAN_LS/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:trend_state",
+    "STRATEGY:regime_context",
+    "PANEL:model_status"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:BREAKOUT",
+   "aliases": [
+    "BREAKOUT"
+   ],
+   "name": "Breakout – wspólny moduł logiki wybicia (kanał, kompresja, potwierdzenie, retest)",
+   "category": "MODEL_ESTIMATED",
+   "files": [
+    "backend/masterquo/modelhub/families/breakout.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "mixed",
+   "task_type": "FILTER_STATE",
+   "task": "BREAKOUT_STATE",
+   "horizon": "[1] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/BREAKOUT/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:breakout_state",
+    "STRATEGY:S05/S12 BREAKOUT_RETEST context",
+    "PANEL:model_status"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:SEQ_LSTM",
+   "aliases": [
+    "SEQ_LSTM"
+   ],
+   "name": "LSTM (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/seq.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H6_AFTER_COST",
+   "horizon": "[6] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv_deep",
+   "artifact": "<data>/families/SEQ_LSTM/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "MISSING_DEPENDENCY",
+   "state_reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:direction_distribution",
+    "MODELHUB:direction_group M5",
+    "PANEL:model_status"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:SEQ_GRU",
+   "aliases": [
+    "SEQ_GRU"
+   ],
+   "name": "GRU świecowy (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/seq.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "DIRECTION_H6_AFTER_COST",
+   "horizon": "[6] świec M5",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv_deep",
+   "artifact": "<data>/families/SEQ_GRU/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "MISSING_DEPENDENCY",
+   "state_reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH_CONTEXT:direction_distribution",
+    "MODELHUB:direction_group M5",
+    "PANEL:model_status"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:RL_PPO",
+   "aliases": [
+    "RL_PPO"
+   ],
+   "name": "PPO (Stable-Baselines3, Gymnasium replay) – propozycja ekspozycji",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/rl.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "action",
+   "task_type": "RL_ACTION",
+   "task": "TARGET_EXPOSURE",
+   "horizon": "brak (pomiar stanu)",
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv_deep",
+   "artifact": "<data>/families/RL_PPO/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "MISSING_DEPENDENCY",
+   "state_reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "RISK:exposure_proposal (OBSERVE)",
+    "PANEL:model_status"
+   ],
+   "quant_role": "NOT_A_VOTE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": "akcja RL ≠ p(win)",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "family:NLP_SENTIMENT",
+   "aliases": [
+    "NLP_SENTIMENT"
+   ],
+   "name": "Sentyment tekstu – TF-IDF + regresja logistyczna (+ opcjonalny lokalny transformer)",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/modelhub/families/nlp.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "sentiment",
+   "task_type": "NLP_SENTIMENT",
+   "task": "TEXT_SENTIMENT_3",
+   "horizon": "brak (pomiar stanu)",
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "modelhub.families.service (proces obok)",
+   "owner_infer": "modelhub.families.service",
+   "env": ".venv",
+   "artifact": "<data>/families/NLP_SENTIMENT/<instrument>/runs/<run_id>",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "AGENT:news_context",
+    "PANEL:news_sentiment",
+    "RISK:information_context (OBSERVE)"
+   ],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "modelhub.families.service.predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "notes": "sentyment ≠ kierunek XAUUSD bez wyuczonego związku",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:DUMMY",
+   "aliases": [],
+   "name": "Lab DUMMY",
+   "category": "BASELINE",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:RULE",
+   "aliases": [],
+   "name": "Lab RULE",
+   "category": "BASELINE",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:LOGREG",
+   "aliases": [],
+   "name": "Lab LOGREG",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:TREE",
+   "aliases": [],
+   "name": "Lab TREE",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:MINIROCKET",
+   "aliases": [],
+   "name": "Lab MINIROCKET",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:XGB",
+   "aliases": [],
+   "name": "Lab XGB",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:RESNET1D",
+   "aliases": [],
+   "name": "Lab RESNET1D",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:SEW_SNN",
+   "aliases": [],
+   "name": "Lab SEW_SNN",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "score_0_100",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
+   "horizon": null,
+   "timeframes": [
+    "M5"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
+   "env": ".venv",
+   "artifact": "<data>/lab/models/<asset>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:LOGREG_PCA",
+   "aliases": [],
+   "name": "Eksperyment lab LOGREG_PCA",
+   "category": "RESEARCH",
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:LOGREG_GMM_AUG",
+   "aliases": [],
+   "name": "Eksperyment lab LOGREG_GMM_AUG",
+   "category": "RESEARCH",
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "lab:LOGREG_NEUTRALIZED",
+   "aliases": [],
+   "name": "Eksperyment lab LOGREG_NEUTRALIZED",
+   "category": "RESEARCH",
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "variants": [],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "si:MQ_RESNEXT1D_V2",
+   "aliases": [],
+   "name": "Structure Intelligence MQ_RESNEXT1D_V2",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (structure_intelligence)",
+   "owner_infer": "lab.si_service",
+   "env": ".venv",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "variants": [],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "si:MQ_SEW_RESNET1D_V2",
+   "aliases": [],
+   "name": "Structure Intelligence MQ_SEW_RESNET1D_V2",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (structure_intelligence)",
+   "owner_infer": "lab.si_service",
+   "env": ".venv",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "variants": [],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "si:MQ_SEW_RESNEXT_EB_V1",
+   "aliases": [],
+   "name": "Structure Intelligence MQ_SEW_RESNEXT_EB_V1",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (structure_intelligence)",
+   "owner_infer": "lab.si_service",
+   "env": ".venv",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "variants": [],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "si:MQ_MINIROCKET_RIDGE_V2",
+   "aliases": [],
+   "name": "Structure Intelligence MQ_MINIROCKET_RIDGE_V2",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/si_families.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (structure_intelligence)",
+   "owner_infer": "lab.si_service",
+   "env": ".venv",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "variants": [],
+   "source_registry": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "si:MQ_SPIKE_BRAIN_FINANCE_V1",
+   "aliases": [],
+   "name": "Structure Intelligence MQ_SPIKE_BRAIN_FINANCE_V1",
+   "category": "MODEL_TRAINED",
+   "files": [
+    "backend/masterquo/lab/si_families.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": "probability",
+   "task_type": "CLASS_PROBABILITIES",
+   "task": "M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)",
+   "horizon": null,
+   "timeframes": [
+    "M1"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": "training (structure_intelligence)",
+   "owner_infer": "lab.si_service",
+   "env": ".venv",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "BASE_FORECAST",
+   "adapter": null,
+   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "variants": [],
+   "source_registry": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:buzoa",
+   "aliases": [],
+   "name": "BUZOA Optimization Engine",
+   "category": "OPTIMIZER",
+   "files": [
+    "backend/masterquo/mm/buzoa.py"
+   ],
+   "input": "objective adapter (train/val only)",
+   "output": "OPTIMIZER_RESULT",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE (optimiser)",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "mm.orchestrator"
+   ],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:sdom",
+   "aliases": [],
+   "name": "SDOm Optimization Engine",
+   "category": "NO_SPEC",
+   "files": [],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:stfs",
+   "aliases": [],
+   "name": "S3CE-Net / STFS (training-time sampling)",
+   "category": "TRAINABLE",
+   "files": [
+    "backend/masterquo/mm/stfs.py"
+   ],
+   "input": "event-encoder feature map [B,T,C]",
+   "output": "training views + losses (no inference output)",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "APPLICABLE (as a training strategy)",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "mm.event_engine.train"
+   ],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:quant_momentum",
+   "aliases": [],
+   "name": "Quant Ultimate Momentum Pro / Quant 2nd Model / Momentum AI Fusion",
+   "category": "NO_SPEC",
+   "files": [],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "UNKNOWN",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:renko",
+   "aliases": [],
+   "name": "Renko Regression Forecasting",
+   "category": "NO_SPEC",
+   "files": [],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "UNKNOWN",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:head_shoulders",
+   "aliases": [],
+   "name": "Head & Shoulders Structure Detector",
+   "category": "NO_SPEC",
+   "files": [
+    "backend/masterquo/analysis/chart_patterns.py (istniejący detektor formacji, w tym H&S)"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:data_grabber",
+   "aliases": [],
+   "name": "Multi-TF Data Grabber Lite",
+   "category": "NO_SPEC",
+   "files": [
+    "backend/masterquo/forecast/export.py (istniejący eksport historii zamkniętych świec + metadane + sha256)"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:tsvp",
+   "aliases": [],
+   "name": "Tick Session Volume Profile",
+   "category": "VISUALIZATION",
+   "files": [
+    "backend/masterquo/mm/tsvp.py",
+    "mql5/MasterModels/Include/PMW/PMW_TSVPCore.mqh",
+    "mql5/MasterModels/Indicators/PMW_TickSessionVP.mq5"
+   ],
+   "input": "MT5 ticks (proxy or actual trade volume)",
+   "output": "buckets, POC, render state",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "mm.orchestrator:tsvp"
+   ],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:mathbench",
+   "aliases": [],
+   "name": "Math Engine Fidelity Benchmark",
+   "category": "BENCHMARK",
+   "files": [
+    "backend/masterquo/mm/mathbench.py",
+    "mql5/MathFidelity/train_export_model.py",
+    "mql5/MathFidelity/Experts/MathFidelityBenchmark_EA.mq5",
+    "mql5/MathFidelity/Indicators/FidelityMonitor.mq5",
+    "mql5/MathFidelity/Scripts/MathFidelity_SelfTest.mq5"
+   ],
+   "input": null,
+   "output": "BENCHMARK_RESULT",
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "mm.orchestrator:mathbench"
+   ],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:chart_sync",
+   "aliases": [],
+   "name": "MT5 Multi-Timeframe Chart Synchronization",
+   "category": "NO_SPEC",
+   "files": [
+    "frontend (istniejąca opcjonalna synchronizacja wykresów w panelu, J1)"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NO_SPEC",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "NO_SPEC",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "mm:fusion_board",
+   "aliases": [],
+   "name": "Evidence board (cross-model integration layer, discovered need)",
+   "category": "DATA_INFRA",
+   "files": [
+    "backend/masterquo/mm/fusion.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": "NOT_APPLICABLE",
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [
+    "mm.service",
+    "API /api/v1/mm/live (board)"
+   ],
+   "quant_role": "TOOL",
+   "adapter": null,
+   "not_applicable_reason": "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu",
+   "variants": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:montecarlo",
+   "aliases": [],
+   "name": "Monte Carlo (PMW-MC-1) – symulacja ścieżek",
+   "category": "SIMULATION",
+   "files": [
+    "backend/masterquo/montecarlo/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "SIMULATION",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": "MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach",
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:zones",
+   "aliases": [],
+   "name": "Mapa stref (PMW-ZONES)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/zones/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:market_zones",
+   "aliases": [],
+   "name": "Strefy rynkowe M1/M5/M15/M30 (1.28)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/zones/market_service.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "liczone na żądanie panelu (job) – brak cyklu niezależnego od panelu",
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:indicators",
+   "aliases": [],
+   "name": "Wskaźniki PMW-IND-1 (EMA/VWAP/RSI/MACD/BB, mikrostruktura, DXY)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/indicators/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:svp",
+   "aliases": [],
+   "name": "Session Volume Profile (PMW-SVP-1)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/svp/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "profile użytkownika (tick volume = aktywność feedu, nie wolumen obrotu) – kontekst panelu",
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:dxy_correlation",
+   "aliases": [],
+   "name": "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/indicators/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:walls",
+   "aliases": [],
+   "name": "Opcje / walls / IV (opcjonalne źródło)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/analysis/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "CONTEXT_FEATURE",
+   "adapter": null,
+   "not_applicable_reason": "wymaga importu IV (import-iv); brak źródła = stan danych, nie zero",
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "analysis:evaluation",
+   "aliases": [],
+   "name": "AI Setup Probability Engine (PMW-EVAL)",
+   "category": "ANALYSIS",
+   "files": [
+    "backend/masterquo/evaluation/"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "SETUP_EVENT",
+   "adapter": "evaluation.service (ledger)",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "quant:metamodel",
+   "aliases": [],
+   "name": "PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)",
+   "category": "META_MODEL",
+   "files": [
+    "backend/masterquo/quant/metamodel.py"
+   ],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "NOT_EVALUATED",
+   "state_reason": null,
+   "validation": "NOT_VALIDATED",
+   "receivers": [],
+   "quant_role": "META_MODEL",
+   "adapter": "quant.service (assessment)",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "ext:catboost",
+   "aliases": [],
+   "name": "CatBoost",
+   "category": "NOT_IMPLEMENTED",
+   "files": [],
+   "input": null,
+   "output": null,
+   "unit": null,
+   "task_type": null,
+   "task": null,
+   "horizon": null,
+   "timeframes": [],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv",
+   "artifact": null,
+   "dependencies": [],
+   "code_state": "NOT_IMPLEMENTED",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
+   "validation": "NOT_APPLICABLE",
+   "receivers": [],
+   "quant_role": "NONE",
+   "adapter": null,
+   "not_applicable_reason": "nie istnieje w kodzie – nie dodano fikcyjnego adaptera",
+   "variants": [],
+   "source_registry": [
+    "lab/traceability.py (wzmianka)"
+   ],
+   "notes": null,
+   "live_output": "NOT_EVALUATED"
+  }
+ ],
+ "coverage": {
+  "inventory": {
+   "recognised": 89,
+   "classified": 89,
+   "groups_expanded": 3,
+   "aliases_folded": 78,
+   "by_category": {
+    "AGENT": 1,
+    "ANALYSIS": 7,
+    "BASELINE": 2,
+    "BENCHMARK": 1,
+    "DATA_INFRA": 1,
+    "MEASUREMENT": 1,
+    "META_MODEL": 1,
+    "MODEL_ESTIMATED": 2,
+    "MODEL_PRETRAINED": 1,
+    "MODEL_TRAINED": 40,
+    "NOT_IMPLEMENTED": 1,
+    "NO_SPEC": 6,
+    "OPTIMIZER": 1,
+    "RESEARCH": 3,
+    "RULE_OR_MEASUREMENT": 18,
+    "SIMULATION": 1,
+    "TRAINABLE": 1,
+    "VISUALIZATION": 1
+   },
+   "by_code_state": {
+    "IMPLEMENTED": 82,
+    "NOT_IMPLEMENTED": 1,
+    "NO_SPEC": 6
+   }
+  },
+  "adapters": {
+   "implemented": 82,
+   "with_adapter": 49,
+   "not_applicable_justified": 33,
+   "missing": []
+  },
+  "operational": {
+   "evaluated": 0,
+   "ready_with_live_output": 0,
+   "ids": [],
+   "by_runtime_state": {
+    "MISSING_DEPENDENCY": 3,
+    "NOT_CONNECTED": 1,
+    "NOT_EVALUATED": 58,
+    "NOT_TRAINED": 17,
+    "SHADOW_ONLY": 1,
+    "UNAVAILABLE": 2
+   },
+   "probe_ok_with_adapter": 0,
+   "note": "liczone z opublikowanej generacji Quant Core (ważny, świeży wynik READY); offline – nieoceniane"
+  },
+  "analytical": {
+   "requiring_validation": 36,
+   "validated_for_role": 0,
+   "ids": [],
+   "note": "pełne pokrycie katalogu nie oznacza gotowości modeli"
+  }
+ }
+}
