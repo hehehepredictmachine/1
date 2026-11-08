@@ -13,9 +13,12 @@ Economics (R = |entry - SL| in price, entry on the executable side so the spread
   Partial exits, BE moves and timeouts make the real outcome distribution non-binary: the binary EV is labelled
   BINARY_PLAN_APPROX; it is a comparison scale, not a promise.
 
-Uncertainty
-  With the calibration sample size n the probability gets a Wilson 90% interval and the EV interval follows from it; without n the
-  interval is unknown (reported). Decision rule (SHADOW): REJECT when EV <= 0 or execution POOR or data not OK; DEFER when there is no
+Uncertainty (1.35, PMW-EVAL-ENGINE-2)
+  The global calibration sample size n is NOT a number of Bernoulli trials of one individual prediction: a Wilson interval on (p, n)
+  describes an observed frequency, not the uncertainty of a model's p(x). 1.33 used it that way - removed. An interval is used only when
+  the probability source supplies one from a VALIDATED method ({"interval": {"lo", "hi", "method", "validated": True}}, e.g. with an
+  out-of-sample coverage check); otherwise interval = None with the reason, and the EV interval is unknown. `wilson()` stays for
+  empirical frequencies (calibration tables of matured outcomes). Decision rule (SHADOW): REJECT when EV <= 0 or execution POOR or data not OK; DEFER when there is no
   calibrated probability of a usable event; REDUCE when the EV interval straddles 0 or is unknown (a point EV without its
   uncertainty is not evidence enough for a full position); ACCEPT otherwise. A threshold is therefore p* (costs and R:R), not a
   fixed 75 %.
@@ -26,13 +29,14 @@ import math
 
 from .contract import SetupAssessment, SetupCandidate
 
-VERSION = "PMW-EVAL-ENGINE-1"
+VERSION = "PMW-EVAL-ENGINE-2"
 DEFAULT_EVENT = {"SH_SCALPING": "TP2 przed SL w horyzoncie", "SH_HEDGING": "TP2 przed SL w horyzoncie",
                  "SCALP_SHADOW": "TP1 przed SL w horyzoncie", "ACTIVE_S01_S12": "net R > 0 wg planu setupu"}
 Z90 = 1.6448536269514722
 
 
 def wilson(p: float, n: int, z: float = Z90) -> list[float]:
+    """Interval of an EMPIRICAL frequency p = k / n of n observed outcomes - never of a model probability (see module notes)."""
     if n <= 0:
         return [0.0, 1.0]
     d = 1 + z * z / n
@@ -106,15 +110,20 @@ def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, ex
         ev = p * eco["gain_r"] - (1 - p) * eco["loss_r"]
         a.expected_value_r = round(ev, 4)
         n = int((prob or {}).get("n_calibration") or 0)
-        if n > 0:
-            lo, hi = wilson(float(p), n)
+        iv = (prob or {}).get("interval") or {}
+        ev_kind = "BINARY" if len(c.targets) == 1 else "BINARY_PLAN_APPROX"
+        if iv.get("validated") and all(isinstance(iv.get(k), (int, float)) and math.isfinite(iv[k]) for k in ("lo", "hi")) and 0 <= iv["lo"] <= iv["hi"] <= 1:
+            lo, hi = float(iv["lo"]), float(iv["hi"])
             a.probability_interval = [round(lo, 4), round(hi, 4)]
             a.expected_value_interval_r = [round(lo * eco["gain_r"] - (1 - lo) * eco["loss_r"], 4),
                                            round(hi * eco["gain_r"] - (1 - hi) * eco["loss_r"], 4)]
-            a.uncertainty = {"method": "Wilson 90% na liczności kalibracji", "n_calibration": n}
+            a.uncertainty = {"method": iv.get("method"), "validated": True, "coverage_oos": iv.get("coverage_oos"), "ev_kind": ev_kind}
         else:
-            a.uncertainty = {"method": None, "reason": "liczność kalibracji nieznana – przedział EV nieznany"}
-        a.notes.append("EV binarne (BINARY_PLAN_APPROX): częściowe wyjścia, BE i timeout czynią rozkład wyniku niebinarnym")
+            a.uncertainty = {"method": None, "ev_kind": ev_kind, "n_calibration": n or None,
+                             "reason": "brak zwalidowanej metody przedziału dla pojedynczej predykcji – przedział EV nieznany"
+                                       + (" (liczność kalibracji nie jest liczbą prób tej predykcji; Wilson nie dotyczy)" if n else "")}
+        a.notes.append("EV binarne (BINARY_PLAN_APPROX): częściowe wyjścia, BE i timeout czynią rozkład wyniku niebinarnym – wynik porównawczy"
+                       if ev_kind != "BINARY" else "EV binarne: jeden cel, bez częściowych wyjść")
         if a.probability_status == "EVENT_MISMATCH":
             a.notes.append("zdarzenie modelu różni się od TP-przed-SL – EV jest przybliżeniem")
         if ev <= 0:

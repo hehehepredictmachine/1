@@ -5,6 +5,7 @@
   python -m masterquo doctor                            environment + MT5 + Claude diagnostics
   python -m masterquo clock                             raw MT5 time diagnostics (no trading)
   python -m masterquo set-key                           store the Anthropic API key locally (DPAPI)
+  python -m masterquo quant status|inventory|train|list|activate|rollback|mode|bench   PMW Quant Core (quant/cli.py)
 """
 from __future__ import annotations
 
@@ -259,6 +260,10 @@ def main(argv=None) -> int:
         _load_dotenv()
         from .trainhub.cli import main as trainhub_main
         return trainhub_main(argv[1:])
+    if argv[:1] == ["quant"]:                        # 1.35 PMW Quant Core (masterquo/quant/cli.py)
+        _load_dotenv()
+        from .quant.cli import main as quant_main
+        return quant_main(argv[1:])
     if argv[:1] == ["training"]:                     # training installer / orchestrator (masterquo/training/cli.py)
         _load_dotenv()
         from .training.cli import main as training_main

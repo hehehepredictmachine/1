@@ -9,6 +9,13 @@ Order of evaluation (each step may only make the verdict stricter - nothing afte
                 (ACTIVE: ENTER -> BLOCKED "MODEL_ASSIST_HOLD"; SH: READY -> WAIT, the existing SH receiver) - never upgrades;
    * REQUIRED - decision.required_models: the model must be READY, fresh (age <= required_max_age_s) and must not contradict the side,
                 otherwise MODEL_REQUIRED_UNAVAILABLE / _STALE / _CONTRARY blocks the entry. Default: no REQUIRED model.
+   * QUANT (1.35, PMW Quant Core) - only in mode ASSIST after validation AND explicit user activation: the Quant MetaModel entry
+                (family "quant:metamodel", EVENT_PROBABILITY) may HOLD an entry (MODEL_QUANT_HOLD) when its validated E[net R] <= 0 or
+                P(event) is below the plan break-even; it never upgrades, never sizes, never sends. In OFF / SHADOW no entry is added and
+                _preds() is the families list exactly as before (parity). In ASSIST _preds() reads the Quant checked snapshot (aliases
+                deduplicated, contract / future-time / stale records excluded) instead of recomputing anything.
+   * time: a data_time in the FUTURE (beyond 5 s clock tolerance) is never age 0 - REQUIRED -> MODEL_REQUIRED_FUTURE_TIME, ASSIST -> no
+     effect (the record is not trusted).
 4. DecisionRecord persisted (decision_records, unique per path+source+inputs) - the audit trail used by replay and the panel.
 Execution then goes through IntentLedger (dedup + shared reservation) - see ledger.py.
 """
@@ -24,7 +31,11 @@ from . import contracts as K
 from .ledger import IntentLedger, RiskBook
 
 
+CLOCK_TOLERANCE_S = 5.0
+
+
 def _age_s(data_time, now: float) -> float | None:
+    """now - data_time in seconds; NEGATIVE for a time in the future (1.33 clamped it to 0 - a future record looked perfectly fresh)."""
     if not data_time:
         return None
     try:
@@ -32,13 +43,19 @@ def _age_s(data_time, now: float) -> float | None:
             t = float(data_time)
         else:
             t = datetime.fromisoformat(str(data_time).replace("Z", "+00:00")).astimezone(timezone.utc).timestamp()
-        return max(0.0, now - t)
+        return now - t
     except (TypeError, ValueError):
         return None
 
 
+def _mid(p: dict) -> str:
+    """Identifier at the coordinator boundary: family / model_id, else the canonical id (never the ambiguous '?')."""
+    from ..quant import ids as I
+    return str(p.get("family") or p.get("model_id") or I.canonical(p))
+
+
 def role_of(pred: dict, required: set[str]) -> str:
-    if pred.get("family") in required or pred.get("model_id") in required:
+    if pred.get("family") in required or pred.get("model_id") in required or _mid(pred) in required:
         return "REQUIRED"
     return "ASSIST" if pred.get("use") == "ASSIST" else "OBSERVE"
 
@@ -49,22 +66,31 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
     out, reasons = [], []
     seen = set()
     for p in preds or []:
-        mid = str(p.get("family") or p.get("model_id") or "?")
+        mid = _mid(p)
         seen.add(mid)
         role = role_of(p, required)
         res = p.get("result") if p.get("state") == "READY" else None
         age = _age_s(p.get("data_time"), now)
+        future = age is not None and age < -CLOCK_TOLERANCE_S
         influence, why = "NONE", None
         opp = None
         if isinstance(res, dict) and p.get("task_type") == "CLASS_PROBABILITIES" and side in ("BUY", "SELL"):
             opp = res.get("DOWN") if side == "BUY" else res.get("UP")
-        if role == "ASSIST" and assist_enabled and opp is not None and opp >= assist_threshold:
+        if role == "ASSIST" and future:
+            why = f"czas danych z przyszłości ({-age:.0f} s) – rekord bez wpływu"
+        elif role == "ASSIST" and assist_enabled and p.get("quant_hold") and p.get("state") == "READY":
+            influence, why = "HOLD", str(p["quant_hold"])[:200]
+            reasons.append(f"MODEL_QUANT_HOLD:{mid}")
+        elif role == "ASSIST" and assist_enabled and opp is not None and opp >= assist_threshold:
             influence, why = "HOLD", f"P({'DOWN' if side == 'BUY' else 'UP'})={opp:.2f}>={assist_threshold:.2f}"
             reasons.append(f"MODEL_ASSIST_HOLD:{mid}")
         elif role == "REQUIRED":
             if p.get("state") != "READY":
                 influence, why = "BLOCK", f"stan {p.get('state')}"
                 reasons.append(f"MODEL_REQUIRED_UNAVAILABLE:{mid}")
+            elif future:
+                influence, why = "BLOCK", f"czas danych z przyszłości ({-age:.0f} s)"
+                reasons.append(f"MODEL_REQUIRED_FUTURE_TIME:{mid}")
             elif age is None or age > max_age_s:
                 influence, why = "BLOCK", "brak czasu danych" if age is None else f"wiek {age:.0f}s > {max_age_s:.0f}s"
                 reasons.append(f"MODEL_REQUIRED_STALE:{mid}")
@@ -101,6 +127,7 @@ class DecisionCoordinator:
         self.book = RiskBook(db, cfg_store, clock=clock)
         self.intents = IntentLedger(db, self.book)
         self.last: dict[str, dict] = {}
+        self.quant = None                    # QuantService (runtime); None / OFF / SHADOW -> no effect at all
 
     def _cfg(self):
         return getattr(self.cfg_store.get(), "decision", None)
@@ -109,13 +136,36 @@ class DecisionCoordinator:
         c = self._cfg()
         return bool(c is None or c.enabled)
 
+    def _quant_assist(self) -> bool:
+        try:
+            return bool(self.quant is not None and self.quant.assist_active())
+        except Exception:  # noqa: BLE001
+            return False
+
     def _preds(self) -> list[dict]:
+        if self._quant_assist():
+            try:                                                 # ASSIST: the Quant checked snapshot (cached, no recomputation here)
+                return self.quant.coordinator_predictions(self.instrument_fn())
+            except Exception:  # noqa: BLE001 - REQUIRED then reports MISSING; ASSIST simply has no effect
+                return []
         if self.families is None:
             return []
         try:
             return self.families.predictions(self.instrument_fn())
         except Exception:  # noqa: BLE001 - models never freeze a decision; REQUIRED then reports MISSING
             return []
+
+    def _quant_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> list[dict]:
+        """[] unless Quant is in ASSIST (validated + explicitly activated); then one EVENT_PROBABILITY entry (READY with an optional hold,
+        or its unavailable state - REQUIRED decides about a missing one)."""
+        if not self._quant_assist():
+            return []
+        try:
+            e = self.quant.coordinator_entry(path, cand=cand, setup=setup)
+            return [e] if e else []
+        except Exception as exc:  # noqa: BLE001
+            return [{"family": "quant:metamodel", "state": "ERROR", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "result": None,
+                     "unavailable_reason": f"Quant: {type(exc).__name__}: {exc}"[:160]}]
 
     def decide(self, cand: dict, *, gates: dict, mode: str, account_key: str | None, preds: list[dict] | None = None,
                persist: bool = True) -> dict:
@@ -164,7 +214,7 @@ class DecisionCoordinator:
         required = set(getattr(c, "required_models", []) or [])
         fam_cfg = getattr(self.cfg_store.get(), "families", None)
         side = "BUY" if setup["direction"] == "LONG" else "SELL"
-        models, reasons = evaluate_models(self._preds(), side, required=required, assist_threshold=float(getattr(fam_cfg, "assist_hold_threshold", 0.6)),
+        models, reasons = evaluate_models(self._preds() + self._quant_entry("ACTIVE", setup=setup), side, required=required, assist_threshold=float(getattr(fam_cfg, "assist_hold_threshold", 0.6)),
                                           max_age_s=float(getattr(c, "required_max_age_s", 900.0)), now=self.clock(),
                                           assist_enabled=bool(getattr(c, "assist_on_active", True)))
         if not models:
@@ -192,7 +242,8 @@ class DecisionCoordinator:
             cand = self.active_candidate(d)
             gates = {"mode": list((d.get("mode_gate") or {}).get("reason_codes") or [])} if cand["base_verdict"] == "ENTER" else {}
             preds = [{"family": m["model_id"], "state": m["state"], "use": "ASSIST" if m["role"] == "ASSIST" else "SHADOW",
-                      "task_type": m["task_type"], "result": m["result"], "data_time": m["data_time"], "unavailable_reason": m["reason"]}
+                      "task_type": m["task_type"], "result": m["result"], "data_time": m["data_time"], "unavailable_reason": m["reason"],
+                      "quant_hold": m["reason"] if m["influence"] == "HOLD" and m["model_id"] == "quant:metamodel" else None}
                      for m in (model_gate or {}).get("models") or []]
             rec = self.decide(cand, gates=gates, mode=mode, account_key=d.get("account_key"), preds=preds)
             d["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"],
@@ -220,6 +271,13 @@ class DecisionCoordinator:
             preds = [{"family": x.get("family"), "state": x.get("state"), "use": x.get("use"), "task_type": x.get("task_type"),
                       "result": x.get("result"), "unavailable_reason": x.get("reason")} for x in fc]
             gates = {"coordination": [] if not coord or coord.get("allowed", True) else [str(coord.get("reason") or "ARBITRATION")]}
+            if self._quant_assist() and su.get("status") == "READY":
+                try:
+                    from ..evaluation import contract as EK
+                    preds = preds + self._quant_entry("SH", cand=EK.from_sh_setup(su).to_dict())
+                except Exception as exc:  # noqa: BLE001 - not a candidate the evaluation contract accepts -> Quant has no entry
+                    preds = preds + [{"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
+                                      "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
             return self.decide(self.sh_candidate(su, risk), gates=gates, mode=mode, account_key=account_key, preds=preds)
         except K.ContractViolation:
             return None

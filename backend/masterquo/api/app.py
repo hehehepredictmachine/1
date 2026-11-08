@@ -2204,6 +2204,83 @@ def create_app(rt, port: int) -> FastAPI:
     def families_predictions(instrument: str | None = Query(None)):
         return {"items": rt.families.predictions(_fam_inst(instrument))}
 
+    # ---------------------------------------------------------------- 1.35 PMW Quant Core (reads the published generation only)
+    def _quant():
+        q = getattr(rt, "quant", None)
+        if q is None:
+            raise HTTPException(503, "QUANT_CORE_NOT_RUNNING")
+        return q
+
+    @app.get("/api/v1/quant/status")
+    def quant_status():
+        """Mode, data state, model counts with reasons, meta-model artifacts, ledger evidence, timings - a cached snapshot (no compute)."""
+        return _quant().status()
+
+    @app.get("/api/v1/quant/predictions")
+    def quant_predictions():
+        return _quant().predictions()
+
+    @app.get("/api/v1/quant/assessment")
+    def quant_assessments(limit: int = Query(30, ge=1, le=200)):
+        q = _quant()
+        return {"items": q.ledger.assessments(limit), "mode": q.mode(),
+                "note": "brak skalibrowanego wyniku = brak wytrenowanego modelu dla tego zdarzenia (nie 0 %, nie 50 %)"}
+
+    @app.post("/api/v1/quant/assessment")
+    def quant_assess(body: dict = Body(...)):
+        """Assessment of a given SetupCandidate (evaluation contract) - read-only, not logged, never an order."""
+        from ..evaluation import contract as EK
+        try:
+            c = EK.SetupCandidate(**{k: v for k, v in (body.get("candidate") or body).items() if k in EK.SetupCandidate.__dataclass_fields__}).validate()
+        except (TypeError, EK.ContractError) as exc:
+            raise HTTPException(400, f"CANDIDATE_INVALID: {exc}") from None
+        return _quant().assess(c.to_dict(), log_row=False)
+
+    @app.get("/api/v1/quant/jobs")
+    def quant_jobs():
+        q = _quant()
+        return {"items": list(q.jobs.values())[-20:], "ledger": q.ledger.counts(q.instrument())}
+
+    @app.post("/api/v1/quant/jobs")
+    def quant_train(body: dict = Body(default={})):
+        """Explicit training of the meta-model from the Quant ledger (never activates; activation = separate call after validation)."""
+        q = _quant()
+        if str(body.get("kind") or "TRAIN_METAMODEL") != "TRAIN_METAMODEL":
+            raise HTTPException(400, "JOB_KIND_UNKNOWN")
+        if any(j["state"] == "RUNNING" for j in q.jobs.values()):
+            raise HTTPException(409, "QUANT_JOB_ALREADY_RUNNING")
+        return q.train(body.get("instrument") or None, body.get("task_hash") or None)
+
+    @app.post("/api/v1/quant/mode")
+    def quant_mode(body: dict = Body(...)):
+        r = _quant().set_mode(str(body.get("mode") or ""), confirm=bool(body.get("confirm")), by="PANEL")
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/quant/models/activate")
+    def quant_activate(body: dict = Body(...)):
+        from ..quant import metamodel as QM
+        q = _quant()
+        try:
+            p = QM.activate(body.get("instrument") or q.instrument(), str(body.get("task_hash") or ""), str(body.get("version") or ""))
+        except (QM.MetaError, OSError, KeyError, ValueError) as exc:
+            raise HTTPException(409, f"ACTIVATION_REFUSED: {exc}") from None
+        return {"ok": True, "pointer": p}
+
+    @app.post("/api/v1/quant/models/rollback")
+    def quant_rollback(body: dict = Body(...)):
+        from ..quant import metamodel as QM
+        q = _quant()
+        return {"ok": True, "pointer": QM.rollback(body.get("instrument") or q.instrument(), str(body.get("task_hash") or ""))}
+
+    @app.get("/api/v1/quant/inventory")
+    def quant_inventory():
+        from ..quant import inventory as QI
+        q = _quant()
+        inv = QI.build(rt, q.instrument())
+        return {"coverage": inv["coverage"], "entries": inv["entries"], "generated_at": inv["generated_at"]}
+
     # ---------------------------------------------------------------- PMW-SVP-1 Session Volume Profile + zones (1.33) - analytical
     def _svp(fn, *a, **k):
         try:

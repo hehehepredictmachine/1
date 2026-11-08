@@ -57,6 +57,7 @@ class EvaluationService:
         self._last_mature = 0.0
         self.regime_sources: dict = {}           # {"ACTIVE": fn() -> regime dict, "SH": fn() -> regime dict} set by the runtime (O4)
         self.zone_provider = None                # ZoneService (PMW-ZONES): zone context of every candidate
+        self.listeners: list = []                # 1.35: Quant Core (decision-time features + SHADOW meta-model assessment); never blocks
 
     # ------------------------------------------------------------------ inputs
     def on_active_events(self, events: list, view) -> None:
@@ -213,6 +214,11 @@ class EvaluationService:
         self.counters["logged" if ok else "duplicates"] += 1
         if ok:
             self.last_assessment = ad
+            for fn in self.listeners:
+                try:
+                    fn(c, ad)
+                except Exception:  # noqa: BLE001 - a listener failure never affects the evaluation ledger
+                    self.counters["errors"] += 1
         return ad
 
     def mature(self, now: float | None = None) -> int:

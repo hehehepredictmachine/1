@@ -267,7 +267,7 @@ class SHService:
                 try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
                     rec = arc.record_sh(su, risk, mode, self.bridge.account_key, coord.get(strat))
                     su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
-                    req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith("MODEL_REQUIRED")]
+                    req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith(("MODEL_REQUIRED", "MODEL_QUANT_HOLD"))]
                     if req and su.get("status") == "READY":
                         model_block = req
                         su["status"], su["status_reason"] = "WAIT", "model REQUIRED: " + ", ".join(req)

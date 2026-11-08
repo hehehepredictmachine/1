@@ -77,12 +77,24 @@ class Engine(unittest.TestCase):
         lo = E.assess(cand(), prob={"value": 0.30, "calibrated": True, "n_calibration": 500}, extra_cost=0.1)
         self.assertEqual(lo.decision, "REJECT")
         self.assertAlmostEqual(lo.expected_value_r, 0.3 * 1.9 - 0.7 * 1.1, places=4)
-        hi = E.assess(cand(), prob={"value": 0.60, "calibrated": True, "n_calibration": 2000}, extra_cost=0.1)
+        hi = E.assess(cand(), prob={"value": 0.60, "calibrated": True, "n_calibration": 2000,
+                                    "interval": {"lo": 0.55, "hi": 0.65, "method": "test", "validated": True}}, extra_cost=0.1)
         self.assertEqual(hi.decision, "ACCEPT")
         self.assertGreater(hi.expected_value_interval_r[0], 0)
 
+    def test_wilson_is_not_a_model_interval(self):
+        """1.35: n_calibration alone never produces an interval of an individual model probability (the 1.33 Wilson misuse)."""
+        a = E.assess(cand(), prob={"value": 0.60, "calibrated": True, "n_calibration": 2000}, extra_cost=0.1)
+        self.assertIsNone(a.probability_interval)
+        self.assertIsNone(a.expected_value_interval_r)
+        self.assertEqual((a.decision, a.rejection_reasons), ("REDUCE", ["EV_INTERVAL_UNKNOWN"]))
+        self.assertIn("Wilson nie dotyczy", a.uncertainty["reason"])
+        bad = E.assess(cand(), prob={"value": 0.60, "calibrated": True, "interval": {"lo": 0.7, "hi": 0.5, "validated": True}}, extra_cost=0.1)
+        self.assertIsNone(bad.probability_interval)                    # an inverted interval is not used
+
     def test_uncertainty_reduces(self):
-        a = E.assess(cand(), prob={"value": 0.42, "calibrated": True, "n_calibration": 40}, extra_cost=0.1)
+        a = E.assess(cand(), prob={"value": 0.42, "calibrated": True, "n_calibration": 40,
+                                   "interval": {"lo": 0.30, "hi": 0.55, "method": "test", "validated": True}}, extra_cost=0.1)
         self.assertEqual(a.decision, "REDUCE")
         self.assertEqual(a.rejection_reasons, ["EV_INTERVAL_STRADDLES_ZERO"])
         b = E.assess(cand(), prob={"value": 0.60, "calibrated": True}, extra_cost=0.1)           # n unknown -> interval unknown

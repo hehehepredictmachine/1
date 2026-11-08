@@ -154,6 +154,11 @@ class Runtime:
         self.trainhub_inference = TrainhubInference(self.cfg, self.bridge, bus=self.bus, log=self.log)   # aktywne paczki, zamknięte świece
         from .montecarlo.service import MonteCarloService
         self.montecarlo = MonteCarloService(self.cfg, self.bridge, synthetic=demo)                 # PMW-MC-1: path simulation, own thread
+        from .quant.service import QuantService
+        self.quant = QuantService(self)                                                             # 1.35 PMW Quant Core: own thread, SHADOW by default
+        self.evaluation.listeners.append(self.quant.on_candidate)                                  # decision-time features + SHADOW assessment
+        self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
+        self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
@@ -266,6 +271,7 @@ class Runtime:
         self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
         self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
         self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
+        self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
 
@@ -301,6 +307,7 @@ class Runtime:
         self.trainhub_inference.stop()
         self.kronos.stop()
         self.montecarlo.stop()
+        self.quant.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()
