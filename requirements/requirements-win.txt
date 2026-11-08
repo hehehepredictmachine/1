@@ -1,6 +1,8 @@
 # MasterQUO AI - pinned runtime dependencies for Windows 10/11 x64, CPython 3.13 (3.12 supported).
 # Installed by 01_INSTALUJ.bat with: pip install --require-hashes --only-binary=:all: -r requirements-win.txt
 # Hashes taken from PyPI for win_amd64 (cp312/cp313/abi3) and pure-Python wheels.
+# 1.34.0: the FULL dependency closure for Windows (uv pip compile --python-platform windows, 3.12 and 3.13) - statsmodels 0.15 needs
+# formulaic -> interface-meta, wrapt; a missing pin stops the whole --require-hashes install (tools/check_requirements_win.py).
 
 annotated-doc==0.0.5 \
     --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101
@@ -23,6 +25,8 @@ docstring-parser==0.18.0 \
     --hash=sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b
 fastapi==0.141.1 \
     --hash=sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3
+formulaic==1.2.2 \
+    --hash=sha256:0f84ff49e3fc9dc0e68ab08a0a9427874021aa6c558e66b44dc634a35739b09b
 h11==0.16.0 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
 httpcore2==2.13.1 \
@@ -31,6 +35,8 @@ httpx2==2.13.1 \
     --hash=sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4
 idna==3.20 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+interface-meta==2.0.1 \
+    --hash=sha256:f38016bef9a4429b6d0792d809be7b65e9781820c674bf7f463999086b6e6323
 jiter==0.17.0 \
     --hash=sha256:9bd3caac219df476dd0cc3fe01d2f1581ed588906feac767abd9614c1c12f8b3 \
     --hash=sha256:a3cebb1fe4a1abb00465f3f8a17e09112603e8b7c59e5c3adbcd9f7815a64acd
@@ -92,5 +98,9 @@ websockets==17.1 \
     --hash=sha256:617243e19a0992095956f406ee9cd3bc4ba92862d83cb1d83bb59ce574412bec \
     --hash=sha256:0340bbef6bfbe16da888b3983d666a4db4954ac3253c38f13bc7aba0c7db5a2f \
     --hash=sha256:f221081107b8c48184d99f7019604486376e7ef826037e70aad6b02540732c23
+wrapt==2.5.2 \
+    --hash=sha256:36021ef761856bdbc10d5f3da9a95af93ef60d6acf9c72c8f849937ba2b902aa \
+    --hash=sha256:5726faa7342ba473041bc1a276486d232b42e3927d35427729b266b1b5ecaa42 \
+    --hash=sha256:61eb54e9540ea522c2c4752a57549a83d3c67e6704ed708403d28e067aaf90f0
 xgboost==3.4.1 \
     --hash=sha256:2d30fa513673101f542fdcbd18f30c8f96c064046f798635ac08663e9969f81b

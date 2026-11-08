@@ -20,7 +20,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.34.0"
+VERSION = "1.34.1"
 APP_ZIP = f"PepeMarketWizard_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
@@ -116,9 +116,21 @@ def manifest_text(files, label: str = "klient") -> str:
     return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
 
 
+def check_windows_requirements() -> None:
+    """1.34.1: a package is never built with a requirements file that does not install on Windows (tools/check_requirements_win.py).
+    Without uv / network the check is reported as NOT RUN - it never counts as passed."""
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "check_requirements_win.py")], capture_output=True, text=True)
+    print(r.stdout.strip())
+    if r.returncode == 2:
+        print("UWAGA: kontrola instalacji Windows NIE została uruchomiona (brak uv) – pip install uv", file=sys.stderr)
+    elif r.returncode != 0:
+        sys.exit("requirements dla Windows nie instalują się – paczka nie zostanie zbudowana:\n" + r.stdout + r.stderr)
+
+
 def main():
     files = tracked()
     scan(files)
+    check_windows_requirements()
     (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(files, "program"), encoding="utf-8", newline="\n")
     write_zip(APP_ZIP, "PepeMarketWizard/", files + ["MANIFEST_SHA256.txt"])
     verify(ROOT / "release" / APP_ZIP, "PepeMarketWizard/")

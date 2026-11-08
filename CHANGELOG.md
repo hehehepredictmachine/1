@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.34.1 – poprawka instalacji na Windows
+* **Błąd w 1.33.0 i 1.34.0:** instalacja zależności na Windows kończyła się „[BLAD] Instalacja pakietow nie powiodla sie”.
+  * Przyczyna: statsmodels 0.15 wymaga pakietu `formulaic` (oraz `interface-meta` i `wrapt`), których nie było w
+    `requirements/requirements-win.txt`. Instalacja `pip --require-hashes` zatrzymuje się na pierwszej nieprzypiętej zależności.
+  * Testy w kontenerze Linux instalowały pakiety bez sprawdzania sum i błędu nie wykryły.
+* **Poprawka:** `formulaic==1.2.2`, `interface-meta==2.0.1` i `wrapt==2.5.2` dodane z sumami SHA-256 kół Windows (cp312, cp313).
+  Pełne domknięcie zależności sprawdzone dla Windows x64, Python 3.13 i 3.12. Bot przechodzi testy modeli z tymi wersjami.
+* **Nowe narzędzie `tools/check_requirements_win.py`:** symuluje instalację każdego pliku requirements dla Windows (markery Windows,
+  sumy, Python 3.13 i 3.12). `tools/build_release.py` uruchamia je przed budową paczki i przerywa ją przy błędzie.
+* Bez innych zmian względem 1.34.0.
+
 ## 1.34.0 – Menu główne Neural City V7.0 i launcher JOIN THE CULT (TASK 001)
 * **Menu główne Neural City** (`#/menu`): neuronowy Pepe przy holograficznym stole z siedmioma wieżami według zatwierdzonej grafiki.
 
