@@ -1,3 +1,68 @@
+# Raport końcowy – PepeMarketWizard 1.35.0 (PMW Quant Core)
+
+**Paczki 1.35.0:**
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_35_0.zip` (2550 plików) | `7551d68fc31de1dbc1c9016534d267ce051edbb6748b72faea2103fb79476980` |
+| `PepeMarketWizard_1_35_0.zip` (1481 plików) | `efab450b379e4f89d4a00ef0bca3354191df5b3e9fee0fa88ed03831f2d080e3` |
+
+`tools/verify_release.py --all` daje OK dla obu. Start z każdej paczki: 17/17 PASS (w tym Quant SHADOW z paczki, CLI `quant`, restart bez włączenia ASSIST).
+
+**Zakres** (specyfikacja `PMW_1_33_0_QUANT_ENGINE_CLAUDE_CODE.md`, wdrożona na bazie 1.34.2):
+* wspólny silnik obliczeń: snapshot z QC, kontrola kontraktów, aliasy kanoniczne, harmonogram DAG z atomową publikacją;
+* adaptery wszystkich modeli z wyjściem na żywo, w tym brakująca dotąd ścieżka Event GRU;
+* rdzeń numeryczny, jednostki, koszty i EV; EventSpec z symulatorem planu;
+* Quant MetaModel: OOF z purge, kalibracja, jednokrotny test, artefakty JSON, rollback;
+* integracja SHADOW / ASSIST przez istniejący koordynator; API, CLI, sekcje panelu, `37_QUANT_CORE.bat`.
+
+Dokumentacja: `docs/quant/` (INVENTORY, ARCHITECTURE, MATH_AND_EVENTS, TRAINING_AND_VALIDATION, TEST_REPORT, PERFORMANCE, RUNBOOK_PL, ROLLBACK).
+
+**Liczby z dowodów:**
+* **Inwentaryzacja:** 89 komponentów sklasyfikowanych, 78 aliasów złożonych, 3 wiersze grupowe rozwinięte.
+  * Adapter / odbiorca: 49; uzasadnione NOT_APPLICABLE: 33; brakujące: 0.
+  * CatBoost = NOT_IMPLEMENTED; 6 modułów MM bez specyfikacji = NO_SPEC.
+* **Działające wyjście na żywo** (bot demo, dane SYNTETYCZNE): 15 wyników READY.
+  * Reguły SH: jakość danych, news, reżim, struktura, ATR.
+  * Wskaźniki, DXY, strefy, mikrostruktura.
+  * Wyjścia MM: Kalman, breakout, multi-indicator, SMC, align mean, GPR.
+  * 7 wykluczonych z przyczyną: Kronos ×2 i gold_candles bez środowisk, Monte Carlo na żądanie, lab / Event GRU / scalp A bez artefaktów.
+* **Zwalidowane dla roli:** 0. Meta-model **nie był trenowany na danych rzeczywistych** (brak MT5 i danych użytkownika). Ledger zbiera się od pierwszego uruchomienia w SHADOW.
+
+**Testy:**
+
+| Zestaw | Wynik |
+|---|---|
+| `test_quant_core` (31), `test_ui_quant` (4) | PASS |
+| regresja nie-UI | 93 moduły, 1140 testów; 2 porażki z powodu zmian 1.35 naprawione i ponownie OK |
+| regresja UI | 20 modułów, 117 testów, PASS |
+| `test_kronos_runtime` w środowisku Kronos | 7 PASS, 1 SKIPPED (wagi) |
+| typecheck / build frontendu | PASS |
+| symulacja instalacji Windows | PASS |
+
+Pominięte (SKIPPED / NOT_RUN): OpenCL / ONNX, `.venv_candles`, `.venv_deep`, oficjalne wagi Kronos, MT5, Windows / WebView2.
+
+**Wydajność** (kontener 4 vCPU, demo):
+* cykl Quant p50 / p95 / p99 = 64 / 161 / 766 ms (pierwsze wywołanie rodzin);
+* predykcja meta-modelu ≈ 0,08 ms;
+* CPU bota SHADOW vs OFF: 39,6% vs 37,6% jednego rdzenia;
+* opóźnienia API bez mierzalnej różnicy.
+
+**Poprawki istniejącego kodu wykryte przy weryfikacji:**
+1. `evaluation/engine.py` liczył przedział Wilsona z liczności kalibracji jako niepewność p(x), co dawało ACCEPT bez podstaw. Teraz przedział tylko ze zwalidowanej metody.
+2. Koordynator traktował czas z przyszłości jako wiek 0.
+3. Event GRU nie miał ścieżki inferencji na żywo.
+4. Na granicy koordynatora mógł pojawić się identyfikator `?` (rekordy Trainhub bez `family`).
+
+**Aktualizacja:**
+1. Zatrzymaj bota.
+2. Rozpakuj paczkę DESKTOP 1.35.0 w miejsce programu, bez nadpisywania `data`.
+3. Uruchom. Quant startuje w SHADOW; migracji bazy nie ma.
+
+Wycofanie: `docs/quant/ROLLBACK.md`.
+
+---
+
 # Raport końcowy – PepeMarketWizard 1.34.2 (Neural City V7.0, launcher JOIN THE CULT, poprawki instalacji)
 
 **Paczki 1.34.2:**
