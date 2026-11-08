@@ -254,8 +254,14 @@ class FamilyService:
 
     def predict(self, fid: str, inst: str) -> dict | None:
         f = self.fams[fid]
-        if fid in ("TH_RF", "TH_XGB", "TH_SVM", "SEQ_GRU_EVENT"):
-            return None                                          # their predictions already flow through trainhub / mm adapters
+        if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+            return None                                          # aliases of trainhub TH_*: the trainhub inference publishes them (one vote)
+        if fid == "SEQ_GRU_EVENT":
+            # 1.35: the Event GRU had no live path (MM only listed its artifact). The Quant scheduler owns its inference; here only the
+            # cached READY result is read (no computation in the decision path); nothing READY -> no record, as before.
+            prov = getattr(self, "event_gru_provider", None)
+            p = prov(inst) if prov is not None else None
+            return p if p and p.get("state") == "READY" else None
         st = self.store.state(fid, inst)
         rid, use = st.get("active"), st.get("use", "OFF")
         symbol = getattr(getattr(self.cfg_store.get(), "mt5", None), "symbol", None)
