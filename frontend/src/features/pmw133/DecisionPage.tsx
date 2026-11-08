@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiGet } from "../../api";
 import { cls, fmtTime } from "../../util";
+import QuantSection from "./QuantSection";
 import { usePoll } from "./usePoll";
 import "./pmw133.css";
 
@@ -31,6 +32,7 @@ export default function DecisionPage() {
             </section>);
         })}
       </div>
+      <QuantSection variant="decision" />
       <section className="pmw-card" data-testid="dec-reservations">
         <h3>Rezerwacje ryzyka w toku ({(d?.reservations_live || []).length})</h3>
         <table className="pmw-t"><thead><tr><th>ścieżka</th><th>przedmiot</th><th>tryb</th><th>ryzyko</th><th>stan</th><th>od</th></tr></thead>
