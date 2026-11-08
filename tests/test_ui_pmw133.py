@@ -105,7 +105,9 @@ class TestUiPmw133(unittest.TestCase):
             self.assertEqual(writes[before:], [])                              # a layer is presentation only
             p.screenshot(path=str(SHOTS / "wykresy_layers.png"))
             self.assertEqual(p.locator("[data-testid=topbar] [data-testid=studio-button]").count(), 1)
-            p.goto(f"{self.srv.base}/#/menu")
+            p.goto(f"{self.srv.base}/#/menu")                                                  # 1.34: Neural City toolbar
+            p.wait_for_selector("[data-testid=page-menu] [data-testid=studio-button]", timeout=30000)
+            p.goto(f"{self.srv.base}/#/lightning")                                             # menu of the tower panels
             p.wait_for_selector("[data-testid=cu-left] [data-testid=studio-button]", timeout=30000)
             self.assertEqual(errors, [])
             self.assertFalse([w for w in writes if "/order" in w or "/execute" in w])

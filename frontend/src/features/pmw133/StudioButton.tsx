@@ -4,7 +4,7 @@ import { apiSend } from "../../api";
 import { cls } from "../../util";
 import { usePoll } from "./usePoll";
 
-export default function StudioButton({ variant = "chip" }: { variant?: "chip" | "nav" }) {
+export default function StudioButton({ variant = "chip", className }: { variant?: "chip" | "nav" | "plain"; className?: string }) {
   const st = usePoll<any>("/api/v1/studio/status", 8000);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -26,6 +26,9 @@ export default function StudioButton({ variant = "chip" }: { variant?: "chip" | 
   };
   const label = busy ? "Studio: uruchamianie…" : on ? "Studio ●" : "Studio";
   const title = `Pepe Data & Training Studio – ${on ? `działa (${st.data?.url})` : "nie działa – kliknij, aby uruchomić osobny proces"}${err ? ` · błąd: ${err}` : ""}`;
+  if (variant === "plain")
+    return <button type="button" className={cls(className, on && "on")} onClick={open} title={title} aria-label={title} data-testid="studio-button"
+      data-running={on ? "1" : "0"} disabled={busy}>{busy ? "Studio…" : on ? "Studio ●" : "Studio"}</button>;
   return variant === "nav" ?
     <button type="button" className={cls("cu-nav-i", "pmw-studio-nav", on && "on")} onClick={open} title={title} data-testid="studio-button" data-running={on ? "1" : "0"}>
       <span aria-hidden="true">⚗</span><span>Training Studio<small>{busy ? "uruchamianie…" : on ? "działa" : "uruchom"}</small></span></button> :

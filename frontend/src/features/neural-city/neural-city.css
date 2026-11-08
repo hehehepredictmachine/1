@@ -100,6 +100,8 @@ html.nc-doc, html.nc-doc body { background: #010604; overflow: hidden; }
 .nc-tools { position: absolute; right: .9%; bottom: 2.2%; display: flex; gap: .45cqw; }
 .nc-tool { width: 2.3cqw; height: 2.3cqw; border-radius: .45cqw; border: 1px solid rgba(57, 255, 143, .4); background: rgba(1, 12, 7, .86); color: #dfffe9; cursor: pointer;
   font: 700 1cqw/1 "Segoe UI", sans-serif; display: grid; place-items: center; }
+.nc-tool-wide { width: auto; padding: 0 .8cqw; font-size: .78cqw; letter-spacing: .06em; }
+.nc-tool.on { border-color: var(--neon); color: var(--neon); }
 .nc-tool:hover, .nc-tool:focus-visible, .nc-tool[aria-pressed="true"], .nc-tool[aria-expanded="true"] { background: rgba(57, 255, 143, .2); outline: none; }
 
 /* intro after JOIN THE CULT: neural flight -> city */

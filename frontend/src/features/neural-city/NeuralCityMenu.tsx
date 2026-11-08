@@ -17,6 +17,7 @@ import { useStore } from "../../store";
 import { cls } from "../../util";
 import { kindOf, money, pct as fpct, useEnvKind, useGet } from "../cult/data";
 import { Tag } from "../cult/kit";
+import StudioButton from "../pmw133/StudioButton";
 import { CORE, HANDS, SCENE_H, SCENE_W, TOWERS, boxStyle, pct, type Tower } from "./towers";
 import "./neural-city.css";
 
@@ -316,7 +317,8 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
         <div className="nc-tag" data-testid="nc-tag"><i />NEURAL CITY V7.0 · 2.5D <em>· {reduced ? "REDUCED MOTION" : paused ? "PAUZA" : prefs.quality.toUpperCase()}</em></div>
         <div className="nc-tip" role="status" aria-live="polite" data-testid="nc-tip">
           {sel && phase !== "IDLE" && phase !== "RETURN" ? `Otwieranie ${sel.name}… (Esc – anuluj)` : active ? `${active.name} – ${active.desc}` : "Wybierz wieżę, aby przejść do sekcji"}</div>
-        <div className="nc-tools" role="toolbar" aria-label="Animacja menu">
+        <div className="nc-tools" role="toolbar" aria-label="Narzędzia menu">
+          <StudioButton variant="plain" className="nc-tool nc-tool-wide" />
           <button type="button" className="nc-tool" onClick={() => setPaused(!paused)} aria-pressed={paused} data-testid="nc-pause"
             aria-label={paused ? "Wznów animacje" : "Wstrzymaj animacje"} title={paused ? "Wznów animacje" : "Wstrzymaj animacje"}>{paused ? "▶" : "Ⅱ"}</button>
           <button type="button" className="nc-tool" onClick={fullscreen} aria-label="Pełny ekran" title="Pełny ekran">⛶</button>

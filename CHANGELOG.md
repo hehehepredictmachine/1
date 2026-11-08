@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.34.2 – przycisk Studio w menu Neural City
+* Przycisk **Studio** (stan i uruchamianie Pepe Data & Training Studio, 1.33) był w bocznym menu dawnego menu głównego i zniknął razem z nim.
+  Teraz jest na pasku narzędzi Neural City (prawy dolny róg) oraz, jak dotąd, w górnym pasku paneli i w menu bocznym wież.
+* Wykryte przez końcową regresję UI (`test_ui_pmw133`); test sprawdza teraz oba miejsca.
+
 ## 1.34.1 – poprawka instalacji na Windows
 * **Błąd w 1.33.0 i 1.34.0:** instalacja zależności na Windows kończyła się „[BLAD] Instalacja pakietow nie powiodla sie”.
   * Przyczyna: statsmodels 0.15 wymaga pakietu `formulaic` (oraz `interface-meta` i `wrapt`), których nie było w
