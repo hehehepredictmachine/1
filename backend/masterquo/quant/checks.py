@@ -3,7 +3,7 @@
 Every prediction is (1) validated with the PMW-PRED-2 validator - NaN / Inf / bool numbers, wrong units, broken distributions, missing
 horizons are contract errors, the record is excluded with that reason and has no influence; (2) timed: a data_time or available_at in
 the FUTURE (beyond a small clock tolerance) is FUTURE_TIME - never age 0; an age above the TTL (record ttl_s, else the TF / horizon
-default) is STALE; a record computed for an older data generation than the current snapshot (late worker answer) is LATE_GENERATION;
+default) is STALE; a record computed for a bar more than one bar older than the newest closed bar of the snapshot (late worker answer) is LATE_GENERATION;
 (3) data kind: a SYNTHETIC record never enters a REAL snapshot. A valid 0 stays 0 (values are never touched).
 Direct ensembling is allowed only between records with the identical event definition (task, unit, horizon, timeframe, plan / side) -
 `ensemble_compatible`; anything else is kept as separate named features or excluded.
@@ -65,7 +65,7 @@ def check(p: dict, *, now: float | None = None, snapshot_kind: str | None = None
     if snapshot_kind == "REAL" and p.get("data_kind") == "SYNTHETIC":
         return {"eligible": False, "reason": "SYNTHETIC_IN_REAL_SNAPSHOT", "age_s": age}
     tf = p.get("timeframe")
-    if generation_floor and tf in generation_floor and generation_floor[tf] is not None and dt < generation_floor[tf] - TF_SECONDS.get(tf, 60) * DEFAULT_TTL_BARS:
+    if generation_floor and tf in generation_floor and generation_floor[tf] is not None and dt < generation_floor[tf] - TF_SECONDS.get(tf, 60):
         return {"eligible": False, "reason": f"LATE_GENERATION:{tf}", "age_s": age}
     return {"eligible": True, "reason": None, "age_s": age}
 
