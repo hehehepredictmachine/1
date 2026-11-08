@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 1.34.0 – Menu główne Neural City V7.0 i launcher JOIN THE CULT (TASK 001)
+* **Menu główne Neural City** (`#/menu`): neuronowy Pepe przy holograficznym stole z siedmioma wieżami według zatwierdzonej grafiki.
+
+  | Wieża | Otwiera istniejący panel |
+  |---|---|
+  | **PEPE$WTC** | Trading Intelligence |
+  | **PEPE$SIGNAL** | Wind Portal |
+  | **PEPE$BANK** | Lightning Tower |
+  | **MARKET NEWS** | Kontekst rynku |
+  | **STRATEGIES** | Strategy Lab |
+  | **SETTINGS** | Ustawienia |
+  | **PEPE$ROI** | Profits |
+
+  * Wieże i górny pasek uruchamiają jeden kontroler z sekwencją SELECTED → STOP_ROTATION → PEPE_REACH → CONTACT → PORTAL → NAVIGATE.
+    Esc anuluje, podwójne kliknięcie jest ignorowane, po powrocie fokus wraca na wieżę.
+  * Karty Winratio / ROI (Dietz) / Equity pokazują dane bota ze znacznikiem źródła albo N/A.
+  * Tryb **2.5D**: pierścienie hologramów, cząsteczki, prąd, rdzeń, gest Pepe, portal, intro z lotem przez sieć neuronów.
+  * Jakość Cinematic / Balanced / Performance, pauza, ograniczony ruch.
+  * Na małym ekranie pod sceną pojawia się lista wież.
+* **Aliasy tras** (stare i nowe nazwy): `#/wtc`, `#/pepe-signal` (`#/brain-signal`), `#/pepe-bank` (`#/ai-agent`), `#/market-news`,
+  `#/strategies`, `#/settings`, `#/pepe-roi` (`#/leaderboard`).
+* **Nowe etykiety** w menu bocznym wież, tytułach okna i mapie ekranów.
+* **Launcher JOIN THE CULT** (przeglądarka i okno Windows): tłem jest dostarczona grafika Pepe przemawiającego (proporcje zachowane),
+  przycisk jest na dole pośrodku.
+  * Animacje: fade-in, poświata, hover, kliknięcie.
+  * Przejście do panelu dopiero po sprawdzeniu połączenia z silnikiem; błąd zostawia launcher z komunikatem.
+  * Wszystkie dotychczasowe funkcje okna startowego pozostają.
+* **Grafiki:** `tools/neural_city_assets.py`. Stare nazwy wież i przykładowe liczby z grafiki są usunięte inpaintingiem, a sumy są
+  w `frontend/public/assets/neural/zrodla.json`.
+* **Testy:** `tests/test_ui_neural_city.py` (9). Testy launchera i menu przeniesiono z `test_ui_cult.py`, który zostaje dla paneli wież.
+* **Opis:** `docs/NEURAL_CITY_I_LAUNCHER_1_34_PL.md` (mapa tras, zmienione pliki, ograniczenia, brakujące zasoby 3D).
+* **Bez zmian:** wnętrza paneli, strategie, modele, ryzyko, wykonanie, MT5, konfiguracja i baza bota. Ustawienia animacji menu są
+  zapisywane tylko w przeglądarce.
+
 ## 1.33.0 – wszystkie aktualizacje: audyt i 15 rodzin modeli, wskaźniki + DXY + plany Scalp/Hedge + SVP, Data & Training Studio, architektura decyzji
 * **Audyt modeli (AUD):**
   * kontrakt prognoz PMW-PRED-2: liczby skończone (nigdy bool), schematy wyników per zadanie, horyzont bez wymyślania, JSON bez NaN;

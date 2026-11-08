@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.33.0"
+VERSION = "1.34.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -166,7 +166,7 @@ def build(path: Path, role: str, story: list, title: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------- administrator
 def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
-               P("Obsługa bota PepeMarketWizard 1.32: uruchomienie (launcher JOIN THE CULT), menu główne – miasto sześciu wież, "
+               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne Neural City (siedem wież), "
                  "panele Lightning / Wind / Control / Strategy Lab, wykresy i strefy, trening modeli, wydawanie paczek, aktualizacja "
                  "i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
@@ -192,33 +192,36 @@ def admin(shots: Path | None) -> list:
             "Przy problemie uruchom <b>02_DIAGNOSTYKA.bat</b> i zachowaj wynik."),
           P("Najpierw otwiera się małe okno <b>JOIN THE CULT</b> (launcher): pokazuje postęp pierwszego startu, wybór danych poprzedniej "
             "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij</b>. Gdy silnik działa, "
-            "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. <b>JOIN THE CULT</b> powiększa okno do 85 % ekranu i otwiera "
-            "menu główne z 6-sekundowym intro (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
+            "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. Tłem launchera jest grafika Pepe przemawiającego do zgromadzenia. "
+            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne <b>Neural City</b> po krótkim "
+            "intro „lotu przez sieć neuronów” (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
             "W przeglądarce (bez aplikacji Windows) ten sam launcher pojawia się na początku sesji."),
-          *shot(shots, "ui_cult/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
+          *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
           P("Dane aplikacji Windows: <b>%LOCALAPPDATA%\\PepeMarketWizard\\data</b> (tryb portable: folder programu). Kopie sprzed "
             "aktualizacji: <b>%LOCALAPPDATA%\\PepeMarketWizard\\backups</b>."),
           box("Pliki EXE nie są podpisane cyfrowo (brak certyfikatu Authenticode) – Windows SmartScreen może pokazać ostrzeżenie. "
               "Uruchamiaj tylko paczkę, której sumę SHA-256 porównałeś z plikiem .sha256 / raportem.", "warn"),
           PageBreak()]
     # 2
-    s += [P("2 / Interfejs: menu główne (sześć wież), panele i pasek stanu", "h1"),
-          P("Menu główne to miasto z sześcioma wieżami. Najechanie na wieżę pokazuje jej opis i bieżącą wartość z bota, kliknięcie "
-            "(albo Enter) przybliża kamerę i otwiera panel. Pasek na dole: wynik, win rate, aktywne sygnały i equity rachunku – każda "
-            "wartość ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>, <b>nieaktualne</b>, "
-            "<b>błąd synchronizacji</b>)."),
+    s += [P("2 / Interfejs: menu główne Neural City (siedem wież), panele i pasek stanu", "h1"),
+          P("Menu główne (1.34) to <b>Neural City</b>: neuronowy Pepe przy holograficznym stole z siedmioma wieżami. Najechanie na wieżę "
+            "pokazuje jej opis, kliknięcie wieży albo przycisku na górnym pasku (ten sam cel), Enter lub dotknięcie listy na małym ekranie "
+            "otwiera istniejący panel (Esc anuluje przejście). Karty Winratio, ROI i Equity pochodzą ze statystyk bota i rachunku MT5 – "
+            "każda ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>), bez danych: <b>N/A</b>. "
+            "Scena działa w trybie <b>2.5D</b> (animowane pierścienie, cząsteczki, gest i portal na grafice – nie modele 3D); jakość "
+            "animacji: ⚙ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje."),
           table([["Wieża", "Panel"],
-                 ["Lightning Tower", "Live Signals Center: sygnały bota, plan wejścia, cykl życia sygnału, alerty rynku"],
-                 ["Ice Tower", "widok Precision (wykresy, reżim, strefy)"],
-                 ["Wind Portal", "AI Engine Core: modele, macierz konsensusu, ślad decyzji, Monte Carlo, mapy przepływu modułów"],
-                 ["Control Tower", "Bot Management Center: wyniki, sterowanie strategią, limity ryzyka, STOP, Telegram, jakość danych, "
-                  "autopilot (tryby), infrastruktura (CPU/RAM), dziennik"],
-                 ["Strategy Lab", "silnik strategii, ustawienia, podgląd potoku decyzji, TEST STRATEGY / DEPLOY TO BOT, biblioteka, porównanie"],
-                 ["Fire Tower", "Trading Intelligence (terminal)"]], [40, 130]),
-          *shot(shots, "ui_cult/03_menu_1920.png", "Menu główne – sześć wież.", width_mm=160),
+                 ["PEPE$WTC (dawniej WTC PEPE)", "Trading Intelligence – terminal handlowy"],
+                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "Wind Portal – modele AI, konsensus, ślad decyzji, Monte Carlo"],
+                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – sygnały BUY/SELL, plan wejścia, cykl życia sygnału"],
+                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["STRATEGIES", "Strategy Lab – silnik, ustawienia, biblioteka, porównanie"],
+                 ["SETTINGS", "Ustawienia"],
+                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"]], [55, 115]),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=160),
           P("Menu boczne obszarów (bez zmian) – kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są na pasku zakładek."),
           table([["Obszar", "Zawartość"],
-                 ["Menu główne", "miasto sześciu wież (logo w lewym górnym rogu również tu prowadzi)"],
+                 ["Menu główne", "Neural City – siedem wież (logo w lewym górnym rogu również tu prowadzi)"],
                  ["Precision", "Pulpit, Wykresy MTF, Strefy rynkowe, Scalping MTF, Kontekst rynku, Indykatory, Analiza sygnału, Neural Cyberpunk"],
                  ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje, Lightning Tower, Strategy Lab"],
                  ["Profits", "Pozycje i ryzyko, Dziennik i wyniki, widok Profits"],
@@ -348,11 +351,11 @@ def client(shots: Path | None) -> list:
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",
                  "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
                  "wymagane składniki – może potrwać kilka minut. Postęp widać w małym oknie <b>JOIN THE CULT</b>.",
-                 "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b>. Okno się powiększy i po krótkim intro "
-                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne – miasto z sześcioma wieżami. Przy pierwszym starcie kreator prosi o "
+                 "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b> (na dole ekranu). Okno się powiększy i po krótkim intro "
+                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne <b>Neural City</b> z siedmioma wieżami. Przy pierwszym starcie kreator prosi o "
                  "limity ryzyka i koszty."]),
-          *shot(shots, "ui_cult/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
-          *shot(shots, "ui_cult/03_menu_1920.png", "Menu główne – sześć wież.", width_mm=150),
+          *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=150),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
               "z plikiem .sha256."),
           PageBreak()]
@@ -370,9 +373,10 @@ def client(shots: Path | None) -> list:
                  ["Tryb, STOP", "SIGNALS / PAPER / AUTO DEMO / AUTO LIVE; STOP zatrzymuje nowe wejścia"]], [55, 115]),
           PageBreak()]
     s += [P("3 / Korzystanie z panelu", "h1"),
-          P("Menu główne to miasto sześciu wież: <b>Lightning</b> (sygnały na żywo), <b>Ice</b> (analiza – widok Precision), "
-            "<b>Wind</b> (silnik AI i modele), <b>Control</b> (zarządzanie botem), <b>Strategy Lab</b> (strategie) i <b>Fire</b> "
-            "(terminal). Najedź na wieżę – zobaczysz opis, kliknij – otworzysz panel. Menu boczne obszarów: <b>Precision</b>, "
+          P("Menu główne <b>Neural City</b> ma siedem wież: <b>PEPE$WTC</b> (terminal handlowy), <b>PEPE$SIGNAL</b> (modele AI i oceny), "
+            "<b>PEPE$BANK</b> (sygnały na żywo), <b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>STRATEGIES</b> (strategie), "
+            "<b>SETTINGS</b> (ustawienia) i <b>PEPE$ROI</b> (wyniki rachunku). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
+            "na górnym pasku – otworzysz panel (Esc anuluje). Menu boczne obszarów: <b>Precision</b>, "
             "<b>Dyscypline</b>, <b>Profits</b>, <b>Modele i trening</b>, <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
           box("Znaczniki przy wartościach mówią, skąd pochodzą: <b>DEMO · symulator</b> (dane syntetyczne), <b>DEMO</b> (rachunek "
               "demonstracyjny), <b>REAL</b>, <b>brak danych</b>, <b>nieaktualne</b>, <b>błąd synchronizacji</b>. Wynik, win rate czy "

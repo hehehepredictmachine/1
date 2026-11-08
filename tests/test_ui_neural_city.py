@@ -3,7 +3,7 @@ terminal; the launcher window of the Windows app as a page with a stand-in bridg
 
 Launcher: shown at the start of a session on the bare address (the panel is not mounted before the click); the delivered image is the
 background with its proportions kept; JOIN THE CULT in the lower centre, disabled until the bot is ready, hover / click animation;
-no engine connection -> the button stays disabled with the reason; JOIN -> neural intro -> main menu; reload / direct link skip it.
+engine not answering -> the start error with the instruction (never SYSTEM READY); JOIN -> neural intro -> main menu; reload / direct link skip it.
 Windows launcher page (desktop/splash.html): ready / progress / error / data choice, JOIN calls the app exactly once, nothing overflows.
 Menu: exactly the seven names; tower geometry and top navigation call the same controller and open the same EXISTING panel; the state
 machine IDLE -> SELECTED -> STOP_ROTATION -> PEPE_REACH -> CONTACT -> PORTAL -> NAVIGATE; Esc cancels; RETURN restores the focus;
@@ -169,17 +169,18 @@ class TestNeuralCityUI(unittest.TestCase):
             finally:
                 c.close()
 
-    def test_02_launcher_without_engine_connection_keeps_button_disabled(self):
+    def test_02_engine_not_answering_never_looks_ready(self):
+        """The engine does not answer: no launcher pretending SYSTEM READY, no panel - the existing start error with the instruction."""
         c, p = self.ctx()
-        p.route_web_socket(re.compile(r".*/api/v1/ws$"), lambda ws: ws.close())             # the engine socket never opens
+        p.route(re.compile(r".*/api/v1/(state|session)(\?.*)?$"), lambda r: r.abort())
         try:
             p.goto(BASE + "/")
-            p.wait_for_selector("[data-testid=cult-launcher]", timeout=30000)
-            p.wait_for_timeout(3000)
-            self.assertTrue(p.locator("[data-testid=cult-join]").is_disabled())
-            self.assertIn("ŁĄCZENIE Z SILNIKIEM", p.locator("[data-testid=cult-status]").inner_text())
+            self.assertTrue(wait_for(lambda: "Nie można połączyć się z lokalnym backendem" in p.evaluate("() => document.body.innerText"), 30, 0.3))
+            self.assertEqual(p.locator("[data-testid=cult-join]:not([disabled])").count(), 0)
             self.assertEqual(p.locator("[data-testid=page-menu]").count(), 0)
+            self.shot(p, "02_engine_down")
         finally:
+            p.unroute_all(behavior="ignoreErrors")
             c.close()
 
     def test_03_windows_launcher_page(self):
@@ -192,8 +193,8 @@ class TestNeuralCityUI(unittest.TestCase):
             for k, st in states.items():
                 c, p = self.ctx(viewport=vp)
                 try:
-                    p.add_init_script("st => { window.__calls = []; window.pmw = (a) => { window.__calls.push(a); "
-                                      "return Promise.resolve(a === 'state' ? st : {}); }; }", st)
+                    p.add_init_script("(() => { const st = " + json.dumps(st) + "; window.__calls = []; window.pmw = (a) => { window.__calls.push(a); "
+                                      "return Promise.resolve(a === 'state' ? st : {}); }; })();")
                     p.goto((_env.ROOT / "desktop" / "splash.html").as_uri())
                     p.wait_for_timeout(1200)
                     self.assertTrue(p.evaluate("() => document.getElementById('sceneImg').naturalWidth") > 0, k)
@@ -261,7 +262,7 @@ class TestNeuralCityUI(unittest.TestCase):
 
     def test_05_keyboard_escape_return_focus_debounce(self):
         c, p = self.ctx()
-        p.add_init_script("() => { window.__hc = 0; window.addEventListener('hashchange', () => window.__hc++); }")
+        p.add_init_script("(() => { window.__hc = 0; window.addEventListener('hashchange', () => window.__hc++); })();")
         try:
             self.menu(p)
             p.focus("[data-testid=nc-tower-signal]")

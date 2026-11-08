@@ -213,7 +213,10 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
     if (!animate || !k) { setPhase("NAVIGATE"); go(t); return; }
     clearTimers();
     for (const [p, at] of SEQ) {
-      timers.current.push(window.setTimeout(() => { setPhase(p); if (p === "NAVIGATE") go(t); }, at * k));
+      timers.current.push(window.setTimeout(() => {
+        setPhase(p);
+        if (p === "NAVIGATE") timers.current.push(window.setTimeout(() => go(t), 60));   // NAVIGATE is rendered (portal flash), then the panel opens
+      }, at * k));
     }
   }, [phase, animate, prefs.quality, go]);
 

@@ -1,5 +1,9 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0a. Wersja 1.34.0 → 1.33.0
+1.34 zmienia tylko interfejs (menu główne Neural City, launcher). Konfiguracja i baza danych są bez zmian, więc wystarczy uruchomić
+1.33.0 z jej folderu. Ustawienia animacji menu leżą wyłącznie w pamięci przeglądarki / okna i 1.33 ich nie czyta.
+
 ## 0. Wersja 1.33.0 → 1.32.0
 Pełna instrukcja: `docs/AKTUALIZACJA_1_33_PL.md`. W skrócie:
 1. Zamknij 1.33.
