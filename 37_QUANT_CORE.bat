@@ -35,14 +35,14 @@ if "%CH%"=="3" "%PY%" -m masterquo quant inventory --live
 if "%CH%"=="4" "%PY%" -m masterquo quant train --instrument XAUUSD
 if "%CH%"=="5" "%PY%" -m masterquo quant list --instrument XAUUSD
 if "%CH%"=="6" "%PY%" -m masterquo quant bench
-if "%CH%"=="7" "%PY%" -m masterquo quant mode SHADOW
+if "%CH%"=="7" "%PY%" -m masterquo quant mode SHADOW --instrument XAUUSD
 if "%CH%"=="8" call :assist
-if "%CH%"=="9" "%PY%" -m masterquo quant mode OFF
+if "%CH%"=="9" "%PY%" -m masterquo quant mode OFF --instrument XAUUSD
 popd
 if "%CH%"=="0" exit /b 0
 goto menu
 :assist
 set "OK="
 set /p "OK=ASSIST moze tylko wstrzymac kandydata (bez zlecen, bez zmiany limitow). Wpisz TAK aby potwierdzic: "
-if /i "%OK%"=="TAK" "%PY%" -m masterquo quant mode ASSIST --confirm
+if /i "%OK%"=="TAK" "%PY%" -m masterquo quant mode ASSIST --confirm --instrument XAUUSD
 exit /b 0

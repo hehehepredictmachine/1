@@ -2,7 +2,7 @@
 
 Wszystkie polecenia uruchamia się z folderu `backend` programu, interpreterem `.venv`: `..\.venv\Scripts\python.exe -m masterquo quant …`.
 Prościej użyć `37_QUANT_CORE.bat` z głównego folderu (menu z tymi samymi poleceniami).
-Każde polecenie było uruchomione w testach (`test_quant_core.TestInventoryCli`, `test_ui_quant`). Kody wyjścia: 0 ok, 1 błąd, 2 brak danych / złe argumenty, 3 odmowa.
+Każde polecenie było uruchomione w testach (`test_quant_core.TestInventoryCli`, `test_ui_quant`). Instrument podaje się zawsze jawnie (`--instrument XAUUSD|BTC`) w train / list / activate / rollback / mode. Kody wyjścia: 0 ok, 1 błąd, 2 brak danych / złe argumenty, 3 odmowa.
 
 ## 1. Po aktualizacji
 
@@ -80,7 +80,7 @@ Po aktywacji oceny setupów tego zadania pokazują P(zdarzenia), E[net R] i ewen
 Warunki: aktywny `VALIDATED_SHADOW` oraz jawne potwierdzenie.
 
 ```bat
-..\.venv\Scripts\python.exe -m masterquo quant mode ASSIST --confirm
+..\.venv\Scripts\python.exe -m masterquo quant mode ASSIST --confirm --instrument XAUUSD
 ```
 
 W panelu: zaznacz „rozumiem…”, a potem przycisk ASSIST.
@@ -88,7 +88,7 @@ W panelu: zaznacz „rozumiem…”, a potem przycisk ASSIST.
 ASSIST może tylko **wstrzymać** kandydata (`MODEL_QUANT_HOLD`), gdy E[net R] ≤ 0 albo P < próg rentowności planu binarnego. Przy nieznanym koszcie nigdy nie wstrzymuje.
 Nie składa zleceń, nie zmienia limitów, wolumenu ani trybu SIGNALS/PAPER/AUTO DEMO/AUTO LIVE. Nie omija STOP ani rezerwacji.
 
-Powrót do domyślnego trybu: `quant mode SHADOW`. Wyłączenie Quant Core: `quant mode OFF` (zachowanie jak 1.34).
+Powrót do domyślnego trybu: `quant mode SHADOW --instrument XAUUSD`. Wyłączenie Quant Core: `quant mode OFF --instrument XAUUSD` (zachowanie jak 1.34).
 
 ## 6. Pomiary
 

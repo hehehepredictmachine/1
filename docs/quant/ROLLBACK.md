@@ -2,8 +2,8 @@
 
 ## Poziomy wycofania (od najlżejszego)
 
-1. **Wyłączenie wpływu**: `python -m masterquo quant mode SHADOW`. Z ASSIST wraca do obserwacji. Koordynator czyta rodziny jak w 1.34.
-2. **Wyłączenie Quant Core**: `python -m masterquo quant mode OFF`. Brak cyklu, ledgera i ocen. Decyzje jak w 1.34.
+1. **Wyłączenie wpływu**: `python -m masterquo quant mode SHADOW --instrument XAUUSD`. Z ASSIST wraca do obserwacji. Koordynator czyta rodziny jak w 1.34.
+2. **Wyłączenie Quant Core**: `python -m masterquo quant mode OFF --instrument XAUUSD`. Brak cyklu, ledgera i ocen. Decyzje jak w 1.34.
    Pozostają dwie poprawki w istniejących modułach: odrzucenie czasu z przyszłości i Wilson. Obie tylko zaostrzają.
 3. **Rollback artefaktu meta-modelu**: `python -m masterquo quant rollback --instrument XAUUSD --task <task_hash>` albo przycisk „rollback” w Centrum treningu.
    Przywraca poprzednią aktywną wersję, a gdy jej nie ma, usuwa aktywny wpis zadania.

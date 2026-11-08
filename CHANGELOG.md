@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 1.35.0 – PMW Quant Core (wspólny silnik obliczeń i Quant MetaModel, SHADOW)
+* **Inwentaryzacja wszystkich komponentów** (`docs/quant/INVENTORY.md/.json`, `python -m masterquo quant inventory`):
+  * 89 komponentów z rejestrów kodu (SH 37, rodziny 16, Trainhub 6, MM 20, lab, SI, flow, analizy); wiersze grupowe rozwinięte, 78 aliasów złożonych;
+  * CatBoost = NOT_IMPLEMENTED, a `sdom` / `quant_momentum` / `renko` / `head_shoulders` / `data_grabber` / `chart_sync` = NO_SPEC (bez odtwarzania algorytmów z nazw);
+  * cztery osobne miary pokrycia (katalog ≠ gotowość).
+* **Kanoniczne identyfikatory i aliasy** (`quant/ids.py`): TH_RF/TH_XGB/TH_SVM rodzin = modele Trainhub; SEQ_GRU_EVENT = `mm:event_engine_dir3`.
+  Jeden artefakt to jeden głos i jeden trening; na granicy koordynatora nigdy nie pojawia się `?`.
+* **Snapshot danych** z QC (zamknięte świece, `available_at`, NATIVE/RESAMPLED, luki raportowane bez wypełniania, tick volume jako aktywność feedu), **kontrola kontraktów**
+  (NaN/Inf/bool, jednostki, rozkłady, FUTURE_TIME, STALE, LATE_GENERATION, SYNTHETIC≠REAL) i **harmonogram DAG** (jeden właściciel, deadline, atomowa publikacja generacji).
+* **Adaptery modeli spoza `all_predictions()`**: reguły SH, wskaźniki, DXY, strefy, Monte Carlo (MODEL_SIMULATED), MM (Kalman, breakout, multi-indicator, SMC, align mean, GPR),
+  lab, scalp A oraz **Event GRU**. W 1.33 Event GRU nie miał żadnej ścieżki na żywo – teraz ją ma.
+* **Rdzeń numeryczny, jednostki, koszty, EV** (`quant/numeric.py`, `quant/units.py`): koszty z podstawą (spread w cenach nie jest odejmowany drugi raz, nieznana prowizja ≠ zero);
+  EV binarne / scenariuszowe; G=2R, L=1R, p=0,6 → 0,8R, próg 1/3.
+* **EventSpec i symulator planu** (partiale, BE po potwierdzonym TP2 od następnej świecy, timeout, luka przez stop, polityka świecy niejednoznacznej ustalona z góry, koszty raz).
+* **Quant MetaModel**: regresja logistyczna zdarzenia + ridge net R, walk-forward OOF z purge, kalibracja na osobnym bloku, jednokrotny test, ablacja, kryteria promocji,
+  artefakty JSON z manifestem i rollbackiem; status z dowodów (`INSUFFICIENT_EVIDENCE` / `VALIDATION_FAILED` / `VALIDATED_SHADOW`).
+* **Integracja**:
+  * SHADOW domyślnie, zgodność wykonawcza z 1.34;
+  * ASSIST tylko po walidacji i jawnym potwierdzeniu – wyłącznie wstrzymanie przez istniejący koordynator (`MODEL_QUANT_HOLD`);
+  * API `/api/v1/quant/status|predictions|assessment|jobs|mode|inventory|models/*`, CLI `python -m masterquo quant …`, `37_QUANT_CORE.bat`;
+  * sekcje w Koordynatorze decyzji i Centrum treningu.
+* **Poprawki istniejących modułów**:
+  * `evaluation/engine.py` nie traktuje już Wilsona z liczności kalibracji jako niepewności p(x) (PMW-EVAL-ENGINE-2);
+  * koordynator nie traktuje czasu z przyszłości jako wieku 0 (`MODEL_REQUIRED_FUTURE_TIME`).
+* Meta-model **nie był trenowany na danych rzeczywistych** (brak terminala i danych użytkownika w środowisku budowania): ledger zaczyna się zbierać po aktualizacji.
+  Bez migracji bazy; nowe pliki tylko w `<dane>/quant/`.
+
 ## 1.34.2 – przycisk Studio w menu Neural City
 * Przycisk **Studio** (stan i uruchamianie Pepe Data & Training Studio, 1.33) był w bocznym menu dawnego menu głównego i zniknął razem z nim.
   Teraz jest na pasku narzędzi Neural City (prawy dolny róg) oraz, jak dotąd, w górnym pasku paneli i w menu bocznym wież.

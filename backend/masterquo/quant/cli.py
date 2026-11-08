@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo quant", description="PMW Quant Core – inwentaryzacja, meta-model, tryb SHADOW/ASSIST, pomiary")
     ap.add_argument("cmd", choices=["status", "inventory", "train", "list", "activate", "rollback", "mode", "bench"])
     ap.add_argument("value", nargs="?", help="mode: OFF|SHADOW|ASSIST")
-    ap.add_argument("--instrument", default="XAUUSD", type=str.upper, choices=["XAUUSD", "BTC"])
+    ap.add_argument("--instrument", default=None, type=str.upper, choices=["XAUUSD", "BTC"], help="XAUUSD albo BTC – jawnie (train/list/activate/rollback/mode)")
     ap.add_argument("--task", default=None)
     ap.add_argument("--version", default=None)
     ap.add_argument("--out", default=None)
@@ -54,6 +54,9 @@ def main(argv=None) -> int:
     from . import service as SV
     from .ledger import QuantLedger
     inst = a.instrument
+    if a.cmd in ("train", "list", "activate", "rollback", "mode") and not inst:
+        print("[BŁĄD] wymagane --instrument XAUUSD|BTC (zawsze jawnie)")
+        return 2
     if a.cmd == "inventory":
         from . import inventory as I
         out = Path(a.out) if a.out else Path(__file__).resolve().parents[3] / "docs" / "quant"
@@ -68,7 +71,7 @@ def main(argv=None) -> int:
             (out / "INVENTORY.json").write_text(json.dumps(inv, ensure_ascii=False, indent=1, default=str) + "\n", encoding="utf-8")
             (out / "INVENTORY.md").write_text(I.to_markdown(inv), encoding="utf-8")
         else:
-            inv = I.write(out, None, inst)
+            inv = I.write(out, None, inst or "XAUUSD")       # the instrument only selects the on-disk artifacts that are probed
         c = inv["coverage"]
         print(f"[QUANT] inwentaryzacja: {c['inventory']['recognised']} komponentów, sklasyfikowano {c['inventory']['classified']}, "
               f"z adapterem {c['adapters']['with_adapter']}, NOT_APPLICABLE uzasadnione {c['adapters']['not_applicable_justified']}, "
@@ -79,8 +82,9 @@ def main(argv=None) -> int:
     if a.cmd == "status":
         st = SV.Settings(SV.qdir() / "settings.json").get()
         live = _server("/api/v1/quant/status")
-        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": led.counts(inst), "active": M.pointer(inst).get("active"),
-            "versions": M.list_versions(inst)[-10:], "bot": "działa" if live else "nie działa (stan offline z plików)",
+        insts = [inst] if inst else ["XAUUSD", "BTC"]
+        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": led.counts(inst),
+            "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0
     if a.cmd == "train":

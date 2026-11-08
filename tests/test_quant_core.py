@@ -651,9 +651,10 @@ class TestInventoryCli(unittest.TestCase):
                                             capture_output=True, text=True, timeout=300)
             self.assertEqual(run("--help").returncode, 0)
             self.assertEqual(run("status").returncode, 0)
-            self.assertEqual(run("train").returncode, 2)                    # no labelled rows
-            self.assertEqual(run("mode", "ASSIST", "--confirm").returncode, 3)
-            self.assertEqual(run("mode", "BOGUS").returncode, 2)
+            self.assertEqual(run("train", "--instrument", "XAUUSD").returncode, 2)                    # no labelled rows
+            self.assertEqual(run("mode", "ASSIST", "--confirm", "--instrument", "XAUUSD").returncode, 3)
+            self.assertEqual(run("train").returncode, 2)                    # instrument never implied
+            self.assertEqual(run("mode", "BOGUS", "--instrument", "XAUUSD").returncode, 2)
             self.assertEqual(run("activate").returncode, 2)
             r = run("inventory", "--out", td.dir + "/inv")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

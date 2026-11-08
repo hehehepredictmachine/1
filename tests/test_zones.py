@@ -397,7 +397,8 @@ class EvaluationIntegration(unittest.TestCase):
     def test_zone_context_reduces_only_with_ok_data(self):
         from test_evaluation import cand
         from masterquo.evaluation import engine as E
-        p = {"value": 0.60, "calibrated": True, "n_calibration": 2000}
+        p = {"value": 0.60, "calibrated": True, "n_calibration": 2000,
+             "interval": {"lo": 0.55, "hi": 0.65, "method": "test", "validated": True}}      # 1.35: only a validated interval gives ACCEPT
         self.assertEqual(E.assess(cand(), prob=p, extra_cost=0.1).decision, "ACCEPT")
         z = {"map_id": "ZM-1", "map_as_of": "x", "data_state": "OK", "flags": ["ZONE_ROOM_INSUFFICIENT"], "room_after_costs_r": 0.5}
         a = E.assess(cand(), prob=p, extra_cost=0.1, zones=z)

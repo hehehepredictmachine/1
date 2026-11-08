@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.34.2"
+VERSION = "1.35.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -299,6 +299,21 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4c - 1.35
+    s += [P("4c / Nowe w 1.35: PMW Quant Core (SHADOW)", "h1"),
+          bullets(["Wspólny silnik: snapshot zamkniętych świec z kontrolą jakości → wyniki wszystkich dostępnych modeli w jednym kontrakcie → "
+                   "kontrola (aliasy, czas z przyszłości, przeterminowanie, błędy kontraktu) → ocena setupu przez <b>Quant MetaModel</b>.",
+                   "Działa sam w tle, także przy zamkniętym panelu. Domyślnie <b>SHADOW</b> – liczy i zapisuje, bez wpływu na decyzje.",
+                   "Sekcje „PMW Quant Core”: <b>Ustawienia i diagnostyka → Koordynator decyzji</b> (stan danych, modele gotowe / wykluczone z powodem, "
+                   "czasy, oceny setupów) oraz <b>Modele i trening → Centrum treningu</b> (dowody w ledgerze, trening, aktywacja, rollback).",
+                   "Meta-model uczy się wyłącznie na rzeczywistych kandydatach zapisanych w chwili decyzji i rozstrzygniętych później. "
+                   "Bez wystarczającej liczby wyników pokazuje <b>brak wytrenowanego modelu dla tego zdarzenia</b> – nigdy 0 % ani 50 %.",
+                   "<b>ASSIST</b> tylko po walidacji (VALIDATED_SHADOW) i Twoim potwierdzeniu – może wyłącznie wstrzymać kandydata; nie składa zleceń "
+                   "i nie zmienia limitów. Menu z wiersza poleceń: <b>37_QUANT_CORE.bat</b>; szczegóły: <b>docs/quant/RUNBOOK_PL.md</b>."]),
+          *shot(shots, "ui_quant/trening_quant.png", "PMW Quant Core w Centrum treningu.", width_mm=160),
+          box("Wynik na danych syntetycznych (tryb demo) sprawdza działanie programu, nie skuteczność. Wycofanie: tryb SHADOW / OFF albo "
+              "docs/quant/ROLLBACK.md.", "warn"),
+          PageBreak()]
     s += [P("5 / Paczki do przekazania", "h1"),
           P("Od 1.30 jest jedna wersja programu – bez licencji, bez podziału na OWNER i CLIENT. Inna osoba dostaje tę samą paczkę co Ty:"),
           table([["Paczka", "Dla kogo"],
