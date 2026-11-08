@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.36.0 (w repozytorium, bez nowej paczki) – Main Menu V2 (8 wież) + wieże PEPE$WTC V4 i PEPE$SIGNAL V1
+* **Menu główne V2 – stół neuronowy**: trzech Pepe przy okrągłym stole z **ośmioma** wieżami (PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, PEPE$ROI, STRATEGIES,
+  MARKET NEWS, TRAINING LAB, SETTINGS). Małe logo w lewym górnym rogu, nawigacja na górze, bez paneli informacyjnych i bez przycisków na dole.
+  Wieże i pasek wywołują ten sam kontroler i otwierają istniejące sekcje; Esc, fokus, klawiatura, reduced motion, pauza, Studio w górnym pasku.
+  Tryb 2.5D (brak modeli 3D i riga Pepe – opisane w panelu ⓘ). Menu nie pobiera danych MT5.
+* **PEPE$WTC V4** (`#/pepe-wtc`, aliasy `#/wtc`, `#/pepe-wtc`): wykres główny, Multi-Chart Workspace (dodawanie/usuwanie, niezależny TF), Indicator Manager
+  tylko z warstwami bota (BB = N/A), Kronos M1/M5 (OFF/AUTO/MANUAL z realnym statusem), AI Live Zones (silnik stref, AUTO/MANUAL, filtr typów),
+  **Volume Profile Auto Zones** (silnik PMW-SVP-1: POC, VAH/VAL, HVN, LVN, warstwa na wykresie), Setup Builder z R:R bez zlecenia, checklista, konsensus, MTF.
+* **PEPE$SIGNAL V1** (`#/pepe-signal`, aliasy `#/signal`, `#/brain-signal`): jeden rejestr sygnałów (bot-signals + scenariusze silnika + SCALPING/HEDGING),
+  filtry, lista wirtualna, wykres sygnału z Entry/SL/TP przewinięty do czasu setupu, warunki ENTRY/TRIGGER/INVALIDATION z checklisty strategii,
+  narracja z faktów, tabela z sortowaniem i paginacją, oś zdarzeń, oceny modeli (stan, wersja, czas, semantyka wyniku), konsensus, metryki, MTF.
+* `ChartPanel`: opcjonalna osobna warstwa `overlay` i sterowane warstwy 1.33 (bez zmian na istniejących stronach).
+* Dawne panele `#/trading-intelligence` i `#/wind` działają bez zmian (menu boczne wież CULT ma do nich wpisy).
+* Testy: `tests/test_ui_towers.py` (nowy), `tests/test_ui_neural_city.py` (8 wież). Raport: `docs/wdrozenie_1_36/RAPORT_WDROZENIA_PL.md`.
+
 ## 1.35.0 – PMW Quant Core (wspólny silnik obliczeń i Quant MetaModel, SHADOW)
 * **Inwentaryzacja wszystkich komponentów** (`docs/quant/INVENTORY.md/.json`, `python -m masterquo quant inventory`):
   * 89 komponentów z rejestrów kodu (SH 37, rodziny 16, Trainhub 6, MM 20, lab, SI, flow, analizy); wiersze grupowe rozwinięte, 78 aliasów złożonych;

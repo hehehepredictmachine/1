@@ -16,7 +16,7 @@ import ScalpMtfPage from "./pages/ScalpMtfPage";
 import { StrategyPage } from "./components/ShPanels";
 import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
-import { CULT_PAGE_IDS, PAGES, TERMINAL_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
+import { CULT_PAGE_IDS, PAGES, TERMINAL_PAGE_IDS, TOWER_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
 import Launcher, { launcherNeeded } from "./features/cult/Launcher";
 import WizardShell from "./features/wizard/WizardShell";
 import { TOWERS } from "./features/wizard/assets";
@@ -42,6 +42,8 @@ const TrainingCenterPage = lazy(() => import("./features/training-center/Trainin
 const DxyPage = lazy(() => import("./features/pmw133/DxyPage"));
 const SvpPage = lazy(() => import("./features/pmw133/SvpPage"));
 const DecisionPage = lazy(() => import("./features/pmw133/DecisionPage"));
+const WtcTower = lazy(() => import("./features/towers/WtcTower"));          // 1.36 PEPE$WTC V4
+const SignalTower = lazy(() => import("./features/towers/SignalTower"));    // 1.36 PEPE$SIGNAL V1
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
 const NEED_LAUNCHER = launcherNeeded();   // decided once, before the router fills in an empty address
@@ -81,6 +83,18 @@ function Panel() {
             {route.page === "wind" && <WindPortal />}
             {route.page === "control" && <ControlTower />}
             {route.page === "strategy-lab" && <StrategyLab />}
+          </Suspense>
+          {settings && <SettingsModal onClose={() => setSettings(false)} />}
+        </div>
+      </UiCtx.Provider>);
+  }
+  if (TOWER_PAGE_IDS.includes(route.page)) {
+    return (
+      <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
+        <div className={cls("app", "app-tower", s.synthetic && "synthetic")}>
+          <Suspense fallback={<div className="cu-loading" role="status">Ładowanie wieży…</div>}>
+            {route.page === "pepe-wtc" && <WtcTower />}
+            {route.page === "pepe-signal" && <SignalTower route={route} />}
           </Suspense>
           {settings && <SettingsModal onClose={() => setSettings(false)} />}
         </div>

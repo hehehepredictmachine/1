@@ -1,24 +1,21 @@
-// MAIN MENU – Neural City V7.0 (PepeMarketWizard_NeuralCity_MainMenu_V7_0). The scene is the approved artwork (neural Pepe at the
-// holographic table with seven towers) with the old baked labels / example numbers removed (tools/neural_city_assets.py); names,
-// navigation, the three account values, the slogan and every effect are drawn live on top of it.
+// MAIN MENU V2 – Neural Table (PepeMarketWizard_Menu_New_V2). Three Pepe in dark suits at the round neural table with EIGHT towers.
+// The screen is ONLY the menu: no information panels, no charts / portfolio cards, no bottom launcher buttons. A small logo top-left
+// and the top navigation with all eight modules; every tower is its own focusable button. Towers and the top navigation call ONE
+// controller and open the same EXISTING panel of the bot (towers.ts). The menu fetches no MT5 data and shows no statistics.
 //
-// HONEST SCOPE: this is the 2.5D fallback of the brief - the towers are pixels of the artwork, NOT 3D geometry, and Pepe has no rig.
-// Animated: hologram rings at the base of every tower (independent speeds, hover slow-down, stop on select), neural particles and
-// current on the table, the core reacting to the selected tower, a stylised light path from Pepe's hands to the tower (marked 2.5D),
-// the portal and a camera fly-in. The menu only navigates to the EXISTING panels (towers.ts) - it never builds, replaces or changes a
-// panel, never opens or closes an order and shows no invented statistics (values from the bot or N/A with the data source marker).
+// HONEST SCOPE: 2.5D – the towers and the three Pepe are pixels of the approved artwork, NOT 3D models (no glTF towers, no rigged Pepe).
+// Animated live on top of it: neural filaments from the brain core to every tower with travelling impulses, the core pulse, a neural
+// wave, hologram rings at the base of each tower (independent speeds, slower on hover, stopped on select), light impulses on the Pepe,
+// floating banknotes, a light path from the hands of the Pepe in the middle to the selected tower, the portal and a camera fly-in.
 //
-// One controller for the top navigation, the tower geometry and the keyboard: IDLE -> SELECTED -> STOP_ROTATION -> PEPE_REACH ->
-// CONTACT -> PORTAL -> NAVIGATE (-> RETURN when the menu is opened again). Double click is debounced, Esc cancels, the selected tower
-// gets the focus back after returning. Reduced motion / "Wstrzymaj" / Performance: no sequence, direct navigation.
+// Controller: IDLE -> SELECTED -> STOP_ROTATION -> PEPE_REACH -> CONTACT -> PORTAL -> NAVIGATE (-> RETURN when the menu is opened again).
+// Double click is debounced, Esc cancels, the selected tower gets the focus back after returning. Reduced motion / pause / Performance:
+// no sequence, direct navigation. The render loop stops when the menu is unmounted, hidden or paused.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { navigate, type Route } from "../../router";
-import { useStore } from "../../store";
 import { cls } from "../../util";
-import { kindOf, money, pct as fpct, useEnvKind, useGet } from "../cult/data";
-import { Tag } from "../cult/kit";
 import StudioButton from "../pmw133/StudioButton";
-import { CORE, HANDS, SCENE_H, SCENE_W, TOWERS, boxStyle, pct, type Tower } from "./towers";
+import { CORE, HANDS, PEPES, SCENE_H, SCENE_W, TOWERS, boxStyle, pct, type Tower } from "./towers";
 import "./neural-city.css";
 
 const ASSET = "/assets/neural/";
@@ -39,75 +36,100 @@ function reducedMotion(): boolean {
   try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; }
 }
 
-function useHud() {
-  const env = useEnvKind();
-  const { s } = useStore();
-  const stats = useGet<any>("/api/v1/stats", 20000);
-  const all = stats.d?.bot?.all;
-  const roi = stats.d?.account_roi;
-  const eqKind = s.account?.equity != null ? (env === "STALE" ? "STALE" : env) : "NONE";
-  return [
-    { key: "wr", label: "Winratio", value: all?.win_rate != null ? fpct(all.win_rate) : "N/A",
-      sub: all?.win_rate != null ? `${all.wins ?? "?"} / ${(all.wins ?? 0) + (all.losses ?? 0)} transakcji bota (bez BE)` : "brak rozliczonych transakcji",
-      kind: kindOf(stats, env, all?.win_rate != null) },
-    { key: "roi", label: "ROI", value: roi?.status === "OK" && roi.roi_pct != null ? fpct(roi.roi_pct, 2) : "N/A",
-      sub: roi?.status === "OK" ? "30 dni, metoda Dietza (wpłaty i wypłaty wyłączone)" : (roi?.reason || "brak historii rachunku"),
-      kind: kindOf(stats, env, roi?.status === "OK") },
-    { key: "eq", label: "Equity", value: s.account?.equity != null ? money(s.account.equity) : "N/A",
-      sub: s.account?.equity != null ? `${s.account.currency ?? ""} · rachunek MT5 (terminal)` : "rozłączono / brak rachunku", kind: eqKind },
-  ] as const;
+/** Point on the neural filament core -> tower (quadratic curve bowed upwards), t in 0..1, scene pixels. */
+function bez(b: [number, number], t: number): [number, number] {
+  const mx = (CORE[0] + b[0]) / 2, my = (CORE[1] + b[1]) / 2 - 55, v = 1 - t;
+  return [v * v * CORE[0] + 2 * v * t * mx + t * t * b[0], v * v * CORE[1] + 2 * v * t * my + t * t * b[1]];
 }
 
-/** Neural particles + current on the table (canvas, paused when hidden / paused / Performance). */
-function useParticles(ref: React.RefObject<HTMLCanvasElement | null>, on: boolean, quality: Quality, target: Tower | null) {
+/** Neural filaments, travelling impulses, core pulse and neural wave (canvas in scene coordinates; stopped when off / hidden). */
+function useNeuralTable(ref: React.RefObject<HTMLCanvasElement | null>, on: boolean, quality: Quality, target: Tower | null, wave: number) {
   const tgt = useRef<Tower | null>(null);
   tgt.current = target;
+  const waveAt = useRef(-1e9);
+  useEffect(() => { if (wave) waveAt.current = performance.now(); }, [wave]);
   useEffect(() => {
     const c = ref.current;
-    if (!c || !on || quality === "performance") return;
+    if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    let raf = 0, w = 0, h = 0;
-    const n = quality === "cinematic" ? 110 : 55;
-    const P = Array.from({ length: n }, () => ({ x: Math.random(), y: 0.3 + Math.random() * 0.7, v: 0.0004 + Math.random() * 0.0012, r: 0.6 + Math.random() * 1.6, a: Math.random() }));
-    const pulses: { t: Tower; p: number; s: number }[] = [];
-    let last = performance.now(), spawn = 0;
+    let raf = 0, k = 1;
     const size = () => {
       const r = c.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, quality === "cinematic" ? 2 : 1);
-      w = c.width = Math.max(1, Math.round(r.width * dpr)); h = c.height = Math.max(1, Math.round(r.height * dpr));
+      c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr));
+      k = c.width / SCENE_W;
     };
     size();
     const ro = new ResizeObserver(size);
     ro.observe(c);
-    const frame = (now: number) => {
-      const dt = Math.min(64, now - last); last = now;
-      ctx.clearRect(0, 0, w, h);
-      if (!document.hidden) {
-        ctx.globalCompositeOperation = "lighter";
-        for (const p of P) {                                         // particles rising over the table
-          p.y -= p.v * dt * 0.06; p.a += dt * 0.002;
-          if (p.y < 0.08) { p.y = 0.95; p.x = Math.random(); }
-          const al = 0.25 + 0.35 * Math.abs(Math.sin(p.a));
-          ctx.fillStyle = `rgba(80,255,150,${al})`;
-          ctx.beginPath(); ctx.arc(p.x * w, p.y * h, p.r * (w / SCENE_W) * 1.4, 0, Math.PI * 2); ctx.fill();
+    const strands = quality === "cinematic" ? [-1, 0, 1] : [0];
+    // the filaments are painted ONCE into an offscreen buffer (again only on resize / when the highlighted tower changes);
+    // every frame only copies the buffer and draws the impulses -> the main thread stays free for the navigation sequence
+    const buf = document.createElement("canvas");
+    let bufKey = "\u0000";
+    const paintStatic = (hotKey: string | null) => {
+      buf.width = c.width; buf.height = c.height;
+      const b = buf.getContext("2d");
+      if (!b) return;
+      b.setTransform(k, 0, 0, k, 0, 0);
+      b.globalCompositeOperation = "lighter";
+      TOWERS.forEach((t) => {
+        const hot = hotKey === t.key;
+        const a = hot ? 0.75 : 0.26;
+        for (const s of strands) {
+          b.beginPath();
+          for (let n = 0; n <= 28; n++) {
+            const u = n / 28, p = bez(t.base, u);
+            const y = p[1] + Math.sin(u * Math.PI) * s * 13;
+            n ? b.lineTo(p[0], y) : b.moveTo(p[0], y);
+          }
+          b.strokeStyle = s === 0 ? `rgba(64,233,255,${a})` : `rgba(255,179,95,${a * 0.4})`;
+          b.lineWidth = s === 0 ? (hot ? 3 : 1.4) : 0.7;
+          b.shadowColor = s === 0 ? "#37eafe" : "#ffd05f";
+          b.shadowBlur = hot ? 18 : 8;
+          b.stroke();
         }
-        spawn -= dt;                                                  // current: pulses from the core to the towers
-        if (spawn <= 0) { pulses.push({ t: tgt.current ?? TOWERS[Math.floor(Math.random() * TOWERS.length)], p: 0, s: 0.0009 + Math.random() * 0.0007 }); spawn = tgt.current ? 120 : 520; }
-        for (let i = pulses.length - 1; i >= 0; i--) {
-          const q = pulses[i]; q.p += q.s * dt;
-          if (q.p >= 1) { pulses.splice(i, 1); continue; }
-          const x = (CORE[0] + (q.t.ring[0] - CORE[0]) * q.p) / SCENE_W * w, y = (CORE[1] + (q.t.ring[1] - CORE[1]) * q.p) / SCENE_H * h;
-          const g = ctx.createRadialGradient(x, y, 0, x, y, 9 * (w / SCENE_W) * 1.5);
-          g.addColorStop(0, "rgba(180,255,220,.95)"); g.addColorStop(1, "rgba(57,255,143,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 9 * (w / SCENE_W) * 1.5, 0, Math.PI * 2); ctx.fill();
+      });
+      bufKey = `${hotKey}|${c.width}x${c.height}`;
+    };
+    const draw = (now: number, still: boolean) => {
+      const hotKey = tgt.current?.key ?? null;
+      if (bufKey !== `${hotKey}|${c.width}x${c.height}`) paintStatic(hotKey);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(buf, 0, 0);
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.globalCompositeOperation = "lighter";
+      const clock = still ? 0 : now / 1000;
+      if (!still) TOWERS.forEach((t, i) => {
+        const hot = hotKey === t.key;
+        for (let j = 0; j < 3; j++) {                                 // impulses travelling core -> tower (halo + dot, no shadow blur)
+          const u = (clock * (0.23 + 0.035 * i) + j / 3 + i * 0.11) % 1, p = bez(t.base, u);
+          const r = hot ? 4.8 : 2.6;
+          ctx.globalAlpha = 0.28; ctx.fillStyle = t.color;
+          ctx.beginPath(); ctx.arc(p[0], p[1], r * 2.6, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1; ctx.fillStyle = j === 0 ? t.color : "#b8faff";
+          ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill();
         }
-        ctx.globalCompositeOperation = "source-over";
+      });
+      const f = still ? 0.5 : 0.5 + 0.5 * Math.sin(clock * 3);         // core pulse
+      ctx.beginPath(); ctx.arc(CORE[0], CORE[1], 21 + 14 * f, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(83,255,255,${0.18 + 0.22 * f})`; ctx.lineWidth = 2; ctx.stroke();
+      const age = (now - waveAt.current) / 1100;                     // neural wave (Pepe in the middle / tower activation)
+      if (!still && age >= 0 && age < 1) {
+        ctx.beginPath(); ctx.ellipse(CORE[0], CORE[1], 30 + 290 * age, 12 + 115 * age, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(151,255,240,${(1 - age) * 0.65})`; ctx.lineWidth = (1 - age) * 5; ctx.stroke();
       }
+      ctx.globalCompositeOperation = "source-over";
+    };
+    const frame = (now: number) => {
+      if (!document.hidden) draw(now, false);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); ctx.clearRect(0, 0, w, h); };
+    if (on && quality !== "performance") raf = requestAnimationFrame(frame);
+    else draw(0, true);                                              // static filaments (paused / reduced motion / Performance)
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); };
   }, [ref, on, quality]);
 }
 
@@ -123,7 +145,8 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
   const [hover, setHover] = useState<Tower | null>(null);
   const [panel, setPanel] = useState<"settings" | "info" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const hud = useHud();
+  const [wave, setWave] = useState(0);
+  const [flash, setFlash] = useState<Record<string, number>>({});
   const timers = useRef<number[]>([]);
   const busy = useRef(false);
   const stage = useRef<HTMLDivElement>(null);
@@ -132,7 +155,7 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
   const rings = useRef<Record<string, Animation | undefined>>({});
   const btn = useRef<Record<string, HTMLButtonElement | null>>({});
   const mounted = useRef(performance.now());
-  useParticles(canvas, prefs.particles && animate && phase !== "INTRO", prefs.quality, sel ?? hover);
+  useNeuralTable(canvas, prefs.particles && animate && phase !== "INTRO", prefs.quality, sel ?? hover, wave);
 
   useEffect(() => {
     document.documentElement.classList.add("nc-doc");
@@ -141,7 +164,7 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
   const clearTimers = () => { timers.current.forEach((t) => clearTimeout(t)); timers.current = []; };
   useEffect(() => () => clearTimers(), []);
 
-  // intro (after JOIN THE CULT): neural flight -> city; played once (the URL loses ?intro=1), Esc / click skips
+  // intro (after JOIN THE CULT): neural flight -> table; played once (the URL loses ?intro=1), Esc / click skips
   useEffect(() => {
     if (route.params.get("intro") === "1") navigate("menu", { replace: true });
     if (phase !== "INTRO") return;
@@ -170,7 +193,7 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
       if (!el || rings.current[t.key]) return;
       const dir = i % 2 ? -1 : 1;
       rings.current[t.key] = el.animate([{ transform: "rotate(0deg)" }, { transform: `rotate(${360 * dir}deg)` }],
-                                        { duration: 9000 + i * 1700, iterations: Infinity });
+                                        { duration: 9000 + i * 1300, iterations: Infinity });
     });
     return () => { Object.values(rings.current).forEach((a) => a?.cancel()); rings.current = {}; };
   }, []);
@@ -205,11 +228,12 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
     }
   }, []);
 
-  /** THE controller: top navigation, tower geometry and keyboard all call this. */
+  /** THE controller: top navigation, tower geometry, the list and the keyboard all call this. */
   const select = useCallback((t: Tower) => {
     if (busy.current || phase === "INTRO" || performance.now() - mounted.current < 250) return;   // debounce double click
     busy.current = true;
     setSel(t);
+    setWave((n) => n + 1);
     const k = SCALE[prefs.quality];
     if (!animate || !k) { setPhase("NAVIGATE"); go(t); return; }
     clearTimers();
@@ -220,6 +244,11 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
       }, at * k));
     }
   }, [phase, animate, prefs.quality, go]);
+
+  const poke = (key: string) => {                                    // click on a Pepe: light impulse (+ neural wave for the middle one)
+    setFlash((f) => ({ ...f, [key]: (f[key] || 0) + 1 }));
+    if (key === "center") setWave((n) => n + 1);
+  };
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -251,92 +280,91 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const fullscreen = () => {
-    const d = document as any;
-    (d.fullscreenElement ? d.exitFullscreen?.() : document.documentElement.requestFullscreen?.())?.catch?.(() => setToast("Pełny ekran niedostępny w tym oknie"));
-  };
   const active = sel ?? hover;
   const camStyle: CSSProperties | undefined = sel && (phase === "PORTAL" || phase === "NAVIGATE")
-    ? { transformOrigin: `${pct(sel.ring[0], SCENE_W)} ${pct(sel.ring[1], SCENE_H)}` } : undefined;
+    ? { transformOrigin: `${pct(sel.base[0], SCENE_W)} ${pct(sel.base[1] - 90, SCENE_H)}` } : undefined;
   const reach = sel && ["PEPE_REACH", "CONTACT", "PORTAL", "NAVIGATE"].includes(phase);
-  const path = sel ? `M ${HANDS[0]} ${HANDS[1]} Q ${(HANDS[0] + sel.ring[0]) / 2} ${Math.min(HANDS[1], sel.ring[1]) + 40} ${sel.ring[0]} ${sel.ring[1] - 70}` : "";
+  const path = sel ? `M ${HANDS[0]} ${HANDS[1]} Q ${(HANDS[0] + sel.base[0]) / 2} ${Math.min(HANDS[1], sel.base[1]) + 30} ${sel.base[0]} ${sel.base[1] - 110}` : "";
 
   return (
     <div className={cls("nc", `q-${prefs.quality}`, !animate && "still", paused && "paused")} data-testid="page-menu" data-phase={phase}
       data-selected={sel?.key ?? ""} data-motion={reduced ? "reduced" : paused ? "paused" : prefs.quality}>
-      <div className="nc-fill" aria-hidden="true" style={{ backgroundImage: `url(${ASSET}neural-city-scene-blur.webp)` }} />
+      <div className="nc-fill" aria-hidden="true" style={{ backgroundImage: `url(${ASSET}neural-table-scene-blur.webp)` }} />
       <div className="nc-stage" ref={stage} data-testid="nc-stage">
         <div className={cls("nc-cam", phase === "PORTAL" || phase === "NAVIGATE" ? "fly" : "", phase === "RETURN" && "back")} ref={cam} style={camStyle}>
-          <img className="nc-scene" src={`${ASSET}neural-city-scene.webp`} draggable={false}
-            alt="Pepe zbudowany ze świetlistej sieci neuronowej przy holograficznym stole z siedmioma wieżami PepeMarketWizard" />
+          <img className="nc-scene" src={`${ASSET}neural-table-scene.webp`} draggable={false}
+            alt="Trzech Pepe w ciemnych garniturach przy okrągłym neonowym stole z sieci neuronowych z ośmioma wieżami PepeMarketWizard" />
           <canvas className="nc-fx" ref={canvas} aria-hidden="true" />
-          <div className="nc-aura" aria-hidden="true" />
           <div className={cls("nc-core", active && "hot")} aria-hidden="true" style={{ left: pct(CORE[0], SCENE_W), top: pct(CORE[1], SCENE_H) }}><i /><i /><i /></div>
           {TOWERS.map((t) => (
             <div key={t.key} className={cls("nc-ring", hover?.key === t.key && "hover", sel?.key === t.key && "sel", sel?.key === t.key && phase === "CONTACT" && "contact")}
-              data-ring={t.key} aria-hidden="true" style={{ left: pct(t.ring[0], SCENE_W), top: pct(t.ring[1], SCENE_H), width: pct(t.ring[2] * 2, SCENE_W), "--c": t.color } as CSSProperties}>
+              data-ring={t.key} aria-hidden="true"
+              style={{ left: pct(t.base[0], SCENE_W), top: pct(t.base[1] - 18, SCENE_H), width: pct(190, SCENE_W), "--c": t.color } as CSSProperties}>
               <div className="nc-ring-tilt"><div className="nc-ring-spin" /></div>
             </div>))}
+          {PEPES.map((p) => (
+            <span key={`${p.key}-${flash[p.key] || 0}`} className={cls("nc-flash", !!flash[p.key] && "on")} aria-hidden="true"
+              style={{ left: pct(p.flash[0], SCENE_W), top: pct(p.flash[1], SCENE_H) }} />))}
+          <div className="nc-cash" aria-hidden="true"><i /><i /><i /></div>
           <svg className={cls("nc-reach", reach && "on")} viewBox={`0 0 ${SCENE_W} ${SCENE_H}`} preserveAspectRatio="none" aria-hidden="true">
-            {sel && <path d={path} pathLength={1} />}
+            {sel && <path d={path} pathLength={1} style={{ "--c": sel.color } as CSSProperties} />}
           </svg>
           {sel && (phase === "PORTAL" || phase === "NAVIGATE" || phase === "RETURN") &&
-            <div className={cls("nc-portal", phase === "RETURN" && "rev")} aria-hidden="true" style={{ left: pct(sel.ring[0], SCENE_W), top: pct(sel.ring[1] - 60, SCENE_H) }}><i /><i /><i /></div>}
+            <div className={cls("nc-portal", phase === "RETURN" && "rev")} aria-hidden="true"
+              style={{ left: pct(sel.base[0], SCENE_W), top: pct(sel.base[1] - 90, SCENE_H), "--c": sel.color } as CSSProperties}><i /><i /><i /></div>}
           {TOWERS.map((t) => (
-            <span key={t.key} className={cls("nc-plate", active?.key === t.key && "on")} style={boxStyle(t.plate)} data-plate={t.key} aria-hidden="true">
-              <b>{t.name}</b></span>))}
-          <div className="nc-towers" role="group" aria-label="Wieże Neural City – wybierz moduł">
+            <span key={t.key} className={cls("nc-plate", active?.key === t.key && "on")} style={{ ...boxStyle(t.plate), "--c": t.color } as CSSProperties}
+              data-plate={t.key} aria-hidden="true"><b>{t.name}</b></span>))}
+          <div className="nc-pepes">
+            {PEPES.map((p) => (
+              <button key={p.key} type="button" className="nc-pepe" style={boxStyle(p.hit)} data-testid={`nc-pepe-${p.key}`} aria-label={p.label}
+                title={p.label} onClick={() => poke(p.key)} />))}
+          </div>
+          <div className="nc-towers" role="group" aria-label="Wieże stołu neuronowego – wybierz moduł">
             {TOWERS.map((t) => (
               <button key={t.key} type="button" ref={(el) => { btn.current[t.key] = el; }} className={cls("nc-hit", hover?.key === t.key && "hover", sel?.key === t.key && "sel")}
-                style={boxStyle(t.hit)} data-testid={`nc-tower-${t.key}`} data-page={t.page} aria-label={`${t.name} – ${t.panel}. ${t.desc}`}
-                title={`${t.name}${t.legacy.length ? ` (dawniej ${t.legacy.join(" / ")})` : ""} → ${t.panel}`}
+                style={{ ...boxStyle(t.hit), "--c": t.color } as CSSProperties} data-testid={`nc-tower-${t.key}`} data-page={t.page} data-id={t.id}
+                aria-label={`${t.name} – ${t.panel}. ${t.desc}`}
+                title={`${t.name}${t.legacy.length ? ` (dawniej ${t.legacy[0]})` : ""} → ${t.panel}`}
                 onMouseEnter={() => setHover(t)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(t)} onBlur={() => setHover(null)}
-                onClick={() => select(t)} />))}
+                onClick={() => select(t)}><span className="nc-hit-name" aria-hidden="true">{t.name}</span></button>))}
           </div>
         </div>
 
         <header className="nc-top">
+          <a className="nc-logo" href="#/menu" aria-label="PepeMarketWizard – menu główne" data-testid="nc-logo" onClick={(e) => e.preventDefault()}>
+            <span className="nc-logo-mark" aria-hidden="true">♛</span>Pepe<span className="m">Market</span><span className="w">Wizard</span></a>
           <nav className="nc-nav" aria-label="Nawigacja główna PepeMarketWizard">
-            <button type="button" className="nc-pill home on" aria-current="page" data-testid="nc-nav-home" title="Menu główne">⌂ HOME</button>
             {TOWERS.map((t) => (
-              <button key={t.key} type="button" className={cls("nc-pill", sel?.key === t.key && "sel")} data-testid={`nc-nav-${t.key}`} data-page={t.page}
+              <button key={t.key} type="button" className={cls("nc-pill", sel?.key === t.key && "sel", hover?.key === t.key && "hov")} data-testid={`nc-nav-${t.key}`}
+                data-page={t.page} data-id={t.id} style={{ "--c": t.color } as CSSProperties}
                 onClick={() => select(t)} onMouseEnter={() => setHover(t)} onMouseLeave={() => setHover(null)} title={`${t.name} → ${t.panel}`}>
-                {t.key === "news" ? "NEWS" : t.name}</button>))}
+                {t.name}</button>))}
           </nav>
-        </header>
-        <section className="nc-hud" aria-label="Account overview – dane z rachunku MT5 bota" data-testid="nc-hud">
-          <div className="nc-hud-h">ACCOUNT OVERVIEW</div>
-          <div className="nc-hud-g">
-            {hud.map((x) => (
-              <div key={x.key} data-testid={`nc-stat-${x.key}`} data-kind={x.kind}>
-                <span>{x.label}</span><strong>{x.value}</strong><small>{x.sub}</small><Tag kind={x.kind} /></div>))}
+          <div className="nc-tools" role="toolbar" aria-label="Narzędzia menu">
+            <StudioButton variant="plain" className="nc-tool nc-tool-wide" />
+            <button type="button" className="nc-tool" onClick={() => setPaused(!paused)} aria-pressed={paused} data-testid="nc-pause"
+              aria-label={paused ? "Wznów animacje" : "Wstrzymaj animacje"} title={paused ? "Wznów animacje" : "Wstrzymaj animacje"}>{paused ? "▶" : "Ⅱ"}</button>
+            <button type="button" className="nc-tool" onClick={() => setPanel(panel === "settings" ? null : "settings")} aria-expanded={panel === "settings"}
+              aria-label="Ustawienia animacji" title="Ustawienia animacji" data-testid="nc-settings">✧</button>
+            <button type="button" className="nc-tool" onClick={() => setPanel(panel === "info" ? null : "info")} aria-expanded={panel === "info"}
+              aria-label="Informacje o menu" title="Informacje" data-testid="nc-info">ⓘ</button>
           </div>
-        </section>
-        <aside className="nc-quote" aria-label="They call us cult but we are something more">
-          <span>They call us cult</span><span className="hl">but we are something more</span></aside>
-        <div className="nc-tag" data-testid="nc-tag"><i />NEURAL CITY V7.0 · 2.5D <em>· {reduced ? "REDUCED MOTION" : paused ? "PAUZA" : prefs.quality.toUpperCase()}</em></div>
+        </header>
         <div className="nc-tip" role="status" aria-live="polite" data-testid="nc-tip">
-          {sel && phase !== "IDLE" && phase !== "RETURN" ? `Otwieranie ${sel.name}… (Esc – anuluj)` : active ? `${active.name} – ${active.desc}` : "Wybierz wieżę, aby przejść do sekcji"}</div>
-        <div className="nc-tools" role="toolbar" aria-label="Narzędzia menu">
-          <StudioButton variant="plain" className="nc-tool nc-tool-wide" />
-          <button type="button" className="nc-tool" onClick={() => setPaused(!paused)} aria-pressed={paused} data-testid="nc-pause"
-            aria-label={paused ? "Wznów animacje" : "Wstrzymaj animacje"} title={paused ? "Wznów animacje" : "Wstrzymaj animacje"}>{paused ? "▶" : "Ⅱ"}</button>
-          <button type="button" className="nc-tool" onClick={fullscreen} aria-label="Pełny ekran" title="Pełny ekran">⛶</button>
-          <button type="button" className="nc-tool" onClick={() => setPanel(panel === "settings" ? null : "settings")} aria-expanded={panel === "settings"}
-            aria-label="Ustawienia animacji" title="Ustawienia animacji" data-testid="nc-settings">⚙</button>
-          <button type="button" className="nc-tool" onClick={() => setPanel(panel === "info" ? null : "info")} aria-expanded={panel === "info"}
-            aria-label="Informacje o menu" title="Informacje" data-testid="nc-info">ⓘ</button>
-        </div>
+          {sel && phase !== "IDLE" && phase !== "RETURN" ? `Otwieranie ${sel.name}… (Esc – anuluj)` : active ? `${active.name} – ${active.desc}` : "WYBIERZ WIEŻĘ LUB SEKCJĘ W GÓRNYM MENU"}</div>
+        <div className="nc-tag" data-testid="nc-tag"><i />NEURAL TABLE · 2.5D <em>· {reduced ? "REDUCED MOTION" : paused ? "PAUZA" : prefs.quality.toUpperCase()}</em></div>
         {phase === "INTRO" && (
           <div className="nc-intro" data-testid="nc-intro" onClick={() => setPhase("IDLE")} role="presentation">
             <img src={`${ASSET}neuron-flight.webp`} alt="" aria-hidden="true" />
-            <div className="nc-intro-t"><small>PEPEMARKETWIZARD</small><b>NEURAL CITY</b><em>INITIALIZING HOLOGRAPHIC INTERFACE</em></div>
+            <div className="nc-intro-t"><small>PEPEMARKETWIZARD</small><b>NEURAL TABLE</b><em>INITIALIZING HOLOGRAPHIC INTERFACE</em></div>
             <button type="button" className="nc-skip" onClick={() => setPhase("IDLE")} data-testid="nc-skip">Pomiń intro ›</button>
           </div>)}
       </div>
 
       <nav className="nc-list" aria-label="Wieże (lista)">
-        {TOWERS.map((t) => <button key={t.key} type="button" onClick={() => select(t)} data-testid={`nc-list-${t.key}`}>{t.name}<small>{t.panel}</small></button>)}
+        {TOWERS.map((t) => <button key={t.key} type="button" onClick={() => select(t)} data-testid={`nc-list-${t.key}`} style={{ "--c": t.color } as CSSProperties}>
+          <span aria-hidden="true">{t.icon}</span> {t.name}<small>{t.panel}</small></button>)}
       </nav>
 
       {panel === "settings" && (
@@ -347,21 +375,20 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
               <button key={q} type="button" aria-pressed={prefs.quality === q} onClick={() => setPrefs({ ...prefs, quality: q })} data-quality={q}>{q.toUpperCase()}</button>))}
           </div>
           <label><input type="checkbox" checked={prefs.parallax} onChange={(e) => setPrefs({ ...prefs, parallax: e.target.checked })} /> Paralaksa kamery</label>
-          <label><input type="checkbox" checked={prefs.particles} onChange={(e) => setPrefs({ ...prefs, particles: e.target.checked })} /> Cząsteczki neuronowe</label>
+          <label><input type="checkbox" checked={prefs.particles} onChange={(e) => setPrefs({ ...prefs, particles: e.target.checked })} /> Impulsy na ścieżkach neuronowych</label>
           <label><input type="checkbox" checked={prefs.intro} onChange={(e) => setPrefs({ ...prefs, intro: e.target.checked })} /> Animacja wejścia po JOIN THE CULT</label>
           <button type="button" className="nc-replay" onClick={() => { setPanel(null); if (!reduced) setPhase("INTRO"); window.setTimeout(() => setPhase("IDLE"), 2600); }}>
             ↻ Odtwórz animację wejścia</button>
-          <p>{reduced ? "System prosi o ograniczony ruch – sekwencje i intro są wyłączone." : "PERFORMANCE: bez sekwencji i cząsteczek, wieże otwierają się od razu."}</p>
+          <p>{reduced ? "System prosi o ograniczony ruch – sekwencje i intro są wyłączone." : "PERFORMANCE: bez sekwencji i impulsów, wieże otwierają się od razu."}</p>
         </section>)}
       {panel === "info" && (
         <section className="nc-panel wide" role="dialog" aria-modal="false" aria-label="Informacje o menu" data-testid="nc-info-panel">
-          <header><b>NEURAL CITY V7.0 – TRYB 2.5D</b><button type="button" onClick={() => setPanel(null)} aria-label="Zamknij">×</button></header>
-          <p>Scena to zatwierdzona grafika (wieże i Pepe są obrazem, nie modelem 3D). Animowane są pierścienie hologramów, cząsteczki,
-            prąd na stole, rdzeń, świetlna ścieżka gestu Pepe (efekt stylizowany 2.5D), portal i przelot kamery. Brakujące zasoby pełnego 3D:
-            modele glTF siedmiu wież, model Pepe z rigiem i IK dłoni, model stołu i rdzenia.</p>
-          <p>Winratio, ROI i Equity pochodzą z istniejącej warstwy statystyk bota (znacznik źródła przy każdej wartości); bez danych – N/A.
-            Menu tylko nawiguje do istniejących paneli i nie wykonuje żadnych operacji handlowych.</p>
-          <ul>{TOWERS.map((t) => <li key={t.key}><b>{t.name}</b>{t.legacy.length ? ` (dawniej ${t.legacy.join(" / ")})` : ""} → {t.panel} <code>#/{t.page}</code>, alias <code>#/{t.alias}</code></li>)}</ul>
+          <header><b>MAIN MENU V2 – NEURAL TABLE (2.5D)</b><button type="button" onClick={() => setPanel(null)} aria-label="Zamknij">×</button></header>
+          <p>Scena to zatwierdzona grafika: wieże i trzech Pepe są obrazem, nie modelami 3D. Animowane są ścieżki neuronowe z impulsami, rdzeń,
+            fala neuronowa, pierścienie hologramów u podstaw wież, impulsy świetlne Pepe, banknoty, świetlna ścieżka do wybranej wieży, portal
+            i przelot kamery. Brakujące zasoby pełnego 3D: modele glTF ośmiu wież, modele Pepe z rigiem (ręce, liczenie banknotów), model stołu.</p>
+          <p>Menu tylko nawiguje do istniejących paneli bota – nie pobiera danych MT5, nie pokazuje statystyk i nie wykonuje operacji handlowych.</p>
+          <ul>{TOWERS.map((t) => <li key={t.key}><b>{t.name}</b> ({t.id}) → {t.panel} <code>#/{t.page}</code>{t.legacy.length ? `, dawniej ${t.legacy.join(" / ")}` : ""}</li>)}</ul>
         </section>)}
       {toast && <div className="nc-toast" role="alert">{toast}</div>}
     </div>);

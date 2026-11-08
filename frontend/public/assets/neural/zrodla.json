@@ -3,7 +3,10 @@
     "neural-city-reference.png": "005fb31dfd7b4a70de4fc4bceada2689c65dede19df2924a56dc64b4d2729cef",
     "4da5010f-82ae-4eac-a001-0b38717e5465.png": "549e68459d962cc275e62d5fd2771841a68c10ce35959e7c6687507f1f54d225",
     "68d9fbfe305f950ee9f2dfc58b60cc26.gif": "1b2e2ca86d705866ed6adb2adf195a8be7edde2daf0aa3e3bb4c4c56d4fc8b5d",
-    "47e288ec-1d84-4b6c-88be-bcd096fc5058.png": "e6f855ef72731ae2ca7c094d576722e52756d4f164c2916ef38b4526c47bde89"
+    "47e288ec-1d84-4b6c-88be-bcd096fc5058.png": "e6f855ef72731ae2ca7c094d576722e52756d4f164c2916ef38b4526c47bde89",
+    "neural_wolf_table.png": "a64a3a646c21f6213a8c7e503d6255e731cc66105929160be34309be74e22f7d",
+    "tower_reference.png": "308f2489dae2554e383d3783286d7b096281bdeb021f1451dd562f19fcfa3057",
+    "pepe_neural.png": "ccded46ef196be400a1dd735aaa9b15650ea86f70cd78ed846e891c762e1e972"
   },
   "outputs": {
     "frontend/public/assets/neural/neural-city-scene.webp": {
@@ -66,6 +69,46 @@
       ],
       "sha256": "625364c3c056f2b78d8be4505bab4b4172ea2a3d5ba422ac82eb211e617dac1a",
       "bytes": 32192
+    },
+    "frontend/public/assets/neural/neural-table-scene.webp": {
+      "from": "neural_wolf_table.png",
+      "size": [
+        1672,
+        941
+      ],
+      "sha256": "c77701066ba5cd8045b81625e3a746fbaa0ff875cd48ad57bee54e553d7a4a56",
+      "bytes": 399172,
+      "note": "1.36: konwersja WebP bez zmian kompozycji (paczki Menu V2 / PEPE V1 / PEPE V4)"
+    },
+    "frontend/public/assets/neural/neural-table-scene-blur.webp": {
+      "from": "neural_wolf_table.png",
+      "size": [
+        84,
+        47
+      ],
+      "sha256": "6d6466c99cae41ca762171ca0d995dc99b1b5b91644cfcf9c27cc2fcf5852caa",
+      "bytes": 472,
+      "note": "1.36: konwersja WebP bez zmian kompozycji (paczki Menu V2 / PEPE V1 / PEPE V4)"
+    },
+    "frontend/public/assets/towers/signal-tower.webp": {
+      "from": "tower_reference.png",
+      "size": [
+        169,
+        788
+      ],
+      "sha256": "64185ea9cb55f66d7d120e332fce7c2ff35dcf73536ee7c58315fcdb4d972187",
+      "bytes": 38214,
+      "note": "1.36: konwersja WebP bez zmian kompozycji (paczki Menu V2 / PEPE V1 / PEPE V4)"
+    },
+    "frontend/public/assets/towers/pepe-neural.webp": {
+      "from": "pepe_neural.png",
+      "size": [
+        285,
+        260
+      ],
+      "sha256": "2e6cdb61dc4fe12787c0dd0838bf1ba2e164bb4fce2fed8f4307c9e21a675723",
+      "bytes": 23970,
+      "note": "1.36: konwersja WebP bez zmian kompozycji (paczki Menu V2 / PEPE V1 / PEPE V4)"
     }
   },
   "inpainted": {

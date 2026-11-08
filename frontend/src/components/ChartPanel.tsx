@@ -33,7 +33,7 @@ import { useStore } from "../store";
 import { parseColor, toHex, useTheme, type Tokens } from "../theme";
 import { chartShift, cls, epochSec, fmtNum, type TimeZoneMode } from "../util";
 import { BoundedBoxesPrimitive, type BoundedBox, type BoxMarker, ZonesPrimitive } from "../zones";
-import { PmwLayerButtons, usePmwLayers, usePmwOverlays } from "../features/pmw133/overlays";
+import { PmwLayerButtons, usePmwLayers, usePmwOverlays, type PmwLayers } from "../features/pmw133/overlays";
 
 export interface ChartOpts {
   showRsi: boolean;
@@ -55,6 +55,9 @@ export interface ChartOpts {
 
 export type AiLevels = { zone?: [number, number] | null; invalidation?: number | null; targets?: number[]; label?: string } | null;
 export type Highlight = { price: number; label: string } | null;
+/** 1.36 overlay layer of the tower interiors (PEPE$WTC: Volume Profile Auto Zones, Setup Builder levels, Kronos forecast close) - values
+ *  computed by the backend and passed in by the page; drawn as a SEPARATE layer, never merged with the engine plan. */
+export type Overlay = { lines?: { price: number; title: string; color: string; dashed?: boolean }[]; zones?: { low: number; high: number; color: string; border: string; label: string }[] } | null;
 const ROLE_PL: Record<string, string> = { TRIGGER: "potwierdzenie / trigger", SETUP: "setup", SETUP_CONTEXT: "kontekst setupu", LOCAL_CONTEXT: "kontekst lokalny",
   HTF: "wyższy kontekst", TREND_REGIME_CONTEXT: "kontekst trendu / reżimu", BACKGROUND: "tło rynku" };
 
@@ -67,7 +70,7 @@ declare global {
   interface Window { __mqCharts?: Record<string, any> }
 }
 
-export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, chartId: idProp, variant, onMain, isMain, aiLevels, highlight, roleText, needed }: {
+export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, chartId: idProp, variant, onMain, isMain, aiLevels, highlight, roleText, needed, overlay, layers }: {
   tf: string;
   index: number;
   opts: ChartOpts;
@@ -81,6 +84,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   highlight?: Highlight;
   roleText?: string | null;
   needed?: boolean | null;        // TF required by the selected setup's strategy
+  overlay?: Overlay;               // 1.36: separate overlay layer of the tower interiors
+  layers?: PmwLayers;              // 1.36: controlled 1.33 layers (AVWAP / SVP / plans) - the page's indicator manager decides
 }) {
   const { s } = useStore();
   const theme = useTheme();
@@ -91,7 +96,12 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const [prefs, setPrefsState] = useState<ChartPrefs>(() => loadPrefs(pkey));
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
-  useEffect(() => { setPrefsState(loadPrefs(pkey)); }, [pkey]);
+  useEffect(() => {
+    setPrefsState(loadPrefs(pkey));
+    const f = (e: Event) => { if ((e as CustomEvent).detail === pkey) setPrefsState(loadPrefs(pkey)); };   // 1.36: layer filters set from outside (PEPE$WTC)
+    window.addEventListener("mq:chartprefs", f);
+    return () => window.removeEventListener("mq:chartprefs", f);
+  }, [pkey]);
   const setPrefs = useCallback((p: ChartPrefs) => { savePrefs(pkey, p); setPrefsState(loadPrefs(pkey)); }, [pkey]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const tk: Tokens = { ...theme.chartTokens(`tf:${tf}`), ...(idProp ? {} : theme.chartTokens(chartId)), ...prefTokens(prefs) };
@@ -112,6 +122,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   const priceLines = useRef<IPriceLine[]>([]);
   const aiLines = useRef<IPriceLine[]>([]);
   const hlLines = useRef<IPriceLine[]>([]);
+  const ovLines = useRef<IPriceLine[]>([]);
+  const ovZones = useRef<ZonesPrimitive | null>(null);
   const structLines = useRef<IPriceLine[]>([]);
   const structZones = useRef<ZonesPrimitive | null>(null);
   const sessBoxes = useRef<BoundedBoxesPrimitive | null>(null);
@@ -177,6 +189,8 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     candles.current.attachPrimitive(volZones.current);
     structZones.current = new ZonesPrimitive();
     candles.current.attachPrimitive(structZones.current);
+    ovZones.current = new ZonesPrimitive();
+    candles.current.attachPrimitive(ovZones.current);
     sessBoxes.current = new BoundedBoxesPrimitive();
     candles.current.attachPrimitive(sessBoxes.current);
     zmBoxes.current = new BoundedBoxesPrimitive();
@@ -252,6 +266,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       priceLines.current = [];
       aiLines.current = [];
       hlLines.current = [];
+      ovLines.current = [];
       structLines.current = [];
       volLines.current = [];
       times.current = [];
@@ -710,8 +725,24 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
   }, [JSON.stringify(aiLevels), opts.showAiLevels, data]);
 
   // ---------------------------------------------------------------- 1.33 layers: Pepe Scalp/Hedge Plan, AVWAP, SVP zones (backend values only)
-  const [pmw, setPmw] = usePmwLayers();
+  const [pmwOwn, setPmwOwn] = usePmwLayers();
+  const pmw = layers ?? pmwOwn;
+  const setPmw = layers ? () => { /* controlled by the page */ } : setPmwOwn;
   const pmwInfo = usePmwOverlays({ chart, candles, tf, layers: pmw, shift, dataKey: data });
+
+  // ---------------------------------------------------------------- 1.36 overlay layer (tower interiors)
+  useEffect(() => {
+    const ser = candles.current;
+    if (!ser) return;
+    ovLines.current.forEach((p) => ser.removePriceLine(p));
+    ovLines.current = [];
+    for (const l of overlay?.lines || [])
+      if (Number.isFinite(l.price)) ovLines.current.push(ser.createPriceLine({ price: l.price, color: l.color, title: l.title, lineWidth: 1, axisLabelVisible: true,
+        lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid }));
+    ovZones.current?.setZones((overlay?.zones || []).filter((z) => Number.isFinite(z.low) && Number.isFinite(z.high))
+      .map((z) => ({ from: 0, low: Math.min(z.low, z.high), high: Math.max(z.low, z.high), color: z.color, border: z.border, label: z.label })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(overlay), data]);
 
   // ---------------------------------------------------------------- "Pokaż na wykresie" highlight from the setup page
   useEffect(() => {
@@ -834,7 +865,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
           <option value="">bez sync</option><option value="A">grupa A</option><option value="B">grupa B</option>
         </select>
         <LayerMenu prefs={prefs} onChange={setPrefs} />
-        <PmwLayerButtons layers={pmw} onChange={setPmw} info={pmwInfo} />
+        {!layers && <PmwLayerButtons layers={pmw} onChange={setPmw} info={pmwInfo} />}
         <button className="icon" data-act="settings" title="Ustawienia tego wykresu (kolory, siatka, tekst, warstwy, szablony)" aria-label="Ustawienia wykresu"
           onClick={() => setSettingsOpen(true)}>⚙</button>
         <span className="spacer" />
