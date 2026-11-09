@@ -5,7 +5,7 @@ Run with the Kronos interpreter:  .venv_kronos\\Scripts\\python -m unittest test
 * manifest: tamper detection, test fixtures refused outside the tests;
 * engine on a RANDOM-WEIGHT fixture (test only - kronos_fixture.py): offline load (network blocked), eval/no grad, compatibility of the
   pair, CPU fallback when CUDA is requested without a GPU, seeded determinism, equality with the original KronosPredictor call,
-  independent paths + quantiles, input errors, worker protocol, timing at the published Kronos-small size;
+  independent paths + quantiles, input errors, worker protocol, timing at the published Kronos-small architecture size (random-weight fixture; the real Kronos-base is tested in test_foundation_real.py);
 * installer download logic with a mocked Hugging Face API: checksum mismatch, wrong revision, missing safetensors, offline;
 * the upstream regression comparison with the OFFICIAL weights runs only when MQ_KRONOS_WEIGHTS_DIR points to a real installation
   (on the user's computer after 33_KRONOS_INSTALUJ.bat) - here it is skipped, never faked.
@@ -133,7 +133,9 @@ class TestKronosRuntime(unittest.TestCase):
                 self.assertEqual(cm.exception.code, "CONFIG")
             st = eng.selftest(reference=True)
             self.assertTrue(st["smoke"]["ok"])
-            self.assertIn(st["reference"]["status"], ("PASS", "DIFF_WITHIN_FLOAT_NOISE", "DIFF"))   # random weights: expected DIFF
+            # 1.37: the upstream regression files belong to Kronos-small; with Kronos-base pinned they are NOT_APPLICABLE
+            self.assertIn(st["reference"]["status"], ("PASS", "DIFF_WITHIN_FLOAT_NOISE", "DIFF", "NOT_APPLICABLE"))
+            self.assertEqual(st["parity"]["status"], "PASS")                 # bot path == direct official KronosPredictor call
         self.assertIs(socket.socket.connect, real_connect)
 
     def test_04_incompatible_pair_is_refused(self):
@@ -247,7 +249,7 @@ class TestKronosRuntime(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_TORCH and os.environ.get("MQ_KRONOS_WEIGHTS_DIR"), "oficjalne wagi: ustaw MQ_KRONOS_WEIGHTS_DIR (po instalacji)")
 class TestOfficialWeights(unittest.TestCase):
-    def test_official_pair_loads_and_reproduces_upstream(self):
+    def test_official_pair_loads_parity_and_identity(self):
         from kronos_runtime import engine as E
         from kronos_runtime import manifest as M
         wd = os.environ["MQ_KRONOS_WEIGHTS_DIR"]
@@ -255,11 +257,13 @@ class TestOfficialWeights(unittest.TestCase):
         self.assertTrue(M.verify(wd)["ok"])
         eng = E.Engine()
         info = eng.load(wd, device="CPU", threads=2)
-        self.assertEqual(info["params_model"], 24741376)                       # Kronos-small: 24.7 M (upstream README)
+        self.assertEqual(info["params_model"], 102310592)                      # Kronos-base: 102.3 M (upstream model zoo) - 1.37
+        self.assertEqual(info["model_name"], "Kronos-base")
         st = eng.selftest(reference=True)
-        print("\n[official] " + json.dumps(st["reference"]))
+        print("\n[official] " + json.dumps({k: st[k] for k in ("parity", "reference")}))
         self.assertTrue(st["smoke"]["ok"])
-        self.assertIn(st["reference"]["status"], ("PASS", "DIFF_WITHIN_FLOAT_NOISE"))
+        self.assertEqual(st["parity"]["status"], "PASS")
+        self.assertEqual(st["reference"]["status"], "NOT_APPLICABLE")       # authors' files are for Kronos-small
 
 
 if __name__ == "__main__":

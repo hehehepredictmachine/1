@@ -91,7 +91,13 @@ _OVR: dict[str, dict] = {
     "mm:ste_flownet_ret": {"role": "BASE_FORECAST", "adapter": None, "na": "brak ścieżki na żywo (tylko artefakt badawczy); log-zwrot h zdarzeń",
                            "unit": "log_return", "task_type": "REGRESSION", "tfs": ["EVENT"]},
     # --- other SH rows ------------------------------------------------------------------------------------------------
-    "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
+    "tsfm:chronos2": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                      "tfs": ["M5", "M15"], "env": ".venv_chronos2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                      "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera"},
+    "tsfm:fincast": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                     "tfs": ["M5", "M15"], "env": ".venv_fincast", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                     "notes": "Vincent05R/FinCast v1 (1B); średnia + kwantyle 0,1–0,9; nieskalibrowane na danych brokera"},
+    "kronos:Kronos-base": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
                             "tfs": ["M1", "M5", "M15", "H1"], "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
                             "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera"},
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},
@@ -133,7 +139,7 @@ def _sh_rows() -> list[dict]:
             continue
         cid = I.resolve(sid) or f"sh:{sid}"
         cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
-        if sid == "kronos":
+        if sid in ("kronos", "chronos2", "fincast"):
             cat = "MODEL_PRETRAINED"
         out.append(_e(cid, name=it["name"], category=cat, output=it["output"], owner_train=it.get("train"), source_registry=["sh.models.REGISTRY"],
                       receivers=[f"SH:{it['roles']['SCALPING']}/{it['roles']['HEDGING']}"], dependencies=[f"grupa korelacji {it['group']}"],

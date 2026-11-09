@@ -1894,7 +1894,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..modelhub import adapters as _AD
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
-    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small, SHADOW)
+    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-base since 1.37, SHADOW)
     _KR_TF = ("M1", "M5", "M15", "M30", "H1")
 
     def _kr_tf(tf: str) -> str:
@@ -1992,6 +1992,111 @@ def create_app(rt, port: int) -> FastAPI:
         use = str(body.get("use", "")).upper()
         tf = body.get("timeframe")
         r = rt.kronos.set_strategy_use(strat, use, timeframe=_kr_tf(tf) if tf else None, confirm=bool(body.get("confirm")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    # ------------------------------------------------------------------ 1.37 Chronos-2 / FinCast (+ three-model comparison with Kronos)
+    _TS_TF = ("M1", "M3", "M5", "M15", "M30", "H1")
+
+    def _ts_tf(tf: str) -> str:
+        tf = (tf or "").upper()
+        if tf not in _TS_TF:
+            raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
+        return tf
+
+    def _ts_mid(m: str) -> str:
+        m = (m or "").lower()
+        if m not in ("chronos2", "fincast"):
+            raise HTTPException(400, "MODEL_NOT_ALLOWED")
+        return m
+
+    @app.get("/api/v1/models/foundation")
+    def tsfm_status():
+        """Status of the three foundation models in one place: Kronos (existing service) + Chronos-2 + FinCast."""
+        from kronos_runtime import lock as _KL
+        kr = rt.kronos
+        return {**rt.tsfm.public(), "settings": rt.tsfm.settings.get().model_dump(mode="json"),
+                "kronos": {"name": _KL.MODEL_NAME, "repo": _KL.MODEL["repo"], "revision": _KL.MODEL["revision"], "params_upstream": _KL.MODEL["params_upstream"],
+                           "status": kr.state.get("status"), "reason": kr.state.get("reason"), "load": kr.load_info, "legacy": list(_KL.LEGACY),
+                           "largest_public_note": "Kronos-large (499,2M) wg autorów nie jest publicznie dostępny – używany jest największy publiczny Kronos-base"},
+                "data_kind": rt.tsfm.data_kind()[0], "data_source": rt.tsfm.data_kind()[1]}
+
+    @app.get("/api/v1/models/foundation/forecast")
+    def tsfm_forecast(model: str = Query(...), instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.forecast(_ts_mid(model), _th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/compare")
+    def tsfm_compare(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.compare(_th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/history")
+    def tsfm_history(model: str | None = Query(None), instrument: str = Query("XAUUSD"), tf: str | None = Query(None),
+                     limit: int = Query(100, ge=1, le=2000)):
+        return {"items": rt.tsfm.history(_ts_mid(model) if model else None, _th_inst(instrument), _ts_tf(tf) if tf else None, limit)}
+
+    @app.put("/api/v1/models/foundation/settings")
+    def tsfm_settings_put(body: dict = Body(...)):
+        def has_use(d):
+            return isinstance(d, dict) and any(k == "use" or has_use(v) for k, v in d.items())
+        if has_use(body.get("models")):
+            raise HTTPException(400, "USE_ONLY_VIA_/api/v1/models/foundation/use")
+        try:
+            s = rt.tsfm.settings.update(body)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_SETTINGS: {exc}"[:500]) from exc
+        rt.log.info("TSFM", "SETTINGS", "Zmieniono ustawienia Chronos-2/FinCast: " + ", ".join(sorted(body))[:200])
+        return {"ok": True, "settings": s.model_dump(mode="json")}
+
+    @app.post("/api/v1/models/foundation/install")
+    def tsfm_install(body: dict = Body(...)):
+        r = rt.tsfm.start_install(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/verify")
+    def tsfm_verify(body: dict = Body(...)):
+        r = rt.tsfm.start_verify(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/refresh")
+    def tsfm_refresh(body: dict = Body(...)):
+        r = rt.tsfm.refresh(_ts_mid(body.get("model")), _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/validate")
+    def tsfm_validate(body: dict = Body(...)):
+        n = int(body.get("max_origins", 200))
+        if not 20 <= n <= 1000:
+            raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
+        r = rt.tsfm.start_validation(_th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), n)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/models/foundation/job/{name}")
+    def tsfm_job(name: str):
+        if not re.match(r"^(install|verify)_(chronos2|fincast)$|^validation$", name):
+            raise HTTPException(400, "JOB_UNKNOWN")
+        return {"job": rt.tsfm.job(name)}
+
+    @app.get("/api/v1/models/foundation/validation")
+    def tsfm_validation(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        from ..tsfm import validation as _TV
+        rep = _TV.latest_report(_th_inst(instrument), _ts_tf(tf))
+        if rep:
+            rep = {k: v for k, v in rep.items() if k != "rows"} | {"rows_tail": (rep.get("rows") or [])[-50:]}
+        return {"report": rep}
+
+    @app.post("/api/v1/models/foundation/use")
+    def tsfm_use(body: dict = Body(...)):
+        r = rt.tsfm.set_use(_ts_mid(body.get("model")), str(body.get("path", "")).upper(), str(body.get("use", "")).upper(),
+                            timeframe=_ts_tf(body["timeframe"]) if body.get("timeframe") else None, confirm=bool(body.get("confirm")))
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r

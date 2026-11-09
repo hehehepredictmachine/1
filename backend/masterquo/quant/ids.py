@@ -12,7 +12,8 @@ Known alias groups found in the 1.33/1.34 code (docs/quant/INVENTORY.md lists al
   returns None for them; the trainhub inference produces the prediction) -> canonical `trainhub:TH_*`;
 * family SEQ_GRU_EVENT, SH row mm_event_engine and MM artifact event_engine_dir3 are ONE model -> `mm:event_engine_dir3`;
 * SH row gold_forecast and the panel keys gold_candles_5m/15m/30m are one model with three horizons -> `forecast:gold_candles`;
-* SH row kronos and model_name Kronos-small -> `kronos:Kronos-small`;
+* SH row kronos and model_name Kronos-base -> `kronos:Kronos-base` (1.37; historical Kronos-small rows -> `kronos:Kronos-small`);
+* SH rows chronos2 / fincast and model_name Chronos-2 / FinCast -> `tsfm:chronos2` / `tsfm:fincast` (1.37);
 * SH row th_direction is a GROUP (all active trainhub packages), SH rows lab / si_move are GROUPS of several families.
 """
 from __future__ import annotations
@@ -39,7 +40,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "mm:multi_indicator": ("mm_multi_indicator", "multi_indicator"),
     "mm:smc_fvg": ("mm_smc_fvg", "smc_fvg"),
     "forecast:gold_candles": ("gold_forecast", "gold_candles", "gold_candles_5m", "gold_candles_15m", "gold_candles_30m"),
-    "kronos:Kronos-small": ("kronos", "Kronos-small", "KRONOS_SMALL"),
+    "kronos:Kronos-base": ("kronos", "Kronos-base", "KRONOS_BASE"),
+    "kronos:Kronos-small": ("Kronos-small", "KRONOS_SMALL"),          # history only (used until 1.36.0)
+    "tsfm:chronos2": ("chronos2", "Chronos-2", "CHRONOS2"),
+    "tsfm:fincast": ("fincast", "FinCast", "FINCAST"),
     "sh:tp_model": ("sh_tp_model",),
     "scalp:A_direction": ("scalp_A",),
     "scalp:B_setup_quality": ("scalp_B",),
@@ -85,7 +89,7 @@ def resolve(name: str | None) -> str | None:
         return f"trainhub:{m.group(1)}"
     if n.startswith("gold_candles_"):
         return "forecast:gold_candles"
-    if ":" in n and n.split(":")[0] in ("trainhub", "mm", "family", "rule", "lab", "si", "flow", "forecast", "kronos", "scalp", "sh", "ml"):
+    if ":" in n and n.split(":")[0] in ("trainhub", "mm", "family", "rule", "lab", "si", "flow", "forecast", "kronos", "tsfm", "scalp", "sh", "ml"):
         return n
     return None
 

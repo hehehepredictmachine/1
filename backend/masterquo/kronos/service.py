@@ -490,6 +490,7 @@ class KronosService:
                 "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "device": r.get("device"), "device_note": r.get("device_note"),
                 "compute_ms": r.get("ms"), "seed": r.get("seed"), "sampling": r.get("sampling"), "context_bars": r.get("context_bars"),
                 "model": comps.get("model"), "tokenizer": comps.get("tokenizer"), "runtime": (self.worker_info or {}).get("runtime"),
+                "model_name": (self.load_info or {}).get("model_name"), "params": (self.load_info or {}).get("params_model"),
                 "quality": job["quality"], "calendar": cinfo, "timestamp_basis": s.timestamp_basis, "data_kind": kind, "data_source": kind_pl,
                 "ohlc_inconsistent_steps": bad_geom, "mode": "SHADOW", "execution_permission": False,
                 "note": "pojedyncza próbkowana ścieżka modelu (sample_count=1) – nie jest pewnością ani skalibrowanym prawdopodobieństwem"}
@@ -505,7 +506,7 @@ class KronosService:
              fc["pred_close_h"], fc["delta_price"], fc["direction"], fc["neutral_band"],
              json.dumps([{"t_utc": x["t_utc"], "c": x["c"]} for x in fc["pred"]]), json.dumps(fc["uncertainty"]) if fc["uncertainty"] else None,
              (fc.get("model") or {}).get("revision"), (fc.get("tokenizer") or {}).get("revision"), fc["device"], fc["compute_ms"], fc["data_kind"],
-             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"]}), "PENDING"))
+             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"], "model": (fc.get("model") or {}).get("revision")}), "PENDING"))
 
     def settle(self, inst: str, tf: str, closed_bars: list[dict]) -> int:
         """Settle PENDING forecasts whose last target bar is already closed: per-step actual closes from REAL closed bars of exactly
@@ -553,7 +554,9 @@ class KronosService:
         if tf:
             q, a = q + " AND timeframe=?", a + [tf]
         rows = self.db.query(q + " ORDER BY id DESC LIMIT ?", tuple(a + [limit]))
+        from kronos_runtime import lock as LK
         for r in rows:
+            r["model_name"] = LK.name_of(None, r.get("model_revision"))       # 1.37: Kronos-small rows stay labelled Kronos-small
             r["path"] = json.loads(r.pop("path_json") or "[]")
             r["uncertainty"] = json.loads(r.pop("uncertainty_json")) if r.get("uncertainty_json") else None
             r["outcome"] = json.loads(r.pop("outcome_json")) if r.get("outcome_json") else None

@@ -629,7 +629,7 @@ class TestInventoryCli(unittest.TestCase):
         c = inv["coverage"]
         self.assertEqual(c["inventory"]["recognised"], c["inventory"]["classified"])
         self.assertEqual(c["adapters"]["missing"], [])
-        for must in ("rule:data_quality", "sh:tp_model", "mm:event_engine_dir3", "kronos:Kronos-small", "agent:claude", "trainhub:TH_SVM", "family:TS_ARIMA",
+        for must in ("rule:data_quality", "sh:tp_model", "mm:event_engine_dir3", "kronos:Kronos-base", "tsfm:chronos2", "tsfm:fincast", "agent:claude", "trainhub:TH_SVM", "family:TS_ARIMA",
                      "family:NLP_SENTIMENT", "lab:SEW_SNN", "lab:LOGREG_GMM_AUG", "si:MQ_SEW_RESNEXT_EB_V1", "si:MQ_SPIKE_BRAIN_FINANCE_V1", "mm:buzoa",
                      "analysis:montecarlo", "quant:metamodel"):
             self.assertIn(must, ids)

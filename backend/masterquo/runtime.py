@@ -147,7 +147,7 @@ class Runtime:
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
-        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-small: SHADOW, own .venv_kronos process
+        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-base (1.37): SHADOW, own .venv_kronos process
         from .trainhub.inference import TrainhubInference
         from .trainhub.jobs import TrainingCenter
         self.trainhub = TrainingCenter(self.cfg, self.bridge, bus=self.bus, log=self.log)         # 1.28: Centrum treningu (kolejka, proces obok)
@@ -160,6 +160,13 @@ class Runtime:
         self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
+        from .tsfm.service import TsfmService
+        self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # 1.37 Chronos-2 + FinCast: own processes, OBSERVE default
+        self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
+        self.sh.tsfm = self.tsfm                                                                    # SH receivers (roles per strategy)
+        from .tsfm import predictions as _tsfm_pred
+        self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / FinCast
+                                    lambda inst: _tsfm_pred.kronos_rows(self.kronos, inst)]          # Kronos: recorded as OBSERVE only
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
         self.evaluation.zone_provider = self.zones
@@ -271,6 +278,7 @@ class Runtime:
         self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
         self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
         self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
+        self.tsfm.start()                       # Chronos-2 / FinCast: forecasts after new closed bars (nothing until installed)
         self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -306,6 +314,7 @@ class Runtime:
         self.trainhub.stop()
         self.trainhub_inference.stop()
         self.kronos.stop()
+        self.tsfm.stop()
         self.montecarlo.stop()
         self.quant.stop()
         self.analytics.stop()

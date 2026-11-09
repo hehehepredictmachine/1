@@ -3,7 +3,7 @@
   python -m kronos_runtime.install download --weights-dir DIR [--status-file F]
   python -m kronos_runtime.install verify   --weights-dir DIR [--reference] [--device AUTO|CPU|CUDA] [--status-file F]
 
-download: for NeoQuasar/Kronos-small and NeoQuasar/Kronos-Tokenizer-base at the revisions of lock.py -
+download: for the pinned pair of lock.py (1.37: NeoQuasar/Kronos-base + Kronos-Tokenizer-base) at the revisions of lock.py -
   1. the revision must exist (model_info at that commit; the returned sha must equal the pinned commit),
   2. config.json + model.safetensors must be present (a pickle checkpoint is never accepted),
   3. each file is downloaded into DIR/.partial, checked against the SOURCE metadata (LFS sha256 for model.safetensors, git blob sha1
@@ -192,10 +192,10 @@ def verify(weights_dir: str, status_file: str | None, reference: bool, device: s
     rep.say(f"urządzenie: {info['device']} ({info.get('device_note') or 'OK'}); ładowanie {info['load_ms']} ms", 3)
     st = eng.selftest(reference=reference)
     rep.say(f"prognoza testowa: {st['smoke']['pred_len']} świec w {st['smoke']['ms']} ms" +
-            (f"; zgodność z wynikiem referencyjnym autorów: {st['reference']['status']}" if reference else ""), 4)
+            (f"; parity z oficjalnym KronosPredictor: {st['parity']['status']}; dane referencyjne autorów: {st['reference']['status']}" if reference else ""), 4)
     # integrity = checksums; the reference comparison is reported with its size (a float difference on another CPU / library build
     # can flip a greedy token) and is shown to the user, it does not turn verified files into a failed installation
-    ok = st["smoke"]["ok"]
+    ok = st["smoke"]["ok"] and (not reference or st["parity"]["status"] == "PASS")
     return result(ok, None if ok else "SELFTEST_FAILED", rep, files=chk["files"], load=info, selftest=st)
 
 

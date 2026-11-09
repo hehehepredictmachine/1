@@ -15,7 +15,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ["requirements-win.txt", "requirements-deep-win.txt", "requirements-kronos-win.txt", "requirements-candles-win.txt"]
+FILES = ["requirements-win.txt", "requirements-deep-win.txt", "requirements-kronos-win.txt", "requirements-candles-win.txt",
+         "requirements-chronos2-win.txt", "requirements-fincast-win.txt"]                     # 1.37: Chronos-2 / FinCast environments
 
 
 def uv() -> list[str] | None:

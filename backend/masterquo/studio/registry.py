@@ -106,9 +106,9 @@ def tasks(cfg_store=None) -> list[dict]:
                              sources=[{"kind": "BARS", "tf": tf, "mandatory": True}] + ([{"kind": "BARS_DXY", "tf": "H1", "mandatory": True}]
                                                                                        if iid == "IND_XAU_DXY" else []),
                              resume={"export": "CHUNK_CHECKPOINT", "training": "NOT_APPLICABLE"}, state="SUPPORTED", reason=None, transfer=None))
-        out.append(_task(model_id="KRONOS_SMALL", task_id="CANDLE_PATH", instrument=inst, broker_symbol=sym.get(inst), base_tf="M5", horizon=None,
+        out.append(_task(model_id="KRONOS_BASE", task_id="CANDLE_PATH", instrument=inst, broker_symbol=sym.get(inst), base_tf="M5", horizon=None,
                          feature_schema_version="kronos-tokenizer-base", label_schema_version="NOT_APPLICABLE", adapter="PRETRAINED",
-                         category="PRETRAINED", name="Kronos-small (wagi pretrained NeoQuasar)", trainer=None,
+                         category="PRETRAINED", name="Kronos-base (wagi pretrained NeoQuasar, 1.37)", trainer=None,
                          loader="kronos_runtime (.venv_kronos)", env=".venv_kronos", sources=[{"kind": "BARS", "tf": "M5", "mandatory": True}],
                          resume={}, state="EXTERNAL", reason="ewaluacja i instalacja w panelu Kronos bota; fine-tuning nie jest obsługiwany przez projekt",
                          transfer=None))

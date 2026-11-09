@@ -222,7 +222,7 @@ class SHService:
             if su["status"] == "READY" and TM.status(inst, strat).get("status") == "READY":
                 pr = TM.predict(inst, strat, TM.features(su, snap))
                 su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
-            evals[strat] = self._kronos(su, inst, strat, snap)
+            evals[strat] = self._tsfm(self._kronos(su, inst, strat, snap), inst, strat)
         ind = getattr(self, "indicators", None)
         if ind is not None:                                               # PMW-IND-1 context (role OBSERVE: shown + logged, never a gate)
             try:
@@ -297,11 +297,29 @@ class SHService:
             ctx = KP.context(kr, inst, strat, side=su.get("side"), other_preds=preds, snap=snap)
         except Exception as exc:  # noqa: BLE001
             use = kr.settings.get().strategy_use[strat].use
-            ctx = {"model": "Kronos-small", "timeframe": kr.settings.get().strategy_use[strat].timeframe, "use": use, "use_pl": KP.USE_PL[use],
+            ctx = {"model": KP.model_name(), "timeframe": kr.settings.get().strategy_use[strat].timeframe, "use": use, "use_pl": KP.USE_PL[use],
                    "available": False, "state": "ERROR", "reason": f"kontekst Kronos: {type(exc).__name__}: {exc}"[:200], "forecast": None,
                    "setup_side": su.get("side"), "relation": "BRAK", "vs_models": [], "vs_structure": None, "knows_only": KP.KNOWS_ONLY,
                    "independence": KP.INDEPENDENCE, "validation_report": None}
         return KP.apply_to_setup(su, ctx)
+
+    def _tsfm(self, su: dict, inst: str, strat: str) -> dict:
+        """1.37 Chronos-2 / FinCast receivers (separate, described). OBSERVE = information; ASSIST / REQUIRED (approved) may only turn
+        READY into WAIT. A failure here never grants anything: OBSERVE keeps the evaluation, REQUIRED holds it."""
+        ts = getattr(self, "tsfm", None)
+        if ts is None:
+            return su
+        from ..tsfm import predictions as TP
+        for mid in ("chronos2", "fincast"):
+            try:
+                ctx = TP.context(ts, mid, inst, strat, side=su.get("side"))
+            except Exception as exc:  # noqa: BLE001
+                use = ts.settings.get().models[mid].use[strat].use
+                ctx = {"model": mid, "name": mid, "timeframe": "?", "use": use, "use_configured": use, "use_pl": TP.USE_PL[use], "validation_report": None,
+                       "approval": None, "available": False, "state": "ERROR", "reason": f"kontekst {mid}: {type(exc).__name__}: {exc}"[:200],
+                       "forecast": None, "setup_side": su.get("side"), "relation": "BRAK", "knows_only": TP.KNOWS_ONLY}
+            su = TP.apply_to_setup(su, ctx)
+        return su
 
     def persist_signal(self, su, risk, coord, now) -> None:
         k = su["strategy"]
