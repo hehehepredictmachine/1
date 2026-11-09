@@ -1,3 +1,46 @@
+# Raport końcowy – PepeMarketWizard 1.40.0 (Granite TTM zamiast FinCast, Memory Governor 16 GB, nowy WTC$PEPE, optymalizacja UI)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_0.zip` (2696 plików, aplikacja Windows) | `a277bcf301ae2eff307f561bacb0ac35d787027063dfe77348b7bb1d649ed23f` |
+| `PepeMarketWizard_1_40_0.zip` (1627 plików, folder programu) | `bff296075624e782546a158c18fc2d59950354142b0880831d257a860d67d91b` |
+| `Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf` (zaktualizowana: Granite TTM, Memory Governor) | – |
+
+`verify_release.py --all`: OK (ścieżki, manifest, sekrety, .sha256). Paczki bez wag, `.venv_*`, danych rachunku i plików FinCast.
+Start z rozpakowanej paczki (demo): wersja 1.40.0; konfiguracja v14 → v15 (`resources` = LOW_MEMORY_16GB, kopia `config.v14.bak.json`);
+ustawienia modeli z wpisem FinCast → modele `chronos2`, `granite_ttm`, FinCast w `retired`, kopia `settings.v139.bak.json` + historia zmian.
+Punkt przywracania kodu: tag `pre-1.40-restore-point` (1.39.0).
+
+## Kryteria zakończenia (masterprompt)
+| Kryterium | Stan |
+|---|---|
+| FinCast nie działa w aktywnym pipeline | DONE – nie jest instalowany, ładowany ani planowany; API zwraca MODEL_RETIRED; historia zachowana |
+| Granite TTM – rzeczywista inferencja | DONE – oficjalne wagi (sumy SHA-256), parytet z oficjalnym API PASS, testy na prawdziwych wagach |
+| Kronos i Chronos-2 nadal działają | DONE – testy na prawdziwych wagach Chronos-2 OK; Kronos zmierzony w pomiarze RAM (80 prognoz, 0 błędów) |
+| Prognozy w ModelHub i u odbiorców strategii | DONE – kontrakt PMW-PRED-2, koordynator ACTIVE, odbiorniki SH, porównanie modeli, panele (testy) |
+| Wspólny harmonogram chroni pamięć | DONE – Memory Governor: progi 75/80/85 %, jeden slot ciężki, STALE zamiast wartości, bramka treningu (testy) |
+| Tryb CPU-only | DONE – cały pomiar i testy bez GPU; CUDA tylko gdy działa, sterowniki nie są instalowane |
+| Brak nowych błędów krytycznych | DONE – pełna regresja 1348 testów, 23 pominięte (brak torch w interpreterze testów), 1 test UI z za krótkim limitem czasu poprawiony i powtórzony OK |
+| Konfiguracja 16 GB zmierzona i opisana | DONE – docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md §6 (komputer 16 GB, 4 vCPU) |
+| Możliwość cofnięcia | DONE – ROLLBACK 0e, kopie konfiguracji, tag git |
+| Brak fikcyjnych prognoz / wyników | DONE – Granite punktowy (bez kwantyli i świec), WTC bez wartości demo, wyniki walidacji ujemne opisane wprost |
+
+## Pomiary
+* Walk-forward XAUUSD (HistData, Q4 2025, dane po publikacji modeli): MAE względem modelu naiwnego – Granite R2 512-96 −9 %, Chronos-2 −2…−3 %,
+  Kronos-base −29…−59 %; trafność kierunku 41–57 % bez istotności. **Żaden model nie pokonał prognozy „ostatnia cena”** → rola OBSERVE.
+* Dotrenowanie Granite (M5): test MAE 8,14 vs bazowy 8,44 vs naiwny 7,83 – lepszy od bazowego, nie od naiwnego.
+* RAM (16 GB): backend 431 MB, Granite 346 MB (p50 3,4 ms), Chronos-2 600–835 MB (p50 79 ms), Kronos 672–1062 MB (p50 6,9 s CPU);
+  3 modele sekwencyjnie 60 świec M5 + M15: 0 błędów, szczyt 11,7 % RAM, suma modeli 2,0 GB. FinCast wymagał ok. 8 GB przy ładowaniu.
+* UI (Chromium bez GPU): menu Galaxy 0,7 → ~34 FPS, WTC 47–58 FPS przy nowym układzie z filmem tła (docs/WYDAJNOSC_UI_1_40_PL.md).
+
+## NOT RUN (środowisko)
+Windows i prawdziwy MT5 (symulator), GPU / CUDA, porównanie strategii po kosztach na Twojej historii MT5 (wymaga eksportu i
+`39_PAKIET_20_WALIDACJA.bat`), GUI WebView2. Dane walidacyjne to publiczny zbiór XAUUSD, nie Twój broker.
+
+Nie otwierano transakcji i nie zmieniano trybu rachunku. Ustawienie LIVE od startu z 1.39 pozostaje bez zmian.
+
+---
+
 # Raport końcowy – PepeMarketWizard 1.39.0 (LIVE od startu, GARCH w HG09, intro, menu Galaxy V2, WTC PEPE 2.1, instrukcja PDF)
 
 **Paczki 1.39.0:**
