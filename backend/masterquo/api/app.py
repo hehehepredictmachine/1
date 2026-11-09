@@ -1082,9 +1082,64 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh import scenario as SHS
         return SHS.build(rt, strategy, volume)
 
+    _SH_TFS = ("M1", "M3", "M5", "M15", "H1")
+
+    def _sh_vid(v):
+        from ..sh.pack import catalog as _CAT
+        if v is None:
+            return None
+        if v not in _CAT.IDS and v not in ("LEGACY_SCALPING", "LEGACY_HEDGING"):
+            raise HTTPException(400, "STRATEGY_ID_UNKNOWN")
+        return v
+
+    def _sh_tf(v):
+        if v is None:
+            return None
+        if v not in _SH_TFS:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        return v
+
     @app.get("/api/v1/sh/signals")
-    def sh_signals(strategy: str | None = None, limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit)}
+    def sh_signals(strategy: str | None = None, strategy_id: str | None = None, tf: str | None = None, symbol: str | None = None,
+                   limit: int = Query(100, ge=1, le=1000)):
+        """SH signal history; 1.38 filters: strategy (family), strategy_id (PMW_.. or LEGACY_SCALPING / LEGACY_HEDGING), tf, symbol."""
+        if strategy is not None and strategy not in ("SCALPING", "HEDGING"):
+            raise HTTPException(400, "BAD_STRATEGY")
+        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit, strategy_id=_sh_vid(strategy_id), tf=_sh_tf(tf), symbol=symbol)}
+
+    @app.get("/api/v1/sh/strategies")
+    def sh_strategies():
+        """Catalog of the 20 variants (one owner of names / TFs / parameters / readiness / validation) + the live evaluation state."""
+        from ..sh.pack import catalog as _CAT
+        pk = getattr(rt.sh, "pack", None)
+        return {**_CAT.public(), "live": pk.public() if pk is not None else None}
+
+    @app.post("/api/v1/sh/strategies/config")
+    def sh_strategies_config(body: dict = Body(...)):
+        """Variant parameter override (validated, versioned). New candidates only - open plans keep their frozen variant."""
+        from ..sh.pack import catalog as _CAT
+        try:
+            cfg = _CAT.save_override(body, who="panel")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)[:400])
+        rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
+        return _CAT.public(cfg)
+
+    @app.get("/api/v1/sh/pack/evaluations")
+    def sh_pack_evaluations(strategy_id: str | None = None, tf: str | None = None):
+        """Current evaluation of every variant x signal TF (READY / WAIT / NO_TRADE / INVALIDATED / EXPIRED with reason codes). Read-only:
+        a GET never runs a scan, a training or an order."""
+        pk = getattr(rt.sh, "pack", None)
+        if pk is None:
+            return {"items": []}
+        vid, f = _sh_vid(strategy_id), _sh_tf(tf)
+        items = []
+        for (k, stf), su in sorted(pk.last.items()):
+            if (vid and k != vid) or (f and stf != f):
+                continue
+            items.append({k2: su.get(k2) for k2 in ("strategy_id", "strategy", "signal_id", "side", "status", "status_reason", "entry_ref", "sl",
+                                                  "tps", "valid_until", "checklist", "risk", "coordination", "created_at")} | {"pack": su.get("pack")})
+        return {"items": items, "timing": pk.timing()}
 
     @app.get("/api/v1/sh/signals/{sid}")
     def sh_signal(sid: str):
@@ -1094,9 +1149,16 @@ def create_app(rt, port: int) -> FastAPI:
         return r
 
     @app.get("/api/v1/plans/chart")
-    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100)):
-        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills."""
+    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100), strategy_id: str | None = None, tf: str | None = None,
+                    plan_id: str | None = None, symbol: str | None = None, family: str | None = None):
+        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills.
+        1.38: layer=PACK (or any strategy_id / tf / plan_id filter) -> PMW-PLAN-2 views of the 20 variants (family from layer SCALP/HEDGE)."""
         from ..plans import service as _PS
+        if layer.upper() == "PACK" or strategy_id or tf or plan_id:
+            fam = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get((family or layer).upper())
+            if plan_id is not None and not re.match(r"^PL-[0-9a-f]{14}$", plan_id):
+                raise HTTPException(400, "PLAN_ID_INVALID")
+            return _PS.collect_pack(rt.sh, strategy_id=_sh_vid(strategy_id), family=fam, tf=_sh_tf(tf), plan_id=plan_id, history=history, symbol=symbol)
         strat = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get(layer.upper())
         if strat is None:
             raise HTTPException(400, "LAYER_INVALID")
@@ -1167,7 +1229,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/sh/chart")
     def sh_chart(tf: str = Query("M1"), limit: int = Query(240, ge=20, le=1000)):
-        if tf not in ("M1", "M5", "M15"):
+        if tf not in ("M1", "M3", "M5", "M15"):
             raise HTTPException(400, "INVALID_TIMEFRAME")
         bars = [b for b in rt.bridge.bars(tf, limit, include_forming=True) if b.get("open_utc")]
         return {"tf": tf, "bars": bars, "quote": rt.sh.quote(time.time()), "last_eval": rt.sh.last_eval,

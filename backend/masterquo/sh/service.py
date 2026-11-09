@@ -196,6 +196,10 @@ class SHService:
             self.manage(ex, spec, q, now, shc)
         self.store.expire_signals(now)
         bars = {tf: [b for b in self.bridge.bars(tf, 400, include_forming=False) if b.get("open_utc")] for tf in ("M1", "M5", "M15", "H1")}
+        if getattr(self, "pack", None) is not None:                     # 1.38 pack: longer closed history + M3 (native or complete triples)
+            from .pack.engine import NEEDED_BARS
+            self.pack_bars = {tf: [b for b in self.bridge.bars(tf, NEEDED_BARS[tf], include_forming=False) if b.get("open_utc")]
+                              for tf in NEEDED_BARS}
         if not bars["M1"]:
             self._set("NO_DATA", "brak zamkniętych świec M1", mode=mode, instrument=inst)
             return
@@ -239,31 +243,43 @@ class SHService:
                     evals[k] = apply_to_setup(su, fam.setup_context(su, inst))
                 except Exception as exc:  # noqa: BLE001
                     su["family_context"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
+        pevals = self.pack_cycle(inst, spec, q, acc, now, shc, snap)
+        for su in pevals:
+            evals[f"{su['strategy_id']}|{su['pack']['signal_tf']}"] = su
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
-        coord = {d["strategy"]: d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"], "side": p["side"],
-                                                                          "state": p["state"]} for p in opens],
-                                                   foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
+        coord = {d["signal_id"]: d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"], "side": p["side"],
+                                                                           "state": p["state"]} for p in opens],
+                                                    foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
         for strat, su in evals.items():
             risk = None
-            if strat in coord:
-                su["coordination"] = coord[strat]
-                if coord[strat]["decision"] == "PROCEED":
-                    rstate = self.risk_state(spec.symbol, strat, now, foreign)
+            is_pack = bool(su.get("strategy_id"))
+            fam = su["strategy"]
+            cd = coord.get(su["signal_id"]) if su.get("status") == "READY" else None
+            if cd:
+                su["coordination"] = cd
+                if cd["decision"] == "PROCEED":
+                    rstate = self.risk_state(spec.symbol, fam, now, foreign)
                     if mode == "AUTO_LIVE":
-                        rstate["live_validation"] = self.live_validation(inst, strat)
-                    risk = RK.evaluate(setup=su, spec=spec, prof=C.profile(shc, inst, strat), cfg=shc, inst=inst, account=acc,
+                        rstate["live_validation"] = self.pack_live_validation(su) if is_pack else self.live_validation(inst, fam)
+                    prof = self.pack.profile(su, C.profile(shc, inst, fam)) if is_pack else C.profile(shc, inst, fam)
+                    risk = RK.evaluate(setup=su, spec=spec, prof=prof, cfg=shc, inst=inst, account=acc,
                                        state=rstate, exec_mode=mode, now=now, quote=q)
+                    if is_pack:
+                        risk = self.pack_risk_extra(su, risk, prof, spec)
                     su["risk"] = risk
                 else:
-                    su["status_reason"] = "koordynator: " + coord[strat]["reason"]
+                    su["status_reason"] = "koordynator: " + cd["reason"]
             if risk and risk["status"] == "PASS" and entry_block:
                 su["entry_block"] = list(entry_block)
                 su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
             model_block = None
             arc = getattr(self, "arc", None)
-            if arc is not None and (su.get("status") == "READY" or self.last_saved.get(strat, (None,))[0] != su.get("status")):
+            was_ready = (self.last_saved.get(strat, (None,))[0] == "READY")
+            record = (su.get("status") == "READY" or was_ready) if is_pack else \
+                (su.get("status") == "READY" or self.last_saved.get(strat, (None,))[0] != su.get("status"))
+            if arc is not None and record:
                 try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
                     rec = arc.record_sh(su, risk, mode, self.bridge.account_key, coord.get(strat))
                     su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
@@ -274,16 +290,74 @@ class SHService:
                 except Exception as exc:  # noqa: BLE001 - audit trail; REQUIRED configured -> no entry on a coordinator error
                     if getattr(getattr(self.cfg_store.get(), "decision", None), "required_models", None):
                         model_block = [f"MODEL_COORDINATOR_ERROR_{type(exc).__name__}"]
-            self.persist_signal(su, risk, coord.get(strat), now)
-            self.last_eval[strat] = su                                     # full setup (checklist, levels, models) for the panel
+            self.persist_signal(su, risk, cd, now, key=strat if is_pack else None)
+            if not is_pack:
+                self.last_eval[strat] = su                                 # full setup (checklist, levels, models) for the panel
             if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block and not model_block:
-                self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
+                res = self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
+                if is_pack and (res or {}).get("status") in ("OPEN", "ABORTED", "FILLED", "PARTIAL", "REJECTED", "UNKNOWN", "DUPLICATE"):
+                    self.pack.consumed(su)
         for fn in list(self.listeners):
             try:
                 fn(evals, inst=inst, symbol=spec.symbol, snap=snap, now=now)
             except Exception:  # noqa: BLE001 - an observer never stops the cycle
                 logging.getLogger("masterquo.sh").exception("sh listener failed")
         return evals
+
+    # ------------------------------------------------------------------ 1.38 pack (20 variants) - same pipeline, variant identity
+    def pack_cycle(self, inst, spec, q, acc, now, shc, snap) -> list[dict]:
+        """20 variants on the shared closed bars of this cycle (no second model process, no separate robot). Model receivers (Kronos,
+        Chronos-2 / FinCast, families) run on READY candidates only, with the family roles; they can only hold READY -> WAIT."""
+        pk = getattr(self, "pack", None)
+        if pk is None:
+            return []
+        ic = {k: v for k, v in shc["instruments"][inst].items() if k not in ("SCALPING", "HEDGING")}
+        try:
+            out = pk.evaluate(bars=getattr(self, "pack_bars", {}) or {}, quote=q, spec=spec, inst=inst, ic=ic, now=now,
+                              account_currency=acc.get("currency"))
+        except Exception as exc:  # noqa: BLE001 - a failing pack never stops the legacy strategies or the management of open plans
+            self.log.error("SH", "PACK", f"{type(exc).__name__}: {exc}"[:300])
+            return []
+        fam = getattr(self, "families", None)
+        res = []
+        for su in out:
+            if su["status"] == "READY":
+                su = self._tsfm(self._kronos(su, inst, su["strategy"], snap), inst, su["strategy"])
+                if fam is not None:
+                    try:
+                        from ..modelhub.families.service import apply_to_setup
+                        su = apply_to_setup(su, fam.setup_context(su, inst))
+                    except Exception as exc:  # noqa: BLE001
+                        su["family_context"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
+            res.append(su)
+        return res
+
+    @staticmethod
+    def pack_live_validation(su: dict) -> dict:
+        from .pack import catalog as CAT
+        v = CAT.validation_status(su.get("strategy_id"))
+        if v.get("status") == "VALIDATED" and v.get("data_kind") == "REAL_USER_DATA":
+            return {"ok": True, "source": f"walidacja wariantu {su.get('strategy_id')} {v.get('report_id')}"}
+        return {"ok": False, "reason": f"{su.get('strategy_id')}: {v.get('status')} – {v.get('reason') or 'brak walidacji OOS na danych MT5 użytkownika'}"}
+
+    @staticmethod
+    def pack_risk_extra(su: dict, risk: dict, prof: dict, spec) -> dict:
+        """Variant-specific execution checks after the shared risk engine: both partial volumes valid (else PARTIAL_VOLUME_INFEASIBLE,
+        never a bigger lot), the hedge leg volume reachable on HEDGING variants, costs known before READY_TO_EXECUTE."""
+        reasons = list(risk.get("reasons") or [])
+        if any(r.startswith("split") for r in reasons):
+            reasons = ["PARTIAL_VOLUME_INFEASIBLE: " + r for r in reasons if r.startswith("split")] + [r for r in reasons if not r.startswith("split")]
+        if risk.get("status") == "PASS" and su["strategy"] == "HEDGING":
+            ratio = float((prof.get("hedge") or {}).get("ratio") or 0.5)
+            hv = spec.floor_volume(float(risk.get("volume") or 0) * ratio)
+            if hv < spec.volume_min - 1e-9:
+                risk["checks"].append({"id": "hedge_volume", "ok": False, "detail": f"wolumen nogi hedge {hv} < min lot {spec.volume_min} przy ratio {ratio}"})
+                reasons.append(f"HEDGE_VOLUME_INFEASIBLE: {hv} < {spec.volume_min}")
+                risk["status"] = "BLOCK"
+        risk["reasons"] = reasons
+        p = su.get("pack") or {}
+        p["ready_to_execute"] = risk.get("status") == "PASS" and (p.get("economics") or {}).get("cost_status") == "KNOWN"
+        return risk
 
     def _kronos(self, su: dict, inst: str, strat: str, snap: dict) -> dict:
         """Kronos context (separate, described). OBSERVE = information only; REQUIRED (after validation + confirmation) can only turn
@@ -321,9 +395,25 @@ class SHService:
             su = TP.apply_to_setup(su, ctx)
         return su
 
-    def persist_signal(self, su, risk, coord, now) -> None:
-        k = su["strategy"]
+    def persist_signal(self, su, risk, coord, now, key: str | None = None) -> None:
+        """Legacy: every status change. Pack variants: READY candidates (with their risk / coordination, BLOCKED stays in the history) and
+        the end of a READY (EXPIRED / INVALIDATED / WAIT) - WAIT evaluations of 20 variants x TF stay in memory (panel), not in the history."""
+        k = key or su["strategy"]
         sig = (su.get("status"), su.get("status_reason"), su.get("side"))
+        if key is not None:
+            prev = self.last_saved.get(k)
+            if su["status"] == "READY":
+                self.store.save_signal(su, risk=risk, coordination=coord, now=now)
+                self.last_saved[k] = sig + (su["signal_id"],)
+            elif prev and prev[0] == "READY":
+                sid = prev[3]
+                row = self.store.signal(sid)
+                if row:
+                    end = su["status"] if su["status"] in ("EXPIRED", "INVALIDATED") else "EXPIRED"
+                    self.store.db.execute("UPDATE sh_signals SET status=?, status_reason=?, updated_at=? WHERE signal_id=? AND status='READY'",
+                                          (end, su.get("status_reason") or "koniec gotowości", now, sid))
+                self.last_saved[k] = sig + (None,)
+            return
         if su["status"] == "READY" or self.last_saved.get(k) != sig:
             self.store.save_signal(su, risk=risk, coordination=coord, now=now)
             self.last_saved[k] = sig
@@ -356,8 +446,10 @@ class SHService:
     # ------------------------------------------------------------------ plan opening
     def open_plan(self, ex, su, risk, spec, q, mode, now, shc, inst, snap) -> dict:
         pid = "PL-" + su["signal_id"][3:]
-        prof = C.profile(shc, inst, su["strategy"])
-        plan = {"plan_id": pid, "signal_id": su["signal_id"], "strategy": su["strategy"], "instrument": inst, "symbol": spec.symbol,
+        is_pack = bool(su.get("strategy_id"))
+        prof = self.pack.profile(su, C.profile(shc, inst, su["strategy"])) if is_pack else C.profile(shc, inst, su["strategy"])
+        plan = {"plan_id": pid, "signal_id": su["signal_id"], "strategy": su["strategy"], "strategy_id": su.get("strategy_id"),
+                "pack": su.get("pack") if is_pack else None, "instrument": inst, "symbol": spec.symbol,
                 "side": su["side"], "exec_mode": mode, "account_key": self.bridge.account_key, "config_hash": shc["_hash"],
                 "setup": {k: su.get(k) for k in ("entry_ref", "sl", "tps", "shares", "be", "invalidation", "entry_zone", "mode", "costs", "net_rr",
                                                  "horizon_minutes", "position_max_minutes", "valid_until", "model_mode", "probability", "score")},
@@ -368,7 +460,8 @@ class SHService:
         arc = getattr(self, "arc", None)
         intent = None
         if arc is not None and mode != "SIGNALS":     # PMW-ARC-1: intent (dedup) + shared atomic risk reservation of BOTH paths
-            rec = arc.last.get("SH") if (arc.last.get("SH") or {}).get("source_id") == su["signal_id"] else None
+            rec = (getattr(arc, "by_source", {}) or {}).get(su["signal_id"]) or \
+                (arc.last.get("SH") if (arc.last.get("SH") or {}).get("source_id") == su["signal_id"] else None)
             op = arc.intents.open(path="SH", mode=mode, account_key=self.bridge.account_key, subject=pid, symbol=spec.symbol, side=su["side"],
                                   volume=float(risk["volume"]), risk_money=risk.get("risk_money"), record_id=(rec or {}).get("record_id"),
                                   equity=(getattr(self.bridge, "account", None) or {}).get("equity"))
@@ -405,6 +498,8 @@ class SHService:
 
     def bind_fill(self, ex, plan, res, spec, q, mode, now) -> dict:
         """Targets from the ACTUAL fill price (snapped to ticks, never closer than requested); split of the ACTUAL filled volume."""
+        if plan.get("pack"):
+            return self.bind_fill_pack(ex, plan, res, spec, q, mode, now)
         pid, side, su, prof = plan["plan_id"], plan["side"], plan["setup"], plan["profile"]
         fill, vol = float(res["price"]), float(res["volume"])
         sl = float(su["sl"])
@@ -450,6 +545,140 @@ class SHService:
         self.process(ex, self.store.plan(pid), obj, acts, spec, q, now)
         return {"status": "OPEN", "plan_id": pid, "fill": fill, "volume": vol}
 
+    def bind_fill_pack(self, ex, plan, res, spec, q, mode, now) -> dict:
+        """Pack plans keep their PLANNED absolute TP1 / TP2 / SL (the plan is not silently moved to hide a slippage). The fill deviation and
+        the net RR from the ACTUAL fill are reported; if the slippage breaks the plan (fill beyond SL, a target already passed, or net RR
+        below 90 % of the minimum) the pre-defined policy closes the position (ENTRY_ABORT)."""
+        from .pack import solver as SV
+        pid, side, su, prof, pk = plan["plan_id"], plan["side"], plan["setup"], plan["profile"], plan["pack"]
+        fill, vol = float(res["price"]), float(res["volume"])
+        sl = float(su["sl"])
+        tps = [float(t["price"]) for t in su["tps"]]
+        shares = list(prof["shares"])
+        sp = spec.split(vol, shares)
+        sg = 1 if side == "BUY" else -1
+        r = sg * (fill - sl)
+        econ = pk.get("economics") or {}
+        c = float(econ.get("c_round_trip") or 0.0)
+        hl = float(econ.get("hedge_loss_bound_price") or 0.0)
+        why = None
+        if r <= 0:
+            why = "wykonanie po złej stronie SL (poślizg)"
+        elif sg * (tps[0] - fill) <= 0:
+            why = "wykonanie za TP1 (poślizg) – plan nieważny"
+        elif sp["status"] != "OK":
+            why = f"PARTIAL_VOLUME_INFEASIBLE: podział wykonanego wolumenu {vol}: {sp.get('reason')}"
+        else:
+            d1, d2 = sg * (tps[0] - fill), sg * (tps[1] - fill)
+            rr = SV.rr_basket(d1, d2, r, c, hl, hl, *shares) if plan["strategy"] == "HEDGING" else SV.rr_plan_net(d1, d2, r, c, c, *shares)
+            self.store.event(pid, "FILL_DEVIATION", {"entry_plan": su.get("entry_ref"), "entry_fill": fill, "deviation": round(fill - float(su.get("entry_ref") or fill), 6),
+                                                     "rr_at_fill": round(rr, 4), "rr_min": prof["min_net_rr"]}, now)
+            if rr < 0.9 * float(prof["min_net_rr"]):
+                why = f"poślizg łamie plan: RR netto przy fillu {rr:.2f} < 90 % minimum {prof['min_net_rr']}"
+        if why:
+            pos = Position(pid, side, fill, vol, sl, [Leg("TP2", tps[-1], vol)])
+            self.store.update_plan(pid, state="OPEN", fsm=pos, primary_ticket=res.get("ticket"), now=now)
+            act = {"action_id": f"{pid}:CLOSE_RUNNER:ENTRY_ABORT", "plan_id": pid, "kind": "CLOSE_RUNNER", "volume": vol, "reason": why}
+            self.store.event(pid, "ENTRY_ABORT", {"reason": why}, now)
+            self.process(ex, self.store.plan(pid), pos, [act], spec, q, now)
+            return {"status": "ABORTED", "reason": why}
+        legs = [Leg("TP1", tps[0], sp["legs"][0]), Leg("TP2", tps[1], sp["legs"][1])]
+        pos = Position(pid, side, fill, vol, sl, legs, be_rule="ENTRY", be_offset=0.0, be_reject_policy="CLOSE")
+        obj = pos
+        if plan["strategy"] == "HEDGING":
+            h = prof["hedge"]
+            cfg = HedgeConfig(trigger_adverse_usd=1e12, ratio=float(h["ratio"]), max_ratio=float(h["max_ratio"]), max_activations=1,
+                              max_hedge_minutes=1e9, unwind_recovery_usd=1e12,
+                              basket_loss_limit_money=float(plan["risk"].get("basket_loss_limit_money") or 0.0),
+                              basket_max_minutes=float(prof["position_max_minutes"]))
+            obj = Basket(pid, pos, cfg, spec.money_per_price(1.0), opened_at=now,
+                         policy={"policy_id": h.get("policy_id"), "opened_at": now, "variant": plan.get("strategy_id")})
+        self.store.update_plan(pid, state=obj.state, fsm=obj, primary_ticket=res.get("ticket"), now=now)
+        self.store.event(pid, "BOUND", {"fill": fill, "volume": vol, "legs": [vars(x) for x in legs], "split": sp, "targets": "PLANNED_ABSOLUTE"}, now)
+        acts = [{"action_id": f"{pid}:MODIFY_TP:FILL", "plan_id": pid, "kind": "MODIFY_TP", "tp": legs[-1].price}]
+        self.process(ex, self.store.plan(pid), obj, acts, spec, q, now)
+        return {"status": "OPEN", "plan_id": pid, "fill": fill, "volume": vol}
+
+    def pack_hedge_step(self, row, b: Basket, spec, q, now) -> list[dict]:
+        """Variant hedge policy (policies.py) on the closed M5 after the fill. Priority: hedge timeout / unwind before any new activation;
+        a new activation passes the same account / volume / margin checks as the legacy hedge AND an atomic HEDGE intent with a risk
+        reservation (IntentLedger / RiskBook) - an opposite leg is never treated as a costless close."""
+        from .pack import policies as POL
+        plan = row["plan"]
+        pk = plan["pack"]
+        vid = plan.get("strategy_id")
+        p = b.primary
+        hedged = bool(b.hedge and b.hedge.status in ("OPEN", "CLOSING"))
+        out: list[dict] = []
+        # ratio cap after a partial of the base: the hedge never exceeds max_ratio x remaining base volume
+        if hedged and b.hedge.status == "OPEN":
+            cap = spec.floor_volume(p.remaining * float(b.cfg.max_ratio))
+            excess = round(b.hedge.volume - cap, 8)
+            if excess > 1e-9:
+                import math
+                ex_v = round(math.ceil(excess / spec.volume_step - 1e-9) * spec.volume_step, 8)       # reduce at least the excess
+                if b.hedge.volume - ex_v < spec.volume_min - 1e-9:
+                    ex_v = b.hedge.volume                                                       # remainder below min lot: close the leg
+                a = b._act("CLOSE_HEDGE", f"CAP{len(p.realized)}", volume=min(b.hedge.volume, ex_v), reason="limit hedge po częściowym zamknięciu bazy")
+                if a:
+                    out.append(a)
+                    b.policy["cap_reduced"] = True
+                return out
+        if b.state not in ("PRIMARY_OPEN", "HEDGED"):
+            return out
+        m5 = self.bridge.bars("M5", 700, include_forming=False)
+        h1 = self.bridge.bars("H1", 1050, include_forming=False)
+        st = pk.get("structure_view") or {}
+        try:
+            dec = POL.decision(vid, plan=plan, st=st, pstate=b.policy, m5_bars=m5, h1_bars=h1, quote=q, now=now,
+                               primary={"side": p.side, "entry": p.entry, "sl": p.sl, "remaining": p.remaining, "volume": p.volume,
+                                        "opened_at": float(b.policy.get("opened_at") or b.opened_at)},
+                               hedged=hedged, hedge_opened_at=b.hedge.opened_at if b.hedge else None, activations=b.activations,
+                               tick=spec.tick_size, common=(self.pack.ctx.cm if getattr(self.pack, "ctx", None) else {"b_tick_mult": 2, "b_atr_mult": 0.1}))
+        except Exception as exc:  # noqa: BLE001 - a broken policy never opens a leg; the basket's own SL / time exits still run
+            dec = {"decision": "HOLD", "reason": f"polityka: {type(exc).__name__}: {exc}"[:160]}
+        b.policy["last_decision"] = {"decision": dec["decision"], "reason": dec.get("reason"), "progress": dec.get("progress"), "at": now}
+        key = f"{dec['decision']}|{str(dec.get('reason'))[:40]}"
+        if dec["decision"] != "HOLD" and self.last_saved.get(row["plan_id"]) != key:
+            self.store.event(row["plan_id"], "HEDGE_POLICY", dec, now)
+            self.last_saved[row["plan_id"]] = key
+        if dec["decision"] == "EXIT":
+            return b._exit_all(now, dec["reason"])
+        if dec["decision"] == "UNWIND":
+            return b._unwind(now, dec["reason"])
+        if dec["decision"] != "HEDGE":
+            return out
+        acc = self.account()
+        ok, why = True, ""
+        if acc.get("margin_mode") != "HEDGING":
+            ok, why = False, f"rachunek {acc.get('margin_mode')} nie pozwala na pozycję przeciwną (NETTING ≠ hedge; REDUCE to osobny wariant)"
+        hv = spec.floor_volume(p.remaining * min(float(dec.get("ratio") or b.cfg.ratio), float(b.cfg.max_ratio)))
+        if ok and hv < spec.volume_min - 1e-9:
+            ok, why = False, f"wolumen hedge {hv} < min lot {spec.volume_min}"
+        mpl, eq = acc.get("margin_per_lot"), float(acc.get("equity") or 0)
+        if ok and mpl and eq and float(acc.get("margin") or 0) + mpl * hv > eq * C.load()["risk"]["max_margin_use_pct"] / 100.0:
+            ok, why = False, "brak miejsca w limicie depozytu"
+        gate = self.gate()
+        if ok and gate["entry_block"]:
+            ok, why = False, "nowe ekspozycje zablokowane: " + ",".join(gate["entry_block"])   # STOP blocks new hedges, never exits
+        arc = getattr(self, "arc", None)
+        if ok and arc is not None and row["exec_mode"] != "SIGNALS":
+            op = arc.intents.open(path="SH", mode=row["exec_mode"], account_key=self.bridge.account_key, subject=f"{row['plan_id']}:HEDGE1",
+                                  symbol=spec.symbol, side="SELL" if p.side == "BUY" else "BUY", volume=hv,
+                                  risk_money=None, record_id=None, equity=acc.get("equity"), kind="HEDGE")
+            if op["status"] != "RESERVED":
+                ok, why = False, f"intencja HEDGE {op['status']}: {','.join(op.get('reasons') or [])}"
+            else:
+                b.policy["hedge_intent"] = op["intent"]["intent_id"]
+                arc.intents.sent(op["intent"]["intent_id"], row["plan_id"])
+        if not ok:
+            b.activations += 1                                   # the one activation is consumed: no retry storm, no second attempt later
+            b.policy["hedge_refused"] = why
+            self.store.event(row["plan_id"], "HEDGE_REFUSED", {"reason": why, "policy": dec.get("reason")}, now)
+            return out
+        b.cfg.ratio = min(float(dec.get("ratio") or b.cfg.ratio), float(b.cfg.max_ratio))
+        return b.request_hedge(now, hv, dec["reason"])
+
     # ------------------------------------------------------------------ management (every tick)
     def manage(self, ex, spec, q, now, shc) -> None:
         for row in self.store.open_plans(spec.symbol):
@@ -466,7 +695,10 @@ class SHService:
                 inval = row["plan"]["setup"].get("invalidation")
                 p = obj.primary
                 sv = True if inval is None else ((q["bid"] > inval) if p.side == "BUY" else (q["ask"] < inval))
-                if obj.state == "PRIMARY_OPEN" and p.state in ("OPEN", "TP1_DONE") and obj.activations < obj.cfg.max_activations:
+                if row["plan"].get("pack"):
+                    if p.state in ("OPEN", "TP1_DONE"):
+                        acts += self.pack_hedge_step(row, obj, spec, q, now)
+                elif obj.state == "PRIMARY_OPEN" and p.state in ("OPEN", "TP1_DONE") and obj.activations < obj.cfg.max_activations:
                     acts += self.hedge_step(row, obj, spec, q, now, sv)
                 acts += obj.on_quote(now, q["bid"], q["ask"], structure_valid=sv)
             else:
@@ -606,6 +838,13 @@ class SHService:
                 ok = res["status"] in ("FILLED", "PARTIAL")
                 if res["status"] in ("UNKNOWN", "BLOCKED") and not ok:
                     self.store.event(pid, "HEDGE_" + res["status"], res, now)
+                hi = (b.policy or {}).pop("hedge_intent", None) if b else None
+                arc = getattr(self, "arc", None)
+                if hi and arc is not None:
+                    try:
+                        arc.intents.outcome(hi, res)
+                    except Exception as exc:  # noqa: BLE001
+                        self.log.warn("SH", "HEDGE_INTENT_OUTCOME_FAILED", f"{type(exc).__name__}: {exc}"[:200])
                 queue += b.on_hedge_result(a["action_id"] + ":r", now, ok, float(res.get("volume") or 0), float(res.get("price") or 0),
                                            "PARTIAL" if res["status"] == "PARTIAL" else str(res.get("reason") or res["status"]))
                 if ok:

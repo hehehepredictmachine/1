@@ -247,6 +247,10 @@ class DecisionCoordinator:
                                  rec["mode"], rec["side"], rec["base_verdict"], verdict, json.dumps(rec["reason_codes"]),
                                  json.dumps(models), h, json.dumps(rec, default=str)))
         self.last[cand["path"]] = rec
+        bs = self.__dict__.setdefault("by_source", {})                 # 1.38: 20 SH variants per cycle - the record of THIS candidate
+        bs[cand["source_id"]] = rec
+        while len(bs) > 500:
+            bs.pop(next(iter(bs)))
         return rec
 
     # ------------------------------------------------------------------ path adapters
@@ -302,7 +306,7 @@ class DecisionCoordinator:
         side = su.get("side") if su.get("side") in ("BUY", "SELL") else "NONE"
         base = "ENTER" if su.get("status") == "READY" else ("WAIT" if su.get("status") == "WAIT" else "NO_TRADE")
         tps = su.get("tps") or []
-        return K.make("StrategyCandidate", path="SH", strategy_id=str(su.get("strategy")), source_id=str(su.get("signal_id") or su.get("strategy")),
+        return K.make("StrategyCandidate", path="SH", strategy_id=str(su.get("strategy_id") or su.get("strategy")), source_id=str(su.get("signal_id") or su.get("strategy")),
                       symbol=str(su.get("symbol") or self.instrument_fn()), side=side, base_verdict=base, entry=_f(su.get("entry_ref")),
                       sl=_f(su.get("sl")), tp=_f(tps[-1].get("price")) if tps else None, risk_money=_f((risk or {}).get("risk_money")),
                       volume=_f((risk or {}).get("volume")), reasons=[] if base == "ENTER" else [str(su.get("status_reason") or "")][:1])

@@ -1,0 +1,72 @@
+{
+  "schema": "pmw-sh-strategy-pack-2",
+  "pack_version": "PMW-SH-PACK-2.0.0",
+  "note": "20 wariantów XAUUSD (PMW_SC01-SC10 SCALPING, PMW_HG01-HG10 HEDGING). Liczby to PARAMETRY STARTOWE BADANIA PMW, nie potwierdzone optima źródeł. Brak walidacji na danych MT5 użytkownika = IMPLEMENTED / NOT_VALIDATED. Zmiana parametrów zmienia hash wariantu i dotyczy tylko nowych kandydatów; otwarte plany czytają swój zamrożony profil.",
+  "instruments": {
+    "XAUUSD": {"pip_size": 0.10, "pip_definition": "PMW_XAU_PRICE_0_10_V1",
+               "pip_note": "konwencja produktu PMW: 1 pip XAUUSD = 0,10 USD/oz zmiany ceny; to NIE jest punkt ani tick MT5 (te pochodzą z terminala)"}
+  },
+  "common": {
+    "b_tick_mult": 2.0,
+    "b_atr_mult": 0.10,
+    "pivot_left": 2,
+    "pivot_right": 2,
+    "retest_max_bars": 3,
+    "max_entry_departure_atr": 0.25,
+    "reach_factor": 1.0,
+    "commission_scenario_price_rt": 0.10,
+    "stress_gap_price": 1.00,
+    "stress_extra_slippage_price": 0.20,
+    "trading_day": {"tz": "America/New_York", "start": "17:00",
+                    "note": "doba handlowa XAUUSD = 17:00–17:00 America/New_York (rollover); kotwica VWAP sesji i profil poprzedniej sesji"},
+    "or_windows": [
+      {"id": "LONDON", "tz": "Europe/London", "start": "08:00", "end": "08:15"},
+      {"id": "NEW_YORK", "tz": "America/New_York", "start": "08:20", "end": "08:35"}
+    ],
+    "warmup": {"ema_mult": 5, "note": "wymagany zapas historii = 5 × najdłuższy okres EMA danego TF (H1: EMA200 → 1000 świec)"}
+  },
+  "families": {
+    "SCALPING": {"tp1_min_pips": 25, "tp1_r_mult": 1.5, "tp2_r_mult": 3.0, "rr_min": 2.0, "shares": [0.5, 0.5],
+                 "ttl_bars": 3, "ttl_max_minutes": 10, "hedge": false},
+    "HEDGING": {"tp1_min_pips": 40, "tp1_r_mult": 2.0, "tp2_r_mult": 5.0, "rr_min": 3.0, "shares": [0.5, 0.5],
+                "ttl_bars": 3, "ttl_max_minutes": 30, "hedge": true, "max_ratio": 0.5, "max_activations": 1,
+                "basket_loss_limit_x_risk": 1.0, "netting_alternative": "BLOCK", "hedge_cost_cap_fraction_of_r": 0.25,
+                "scenario_unwind_overshoot_r": 0.25}
+  },
+  "variants": {
+    "PMW_HG01": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 240,
+                 "hedge": {"ratio": 0.50, "adverse_min_r": 0.5, "confirm_closes": 2, "max_hedge_minutes": 30}},
+    "PMW_HG02": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 180,
+                 "hedge": {"ratio": 0.50, "max_hedge_minutes": 20}},
+    "PMW_HG03": {"enabled": true, "signal_tfs": ["M15"], "position_max_minutes": 360, "params": {"channel": 20, "adx_min": 25},
+                 "hedge": {"ratio": 0.25, "confirm_closes": 2, "max_hedge_minutes": 45}},
+    "PMW_HG04": {"enabled": true, "signal_tfs": ["M5"], "position_max_minutes": 180, "params": {"entry_window_minutes": 90},
+                 "hedge": {"ratio": 0.50, "max_hedge_minutes": 20}},
+    "PMW_HG05": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 240, "params": {"anchor": "TRADING_DAY"},
+                 "hedge": {"ratio": 0.50, "confirm_closes": 2, "max_hedge_minutes": 30}},
+    "PMW_HG06": {"enabled": true, "signal_tfs": ["M5"], "position_max_minutes": 180,
+                 "params": {"bb_n": 20, "bb_k": 2.0, "bw_pct": 0.20, "bw_lookback": 120, "break_lookback": 10, "sl_anchor": "RETEST"},
+                 "hedge": {"ratio": 0.50, "body_atr": 0.8, "max_hedge_minutes": 15}},
+    "PMW_HG07": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 120,
+                 "hedge": {"ratio": 0.25, "max_hedge_minutes": 15}},
+    "PMW_HG08": {"enabled": true, "signal_tfs": ["M5"], "position_max_minutes": 120, "params": {"value_area_pct": 0.70, "bin_ticks": 10},
+                 "hedge": {"ratio": 0.25, "confirm_closes": 2, "max_hedge_minutes": 15}},
+    "PMW_HG09": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 240,
+                 "params": {"sigma_window": 60, "sigma_extreme_pct": 0.95, "volatility_method": "STD_LOGRET_60_M5"},
+                 "hedge": {"ratio_min": 0.25, "ratio_max": 0.50, "sigma_ratio_on": 1.5, "sigma_ratio_off": 1.2, "off_bars": 3,
+                           "move_atr": 0.5, "max_hedge_minutes": 30, "scenario_unwind_gap_r": 0.5}},
+    "PMW_HG10": {"enabled": true, "signal_tfs": ["M5", "M15"], "position_max_minutes": 240,
+                 "hedge": {"ratio": 0.50, "mfe_min_r": 1.5, "giveback_r": 0.5, "max_hedge_minutes": 20, "scenario_unwind_gap_r": 0.5}},
+    "PMW_SC01": {"enabled": true, "signal_tfs": ["M1", "M3"], "position_max_minutes": 30},
+    "PMW_SC02": {"enabled": true, "signal_tfs": ["M1", "M3"], "position_max_minutes": 30, "params": {"max_crosses_10": 4}},
+    "PMW_SC03": {"enabled": true, "signal_tfs": ["M1", "M3", "M5"], "position_max_minutes": 30, "params": {"entry_window_minutes": 60}},
+    "PMW_SC04": {"enabled": true, "signal_tfs": ["M3", "M5"], "position_max_minutes": 45, "params": {"channel": 20, "adx_min": 25}},
+    "PMW_SC05": {"enabled": true, "signal_tfs": ["M1", "M3", "M5"], "position_max_minutes": 30,
+                 "params": {"bb_n": 20, "bb_k": 2.0, "bw_pct": 0.20, "bw_lookback": 120, "squeeze_min_of_5": 3, "break_lookback": 10}},
+    "PMW_SC06": {"enabled": true, "signal_tfs": ["M1", "M3"], "position_max_minutes": 20},
+    "PMW_SC07": {"enabled": true, "signal_tfs": ["M1", "M3"], "position_max_minutes": 20, "params": {"rsi_level": 30, "adx_m5_max": 20}},
+    "PMW_SC08": {"enabled": true, "signal_tfs": ["M1", "M3"], "position_max_minutes": 30, "params": {"stoch_low": 20, "lookback": 6}},
+    "PMW_SC09": {"enabled": true, "signal_tfs": ["M3", "M5"], "position_max_minutes": 45},
+    "PMW_SC10": {"enabled": true, "signal_tfs": ["M1", "M5"], "position_max_minutes": 30, "params": {"value_area_pct": 0.70, "bin_ticks": 10}}
+  }
+}

@@ -28,7 +28,7 @@ import TowerFrame, { Card, Dir, Src } from "./TowerFrame";
 type Slot = { id: string; tf: string };
 const DEF_SLOTS: Slot[] = [{ id: "a", tf: "M5" }, { id: "b", tf: "M15" }, { id: "c", tf: "H4" }, { id: "d", tf: "D1" }];
 const validSlots = (v: any) => Array.isArray(v) && v.length <= 8 && v.every((x) => x && typeof x.id === "string" && TFS.includes(x.tf));
-const TF_SEC: Record<string, number> = { M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
+const TF_SEC: Record<string, number> = { M1: 60, M3: 180, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
 const MZ_LAYERS: [keyof ChartPrefs["layers"], string][] = [["SD", "Supply / Demand"], ["OB", "Order Blocks"], ["FVG", "Fair Value Gaps"], ["LIQ", "Liquidity (EQH/EQL)"], ["SR", "S/R Bands"]];
 const VP_COL = { poc: "#ffcf5c", va: "#5fe3ff", hvn: "#39ff8f", lvn: "#ff6c8a" };
 

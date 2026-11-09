@@ -6,7 +6,7 @@ import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle
 import { apiGet } from "../../api";
 import type { Sig } from "./signals";
 
-const SEC: Record<string, number> = { M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
+const SEC: Record<string, number> = { M1: 60, M3: 180, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
 
 export default function SignalChart({ sig, showLevels, resetKey }: { sig: Sig | null; showLevels: boolean; resetKey: number }) {
   const box = useRef<HTMLDivElement>(null);
@@ -16,7 +16,8 @@ export default function SignalChart({ sig, showLevels, resetKey }: { sig: Sig | 
   const pl = useRef<IPriceLine[]>([]);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
-  const tf = sig?.tf && SEC[sig.tf] ? sig.tf : "M15";
+  // the signal's own TF (M3 = 180 s); an unknown TF is reported, never silently replaced by M15
+  const tf = sig?.tf && SEC[sig.tf] ? sig.tf : sig?.tf ? "" : "M15";
   const symbol = sig?.symbol ?? null;
 
   useEffect(() => {
@@ -41,12 +42,12 @@ export default function SignalChart({ sig, showLevels, resetKey }: { sig: Sig | 
 
   useEffect(() => {
     setData(null); setErr(null);
-    if (!symbol) return;
+    if (!symbol || !tf) return;
     let alive = true;
     const load = () => apiGet(`/api/v1/markets/chart?symbol=${encodeURIComponent(symbol)}&tf=${tf}&bars=400`)
       .then((d) => { if (alive) { setData(d); setErr(null); } }).catch((e) => { if (alive) setErr(String(e?.message || e)); });
     load();
-    const t = setInterval(() => { if (!document.hidden) load(); }, Math.max(15000, SEC[tf] * 250));
+    const t = setInterval(() => { if (!document.hidden) load(); }, Math.max(15000, (SEC[tf] || 60) * 250));
     return () => { alive = false; clearInterval(t); };
   }, [symbol, tf]);
 
@@ -88,6 +89,7 @@ export default function SignalChart({ sig, showLevels, resetKey }: { sig: Sig | 
     <div className="sg-chart-wrap" data-testid="sg-chart" data-symbol={symbol ?? ""} data-tf={tf}>
       <div ref={box} className="sg-chart" />
       {!symbol && <p className="tw-na abs">Wybierz sygnał.</p>}
+      {symbol && !tf && <p className="tw-na abs">TF sygnału {sig?.tf} nie jest obsługiwany przez wykres – brak zastępczego interwału.</p>}
       {err && <p className="tw-na abs">Wykres niedostępny: {err}</p>}
       {data && !(data.bars || []).some((b: any) => b.open_utc) && <p className="tw-na abs">Brak świec z czasem UTC dla {symbol} {tf} (zegar serwera jeszcze mierzony).</p>}
     </div>);

@@ -49,8 +49,11 @@ function fromSh(x: any): Sig {
   const d = dirOf(x.side);
   const st = String(x.status || "");
   const lc: Lifecycle = st === "WAIT" || st === "NO_TRADE" || !d ? "WAIT" : st === "INVALIDATED" ? "INVALIDATED" : st === "EXPIRED" ? "EXPIRED" : "CONFIRMED";
+  // 1.38: variant identity (PMW_SC01.. / PMW_HG01..; old rows LEGACY_SCALPING / LEGACY_HEDGING) and its own signal TF - never "M1" for all
+  const sid = x.strategy_id || (x.strategy === "SCALPING" ? "LEGACY_SCALPING" : x.strategy === "HEDGING" ? "LEGACY_HEDGING" : x.strategy);
   return {
-    id: x.signal_id, kind: "SH", strategyId: x.strategy, strategyName: x.strategy, family: "SCALPING/HEDGING", symbol: x.symbol, tf: "M1", direction: lc === "CONFIRMED" && d ? d : "WAIT",
+    id: x.signal_id, kind: "SH", strategyId: sid, strategyName: sid, family: x.strategy ?? "SCALPING/HEDGING", symbol: x.symbol, tf: x.signal_tf || (x.strategy_id ? null : "M1"),
+    direction: lc === "CONFIRMED" && d ? d : "WAIT",
     scenarioDir: d, lifecycle: lc, statusRaw: st, at: iso(x.created_at), updated: iso(x.updated_at ?? x.created_at), entry: null, sl: null, targets: [],
     strength: null, setupId: null, source: "maszyna SH", reason: x.status_reason ?? null, rr: null, outcomeR: null, live: lc !== "EXPIRED" && lc !== "INVALIDATED", raw: x,
   };
@@ -62,8 +65,9 @@ export function mergeSignals(bot: any[], setups: any[], sh: any[]): Sig[] {
   const botSetups = new Set(bot.map((x) => x.setup_id).filter(Boolean));
   for (const x of bot) if (!seen.has(x.signal_id)) { seen.add(x.signal_id); out.push(fromBot(x)); }
   for (const x of setups) if (!botSetups.has(x.setup_id) && !seen.has(x.setup_id)) { seen.add(x.setup_id); out.push(fromSetup(x)); }
-  const latestSh = new Map<string, any>();                   // SH machines: the current state of each strategy (they re-evaluate every M1)
-  for (const x of sh) { const p = latestSh.get(x.strategy); if (!p || (x.created_at ?? 0) > (p.created_at ?? 0)) latestSh.set(x.strategy, x); }
+  const latestSh = new Map<string, any>();                   // SH: the current state per symbol / variant / TF (20 variants are never collapsed to 2 cards)
+  const shKey = (x: any) => `${x.symbol}|${x.strategy_id || x.strategy}|${x.signal_tf || ""}`;
+  for (const x of sh) { const k = shKey(x); const p = latestSh.get(k); if (!p || (x.created_at ?? 0) > (p.created_at ?? 0)) latestSh.set(k, x); }
   for (const x of latestSh.values()) if (!seen.has(x.signal_id)) { seen.add(x.signal_id); out.push(fromSh(x)); }
   return out.sort((a, b) => (Date.parse(b.updated || b.at || "") || 0) - (Date.parse(a.updated || a.at || "") || 0));
 }

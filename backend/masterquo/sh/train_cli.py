@@ -96,7 +96,30 @@ def main(argv: list[str]) -> int:
     t.add_argument("--last-m1", type=int, default=None, help="ogranicz replay do ostatnich N świec M1 (test instalacji)")
     t.add_argument("--allow-synthetic", action="store_true")
     t.add_argument("--strategies", default="SCALPING,HEDGING")
+    pr = sub.add_parser("pack-replay", help="1.38: replay + walidacja walk-forward 20 wariantów (PMW_SC01..HG10) na eksporcie historii")
+    pr.add_argument("--dataset", required=True)
+    pr.add_argument("--last-m1", type=int, default=None)
+    pr.add_argument("--variants", default="", help="lista PMW_.. po przecinku (domyślnie wszystkie 20)")
+    pr.add_argument("--commission-price-rt", type=float, default=None, help="znana prowizja round trip w cenie (brak = scenariusz, wynik nie NET)")
+    pr.add_argument("--slippage", type=float, default=0.05)
+    pr.add_argument("--spread-fallback", type=float, default=0.20)
+    pr.add_argument("--allow-synthetic", action="store_true")
     a = ap.parse_args(argv)
+    if a.cmd == "pack-replay":
+        from .pack import replay as PR
+        try:
+            bars, meta = PR.load(Path(a.dataset), last_m1=a.last_m1)
+            if meta.get("data_kind") != "REAL_USER_DATA" and not a.allow_synthetic:
+                raise ValueError("SYNTHETIC_DATA_REQUIRES_--allow-synthetic (wynik tylko techniczny, NOT_VALIDATED)")
+            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=a.commission_price_rt,
+                         slip=a.slippage, spread_fallback=a.spread_fallback, progress=lambda i, n: print(f"[POSTEP] pack-replay {i}/{n}", flush=True))
+            w = PR.write(rep)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[BLAD] {type(exc).__name__}: {exc}")
+            return 1
+        print(json.dumps({"status": "DONE", "report": w["report"], "variant_files": w["variant_files"], "seconds": rep["seconds"],
+                          "verdicts": {k: v["verdict"] for k, v in rep["variants"].items()}}, ensure_ascii=False))
+        return 0
     try:
         r = train(Path(a.dataset), a.instrument, Path(a.out), allow_synthetic=a.allow_synthetic, last_m1=a.last_m1,
                   strategies=tuple(s for s in a.strategies.split(",") if s in ("SCALPING", "HEDGING")))

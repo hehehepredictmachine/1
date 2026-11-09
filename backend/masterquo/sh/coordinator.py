@@ -7,6 +7,10 @@ Rules (in this order; anything unresolved becomes WAIT with the reason, never a 
    opposite direction is never opened in parallel (that would be an unmanaged hedge).
 3. Two READY setups in OPPOSITE directions in the same cycle -> both WAIT (the market is ambiguous for the bot).
 4. Two READY setups in the same direction -> the strategy earlier in `priority` proceeds, the other WAITs.
+1.38 (20 variants, PMW-SH-PACK-2): candidates are identified by signal_id (never collapsed under the family name). Without a validated
+ranker the order is the documented deterministic priority: family priority, then the variant cluster priority (catalog.CLUSTER_PRIORITY),
+then the higher net RR after costs, then the variant id as the final tie-breaker. At most ONE new entry per cycle on the exposure; READY
+peers of the same logic group are not independent votes. Opposite directions in one cycle -> all WAIT (never an unmanaged hedge).
 """
 from __future__ import annotations
 
@@ -45,11 +49,20 @@ def arbitrate(ready: list[dict], *, open_plans: list[dict], foreign_positions: i
             out.append({"signal_id": s["signal_id"], "strategy": s["strategy"], "decision": "WAIT",
                         "reason": "SCALPING i HEDGING wskazują przeciwne kierunki w tym samym cyklu – brak jednoznacznej decyzji"})
         return out
-    cands.sort(key=lambda s: pri.index(s["strategy"]) if s["strategy"] in pri else 99)
+    from .pack.catalog import CLUSTER_PRIORITY
+
+    def key(s):
+        cl = (s.get("pack") or {}).get("cluster")
+        return (pri.index(s["strategy"]) if s["strategy"] in pri else 99, 0 if not s.get("strategy_id") else 1,
+                CLUSTER_PRIORITY.index(cl) if cl in CLUSTER_PRIORITY else 99, -float(s.get("net_rr") or 0.0), str(s.get("strategy_id") or ""),
+                str(s.get("signal_id")))
+    cands.sort(key=key)
     for i, s in enumerate(cands):
         if i == 0:
-            out.append({"signal_id": s["signal_id"], "strategy": s["strategy"], "decision": "PROCEED", "reason": "brak konfliktu"})
+            out.append({"signal_id": s["signal_id"], "strategy": s["strategy"], "strategy_id": s.get("strategy_id"), "decision": "PROCEED",
+                        "reason": "brak konfliktu"})
         else:
-            out.append({"signal_id": s["signal_id"], "strategy": s["strategy"], "decision": "WAIT",
-                        "reason": f"priorytet {cands[0]['strategy']} (ten sam kierunek, jeden plan na cykl)"})
+            lead = cands[0].get("strategy_id") or cands[0]["strategy"]
+            out.append({"signal_id": s["signal_id"], "strategy": s["strategy"], "strategy_id": s.get("strategy_id"), "decision": "WAIT",
+                        "reason": f"priorytet {lead} (ten sam kierunek, jedno wejście na ekspozycję w cyklu)"})
     return out

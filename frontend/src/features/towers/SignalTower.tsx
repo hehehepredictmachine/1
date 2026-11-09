@@ -75,11 +75,16 @@ export default function SignalTower({ route }: { route: Route }) {
   const cond = conditions(sel, detOk, shDet.d);
   const story = narrative(sel, cond, detOk, cons);
   const levels = detOk?.levels;
-  const entry = sel?.entry ?? levels?.planned_entry ?? levels?.trigger_level ?? levels?.reference_price ?? null;
-  const sl = sel?.sl ?? levels?.stop_loss ?? null;
-  const tps: number[] = sel?.targets?.length ? sel.targets : levels?.targets || [];
+  // SH levels: the stored plan of THIS signal (same backend numbers as the chart contract) - no second TP/SL solver in the browser
+  const shp = sel?.kind === "SH" && shDet.d?.signal_id === sel.id ? shDet.d.payload : null;
+  const shEntry = shp?.status === "READY" || shp?.pack?.analytical_state === "READY" ? (typeof shp?.entry_ref === "number" ? shp.entry_ref : null) : null;
+  const entry = sel?.entry ?? shEntry ?? levels?.planned_entry ?? levels?.trigger_level ?? levels?.reference_price ?? null;
+  const shSl: number | null = shEntry != null && typeof shp?.sl === "number" ? shp.sl : null;
+  const sl = sel?.sl ?? shSl ?? levels?.stop_loss ?? null;
+  const tps: number[] = sel?.targets?.length ? sel.targets : shEntry != null ? (shp?.tps || []).map((t: any) => t.price) : levels?.targets || [];
   const digits = sel?.symbol === s.symbol?.symbol ? s.symbol?.info?.digits ?? 2 : entry != null && Math.abs(entry) < 20 ? 5 : entry != null && Math.abs(entry) < 500 ? 3 : 2;
-  const sigView: Sig | null = sel ? { ...sel, entry, sl, targets: tps } : null;
+  // marker of a variant signal = the first bar on which the information was available (plan arrow), not the record's write time
+  const sigView: Sig | null = sel ? { ...sel, entry, sl, targets: tps, at: shp?.pack?.arrow?.time ?? sel.at } : null;
   const rrTp = (i: number) => rr(sel?.scenarioDir, entry, sl, tps[i]);
   const mtfRows: any[] = detOk?.timeframes || [];
   const envK = ctx.env === "LIVE" ? "live" : ctx.env === "DEMO" || ctx.env === "SYNTHETIC" ? "demo" : "na";

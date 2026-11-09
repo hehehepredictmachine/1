@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet } from "../../api";
 
-export const TFS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+export const TFS = ["M1", "M3", "M5", "M15", "M30", "H1", "H4", "D1"];
 
 /** GET with polling that keeps the last good answer, drops answers of an older request (path changed) and pauses when the tab is hidden. */
 export function usePolled<T = any>(path: string | null, every = 0): { d: T | null; err: string | null; at: number | null; reload: () => void; stale: boolean } {

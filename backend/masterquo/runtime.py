@@ -56,6 +56,9 @@ class Runtime:
                 mt5_factory = real_mt5_factory
         self.worker = MT5Worker(mt5_factory)
         required = Profiles().required_closed_bars()
+        from .sh.pack.engine import NEEDED_BARS as _PACK_BARS                 # 1.38 pack: H1 EMA200 x5 warm-up, previous-session profile, M3
+        for _tf, _n in _PACK_BARS.items():
+            required[_tf] = max(int(required.get(_tf) or 0), _n)
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         self.bridge.secrets = self.secrets
         from .assets.registry import AssetRegistry
@@ -120,6 +123,8 @@ class Runtime:
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
         self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
+        from .sh.pack.engine import PackEngine
+        self.sh.pack = PackEngine()                                                               # 1.38: 20 variants in the SAME SH cycle
         from .evaluation.service import EvaluationService
         self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
         self.engine.active.listeners.append(self.evaluation.on_active_events)
