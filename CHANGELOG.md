@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.37.0 – Trzy przetrenowane modele prognoz: Kronos-base, Chronos-2, FinCast (prawdziwa inferencja, SHADOW)
+* **Kronos → Kronos-base** (`NeoQuasar/Kronos-base` @ `2b554741`, 102,3M; tokenizer bez zmian). To największy publiczny wariant – Kronos-large (499,2M)
+  według autorów nie jest udostępniony (sprawdzone: karta modelu i lista repozytoriów organizacji). Ten sam serwis, ten sam proces, bez drugiej
+  instancji; po załadowaniu sprawdzana jest tożsamość checkpointu (liczba parametrów 102 310 592), przy braku pamięci stan RESOURCE_LIMIT –
+  **bez cichego przejścia na Small/Mini**. Historyczne rekordy „Kronos-small” zachowują nazwę. Po aktualizacji z 1.36 Kronos ma stan
+  „brak zweryfikowanych wag” do czasu `33_KRONOS_INSTALUJ.bat` (lub przycisku „Zainstaluj model Kronos”).
+* **Chronos-2** (`amazon/chronos-2` @ `29ec3766`, 120M, Apache-2.0) i **FinCast** (`Vincent05R/FinCast` @ `2d7d90b1`, ok. 1B, Apache-2.0):
+  każdy w osobnym procesie i własnym środowisku (`.venv_chronos2`, `.venv_fincast`), oficjalne API (Chronos2Pipeline / FFM z kodu autorów,
+  `weights_only=True`, `strict=True`), przypięte rewizje + rozmiar + SHA-256 każdego pliku, test zgodności adaptera z oficjalnym wywołaniem.
+* **Instalator** `38_MODELE_CHRONOS2_FINCAST.bat` (`tools/tsfm_setup.py`): środowisko, pakiety z sumami (Windows), pobieranie z wznowieniem,
+  instalacja offline (`--from-dir`), weryfikacja i prognoza testowa; przyciski „Zainstaluj / Sprawdź” w panelu. Wagi nie wchodzą do paczki.
+* **Połączenie z botem**: wspólna migawka zamkniętych świec, kolejka z deduplikacją, historia i rozliczanie (`tsfm_forecasts`, migracja 0026: MAE,
+  pinball, pokrycie 80%), kontrakt PMW-PRED-2 (REGRESSION, cena, UNCALIBRATED – bez sztucznego prawdopodobieństwa), ModelHub, koordynator (ACTIVE)
+  i SH (SCALPING / HEDGING). Role **OBSERVE** (domyślnie) / **ASSIST** (aktualna przeciwna prognoza = czekaj) / **REQUIRED** (brak / nieaktualna /
+  niezgodna prognoza = brak wejścia) – ASSIST i REQUIRED tylko po pozytywnej walidacji na danych rzeczywistych dla bieżącego checkpointu
+  i z potwierdzeniem. Modele mogą wyłącznie wstrzymać setup; Execution Lock, limity ryzyka, spread, deduplikacja zleceń i STOP bez zmian.
+* **Walidacja walk-forward PMW-TSFM-WF-1**: trzy modele na tych samych punktach startu vs „ostatnia cena” i momentum (MAE, RMSE, kierunek +
+  test dwumianowy, pinball, pokrycie, szerokość pasma); brak łączenia modeli bez osobnej walidacji.
+* **UI** (bez zmian wyglądu i nawigacji): nowa zwijana sekcja „Modele prognoz” na stronie „Wykresy bota” – status, checkpoint, urządzenie,
+  czasy, linie prognoz z przełącznikami per model (nieaktualne – kropkowane), porównanie, walidacja, role.
+* API: `/api/v1/models/foundation` (+ `/forecast`, `/compare`, `/history`, `/validation`, `/job/{name}`, `/install`, `/verify`, `/refresh`, `/validate`, `/use`).
+* Testy: `tests/test_tsfm_bot.py`, `tests/test_ui_foundation.py`, kategoria prawdziwych wag `tests/test_foundation_real.py` (w środowiskach modeli),
+  zaktualizowane testy Kronosa. Dokumentacja: `docs/MODELE_KRONOS_CHRONOS2_FINCAST_1_37_PL.md`.
+
 ## 1.36.0 – Main Menu V2 (8 wież) + wieże PEPE$WTC V4 i PEPE$SIGNAL V1
 * **Menu główne V2 – stół neuronowy**: trzech Pepe przy okrągłym stole z **ośmioma** wieżami (PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, PEPE$ROI, STRATEGIES,
   MARKET NEWS, TRAINING LAB, SETTINGS). Małe logo w lewym górnym rogu, nawigacja na górze, bez paneli informacyjnych i bez przycisków na dole.

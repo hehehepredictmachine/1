@@ -250,6 +250,11 @@ class TestService(unittest.TestCase):
         cmp = svc.compare("XAUUSD", "M5")
         self.assertEqual(cmp["summary"]["n"], 2)
         self.assertNotIn("%", cmp["summary"]["text"])
+        self.assertEqual((cmp["summary"]["leading"], cmp["summary"]["agree"]), ("UP", 2))
+        svc.latest[("fincast", "XAUUSD", "M5")]["direction"] = "DOWN"          # 1 up / 1 down: a tie has no leading direction
+        cmp = svc.compare("XAUUSD", "M5")
+        self.assertEqual((cmp["summary"]["leading"], cmp["summary"]["agree"], cmp["summary"]["conflict"]), (None, None, True))
+        self.assertIn("brak przewagi", cmp["summary"]["text"])
 
     def test_dedup_and_result_for_older_bar_is_not_current(self):
         svc = self.make()

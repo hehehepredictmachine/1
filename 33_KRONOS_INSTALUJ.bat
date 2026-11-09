@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 set "MQ_PAUSE=pause"
 if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
-rem PepeMarketWizard - instalacja modelu Kronos (NeoQuasar/Kronos-small + Kronos-Tokenizer-base, przetrenowane wagi).
+rem PepeMarketWizard - instalacja modelu Kronos (NeoQuasar/Kronos-base + Kronos-Tokenizer-base; od 1.37 najwiekszy publiczny Kronos, przetrenowane wagi).
 rem Tworzy izolowane .venv_kronos (PyTorch CPU z PyPI, pakiety tylko z sumami SHA-256), pobiera oficjalne wagi w przypietych
 rem rewizjach, sprawdza sumy ze zrodlem i wykonuje krotka prognoze testowa. Glowne .venv bota NIE jest zmieniane.
 rem Uzycie:  33_KRONOS_INSTALUJ.bat            (CPU)
@@ -30,7 +30,7 @@ if not defined PYEXE (
 set "CUDA_ARG="
 if /i "%~1"=="cu126" set "CUDA_ARG=--cuda cu126"
 if /i "%~1"=="cu128" set "CUDA_ARG=--cuda cu128"
-echo [..] Trwa instalacja ^(PyTorch ok. 250 MB + wagi ok. 120 MB^). Postep ponizej i w logu.
+echo [..] Trwa instalacja ^(PyTorch ok. 250 MB + wagi ok. 420 MB^). Postep ponizej i w logu.
 "%PYEXE%" "%ROOT%tools\kronos_setup.py" --root "%ROOT%." --weights-dir auto --python "%PYEXE%" --log "%LOG%" %CUDA_ARG%
 if errorlevel 1 (
   echo [BLAD] Instalacja Kronos nie powiodla sie - szczegoly: "%LOG%"

@@ -1,5 +1,15 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0b. Wersja 1.37.0 → 1.36.0
+1. Zamknij 1.37. Uruchom 1.36.0 z jej folderu – konfiguracja `config.json` jest wspólna (1.37 nie dodaje sekcji do `config.json`).
+2. Baza może zostać: migracja 0026 (`tsfm_forecasts`) jest addytywna, 1.36 jej nie czyta. Plik `data/tsfm/settings.json` i raporty
+   `data/tsfm/reports` 1.36 ignoruje.
+3. **Kronos**: 1.37 przełącza manifest wag na Kronos-base. W 1.36 uruchom `33_KRONOS_INSTALUJ.bat` z folderu 1.36 – instalator 1.36 ponownie
+   sprawdzi / pobierze Kronos-small i zapisze jego manifest. Do tego czasu 1.36 pokazuje „brak zweryfikowanych wag” (nie liczy na złym modelu).
+4. Środowiska `.venv_chronos2`, `.venv_fincast` i wagi w `data/tsfm/models` można usunąć ręcznie (środowisko ok. 1,3–1,5 GB każde; wagi Chronos-2 ok. 0,5 GB, FinCast ok. 3,7 GB).
+5. Wyłączenie bez cofania wersji: w panelu „Modele prognoz” zostaw rolę „obserwacja” (domyślna) albo wyłącz model w `data/tsfm/settings.json`
+   (`"enabled": false`) – wtedy nie wpływa na żadną decyzję.
+
 ## 0a. Wersja 1.34.0 → 1.33.0
 1.34 zmienia tylko interfejs (menu główne Neural City, launcher). Konfiguracja i baza danych są bez zmian, więc wystarczy uruchomić
 1.33.0 z jej folderu. Ustawienia animacji menu leżą wyłącznie w pamięci przeglądarki / okna i 1.33 ich nie czyta.

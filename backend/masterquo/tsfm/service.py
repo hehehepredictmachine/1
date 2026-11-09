@@ -714,12 +714,15 @@ class TsfmService:
         dirs = [r["direction"] for r in comparable]
         summary = None
         if comparable:
-            up, dn = dirs.count("UP"), dirs.count("DOWN")
-            lead = "UP" if up > dn else "DOWN" if dn > up else "FLAT"
-            summary = {"n": len(comparable), "up": up, "down": dn, "flat": dirs.count("FLAT"), "leading": lead,
-                       "agree": max(up, dn, dirs.count("FLAT")), "conflict": up > 0 and dn > 0,
-                       "text": f"{max(up, dn, dirs.count('FLAT'))} z {len(comparable)} modeli wskazuje {DIR_PL[lead]} – zgodność modeli liczących na tych "
-                               f"samych świecach nie jest niezależnym potwierdzeniem ani prawdopodobieństwem"}
+            cnt = {"UP": dirs.count("UP"), "DOWN": dirs.count("DOWN"), "FLAT": dirs.count("FLAT")}
+            top = max(cnt.values())
+            leads = [d for d, c in cnt.items() if c == top]
+            lead = leads[0] if len(leads) == 1 else None                      # a tie has no leading direction
+            head = (f"{top} z {len(comparable)} modeli wskazuje {DIR_PL[lead]}" if lead else
+                    f"brak przewagi kierunku ({len(comparable)} modele: w górę {cnt['UP']}, w dół {cnt['DOWN']}, bocznie {cnt['FLAT']})")
+            summary = {"n": len(comparable), "up": cnt["UP"], "down": cnt["DOWN"], "flat": cnt["FLAT"], "leading": lead,
+                       "agree": top if lead else None, "conflict": cnt["UP"] > 0 and cnt["DOWN"] > 0,
+                       "text": f"{head} – zgodność modeli liczących na tych samych świecach nie jest niezależnym potwierdzeniem ani prawdopodobieństwem"}
         return {"instrument": inst, "timeframe": tf, "horizon_bars": H, "last_bar_open_utc": ref_bar, "rows": rows, "summary": summary,
                 "rule": "porównywane są tylko prognozy aktualne dla tej samej ostatniej świecy, interwału i horyzontu; brak walidacji = brak wag i łączenia"}
 
@@ -742,6 +745,7 @@ class TsfmService:
         return {"version": "PMW-TSFM-1", "mode": "SHADOW", "execution_permission": False, "models": out, "horizon_bars": s.horizon_bars,
                 "quantiles": s.quantiles, "queue": [list(k) for k in self.queue], "running": list(self.running) if self.running else None,
                 "counters": dict(self.counters), "settings_error": self.settings.load_error,
+                "jobs": {"validation": (lambda j: j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})(self.jobs.get("validation"))},
                 "memory_note": "FinCast 1B potrzebuje ok. 8 GB RAM w szczycie ładowania (CPU, float32); Chronos-2 ok. 0,9 GB; Kronos-base ok. 1,1 GB"}
 
     def _publish(self) -> None:

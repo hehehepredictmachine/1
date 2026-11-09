@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.36.0"
+VERSION = "1.37.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -270,7 +270,7 @@ def admin(shots: Path | None) -> list:
           P("Bez bota: <b>32_CENTRUM_TRENINGU.bat</b>."),
           box("Wytrenowany model nie jest dowodem przewagi. Nowe modele działają w trybie OBSERVATION (nie głosują w strategiach). "
               "Wynik na danych syntetycznych nic nie mówi o rynku.", "warn"),
-          P("Kronos AI Forecast (1.31) – przetrenowany model, bez treningu w bocie", "h2"),
+          P("Kronos AI Forecast (1.31; od 1.37 Kronos-base) – przetrenowany model, bez treningu w bocie", "h2"),
           bullets(["Instalacja: Wykresy bota → <b>Kronos AI Forecast</b> → <b>Zainstaluj model Kronos</b> albo <b>33_KRONOS_INSTALUJ.bat</b> "
                    "(osobne .venv_kronos, PyTorch CPU, oficjalne wagi NeoQuasar w przypiętych rewizjach, sumy sprawdzane ze źródłem).",
                    "<b>Sprawdź instalację</b> naprawdę ładuje model i robi prognozę testową. Po instalacji działa bez internetu.",
@@ -300,6 +300,20 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4e - 1.37
+    s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast", "h1"),
+          bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "
+                   "Po aktualizacji uruchom <b>33_KRONOS_INSTALUJ.bat</b>; do tego czasu Kronos pokazuje „brak zweryfikowanych wag”. "
+                   "Bot nigdy nie przechodzi po cichu na mniejszy model.",
+                   "<b>Chronos-2</b> (Amazon, 120M) i <b>FinCast</b> (ok. 1B): instalacja <b>38_MODELE_CHRONOS2_FINCAST.bat</b> albo przyciski "
+                   "„Zainstaluj” w sekcji <b>Modele prognoz</b> (Wykresy bota). FinCast potrzebuje ok. 8 GB wolnej pamięci przy ładowaniu.",
+                   "Sekcja <b>Modele prognoz</b>: status, czasy, linie prognoz z przełącznikiem dla każdego modelu (nieaktualna = kropkowana), "
+                   "porównanie na tej samej świecy, walidacja walk-forward i rola w strategiach.",
+                   "Domyślnie <b>obserwacja</b>. ASSIST / REQUIRED tylko po pozytywnej walidacji na danych rzeczywistych i z potwierdzeniem – model może "
+                   "wyłącznie wstrzymać setup. Prognoza to cena, nie prawdopodobieństwo; zgodność modeli nie jest niezależnym potwierdzeniem."]),
+          *shot(shots, "ui_foundation/live.png", "Modele prognoz – trzy modele na symulatorze MT5 (dane syntetyczne).", width_mm=165),
+          box("Szczegóły, zasoby, testy i ograniczenia: docs/MODELE_KRONOS_CHRONOS2_FINCAST_1_37_PL.md.", "note"),
+          PageBreak()]
     # 4d - 1.36
     s += [P("4d / Nowe w 1.36: wieże PEPE$WTC i PEPE$SIGNAL", "h1"),
           P("PEPE$WTC – Neural Market Command Center", "h2"),
