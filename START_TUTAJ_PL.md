@@ -4,6 +4,14 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.40 – Granite TTM zamiast FinCast, Memory Governor (16 GB), nowy WTC$PEPE
+* **FinCast wycofany**, w jego miejsce lekki **IBM Granite TTM** (0,8 M parametrów, ok. 0,35 GB RAM): `38_MODELE_CHRONOS2_GRANITE.bat` albo
+  „Zainstaluj” w Wykresy bota → Modele prognoz. Rola OBSERVE (informacja). Historia FinCast zostaje.
+* **Memory Governor**: Modele prognoz → Zasoby – profil LOW_MEMORY_16GB (domyślny) / ECO / BALANCED, pomiar pamięci procesów, jeden ciężki model naraz.
+* **Dotrenowanie Granite** na Twojej historii MT5 (Modele prognoz → Granite TTM) – aktywacja tylko, gdy jest lepszy od bazowego na niewidzianych danych.
+* **WTC$PEPE** w układzie z paczki WTC 2.1 (na danych bota), szybsze menu Galaxy. Uczciwie: na złocie (Q4 2025) żaden model prognoz nie pokonał
+  prognozy „ostatnia cena”. Szczegóły: `docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md`, `docs/WYDAJNOSC_UI_1_40_PL.md`.
+
 ## Nowe w 1.39 – LIVE od startu, GARCH, intro i menu Galaxy, WTC PEPE 2.1
 * **Bot startuje w AUTO LIVE** i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem **REAL** (prawdziwe pieniądze). Bramki walidacji
   są ostrzeżeniami; STOP, limity ryzyka, spread, deduplikacja, uzgadnianie z MT5 i wymóg rachunku REAL działają. Wyłączenie: STOP albo

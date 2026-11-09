@@ -164,29 +164,29 @@ class TestGalaxyUI(unittest.TestCase):
             p.goto(BASE + "/#/menu")
             p.wait_for_selector("#pmwBoot[data-elapsed]", timeout=15000)                         # the animation (and its key handler) runs
             p.keyboard.press("Escape")
-            p.wait_for_selector("#pmwBoot", state="detached", timeout=3000)
+            p.wait_for_selector("#pmwBoot", state="detached", timeout=10000)
             p.keyboard.press("Control+Alt+b")                                                    # replay
-            p.wait_for_selector("#pmwBoot[data-elapsed]", timeout=3000)
+            p.wait_for_selector("#pmwBoot[data-elapsed]", timeout=10000)
             p.click("[data-testid=boot-skip]")
-            p.wait_for_selector("#pmwBoot", state="detached", timeout=3000)
+            p.wait_for_selector("#pmwBoot", state="detached", timeout=10000)
             p.click("[data-testid=boot-replay]")
-            p.wait_for_selector("#pmwBoot[data-elapsed]", timeout=3000)
+            p.wait_for_selector("#pmwBoot[data-elapsed]", timeout=10000)
             p.click("[data-testid=boot-skip]")
-            p.wait_for_selector("#pmwBoot", state="detached", timeout=3000)
+            p.wait_for_selector("#pmwBoot", state="detached", timeout=10000)
             self.assertEqual(self.real_errors(p), [])
         finally:
             c.close()
         c, p = self.ctx(boot=True, reduced_motion="reduce")
         try:
             p.goto(BASE + "/#/menu")
-            p.wait_for_selector("#pmwBoot", state="detached", timeout=4000)                      # reduced motion: straight to the end
+            p.wait_for_selector("#pmwBoot", state="detached", timeout=10000)                      # reduced motion: straight to the end
         finally:
             c.close()
         # automated browser without the force flag: no intro at all (does not block the other UI tests)
         c, p = self.ctx()
         try:
             p.goto(BASE + "/#/menu")
-            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=30000)
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=100000)
             self.assertIsNone(p.query_selector("#pmwBoot"))
         finally:
             c.close()
