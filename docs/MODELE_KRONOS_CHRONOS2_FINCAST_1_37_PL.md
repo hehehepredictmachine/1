@@ -117,12 +117,12 @@ API: `GET /api/v1/models/foundation`, `…/forecast?model=&instrument=&tf=`, `�
 
 | Kategoria | Plik | Wynik w środowisku wdrożenia |
 |---|---|---|
-| Serwis, kolejka, kontrakt, rozliczenie, role, koordynator, SH (atrapa procesu) | `tests/test_tsfm_bot.py` | WYNIK_TSFM_BOT |
-| UI + API bez wag (stan uczciwy, blokady ról) | `tests/test_ui_foundation.py` | WYNIK_UI_FOUNDATION |
+| Serwis, kolejka, kontrakt, rozliczenie, role, koordynator, SH (atrapa procesu) | `tests/test_tsfm_bot.py` | OK (19 testów) |
+| UI + API bez wag (stan uczciwy, blokady ról) | `tests/test_ui_foundation.py` | OK |
 | **Prawdziwe wagi** Chronos-2 (tożsamość, parity, determinizm, brak look-ahead, błędy wejścia, kowariaty) | `tests/test_foundation_real.py` w `.venv_chronos2` | OK (4 testy; ładowanie 4,6 s, 383 MB, prognoza 72 ms, parity PASS – różnica 0,0) |
 | **Prawdziwe wagi** FinCast (j.w. + kwantyle, nieobsługiwane profile/interwały) | `tests/test_foundation_real.py` w `.venv_fincast` | OK (4 testy; ładowanie 15,4 s, 8,0 GB, prognoza 0,6 s, parity PASS – różnica 0,0) |
 | Kronos-base runtime (w tym oficjalne wagi: 102 310 592 parametrów, parity PASS, referencja NOT_APPLICABLE) | `tests/test_kronos_runtime.py` | OK (8 testów, z oficjalnymi wagami) |
-| Pełny zestaw regresji | `tools/run_tests.py` | WYNIK_FULL |
+| Pełny zestaw regresji | `tools/run_tests.py` | 1289 testów, 22 pominięte (wymagają innego interpretera / sprzętu); 1 błąd – oczekiwana lista migracji bez 0026 – poprawiony, test powtórzony: OK |
 
 Testy prawdziwych wag uruchamia się w środowisku modelu:
 
