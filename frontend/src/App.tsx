@@ -30,6 +30,7 @@ import { cls } from "./util";
 
 // tower views and the 1.32 CULT screens: lazy chunks
 const NeuralCityMenu = lazy(() => import("./features/neural-city/NeuralCityMenu"));
+const GalaxyMenu = lazy(() => import("./features/galaxy/GalaxyMenu"));
 const LightningTower = lazy(() => import("./features/cult/LightningTower"));
 const WindPortal = lazy(() => import("./features/cult/WindPortal"));
 const ControlTower = lazy(() => import("./features/cult/ControlTower"));
@@ -78,7 +79,8 @@ function Panel() {
       <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
         <div className={cls("app", "app-cult", s.synthetic && "synthetic")}>
           <Suspense fallback={<div className="cu-loading" role="status">Ładowanie…</div>}>
-            {route.page === "menu" && <NeuralCityMenu route={route} />}
+            {route.page === "menu" && <GalaxyMenu />}
+            {route.page === "neural-city" && <NeuralCityMenu route={route} />}
             {route.page === "lightning" && <LightningTower />}
             {route.page === "wind" && <WindPortal />}
             {route.page === "control" && <ControlTower />}

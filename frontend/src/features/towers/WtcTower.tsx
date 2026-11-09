@@ -10,6 +10,9 @@
 //  * Volume Profile Auto Zones = /api/v1/svp/visible (backend PMW-SVP-1 engine: POC, VAH/VAL, HVN, LVN) for the main chart window;
 //              zones are drawn as a separate, typed layer – a VP level is NOT a trade zone.
 //  * signals / consensus / MTF = /api/v1/bot-signals, /api/v1/models/predictions, the engine's tf_overview.
+//  * 1.39 Chart Lab 2.1 (chartlab/) = CUSTOMIZE CHART (themes, Candles / Hollow / Heikin Ashi / Line / Area, EMA / VWAP / BB / RSI / MACD /
+//              ATR / SVP / SMC with period, colour, width, presets) + Session Volume Profile (POC / VA, London / New York / Asia, biggest
+//              impulse 3 / 5 / 8 / 12) on the REAL bars of /api/v1/candles - the synthetic demo data of the pack is not used.
 // The panel never sends an order: the Setup Builder only computes R:R; execution stays in the bot's own flow and gates.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { apiSend } from "../../api";
@@ -24,6 +27,7 @@ import { usePmwLayers, type PmwLayers } from "../pmw133/overlays";
 import { useTerminalContext } from "../shell/useTerminalContext";
 import { TFS, consensus, dt, fmt, fmtSigned, hms, modelRows, mtfRows, rr, usePolled } from "./data";
 import TowerFrame, { Card, Dir, Src } from "./TowerFrame";
+import ChartLab from "./chartlab/ChartLab";
 
 type Slot = { id: string; tf: string };
 const DEF_SLOTS: Slot[] = [{ id: "a", tf: "M5" }, { id: "b", tf: "M15" }, { id: "c", tf: "H4" }, { id: "d", tf: "D1" }];
@@ -76,6 +80,8 @@ export default function WtcTower() {
   const [msg, setMsg] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const [fullMain, setFullMain] = useState(false);
+  const [labOpen, setLabOpen] = useState(false);
+  const openLab = () => { setLabOpen(true); setTimeout(() => document.querySelector("[data-testid=wtc-chartlab]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
 
   // ---- data
   const sig = usePolled<any>("/api/v1/bot-signals?limit=30", 10000);
@@ -216,6 +222,7 @@ export default function WtcTower() {
         </div>
         <span className="tw-grow" />
         <button type="button" className="tw-btn acc" onClick={addChart} disabled={slots.length >= 8} data-testid="wtc-add-chart">＋ Dodaj wykres</button>
+        <button type="button" className="tw-btn acc" onClick={openLab} data-testid="wtc-customize">⚙ CUSTOMIZE CHART</button>
         <a className="tw-btn" href="#wtc-kronos" data-testid="wtc-kronos-link">◈ Kronos AI</a>
         <label className="tw-field sm"><span className="sr">Układ</span>
           <select value={cols} onChange={(e) => setCols(Number(e.target.value))} aria-label="Układ Multi-Chart Workspace" data-testid="wtc-layout">
@@ -311,6 +318,8 @@ export default function WtcTower() {
               <span><i style={{ background: "rgba(180,107,255,.35)" }} />Liquidity</span><span><i className="dash" />S/R Band</span><span><i style={{ background: VP_COL.poc }} />Volume Profile</span>
             </div>
           </section>
+
+          <ChartLab initialTf={mainTf} digits={digits} symbol={symbol} open={labOpen} setOpen={setLabOpen} />
 
           <div className="wtc-quad">
             <Card title="SMART TRADE SETUP BUILDER" icon="⊕" right={<Src k="info">TYLKO ANALIZA</Src>} testid="wtc-builder">

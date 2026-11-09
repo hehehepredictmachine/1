@@ -368,3 +368,32 @@ html.tw-doc, html.tw-doc body { background: #010705; }
 .tw-hero h1 > span:last-child { display: inline; }
 .sg-name { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .tw-card-h h2 small { display: none; } .sg-name span { display: block; font-size: 11px; } }
+
+/* 1.39 WTC PEPE 2.1 – Chart Lab + Session Volume Profile (chartlab/ChartLab.tsx) */
+.wtc-lab .tw-card-h { flex-wrap: wrap; }
+.wtc-lab-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 6px; padding: 6px; }
+.wtc-lab-row:not(:has(.wtc-lab-svp)) { grid-template-columns: minmax(0, 1fr); }
+.wtc-lab-row.open { grid-template-columns: minmax(0, 1fr) 150px 330px; }
+.wtc-lab-row.open:not(:has(.wtc-lab-svp)) { grid-template-columns: minmax(0, 1fr) 330px; }
+.wtc-lab-chart { position: relative; min-width: 0; height: 520px; border-radius: 7px; overflow: hidden; border: 1px solid rgba(57, 255, 143, .14); }
+.wtc-lab-svp { display: flex; flex-direction: column; gap: 6px; border: 1px solid rgba(57, 255, 143, .18); border-radius: 7px; padding: 6px; background: rgba(1, 10, 6, .7); min-height: 0; }
+.wtc-lab-svp header { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; }
+.wtc-lab-svp svg { width: 100%; flex: 1; min-height: 260px; max-height: 440px; }
+.wtc-lab-svp ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.wtc-lab-svp li { display: flex; justify-content: space-between; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(95, 227, 255, .6); }
+.wtc-lab-svp li.poc { border-color: #ffcf5c; color: #ffcf5c; }
+.wtc-lab-cfg { display: flex; flex-direction: column; gap: 8px; border: 1px solid rgba(57, 255, 143, .25); border-radius: 7px; padding: 8px; background: rgba(2, 12, 9, .92);
+  max-height: 520px; overflow: auto; font-size: 12px; }
+.wtc-lab-form { display: flex; flex-direction: column; gap: 7px; }
+.wtc-lab-form label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wtc-lab-form label.chk { justify-content: flex-start; }
+.wtc-lab-form .tw-seg { flex-wrap: wrap; }
+.wtc-lab-ind input[type=number] { width: 54px; } .wtc-lab-ind input[type=color] { width: 28px; height: 20px; padding: 0; border: 0; background: none; }
+.wtc-lab-plist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.wtc-lab-plist li { display: flex; gap: 2px; }
+.wtc-lab-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 4px 10px 8px; font-size: 11px; color: var(--tw-dim, #8fb3a3); }
+.wtc-lab-foot .ok { color: #39ff8f; } .wtc-lab-foot .bad { color: #ff5d6c; }
+@media (max-width: 1100px) {
+  .wtc-lab-row, .wtc-lab-row.open, .wtc-lab-row.open:not(:has(.wtc-lab-svp)) { grid-template-columns: minmax(0, 1fr); }
+  .wtc-lab-svp svg { min-height: 160px; max-height: 220px; } .wtc-lab-chart { height: 420px; }
+}

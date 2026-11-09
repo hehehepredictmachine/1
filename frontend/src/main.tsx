@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import BootScreen from "./features/galaxy/BootScreen";
 import { AppearanceProvider } from "./appearance";
 import { StoreProvider } from "./store";
 import { ThemeProvider } from "./theme";
@@ -12,5 +13,6 @@ createRoot(document.getElementById("root")!).render(
         <App />
       </StoreProvider>
     </AppearanceProvider>
+    <BootScreen />
   </ThemeProvider>,
 );

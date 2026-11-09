@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.38.0"
+VERSION = "1.39.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -300,6 +300,22 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4g - 1.39
+    s += [P("4g / Nowe w 1.39: LIVE od startu, GARCH, intro, menu Galaxy, WTC PEPE 2.1", "h1"),
+          box("<b>Bot startuje w AUTO LIVE</b> (na Twoje polecenie) i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem REAL. "
+              "Zdjęte bramki walidacji (VALIDATED, skalibrowany model, znana prowizja) są teraz ostrzeżeniami; STOP, limity ryzyka, spread, "
+              "deduplikacja, uzgadnianie z MT5 i wymóg rachunku REAL działają dalej. Wyłączenie: STOP albo data\\config.json → "
+              "execution.start_mode = \"SIGNALS\", execution.live_autobind = false.", "block"),
+          bullets(["Do handlu nadal potrzebne: ścieżka główna instrumentu (ACTIVE / SH) i limity ryzyka – bez nich bot pokazuje powód i nie wchodzi.",
+                   "<b>GARCH</b>: rodzina VOL_GARCH może liczyć sigmę strategii PMW_HG09 (volatility_method = VOL_GARCH). Bez aktywnego modelu "
+                   "HG09 zwraca NO_DATA (GARCH_NOT_READY) – bez cichego zastępstwa.",
+                   "<b>Intro</b> „$PEPEMARKET WIZARD” (ok. 8,5 s; POMIŃ INTRO / Esc, Ctrl+Alt+B – ponownie) i <b>menu Galaxy</b> (#/menu): 7 planet, "
+                   "pełna sieć 21/21, edytor „Projektuj”, planety otwierają prawdziwe ekrany. Neural City: #/neural-city.",
+                   "<b>WTC PEPE → CUSTOMIZE CHART</b> (Chart Lab 2.1) i Session Volume Profile (POC / VA, London / New York / Asia, impuls 3/5/8/12) "
+                   "na prawdziwych świecach MT5.",
+                   "Instalacja bota i modeli oraz trening krok po kroku: <b>Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf</b>."]),
+          *shot(shots, "ui_galaxy/galaxy_1920x1080.png", "Menu Galaxy V2.", width_mm=150),
+          PageBreak()]
     # 4f - 1.38
     s += [P("4f / Nowe w 1.38: pakiet 20 strategii XAUUSD (SCALPING + HEDGING)", "h1"),
           bullets(["Strona <b>Strategie</b> → panel <b>Pakiet 20 strategii</b>: PMW_SC01–SC10 (scalp: TP1 ≥ 25 pips, RR planu netto ≥ 2) i "
@@ -416,6 +432,10 @@ def client(shots: Path | None) -> list:
                         "Paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> i jej plik <b>.sha256</b>.",
                         "Terminal MetaTrader 5 z dostępem do własnego rachunku."]),
                box("Nie wysyłaj nikomu hasła do MT5 ani kodów bezpieczeństwa.", "warn"),
+               box("<b>Od wersji 1.39 bot startuje w trybie AUTO LIVE</b> i po pierwszej decyzji handluje na zalogowanym rachunku REAL "
+                   "(prawdziwe pieniądze). Przycisk <b>STOP</b> natychmiast zatrzymuje nowe wejścia. Jeśli chcesz tylko oglądać sygnały, "
+                   "poproś administratora o tryb SIGNALS (data\\config.json → execution.start_mode). Po starcie zobaczysz intro "
+                   "„$PEPEMARKET WIZARD” (POMIŃ INTRO / Esc) i menu <b>Galaxy</b> z siedmioma planetami – kliknięcie planety otwiera jej ekran.", "block"),
                PageBreak()]
     s += [P("1 / Instalacja", "h1"), P("Pierwsze uruchomienie", "h2"),
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",

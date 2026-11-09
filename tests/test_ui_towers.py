@@ -171,8 +171,8 @@ class TestTowersUI(unittest.TestCase):
                 p.wait_for_selector(f"[data-testid={sel}]", timeout=5000)
             p.click("[data-testid=sg-pause]")
             self.assertIn("PAUZA", p.locator("[data-testid=sg-flow]").inner_text())
-            p.click("[data-testid=tw-logo]")                                                      # back to the table
-            p.wait_for_selector("[data-testid=page-menu]", timeout=30000)
+            p.click("[data-testid=tw-logo]")                                                      # back to the main menu (Galaxy V2)
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=30000)
             self.assertEqual([s for s in p.sent if ORDER_URL.search(s[1])], [])
             self.assertEqual(p.errors, [])
         finally:

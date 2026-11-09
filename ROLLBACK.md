@@ -1,5 +1,17 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0d. Wersja 1.39.0 → 1.38.0 (LIVE od startu, GARCH, menu Galaxy, WTC 2.1)
+1. **Tylko wyłączenie LIVE (bez cofania wersji)**: przycisk STOP, potem w `data/config.json` → `"execution": {"start_mode": "SIGNALS",
+   "live_autobind": false}` (albo `"start_mode": null` = ostatni zapisany tryb) i restart. Bramek walidacji nie da się przywrócić
+   konfiguracją – do tego potrzebna jest wersja 1.38.
+2. **GARCH**: panel Strategie → Pakiet 20 → „PMW_HG09 – zmienność” → „odchylenie 60 × M5” (albo `POST /api/v1/sh/strategies/config`
+   z `volatility_method: "STD_LOGRET_60_M5"`). 1.38 nie zna wartości `VOL_GARCH` – przed powrotem przełącz z powrotem, inaczej katalog 1.38
+   odrzuci nadpisanie (`data/sh/pack_override.json`).
+3. **Pełny powrót**: STOP, zamknij 1.39, przywróć `data/config.v13.bak.json` jako `data/config.json` (1.38 nie czyta konfiguracji v14),
+   uruchom folder 1.38. Baza bez nowych migracji w 1.39 – zgodna. Układ menu Galaxy (`PMW_GALAXY_LIVE_V1`) i presety Chart Lab
+   (`mq.wtc.chartlab.*`) są w pamięci przeglądarki – 1.38 je ignoruje.
+4. Menu: w 1.39 dawne menu Neural City jest pod `#/neural-city`; w 1.38 pod `#/menu`.
+
 ## 0c. Wersja 1.38.0 → 1.37.0 (pakiet 20 strategii)
 1. Bez cofania wersji: wyłącz warianty w `POST /api/v1/sh/strategies/config` (`{"variants": {"PMW_SC01": {"enabled": false}, ...}}`) –
    wyłączony wariant nie generuje kandydatów; legacy SCALPING/HEDGING działają jak w 1.37. Otwarte plany pakietu są dalej zarządzane do

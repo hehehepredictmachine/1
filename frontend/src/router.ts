@@ -9,7 +9,7 @@ import { TOWER_ALIASES } from "./features/neural-city/towers";
 export type Page = "pulpit" | "wykresy" | "scalp-mtf" | "kontekst" | "warunki" | "ai" | "indykatory" | "sygnal" | "formacje" | "pozycje" | "dziennik" | "testy"
   | "diagnostyka" | "setupy" | "modele" | "neural" | "struktura" | "badania" | "dane" | "ustawienia" | "strategie" | "nc"
   | "trading-intelligence" | "ai-neural-lab" | "system-control" | "menu" | "precision" | "dyscypline" | "profits" | "strefy" | "trening"
-  | "lightning" | "wind" | "control" | "strategy-lab" | "dxy" | "svp" | "decyzje" | "pepe-wtc" | "pepe-signal";
+  | "lightning" | "wind" | "control" | "strategy-lab" | "dxy" | "svp" | "decyzje" | "pepe-wtc" | "pepe-signal" | "neural-city";
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 // 1.29 one interface in the style of the towers: the side menu is grouped by AREAS of the main menu - Precision (charts and
 // market), Dyscypline (setups and signals), Profits (results and account), Modele i trening, Ustawienia i diagnostyka.
@@ -47,10 +47,13 @@ export const SCREEN_MAP: { old: string; hash: string; now: string }[] = [
     now: "PEPE$WTC → Trading Intelligence, PEPE$SIGNAL → Wind Portal, PEPE$BANK → Lightning Tower, MARKET NEWS → Kontekst rynku, STRATEGIES → Strategy Lab, SETTINGS → Ustawienia, PEPE$ROI → Profits; aliasy #/wtc, #/pepe-signal (#/brain-signal), #/pepe-bank (#/ai-agent), #/market-news, #/strategies, #/settings, #/pepe-roi (#/leaderboard)" },
   { old: "(1.36) Main Menu V2 – stół neuronowy, 8 wież: PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, PEPE$ROI, STRATEGIES, MARKET NEWS, TRAINING LAB, SETTINGS", hash: "#/menu",
     now: "PEPE$WTC → nowa wieża #/pepe-wtc (Neural Market Command Center), PEPE$SIGNAL → nowa wieża #/pepe-signal (Signal Intelligence Center), PEPE$BANK → Lightning Tower, PEPE$ROI → Profits, STRATEGIES → Strategy Lab, MARKET NEWS → Kontekst rynku, TRAINING LAB → Centrum treningu, SETTINGS → Ustawienia; aliasy #/wtc, #/signal, #/brain-signal, #/pepe-bank, #/pepe-roi, #/strategies, #/market-news, #/training-lab, #/settings. Dawne panele #/trading-intelligence i #/wind działają bez zmian" },
+  { old: "(1.39) Menu główne Neural City (stół neuronowy, 8 wież)", hash: "#/menu → #/neural-city",
+    now: "#/menu = Galaxy V2 (7 planet, pełna sieć K7 21/21, edytor „Projektuj”): WTC PEPE → #/pepe-wtc, Brain Signal → #/pepe-signal, PEPE$BANK → #/lightning, PEPE$ROI → #/profits, Models → #/modele, Signals → #/sygnal, Settings → #/ustawienia. Poprzednie menu Neural City działa pod #/neural-city (przycisk „Neural City” w edytorze „Projektuj”)" },
   { old: "Trading Intelligence, AI Neural Lab, System Control", hash: "#/trading-intelligence · #/ai-neural-lab · #/system-control", now: "bez zmian („Nowe panele” w menu bocznym)" },
 ];
 export const PAGES: { id: Page; label: string; short: string; icon: string }[] = [
-  { id: "menu", label: "Menu główne – Neural City", short: "Menu", icon: "✶" },
+  { id: "menu", label: "Menu główne – Galaxy V2 (Full Neural Mesh)", short: "Menu", icon: "✶" },
+  { id: "neural-city", label: "Neural City – poprzednie menu (1.34–1.38)", short: "Neural City", icon: "✶" },
   { id: "pepe-wtc", label: "PEPE$WTC – Neural Market Command Center (multi-chart, Kronos, AI Live Zones, Volume Profile)", short: "PEPE$WTC", icon: "▥" },
   { id: "pepe-signal", label: "PEPE$SIGNAL – Signal Intelligence Center (sygnały, warunki, oceny AI)", short: "PEPE$SIGNAL", icon: "◈" },
   { id: "lightning", label: "PEPE$BANK – Lightning Tower (Live Signals Center)", short: "PEPE$BANK", icon: "⚡" },
@@ -98,7 +101,7 @@ export const TERMINAL_PAGE_IDS: Page[] = ["trading-intelligence", "ai-neural-lab
 /** 1.26: the three tower views Precision / Dyscypline / Profits - their own frame (features/wizard). */
 export const WIZARD_PAGE_IDS: Page[] = ["precision", "dyscypline", "profits"];
 /** 1.32 CULT interface: main menu (city of towers) and the four tower panels - their own frame (features/cult). */
-export const CULT_PAGE_IDS: Page[] = ["menu", "lightning", "wind", "control", "strategy-lab"];
+export const CULT_PAGE_IDS: Page[] = ["menu", "neural-city", "lightning", "wind", "control", "strategy-lab"];
 /** 1.36 tower interiors PEPE$WTC and PEPE$SIGNAL (features/towers) - their own frame with the top navigation of the eight towers. */
 export const TOWER_PAGE_IDS: Page[] = ["pepe-wtc", "pepe-signal"];
 const LAST = "mq.lastPage";

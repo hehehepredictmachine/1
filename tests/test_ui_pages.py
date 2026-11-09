@@ -98,7 +98,7 @@ class TestThreePagesUI(unittest.TestCase):
         cls.page.wait_for_selector("[data-testid=cult-launcher]", timeout=30000)
         cls.page.wait_for_selector("[data-testid=cult-join]:not([disabled])", timeout=30000)
         cls.page.click("[data-testid=cult-join]")
-        cls.page.wait_for_selector("[data-testid=page-menu]", timeout=30000)       # -> intro -> CULT Main Menu (six towers)
+        cls.page.wait_for_selector("[data-testid=galaxy-menu]", timeout=30000)     # -> 1.39 Galaxy V2 main menu
         cls.page.wait_for_function("() => location.hash === '#/menu'", timeout=10000)
         cls.first_url = cls.page.url
         cls.page.goto(BASE + "/#/ai")

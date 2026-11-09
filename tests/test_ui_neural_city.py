@@ -1,4 +1,6 @@
-"""1.36 Main Menu V2 (Neural Table, EIGHT towers) + JOIN THE CULT launcher (1.34 TASK 001) (TASK 001) in a real browser (Chromium + demo backend on the SYNTHETIC
+"""1.39: the Neural City menu moved from #/menu to #/neural-city (#/menu = Galaxy V2, tests/test_ui_galaxy.py); JOIN THE CULT now opens
+Galaxy V2 directly (the START boot intro replaced the neural intro of the launcher).
+1.36 Main Menu V2 (Neural Table, EIGHT towers) + JOIN THE CULT launcher (1.34 TASK 001) (TASK 001) in a real browser (Chromium + demo backend on the SYNTHETIC
 terminal; the launcher window of the Windows app as a page with a stand-in bridge).
 
 Launcher: shown at the start of a session on the bare address (the panel is not mounted before the click); the delivered image is the
@@ -110,7 +112,7 @@ class TestNeuralCityUI(unittest.TestCase):
         return r.json()
 
     def menu(self, p, extra=""):
-        p.goto(BASE + "/#/menu" + extra)
+        p.goto(BASE + "/#/neural-city" + extra)
         p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
         p.wait_for_timeout(300)                                                              # debounce window of a fresh mount
 
@@ -150,13 +152,12 @@ class TestNeuralCityUI(unittest.TestCase):
             p.wait_for_timeout(400)
             self.assertNotEqual(before, join.evaluate("e => getComputedStyle(e).transform"))    # hover animation
             join.click()
-            p.wait_for_selector("[data-testid=nc-intro]", timeout=10000)                         # neural intro after JOIN
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=10000)                      # 1.39: JOIN -> Galaxy V2 main menu
             self.assertEqual(p.evaluate("() => location.hash"), "#/menu")
-            self.shot(p, "01_intro")
-            p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=10000)       # ends by itself
+            self.shot(p, "01_after_join")
             self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
             p.reload()
-            p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)       # same session: no launcher, no intro
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=30000)                      # same session: no launcher
             self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
             self.assertEqual(self.real_errors(p), [])
         finally:
@@ -165,7 +166,7 @@ class TestNeuralCityUI(unittest.TestCase):
             c, p = self.ctx()
             try:
                 p.goto(url)
-                p.wait_for_selector("[data-testid=page-menu], [data-testid=page-lightning]", timeout=30000)
+                p.wait_for_selector("[data-testid=galaxy-menu], [data-testid=page-lightning]", timeout=30000)
                 self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0, url)
             finally:
                 c.close()
@@ -278,7 +279,7 @@ class TestNeuralCityUI(unittest.TestCase):
             p.keyboard.press("Escape")                                                            # cancel -> back to IDLE, still on the menu
             p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=3000)
             p.wait_for_timeout(2200)
-            self.assertTrue(p.url.endswith("#/menu"))
+            self.assertTrue(p.url.endswith("#/neural-city"))
             self.assertEqual(p.evaluate("() => document.activeElement?.dataset?.testid"), "nc-tower-signal")
             self.menu(p)
             n0 = p.evaluate("() => window.__hc")
@@ -299,7 +300,7 @@ class TestNeuralCityUI(unittest.TestCase):
         got: list = []
         p.on("request", lambda r: got.append(r.url) if "/api/v1/" in r.url else None)
         try:
-            p.goto(BASE + "/#/menu")
+            p.goto(BASE + "/#/neural-city")
             p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
             got.clear()                                                                           # the shell (state, WebSocket) is loaded once for the app
             p.wait_for_timeout(4000)
@@ -307,7 +308,7 @@ class TestNeuralCityUI(unittest.TestCase):
             self.assertEqual(market, [])                                                          # the animation never pulls MT5 / bot data
             p.click("[data-testid=nc-pepe-center]")                                               # Pepe impulse: visual only
             self.assertEqual(p.locator("[data-testid=page-menu]").get_attribute("data-phase"), "IDLE")
-            self.assertTrue(p.url.endswith("#/menu"))
+            self.assertTrue(p.url.endswith("#/neural-city"))
         finally:
             c.close()
 

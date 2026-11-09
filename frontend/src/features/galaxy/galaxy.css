@@ -1,0 +1,174 @@
+/* 1.39 Galaxy V2 main menu - CSS of the approved reference (REFERENCJE/GALAXY_V2), scoped to .pmw-galaxy (no global body/html rules). */
+.pmw-galaxy{position:fixed;inset:0;z-index:30;background:#02030a;color:#f5f3ff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Arial,sans-serif;overflow:hidden}
+.pmw-galaxy{--accent:#ae5cff;--cyan:#29d8ff;--green:#36fbb4;--line:rgba(116,103,254,.54);--bg:#02030a;--muted:#a9a4ce;--nav:#090919;--speed:1;--side-width:clamp(116px,12vw,190px)}
+.pmw-galaxy *, .pmw-galaxy{box-sizing:border-box}
+.pmw-galaxy button,.pmw-galaxy input,.pmw-galaxy select{font:inherit}
+.pmw-galaxy button{cursor:pointer}
+.pmw-galaxy button:focus-visible,.pmw-galaxy input:focus-visible{outline:2px solid #72e3ff;outline-offset:2px}
+.pmw-galaxy .gx-app{height:100dvh;min-height:470px;display:grid;grid-template-rows:74px minmax(0,1fr) clamp(92px,14.5vh,153px);gap:8px;padding:7px 8px 7px;isolation:isolate;background:radial-gradient(ellipse at 50% 52%,#10102a 0%,#03040b 47%,#020207 94%)}
+.pmw-galaxy .topbar{position:relative;display:flex;align-items:center;gap:16px;padding:0 18px 0 12px;border:1px solid #546ec0;border-radius:24px;background:linear-gradient(100deg,rgba(5,7,22,.97),rgba(4,4,12,.97));box-shadow:inset 0 0 14px #2a2c76,0 0 9px #3348e0,0 4px 28px #000;z-index:20;min-width:0}
+.pmw-galaxy .topbar:after{content:"";position:absolute;left:5%;right:5%;bottom:-3px;height:2px;background:linear-gradient(90deg,transparent,#33d9ff 20%,#9f5cfa 53%,#35b8ff 85%,transparent);filter:blur(1px);opacity:.85;pointer-events:none}
+.pmw-galaxy .brand{display:flex;align-items:center;gap:10px;min-width:255px;flex:0 1 330px;white-space:nowrap}
+.pmw-galaxy .brand-logo{width:63px;height:55px;object-fit:contain;filter:drop-shadow(0 0 9px #9457fb)}
+.pmw-galaxy .brand-name{font-weight:850;font-size:clamp(17px,1.75vw,29px);letter-spacing:-1px;font-style:italic;line-height:1.04;text-shadow:0 0 13px #7a5bff}
+.pmw-galaxy .brand-name .g{color:#98ffd4}
+.pmw-galaxy .brand-name .p{color:#e09bff}
+.pmw-galaxy .brand-caption{font-size:9px;letter-spacing:2px;color:#8985bd;margin-top:5px;text-transform:uppercase}
+.pmw-galaxy .nav{display:flex;align-items:center;justify-content:center;flex:1 1 auto;gap:clamp(5px,1vw,20px);min-width:0}
+.pmw-galaxy .nav button{display:flex;align-items:center;gap:7px;white-space:nowrap;background:transparent;border:1px solid transparent;border-radius:20px;color:#e2dff5;padding:8px 10px;font-weight:650;font-size:12px;transition:.18s}
+.pmw-galaxy .nav button:hover,.pmw-galaxy .nav button.active{background:rgba(5,30,58,.76);border-color:#33dfff;box-shadow:0 0 15px #28c6ff6b;color:white}
+.pmw-galaxy .nav button .ni{font-size:18px;color:#adacff}
+.pmw-galaxy .actions{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.pmw-galaxy .status{display:flex;align-items:center;gap:7px;border:1px solid #3ee6b1;border-radius:30px;padding:7px 11px;box-shadow:0 0 12px #22dd9b44;background:#00170f;color:#c5ffe6;font-size:11px;font-weight:800;white-space:nowrap}
+.pmw-galaxy .dot{height:8px;width:8px;display:inline-block;background:#54ff97;border-radius:50%;box-shadow:0 0 8px #59ffab;animation:gx-pulse 1.4s infinite}
+.pmw-galaxy .icon-btn{display:grid;place-items:center;width:35px;height:35px;border-radius:11px;border:1px solid #56518c;background:#0d0b24;color:#c7bcff;font-size:17px;transition:.2s}
+.pmw-galaxy .icon-btn:hover,.pmw-galaxy .icon-btn.active{border-color:#7bdfff;box-shadow:0 0 14px #55caff55;color:white}
+.pmw-galaxy .stage{min-height:0;position:relative;display:grid;grid-template-columns:var(--side-width) minmax(0,1fr) var(--side-width);gap:6px;overflow:hidden}
+.pmw-galaxy .side{position:relative;min-height:0;border:1px solid #546bd4;border-radius:25px;background-color:#02040b;background-position:center;background-size:100% 100%;box-shadow:inset 0 0 17px #2746a05c,0 0 11px #1a3b986b;overflow:hidden}
+.pmw-galaxy .side::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 13px #5ce8ff66;pointer-events:none;z-index:3}
+.pmw-galaxy .side::after{content:"";position:absolute;left:0;right:0;top:-40%;height:32%;background:linear-gradient(transparent,#66ffd52a,transparent);mix-blend-mode:screen;animation:gx-scan 5.6s linear infinite;z-index:2;pointer-events:none}
+.pmw-galaxy .side-head{position:absolute;left:8px;right:8px;top:10px;padding:9px 7px;background:rgba(4,9,24,.85);border:1px solid #3d8eae;border-radius:13px;z-index:4;display:flex;gap:7px;align-items:center;box-shadow:0 0 14px #1226a7}
+.pmw-galaxy .side-head .chip{color:#54fff0;font-size:23px}
+.pmw-galaxy .side-head strong{font-size:11px;line-height:1.12}
+.pmw-galaxy .side-head small{display:block;font-size:8px;font-weight:700;color:#63fbd3;letter-spacing:1px;margin-top:3px}
+.pmw-galaxy .side canvas{position:absolute;width:100%;height:100%;inset:0;z-index:2;pointer-events:none;mix-blend-mode:screen}
+.pmw-galaxy .side-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.58;mix-blend-mode:screen;filter:saturate(1.45) contrast(1.28) brightness(1.15);pointer-events:none;z-index:1}
+.pmw-galaxy #sideRight .side-video{transform:scaleX(-1);filter:hue-rotate(16deg) saturate(1.5) contrast(1.28) brightness(1.14)}
+.pmw-galaxy .side::before{z-index:4}
+.pmw-galaxy .side::after{z-index:3}
+.pmw-galaxy .mesh-indicator{position:absolute;z-index:9;top:11px;left:13px;pointer-events:none;display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #7261bc85;border-radius:30px;background:rgba(2,3,19,.85);box-shadow:0 0 16px #6a4bf53d;color:#d5c9ff;font-size:10px;letter-spacing:.08em;font-weight:750}
+.pmw-galaxy .mesh-indicator strong{font-size:10px;color:#eff0ff}
+.pmw-galaxy .mesh-indicator .mesh-led{width:7px;height:7px;border-radius:50%;background:#56ffdb;box-shadow:0 0 11px #35fcb9;animation:gx-pulse 1.7s infinite}
+.pmw-galaxy .mesh-indicator .links{color:#77ebff}
+.pmw-galaxy .side-head{backdrop-filter:blur(4px)}
+.pmw-galaxy .bottom{box-shadow:inset 0 0 22px #665deb,0 0 13px #5645d7}
+@media(max-width:750px){.pmw-galaxy .mesh-indicator{left:5px;top:5px;padding:5px 6px;font-size:7px;gap:3px}
+.pmw-galaxy .mesh-indicator strong{font-size:7px}}
+.pmw-galaxy .space{position:relative;overflow:hidden;border-radius:16px;touch-action:pan-y;background:radial-gradient(ellipse at 50% 46%,rgba(56,30,104,.18),transparent 55%),#010207;isolation:isolate}
+.pmw-galaxy .space-bg{position:absolute;inset:-4%;background-image:url('/assets/galaxy/nebula.webp');background-position:center;background-size:cover;opacity:.32;mix-blend-mode:screen;filter:saturate(1.6);animation:gx-breath 11s ease-in-out infinite alternate;pointer-events:none}
+.pmw-galaxy .space::before{content:"";position:absolute;inset:-15%;background:radial-gradient(ellipse at 50% 48%,transparent 0 35%,#02030c 78%);z-index:2;pointer-events:none}
+.pmw-galaxy .galaxy-glow{position:absolute;width:85%;height:70%;left:8%;top:15%;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 13%,#5e1a94 22%,transparent 35%,#047e6a 54%,transparent 60%,#4a2387 75%,transparent 100%);opacity:.23;filter:blur(52px);animation:gx-galaxy-spin 54s linear infinite;z-index:0;pointer-events:none}
+.pmw-galaxy #galaxyCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+.pmw-galaxy .planet-layer{position:absolute;inset:0;z-index:5;pointer-events:none;transform-origin:center}
+.pmw-galaxy .planet{--c:#a45cff;position:absolute;display:grid;place-items:center;border:0;color:white;padding:0;background:transparent;aspect-ratio:1/1;border-radius:50%;pointer-events:auto;will-change:transform,top,left;transition:filter .18s;cursor:pointer;filter:drop-shadow(0 0 6px var(--c))}
+.pmw-galaxy .planet:hover,.pmw-galaxy .planet.selected{z-index:8!important;filter:drop-shadow(0 0 17px var(--c)) brightness(1.15)}
+.pmw-galaxy .planet:focus-visible{outline:2px dashed #b6eafa;outline-offset:5px}
+.pmw-galaxy .planet .image{width:100%;height:100%;display:block;object-fit:contain;border-radius:50%;pointer-events:none;animation:gx-inner-breathe 5s ease-in-out infinite alternate}
+.pmw-galaxy .planet::after{content:"";position:absolute;inset:7%;border:1px solid var(--c);border-radius:50%;box-shadow:inset 0 0 20px transparent,0 0 19px var(--c);opacity:.29;pointer-events:none;animation:gx-pulse 4.5s infinite;z-index:1}
+.pmw-galaxy .planet .planet-title{position:absolute;z-index:3;top:64%;left:50%;transform:translate(-50%,-50%);max-width:84%;min-width:82%;padding:5px 10px;background:linear-gradient(180deg,rgba(1,3,20,.97),rgba(4,2,30,.93));border:1px solid var(--c);border-radius:30px;box-shadow:0 0 16px var(--c),inset 0 0 8px #283d7c;text-shadow:0 0 4px #fff,0 0 9px var(--c);font-weight:850;font-size:clamp(9px,1.08vw,16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;pointer-events:none}
+.pmw-galaxy .planet.central .planet-title{font-size:clamp(14px,1.7vw,25px);font-style:italic;font-weight:900;letter-spacing:.1px;top:72%;min-width:70%;padding:8px 10px}
+.pmw-galaxy .planet .orbit-dot{position:absolute;right:9%;top:18%;width:7px;height:7px;border-radius:50%;background:#d5fdff;box-shadow:0 0 10px 3px var(--c);opacity:.75;pointer-events:none}
+.pmw-galaxy .planet-hint{position:absolute;left:50%;top:-15px;transform:translate(-50%,-100%);padding:7px 12px;border:1px solid #63559d;border-radius:9px;background:#08091ce8;white-space:nowrap;font-size:11px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:22}
+.pmw-galaxy .planet:hover .planet-hint{opacity:1}
+.pmw-galaxy .galaxy-caption{pointer-events:none;position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:10px;padding:6px 11px;border:1px solid #686b9d57;border-radius:30px;background:#020413ae;color:#b9b4da;font-size:10px;white-space:nowrap;letter-spacing:.06em}
+.pmw-galaxy .galaxy-caption b{color:#70dfdb}
+.pmw-galaxy .bottom{position:relative;overflow:hidden;isolation:isolate;border:1px solid #6151a6;border-radius:16px 16px 24px 24px;box-shadow:inset 0 0 15px #645deb,0 0 10px #5645d7;background:#04000c url('/assets/galaxy/bottom.webp') center center/100% 100%}
+.pmw-galaxy .bottom:before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 10%,#47b6ff55 40%,transparent 70%);mix-blend-mode:screen;transform:translateX(-140%);animation:gx-bottom-sweep 6s ease-in-out infinite;pointer-events:none}
+.pmw-galaxy .bottom canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;mix-blend-mode:screen}
+.pmw-galaxy .bottom-meta{position:absolute;bottom:10px;right:15px;font-size:9px;font-weight:800;letter-spacing:1.2px;color:#d6dcff;background:rgba(2,2,14,.58);padding:6px 11px;border-radius:8px;z-index:2}
+.pmw-galaxy .bottom-meta span{color:#64f9df}
+.pmw-galaxy .floating-tools{position:absolute;right:14px;bottom:12px;z-index:10;display:flex;gap:7px}
+.pmw-galaxy .floating-tools button{border:1px solid #676ab8;background:rgba(5,5,27,.83);color:#dfdeff;border-radius:10px;padding:7px 10px;font-size:11px}
+.pmw-galaxy .floating-tools button:hover{border-color:#69d5ff;background:#172a4a}
+.pmw-galaxy #inspector{position:fixed;top:87px;right:18px;bottom:clamp(113px,17vh,178px);width:min(328px,calc(100vw - 32px));display:flex;flex-direction:column;z-index:30;border:1px solid #7670cc;border-radius:18px;background:rgba(6,8,25,.97);box-shadow:0 15px 70px #000e,0 0 28px #3d2e8b5c;transform:translateX(calc(100% + 35px));opacity:0;pointer-events:none;transition:transform .27s,opacity .27s;overflow:hidden}
+.pmw-galaxy #inspector.show{transform:translateX(0);opacity:1;pointer-events:auto}
+.pmw-galaxy .ins-head{display:flex;align-items:center;justify-content:space-between;padding:15px 15px;border-bottom:1px solid #35346b;background:#10102c}
+.pmw-galaxy .ins-head strong{font-size:14px}
+.pmw-galaxy .ins-head small{display:block;font-size:10px;color:#aaa6d3;margin-top:4px}
+.pmw-galaxy .ins-body{padding:13px 15px 20px;overflow:auto;flex:1}
+.pmw-galaxy .ins-body label{display:block;font-size:11px;color:#bdb9db;margin-bottom:7px;margin-top:15px}
+.pmw-galaxy .ins-body label:first-child{margin-top:0}
+.pmw-galaxy .ins-body input[type="text"],.pmw-galaxy .ins-body input[type="number"],.pmw-galaxy .ins-body select{width:100%;background:#11152d;color:white;border:1px solid #3b4972;border-radius:8px;padding:9px 10px;font-size:12px}
+.pmw-galaxy .ins-body input[type="range"]{width:100%;accent-color:#a56aff}
+.pmw-galaxy .ins-body input[type="color"]{background:transparent;border:0;padding:0;width:55px;height:36px;cursor:pointer}
+.pmw-galaxy .range-line{display:flex;justify-content:space-between;gap:10px}
+.pmw-galaxy .range-line strong{font-size:11px;color:#fff}
+.pmw-galaxy .toggle-row{display:flex!important;align-items:center;justify-content:space-between;margin:12px 0!important;font-size:12px!important}
+.pmw-galaxy .toggle-row input{accent-color:#8d5dff;width:16px;height:16px}
+.pmw-galaxy .ins-h{font-size:11px;font-weight:900;color:#65ddff;letter-spacing:1.3px;margin:21px 0 12px;border-bottom:1px solid #2d365f;padding-bottom:7px}
+.pmw-galaxy .ins-foot{border-top:1px solid #373363;padding:13px;display:flex;gap:8px}
+.pmw-galaxy .small-btn{padding:9px 11px;border-radius:9px;border:1px solid #545d93;background:#15183a;color:white;font-size:11px;font-weight:700}
+.pmw-galaxy .small-btn:hover{border-color:#69d8ff}
+.pmw-galaxy .small-btn.primary{background:linear-gradient(120deg,#4926aa,#123ea2);border-color:#9575fd}
+.pmw-galaxy .small-btn.danger{border-color:#ab5076;color:#ffc9dd}
+.pmw-galaxy .small-btn:disabled{opacity:.35;cursor:not-allowed}
+.pmw-galaxy .ins-foot .small-btn{flex:1}
+.pmw-galaxy .edit-pill{position:absolute;top:11px;left:50%;transform:translateX(-50%);background:#170c35dc;border:1px solid #997cf9;color:#edddff;padding:7px 14px;border-radius:30px;font-size:11px;letter-spacing:1px;font-weight:800;z-index:10;pointer-events:none;display:none}
+.pmw-galaxy.editing .edit-pill{display:block}
+.pmw-galaxy.editing .planet{cursor:grab}
+.pmw-galaxy.editing .planet.dragging{cursor:grabbing;z-index:12!important}
+.pmw-galaxy.editing .planet.selected:after{opacity:1;outline:2px dashed #c2fcff;outline-offset:4px}
+.pmw-galaxy .section-modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,10,.76);backdrop-filter:blur(15px);display:grid;place-items:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .25s}
+.pmw-galaxy .section-modal.show{opacity:1;pointer-events:auto}
+.pmw-galaxy .section-box{width:min(660px,95vw);border:1px solid var(--accent);border-radius:22px;box-shadow:0 0 50px #5c3cae44,0 22px 90px #000;background:radial-gradient(circle at 70% 15%,#251b53 0%,#0b0d28 43%,#080919 100%);overflow:hidden;transform:scale(.93) translateY(15px);transition:transform .25s}
+.pmw-galaxy .section-modal.show .section-box{transform:scale(1) translateY(0)}
+.pmw-galaxy .modal-top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #4d4278;padding:20px 24px}
+.pmw-galaxy .modal-kicker{font-size:10px;letter-spacing:2px;color:#7bffd9;font-weight:900}
+.pmw-galaxy .modal-title{font-size:clamp(23px,3vw,36px);margin:6px 0 0;text-shadow:0 0 22px #8d5ff2}
+.pmw-galaxy .modal-content{padding:24px}
+.pmw-galaxy .modal-content p{margin:0 0 18px;color:#c3bedc;font-size:14px;line-height:1.6}
+.pmw-galaxy .demo-card-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.pmw-galaxy .demo-card{padding:15px 12px;border:1px solid #474275;border-radius:13px;background:#131332cc}
+.pmw-galaxy .demo-card b{display:block;font-size:11px;margin:5px 0 8px;color:#d4ceeb}
+.pmw-galaxy .demo-card span{display:block;font-size:10px;color:#aea9ca}
+.pmw-galaxy .demo-action{margin-top:20px;display:flex;justify-content:flex-end;gap:10px}
+.pmw-galaxy .demo-note{color:#9f9bbe;font-size:10px;margin-top:16px}
+.pmw-galaxy .close-x{background:transparent;color:white;border:1px solid #665f9e;border-radius:10px;width:36px;height:36px;font-size:20px}
+.pmw-galaxy .toast{position:fixed;bottom:160px;left:50%;transform:translateX(-50%) translateY(10px);z-index:100;padding:10px 17px;border:1px solid #5783a8;border-radius:11px;background:#071523ed;color:#b9f1ff;box-shadow:0 7px 30px #000d;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;font-size:12px}
+.pmw-galaxy .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@keyframes gx-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes gx-scan{to{transform:translateY(500%)}}
+@keyframes gx-galaxy-spin{to{transform:rotate(360deg)}}
+@keyframes gx-breath{from{transform:scale(1);opacity:.25}to{transform:scale(1.13);opacity:.45}}
+@keyframes gx-inner-breathe{from{transform:scale(1) translateY(-3px) rotate(-1.5deg)}to{transform:scale(1.025) translateY(3px) rotate(1.5deg)}}
+@keyframes gx-bottom-sweep{40%,100%{transform:translateX(150%)}}
+.pmw-galaxy.paused *,.pmw-galaxy.paused *::before,.pmw-galaxy.paused *::after{animation-play-state:paused!important}
+.pmw-galaxy .space.no-motion *,.pmw-galaxy .space.no-motion *::before,.pmw-galaxy .space.no-motion *::after{animation-play-state:paused!important}
+@media(max-width:1200px){.pmw-galaxy .brand{min-width:215px;flex-basis:240px}
+.pmw-galaxy .brand-logo{width:52px}
+.pmw-galaxy .nav{gap:3px}
+.pmw-galaxy .nav button{font-size:11px;padding:7px 7px}
+.pmw-galaxy .nav button .ni{font-size:16px}
+.pmw-galaxy .status{font-size:10px;padding:6px 8px}
+.pmw-galaxy .topbar{gap:7px}
+.pmw-galaxy .side-head strong{font-size:9px}}
+@media(max-width:900px){.pmw-galaxy .gx-app{grid-template-rows:67px minmax(0,1fr) 92px;gap:6px;padding:5px}
+.pmw-galaxy .topbar{border-radius:14px;padding:0 9px}
+.pmw-galaxy .brand{min-width:0;flex:1 0 auto}
+.pmw-galaxy .brand-name{font-size:19px}
+.pmw-galaxy .brand-logo{width:44px;height:46px}
+.pmw-galaxy .brand-caption{font-size:7px}
+.pmw-galaxy .nav{display:none}
+.pmw-galaxy .stage{grid-template-columns:70px minmax(0,1fr) 70px;gap:3px}
+.pmw-galaxy .side{border-radius:12px}
+.pmw-galaxy .side-head{top:4px;left:3px;right:3px;padding:5px 2px;justify-content:center}
+.pmw-galaxy .side-head strong{font-size:7px}
+.pmw-galaxy .side-head small{font-size:6px;letter-spacing:0}
+.pmw-galaxy .side-head .chip{display:none}
+.pmw-galaxy .galaxy-caption{display:none}
+.pmw-galaxy .planet .planet-title{padding:3px 5px;font-size:8px}
+.pmw-galaxy .planet.central .planet-title{font-size:11px;padding:5px 7px}
+.pmw-galaxy .bottom{border-radius:12px}
+.pmw-galaxy .bottom-meta{font-size:8px}}
+@media(max-width:520px){.pmw-galaxy .brand-name{font-size:15px}
+.pmw-galaxy .brand-caption{display:none}
+.pmw-galaxy .brand-logo{width:35px}
+.pmw-galaxy .actions{gap:4px}
+.pmw-galaxy .icon-btn{width:32px;height:31px}
+.pmw-galaxy .status{font-size:8px}
+.pmw-galaxy .stage{grid-template-columns:44px minmax(0,1fr) 44px}
+.pmw-galaxy .side-head{display:none}
+.pmw-galaxy .bottom-meta{display:none}
+.pmw-galaxy .planet-hint{display:none}
+.pmw-galaxy .demo-card-row{grid-template-columns:1fr}
+.pmw-galaxy .modal-content{padding:15px}
+.pmw-galaxy .modal-top{padding:14px}
+.pmw-galaxy .floating-tools{bottom:5px;right:5px}
+.pmw-galaxy #inspector{top:77px;right:8px;bottom:106px}
+.pmw-galaxy .galaxy-caption{display:none}}
+@media(prefers-reduced-motion:reduce){.pmw-galaxy *, .pmw-galaxy,.pmw-galaxy *::before,.pmw-galaxy *::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+/* 1.39 integration: the status pill tone follows the backend state (never a fake ONLINE) */
+.pmw-galaxy .status[data-tone="warn"]{border-color:#e7b53f;box-shadow:0 0 12px #e7b53f44;background:#1b1400;color:#ffe9b0}
+.pmw-galaxy .status[data-tone="warn"] .dot{background:#ffc94a;box-shadow:0 0 8px #ffc94a}
+.pmw-galaxy .status[data-tone="bad"]{border-color:#ff5a6e;box-shadow:0 0 12px #ff5a6e44;background:#1d0308;color:#ffc4cc}
+.pmw-galaxy .status[data-tone="bad"] .dot{background:#ff5a6e;box-shadow:0 0 8px #ff5a6e}

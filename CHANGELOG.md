@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 1.39.0 – LIVE od startu, GARCH w PMW_HG09, intro startowe, menu Galaxy V2, WTC PEPE 2.1 (Chart Lab + SVP), instrukcja PDF
+* **LIVE od startu (na polecenie użytkownika)**: `execution.start_mode = "AUTO_LIVE"` (konfiguracja v14, kopia `config.v13.bak.json`);
+  przy starcie z prawdziwym terminalem `ModeManager.apply_start_mode()`. `execution.live_autobind = true`: pierwsza decyzja na rachunku
+  **REAL** wiąże LIVE z tym rachunkiem (`LIVE_AUTOBIND`); DEMO i dane syntetyczne nigdy nie są wiązane; inny rachunek dalej blokuje
+  (`ACCOUNT_DIFFERS_FROM_CONFIRMED_…`). Symulator (`--demo`) nie stosuje trybu startowego.
+* **Zdjęte bramki walidacji** (wybór użytkownika „Bramki walidacji”): VALIDATED wariantów SC/HG, skalibrowany model zdarzeń i znana
+  prowizja nie blokują już AUTO_LIVE – są ostrzeżeniami planu; REDUCE na NETTING bez walidacji dozwolone z ostrzeżeniem. **Bez zmian**:
+  STOP, limity ryzyka (konfigurowane przez użytkownika), spread, deduplikacja, uzgadnianie z MT5, wymóg rachunku REAL, ścieżka główna.
+* **GARCH (VOL_GARCH) w PMW_HG09**: `volatility_method = VOL_GARCH` liczy sigmę z aktywnego, zatwierdzonego modelu rodziny VOL_GARCH
+  (GARCH(1,1), pakiet arch; `TF.garch_sigma` przyczynowo, parametry zamrożone w planie); bez gotowego modelu `NO_DATA / GARCH_NOT_READY` –
+  bez cichego zastępstwa. Przełącznik i stan modelu w panelu „Pakiet 20 strategii”; `/api/v1/sh/strategies` zwraca `garch`; replay
+  `sh pack-replay --garch-json`.
+* **Intro startowe** (`features/galaxy/BootScreen.tsx`, port `boot_overlay` z paczki): 8,5 s, „$PEPEMARKET WIZARD” + „They call us cult
+  but we are something more”, siatka cyfrowa → sieć neuronowa; POMIŃ INTRO / Esc, Ctrl+Alt+B / ↻ INTRO, ograniczone animacje → koniec,
+  twardy limit czasu, nigdy nie blokuje aplikacji (montuje się pod spodem), raz na sesję.
+* **Menu główne Galaxy V2** (`#/menu`, `features/galaxy/`): 1:1 z referencją FULL NEURAL MESH – 7 planet (WTC PEPE w środku), pełna sieć
+  K7 = 21/21 animowanych połączeń (n(n−1)/2 przy dodawaniu planet), boczne emitery AI (wideo + canvas), dolne błyskawice, edytor
+  „Projektuj” (przeciąganie, nazwa, rozmiar, pozycja, kolor, **sekcja bota**, efekty, dodaj / usuń, eksport / import JSON, reset).
+  Planety otwierają prawdziwe ekrany (WTC PEPE → #/pepe-wtc, Brain Signal → #/pepe-signal, PEPE$BANK → #/lightning, PEPE$ROI → #/profits,
+  Models → #/modele, Signals → #/sygnal, Settings → #/ustawienia); bez sekcji – „Niepołączony moduł”. Status z backendu (MT5 ONLINE /
+  DEMO SIM / OFFLINE / UNKNOWN), nigdy udawane „AI ONLINE”. Dawne menu Neural City: `#/neural-city`. JOIN THE CULT otwiera Galaxy.
+* **WTC PEPE 2.1** (`features/towers/chartlab/`): CUSTOMIZE CHART – motywy, Candles / Hollow / Heikin Ashi / Line / Area, EMA×2, VWAP, BB,
+  RSI, MACD, ATR (osobne panele), SVP, SMC (okres, kolor, grubość), presety (zapis, wczytanie, import / eksport JSON ze schematem
+  `PMW-CHARTLAB-1`, reset). Session Volume Profile z POC i Value Area dla okna lub ostatniej sesji London / New York / Asia (UTC),
+  największy impuls 3 / 5 / 8 / 12 świec. Wszystko na prawdziwych świecach `/api/v1/candles` (bez danych syntetycznych paczki demo).
+* **Instrukcja PDF** `release/Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf` (`tools/make_install_guide.py`): instalacja bota,
+  tryb LIVE, Kronos-base / Chronos-2 / FinCast, rodziny modeli, trening i aktywacja, GARCH w HG09, Centrum treningu, walidacja, menu,
+  aktualizacja i powrót. Podręczniki administratora / użytkownika: rozdział 1.39.
+* Testy: `test_live_start.py`, `test_sh_pack.py` (GARCH), `test_ui_galaxy.py`, `test_ui_wtc_chartlab.py`, `test_chartlab_calc.py`
+  (+ `tests/js/chartlab_calc.test.mjs`), `test_install_guide.py`, `test_ui_sh_pack.py` (przełącznik HG09); testy menu przeniesione na `#/neural-city`.
+
 ## 1.38.0 – Pakiet 20 strategii XAUUSD: 10 HEDGING (PMW_HG01–HG10) + 10 SCALPING (PMW_SC01–SC10)
 * **Katalog** (`sh/pack/catalog.py`, `config/sh_strategy_pack_v2.json`): jedno źródło nazw, rodzin, klastrów, grup logiki, TF, parametrów,
   polityk hedge, wersji i hasha wariantu; status walidacji per wariant (bez danych MT5 użytkownika: NOT_VALIDATED). Jawna konwencja

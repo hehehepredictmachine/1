@@ -1112,7 +1112,12 @@ def create_app(rt, port: int) -> FastAPI:
         """Catalog of the 20 variants (one owner of names / TFs / parameters / readiness / validation) + the live evaluation state."""
         from ..sh.pack import catalog as _CAT
         pk = getattr(rt.sh, "pack", None)
-        return {**_CAT.public(), "live": pk.public() if pk is not None else None}
+        out = {**_CAT.public(), "live": pk.public() if pk is not None else None}
+        try:                                              # 1.39: VOL_GARCH state for HG09 (volatility_method VOL_GARCH) - read only
+            out["garch"] = rt.sh.garch_artifact(rt.sh.instrument() or "XAUUSD")
+        except Exception as exc:  # noqa: BLE001 - the catalog stays available
+            out["garch"] = {"status": "ERROR", "error": type(exc).__name__}
+        return out
 
     @app.post("/api/v1/sh/strategies/config")
     def sh_strategies_config(body: dict = Body(...)):

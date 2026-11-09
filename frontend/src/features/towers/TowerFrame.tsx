@@ -41,11 +41,11 @@ export default function TowerFrame({ page, accent, title, subtitle, tagline, tab
   return (
     <div className={cls("tw", s.synthetic && "tw-syn")} style={{ "--acc": accent } as CSSProperties} data-testid={testid}>
       <header className="tw-top" data-testid="tw-top">
-        <a className="tw-logo" href={href("menu")} aria-label="PepeMarketWizard – wróć do menu głównego (stół neuronowy)" data-testid="tw-logo">
+        <a className="tw-logo" href={href("menu")} aria-label="PepeMarketWizard – wróć do menu głównego (Galaxy)" data-testid="tw-logo">
           <span className="tw-logo-mark" aria-hidden="true">♛</span>
           <span><b>Pepe<em>Market</em><i>Wizard</i></b><small>NEURAL TRADING COMMAND CENTER</small></span></a>
         <nav className="tw-nav" aria-label="Wieże PepeMarketWizard">
-          <a className="tw-nav-i home" href={href("menu")} data-testid="tw-nav-menu" title="Menu główne – stół neuronowy">← Stół</a>
+          <a className="tw-nav-i home" href={href("menu")} data-testid="tw-nav-menu" title="Menu główne – Galaxy">← Galaxy</a>
           {TOWERS.map((t) => (
             <a key={t.key} href={href(t.page)} className={cls("tw-nav-i", t.page === page && "on")} aria-current={t.page === page ? "page" : undefined}
               data-testid={`tw-nav-${t.key}`} style={{ "--c": t.color } as CSSProperties} title={`${t.name} → ${t.panel}`}>

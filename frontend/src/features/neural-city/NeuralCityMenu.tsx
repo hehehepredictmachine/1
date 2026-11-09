@@ -166,7 +166,7 @@ export default function NeuralCityMenu({ route }: { route: Route }) {
 
   // intro (after JOIN THE CULT): neural flight -> table; played once (the URL loses ?intro=1), Esc / click skips
   useEffect(() => {
-    if (route.params.get("intro") === "1") navigate("menu", { replace: true });
+    if (route.params.get("intro") === "1") navigate("neural-city", { replace: true });
     if (phase !== "INTRO") return;
     const t = window.setTimeout(() => setPhase("IDLE"), prefs.quality === "balanced" ? 1700 : 2600);
     return () => clearTimeout(t);

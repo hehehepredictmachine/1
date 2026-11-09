@@ -34,7 +34,7 @@ OLD_LINKS = {   # hash -> selector of the screen (unchanged ids since 1.10-1.28)
     "#/neural": "main.page[data-page=neural]", "#/struktura": "main.page[data-page=struktura]", "#/testy": "main.page[data-page=testy]",
     "#/badania": "main.page[data-page=badania]", "#/formacje": "main.page[data-page=formacje]", "#/dane": "main.page[data-page=dane]",
     "#/diagnostyka": "main.page[data-page=diagnostyka]", "#/ustawienia": "main.page[data-page=ustawienia]",
-    "#/menu": "[data-testid=page-menu]", "#/precision": "[data-testid=wizard-shell][data-page=precision]",
+    "#/menu": "[data-testid=galaxy-menu]", "#/precision": "[data-testid=wizard-shell][data-page=precision]",
     "#/dyscypline": "[data-testid=wizard-shell][data-page=dyscypline]", "#/profits": "[data-testid=wizard-shell][data-page=profits]",
     "#/trading-intelligence": "[data-testid=terminal-shell]", "#/ai-neural-lab": "[data-testid=terminal-shell]", "#/system-control": "[data-testid=terminal-shell]",
 }

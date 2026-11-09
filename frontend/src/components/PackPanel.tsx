@@ -4,7 +4,7 @@
 // A WAIT / NO_TRADE evaluation is never drawn as an entry; the score is a heuristic, probabilities stay "brak" without a calibrated model.
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type Time } from "lightweight-charts";
-import { apiGet } from "../api";
+import { apiGet, apiSend } from "../api";
 import { fmtNum } from "../util";
 
 const TONE: Record<string, string> = { READY: "ok", WAIT: "warn", NO_TRADE: "bad", INVALIDATED: "bad", EXPIRED: "muted", ACTIVE: "ok", CLOSED: "muted",
@@ -126,6 +126,7 @@ export default function PackPanel() {
       </div>
       <p className="muted small">{cat.note}. SC: TP1 ≥ 25 pips, RR planu netto ≥ 2; HG: TP1 ≥ 40 pips, RR koszyka netto ≥ 3 (scenariusz celu). Dokładnie dwa TP (50/50), bez BE.
         Status walidacji per wariant – bez danych MT5 użytkownika: NOT_VALIDATED.</p>
+      <Hg09Vol cat={cat} reload={() => apiGet("/api/v1/sh/strategies").then(setCat).catch(() => undefined)} />
       <div className="tbl-wrap"><table className="tbl small" data-testid="pack-table">
         <thead><tr><th>ID</th><th>Strategia</th><th>Rodzina / klaster</th><th>TF sygnału</th><th>Stan (na TF)</th><th>Polityka</th><th>Walidacja</th></tr></thead>
         <tbody>{items.map((v: any) => (
@@ -183,5 +184,28 @@ export default function PackPanel() {
             </tbody></table></div>
           </div>
         </div>)}
+    </div>);
+}
+
+/** 1.39: volatility of PMW_HG09 – standard deviation of 60 M5 log returns or the active VOL_GARCH model (no silent fallback: without a
+ *  READY GARCH artifact HG09 returns NO_DATA GARCH_NOT_READY). The switch saves a validated, versioned override of the variant. */
+function Hg09Vol({ cat, reload }: { cat: any; reload: () => void }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const v = (cat.items || []).find((x: any) => x.strategy_id === "PMW_HG09");
+  if (!v) return null;
+  const cur = v.params?.volatility_method ?? "STD_LOGRET_60_M5";
+  const g = cat.garch || {};
+  const set = (m: string) => apiSend("POST", "/api/v1/sh/strategies/config", { variants: { PMW_HG09: { params: { volatility_method: m } } } })
+    .then(() => { setMsg(`PMW_HG09: zmienność ${m}`); reload(); }).catch((e: any) => setMsg(`Nie zapisano: ${String(e?.message || e)}`));
+  return (
+    <div className="chips-row small" data-testid="pack-hg09-vol">
+      <b>PMW_HG09 – zmienność:</b>
+      {["STD_LOGRET_60_M5", "VOL_GARCH"].map((m) => <button key={m} className={`btn tiny ${cur === m ? "" : "ghost"}`} aria-pressed={cur === m}
+        onClick={() => cur !== m && set(m)} data-testid={`pack-hg09-${m}`}>{m === "VOL_GARCH" ? "GARCH (VOL_GARCH)" : "odchylenie 60 × M5"}</button>)}
+      <span className="muted" data-testid="pack-garch-state">GARCH: <B s={g.status === "READY" ? "PASS" : "WAIT"} t={g.status} /> {g.status === "READY"
+        ? `run ${g.run_id} · ω ${fmtNum(g.omega, 4)} · α ${fmtNum(g.alpha, 3)} · β ${fmtNum(g.beta, 3)}`
+        : `${g.status ?? "—"} – wytrenuj i aktywuj VOL_GARCH (Centrum treningu → Rodziny modeli albo 35_RODZINY_MODELI.bat)`}</span>
+      {cur === "VOL_GARCH" && g.status !== "READY" && <span className="bad small">HG09 zwraca NO_DATA (GARCH_NOT_READY), dopóki model nie jest aktywny.</span>}
+      {msg && <span className="small" role="status">{msg}</span>}
     </div>);
 }

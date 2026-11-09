@@ -236,7 +236,7 @@ class TestWizardUI(unittest.TestCase):
                 p.wait_for_selector(f"[data-testid=page-{t}]", timeout=30000)
                 p.wait_for_timeout(300)
             p.click("[data-testid=wz-logo]")                                                     # logo -> CULT Main Menu
-            p.wait_for_selector("[data-testid=page-menu]", timeout=20000)
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=20000)
             p.wait_for_timeout(500)
             p.evaluate("location.hash = '#/precision'")
             p.wait_for_selector("[data-testid=page-precision]", timeout=30000)

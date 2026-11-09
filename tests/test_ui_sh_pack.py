@@ -32,6 +32,9 @@ class TestPackUI(unittest.TestCase):
             c, pl = srv.call("/api/v1/plans/chart?layer=PACK&symbol=BTCUSD-")
             self.assertEqual(pl["plans"], [])                                     # never another symbol's levels
             self.assertEqual(srv.call("/api/v1/sh/strategies/config", {"variants": {"PMW_HG01": {"hedge": {"ratio": 0.9}}}})[0], 400)
+            # 1.39 GARCH for HG09: state exposed read-only, an unknown method is refused (no model trained in the demo -> not READY)
+            self.assertNotEqual(cat["garch"]["status"], "READY")
+            self.assertEqual(srv.call("/api/v1/sh/strategies/config", {"variants": {"PMW_HG09": {"params": {"volatility_method": "EWMA"}}}})[0], 400)
             c, stt = srv.call("/api/v1/sh/pack/stats")
             self.assertEqual((c, stt["items"]), (200, []))
             self.assertEqual(srv.call("/api/v1/sh/pack/stats?strategy_id=XX")[0], 400)
@@ -64,6 +67,12 @@ class TestPackUI(unittest.TestCase):
             p.click("[data-testid=pack-fam-HEDGING]")
             p.wait_for_timeout(500)
             hg_rows = p.locator("[data-testid^=pack-row-PMW_HG]").count()
+            # 1.39: HG09 volatility switch -> saved override, the GARCH state is shown honestly (not READY in the demo)
+            p.click("[data-testid=pack-hg09-VOL_GARCH]")
+            p.wait_for_selector("[data-testid=pack-hg09-VOL_GARCH][aria-pressed=true]", timeout=10000)
+            hg09 = p.locator("[data-testid=pack-hg09-vol]").inner_text()
+            p.click("[data-testid=pack-hg09-STD_LOGRET_60_M5]")
+            p.wait_for_selector("[data-testid=pack-hg09-STD_LOGRET_60_M5][aria-pressed=true]", timeout=10000)
             p.goto(srv.base + "/#/wykresy")
             p.wait_for_selector("[data-act=pmw-pack]", timeout=60000)
             p.locator("[data-act=pmw-pack]").first.click()
@@ -71,6 +80,7 @@ class TestPackUI(unittest.TestCase):
             ctrl = min(1, p.locator("[data-testid=pack-controls]").count())
             br.close()
         self.assertEqual(hg_rows, 10)
+        self.assertIn("GARCH_NOT_READY", hg09)
         return {"errors": errors, "rows": rows, "detail": "PMW_SC01" in detail, "pack_controls": ctrl}
 
 

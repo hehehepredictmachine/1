@@ -126,8 +126,8 @@ class TestCultUI(unittest.TestCase):
         return self.api("/api/v1/state")
 
     def menu(self, p):
-        """Main menu (Neural City) without the intro (a direct link skips the launcher)."""
-        p.goto(BASE + "/#/menu")
+        """Neural City menu (#/neural-city since 1.39) without the intro (a direct link skips the launcher)."""
+        p.goto(BASE + "/#/neural-city")                                                  # 1.39: Neural City moved here
         p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
 
     def no_hscroll(self, p):
@@ -356,7 +356,7 @@ class TestCultUI(unittest.TestCase):
                     p.wait_for_selector(sel, timeout=30000)
                     p.wait_for_timeout(250)
                 p.click("[data-testid=cu-logo]")
-                p.wait_for_selector("[data-testid=page-menu]", timeout=20000)
+                p.wait_for_selector("[data-testid=galaxy-menu]", timeout=20000)
             # one live socket for the whole panel: screens never open their own. A reconnect of that one socket (the client closes it
             # by itself when it sees a gap in the event sequence and asks for the missing events / a resync) is allowed - it is never
             # a second socket at the same time, and it always follows a close of the previous one.
