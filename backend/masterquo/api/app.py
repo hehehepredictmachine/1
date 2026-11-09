@@ -2089,7 +2089,7 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(409, r.get("reason"))
         return r
 
-    # ------------------------------------------------------------------ 1.37 Chronos-2 / FinCast (+ three-model comparison with Kronos)
+    # ------------------------------------------------------------------ 1.37 Chronos-2 / 1.40 Granite TTM (+ three-model comparison with Kronos)
     _TS_TF = ("M1", "M3", "M5", "M15", "M30", "H1")
 
     def _ts_tf(tf: str) -> str:
@@ -2098,15 +2098,39 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
         return tf
 
-    def _ts_mid(m: str) -> str:
+    def _ts_mid(m: str, history: bool = False) -> str:
         m = (m or "").lower()
-        if m not in ("chronos2", "fincast"):
-            raise HTTPException(400, "MODEL_NOT_ALLOWED")
+        if m not in ("chronos2", "granite_ttm") and not (history and m == "fincast"):       # fincast: RETIRED in 1.40 - history only
+            raise HTTPException(400, "MODEL_RETIRED" if m == "fincast" else "MODEL_NOT_ALLOWED")
         return m
+
+    # ------------------------------------------------------------------ 1.40 Memory Governor / AI scheduler (resources)
+    @app.get("/api/v1/resources")
+    def resources_get():
+        """RAM of the computer, memory of the bot + every model process (current / peak), level, profile, inference p50 / p95, events."""
+        return rt.governor.public()
+
+    @app.put("/api/v1/resources/profile")
+    def resources_profile(body: dict = Body(...)):
+        from ..resources.governor import PROFILE_KEYS
+        prof = str(body.get("profile") or "")
+        if prof not in ("LOW_MEMORY_16GB", "ECO", "BALANCED", "MANUAL"):
+            raise HTTPException(400, "PROFILE_UNKNOWN")
+        manual = body.get("manual") or {}
+        if not isinstance(manual, dict) or any(k not in PROFILE_KEYS for k in manual):
+            raise HTTPException(400, "MANUAL_KEYS_UNKNOWN")
+        before = rt.cfg.get().resources.model_dump(mode="json")
+        try:
+            rt.cfg.update({"resources": {"profile": prof, "manual": manual if prof == "MANUAL" else before.get("manual", {})}})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_RESOURCES: {exc}"[:300]) from exc
+        rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
+        rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
+        return rt.governor.public()
 
     @app.get("/api/v1/models/foundation")
     def tsfm_status():
-        """Status of the three foundation models in one place: Kronos (existing service) + Chronos-2 + FinCast."""
+        """Status of the three foundation models in one place: Kronos (existing service) + Chronos-2 + Granite TTM (+ retired FinCast)."""
         from kronos_runtime import lock as _KL
         kr = rt.kronos
         return {**rt.tsfm.public(), "settings": rt.tsfm.settings.get().model_dump(mode="json"),
@@ -2126,7 +2150,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/models/foundation/history")
     def tsfm_history(model: str | None = Query(None), instrument: str = Query("XAUUSD"), tf: str | None = Query(None),
                      limit: int = Query(100, ge=1, le=2000)):
-        return {"items": rt.tsfm.history(_ts_mid(model) if model else None, _th_inst(instrument), _ts_tf(tf) if tf else None, limit)}
+        return {"items": rt.tsfm.history(_ts_mid(model, history=True) if model else None, _th_inst(instrument), _ts_tf(tf) if tf else None, limit)}
 
     @app.put("/api/v1/models/foundation/settings")
     def tsfm_settings_put(body: dict = Body(...)):
@@ -2134,11 +2158,13 @@ def create_app(rt, port: int) -> FastAPI:
             return isinstance(d, dict) and any(k == "use" or has_use(v) for k, v in d.items())
         if has_use(body.get("models")):
             raise HTTPException(400, "USE_ONLY_VIA_/api/v1/models/foundation/use")
+        if any(isinstance(v, dict) and "checkpoint" in v for v in (body.get("models") or {}).values()) or "retired" in body:
+            raise HTTPException(400, "CHECKPOINT_ONLY_VIA_/api/v1/models/foundation/granite/activate")
         try:
             s = rt.tsfm.settings.update(body)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(400, f"INVALID_SETTINGS: {exc}"[:500]) from exc
-        rt.log.info("TSFM", "SETTINGS", "Zmieniono ustawienia Chronos-2/FinCast: " + ", ".join(sorted(body))[:200])
+        rt.log.info("TSFM", "SETTINGS", "Zmieniono ustawienia Chronos-2/Granite TTM: " + ", ".join(sorted(body))[:200])
         return {"ok": True, "settings": s.model_dump(mode="json")}
 
     @app.post("/api/v1/models/foundation/install")
@@ -2172,9 +2198,54 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(409, r.get("reason"))
         return r
 
+    # ---- 1.40 Granite TTM in the Training Center (export, fine-tune job, versions, activation, rollback)
+    @app.get("/api/v1/models/foundation/granite")
+    def granite_get():
+        from ..tsfm import granite_train as _GT
+        c = rt.tsfm.settings.get().models["granite_ttm"]
+        return {"checkpoint": c.checkpoint, "runs": _GT.runs(), "job": rt.tsfm.job("granite_train"),
+                "rule": "trening nie startuje z botem; aktywacja tylko ręczna i tylko z werdyktem IMPROVED_VS_BASE na niewidzianych danych; powrót = BASE"}
+
+    @app.post("/api/v1/models/foundation/granite/train")
+    def granite_train(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        epochs = int(body.get("epochs", 6))
+        if not 1 <= epochs <= 30:
+            raise HTTPException(400, "EPOCHS_OUT_OF_RANGE")
+        trading = getattr(rt.modes, "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
+        r = _GT.start(rt.tsfm, _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), epochs=epochs,
+                      confirm_during_trading=bool(body.get("confirm_during_trading")), trading_active=trading)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/cancel")
+    def granite_cancel():
+        from ..tsfm import granite_train as _GT
+        r = _GT.cancel(rt.tsfm)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/activate")
+    def granite_activate(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        rid = str(body.get("run_id") or "")
+        if not re.match(r"^GTR-[0-9A-Za-z_-]{6,64}$", rid):
+            raise HTTPException(400, "RUN_ID_INVALID")
+        r = _GT.activate(rt.tsfm, rid)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/rollback")
+    def granite_rollback():
+        from ..tsfm import granite_train as _GT
+        return _GT.rollback(rt.tsfm)
+
     @app.get("/api/v1/models/foundation/job/{name}")
     def tsfm_job(name: str):
-        if not re.match(r"^(install|verify)_(chronos2|fincast)$|^validation$", name):
+        if not re.match(r"^(install|verify)_(chronos2|granite_ttm)$|^validation$|^granite_train$", name):
             raise HTTPException(400, "JOB_UNKNOWN")
         return {"job": rt.tsfm.job(name)}
 

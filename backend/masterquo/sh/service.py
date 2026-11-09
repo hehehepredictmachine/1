@@ -307,7 +307,7 @@ class SHService:
     # ------------------------------------------------------------------ 1.38 pack (20 variants) - same pipeline, variant identity
     def pack_cycle(self, inst, spec, q, acc, now, shc, snap) -> list[dict]:
         """20 variants on the shared closed bars of this cycle (no second model process, no separate robot). Model receivers (Kronos,
-        Chronos-2 / FinCast, families) run on READY candidates only, with the family roles; they can only hold READY -> WAIT."""
+        Chronos-2 / Granite TTM, families) run on READY candidates only, with the family roles; they can only hold READY -> WAIT."""
         pk = getattr(self, "pack", None)
         if pk is None:
             return []
@@ -392,13 +392,13 @@ class SHService:
         return KP.apply_to_setup(su, ctx)
 
     def _tsfm(self, su: dict, inst: str, strat: str) -> dict:
-        """1.37 Chronos-2 / FinCast receivers (separate, described). OBSERVE = information; ASSIST / REQUIRED (approved) may only turn
+        """1.37 Chronos-2 / 1.40 Granite TTM receivers (separate, described). OBSERVE = information; ASSIST / REQUIRED (approved) may only turn
         READY into WAIT. A failure here never grants anything: OBSERVE keeps the evaluation, REQUIRED holds it."""
         ts = getattr(self, "tsfm", None)
         if ts is None:
             return su
         from ..tsfm import predictions as TP
-        for mid in ("chronos2", "fincast"):
+        for mid in ("chronos2", "granite_ttm"):
             try:
                 ctx = TP.context(ts, mid, inst, strat, side=su.get("side"))
             except Exception as exc:  # noqa: BLE001

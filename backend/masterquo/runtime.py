@@ -168,11 +168,12 @@ class Runtime:
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
         from .tsfm.service import TsfmService
-        self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # 1.37 Chronos-2 + FinCast: own processes, OBSERVE default
+        self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # Chronos-2 + Granite TTM (1.40, FinCast retired): own processes, OBSERVE default
         self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
+        self._wire_governor()
         self.sh.tsfm = self.tsfm                                                                    # SH receivers (roles per strategy)
         from .tsfm import predictions as _tsfm_pred
-        self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / FinCast
+        self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / Granite TTM
                                     lambda inst: _tsfm_pred.kronos_rows(self.kronos, inst)]          # Kronos: recorded as OBSERVE only
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
@@ -190,6 +191,24 @@ class Runtime:
         self._stop = threading.Event()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+
+    def _wire_governor(self) -> None:
+        """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
+        import os as _os
+        import time as _time
+        from .resources.governor import HEAVY, Governor
+        self.governor = Governor(self.cfg, self.log)
+        self.tsfm.governor = self.governor
+        self.kronos.governor = self.governor
+        self.governor.register("bot", "bot", lambda: _os.getpid())
+        k = self.kronos
+        self.governor.register("kronos", "heavy", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
+                               release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
+        for mid, w in self.tsfm.workers.items():
+            self.governor.register(mid, "heavy" if mid in HEAVY else "light",
+                                   (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
+                                   release=(lambda w=w, mid=mid: (self.tsfm.running is None or self.tsfm.running[0] != mid) and w.kill()),
+                                   idle=(lambda w=w, mid=mid: 0.0 if (self.tsfm.running and self.tsfm.running[0] == mid) else _time.monotonic() - w.last_used))
 
     def _publish_prefs(self) -> None:
         try:
@@ -285,7 +304,8 @@ class Runtime:
         self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
         self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
         self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
-        self.tsfm.start()                       # Chronos-2 / FinCast: forecasts after new closed bars (nothing until installed)
+        self.tsfm.start()                       # Chronos-2 / Granite TTM: forecasts after new closed bars (nothing until installed)
+        self.governor.start()                   # 1.40 Memory Governor: measurement every 15 s, idle release of heavy models under pressure
         self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -308,6 +328,8 @@ class Runtime:
     def stop(self) -> None:
         self.telegram.stop()
         self._stop.set()
+        if getattr(self, "governor", None) is not None:
+            self.governor.stop()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
         self.ml.stop()
         self.forecast.stop()

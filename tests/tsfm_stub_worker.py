@@ -32,9 +32,14 @@ for line in sys.stdin:
         pt = [last + step * (i + 1) for i in range(n)]
         qs = sorted(set(req.get("quantiles") or [0.1, 0.5, 0.9]) | {0.5})
         vals = {f"{q:g}": [p + (q - 0.5) for p in pt] for q in qs}
-        r = {"ok": True, "point": pt, "point_kind": "median" if model == "chronos2" else "mean", "median": pt,
-             "quantiles": {"levels": qs, "values": vals, "crossing_steps": 0}, "ms": 1.5, "device": "cpu", "context_bars": len(req["close"]),
-             "profile": req.get("profile"), "input_hash": "stub"}
+        if model == "granite_ttm":                                     # point forecast only (as the real Granite TTM engine)
+            r = {"ok": True, "point": pt, "point_kind": "point", "median": None, "quantiles": None, "ms": 0.5, "device": "cpu",
+                 "context_bars": len(req["close"]), "profile": req.get("profile"), "input_hash": "stub",
+                 "normalization": {"method": "zscore_context_window", "mean": last, "std": 1.0}}
+        else:
+            r = {"ok": True, "point": pt, "point_kind": "median", "median": pt,
+                 "quantiles": {"levels": qs, "values": vals, "crossing_steps": 0}, "ms": 1.5, "device": "cpu", "context_bars": len(req["close"]),
+                 "profile": req.get("profile"), "input_hash": "stub"}
     elif cmd == "quit":
         print(json.dumps({"ok": True, "id": req.get("id")}), flush=True)
         break

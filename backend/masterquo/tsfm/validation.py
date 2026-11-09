@@ -1,4 +1,5 @@
-"""Walk-forward comparison of Kronos-base, Chronos-2 and FinCast on the SAME forecast origins (PMW-TSFM-WF-1).
+"""Walk-forward comparison of Kronos-base, Chronos-2 and Granite TTM on the SAME forecast origins (PMW-TSFM-WF-1; 1.40: Granite TTM
+replaced FinCast - FinCast reports stay readable, Granite TTM is validated from zero: its own model id, fingerprint and binding).
 
 Data: closed bars of the user's MT5 history through the existing bridge (quality-checked, no filling). Origins every H bars (the label
 windows never overlap: no leakage across the DEV / TEST boundary), chronological split DEV (first 60 %) / TEST (last 40 %); the target
@@ -31,7 +32,7 @@ from .settings import MODEL_IDS, tsfm_dir
 
 SCHEMA = "PMW-TSFM-WF-1"
 BINDING_SCHEMA = "PMW-TSFM-BINDING-1"
-CAVEAT = ("Zakres danych pretreningu modeli (Kronos, Chronos-2, FinCast) nie jest znany z dokładnością do instrumentu i dnia – nie można "
+CAVEAT = ("Zakres danych pretreningu modeli (Kronos, Chronos-2, Granite TTM) nie jest znany z dokładnością do instrumentu i dnia – nie można "
           "wykluczyć, że publiczne notowania z okresu testu były w danych treningowych autorów. Wyniki dotyczą prognozy ceny, nie wyniku transakcji.")
 
 
@@ -51,7 +52,7 @@ def binding(svc, mid: str, inst: str, tf: str) -> dict:
     return {"schema": BINDING_SCHEMA, "model": mid, "fingerprint": L.fingerprint(mid), "instrument": inst, "symbol": sym, "data_kind": kind,
             "timeframe": tf, "horizon_bars": int(s.horizon_bars[tf]), "context_len": c.context_len, "profile": c.profile,
             "direction_band_atr": s.direction_band_atr, "direction_band_min_points": s.direction_band_min_points, "quantiles": s.quantiles,
-            "validation_code": SCHEMA}
+            "checkpoint": c.checkpoint, "validation_code": SCHEMA}
 
 
 def binding_diff(stored: dict | None, current: dict) -> list[str]:

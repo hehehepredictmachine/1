@@ -1,10 +1,10 @@
-"""Chronos-2 and FinCast forecasts in the bot (1.37) - OBSERVE by default, never an order.
+"""Chronos-2 and Granite TTM forecasts in the bot (1.37; 1.40: Granite TTM replaced FinCast) - OBSERVE by default, never an order.
 
 Data path (the SAME as Kronos - no second terminal connection, no new data source):
   closed bars of the existing MT5 bridge -> kronos.quality.check (closed only, order, duplicates, gaps, NaN/Inf, OHLC geometry, staleness)
   -> kronos.calendar (future candle times from the broker's real session slots: no weekend / break candles) -> ONE immutable snapshot
   per (instrument, timeframe, last closed bar) shared by both models -> JSON line -> long-lived model process (`python -m
-  tsfm_runtime.worker` from .venv_chronos2 / .venv_fincast, weights loaded once) -> forecast -> stored BEFORE its outcome.
+  tsfm_runtime.worker` from .venv_chronos2 / .venv_granite, weights loaded once) -> forecast -> stored BEFORE its outcome.
 
 Load control: a forecast only after a NEW closed bar of an enabled (model, instrument, timeframe) or on demand; one bounded queue for both
 models processed by ONE executor thread (the models never run at the same time -> no shared-GPU OOM, CPU threads not oversubscribed); a
@@ -13,7 +13,7 @@ heartbeat (ping) checks an idle process; the MT5 bridge, the UI and the order pa
 A result that arrives after a NEWER bar closed is stored but never shown as current (`superseded`). Failures (not installed, checksum,
 wrong checkpoint, out of memory, timeout, MT5 disconnected, stale / bad data, uncertain calendar) give a state with a reason and NO value.
 
-Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 median / FinCast mean (point_kind);
+Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 median / Granite TTM point (point_kind);
 model quantiles (uncalibrated on the user's data); direction UP / FLAT / DOWN from the point at H by the explicit neutral band rule
 (the same rule as Kronos). No probability is derived from it.
 """
@@ -37,20 +37,21 @@ from ..kronos import calendar as CAL  # noqa: F401 - used through the shared hel
 from ..kronos import quality as Q
 from ..kronos.service import KronosService
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
-from .settings import MODEL_IDS, PATHS, SettingsStore, default_weights_root, find_python, tsfm_dir
+from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
 
 log = logging.getLogger("masterquo.tsfm")
 
-STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_FINCAST.bat)",
+STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
              "NO_WEIGHTS": "brak zweryfikowanych wag modelu", "DISABLED": "model wyłączony w ustawieniach", "INSTALLING": "instalacja w toku",
              "STARTING": "uruchamianie procesu modelu", "LOADING": "ładowanie wag (raz na proces)", "READY": "model załadowany",
              "ERROR": "błąd modelu", "IDLE": "zainstalowany – proces uruchomi się przy pierwszej prognozie"}
-TARGET_PL = {"READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
+TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pamięci)", "READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
              "MODEL_UNAVAILABLE": "model niedostępny", "NO_SYMBOL": "brak symbolu brokera", "MT5_DISCONNECTED": "MT5 rozłączony",
              "STALE": "dane nieaktualne", "BLOCK": "dane odrzucone (jakość)", "WARMUP": "za mało świec", "ERROR": "błąd", "DISABLED": "wyłączony",
              "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
-NAMES = {"chronos2": "Chronos-2", "fincast": "FinCast"}
+NAMES = {"chronos2": "Chronos-2", "granite_ttm": "Granite TTM", "fincast": "FinCast (wycofany)"}
+RETIRED_PL = "wycofany w 1.40 – zastąpiony przez Granite TTM; historia prognoz zachowana, model nie jest uruchamiany"
 
 
 class ModelWorker:
@@ -70,6 +71,7 @@ class ModelWorker:
         self.last_ok = 0.0
         self.timings: list[float] = []
         self.errlog = None
+        self.last_used = time.monotonic()            # last forecast request (heartbeat pings do not count) - idle release by the governor
 
     def set_state(self, status: str, reason: str | None = None, code: str | None = None) -> None:
         self.state = {"status": status, "code": code, "reason": reason, "updated_at": iso(utcnow())}
@@ -131,7 +133,8 @@ class ModelWorker:
     def ensure(self) -> bool:
         s = self.svc.settings.get()
         c = s.models[self.mid]
-        key = (str(self.svc.weights_root()), c.device, c.cpu_threads)
+        threads = self.svc.threads_for(self.mid, c)
+        key = (str(self.svc.weights_root()), c.device, threads, c.checkpoint)
         if self.proc and self.proc.poll() is None and self.load_info and self.load_key == key:
             return True
         if self.proc and self.load_key != key:
@@ -159,7 +162,6 @@ class ModelWorker:
             errlog.close()
             return self.fail("WORKER_START", f"nie można uruchomić {py}: {exc}")
         self.starts += 1
-        threads = c.cpu_threads or max(1, (os.cpu_count() or 2) - 1)
         try:
             hello = self.ask({"cmd": "hello"}, 120)
             if not hello.get("ok"):
@@ -167,14 +169,17 @@ class ModelWorker:
             self.info = {k: hello.get(k) for k in ("runtime", "versions", "cuda", "pid")} | {"python": py}
             self.set_state("LOADING", STATUS_PL["LOADING"])
             t0 = time.monotonic()
-            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": c.device, "threads": threads, "verify_files": True},
-                         c.load_timeout_s)
+            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": c.device, "threads": threads, "verify_files": True,
+                          "checkpoint": c.checkpoint, "finetune_dir": str(tsfm_dir() / "finetuned" / self.mid)}, c.load_timeout_s)
         except (TimeoutError, RuntimeError, ValueError) as exc:
             return self.fail("WORKER_TIMEOUT" if isinstance(exc, TimeoutError) else "WORKER", str(exc))
         if not r.get("ok"):
             return self.fail(r.get("code") or "LOAD_ERROR", r.get("error"))
         self.load_info, self.load_key, self.backoff = r["info"], key, 30.0
         self.load_info["cold_start_s"] = round(time.monotonic() - t0, 1)
+        gov = getattr(self.svc, "governor", None)
+        if gov is not None:
+            gov.record(self.mid, load_ms=r["info"].get("load_ms"))
         self.set_state("READY", STATUS_PL["READY"])
         self.last_ok = time.monotonic()
         self.svc.applog.info("TSFM", "LOADED", f"{NAMES[self.mid]} załadowany: {r['info'].get('params')} parametrów, urządzenie "
@@ -257,6 +262,15 @@ class TsfmService:
         for p in list(self._job_procs.values()):
             if p.poll() is None:
                 p.terminate()
+
+    def threads_for(self, mid: str, c) -> int:
+        """CPU threads of a model process: the explicit setting, else the resource profile (Memory Governor), else all cores but one."""
+        if c.cpu_threads:
+            return int(c.cpu_threads)
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            return gov.threads_for(mid)
+        return max(1, (os.cpu_count() or 2) - 1)
 
     def weights_root(self) -> Path:
         s = self.settings.get()
@@ -455,7 +469,23 @@ class TsfmService:
         s = self.settings.get()
         c = s.models[mid]
         w = self.workers[mid]
+        gov = getattr(self, "governor", None)
+        loaded = bool(w.proc and w.proc.poll() is None and w.load_info)
+        if gov is not None:
+            ok, why = gov.admit(mid, loaded=loaded)
+            if not ok:
+                ms.update(state="RESOURCE_PAUSED", reason=why)                  # never a neutral value: the forecast is simply not there
+                return None
         ms.update(state="RUNNING", reason=None)
+        w.last_used = time.monotonic()
+        with (gov.heavy(mid) if gov is not None else _nullslot()) as slot:
+            if not slot:
+                ms.update(state="RESOURCE_PAUSED", reason="slot ciężkiej inferencji zajęty zbyt długo – prognoza przy następnej świecy")
+                return None
+            return self._run_job_loaded(job, k, ms, s, c, w)
+
+    def _run_job_loaded(self, job, k, ms, s, c, w) -> dict | None:
+        mid, inst, tf = k
         if not w.ensure():
             ms.update(state="MODEL_UNAVAILABLE", reason=w.state.get("reason"))
             return None
@@ -495,7 +525,10 @@ class TsfmService:
             ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
             return None
         w.timings.append(float(r.get("ms") or 0))
-        w.last_ok = time.monotonic()
+        w.last_ok = w.last_used = time.monotonic()
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            gov.record(mid, ms=r.get("ms"))
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo, ctx)
         tgt = self._target((inst, tf))
         superseded = tgt.get("bar_key") not in (None, job["bar_key"])           # a newer bar closed while the model was computing
@@ -540,7 +573,10 @@ class TsfmService:
         pin = L.model(mid)
         return {"id": uuid.uuid4().hex[:16], "model_id": mid, "model_name": pin["name"], "variant": pin["variant"], "model_revision": pin["revision"],
                 "fingerprint": L.fingerprint(mid), "params": load.get("params"), "profile": r.get("profile") or "CLOSE_V1",
-                "preprocessing": "PMW-TSFM-PRE-1 (zamknięte świece z kontroli jakości, bez normalizacji po stronie bota, bez uzupełniania luk)",
+                "preprocessing": ("PMW-TSFM-PRE-2 (zamknięte świece z kontroli jakości, bez uzupełniania luk; normalizacja z-score wyłącznie z okna "
+                                  "kontekstu w procesie modelu, odwracana na wyjściu)") if mid == "granite_ttm" else
+                "PMW-TSFM-PRE-1 (zamknięte świece z kontroli jakości, bez normalizacji po stronie bota, bez uzupełniania luk)",
+                "normalization": r.get("normalization"), "checkpoint": load.get("checkpoint") or "BASE",
                 "feature_schema": f"TSFM_{r.get('profile') or 'CLOSE_V1'}", "snapshot_id": job["snapshot_id"], "instrument": job["instrument"],
                 "symbol": job["symbol"], "data_source": kind_pl, "data_kind": kind, "timeframe": tf, "horizon_bars": H, "context_bars": ctx,
                 "created_at": iso(utcnow()), "last_bar_open_utc": last["open_utc"],
@@ -554,7 +590,8 @@ class TsfmService:
                 "band_rule": f"bocznie, gdy |zmiana| ≤ max({s.direction_band_atr} × ATR14({tf}), {s.direction_band_min_points} × point)",
                 "atr14": a, "point": pt, "digits": digits, "device": r.get("device"), "compute_ms": r.get("ms"), "input_hash": r.get("input_hash"),
                 "freq_class": r.get("freq_class"), "quality": job["quality"], "calendar": cinfo, "state": "READY",
-                "calibration": {"status": "UNCALIBRATED", "note": "kwantyle modelu nie były kalibrowane na danych brokera"},
+                "calibration": {"status": "UNCALIBRATED", "note": "kwantyle modelu nie były kalibrowane na danych brokera" if r.get("quantiles")
+                                else "prognoza punktowa – brak kwantyli; nie jest prawdopodobieństwem"},
                 "mode": "SHADOW", "execution_permission": False,
                 "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem"}
 
@@ -746,7 +783,16 @@ class TsfmService:
                 "quantiles": s.quantiles, "queue": [list(k) for k in self.queue], "running": list(self.running) if self.running else None,
                 "counters": dict(self.counters), "settings_error": self.settings.load_error,
                 "jobs": {"validation": (lambda j: j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})(self.jobs.get("validation"))},
-                "memory_note": "FinCast 1B potrzebuje ok. 8 GB RAM w szczycie ładowania (CPU, float32); Chronos-2 ok. 0,9 GB; Kronos-base ok. 1,1 GB"}
+                "retired": {k: {"name": NAMES.get(k, k), "status": "RETIRED", "status_pl": RETIRED_PL, "history_count": self._count(k),
+                                "settings": (s.retired.get(k) or {}).get("settings")} for k in RETIRED},
+                "settings_history": self.settings.history(20),
+                "memory_note": "pomiar procesów modeli: panel Zasoby (Memory Governor); Granite TTM ok. 0,35 GB, Chronos-2 ok. 1 GB, Kronos-base ok. 1,1 GB"}
+
+    def _count(self, mid: str) -> int:
+        try:
+            return int(self.db.one("SELECT COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=?", (mid,))["n"])
+        except Exception:  # noqa: BLE001
+            return 0
 
     def _publish(self) -> None:
         try:
@@ -900,6 +946,14 @@ class TsfmService:
         self.settings.update({"models": {mid: {"use": {path: {"use": use, "timeframe": tf, "validation_report": ids, "confirmed_at": iso(utcnow())}}}}})
         self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = {use} ({tf}), raporty {ids}.")
         return {"ok": True, "use": use, "reports": ids}
+
+
+class _nullslot:
+    def __enter__(self):
+        return True
+
+    def __exit__(self, *a):
+        return False
 
 
 def _mean(it) -> float | None:

@@ -13,7 +13,8 @@ Known alias groups found in the 1.33/1.34 code (docs/quant/INVENTORY.md lists al
 * family SEQ_GRU_EVENT, SH row mm_event_engine and MM artifact event_engine_dir3 are ONE model -> `mm:event_engine_dir3`;
 * SH row gold_forecast and the panel keys gold_candles_5m/15m/30m are one model with three horizons -> `forecast:gold_candles`;
 * SH row kronos and model_name Kronos-base -> `kronos:Kronos-base` (1.37; historical Kronos-small rows -> `kronos:Kronos-small`);
-* SH rows chronos2 / fincast and model_name Chronos-2 / FinCast -> `tsfm:chronos2` / `tsfm:fincast` (1.37);
+* SH rows chronos2 / granite_ttm and model_name Chronos-2 / Granite TTM -> `tsfm:chronos2` / `tsfm:granite_ttm` (1.37, 1.40);
+  `tsfm:fincast` stays as a HISTORY id (FinCast retired in 1.40 - old records keep it, it is never given to Granite TTM);
 * SH row th_direction is a GROUP (all active trainhub packages), SH rows lab / si_move are GROUPS of several families.
 """
 from __future__ import annotations
@@ -43,7 +44,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "kronos:Kronos-base": ("kronos", "Kronos-base", "KRONOS_BASE"),
     "kronos:Kronos-small": ("Kronos-small", "KRONOS_SMALL"),          # history only (used until 1.36.0)
     "tsfm:chronos2": ("chronos2", "Chronos-2", "CHRONOS2"),
-    "tsfm:fincast": ("fincast", "FinCast", "FINCAST"),
+    "tsfm:granite_ttm": ("granite_ttm", "Granite TTM", "GRANITE_TTM"),
+    "tsfm:fincast": ("fincast", "FinCast", "FINCAST"),               # history only (1.37-1.39, retired in 1.40)
     "sh:tp_model": ("sh_tp_model",),
     "scalp:A_direction": ("scalp_A",),
     "scalp:B_setup_quality": ("scalp_B",),

@@ -38,7 +38,7 @@ class TestLiveStart(unittest.TestCase):
 
     def test_defaults_and_start_mode(self):
         ex = self.cfg.get().execution
-        self.assertEqual((ex.start_mode, ex.live_autobind, self.cfg.get().config_version), ("AUTO_LIVE", True, 14))
+        self.assertEqual((ex.start_mode, ex.live_autobind, self.cfg.get().config_version), ("AUTO_LIVE", True, 15))
         self.assertEqual(self.mm.mode, "PAPER")                       # the manager itself does not change the mode ...
         self.assertEqual(self.mm.apply_start_mode(), "AUTO_LIVE")     # ... the runtime applies start_mode on a real terminal
         self.assertEqual(self.cfg.get().execution.mode, "AUTO_LIVE")
@@ -77,9 +77,27 @@ class TestLiveStart(unittest.TestCase):
         p = paths.data_dir() / "config.json"
         p.write_text(json.dumps({"config_version": 13, "execution": {"mode": "PAPER"}}), encoding="utf-8")
         c = ConfigStore()
-        self.assertEqual((c.get().config_version, c.get().execution.start_mode), (14, "AUTO_LIVE"))
+        self.assertEqual((c.get().config_version, c.get().execution.start_mode), (15, "AUTO_LIVE"))
         self.assertTrue((paths.data_dir() / "config.v13.bak.json").exists())
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConfigV15(unittest.TestCase):
+    def test_v14_to_v15_resources_backup(self):
+        import json
+        from pathlib import Path
+        from _env import TempData
+        from masterquo.config import ConfigStore
+        td = TempData()
+        try:
+            p = Path(td.dir) / "config.json"
+            raw = {"config_version": 14, "execution": {"start_mode": "SIGNALS", "live_autobind": False}, "first_run_completed": True}
+            p.write_text(json.dumps(raw), encoding="utf-8")
+            c = ConfigStore(p).get()
+            self.assertEqual((c.config_version, c.resources.profile, c.execution.start_mode), (15, "LOW_MEMORY_16GB", "SIGNALS"))
+            self.assertEqual(json.loads(p.with_name("config.v14.bak.json").read_text(encoding="utf-8"))["config_version"], 14)
+        finally:
+            td.close()

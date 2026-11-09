@@ -1,7 +1,7 @@
-"""Chronos-2 / FinCast in the prediction contract (PMW-PRED-2), in the decision coordinator (ACTIVE) and in SCALPING / HEDGING (1.37).
+"""Chronos-2 / Granite TTM in the prediction contract (PMW-PRED-2), in the decision coordinator (ACTIVE) and in SCALPING / HEDGING (1.37, 1.40).
 
 Contract rows: task_type REGRESSION, unit "price", task TSFM_CLOSE_H{H}_{TF}; result = point forecast of the close after H bars
-(Chronos-2: median, FinCast: mean - `point_kind`), median, the model quantiles at H, change in price units and %, direction by the
+(Chronos-2: median, Granite TTM: point - `point_kind`), median, the model quantiles at H (Chronos-2 only), change in price units and %, direction by the
 explicit neutral band rule, forecast id. Calibration UNCALIBRATED (model quantiles were never calibrated on the user's data); no
 probability is derived. READY only when the process is loaded AND the forecast belongs to the CURRENT last closed bar; otherwise
 result = null with the exact reason (never 0, never a neutral vote, never an older value marked as fresh).
@@ -29,7 +29,7 @@ USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – bez wpływu na decyzje i zle
 SERVICE_STATE = {"NOT_INSTALLED": "DISABLED", "NO_WEIGHTS": "DISABLED", "DISABLED": "DISABLED", "INSTALLING": "DISABLED", "IDLE": "ERROR",
                  "STARTING": "ERROR", "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR"}
 INCOMPATIBLE_CODES = ("INCOMPATIBLE", "CHECKSUM", "MISSING_DEPENDENCY")
-KNOWS_ONLY = "Chronos-2 i FinCast widzą wyłącznie ceny close zamkniętych świec (Chronos-2 w profilu OHLCV także open/high/low/wolumen) – " \
+KNOWS_ONLY = "Chronos-2 i Granite TTM widzą wyłącznie ceny close zamkniętych świec (Chronos-2 w profilu OHLCV także open/high/low/wolumen) – " \
              "nie znają poziomów płynności, newsów, spreadu, kosztów ani pozycji"
 
 
@@ -45,6 +45,8 @@ def _state(svc, k: tuple) -> tuple[str, str | None]:
         return mapped, w.state.get("reason") or st
     if tv["state"] == "NO_SYMBOL":
         return "DISABLED", tv["reason"]
+    if tv["state"] == "RESOURCE_PAUSED":                          # 1.40 Memory Governor: not computed now -> STALE with the reason, no value
+        return "STALE", f"{tv['state_pl']}: {tv['reason'] or ''}"
     if tv["state"] in ("QUEUED", "RUNNING", "WAITING"):
         return "STALE", f"{tv['state_pl']}: poprzednia prognoza nie dotyczy już ostatniej zamkniętej świecy"
     if tv["state"] in ("STALE", "WARMUP", "BLOCK", "MT5_DISCONNECTED"):
@@ -54,10 +56,13 @@ def _state(svc, k: tuple) -> tuple[str, str | None]:
 
 def _result(fc: dict) -> dict:
     last = fc["path"][-1]
-    return {"last_close": fc["last_close"], "pred_close": fc["pred_close_h"], "point_kind": fc["point_kind"], "median": fc.get("median_close_h"),
-            "quantiles_h": {k[1:]: v for k, v in last.items() if k.startswith("q")}, "delta_price": fc["delta_price"], "delta_pct": fc["delta_pct"],
-            "direction": fc["direction"], "neutral_band": fc["neutral_band"], "forecast_id": fc["id"], "snapshot_id": fc["snapshot_id"],
-            "target_time": fc["target_times"][-1]}
+    out = {"last_close": fc["last_close"], "pred_close": fc["pred_close_h"], "point_kind": fc["point_kind"], "median": fc.get("median_close_h"),
+           "quantiles_h": {k[1:]: v for k, v in last.items() if k.startswith("q") and v is not None}, "delta_price": fc["delta_price"],
+           "delta_pct": fc["delta_pct"], "direction": fc["direction"], "neutral_band": fc["neutral_band"], "forecast_id": fc["id"],
+           "snapshot_id": fc["snapshot_id"], "target_time": fc["target_times"][-1]}
+    if out["median"] is None:                       # point-only model (Granite TTM): no median exists - the field is absent, not null
+        out.pop("median")
+    return out
 
 
 def contract_predictions(svc, inst: str) -> list[dict]:
@@ -79,15 +84,33 @@ def contract_predictions(svc, inst: str) -> list[dict]:
                           model_version=pin["revision"], feature_schema=f"TSFM_{c.profile}", task_type="REGRESSION", task=f"TSFM_CLOSE_H{H}_{tf}",
                           horizon_bars=H, unit="price", calibration={"method": None, "status": "UNCALIBRATED"},
                           extra={"model_key": f"{mid}_{tf}", "model_id": f"tsfm:{mid}", "fingerprint": L.fingerprint(mid),
+                                 "checkpoint_revision": f"{pin['revision']}" + ("" if c.checkpoint == "BASE" else f"+{c.checkpoint}"),
+                                 "data_profile": c.profile, "validation_status": _validation(svc, mid, inst, tf),
                                  "role": USE_PL[c.use["SCALPING"].use], "decision_use": {p: u.use for p, u in c.use.items()}})
             if state != "READY":
                 out.append(C.make(**common, state=state, unavailable_reason=why or state))
                 continue
+            base_extra = common.pop("extra")
             out.append(C.make(**common, state="READY", data_time=fc["last_bar_close_utc"], compute_ms=fc["compute_ms"], run_id=fc["id"],
                               data_quality={"OK": "OK", "DEGRADED": "DEGRADED"}.get(fc["quality"]["status"], fc["quality"]["status"]),
                               data_kind="SYNTHETIC" if fc["data_kind"] == "SYNTHETIC" else "REAL", available_at=fc["data_available_at"],
-                              result=_result(fc)))
+                              result=_result(fc), extra={**base_extra, "snapshot_id": fc["snapshot_id"], "latency_ms": fc["compute_ms"],
+                                                         "freshness": {"current": True, "last_bar_open_utc": fc["last_bar_open_utc"],
+                                                                       "valid_until": fc["valid_until"]}}))
     return out
+
+
+def _validation(svc, mid: str, inst: str, tf: str) -> str:
+    """Status of the latest walk-forward report for THIS model / instrument / TF (NOT_VALIDATED when none) - information, not a gate."""
+    try:
+        from . import validation as V
+        r = V.latest_report(inst, tf)
+        v = (((r or {}).get("models") or {}).get(mid) or {}).get("verdict") or {}
+        if not r:
+            return "NOT_VALIDATED"
+        return "POSITIVE" if v.get("positive") else "NEGATIVE" if v else "NOT_VALIDATED"
+    except Exception:  # noqa: BLE001
+        return "UNKNOWN"
 
 
 def approval_ok(svc, mid: str, inst: str, path: str) -> tuple[bool, str | None]:

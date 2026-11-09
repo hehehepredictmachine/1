@@ -36,7 +36,8 @@ LOCATION = {
     "th_direction": ("trainhub/inference.py (aktywne paczki)", "świece M1–M30 przez bridge"),
     "kronos": ("kronos/ (serwis) + backend/kronos_runtime (proces .venv_kronos, kod Kronos MIT; 1.37: Kronos-base)", "zamknięte świece M1–H1 z MT5 przez bridge"),
     "chronos2": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_chronos2, chronos-forecasting 2.3.2, Apache-2.0)", "zamknięte świece M5/M15 z MT5 przez bridge"),
-    "fincast": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_fincast, kod FinCast Apache-2.0)", "zamknięte świece M5/M15 z MT5 przez bridge"),
+    "granite_ttm": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_granite, granite-tsfm 0.3.11, Apache-2.0; 1.40 zamiast FinCast)",
+                    "zamknięte świece M5/M15 z MT5 przez bridge (wspólny snapshot z Chronos-2)"),
 }
 
 

@@ -24,7 +24,7 @@ class TestConfigV13(unittest.TestCase):
                "mt5": {"symbol": "XAUUSD-", "dxy_symbol": None}, "first_run_completed": True}
         p.write_text(json.dumps(v12), encoding="utf-8")
         c = ConfigStore(p).get()
-        self.assertEqual(c.config_version, 14)                                   # 1.39: v14 (execution.start_mode)
+        self.assertEqual(c.config_version, 15)                                   # 1.40: v15 (resources)
         self.assertEqual((c.server.port, c.risk.risk_per_trade_pct, c.risk.max_open_positions), (8899, 0.7, 2))
         bak = p.with_name("config.v12.bak.json")
         self.assertTrue(bak.exists())

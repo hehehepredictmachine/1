@@ -14,7 +14,7 @@ Order of evaluation (each step may only make the verdict stricter - nothing afte
                 P(event) is below the plan break-even; it never upgrades, never sizes, never sends. In OFF / SHADOW no entry is added and
                 _preds() is the families list exactly as before (parity). In ASSIST _preds() reads the Quant checked snapshot (aliases
                 deduplicated, contract / future-time / stale records excluded) instead of recomputing anything.
-   * 1.37 REGRESSION price forecasts (Kronos, Chronos-2, FinCast) carry a direction (UP / FLAT / DOWN by the explicit neutral band) and
+   * 1.37 REGRESSION price forecasts (Kronos, Chronos-2, Granite TTM - FinCast until 1.39) carry a direction (UP / FLAT / DOWN by the explicit neutral band) and
                 NO probability: ASSIST holds only on a FRESH forecast AGAINST the side; REQUIRED needs READY + fresh + agreeing (FLAT ->
                 MODEL_REQUIRED_NOT_CONFIRMING, against -> MODEL_REQUIRED_CONTRARY). Freshness is checked for ASSIST too (a stale optional
                 forecast has no effect - it never blocks the system). The role comes from decision.required_models OR the model's own
@@ -159,7 +159,7 @@ class DecisionCoordinator:
         self.intents = IntentLedger(db, self.book)
         self.last: dict[str, dict] = {}
         self.quant = None                    # QuantService (runtime); None / OFF / SHADOW -> no effect at all
-        self.extra_providers: list = []      # 1.37: callables inst -> rows (Chronos-2 / FinCast roles, Kronos as OBSERVE)
+        self.extra_providers: list = []      # 1.37: callables inst -> rows (Chronos-2 / Granite TTM roles, Kronos as OBSERVE)
 
     def _cfg(self):
         return getattr(self.cfg_store.get(), "decision", None)

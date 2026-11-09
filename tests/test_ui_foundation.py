@@ -1,6 +1,6 @@
-"""1.37 "Modele prognoz" (Kronos-base · Chronos-2 · FinCast) - real server process on the SYNTHETIC terminal (--demo) + Chromium.
+"""1.37 "Modele prognoz" (Kronos-base · Chronos-2 · Granite TTM; 1.40: FinCast retired) - real server process on the SYNTHETIC terminal (--demo) + Chromium.
 
-Without weights for Chronos-2 / FinCast (an empty weights root): the API says so (no forecast is invented), every model stays SHADOW
+Without weights for Chronos-2 / Granite TTM (an empty weights root): the API says so (no forecast is invented), every model stays SHADOW
 without order permission, the role can be changed only through /use (settings PUT with "use" is refused), ASSIST / REQUIRED is refused
 without confirmation and without a positive walk-forward report, the contract rows carry no result and a reason, the comparison has no
 comparable rows. The panel (collapsed section on the "Wykresy bota" page) renders the status table, the three line toggles, the
@@ -29,29 +29,29 @@ class TestFoundationUI(unittest.TestCase):
             self.assertEqual(c, 200, r)
             c, st = srv.call("/api/v1/models/foundation")
             self.assertEqual((c, st["mode"], st["execution_permission"]), (200, "SHADOW", False))
-            self.assertEqual(set(st["models"]), {"chronos2", "fincast"})
+            self.assertEqual(set(st["models"]), {"chronos2", "granite_ttm"})
             self.assertEqual(st["kronos"]["name"], "Kronos-base")
-            for m in ("chronos2", "fincast"):
+            for m in ("chronos2", "granite_ttm"):
                 self.assertFalse(st["models"][m]["env"]["weights_installed"])
                 self.assertNotEqual(st["models"][m]["status"], "READY")
             # role only through /use; ASSIST / REQUIRED need confirmation AND a positive report
-            c, r = srv.call("/api/v1/models/foundation/settings", {"models": {"fincast": {"use": {"ACTIVE": {"use": "REQUIRED"}}}}}, method="PUT")
+            c, r = srv.call("/api/v1/models/foundation/settings", {"models": {"granite_ttm": {"use": {"ACTIVE": {"use": "REQUIRED"}}}}}, method="PUT")
             self.assertEqual(c, 400)
             c, r = srv.call("/api/v1/models/foundation/use", {"model": "chronos2", "path": "SCALPING", "use": "ASSIST"})
             self.assertEqual(c, 409)
             self.assertIn("CONFIRMATION_REQUIRED", r.get("detail", ""))
-            c, r = srv.call("/api/v1/models/foundation/use", {"model": "fincast", "path": "ACTIVE", "use": "REQUIRED", "confirm": True})
+            c, r = srv.call("/api/v1/models/foundation/use", {"model": "granite_ttm", "path": "ACTIVE", "use": "REQUIRED", "confirm": True})
             self.assertEqual(c, 409)
             self.assertIn("VALIDATION_REQUIRED", r.get("detail", ""))
             self.assertEqual(srv.call("/api/v1/models/foundation/forecast?model=kronos-large&instrument=XAUUSD&tf=M5")[0], 400)
-            c, f = srv.call("/api/v1/models/foundation/forecast?model=fincast&instrument=XAUUSD&tf=M5")
+            c, f = srv.call("/api/v1/models/foundation/forecast?model=granite_ttm&instrument=XAUUSD&tf=M5")
             self.assertEqual((c, f["forecast"]), (200, None))
             c, cmp = srv.call("/api/v1/models/foundation/compare?instrument=XAUUSD&tf=M5")
             self.assertEqual(c, 200)
             self.assertFalse(any(r["comparable"] for r in cmp["rows"]))
             self.assertIsNone(cmp["summary"])
             preds = {x["model_key"]: x for x in srv.call("/api/v1/models/predictions?instrument=XAUUSD")[1]["items"] if x.get("model_key")}
-            for m in ("chronos2_M5", "chronos2_M15", "fincast_M5", "fincast_M15"):
+            for m in ("chronos2_M5", "chronos2_M15", "granite_ttm_M5", "granite_ttm_M15"):
                 self.assertIn(m, preds)
                 self.assertIsNone(preds[m]["result"])
                 self.assertTrue(preds[m]["unavailable_reason"])
@@ -81,9 +81,9 @@ class TestFoundationUI(unittest.TestCase):
             p.wait_for_timeout(2500)
             out = {"errors": errors, "text": p.locator("[data-testid=fm-panel]").inner_text(),
                    "status_text": p.locator("[data-testid=fm-status]").inner_text(),
-                   "rows": [p.locator(f"[data-testid=fm-row-{m}]").count() for m in ("kronos", "chronos2", "fincast")],
-                   "buttons": [p.locator(f"[data-testid=fm-{b}-{m}]").count() for m in ("chronos2", "fincast") for b in ("install", "verify", "refresh")],
-                   "toggles": [p.locator(f"[data-testid=fm-toggle-{m}]").count() for m in ("kronos", "chronos2", "fincast")],
+                   "rows": [p.locator(f"[data-testid=fm-row-{m}]").count() for m in ("kronos", "chronos2", "granite_ttm")],
+                   "buttons": [p.locator(f"[data-testid=fm-{b}-{m}]").count() for m in ("chronos2", "granite_ttm") for b in ("install", "verify", "refresh")],
+                   "toggles": [p.locator(f"[data-testid=fm-toggle-{m}]").count() for m in ("kronos", "chronos2", "granite_ttm")],
                    "no_forecast": p.locator("[data-testid=fm-no-forecast]").count()}
             p.locator("[data-testid=sec-foundation]").screenshot(path=str(SHOTS / "foundation_not_installed.png"))
             br.close()

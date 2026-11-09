@@ -108,9 +108,11 @@ REGISTRY: list[dict] = [
     {"id": "chronos2", "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close", "kind": "TRAINED",
      "output": "kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)", "group": "TSFM_PRICE",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
-    {"id": "fincast", "name": "FinCast (Vincent05R/FinCast v1, 1B, przetrenowany) – średnia + kwantyle close", "kind": "TRAINED",
-     "output": "średnia i kwantyle 0,1–0,9 ceny close na H świec (nieskalibrowane)", "group": "TSFM_PRICE",
-     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    # 1.40: FinCast retired -> Granite TTM (same correlation group TSFM_PRICE: three price forecasts from the same closes are not
+    # independent votes - the group is counted once in the SH consensus).
+    {"id": "granite_ttm", "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close", "kind": "TRAINED",
+     "output": "prognoza punktowa ceny close na H świec (bez kwantyli; nieskalibrowana)", "group": "TSFM_PRICE",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "tsfm.granite_train"},
 ]
 
 
@@ -185,10 +187,10 @@ def probe(item: dict, rt, inst: str) -> dict:
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
-        if mid in ("chronos2", "fincast"):
+        if mid in ("chronos2", "granite_ttm"):
             ts = getattr(rt, "tsfm", None) if rt else None
             if ts is None:
-                return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/FinCast niedostępny"}
+                return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/Granite TTM niedostępny"}
             w = ts.workers[mid]
             st = w.state.get("status")
             use = {p: u.use for p, u in ts.settings.get().models[mid].use.items()}

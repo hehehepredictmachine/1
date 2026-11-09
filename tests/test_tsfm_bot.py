@@ -1,4 +1,4 @@
-"""1.37 Chronos-2 / FinCast + Kronos-base migration - bot side, no torch (stub worker = test double, its numbers are not forecasts):
+"""1.37 Chronos-2 / Granite TTM (1.40, FinCast retired) + Kronos-base migration - bot side, no torch (stub worker = test double, its numbers are not forecasts):
 installer + manifest (size / SHA-256, wrong file rejected, no manifest = never READY, pinned revision, tamper detected, resume),
 service (not installed -> no terminal reads, one shared snapshot for both models, queue dedup, ledger + settlement from real closed bars,
 pinball / coverage, a result for an older bar never current, timeout / crash / load failure -> no value + reason, MT5 disconnect),
@@ -146,9 +146,9 @@ class TestInstallerManifest(unittest.TestCase):
         s = self.M.summary(self.root, "chronos2")
         self.assertFalse(s["installed"])
         self.assertIn("inna rewizja", s["reason"])
-        fixture_weights(self.root, "fincast")
+        fixture_weights(self.root, "granite_ttm")
         os.environ.pop("MQ_TSFM_ALLOW_FIXTURE", None)
-        self.assertFalse(self.M.summary(self.root, "fincast")["installed"])
+        self.assertFalse(self.M.summary(self.root, "granite_ttm")["installed"])
 
     def test_disk_space_check(self):
         from tsfm_runtime import install as I
@@ -157,11 +157,16 @@ class TestInstallerManifest(unittest.TestCase):
         self.assertEqual((r["ok"], r["code"]), (False, "DISK_SPACE"))
 
     def test_real_pins_are_complete(self):
-        for mid in ("chronos2", "fincast"):
+        for mid in ("chronos2", "granite_ttm"):
             pin = self._orig if mid == "chronos2" else self.L.MODELS[mid]
             self.assertRegex(pin["revision"], r"^[0-9a-f]{40}$")
             big = [f for f in pin["files"] if f["name"] in pin["required_files"] and f["name"].endswith((".safetensors", ".pth"))]
-            self.assertTrue(big and all(len(f["sha256"]) == 64 and f["size"] > 10 ** 8 for f in big))
+            self.assertTrue(big and all(len(f["sha256"]) == 64 and f["size"] > 10 ** 6 for f in big))
+        g = self.L.MODELS["granite_ttm"]
+        self.assertEqual((g["repo"], g["params_measured"], g["license"], g["max_context"]), ("ibm-granite/granite-timeseries-ttm-r2", 805280, "Apache-2.0", 512))
+        self.assertEqual(self.L.ACTIVE, ("chronos2", "granite_ttm"))
+        self.assertEqual(self.L.RETIRED, ("fincast",))                          # pin kept for the history, never installed
+        self.assertTrue(self.L.MODELS["fincast"]["retired"])
         self.assertEqual(self.L.MODELS["fincast"]["params_measured"], 991436960)
         self.assertEqual(self._orig["params_measured"], 119477664)
 
@@ -192,10 +197,10 @@ class TestService(unittest.TestCase):
         root = self.dir / ("w" if weights else "w_empty")
         if weights:
             fixture_weights(root, "chronos2")
-            fixture_weights(root, "fincast")
+            fixture_weights(root, "granite_ttm")
         py = stub_python(self.dir, mode) if mode else str(self.dir / "missing")
         mc = {m: {"python_path": py, "timeframes": list(tfs), "instruments": ["XAUUSD"], "request_timeout_s": 5.0, **models.get(m, {})}
-              for m in ("chronos2", "fincast")}
+              for m in ("chronos2", "granite_ttm")}
         st.update({"weights_root": str(root), "models": mc})
         self.svc = TsfmService(self.cfg, self.bridge, Database(self.dir / "t.sqlite"), K.Bus(), K.Log(), clock=lambda: self.now[0], settings=st)
         return self.svc
@@ -226,13 +231,15 @@ class TestService(unittest.TestCase):
         from masterquo.tsfm import predictions as TP
         svc = self.make()
         svc.tick()
-        self.assertEqual(set(svc.queue), {("chronos2", "XAUUSD", "M5"), ("fincast", "XAUUSD", "M5")})
+        self.assertEqual(set(svc.queue), {("chronos2", "XAUUSD", "M5"), ("granite_ttm", "XAUUSD", "M5")})
         snaps = {j["snapshot_id"] for j in svc.queue.values()}
         self.assertEqual(len(snaps), 1)                                         # one data read, one snapshot for both models
         fcs = self.run_queue()
         self.assertTrue(all(fcs))
         c, f = fcs
-        self.assertEqual((c["point_kind"], f["point_kind"]), ("median", "mean"))
+        self.assertEqual((c["point_kind"], f["point_kind"]), ("median", "point"))
+        self.assertEqual((f["quantile_levels"], f["path"][0].get("q0.1"), f["normalization"]["method"]), (None, None, "zscore_context_window"))
+        self.assertIn("z-score", f["preprocessing"])
         self.assertEqual(c["target_times"], f["target_times"])                 # the SAME target bars
         self.assertEqual((c["mode"], c["execution_permission"], c["unit"], c["task_type"]), ("SHADOW", False, "price", "REGRESSION"))
         self.assertEqual(c["direction"], "UP")
@@ -246,12 +253,21 @@ class TestService(unittest.TestCase):
         svc.settle("XAUUSD", "M5", [b for b in later if b["closed"]])
         rows = svc.db.query("SELECT * FROM tsfm_forecasts")
         self.assertTrue(all(x["outcome_status"] == "SETTLED" for x in rows), [x["outcome_status"] for x in rows])
-        self.assertTrue(all(x["pinball_h"] is not None and x["covered_80"] in (0, 1) and x["naive_abs_err_h"] is not None for x in rows))
+        self.assertTrue(all(x["naive_abs_err_h"] is not None and x["abs_err_h"] is not None for x in rows))
+        q = {x["model_id"]: x for x in rows}
+        self.assertTrue(q["chronos2"]["pinball_h"] is not None and q["chronos2"]["covered_80"] in (0, 1))
+        self.assertTrue(q["granite_ttm"]["pinball_h"] is None and q["granite_ttm"]["covered_80"] is None)   # point model: no invented quantiles
+        g = {r["model_id"]: r for r in TP.contract_predictions(svc, "XAUUSD")}["tsfm:granite_ttm"]
+        self.assertEqual((g["result"]["quantiles_h"], g["checkpoint_revision"][:8], g["snapshot_id"], g["data_profile"]),
+                         ({}, "d6a79570", c["snapshot_id"], "CLOSE_V1"))
+        self.assertNotIn("median", g["result"])                                # point model: field absent, never null / invented
+        self.assertEqual((g["validation_status"], g["freshness"]["current"]), ("NOT_VALIDATED", True))
+        self.assertIsNotNone(g["latency_ms"])
         cmp = svc.compare("XAUUSD", "M5")
         self.assertEqual(cmp["summary"]["n"], 2)
         self.assertNotIn("%", cmp["summary"]["text"])
         self.assertEqual((cmp["summary"]["leading"], cmp["summary"]["agree"]), ("UP", 2))
-        svc.latest[("fincast", "XAUUSD", "M5")]["direction"] = "DOWN"          # 1 up / 1 down: a tie has no leading direction
+        svc.latest[("granite_ttm", "XAUUSD", "M5")]["direction"] = "DOWN"          # 1 up / 1 down: a tie has no leading direction
         cmp = svc.compare("XAUUSD", "M5")
         self.assertEqual((cmp["summary"]["leading"], cmp["summary"]["agree"], cmp["summary"]["conflict"]), (None, None, True))
         self.assertIn("brak przewagi", cmp["summary"]["text"])
@@ -336,7 +352,7 @@ class TestService(unittest.TestCase):
         svc.tick()
         self.run_queue()
         rows = TP.coordinator_rows(svc, "XAUUSD")
-        self.assertEqual({r["family"] for r in rows}, {"tsfm:chronos2", "tsfm:fincast"})
+        self.assertEqual({r["family"] for r in rows}, {"tsfm:chronos2", "tsfm:granite_ttm"})
         self.assertTrue(all(r["timeframe"] == "M15" and r["use"] == "SHADOW" for r in rows))   # ACTIVE role reads M15 by default
 
 
@@ -363,7 +379,44 @@ class TestKronosMigration(unittest.TestCase):
         self.assertEqual(I.resolve("Kronos-base"), "kronos:Kronos-base")
         self.assertEqual(I.resolve("Kronos-small"), "kronos:Kronos-small")
         self.assertEqual(I.resolve("Chronos-2"), "tsfm:chronos2")
-        self.assertEqual(I.resolve("FinCast"), "tsfm:fincast")
+        self.assertEqual(I.resolve("FinCast"), "tsfm:fincast")                   # history id stays FinCast (retired)
+        self.assertEqual(I.resolve("Granite TTM"), "tsfm:granite_ttm")
+
+
+class TestFinCastRetirement(unittest.TestCase):
+    def test_settings_of_139_migrated_backup_and_history(self):
+        from masterquo.tsfm.settings import SettingsStore
+        td = TempData()
+        try:
+            p = Path(td.dir) / "tsfm" / "settings.json"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            old = {"models": {"chronos2": {"enabled": True, "timeframes": ["M5"]}, "fincast": {"enabled": True, "use": {"SCALPING": {"use": "ASSIST",
+                   "timeframe": "M5", "validation_report": "R1", "confirmed_at": "x"}}}}, "horizon_bars": {"M5": 12}}
+            p.write_text(json.dumps(old), encoding="utf-8")
+            st = SettingsStore(p)
+            s = st.get()
+            self.assertIsNone(st.load_error)
+            self.assertEqual(set(s.models), {"chronos2", "granite_ttm"})
+            self.assertEqual(s.models["chronos2"].timeframes, ["M5"])             # user values kept
+            self.assertEqual(s.models["granite_ttm"].use["SCALPING"].use, "OBSERVE")  # FinCast role NOT carried over
+            self.assertEqual(s.retired["fincast"]["status"], "RETIRED")
+            self.assertEqual(json.loads((p.parent / "settings.v139.bak.json").read_text(encoding="utf-8")), old)
+            h = st.history()
+            self.assertEqual(h[-1]["who"], "migration")
+            st.update({"models": {"granite_ttm": {"enabled": False}}}, who="test")
+            self.assertEqual(st.history()[-1]["change"], {"models": {"granite_ttm": {"enabled": False}}})
+            self.assertNotIn("fincast", json.loads(p.read_text(encoding="utf-8"))["models"])
+        finally:
+            td.close()
+
+    def test_engine_and_installer_refuse_fincast(self):
+        from tsfm_runtime import engines as E
+        from tsfm_runtime import install as I
+        with self.assertRaises(E.EngineError) as cm:
+            E.make("fincast")
+        self.assertEqual(cm.exception.code, "RETIRED")
+        with self.assertRaises(SystemExit):
+            I.main(["download", "--model", "fincast", "--weights-root", "/nonexistent"])
 
 
 if __name__ == "__main__":

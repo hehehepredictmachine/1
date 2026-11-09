@@ -1,4 +1,8 @@
-"""Chronos-2 / FinCast settings - data/tsfm/settings.json, validated (unknown keys rejected), defaults = observation only.
+"""Chronos-2 / Granite TTM settings - data/tsfm/settings.json, validated (unknown keys rejected), defaults = observation only.
+
+1.40: FinCast is RETIRED (replaced by Granite TTM). A settings file of 1.37-1.39 with a "fincast" entry is migrated on load: the entry is
+removed from the active models, the untouched original is kept as settings.v139.bak.json and the change is written to
+settings_history.jsonl (every later change of the settings - model, checkpoint, role - is appended there too).
 
 Own file (like Kronos): an older release that does not know these models opens config.json unchanged. Per model:
   enabled, instruments, timeframes (start: M5 + M15), context_len, input profile, device, threads, timeouts;
@@ -13,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -23,7 +28,8 @@ from .. import paths
 TF = Literal["M1", "M3", "M5", "M15", "M30", "H1"]
 TF_ALL = ("M1", "M3", "M5", "M15", "M30", "H1")
 PATHS = ("ACTIVE", "SCALPING", "HEDGING")
-MODEL_IDS = ("chronos2", "fincast")
+MODEL_IDS = ("chronos2", "granite_ttm")
+RETIRED_IDS = ("fincast",)                                                       # 1.40: history only, never scheduled
 HORIZON_DEFAULT = {"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6}      # = Kronos defaults (starting values, not proven optimal)
 
 
@@ -52,6 +58,7 @@ class ModelCfg(BaseModel):
     load_timeout_s: float = Field(900.0, ge=30.0, le=3600.0)
     use: dict[str, PathUse] = Field(default_factory=_uses)
     python_path: str | None = None
+    checkpoint: str = Field("BASE", pattern=r"^(BASE|GTR-[0-9A-Za-z_-]{6,64})$")   # Granite TTM: BASE = pinned pretrained, GTR-... = own fine-tune
 
     @field_validator("use")
     @classmethod
@@ -71,12 +78,13 @@ class ModelCfg(BaseModel):
 
 
 def _models() -> dict:
-    return {"chronos2": ModelCfg(), "fincast": ModelCfg()}
+    return {"chronos2": ModelCfg(), "granite_ttm": ModelCfg()}
 
 
 class TsfmSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
     models: dict[str, ModelCfg] = Field(default_factory=_models)
+    retired: dict[str, dict] = Field(default_factory=dict)        # 1.40: last settings of retired models (FinCast) - information only
     horizon_bars: dict[str, int] = Field(default_factory=lambda: dict(HORIZON_DEFAULT))
     quantiles: list[float] = Field(default_factory=lambda: [0.1, 0.5, 0.9])
     lookback: int = Field(560, ge=96, le=2200)
@@ -114,7 +122,7 @@ class TsfmSettings(BaseModel):
     @classmethod
     def _q(cls, v: list) -> list:
         v = sorted({float(x) for x in v} | {0.5})
-        allowed = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)                 # common to both models (FinCast: only these)
+        allowed = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)                 # Chronos-2 levels used by the bot (Granite TTM: point only)
         bad = [x for x in v if x not in allowed]
         if bad:
             raise ValueError(f"QUANTILE_UNSUPPORTED:{bad} (wspólne poziomy obu modeli: 0,1–0,9)")
@@ -133,7 +141,7 @@ def default_weights_root() -> Path:
 
 def python_candidates(mid: str, c: ModelCfg) -> list[str]:
     root = paths.ROOT_DIR
-    venv = {"chronos2": ".venv_chronos2", "fincast": ".venv_fincast"}[mid]
+    venv = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite"}[mid]
     return [x for x in (os.environ.get(f"MQ_{mid.upper()}_PYTHON"), c.python_path, str(root / venv / "Scripts" / "python.exe"),
                         str(root / venv / "bin" / "python")) if x]
 
@@ -157,17 +165,62 @@ class SettingsStore:
         except (OSError, ValueError) as exc:
             self.load_error = f"settings.json nieczytelny ({type(exc).__name__}) – użyto ustawień domyślnych (obserwacja)"
             return TsfmSettings()
+        if isinstance(raw, dict) and isinstance(raw.get("models"), dict) and any(k in raw["models"] for k in RETIRED_IDS):
+            raw = self._migrate_retired(raw)
         try:
             return TsfmSettings.model_validate(raw)
         except Exception as exc:  # noqa: BLE001 - a broken file never enables anything: defaults = observation only
             self.load_error = f"settings.json niepoprawny ({str(exc)[:200]}) – użyto ustawień domyślnych (obserwacja)"
             return TsfmSettings()
 
+    def _migrate_retired(self, raw: dict) -> dict:
+        """1.40: FinCast removed from the active models; original kept, change recorded. Roles of a retired model are never carried over
+        to its successor (Granite TTM starts in OBSERVE with its own validation)."""
+        bak = self.path.with_name("settings.v139.bak.json")
+        try:
+            if not bak.exists():
+                bak.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        raw = json.loads(json.dumps(raw))
+        retired = raw.setdefault("retired", {})
+        for k in RETIRED_IDS:
+            if k in raw["models"]:
+                retired[k] = {"settings": raw["models"].pop(k), "status": "RETIRED", "retired_in": "1.40.0", "replaced_by": "granite_ttm"}
+        try:
+            s = TsfmSettings.model_validate(raw)
+            self.path.write_text(json.dumps(s.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
+            self._history("migration", {"retired": list(retired), "added": ["granite_ttm"], "backup": bak.name})
+        except Exception:  # noqa: BLE001 - validated again by the caller
+            pass
+        return raw
+
+    def _history(self, who: str, change: dict) -> None:
+        try:
+            with open(self.path.with_name("settings_history.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                    "who": who, "change": change}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def history(self, limit: int = 50) -> list[dict]:
+        try:
+            lines = self.path.with_name("settings_history.jsonl").read_text(encoding="utf-8").splitlines()[-limit:]
+        except OSError:
+            return []
+        out = []
+        for ln in lines:
+            try:
+                out.append(json.loads(ln))
+            except ValueError:
+                pass
+        return out
+
     def get(self) -> TsfmSettings:
         with self._lock:
             return self._s.model_copy(deep=True)
 
-    def update(self, patch: dict) -> TsfmSettings:
+    def update(self, patch: dict, who: str = "panel") -> TsfmSettings:
         with self._lock:
             merged = _merge(self._s.model_dump(mode="json"), patch)
             s = TsfmSettings.model_validate(merged)
@@ -177,6 +230,7 @@ class SettingsStore:
             tmp.replace(self.path)
             self._s = s
             self.load_error = None
+            self._history(who, patch)
             return s.model_copy(deep=True)
 
 

@@ -1,12 +1,12 @@
-"""Installer of Chronos-2 and FinCast (stdlib only) - used by 38_MODELE_CHRONOS2_FINCAST.bat and by the panel buttons "Zainstaluj".
+"""Installer of Chronos-2 and Granite TTM (stdlib only; 1.40: FinCast retired) - used by 38_MODELE_CHRONOS2_GRANITE.bat and by the panel buttons "Zainstaluj".
 
-  python tools/tsfm_setup.py --model chronos2|fincast|all --root <folder programu> --weights-root <folder wag | auto>
+  python tools/tsfm_setup.py --model chronos2|granite_ttm|all --root <folder programu> --weights-root <folder wag | auto>
                              [--cuda cu126|cu128] [--from-dir DIR] [--status-file F] [--python EXE] [--log F]
 
 Steps per model (progress lines "[TSFM-SETUP] [k/5] ..."; the last line is "RESULT <json>"):
   1. Python 3.13 / 3.12 x64 for the environment (runtime\\python of the Windows package first, then --python, then this interpreter)
      + a report of RAM, free disk and CUDA (nvidia-smi if present) - drivers are never changed.
-  2. Own environment next to the program: .venv_chronos2 / .venv_fincast (the bot's .venv and .venv_kronos are never modified).
+  2. Own environment next to the program: .venv_chronos2 / .venv_granite (the bot's .venv and .venv_kronos are never modified).
   3. Packages: requirements/requirements-<model>-win.txt with --require-hashes --only-binary=:all: (torch from PyPI = CPU build on
      Windows). --cuda: torch from the official PyTorch index for that CUDA variant (no hashes in our file - stated in the log), the rest
      still hash-checked. Other systems: the same versions without hashes (development only).
@@ -31,10 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kronos_setup as KS  # noqa: E402 - same process helpers (streaming, RESULT parsing, python detection)
 
 TOTAL = 5
-TORCH = "torch==2.14.1"
-VENV = {"chronos2": ".venv_chronos2", "fincast": ".venv_fincast"}
-NAME = {"chronos2": "Chronos-2 (amazon/chronos-2, ~0,5 GB wag)", "fincast": "FinCast (Vincent05R/FinCast v1, ~4 GB wag, ~8 GB RAM przy ładowaniu)"}
-NEED_DISK = {"chronos2": 0.6e9 + 1.2e9, "fincast": 4.0e9 + 1.0e9}          # weights + environment (approx.)
+TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.11.0"}        # = the pins of the requirement files
+VENV = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite"}
+NAME = {"chronos2": "Chronos-2 (amazon/chronos-2, ~0,5 GB wag)", "granite_ttm": "Granite TTM R2 (ibm-granite/granite-timeseries-ttm-r2, ~3 MB wag, ~0,35 GB RAM)"}
+NEED_DISK = {"chronos2": 0.6e9 + 1.2e9, "granite_ttm": 0.01e9 + 1.7e9}      # weights + environment (approx.)
 HINT = {"NETWORK": "brak połączenia z huggingface.co (internet, zapora albo proxy) – odblokuj huggingface.co i jego CDN, potem powtórz "
                    "(częściowo pobrany plik zostanie wznowiony)",
         "CHECKSUM": "plik niezgodny z przypiętą sumą SHA-256 – odrzucony, nic nie zostało oznaczone jako gotowe",
@@ -125,9 +125,6 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
     out.say(1, f"{NAME[mid]}: Python {base}; RAM {hw.get('ram_total_gb', '?')} GB, wolne {free / 1e9:.1f} GB, GPU {hw.get('gpu') or 'brak (CPU)'}")
     if free < NEED_DISK[mid]:
         return result(out, 1, False, "DISK_SPACE", error=f"potrzeba ok. {NEED_DISK[mid] / 1e9:.1f} GB, wolne {free / 1e9:.1f} GB", model=mid)
-    if mid == "fincast" and hw.get("ram_total_gb") and hw["ram_total_gb"] < 12:
-        out.say(1, f"UWAGA: FinCast 1B potrzebuje ok. 8 GB RAM przy ładowaniu (CPU) – ten komputer ma {hw['ram_total_gb']} GB; "
-                   "model może nie dać się załadować (stan RESOURCE_LIMIT, bot działa dalej)")
     venv = root / VENV[mid]
     vpy = venv / ("Scripts/python.exe" if win else "bin/python")
     if not vpy.is_file():
@@ -142,7 +139,7 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
         rc, last = KS.run([str(vpy), "-m", "ensurepip", "--upgrade"], out, 2)
         if rc != 0:
             return result(out, 2, False, "VENV", error=f"brak pip i ensurepip nie powiodło się: {last}; usuń {venv} i uruchom ponownie", model=mid)
-    req =root / "requirements" / f"requirements-{mid}-win.txt"
+    req = root / "requirements" / f"requirements-{"granite" if mid == "granite_ttm" else mid}-win.txt"
     pip = [str(vpy), "-m", "pip", "install", "--disable-pip-version-check", "--no-input"]
     if win:
         if a.cuda:
@@ -158,10 +155,10 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
                 keep.append(ln)
             tmp = venv / f"requirements-{mid}-nocuda.txt"
             tmp.write_text("\n".join(keep) + "\n", encoding="utf-8")
-            out.say(3, f"instaluję zależności (z sumami) bez torch, potem {TORCH} z indeksu PyTorch {a.cuda} (bez sum w naszym pliku)")
+            out.say(3, f"instaluję zależności (z sumami) bez torch, potem {TORCH[mid]} z indeksu PyTorch {a.cuda} (bez sum w naszym pliku)")
             rc, last = KS.run(pip + ["--require-hashes", "--only-binary=:all:", "-r", str(tmp)], out, 3)
             if rc == 0:
-                rc, last = KS.run(pip + ["--only-binary=:all:", "--force-reinstall", "--no-deps", TORCH, "--index-url",
+                rc, last = KS.run(pip + ["--only-binary=:all:", "--force-reinstall", "--no-deps", TORCH[mid], "--index-url",
                                          f"https://download.pytorch.org/whl/{a.cuda}"], out, 3)
         else:
             out.say(3, "instaluję PyTorch (CPU) i zależności – tylko pakiety z sumami SHA-256")
@@ -197,7 +194,7 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=("chronos2", "fincast", "all"))
+    ap.add_argument("--model", required=True, choices=("chronos2", "granite_ttm", "all"))
     ap.add_argument("--root", required=True)
     ap.add_argument("--weights-root", required=True)
     ap.add_argument("--cuda", choices=("cu126", "cu128"))
@@ -224,7 +221,7 @@ def main(argv=None) -> int:
         r = result(out, 1, False, "NO_PYTHON", error="brak Python 3.13/3.12 x64 (runtime\\python z paczki, --python albo bieżący)")
         KS.emit("RESULT " + json.dumps(r, ensure_ascii=False))
         return 1
-    models = ["chronos2", "fincast"] if a.model == "all" else [a.model]
+    models = ["chronos2", "granite_ttm"] if a.model == "all" else [a.model]
     res = [install_one(m, a, root, base, out) for m in models]
     ok = all(r["ok"] for r in res)
     first_bad = next((r for r in res if not r["ok"]), {})

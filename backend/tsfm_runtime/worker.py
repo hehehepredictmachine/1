@@ -1,6 +1,6 @@
-"""Inference process of Chronos-2 / FinCast (started by masterquo/tsfm/service.py with the model's own interpreter).
+"""Inference process of Chronos-2 / Granite TTM (started by masterquo/tsfm/service.py with the model's own interpreter).
 
-  python -m tsfm_runtime.worker --model chronos2|fincast
+  python -m tsfm_runtime.worker --model chronos2|granite_ttm
 Protocol: one JSON object per line on stdin -> one JSON object per line on stdout carrying the request "id".
   {"cmd": "hello"}  {"cmd": "load", "weights_root", "device", "threads", "verify_files"}  {"cmd": "predict", ...}  {"cmd": "selftest"}
   {"cmd": "ping"} (heartbeat)  {"cmd": "quit"}
@@ -20,7 +20,7 @@ from . import RUNTIME_VERSION
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=["chronos2", "fincast"])
+    ap.add_argument("--model", required=True, choices=["chronos2", "granite_ttm"])
     a = ap.parse_args(argv)
     proto = sys.stdout
     sys.stdout = sys.stderr
@@ -46,8 +46,9 @@ def main(argv=None) -> int:
             elif cmd == "ping":
                 resp = {"ok": True, "loaded": eng.loaded, "rss_mb": E.rss_mb()}
             elif cmd == "load":
+                kw = {"checkpoint": req.get("checkpoint"), "finetune_dir": req.get("finetune_dir")} if a.model == "granite_ttm" else {}
                 resp = {"ok": True, "info": eng.load(req["weights_root"], device=req.get("device", "AUTO"), threads=req.get("threads"),
-                                                     verify_files=bool(req.get("verify_files", True)))}
+                                                     verify_files=bool(req.get("verify_files", True)), **kw)}
             elif cmd == "predict":
                 resp = {"ok": True, **eng.predict(req)}
             elif cmd == "selftest":

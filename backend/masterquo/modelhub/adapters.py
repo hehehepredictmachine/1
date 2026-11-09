@@ -68,11 +68,11 @@ def all_predictions(rt, inst: str) -> list[dict]:
     if ts is not None:
         try:
             from ..tsfm import predictions as TP
-            out += TP.contract_predictions(ts, inst)                   # 1.37 Chronos-2 / FinCast: REGRESSION in price units
+            out += TP.contract_predictions(ts, inst)                   # 1.37 Chronos-2 / 1.40 Granite TTM: REGRESSION in price units
         except Exception as exc:  # noqa: BLE001
             out.append(C.make(instrument=inst, symbol=None, timeframe="M5", model_name="tsfm", model_version=None, task_type="REGRESSION",
                               task="TSFM_CLOSE_H1_M5", horizon_bars=1, unit="price", state="ERROR",
-                              unavailable_reason=f"adapter Chronos-2/FinCast: {type(exc).__name__}: {exc}"[:200]))
+                              unavailable_reason=f"adapter Chronos-2/Granite TTM: {type(exc).__name__}: {exc}"[:200]))
     fam = getattr(rt, "families", None) if rt is not None else None
     if fam is not None:
         try:

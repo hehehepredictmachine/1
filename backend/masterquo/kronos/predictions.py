@@ -45,6 +45,8 @@ def _state(svc, k: tuple) -> tuple[str, str | None]:
             return mapped, svc.state.get("reason") or st
     if tv["state"] == "NO_SYMBOL":
         return "DISABLED", tv["reason"]
+    if tv["state"] == "RESOURCE_PAUSED":                          # 1.40 Memory Governor: not computed now -> STALE with the reason, no value
+        return "STALE", f"{tv['state_pl']}: {tv['reason'] or ''}"
     if not tv["forecast_current"]:
         return "ERROR", f"{tv['state_pl']}: {tv['reason'] or 'brak aktualnej prognozy dla ostatniej zamkniętej świecy'}"
     return "READY", None

@@ -1,5 +1,5 @@
 // 1.37 "Modele prognoz": trzy przetrenowane modele liczone lokalnie, każdy we własnym procesie – Kronos-base (istniejący serwis),
-// Chronos-2 (amazon/chronos-2) i FinCast (Vincent05R/FinCast v1). Ten panel tylko pokazuje i porównuje ich prognozy na tych samych
+// Chronos-2 (amazon/chronos-2) i Granite TTM (IBM granite-timeseries-ttm-r2; 1.40 zamiast wycofanego FinCast). Ten panel tylko pokazuje i porównuje ich prognozy na tych samych
 // zamkniętych świecach; nie wymyśla wartości, nie uśrednia modeli i nie zamienia regresji na prawdopodobieństwo.
 // Rola w strategiach (OBSERVE / ASSIST / REQUIRED) zmienia się wyłącznie przez serwer, po pozytywnej walidacji i potwierdzeniu.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,9 +11,9 @@ import { cls, fmtNum, fmtTime } from "../util";
 const MODELS = [
   { id: "kronos", name: "Kronos-base", color: "#a878ff" },
   { id: "chronos2", name: "Chronos-2", color: "#2fa6de" },
-  { id: "fincast", name: "FinCast", color: "#e0a030" },
+  { id: "granite_ttm", name: "Granite TTM", color: "#e0a030" },
 ] as const;
-const TSFM = ["chronos2", "fincast"] as const;
+const TSFM = ["chronos2", "granite_ttm"] as const;
 const PATHS = ["ACTIVE", "SCALPING", "HEDGING"] as const;
 const USE_PL: Record<string, string> = { OBSERVE: "obserwacja", ASSIST: "wspomaga (może wstrzymać)", REQUIRED: "warunek wymagany" };
 const ST_TONE: Record<string, string> = { READY: "ok", STARTING: "warn", LOADING: "warn", INSTALLING: "warn", NOT_INSTALLED: "warn", NO_WEIGHTS: "warn",
@@ -81,7 +81,7 @@ export default function FoundationModelsPanel() {
     Promise.all([
       apiGet(`/api/v1/kronos/forecast?instrument=${inst}&tf=${tf}`).catch(() => null),
       ...TSFM.map((m) => apiGet(`/api/v1/models/foundation/forecast?model=${m}&instrument=${inst}&tf=${tf}`).catch(() => null)),
-    ]).then(([k, c2, fc]) => setFcs({ kronos: k, chronos2: c2, fincast: fc }));
+    ]).then(([k, c2, fc]) => setFcs({ kronos: k, chronos2: c2, granite_ttm: fc }));
   };
   useEffect(() => { save("fm.inst", inst); save("fm.tf", tf); load(); }, [inst, tf, live?.updated_at, (s as any).kronos?.updated_at]);
   useEffect(() => {
@@ -119,10 +119,10 @@ export default function FoundationModelsPanel() {
       pts: fc.path.map((p: any) => ({ t: p.t_utc, v: p.point })), q10: fc.path.map((p: any) => p["q0.1"]), q90: fc.path.map((p: any) => p["q0.9"]) };
   }), [fcs, on]);
   const context = useMemo(() => {
-    const t = fcs.chronos2?.context?.length ? fcs.chronos2.context : fcs.fincast?.context?.length ? fcs.fincast.context : (fcs.kronos?.context || []);
+    const t = fcs.chronos2?.context?.length ? fcs.chronos2.context : fcs.granite_ttm?.context?.length ? fcs.granite_ttm.context : (fcs.kronos?.context || []);
     return t.map((b: any) => ({ t: b.t, c: b.c }));
   }, [fcs]);
-  const digits = fcs.chronos2?.forecast?.digits ?? fcs.fincast?.forecast?.digits ?? fcs.kronos?.forecast?.digits ?? 2;
+  const digits = fcs.chronos2?.forecast?.digits ?? fcs.granite_ttm?.forecast?.digits ?? fcs.kronos?.forecast?.digits ?? 2;
   const synthetic = st?.data_kind === "SYNTHETIC";
   const ms = st?.models || {};
   const insts: string[] = Array.from(new Set(["XAUUSD", ...TSFM.flatMap((m) => ms[m]?.instruments || [])]));
@@ -163,7 +163,7 @@ export default function FoundationModelsPanel() {
                 <td>{x.timing?.n ? `p50 ${fmtNum(x.timing.p50_ms, 0)} ms · p95 ${fmtNum(x.timing.p95_ms, 0)} ms (n=${x.timing.n})` : "—"}</td>
                 <td><div className="row wrap" style={{ gap: 4 }}>
                   <button className="btn" disabled={busy || job("install")?.state === "RUNNING"} data-testid={`fm-install-${m}`}
-                    onClick={() => { if (confirm(`Zainstalować ${x.name}? Zostanie utworzone osobne środowisko (PyTorch CPU ok. 250 MB) i pobrane oficjalne wagi z Hugging Face (${m === "fincast" ? "ok. 4 GB; ładowanie wymaga ok. 8 GB RAM" : "ok. 0,5 GB"}).`)) act("/api/v1/models/foundation/install", { model: m }, "instalacja uruchomiona"); }}>
+                    onClick={() => { if (confirm(`Zainstalować ${x.name}? Zostanie utworzone osobne środowisko (PyTorch CPU ok. 250 MB) i pobrane oficjalne wagi z Hugging Face (${m === "granite_ttm" ? "ok. 3 MB; ok. 0,35 GB RAM" : "ok. 0,5 GB"}).`)) act("/api/v1/models/foundation/install", { model: m }, "instalacja uruchomiona"); }}>
                     Zainstaluj</button>
                   <button className="btn ghost" disabled={busy || job("verify")?.state === "RUNNING"} data-testid={`fm-verify-${m}`}
                     onClick={() => act("/api/v1/models/foundation/verify", { model: m }, "sprawdzanie uruchomione")}>Sprawdź</button>
@@ -185,7 +185,7 @@ export default function FoundationModelsPanel() {
         : <p className="muted" data-testid="fm-no-forecast">Brak prognoz dla {inst} {tf} – stan modeli i przyczyny w tabeli powyżej.</p>}
       {lines.filter((l) => l.pts.length && !l.current).map((l) => (
         <p key={l.id} className="small warn" data-testid={`fm-stale-${l.id}`}>{l.name}: prognoza NIEAKTUALNA (linia kropkowana) – {fcs[l.id]?.stale_note || "nie dotyczy ostatniej zamkniętej świecy"}</p>))}
-      <p className="small muted">Linie: Chronos-2 – mediana (kwantyl 0,5), FinCast – średnia, Kronos – średnia ścieżek próbkowanych; przerywane – kwantyle 0,1 i 0,9
+      <p className="small muted">Linie: Chronos-2 – mediana (kwantyl 0,5), Granite TTM – prognoza punktowa (bez kwantyli), Kronos – średnia ścieżek próbkowanych; przerywane – kwantyle 0,1 i 0,9
         (nieskalibrowane na danych brokera). Prognozowane jest tylko zamknięcie, nie świece OHLC.</p>
 
       <h4>Porównanie modeli – ta sama świeca, interwał i horyzont</h4>
@@ -206,7 +206,7 @@ export default function FoundationModelsPanel() {
           <p className="small muted">{cmp.rule}. Świeca: {cmp.last_bar_open_utc ? fmtTime(cmp.last_bar_open_utc, true) : "—"}, horyzont {cmp.horizon_bars} świec.</p>
         </>)}
 
-      <h4>Walidacja walk-forward: Kronos-base, Chronos-2 i FinCast vs prognoza „ostatnia cena” i momentum</h4>
+      <h4>Walidacja walk-forward: Kronos-base, Chronos-2 i Granite TTM vs prognoza „ostatnia cena” i momentum</h4>
       <div className="row wrap" style={{ gap: 6, alignItems: "center" }}>
         <button className="btn" disabled={busy || st?.jobs?.validation?.state === "RUNNING"} data-testid="fm-validate"
           onClick={() => act("/api/v1/models/foundation/validate", { instrument: inst, tf, max_origins: 200 }, "walidacja uruchomiona (procesy modeli)")}>
@@ -256,7 +256,7 @@ export default function FoundationModelsPanel() {
       </table></div>
       <p className="small muted">Kronos-base ma osobne ustawienia roli w sekcji „Kronos AI Forecast”. Modele widzą wyłącznie zamknięte świece (Chronos-2 opcjonalnie OHLC + tick volume
         jako przeszłe zmienne) – nie znają newsów, spreadu, prowizji, poślizgu ani pozycji. Zgodność modeli liczących na tych samych świecach nie jest niezależnym potwierdzeniem.
-        Licencje: Chronos-2 – Apache-2.0 (Amazon), FinCast – Apache-2.0 (wg karty modelu Vincent05R/FinCast).</p>
+        Licencje: Chronos-2 – Apache-2.0 (Amazon), Granite TTM – Apache-2.0 (IBM, karta modelu ibm-granite/granite-timeseries-ttm-r2). FinCast wycofany w 1.40 – jego dawne prognozy pozostają w historii.</p>
     </div>
   );
 }
