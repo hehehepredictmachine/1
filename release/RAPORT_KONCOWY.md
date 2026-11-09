@@ -1,3 +1,55 @@
+# Raport końcowy – PepeMarketWizard 1.39.0 (LIVE od startu, GARCH w HG09, intro, menu Galaxy V2, WTC PEPE 2.1, instrukcja PDF)
+
+**Paczki 1.39.0:**
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_39_0.zip` (2685 plików, aplikacja Windows) | `4bdc7842deee6004d1e0e80cd66d01e680dbf58abcfa514d7936bde16c34818c` |
+| `PepeMarketWizard_1_39_0.zip` (1616 plików, folder programu) | `0cea51a0df2caddc19e41ae9ef823d37891d2478c15632392e9849d1e5825f37` |
+| `Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf` (14 stron; także w paczce: `docs/`) | – |
+
+`tools/verify_release.py --all`: OK dla obu (ścieżki, manifest, sekrety, .sha256). Paczki bez wag modeli, środowisk `.venv_*`, danych
+rachunku i historii. Start z rozpakowanej paczki (backend demo): wersja 1.39.0, konfiguracja zmigrowana do v14 (`execution.start_mode =
+AUTO_LIVE`, `live_autobind = true`), symulator pozostaje w PAPER (dane syntetyczne nigdy nie idą LIVE), zasoby `/assets/galaxy/*` serwowane
+(WebP, MP4, GIF), katalog 20 wariantów + stan GARCH (`NOT_TRAINED` – brak modelu w czystej instalacji). Paczka 1.38.0 nie została nadpisana.
+
+## Co zrobiono (polecenie: LIVE, bez ograniczeń, GARCH, PDF, menu z paczek ZIP)
+
+| Zadanie | Stan | Uwagi |
+|---|---|---|
+| Tryb LIVE od startu | DONE | `start_mode = AUTO_LIVE`, autowiązanie z rachunkiem REAL przy pierwszej decyzji (`LIVE_AUTOBIND`) |
+| Zdjęcie ograniczeń (wybór: „bramki walidacji”) | DONE | VALIDATED, skalibrowany model, znana prowizja, REDUCE/NETTING → ostrzeżenia. **Zostały**: STOP, limity ryzyka, spread, deduplikacja, uzgadnianie MT5, wymóg REAL, ścieżka główna |
+| Model GARCH | DONE | rodzina VOL_GARCH → sigma PMW_HG09 (`volatility_method`), przełącznik w panelu Pakiet 20, bez cichego zastępstwa (`GARCH_NOT_READY`), replay `--garch-json` |
+| Instrukcja PDF (instalacja bota, modeli, trening) | DONE | `tools/make_install_guide.py`; polecenia sprawdzane testem `test_install_guide.py`; podręczniki admin/klient z rozdziałem 1.39 |
+| Intro startowe (paczka ALL_IN_ONE) | DONE | 8,5 s, slogan dokładny, Esc / POMIŃ, Ctrl+Alt+B, ograniczone animacje, twardy limit, nie blokuje |
+| Menu Galaxy V2 + edytor (paczka ALL_IN_ONE) | DONE | 7 planet, 21/21, emitery, błyskawice, edytor z trasą planety, JSON; planety → prawdziwe ekrany; status z backendu |
+| WTC PEPE 2.1 Chart Lab + SVP (paczka WTC 2.1) | DONE | na prawdziwych świecach `/api/v1/candles`; elementy demo oparte na danych syntetycznych nieprzeniesione |
+
+## Testy i build
+
+| Zestaw | Wynik |
+|---|---|
+| Pełna regresja `tools/run_tests.py` | 1333 testy, 22 pominięte (brak PyTorch / modeli w tym interpreterze); 4 niepowodzenia – asercje `config_version == 13` w starych testach migracji (oczekiwane po v14) – poprawione, 17/17 powtórzone OK |
+| Nowe: `test_live_start`, `TestGarchHG09` (`test_sh_pack`), `test_ui_galaxy` (6), `test_ui_wtc_chartlab`, `test_chartlab_calc` (Node), `test_install_guide` (4), `test_ui_sh_pack` (przełącznik HG09) | OK |
+| Testy menu przeniesione na `#/neural-city` (`test_ui_neural_city`, `test_ui_cult`, `test_ui_towers`, `test_ui_wizard`, `test_ui_pages`, `test_ui_interface_129`, `test_ui_pmw133`) | OK |
+| `tsc --noEmit`, `npm run build`, `go test` aplikacji desktop, go-winres (wersja 1.39.0.0 w EXE), kontrola requirements Windows | OK |
+| Rozdzielczości menu 1366×768 / 1440×900 / 1920×1080 | bez poziomego przewijania, wszystkie planety w kadrze, bez błędów JS, bez zleceń / zmian trybu |
+
+## Ograniczenia (uczciwie)
+
+* **LIVE oznacza prawdziwe pieniądze.** Żaden z 20 wariantów nie ma walidacji OOS na Twoich danych (NOT_VALIDATED) – w 1.39 to już
+  tylko ostrzeżenie. Do handlu bot nadal potrzebuje wybranej ścieżki głównej (ACTIVE / SH) i ustawionych limitów ryzyka.
+* Brak Windows i terminala MT5 w środowisku budowania: AUTO_LIVE i autowiązanie rachunku przetestowane na atrapach terminala i
+  symulatorze, nie na prawdziwym rachunku. Pliki EXE niepodpisane.
+* GARCH wymaga wytrenowania i aktywacji VOL_GARCH na historii MT5 – w czystej instalacji HG09 z `VOL_GARCH` zwraca `NO_DATA`.
+* SVP Chart Lab to przybliżenie z OHLC (wolumen rozłożony na High–Low świecy), sesje w stałych godzinach UTC; nie footprint / order flow.
+* Intro i menu w przeglądarce bez GPU renderują się wolniej (canvas z poświatą) – na komputerze z GPU płynnie; menu wstrzymuje
+  rysowanie, gdy intro jest na ekranie.
+
+Nie otwierano transakcji i nie zmieniano trybu żadnego rachunku.
+
+---
+
 # Raport końcowy – PepeMarketWizard 1.38.0 (pakiet 20 strategii XAUUSD: 10 HEDGING + 10 SCALPING)
 
 **Paczki 1.38.0:**
