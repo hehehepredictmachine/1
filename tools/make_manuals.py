@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.37.0"
+VERSION = "1.38.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -300,6 +300,20 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4f - 1.38
+    s += [P("4f / Nowe w 1.38: pakiet 20 strategii XAUUSD (SCALPING + HEDGING)", "h1"),
+          bullets(["Strona <b>Strategie</b> → panel <b>Pakiet 20 strategii</b>: PMW_SC01–SC10 (scalp: TP1 ≥ 25 pips, RR planu netto ≥ 2) i "
+                   "PMW_HG01–HG10 (hedge: TP1 ≥ 40 pips, RR koszyka netto ≥ 3). Stan każdego wariantu na każdym TF z powodem, plan Entry/SL/TP1/TP2, "
+                   "warunek hedge i postęp, historia sygnałów.",
+                   "Wykresy: warstwa <b>Pakiet 20</b> – strzałka sygnału na świecy, na której informacja była dostępna, linie wybranego planu "
+                   "i aktywnych pozycji (nie 20 kompletów naraz), filtry Scalp/Hedge, strategia, historia.",
+                   "Wykonanie tylko istniejącą ścieżką i w bieżącym trybie: SIGNALS – zero zleceń, PAPER – symulacja, AUTO_LIVE – tylko wariant z walidacją "
+                   "VALIDATED na Twoich danych. Bot nie zmienia trybu. Hedge tylko na rachunku HEDGING, jedna aktywacja, maks. 50 % bazy.",
+                   "Walidacja na Twojej historii MT5: <b>39_PAKIET_20_WALIDACJA.bat</b>. Bez niej wszystkie warianty mają status NOT_VALIDATED."]),
+          *shot(shots, "ui_kronos/sh_pack_panel.png", "Panel Pakiet 20 strategii (symulator MT5, świeży start – oceny po pierwszej zamkniętej M1).", width_mm=165, crop=(0, 0, 1, 0.68)),
+          box("Szczegóły: docs/strategies20/RUNBOOK_PL.md, STRATEGY_SPECIFICATIONS.md, RISK_AND_UNITS.md. Nazwa strategii i linia 1:3 na wykresie nie są "
+              "dowodem przewagi.", "warn"),
+          PageBreak()]
     # 4e - 1.37
     s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast", "h1"),
           bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "

@@ -101,24 +101,41 @@ def main(argv: list[str]) -> int:
     pr.add_argument("--last-m1", type=int, default=None)
     pr.add_argument("--variants", default="", help="lista PMW_.. po przecinku (domyślnie wszystkie 20)")
     pr.add_argument("--commission-price-rt", type=float, default=None, help="znana prowizja round trip w cenie (brak = scenariusz, wynik nie NET)")
+    pr.add_argument("--commission-per-lot-side", type=float, default=None, help="prowizja na lot i stronę (waluta rachunku) – przeliczana ze specyfikacji eksportu")
     pr.add_argument("--slippage", type=float, default=0.05)
     pr.add_argument("--spread-fallback", type=float, default=0.20)
     pr.add_argument("--allow-synthetic", action="store_true")
+    pr.add_argument("--out", default=None, help="plik JSON z podsumowaniem (runner treningu)")
     a = ap.parse_args(argv)
     if a.cmd == "pack-replay":
         from .pack import replay as PR
         try:
             bars, meta = PR.load(Path(a.dataset), last_m1=a.last_m1)
+            cpx = a.commission_price_rt
+            if cpx is None and a.commission_per_lot_side is not None:
+                sp = meta.get("spec") or {}
+                tv, ts = float(sp.get("trade_tick_value") or 0), float(sp.get("trade_tick_size") or sp.get("point") or 0)
+                if not (tv > 0 and ts > 0):
+                    raise ValueError("COMMISSION_CONVERSION_NEEDS_TICK_VALUE (spec eksportu bez trade_tick_value)")
+                cpx = 2 * a.commission_per_lot_side / (tv / ts)
+            elif cpx is None:
+                c2 = (meta.get("costs") or {}).get("commission_per_lot_side")
+                sp = meta.get("spec") or {}
+                if c2 is not None and float(sp.get("trade_tick_value") or 0) > 0:
+                    cpx = 2 * float(c2) / (float(sp["trade_tick_value"]) / float(sp.get("trade_tick_size") or sp.get("point")))
             if meta.get("data_kind") != "REAL_USER_DATA" and not a.allow_synthetic:
                 raise ValueError("SYNTHETIC_DATA_REQUIRES_--allow-synthetic (wynik tylko techniczny, NOT_VALIDATED)")
-            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=a.commission_price_rt,
+            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=cpx,
                          slip=a.slippage, spread_fallback=a.spread_fallback, progress=lambda i, n: print(f"[POSTEP] pack-replay {i}/{n}", flush=True))
             w = PR.write(rep)
         except Exception as exc:  # noqa: BLE001
             print(f"[BLAD] {type(exc).__name__}: {exc}")
             return 1
-        print(json.dumps({"status": "DONE", "report": w["report"], "variant_files": w["variant_files"], "seconds": rep["seconds"],
-                          "verdicts": {k: v["verdict"] for k, v in rep["variants"].items()}}, ensure_ascii=False))
+        summ = {"status": "DONE", "report": w["report"], "variant_files": w["variant_files"], "seconds": rep["seconds"], "data_kind": rep["data_kind"],
+                "verdicts": {k: v["verdict"] for k, v in rep["variants"].items()}}
+        if a.out:
+            _write(Path(a.out), summ)
+        print(json.dumps(summ, ensure_ascii=False))
         return 0
     try:
         r = train(Path(a.dataset), a.instrument, Path(a.out), allow_synthetic=a.allow_synthetic, last_m1=a.last_m1,

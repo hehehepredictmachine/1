@@ -249,14 +249,14 @@ class SHService:
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
-        coord = {d["signal_id"]: d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"], "side": p["side"],
-                                                                           "state": p["state"]} for p in opens],
-                                                    foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
+        coord = {(d.get("signal_id") or d["strategy"]): d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"],
+                                                                                                  "side": p["side"], "state": p["state"]} for p in opens],
+                                                                           foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
         for strat, su in evals.items():
             risk = None
             is_pack = bool(su.get("strategy_id"))
             fam = su["strategy"]
-            cd = coord.get(su["signal_id"]) if su.get("status") == "READY" else None
+            cd = (coord.get(su.get("signal_id")) or (None if is_pack else coord.get(fam))) if su.get("status") == "READY" else None
             if cd:
                 su["coordination"] = cd
                 if cd["decision"] == "PROCEED":

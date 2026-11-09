@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 1.38.0 – Pakiet 20 strategii XAUUSD: 10 HEDGING (PMW_HG01–HG10) + 10 SCALPING (PMW_SC01–SC10)
+* **Katalog** (`sh/pack/catalog.py`, `config/sh_strategy_pack_v2.json`): jedno źródło nazw, rodzin, klastrów, grup logiki, TF, parametrów,
+  polityk hedge, wersji i hasha wariantu; status walidacji per wariant (bez danych MT5 użytkownika: NOT_VALIDATED). Jawna konwencja
+  1 pip XAUUSD = 0,10 USD (`PMW_XAU_PRICE_0_10_V1`).
+* **Detektory** 20 wariantów (wspólne cechy przyczynowe liczone raz na TF i cykl; SELL = dokładne lustro BUY), **solver** dwóch TP
+  (SC: TP1 ≥ 25 pips, RR planu netto ≥ 2; HG: TP1 ≥ 40 pips, RR koszyka netto ≥ 3 w scenariuszu celu), koszty bez podwójnego spreadu,
+  nieznana prowizja = scenariusz, `TARGET_UNREACHABLE` / `RR_NOT_ESTIMABLE` zamiast odsuwania celu lub skracania SL.
+* **10 polityk hedge** na istniejącym koszyku (`Basket.policy`): jedna aktywacja, ratio ≤ 0,50 bieżącej bazy, limit po partialu,
+  timeout = wyjście koszyka, intencja `HEDGE` w IntentLedger + rezerwacja RiskBook, NETTING = odmowa z powodem, STOP blokuje nowy hedge.
+* **Integracja** w istniejącym cyklu SH: arbitraż po `signal_id` (jedno wejście na ekspozycję, deterministyczny priorytet), ryzyko
+  z profilem wariantu, DecisionCoordinator ze `strategy_id`, plany z planowanymi absolutnymi TP1/TP2 (bez BE), kontrola poślizgu po fillu.
+  Legacy SCALPING/HEDGING i S01–S12 bez zmian. Migracja 0027 (`strategy_id`, `signal_tf`; stare = LEGACY_*).
+* **Plan PMW-PLAN-2 i wykresy**: strzałka potwierdzonego sygnału, Entry/SL/TP1/TP2 bez TP3, RR netto vs brutto, stan hedge; warstwa
+  „Pakiet 20” z filtrami, panel „Pakiet 20 strategii” na stronie Strategie, tożsamość wariantu i TF w PEPE$SIGNAL, pełne M3
+  (180 s, brak zastępczego M15), token generacji odpowiedzi.
+* **Replay / walidacja** (`python -m masterquo sh pack-replay`, zadanie runnera `sh_pack`, `39_PAKIET_20_WALIDACJA.bat`): te same detektory,
+  solver i polityki; STOP_FIRST, 3 odcinki walk-forward, bootstrap blokami dni, stres kosztów, HEDGE vs NO_HEDGE vs REDUCE; werdykt per wariant.
+* Testy: `tests/test_sh_pack.py` (24), `tests/test_ui_sh_pack.py`. Dokumentacja: `docs/strategies20/`.
+
 ## 1.37.0 – Trzy przetrenowane modele prognoz: Kronos-base, Chronos-2, FinCast (prawdziwa inferencja, SHADOW)
 * **Kronos → Kronos-base** (`NeoQuasar/Kronos-base` @ `2b554741`, 102,3M; tokenizer bez zmian). To największy publiczny wariant – Kronos-large (499,2M)
   według autorów nie jest udostępniony (sprawdzone: karta modelu i lista repozytoriów organizacji). Ten sam serwis, ten sam proces, bez drugiej

@@ -32,6 +32,9 @@ class TestPackUI(unittest.TestCase):
             c, pl = srv.call("/api/v1/plans/chart?layer=PACK&symbol=BTCUSD-")
             self.assertEqual(pl["plans"], [])                                     # never another symbol's levels
             self.assertEqual(srv.call("/api/v1/sh/strategies/config", {"variants": {"PMW_HG01": {"hedge": {"ratio": 0.9}}}})[0], 400)
+            c, stt = srv.call("/api/v1/sh/pack/stats")
+            self.assertEqual((c, stt["items"]), (200, []))
+            self.assertEqual(srv.call("/api/v1/sh/pack/stats?strategy_id=XX")[0], 400)
             n0 = srv.call("/api/v1/sh/plans")[1]["items"]
             ui = self._browse(srv)
             self.assertEqual(ui["errors"], [])

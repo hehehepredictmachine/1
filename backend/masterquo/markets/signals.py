@@ -252,9 +252,11 @@ class BotSignalService:
             shares = [float(t.get("share") or 0.0) for t in tps]
             tot = sum(shares) or 1.0
             try:
-                self.record_strategy(source="SH", strategy_id=strat, strategy_name=f"{strat} ({inst})", symbol=symbol, side=su["side"],
+                pk = su.get("pack") or {}                                 # 1.38: variant identity + its own signal TF (never collapsed to the family)
+                self.record_strategy(source="SH", strategy_id=su.get("strategy_id") or strat,
+                                     strategy_name=f"{pk.get('name') or strat} ({su.get('strategy_id') or strat}, {inst})", symbol=symbol, side=su["side"],
                                      sl=su.get("sl"), targets=[{"price": t.get("price"), "weight": sh / tot, "basis": t.get("name")} for t, sh in zip(tps, shares)],
-                                     timeframe="M1", setup_id=str(su.get("signal_id")), horizon="SCALP",
+                                     timeframe=pk.get("signal_tf") or "M1", setup_id=str(su.get("signal_id")), horizon="SCALP",
                                      validation_status=(su.get("model_mode") or "strategia SH"),
                                      facts={"net_rr": su.get("net_rr"), "score": (su.get("score") or {}).get("value") if isinstance(su.get("score"), dict) else su.get("score")})
             except Exception:  # noqa: BLE001 - a signal never breaks the strategy cycle

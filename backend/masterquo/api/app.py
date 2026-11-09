@@ -1125,6 +1125,32 @@ def create_app(rt, port: int) -> FastAPI:
         rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
         return _CAT.public(cfg)
 
+    @app.get("/api/v1/sh/pack/stats")
+    def sh_pack_stats(strategy_id: str | None = None):
+        """Closed plans of the variants grouped by variant / TF / execution mode (PAPER is never mixed with AUTO_DEMO / AUTO_LIVE).
+        Whole-cycle results (one plan = one result, partials are not separate wins); R from the plan's own initial risk."""
+        vid = _sh_vid(strategy_id)
+        rows = rt.db.query("SELECT strategy_id, signal_tf, exec_mode, result FROM sh_plans WHERE strategy_id IS NOT NULL AND result IS NOT NULL"
+                           + (" AND strategy_id=?" if vid else ""), (vid,) if vid else ())
+        out: dict = {}
+        for r in rows:
+            res = json.loads(r["result"]) if r.get("result") else {}
+            k = f"{r['strategy_id']}|{r['signal_tf']}|{r['exec_mode']}"
+            g = out.setdefault(k, {"strategy_id": r["strategy_id"], "signal_tf": r["signal_tf"], "exec_mode": r["exec_mode"], "n": 0, "wins": 0,
+                                   "sum_r": 0.0, "n_r": 0, "net_money": 0.0, "hedge_activations": 0})
+            g["n"] += 1
+            if res.get("r_multiple") is not None:
+                g["n_r"] += 1
+                g["sum_r"] += float(res["r_multiple"])
+                g["wins"] += 1 if float(res["r_multiple"]) > 0 else 0
+            g["net_money"] += float(res.get("net_money") or 0.0)
+            g["hedge_activations"] += int(res.get("hedge_activations") or 0)
+        for g in out.values():
+            g["expectancy_r"] = round(g["sum_r"] / g["n_r"], 4) if g["n_r"] else None
+            g["net_money"] = round(g["net_money"], 2)
+        return {"items": sorted(out.values(), key=lambda x: (x["strategy_id"], x["signal_tf"] or "", x["exec_mode"])),
+                "note": "wynik całego cyklu planu; PAPER oddzielnie od rachunku – nie jest walidacją OOS (patrz replay pakietu)"}
+
     @app.get("/api/v1/sh/pack/evaluations")
     def sh_pack_evaluations(strategy_id: str | None = None, tf: str | None = None):
         """Current evaluation of every variant x signal TF (READY / WAIT / NO_TRADE / INVALIDATED / EXPIRED with reason codes). Read-only:

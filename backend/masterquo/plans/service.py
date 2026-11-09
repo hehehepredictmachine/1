@@ -27,8 +27,8 @@ def collect(sh, strategy: str, *, now: float | None = None, history: int = 10) -
     digits = (getattr(sh.bridge, "symbol_info", None) or {}).get("digits")
     plans = []
     seen_signals = set()
-    rows = sh.store.db.query("SELECT * FROM sh_plans WHERE strategy=? AND symbol=? AND (account_key IS NULL OR account_key=?) "
-                             "ORDER BY created_at DESC LIMIT ?", (strategy, symbol, acct, int(history)))
+    rows = sh.store.db.query("SELECT * FROM sh_plans WHERE strategy=? AND strategy_id IS NULL AND symbol=? AND (account_key IS NULL OR account_key=?) "
+                             "ORDER BY created_at DESC LIMIT ?", (strategy, symbol, acct, int(history)))      # 1.38: variant plans -> layer PACK
     for r in rows:
         row = sh.store._plan_row(dict(r))
         o = row.get("fsm_obj")

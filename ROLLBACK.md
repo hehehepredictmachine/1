@@ -1,5 +1,14 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0c. Wersja 1.38.0 → 1.37.0 (pakiet 20 strategii)
+1. Bez cofania wersji: wyłącz warianty w `POST /api/v1/sh/strategies/config` (`{"variants": {"PMW_SC01": {"enabled": false}, ...}}`) –
+   wyłączony wariant nie generuje kandydatów; legacy SCALPING/HEDGING działają jak w 1.37. Otwarte plany pakietu są dalej zarządzane do
+   zamknięcia (TP/SL/czas/koszyk) – nie są porzucane.
+2. Pełny powrót: zamknij plany pakietu (panel Strategie → pozycja / `POST /api/v1/sh/plans/<id>/close`), zamknij 1.38 i uruchom 1.37.0.
+   Migracja 0027 jest addytywna (kolumny `strategy_id`, `signal_tf`) – 1.37 je ignoruje. Plany pakietu w bazie 1.37 traktuje jak plany
+   rodziny (strategy = SCALPING/HEDGING), ale nie zna ich polityk – dlatego zamknij je przed powrotem.
+3. Pliki 1.38 do usunięcia (opcjonalnie): `data/sh/pack_override.json`, `data/sh/pack_validation/`.
+
 ## 0b. Wersja 1.37.0 → 1.36.0
 1. Zamknij 1.37. Uruchom 1.36.0 z jej folderu – konfiguracja `config.json` jest wspólna (1.37 nie dodaje sekcji do `config.json`).
 2. Baza może zostać: migracja 0026 (`tsfm_forecasts`) jest addytywna, 1.36 jej nie czyta. Plik `data/tsfm/settings.json` i raporty

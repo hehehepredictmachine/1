@@ -85,6 +85,7 @@ export default function PackPanel() {
   const [plans, setPlans] = useState<any>(null);
   const [hist, setHist] = useState<any[]>([]);
   const [evl, setEvl] = useState<any>(null);
+  const [stats, setStats] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
@@ -98,6 +99,7 @@ export default function PackPanel() {
     if (!sel) { setPlans(null); setHist([]); setEvl(null); return; }
     let alive = true;
     const load = () => {
+      apiGet(`/api/v1/sh/pack/stats?strategy_id=${sel.id}`).then((d) => alive && setStats((d.items || []).filter((x: any) => x.signal_tf === sel.tf))).catch(() => alive && setStats([]));
       apiGet(`/api/v1/sh/pack/evaluations?strategy_id=${sel.id}&tf=${sel.tf}`).then((d) => alive && setEvl((d.items || [])[0] ?? null)).catch(() => alive && setEvl(null));
       apiGet(`/api/v1/plans/chart?layer=PACK&strategy_id=${sel.id}&tf=${sel.tf}&history=10`).then((d) => alive && setPlans(d)).catch(() => alive && setPlans(null));
       apiGet(`/api/v1/sh/signals?strategy_id=${sel.id}&tf=${sel.tf}&limit=30`).then((d) => alive && setHist(d.items || [])).catch(() => alive && setHist([]));
@@ -171,6 +173,8 @@ export default function PackPanel() {
           </div>
           <div>
             <PackChart tf={sel.tf} plan={plan} />
+            <p className="small" data-testid="pack-stats">Zamknięte plany: {stats.length ? stats.map((s: any) => `${s.exec_mode}: ${s.n} (E ${fmtNum(s.expectancy_r, 2)} R, netto ${fmtNum(s.net_money, 2)})`).join(" · ")
+              : "brak"} <span className="muted">– wynik całych cykli; PAPER oddzielnie od rachunku; to nie jest walidacja OOS.</span></p>
             <h4>Historia sygnałów {sel.id} / {sel.tf}</h4>
             <div className="tbl-wrap"><table className="tbl small" data-testid="pack-history"><thead><tr><th>Czas</th><th>Kierunek</th><th>Status</th><th>Powód</th></tr></thead><tbody>
               {hist.map((h: any) => <tr key={h.signal_id}><td>{new Date(h.created_at * 1000).toISOString().slice(5, 16).replace("T", " ")}</td><td>{h.side}</td><td><B s={h.status} /></td>
