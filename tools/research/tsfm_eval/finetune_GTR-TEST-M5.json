@@ -1,0 +1,89 @@
+{
+  "schema": "PMW-GRANITE-FT-1",
+  "run_id": "GTR-TEST-M5",
+  "created_at": "2026-11-09T16:03:21+00:00",
+  "base_fingerprint": "granite_ttm|ibm-granite/granite-timeseries-ttm-r2@d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f|granite-tsfm@0.3.11",
+  "files": [
+    {
+      "name": "config.json",
+      "sha256": "ed1840d6722082405a09946d746ebeb130f1631b0d34a87bac141bbf7a78653f",
+      "size": 2863
+    },
+    {
+      "name": "model.safetensors",
+      "sha256": "4c00f60b3d745541aa63186226bf0f4a9122eef31f3961b3c1d5589da080f006",
+      "size": 3240592
+    }
+  ],
+  "data": {
+    "instrument": "XAUUSD",
+    "symbol": "XAUUSD (HistData M1->M5)",
+    "timeframe": "M5",
+    "data_kind": "EXTERNAL_PUBLIC",
+    "first": "2025-01-01T18:00:00",
+    "last": "2026-01-09T16:55:00",
+    "bars": 72466,
+    "sha256": "57e597a2bd675cdd4a889875f36ec061e79dd078c4fa85dcef94ee9ab5f62060",
+    "source": "huggingface fokan/xauusd-2009-2026 (HistData, EST)"
+  },
+  "train": {
+    "context": 512,
+    "horizon": 12,
+    "epochs": 4,
+    "lr": 0.001,
+    "batch": 64,
+    "stride": 4,
+    "seed": 7,
+    "threads": 4,
+    "trainable_params": 289696,
+    "frozen": "backbone",
+    "train_s": 223.3,
+    "windows": {
+      "train": 12590,
+      "val": 5134,
+      "test": 856
+    },
+    "embargo_bars": 524,
+    "history": [
+      {
+        "epoch": 1,
+        "val_mse": 0.14395704865455627
+      },
+      {
+        "epoch": 2,
+        "val_mse": 0.14507101476192474
+      },
+      {
+        "epoch": 3,
+        "val_mse": 0.13946953415870667
+      },
+      {
+        "epoch": 4,
+        "val_mse": 0.14239509403705597
+      }
+    ]
+  },
+  "metrics": {
+    "test_finetuned": {
+      "mae_h": 8.1412594031141,
+      "rmse_h": 11.546622412612138,
+      "direction_n": 478,
+      "direction_hit": 0.502092050209205
+    },
+    "test_base": {
+      "mae_h": 8.439148232696008,
+      "rmse_h": 11.919557995993493,
+      "direction_n": 588,
+      "direction_hit": 0.49489795918367346
+    },
+    "test_naive_last_price": {
+      "mae_h": 7.832689252336448,
+      "rmse_h": 11.158141830302224
+    },
+    "val_mse_base": 0.16681364178657532,
+    "val_mse_best": 0.13946953415870667,
+    "verdict": "IMPROVED_VS_BASE",
+    "note": "lepszy od modelu bazowego; NIE lepszy od prognozy „ostatnia cena” (błądzenie losowe)",
+    "rule": "część testowa (15 % końca) nie była używana w treningu ani do wyboru epoki; horyzonty bez nakładania"
+  }
+}

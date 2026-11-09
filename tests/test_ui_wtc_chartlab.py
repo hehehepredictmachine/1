@@ -82,7 +82,10 @@ class TestWtcChartLab(unittest.TestCase):
         lab = "[data-testid=wtc-lab-chart]"
         try:
             p.goto(BASE + "/#/pepe-wtc")
-            p.wait_for_selector("[data-testid=wtc-chartlab]", timeout=60000)
+            p.wait_for_selector("[data-testid=wtc-customize]", timeout=60000)
+            self.assertEqual(p.locator("[data-testid=wtc-chartlab]").count(), 0)          # 1.40: mounted only on demand (performance)
+            p.click("[data-testid=wtc-customize]")
+            p.wait_for_selector("[data-testid=wtc-chartlab]", timeout=10000)
             p.select_option("[data-testid=wtc-lab-tf]", "M5")
             p.wait_for_function(f"() => Number(document.querySelector('{lab}').dataset.bars || 0) > 50", timeout=60000)
             self.assertIn("/api/v1/candles", p.inner_text("[data-testid=wtc-lab-foot]"))
@@ -90,8 +93,7 @@ class TestWtcChartLab(unittest.TestCase):
             poc = p.inner_text("[data-testid=wtc-lab-poc]")
             self.assertEqual(poc.replace("\u00a0", "").replace(" ", "").replace(",", "."), p.get_attribute(lab, "data-poc"))
             self.assertIn("IMPULS", p.inner_text("[data-testid=wtc-lab-impulse]").upper())
-            # toolbar button opens the configurator
-            p.click("[data-testid=wtc-customize]")
+            # the configurator is open together with the lab
             p.wait_for_selector("[data-testid=wtc-lab-panel]", timeout=3000)
             for t in ("HOLLOW", "HEIKIN_ASHI", "LINE", "AREA", "CANDLES"):
                 p.click(f"[data-testid=wtc-lab-type-{t}]")

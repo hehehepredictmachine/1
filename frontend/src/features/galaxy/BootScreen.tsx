@@ -126,7 +126,9 @@ export default function BootScreen() {
       closeTimer = window.setTimeout(() => { setRun(0); setDone(true); window.dispatchEvent(new CustomEvent("pmw:boot-finished")); }, 760);
     }
     function tick(ts: number) {
-      if (!active) return; if (!start) start = ts; elapsed = FREEZE || Math.min(FAST ? TOTAL : (ts - start) / 1000, TOTAL);
+      if (!active) return;
+      if (!start) { start = ts; clearTimeout(noFrame); if (!FREEZE) hard = window.setTimeout(close, (TOTAL + 3) * 1000); }
+      elapsed = FREEZE || Math.min(FAST ? TOTAL : (ts - start) / 1000, TOTAL);
       if (elapsed > 2.8) boot!.classList.add("pmwb-title"); if (elapsed > 3.45) boot!.classList.add("pmwb-tag-show"); if (elapsed > 4.65) boot!.classList.add("pmwb-neural");
       boot!.dataset.elapsed = elapsed.toFixed(2);
       phaseLabel.textContent = elapsed < 2.8 ? "INITIALIZING NEURAL MATRIX" : elapsed < 4.65 ? "PEPEMARKET WIZARD • SYSTEM BOOT" : elapsed < 6.65 ? "ACTIVATING NEURAL NETWORK" : "NEURAL SYSTEM READY";
@@ -134,13 +136,15 @@ export default function BootScreen() {
       if (elapsed >= TOTAL) { close(); return; } raf = requestAnimationFrame(tick);
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && active) close(); };
-    // hard timeout: a throttled / background tab never keeps the overlay over the app
-    const hard = FREEZE ? 0 : window.setTimeout(close, (TOTAL + 3) * 1000);
+    // hard timeouts (the overlay never blocks the app): TOTAL + 3 s after the FIRST frame of the animation (a busy start does not cut the
+    // intro short), and 15 s when no frame comes at all (throttled / background tab)
+    let hard = 0;
+    const noFrame = FREEZE ? 0 : window.setTimeout(close, 15000);
     skip.addEventListener("click", close); document.addEventListener("keydown", onKey); window.addEventListener("resize", resize);
     (window as any).pmwBoot = { replay, skip: close, get state() { return { active, elapsed, done: leaving }; } };
     resize(); init(); raf = requestAnimationFrame(tick);
     return () => {
-      active = false; cancelAnimationFrame(raf); clearTimeout(closeTimer); clearTimeout(hard);
+      active = false; cancelAnimationFrame(raf); clearTimeout(closeTimer); clearTimeout(hard); clearTimeout(noFrame);
       skip.removeEventListener("click", close); document.removeEventListener("keydown", onKey); window.removeEventListener("resize", resize);
     };
   }, [run, replay]);

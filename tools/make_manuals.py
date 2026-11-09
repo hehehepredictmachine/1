@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.39.0"
+VERSION = "1.40.0"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -300,6 +300,18 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4h - 1.40
+    s += [P("4h / Nowe w 1.40: Granite TTM zamiast FinCast, Memory Governor, trening Granite, nowy WTC$PEPE", "h1"),
+          bullets(["<b>Granite TTM</b> (IBM, 0,8 M parametrów, Apache-2.0) zastępuje wycofany FinCast: instalacja <b>38_MODELE_CHRONOS2_GRANITE.bat</b> "
+                   "albo „Zainstaluj” w sekcji Modele prognoz; ok. 3 MB wag, ok. 0,35 GB RAM. Prognoza punktowa (bez kwantyli i świec), rola OBSERVE.",
+                   "Historia prognoz FinCast zostaje (tylko do odczytu); jego ustawienia zapisano w kopii, role nie przeszły na Granite.",
+                   "<b>Memory Governor</b> (Modele prognoz → Zasoby): profile LOW_MEMORY_16GB / ECO / BALANCED / MANUAL, pomiar RAM procesów, progi 75/80/85 %, "
+                   "jeden ciężki model naraz. Wstrzymana prognoza ma stan STALE z powodem – nigdy wartości zastępczej.",
+                   "<b>Dotrenowanie Granite</b> na Twojej historii MT5: osobny proces, test na niewidzianych danych, aktywacja tylko przy wyniku lepszym od bazowego.",
+                   "<b>WTC$PEPE</b> ma układ z paczki WTC 2.1 na danych bota; menu Galaxy i panel działają płynniej (docs/WYDAJNOSC_UI_1_40_PL.md).",
+                   "Walidacja na złocie (Q4 2025): żaden model (Granite, Chronos-2, Kronos) nie pokonał prognozy „ostatnia cena” – modele są informacją, "
+                   "nie sygnałem."]),
+          PageBreak()]
     # 4g - 1.39
     s += [P("4g / Nowe w 1.39: LIVE od startu, GARCH, intro, menu Galaxy, WTC PEPE 2.1", "h1"),
           box("<b>Bot startuje w AUTO LIVE</b> (na Twoje polecenie) i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem REAL. "
@@ -331,7 +343,7 @@ def admin(shots: Path | None) -> list:
               "dowodem przewagi.", "warn"),
           PageBreak()]
     # 4e - 1.37
-    s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast", "h1"),
+    s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
           bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "
                    "Po aktualizacji uruchom <b>33_KRONOS_INSTALUJ.bat</b>; do tego czasu Kronos pokazuje „brak zweryfikowanych wag”. "
                    "Bot nigdy nie przechodzi po cichu na mniejszy model.",

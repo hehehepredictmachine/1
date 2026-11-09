@@ -54,10 +54,17 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
   try { const saved = JSON.parse(localStorage.getItem(GALAXY_KEY)); if (saved && Array.isArray(saved.planets) && saved.planets.length > 0) model = sanitizeModel(saved, validRoutes); } catch (e) { /* storage unavailable */ }
   let edit = false, paused = !!window.matchMedia("(prefers-reduced-motion: reduce)").matches, selectedId = "center", time = 0, last = 0, screenW = 1000, screenH = 600, dpr = 1, starfield = [], leftSparks = [], rightSparks = [];
   let alive = true, raf = 0, hidden = false;
+  // 1.40 adaptive quality: the real cost of drawing a frame is measured; above ~12 ms (slow GPU / software rendering) the effects are
+  // simplified (fewer filaments, no glow blur, fewer particles) and the loop runs at 30 FPS; it goes back up when the cost falls.
+  let quality = 1, frameGap = 16, lastDraw = 0, lowSince = 0, retries = 0, booting = false;
   const $ = (s) => root.querySelector(s), $$ = (s) => [...root.querySelectorAll(s)];
   const space = $("#space"), layer = $("#planetLayer");
   const canvases = { galaxy: $("#galaxyCanvas"), left: $("#leftCanvas"), right: $("#rightCanvas"), lightning: $("#lightningCanvas") };
   const ctx = {}; for (const k in canvases) ctx[k] = canvases[k].getContext("2d");
+  // 1.40: glow by shadowBlur is the main raster cost (CPU / weak GPU: ~400 blurred strokes per frame). In the simplified quality every
+  // shadowBlur write becomes 0 - the layered strokes of the reference keep the look, the blur is dropped.
+  const SB = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "shadowBlur");
+  for (const k in ctx) Object.defineProperty(ctx[k], "shadowBlur", { configurable: true, get() { return SB.get.call(this); }, set(v) { SB.set.call(this, quality === 1 ? v : 0); } });
   const cleanups: (() => void)[] = [];
   const on = (el, ev, fn, o?) => { el.addEventListener(ev, fn, o); cleanups.push(() => el.removeEventListener(ev, fn, o)); };
 
@@ -93,7 +100,17 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
     updatePlanetPositions(); refreshSelect(); updateMeshStatus();
   }
   function updatePlanetPositions() {
-    model.planets.forEach((p, i) => { const el = elements.get(p.id); if (!el) return; const xy = actualXY(p, i), s = planetSize(p); el.style.width = s + "px"; el.style.left = xy.x + "px"; el.style.top = xy.y + "px"; el.style.transform = "translate(-50%,-50%)"; el.classList.toggle("selected", edit && selectedId === p.id); el.style.setProperty("--c", p.color); });
+    // 1.40: position by transform only (compositor) - left / top every frame forced a layout of the whole menu; width / colour / class only on change
+    model.planets.forEach((p, i) => {
+      const el = elements.get(p.id); if (!el) return;
+      const xy = actualXY(p, i), s = Math.round(planetSize(p));
+      if (el._w !== s) { el.style.width = s + "px"; el._w = s; }
+      if (!el._init) { el.style.left = "0px"; el.style.top = "0px"; el._init = true; }
+      el.style.transform = `translate3d(${xy.x.toFixed(1)}px, ${xy.y.toFixed(1)}px, 0) translate(-50%,-50%)`;
+      const sel = edit && selectedId === p.id;
+      if (el._sel !== sel) { el.classList.toggle("selected", sel); el._sel = sel; }
+      if (el._c !== p.color) { el.style.setProperty("--c", p.color); el._c = p.color; }
+    });
   }
   function refreshSelect() {
     const el = $("#selectPlanet"); el.innerHTML = "";
@@ -159,7 +176,7 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
   on(document, "keydown", (e) => { if (e.key === "Escape") { closeSection(); if (edit) setEdit(false); } if (e.key === " " && e.target === document.body) { e.preventDefault(); setPause(!paused); } });
   on(document, "visibilitychange", () => { hidden = document.hidden; syncSideVideos(); });
   function updateMeshStatus() { const possible = meshLinks(model.planets.length); const current = model.connections ? possible : 0; $("#meshCount").textContent = current + " / " + possible; root.dataset.meshLinks = String(current); root.dataset.meshPossible = String(possible); }
-  function resize() { dpr = Math.min(window.devicePixelRatio || 1, 1.6); const r = space.getBoundingClientRect(); screenW = r.width; screenH = r.height; for (const [k, c] of Object.entries(canvases)) { const rr = c.getBoundingClientRect(); c.width = Math.max(1, Math.floor(rr.width * dpr)); c.height = Math.max(1, Math.floor(rr.height * dpr)); ctx[k].setTransform(dpr, 0, 0, dpr, 0, 0); } makeStars(); makeSideSparks(); updatePlanetPositions(); }
+  function resize() { dpr = Math.min(window.devicePixelRatio || 1, 1.25); const r = space.getBoundingClientRect(); screenW = r.width; screenH = r.height; for (const [k, c] of Object.entries(canvases)) { const rr = c.getBoundingClientRect(); c.width = Math.max(1, Math.floor(rr.width * dpr)); c.height = Math.max(1, Math.floor(rr.height * dpr)); ctx[k].setTransform(dpr, 0, 0, dpr, 0, 0); } makeStars(); makeSideSparks(); updatePlanetPositions(); }
   function makeStars() { starfield = Array.from({ length: Math.floor(clamp(screenW * screenH / 2100, 120, 350)) }, () => ({ x: Math.random(), y: Math.random(), a: rand(.1, .65), r: rand(.25, 1.4), phase: rand(0, 6.28), g: Math.random() < .4 })); }
   function makeSideSparks() { leftSparks = Array.from({ length: 235 }, () => ({ x: Math.random(), y: Math.random(), speed: rand(.025, .17), rad: rand(.4, 1.95), phase: rand(0, 6.28) })); rightSparks = Array.from({ length: 235 }, () => ({ x: Math.random(), y: Math.random(), speed: rand(.025, .17), rad: rand(.4, 1.95), phase: rand(0, 6.28) })); }
   function rgb(hex) { const s = (hex || "#aa77ff").replace("#", ""); return [parseInt(s.slice(0, 2), 16) || 0, parseInt(s.slice(2, 4), 16) || 0, parseInt(s.slice(4, 6), 16) || 0]; }
@@ -194,13 +211,13 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
         const alpha = (primary ? .33 : .24) * (focus ? 1.75 : 1) * Math.min(1.18, intensity);
         c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(mx, my, x1, y1);
         c.strokeStyle = `rgba(${mix.join(",")},${alpha * .62})`; c.lineWidth = primary ? 3.4 : 2.1; c.shadowBlur = primary ? 18 : 12; c.shadowColor = `rgb(${mix.join(",")})`; c.stroke(); c.shadowBlur = 0;
-        const strands = Math.max(4, Math.round((primary ? 11 : 8) * intensity));
+        const strands = Math.max(quality < 1 ? 2 : 4, Math.round((primary ? 11 : 8) * intensity * quality));
         for (let strand = 0; strand < strands; strand++) {
           const spread = (strand - (strands - 1) / 2) * (primary ? 3.3 : 2.4);
           const speed = time * .0014 * (strand % 2 ? 1 : -.7);
           const brightness = (strand % 4 === 0 ? 1.55 : .85);
           c.strokeStyle = `rgba(${mix.join(",")},${Math.min(.83, alpha * brightness)})`; c.lineWidth = strand % 4 === 0 ? 1.35 : .68;
-          if (strand % 5 === 0) { c.shadowBlur = 9; c.shadowColor = `rgb(${mix.join(",")})`; }
+          if (strand % 5 === 0 && quality === 1) { c.shadowBlur = 9; c.shadowColor = `rgb(${mix.join(",")})`; }
           c.beginPath();
           for (let k = 0; k <= 26; k++) {
             const t = k / 26, inv = 1 - t;
@@ -240,7 +257,8 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
       if (filament % 4 === 0) { c.shadowColor = "#62fff3"; c.shadowBlur = 10; }
       c.stroke(); c.shadowBlur = 0;
     }
-    for (const p of arr) { const yy = ((p.y - (t * p.speed) % 1 + 1) % 1) * h; const xx = (.5 + Math.sin(yy * .015 + t * 1.28 * side + p.phase) * .34) * w + (p.x - .5) * w * .31; const a = (.24 + .58 * Math.sin(t * 2.5 + p.phase) ** 2); c.fillStyle = p.x > .25 ? `rgba(41,255,158,${a})` : `rgba(111,174,255,${a})`; c.beginPath(); c.arc(xx, yy, p.rad, 0, 6.283); c.fill(); }
+    const nShow = quality === 1 ? arr.length : Math.floor(arr.length * quality);
+    for (let pi = 0; pi < nShow; pi++) { const p = arr[pi]; const yy = ((p.y - (t * p.speed) % 1 + 1) % 1) * h; const xx = (.5 + Math.sin(yy * .015 + t * 1.28 * side + p.phase) * .34) * w + (p.x - .5) * w * .31; const a = (.24 + .58 * Math.sin(t * 2.5 + p.phase) ** 2); c.fillStyle = p.x > .25 ? `rgba(41,255,158,${a})` : `rgba(111,174,255,${a})`; c.beginPath(); c.arc(xx, yy, p.rad, 0, 6.283); c.fill(); }
     for (let n = 0; n < 9; n++) { const y = h * (n + .52) / 9, x = w * (.5 + .31 * Math.sin(t * .94 + phase + n * .82)); const radius = 2.4 + 2 * Math.sin(t * 2 + n); c.beginPath(); c.arc(x, y, radius, 0, 6.283); c.fillStyle = "rgba(174,255,246,.38)"; c.shadowColor = "#50ffdf"; c.shadowBlur = 15; c.fill(); c.shadowBlur = 0; }
     const tick = Math.floor(time / 145), onBolt = Math.sin(tick * 12.51 + phase) > -.45;
     if (onBolt) {
@@ -261,7 +279,7 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
     c.save(); c.globalCompositeOperation = "screen";
     const t = time * .001;
     for (let wave = 0; wave < 5; wave++) { const y = h * (.31 + wave * .135); c.beginPath(); for (let j = 0; j <= 100; j++) { const x = j * w / 100; const yy = y + Math.sin(x * .016 + t * (1.1 + wave * .12) + wave * 1.5) * h * .035 + Math.sin(x * .051 - t * .67 + wave) * h * .014; j ? c.lineTo(x, yy) : c.moveTo(x, yy); } c.lineWidth = wave % 2 ? 1.2 : 2.4; c.strokeStyle = `rgba(${wave % 2 ? "111,98,255" : "67,194,255"},${.16 + .14 * Math.sin(t + wave) ** 2})`; c.shadowColor = "#3976ff"; c.shadowBlur = 9; c.stroke(); c.shadowBlur = 0; }
-    const tick = Math.floor(time / 175), segments = 26;
+    const tick = Math.floor(time / 175), segments = quality === 1 ? 26 : 14;
     for (let i = 0; i < segments; i++) {
       const seed = tick * 23 + i * 31.7;
       if (randHash(seed) < .28) continue;
@@ -281,20 +299,35 @@ export function mountGalaxy(root: HTMLElement, opts: GalaxyOpts): () => void {
   const sideVideos = [$("#sideVideoLeft"), $("#sideVideoRight")];
   for (const v of sideVideos) { v.src = A + "side_models.mp4"; v.muted = true; v.loop = true; v.playsInline = true; on(v, "error", () => { v.style.display = "none"; }); }
   on(sideVideos[1], "loadedmetadata", () => { try { sideVideos[1].currentTime = Math.min(3.35, sideVideos[1].duration * .4); } catch (e) { /* ignore */ } }, { once: true });
-  function syncSideVideos() { for (const v of sideVideos) { v.style.opacity = model.sides ? ".58" : "0"; if (paused || hidden || !model.sides || !alive) v.pause(); else v.play().catch(() => { /* autoplay refused - the canvas effect still runs */ }); } }
+  function syncSideVideos() { for (const v of sideVideos) { v.style.opacity = model.sides ? ".58" : "0"; if (paused || hidden || !model.sides || !alive || quality < 1 || booting) v.pause(); else v.play().catch(() => { /* autoplay refused - the canvas effect still runs */ }); } }
   function randHash(n) { return (Math.sin(n * 12.9898) * 43758.5453) % 1 < 0 ? 1 + ((Math.sin(n * 12.9898) * 43758.5453) % 1) : ((Math.sin(n * 12.9898) * 43758.5453) % 1); }
+  function setQuality(q, t) {
+    quality = q; lowSince = t; frameGap = q === 1 ? 16 : frameGap;
+    root.dataset.quality = q === 1 ? "high" : "low";
+    root.classList.toggle("gx-lite", q < 1);                       // decorative CSS animations + side films off (measured costs)
+    syncSideVideos();
+  }
   function frame(t) {
     if (!alive) return;
+    const b = !!document.getElementById("pmwBoot");               // START intro on top: films + CSS animations of the menu paused too
+    if (b !== booting) { booting = b; root.classList.toggle("gx-under-boot", b); syncSideVideos(); }
     const delta = last ? Math.min(45, t - last) : 16; last = t;
-    if (!hidden && !document.getElementById("pmwBoot")) {         // the START intro covers the menu: no drawing under it
-      if (!paused) time += delta * model.speed;
+    const minGap = quality < 1 ? 31 : 0;                          // 30 FPS when simplified
+    if (!hidden && !document.getElementById("pmwBoot") && t - lastDraw >= minGap) {   // the START intro covers the menu: no drawing under it
+      if (!paused) time += (lastDraw ? Math.min(66, t - lastDraw) : delta) * model.speed;
+      lastDraw = t;
       drawGalaxy(); drawSide("left", leftSparks); drawSide("right", rightSparks); drawLightning(); updatePlanetPositions();
+      // real frame interval (includes raster / compositing, which JS timing does not see)
+      frameGap = frameGap * 0.85 + Math.min(1000, delta) * 0.15;
+      if (quality === 1 && frameGap > 40) setQuality(0.4, t);
+      else if (quality < 1 && retries < 2 && t - lowSince > 20000 && frameGap < 40) { retries++; setQuality(1, t); }
     }
     raf = requestAnimationFrame(frame);
   }
   function status() { try { const s = opts.status(); const el = $("#gxStatus"); el.querySelector("span").textContent = s.text; el.dataset.tone = s.tone; } catch (e) { /* ignore */ } }
   const statusTimer = setInterval(status, 1000); status();
   const observer = new ResizeObserver(resize); observer.observe(space); observer.observe($("#bottom")); observer.observe($("#sideLeft")); observer.observe($("#sideRight"));
+  root.dataset.quality = "high";
   setupInspector(); renderPlanets(); syncSettings(); resize(); syncSideVideos(); raf = requestAnimationFrame(frame);
   return () => {
     alive = false; cancelAnimationFrame(raf); clearInterval(statusTimer); clearTimeout(toast.t); observer.disconnect();

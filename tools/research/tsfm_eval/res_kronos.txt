@@ -1,0 +1,6 @@
+{'model': 'kronos-base', 'n': 60, 'mae': 12.687, 'rmse': 17.945, 'naive_mae': 8.002, 'skill_vs_naive': -0.5854, 'dir_n': 45, 'dir_hit': 0.444, 'pred_flat': 11, 'tf': 'M5', 'H': 12, 'ms_per_origin': 4423.0}
+{'model': 'naive_last(same origins)', 'n': 60, 'mae': 8.002, 'rmse': 11.191, 'naive_mae': 8.002, 'skill_vs_naive': 0.0, 'dir_n': 0, 'dir_hit': None, 'pred_flat': 60, 'tf': 'M5', 'H': 12}
+{'model': 'kronos-base', 'n': 40, 'mae': 16.445, 'rmse': 21.976, 'naive_mae': 11.818, 'skill_vs_naive': -0.3915, 'dir_n': 29, 'dir_hit': 0.483, 'pred_flat': 5, 'tf': 'M15', 'H': 8, 'ms_per_origin': 2777.5}
+{'model': 'naive_last(same origins)', 'n': 40, 'mae': 11.818, 'rmse': 16.021, 'naive_mae': 11.818, 'skill_vs_naive': 0.0, 'dir_n': 0, 'dir_hit': None, 'pred_flat': 40, 'tf': 'M15', 'H': 8}
+{'model': 'kronos-base', 'n': 40, 'mae': 31.985, 'rmse': 40.99, 'naive_mae': 24.706, 'skill_vs_naive': -0.2946, 'dir_n': 29, 'dir_hit': 0.414, 'pred_flat': 7, 'tf': 'H1', 'H': 6, 'ms_per_origin': 2177.2}
+{'model': 'naive_last(same origins)', 'n': 40, 'mae': 24.706, 'rmse': 31.656, 'naive_mae': 24.706, 'skill_vs_naive': 0.0, 'dir_n': 0, 'dir_hit': None, 'pred_flat': 40, 'tf': 'H1', 'H': 6}

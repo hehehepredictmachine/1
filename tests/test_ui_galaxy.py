@@ -127,7 +127,7 @@ class TestGalaxyUI(unittest.TestCase):
             for k in ("pmwb-title", "pmwb-tag-show", "pmwb-neural", "pmwb-exit"):
                 self.assertIn(k, classes)
             self.assertEqual(log[-1], "GONE")
-            p.wait_for_selector("[data-testid=boot-replay]", timeout=3000)
+            p.wait_for_selector("[data-testid=boot-replay]", timeout=10000)
             self.assertEqual(self.real_errors(p), [])
         finally:
             c.close()

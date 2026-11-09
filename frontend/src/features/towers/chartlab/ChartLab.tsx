@@ -29,8 +29,11 @@ export default function ChartLab({ initialTf, digits, symbol, open, setOpen }: {
   const [note, setNote] = useState<string | null>(null);
   const g = usePolled<any>(`/api/v1/candles?tf=${tf}`, 15000);
   const raw: any[] = g.d?.bars || [];
-  const bars = useMemo(() => toBars(raw), [g.d]);                      // eslint-disable-line react-hooks/exhaustive-deps
-  const vsrc = useMemo(() => volumeSource(raw), [g.d]);                // eslint-disable-line react-hooks/exhaustive-deps
+  // 1.40 performance: the poll returns a new object every 15 s even when nothing changed - the chart is rebuilt only when the bars change
+  // (count, last bar time and close of the last two bars), never on an identical poll.
+  const sig = raw.length ? `${raw.length}|${raw[raw.length - 1]?.open_utc}|${raw[raw.length - 1]?.c}|${raw[raw.length - 2]?.c}` : "";
+  const bars = useMemo(() => toBars(raw), [sig]);                      // eslint-disable-line react-hooks/exhaustive-deps
+  const vsrc = useMemo(() => volumeSource(raw), [sig]);                // eslint-disable-line react-hooks/exhaustive-deps
   const sessBars = useMemo(() => lastSessionBars(bars, cfg.svp.session), [bars, cfg.svp.session]);
   const prof = useMemo(() => (cfg.ind.svp.on ? volumeProfile(sessBars, cfg.svp.bins, cfg.svp.va) : null), [sessBars, cfg.ind.svp.on, cfg.svp.bins, cfg.svp.va]);
   const imp = useMemo(() => (cfg.svp.showImpulse ? biggestImpulse(sessBars, cfg.svp.impulse) : null), [sessBars, cfg.svp.showImpulse, cfg.svp.impulse]);

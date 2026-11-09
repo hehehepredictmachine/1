@@ -1,5 +1,15 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0e. Wersja 1.40.0 → 1.39.0 (Granite TTM, Memory Governor, nowy WTC$PEPE)
+1. **Bez cofania wersji**: Granite TTM wyłączysz w panelu „Modele prognoz” (lub `data/tsfm/settings.json` → `"granite_ttm": {"enabled": false}`);
+   dotrenowany checkpoint → „Powrót do BASE”. Memory Governor: profil BALANCED albo MANUAL z `"auto_throttle": false`.
+2. **Pełny powrót**: STOP, zamknij 1.40. Przywróć `data/config.v14.bak.json` jako `data/config.json` (1.39 nie zna sekcji `resources`) oraz
+   `data/tsfm/settings.v139.bak.json` jako `data/tsfm/settings.json` (z wpisem FinCast). Uruchom folder 1.39.0 i, jeśli chcesz FinCast, zainstaluj go
+   `38_MODELE_CHRONOS2_FINCAST.bat` z folderu 1.39 (wagi ~4 GB). Baza (`tsfm_forecasts`) jest zgodna – 1.40 nie zmienia jej schematu; prognozy Granite
+   zostają w historii pod `granite_ttm` (1.39 je ignoruje).
+3. Do usunięcia (opcjonalnie): `.venv_granite`, `data/tsfm/models/granite_ttm`, `data/tsfm/finetuned/granite_ttm`, `data/tsfm/granite_data`.
+4. Kod: tag git `pre-1.40-restore-point` wskazuje wydanie 1.39.0.
+
 ## 0d. Wersja 1.39.0 → 1.38.0 (LIVE od startu, GARCH, menu Galaxy, WTC 2.1)
 1. **Tylko wyłączenie LIVE (bez cofania wersji)**: przycisk STOP, potem w `data/config.json` → `"execution": {"start_mode": "SIGNALS",
    "live_autobind": false}` (albo `"start_mode": null` = ostatni zapisany tryb) i restart. Bramek walidacji nie da się przywrócić

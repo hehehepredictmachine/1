@@ -42,11 +42,13 @@ class EngineError(RuntimeError):
 
 
 def versions() -> dict:
+    """Installed package versions WITHOUT importing them (1.40: importing pandas / tsfm_public only to read a version cost ~100 MB per process)."""
+    from importlib import metadata
     out = {"python": sys.version.split()[0]}
-    for mod in ("torch", "numpy", "pandas", "chronos", "tsfm_public", "transformers", "einops", "safetensors"):
+    for mod, dist in (("torch", "torch"), ("numpy", "numpy"), ("pandas", "pandas"), ("chronos", "chronos-forecasting"), ("tsfm_public", "granite-tsfm"),
+                      ("transformers", "transformers"), ("einops", "einops"), ("safetensors", "safetensors")):
         try:
-            m = __import__(mod)
-            out[mod] = getattr(m, "__version__", "?")
+            out[mod] = metadata.version(dist)
         except Exception as exc:  # noqa: BLE001
             out[mod] = f"BRAK ({type(exc).__name__})"
     return out

@@ -257,6 +257,66 @@ export default function FoundationModelsPanel() {
       <p className="small muted">Kronos-base ma osobne ustawienia roli w sekcji „Kronos AI Forecast”. Modele widzą wyłącznie zamknięte świece (Chronos-2 opcjonalnie OHLC + tick volume
         jako przeszłe zmienne) – nie znają newsów, spreadu, prowizji, poślizgu ani pozycji. Zgodność modeli liczących na tych samych świecach nie jest niezależnym potwierdzeniem.
         Licencje: Chronos-2 – Apache-2.0 (Amazon), Granite TTM – Apache-2.0 (IBM, karta modelu ibm-granite/granite-timeseries-ttm-r2). FinCast wycofany w 1.40 – jego dawne prognozy pozostają w historii.</p>
+      <GraniteTraining inst={inst} tf={tf} />
+      <ResourcesPanel />
     </div>
   );
+}
+
+/** 1.40 Granite TTM in the Training Center: fine-tune job (separate process), versions with TEST metrics, activation / rollback. */
+function GraniteTraining({ inst, tf }: { inst: string; tf: string }) {
+  const [g, setG] = useState<any>(null);
+  const [epochs, setEpochs] = useState(6);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => apiGet("/api/v1/models/foundation/granite").then(setG).catch((e) => setMsg(String(e?.message || e)));
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (g?.job?.state !== "RUNNING") return; const t = setInterval(load, 3000); return () => clearInterval(t); }, [g?.job?.state]);
+  const call = (path: string, body: any, ok: string) => apiSend("POST", path, body).then(() => { setMsg(ok); load(); }).catch((e) => setMsg(String(e?.message || e)));
+  const running = g?.job?.state === "RUNNING";
+  return (
+    <div className="fm-granite" data-testid="fm-granite">
+      <h4>Granite TTM – dotrenowanie na Twoich danych (Centrum treningu)</h4>
+      <p className="small muted">Osobny proces (.venv_granite), nie startuje z botem; zamrożony backbone, podział chronologiczny z embargiem, wynik na niewidzianych 15 % danych.
+        Aktywacja tylko gdy model jest lepszy od bazowego na teście; powrót do modelu bazowego jednym przyciskiem. Aktywny checkpoint: <b data-testid="fm-granite-ckpt">{g?.checkpoint ?? "…"}</b></p>
+      <div className="row wrap" style={{ gap: 6 }}>
+        <label className="small">Epoki <input type="number" min={1} max={30} value={epochs} onChange={(e) => setEpochs(Math.max(1, Math.min(30, Number(e.target.value) || 6)))} style={{ width: 56 }} /></label>
+        <button className="btn" disabled={running} data-testid="fm-granite-train" onClick={() => call("/api/v1/models/foundation/granite/train", { instrument: inst, tf, epochs }, "trening uruchomiony")}>Trenuj {inst} {tf}</button>
+        <button className="btn" disabled={running} onClick={() => { if (confirm("Uruchomić trening podczas aktywnego handlu AUTO? Proces dostaje ograniczoną liczbę wątków CPU, ale obciąża komputer.")) call("/api/v1/models/foundation/granite/train", { instrument: inst, tf, epochs, confirm_during_trading: true }, "trening uruchomiony"); }}>…mimo handlu AUTO</button>
+        {running && <button className="btn ghost" onClick={() => call("/api/v1/models/foundation/granite/cancel", {}, "przerwano")}>Przerwij</button>}
+        <button className="btn ghost" disabled={g?.checkpoint === "BASE"} data-testid="fm-granite-rollback" onClick={() => call("/api/v1/models/foundation/granite/rollback", {}, "powrót do modelu bazowego")}>Powrót do BASE</button>
+      </div>
+      {g?.job && <p className="small" data-testid="fm-granite-job">Zadanie: {g.job.state} – {g.job.message}</p>}
+      {msg && <p className="small" role="status">{msg}</p>}
+      <div className="table-wrap"><table className="tbl small" data-testid="fm-granite-runs"><thead><tr><th>Wersja</th><th>Dane</th><th>MAE test (dotren. / bazowy / naiwny)</th><th>Kierunek</th><th>Werdykt</th><th /></tr></thead>
+        <tbody>{(g?.runs || []).map((r: any) => { const m = r.metrics || {}; return (
+          <tr key={r.run_id}><td className="mono">{r.run_id}</td><td>{r.data?.instrument} {r.data?.timeframe} · {r.data?.bars} świec · {r.data?.data_kind}</td>
+            <td>{fmtNum(m.test_finetuned?.mae_h, 3)} / {fmtNum(m.test_base?.mae_h, 3)} / {fmtNum(m.test_naive_last_price?.mae_h, 3)}</td>
+            <td>{m.test_finetuned?.direction_hit != null ? `${fmtNum(m.test_finetuned.direction_hit * 100, 1)} % (n ${m.test_finetuned.direction_n})` : "—"}</td>
+            <td title={m.note}>{m.verdict}</td>
+            <td>{m.verdict === "IMPROVED_VS_BASE" && g?.checkpoint !== r.run_id && <button className="btn ghost" onClick={() => { if (confirm(`Aktywować ${r.run_id}? ${m.note}`)) call("/api/v1/models/foundation/granite/activate", { run_id: r.run_id }, `aktywny ${r.run_id}`); }}>Aktywuj</button>}</td></tr>); })}
+          {!(g?.runs || []).length && <tr><td colSpan={6} className="muted">brak dotrenowanych wersji</td></tr>}</tbody></table></div>
+    </div>);
+}
+
+/** 1.40 Memory Governor: profile + measured memory of every model process (no estimate). */
+function ResourcesPanel() {
+  const [r, setR] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = () => apiGet("/api/v1/resources").then((x) => { setR(x); setErr(null); }).catch((e) => setErr(String(e?.message || e)));
+  useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
+  const setProfile = (p: string) => apiSend("PUT", "/api/v1/resources/profile", { profile: p }).then(setR).catch((e) => setErr(String(e?.message || e)));
+  return (
+    <div className="fm-resources" data-testid="fm-resources">
+      <h4>Zasoby – Memory Governor ({r?.level_pl ?? "…"})</h4>
+      <div className="row wrap" style={{ gap: 6 }}>
+        {["LOW_MEMORY_16GB", "ECO", "BALANCED"].map((p) => <button key={p} className={cls("btn", r?.profile === p ? "" : "ghost")} data-testid={`fm-prof-${p}`} onClick={() => setProfile(p)}>{p}</button>)}
+        <span className="small muted">{r?.profile_pl}</span></div>
+      <p className="small">RAM komputera: {r?.system?.used_pct != null ? `${fmtNum(r.system.used_pct, 1)} % z ${fmtNum((r.system.total_mb ?? 0) / 1024, 1)} GB (wolne ${fmtNum((r.system.available_mb ?? 0) / 1024, 1)} GB)` : "brak pomiaru"} ·
+        procesy PMW: {r?.pmw_total_mb != null ? `${fmtNum(r.pmw_total_mb, 0)} MB` : "—"} · CPU {r?.cpu_pct ?? "—"} % ({r?.cpu_count} rdzenie) · progi {r?.settings?.warn_pct}/{r?.settings?.limit_heavy_pct}/{r?.settings?.pause_optional_pct} %</p>
+      <div className="table-wrap"><table className="tbl small" data-testid="fm-res-procs"><thead><tr><th>Proces</th><th>Rodzaj</th><th>RAM teraz</th><th>Szczyt</th><th>Inferencja p50 / p95</th></tr></thead>
+        <tbody>{Object.entries(r?.processes || {}).map(([k, v]: [string, any]) => (
+          <tr key={k}><td>{k}</td><td>{v.kind}</td><td>{v.running ? `${fmtNum(v.rss_mb, 0)} MB` : "nie działa"}</td><td>{v.peak_mb != null ? `${fmtNum(v.peak_mb, 0)} MB` : "—"}</td>
+            <td>{r?.inference?.[k]?.n ? `${fmtNum(r.inference[k].p50_ms, 1)} / ${fmtNum(r.inference[k].p95_ms, 1)} ms` : "—"}</td></tr>))}</tbody></table></div>
+      <p className="small muted">{r?.rule}{err ? ` · błąd: ${err}` : ""}</p>
+    </div>);
 }

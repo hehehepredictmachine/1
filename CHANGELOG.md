@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 1.40.0 – IBM Granite TTM zamiast FinCast, Memory Governor (16 GB) + harmonogram AI, trening Granite, nowy panel WTC$PEPE, optymalizacja UI
+* **Granite TTM** (`ibm-granite/granite-timeseries-ttm-r2`, R2 512-96, Apache-2.0, 0,8 M parametrów, `.venv_granite`, granite-tsfm 0.3.11): wybrany
+  walk-forwardem na prawdziwych danych XAUUSD (Q4 2025) spośród 4 wariantów R2 / R2.1; normalizacja tylko z okna kontekstu, prognoza punktowa,
+  parytet z oficjalnym API, 349 MB RSS procesu. Wyniki: żaden model (Granite, Chronos-2, Kronos) nie pokonał prognozy „ostatnia cena” – rola OBSERVE.
+* **FinCast wycofany** (RETIRED): nie jest instalowany ani ładowany (silnik, kod vendor, wymagania usunięte); historia prognoz zostaje pod `fincast`;
+  ustawienia migrowane z kopią `settings.v139.bak.json` i historią zmian; role nie przechodzą na Granite.
+* **Kontrakt PMW-PRED-2** rozszerzony o checkpoint, snapshot, opóźnienie, świeżość, stan walidacji i profil danych; Granite w ModelHub, koordynatorze
+  ACTIVE, odbiornikach SH (grupa korelacji TSFM_PRICE – bez podwójnego liczenia), porównaniu modeli i panelach.
+* **Memory Governor + harmonogram AI** (`resources/governor.py`): pomiar RAM systemu i procesów (bez psutil), progi 75 / 80 / 85 %, budżet PMW 6 / 8 GB,
+  wspólny slot ciężkiej inferencji (Kronos / Chronos-2), wstrzymanie opcjonalnych prognoz jako STALE z powodem, zwalnianie bezczynnych ciężkich
+  procesów pod presją, wątki CPU z profilu, bramka treningu. Profile LOW_MEMORY_16GB (domyślny) / ECO / BALANCED / MANUAL; konfiguracja v15 (kopia
+  `config.v14.bak.json`); API `/api/v1/resources`.
+* **Trening Granite** w Centrum treningu: eksport z walidacją, osobny proces, zamrożony backbone, podział z embargo, test na niewidzianych danych,
+  wersje z SHA-256, aktywacja tylko gdy lepszy od bazowego, powrót do BASE, przerwanie.
+* **WTC$PEPE** – nowy układ panelu z paczki `WTC_PEPE_2_1_HTML` (radar sygnałów, prognozy modeli, stan rynku, tarcza makro, KPI, matryca modeli z pamięcią
+  procesów, karta Granite TTM, 14 modułów → prawdziwe ekrany) na danych bota; wartości demonstracyjne paczki nie są pokazywane.
+* **Wydajność UI** (zmierzone w Chromium): menu Galaxy 0,7 → ~34 FPS (filmy boczne przeskalowane 720×1280 → 240×426, bez rozmycia tła / filtrów
+  na zmieniających się warstwach, planety przesuwane transformacją, adaptacyjna jakość wg rzeczywistego czasu klatki), Chart Lab montowany na
+  żądanie i bez przebudowy przy identycznym odpytaniu, wykresy Multi-Chart rysowane dopiero gdy widoczne. Szczegóły: `docs/WYDAJNOSC_UI_1_40_PL.md`.
+* Dokumentacja: `docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md`, ROLLBACK 0e, instrukcja PDF (Granite, Memory Governor), `38_MODELE_CHRONOS2_GRANITE.bat`.
+
 ## 1.39.0 – LIVE od startu, GARCH w PMW_HG09, intro startowe, menu Galaxy V2, WTC PEPE 2.1 (Chart Lab + SVP), instrukcja PDF
 * **LIVE od startu (na polecenie użytkownika)**: `execution.start_mode = "AUTO_LIVE"` (konfiguracja v14, kopia `config.v13.bak.json`);
   przy starcie z prawdziwym terminalem `ModeManager.apply_start_mode()`. `execution.live_autobind = true`: pierwsza decyzja na rachunku

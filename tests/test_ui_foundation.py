@@ -55,6 +55,26 @@ class TestFoundationUI(unittest.TestCase):
                 self.assertIn(m, preds)
                 self.assertIsNone(preds[m]["result"])
                 self.assertTrue(preds[m]["unavailable_reason"])
+            # 1.40 FinCast retired: no forecast / role / install any more, its history id stays readable
+            self.assertEqual(srv.call("/api/v1/models/foundation/forecast?model=fincast&instrument=XAUUSD&tf=M5")[0], 400)
+            self.assertEqual(srv.call("/api/v1/models/foundation/install", {"model": "fincast"})[0], 400)
+            self.assertEqual(srv.call("/api/v1/models/foundation/history?model=fincast&instrument=XAUUSD")[0], 200)
+            self.assertIn("fincast", st["retired"])
+            # 1.40 Granite training + Memory Governor API
+            c, gr = srv.call("/api/v1/models/foundation/granite")
+            self.assertEqual((c, gr["checkpoint"], gr["runs"]), (200, "BASE", []))
+            self.assertEqual(srv.call("/api/v1/models/foundation/granite/activate", {"run_id": "../x"})[0], 400)
+            self.assertEqual(srv.call("/api/v1/models/foundation/granite/activate", {"run_id": "GTR-NOTHERE"})[0], 409)
+            c, r = srv.call("/api/v1/models/foundation/granite/train", {"instrument": "XAUUSD", "tf": "M5"})
+            self.assertEqual(c, 409)                                              # no .venv_granite / no exported history in the demo
+            c, res = srv.call("/api/v1/resources")
+            self.assertEqual((c, res["profile"], res["settings"]["heavy_parallelism"]), (200, "LOW_MEMORY_16GB", 1))
+            self.assertIsNotNone(res["system"]["total_mb"])
+            self.assertIn("bot", res["processes"])
+            c, res = srv.call("/api/v1/resources/profile", {"profile": "ECO"}, method="PUT")
+            self.assertEqual((c, res["profile"]), (200, "ECO"))
+            self.assertEqual(srv.call("/api/v1/resources/profile", {"profile": "TURBO"}, method="PUT")[0], 400)
+            self.assertEqual(srv.call("/api/v1/models/foundation/settings", {"models": {"granite_ttm": {"checkpoint": "GTR-ABCDEF"}}}, method="PUT")[0], 400)
             ui = self._browse(srv)
             self.assertEqual(ui["errors"], [])
             self.assertEqual(ui["rows"], [1, 1, 1])
@@ -63,6 +83,7 @@ class TestFoundationUI(unittest.TestCase):
             self.assertEqual(ui["no_forecast"], 1)
             self.assertIn("zgoda na zlecenia: NIE", ui["text"])
             self.assertNotIn("prawdopodobie", ui["status_text"].lower())
+            self.assertEqual((ui["granite_section"], ui["resources"]), (1, 1))
         finally:
             srv.stop()
 
@@ -84,7 +105,8 @@ class TestFoundationUI(unittest.TestCase):
                    "rows": [p.locator(f"[data-testid=fm-row-{m}]").count() for m in ("kronos", "chronos2", "granite_ttm")],
                    "buttons": [p.locator(f"[data-testid=fm-{b}-{m}]").count() for m in ("chronos2", "granite_ttm") for b in ("install", "verify", "refresh")],
                    "toggles": [p.locator(f"[data-testid=fm-toggle-{m}]").count() for m in ("kronos", "chronos2", "granite_ttm")],
-                   "no_forecast": p.locator("[data-testid=fm-no-forecast]").count()}
+                   "no_forecast": p.locator("[data-testid=fm-no-forecast]").count(),
+                   "granite_section": p.locator("[data-testid=fm-granite]").count(), "resources": p.locator("[data-testid=fm-resources]").count()}
             p.locator("[data-testid=sec-foundation]").screenshot(path=str(SHOTS / "foundation_not_installed.png"))
             br.close()
         return out

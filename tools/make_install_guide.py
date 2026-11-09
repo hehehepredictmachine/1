@@ -34,7 +34,7 @@ def story(shots: Path | None) -> list:
     V, TAG = M.VERSION, M.VERSION.replace(".", "_")
     s: list = [Spacer(1, 18 * mm), P("Instalacja bota,<br/>modeli i trening", "title"),
                P(f"PepeMarketWizard {V}: instalacja na Windows, pierwsze uruchomienie, tryb LIVE od startu, instalacja modeli prognoz "
-                 "(Kronos-base, Chronos-2, FinCast), rodziny modeli (ARIMA, GARCH, LSTM, PPO …), trening, aktywacja, GARCH w strategii "
+                 "(Kronos-base, Chronos-2, Granite TTM), Memory Governor (16 GB), rodziny modeli (ARIMA, GARCH, LSTM, PPO …), trening, aktywacja, GARCH w strategii "
                  "PMW_HG09, walidacja 20 wariantów, aktualizacja i powrót do poprzedniej wersji.", "lead"),
                box(f"<b>Stan:</b> instrukcja odpowiada wersji <b>{V}</b>. Polecenia i nazwy plików pochodzą z paczki i są sprawdzane testem "
                    "(tests/test_install_guide.py). Nie przeprowadzono tutaj testu na Twoim Windows ani z prawdziwym MT5 – zrzuty ekranu "
@@ -44,7 +44,7 @@ def story(shots: Path | None) -> list:
                    "rozdział 3 (co zostało zdjęte, co nadal chroni rachunek, jak wyłączyć LIVE).", "block"),
                P("Spis treści", "h2"),
                steps(["Wymagania", "Instalacja bota", "Tryb LIVE od startu – co się zmieniło", "Modele – przegląd",
-                      "Instalacja modeli prognoz (Kronos-base, Chronos-2, FinCast)", "Rodziny modeli – instalacja i trening",
+                      "Instalacja modeli prognoz (Kronos-base, Chronos-2, Granite TTM)", "Rodziny modeli – instalacja i trening",
                       "GARCH (VOL_GARCH) i strategia PMW_HG09", "Centrum treningu i eksport danych z MT5",
                       "Walidacja (replay 20 wariantów, prognozy, scalp)", "Nowe menu, intro i WTC PEPE 2.1",
                       "Aktualizacja z 1.38 i powrót", "Problemy i logi"]),
@@ -55,8 +55,8 @@ def story(shots: Path | None) -> list:
                  ["System", "Windows 10 / 11 x64", "Aplikacja Windows ma własny Python (runtime\\python) i WebView2."],
                  ["MetaTrader 5", "zainstalowany, zalogowany, symbol w Market Watch", "np. XAUUSD- u brokera; „Algo Trading” włączone dla LIVE."],
                  ["Python (wariant bez aplikacji)", "3.13 x64 (lub 3.12) z python.org", "01_INSTALUJ.bat sam wybiera interpreter; nie zmienia globalnego Pythona."],
-                 ["RAM", "8 GB (16 GB z FinCast)", "FinCast przy ładowaniu potrzebuje ok. 8 GB wolnej pamięci."],
-                 ["Dysk", "ok. 2 GB bot + modele", "Kronos-base ≈ 0,7 GB (PyTorch + wagi), Chronos-2 ≈ 0,75 GB, FinCast ≈ 4,3 GB."],
+                 ["RAM", "16 GB (zalecane)", "Profil LOW_MEMORY_16GB: Granite ≈ 0,35 GB, Chronos-2 ≈ 1 GB, Kronos ≈ 1,1 GB na proces; Memory Governor pilnuje progów 75/80/85 %."],
+                 ["Dysk", "ok. 2 GB bot + modele", "Kronos-base ≈ 0,7 GB (PyTorch + wagi), Chronos-2 ≈ 0,75 GB, Granite TTM ≈ 0,3 GB (wagi 3 MB + PyTorch)."],
                  ["Internet", "przy instalacji", "Pakiety z sumami SHA-256; wagi modeli w przypiętych rewizjach. Instalacja offline: rozdz. 5."],
                  ["GPU (opcjonalnie)", "NVIDIA, CUDA 12.6 / 12.8", "Parametr cu126 / cu128 w instalatorach modeli; bez GPU działa na CPU."]],
                 [34, 52, 84]),
@@ -118,9 +118,9 @@ def story(shots: Path | None) -> list:
           table([["Model / grupa", "Rola w bocie", "Instalacja", "Trening"],
                  ["Kronos-base (NeoQuasar)", "prognoza świec M1/M5, SHADOW (bez zleceń)", "33_KRONOS_INSTALUJ.bat (.venv_kronos)",
                   "przetrenowany przez autorów – bot nie trenuje, tylko pobiera wagi"],
-                 ["Chronos-2 (amazon, 120M)", "prognoza, rola OBSERVE + porównanie", "38_MODELE_CHRONOS2_FINCAST.bat chronos2 (.venv_chronos2)",
+                 ["Chronos-2 (amazon, 120M)", "prognoza, rola OBSERVE + porównanie", "38_MODELE_CHRONOS2_GRANITE.bat chronos2 (.venv_chronos2)",
                   "zero-shot, wagi oficjalne"],
-                 ["FinCast v1 (≈1B)", "prognoza, rola OBSERVE + porównanie", "38_MODELE_CHRONOS2_FINCAST.bat fincast (.venv_fincast)",
+                 ["Granite TTM R2 (IBM, 0,8M)", "lekka prognoza punktowa, OBSERVE + porównanie", "38_MODELE_CHRONOS2_GRANITE.bat granite (.venv_granite)",
                   "zero-shot, wagi oficjalne"],
                  ["Rodziny modeli 1.33: TS_ARIMA, TS_SARIMAX, VOL_GARCH, MICROSTRUCTURE, PAIR_COINT, STATARB, KALMAN_LS, BREAKOUT, TH_RF, TH_XGB, "
                   "TH_SVM, SEQ_LSTM, SEQ_GRU, RL_PPO, NLP_SENTIMENT", "OFF / SHADOW / ASSIST", "w .venv; LSTM / GRU / PPO: 34_DEEP_INSTALUJ.bat",
@@ -138,14 +138,14 @@ def story(shots: Path | None) -> list:
           P("Tworzy izolowane <b>.venv_kronos</b> (PyTorch CPU ≈ 250 MB), pobiera oficjalne wagi Kronos-base + Kronos-Tokenizer-base "
             "(≈ 420 MB) w przypiętych rewizjach, sprawdza sumy i wykonuje prognozę testową. Główne .venv bota nie jest zmieniane. "
             "Status: <b>Wykresy bota → Kronos AI Forecast</b> oraz WTC PEPE → karta KRONOS."),
-          P("Chronos-2 i FinCast", "h2"),
-          cmd("38_MODELE_CHRONOS2_FINCAST.bat                 (oba modele, CPU)"),
-          cmd("38_MODELE_CHRONOS2_FINCAST.bat chronos2        |  38_MODELE_CHRONOS2_FINCAST.bat fincast"),
-          cmd("38_MODELE_CHRONOS2_FINCAST.bat all cu126       (GPU; cu128 dla CUDA 12.8)"),
-          cmd("38_MODELE_CHRONOS2_FINCAST.bat all \"\" D:\\wagi  (instalacja offline z pobranych wcześniej plików wag)"),
-          P("Każdy model ma własne środowisko (<b>.venv_chronos2</b>, <b>.venv_fincast</b>), wagi z rozmiarem i SHA-256 każdego pliku, test "
+          P("Chronos-2 i Granite TTM (1.40: zamiast wycofanego FinCast)", "h2"),
+          cmd("38_MODELE_CHRONOS2_GRANITE.bat                 (oba modele, CPU)"),
+          cmd("38_MODELE_CHRONOS2_GRANITE.bat chronos2        |  38_MODELE_CHRONOS2_GRANITE.bat granite"),
+          cmd("38_MODELE_CHRONOS2_GRANITE.bat all cu126       (GPU opcjonalnie; cu128 dla CUDA 12.8 – bot działa bez GPU)"),
+          cmd("38_MODELE_CHRONOS2_GRANITE.bat all \"\" D:\\wagi  (instalacja offline z pobranych wcześniej plików wag)"),
+          P("Każdy model ma własne środowisko (<b>.venv_chronos2</b>, <b>.venv_granite</b>), wagi z rozmiarem i SHA-256 każdego pliku, test "
             "ładowania i prognozę testową. Status i porównanie: <b>Wykresy bota → Modele prognoz</b>."),
-          box("Kronos, Chronos-2 i FinCast to modele przetrenowane przez autorów (foundation models). Bot ich nie dotrenowuje – pobiera "
+          box("Kronos, Chronos-2 i Granite TTM to modele przetrenowane przez autorów (foundation models). Bot ich nie dotrenowuje – pobiera "
               "oficjalne wagi i liczy prognozy lokalnie. Nie wysyłają zleceń; ich prognoza jest informacją (SHADOW / OBSERVE)."),
           PageBreak()]
     # 6
@@ -166,6 +166,17 @@ def story(shots: Path | None) -> list:
           bullets(["<b>activate</b> sprawdza integralność artefaktu i próbkę predykcji, po czym ustawia rolę SHADOW.",
                    "<b>ASSIST</b> pozwala, by wynik wpływał na ocenę sygnału; SHADOW tylko zapisuje predykcje do porównania.",
                    "RUN_ID znajdziesz w wyniku <b>train</b> albo w <b>families list</b> (kolumna active / runs)."]),
+          PageBreak()]
+    s += [P("6b / Granite TTM: trening i Memory Governor (1.40)", "h1"),
+          bullets(["Dotrenowanie: <b>Wykresy bota → Modele prognoz → Granite TTM – dotrenowanie</b> → „Trenuj” (eksport świec z Centrum treningu, min. 5000; "
+                   "osobny proces, zamrożony backbone, test na niewidzianych 15 % danych). Aktywacja tylko gdy wynik jest lepszy od modelu bazowego; "
+                   "„Powrót do BASE” cofa. Trening nie startuje z botem i nie biegnie podczas handlu AUTO bez potwierdzenia.",
+                   "API: GET /api/v1/models/foundation/granite, POST …/granite/train, …/granite/activate, …/granite/rollback, …/granite/cancel.",
+                   "<b>Memory Governor</b>: profil LOW_MEMORY_16GB (domyślny), ECO, BALANCED lub MANUAL (Modele prognoz → Zasoby; API PUT /api/v1/resources/profile). "
+                   "Progi RAM 75 / 80 / 85 %: ostrzeżenie, brak ładowania nowych ciężkich modeli, wstrzymanie opcjonalnych prognoz (stan STALE z powodem). "
+                   "Kronos i Chronos-2 nigdy nie liczą jednocześnie. Dane rynkowe, pozycje, ryzyko i zlecenia nie czekają na modele.",
+                   "Wyniki walidacji na złocie (Q4 2025): żaden z modeli nie pokonał prognozy „ostatnia cena” – dlatego rola domyślna to OBSERVE. "
+                   "Szczegóły: docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md."]),
           PageBreak()]
     # 7
     s += [P("7 / GARCH (VOL_GARCH) i strategia PMW_HG09", "h1"),
@@ -251,7 +262,7 @@ def story(shots: Path | None) -> list:
                  ["HG09: NO_DATA GARCH_NOT_READY", "Wytrenuj i aktywuj VOL_GARCH (rozdział 7) albo wróć do volatility_method STD_LOGRET_60_M5."],
                  ["Model w stanie BLOCKED", "Brak danych lub środowiska – raport podaje powód; zainstaluj brakujące środowisko (34_DEEP_INSTALUJ.bat) "
                   "albo wyeksportuj więcej historii."],
-                 ["FinCast nie ładuje się", "Za mało RAM (≈ 8 GB wolnej pamięci) – zamknij inne programy albo zainstaluj tylko Chronos-2."],
+                 ["Prognozy STALE „Memory Governor”", "RAM komputera ≥ 85 % (albo ≥ 80 % dla nieładowanego ciężkiego modelu) – zamknij inne programy lub zmień profil (Modele prognoz → Zasoby)."],
                  ["Krótka historia z MT5", "Zwiększ „Maks. barów na wykresie” w MT5 i powtórz eksport."],
                  ["Intro / animacje obciążają komputer", "⚙ Projektuj → wyłącz efekty; system z „ograniczonymi animacjami” pomija intro."]],
                 [52, 118]),
