@@ -347,12 +347,14 @@ def verdict(st: dict, *, real: bool, commission_known: bool, hedge_cmp: dict | N
 
 # ---------------------------------------------------------------------------------------------------------- driver
 def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: list[str] | None = None, spread_fallback: float = 0.20,
-        slip: float = 0.05, commission_price_rt: float | None = None, stress: tuple = (0.20, 0.10), progress=None, warm_m1: int = 1200) -> dict:
+        slip: float = 0.05, commission_price_rt: float | None = None, stress: tuple = (0.20, 0.10), progress=None, warm_m1: int = 1200,
+        garch: dict | None = None) -> dict:
     cfg = CAT.load()
     tick = float((meta.get("spec") or {}).get("trade_tick_size") or (meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
     spec = _Spec(tick, symbol=meta.get("symbol") or "XAUUSD")
     X = F.Context(bars, tick=tick, common=cfg["common"], as_of=F.ts(bars["M1"][0]["open_utc"]), symbol=spec.symbol, instrument=meta.get("instrument") or "XAUUSD")
     X.advance(X.as_of)
+    X.garch = garch                                                         # HG09 VOL_GARCH: frozen artifact parameters (else NO_DATA)
     eng = PackEngine()
     pipdef = (cfg["instruments"] or {}).get(meta.get("instrument") or "XAUUSD")
     ic = {"slippage_usd": slip, "commission_per_lot_side": None}

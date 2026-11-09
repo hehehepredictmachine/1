@@ -49,6 +49,12 @@ class PackEngine:
         self.cfg_hash = cfg["hash"]
         pipdef = (cfg["instruments"] or {}).get(inst)
         X = F.Context(bars, tick=spec.tick_size, common=cfg["common"], as_of=now, symbol=spec.symbol, instrument=inst)
+        gp = getattr(self, "garch_provider", None)
+        if gp is not None:
+            try:
+                X.garch = gp(inst)
+            except Exception as exc:  # noqa: BLE001 - an unreadable artifact = not ready (never another method)
+                X.garch = {"status": f"ERROR {type(exc).__name__}"}
         self.ctx = X
         out = []
         try:

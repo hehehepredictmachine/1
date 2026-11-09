@@ -43,18 +43,17 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
         return done()
     if not chk("not_expired", now <= float(setup.get("valid_until") or 0), "setup wygasł (TTL)"):
         return done()
+    # 1.39 (user decision): the validation gates of AUTO_LIVE / AUTO_DEMO are withdrawn - no strategy validation report, no calibrated
+    # event model and no known commission are required any more. They stay visible as WARNINGS (nothing is hidden); the account type,
+    # STOP, the user's risk limits, spread, dedup and reconciliation still apply.
     if exec_mode == "AUTO_LIVE":
-        # 1.24 (user decision): instead of the unconditional refusal - a passed validation of this strategy on the client's own history
-        # (state["live_validation"], read by the service: REAL_USER_DATA, known commission, n >= 30, positive net expectancy).
         lv = state.get("live_validation") or {"ok": False, "reason": "brak wyniku walidacji ścieżki SH na danych klienta"}
-        chk("live_validation", lv.get("ok"), f"AUTO_LIVE {strat}: " + str(lv.get("source") if lv.get("ok") else lv.get("reason")))
-    if exec_mode == "AUTO_LIVE":
-        # 1.24: a calibrated event model is required for real money only; AUTO_DEMO may run on the score (OGRANICZONY) - a demo
-        # account risks no money and the path must be testable on demo before any LIVE validation exists
-        chk("model_mode", setup.get("model_mode") == "PEŁNA",
-            "tryb OGRANICZONY (brak skalibrowanego modelu zdarzenia) – AUTO LIVE wymaga modelu; SIGNALS/PAPER/AUTO DEMO dostępne")
-    if exec_mode in REAL_MODES:
-        chk("commission_known", ic.get("commission_per_lot_side") is not None, "prowizja instrumentu nieznana – koszt nie jest pełny")
+        if not lv.get("ok"):
+            warn.append(f"AUTO_LIVE {strat} bez walidacji na Twoich danych ({lv.get('reason')}) – bramka zdjęta decyzją użytkownika (1.39)")
+        if setup.get("model_mode") != "PEŁNA":
+            warn.append("AUTO_LIVE bez skalibrowanego modelu zdarzenia (tryb OGRANICZONY) – bramka zdjęta decyzją użytkownika (1.39)")
+    if exec_mode in REAL_MODES and ic.get("commission_per_lot_side") is None:
+        warn.append("prowizja instrumentu nieznana – koszt w sizingu niepełny (bramka zdjęta decyzją użytkownika, 1.39)")
     netting_reduce = False
     if strat == "HEDGING" and account.get("margin_mode") != "HEDGING":
         # decision O3: on a NETTING account the basket runs without the opposite leg - the hedge event becomes a REDUCE
@@ -62,12 +61,12 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
         # REDUCE variant on the client's own data (state["netting_reduce_validation"], read by the service).
         alt = (prof.get("hedge") or {}).get("netting_alternative", "BLOCK")
         val = state.get("netting_reduce_validation") or {"ok": False, "reason": "brak wyniku walidacji wariantu REDUCE"}
-        if account.get("margin_mode") == "NETTING" and alt == "REDUCE" and val.get("ok"):
-            netting_reduce = True
-            warn.append("rachunek NETTING: zamiast pozycji przeciwnej redukcja części pozycji (REDUCE), " + str(val.get("source")))
+        if account.get("margin_mode") == "NETTING" and alt == "REDUCE":
+            netting_reduce = True                               # 1.39: the REDUCE validation gate is withdrawn (warning only)
+            warn.append("rachunek NETTING: zamiast pozycji przeciwnej redukcja części pozycji (REDUCE), "
+                        + (str(val.get("source")) if val.get("ok") else f"bez walidacji wariantu REDUCE ({val.get('reason')})"))
         else:
-            why = ("wariant REDUCE wyłączony w konfiguracji" if alt != "REDUCE" else "wariant REDUCE niezwalidowany: " + str(val.get("reason"))) \
-                if account.get("margin_mode") == "NETTING" else "typ rachunku nieobsługiwany dla HEDGING"
+            why = "wariant REDUCE wyłączony w konfiguracji" if account.get("margin_mode") == "NETTING" else "typ rachunku nieobsługiwany dla HEDGING"
             chk("account_hedging", False, f"rachunek {account.get('margin_mode')} – HEDGING wymaga rachunku typu hedging; {why}")
     # --- data ------------------------------------------------------------------------------------------------------------
     q_age = (quote or {}).get("age_s")

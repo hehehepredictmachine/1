@@ -36,7 +36,7 @@ class TestConfigMigration(unittest.TestCase):
     def test_locked_auto_live_is_reset_to_paper_with_note(self):
         cfg, p = self._load({"mode": "AUTO_LIVE", "bound_account": "srv:1", "lock": "LOCKED", "lock_changed_at": None})
         ex = cfg.get().execution
-        self.assertEqual(cfg.get().config_version, 13)
+        self.assertEqual(cfg.get().config_version, 14)
         self.assertEqual(ex.mode, "PAPER")                                   # removing the lock never starts orders silently
         self.assertIn("Execution Lock został wycofany", ex.mode_note or "")
         self.assertFalse(hasattr(ex, "lock"))
@@ -149,7 +149,7 @@ class TestSHExecutorGate(unittest.TestCase):
         ex = self._ex(check=lambda strat: SHService.live_validation("XAUUSD", strat))
         plan = {"plan_id": "P1", "strategy": "SCALPING", "account_key": "srv:1"}
         g = ex._gate("AUTO_LIVE", plan, entry=True)
-        self.assertTrue(g and g.startswith("SH_LIVE_WYMAGA_WALIDACJI"), g)       # concrete reason, never a silent refusal
+        self.assertIsNone(g, g)                                                   # 1.39 (user decision): no validation gate for LIVE entries
         self.assertIsNone(ex._gate("AUTO_LIVE", plan, entry=False))               # open plan: managed
         self.assertIsNone(ex._gate("AUTO_DEMO", plan, entry=False))
         self.assertTrue(ex._gate("AUTO_LIVE", dict(plan, account_key="other:2"), entry=False).startswith("INNY_RACHUNEK"))
@@ -180,16 +180,13 @@ class TestSHExecutorGate(unittest.TestCase):
         self.assertEqual(self._ex(live=False)._gate("AUTO_LIVE", {"strategy": "SCALPING"}, entry=True), "RACHUNEK_NIE_REAL")
 
     def test_sh_risk_engine_reports_the_validation_result(self):
+        """1.39 (user decision): the missing validation is reported as a WARNING, not as a blocking check."""
         from masterquo.sh import risk as RK
         su = {"strategy": "SCALPING", "status": "READY", "valid_until": 1e12, "side": "BUY", "model_mode": "PEŁNA"}
-        try:
-            out = RK.evaluate(setup=su, spec=None, prof={}, cfg={"risk": {"max_quote_age_s": 5}}, inst="XAUUSD", account={},
-                              state={"live_validation": {"ok": False, "reason": "brak raportu"}}, exec_mode="AUTO_LIVE", now=0.0, quote=None)
-        except Exception:  # noqa: BLE001 - later checks need a full spec; the mode check comes first and is what is tested
-            return
-        bad = [c for c in out["checks"] if c["id"] == "live_validation"]
-        self.assertTrue(bad and not bad[0]["ok"])
-
+        out = RK.evaluate(setup=su, spec=None, prof={}, cfg={"risk": {"max_quote_age_s": 5, "max_spread_usd": None}}, inst="XAUUSD",
+                          account={}, state={"live_validation": {"ok": False, "reason": "brak raportu"}}, exec_mode="AUTO_LIVE", now=0.0, quote=None)
+        self.assertFalse([c for c in out["checks"] if c["id"] == "live_validation"])
+        self.assertTrue(any("bez walidacji" in w for w in out["warnings"]), out["warnings"])
 
 if __name__ == "__main__":
     unittest.main()

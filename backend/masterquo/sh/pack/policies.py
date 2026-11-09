@@ -174,7 +174,7 @@ def _activate(vid, v: F.TF, idx, st, b5, ps, plan, E, S, r, px, h1_ok):
         if _two_below(v, idx, lambda k: st["VAL"] - b5, int(hc.get("confirm_closes", 2))):
             return {"reason": "dwa zamknięcia M5 pod VAL−b (akceptacja poza obszarem wartości)", "ratio": ratio}
     elif vid == "PMW_HG09":
-        sg = v.sigma(int((plan["pack"].get("params") or {}).get("sigma_window", 60)))
+        sg = _hg09_sigma(v, st, plan)
         a = v.atr()
         se, sn = st.get("sigma_entry"), sg[i]
         if se and sn and a[i]:
@@ -219,7 +219,7 @@ def _unwind(vid, v: F.TF, after, st, b5, ps, plan) -> str | None:
         return "zamknięcie > VAL+b" if v.c[i] > st["VAL"] + b5 else None
     if vid == "PMW_HG09":
         hc = plan["pack"]["hedge"] or {}
-        sg = v.sigma(int((plan["pack"].get("params") or {}).get("sigma_window", 60)))
+        sg = _hg09_sigma(v, st, plan)
         e20 = v.ema(20)
         se = st.get("sigma_entry")
         n = int(hc.get("off_bars", 3))
@@ -232,3 +232,11 @@ def _unwind(vid, v: F.TF, after, st, b5, ps, plan) -> str | None:
         pre = st.get("pre_correction_high")
         return "zamknięcie > EMA9+b i ponad lokalne maksimum sprzed korekty" if e9[i] is not None and v.c[i] > e9[i] + b5 and pre is not None and v.c[i] > pre else None
     return None
+
+
+def _hg09_sigma(v: F.TF, st: dict, plan: dict) -> list:
+    """The SAME volatility method the entry used (frozen in the plan): GARCH with the frozen artifact parameters, else std of log returns."""
+    g = st.get("garch") if st.get("sigma_method") == "VOL_GARCH" else None
+    if g:
+        return v.garch_sigma(float(g["omega"]), float(g["alpha"]), float(g["beta"]))
+    return v.sigma(int((plan["pack"].get("params") or {}).get("sigma_window", 60)))

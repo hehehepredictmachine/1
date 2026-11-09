@@ -8,6 +8,7 @@ TP2, NETTING refuses the opposite leg) / plan contract PMW-PLAN-2 / replay on a 
 from __future__ import annotations
 
 import json
+import math
 import random
 import tempfile
 import unittest
@@ -531,3 +532,60 @@ class TestReplay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGarchHG09(unittest.TestCase):
+    """1.39: HG09 with volatility_method VOL_GARCH uses the ACTIVE trained GARCH(1,1) (family VOL_GARCH) - same filter, frozen params."""
+
+    def test_filter_equals_family_forecast(self):
+        import numpy as np
+        from masterquo.modelhub.families import garch as G
+        m1 = series(4000, seed=9)
+        m5 = PR.aggregate(m1, 300)
+        v = F.TF("M5", m5)
+        om, al, be = 0.002, 0.08, 0.9
+        g = v.garch_sigma(om, al, be)
+        c = np.array([b["c"] for b in m5])
+        r = np.diff(np.log(c)) * 100.0
+        vf = G.garch_filter(r, om, al, be)
+        nxt = om + al * r[-1] ** 2 + be * vf[-1]
+        self.assertAlmostEqual(g[-1], math.sqrt(nxt) / 100.0, places=12)
+        cut = F.TF("M5", m5[:500])                                       # causal: a longer history never changes an earlier value
+        self.assertAlmostEqual(cut.garch_sigma(om, al, be)[499], g[499], places=12)
+        self.assertEqual(F.TF("M5", m5, mirror=True).garch_sigma(om, al, be)[-1], g[-1])     # SELL view: same returns
+
+    def test_no_silent_fallback_and_config_validation(self):
+        bars, found, cfg = _Found.get()
+        t, tf, d = found["PMW_HG09"]
+        v = dict(cfg["variants"]["PMW_HG09"], params=dict(cfg["variants"]["PMW_HG09"]["params"], volatility_method="VOL_GARCH"))
+        X = ctx(bars, t)
+        dn = D.detect(X, v, tf, "BUY")
+        self.assertEqual((dn["status"], dn["reason_code"]), ("NO_DATA", "GARCH_NOT_READY"))
+        X.garch = {"status": "CANDIDATE"}
+        self.assertEqual(D.detect(X, v, tf, "BUY")["reason_code"], "GARCH_NOT_READY")
+        X.garch = {"status": "READY", "omega": 0.002, "alpha": 0.08, "beta": 0.9, "run_id": "R1"}
+        dg = D.detect(X, v, tf, "BUY")
+        self.assertIn(dg["status"], ("SETUP", "NO_SETUP"))
+        if dg["status"] == "SETUP":
+            self.assertEqual(dg["structure"]["sigma_method"], "VOL_GARCH")
+            self.assertEqual(dg["structure"]["garch"]["run_id"], "R1")
+        self.assertIn("volatility_method", " ".join(CAT.load({"variants": {"PMW_HG09": {"params": {"volatility_method": "EGARCH"}}}})["errors"]))
+
+    def test_service_reads_only_an_approved_active_artifact(self):
+        from masterquo.sh.service import SHService
+
+        class Fam:
+            def __init__(self, st):
+                self.st = st
+
+            def status(self, fid, inst):
+                return self.st
+
+            def _artifact(self, fid, inst, rid):
+                return {"omega": 0.01, "alpha": 0.05, "beta": 0.9, "dist": "t"}
+        s = SHService.__new__(SHService)
+        s.families = Fam({"artifact": "CANDIDATE", "active_run": "R1"})
+        self.assertEqual(s.garch_artifact("XAUUSD")["status"], "CANDIDATE")
+        s.families = Fam({"artifact": "APPROVED", "active_run": "R2"})
+        g = s.garch_artifact("XAUUSD")
+        self.assertEqual((g["status"], g["run_id"], g["alpha"]), ("READY", "R2", 0.05))

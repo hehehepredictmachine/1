@@ -312,6 +312,8 @@ class SHService:
         if pk is None:
             return []
         ic = {k: v for k, v in shc["instruments"][inst].items() if k not in ("SCALPING", "HEDGING")}
+        if getattr(pk, "garch_provider", None) is None:
+            pk.garch_provider = self.garch_artifact
         try:
             out = pk.evaluate(bars=getattr(self, "pack_bars", {}) or {}, quote=q, spec=spec, inst=inst, ic=ic, now=now,
                               account_currency=acc.get("currency"))
@@ -331,6 +333,18 @@ class SHService:
                         su["family_context"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
             res.append(su)
         return res
+
+    def garch_artifact(self, inst: str) -> dict:
+        """1.39: the ACTIVE, APPROVED VOL_GARCH family artifact (GARCH(1,1) fitted by arch) for HG09 with volatility_method VOL_GARCH."""
+        fam = getattr(self, "families", None)
+        if fam is None:
+            return {"status": "NO_FAMILY_SERVICE"}
+        st = fam.status("VOL_GARCH", inst)
+        rid = st.get("active_run")
+        if st.get("artifact") != "APPROVED" or not rid:
+            return {"status": st.get("artifact") or "NOT_TRAINED"}
+        art = fam._artifact("VOL_GARCH", inst, rid)
+        return {"status": "READY", "run_id": rid, "omega": art["omega"], "alpha": art["alpha"], "beta": art["beta"], "dist": art.get("dist")}
 
     @staticmethod
     def pack_live_validation(su: dict) -> dict:

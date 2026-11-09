@@ -106,6 +106,7 @@ def main(argv: list[str]) -> int:
     pr.add_argument("--spread-fallback", type=float, default=0.20)
     pr.add_argument("--allow-synthetic", action="store_true")
     pr.add_argument("--out", default=None, help="plik JSON z podsumowaniem (runner treningu)")
+    pr.add_argument("--garch-json", default=None, help="garch.json aktywnego modelu VOL_GARCH (HG09 z volatility_method VOL_GARCH)")
     a = ap.parse_args(argv)
     if a.cmd == "pack-replay":
         from .pack import replay as PR
@@ -125,7 +126,9 @@ def main(argv: list[str]) -> int:
                     cpx = 2 * float(c2) / (float(sp["trade_tick_value"]) / float(sp.get("trade_tick_size") or sp.get("point")))
             if meta.get("data_kind") != "REAL_USER_DATA" and not a.allow_synthetic:
                 raise ValueError("SYNTHETIC_DATA_REQUIRES_--allow-synthetic (wynik tylko techniczny, NOT_VALIDATED)")
-            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=cpx,
+            gj = json.loads(Path(a.garch_json).read_text(encoding="utf-8")) if a.garch_json else None
+            garch = dict(gj, status="READY", run_id=Path(a.garch_json).parent.name) if gj else None
+            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=cpx, garch=garch,
                          slip=a.slippage, spread_fallback=a.spread_fallback, progress=lambda i, n: print(f"[POSTEP] pack-replay {i}/{n}", flush=True))
             w = PR.write(rep)
         except Exception as exc:  # noqa: BLE001

@@ -614,7 +614,11 @@ def adaptive_trend(X, vid, tf, mir, cfg) -> Det:
         return _done("NO_SETUP", "NO_TRIGGER", "brak zamknięcia nad maksimum dwóch świec + b", cl)
     m5 = X.tf("M5", mir)
     win = int(p.get("sigma_window", 60))
-    sg = m5.sigma(win)
+    method = p.get("volatility_method", "STD_LOGRET_60_M5")
+    sg, how = F.vol_series(m5, method, window=win, garch=X.garch)
+    if sg is None:
+        _cl(cl, "vol", "Model zmienności", "FAIL", how)
+        return _done("NO_DATA", "GARCH_NOT_READY", how, cl)
     j = m5.n - 1
     if j < win + 100 or sg[j] is None:
         return _done("WARMING_UP", "WARMING_UP", "σ M5: za mało historii", cl)
@@ -626,7 +630,8 @@ def adaptive_trend(X, vid, tf, mir, cfg) -> Det:
     _cl(cl, "vol", "Reżim zmienności nie jest ekstremalny", "PASS", f"percentyl {rank:.2f}")
     low = min(v.l[k] for k in range(hi_k, i + 1))
     return _done("SETUP", "OK", "warunki spełnione", cl, trigger_i=i, sl=low - b, invalidation_pre_fill=low - b,
-                 structure={"sigma_entry": sg[j], "sigma_method": p.get("volatility_method", "STD_LOGRET_60_M5"), "sigma_rank": rank,
+                 structure={"sigma_entry": sg[j], "sigma_method": method, "sigma_source": how, "sigma_rank": rank,
+                            "garch": ({k: X.garch.get(k) for k in ("omega", "alpha", "beta", "run_id")} if method == "VOL_GARCH" else None),
                             "correction_low": low, "protected_swing": prot, "b": b}, structure_key=f"ADT:{round(low, 2)}")
 
 

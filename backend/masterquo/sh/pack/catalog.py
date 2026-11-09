@@ -163,6 +163,9 @@ def load(override: dict | None = None) -> dict:
             out["errors"].append(f"{vid}: TF {bad} nie jest zaimplementowany (dozwolone {list(tfs)})")
         fam_c = cfg["families"][fam]
         hedge = dict(vc.get("hedge") or {}) if fam == "HEDGING" else None
+        vm = (vc.get("params") or {}).get("volatility_method")
+        if vm is not None and vm not in ("STD_LOGRET_60_M5", "VOL_GARCH"):
+            out["errors"].append(f"{vid}: volatility_method {vm} – dozwolone STD_LOGRET_60_M5 | VOL_GARCH")
         if hedge is not None:
             for k in ("ratio", "ratio_max"):
                 if k in hedge and not 0 < float(hedge[k]) <= float(fam_c.get("max_ratio", 0.5)):

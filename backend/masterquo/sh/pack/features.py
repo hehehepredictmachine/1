@@ -205,6 +205,23 @@ class TF:
             return out
         return self._m(("vwap", round(anchor_t)), calc)
 
+    def garch_sigma(self, omega: float, alpha: float, beta: float) -> list[float | None]:
+        """1.39 VOL_GARCH (frozen parameters of the trained family artifact, arch on PERCENT log returns): element i = conditional sigma
+        (decimal) of the NEXT bar's log return, known at the close of bar i (v[i+1] = omega + alpha r[i]^2 + beta v[i]). Causal."""
+        def calc():
+            out: list[float | None] = [None] * self.N
+            if self.N < 3 or not (omega > 0 and alpha >= 0 and beta >= 0 and alpha + beta < 1):
+                return out
+            r = [0.0] + [100.0 * math.log(self.c[i] / self.c[i - 1]) if self.c[i - 1] and self.c[i] / self.c[i - 1] > 0 else 0.0
+                         for i in range(1, self.N)]
+            v = omega / (1 - alpha - beta)
+            for i in range(1, self.N):
+                v = omega + alpha * r[i] ** 2 + beta * v
+                if i >= 50:                                            # filter burn-in from the unconditional variance
+                    out[i] = math.sqrt(v) / 100.0
+            return out
+        return self._m(("garch", round(omega, 12), round(alpha, 12), round(beta, 12)), calc)
+
     def sigma(self, window: int) -> list[float | None]:
         def calc():
             lr = [0.0] + [math.log(abs(self.c[i] / self.c[i - 1])) if self.c[i - 1] and self.c[i] / self.c[i - 1] > 0 else 0.0
@@ -288,6 +305,7 @@ class Context:
         return self._v[k]
 
     replay = False
+    garch: dict | None = None          # 1.39: active VOL_GARCH artifact {status, omega, alpha, beta, run_id} (None = no provider)
 
     def advance(self, as_of: float) -> None:
         """Replay: move the clock; every view shows only the bars closed by as_of."""
@@ -330,3 +348,17 @@ class Context:
             p["session_start"], p["session_end"] = iso(prev), iso(cur)
             self._prof[key] = p
         return self._prof[key]
+
+
+VOL_METHODS = ("STD_LOGRET_60_M5", "VOL_GARCH")
+
+
+def vol_series(m5: TF, method: str, *, window: int = 60, garch: dict | None = None) -> tuple[list | None, str]:
+    """Volatility series of HG09 by the configured method. VOL_GARCH requires an ACTIVE, APPROVED family artifact - without it the answer is
+    (None, reason): never a silent fall back to the standard deviation (that is a different, separately configured method)."""
+    if method == "VOL_GARCH":
+        g = garch or {}
+        if g.get("status") != "READY":
+            return None, f"model VOL_GARCH niegotowy ({g.get('status') or 'brak aktywnego artefaktu'}) – wytrenuj i aktywuj GARCH (Rodziny modeli)"
+        return m5.garch_sigma(float(g["omega"]), float(g["alpha"]), float(g["beta"])), f"GARCH(1,1) {g.get('run_id') or ''}".strip()
+    return m5.sigma(window), f"std log-zwrotów {window} M5"

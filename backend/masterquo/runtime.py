@@ -68,6 +68,8 @@ class Runtime:
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,
                                  account_provider=lambda: (self.bridge.account_status(), self.bridge.account_key, self.bridge.synthetic))
+        if not demo and mt5_factory is None:                                # 1.39: real terminal only - start in execution.start_mode (AUTO_LIVE)
+            self.modes.apply_start_mode()
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
         self.engine = EngineService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.news, self.pcclock)
         self.paper = PaperBroker(self.cfg, self.bridge, self.db, self.bus, self.log)
