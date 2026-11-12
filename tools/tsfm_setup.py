@@ -134,7 +134,7 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
             return result(out, 2, False, "VENV", error=f"python -m venv nie powiodło się: {last}", model=mid)
     else:
         out.say(2, f"{venv} istnieje – używam")
-    if subprocess.run([str(vpy), "-m", "pip", "--version"], capture_output=True).returncode != 0:
+    if subprocess.run([str(vpy), "-m", "pip", "--version"], capture_output=True, env=KS.child_env()).returncode != 0:
         out.say(2, "w środowisku brak pip – instaluję go z modułu ensurepip (offline, z biblioteki standardowej)")
         rc, last = KS.run([str(vpy), "-m", "ensurepip", "--upgrade"], out, 2)
         if rc != 0:

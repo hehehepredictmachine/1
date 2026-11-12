@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.40.2 – poprawka instalatora modeli (Granite TTM, Chronos-2, Kronos, deep)
+* **Instalacja z aplikacji desktop nie kończyła się**: instalator uruchomiony z aplikacji dziedziczył `PYTHONPATH` bota (folder `backend`
+  i pakiety bota). pip w `.venv_granite` / `.venv_chronos2` / `.venv_kronos` / `.venv_deep` uznawał pakiety bota w tej samej wersji
+  (np. `scipy 1.18.1`) za „już zainstalowane” i pomijał je – środowisko modelu było niekompletne, a sprawdzenie instalacji kończyło się błędem.
+  Teraz każdy krok instalatora dostaje czyste środowisko (bez obcego `PYTHONPATH`, `PYTHONHOME`, nadpisań `PIP_*`, bez katalogu
+  użytkownika); ustawienia proxy i PATH zostają. Ponowna instalacja na istniejącym, niepełnym środowisku je uzupełnia (nie trzeba nic usuwać).
+* Test `tests/test_installer_env.py`; pełna instalacja Granite TTM uruchomiona tak jak z aplikacji (z zanieczyszczonym `PYTHONPATH`) – OK.
+
 ## 1.40.1 – poprawka startu aplikacji desktop („silnik zakończył się podczas startu”)
 * **Start silnika odporny na awarię pojedynczej części**: każdy podsystem (MT5, modele Chronos-2 / Granite TTM / Kronos, Memory Governor,
   Quant Core, …) startuje osobno; błąd jednego jest zapisywany z pełnym śladem w `logs/engine_console.log`, zdarzeniem `START_DEGRADED`

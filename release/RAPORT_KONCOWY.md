@@ -1,3 +1,19 @@
+# Raport – PepeMarketWizard 1.40.2 (poprawka instalatora modeli)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_2.zip` (2697 plików, aplikacja Windows) | `d385d17b59ddc775acdaea174eef29abc1a9a9168817920ad4f89515a82346ec` |
+| `PepeMarketWizard_1_40_2.zip` (1628 plików, folder programu) | `fa0c8d72a080ca11b1fcc3861614f9e93c9ed27c84a97dc8cd1c5f8a5d4a7bfa` |
+
+Zgłoszenie: „nie działa installer” (bez logu). Znaleziony błąd: instalator modeli uruchamiany z aplikacji desktop dziedziczył `PYTHONPATH`
+bota; pip w środowisku modelu pomijał pakiety obecne u bota w tej samej wersji („Requirement already satisfied … pyenv\…\site-packages”),
+więc `.venv_granite` / `.venv_chronos2` / `.venv_kronos` / `.venv_deep` zostawało niekompletne (odtworzone: brak `scipy` w środowisku).
+Poprawka: czyste środowisko dla każdego kroku instalatora. Sprawdzenie: pełna instalacja Granite TTM z zanieczyszczonym `PYTHONPATH` – OK
+(pakiety, wagi z sumami, prognoza testowa, zgodność z oficjalnym API); `tests/test_installer_env.py`, testy procesu aplikacji i desktop – OK;
+`verify_release.py --all` – OK. NOT RUN: Windows (brak maszyny Windows w środowisku).
+
+---
+
 # Raport – PepeMarketWizard 1.40.1 (poprawka startu aplikacji desktop)
 
 | Plik | SHA-256 |
