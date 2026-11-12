@@ -170,7 +170,12 @@ class Runtime:
         from .tsfm.service import TsfmService
         self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # Chronos-2 + Granite TTM (1.40, FinCast retired): own processes, OBSERVE default
         self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
-        self._wire_governor()
+        try:
+            self._wire_governor()
+        except Exception:  # noqa: BLE001 - 1.40.1: no governor = models run unmanaged (as in 1.39), the engine still starts
+            log.exception("memory governor unavailable")
+            self.governor = None
+            self.tsfm.governor = self.kronos.governor = None
         self.sh.tsfm = self.tsfm                                                                    # SH receivers (roles per strategy)
         from .tsfm import predictions as _tsfm_pred
         self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / Granite TTM
@@ -272,43 +277,37 @@ class Runtime:
         return mode, st.get("day") or {}, (self.bridge.account_status() or {}).get("currency")
 
     def start(self) -> None:
+        """1.40.1: every subsystem starts on its own - one failing part (MT5 terminal, a model worker, a broken settings file, a Windows
+        API call) never takes the whole engine down; the failure is logged with its traceback and listed in start_failures (API health)."""
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
-        self.worker.start()
-        self.bridge.start()
-        self.news.start()
-        self.engine.start()
-        self.manager.start()
-        self.telegram.start()
-        self.ml.start()
-        self.scanner.start()
-        self.forecast.start()
-        self.scalp.start()
-        self.analytics.start()
-        self.lab.start()
-        self.extind.start()
-        self.nss.start()
-        self.mtf.start()
-        self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
-        self.liquidity.start()
-        self.sh.start()
-        self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
-        self.zones.start()                      # PMW-ZONES: zone map on every closed M5
-        self.indicators.start()                 # PMW-IND-1: indicator snapshot on every closed M1, spread sampling, market depth
-        self.svp.start()                        # PMW-SVP-1: LIVE profiles / zones (only profiles switched to LIVE)
+        self.start_failures: list[dict] = []
+        for name in ("worker", "bridge", "news", "engine", "manager", "telegram", "ml", "scanner", "forecast", "scalp", "analytics", "lab",
+                     "extind", "nss", "mtf", "si", "liquidity", "sh", "mm", "zones", "indicators", "svp"):
+            self._start_part(name)
         try:                                    # Studio packages handed over while the bot was off (candidates, inactive)
             from .studio import importer as _IM
             self.studio_imports = _IM.process_inbox()
         except Exception as exc:  # noqa: BLE001
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
-        self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
-        self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
-        self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
-        self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
-        self.tsfm.start()                       # Chronos-2 / Granite TTM: forecasts after new closed bars (nothing until installed)
-        self.governor.start()                   # 1.40 Memory Governor: measurement every 15 s, idle release of heavy models under pressure
-        self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
+        # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
+        # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant"):
+            self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
+        if self.start_failures:
+            self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
+                           + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _start_part(self, name: str) -> None:
+        part = getattr(self, name, None)
+        if part is None:
+            return
+        try:
+            part.start()
+        except Exception as exc:  # noqa: BLE001 - see start()
+            log.exception("start of %s failed", name)
+            self.start_failures.append({"part": name, "error": f"{type(exc).__name__}: {exc}"[:300]})
 
     def _clock_loop(self) -> None:
         while not self._stop.is_set():

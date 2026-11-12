@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.40.1 – poprawka startu aplikacji desktop („silnik zakończył się podczas startu”)
+* **Start silnika odporny na awarię pojedynczej części**: każdy podsystem (MT5, modele Chronos-2 / Granite TTM / Kronos, Memory Governor,
+  Quant Core, …) startuje osobno; błąd jednego jest zapisywany z pełnym śladem w `logs/engine_console.log`, zdarzeniem `START_DEGRADED`
+  i polem `start_failures` w `/api/v1/health` – reszta aplikacji działa, zamiast kończyć cały proces.
+* **Memory Governor na Windows**: pomiar pamięci procesów przez `kernel32` / `psapi` z jawnymi prototypami ctypes (64-bitowy HANDLE, BOOL);
+  gdy Governor nie da się uruchomić, modele działają jak w 1.39 (bez zarządzania pamięcią), a silnik startuje.
+* **Diagnostyka**: błąd przed uruchomieniem serwera kończy się kodem 5 z komunikatem „BŁĄD STARTU SILNIKA” i śladem w logu oraz
+  w `logs/engine_crash.txt`; awarie natywne (DLL, ctypes) zostawiają stos wszystkich wątków (faulthandler).
+* **Launcher desktop**: okno błędu pokazuje ostatnie linie logu z tego uruchomienia (bez szukania pliku); kod 3 = port zajęty,
+  kod 4 = inna kopia silnika trzyma folder danych → launcher czeka do 60 s i podłącza się, gdy tamta odpowie; nieudany start nie wpada
+  już w cichą pętlę ponownych uruchomień.
+
 ## 1.40.0 – IBM Granite TTM zamiast FinCast, Memory Governor (16 GB) + harmonogram AI, trening Granite, nowy panel WTC$PEPE, optymalizacja UI
 * **Granite TTM** (`ibm-granite/granite-timeseries-ttm-r2`, R2 512-96, Apache-2.0, 0,8 M parametrów, `.venv_granite`, granite-tsfm 0.3.11): wybrany
   walk-forwardem na prawdziwych danych XAUUSD (Q4 2025) spośród 4 wariantów R2 / R2.1; normalizacja tylko z okna kontekstu, prognoza punktowa,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -488,5 +489,45 @@ func TestStudioModeLaunchesStudioWithOwnData(t *testing.T) {
 	}
 	if !strings.HasPrefix(l.WindowTitle("1.33.0"), "Pepe Data & Training Studio") {
 		t.Fatal("title")
+	}
+}
+
+// 1.40.1: an engine that dies during start - the error carries the reason (last log lines), and no silent restart loop follows.
+func TestEarlyExitShowsLogTail(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script stands in for python")
+	}
+	repo, _ := filepath.Abs("..")
+	l := testLayout(t, repo)
+	fake := filepath.Join(t.TempDir(), "fakepy")
+	os.WriteFile(fake, []byte("#!/bin/sh\necho 'Traceback (most recent call last):'\necho '  File \"x.py\", line 1'\necho 'RuntimeError: boom at start' >&2\nexit 5\n"), 0o755)
+	l.Python = fake
+	port := freePort(t)
+	writeJSON(t, filepath.Join(l.DataDir, "config.json"), map[string]any{"server": map[string]any{"port": port}})
+	var smu sync.Mutex
+	var states []EngineState
+	e := newEngine(l, "", func(m string) { t.Log(m) }, func(s EngineState, d string) { smu.Lock(); states = append(states, s); smu.Unlock() })
+	err := e.Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "RuntimeError: boom at start") || !strings.Contains(err.Error(), "kod 5") {
+		t.Fatalf("error without the log tail: %v", err)
+	}
+	time.Sleep(2500 * time.Millisecond) // the first backoff step would have restarted it by now
+	smu.Lock()
+	defer smu.Unlock()
+	for _, s := range states {
+		if s == EngineCrashed {
+			t.Fatalf("early exit went into the restart loop: %v", states)
+		}
+	}
+	if s, _ := e.State(); s != EngineFailed {
+		t.Fatalf("state %v", s)
+	}
+}
+
+func TestLogTailOnlyThisStart(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.log")
+	os.WriteFile(p, []byte("old run line\n===== start\na\n\nb\r\nc\n"), 0o644)
+	if got := logTail(p, int64(len("old run line\n")), 2); got != "b\nc" {
+		t.Fatalf("%q", got)
 	}
 }

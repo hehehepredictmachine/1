@@ -64,27 +64,53 @@ PROFILE_PL = {"LOW_MEMORY_16GB": "Niska pamięć – komputer 16 GB (domyślny)"
               "BALANCED": "BALANCED – więcej wątków, wyższe progi (komputer z zapasem RAM)", "MANUAL": "MANUAL – własne wartości"}
 
 
+_WIN_API = None
+
+
+def _win_api():
+    """kernel32/psapi with explicit prototypes (64-bit HANDLE, BOOL) - without them ctypes passes/returns a C int, which truncates
+    handles on 64-bit Windows. Built once; on any problem the governor simply reports 'unknown' (None), it never guesses."""
+    global _WIN_API
+    if _WIN_API is None:
+        from ctypes import wintypes as W
+
+        class PMC(ctypes.Structure):
+            _fields_ = [("cb", W.DWORD), ("PageFaultCount", W.DWORD), ("PeakWorkingSetSize", ctypes.c_size_t),
+                        ("WorkingSetSize", ctypes.c_size_t), ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPagedPoolUsage", ctypes.c_size_t), ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaNonPagedPoolUsage", ctypes.c_size_t), ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        k32.OpenProcess.argtypes = [W.DWORD, W.BOOL, W.DWORD]
+        k32.OpenProcess.restype = W.HANDLE
+        k32.CloseHandle.argtypes = [W.HANDLE]
+        k32.CloseHandle.restype = W.BOOL
+        psapi.GetProcessMemoryInfo.argtypes = [W.HANDLE, ctypes.POINTER(PMC), W.DWORD]
+        psapi.GetProcessMemoryInfo.restype = W.BOOL
+        _WIN_API = (k32, psapi, PMC)
+    return _WIN_API
+
+
+def _win_proc_mem(pid: int) -> tuple[float | None, float | None]:
+    k32, psapi, PMC = _win_api()
+    h = k32.OpenProcess(0x1000 | 0x0010, False, pid)                        # QUERY_LIMITED_INFORMATION | VM_READ
+    if not h:
+        return None, None
+    try:
+        pmc = PMC()
+        pmc.cb = ctypes.sizeof(PMC)
+        if psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):
+            return round(pmc.WorkingSetSize / 2**20, 1), round(pmc.PeakWorkingSetSize / 2**20, 1)
+        return None, None
+    finally:
+        k32.CloseHandle(h)
+
+
 def _proc_mem(pid: int) -> tuple[float | None, float | None]:
     """(rss_mb, peak_mb) of one process; (None, None) when the platform does not tell (never a guess)."""
     try:
         if sys.platform == "win32":
-            class PMC(ctypes.Structure):
-                _fields_ = [("cb", ctypes.c_uint32), ("PageFaultCount", ctypes.c_uint32), ("PeakWorkingSetSize", ctypes.c_size_t),
-                            ("WorkingSetSize", ctypes.c_size_t), ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-                            ("QuotaPagedPoolUsage", ctypes.c_size_t), ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                            ("QuotaNonPagedPoolUsage", ctypes.c_size_t), ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
-            k32 = ctypes.windll.kernel32
-            h = k32.OpenProcess(0x1000 | 0x0010, False, int(pid))            # QUERY_LIMITED_INFORMATION | VM_READ
-            if not h:
-                return None, None
-            try:
-                pmc = PMC()
-                pmc.cb = ctypes.sizeof(PMC)
-                if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):
-                    return round(pmc.WorkingSetSize / 2**20, 1), round(pmc.PeakWorkingSetSize / 2**20, 1)
-            finally:
-                k32.CloseHandle(h)
-            return None, None
+            return _win_proc_mem(int(pid))
         rss = peak = None
         with open(f"/proc/{int(pid)}/status", encoding="ascii") as f:
             for line in f:

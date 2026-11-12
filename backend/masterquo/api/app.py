@@ -236,7 +236,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/health")
     def health():
         return {"ok": True, "app": APP_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
-                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow())}
+                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow()),
+                "start_failures": [f["part"] for f in getattr(rt, "start_failures", [])]}
 
     @app.get("/api/v1/session")
     def session(request: Request):
@@ -2108,6 +2109,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/resources")
     def resources_get():
         """RAM of the computer, memory of the bot + every model process (current / peak), level, profile, inference p50 / p95, events."""
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
         return rt.governor.public()
 
     @app.put("/api/v1/resources/profile")
@@ -2125,6 +2128,8 @@ def create_app(rt, port: int) -> FastAPI:
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(400, f"INVALID_RESOURCES: {exc}"[:300]) from exc
         rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
         rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
         return rt.governor.public()
 
