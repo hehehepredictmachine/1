@@ -1,3 +1,20 @@
+# Raport – PepeMarketWizard 1.40.1 (poprawka startu aplikacji desktop)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_1.zip` (2697 plików, aplikacja Windows) | `08b3a1afd8e046a667e73b0794d9ec404c0ac3e90b0c4ebb27f1ef05e63dd9b8` |
+| `PepeMarketWizard_1_40_1.zip` (1628 plików, folder programu) | `0bb8d21fde580e58e7eac2170fc2b28f85a315104d166b7644cf7c2c55bcac44` |
+
+Zgłoszenie: 1.40.0 na Windows – „silnik zakończył się podczas startu”, bez logu. Na Linuksie 1.40.0 startował (także z konfiguracją 1.39
+i czystym środowiskiem z requirements-win.txt), więc przyczyna jest specyficzna dla Windows / danych użytkownika i nie została odtworzona.
+Poprawki: start każdego podsystemu osobno (błąd jednego nie zabija silnika, lista w `/api/v1/health` → `start_failures`), Memory Governor
+z jawnymi prototypami ctypes i bezpiecznym wyłączeniem, kod 5 + `logs/engine_crash.txt` + faulthandler, launcher pokazuje ostatnie linie
+logu i obsługuje kody 3/4. Testy: `tests/test_start_resilience.py` (3), testy Go desktop (w tym atrapa silnika padającego przy starcie),
+`verify_release.py --all` OK, start z rozpakowanej paczki: wersja 1.40.1, `start_failures: []`.
+NOT RUN: Windows (brak maszyny Windows w środowisku) – jeśli start dalej się nie uda, okno błędu pokaże przyczynę z logu.
+
+---
+
 # Raport końcowy – PepeMarketWizard 1.40.0 (Granite TTM zamiast FinCast, Memory Governor 16 GB, nowy WTC$PEPE, optymalizacja UI)
 
 | Plik | SHA-256 |
