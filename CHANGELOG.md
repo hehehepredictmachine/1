@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.40.3 – audyt błędów aplikacji i launchera
+Przegląd: analiza statyczna Pythona (ruff) i Go (go vet, staticcheck dla Windows), 189 endpointów GET w trybie demo i rzeczywistym bez
+terminala (0 błędów 500, 0 wyjątków w logach), wszystkie 41 ekranów w Chromium (0 błędów JS), wszystkie 46 plików .bat (odwołania
+do skryptów, wymagań i modułów). Poprawione:
+* **Okno nie robi się puste po błędzie ekranu**: globalna osłona błędów pokazuje komunikat z przyczyną oraz przyciski „Menu główne” /
+  „Odśwież”, znika po przejściu na inny ekran; brakujący fragment ekranu (aktualizacja przy otwartym oknie) – jedno automatyczne odświeżenie.
+* **Launcher po aktualizacji**: jeżeli na porcie działał silnik innej wersji z tego samego folderu danych (np. uruchomiony z .bat),
+  launcher go zatrzymuje i uruchamia bieżącą wersję zamiast podłączać się do starej; silnika innego folderu nigdy nie zatrzymuje.
+* **Launcher i inne instalacje Pythona na komputerze**: pip, sprawdzanie składników i silnik nie dziedziczą `PYTHONHOME`, `PYTHONPATH`
+  ani ustawień `PIP_*` (`PIP_REQUIRE_VIRTUALENV`, `PIP_USER`, `PIP_TARGET`…), które psuły wbudowanego Pythona lub instalację;
+  proxy zostaje. Zapis folderu składników ponawiany przez ~10 s (blokady antywirusa).
+* **Awaria okna** (panic w dowolnym wątku) zapisuje ślad w `logs\launcher_crash.txt`.
+* **Pliki .bat**: tryb UTF-8 Pythona we wszystkich skryptach uruchamiających Pythona – znaki spoza cp1250 w logach nie przerywają skryptu.
+* Odczyt wyjścia procesów potomnych (Studio, MiniRocket) w UTF-8 z zastępowaniem – brak `UnicodeDecodeError`; instalatory modeli
+  wymuszają `PIP_USER=0` (pip.ini z `user = true`).
+* Testy: `test_ui_error_boundary.py` (wszystkie ekrany bez błędów JS, osłona, odświeżenie), testy Go (wymiana starego silnika,
+  czyste środowisko Pythona).
+
 ## 1.40.2 – poprawka instalatora modeli (Granite TTM, Chronos-2, Kronos, deep)
 * **Instalacja z aplikacji desktop nie kończyła się**: instalator uruchomiony z aplikacji dziedziczył `PYTHONPATH` bota (folder `backend`
   i pakiety bota). pip w `.venv_granite` / `.venv_chronos2` / `.venv_kronos` / `.venv_deep` uznawał pakiety bota w tej samej wersji
