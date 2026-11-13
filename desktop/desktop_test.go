@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -629,5 +630,52 @@ func TestPyChildEnvDropsForeignPythonSettings(t *testing.T) {
 		if k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0]); k == "PYTHONHOME" || k == "PIP_TARGET" || k == "PIP_USER" || k == "PIP_REQUIRE_VIRTUALENV" {
 			t.Fatalf("engine env carries %s", strings.SplitN(kv, "=", 2)[0])
 		}
+	}
+}
+
+// 1.40.4: a damaged dependency folder (file of a package removed / truncated, package missing) is detected from pip's RECORD lists.
+func TestEnvIntactDetectsDamagedPackages(t *testing.T) {
+	site := filepath.Join(t.TempDir(), "site-packages")
+	req := filepath.Join(t.TempDir(), "requirements-win.txt")
+	os.WriteFile(req, []byte("# x==1 comment\nclick==8.1.8 \\\n    --hash=sha256:aa\nuvicorn==0.1 \\\n    --hash=sha256:bb\n"), 0o644)
+	mk := func(rel, body string) {
+		p := filepath.Join(site, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+	}
+	mk("click/__init__.py", "from .core import Argument\n")
+	mk("click/core.py", "class Argument: pass\n")
+	mk("click-8.1.8.dist-info/RECORD", "click/__init__.py,sha256=x,27\nclick/core.py,sha256=y,21\nclick/__pycache__/core.cpython-313.pyc,,\n"+
+		"click-8.1.8.dist-info/RECORD,,\n")
+	mk("uvicorn/__init__.py", "")
+	mk("uvicorn-0.1.dist-info/RECORD", "uvicorn/__init__.py,sha256=z,0\n../../bin/uvicorn,sha256=q,233\nuvicorn-0.1.dist-info/RECORD,,\n")
+	if ok, bad := envIntact(site, req); !ok {
+		t.Fatalf("intact folder reported damaged: %s", bad)
+	}
+	os.Remove(filepath.Join(site, "click", "core.py")) // the user's case: ModuleNotFoundError: No module named 'click.core'
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "click/core.py") {
+		t.Fatalf("missing click/core.py not detected: %v %q", ok, bad)
+	}
+	mk("click/core.py", "trunc")
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "uszkodzony click/core.py") {
+		t.Fatalf("truncated file not detected: %v %q", ok, bad)
+	}
+	mk("click/core.py", "class Argument: pass\n")
+	os.RemoveAll(filepath.Join(site, "uvicorn-0.1.dist-info"))
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "1 z 2") {
+		t.Fatalf("missing package not detected: %v %q", ok, bad)
+	}
+}
+
+func TestDamagedEnvIsDiscardedAndImportFailureRecognised(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cp313-abc")
+	os.MkdirAll(filepath.Join(dir, "site-packages", "click"), 0o755)
+	os.WriteFile(filepath.Join(dir, "ok.json"), []byte("{}"), 0o644)
+	if err := discardEnv(dir); err != nil || exists(dir) {
+		t.Fatalf("discard: %v exists=%v", err, exists(dir))
+	}
+	msg := "silnik zakończył się podczas startu (kod 5)\n\nOstatnie linie logu:\nModuleNotFoundError: No module named 'click.core'"
+	if !importFailure(errors.New(msg)) || importFailure(errors.New("port 8765 jest zajęty")) || importFailure(nil) {
+		t.Fatal("importFailure")
 	}
 }

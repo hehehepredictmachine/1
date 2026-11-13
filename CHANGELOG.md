@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.40.4 – samonaprawa składników bota (ModuleNotFoundError: No module named 'click.core')
+* Zgłoszenie z logu: silnik kończył start błędem `ModuleNotFoundError: No module named 'click.core'` – w folderze składników
+  `%LOCALAPPDATA%\PepeMarketWizard\pyenv\cp313-…` brakowało pliku pakietu (zwykle kwarantanna antywirusa, czyszczenie dysku albo
+  przerwane kopiowanie). Launcher sprawdzał tylko znacznik `ok.json`, więc uszkodzony folder uznawał za gotowy.
+* **Sprawdzenie przy każdym starcie**: każdy plik zapisany przez pip w listach `*.dist-info/RECORD` (ścieżka + rozmiar) musi istnieć
+  z tym rozmiarem, a pakietów musi być tyle, ile pinów w `requirements-win.txt` (ok. 30 ms). Uszkodzony folder jest usuwany (albo
+  odkładany jako `.broken-…`, gdy pliki są zablokowane) i składniki instalują się ponownie.
+* **Druga linia obrony**: jeśli silnik mimo to zakończy start błędem importu (`ModuleNotFoundError` / `ImportError` / `DLL load failed`),
+  launcher sam instaluje składniki ponownie i uruchamia silnik drugi raz.
+* Testy Go: wykrycie brakującego / obciętego pliku i brakującego pakietu, rozpoznanie błędu importu; sprawdzenie na prawdziwej
+  instalacji 42 pakietów bota – bez fałszywych alarmów.
+
 ## 1.40.3 – audyt błędów aplikacji i launchera
 Przegląd: analiza statyczna Pythona (ruff) i Go (go vet, staticcheck dla Windows), 189 endpointów GET w trybie demo i rzeczywistym bez
 terminala (0 błędów 500, 0 wyjątków w logach), wszystkie 41 ekranów w Chromium (0 błędów JS), wszystkie 46 plików .bat (odwołania

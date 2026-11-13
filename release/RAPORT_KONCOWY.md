@@ -1,3 +1,18 @@
+# Raport – PepeMarketWizard 1.40.4 (samonaprawa składników bota)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_4.zip` (2700 plików, aplikacja Windows) | `46b0520c06ca609df7c40346acf45853fc6a5e76c4472bffac0a6e66006c4554` |
+| `PepeMarketWizard_1_40_4.zip` (1631 plików, folder programu) | `ce7f183966bc4e53fd287e8563183f0b39037d6ed775ef2ff660a3c7e7c0391f` |
+
+Przyczyna z logu użytkownika: `ModuleNotFoundError: No module named 'click.core'` – uszkodzony folder składników `pyenv\cp313-8dd71ad81399`
+(brak pliku pakietu), uznawany za gotowy po samym `ok.json`. Poprawka: sprawdzenie plików z `*.dist-info/RECORD` przy każdym starcie
+i automatyczna ponowna instalacja; po błędzie importu silnika – naprawa i drugi start. Testy Go (w tym prawdziwa instalacja 42 pakietów:
+bez fałszywych alarmów, wykrycie braku `click/core.py`), testy aplikacji desktop i startu – OK; `verify_release.py --all` – OK.
+NOT RUN: Windows (brak w środowisku).
+
+---
+
 # Raport – PepeMarketWizard 1.40.3 (audyt błędów aplikacji i launchera)
 
 | Plik | SHA-256 |
