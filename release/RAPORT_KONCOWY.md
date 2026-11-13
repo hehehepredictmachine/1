@@ -1,3 +1,24 @@
+# Raport – PepeMarketWizard 1.40.3 (audyt błędów aplikacji i launchera)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_3.zip` (2700 plików, aplikacja Windows) | `36ef541ac8e6e3f2e87e708b60d37c1daa35aee15daa184a006fd926c0d42918` |
+| `PepeMarketWizard_1_40_3.zip` (1631 plików, folder programu) | `3a766672696fce898e00c440e8c4ede9f5d7a1d5deb4247395ebcf3d69e56512` |
+
+| Obszar | Sprawdzenie | Wynik |
+|---|---|---|
+| Python (backend, narzędzia) | ruff: niezdefiniowane nazwy, błędy składni, kodowanie plików | 0 błędów; 1 odczyt bez kodowania + 3 procesy potomne bez UTF-8 poprawione |
+| API | 189 GET (demo i tryb rzeczywisty bez terminala), 57 POST/PUT z pustym / błędnym ciałem | 0 × 500, 0 wyjątków w logach |
+| Interfejs | 41 ekranów w Chromium (demo i bez terminala), `tsc -b` | 0 błędów JS; dodana globalna osłona błędów |
+| Launcher | go vet / staticcheck (Windows), przegląd ścieżek startu | poprawione: stary silnik po aktualizacji, obce zmienne Pythona/pip, blokady antywirusa, zapis awarii |
+| Pliki .bat (46) | odwołania do skryptów, wymagań, modułów; kodowanie | odwołania OK; tryb UTF-8 dodany w 33 skryptach |
+| Regresja | pełny zestaw | 1357 testów OK, 23 pominięte (brak torch w interpreterze testów) |
+
+Start z rozpakowanej paczki: wersja 1.40.3, `start_failures: []`. `verify_release.py --all` – OK.
+NOT RUN: Windows, WebView2 i prawdziwy MT5 (brak w środowisku) – ścieżki Windows sprawdzone kompilacją, analizą i testami jednostkowymi.
+
+---
+
 # Raport – PepeMarketWizard 1.40.2 (poprawka instalatora modeli)
 
 | Plik | SHA-256 |
