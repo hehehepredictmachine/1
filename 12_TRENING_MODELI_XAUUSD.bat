@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Trening prognoz 5/15/30 min na NAJNOWSZYM eksporcie (data\forecast\history). Tick size i symbol z source_metadata.json.
 rem Plan z granicami UTC jest zamrazany przed treningiem; holdout oceniany raz. Wynik: data\forecast\runs\^<run_id^>\.
 rem Trening dziala w osobnym procesie - bot moze w tym czasie pracowac. Brak zgody na zlecenia (tylko SHADOW).

@@ -1,4 +1,7 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - Structure Intelligence (PMW-UPD-07). Dane, kalibracja na dev, trening rodzin, raport.
 rem Nie wysyla zlecen, nie zmienia Execution Lock, nie wybiera modelu automatycznie (SHADOW tylko recznie).
 setlocal

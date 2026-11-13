@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // modules the engine cannot start without (same check as 01_INSTALUJ.bat)
@@ -104,12 +105,12 @@ func ensureEnv(ctx context.Context, l Layout, progress, detail func(string)) (st
 	} else {
 		progress("Pierwsze uruchomienie: pobieranie składników z PyPI (ok. 110 MB, sprawdzane sumami SHA-256)…")
 	}
-	if err := runLogged(ctx, l.Python, pipArgs(l, tmp, offline), nil, detail); err != nil {
+	if err := runLogged(ctx, l.Python, pipArgs(l, tmp, offline), pyChildEnv(), detail); err != nil {
 		_ = os.RemoveAll(tmp)
 		return "", fmt.Errorf("instalacja składników nie powiodła się: %w", err)
 	}
 	progress("Sprawdzanie składników…")
-	env := append(os.Environ(), "PYTHONPATH="+sitePackages(tmp), "PYTHONNOUSERSITE=1")
+	env := pyChildEnv("PYTHONPATH=" + sitePackages(tmp))
 	if err := runLogged(ctx, l.Python, []string{"-c", importCheck}, env, detail); err != nil {
 		_ = os.RemoveAll(tmp)
 		return "", fmt.Errorf("składniki zainstalowane, ale nie ładują się: %w", err)
@@ -124,9 +125,8 @@ func ensureEnv(ctx context.Context, l Layout, progress, detail func(string)) (st
 	if err := os.WriteFile(filepath.Join(tmp, "ok.json"), b, 0o644); err != nil {
 		return "", err
 	}
-	_ = os.RemoveAll(dir)
-	if err := os.Rename(tmp, dir); err != nil {
-		return "", err
+	if err := renameRetry(tmp, dir); err != nil {
+		return "", fmt.Errorf("nie można zapisać folderu składników %s (%w) – zwykle blokuje go program antywirusowy; spróbuj ponownie", dir, err)
 	}
 	progress("Składniki gotowe.")
 	return sitePackages(dir), nil
@@ -169,4 +169,40 @@ func runLogged(ctx context.Context, exe string, args, env []string, progress fun
 		return errors.New(err.Error() + ": " + strings.Join(tail, " | "))
 	}
 	return nil
+}
+
+// foreignPyEnv: variables of the user's machine that must never reach the bundled Python or pip (1.40.3). A PYTHONHOME left by another
+// Python breaks the interpreter at start; PIP_REQUIRE_VIRTUALENV / PIP_USER / PIP_TARGET / PIP_NO_INDEX change where pip installs or
+// make it refuse. Proxy settings (HTTPS_PROXY), PATH and TEMP stay.
+var foreignPyEnv = map[string]bool{"PYTHONPATH": true, "PYTHONHOME": true, "PYTHONSTARTUP": true, "PYTHONUSERBASE": true,
+	"PYTHONEXECUTABLE": true, "PYTHONSAFEPATH": true, "PYTHONNOUSERSITE": true, "PYTHONUTF8": true, "PYTHONIOENCODING": true,
+	"VIRTUAL_ENV": true, "CONDA_PREFIX": true, "__PYVENV_LAUNCHER__": true, "PIP_TARGET": true, "PIP_PREFIX": true, "PIP_USER": true,
+	"PIP_ROOT": true, "PIP_REQUIRE_VIRTUALENV": true, "PIP_NO_INDEX": true, "PIP_FIND_LINKS": true, "PIP_ONLY_BINARY": true,
+	"PIP_NO_BINARY": true, "PIP_CONSTRAINT": true, "PIP_REQUIREMENT": true, "PIP_NO_DEPS": true}
+
+// pyChildEnv: the machine's environment without foreignPyEnv, with user site off and UTF-8 I/O, plus extra "K=V" entries.
+func pyChildEnv(extra ...string) []string {
+	env := []string{}
+	for _, kv := range os.Environ() {
+		if foreignPyEnv[strings.ToUpper(strings.SplitN(kv, "=", 2)[0])] {
+			continue
+		}
+		env = append(env, kv)
+	}
+	// pip.ini stays readable (company proxy / mirror), but its require-virtualenv / user switches are overridden here
+	env = append(env, "PYTHONNOUSERSITE=1", "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8", "PIP_REQUIRE_VIRTUALENV=0", "PIP_USER=0")
+	return append(env, extra...)
+}
+
+// renameRetry replaces dst with src; antivirus scanners briefly lock freshly written files on Windows, so it retries for ~10 s.
+func renameRetry(src, dst string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		_ = os.RemoveAll(dst)
+		if err = os.Rename(src, dst); err == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return err
 }

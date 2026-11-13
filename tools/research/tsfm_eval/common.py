@@ -1,6 +1,6 @@
 import json, math
 def load(tf):
-    b=json.load(open(f"/tmp/claude-0/-home-user-1/e704900f-05d3-5cd0-a027-a6973be977c8/scratchpad/xau/{tf}.json"))
+    b=json.load(open(f"/tmp/claude-0/-home-user-1/e704900f-05d3-5cd0-a027-a6973be977c8/scratchpad/xau/{tf}.json", encoding="utf-8"))
     return [x[0] for x in b],[x[1] for x in b],[x[2] for x in b],[x[3] for x in b],[x[4] for x in b]
 def atr14(h,l,c,i):
     trs=[max(h[j]-l[j],abs(h[j]-c[j-1]),abs(l[j]-c[j-1])) for j in range(i-13,i+1)]

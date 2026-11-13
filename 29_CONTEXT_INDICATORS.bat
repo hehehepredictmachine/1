@@ -1,4 +1,7 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - Context indicators (PMW-UPD-14): VAMD, bounded Katz FD, Pullback + SMC (BoS/CHoCH/IDM/x), Buffer Inspector.
 rem Kalibracja tylko na dev (max 24 konfiguracje), trening SHADOW/OBSERVE, brak zlecen, brak zmian AutoTrading i Execution Lock.
 setlocal EnableDelayedExpansion

@@ -17,4 +17,4 @@ for tf,H in (("M5",12),("M15",8),("H1",6)):
     ms=(time.perf_counter()-t0)*1000/len(orig)
     r=score("chronos2",preds,orig,h,l,c,H); r.update(tf=tf,H=H,ms_per_origin=round(ms,2)); out.append(r); print(r,flush=True)
 print("maxrss_mb",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)
-json.dump(out,open(os.path.dirname(__file__)+"/res_chronos.json","w"),indent=1)
+json.dump(out,open(os.path.dirname(__file__)+"/res_chronos.json","w", encoding="utf-8"),indent=1)

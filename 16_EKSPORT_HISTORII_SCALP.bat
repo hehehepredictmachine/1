@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Eksport zamknietych M1/M5/M15/M30/H1 XAUUSD- z TWOJEGO zalogowanego MT5 do profilu scalp (osobne polaczenie; bez zlecen).
 rem Domyslnie 6 miesiecy (argument = liczba miesiecy, np. 16_EKSPORT_HISTORII_SCALP.bat 12). Wynik: data\scalp\history\^<cutoff^>\
 cd /d "%~dp0"

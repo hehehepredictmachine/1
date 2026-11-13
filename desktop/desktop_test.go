@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -529,5 +530,104 @@ func TestLogTailOnlyThisStart(t *testing.T) {
 	os.WriteFile(p, []byte("old run line\n===== start\na\n\nb\r\nc\n"), 0o644)
 	if got := logTail(p, int64(len("old run line\n")), 2); got != "b\nc" {
 		t.Fatalf("%q", got)
+	}
+}
+
+// fakeEngine answers /api/v1/health as PepeMarketWizard <ver> and stops on the shutdown endpoint only with the right token.
+func fakeEngine(t *testing.T, port int, ver, token string) (*http.Server, chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "app": "PepeMarketWizard", "version": ver})
+	})
+	mux.HandleFunc("/api/v1/admin/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-mq-shutdown") != token {
+			w.WriteHeader(401)
+			return
+		}
+		w.WriteHeader(200)
+		go func() { srv.Close(); close(done) }()
+	})
+	go srv.Serve(ln)
+	return srv, done
+}
+
+// 1.40.3: an older engine of this data folder is stopped and replaced; an engine of another folder (token refused) is never stopped.
+func TestOutdatedEngineIsReplacedOnlyWhenItIsOurs(t *testing.T) {
+	repo, _ := filepath.Abs("..")
+	old := version
+	version = "1.40.3"
+	defer func() { version = old }()
+	for _, tc := range []struct {
+		name, token string
+		want        bool
+	}{{"ours", "tok-ours", true}, {"foreign", "tok-other", false}} {
+		l := testLayout(t, repo)
+		port := freePort(t)
+		writeJSON(t, filepath.Join(l.DataDir, "config.json"), map[string]any{"server": map[string]any{"port": port}})
+		os.MkdirAll(l.RuntimeDir(), 0o755)
+		os.WriteFile(filepath.Join(l.RuntimeDir(), "shutdown.token"), []byte("tok-ours\n"), 0o600)
+		srv, done := fakeEngine(t, port, "1.40.0", tc.token)
+		e := newEngine(l, "", func(m string) { t.Log(m) }, nil)
+		ok, running := e.health()
+		if !ok || running != "1.40.0" {
+			t.Fatalf("%s: health %v %q", tc.name, ok, running)
+		}
+		if got := e.replaceOutdated(running); got != tc.want {
+			t.Fatalf("%s: replaceOutdated=%v want %v", tc.name, got, tc.want)
+		}
+		if tc.want {
+			<-done
+		} else {
+			if ok, _ := e.health(); !ok {
+				t.Fatalf("foreign engine was stopped")
+			}
+			srv.Close()
+		}
+	}
+}
+
+// 1.40.3: the bundled Python and pip never see another Python's settings of the machine.
+func TestPyChildEnvDropsForeignPythonSettings(t *testing.T) {
+	for k, v := range map[string]string{"PYTHONHOME": "C:\\Python39", "PYTHONPATH": "C:\\x", "PIP_REQUIRE_VIRTUALENV": "true", "PIP_USER": "1",
+		"PIP_TARGET": "C:\\t", "HTTPS_PROXY": "http://proxy:8080"} {
+		t.Setenv(k, v)
+	}
+	env := pyChildEnv("PYTHONPATH=C:\\site")
+	got := map[string][]string{}
+	for _, kv := range env {
+		p := strings.SplitN(kv, "=", 2)
+		got[strings.ToUpper(p[0])] = append(got[strings.ToUpper(p[0])], p[1])
+	}
+	pick := func(keys ...string) map[string][]string { // only the keys under test are ever printed
+		m := map[string][]string{}
+		for _, k := range keys {
+			m[k] = got[k]
+		}
+		return m
+	}
+	if got["PYTHONHOME"] != nil || got["PIP_TARGET"] != nil {
+		t.Fatalf("foreign settings passed: %v", pick("PYTHONHOME", "PIP_TARGET"))
+	}
+	hasProxy := false
+	for _, v := range got["HTTPS_PROXY"] {
+		hasProxy = hasProxy || v == "http://proxy:8080"
+	}
+	if strings.Join(got["PYTHONPATH"], ";") != "C:\\site" || strings.Join(got["PIP_REQUIRE_VIRTUALENV"], ";") != "0" ||
+		strings.Join(got["PIP_USER"], ";") != "0" || !hasProxy {
+		t.Fatalf("env %v", pick("PYTHONPATH", "PIP_REQUIRE_VIRTUALENV", "PIP_USER", "HTTPS_PROXY"))
+	}
+	l := Layout{AppDir: "/app", DataDir: "/data"}
+	e := newEngine(l, "", nil, nil)
+	for _, kv := range e.env() {
+		if k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0]); k == "PYTHONHOME" || k == "PIP_TARGET" || k == "PIP_USER" || k == "PIP_REQUIRE_VIRTUALENV" {
+			t.Fatalf("engine env carries %s", strings.SplitN(kv, "=", 2)[0])
+		}
 	}
 }

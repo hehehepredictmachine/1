@@ -20,4 +20,4 @@ for tf,H,dt in (("M5",12,5),("M15",8,15),("H1",6,60)):
     r=score("kronos-base",preds,orig,h,l,c,H); r.update(tf=tf,H=H,ms_per_origin=round(ms,1)); out.append(r); print(r,flush=True)
     rn=score("naive_last(same origins)",[c[i] for i in orig],orig,h,l,c,H); rn.update(tf=tf,H=H); out.append(rn); print(rn,flush=True)
 print("maxrss_mb",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)
-json.dump(out,open(os.path.dirname(__file__)+"/res_kronos.json","w"),indent=1)
+json.dump(out,open(os.path.dirname(__file__)+"/res_kronos.json","w", encoding="utf-8"),indent=1)

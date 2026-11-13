@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Eksport zamknietych M5/M30 XAUUSD- z TWOJEGO zalogowanego MT5 (wlasne, osobne polaczenie tego polecenia; bez zlecen).
 rem Domyslnie 12 miesiecy (mozna podac liczbe miesiecy jako argument, np. 11_EKSPORT_HISTORII_XAUUSD.bat 6).
 cd /d "%~dp0"

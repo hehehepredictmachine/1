@@ -102,16 +102,54 @@ func (e *Engine) URL() string { return fmt.Sprintf("http://127.0.0.1:%d/", e.Por
 
 // healthy = this app answers on the port (another program on the port is not mistaken for the engine).
 func (e *Engine) healthy() bool {
+	ok, _ := e.health()
+	return ok
+}
+
+// health: whether this app answers on the port, and the version of the engine that answers ("" when it does not say).
+func (e *Engine) health() (bool, string) {
 	r, err := e.client.Get(e.URL() + healthPath())
 	if err != nil {
-		return false
+		return false, ""
 	}
 	defer r.Body.Close()
 	var h struct {
-		OK  bool   `json:"ok"`
-		App string `json:"app"`
+		OK      bool   `json:"ok"`
+		App     string `json:"app"`
+		Version string `json:"version"`
 	}
-	return r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, expectedApp())
+	ok := r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, expectedApp())
+	return ok, h.Version
+}
+
+// replaceOutdated (1.40.3): an engine of ANOTHER version answers on our port (e.g. the previous version started from a .bat file or
+// left running) - attaching to it would show the old program after an update. When it belongs to this data folder (it accepts the
+// shutdown token from <data>\runtime\shutdown.token) it is asked to stop and the current version starts. Returns true when the port
+// is free again.
+func (e *Engine) replaceOutdated(running string) bool {
+	tok, err := os.ReadFile(filepath.Join(e.l.RuntimeDir(), "shutdown.token"))
+	if err != nil {
+		return false
+	}
+	req, _ := http.NewRequest("POST", e.URL()+"api/v1/admin/shutdown", strings.NewReader("{}"))
+	req.Header.Set("x-mq-shutdown", strings.TrimSpace(string(tok)))
+	req.Header.Set("Content-Type", "application/json")
+	r, err := e.client.Do(req)
+	if err != nil {
+		return false
+	}
+	r.Body.Close()
+	if r.StatusCode >= 300 {
+		return false // not our engine (another data folder) - never stopped
+	}
+	e.logf("silnik: działała wersja " + running + " – zatrzymano ją, uruchamiam " + version)
+	for i := 0; i < 75; i++ { // up to 30 s for its graceful stop (positions stay protected by SL/TP on the broker side)
+		time.Sleep(400 * time.Millisecond)
+		if ok, _ := e.health(); !ok && !e.portTakenByOther() {
+			return true
+		}
+	}
+	return false
 }
 
 func healthPath() string {
@@ -144,9 +182,9 @@ func (e *Engine) env() []string {
 		pp += sep + e.site
 	}
 	env := []string{}
-	for _, kv := range os.Environ() { // never inherit a foreign PYTHONPATH / PYTHONHOME (another Python on the machine)
+	for _, kv := range os.Environ() { // never inherit a foreign PYTHONPATH / PYTHONHOME / pip settings (another Python on the machine)
 		k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0])
-		if k == "PYTHONPATH" || k == "PYTHONHOME" || k == "MASTERQUO_DATA_DIR" {
+		if foreignPyEnv[k] || k == "MASTERQUO_DATA_DIR" {
 			continue
 		}
 		env = append(env, kv)
@@ -180,9 +218,16 @@ func (e *Engine) consoleLog() (*os.File, error) {
 
 // Start attaches to a running engine or starts one and waits until it answers (first start may migrate the database).
 func (e *Engine) Start(ctx context.Context) error {
-	if e.healthy() {
+	if ok, running := e.health(); ok {
 		if e.Owned() { // our own process from an earlier attempt finished starting meanwhile
 			e.set(EngineRunning, "")
+			return nil
+		}
+		if running != "" && version != "" && running != version && !isStudio() {
+			if e.replaceOutdated(running) {
+				return e.spawn(ctx)
+			}
+			e.set(EngineExternal, "działa silnik w wersji "+running+" (ta aplikacja: "+version+") – podłączono; zamknij go, aby używać nowej wersji")
 			return nil
 		}
 		e.set(EngineExternal, "silnik działał już wcześniej – podłączono bez uruchamiania drugiej kopii")

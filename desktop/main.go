@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 )
 
 var version = "1.25.0" // overridden by the build: -ldflags "-X main.version=..."
@@ -43,9 +44,24 @@ func main() {
 	}
 	l := detectLayout(exe, os.Getenv)
 	logf := openShellLog(l)
+	crashOutput(l, logf) // 1.40.3: a panic of the window (any goroutine) leaves its stack in <data>\logs\launcher_crash.txt
 	logf(fmt.Sprintf("start %s (app=%s home=%s portable=%v)", version, l.AppDir, l.Home, l.Portable))
 	if o.headless {
 		os.Exit(runHeadless(l, o, logf))
 	}
 	os.Exit(runApp(l, o, logf))
+}
+
+func crashOutput(l Layout, logf func(string)) {
+	if err := os.MkdirAll(l.LogsDir(), 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(l.LogsDir(), "launcher_crash.txt"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		logf("crash output: " + err.Error())
+	}
+	f.Close() // SetCrashOutput keeps its own duplicate of the file
 }

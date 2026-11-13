@@ -25,4 +25,4 @@ for tf,H in (("M5",12),("M15",8),("H1",6)):
     r=score("naive_last",[c[i] for i in orig],orig,h,l,c,H); r.update(tf=tf,H=H); out.append(r); print(r)
     r=score("drift_20",[c[i]+(c[i]-c[i-20])/20*H for i in orig],orig,h,l,c,H); r.update(tf=tf,H=H); out.append(r); print(r)
 print("maxrss_mb",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)
-json.dump(out,open(os.path.dirname(__file__)+"/res_granite.json","w"),indent=1)
+json.dump(out,open(os.path.dirname(__file__)+"/res_granite.json","w", encoding="utf-8"),indent=1)

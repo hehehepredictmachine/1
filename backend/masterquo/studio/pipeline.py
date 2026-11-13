@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import time
 from pathlib import Path
@@ -142,7 +143,8 @@ def _export_runner(ctx: Ctx) -> dict:
     cmd = [sys.executable, "-m", "masterquo", "training", "export", "--instrument", task["instrument"], "--symbol",
            task.get("broker_symbol") or ("XAUUSD-" if task["instrument"] == "XAUUSD" else "BTCUSD-"), "--months", str(months), "--out", str(out),
            "--tfs", ",".join(needed_tfs(task))] + (["--synthetic"] if mode == "SYNTHETIC" else [])
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=6 * 3600)
+    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=6 * 3600,
+                       env=dict(os.environ, PYTHONIOENCODING="utf-8"))
     (pkg.dir / "logs" / "runner_export.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
     if p.returncode != 0 or not (out / "source_metadata.json").exists():
         raise Blocked("FAILED", f"eksport runnera zakończony kodem {p.returncode}")
@@ -444,7 +446,8 @@ def stage_verify_loader(ctx: Ctx) -> dict:
     import sys
     pkg = ctx.pkg
     tmp = pkg.tmp("verify_loader")
-    p = subprocess.run([sys.executable, "-m", "masterquo.studio.verify", str(pkg.dir)], capture_output=True, text=True, timeout=900)
+    p = subprocess.run([sys.executable, "-m", "masterquo.studio.verify", str(pkg.dir)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=900, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
     try:
         res = json.loads((p.stdout or "").strip().splitlines()[-1])
     except (ValueError, IndexError):

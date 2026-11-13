@@ -939,3 +939,15 @@ pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: 
 .kronos-panel { overflow-wrap: anywhere; min-width: 0; }
 .kronos-panel .badge { white-space: normal; max-width: 100%; }
 .kronos-panel .kronos-grid .card { min-width: 0; }
+
+/* 1.40.3 global error boundary (components/ErrorBoundary.tsx) */
+.pmw-crash { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(6, 8, 18, .94); color: #e8ecff; font-family: system-ui, "Segoe UI", sans-serif; }
+.pmw-crash-box { max-width: 760px; width: 100%; border: 1px solid #6a2a2a; border-radius: 12px; background: #120c14; padding: 18px 20px; }
+.pmw-crash-box h2 { margin: 0 0 8px; font-size: 18px; color: #ffb4b4; }
+.pmw-crash-box p { margin: 0 0 10px; color: #c9cde6; font-size: 13.5px; }
+.pmw-crash-box pre { max-height: 260px; overflow: auto; white-space: pre-wrap; font: 12px/1.4 Consolas, "Cascadia Mono", monospace;
+  background: #0a0710; border-radius: 8px; padding: 10px; color: #ffd6d6; user-select: text; }
+.pmw-crash-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.pmw-crash-row button { padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3f66; background: #1b2040; color: #e8ecff; cursor: pointer; }
+.pmw-crash-row button:first-child { background: #2a5bd7; border-color: #2a5bd7; }

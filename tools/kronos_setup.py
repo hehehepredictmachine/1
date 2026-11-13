@@ -95,7 +95,7 @@ def child_env(env: dict | None = None) -> dict:
     clean = {k: v for k, v in src.items() if k.upper() not in FOREIGN_ENV}
     if keep_pp:
         clean["PYTHONPATH"] = keep_pp
-    clean.update(PYTHONNOUSERSITE="1", PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    clean.update(PYTHONNOUSERSITE="1", PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PIP_USER="0")  # pip.ini "user = true" never applies
     return clean
 
 
