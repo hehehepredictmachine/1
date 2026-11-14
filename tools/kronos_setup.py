@@ -121,10 +121,18 @@ def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[i
     return p.wait(), last
 
 
+APP_CONTROL = ("WinError 4551", "Zasady kontroli aplikacji", "Application Control policy", "application control policy")
+
+
 def child_error(last: str) -> tuple[str | None, str]:
     r = CHILD["result"] or {}
     code = r.get("code")
     msg = (r.get("error") or last or "")[:300]
+    if any(k in msg for k in APP_CONTROL):
+        # 1.40.6: Windows Smart App Control / WDAC refused a library of the model environment - not a missing package
+        return "APP_CONTROL_BLOCKED", ("Windows (Smart App Control / zasady kontroli aplikacji) zablokował bibliotekę środowiska modelu – "
+                                       "to nie jest brak pakietu i ponowna instalacja tej samej wersji nie pomoże. Pozostałe modele i bot "
+                                       "działają. Szczegóły: " + msg)
     return code, (f"{HINT[code]}. " if code in HINT else "") + msg
 
 

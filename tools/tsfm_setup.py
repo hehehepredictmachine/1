@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kronos_setup as KS  # noqa: E402 - same process helpers (streaming, RESULT parsing, python detection)
 
 TOTAL = 5
-TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.11.0"}        # = the pins of the requirement files
+TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.14.1"}        # = the pins of the requirement files
 VENV = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite"}
 NAME = {"chronos2": "Chronos-2 (amazon/chronos-2, ~0,5 GB wag)", "granite_ttm": "Granite TTM R2 (ibm-granite/granite-timeseries-ttm-r2, ~3 MB wag, ~0,35 GB RAM)"}
 NEED_DISK = {"chronos2": 0.6e9 + 1.2e9, "granite_ttm": 0.01e9 + 1.7e9}      # weights + environment (approx.)
@@ -65,8 +65,10 @@ def result(out: Out, step: int, ok: bool, code: str | None = None, **kw) -> dict
 
 def child_error(last: str) -> tuple[str | None, str]:
     r = KS.CHILD["result"] or {}
-    code = r.get("code")
     msg = (r.get("error") or last or "")[:300]
+    if any(k in msg for k in KS.APP_CONTROL):       # 1.40.6: Windows refused a library - explained, not "missing package"
+        return KS.child_error(last)
+    code = r.get("code")
     return code, (f"{HINT[code]}. " if code in HINT else "") + msg
 
 
@@ -141,6 +143,8 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
             return result(out, 2, False, "VENV", error=f"brak pip i ensurepip nie powiodło się: {last}; usuń {venv} i uruchom ponownie", model=mid)
     req = root / "requirements" / f"requirements-{"granite" if mid == "granite_ttm" else mid}-win.txt"
     pip = [str(vpy), "-m", "pip", "install", "--disable-pip-version-check", "--no-input"]
+    if mid == "granite_ttm":                 # 1.40.6: every package is pinned; granite-tsfm's declared torch<2.12 would block torch 2.14.1
+        pip.append("--no-deps")
     if win:
         if a.cuda:
             lines = req.read_text(encoding="utf-8").splitlines()

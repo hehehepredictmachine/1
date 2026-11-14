@@ -1,3 +1,18 @@
+# Raport – PepeMarketWizard 1.40.6 (Granite TTM a Smart App Control)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_6.zip` (2700 plików, aplikacja Windows) | `f967dbdfab6ee941f3219d24eb2ce9796598539dbf5ea02f370056b53e41f9b0` |
+| `PepeMarketWizard_1_40_6.zip` (1631 plików, folder programu) | `ed36d7181e36dfa2842ecdda91874190883e687f3908049674d433a38aa59208` |
+
+Przyczyna z logu: `WinError 4551` (Smart App Control) dla `torch\lib\shm.dll` z torch 2.11.0 w `.venv_granite`; torch 2.14.1 w `.venv_chronos2`
+ładował się na tym samym komputerze. Poprawka: Granite na torch 2.14.1 (jak Chronos-2 / Kronos), instalacja z `--no-deps`, czytelny
+komunikat `APP_CONTROL_BLOCKED`. Sprawdzenie: `check_requirements_win.py` (Windows cp313 / cp312, z sumami) OK; Granite na torch 2.14.1 –
+testy na prawdziwych wagach (parity PASS, determinizm, brak zaglądania w przyszłość) OK, dotrenowanie OK; testy instalatora OK;
+`verify_release.py --all` OK. NOT RUN: Windows (brak w środowisku).
+
+---
+
 # Raport – PepeMarketWizard 1.40.5 (instalacja Kronos na Windows)
 
 | Plik | SHA-256 |

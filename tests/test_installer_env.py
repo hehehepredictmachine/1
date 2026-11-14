@@ -45,6 +45,27 @@ class TestInstallerEnv(unittest.TestCase):
         self.assertIsNone(seen["PIP_TARGET"])
         self.assertEqual(seen["PYTHONNOUSERSITE"], "1")
 
+    def test_app_control_block_is_explained(self):
+        import kronos_setup as KS
+        KS.CHILD["result"] = {"code": "MISSING_DEPENDENCY", "error": 'OSError: [WinError 4551] Zasady kontroli aplikacji zablokowały ten plik. '
+                              'Error loading "C:\\x\\.venv_granite\\Lib\\site-packages\\torch\\lib\\shm.dll"'}
+        code, msg = KS.child_error("")
+        self.assertEqual(code, "APP_CONTROL_BLOCKED")
+        import tsfm_setup as TS                                   # the Chronos-2 / Granite installer uses its own wrapper
+        self.assertEqual(TS.child_error("")[0], "APP_CONTROL_BLOCKED")
+        self.assertIn("Smart App Control", msg)
+        self.assertNotIn("powtórz instalację", msg)
+        KS.CHILD["result"] = None
+
+    def test_granite_uses_the_same_torch_as_the_other_models(self):
+        req = (_env.ROOT / "requirements")
+        pins = {f: next(l.split(" ")[0] for l in (req / f).read_text(encoding="utf-8").splitlines() if l.startswith("torch=="))
+                for f in ("requirements-granite-win.txt", "requirements-chronos2-win.txt", "requirements-kronos-win.txt")}
+        self.assertEqual(len(set(pins.values())), 1, pins)       # torch 2.11.0 was blocked by Smart App Control (WinError 4551)
+        t = (_env.ROOT / "tools" / "tsfm_setup.py").read_text(encoding="utf-8")
+        self.assertIn('"granite_ttm": "torch==2.14.1"', t)
+        self.assertIn('pip.append("--no-deps")', t)
+
     def test_every_installer_uses_it(self):
         tools = _env.ROOT / "tools"
         k = (tools / "kronos_setup.py").read_text(encoding="utf-8")

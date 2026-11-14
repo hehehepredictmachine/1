@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.40.6 – Granite TTM na Windows 11 z Smart App Control (WinError 4551)
+* Zgłoszenie z logu instalacji: Chronos-2 zainstalował się poprawnie, a sprawdzenie Granite TTM kończyło się
+  `OSError: [WinError 4551] Zasady kontroli aplikacji zablokowały ten plik … torch\lib\shm.dll`. Windows (Smart App Control) blokował
+  bibliotekę **torch 2.11.0** ze środowiska Granite, a **torch 2.14.1** (Chronos-2, Kronos) ładował się na tym samym komputerze bez problemu.
+* `.venv_granite` używa teraz **torch 2.14.1** – tej samej wersji co Chronos-2 i Kronos (te same pliki koła, sumy SHA-256 bez zmian).
+  `granite-tsfm 0.3.11` deklaruje zachowawczo `torch<2.12`; zgodność sprawdzona na torch 2.14.1: test identyczności i zgodności
+  z oficjalnym API (parity PASS), determinizm, brak zaglądania w przyszłość, prognoza testowa i dotrenowanie – OK. Instalacja Granite
+  przebiega z `--no-deps` (wszystkie 64 pakiety przypięte z sumami; sprawdzone dla Windows cp313 / cp312).
+* Ponowne uruchomienie instalatora na istniejącym `.venv_granite` wymienia torch 2.11.0 na 2.14.1 (reszta zostaje).
+* Gdy Windows zablokuje bibliotekę modelu, instalator mówi to wprost (kod `APP_CONTROL_BLOCKED`, „Smart App Control / zasady kontroli
+  aplikacji”) zamiast mylącego „brak pakietu – powtórz instalację”.
+
 ## 1.40.5 – instalacja Kronos na Windows (FileNotFoundError przy pobieraniu wag)
 * Zgłoszenie z logu instalacji: pobieranie `NeoQuasar/Kronos-base/model.safetensors` kończyło się `FileNotFoundError` dla pliku
   `…\.partial\NeoQuasar__Kronos-base@<40 znaków rewizji>\.cache\huggingface\download\<…>.incomplete`. Biblioteka huggingface_hub
