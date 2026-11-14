@@ -78,10 +78,60 @@ def _classify(exc: Exception) -> str:
     return "DOWNLOAD_ERROR"
 
 
+CHUNK = 1 << 20
+
+
+def _fetch(url: str, part: Path, size: int | None, label: str, rep, step: int, retries: int = 4) -> None:
+    """Direct, resumable HTTPS download into `part` (1.40.4). huggingface_hub's local_dir mode writes
+    <dir>\\.cache\\huggingface\\download\\<44 chars>.<64 chars>.incomplete - with the 40-character revision in the folder name that is
+    over the 260-character MAX_PATH of Windows, so the file could not be created (FileNotFoundError). Proxy settings of the system apply."""
+    import urllib.error
+    import urllib.request
+    err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            have = part.stat().st_size if part.exists() else 0
+            if size is not None and have > size:
+                part.unlink()
+                have = 0
+            req = urllib.request.Request(url, headers={"User-Agent": "PepeMarketWizard-kronos-setup"})
+            if have:
+                req.add_header("Range", f"bytes={have}-")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                mode = "ab" if (have and r.status == 206) else "wb"
+                if mode == "wb":
+                    have = 0
+                t0, last, start = time.time(), 0.0, have
+                with open(part, mode) as out:
+                    while True:
+                        b = r.read(CHUNK)
+                        if not b:
+                            break
+                        out.write(b)
+                        have += len(b)
+                        if size and time.time() - last > 3:
+                            last = time.time()
+                            rep.say(f"{label}: {have / 1e6:.0f} / {size / 1e6:.0f} MB ({(have - start) / max(1e-6, time.time() - t0) / 1e6:.1f} MB/s)", step)
+            if size is None or part.stat().st_size == size:
+                return
+            err = OSError(f"pobrano {part.stat().st_size} B z {size} B")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 416:                      # range beyond the end: the partial file is complete or stale -> start again
+                part.unlink(missing_ok=True)
+            elif exc.code in (401, 403, 404):
+                raise
+            err = exc
+        except (OSError, TimeoutError) as exc:   # network interruption: resume on the next attempt
+            err = exc
+        rep.say(f"{label}: przerwane pobieranie ({type(err).__name__}: {str(err)[:120]}) – ponowienie {attempt + 1}/{retries}", step)
+        time.sleep(min(30, 2 ** (attempt + 1)))
+    raise err if err else OSError("pobieranie nie powiodło się")
+
+
 def download(weights_dir: str, status_file: str | None) -> int:
     rep = Reporter(status_file, 6)
     try:
-        from huggingface_hub import HfApi, hf_hub_download
+        from huggingface_hub import HfApi
         import huggingface_hub
     except ImportError as exc:
         rep.say("brak huggingface_hub w .venv_kronos", 1)
@@ -91,7 +141,15 @@ def download(weights_dir: str, status_file: str | None) -> int:
         return result(False, "NETWORK", rep, error="tryb offline (HF_HUB_OFFLINE=1) – pobranie wag wymaga internetu przy pierwszej instalacji")
     w = Path(weights_dir)
     partial = w / ".partial"
-    shutil.rmtree(partial, ignore_errors=True)
+    keep = {c["kind"] for c in lock.COMPONENTS}
+    if partial.is_dir():                              # keep interrupted downloads (*.part) to resume them; drop everything else
+        for x in partial.iterdir():
+            if x.is_dir() and x.name in keep:
+                for f in x.iterdir():
+                    if not f.name.endswith(".part"):
+                        shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(x, ignore_errors=True) if x.is_dir() else x.unlink(missing_ok=True)
     partial.mkdir(parents=True, exist_ok=True)
     api = HfApi()
     comps_out = []
@@ -111,7 +169,8 @@ def download(weights_dir: str, status_file: str | None) -> int:
         names = list(lock.REQUIRED_FILES) + [n for n in ("README.md",) if n in sib]
         files = []
         step += 1
-        dest = partial / lock.component_dir_name(c)
+        dest = partial / c["kind"]                    # short folder (MAX_PATH): the final, descriptive name is set when moved into place
+        dest.mkdir(parents=True, exist_ok=True)
         for name in names:
             s = sib.get(name)
             if s is None:
@@ -119,11 +178,20 @@ def download(weights_dir: str, status_file: str | None) -> int:
             size = getattr(s, "size", None)
             rep.say(f"{c['repo']}: pobieram {name}" + (f" ({size / 1e6:.1f} MB)" if size else ""), step)
             t0 = time.time()
+            p = dest / name
+            part = dest / (name + ".part")
             try:
-                local = hf_hub_download(c["repo"], name, revision=c["revision"], local_dir=str(dest))
+                _fetch(f"{lock.SOURCE}/{c['repo']}/resolve/{c['revision']}/{name}", part, size, f"{c['repo']}/{name}", rep, step)
+                part.replace(p)
             except Exception as exc:  # noqa: BLE001
-                return result(False, _classify(exc), rep, error=f"{c['repo']}/{name}: {type(exc).__name__}: {exc}"[:400])
-            p = Path(local)
+                code = _classify(exc)
+                if getattr(exc, "code", None) == 404:
+                    code = "FILE_MISSING"
+                elif getattr(exc, "code", None) in (401, 403):
+                    code = "REPO_NOT_FOUND"
+                elif isinstance(exc, (OSError, TimeoutError)) and code == "DOWNLOAD_ERROR":
+                    code = "NETWORK"
+                return result(False, code, rep, error=f"{c['repo']}/{name}: {type(exc).__name__}: {exc}"[:400])
             lfs = getattr(s, "lfs", None)
             lfs_sha = (lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)) if lfs else None
             if lfs_sha:
@@ -150,7 +218,7 @@ def download(weights_dir: str, status_file: str | None) -> int:
     for c in lock.COMPONENTS:
         final = w / lock.component_dir_name(c)
         shutil.rmtree(final, ignore_errors=True)
-        (partial / lock.component_dir_name(c)).replace(final)
+        (partial / c["kind"]).replace(final)
     shutil.rmtree(partial, ignore_errors=True)
     import platform
     man = {"schema": lock.MANIFEST_SCHEMA, "installed_at": _now(), "source": lock.SOURCE, "components": comps_out,

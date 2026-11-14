@@ -201,12 +201,14 @@ class TestKronosRuntime(unittest.TestCase):
                 return type("I", (), {"sha": revision if rev_ok else "f" * 40, "siblings": sib})()
             return model_info
 
-        def fake_download(repo, name, revision, local_dir):
+        def fake_download(url, part, size, label, rep, step, retries=4):
+            # 1.40.4: direct download <SOURCE>/<repo>/resolve/<revision>/<name> into a short <dir>/.partial/<kind>/<name>.part
+            repo_rev, name = url[len(lock.SOURCE) + 1:].rsplit("/", 1)
+            repo = repo_rev.split("/resolve/")[0]
             c = next(x for x in lock.COMPONENTS if x["repo"] == repo)
-            src = self.small / lock.component_dir_name(c) / name
-            Path(local_dir).mkdir(parents=True, exist_ok=True)
-            shutil.copy(src, Path(local_dir) / name)
-            return str(Path(local_dir) / name)
+            self.assertEqual(repo_rev.split("/resolve/")[1], c["revision"])
+            self.assertEqual(Path(part).parent.name, c["kind"])
+            shutil.copy(self.small / lock.component_dir_name(c) / name, part)
 
         os.environ.pop("HF_HUB_OFFLINE", None)          # the engine (test_03) sets it for its own process; the installer runs separately
         cases = [({}, True, None), ({"bad_sha": True}, False, "CHECKSUM_MISMATCH"), ({"rev_ok": False}, False, "REVISION_MISMATCH"),
@@ -215,12 +217,16 @@ class TestKronosRuntime(unittest.TestCase):
             dest = self.tmp / f"dl_{code}"
             shutil.rmtree(dest, ignore_errors=True)
             with mock.patch("huggingface_hub.HfApi.model_info", side_effect=lambda *a, **k: info_for(**kw)(a[0] if a else k["repo_id"], k.get("revision"), True)), \
-                    mock.patch("huggingface_hub.hf_hub_download", side_effect=fake_download), \
+                    mock.patch.object(I, "_fetch", side_effect=fake_download), \
                     mock.patch("builtins.print"):
                 rc = I.download(str(dest), None)
             self.assertEqual(rc == 0, ok, (kw, code))
             if ok:
                 self.assertTrue(M.verify(dest)["ok"])
+                # Windows MAX_PATH: nothing deeper than <dir>\<repo>__<name>@<40-char revision>\<file> is ever created (no .cache tree)
+                longest = max(len(str(x.relative_to(dest))) for x in dest.rglob("*"))
+                self.assertLess(longest, 120, longest)          # was ~200 with the huggingface_hub .cache tree
+                self.assertFalse(list(dest.rglob(".cache")))
                 comps = M.read(dest)["components"]
                 self.assertEqual({c["revision"] for c in comps}, {lock.MODEL["revision"], lock.TOKENIZER["revision"]})
                 self.assertEqual({f["source_check"] for c in comps for f in c["files"]}, {"lfs_sha256", "git_blob_sha1"})

@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.40.5 – instalacja Kronos na Windows (FileNotFoundError przy pobieraniu wag)
+* Zgłoszenie z logu instalacji: pobieranie `NeoQuasar/Kronos-base/model.safetensors` kończyło się `FileNotFoundError` dla pliku
+  `…\.partial\NeoQuasar__Kronos-base@<40 znaków rewizji>\.cache\huggingface\download\<…>.incomplete`. Biblioteka huggingface_hub
+  w trybie `local_dir` tworzy taki plik tymczasowy; ścieżka miała ok. 270 znaków – ponad limit 260 znaków (MAX_PATH) Windows.
+* Instalator Kronos pobiera teraz pliki bezpośrednio (jak instalator Chronos-2 / Granite): krótki folder roboczy `.partial\model` /
+  `.partial\tokenizer`, plik `*.part`, wznawianie przerwanego pobierania (również po ponownym uruchomieniu instalatora), te same
+  kontrole ze źródłem (LFS SHA-256 / git blob SHA-1, rozmiar) i ten sam manifest. Najdłuższa ścieżka w folderze wag: ok. 110 znaków.
+* Sprawdzone: prawdziwe pobranie wag Kronos-base + tokenizera (przerwane w połowie i wznowione), `verify` – OK; test instalatora
+  pilnuje braku drzewa `.cache` i długości ścieżek.
+
 ## 1.40.4 – samonaprawa składników bota (ModuleNotFoundError: No module named 'click.core')
 * Zgłoszenie z logu: silnik kończył start błędem `ModuleNotFoundError: No module named 'click.core'` – w folderze składników
   `%LOCALAPPDATA%\PepeMarketWizard\pyenv\cp313-…` brakowało pliku pakietu (zwykle kwarantanna antywirusa, czyszczenie dysku albo

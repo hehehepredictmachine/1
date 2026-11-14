@@ -1,3 +1,17 @@
+# Raport – PepeMarketWizard 1.40.5 (instalacja Kronos na Windows)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_40_5.zip` (2700 plików, aplikacja Windows) | `5040c342bae6630be9dcdaa7ce78f41537626af7ee9cbcf66de8fc25f2eeca62` |
+| `PepeMarketWizard_1_40_5.zip` (1631 plików, folder programu) | `01d9177862b7ce9a469f55cf52d669ff90b8697153c67d0f6074a75f5a06e8d5` |
+
+Przyczyna z logu instalacji: plik tymczasowy huggingface_hub (`.cache\huggingface\download\….incomplete`) w folderze z pełną rewizją
+w nazwie – ok. 270 znaków, ponad MAX_PATH (260) Windows → `FileNotFoundError`. Poprawka: bezpośrednie, wznawiane pobieranie do krótkich
+folderów (`.partial\model`, `.partial\tokenizer`), te same kontrole sum i rozmiarów. Sprawdzenie: prawdziwe pobranie wag (przerwane
+i wznowione) + `verify` OK; testy Kronos w `.venv_kronos` OK; `verify_release.py --all` OK. NOT RUN: Windows (brak w środowisku).
+
+---
+
 # Raport – PepeMarketWizard 1.40.4 (samonaprawa składników bota)
 
 | Plik | SHA-256 |
