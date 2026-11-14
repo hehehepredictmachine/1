@@ -38,7 +38,7 @@ STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska .venv_kronos (przyc
              "NO_WEIGHTS": "brak zweryfikowanych wag modelu / tokenizera (instalacja niepełna)", "DISABLED": "wyłączony w ustawieniach",
              "INSTALLING": "instalacja w toku", "STARTING": "uruchamianie procesu modelu", "LOADING": "ładowanie modelu i tokenizera",
              "READY": "model załadowany – prognozy po każdej nowej zamkniętej świecy", "ERROR": "błąd modelu"}
-TARGET_PL = {"READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę / kolejkę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
+TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pamięci)", "READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę / kolejkę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
              "NO_SYMBOL": "brak potwierdzonego symbolu brokera", "MT5_DISCONNECTED": "MT5 rozłączony", "STALE": "dane nieaktualne",
              "WARMUP": "za mało zamkniętych świec", "BLOCK": "dane odrzucone przez kontrolę jakości", "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji",
              "CALENDAR_INSUFFICIENT": "za krótka historia do kalendarza sesji", "CALENDAR_NO_SESSION": "brak sesji w horyzoncie",
@@ -67,6 +67,7 @@ class KronosService:
         self.backoff = 30.0
         self.state = {"status": "STARTING", "code": None, "reason": None, "updated_at": None}
         self.counters = {"enqueued": 0, "deduplicated": 0, "dropped_queue_full": 0, "done": 0, "errors": 0, "timeouts": 0, "worker_starts": 0}
+        self.last_used = time.monotonic()
         self._cal: dict[tuple, tuple] = {}
         self._meta: dict[str, tuple] = {}
         self.jobs: dict[str, dict | None] = {"install": None, "verify": None, "validation": None}
@@ -150,6 +151,9 @@ class KronosService:
         return (str(self.weights_dir()), s.device, s.max_context, s.cpu_threads)
 
     def _threads_default(self) -> int:
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            return gov.threads_for("kronos")                                     # 1.40: resource profile
         return max(1, min(4, (os.cpu_count() or 2) // 2))
 
     def ensure_worker(self) -> bool:
@@ -404,7 +408,22 @@ class KronosService:
     def run_job(self, job: dict) -> dict | None:
         k = (job["instrument"], job["timeframe"])
         t = self._target(k)
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info))
+            if not ok:
+                t.update(state="RESOURCE_PAUSED", reason=why)
+                return None
+            with gov.heavy("kronos") as slot:
+                if not slot:
+                    t.update(state="RESOURCE_PAUSED", reason="slot ciężkiej inferencji zajęty zbyt długo – prognoza przy następnej świecy")
+                    return None
+                return self._run_job(job, k, t)
+        return self._run_job(job, k, t)
+
+    def _run_job(self, job: dict, k: tuple, t: dict) -> dict | None:
         s = self.settings.get()
+        self.last_used = time.monotonic()
         t.update(state="RUNNING", reason=None)
         if not self.ensure_worker():
             t.update(state="MODEL_UNAVAILABLE", reason=self.state.get("reason"))
@@ -447,6 +466,9 @@ class KronosService:
             t.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
             return None
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo)
+        self.last_used = time.monotonic()
+        if getattr(self, "governor", None) is not None:
+            self.governor.record("kronos", ms=r.get("ms"))
         self.latest[k] = fc
         self.context_tail[k] = [{"t": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"]} for b in bars[-120:]]
         t.update(state="READY", reason=None, last_key=job["bar_key"])
@@ -490,6 +512,7 @@ class KronosService:
                 "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "device": r.get("device"), "device_note": r.get("device_note"),
                 "compute_ms": r.get("ms"), "seed": r.get("seed"), "sampling": r.get("sampling"), "context_bars": r.get("context_bars"),
                 "model": comps.get("model"), "tokenizer": comps.get("tokenizer"), "runtime": (self.worker_info or {}).get("runtime"),
+                "model_name": (self.load_info or {}).get("model_name"), "params": (self.load_info or {}).get("params_model"),
                 "quality": job["quality"], "calendar": cinfo, "timestamp_basis": s.timestamp_basis, "data_kind": kind, "data_source": kind_pl,
                 "ohlc_inconsistent_steps": bad_geom, "mode": "SHADOW", "execution_permission": False,
                 "note": "pojedyncza próbkowana ścieżka modelu (sample_count=1) – nie jest pewnością ani skalibrowanym prawdopodobieństwem"}
@@ -505,7 +528,7 @@ class KronosService:
              fc["pred_close_h"], fc["delta_price"], fc["direction"], fc["neutral_band"],
              json.dumps([{"t_utc": x["t_utc"], "c": x["c"]} for x in fc["pred"]]), json.dumps(fc["uncertainty"]) if fc["uncertainty"] else None,
              (fc.get("model") or {}).get("revision"), (fc.get("tokenizer") or {}).get("revision"), fc["device"], fc["compute_ms"], fc["data_kind"],
-             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"]}), "PENDING"))
+             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"], "model": (fc.get("model") or {}).get("revision")}), "PENDING"))
 
     def settle(self, inst: str, tf: str, closed_bars: list[dict]) -> int:
         """Settle PENDING forecasts whose last target bar is already closed: per-step actual closes from REAL closed bars of exactly
@@ -553,7 +576,9 @@ class KronosService:
         if tf:
             q, a = q + " AND timeframe=?", a + [tf]
         rows = self.db.query(q + " ORDER BY id DESC LIMIT ?", tuple(a + [limit]))
+        from kronos_runtime import lock as LK
         for r in rows:
+            r["model_name"] = LK.name_of(None, r.get("model_revision"))       # 1.37: Kronos-small rows stay labelled Kronos-small
             r["path"] = json.loads(r.pop("path_json") or "[]")
             r["uncertainty"] = json.loads(r.pop("uncertainty_json")) if r.get("uncertainty_json") else None
             r["outcome"] = json.loads(r.pop("outcome_json")) if r.get("outcome_json") else None

@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.35.0"
+VERSION = "1.40.6"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -166,7 +166,7 @@ def build(path: Path, role: str, story: list, title: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------- administrator
 def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
-               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne Neural City (siedem wież), "
+               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne – stół neuronowy (osiem wież), "
                  "panele Lightning / Wind / Control / Strategy Lab, wykresy i strefy, trening modeli, wydawanie paczek, aktualizacja "
                  "i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
@@ -193,7 +193,7 @@ def admin(shots: Path | None) -> list:
           P("Najpierw otwiera się małe okno <b>JOIN THE CULT</b> (launcher): pokazuje postęp pierwszego startu, wybór danych poprzedniej "
             "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij</b>. Gdy silnik działa, "
             "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. Tłem launchera jest grafika Pepe przemawiającego do zgromadzenia. "
-            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne <b>Neural City</b> po krótkim "
+            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne (<b>stół neuronowy</b>) po krótkim "
             "intro „lotu przez sieć neuronów” (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
             "W przeglądarce (bez aplikacji Windows) ten sam launcher pojawia się na początku sesji."),
           *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
@@ -203,25 +203,26 @@ def admin(shots: Path | None) -> list:
               "Uruchamiaj tylko paczkę, której sumę SHA-256 porównałeś z plikiem .sha256 / raportem.", "warn"),
           PageBreak()]
     # 2
-    s += [P("2 / Interfejs: menu główne Neural City (siedem wież), panele i pasek stanu", "h1"),
-          P("Menu główne (1.34) to <b>Neural City</b>: neuronowy Pepe przy holograficznym stole z siedmioma wieżami. Najechanie na wieżę "
-            "pokazuje jej opis, kliknięcie wieży albo przycisku na górnym pasku (ten sam cel), Enter lub dotknięcie listy na małym ekranie "
-            "otwiera istniejący panel (Esc anuluje przejście). Karty Winratio, ROI i Equity pochodzą ze statystyk bota i rachunku MT5 – "
-            "każda ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>), bez danych: <b>N/A</b>. "
-            "Scena działa w trybie <b>2.5D</b> (animowane pierścienie, cząsteczki, gest i portal na grafice – nie modele 3D); jakość "
-            "animacji: ⚙ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje."),
+    s += [P("2 / Interfejs: menu główne – stół neuronowy (osiem wież), panele i pasek stanu", "h1"),
+          P("Menu główne (1.36, Main Menu V2) to <b>stół neuronowy</b>: trzech Pepe w garniturach przy okrągłym stole z ośmioma wieżami. "
+            "Małe logo jest w lewym górnym rogu, nawigacja wszystkich ośmiu modułów na górze; ekran nie ma paneli informacyjnych ani "
+            "przycisków na dole. Najechanie na wieżę pokazuje jej opis, kliknięcie wieży albo pozycji na górnym pasku (ten sam cel), Enter "
+            "lub dotknięcie listy na małym ekranie otwiera panel (Esc anuluje przejście). Menu nie pobiera danych MT5 i nie pokazuje statystyk. "
+            "Scena działa w trybie <b>2.5D</b> (ścieżki neuronowe z impulsami, pierścienie, portal na grafice – nie modele 3D); jakość "
+            "animacji: ✧ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje, Studio – w górnym pasku."),
           table([["Wieża", "Panel"],
-                 ["PEPE$WTC (dawniej WTC PEPE)", "Trading Intelligence – terminal handlowy"],
-                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "Wind Portal – modele AI, konsensus, ślad decyzji, Monte Carlo"],
-                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – sygnały BUY/SELL, plan wejścia, cykl życia sygnału"],
-                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["PEPE$WTC (dawniej WTC PEPE)", "PEPE$WTC – Neural Market Command Center (multi-chart, Kronos, strefy, Volume Profile)"],
+                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "PEPE$SIGNAL – Signal Intelligence Center (sygnały, warunki, oceny AI)"],
+                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – pełne informacje i historia sygnałów"],
+                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"],
                  ["STRATEGIES", "Strategy Lab – silnik, ustawienia, biblioteka, porównanie"],
-                 ["SETTINGS", "Ustawienia"],
-                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"]], [55, 115]),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=160),
+                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["TRAINING LAB", "Centrum treningu – eksport, walidacja, trening, aktywacja"],
+                 ["SETTINGS", "Ustawienia"]], [55, 115]),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – stół neuronowy z ośmioma wieżami.", width_mm=160),
           P("Menu boczne obszarów (bez zmian) – kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są na pasku zakładek."),
           table([["Obszar", "Zawartość"],
-                 ["Menu główne", "Neural City – siedem wież (logo w lewym górnym rogu również tu prowadzi)"],
+                 ["Menu główne", "stół neuronowy – osiem wież (logo w lewym górnym rogu również tu prowadzi)"],
                  ["Precision", "Pulpit, Wykresy MTF, Strefy rynkowe, Scalping MTF, Kontekst rynku, Indykatory, Analiza sygnału, Neural Cyberpunk"],
                  ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje, Lightning Tower, Strategy Lab"],
                  ["Profits", "Pozycje i ryzyko, Dziennik i wyniki, widok Profits"],
@@ -269,7 +270,7 @@ def admin(shots: Path | None) -> list:
           P("Bez bota: <b>32_CENTRUM_TRENINGU.bat</b>."),
           box("Wytrenowany model nie jest dowodem przewagi. Nowe modele działają w trybie OBSERVATION (nie głosują w strategiach). "
               "Wynik na danych syntetycznych nic nie mówi o rynku.", "warn"),
-          P("Kronos AI Forecast (1.31) – przetrenowany model, bez treningu w bocie", "h2"),
+          P("Kronos AI Forecast (1.31; od 1.37 Kronos-base) – przetrenowany model, bez treningu w bocie", "h2"),
           bullets(["Instalacja: Wykresy bota → <b>Kronos AI Forecast</b> → <b>Zainstaluj model Kronos</b> albo <b>33_KRONOS_INSTALUJ.bat</b> "
                    "(osobne .venv_kronos, PyTorch CPU, oficjalne wagi NeoQuasar w przypiętych rewizjach, sumy sprawdzane ze źródłem).",
                    "<b>Sprawdź instalację</b> naprawdę ładuje model i robi prognozę testową. Po instalacji działa bez internetu.",
@@ -299,6 +300,88 @@ def admin(shots: Path | None) -> list:
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
     # 5
+    # 4h - 1.40
+    s += [P("4h / Nowe w 1.40: Granite TTM zamiast FinCast, Memory Governor, trening Granite, nowy WTC$PEPE", "h1"),
+          bullets(["<b>Granite TTM</b> (IBM, 0,8 M parametrów, Apache-2.0) zastępuje wycofany FinCast: instalacja <b>38_MODELE_CHRONOS2_GRANITE.bat</b> "
+                   "albo „Zainstaluj” w sekcji Modele prognoz; ok. 3 MB wag, ok. 0,35 GB RAM. Prognoza punktowa (bez kwantyli i świec), rola OBSERVE.",
+                   "Historia prognoz FinCast zostaje (tylko do odczytu); jego ustawienia zapisano w kopii, role nie przeszły na Granite.",
+                   "<b>Memory Governor</b> (Modele prognoz → Zasoby): profile LOW_MEMORY_16GB / ECO / BALANCED / MANUAL, pomiar RAM procesów, progi 75/80/85 %, "
+                   "jeden ciężki model naraz. Wstrzymana prognoza ma stan STALE z powodem – nigdy wartości zastępczej.",
+                   "<b>Dotrenowanie Granite</b> na Twojej historii MT5: osobny proces, test na niewidzianych danych, aktywacja tylko przy wyniku lepszym od bazowego.",
+                   "<b>WTC$PEPE</b> ma układ z paczki WTC 2.1 na danych bota; menu Galaxy i panel działają płynniej (docs/WYDAJNOSC_UI_1_40_PL.md).",
+                   "Walidacja na złocie (Q4 2025): żaden model (Granite, Chronos-2, Kronos) nie pokonał prognozy „ostatnia cena” – modele są informacją, "
+                   "nie sygnałem."]),
+          PageBreak()]
+    # 4g - 1.39
+    s += [P("4g / Nowe w 1.39: LIVE od startu, GARCH, intro, menu Galaxy, WTC PEPE 2.1", "h1"),
+          box("<b>Bot startuje w AUTO LIVE</b> (na Twoje polecenie) i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem REAL. "
+              "Zdjęte bramki walidacji (VALIDATED, skalibrowany model, znana prowizja) są teraz ostrzeżeniami; STOP, limity ryzyka, spread, "
+              "deduplikacja, uzgadnianie z MT5 i wymóg rachunku REAL działają dalej. Wyłączenie: STOP albo data\\config.json → "
+              "execution.start_mode = \"SIGNALS\", execution.live_autobind = false.", "block"),
+          bullets(["Do handlu nadal potrzebne: ścieżka główna instrumentu (ACTIVE / SH) i limity ryzyka – bez nich bot pokazuje powód i nie wchodzi.",
+                   "<b>GARCH</b>: rodzina VOL_GARCH może liczyć sigmę strategii PMW_HG09 (volatility_method = VOL_GARCH). Bez aktywnego modelu "
+                   "HG09 zwraca NO_DATA (GARCH_NOT_READY) – bez cichego zastępstwa.",
+                   "<b>Intro</b> „$PEPEMARKET WIZARD” (ok. 8,5 s; POMIŃ INTRO / Esc, Ctrl+Alt+B – ponownie) i <b>menu Galaxy</b> (#/menu): 7 planet, "
+                   "pełna sieć 21/21, edytor „Projektuj”, planety otwierają prawdziwe ekrany. Neural City: #/neural-city.",
+                   "<b>WTC PEPE → CUSTOMIZE CHART</b> (Chart Lab 2.1) i Session Volume Profile (POC / VA, London / New York / Asia, impuls 3/5/8/12) "
+                   "na prawdziwych świecach MT5.",
+                   "Instalacja bota i modeli oraz trening krok po kroku: <b>Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf</b>."]),
+          *shot(shots, "ui_galaxy/galaxy_1920x1080.png", "Menu Galaxy V2.", width_mm=150),
+          PageBreak()]
+    # 4f - 1.38
+    s += [P("4f / Nowe w 1.38: pakiet 20 strategii XAUUSD (SCALPING + HEDGING)", "h1"),
+          bullets(["Strona <b>Strategie</b> → panel <b>Pakiet 20 strategii</b>: PMW_SC01–SC10 (scalp: TP1 ≥ 25 pips, RR planu netto ≥ 2) i "
+                   "PMW_HG01–HG10 (hedge: TP1 ≥ 40 pips, RR koszyka netto ≥ 3). Stan każdego wariantu na każdym TF z powodem, plan Entry/SL/TP1/TP2, "
+                   "warunek hedge i postęp, historia sygnałów.",
+                   "Wykresy: warstwa <b>Pakiet 20</b> – strzałka sygnału na świecy, na której informacja była dostępna, linie wybranego planu "
+                   "i aktywnych pozycji (nie 20 kompletów naraz), filtry Scalp/Hedge, strategia, historia.",
+                   "Wykonanie tylko istniejącą ścieżką i w bieżącym trybie: SIGNALS – zero zleceń, PAPER – symulacja, AUTO_LIVE – tylko wariant z walidacją "
+                   "VALIDATED na Twoich danych. Bot nie zmienia trybu. Hedge tylko na rachunku HEDGING, jedna aktywacja, maks. 50 % bazy.",
+                   "Walidacja na Twojej historii MT5: <b>39_PAKIET_20_WALIDACJA.bat</b>. Bez niej wszystkie warianty mają status NOT_VALIDATED."]),
+          *shot(shots, "ui_kronos/sh_pack_panel.png", "Panel Pakiet 20 strategii (symulator MT5, świeży start – oceny po pierwszej zamkniętej M1).", width_mm=165, crop=(0, 0, 1, 0.68)),
+          box("Szczegóły: docs/strategies20/RUNBOOK_PL.md, STRATEGY_SPECIFICATIONS.md, RISK_AND_UNITS.md. Nazwa strategii i linia 1:3 na wykresie nie są "
+              "dowodem przewagi.", "warn"),
+          PageBreak()]
+    # 4e - 1.37
+    s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
+          bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "
+                   "Po aktualizacji uruchom <b>33_KRONOS_INSTALUJ.bat</b>; do tego czasu Kronos pokazuje „brak zweryfikowanych wag”. "
+                   "Bot nigdy nie przechodzi po cichu na mniejszy model.",
+                   "<b>Chronos-2</b> (Amazon, 120M) i <b>FinCast</b> (ok. 1B): instalacja <b>38_MODELE_CHRONOS2_FINCAST.bat</b> albo przyciski "
+                   "„Zainstaluj” w sekcji <b>Modele prognoz</b> (Wykresy bota). FinCast potrzebuje ok. 8 GB wolnej pamięci przy ładowaniu.",
+                   "Sekcja <b>Modele prognoz</b>: status, czasy, linie prognoz z przełącznikiem dla każdego modelu (nieaktualna = kropkowana), "
+                   "porównanie na tej samej świecy, walidacja walk-forward i rola w strategiach.",
+                   "Domyślnie <b>obserwacja</b>. ASSIST / REQUIRED tylko po pozytywnej walidacji na danych rzeczywistych i z potwierdzeniem – model może "
+                   "wyłącznie wstrzymać setup. Prognoza to cena, nie prawdopodobieństwo; zgodność modeli nie jest niezależnym potwierdzeniem."]),
+          *shot(shots, "ui_foundation/live.png", "Modele prognoz – trzy modele na symulatorze MT5 (dane syntetyczne).", width_mm=165),
+          box("Szczegóły, zasoby, testy i ograniczenia: docs/MODELE_KRONOS_CHRONOS2_FINCAST_1_37_PL.md.", "note"),
+          PageBreak()]
+    # 4d - 1.36
+    s += [P("4d / Nowe w 1.36: wieże PEPE$WTC i PEPE$SIGNAL", "h1"),
+          P("PEPE$WTC – Neural Market Command Center", "h2"),
+          bullets(["Duży wykres główny aktywnego instrumentu z wyborem interwału; <b>Multi-Chart Workspace</b>: „＋ Dodaj wykres”, × usuwa, "
+                   "każdy wykres ma własny interwał, kliknięcie nazwy przenosi go na wykres główny; „Reset widoku” przywraca układ.",
+                   "<b>Indicator Manager</b> pokazuje tylko warstwy, które bot naprawdę liczy (EMA, VWAP, RSI, MACD, ATR, BOS/CHoCH, OB/FVG, sesje, "
+                   "strefy, S/R + profil sesji, SVP, walls, SAR, IQ/PAL, poziomy AI). Bollinger Bands = N/A (brak w bocie).",
+                   "<b>Kronos M1 / M5</b>: OFF / AUTO / MANUAL („Przelicz” na żądanie), prognoza jako linia na wykresie; status z backendu "
+                   "(np. NOT_INSTALLED) – bez wymyślonego confidence.",
+                   "<b>AI Live Zones</b>: AUTO = przeliczenie stref po zamknięciu każdej świecy M1–M30, MANUAL = „Wyznacz teraz”; filtr typów.",
+                   "<b>Volume Profile Auto Zones</b>: POC, VAH/VAL, HVN, LVN z silnika PMW-SVP-1 dla okna wykresu (100/200/500 świec) – "
+                   "kolumna profilu przy wykresie i typowane strefy na wykresie. Poziom VP to informacja, nie sygnał.",
+                   "<b>Smart Trade Setup Builder</b> liczy R:R = |TP − Entry| / |Entry − SL| – nie ma przycisku zlecenia."]),
+          *shot(shots, "ui_towers/01_wtc_1672.png", "PEPE$WTC (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.55)),
+          P("PEPE$SIGNAL – Signal Intelligence Center", "h2"),
+          bullets(["Strumień sygnałów wszystkich strategii bota (S01–S12, skaner rynków, SCALPING / HEDGING) z filtrami: strategia, symbol, "
+                   "interwał, kierunek, status, czas, siła. Ⅱ zamraża listę.",
+                   "Wybór sygnału (z listy albo tabeli) aktualizuje wykres (Entry / SL / TP, przewinięty do chwili sygnału), podsumowanie, "
+                   "warunki <b>ENTRY / TRIGGER / INVALIDATION</b> z checklisty strategii, narrację, oceny modeli, metryki i zgodność MTF.",
+                   "Sygnał oczekujący jest zawsze <b>WAIT</b>. Siła sygnału to heurystyka 0–100, wynik modelu nie jest prawdopodobieństwem, "
+                   "o ile model nie jest skalibrowany. Dla starych sygnałów oceny modeli są oznaczone jako bieżące.",
+                   "Zakładki: LIVE SIGNALS, ALL STRATEGIES, AI EVALUATION, SIGNAL HISTORY, PERFORMANCE (wyniki w R), SETUP BUILDER (widok setupu)."]),
+          *shot(shots, "ui_towers/02_signal_1672.png", "PEPE$SIGNAL (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.6)),
+          box("Obie wieże tylko analizują – nie otwierają ani nie zamykają pozycji. Dawne panele: Trading Intelligence i Wind Portal "
+              "są dostępne w menu bocznym wież.", "note"),
+          PageBreak()]
     # 4c - 1.35
     s += [P("4c / Nowe w 1.35: PMW Quant Core (SHADOW)", "h1"),
           bullets(["Wspólny silnik: snapshot zamkniętych świec z kontrolą jakości → wyniki wszystkich dostępnych modeli w jednym kontrakcie → "
@@ -361,16 +444,20 @@ def client(shots: Path | None) -> list:
                         "Paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> i jej plik <b>.sha256</b>.",
                         "Terminal MetaTrader 5 z dostępem do własnego rachunku."]),
                box("Nie wysyłaj nikomu hasła do MT5 ani kodów bezpieczeństwa.", "warn"),
+               box("<b>Od wersji 1.39 bot startuje w trybie AUTO LIVE</b> i po pierwszej decyzji handluje na zalogowanym rachunku REAL "
+                   "(prawdziwe pieniądze). Przycisk <b>STOP</b> natychmiast zatrzymuje nowe wejścia. Jeśli chcesz tylko oglądać sygnały, "
+                   "poproś administratora o tryb SIGNALS (data\\config.json → execution.start_mode). Po starcie zobaczysz intro "
+                   "„$PEPEMARKET WIZARD” (POMIŃ INTRO / Esc) i menu <b>Galaxy</b> z siedmioma planetami – kliknięcie planety otwiera jej ekran.", "block"),
                PageBreak()]
     s += [P("1 / Instalacja", "h1"), P("Pierwsze uruchomienie", "h2"),
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",
                  "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
                  "wymagane składniki – może potrwać kilka minut. Postęp widać w małym oknie <b>JOIN THE CULT</b>.",
                  "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b> (na dole ekranu). Okno się powiększy i po krótkim intro "
-                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne <b>Neural City</b> z siedmioma wieżami. Przy pierwszym starcie kreator prosi o "
+                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne – <b>stół neuronowy</b> z ośmioma wieżami. Przy pierwszym starcie kreator prosi o "
                  "limity ryzyka i koszty."]),
           *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=150),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – osiem wież.", width_mm=150),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
               "z plikiem .sha256."),
           PageBreak()]
@@ -388,9 +475,9 @@ def client(shots: Path | None) -> list:
                  ["Tryb, STOP", "SIGNALS / PAPER / AUTO DEMO / AUTO LIVE; STOP zatrzymuje nowe wejścia"]], [55, 115]),
           PageBreak()]
     s += [P("3 / Korzystanie z panelu", "h1"),
-          P("Menu główne <b>Neural City</b> ma siedem wież: <b>PEPE$WTC</b> (terminal handlowy), <b>PEPE$SIGNAL</b> (modele AI i oceny), "
-            "<b>PEPE$BANK</b> (sygnały na żywo), <b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>STRATEGIES</b> (strategie), "
-            "<b>SETTINGS</b> (ustawienia) i <b>PEPE$ROI</b> (wyniki rachunku). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
+          P("Menu główne ma osiem wież: <b>PEPE$WTC</b> (wykresy, Kronos, strefy i Volume Profile), <b>PEPE$SIGNAL</b> (sygnały i oceny AI), "
+            "<b>PEPE$BANK</b> (historia sygnałów), <b>PEPE$ROI</b> (wyniki rachunku), <b>STRATEGIES</b> (strategie), "
+            "<b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>TRAINING LAB</b> (trening modeli) i <b>SETTINGS</b> (ustawienia). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
             "na górnym pasku – otworzysz panel (Esc anuluje). Menu boczne obszarów: <b>Precision</b>, "
             "<b>Dyscypline</b>, <b>Profits</b>, <b>Modele i trening</b>, <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
           box("Znaczniki przy wartościach mówią, skąd pochodzą: <b>DEMO · symulator</b> (dane syntetyczne), <b>DEMO</b> (rachunek "

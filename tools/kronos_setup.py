@@ -79,9 +79,29 @@ HINT = {"NETWORK": "brak połączenia z huggingface.co (internet, zapora albo pr
         "INCOMPATIBLE": "model i tokenizer nie pasują do siebie", "NO_WEIGHTS": "brak zweryfikowanych wag"}
 
 
+# Variables of the CALLING Python that must never reach the model environment. Started from the desktop app, this installer inherits the
+# bot's PYTHONPATH (backend + the bot's own site-packages): pip inside .venv_* then saw the bot's packages as "already satisfied" (same
+# version, e.g. scipy) and skipped them, so the environment stayed incomplete and the check failed (1.40.1 fix).
+FOREIGN_ENV = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", "PYTHONEXECUTABLE", "__PYVENV_LAUNCHER__", "VIRTUAL_ENV",
+               "PIP_TARGET", "PIP_PREFIX", "PIP_USER", "PIP_ROOT", "PIP_REQUIRE_VIRTUALENV", "PIP_NO_INDEX", "PIP_FIND_LINKS",
+               "PIP_ONLY_BINARY", "PIP_NO_BINARY", "PIP_CONSTRAINT", "PIP_REQUIREMENT")
+
+
+def child_env(env: dict | None = None) -> dict:
+    """Environment of a child process: the caller's one without FOREIGN_ENV (proxy, TEMP, PATH stay), user site off, UTF-8.
+    An explicit `env` keeps only its own PYTHONPATH (the program's backend folder)."""
+    src = dict(os.environ if env is None else env)
+    keep_pp = src.get("PYTHONPATH") if env is not None else None
+    clean = {k: v for k, v in src.items() if k.upper() not in FOREIGN_ENV}
+    if keep_pp:
+        clean["PYTHONPATH"] = keep_pp
+    clean.update(PYTHONNOUSERSITE="1", PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PIP_USER="0")  # pip.ini "user = true" never applies
+    return clean
+
+
 def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[int, str]:
     """Run a child process, stream its output (prefixed), return (rc, last line); the child's RESULT is kept in CHILD."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=env,
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=child_env(env),
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     last = ""
     CHILD["result"] = None
@@ -101,10 +121,18 @@ def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[i
     return p.wait(), last
 
 
+APP_CONTROL = ("WinError 4551", "Zasady kontroli aplikacji", "Application Control policy", "application control policy")
+
+
 def child_error(last: str) -> tuple[str | None, str]:
     r = CHILD["result"] or {}
     code = r.get("code")
     msg = (r.get("error") or last or "")[:300]
+    if any(k in msg for k in APP_CONTROL):
+        # 1.40.6: Windows Smart App Control / WDAC refused a library of the model environment - not a missing package
+        return "APP_CONTROL_BLOCKED", ("Windows (Smart App Control / zasady kontroli aplikacji) zablokował bibliotekę środowiska modelu – "
+                                       "to nie jest brak pakietu i ponowna instalacja tej samej wersji nie pomoże. Pozostałe modele i bot "
+                                       "działają. Szczegóły: " + msg)
     return code, (f"{HINT[code]}. " if code in HINT else "") + msg
 
 
@@ -129,7 +157,7 @@ def default_weights_dir(root: Path) -> Path:
 def py_version(exe: str) -> tuple[int, int, int] | None:
     try:
         r = subprocess.run([exe, "-c", "import sys,struct;print(sys.version_info[0],sys.version_info[1],struct.calcsize('P')*8)"],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         a, b, bits = (int(x) for x in r.stdout.split())
         return a, b, bits
     except Exception:  # noqa: BLE001
@@ -207,7 +235,7 @@ def main(argv=None) -> int:
         return result(out, 3, False, "PIP", error=f"instalacja pakietów nie powiodła się: {last[-300:]}")
     env = dict(os.environ, PYTHONPATH=str(root / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_TELEMETRY="1")
     # 4. weights
-    out.say(4, "pobieram oficjalne wagi NeoQuasar/Kronos-small i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy")
+    out.say(4, "pobieram oficjalne wagi NeoQuasar/Kronos-base (największy publicznie dostępny wariant) i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy")
     rc, last = run([str(vpy), "-m", "kronos_runtime.install", "download", "--weights-dir", a.weights_dir], out, 4, env)
     if rc != 0:
         code, msg = child_error(last)

@@ -1,5 +1,46 @@
 # Powrót do poprzedniej konfiguracji
 
+## 0e. Wersja 1.40.0 → 1.39.0 (Granite TTM, Memory Governor, nowy WTC$PEPE)
+1. **Bez cofania wersji**: Granite TTM wyłączysz w panelu „Modele prognoz” (lub `data/tsfm/settings.json` → `"granite_ttm": {"enabled": false}`);
+   dotrenowany checkpoint → „Powrót do BASE”. Memory Governor: profil BALANCED albo MANUAL z `"auto_throttle": false`.
+2. **Pełny powrót**: STOP, zamknij 1.40. Przywróć `data/config.v14.bak.json` jako `data/config.json` (1.39 nie zna sekcji `resources`) oraz
+   `data/tsfm/settings.v139.bak.json` jako `data/tsfm/settings.json` (z wpisem FinCast). Uruchom folder 1.39.0 i, jeśli chcesz FinCast, zainstaluj go
+   `38_MODELE_CHRONOS2_FINCAST.bat` z folderu 1.39 (wagi ~4 GB). Baza (`tsfm_forecasts`) jest zgodna – 1.40 nie zmienia jej schematu; prognozy Granite
+   zostają w historii pod `granite_ttm` (1.39 je ignoruje).
+3. Do usunięcia (opcjonalnie): `.venv_granite`, `data/tsfm/models/granite_ttm`, `data/tsfm/finetuned/granite_ttm`, `data/tsfm/granite_data`.
+4. Kod: tag git `pre-1.40-restore-point` wskazuje wydanie 1.39.0.
+
+## 0d. Wersja 1.39.0 → 1.38.0 (LIVE od startu, GARCH, menu Galaxy, WTC 2.1)
+1. **Tylko wyłączenie LIVE (bez cofania wersji)**: przycisk STOP, potem w `data/config.json` → `"execution": {"start_mode": "SIGNALS",
+   "live_autobind": false}` (albo `"start_mode": null` = ostatni zapisany tryb) i restart. Bramek walidacji nie da się przywrócić
+   konfiguracją – do tego potrzebna jest wersja 1.38.
+2. **GARCH**: panel Strategie → Pakiet 20 → „PMW_HG09 – zmienność” → „odchylenie 60 × M5” (albo `POST /api/v1/sh/strategies/config`
+   z `volatility_method: "STD_LOGRET_60_M5"`). 1.38 nie zna wartości `VOL_GARCH` – przed powrotem przełącz z powrotem, inaczej katalog 1.38
+   odrzuci nadpisanie (`data/sh/pack_override.json`).
+3. **Pełny powrót**: STOP, zamknij 1.39, przywróć `data/config.v13.bak.json` jako `data/config.json` (1.38 nie czyta konfiguracji v14),
+   uruchom folder 1.38. Baza bez nowych migracji w 1.39 – zgodna. Układ menu Galaxy (`PMW_GALAXY_LIVE_V1`) i presety Chart Lab
+   (`mq.wtc.chartlab.*`) są w pamięci przeglądarki – 1.38 je ignoruje.
+4. Menu: w 1.39 dawne menu Neural City jest pod `#/neural-city`; w 1.38 pod `#/menu`.
+
+## 0c. Wersja 1.38.0 → 1.37.0 (pakiet 20 strategii)
+1. Bez cofania wersji: wyłącz warianty w `POST /api/v1/sh/strategies/config` (`{"variants": {"PMW_SC01": {"enabled": false}, ...}}`) –
+   wyłączony wariant nie generuje kandydatów; legacy SCALPING/HEDGING działają jak w 1.37. Otwarte plany pakietu są dalej zarządzane do
+   zamknięcia (TP/SL/czas/koszyk) – nie są porzucane.
+2. Pełny powrót: zamknij plany pakietu (panel Strategie → pozycja / `POST /api/v1/sh/plans/<id>/close`), zamknij 1.38 i uruchom 1.37.0.
+   Migracja 0027 jest addytywna (kolumny `strategy_id`, `signal_tf`) – 1.37 je ignoruje. Plany pakietu w bazie 1.37 traktuje jak plany
+   rodziny (strategy = SCALPING/HEDGING), ale nie zna ich polityk – dlatego zamknij je przed powrotem.
+3. Pliki 1.38 do usunięcia (opcjonalnie): `data/sh/pack_override.json`, `data/sh/pack_validation/`.
+
+## 0b. Wersja 1.37.0 → 1.36.0
+1. Zamknij 1.37. Uruchom 1.36.0 z jej folderu – konfiguracja `config.json` jest wspólna (1.37 nie dodaje sekcji do `config.json`).
+2. Baza może zostać: migracja 0026 (`tsfm_forecasts`) jest addytywna, 1.36 jej nie czyta. Plik `data/tsfm/settings.json` i raporty
+   `data/tsfm/reports` 1.36 ignoruje.
+3. **Kronos**: 1.37 przełącza manifest wag na Kronos-base. W 1.36 uruchom `33_KRONOS_INSTALUJ.bat` z folderu 1.36 – instalator 1.36 ponownie
+   sprawdzi / pobierze Kronos-small i zapisze jego manifest. Do tego czasu 1.36 pokazuje „brak zweryfikowanych wag” (nie liczy na złym modelu).
+4. Środowiska `.venv_chronos2`, `.venv_fincast` i wagi w `data/tsfm/models` można usunąć ręcznie (środowisko ok. 1,3–1,5 GB każde; wagi Chronos-2 ok. 0,5 GB, FinCast ok. 3,7 GB).
+5. Wyłączenie bez cofania wersji: w panelu „Modele prognoz” zostaw rolę „obserwacja” (domyślna) albo wyłącz model w `data/tsfm/settings.json`
+   (`"enabled": false`) – wtedy nie wpływa na żadną decyzję.
+
 ## 0a. Wersja 1.34.0 → 1.33.0
 1.34 zmienia tylko interfejs (menu główne Neural City, launcher). Konfiguracja i baza danych są bez zmian, więc wystarczy uruchomić
 1.33.0 z jej folderu. Ustawienia animacji menu leżą wyłącznie w pamięci przeglądarki / okna i 1.33 ich nie czyta.

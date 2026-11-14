@@ -32,14 +32,15 @@ def pos_load(d: dict) -> Position:
 def basket_dump(b: Basket) -> dict:
     return {"basket_id": b.basket_id, "primary": pos_dump(b.primary), "cfg": vars(b.cfg), "money_per_price_per_lot": b.money_per_price_per_lot,
             "opened_at": b.opened_at, "state": b.state, "hedge": vars(b.hedge) if b.hedge else None, "activations": b.activations,
-            "hedge_realized_money": b.hedge_realized_money, "seen": sorted(b.seen), "issued": sorted(b.issued), "transitions": b.transitions}
+            "hedge_realized_money": b.hedge_realized_money, "seen": sorted(b.seen), "issued": sorted(b.issued), "transitions": b.transitions,
+            "policy": b.policy}
 
 
 def basket_load(d: dict) -> Basket:
     b = Basket(basket_id=d["basket_id"], primary=pos_load(d["primary"]), cfg=HedgeConfig(**d["cfg"]),
                money_per_price_per_lot=d["money_per_price_per_lot"], opened_at=d["opened_at"], state=d["state"],
                hedge=Leg2(**d["hedge"]) if d.get("hedge") else None, activations=d["activations"],
-               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [])
+               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [], policy=d.get("policy") or {})
     b.seen, b.issued = set(d.get("seen") or []), set(d.get("issued") or [])
     return b
 
@@ -61,24 +62,42 @@ class SHStore:
     def save_signal(self, s: dict, *, risk: dict | None = None, coordination: dict | None = None, now: float | None = None) -> None:
         now = time.time() if now is None else now
         self.db.execute("""INSERT INTO sh_signals(signal_id, strategy, instrument, symbol, side, status, status_reason, created_at, updated_at,
-                           valid_until, config_hash, payload, risk, coordination) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           valid_until, config_hash, payload, risk, coordination, strategy_id, signal_tf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                            ON CONFLICT(signal_id) DO UPDATE SET status=excluded.status, status_reason=excluded.status_reason,
                            updated_at=excluded.updated_at, payload=excluded.payload, risk=COALESCE(excluded.risk, sh_signals.risk),
                            coordination=COALESCE(excluded.coordination, sh_signals.coordination)""",
                         (s["signal_id"], s["strategy"], s["instrument"], s["symbol"], s.get("side"), s["status"], s.get("status_reason"),
                          s.get("created_at", now), now, s.get("valid_until"), s.get("config_hash"), dumps(s),
-                         dumps(risk) if risk else None, dumps(coordination) if coordination else None))
+                         dumps(risk) if risk else None, dumps(coordination) if coordination else None, s.get("strategy_id"),
+                         (s.get("pack") or {}).get("signal_tf")))
 
     def expire_signals(self, now: float) -> int:
         return self.db.execute("""UPDATE sh_signals SET status='EXPIRED', status_reason='TTL minął przed wykonaniem', updated_at=?
                                   WHERE status='READY' AND valid_until IS NOT NULL AND valid_until < ?""", (now, now))
 
-    def recent_signals(self, strategy: str | None = None, since: float = 0.0, limit: int = 200) -> list[dict]:
-        q = "SELECT signal_id, strategy, instrument, symbol, side, status, status_reason, created_at, valid_until FROM sh_signals WHERE created_at >= ?"
+    def recent_signals(self, strategy: str | None = None, since: float = 0.0, limit: int = 200, *, strategy_id: str | None = None,
+                       tf: str | None = None, symbol: str | None = None) -> list[dict]:
+        """strategy = family (SCALPING / HEDGING); strategy_id = variant (PMW_..) or LEGACY_SCALPING / LEGACY_HEDGING (rows without a variant)."""
+        q = ("SELECT signal_id, strategy, COALESCE(strategy_id, CASE strategy WHEN 'SCALPING' THEN 'LEGACY_SCALPING' WHEN 'HEDGING' THEN "
+             "'LEGACY_HEDGING' ELSE strategy END) AS strategy_id, signal_tf, instrument, symbol, side, status, status_reason, created_at, valid_until "
+             "FROM sh_signals WHERE created_at >= ?")
         args: list = [since]
         if strategy:
             q += " AND strategy=?"
             args.append(strategy)
+        if strategy_id:
+            if strategy_id.startswith("LEGACY_"):
+                q += " AND strategy_id IS NULL AND strategy=?"
+                args.append(strategy_id[len("LEGACY_"):])
+            else:
+                q += " AND strategy_id=?"
+                args.append(strategy_id)
+        if tf:
+            q += " AND signal_tf=?"
+            args.append(tf)
+        if symbol:
+            q += " AND symbol=?"
+            args.append(symbol)
         return self.db.query(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit))
 
     def signal(self, signal_id: str) -> dict | None:
@@ -96,9 +115,10 @@ class SHStore:
             if c.execute("SELECT 1 FROM sh_plans WHERE plan_id=? OR signal_id=?", (plan["plan_id"], plan["signal_id"])).fetchone():
                 return False
             c.execute("""INSERT INTO sh_plans(plan_id, signal_id, strategy, instrument, symbol, side, exec_mode, account_key, state, config_hash,
-                         plan, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         plan, created_at, updated_at, strategy_id, signal_tf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (plan["plan_id"], plan["signal_id"], plan["strategy"], plan["instrument"], plan["symbol"], plan["side"], plan["exec_mode"],
-                       plan.get("account_key"), "PENDING_ENTRY", plan["config_hash"], dumps(plan), now, now))
+                       plan.get("account_key"), "PENDING_ENTRY", plan["config_hash"], dumps(plan), now, now, plan.get("strategy_id"),
+                       (plan.get("pack") or {}).get("signal_tf")))
         return True
 
     def update_plan(self, plan_id: str, *, state: str | None = None, fsm=None, now: float | None = None, **cols) -> None:

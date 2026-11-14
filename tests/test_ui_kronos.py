@@ -116,7 +116,7 @@ class TestKronosUI(unittest.TestCase):
             c, st = srv.call("/api/v1/kronos")
             self.assertEqual((c, st["mode"], st["execution_permission"]), (200, "SHADOW", False))
             self.assertIn(st["status"], ("NOT_INSTALLED", "NO_WEIGHTS"))
-            self.assertEqual(st["model"]["repo"], "NeoQuasar/Kronos-small")
+            self.assertEqual(st["model"]["repo"], "NeoQuasar/Kronos-base")              # 1.37: largest public variant
             self.assertEqual(st["tokenizer"]["repo"], "NeoQuasar/Kronos-Tokenizer-base")
             c, r = srv.call("/api/v1/kronos/settings", {"strategy_use": {"SCALPING": {"use": "REQUIRED"}}}, method="PUT")
             self.assertEqual(c, 400)
@@ -129,7 +129,7 @@ class TestKronosUI(unittest.TestCase):
             self.assertEqual((c, f["forecast"]), (200, None))
             self.assertEqual(srv.call("/api/v1/kronos/forecast?instrument=EURUSD&tf=M5")[0], 400)
             self.assertEqual(srv.call("/api/v1/kronos/forecast?instrument=XAUUSD&tf=H4")[0], 400)
-            preds = [x for x in srv.call("/api/v1/models/predictions?instrument=XAUUSD")[1]["items"] if x["model_name"] == "Kronos-small"]
+            preds = [x for x in srv.call("/api/v1/models/predictions?instrument=XAUUSD")[1]["items"] if x["model_name"] == "Kronos-base"]
             self.assertTrue(preds and all(x["state"] == "DISABLED" and x["result"] is None and x["unavailable_reason"] for x in preds))
             cat = [x for x in srv.call("/api/v1/models/catalog?instrument=XAUUSD")[1]["items"] if x["id"] == "kronos"]
             self.assertEqual(len(cat), 1)
@@ -165,7 +165,7 @@ class TestKronosUI(unittest.TestCase):
             closed = [b for b in (bars.get("bars") or bars.get("items") or []) if b.get("closed")]
             if closed:
                 self.assertLessEqual(fc["last_bar_open_utc"], closed[-1]["open_utc"])   # never the forming bar
-            preds = {x["timeframe"]: x for x in srv.call("/api/v1/models/predictions?instrument=XAUUSD")[1]["items"] if x["model_name"] == "Kronos-small"}
+            preds = {x["timeframe"]: x for x in srv.call("/api/v1/models/predictions?instrument=XAUUSD")[1]["items"] if x["model_name"] == "Kronos-base"}
             self.assertEqual(preds["M5"]["state"], "READY")
             self.assertEqual(preds["M5"]["unit"], "price")
             ui = _browse(self, srv, "stub_forecast.png")

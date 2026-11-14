@@ -72,7 +72,7 @@ export default function Launcher({ onJoin }: { onJoin: () => void }) {
       markJoined();
       setLeaving(true);
       setTimeout(() => {
-        try { navigate("menu", { params: { intro: "1" } }); onJoin(); }
+        try { navigate("menu"); onJoin(); }
         catch (e) { setLeaving(false); setPressed(false); setErr(`Nie udało się otworzyć głównej aplikacji: ${String(e)}`); }
       }, 550);
     } catch (e) {

@@ -1,5 +1,187 @@
 # CHANGELOG
 
+## 1.40.6 – Granite TTM na Windows 11 z Smart App Control (WinError 4551)
+* Zgłoszenie z logu instalacji: Chronos-2 zainstalował się poprawnie, a sprawdzenie Granite TTM kończyło się
+  `OSError: [WinError 4551] Zasady kontroli aplikacji zablokowały ten plik … torch\lib\shm.dll`. Windows (Smart App Control) blokował
+  bibliotekę **torch 2.11.0** ze środowiska Granite, a **torch 2.14.1** (Chronos-2, Kronos) ładował się na tym samym komputerze bez problemu.
+* `.venv_granite` używa teraz **torch 2.14.1** – tej samej wersji co Chronos-2 i Kronos (te same pliki koła, sumy SHA-256 bez zmian).
+  `granite-tsfm 0.3.11` deklaruje zachowawczo `torch<2.12`; zgodność sprawdzona na torch 2.14.1: test identyczności i zgodności
+  z oficjalnym API (parity PASS), determinizm, brak zaglądania w przyszłość, prognoza testowa i dotrenowanie – OK. Instalacja Granite
+  przebiega z `--no-deps` (wszystkie 64 pakiety przypięte z sumami; sprawdzone dla Windows cp313 / cp312).
+* Ponowne uruchomienie instalatora na istniejącym `.venv_granite` wymienia torch 2.11.0 na 2.14.1 (reszta zostaje).
+* Gdy Windows zablokuje bibliotekę modelu, instalator mówi to wprost (kod `APP_CONTROL_BLOCKED`, „Smart App Control / zasady kontroli
+  aplikacji”) zamiast mylącego „brak pakietu – powtórz instalację”.
+
+## 1.40.5 – instalacja Kronos na Windows (FileNotFoundError przy pobieraniu wag)
+* Zgłoszenie z logu instalacji: pobieranie `NeoQuasar/Kronos-base/model.safetensors` kończyło się `FileNotFoundError` dla pliku
+  `…\.partial\NeoQuasar__Kronos-base@<40 znaków rewizji>\.cache\huggingface\download\<…>.incomplete`. Biblioteka huggingface_hub
+  w trybie `local_dir` tworzy taki plik tymczasowy; ścieżka miała ok. 270 znaków – ponad limit 260 znaków (MAX_PATH) Windows.
+* Instalator Kronos pobiera teraz pliki bezpośrednio (jak instalator Chronos-2 / Granite): krótki folder roboczy `.partial\model` /
+  `.partial\tokenizer`, plik `*.part`, wznawianie przerwanego pobierania (również po ponownym uruchomieniu instalatora), te same
+  kontrole ze źródłem (LFS SHA-256 / git blob SHA-1, rozmiar) i ten sam manifest. Najdłuższa ścieżka w folderze wag: ok. 110 znaków.
+* Sprawdzone: prawdziwe pobranie wag Kronos-base + tokenizera (przerwane w połowie i wznowione), `verify` – OK; test instalatora
+  pilnuje braku drzewa `.cache` i długości ścieżek.
+
+## 1.40.4 – samonaprawa składników bota (ModuleNotFoundError: No module named 'click.core')
+* Zgłoszenie z logu: silnik kończył start błędem `ModuleNotFoundError: No module named 'click.core'` – w folderze składników
+  `%LOCALAPPDATA%\PepeMarketWizard\pyenv\cp313-…` brakowało pliku pakietu (zwykle kwarantanna antywirusa, czyszczenie dysku albo
+  przerwane kopiowanie). Launcher sprawdzał tylko znacznik `ok.json`, więc uszkodzony folder uznawał za gotowy.
+* **Sprawdzenie przy każdym starcie**: każdy plik zapisany przez pip w listach `*.dist-info/RECORD` (ścieżka + rozmiar) musi istnieć
+  z tym rozmiarem, a pakietów musi być tyle, ile pinów w `requirements-win.txt` (ok. 30 ms). Uszkodzony folder jest usuwany (albo
+  odkładany jako `.broken-…`, gdy pliki są zablokowane) i składniki instalują się ponownie.
+* **Druga linia obrony**: jeśli silnik mimo to zakończy start błędem importu (`ModuleNotFoundError` / `ImportError` / `DLL load failed`),
+  launcher sam instaluje składniki ponownie i uruchamia silnik drugi raz.
+* Testy Go: wykrycie brakującego / obciętego pliku i brakującego pakietu, rozpoznanie błędu importu; sprawdzenie na prawdziwej
+  instalacji 42 pakietów bota – bez fałszywych alarmów.
+
+## 1.40.3 – audyt błędów aplikacji i launchera
+Przegląd: analiza statyczna Pythona (ruff) i Go (go vet, staticcheck dla Windows), 189 endpointów GET w trybie demo i rzeczywistym bez
+terminala (0 błędów 500, 0 wyjątków w logach), wszystkie 41 ekranów w Chromium (0 błędów JS), wszystkie 46 plików .bat (odwołania
+do skryptów, wymagań i modułów). Poprawione:
+* **Okno nie robi się puste po błędzie ekranu**: globalna osłona błędów pokazuje komunikat z przyczyną oraz przyciski „Menu główne” /
+  „Odśwież”, znika po przejściu na inny ekran; brakujący fragment ekranu (aktualizacja przy otwartym oknie) – jedno automatyczne odświeżenie.
+* **Launcher po aktualizacji**: jeżeli na porcie działał silnik innej wersji z tego samego folderu danych (np. uruchomiony z .bat),
+  launcher go zatrzymuje i uruchamia bieżącą wersję zamiast podłączać się do starej; silnika innego folderu nigdy nie zatrzymuje.
+* **Launcher i inne instalacje Pythona na komputerze**: pip, sprawdzanie składników i silnik nie dziedziczą `PYTHONHOME`, `PYTHONPATH`
+  ani ustawień `PIP_*` (`PIP_REQUIRE_VIRTUALENV`, `PIP_USER`, `PIP_TARGET`…), które psuły wbudowanego Pythona lub instalację;
+  proxy zostaje. Zapis folderu składników ponawiany przez ~10 s (blokady antywirusa).
+* **Awaria okna** (panic w dowolnym wątku) zapisuje ślad w `logs\launcher_crash.txt`.
+* **Pliki .bat**: tryb UTF-8 Pythona we wszystkich skryptach uruchamiających Pythona – znaki spoza cp1250 w logach nie przerywają skryptu.
+* Odczyt wyjścia procesów potomnych (Studio, MiniRocket) w UTF-8 z zastępowaniem – brak `UnicodeDecodeError`; instalatory modeli
+  wymuszają `PIP_USER=0` (pip.ini z `user = true`).
+* Testy: `test_ui_error_boundary.py` (wszystkie ekrany bez błędów JS, osłona, odświeżenie), testy Go (wymiana starego silnika,
+  czyste środowisko Pythona).
+
+## 1.40.2 – poprawka instalatora modeli (Granite TTM, Chronos-2, Kronos, deep)
+* **Instalacja z aplikacji desktop nie kończyła się**: instalator uruchomiony z aplikacji dziedziczył `PYTHONPATH` bota (folder `backend`
+  i pakiety bota). pip w `.venv_granite` / `.venv_chronos2` / `.venv_kronos` / `.venv_deep` uznawał pakiety bota w tej samej wersji
+  (np. `scipy 1.18.1`) za „już zainstalowane” i pomijał je – środowisko modelu było niekompletne, a sprawdzenie instalacji kończyło się błędem.
+  Teraz każdy krok instalatora dostaje czyste środowisko (bez obcego `PYTHONPATH`, `PYTHONHOME`, nadpisań `PIP_*`, bez katalogu
+  użytkownika); ustawienia proxy i PATH zostają. Ponowna instalacja na istniejącym, niepełnym środowisku je uzupełnia (nie trzeba nic usuwać).
+* Test `tests/test_installer_env.py`; pełna instalacja Granite TTM uruchomiona tak jak z aplikacji (z zanieczyszczonym `PYTHONPATH`) – OK.
+
+## 1.40.1 – poprawka startu aplikacji desktop („silnik zakończył się podczas startu”)
+* **Start silnika odporny na awarię pojedynczej części**: każdy podsystem (MT5, modele Chronos-2 / Granite TTM / Kronos, Memory Governor,
+  Quant Core, …) startuje osobno; błąd jednego jest zapisywany z pełnym śladem w `logs/engine_console.log`, zdarzeniem `START_DEGRADED`
+  i polem `start_failures` w `/api/v1/health` – reszta aplikacji działa, zamiast kończyć cały proces.
+* **Memory Governor na Windows**: pomiar pamięci procesów przez `kernel32` / `psapi` z jawnymi prototypami ctypes (64-bitowy HANDLE, BOOL);
+  gdy Governor nie da się uruchomić, modele działają jak w 1.39 (bez zarządzania pamięcią), a silnik startuje.
+* **Diagnostyka**: błąd przed uruchomieniem serwera kończy się kodem 5 z komunikatem „BŁĄD STARTU SILNIKA” i śladem w logu oraz
+  w `logs/engine_crash.txt`; awarie natywne (DLL, ctypes) zostawiają stos wszystkich wątków (faulthandler).
+* **Launcher desktop**: okno błędu pokazuje ostatnie linie logu z tego uruchomienia (bez szukania pliku); kod 3 = port zajęty,
+  kod 4 = inna kopia silnika trzyma folder danych → launcher czeka do 60 s i podłącza się, gdy tamta odpowie; nieudany start nie wpada
+  już w cichą pętlę ponownych uruchomień.
+
+## 1.40.0 – IBM Granite TTM zamiast FinCast, Memory Governor (16 GB) + harmonogram AI, trening Granite, nowy panel WTC$PEPE, optymalizacja UI
+* **Granite TTM** (`ibm-granite/granite-timeseries-ttm-r2`, R2 512-96, Apache-2.0, 0,8 M parametrów, `.venv_granite`, granite-tsfm 0.3.11): wybrany
+  walk-forwardem na prawdziwych danych XAUUSD (Q4 2025) spośród 4 wariantów R2 / R2.1; normalizacja tylko z okna kontekstu, prognoza punktowa,
+  parytet z oficjalnym API, 349 MB RSS procesu. Wyniki: żaden model (Granite, Chronos-2, Kronos) nie pokonał prognozy „ostatnia cena” – rola OBSERVE.
+* **FinCast wycofany** (RETIRED): nie jest instalowany ani ładowany (silnik, kod vendor, wymagania usunięte); historia prognoz zostaje pod `fincast`;
+  ustawienia migrowane z kopią `settings.v139.bak.json` i historią zmian; role nie przechodzą na Granite.
+* **Kontrakt PMW-PRED-2** rozszerzony o checkpoint, snapshot, opóźnienie, świeżość, stan walidacji i profil danych; Granite w ModelHub, koordynatorze
+  ACTIVE, odbiornikach SH (grupa korelacji TSFM_PRICE – bez podwójnego liczenia), porównaniu modeli i panelach.
+* **Memory Governor + harmonogram AI** (`resources/governor.py`): pomiar RAM systemu i procesów (bez psutil), progi 75 / 80 / 85 %, budżet PMW 6 / 8 GB,
+  wspólny slot ciężkiej inferencji (Kronos / Chronos-2), wstrzymanie opcjonalnych prognoz jako STALE z powodem, zwalnianie bezczynnych ciężkich
+  procesów pod presją, wątki CPU z profilu, bramka treningu. Profile LOW_MEMORY_16GB (domyślny) / ECO / BALANCED / MANUAL; konfiguracja v15 (kopia
+  `config.v14.bak.json`); API `/api/v1/resources`.
+* **Trening Granite** w Centrum treningu: eksport z walidacją, osobny proces, zamrożony backbone, podział z embargo, test na niewidzianych danych,
+  wersje z SHA-256, aktywacja tylko gdy lepszy od bazowego, powrót do BASE, przerwanie.
+* **WTC$PEPE** – nowy układ panelu z paczki `WTC_PEPE_2_1_HTML` (radar sygnałów, prognozy modeli, stan rynku, tarcza makro, KPI, matryca modeli z pamięcią
+  procesów, karta Granite TTM, 14 modułów → prawdziwe ekrany) na danych bota; wartości demonstracyjne paczki nie są pokazywane.
+* **Wydajność UI** (zmierzone w Chromium): menu Galaxy 0,7 → ~34 FPS (filmy boczne przeskalowane 720×1280 → 240×426, bez rozmycia tła / filtrów
+  na zmieniających się warstwach, planety przesuwane transformacją, adaptacyjna jakość wg rzeczywistego czasu klatki), Chart Lab montowany na
+  żądanie i bez przebudowy przy identycznym odpytaniu, wykresy Multi-Chart rysowane dopiero gdy widoczne. Szczegóły: `docs/WYDAJNOSC_UI_1_40_PL.md`.
+* Dokumentacja: `docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md`, ROLLBACK 0e, instrukcja PDF (Granite, Memory Governor), `38_MODELE_CHRONOS2_GRANITE.bat`.
+
+## 1.39.0 – LIVE od startu, GARCH w PMW_HG09, intro startowe, menu Galaxy V2, WTC PEPE 2.1 (Chart Lab + SVP), instrukcja PDF
+* **LIVE od startu (na polecenie użytkownika)**: `execution.start_mode = "AUTO_LIVE"` (konfiguracja v14, kopia `config.v13.bak.json`);
+  przy starcie z prawdziwym terminalem `ModeManager.apply_start_mode()`. `execution.live_autobind = true`: pierwsza decyzja na rachunku
+  **REAL** wiąże LIVE z tym rachunkiem (`LIVE_AUTOBIND`); DEMO i dane syntetyczne nigdy nie są wiązane; inny rachunek dalej blokuje
+  (`ACCOUNT_DIFFERS_FROM_CONFIRMED_…`). Symulator (`--demo`) nie stosuje trybu startowego.
+* **Zdjęte bramki walidacji** (wybór użytkownika „Bramki walidacji”): VALIDATED wariantów SC/HG, skalibrowany model zdarzeń i znana
+  prowizja nie blokują już AUTO_LIVE – są ostrzeżeniami planu; REDUCE na NETTING bez walidacji dozwolone z ostrzeżeniem. **Bez zmian**:
+  STOP, limity ryzyka (konfigurowane przez użytkownika), spread, deduplikacja, uzgadnianie z MT5, wymóg rachunku REAL, ścieżka główna.
+* **GARCH (VOL_GARCH) w PMW_HG09**: `volatility_method = VOL_GARCH` liczy sigmę z aktywnego, zatwierdzonego modelu rodziny VOL_GARCH
+  (GARCH(1,1), pakiet arch; `TF.garch_sigma` przyczynowo, parametry zamrożone w planie); bez gotowego modelu `NO_DATA / GARCH_NOT_READY` –
+  bez cichego zastępstwa. Przełącznik i stan modelu w panelu „Pakiet 20 strategii”; `/api/v1/sh/strategies` zwraca `garch`; replay
+  `sh pack-replay --garch-json`.
+* **Intro startowe** (`features/galaxy/BootScreen.tsx`, port `boot_overlay` z paczki): 8,5 s, „$PEPEMARKET WIZARD” + „They call us cult
+  but we are something more”, siatka cyfrowa → sieć neuronowa; POMIŃ INTRO / Esc, Ctrl+Alt+B / ↻ INTRO, ograniczone animacje → koniec,
+  twardy limit czasu, nigdy nie blokuje aplikacji (montuje się pod spodem), raz na sesję.
+* **Menu główne Galaxy V2** (`#/menu`, `features/galaxy/`): 1:1 z referencją FULL NEURAL MESH – 7 planet (WTC PEPE w środku), pełna sieć
+  K7 = 21/21 animowanych połączeń (n(n−1)/2 przy dodawaniu planet), boczne emitery AI (wideo + canvas), dolne błyskawice, edytor
+  „Projektuj” (przeciąganie, nazwa, rozmiar, pozycja, kolor, **sekcja bota**, efekty, dodaj / usuń, eksport / import JSON, reset).
+  Planety otwierają prawdziwe ekrany (WTC PEPE → #/pepe-wtc, Brain Signal → #/pepe-signal, PEPE$BANK → #/lightning, PEPE$ROI → #/profits,
+  Models → #/modele, Signals → #/sygnal, Settings → #/ustawienia); bez sekcji – „Niepołączony moduł”. Status z backendu (MT5 ONLINE /
+  DEMO SIM / OFFLINE / UNKNOWN), nigdy udawane „AI ONLINE”. Dawne menu Neural City: `#/neural-city`. JOIN THE CULT otwiera Galaxy.
+* **WTC PEPE 2.1** (`features/towers/chartlab/`): CUSTOMIZE CHART – motywy, Candles / Hollow / Heikin Ashi / Line / Area, EMA×2, VWAP, BB,
+  RSI, MACD, ATR (osobne panele), SVP, SMC (okres, kolor, grubość), presety (zapis, wczytanie, import / eksport JSON ze schematem
+  `PMW-CHARTLAB-1`, reset). Session Volume Profile z POC i Value Area dla okna lub ostatniej sesji London / New York / Asia (UTC),
+  największy impuls 3 / 5 / 8 / 12 świec. Wszystko na prawdziwych świecach `/api/v1/candles` (bez danych syntetycznych paczki demo).
+* **Instrukcja PDF** `release/Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf` (`tools/make_install_guide.py`): instalacja bota,
+  tryb LIVE, Kronos-base / Chronos-2 / FinCast, rodziny modeli, trening i aktywacja, GARCH w HG09, Centrum treningu, walidacja, menu,
+  aktualizacja i powrót. Podręczniki administratora / użytkownika: rozdział 1.39.
+* Testy: `test_live_start.py`, `test_sh_pack.py` (GARCH), `test_ui_galaxy.py`, `test_ui_wtc_chartlab.py`, `test_chartlab_calc.py`
+  (+ `tests/js/chartlab_calc.test.mjs`), `test_install_guide.py`, `test_ui_sh_pack.py` (przełącznik HG09); testy menu przeniesione na `#/neural-city`.
+
+## 1.38.0 – Pakiet 20 strategii XAUUSD: 10 HEDGING (PMW_HG01–HG10) + 10 SCALPING (PMW_SC01–SC10)
+* **Katalog** (`sh/pack/catalog.py`, `config/sh_strategy_pack_v2.json`): jedno źródło nazw, rodzin, klastrów, grup logiki, TF, parametrów,
+  polityk hedge, wersji i hasha wariantu; status walidacji per wariant (bez danych MT5 użytkownika: NOT_VALIDATED). Jawna konwencja
+  1 pip XAUUSD = 0,10 USD (`PMW_XAU_PRICE_0_10_V1`).
+* **Detektory** 20 wariantów (wspólne cechy przyczynowe liczone raz na TF i cykl; SELL = dokładne lustro BUY), **solver** dwóch TP
+  (SC: TP1 ≥ 25 pips, RR planu netto ≥ 2; HG: TP1 ≥ 40 pips, RR koszyka netto ≥ 3 w scenariuszu celu), koszty bez podwójnego spreadu,
+  nieznana prowizja = scenariusz, `TARGET_UNREACHABLE` / `RR_NOT_ESTIMABLE` zamiast odsuwania celu lub skracania SL.
+* **10 polityk hedge** na istniejącym koszyku (`Basket.policy`): jedna aktywacja, ratio ≤ 0,50 bieżącej bazy, limit po partialu,
+  timeout = wyjście koszyka, intencja `HEDGE` w IntentLedger + rezerwacja RiskBook, NETTING = odmowa z powodem, STOP blokuje nowy hedge.
+* **Integracja** w istniejącym cyklu SH: arbitraż po `signal_id` (jedno wejście na ekspozycję, deterministyczny priorytet), ryzyko
+  z profilem wariantu, DecisionCoordinator ze `strategy_id`, plany z planowanymi absolutnymi TP1/TP2 (bez BE), kontrola poślizgu po fillu.
+  Legacy SCALPING/HEDGING i S01–S12 bez zmian. Migracja 0027 (`strategy_id`, `signal_tf`; stare = LEGACY_*).
+* **Plan PMW-PLAN-2 i wykresy**: strzałka potwierdzonego sygnału, Entry/SL/TP1/TP2 bez TP3, RR netto vs brutto, stan hedge; warstwa
+  „Pakiet 20” z filtrami, panel „Pakiet 20 strategii” na stronie Strategie, tożsamość wariantu i TF w PEPE$SIGNAL, pełne M3
+  (180 s, brak zastępczego M15), token generacji odpowiedzi.
+* **Replay / walidacja** (`python -m masterquo sh pack-replay`, zadanie runnera `sh_pack`, `39_PAKIET_20_WALIDACJA.bat`): te same detektory,
+  solver i polityki; STOP_FIRST, 3 odcinki walk-forward, bootstrap blokami dni, stres kosztów, HEDGE vs NO_HEDGE vs REDUCE; werdykt per wariant.
+* Testy: `tests/test_sh_pack.py` (24), `tests/test_ui_sh_pack.py`. Dokumentacja: `docs/strategies20/`.
+
+## 1.37.0 – Trzy przetrenowane modele prognoz: Kronos-base, Chronos-2, FinCast (prawdziwa inferencja, SHADOW)
+* **Kronos → Kronos-base** (`NeoQuasar/Kronos-base` @ `2b554741`, 102,3M; tokenizer bez zmian). To największy publiczny wariant – Kronos-large (499,2M)
+  według autorów nie jest udostępniony (sprawdzone: karta modelu i lista repozytoriów organizacji). Ten sam serwis, ten sam proces, bez drugiej
+  instancji; po załadowaniu sprawdzana jest tożsamość checkpointu (liczba parametrów 102 310 592), przy braku pamięci stan RESOURCE_LIMIT –
+  **bez cichego przejścia na Small/Mini**. Historyczne rekordy „Kronos-small” zachowują nazwę. Po aktualizacji z 1.36 Kronos ma stan
+  „brak zweryfikowanych wag” do czasu `33_KRONOS_INSTALUJ.bat` (lub przycisku „Zainstaluj model Kronos”).
+* **Chronos-2** (`amazon/chronos-2` @ `29ec3766`, 120M, Apache-2.0) i **FinCast** (`Vincent05R/FinCast` @ `2d7d90b1`, ok. 1B, Apache-2.0):
+  każdy w osobnym procesie i własnym środowisku (`.venv_chronos2`, `.venv_fincast`), oficjalne API (Chronos2Pipeline / FFM z kodu autorów,
+  `weights_only=True`, `strict=True`), przypięte rewizje + rozmiar + SHA-256 każdego pliku, test zgodności adaptera z oficjalnym wywołaniem.
+* **Instalator** `38_MODELE_CHRONOS2_FINCAST.bat` (`tools/tsfm_setup.py`): środowisko, pakiety z sumami (Windows), pobieranie z wznowieniem,
+  instalacja offline (`--from-dir`), weryfikacja i prognoza testowa; przyciski „Zainstaluj / Sprawdź” w panelu. Wagi nie wchodzą do paczki.
+* **Połączenie z botem**: wspólna migawka zamkniętych świec, kolejka z deduplikacją, historia i rozliczanie (`tsfm_forecasts`, migracja 0026: MAE,
+  pinball, pokrycie 80%), kontrakt PMW-PRED-2 (REGRESSION, cena, UNCALIBRATED – bez sztucznego prawdopodobieństwa), ModelHub, koordynator (ACTIVE)
+  i SH (SCALPING / HEDGING). Role **OBSERVE** (domyślnie) / **ASSIST** (aktualna przeciwna prognoza = czekaj) / **REQUIRED** (brak / nieaktualna /
+  niezgodna prognoza = brak wejścia) – ASSIST i REQUIRED tylko po pozytywnej walidacji na danych rzeczywistych dla bieżącego checkpointu
+  i z potwierdzeniem. Modele mogą wyłącznie wstrzymać setup; Execution Lock, limity ryzyka, spread, deduplikacja zleceń i STOP bez zmian.
+* **Walidacja walk-forward PMW-TSFM-WF-1**: trzy modele na tych samych punktach startu vs „ostatnia cena” i momentum (MAE, RMSE, kierunek +
+  test dwumianowy, pinball, pokrycie, szerokość pasma); brak łączenia modeli bez osobnej walidacji.
+* **UI** (bez zmian wyglądu i nawigacji): nowa zwijana sekcja „Modele prognoz” na stronie „Wykresy bota” – status, checkpoint, urządzenie,
+  czasy, linie prognoz z przełącznikami per model (nieaktualne – kropkowane), porównanie, walidacja, role.
+* API: `/api/v1/models/foundation` (+ `/forecast`, `/compare`, `/history`, `/validation`, `/job/{name}`, `/install`, `/verify`, `/refresh`, `/validate`, `/use`).
+* Testy: `tests/test_tsfm_bot.py`, `tests/test_ui_foundation.py`, kategoria prawdziwych wag `tests/test_foundation_real.py` (w środowiskach modeli),
+  zaktualizowane testy Kronosa. Dokumentacja: `docs/MODELE_KRONOS_CHRONOS2_FINCAST_1_37_PL.md`.
+
+## 1.36.0 – Main Menu V2 (8 wież) + wieże PEPE$WTC V4 i PEPE$SIGNAL V1
+* **Menu główne V2 – stół neuronowy**: trzech Pepe przy okrągłym stole z **ośmioma** wieżami (PEPE$WTC, PEPE$SIGNAL, PEPE$BANK, PEPE$ROI, STRATEGIES,
+  MARKET NEWS, TRAINING LAB, SETTINGS). Małe logo w lewym górnym rogu, nawigacja na górze, bez paneli informacyjnych i bez przycisków na dole.
+  Wieże i pasek wywołują ten sam kontroler i otwierają istniejące sekcje; Esc, fokus, klawiatura, reduced motion, pauza, Studio w górnym pasku.
+  Tryb 2.5D (brak modeli 3D i riga Pepe – opisane w panelu ⓘ). Menu nie pobiera danych MT5.
+* **PEPE$WTC V4** (`#/pepe-wtc`, aliasy `#/wtc`, `#/pepe-wtc`): wykres główny, Multi-Chart Workspace (dodawanie/usuwanie, niezależny TF), Indicator Manager
+  tylko z warstwami bota (BB = N/A), Kronos M1/M5 (OFF/AUTO/MANUAL z realnym statusem), AI Live Zones (silnik stref, AUTO/MANUAL, filtr typów),
+  **Volume Profile Auto Zones** (silnik PMW-SVP-1: POC, VAH/VAL, HVN, LVN, warstwa na wykresie), Setup Builder z R:R bez zlecenia, checklista, konsensus, MTF.
+* **PEPE$SIGNAL V1** (`#/pepe-signal`, aliasy `#/signal`, `#/brain-signal`): jeden rejestr sygnałów (bot-signals + scenariusze silnika + SCALPING/HEDGING),
+  filtry, lista wirtualna, wykres sygnału z Entry/SL/TP przewinięty do czasu setupu, warunki ENTRY/TRIGGER/INVALIDATION z checklisty strategii,
+  narracja z faktów, tabela z sortowaniem i paginacją, oś zdarzeń, oceny modeli (stan, wersja, czas, semantyka wyniku), konsensus, metryki, MTF.
+* `ChartPanel`: opcjonalna osobna warstwa `overlay` i sterowane warstwy 1.33 (bez zmian na istniejących stronach).
+* Dawne panele `#/trading-intelligence` i `#/wind` działają bez zmian (menu boczne wież CULT ma do nich wpisy).
+* Testy: `tests/test_ui_towers.py` (nowy), `tests/test_ui_neural_city.py` (8 wież). Raport: `docs/wdrozenie_1_36/RAPORT_WDROZENIA_PL.md`.
+
 ## 1.35.0 – PMW Quant Core (wspólny silnik obliczeń i Quant MetaModel, SHADOW)
 * **Inwentaryzacja wszystkich komponentów** (`docs/quant/INVENTORY.md/.json`, `python -m masterquo quant inventory`):
   * 89 komponentów z rejestrów kodu (SH 37, rodziny 16, Trainhub 6, MM 20, lab, SI, flow, analizy); wiersze grupowe rozwinięte, 78 aliasów złożonych;

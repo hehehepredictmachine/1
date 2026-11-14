@@ -236,7 +236,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/health")
     def health():
         return {"ok": True, "app": APP_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
-                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow())}
+                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow()),
+                "start_failures": [f["part"] for f in getattr(rt, "start_failures", [])]}
 
     @app.get("/api/v1/session")
     def session(request: Request):
@@ -1082,9 +1083,95 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh import scenario as SHS
         return SHS.build(rt, strategy, volume)
 
+    _SH_TFS = ("M1", "M3", "M5", "M15", "H1")
+
+    def _sh_vid(v):
+        from ..sh.pack import catalog as _CAT
+        if v is None:
+            return None
+        if v not in _CAT.IDS and v not in ("LEGACY_SCALPING", "LEGACY_HEDGING"):
+            raise HTTPException(400, "STRATEGY_ID_UNKNOWN")
+        return v
+
+    def _sh_tf(v):
+        if v is None:
+            return None
+        if v not in _SH_TFS:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        return v
+
     @app.get("/api/v1/sh/signals")
-    def sh_signals(strategy: str | None = None, limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit)}
+    def sh_signals(strategy: str | None = None, strategy_id: str | None = None, tf: str | None = None, symbol: str | None = None,
+                   limit: int = Query(100, ge=1, le=1000)):
+        """SH signal history; 1.38 filters: strategy (family), strategy_id (PMW_.. or LEGACY_SCALPING / LEGACY_HEDGING), tf, symbol."""
+        if strategy is not None and strategy not in ("SCALPING", "HEDGING"):
+            raise HTTPException(400, "BAD_STRATEGY")
+        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit, strategy_id=_sh_vid(strategy_id), tf=_sh_tf(tf), symbol=symbol)}
+
+    @app.get("/api/v1/sh/strategies")
+    def sh_strategies():
+        """Catalog of the 20 variants (one owner of names / TFs / parameters / readiness / validation) + the live evaluation state."""
+        from ..sh.pack import catalog as _CAT
+        pk = getattr(rt.sh, "pack", None)
+        out = {**_CAT.public(), "live": pk.public() if pk is not None else None}
+        try:                                              # 1.39: VOL_GARCH state for HG09 (volatility_method VOL_GARCH) - read only
+            out["garch"] = rt.sh.garch_artifact(rt.sh.instrument() or "XAUUSD")
+        except Exception as exc:  # noqa: BLE001 - the catalog stays available
+            out["garch"] = {"status": "ERROR", "error": type(exc).__name__}
+        return out
+
+    @app.post("/api/v1/sh/strategies/config")
+    def sh_strategies_config(body: dict = Body(...)):
+        """Variant parameter override (validated, versioned). New candidates only - open plans keep their frozen variant."""
+        from ..sh.pack import catalog as _CAT
+        try:
+            cfg = _CAT.save_override(body, who="panel")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)[:400])
+        rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
+        return _CAT.public(cfg)
+
+    @app.get("/api/v1/sh/pack/stats")
+    def sh_pack_stats(strategy_id: str | None = None):
+        """Closed plans of the variants grouped by variant / TF / execution mode (PAPER is never mixed with AUTO_DEMO / AUTO_LIVE).
+        Whole-cycle results (one plan = one result, partials are not separate wins); R from the plan's own initial risk."""
+        vid = _sh_vid(strategy_id)
+        rows = rt.db.query("SELECT strategy_id, signal_tf, exec_mode, result FROM sh_plans WHERE strategy_id IS NOT NULL AND result IS NOT NULL"
+                           + (" AND strategy_id=?" if vid else ""), (vid,) if vid else ())
+        out: dict = {}
+        for r in rows:
+            res = json.loads(r["result"]) if r.get("result") else {}
+            k = f"{r['strategy_id']}|{r['signal_tf']}|{r['exec_mode']}"
+            g = out.setdefault(k, {"strategy_id": r["strategy_id"], "signal_tf": r["signal_tf"], "exec_mode": r["exec_mode"], "n": 0, "wins": 0,
+                                   "sum_r": 0.0, "n_r": 0, "net_money": 0.0, "hedge_activations": 0})
+            g["n"] += 1
+            if res.get("r_multiple") is not None:
+                g["n_r"] += 1
+                g["sum_r"] += float(res["r_multiple"])
+                g["wins"] += 1 if float(res["r_multiple"]) > 0 else 0
+            g["net_money"] += float(res.get("net_money") or 0.0)
+            g["hedge_activations"] += int(res.get("hedge_activations") or 0)
+        for g in out.values():
+            g["expectancy_r"] = round(g["sum_r"] / g["n_r"], 4) if g["n_r"] else None
+            g["net_money"] = round(g["net_money"], 2)
+        return {"items": sorted(out.values(), key=lambda x: (x["strategy_id"], x["signal_tf"] or "", x["exec_mode"])),
+                "note": "wynik całego cyklu planu; PAPER oddzielnie od rachunku – nie jest walidacją OOS (patrz replay pakietu)"}
+
+    @app.get("/api/v1/sh/pack/evaluations")
+    def sh_pack_evaluations(strategy_id: str | None = None, tf: str | None = None):
+        """Current evaluation of every variant x signal TF (READY / WAIT / NO_TRADE / INVALIDATED / EXPIRED with reason codes). Read-only:
+        a GET never runs a scan, a training or an order."""
+        pk = getattr(rt.sh, "pack", None)
+        if pk is None:
+            return {"items": []}
+        vid, f = _sh_vid(strategy_id), _sh_tf(tf)
+        items = []
+        for (k, stf), su in sorted(pk.last.items()):
+            if (vid and k != vid) or (f and stf != f):
+                continue
+            items.append({k2: su.get(k2) for k2 in ("strategy_id", "strategy", "signal_id", "side", "status", "status_reason", "entry_ref", "sl",
+                                                  "tps", "valid_until", "checklist", "risk", "coordination", "created_at")} | {"pack": su.get("pack")})
+        return {"items": items, "timing": pk.timing()}
 
     @app.get("/api/v1/sh/signals/{sid}")
     def sh_signal(sid: str):
@@ -1094,9 +1181,16 @@ def create_app(rt, port: int) -> FastAPI:
         return r
 
     @app.get("/api/v1/plans/chart")
-    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100)):
-        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills."""
+    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100), strategy_id: str | None = None, tf: str | None = None,
+                    plan_id: str | None = None, symbol: str | None = None, family: str | None = None):
+        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills.
+        1.38: layer=PACK (or any strategy_id / tf / plan_id filter) -> PMW-PLAN-2 views of the 20 variants (family from layer SCALP/HEDGE)."""
         from ..plans import service as _PS
+        if layer.upper() == "PACK" or strategy_id or tf or plan_id:
+            fam = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get((family or layer).upper())
+            if plan_id is not None and not re.match(r"^PL-[0-9a-f]{14}$", plan_id):
+                raise HTTPException(400, "PLAN_ID_INVALID")
+            return _PS.collect_pack(rt.sh, strategy_id=_sh_vid(strategy_id), family=fam, tf=_sh_tf(tf), plan_id=plan_id, history=history, symbol=symbol)
         strat = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get(layer.upper())
         if strat is None:
             raise HTTPException(400, "LAYER_INVALID")
@@ -1167,7 +1261,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/sh/chart")
     def sh_chart(tf: str = Query("M1"), limit: int = Query(240, ge=20, le=1000)):
-        if tf not in ("M1", "M5", "M15"):
+        if tf not in ("M1", "M3", "M5", "M15"):
             raise HTTPException(400, "INVALID_TIMEFRAME")
         bars = [b for b in rt.bridge.bars(tf, limit, include_forming=True) if b.get("open_utc")]
         return {"tf": tf, "bars": bars, "quote": rt.sh.quote(time.time()), "last_eval": rt.sh.last_eval,
@@ -1894,7 +1988,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..modelhub import adapters as _AD
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
-    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small, SHADOW)
+    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-base since 1.37, SHADOW)
     _KR_TF = ("M1", "M5", "M15", "M30", "H1")
 
     def _kr_tf(tf: str) -> str:
@@ -1992,6 +2086,186 @@ def create_app(rt, port: int) -> FastAPI:
         use = str(body.get("use", "")).upper()
         tf = body.get("timeframe")
         r = rt.kronos.set_strategy_use(strat, use, timeframe=_kr_tf(tf) if tf else None, confirm=bool(body.get("confirm")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    # ------------------------------------------------------------------ 1.37 Chronos-2 / 1.40 Granite TTM (+ three-model comparison with Kronos)
+    _TS_TF = ("M1", "M3", "M5", "M15", "M30", "H1")
+
+    def _ts_tf(tf: str) -> str:
+        tf = (tf or "").upper()
+        if tf not in _TS_TF:
+            raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
+        return tf
+
+    def _ts_mid(m: str, history: bool = False) -> str:
+        m = (m or "").lower()
+        if m not in ("chronos2", "granite_ttm") and not (history and m == "fincast"):       # fincast: RETIRED in 1.40 - history only
+            raise HTTPException(400, "MODEL_RETIRED" if m == "fincast" else "MODEL_NOT_ALLOWED")
+        return m
+
+    # ------------------------------------------------------------------ 1.40 Memory Governor / AI scheduler (resources)
+    @app.get("/api/v1/resources")
+    def resources_get():
+        """RAM of the computer, memory of the bot + every model process (current / peak), level, profile, inference p50 / p95, events."""
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
+        return rt.governor.public()
+
+    @app.put("/api/v1/resources/profile")
+    def resources_profile(body: dict = Body(...)):
+        from ..resources.governor import PROFILE_KEYS
+        prof = str(body.get("profile") or "")
+        if prof not in ("LOW_MEMORY_16GB", "ECO", "BALANCED", "MANUAL"):
+            raise HTTPException(400, "PROFILE_UNKNOWN")
+        manual = body.get("manual") or {}
+        if not isinstance(manual, dict) or any(k not in PROFILE_KEYS for k in manual):
+            raise HTTPException(400, "MANUAL_KEYS_UNKNOWN")
+        before = rt.cfg.get().resources.model_dump(mode="json")
+        try:
+            rt.cfg.update({"resources": {"profile": prof, "manual": manual if prof == "MANUAL" else before.get("manual", {})}})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_RESOURCES: {exc}"[:300]) from exc
+        rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
+        rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
+        return rt.governor.public()
+
+    @app.get("/api/v1/models/foundation")
+    def tsfm_status():
+        """Status of the three foundation models in one place: Kronos (existing service) + Chronos-2 + Granite TTM (+ retired FinCast)."""
+        from kronos_runtime import lock as _KL
+        kr = rt.kronos
+        return {**rt.tsfm.public(), "settings": rt.tsfm.settings.get().model_dump(mode="json"),
+                "kronos": {"name": _KL.MODEL_NAME, "repo": _KL.MODEL["repo"], "revision": _KL.MODEL["revision"], "params_upstream": _KL.MODEL["params_upstream"],
+                           "status": kr.state.get("status"), "reason": kr.state.get("reason"), "load": kr.load_info, "legacy": list(_KL.LEGACY),
+                           "largest_public_note": "Kronos-large (499,2M) wg autorów nie jest publicznie dostępny – używany jest największy publiczny Kronos-base"},
+                "data_kind": rt.tsfm.data_kind()[0], "data_source": rt.tsfm.data_kind()[1]}
+
+    @app.get("/api/v1/models/foundation/forecast")
+    def tsfm_forecast(model: str = Query(...), instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.forecast(_ts_mid(model), _th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/compare")
+    def tsfm_compare(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.compare(_th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/history")
+    def tsfm_history(model: str | None = Query(None), instrument: str = Query("XAUUSD"), tf: str | None = Query(None),
+                     limit: int = Query(100, ge=1, le=2000)):
+        return {"items": rt.tsfm.history(_ts_mid(model, history=True) if model else None, _th_inst(instrument), _ts_tf(tf) if tf else None, limit)}
+
+    @app.put("/api/v1/models/foundation/settings")
+    def tsfm_settings_put(body: dict = Body(...)):
+        def has_use(d):
+            return isinstance(d, dict) and any(k == "use" or has_use(v) for k, v in d.items())
+        if has_use(body.get("models")):
+            raise HTTPException(400, "USE_ONLY_VIA_/api/v1/models/foundation/use")
+        if any(isinstance(v, dict) and "checkpoint" in v for v in (body.get("models") or {}).values()) or "retired" in body:
+            raise HTTPException(400, "CHECKPOINT_ONLY_VIA_/api/v1/models/foundation/granite/activate")
+        try:
+            s = rt.tsfm.settings.update(body)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_SETTINGS: {exc}"[:500]) from exc
+        rt.log.info("TSFM", "SETTINGS", "Zmieniono ustawienia Chronos-2/Granite TTM: " + ", ".join(sorted(body))[:200])
+        return {"ok": True, "settings": s.model_dump(mode="json")}
+
+    @app.post("/api/v1/models/foundation/install")
+    def tsfm_install(body: dict = Body(...)):
+        r = rt.tsfm.start_install(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/verify")
+    def tsfm_verify(body: dict = Body(...)):
+        r = rt.tsfm.start_verify(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/refresh")
+    def tsfm_refresh(body: dict = Body(...)):
+        r = rt.tsfm.refresh(_ts_mid(body.get("model")), _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/validate")
+    def tsfm_validate(body: dict = Body(...)):
+        n = int(body.get("max_origins", 200))
+        if not 20 <= n <= 1000:
+            raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
+        r = rt.tsfm.start_validation(_th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), n)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    # ---- 1.40 Granite TTM in the Training Center (export, fine-tune job, versions, activation, rollback)
+    @app.get("/api/v1/models/foundation/granite")
+    def granite_get():
+        from ..tsfm import granite_train as _GT
+        c = rt.tsfm.settings.get().models["granite_ttm"]
+        return {"checkpoint": c.checkpoint, "runs": _GT.runs(), "job": rt.tsfm.job("granite_train"),
+                "rule": "trening nie startuje z botem; aktywacja tylko ręczna i tylko z werdyktem IMPROVED_VS_BASE na niewidzianych danych; powrót = BASE"}
+
+    @app.post("/api/v1/models/foundation/granite/train")
+    def granite_train(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        epochs = int(body.get("epochs", 6))
+        if not 1 <= epochs <= 30:
+            raise HTTPException(400, "EPOCHS_OUT_OF_RANGE")
+        trading = getattr(rt.modes, "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
+        r = _GT.start(rt.tsfm, _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), epochs=epochs,
+                      confirm_during_trading=bool(body.get("confirm_during_trading")), trading_active=trading)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/cancel")
+    def granite_cancel():
+        from ..tsfm import granite_train as _GT
+        r = _GT.cancel(rt.tsfm)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/activate")
+    def granite_activate(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        rid = str(body.get("run_id") or "")
+        if not re.match(r"^GTR-[0-9A-Za-z_-]{6,64}$", rid):
+            raise HTTPException(400, "RUN_ID_INVALID")
+        r = _GT.activate(rt.tsfm, rid)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/rollback")
+    def granite_rollback():
+        from ..tsfm import granite_train as _GT
+        return _GT.rollback(rt.tsfm)
+
+    @app.get("/api/v1/models/foundation/job/{name}")
+    def tsfm_job(name: str):
+        if not re.match(r"^(install|verify)_(chronos2|granite_ttm)$|^validation$|^granite_train$", name):
+            raise HTTPException(400, "JOB_UNKNOWN")
+        return {"job": rt.tsfm.job(name)}
+
+    @app.get("/api/v1/models/foundation/validation")
+    def tsfm_validation(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        from ..tsfm import validation as _TV
+        rep = _TV.latest_report(_th_inst(instrument), _ts_tf(tf))
+        if rep:
+            rep = {k: v for k, v in rep.items() if k != "rows"} | {"rows_tail": (rep.get("rows") or [])[-50:]}
+        return {"report": rep}
+
+    @app.post("/api/v1/models/foundation/use")
+    def tsfm_use(body: dict = Body(...)):
+        r = rt.tsfm.set_use(_ts_mid(body.get("model")), str(body.get("path", "")).upper(), str(body.get("use", "")).upper(),
+                            timeframe=_ts_tf(body["timeframe"]) if body.get("timeframe") else None, confirm=bool(body.get("confirm")))
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r

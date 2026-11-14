@@ -6,6 +6,7 @@ import { CandlestickSeries, ColorType, createChart, LineStyle, type IChartApi, t
 import { apiGet, apiSend, getCsrf } from "../api";
 import { useTheme } from "../theme";
 import { fmtNum } from "../util";
+import PackPanel from "./PackPanel";
 
 const ST_TONE: Record<string, string> = { READY: "ok", WAIT: "warn", NO_TRADE: "bad", INVALIDATED: "bad", EXPIRED: "muted", PASS: "ok", BLOCK: "bad",
   PROCEED: "ok", FAIL: "bad", INFO: "muted" };
@@ -113,6 +114,8 @@ export function StrategyPage() {
         <p className="muted small">Cele TP to bezwzględny ruch ceny w USD od rzeczywistego wykonania (nie %, nie punkty, nie zysk rachunku). Ustawienia są parametrami
           roboczymi do walidacji – bez obietnicy wyniku. Stan: {st.status}{st.reason ? ` (${st.reason})` : ""} · aktualizacja {tsl(st.updated_at)}.</p>
       </div>
+
+      <PackPanel />
 
       <div className="grid-2">
         <div className="panel" data-testid="sh-setup">

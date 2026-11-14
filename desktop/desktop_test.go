@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -488,5 +491,191 @@ func TestStudioModeLaunchesStudioWithOwnData(t *testing.T) {
 	}
 	if !strings.HasPrefix(l.WindowTitle("1.33.0"), "Pepe Data & Training Studio") {
 		t.Fatal("title")
+	}
+}
+
+// 1.40.1: an engine that dies during start - the error carries the reason (last log lines), and no silent restart loop follows.
+func TestEarlyExitShowsLogTail(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script stands in for python")
+	}
+	repo, _ := filepath.Abs("..")
+	l := testLayout(t, repo)
+	fake := filepath.Join(t.TempDir(), "fakepy")
+	os.WriteFile(fake, []byte("#!/bin/sh\necho 'Traceback (most recent call last):'\necho '  File \"x.py\", line 1'\necho 'RuntimeError: boom at start' >&2\nexit 5\n"), 0o755)
+	l.Python = fake
+	port := freePort(t)
+	writeJSON(t, filepath.Join(l.DataDir, "config.json"), map[string]any{"server": map[string]any{"port": port}})
+	var smu sync.Mutex
+	var states []EngineState
+	e := newEngine(l, "", func(m string) { t.Log(m) }, func(s EngineState, d string) { smu.Lock(); states = append(states, s); smu.Unlock() })
+	err := e.Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "RuntimeError: boom at start") || !strings.Contains(err.Error(), "kod 5") {
+		t.Fatalf("error without the log tail: %v", err)
+	}
+	time.Sleep(2500 * time.Millisecond) // the first backoff step would have restarted it by now
+	smu.Lock()
+	defer smu.Unlock()
+	for _, s := range states {
+		if s == EngineCrashed {
+			t.Fatalf("early exit went into the restart loop: %v", states)
+		}
+	}
+	if s, _ := e.State(); s != EngineFailed {
+		t.Fatalf("state %v", s)
+	}
+}
+
+func TestLogTailOnlyThisStart(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.log")
+	os.WriteFile(p, []byte("old run line\n===== start\na\n\nb\r\nc\n"), 0o644)
+	if got := logTail(p, int64(len("old run line\n")), 2); got != "b\nc" {
+		t.Fatalf("%q", got)
+	}
+}
+
+// fakeEngine answers /api/v1/health as PepeMarketWizard <ver> and stops on the shutdown endpoint only with the right token.
+func fakeEngine(t *testing.T, port int, ver, token string) (*http.Server, chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "app": "PepeMarketWizard", "version": ver})
+	})
+	mux.HandleFunc("/api/v1/admin/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-mq-shutdown") != token {
+			w.WriteHeader(401)
+			return
+		}
+		w.WriteHeader(200)
+		go func() { srv.Close(); close(done) }()
+	})
+	go srv.Serve(ln)
+	return srv, done
+}
+
+// 1.40.3: an older engine of this data folder is stopped and replaced; an engine of another folder (token refused) is never stopped.
+func TestOutdatedEngineIsReplacedOnlyWhenItIsOurs(t *testing.T) {
+	repo, _ := filepath.Abs("..")
+	old := version
+	version = "1.40.3"
+	defer func() { version = old }()
+	for _, tc := range []struct {
+		name, token string
+		want        bool
+	}{{"ours", "tok-ours", true}, {"foreign", "tok-other", false}} {
+		l := testLayout(t, repo)
+		port := freePort(t)
+		writeJSON(t, filepath.Join(l.DataDir, "config.json"), map[string]any{"server": map[string]any{"port": port}})
+		os.MkdirAll(l.RuntimeDir(), 0o755)
+		os.WriteFile(filepath.Join(l.RuntimeDir(), "shutdown.token"), []byte("tok-ours\n"), 0o600)
+		srv, done := fakeEngine(t, port, "1.40.0", tc.token)
+		e := newEngine(l, "", func(m string) { t.Log(m) }, nil)
+		ok, running := e.health()
+		if !ok || running != "1.40.0" {
+			t.Fatalf("%s: health %v %q", tc.name, ok, running)
+		}
+		if got := e.replaceOutdated(running); got != tc.want {
+			t.Fatalf("%s: replaceOutdated=%v want %v", tc.name, got, tc.want)
+		}
+		if tc.want {
+			<-done
+		} else {
+			if ok, _ := e.health(); !ok {
+				t.Fatalf("foreign engine was stopped")
+			}
+			srv.Close()
+		}
+	}
+}
+
+// 1.40.3: the bundled Python and pip never see another Python's settings of the machine.
+func TestPyChildEnvDropsForeignPythonSettings(t *testing.T) {
+	for k, v := range map[string]string{"PYTHONHOME": "C:\\Python39", "PYTHONPATH": "C:\\x", "PIP_REQUIRE_VIRTUALENV": "true", "PIP_USER": "1",
+		"PIP_TARGET": "C:\\t", "HTTPS_PROXY": "http://proxy:8080"} {
+		t.Setenv(k, v)
+	}
+	env := pyChildEnv("PYTHONPATH=C:\\site")
+	got := map[string][]string{}
+	for _, kv := range env {
+		p := strings.SplitN(kv, "=", 2)
+		got[strings.ToUpper(p[0])] = append(got[strings.ToUpper(p[0])], p[1])
+	}
+	pick := func(keys ...string) map[string][]string { // only the keys under test are ever printed
+		m := map[string][]string{}
+		for _, k := range keys {
+			m[k] = got[k]
+		}
+		return m
+	}
+	if got["PYTHONHOME"] != nil || got["PIP_TARGET"] != nil {
+		t.Fatalf("foreign settings passed: %v", pick("PYTHONHOME", "PIP_TARGET"))
+	}
+	hasProxy := false
+	for _, v := range got["HTTPS_PROXY"] {
+		hasProxy = hasProxy || v == "http://proxy:8080"
+	}
+	if strings.Join(got["PYTHONPATH"], ";") != "C:\\site" || strings.Join(got["PIP_REQUIRE_VIRTUALENV"], ";") != "0" ||
+		strings.Join(got["PIP_USER"], ";") != "0" || !hasProxy {
+		t.Fatalf("env %v", pick("PYTHONPATH", "PIP_REQUIRE_VIRTUALENV", "PIP_USER", "HTTPS_PROXY"))
+	}
+	l := Layout{AppDir: "/app", DataDir: "/data"}
+	e := newEngine(l, "", nil, nil)
+	for _, kv := range e.env() {
+		if k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0]); k == "PYTHONHOME" || k == "PIP_TARGET" || k == "PIP_USER" || k == "PIP_REQUIRE_VIRTUALENV" {
+			t.Fatalf("engine env carries %s", strings.SplitN(kv, "=", 2)[0])
+		}
+	}
+}
+
+// 1.40.4: a damaged dependency folder (file of a package removed / truncated, package missing) is detected from pip's RECORD lists.
+func TestEnvIntactDetectsDamagedPackages(t *testing.T) {
+	site := filepath.Join(t.TempDir(), "site-packages")
+	req := filepath.Join(t.TempDir(), "requirements-win.txt")
+	os.WriteFile(req, []byte("# x==1 comment\nclick==8.1.8 \\\n    --hash=sha256:aa\nuvicorn==0.1 \\\n    --hash=sha256:bb\n"), 0o644)
+	mk := func(rel, body string) {
+		p := filepath.Join(site, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+	}
+	mk("click/__init__.py", "from .core import Argument\n")
+	mk("click/core.py", "class Argument: pass\n")
+	mk("click-8.1.8.dist-info/RECORD", "click/__init__.py,sha256=x,27\nclick/core.py,sha256=y,21\nclick/__pycache__/core.cpython-313.pyc,,\n"+
+		"click-8.1.8.dist-info/RECORD,,\n")
+	mk("uvicorn/__init__.py", "")
+	mk("uvicorn-0.1.dist-info/RECORD", "uvicorn/__init__.py,sha256=z,0\n../../bin/uvicorn,sha256=q,233\nuvicorn-0.1.dist-info/RECORD,,\n")
+	if ok, bad := envIntact(site, req); !ok {
+		t.Fatalf("intact folder reported damaged: %s", bad)
+	}
+	os.Remove(filepath.Join(site, "click", "core.py")) // the user's case: ModuleNotFoundError: No module named 'click.core'
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "click/core.py") {
+		t.Fatalf("missing click/core.py not detected: %v %q", ok, bad)
+	}
+	mk("click/core.py", "trunc")
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "uszkodzony click/core.py") {
+		t.Fatalf("truncated file not detected: %v %q", ok, bad)
+	}
+	mk("click/core.py", "class Argument: pass\n")
+	os.RemoveAll(filepath.Join(site, "uvicorn-0.1.dist-info"))
+	if ok, bad := envIntact(site, req); ok || !strings.Contains(bad, "1 z 2") {
+		t.Fatalf("missing package not detected: %v %q", ok, bad)
+	}
+}
+
+func TestDamagedEnvIsDiscardedAndImportFailureRecognised(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cp313-abc")
+	os.MkdirAll(filepath.Join(dir, "site-packages", "click"), 0o755)
+	os.WriteFile(filepath.Join(dir, "ok.json"), []byte("{}"), 0o644)
+	if err := discardEnv(dir); err != nil || exists(dir) {
+		t.Fatalf("discard: %v exists=%v", err, exists(dir))
+	}
+	msg := "silnik zakończył się podczas startu (kod 5)\n\nOstatnie linie logu:\nModuleNotFoundError: No module named 'click.core'"
+	if !importFailure(errors.New(msg)) || importFailure(errors.New("port 8765 jest zajęty")) || importFailure(nil) {
+		t.Fatal("importFailure")
 	}
 }

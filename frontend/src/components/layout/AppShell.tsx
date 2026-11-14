@@ -156,7 +156,7 @@ function SideNav({ page }: { page: Page }) {
   const cur = SECTION_OF[page];
   return (
     <nav className={cls("sidenav", collapsed && "collapsed")} aria-label="Menu główne" data-testid="sidenav">
-      <a href={href("menu")} className="nav-item nav-main nav-menu" data-testid="nav-menu" title="Menu główne – trzy wieże"><i aria-hidden="true">✶</i><span>Menu – trzy wieże</span></a>
+      <a href={href("menu")} className="nav-item nav-main nav-menu" data-testid="nav-menu" title="Menu główne – Galaxy"><i aria-hidden="true">✶</i><span>Menu – Galaxy</span></a>
       {GROUPS.map((g) => (
         <div key={g.id} className={cls("nav-group", cur === g.id && "cur")} data-group={g.id} style={{ "--area": g.accent } as React.CSSProperties}>
           <a href={href(g.pages[0])} className={cls("nav-item nav-main", cur === g.id && "on")}

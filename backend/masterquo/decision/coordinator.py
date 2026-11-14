@@ -14,6 +14,14 @@ Order of evaluation (each step may only make the verdict stricter - nothing afte
                 P(event) is below the plan break-even; it never upgrades, never sizes, never sends. In OFF / SHADOW no entry is added and
                 _preds() is the families list exactly as before (parity). In ASSIST _preds() reads the Quant checked snapshot (aliases
                 deduplicated, contract / future-time / stale records excluded) instead of recomputing anything.
+   * 1.37 REGRESSION price forecasts (Kronos, Chronos-2, Granite TTM - FinCast until 1.39) carry a direction (UP / FLAT / DOWN by the explicit neutral band) and
+                NO probability: ASSIST holds only on a FRESH forecast AGAINST the side; REQUIRED needs READY + fresh + agreeing (FLAT ->
+                MODEL_REQUIRED_NOT_CONFIRMING, against -> MODEL_REQUIRED_CONTRARY). Freshness is checked for ASSIST too (a stale optional
+                forecast has no effect - it never blocks the system). The role comes from decision.required_models OR the model's own
+                approved setting (`use` = REQUIRED); rows marked `no_required` (Kronos - its condition lives in the SH receiver; SH rows of
+                models already applied by the SH receiver) are recorded as OBSERVE only - one model / condition is never applied twice.
+                Extra providers (runtime: tsfm.predictions.coordinator_rows + kronos_rows) are appended to _preds(); with Quant ASSIST the
+                same producers are removed from the Quant snapshot first (dedup by family id).
    * time: a data_time in the FUTURE (beyond 5 s clock tolerance) is never age 0 - REQUIRED -> MODEL_REQUIRED_FUTURE_TIME, ASSIST -> no
      effect (the record is not trusted).
 4. DecisionRecord persisted (decision_records, unique per path+source+inputs) - the audit trail used by replay and the panel.
@@ -55,9 +63,18 @@ def _mid(p: dict) -> str:
 
 
 def role_of(pred: dict, required: set[str]) -> str:
-    if pred.get("family") in required or pred.get("model_id") in required or _mid(pred) in required:
+    if pred.get("no_required"):
+        return "OBSERVE"
+    if pred.get("use") == "REQUIRED" or pred.get("family") in required or pred.get("model_id") in required or _mid(pred) in required:
         return "REQUIRED"
     return "ASSIST" if pred.get("use") == "ASSIST" else "OBSERVE"
+
+
+def _reg_direction(p: dict, res) -> str | None:
+    """Direction of a REGRESSION price forecast (UP / FLAT / DOWN) - never converted into a probability."""
+    if isinstance(res, dict) and p.get("task_type") == "REGRESSION" and res.get("direction") in ("UP", "DOWN", "FLAT"):
+        return res["direction"]
+    return None
 
 
 def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_threshold: float, max_age_s: float,
@@ -76,8 +93,16 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
         opp = None
         if isinstance(res, dict) and p.get("task_type") == "CLASS_PROBABILITIES" and side in ("BUY", "SELL"):
             opp = res.get("DOWN") if side == "BUY" else res.get("UP")
+        rdir = _reg_direction(p, res)
+        contra = rdir is not None and side in ("BUY", "SELL") and rdir == ("DOWN" if side == "BUY" else "UP")
+        lim = float(p.get("max_age_s") or max_age_s)
         if role == "ASSIST" and future:
             why = f"czas danych z przyszłości ({-age:.0f} s) – rekord bez wpływu"
+        elif role == "ASSIST" and rdir is not None and (age is None or age > lim):
+            why = "prognoza nieaktualna – ASSIST bez wpływu" if age is not None else "brak czasu danych – ASSIST bez wpływu"
+        elif role == "ASSIST" and assist_enabled and contra and p.get("state") == "READY":
+            influence, why = "HOLD", f"prognoza {rdir} przeciwna do {side}"
+            reasons.append(f"MODEL_ASSIST_HOLD:{mid}")
         elif role == "ASSIST" and assist_enabled and p.get("quant_hold") and p.get("state") == "READY":
             influence, why = "HOLD", str(p["quant_hold"])[:200]
             reasons.append(f"MODEL_QUANT_HOLD:{mid}")
@@ -91,12 +116,18 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
             elif future:
                 influence, why = "BLOCK", f"czas danych z przyszłości ({-age:.0f} s)"
                 reasons.append(f"MODEL_REQUIRED_FUTURE_TIME:{mid}")
-            elif age is None or age > max_age_s:
-                influence, why = "BLOCK", "brak czasu danych" if age is None else f"wiek {age:.0f}s > {max_age_s:.0f}s"
+            elif age is None or age > lim:
+                influence, why = "BLOCK", "brak czasu danych" if age is None else f"wiek {age:.0f}s > {lim:.0f}s"
                 reasons.append(f"MODEL_REQUIRED_STALE:{mid}")
             elif opp is not None and opp >= 0.5:
                 influence, why = "BLOCK", f"P(przeciwny)={opp:.2f}"
                 reasons.append(f"MODEL_REQUIRED_CONTRARY:{mid}")
+            elif contra:
+                influence, why = "BLOCK", f"prognoza {rdir} przeciwna do {side}"
+                reasons.append(f"MODEL_REQUIRED_CONTRARY:{mid}")
+            elif rdir == "FLAT" or (rdir is not None and side not in ("BUY", "SELL")):
+                influence, why = "BLOCK", "prognoza bocznie – nie potwierdza strony" if rdir == "FLAT" else "brak strony setupu"
+                reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
             else:
                 influence = "PASS"
         out.append(K.make("ModelForecast", model_id=mid, role=role, state=str(p.get("state")), task_type=str(p.get("task_type")),
@@ -128,6 +159,7 @@ class DecisionCoordinator:
         self.intents = IntentLedger(db, self.book)
         self.last: dict[str, dict] = {}
         self.quant = None                    # QuantService (runtime); None / OFF / SHADOW -> no effect at all
+        self.extra_providers: list = []      # 1.37: callables inst -> rows (Chronos-2 / Granite TTM roles, Kronos as OBSERVE)
 
     def _cfg(self):
         return getattr(self.cfg_store.get(), "decision", None)
@@ -142,18 +174,30 @@ class DecisionCoordinator:
         except Exception:  # noqa: BLE001
             return False
 
+    def _extra(self) -> list[dict]:
+        out = []
+        for fn in self.extra_providers:
+            try:
+                out += fn(self.instrument_fn()) or []
+            except Exception:  # noqa: BLE001 - a provider failure never freezes a decision (REQUIRED reports MISSING)
+                continue
+        return out
+
     def _preds(self) -> list[dict]:
+        extra = self._extra()
         if self._quant_assist():
             try:                                                 # ASSIST: the Quant checked snapshot (cached, no recomputation here)
-                return self.quant.coordinator_predictions(self.instrument_fn())
+                base = self.quant.coordinator_predictions(self.instrument_fn())
             except Exception:  # noqa: BLE001 - REQUIRED then reports MISSING; ASSIST simply has no effect
-                return []
+                base = []
+            own = {_mid(p) for p in extra} | {str(p.get("family")) for p in extra}
+            return [p for p in base if _mid(p) not in own and p.get("canonical_id") not in own] + extra   # one record per producer
         if self.families is None:
-            return []
+            return extra
         try:
-            return self.families.predictions(self.instrument_fn())
+            return self.families.predictions(self.instrument_fn()) + extra
         except Exception:  # noqa: BLE001 - models never freeze a decision; REQUIRED then reports MISSING
-            return []
+            return extra
 
     def _quant_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> list[dict]:
         """[] unless Quant is in ASSIST (validated + explicitly activated); then one EVENT_PROBABILITY entry (READY with an optional hold,
@@ -203,6 +247,10 @@ class DecisionCoordinator:
                                  rec["mode"], rec["side"], rec["base_verdict"], verdict, json.dumps(rec["reason_codes"]),
                                  json.dumps(models), h, json.dumps(rec, default=str)))
         self.last[cand["path"]] = rec
+        bs = self.__dict__.setdefault("by_source", {})                 # 1.38: 20 SH variants per cycle - the record of THIS candidate
+        bs[cand["source_id"]] = rec
+        while len(bs) > 500:
+            bs.pop(next(iter(bs)))
         return rec
 
     # ------------------------------------------------------------------ path adapters
@@ -241,7 +289,8 @@ class DecisionCoordinator:
         try:
             cand = self.active_candidate(d)
             gates = {"mode": list((d.get("mode_gate") or {}).get("reason_codes") or [])} if cand["base_verdict"] == "ENTER" else {}
-            preds = [{"family": m["model_id"], "state": m["state"], "use": "ASSIST" if m["role"] == "ASSIST" else "SHADOW",
+            preds = [{"family": m["model_id"], "state": m["state"], "use": {"ASSIST": "ASSIST", "REQUIRED": "REQUIRED"}.get(m["role"], "SHADOW"),
+                      "no_required": m["role"] == "OBSERVE" and (m["model_id"].startswith("kronos:") or m["model_id"].startswith("tsfm:")),
                       "task_type": m["task_type"], "result": m["result"], "data_time": m["data_time"], "unavailable_reason": m["reason"],
                       "quant_hold": m["reason"] if m["influence"] == "HOLD" and m["model_id"] == "quant:metamodel" else None}
                      for m in (model_gate or {}).get("models") or []]
@@ -257,7 +306,7 @@ class DecisionCoordinator:
         side = su.get("side") if su.get("side") in ("BUY", "SELL") else "NONE"
         base = "ENTER" if su.get("status") == "READY" else ("WAIT" if su.get("status") == "WAIT" else "NO_TRADE")
         tps = su.get("tps") or []
-        return K.make("StrategyCandidate", path="SH", strategy_id=str(su.get("strategy")), source_id=str(su.get("signal_id") or su.get("strategy")),
+        return K.make("StrategyCandidate", path="SH", strategy_id=str(su.get("strategy_id") or su.get("strategy")), source_id=str(su.get("signal_id") or su.get("strategy")),
                       symbol=str(su.get("symbol") or self.instrument_fn()), side=side, base_verdict=base, entry=_f(su.get("entry_ref")),
                       sl=_f(su.get("sl")), tp=_f(tps[-1].get("price")) if tps else None, risk_money=_f((risk or {}).get("risk_money")),
                       volume=_f((risk or {}).get("volume")), reasons=[] if base == "ENTER" else [str(su.get("status_reason") or "")][:1])
@@ -270,6 +319,8 @@ class DecisionCoordinator:
             fc = (su.get("family_context") or {}).get("context") or []
             preds = [{"family": x.get("family"), "state": x.get("state"), "use": x.get("use"), "task_type": x.get("task_type"),
                       "result": x.get("result"), "unavailable_reason": x.get("reason")} for x in fc]
+            from ..tsfm import predictions as TP
+            preds = preds + TP.sh_record_rows(su)                      # 1.37: applied by the SH receiver -> recorded only
             gates = {"coordination": [] if not coord or coord.get("allowed", True) else [str(coord.get("reason") or "ARBITRATION")]}
             if self._quant_assist() and su.get("status") == "READY":
                 try:

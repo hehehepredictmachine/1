@@ -1,0 +1,149 @@
+{
+  "schema": "PMW-RAM-BENCH-1",
+  "started_at": "2026-11-09T17:11:56+00:00",
+  "cpu_count": 4,
+  "platform": "linux",
+  "baseline": {
+    "used_pct": 3.2,
+    "total_mb": 16086,
+    "available_mb": 15571
+  },
+  "models": {
+    "granite_ttm": {
+      "rss_after_start_mb": 457.6,
+      "rss_loaded_mb": 468.9,
+      "peak_load_mb": 468.9,
+      "load_s": 1.11,
+      "params": 805280,
+      "device": "cpu",
+      "threads": 1,
+      "system_before": {
+        "used_pct": 3.4,
+        "total_mb": 16086,
+        "available_mb": 15539
+      },
+      "system_after": {
+        "used_pct": 5.3,
+        "total_mb": 16086,
+        "available_mb": 15233
+      },
+      "single_m5": {
+        "n": 30,
+        "p50_ms": 3.4,
+        "p95_ms": 5.3,
+        "max_ms": 2421.8,
+        "errors": 0,
+        "rss_mb": 478.6,
+        "peak_mb": 478.6,
+        "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"
+      }
+    },
+    "chronos2": {
+      "rss_after_start_mb": 358.5,
+      "rss_loaded_mb": 598.5,
+      "peak_load_mb": 598.5,
+      "load_s": 1.57,
+      "params": 119477664,
+      "device": "cpu",
+      "threads": 2,
+      "system_before": {
+        "used_pct": 5.3,
+        "total_mb": 16086,
+        "available_mb": 15233
+      },
+      "system_after": {
+        "used_pct": 7.6,
+        "total_mb": 16086,
+        "available_mb": 14863
+      },
+      "single_m5": {
+        "n": 30,
+        "p50_ms": 80.5,
+        "p95_ms": 128.6,
+        "max_ms": 386.5,
+        "errors": 0,
+        "rss_mb": 833.4,
+        "peak_mb": 833.4,
+        "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"
+      }
+    },
+    "kronos": {
+      "rss_after_start_mb": 248.3,
+      "rss_loaded_mb": 672.4,
+      "peak_load_mb": 1062.4,
+      "load_s": 3.44,
+      "params": null,
+      "device": "cpu",
+      "threads": 2,
+      "system_before": {
+        "used_pct": 7.6,
+        "total_mb": 16086,
+        "available_mb": 14863
+      },
+      "system_after": {
+        "used_pct": 11.4,
+        "total_mb": 16086,
+        "available_mb": 14252
+      },
+      "single_m5": {
+        "n": 30,
+        "p50_ms": 6876.4,
+        "p95_ms": 7297.1,
+        "max_ms": 7437.6,
+        "errors": 0,
+        "rss_mb": 707.6,
+        "peak_mb": 1062.4,
+        "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"
+      }
+    }
+  },
+  "not_run": {},
+  "sequential": {
+    "cycles": 60,
+    "with_m15": true,
+    "seconds": 512.0,
+    "latency": {
+      "granite_ttm": {
+        "n": 80,
+        "p50_ms": 4.7,
+        "p95_ms": 6.8,
+        "max_ms": 9.1
+      },
+      "chronos2": {
+        "n": 80,
+        "p50_ms": 84.3,
+        "p95_ms": 101.0,
+        "max_ms": 120.9
+      },
+      "kronos": {
+        "n": 80,
+        "p50_ms": 6796.1,
+        "p95_ms": 7102.0,
+        "max_ms": 7427.6
+      }
+    },
+    "errors": 0,
+    "peak_system_used_pct": 11.7,
+    "peak_sum_models_rss_mb": 2019.8,
+    "final": {
+      "granite_ttm": {
+        "rss_mb": 478.6,
+        "peak_mb": 478.6
+      },
+      "chronos2": {
+        "rss_mb": 833.4,
+        "peak_mb": 833.4
+      },
+      "kronos": {
+        "rss_mb": 707.8,
+        "peak_mb": 1062.4
+      }
+    },
+    "system_end": {
+      "used_pct": 11.7,
+      "total_mb": 16086,
+      "available_mb": 14204
+    }
+  },
+  "finished_at": "2026-11-09T17:25:03+00:00"
+}

@@ -61,6 +61,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, forecast: d };
     case "kronos":
       return { ...s, kronos: d };
+    case "tsfm":
+      return { ...s, tsfm: d };
     case "scalp":
       return { ...s, scalp: d };
     case "analytics":

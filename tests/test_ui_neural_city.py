@@ -1,14 +1,16 @@
-"""1.34 Neural City Main Menu V7.0 + JOIN THE CULT launcher (TASK 001) in a real browser (Chromium + demo backend on the SYNTHETIC
+"""1.39: the Neural City menu moved from #/menu to #/neural-city (#/menu = Galaxy V2, tests/test_ui_galaxy.py); JOIN THE CULT now opens
+Galaxy V2 directly (the START boot intro replaced the neural intro of the launcher).
+1.36 Main Menu V2 (Neural Table, EIGHT towers) + JOIN THE CULT launcher (1.34 TASK 001) (TASK 001) in a real browser (Chromium + demo backend on the SYNTHETIC
 terminal; the launcher window of the Windows app as a page with a stand-in bridge).
 
 Launcher: shown at the start of a session on the bare address (the panel is not mounted before the click); the delivered image is the
 background with its proportions kept; JOIN THE CULT in the lower centre, disabled until the bot is ready, hover / click animation;
 engine not answering -> the start error with the instruction (never SYSTEM READY); JOIN -> neural intro -> main menu; reload / direct link skip it.
 Windows launcher page (desktop/splash.html): ready / progress / error / data choice, JOIN calls the app exactly once, nothing overflows.
-Menu: exactly the seven names; tower geometry and top navigation call the same controller and open the same EXISTING panel; the state
+Menu: exactly the eight names, no information panels and no buttons at the bottom; tower geometry and top navigation call the same controller and open the same EXISTING panel; the state
 machine IDLE -> SELECTED -> STOP_ROTATION -> PEPE_REACH -> CONTACT -> PORTAL -> NAVIGATE; Esc cancels; RETURN restores the focus;
-double click = one navigation; Performance / pause / reduced motion -> direct navigation, no intro; HUD values never invented and never
-REAL on the simulator; 1280x720 / 1920x1080 / 390 px without horizontal scroll; legacy route aliases; no order, no mode change, one
+double click = one navigation; Performance / pause / reduced motion -> direct navigation, no intro; the menu fetches no MT5 data;
+1280x720 / 1920x1080 / 390 px without horizontal scroll; legacy route aliases; no order, no mode change, one
 WebSocket. Screenshot comparison with the reference (honest numbers in data/logs/ui_neural_city/compare.json)."""
 from __future__ import annotations
 
@@ -29,15 +31,16 @@ PORT = 8823
 BASE = f"http://127.0.0.1:{PORT}"
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_neural_city"
-NAMES = ["PEPE$WTC", "PEPE$SIGNAL", "PEPE$BANK", "MARKET NEWS", "STRATEGIES", "SETTINGS", "PEPE$ROI"]
+NAMES = ["PEPE$WTC", "PEPE$SIGNAL", "PEPE$BANK", "PEPE$ROI", "STRATEGIES", "MARKET NEWS", "TRAINING LAB", "SETTINGS"]
 OLD = ["WTC PEPE", "BRAIN SIGNAL", "AI AGENT", "LEADERBOARD"]
 # tower key -> (route, selector of the EXISTING panel it opens)
-TOWERS = {"wtc": ("trading-intelligence", "[data-testid=terminal-shell]"), "signal": ("wind", "[data-testid=page-wind]"),
-          "bank": ("lightning", "[data-testid=page-lightning]"), "news": ("kontekst", "[data-testid=ctx-news]"),
-          "strategies": ("strategy-lab", "[data-testid=page-strategy-lab]"), "settings": ("ustawienia", "main.page"),
-          "roi": ("profits", "[data-testid=wz-top]")}
-ALIASES = {"wtc": "terminal-shell", "pepe-signal": "page-wind", "brain-signal": "page-wind", "pepe-bank": "page-lightning", "ai-agent": "page-lightning",
-           "market-news": "ctx-news", "leaderboard": "wz-top", "pepe-roi": "wz-top", "strategies": "page-strategy-lab"}
+TOWERS = {"wtc": ("pepe-wtc", "[data-testid=page-pepe-wtc]"), "signal": ("pepe-signal", "[data-testid=page-pepe-signal]"),
+          "bank": ("lightning", "[data-testid=page-lightning]"), "roi": ("profits", "[data-testid=wz-top]"),
+          "strategies": ("strategy-lab", "[data-testid=page-strategy-lab]"), "news": ("kontekst", "[data-testid=ctx-news]"),
+          "training": ("trening", "main.page"), "settings": ("ustawienia", "main.page")}
+ALIASES = {"wtc": "page-pepe-wtc", "pepe-signal": "page-pepe-signal", "brain-signal": "page-pepe-signal", "pepe-bank": "page-lightning", "ai-agent": "page-lightning",
+           "market-news": "ctx-news", "leaderboard": "wz-top", "pepe-roi": "wz-top", "strategies": "page-strategy-lab", "trading-intelligence": "terminal-shell",
+           "wind": "page-wind"}
 ORDER_URL = re.compile(r"/api/v1/(order|orders|trade|execution|close|positions?|plan/.*/(execute|confirm))", re.I)
 MODE_URL = re.compile(r"/api/v1/mode\b", re.I)
 try:
@@ -109,7 +112,7 @@ class TestNeuralCityUI(unittest.TestCase):
         return r.json()
 
     def menu(self, p, extra=""):
-        p.goto(BASE + "/#/menu" + extra)
+        p.goto(BASE + "/#/neural-city" + extra)
         p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
         p.wait_for_timeout(300)                                                              # debounce window of a fresh mount
 
@@ -149,13 +152,12 @@ class TestNeuralCityUI(unittest.TestCase):
             p.wait_for_timeout(400)
             self.assertNotEqual(before, join.evaluate("e => getComputedStyle(e).transform"))    # hover animation
             join.click()
-            p.wait_for_selector("[data-testid=nc-intro]", timeout=10000)                         # neural intro after JOIN
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=10000)                      # 1.39: JOIN -> Galaxy V2 main menu
             self.assertEqual(p.evaluate("() => location.hash"), "#/menu")
-            self.shot(p, "01_intro")
-            p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=10000)       # ends by itself
+            self.shot(p, "01_after_join")
             self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
             p.reload()
-            p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)       # same session: no launcher, no intro
+            p.wait_for_selector("[data-testid=galaxy-menu]", timeout=30000)                      # same session: no launcher
             self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0)
             self.assertEqual(self.real_errors(p), [])
         finally:
@@ -164,7 +166,7 @@ class TestNeuralCityUI(unittest.TestCase):
             c, p = self.ctx()
             try:
                 p.goto(url)
-                p.wait_for_selector("[data-testid=page-menu], [data-testid=page-lightning]", timeout=30000)
+                p.wait_for_selector("[data-testid=galaxy-menu], [data-testid=page-lightning]", timeout=30000)
                 self.assertEqual(p.locator("[data-testid=cult-launcher]").count(), 0, url)
             finally:
                 c.close()
@@ -220,7 +222,7 @@ class TestNeuralCityUI(unittest.TestCase):
                     c.close()
 
     # ------------------------------------------------------------ 4. seven names, one controller, existing panels
-    def test_04_seven_towers_and_navigation(self):
+    def test_04_eight_towers_and_navigation(self):
         c, p = self.ctx()
         try:
             before = (self.api("/api/v1/state").get("mode") or {})
@@ -228,7 +230,13 @@ class TestNeuralCityUI(unittest.TestCase):
             plates = [x.inner_text().strip() for x in p.locator("[data-plate] b").all()]
             self.assertEqual(sorted(plates), sorted(NAMES))
             nav = [x.inner_text().strip() for x in p.locator("[data-testid^=nc-nav-]:not([data-testid=nc-nav-home])").all()]
-            self.assertEqual(nav, ["PEPE$WTC", "PEPE$SIGNAL", "PEPE$BANK", "NEWS", "STRATEGIES", "SETTINGS", "PEPE$ROI"])
+            self.assertEqual(nav, NAMES)                                                          # top navigation of all eight modules
+            self.assertEqual(p.locator("[data-testid=nc-hud], .nc-quote, [data-testid=nc-stat-eq]").count(), 0)   # no information panels
+            tools = p.locator("[data-testid=page-menu] button:visible").all()
+            low = [b.get_attribute("data-testid") for b in tools if (bb := b.bounding_box()) and bb["y"] > 1080 * 0.9]
+            self.assertEqual(low, [], low)                                                        # no buttons at the bottom of the menu
+            logo = p.locator("[data-testid=nc-logo]").bounding_box()
+            self.assertLess(logo["x"] + logo["y"], 80)                                            # small logo top-left
             visible = p.evaluate("() => document.querySelector('[data-testid=nc-stage]').innerText")
             for o in OLD:
                 self.assertNotIn(o, visible)                                                      # old names only in titles / info
@@ -271,7 +279,7 @@ class TestNeuralCityUI(unittest.TestCase):
             p.keyboard.press("Escape")                                                            # cancel -> back to IDLE, still on the menu
             p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=3000)
             p.wait_for_timeout(2200)
-            self.assertTrue(p.url.endswith("#/menu"))
+            self.assertTrue(p.url.endswith("#/neural-city"))
             self.assertEqual(p.evaluate("() => document.activeElement?.dataset?.testid"), "nc-tower-signal")
             self.menu(p)
             n0 = p.evaluate("() => window.__hc")
@@ -287,21 +295,20 @@ class TestNeuralCityUI(unittest.TestCase):
         finally:
             c.close()
 
-    def test_06_hud_values_never_invented(self):
+    def test_06_menu_fetches_no_market_data(self):
         c, p = self.ctx()
+        got: list = []
+        p.on("request", lambda r: got.append(r.url) if "/api/v1/" in r.url else None)
         try:
-            self.menu(p)
-            st = self.api("/api/v1/state")
-            for k in ("wr", "roi", "eq"):
-                el = p.locator(f"[data-testid=nc-stat-{k}]")
-                self.assertTrue(wait_for(lambda: el.get_attribute("data-kind") not in (None, ""), 20, 0.3), k)
-                self.assertNotEqual(el.get_attribute("data-kind"), "REAL", k)                    # simulator is never REAL
-                v = el.locator("strong").inner_text()
-                self.assertTrue(v == "N/A" or re.search(r"\d", v), (k, v))
-            eq = p.locator("[data-testid=nc-stat-eq] strong").inner_text().replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
-            self.assertEqual(eq, f"{st['account']['equity']:,.2f}".replace(",", "").replace(".", ","))   # the bot's own value
-            for fake in ("72.8", "168.4", "1,248,932", "72,8"):
-                self.assertNotIn(fake, p.locator("[data-testid=nc-hud]").inner_text())
+            p.goto(BASE + "/#/neural-city")
+            p.wait_for_selector("[data-testid=page-menu][data-phase=IDLE]", timeout=30000)
+            got.clear()                                                                           # the shell (state, WebSocket) is loaded once for the app
+            p.wait_for_timeout(4000)
+            market = [u for u in got if re.search(r"/api/v1/(candles|stats|bot-signals|markets|models|kronos|svp|setups)", u)]
+            self.assertEqual(market, [])                                                          # the animation never pulls MT5 / bot data
+            p.click("[data-testid=nc-pepe-center]")                                               # Pepe impulse: visual only
+            self.assertEqual(p.locator("[data-testid=page-menu]").get_attribute("data-phase"), "IDLE")
+            self.assertTrue(p.url.endswith("#/neural-city"))
         finally:
             c.close()
 
@@ -347,7 +354,7 @@ class TestNeuralCityUI(unittest.TestCase):
                     b = p.locator(f"[data-plate={key}]").bounding_box()
                     self.assertTrue(b and b["x"] >= 0 and b["x"] + b["width"] <= vp["width"] + 1, (key, vp))
                 if vp["width"] < 600:
-                    self.assertEqual(p.locator("[data-testid^=nc-list-]").count(), 7)            # list for small screens
+                    self.assertEqual(p.locator("[data-testid^=nc-list-]").count(), 8)            # list for small screens
                     self.assertTrue(p.locator("[data-testid=nc-list-roi]").is_visible())
                 self.shot(p, f"08_menu_{vp['width']}", full=vp["width"] < 600)
                 self.assertEqual(self.real_errors(p), [], vp)
@@ -382,8 +389,8 @@ class TestNeuralCityUI(unittest.TestCase):
         finally:
             c.close()
         got = Image.open(SHOTS / "09_stage_1672.png").convert("RGB").resize((1672, 941))
-        clean = Image.open(_env.ROOT / "frontend" / "public" / "assets" / "neural" / "neural-city-scene.webp").convert("RGB")
-        tower_area = (0, 250, 1672, 941)                                                          # table + towers (HUD drawn above it)
+        clean = Image.open(_env.ROOT / "frontend" / "public" / "assets" / "neural" / "neural-table-scene.webp").convert("RGB")
+        tower_area = (0, 80, 1672, 941)                                                           # everything under the top navigation
         mae_clean = sum(ImageStat.Stat(ImageChops.difference(got.crop(tower_area), clean.crop(tower_area))).mean) / 3
         out = {"viewport": [1672, 941], "mae_vs_clean_scene_towers_area": round(mae_clean, 2)}
         if ref_dir and os.path.exists(os.path.join(ref_dir, "neural-city-reference.png")):

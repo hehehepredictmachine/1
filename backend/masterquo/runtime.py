@@ -56,6 +56,9 @@ class Runtime:
                 mt5_factory = real_mt5_factory
         self.worker = MT5Worker(mt5_factory)
         required = Profiles().required_closed_bars()
+        from .sh.pack.engine import NEEDED_BARS as _PACK_BARS                 # 1.38 pack: H1 EMA200 x5 warm-up, previous-session profile, M3
+        for _tf, _n in _PACK_BARS.items():
+            required[_tf] = max(int(required.get(_tf) or 0), _n)
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         self.bridge.secrets = self.secrets
         from .assets.registry import AssetRegistry
@@ -65,6 +68,8 @@ class Runtime:
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,
                                  account_provider=lambda: (self.bridge.account_status(), self.bridge.account_key, self.bridge.synthetic))
+        if not demo and mt5_factory is None:                                # 1.39: real terminal only - start in execution.start_mode (AUTO_LIVE)
+            self.modes.apply_start_mode()
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
         self.engine = EngineService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.news, self.pcclock)
         self.paper = PaperBroker(self.cfg, self.bridge, self.db, self.bus, self.log)
@@ -120,6 +125,8 @@ class Runtime:
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
         self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
+        from .sh.pack.engine import PackEngine
+        self.sh.pack = PackEngine()                                                               # 1.38: 20 variants in the SAME SH cycle
         from .evaluation.service import EvaluationService
         self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
         self.engine.active.listeners.append(self.evaluation.on_active_events)
@@ -147,7 +154,7 @@ class Runtime:
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
-        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-small: SHADOW, own .venv_kronos process
+        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-base (1.37): SHADOW, own .venv_kronos process
         from .trainhub.inference import TrainhubInference
         from .trainhub.jobs import TrainingCenter
         self.trainhub = TrainingCenter(self.cfg, self.bridge, bus=self.bus, log=self.log)         # 1.28: Centrum treningu (kolejka, proces obok)
@@ -160,6 +167,19 @@ class Runtime:
         self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
+        from .tsfm.service import TsfmService
+        self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # Chronos-2 + Granite TTM (1.40, FinCast retired): own processes, OBSERVE default
+        self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
+        try:
+            self._wire_governor()
+        except Exception:  # noqa: BLE001 - 1.40.1: no governor = models run unmanaged (as in 1.39), the engine still starts
+            log.exception("memory governor unavailable")
+            self.governor = None
+            self.tsfm.governor = self.kronos.governor = None
+        self.sh.tsfm = self.tsfm                                                                    # SH receivers (roles per strategy)
+        from .tsfm import predictions as _tsfm_pred
+        self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / Granite TTM
+                                    lambda inst: _tsfm_pred.kronos_rows(self.kronos, inst)]          # Kronos: recorded as OBSERVE only
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
         self.evaluation.zone_provider = self.zones
@@ -176,6 +196,24 @@ class Runtime:
         self._stop = threading.Event()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+
+    def _wire_governor(self) -> None:
+        """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
+        import os as _os
+        import time as _time
+        from .resources.governor import HEAVY, Governor
+        self.governor = Governor(self.cfg, self.log)
+        self.tsfm.governor = self.governor
+        self.kronos.governor = self.governor
+        self.governor.register("bot", "bot", lambda: _os.getpid())
+        k = self.kronos
+        self.governor.register("kronos", "heavy", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
+                               release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
+        for mid, w in self.tsfm.workers.items():
+            self.governor.register(mid, "heavy" if mid in HEAVY else "light",
+                                   (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
+                                   release=(lambda w=w, mid=mid: (self.tsfm.running is None or self.tsfm.running[0] != mid) and w.kill()),
+                                   idle=(lambda w=w, mid=mid: 0.0 if (self.tsfm.running and self.tsfm.running[0] == mid) else _time.monotonic() - w.last_used))
 
     def _publish_prefs(self) -> None:
         try:
@@ -239,41 +277,37 @@ class Runtime:
         return mode, st.get("day") or {}, (self.bridge.account_status() or {}).get("currency")
 
     def start(self) -> None:
+        """1.40.1: every subsystem starts on its own - one failing part (MT5 terminal, a model worker, a broken settings file, a Windows
+        API call) never takes the whole engine down; the failure is logged with its traceback and listed in start_failures (API health)."""
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
-        self.worker.start()
-        self.bridge.start()
-        self.news.start()
-        self.engine.start()
-        self.manager.start()
-        self.telegram.start()
-        self.ml.start()
-        self.scanner.start()
-        self.forecast.start()
-        self.scalp.start()
-        self.analytics.start()
-        self.lab.start()
-        self.extind.start()
-        self.nss.start()
-        self.mtf.start()
-        self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
-        self.liquidity.start()
-        self.sh.start()
-        self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
-        self.zones.start()                      # PMW-ZONES: zone map on every closed M5
-        self.indicators.start()                 # PMW-IND-1: indicator snapshot on every closed M1, spread sampling, market depth
-        self.svp.start()                        # PMW-SVP-1: LIVE profiles / zones (only profiles switched to LIVE)
+        self.start_failures: list[dict] = []
+        for name in ("worker", "bridge", "news", "engine", "manager", "telegram", "ml", "scanner", "forecast", "scalp", "analytics", "lab",
+                     "extind", "nss", "mtf", "si", "liquidity", "sh", "mm", "zones", "indicators", "svp"):
+            self._start_part(name)
         try:                                    # Studio packages handed over while the bot was off (candidates, inactive)
             from .studio import importer as _IM
             self.studio_imports = _IM.process_inbox()
         except Exception as exc:  # noqa: BLE001
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
-        self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
-        self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
-        self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
-        self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
-        self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
+        # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
+        # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant"):
+            self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
+        if self.start_failures:
+            self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
+                           + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _start_part(self, name: str) -> None:
+        part = getattr(self, name, None)
+        if part is None:
+            return
+        try:
+            part.start()
+        except Exception as exc:  # noqa: BLE001 - see start()
+            log.exception("start of %s failed", name)
+            self.start_failures.append({"part": name, "error": f"{type(exc).__name__}: {exc}"[:300]})
 
     def _clock_loop(self) -> None:
         while not self._stop.is_set():
@@ -293,6 +327,8 @@ class Runtime:
     def stop(self) -> None:
         self.telegram.stop()
         self._stop.set()
+        if getattr(self, "governor", None) is not None:
+            self.governor.stop()
         self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
         self.ml.stop()
         self.forecast.stop()
@@ -306,6 +342,7 @@ class Runtime:
         self.trainhub.stop()
         self.trainhub_inference.stop()
         self.kronos.stop()
+        self.tsfm.stop()
         self.montecarlo.stop()
         self.quant.stop()
         self.analytics.stop()

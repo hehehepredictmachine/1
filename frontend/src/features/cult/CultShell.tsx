@@ -17,12 +17,13 @@ export type NavItem = { page: Page; label: string; sub?: string; icon: string };
 /** Menu of the main screen - as in menu.jpg (without Community / Membership: not part of the bot). */
 /** Menu of the tower panels - as in wind.jpg / controltower.jpg (Backtest Lab, Accounts, Community, Membership: not part of the bot). */
 export const TOWER_NAV: NavItem[] = [
-  { page: "menu", label: "Neural City", sub: "Menu główne", icon: "home" }, { page: "lightning", label: "PEPE$BANK", sub: "Lightning · Live Signals", icon: "bolt" },
-  { page: "precision", label: "Ice Tower", sub: "Analytics", icon: "snow" }, { page: "wind", label: "PEPE$SIGNAL", sub: "Wind · AI Engine", icon: "wind" },
-  { page: "trading-intelligence", label: "PEPE$WTC", sub: "Trading Terminal", icon: "fire" },
+  { page: "menu", label: "Galaxy", sub: "Menu główne", icon: "home" }, { page: "lightning", label: "PEPE$BANK", sub: "Lightning · Live Signals", icon: "bolt" },
+  { page: "precision", label: "Ice Tower", sub: "Analytics", icon: "snow" }, { page: "pepe-signal", label: "PEPE$SIGNAL", sub: "Signal Intelligence", icon: "signal" },
+  { page: "pepe-wtc", label: "PEPE$WTC", sub: "Market Command Center", icon: "chart" }, { page: "wind", label: "Wind Portal", sub: "AI Engine Core", icon: "wind" },
+  { page: "trading-intelligence", label: "Trading Terminal", sub: "Trading Intelligence", icon: "fire" },
   { page: "control", label: "Control Tower", sub: "Bot Manager", icon: "sliders" }, { page: "strategy-lab", label: "STRATEGIES", sub: "Strategy Lab", icon: "flask" },
   { page: "profits", label: "PEPE$ROI", sub: "Profits", icon: "bars" }, { page: "kontekst", label: "MARKET NEWS", sub: "Kontekst rynku", icon: "chart" },
-  { page: "dane", label: "Data Center", icon: "db" }, { page: "ustawienia", label: "SETTINGS", sub: "Ustawienia", icon: "gear" },
+  { page: "trening", label: "TRAINING LAB", sub: "Centrum treningu", icon: "dna" }, { page: "dane", label: "Data Center", icon: "db" }, { page: "ustawienia", label: "SETTINGS", sub: "Ustawienia", icon: "gear" },
 ];
 
 export function LeftPanel({ page, nav, emblem }: { page: Page; nav: NavItem[]; emblem?: { tower: TowerKey; title: string; sub: string } }) {

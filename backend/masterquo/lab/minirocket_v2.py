@@ -693,7 +693,8 @@ def parity(fixtures: Path, reference_python: str | None = None, native_scores: P
     if reference_python:                                              # live run of the pinned reference in its own interpreter
         tmp = Path(tempfile.mkdtemp(prefix="mr2_ref_"))
         tool = Path(__file__).resolve().parents[3] / "tools" / "minirocket_sktime_reference.py"
-        r = subprocess.run([reference_python, str(tool), str(tmp)], capture_output=True, text=True, timeout=600)
+        r = subprocess.run([reference_python, str(tool), str(tmp)], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=600, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
         if r.returncode != 0:
             details["reference_run"] = {"status": "BLOCKED", "stderr": r.stderr[-500:]}
         else:

@@ -1,0 +1,30 @@
+/* 1.39 START boot splash – port of DEMO/boot_overlay.css (approved pack). Reference backgrounds served from /assets/galaxy/. */
+#pmwBoot{position:fixed;inset:0;z-index:50000;isolation:isolate;overflow:hidden;background:#010a10;color:#dfffff;font-family:Inter,ui-sans-serif,system-ui,sans-serif;opacity:1;transition:opacity .75s ease;user-select:none}
+#pmwBoot.pmwb-exit{opacity:0;pointer-events:none}
+#pmwBoot *{box-sizing:border-box}
+#pmwBoot .pmwb-scene{position:absolute;inset:0;overflow:hidden;background:radial-gradient(ellipse at 50% 52%,#063139 0%,#02151b 33%,#010306 86%)}
+#pmwBoot .pmwb-ref{position:absolute;inset:-10%;background-repeat:no-repeat;background-size:cover;background-position:center;mix-blend-mode:screen;filter:saturate(1.7) contrast(1.2);pointer-events:none;transition:opacity 1.4s ease}
+#pmwBoot #pmwBootMatrixRef{opacity:.30;animation:pmwbDrift 19s linear infinite alternate}
+#pmwBoot #pmwBootNeuralRef{opacity:0;filter:saturate(.2) sepia(1) hue-rotate(120deg) saturate(3) contrast(1.5);animation:pmwbDrift2 16s ease-in-out infinite alternate}
+#pmwBoot.pmwb-neural #pmwBootMatrixRef{opacity:.06}
+#pmwBoot.pmwb-neural #pmwBootNeuralRef{opacity:.23}
+#pmwBootCanvas{position:absolute;width:100%;height:100%;inset:0;display:block}
+#pmwBoot .pmwb-vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 15%,rgba(0,8,11,.16) 59%,#00070b 100%)}
+#pmwBoot .pmwb-titlewrap{position:absolute;left:4%;right:4%;top:48%;transform:translateY(-50%) scale(.94);text-align:center;opacity:0;transition:opacity 1.05s ease,transform 1.2s cubic-bezier(.13,.7,.3,1);pointer-events:none}
+#pmwBoot.pmwb-title #pmwBootTitlewrap{opacity:1;transform:translateY(-50%) scale(1)}
+#pmwBoot .pmwb-title{margin:0;color:#caffff;font-weight:900;font-size:clamp(34px,5.8vw,100px);line-height:1.03;letter-spacing:.015em;font-style:italic;text-shadow:0 0 10px #52d9f1,0 0 35px #1cb5cb,0 0 75px #0f98aa;max-width:1300px;margin-inline:auto}
+#pmwBoot .pmwb-title .pmwb-dollar{color:#79ffff}
+#pmwBoot .pmwb-tag{font-size:clamp(13px,1.5vw,22px);font-style:italic;font-weight:600;letter-spacing:.04em;color:#dcffff;margin:20px 0 0;text-shadow:0 0 18px #41b8cd;opacity:0;transform:translateY(10px);transition:opacity .8s ease .15s,transform .8s ease .15s}
+#pmwBoot.pmwb-tag-show .pmwb-tag{opacity:1;transform:translateY(0)}
+#pmwBoot .pmwb-subbar{position:absolute;bottom:clamp(32px,5vh,70px);left:50%;transform:translateX(-50%);width:min(470px,82vw);text-align:center;color:#7fcad2;font-size:11px;letter-spacing:.3em;z-index:2}
+#pmwBoot .pmwb-track{height:2px;background:rgba(40,161,178,.25);width:100%;margin-top:14px;box-shadow:0 0 7px #0c8298}
+#pmwBoot #pmwBootProgress{height:100%;width:0;background:linear-gradient(90deg,#08788e,#bbffff);box-shadow:0 0 14px #3cfff3;transition:width .10s linear}
+#pmwBoot #pmwBootSkip{position:absolute;right:clamp(20px,3vw,50px);top:clamp(20px,4vh,50px);z-index:5;border:1px solid #52c4d5aa;border-radius:30px;color:#d0f9ff;background:rgba(1,17,28,.74);padding:10px 19px;font-size:12px;letter-spacing:.12em;cursor:pointer;box-shadow:0 0 12px #00535e77}
+#pmwBoot #pmwBootSkip:hover,#pmwBoot #pmwBootSkip:focus-visible{border-color:#bfffff;box-shadow:0 0 20px #36ecff77;outline:none}
+#pmwBootReplay{position:fixed;z-index:75;bottom:16px;left:16px;padding:7px 10px;border-radius:12px;background:#04141ee6;border:1px solid #1e7484;color:#95e5e9;cursor:pointer;font-size:11px;display:none}
+#pmwBootReplay:hover{color:white;border-color:#8ffaff}
+@keyframes pmwbDrift{0%{transform:scale(1.08) translate(-1.7%,-1%)}100%{transform:scale(1.25) translate(2%,1.4%)}}
+@keyframes pmwbDrift2{0%{transform:scale(1.25) rotate(-3deg)}100%{transform:scale(1.10) rotate(3deg)}}
+@media (prefers-reduced-motion:reduce){#pmwBoot .pmwb-ref{animation:none!important}#pmwBoot .pmwb-titlewrap,#pmwBoot .pmwb-tag,#pmwBoot{transition-duration:.01s}}
+#pmwBoot #pmwBootMatrixRef{background-image:url('/assets/galaxy/boot_matrix.gif')}
+#pmwBoot #pmwBootNeuralRef{background-image:url('/assets/galaxy/boot_neural.gif')}

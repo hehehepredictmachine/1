@@ -40,7 +40,9 @@ def result(ok: bool, step: int, code: str | None = None, **kw) -> int:
 
 
 def run(cmd, env=None) -> tuple[int, str]:
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=env)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import kronos_setup as KS  # same clean child environment (the bot's PYTHONPATH never reaches pip in .venv_deep)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=KS.child_env(env))
     last = ""
     for ln in p.stdout:
         ln = ln.rstrip()

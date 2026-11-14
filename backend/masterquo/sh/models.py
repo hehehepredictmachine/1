@@ -99,11 +99,20 @@ REGISTRY: list[dict] = [
     {"id": "th_direction", "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)", "kind": "TRAINED",
      "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)", "group": "TH_DIRECTION",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "trainhub"},
-    {"id": "kronos", "name": "Kronos-small (NeoQuasar, przetrenowany) – prognoza świec OHLC", "kind": "TRAINED",
+    {"id": "kronos", "name": "Kronos-base (NeoQuasar, przetrenowany, 102M) – prognoza świec OHLC", "kind": "TRAINED",
      "output": "ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)", "group": "KRONOS_PRICE_PATH",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
      "group": "AGENT", "roles": {"SCALPING": "SUPERVISION", "HEDGING": "SUPERVISION"}, "train": None},
+    # --- 1.37 time-series foundation models (pretrained, own processes; OBSERVE by default, ASSIST / REQUIRED only after validation)
+    {"id": "chronos2", "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close", "kind": "TRAINED",
+     "output": "kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)", "group": "TSFM_PRICE",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
+    # 1.40: FinCast retired -> Granite TTM (same correlation group TSFM_PRICE: three price forecasts from the same closes are not
+    # independent votes - the group is counted once in the SH consensus).
+    {"id": "granite_ttm", "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close", "kind": "TRAINED",
+     "output": "prognoza punktowa ceny close na H świec (bez kwantyli; nieskalibrowana)", "group": "TSFM_PRICE",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "tsfm.granite_train"},
 ]
 
 
@@ -178,6 +187,20 @@ def probe(item: dict, rt, inst: str) -> dict:
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
+        if mid in ("chronos2", "granite_ttm"):
+            ts = getattr(rt, "tsfm", None) if rt else None
+            if ts is None:
+                return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/Granite TTM niedostępny"}
+            w = ts.workers[mid]
+            st = w.state.get("status")
+            use = {p: u.use for p, u in ts.settings.get().models[mid].use.items()}
+            if st in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
+                return {"status": "UNAVAILABLE" if st != "NO_WEIGHTS" else "NOT_CONNECTED", "reason": w.state.get("reason") or st}
+            if st == "ERROR":
+                code = w.state.get("code")
+                return {"status": "INCOMPATIBLE" if code in ("INCOMPATIBLE", "CHECKSUM") else "ERROR", "reason": w.state.get("reason")}
+            return {"status": "SHADOW_ONLY", "reason": f"przetrenowany model (bez treningu w bocie); role: {use} – OBSERVE = obserwacja, "
+                    "ASSIST / REQUIRED tylko po walidacji walk-forward", "detail": {"use": use, "service": st}}
         if mid == "kronos":
             kr = getattr(rt, "kronos", None) if rt else None
             if kr is None:

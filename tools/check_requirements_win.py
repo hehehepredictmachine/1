@@ -15,7 +15,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ["requirements-win.txt", "requirements-deep-win.txt", "requirements-kronos-win.txt", "requirements-candles-win.txt"]
+FILES = ["requirements-win.txt", "requirements-deep-win.txt", "requirements-kronos-win.txt", "requirements-candles-win.txt",
+         "requirements-chronos2-win.txt", "requirements-granite-win.txt"]                     # 1.37 Chronos-2, 1.40 Granite TTM (FinCast retired)
 
 
 def uv() -> list[str] | None:
@@ -32,6 +33,10 @@ def uv() -> list[str] | None:
         return None
 
 
+# files installed with --no-deps (all packages pinned; a declared upper bound of one package is deliberately overridden - see the file header)
+NO_DEPS = {"requirements-granite-win.txt"}
+
+
 def main() -> int:
     u = uv()
     if not u:
@@ -42,7 +47,8 @@ def main() -> int:
         for py in ("3.13", "3.12"):
             with tempfile.TemporaryDirectory() as td:
                 r = subprocess.run([*u, "pip", "install", "-r", str(ROOT / "requirements" / f), "--require-hashes", "--only-binary", ":all:",
-                                    "--python-platform", "x86_64-pc-windows-msvc", "--python-version", py, "--target", td, "-q"],
+                                    "--python-platform", "x86_64-pc-windows-msvc", "--python-version", py, "--target", td, "-q"]
+                                   + (["--no-deps"] if f in NO_DEPS else []),
                                    capture_output=True, text=True, timeout=1800)
                 n = sum(1 for p in Path(td).glob("*.dist-info"))
             ok = r.returncode == 0

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type consoleUI struct{ importSrc string }
+type consoleUI struct{}
 
 func (c consoleUI) Status(msg string)  { fmt.Println(msg) }
 func (c consoleUI) Detail(line string) { fmt.Println("  ", line) }

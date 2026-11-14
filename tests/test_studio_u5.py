@@ -63,7 +63,7 @@ class TestRegistryLock(Env):
         self.assertIn("CALIBRATE", R.operations(br))
         det = next(t for t in ts if t["model_id"] == "IND_SEMIVAR")
         self.assertEqual(R.operations(det), ["FULL_EXPORT", "VALIDATE", "EXPORT_FEATURES"])
-        self.assertEqual(R.operations(next(t for t in ts if t["model_id"] == "KRONOS_SMALL")), [])   # no fake training button
+        self.assertEqual(R.operations(next(t for t in ts if t["model_id"] == "KRONOS_BASE")), [])   # no fake training button
         self.assertEqual(R.matrix()["count"], len(ts))
 
     def test_cross_process_lock(self):

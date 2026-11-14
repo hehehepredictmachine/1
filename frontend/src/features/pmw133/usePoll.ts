@@ -6,17 +6,20 @@ export function usePoll<T = any>(url: string | null, ms: number): { data: T | nu
   const [data, setData] = useState<T | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const alive = useRef(true);
+  const gen = useRef(0);                                     // 1.38: generation token - an answer for an older URL (TF / strategy change) is dropped
   const reload = useCallback(async () => {
     if (!url) return;
+    const g = gen.current;
     try {
       const d = await apiGet<T>(url);
-      if (alive.current) { setData(d); setErr(null); }
+      if (alive.current && g === gen.current) { setData(d); setErr(null); }
     } catch (e: any) {
-      if (alive.current) setErr(String(e?.message || e));
+      if (alive.current && g === gen.current) setErr(String(e?.message || e));
     }
   }, [url]);
   useEffect(() => {
     alive.current = true;
+    gen.current += 1;
     if (!url) { setData(null); return; }
     void reload();
     const t = setInterval(() => void reload(), ms);

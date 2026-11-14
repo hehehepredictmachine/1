@@ -1,6 +1,7 @@
 # Kronos AI Forecast w PepeMarketWizard – instrukcja
 
-Kronos-small to **przetrenowany** model prognozy świec OHLC (autorzy: NeoQuasar / ShiYu, https://github.com/shiyu-coder/Kronos).
+Od 1.37 bot używa **Kronos-base** (102,3M parametrów; największy publicznie dostępny wariant – Kronos-large 499,2M według autorów
+nie jest udostępniony). Do 1.36 był to Kronos-small; historyczne rekordy zachowują swoją nazwę. Kronos to **przetrenowany** model prognozy świec OHLC (autorzy: NeoQuasar / ShiYu, https://github.com/shiyu-coder/Kronos).
 Bot go **nie trenuje** – używa oficjalnych wag z Hugging Face i liczy prognozy **lokalnie** na Twoim komputerze. Nie korzysta z płatnego
 API i nie wysyła danych rachunku ani historii transakcji na zewnątrz.
 
@@ -20,7 +21,7 @@ Domyślnie działa w trybie **SHADOW (obserwacja)**. Gotowość do prognozowania
 * Windows 10/11 64-bit. Wystarczy procesor (CPU); karta NVIDIA nie jest wymagana.
 * Internet tylko przy pierwszej instalacji. Pobierane są:
   * z PyPI: PyTorch (CPU) i inne pakiety, ok. 250 MB;
-  * z Hugging Face: wagi modelu i tokenizera, ok. 120 MB.
+  * z Hugging Face: wagi modelu i tokenizera, ok. 420 MB.
 * Ok. 1,2 GB wolnego miejsca. Środowisko `.venv_kronos` powstaje obok programu, a wagi trafiają do folderu danych.
 * Działający bot PepeMarketWizard 1.31 z podłączonym MT5 (tak jak dotąd).
 
@@ -40,7 +41,7 @@ Instalator wykonuje 5 kroków:
    * tylko pakiety binarne z **sumami SHA-256**: `--require-hashes --only-binary=:all:`;
    * `torch==2.14.1` z PyPI, czyli wersja **CPU**.
 4. **Wagi** (`python -m kronos_runtime.install download`) w przypiętych rewizjach:
-   * `NeoQuasar/Kronos-small` @ `901c26c1332695a2a8f243eb2f37243a37bea320`;
+   * `NeoQuasar/Kronos-base` @ `2b554741eca47781b64468546e77fef3e85130e6` (do 1.36: `NeoQuasar/Kronos-small` @ `901c26c1…`);
    * `NeoQuasar/Kronos-Tokenizer-base` @ `0e0117387f39004a9016484a186a908917e22426`.
 
    Instalator sprawdza, że rewizja istnieje w źródle. Każdy plik porównuje z metadanymi źródła: `model.safetensors` – SHA-256 z LFS,
@@ -219,7 +220,7 @@ próbka nie jest prawdopodobieństwem. Stan READY oznacza wyłącznie: model za�
 | `instruments` | XAUUSD, BTC | BTC liczony dopiero po potwierdzeniu symbolu |
 | `timeframes` | M5, M15 | dostępne M1, M5, M15, M30, H1 |
 | `horizon_bars` | M1 15, M5 12, M15 8, M30 8, H1 6 | 1–64 świece |
-| `lookback` / `max_context` | 400 / 512 | Kronos-small ma kontekst 512 – więcej nie jest używane |
+| `lookback` / `max_context` | 400 / 512 | Kronos-base ma kontekst 512 – więcej nie jest używane |
 | `temperature`, `top_k`, `top_p` | 1.0, 0, 0.9 | jak w `predict()` autorów |
 | `paths` | 0 | ≥ 2 = tyle niezależnych ścieżek na pasmo q10–q90 (nieskalibrowane; koszt × N) |
 | `direction_band_atr`, `direction_band_min_points` | 0.25, 0 | reguła „bocznie” |

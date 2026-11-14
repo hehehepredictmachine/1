@@ -221,6 +221,11 @@ class ExecutionConfig(_Strict):
     # 1.24 (user decision): the 1.14 Execution Lock is withdrawn - nothing below the mode, the confirmed account, STOP and the
     # user's risk limits holds orders back. mode_note explains a mode reset done by the config migration (shown in the panel).
     mode_note: str | None = None
+    # 1.39 (user decision): the bot STARTS in this mode on every launch (None = restore the last stored mode). With live_autobind, AUTO_LIVE
+    # binds itself to the account the terminal reports as REAL when no account is confirmed yet (instead of typing "LIVE <login>"); a
+    # DIFFERENT account later still blocks sending until re-confirmed. STOP, risk limits, spread, dedup and reconciliation stay active.
+    start_mode: OperatingMode | None = "AUTO_LIVE"
+    live_autobind: bool = True
     # 1.20 (decision O1): ONE execution path opens new entries per instrument - ACTIVE (S01-S12) or SH (SCALPING/HEDGING);
     # the other path only analyses (as SIGNALS). Missing/UNSET = neither opens new entries until the user chooses. Open
     # positions of both paths are always managed. Manual trades are not affected.
@@ -648,8 +653,16 @@ class DecisionConfig(_Strict):
     reservation_ttl_s: float = Field(180.0, ge=10, le=3600, description="an un-settled reservation (crash) is released after this; UNKNOWN never")
 
 
+class ResourcesConfig(_Strict):
+    """1.40 Memory Governor / AI scheduler profile (one resource manager - the profiles are its configurations, not separate schedulers).
+    LOW_MEMORY_16GB (default) | ECO | BALANCED | MANUAL; MANUAL uses `manual` (keys of governor.PROFILE_KEYS) over the LOW_MEMORY_16GB values.
+    Changes are effective at once (no rebuild) and written to the configuration history."""
+    profile: Literal["LOW_MEMORY_16GB", "ECO", "BALANCED", "MANUAL"] = "LOW_MEMORY_16GB"
+    manual: dict = Field(default_factory=dict)
+
+
 class AppConfig(_Strict):
-    config_version: int = 13
+    config_version: int = 15
     mt5: MT5Config = Field(default_factory=MT5Config)
     clock: ClockConfig = Field(default_factory=ClockConfig)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -675,6 +688,7 @@ class AppConfig(_Strict):
     indicators: IndicatorsConfig = Field(default_factory=IndicatorsConfig)
     families: FamiliesConfig = Field(default_factory=FamiliesConfig)
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
+    resources: ResourcesConfig = Field(default_factory=ResourcesConfig)
     first_run_completed: bool = False
     synthetic_demo: bool = False  # set only by the --demo launcher; never by the UI
 
@@ -762,14 +776,34 @@ _V2_CHANGES = [
 def migrate(raw: dict) -> bool:
     """In-place upgrade of a stored config dict. Returns True when something changed."""
     v = int(raw.get("config_version", 1))
-    if v >= 13:
+    if v >= 15:
         return False
-    if v < 12:
-        if v < 11:
-            _to_v11_chain(raw, v)
-        _to_v12(raw)
-    _to_v13(raw)
+    if v < 14:
+        if v < 13:
+            if v < 12:
+                if v < 11:
+                    _to_v11_chain(raw, v)
+                _to_v12(raw)
+            _to_v13(raw)
+        _to_v14(raw)
+    _to_v15(raw)
     return True
+
+
+def _to_v15(raw: dict) -> None:
+    """v14 -> v15 (1.40): `resources` section (Memory Governor profile LOW_MEMORY_16GB). Nothing existing changes; the untouched 1.39 file
+    is kept as config.v14.bak.json (1.39 refuses the unknown section - a rollback restores that copy)."""
+    raw.setdefault("resources", {"profile": "LOW_MEMORY_16GB", "manual": {}})
+    raw["config_version"] = 15
+
+
+def _to_v14(raw: dict) -> None:
+    """v13 -> v14 (1.39, user decision): execution.start_mode = AUTO_LIVE and live_autobind = True (defaults of the new fields). The bump
+    keeps the untouched 1.38 file as config.v13.bak.json - 1.38 refuses the unknown fields (strict model), a rollback restores that copy."""
+    ex = raw.setdefault("execution", {})
+    ex.setdefault("start_mode", "AUTO_LIVE")
+    ex.setdefault("live_autobind", True)
+    raw["config_version"] = 14
 
 
 def _to_v13(raw: dict) -> None:

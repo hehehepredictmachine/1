@@ -1,4 +1,7 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - Flow context (PMW-UPD-11): Markov 3-stanowy i koszyki, Heikin Flow, kanaly S/R, StopDistance.
 rem Kalibracja i Markov tylko na czesci dev; holdout wylacznie evaluate-holdout; SHADOW recznie; brak zlecen i zmian Execution Lock.
 setlocal EnableDelayedExpansion

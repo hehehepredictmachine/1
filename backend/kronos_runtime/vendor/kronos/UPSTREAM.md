@@ -15,6 +15,11 @@ SHA-256 archiwum: `92fc55519ddc46f22e0c8ac10a37cde73d6346818f4b8aa10f0e54c9f8a62
 Dane testu regresji z `tests/data/` (plik wejściowy i oczekiwane wyjścia dla kontekstu 256 / 512) leżą w
 `backend/kronos_runtime/tests_data/` bez zmian – używa ich przycisk „Sprawdź instalację” (porównanie z wynikiem referencyjnym autorów).
 
-Wagi NIE są częścią archiwum ani paczki bota. Instalator pobiera je z Hugging Face (`NeoQuasar/Kronos-small`,
+Wagi NIE są częścią archiwum ani paczki bota. Instalator pobiera je z Hugging Face (od 1.37 `NeoQuasar/Kronos-base` – największy publiczny
+wariant; do 1.36 `NeoQuasar/Kronos-small`;
 `NeoQuasar/Kronos-Tokenizer-base`) w przypiętych rewizjach z `kronos_runtime/lock.py` i sprawdza sumy z metadanymi źródła.
 Logika predykcji (`KronosPredictor`, `auto_regressive_inference`) nie jest zmieniana: bot wywołuje oryginalne funkcje.
+
+1.37: kod porównany z repozytorium autorów w commicie `67b630e67f6a…` (pin `CODE` w `lock.py`) – `module.py`, `__init__.py` identyczne (SHA-256), `kronos.py` = oryginał z tego commitu + opisana wyżej zmiana importu (sprawdzone 2026-11-09).
+Pliki regresji autorów dotyczą Kronos-small, więc dla Kronos-base porównanie z nimi ma status NOT_APPLICABLE; zamiast niego „Sprawdź
+instalację” wykonuje test zgodności (parity): wynik adaptera bota = bezpośrednie wywołanie `KronosPredictor.predict` z tymi samymi danymi i ziarnem.

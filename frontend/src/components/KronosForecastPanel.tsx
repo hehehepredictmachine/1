@@ -1,4 +1,4 @@
-// "Kronos AI Forecast": przetrenowany model NeoQuasar/Kronos-small (+ Kronos-Tokenizer-base) liczony lokalnie w osobnym procesie
+// "Kronos AI Forecast": przetrenowany model NeoQuasar/Kronos-base (1.37, największy publiczny wariant; + Kronos-Tokenizer-base) liczony lokalnie w osobnym procesie
 // (.venv_kronos) na ZAMKNIĘTYCH świecach z MT5. Domyślnie SHADOW (obserwacja): prognoza nie wywołuje zleceń i nie zmienia ustawień.
 // Nic tu nie jest wymyślane: brak modelu / danych / aktualności = komunikat z przyczyną, nigdy pozorna prognoza.
 import { useEffect, useMemo, useRef, useState } from "react";

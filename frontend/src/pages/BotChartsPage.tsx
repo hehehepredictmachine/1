@@ -13,6 +13,7 @@ import { BotSignalsPanel, MarketDetail, MarketsPanel } from "../components/Marke
 import VolPanel from "../components/VolPanel";
 import CandleForecastPanel from "../components/CandleForecastPanel";
 import KronosForecastPanel from "../components/KronosForecastPanel";
+import FoundationModelsPanel from "../components/FoundationModelsPanel";
 import ScalpPanel from "../components/ScalpPanel";
 import { navigate, usePersisted, type Route } from "../router";
 import { useStore } from "../store";
@@ -115,7 +116,8 @@ export default function BotChartsPage({ route }: { route: Route }) {
       {opts.showSessions && <LiquidityContextCard />}
       <Section id="bot.scalp" title="Scalp M5 Range → M1 Sweep → Retest + hedge (SHADOW – bez zleceń)" defaultOpen testid="sec-scalp"><ScalpPanel /></Section>
       <Section id="bot.forecast" title="Świece i prognozy 5/15/30 min (SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-forecast"><CandleForecastPanel /></Section>
-      <Section id="bot.kronos" title="Kronos AI Forecast (Kronos-small, SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-kronos"><KronosForecastPanel /></Section>
+      <Section id="bot.kronos" title="Kronos AI Forecast (Kronos-base, SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-kronos"><KronosForecastPanel /></Section>
+      <Section id="bot.foundation" title="Modele prognoz: Kronos-base · Chronos-2 · Granite TTM (porównanie, SHADOW)" testid="sec-foundation"><FoundationModelsPanel /></Section>
       <Section id="bot.vol" title="Zmienność i walls (źródło: HV_PROXY / IV)" testid="sec-vol"><VolPanel /></Section>
       <Section id="bot.regime" title="Reżim rynku i stan AUTO" testid="sec-regime"><AutoPanel full={autoFull} /></Section>
       <Section id="bot.strategies" title="Monitor strategii (S01–S12)" testid="sec-strategies"><StrategiesPanel full={autoFull} reload={() => reloadAuto()} /></Section>

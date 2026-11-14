@@ -60,6 +60,23 @@ class ModeManager:
         self.kill_reason: str | None = None
         self.changed_at = iso(utcnow())
 
+    def apply_start_mode(self) -> str | None:
+        """1.39 (user decision): start in execution.start_mode on every launch (real terminal only - the runtime does not call this on the
+        synthetic demo, where AUTO_LIVE is impossible). Returns the mode applied or None."""
+        sm = getattr(self.cfg_store.get().execution, "start_mode", None)
+        if not sm:
+            return None
+        sm = LEGACY.get(sm, sm)
+        with self._lock:
+            if sm != self.mode:
+                self.mode = sm
+                if sm not in ORDER_MODES:
+                    self.bound_account = None
+        self.log.warn("MODE", "START_MODE", f"Start w trybie {LABEL_PL.get(sm, sm)} (execution.start_mode)"
+                      + (" – rachunek REAL zostanie powiązany automatycznie (live_autobind)" if sm == "AUTO_LIVE" else ""))
+        self._persist_and_publish("start_mode")
+        return sm
+
     # ------------------------------------------------------------ state
     @property
     def auto_trading(self) -> bool:
@@ -169,6 +186,14 @@ class ModeManager:
                 reasons.append("EXECUTION_MODE_SIGNALS")
             if mode in ORDER_MODES:
                 tm = (account or {}).get("trade_mode")
+                if (mode == "AUTO_LIVE" and self.bound_account is None and account and account_key and tm == "REAL" and not synthetic
+                        and getattr(self.cfg_store.get().execution, "live_autobind", False)):
+                    self.bound_account = account_key            # 1.39: auto-bind to the REAL account of the terminal (logged + persisted)
+                    self.log.warn("MODE", "LIVE_AUTOBIND", f"AUTO LIVE powiązany automatycznie z rachunkiem REAL {account_key} (execution.live_autobind)")
+                    try:
+                        self.cfg_store.update({"execution": {"bound_account": account_key}})
+                    except Exception:  # noqa: BLE001
+                        pass
                 if not account_key or not account:
                     reasons.append("NO_MT5_ACCOUNT")
                 elif self.bound_account != account_key:

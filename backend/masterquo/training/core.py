@@ -178,7 +178,7 @@ def free_ram_mb() -> float | None:
             m.dwLength = ctypes.sizeof(MS)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
             return round(m.ullAvailPhys / 1024 / 1024)
-        for line in Path("/proc/meminfo").read_text().splitlines():
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
             if line.startswith("MemAvailable:"):
                 return round(int(line.split()[1]) / 1024)
     except Exception:  # noqa: BLE001
