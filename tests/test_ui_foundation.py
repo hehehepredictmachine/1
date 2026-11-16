@@ -29,9 +29,9 @@ class TestFoundationUI(unittest.TestCase):
             self.assertEqual(c, 200, r)
             c, st = srv.call("/api/v1/models/foundation")
             self.assertEqual((c, st["mode"], st["execution_permission"]), (200, "SHADOW", False))
-            self.assertEqual(set(st["models"]), {"chronos2", "granite_ttm"})
+            self.assertEqual(set(st["models"]), {"chronos2", "granite_ttm", "tirex2"})          # 1.41: TiRex-2
             self.assertEqual(st["kronos"]["name"], "Kronos-base")
-            for m in ("chronos2", "granite_ttm"):
+            for m in ("chronos2", "granite_ttm", "tirex2"):
                 self.assertFalse(st["models"][m]["env"]["weights_installed"])
                 self.assertNotEqual(st["models"][m]["status"], "READY")
             # role only through /use; ASSIST / REQUIRED need confirmation AND a positive report

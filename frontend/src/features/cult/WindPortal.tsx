@@ -125,7 +125,7 @@ export default function WindPortal() {
             <NA>Brak gotowych predykcji – {(ev.d?.excluded || []).length} modeli wyłączonych (np. „{ev.d?.excluded?.[0]?.reason ?? "brak środowiska"}”).</NA>) : (
             <table className="cu-tbl"><thead><tr><th>Model</th><th>Signal</th><th>Wartość</th><th>Weight</th><th>Status</th></tr></thead>
               <tbody>{(groups.length ? groups : ready).slice(0, 6).map((g: any, i: number) => (
-                <tr key={i}><td>{g.group ?? g.model_name}</td><td>{g.direction ?? g.result?.direction ?? "—"}</td>
+                <tr key={i}><td style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>{g.group ?? g.model_name}</td><td>{g.direction ?? g.result?.direction ?? "—"}</td>
                   <td>{g.probability != null ? pct(g.probability * 100) : g.result?.probability != null ? pct(g.result.probability * 100) : "—"}</td>
                   <td>{g.weight != null ? pct(g.weight * 100, 0) : "—"}</td><td>{g.state ?? "READY"}</td></tr>))}</tbody></table>)}
           <button type="button" className="cu-link-btn" onClick={() => setShowRules(!showRules)}>{showRules ? "Ukryj zasady" : "Zasady konsensusu"}</button>
