@@ -12,8 +12,9 @@ const MODELS = [
   { id: "kronos", name: "Kronos-base", color: "#a878ff" },
   { id: "chronos2", name: "Chronos-2", color: "#2fa6de" },
   { id: "granite_ttm", name: "Granite TTM", color: "#e0a030" },
+  { id: "tirex2", name: "TiRex-2", color: "#4cc38a" },
 ] as const;
-const TSFM = ["chronos2", "granite_ttm"] as const;
+const TSFM = ["chronos2", "granite_ttm", "tirex2"] as const;
 const PATHS = ["ACTIVE", "SCALPING", "HEDGING"] as const;
 const USE_PL: Record<string, string> = { OBSERVE: "obserwacja", ASSIST: "wspomaga (może wstrzymać)", REQUIRED: "warunek wymagany" };
 const ST_TONE: Record<string, string> = { READY: "ok", STARTING: "warn", LOADING: "warn", INSTALLING: "warn", NOT_INSTALLED: "warn", NO_WEIGHTS: "warn",
@@ -81,7 +82,7 @@ export default function FoundationModelsPanel() {
     Promise.all([
       apiGet(`/api/v1/kronos/forecast?instrument=${inst}&tf=${tf}`).catch(() => null),
       ...TSFM.map((m) => apiGet(`/api/v1/models/foundation/forecast?model=${m}&instrument=${inst}&tf=${tf}`).catch(() => null)),
-    ]).then(([k, c2, fc]) => setFcs({ kronos: k, chronos2: c2, granite_ttm: fc }));
+    ]).then(([k, c2, fc, tx]) => setFcs({ kronos: k, chronos2: c2, granite_ttm: fc, tirex2: tx }));
   };
   useEffect(() => { save("fm.inst", inst); save("fm.tf", tf); load(); }, [inst, tf, live?.updated_at, (s as any).kronos?.updated_at]);
   useEffect(() => {
@@ -163,7 +164,7 @@ export default function FoundationModelsPanel() {
                 <td>{x.timing?.n ? `p50 ${fmtNum(x.timing.p50_ms, 0)} ms · p95 ${fmtNum(x.timing.p95_ms, 0)} ms (n=${x.timing.n})` : "—"}</td>
                 <td><div className="row wrap" style={{ gap: 4 }}>
                   <button className="btn" disabled={busy || job("install")?.state === "RUNNING"} data-testid={`fm-install-${m}`}
-                    onClick={() => { if (confirm(`Zainstalować ${x.name}? Zostanie utworzone osobne środowisko (PyTorch CPU ok. 250 MB) i pobrane oficjalne wagi z Hugging Face (${m === "granite_ttm" ? "ok. 3 MB; ok. 0,35 GB RAM" : "ok. 0,5 GB"}).`)) act("/api/v1/models/foundation/install", { model: m }, "instalacja uruchomiona"); }}>
+                    onClick={() => { if (confirm(`Zainstalować ${x.name}? Zostanie utworzone osobne środowisko (PyTorch CPU ok. 250 MB) i pobrane oficjalne wagi z Hugging Face (${m === "granite_ttm" ? "ok. 3 MB; ok. 0,35 GB RAM" : m === "tirex2" ? "ok. 0,33 GB, polityka DIRECT_USER_REQUEST" : "ok. 0,5 GB"}).`)) act("/api/v1/models/foundation/install", { model: m }, "instalacja uruchomiona"); }}>
                     Zainstaluj</button>
                   <button className="btn ghost" disabled={busy || job("verify")?.state === "RUNNING"} data-testid={`fm-verify-${m}`}
                     onClick={() => act("/api/v1/models/foundation/verify", { model: m }, "sprawdzanie uruchomione")}>Sprawdź</button>
@@ -256,7 +257,7 @@ export default function FoundationModelsPanel() {
       </table></div>
       <p className="small muted">Kronos-base ma osobne ustawienia roli w sekcji „Kronos AI Forecast”. Modele widzą wyłącznie zamknięte świece (Chronos-2 opcjonalnie OHLC + tick volume
         jako przeszłe zmienne) – nie znają newsów, spreadu, prowizji, poślizgu ani pozycji. Zgodność modeli liczących na tych samych świecach nie jest niezależnym potwierdzeniem.
-        Licencje: Chronos-2 – Apache-2.0 (Amazon), Granite TTM – Apache-2.0 (IBM, karta modelu ibm-granite/granite-timeseries-ttm-r2). FinCast wycofany w 1.40 – jego dawne prognozy pozostają w historii.</p>
+        Licencje: Chronos-2 – Apache-2.0 (Amazon), Granite TTM – Apache-2.0 (IBM, karta modelu ibm-granite/granite-timeseries-ttm-r2), TiRex-2 – wg pliku LICENSE/NOTICE repozytorium NX-AI/TiRex-2 (pobierany razem z wagami). FinCast wycofany w 1.40 – jego dawne prognozy pozostają w historii.</p>
       <GraniteTraining inst={inst} tf={tf} />
       <ResourcesPanel />
     </div>

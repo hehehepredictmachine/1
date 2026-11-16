@@ -15,6 +15,7 @@ import CandleForecastPanel from "../components/CandleForecastPanel";
 import KronosForecastPanel from "../components/KronosForecastPanel";
 import FoundationModelsPanel from "../components/FoundationModelsPanel";
 import ScalpPanel from "../components/ScalpPanel";
+import { BasketsPanel, ResearchModulesPanel, TabICLCard } from "../components/Pmw141Panels";
 import { navigate, usePersisted, type Route } from "../router";
 import { useStore } from "../store";
 import { cls } from "../util";
@@ -117,7 +118,9 @@ export default function BotChartsPage({ route }: { route: Route }) {
       <Section id="bot.scalp" title="Scalp M5 Range → M1 Sweep → Retest + hedge (SHADOW – bez zleceń)" defaultOpen testid="sec-scalp"><ScalpPanel /></Section>
       <Section id="bot.forecast" title="Świece i prognozy 5/15/30 min (SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-forecast"><CandleForecastPanel /></Section>
       <Section id="bot.kronos" title="Kronos AI Forecast (Kronos-base, SHADOW – bez zgody na zlecenia)" defaultOpen testid="sec-kronos"><KronosForecastPanel /></Section>
-      <Section id="bot.foundation" title="Modele prognoz: Kronos-base · Chronos-2 · Granite TTM (porównanie, SHADOW)" testid="sec-foundation"><FoundationModelsPanel /></Section>
+      <Section id="bot.foundation" title="Modele prognoz: Kronos-base · Chronos-2 · Granite TTM · TiRex-2 (porównanie)" testid="sec-foundation"><FoundationModelsPanel /><TabICLCard /></Section>
+      <Section id="bot.baskets" title="Koszyki strategii 1.41: FOREX · FOMO perps · Gold OTC (9 × 10 = 90, sygnały i plany – bez zleceń)" testid="sec-baskets"><BasketsPanel /></Section>
+      <Section id="bot.research" title="Moduły MQL5: SDformerFlow · graf cech · COA · BChimp · G7 Radar · Exponential Trend Channel" testid="sec-research"><ResearchModulesPanel /></Section>
       <Section id="bot.vol" title="Zmienność i walls (źródło: HV_PROXY / IV)" testid="sec-vol"><VolPanel /></Section>
       <Section id="bot.regime" title="Reżim rynku i stan AUTO" testid="sec-regime"><AutoPanel full={autoFull} /></Section>
       <Section id="bot.strategies" title="Monitor strategii (S01–S12)" testid="sec-strategies"><StrategiesPanel full={autoFull} reload={() => reloadAuto()} /></Section>

@@ -8,6 +8,7 @@ import { cls, fmtNum, fmtTime } from "../../util";
 import "./training-center.css";
 import FamiliesSection from "../pmw133/FamiliesSection";
 import QuantSection from "../pmw133/QuantSection";
+import { ComponentsCards } from "../../components/Pmw141Panels";
 
 const INSTS = ["XAUUSD", "BTC"];
 const TFS = ["M1", "M5", "M15", "M30"];
@@ -215,5 +216,6 @@ export default function TrainingCenterPage() {
               <td className="small">{r.required_data}</td><td className="small">{r.training}</td><td className="small">{r.location}</td><td className="small">{r.reason}</td></tr>))}</tbody></table></div>
         <p className="muted small">{cat?.note}</p>
       </section>
+      <ComponentsCards />
     </main>);
 }

@@ -11,10 +11,12 @@ STOP, risk, leverage or the existing gold strategies (which keep their own, unch
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import math
+import os
 import sqlite3
 import threading
 import time
@@ -93,10 +95,15 @@ class Ledger:
             CREATE TABLE IF NOT EXISTS declared(id TEXT PRIMARY KEY, profile_id TEXT, kind TEXT, data TEXT, created_at REAL, status TEXT);
             """)
 
+    @contextlib.contextmanager
     def _c(self):
         c = sqlite3.connect(self.path, timeout=10)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def add_signal(self, row: dict) -> bool:
         with self._lock, self._c() as c:
@@ -352,6 +359,8 @@ class BasketService:
 
     def _crypto(self, st: dict) -> dict:
         pr = st["profiles"]["CRYPTO_FOMO_PERPS"]
+        if os.environ.get("MQ_BASKETS_OFFLINE"):
+            return {"state": "WAITING_FOR_DATA", "reason": "tryb offline (MQ_BASKETS_OFFLINE) – bez połączeń z Hyperliquid"}
         try:
             cat = self.hl.catalog()
         except HLError as exc:

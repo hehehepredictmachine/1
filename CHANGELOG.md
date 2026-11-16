@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.41.0 – pełna aktualizacja: zachowanie strategii złota, TiRex-2 + TabICLv2, 6 modułów MQL5, 3 rynki, 9 koszyków / 90 strategii
+* **Zachowanie złota**: inwentaryzacja 38 strategii i 29 modeli przed/po, raport `strategy_preservation.json`, kopia konfiguracji
+  `data/backups/pre-1.41.0`, migracja idempotentna; stare strategie bez nowych bramek i bez drugiej trasy wykonania.
+* **TiRex-2** w runtime TSFM (pin rewizji + SHA-256, worker JSON-lines, governor) i **TabICLv2** jako estymator confidence Quant
+  (`100 × p_event_raw`, UNCALIBRATED, asynchronicznie, kontekst z ledgera / przyczynowej rekonstrukcji); automatyczna instalacja w tle.
+* **Moduły MQL5**: SDformerFlow (port PyTorch, prawdziwy trening/checkpoint/resume/fine-tune, bootstrap na H1), graf cech Cellular 10K,
+  COA i BChimp (optymalizacja kompozytu badawczego), G7 SMC Radar, Exponential Trend Channel (cechy as-of); osobne osie stanu.
+* **Trzy profile rynku**: FOREX_MT5, CRYPTO_FOMO_PERPS (publiczne dane Hyperliquid, MANUAL_ONLY), OTC_GOLD_POCKETOPTION (własny feed,
+  WAITING_FOR_OTC_FEED); **9 koszyków × 10 = 90 strategii** na wspólnych detektorach DET-1, selektor OFF/AUTO/MANUAL_SELECT,
+  deduplikacja zdarzeń, konflikty, 30 planerów hedge, OTC_PAYOFF_GATE (CALL+PUT 100 @ 80% = −20), ledger SIGNAL_SIMULATION.
+* **Centrum treningu**: komponenty TH_SDFORMERFLOW i ETC_LOG_CHANNEL, job OPTIMIZE, import/eksport, aktywacja, rollback.
+* UI: nowe sekcje w „Wykresy bota” i karta komponentów w Centrum treningu (bez przebudowy menu). Szczegóły: `docs/AKTUALIZACJA_1_41_PL.md`.
+
 ## 1.40.6 – Granite TTM na Windows 11 z Smart App Control (WinError 4551)
 * Zgłoszenie z logu instalacji: Chronos-2 zainstalował się poprawnie, a sprawdzenie Granite TTM kończyło się
   `OSError: [WinError 4551] Zasady kontroli aplikacji zablokowały ten plik … torch\lib\shm.dll`. Windows (Smart App Control) blokował
