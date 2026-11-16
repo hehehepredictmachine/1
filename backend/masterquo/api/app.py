@@ -1848,6 +1848,62 @@ def create_app(rt, port: int) -> FastAPI:
 
     _SAFE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
+    # ---- 1.41 Training Center components (dispatch by component kind): TH_SDFORMERFLOW (weights), ETC_LOG_CHANNEL (transform config)
+    def _comp():
+        return _research().components
+
+    @app.get("/api/v1/trainhub/components")
+    def th_components():
+        return _comp().status()
+
+    @app.post("/api/v1/trainhub/components/{cid}/jobs")
+    def th_component_job(cid: str, body: dict = Body(default={})):
+        try:
+            r = _comp().start_job(cid, str(body.get("kind") or "").upper(), body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        if not r.get("ok", True):
+            raise HTTPException(409, r.get("reason") or r.get("state"))
+        return r
+
+    @app.post("/api/v1/trainhub/components/{cid}/cancel")
+    def th_component_cancel(cid: str):
+        return _comp().cancel(cid)
+
+    @app.post("/api/v1/trainhub/components/{cid}/activate")
+    def th_component_activate(cid: str, body: dict = Body(...)):
+        c = _comp()
+        r = c.activate_sdf(str(body.get("version"))) if cid == "TH_SDFORMERFLOW" else c.etc_activate(str(body.get("version")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason") or "aktywacja nieudana")
+        return r
+
+    @app.post("/api/v1/trainhub/components/{cid}/rollback")
+    def th_component_rollback(cid: str):
+        c = _comp()
+        r = c.rollback_sdf() if cid == "TH_SDFORMERFLOW" else c.etc_rollback()
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/trainhub/components/{cid}/export.zip")
+    def th_component_export(cid: str, version: str):
+        try:
+            data = _comp().export_zip(cid, version)
+        except FileNotFoundError:
+            raise HTTPException(404, "brak wersji")
+        return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{cid}_{version}.zip"'})
+
+    @app.post("/api/v1/trainhub/components/{cid}/import")
+    async def th_component_import(cid: str, request: Request):
+        data = await request.body()
+        if not data or len(data) > 200 * 1024 * 1024:
+            raise HTTPException(400, "puste lub zbyt duże archiwum")
+        try:
+            return _comp().import_zip(cid, data)
+        except (ValueError, KeyError, __import__("zipfile").BadZipFile) as exc:
+            raise HTTPException(400, f"import odrzucony: {exc}")
+
     @app.get("/api/v1/trainhub/status")
     def trainhub_status():
         from ..marketdata.store import Store
@@ -2630,6 +2686,81 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/research-modules/sdformerflow/cancel")
     def research_sdf_cancel():
         return _research().cancel_training()
+
+    # ---- 1.41 market profiles + 9 baskets / 90 strategies (signals, plans, manual tickets - no orders)
+    def _baskets():
+        b = getattr(rt, "baskets", None)
+        if b is None:
+            raise HTTPException(503, "koszyki niedostępne (błąd startu – patrz logs/engine_console.log)")
+        return b
+
+    @app.get("/api/v1/baskets")
+    def baskets_list(basket: str | None = None):
+        b = _baskets()
+        return {"status": b.status(), "baskets": b.basket_view(basket)}
+
+    @app.get("/api/v1/baskets/catalog")
+    def baskets_catalog():
+        from ..baskets import catalog as _BC
+        return _BC.manifest()
+
+    @app.get("/api/v1/baskets/settings")
+    def baskets_settings():
+        return _baskets().settings()
+
+    @app.put("/api/v1/baskets/settings")
+    def baskets_settings_put(body: dict = Body(...)):
+        try:
+            return _baskets().update_settings(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/v1/baskets/signals")
+    def baskets_signals(basket: str | None = None, limit: int = 100):
+        return {"signals": _baskets().ledger.recent(basket, min(500, max(1, limit)))}
+
+    @app.get("/api/v1/baskets/declared/{profile}")
+    def baskets_declared(profile: str):
+        return {"items": _baskets().ledger.declared(profile)}
+
+    @app.post("/api/v1/baskets/declared/{profile}")
+    def baskets_declare(profile: str, body: dict = Body(...)):
+        if profile not in ("CRYPTO_FOMO_PERPS", "OTC_GOLD_POCKETOPTION"):
+            raise HTTPException(400, "deklaracja ekspozycji tylko dla FOMO / OTC (FOREX: pozycje z terminala)")
+        need = ("instrument", "side", "size") if profile == "CRYPTO_FOMO_PERPS" else ("dir", "stake", "r", "strike", "expiry", "opened_at")
+        miss = [k for k in need if body.get(k) in (None, "")]
+        if miss:
+            raise HTTPException(400, f"brak pól: {miss}")
+        return {"id": _baskets().ledger.declare(profile, str(body.get("kind") or ("PERP" if profile.startswith("CRYPTO") else "OTC_CONTRACT")), body)}
+
+    @app.delete("/api/v1/baskets/declared/{item_id}")
+    def baskets_undeclare(item_id: str):
+        _baskets().ledger.close_declared(item_id)
+        return {"ok": True}
+
+    @app.get("/api/v1/baskets/otc")
+    def baskets_otc():
+        b = _baskets()
+        return {"state": b.otc.state(), "meta": b.otc.meta()}
+
+    @app.put("/api/v1/baskets/otc/meta")
+    def baskets_otc_meta(body: dict = Body(...)):
+        try:
+            return _baskets().otc.set_meta(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/api/v1/baskets/otc/ticks")
+    def baskets_otc_ticks(body: dict = Body(...)):
+        rows = body.get("ticks") or []
+        if not isinstance(rows, list) or not rows:
+            raise HTTPException(400, "ticks: [{t, price}]")
+        return {"accepted": _baskets().otc.push_ticks(rows, str(body.get("source") or "CONNECTOR"))}
+
+    @app.post("/api/v1/baskets/otc/payoff")
+    def baskets_otc_payoff(body: dict = Body(...)):
+        from ..baskets import payoff as _PO
+        return _PO.table(body.get("legs") or [], float(body.get("extra_cost") or 0.0))
 
     @app.post("/api/v1/quant/models/activate")
     def quant_activate(body: dict = Body(...)):

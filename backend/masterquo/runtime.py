@@ -182,6 +182,12 @@ class Runtime:
         except Exception:  # noqa: BLE001 - a broken research state never stops the engine
             log.exception("research modules unavailable")
             self.research = None
+        try:                                                                                        # 1.41 three market profiles, 9 baskets / 90 strategies
+            from .baskets.service import BasketService
+            self.baskets = BasketService(self)
+        except Exception:  # noqa: BLE001
+            log.exception("baskets unavailable")
+            self.baskets = None
         try:
             self._wire_governor()
         except Exception:  # noqa: BLE001 - 1.40.1: no governor = models run unmanaged (as in 1.39), the engine still starts
@@ -309,7 +315,7 @@ class Runtime:
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
         # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
         # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
-        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research"):
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets"):
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -380,6 +386,8 @@ class Runtime:
         self.quant.stop()
         if getattr(self, "research", None) is not None:
             self.research.stop()
+        if getattr(self, "baskets", None) is not None:
+            self.baskets.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()

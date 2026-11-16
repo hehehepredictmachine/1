@@ -285,6 +285,8 @@ class BasketService:
             return {"state": "WAITING_FOR_DATA", "reason": "brak bridge MT5"}
         sym = br.cfg.symbol
         acc = br.account_status() or {}
+        if not acc.get("login"):
+            return {"state": "WAITING_FOR_DATA", "reason": "konto MT5 jeszcze nie odczytane"}
         c = self._context("FOREX_MT5", sym, "MT5", "SYNTHETIC" if getattr(self.rt, "demo", False) else "LIVE", str(acc.get("login") or "?"),
                           "CFD")
         info = getattr(br, "symbol_info", None) or {}

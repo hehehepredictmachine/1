@@ -126,6 +126,8 @@ class ResearchModulesService:
         self.param_history: list[dict] = self._read(self.base / "parameter_history.json", [])
         self.governor = None
         self._sdf_proc: subprocess.Popen | None = None
+        from .components import Components
+        self.components = Components(self)
 
     # ------------------------------------------------------------------ settings
     def _read(self, p: Path, default):
@@ -434,7 +436,16 @@ class ResearchModulesService:
             job["activation"] = {"state": "SKIPPED", "reason": "użytkownik zmienił aktywną wersję w trakcie treningu"}
             return
         py = torch_python()
-        data = self._sdf_dir() / "bootstrap_h1.json"
+        if not py:
+            job["activation"] = {"state": "FAILED", "reason": "WAITING_DEPENDENCY: brak środowiska z torch"}
+            return
+        data = self._sdf_dir() / "activation_test_h1.json"
+        c = self.ensure_main_context()
+        h1 = c.bars_fn("H1", 400) if c else []
+        if len(h1) < 200 and (self._sdf_dir() / "bootstrap_h1.json").exists():
+            data = self._sdf_dir() / "bootstrap_h1.json"
+        else:
+            _atomic(data, h1)
         r = subprocess.run([py, "-m", "sdformer_runtime.infer", "--checkpoint", str(self._sdf_dir() / run_id), "--bars", str(data)],
                            cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend")), capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=300)
