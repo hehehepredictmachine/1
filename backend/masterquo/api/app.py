@@ -2563,6 +2563,74 @@ def create_app(rt, port: int) -> FastAPI:
         argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
         return rt.tsfm._run_job_proc("install_tabicl", argv)
 
+    # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
+    def _research():
+        r = getattr(rt, "research", None)
+        if r is None:
+            raise HTTPException(503, "moduły badawcze niedostępne (błąd startu – patrz logs/engine_console.log)")
+        return r
+
+    @app.get("/api/v1/research-modules")
+    def research_status():
+        return _research().status()
+
+    @app.get("/api/v1/research-modules/settings")
+    def research_settings():
+        return _research().settings()
+
+    @app.put("/api/v1/research-modules/settings")
+    def research_settings_put(body: dict = Body(...)):
+        try:
+            return _research().update_settings(body, who="panel")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/v1/research-modules/features")
+    def research_features(t: float | None = None):
+        r = _research()
+        inst = rt.sh.instrument()
+        return {"instrument": inst, "asof": t, "features": r.features_for(inst, t), "snapshot": r.latest(inst)}
+
+    @app.get("/api/v1/research-modules/feature-graph")
+    def research_graph(target: str = "BPC10"):
+        return _research().feature_graph(target)
+
+    @app.get("/api/v1/research-modules/optimizer/jobs")
+    def research_opt_jobs():
+        return {"jobs": _research().optimizer_jobs(), "history": _research().param_history[-50:]}
+
+    @app.post("/api/v1/research-modules/optimizer/run")
+    def research_opt_run():
+        r = _research()
+        c = r.ensure_main_context()
+        rows = r._objective_rows(c) if c else []
+        if len(rows) < int(r.settings()["optimizer"]["min_mature_examples"]):
+            raise HTTPException(409, f"za mało dojrzałych etykiet ({len(rows)}) – optymalizator czeka na dane")
+        return r.optimise(c, rows)
+
+    @app.post("/api/v1/research-modules/parameters/rollback")
+    def research_rollback():
+        return _research().rollback_parameters()
+
+    @app.post("/api/v1/research-modules/sdformerflow/train")
+    def research_sdf_train(body: dict = Body(default={})):
+        r = _research()
+        c = r.ensure_main_context()
+        op = str(body.get("op") or "from_scratch")
+        if op not in ("from_scratch", "fine_tune", "resume"):
+            raise HTTPException(400, "op: from_scratch | fine_tune | resume")
+        h1 = c.bars_fn("H1", 6000) if c else []
+        ck = body.get("checkpoint") or (r.settings()["sdformer"].get("active_run") if op != "from_scratch" else None)
+        ckp = str(r._sdf_dir() / ck) if ck else None
+        res = r.start_training(c, h1, op=op, checkpoint=ckp, reason="panel (DIRECT_USER_REQUEST)")
+        if not res.get("ok"):
+            raise HTTPException(409, res.get("reason"))
+        return res
+
+    @app.post("/api/v1/research-modules/sdformerflow/cancel")
+    def research_sdf_cancel():
+        return _research().cancel_training()
+
     @app.post("/api/v1/quant/models/activate")
     def quant_activate(body: dict = Body(...)):
         from ..quant import metamodel as QM

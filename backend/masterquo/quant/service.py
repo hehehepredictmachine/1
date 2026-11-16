@@ -294,6 +294,12 @@ class QuantService:
         a.update(task_hash=th, event_id=spec.event_id, plan_hash=spec.plan_hash(), event=spec.task_dict(),
                  plan={"entry": spec.entry, "sl": spec.sl, "targets": [list(map(float, t)) for t in spec.targets]})
         preds, pub = self._eligible_at(float(cd.get("decision_ts") or now))
+        rs = getattr(self.rt, "research", None)
+        if rs is not None and "research_features" not in cd:       # 1.41 research-module features as known at decision time (as-of)
+            try:
+                cd = {**cd, "research_features": rs.features_for(inst, float(cd.get("decision_ts") or now))}
+            except Exception:  # noqa: BLE001 - missing research features = missing columns, never invented values
+                pass
         feats = F.build2(cd, preds)                     # 1.41 FEAT-2 = FEAT-1 (same names / meaning) + price-forecast + research-module columns
         a["sources"] = {"generation": (pub or {}).get("generation"), "eligible": len(preds), "excluded": len((pub or {}).get("excluded") or []),
                         "snapshot_status": ((pub or {}).get("snapshot") or {}).get("status"), "features": len(feats)}

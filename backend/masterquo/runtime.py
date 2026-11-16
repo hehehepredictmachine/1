@@ -176,6 +176,12 @@ class Runtime:
         from .tsfm.service import TsfmService
         self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # Chronos-2 + Granite TTM (1.40, FinCast retired): own processes, OBSERVE default
         self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
+        try:                                                                                        # 1.41 six MQL5-derived research modules (autostart)
+            from .research.service import ResearchModulesService
+            self.research = ResearchModulesService(self)
+        except Exception:  # noqa: BLE001 - a broken research state never stops the engine
+            log.exception("research modules unavailable")
+            self.research = None
         try:
             self._wire_governor()
         except Exception:  # noqa: BLE001 - 1.40.1: no governor = models run unmanaged (as in 1.39), the engine still starts
@@ -219,6 +225,8 @@ class Runtime:
         self.quant.tabicl.governor = self.governor
         self.governor.register("tabicl", "heavy", lambda: tb.worker.proc.pid if (tb.worker.proc and tb.worker.proc.poll() is None) else None,
                                release=lambda: tb.jobs.empty() and tb.worker.kill(), idle=lambda: _time.monotonic() - tb.worker.last_used)
+        if getattr(self, "research", None) is not None:
+            self.research.governor = self.governor                     # 1.41 SDformerFlow training / inference (heavy slot)
         for mid, w in self.tsfm.workers.items():
             self.governor.register(mid, "heavy" if mid in HEAVY else "light",
                                    (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
@@ -301,7 +309,7 @@ class Runtime:
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
         # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
         # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
-        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant"):
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research"):
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -370,6 +378,8 @@ class Runtime:
         self.tsfm.stop()
         self.montecarlo.stop()
         self.quant.stop()
+        if getattr(self, "research", None) is not None:
+            self.research.stop()
         self.analytics.stop()
         self.lab.stop()
         self.extind.stop()

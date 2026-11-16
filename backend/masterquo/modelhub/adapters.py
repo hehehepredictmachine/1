@@ -73,6 +73,14 @@ def all_predictions(rt, inst: str) -> list[dict]:
             out.append(C.make(instrument=inst, symbol=None, timeframe="M5", model_name="tsfm", model_version=None, task_type="REGRESSION",
                               task="TSFM_CLOSE_H1_M5", horizon_bars=1, unit="price", state="ERROR",
                               unavailable_reason=f"adapter Chronos-2/Granite TTM: {type(exc).__name__}: {exc}"[:200]))
+    rs = getattr(rt, "research", None) if rt is not None else None
+    if rs is not None:
+        try:
+            out += rs.predictions(inst)                                    # 1.41 research modules: SCORE (raw, not a probability)
+        except Exception as exc:  # noqa: BLE001
+            out.append(C.make(instrument=inst, symbol=None, timeframe="M5", model_name="research", model_version=None, task_type="SCORE",
+                              task="RESEARCH_MODULES", horizon_bars=None, unit="ratio", state="ERROR",
+                              unavailable_reason=f"adapter modułów badawczych: {type(exc).__name__}: {exc}"[:200]))
     fam = getattr(rt, "families", None) if rt is not None else None
     if fam is not None:
         try:
