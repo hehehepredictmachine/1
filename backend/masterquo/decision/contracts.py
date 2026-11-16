@@ -41,7 +41,8 @@ SCHEMAS: dict[str, dict] = {
                           "entry": "num?", "sl": "num?", "tp": "num?", "risk_money": "num?", "volume": "num?", "reasons": "list"},
     "DecisionRecord": {"record_id": "str", "created_at": "str", "path": PATHS, "source_id": "str", "strategy_id": "str", "symbol": "str",
                        "account_key": "str?", "mode": MODES, "side": SIDES, "base_verdict": VERDICTS, "final_verdict": VERDICTS,
-                       "reason_codes": "list", "models": "list", "gates": "dict", "inputs_hash": "str"},
+                       "reason_codes": "list", "models": "list", "gates": "dict", "inputs_hash": "str",
+                       "confidence": "dict?"},      # 1.41: TabICLv2 raw confidence of THIS plan (presentation / ranking - never a gate)
     "ExecutionIntent": {"intent_id": "str", "dedup_key": "str", "record_id": "str?", "path": PATHS, "kind": ("ENTRY", "HEDGE"), "mode": MODES,
                         "account_key": "str?", "symbol": "str", "side": SIDES, "volume": "num?", "risk_money": "num?", "state": INTENT_STATES},
     "ExecutionOutcome": {"intent_id": "str", "status": OUTCOMES, "ticket": "int?", "price": "num?", "volume": "num?", "reason": "str?",

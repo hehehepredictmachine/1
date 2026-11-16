@@ -1,7 +1,7 @@
 """Installer / verifier of the Chronos-2 and FinCast weights (stdlib only for `download`; `selftest` needs the model environment).
 
-  python -m tsfm_runtime.install download --model chronos2|granite_ttm --weights-root DIR [--from-dir DIR] [--status-file F]
-  python -m tsfm_runtime.install verify   --model chronos2|granite_ttm --weights-root DIR [--selftest] [--status-file F]
+  python -m tsfm_runtime.install download --model chronos2|granite_ttm|tirex2 --weights-root DIR [--from-dir DIR] [--status-file F]
+  python -m tsfm_runtime.install verify   --model chronos2|granite_ttm|tirex2 --weights-root DIR [--selftest] [--status-file F]
 
 download: every pinned file goes to <file>.part (resumed with an HTTP Range request after an interrupted transfer), is checked against
 the pinned size and SHA-256 (LFS) / git blob sha1, and only then renamed to its final name. A file already present and matching is kept

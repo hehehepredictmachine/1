@@ -46,7 +46,8 @@ def versions() -> dict:
     from importlib import metadata
     out = {"python": sys.version.split()[0]}
     for mod, dist in (("torch", "torch"), ("numpy", "numpy"), ("pandas", "pandas"), ("chronos", "chronos-forecasting"), ("tsfm_public", "granite-tsfm"),
-                      ("transformers", "transformers"), ("einops", "einops"), ("safetensors", "safetensors")):
+                      ("transformers", "transformers"), ("einops", "einops"), ("safetensors", "safetensors"),
+                      ("tirex2", "tirex-2")):
         try:
             out[mod] = metadata.version(dist)
         except Exception as exc:  # noqa: BLE001
@@ -387,9 +388,90 @@ class GraniteTTMEngine(BaseEngine):
                 "rss_mb": rss_mb()}
 
 
+class TiRex2Engine(BaseEngine):
+    """1.41 TiRex-2 (NX-AI/TiRex-2, xLSTM, Apache-2.0) through the official tirex2 package: load_model(<local dir>, device) +
+    ForecastModel.forecast([TimeseriesType(target)], prediction_length). Only the model's own 9 quantile levels are published
+    (no interpolation); the point is the 0.5 quantile (median). Plain inference: no torch.compile, no CUDA graphs, batch 1."""
+    model_id = "tirex2"
+
+    def __init__(self):
+        super().__init__()
+        self.model = None
+        self.levels: list[float] = []
+
+    def load(self, weights_root: str, device: str = "AUTO", threads: int | None = None, verify_files: bool = True) -> dict:
+        if self.loaded:
+            return self.info
+        t0 = time.perf_counter()
+        d = self._verify(weights_root, verify_files)
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        try:
+            import torch
+            from tirex2 import load_model
+        except Exception as exc:  # noqa: BLE001
+            raise EngineError("MISSING_DEPENDENCY", f"{type(exc).__name__}: {exc}"[:300]) from None
+        if threads:
+            torch.set_num_threads(int(threads))
+        dev, note = _pick_device(torch, device)
+        try:
+            self.model = load_model(str(d), device="cuda" if dev.startswith("cuda") else "cpu", compile=False,
+                                    cuda_graphs=False if dev.startswith("cuda") else None)
+        except Exception as exc:  # noqa: BLE001
+            raise EngineError("LOAD_ERROR", f"{type(exc).__name__}: {exc}"[:400]) from None
+        self.model.model.eval()
+        self.levels = self.model._quantile_levels()
+        n = sum(p.numel() for p in self.model.model.parameters())
+        self.info = {**self._identity(n), "device": dev, "device_note": note, "dtype": "float32", "threads": torch.get_num_threads(),
+                     "load_ms": round((time.perf_counter() - t0) * 1000, 1), "trained_quantiles": self.levels,
+                     "model_context_length": lock.model("tirex2")["max_context"], "rss_mb": rss_mb()}
+        self.loaded = True
+        return self.info
+
+    def _forecast(self, close, H):
+        import numpy as np
+        import torch
+        from tirex2 import TimeseriesType
+        ts = TimeseriesType(target=torch.tensor(np.asarray(close, dtype=np.float32)).unsqueeze(0), past_covariates=None, future_covariates=None)
+        with torch.inference_mode():
+            out = self.model.forecast([ts], prediction_length=H, output_type="numpy", batch_size=1)
+        return np.asarray(out[0], dtype=np.float64).reshape(len(self.levels), H)          # (Q, H)
+
+    def predict(self, req: dict) -> dict:
+        if not self.loaded:
+            raise EngineError("NOT_LOADED", "model nie jest załadowany")
+        import numpy as np
+        close, H, ctx = _validate(req, lock.model("tirex2")["max_context"])
+        want = sorted({round(float(q), 6) for q in (req.get("quantiles") or [0.1, 0.5, 0.9])} | {0.5})
+        bad = [q for q in want if q not in self.levels]
+        if bad:
+            raise EngineError("CONFIG", f"kwantyle {bad} nie są wyjściem TiRex-2 (dostępne: {self.levels}) – nie są interpolowane")
+        t0 = time.perf_counter()
+        qa = self._forecast(close, H)
+        if not np.isfinite(qa).all():
+            raise EngineError("NON_FINITE", "model zwrócił NaN/Inf")
+        arr = np.stack([qa[self.levels.index(q)] for q in want], axis=1)                     # (H, len(want))
+        med = qa[self.levels.index(0.5)]
+        return {"point": [float(v) for v in med], "point_kind": "median", "median": [float(v) for v in med],
+                "quantiles": _quantile_block(want, arr), "ms": round((time.perf_counter() - t0) * 1000, 1), "device": self.info.get("device", "cpu"),
+                "context_bars": ctx, "profile": req.get("profile") or "CLOSE_V1", "input_hash": input_hash(req),
+                "note": "kwantyle TiRex-2 (0,1–0,9; nieskalibrowane na danych użytkownika); punkt = mediana (kwantyl 0,5)"}
+
+    def _direct(self, close, H, qs) -> dict:
+        import numpy as np
+        import torch
+        from tirex2 import TimeseriesType
+        with torch.inference_mode():                                                        # official call, own conversion of the output
+            out = self.model.forecast([TimeseriesType(target=torch.tensor([close], dtype=torch.float32), past_covariates=None,
+                                                      future_covariates=None)], prediction_length=H, output_type="torch")
+        t = out[0].reshape(len(self.levels), H).double().cpu().numpy()
+        return {"point": t[self.levels.index(0.5)].tolist(), "quantiles": [t[self.levels.index(q)].tolist() for q in qs]}
+
+
 def make(mid: str) -> BaseEngine:
     if mid == "chronos2":
         return Chronos2Engine()
+    if mid == "tirex2":
+        return TiRex2Engine()
     if mid == "granite_ttm":
         return GraniteTTMEngine()
     if mid in lock.RETIRED:

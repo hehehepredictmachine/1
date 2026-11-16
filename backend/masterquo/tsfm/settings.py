@@ -28,7 +28,8 @@ from .. import paths
 TF = Literal["M1", "M3", "M5", "M15", "M30", "H1"]
 TF_ALL = ("M1", "M3", "M5", "M15", "M30", "H1")
 PATHS = ("ACTIVE", "SCALPING", "HEDGING")
-MODEL_IDS = ("chronos2", "granite_ttm")
+MODEL_IDS = ("chronos2", "granite_ttm", "tirex2")                                 # 1.41 TiRex-2
+DIRECT_POLICY_IDS = ("tirex2",)                                                  # 1.41: ASSIST without a validation report (DIRECT_USER_REQUEST)
 RETIRED_IDS = ("fincast",)                                                       # 1.40: history only, never scheduled
 HORIZON_DEFAULT = {"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6}      # = Kronos defaults (starting values, not proven optimal)
 
@@ -39,6 +40,10 @@ class PathUse(BaseModel):
     timeframe: TF = "M5"
     validation_report: str | None = None
     confirmed_at: str | None = None
+    # 1.41: how ASSIST was granted - VALIDATION (walk-forward report, unchanged rule for Chronos-2 / Granite TTM) or DIRECT_USER_REQUEST
+    # (TiRex-2 only: the user's explicit instruction of the 1.41 update; no report is invented, calibration stays UNCALIBRATED)
+    activation_policy: Literal["VALIDATION", "DIRECT_USER_REQUEST"] = "VALIDATION"
+    activated_at: str | None = None
 
 
 def _uses() -> dict:
@@ -77,8 +82,17 @@ class ModelCfg(BaseModel):
         return list(dict.fromkeys(v))
 
 
+def default_model(mid: str) -> "ModelCfg":
+    """1.41 TiRex-2: enabled, CPU, M5 + M15 after every closed bar, context 512 (the bot's horizons). Its forecast is used ACTIVELY in
+    the analysis (Quant features / TabICL input / decision trace) from the first result; the hold-roles of the entry paths stay OBSERVE
+    so no existing gold strategy gets a new gate (the user can switch ASSIST on without a report - DIRECT_USER_REQUEST)."""
+    if mid == "tirex2":
+        return ModelCfg(device="CPU", cpu_threads=2, context_len=512)
+    return ModelCfg()
+
+
 def _models() -> dict:
-    return {"chronos2": ModelCfg(), "granite_ttm": ModelCfg()}
+    return {m: default_model(m) for m in MODEL_IDS}
 
 
 class TsfmSettings(BaseModel):
@@ -102,7 +116,7 @@ class TsfmSettings(BaseModel):
         if bad:
             raise ValueError("MODEL_UNKNOWN:" + ",".join(bad))
         for k in MODEL_IDS:
-            v.setdefault(k, ModelCfg())
+            v.setdefault(k, default_model(k))
         return v
 
     @field_validator("horizon_bars")
@@ -122,7 +136,7 @@ class TsfmSettings(BaseModel):
     @classmethod
     def _q(cls, v: list) -> list:
         v = sorted({float(x) for x in v} | {0.5})
-        allowed = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)                 # Chronos-2 levels used by the bot (Granite TTM: point only)
+        allowed = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)                 # Chronos-2 / TiRex-2 levels used by the bot (Granite TTM: point only)
         bad = [x for x in v if x not in allowed]
         if bad:
             raise ValueError(f"QUANTILE_UNSUPPORTED:{bad} (wspólne poziomy obu modeli: 0,1–0,9)")
@@ -141,7 +155,7 @@ def default_weights_root() -> Path:
 
 def python_candidates(mid: str, c: ModelCfg) -> list[str]:
     root = paths.ROOT_DIR
-    venv = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite"}[mid]
+    venv = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite", "tirex2": ".venv_tirex2"}[mid]
     return [x for x in (os.environ.get(f"MQ_{mid.upper()}_PYTHON"), c.python_path, str(root / venv / "Scripts" / "python.exe"),
                         str(root / venv / "bin" / "python")) if x]
 

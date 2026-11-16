@@ -348,7 +348,9 @@ def verdict(st: dict, *, real: bool, commission_known: bool, hedge_cmp: dict | N
 # ---------------------------------------------------------------------------------------------------------- driver
 def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: list[str] | None = None, spread_fallback: float = 0.20,
         slip: float = 0.05, commission_price_rt: float | None = None, stress: tuple = (0.20, 0.10), progress=None, warm_m1: int = 1200,
-        garch: dict | None = None) -> dict:
+        garch: dict | None = None, on_ready=None, plans_only: bool = False, cancel=None) -> dict:
+    """on_ready(t, vid, tf, su) receives every READY plan at its decision time (1.41: causal reconstruction of the TabICLv2 context with
+    the SAME detectors / solver as live); plans_only skips the outcome simulation (the caller labels with quant.events)."""
     cfg = CAT.load()
     tick = float((meta.get("spec") or {}).get("trade_tick_size") or (meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
     spec = _Spec(tick, symbol=meta.get("symbol") or "XAUUSD")
@@ -396,6 +398,11 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
                 c[f"{su['status']}:{code}"] = c.get(f"{su['status']}:{code}", 0) + 1
                 if su["status"] != "READY":
                     continue
+                if on_ready is not None:
+                    on_ready(t, vid, tf, su)
+                if plans_only:
+                    busy[key] = t + 60 * float(v["position_max_minutes"]) + 60       # one plan per variant x TF at a time, as in the live cycle
+                    continue
                 hctx = None
                 if v["family"] == "HEDGING":
                     hctx = {"m5": m5_full, "m5_idx": m5_idx, "h1": h1_upto, "hcfg": v["hedge"] or {}, "tick": tick, "common": cfg["common"]}
@@ -419,6 +426,8 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
                     trades.setdefault(f"{vid}|{tf}|{mode}", []).append(r)
         if progress and j % 500 == 0:
             progress(j, n)
+        if cancel is not None and j % 200 == 0 and cancel():
+            break
     real = meta.get("data_kind") == "REAL_USER_DATA"
     comm_known = commission_price_rt is not None
     out = {"schema": VERSION, "created_at": _iso(time.time()), "dataset": meta.get("dataset_id") or meta.get("source"), "data_kind": meta.get("data_kind"),

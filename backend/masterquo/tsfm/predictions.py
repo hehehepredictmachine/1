@@ -117,6 +117,8 @@ def approval_ok(svc, mid: str, inst: str, path: str) -> tuple[bool, str | None]:
     """ASSIST / REQUIRED is valid only while the stored report(s) match the CURRENT binding (fingerprint, symbol, TF, horizon, ...)."""
     from . import validation as V
     u = svc.settings.get().models[mid].use[path]
+    if u.activation_policy == "DIRECT_USER_REQUEST" and u.use == "ASSIST":
+        return True, None                                   # 1.41: explicit user instruction (TiRex-2), not a validation claim
     if not u.validation_report:
         return False, "brak raportu dopuszczenia"
     bad = []

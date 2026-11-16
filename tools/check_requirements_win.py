@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ["requirements-win.txt", "requirements-deep-win.txt", "requirements-kronos-win.txt", "requirements-candles-win.txt",
-         "requirements-chronos2-win.txt", "requirements-granite-win.txt"]                     # 1.37 Chronos-2, 1.40 Granite TTM (FinCast retired)
+         "requirements-chronos2-win.txt", "requirements-granite-win.txt", "requirements-tirex2-win.txt", "requirements-tabicl-win.txt"]                     # 1.37 Chronos-2, 1.40 Granite TTM (FinCast retired)
 
 
 def uv() -> list[str] | None:

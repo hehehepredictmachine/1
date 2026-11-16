@@ -230,10 +230,17 @@ class DecisionCoordinator:
         core = {k: cand.get(k) for k in ("path", "strategy_id", "source_id", "side", "base_verdict", "reasons")}   # prices move every tick
         h = K.inputs_hash({"cand": core, "gates": gates, "models": [(m["model_id"], m["state"], m["influence"]) for m in models],
                            "mode": mode, "acct": account_key})
+        conf = None
+        if self.quant is not None and hasattr(self.quant, "confidence_for"):
+            try:                                                   # 1.41: the confidence of THIS plan (never part of the verdict / hash)
+                conf = self.quant.confidence_for(cand.get("strategy_id"), cand.get("side"), cand.get("entry"), cand.get("sl"))
+            except Exception:  # noqa: BLE001
+                conf = None
         rec = K.make("DecisionRecord", record_id="DR-" + uuid.uuid4().hex[:16], created_at=iso(utcnow()), path=cand["path"],
                      source_id=cand["source_id"], strategy_id=cand["strategy_id"], symbol=cand["symbol"], account_key=account_key,
                      mode=mode if mode in K.MODES else "SIGNALS", side=cand["side"], base_verdict=cand["base_verdict"], final_verdict=verdict,
-                     reason_codes=list(cand.get("reasons") or []) + greasons + mreasons, models=models, gates=gates, inputs_hash=h)
+                     reason_codes=list(cand.get("reasons") or []) + greasons + mreasons, models=models, gates=gates, inputs_hash=h,
+                     **({"confidence": conf} if conf else {}))
         if persist:
             prev = self.db.one("SELECT record_id FROM decision_records WHERE path=? AND source_id=? AND inputs_hash=?",
                                (rec["path"], rec["source_id"], h))

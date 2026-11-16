@@ -2101,7 +2101,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     def _ts_mid(m: str, history: bool = False) -> str:
         m = (m or "").lower()
-        if m not in ("chronos2", "granite_ttm") and not (history and m == "fincast"):       # fincast: RETIRED in 1.40 - history only
+        if m not in ("chronos2", "granite_ttm", "tirex2") and not (history and m == "fincast"):   # fincast: RETIRED in 1.40 - history only
             raise HTTPException(400, "MODEL_RETIRED" if m == "fincast" else "MODEL_NOT_ALLOWED")
         return m
 
@@ -2250,7 +2250,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/models/foundation/job/{name}")
     def tsfm_job(name: str):
-        if not re.match(r"^(install|verify)_(chronos2|granite_ttm)$|^validation$|^granite_train$", name):
+        if not re.match(r"^(install|verify)_(chronos2|granite_ttm|tirex2|tabicl)$|^validation$|^granite_train$", name):
             raise HTTPException(400, "JOB_UNKNOWN")
         return {"job": rt.tsfm.job(name)}
 
@@ -2531,6 +2531,37 @@ def create_app(rt, port: int) -> FastAPI:
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
+
+    # ------------------------------------------------------------------ 1.41 TabICLv2 confidence estimator
+    @app.get("/api/v1/quant/tabicl")
+    def quant_tabicl():
+        return _quant().tabicl.status()
+
+    @app.put("/api/v1/quant/estimator")
+    def quant_estimator(body: dict = Body(...)):
+        r = _quant().set_estimator(str(body.get("estimator") or ""), by="PANEL")
+        if not r.get("ok"):
+            raise HTTPException(400, r.get("reason"))
+        rt.log.info("QUANT", "ESTIMATOR", f"Estymator confidence: {r['estimator']} (panel).")
+        return r
+
+    @app.post("/api/v1/quant/tabicl/reconstruct")
+    def quant_tabicl_reconstruct(body: dict = Body(default={})):
+        days = int(body.get("days") or 30)
+        if not 3 <= days <= 365:
+            raise HTTPException(400, "DAYS_OUT_OF_RANGE (3..365)")
+        r = _quant().tabicl.run_reconstruction(_quant().instrument(), days=days)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/quant/tabicl/install")
+    def quant_tabicl_install():
+        import sys as _sys
+        from .. import paths as _P
+        from ..tsfm.settings import default_weights_root as _dwr
+        argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
+        return rt.tsfm._run_job_proc("install_tabicl", argv)
 
     @app.post("/api/v1/quant/models/activate")
     def quant_activate(body: dict = Body(...)):

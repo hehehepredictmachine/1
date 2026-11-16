@@ -10,6 +10,8 @@ SHA-256 before a file is accepted and writes the manifest only after every file 
             805 280 parameters measured), code: PyPI granite-tsfm 0.3.11 (github.com/ibm-granite/granite-tsfm), Apache-2.0 (1.40).
             Chosen on a walk-forward test on real XAUUSD M5 / M15 / H1 (Q4 2025): the lowest error of the R2 / R2.1 variants tried
             (512-96-r2, 512-48-ft-r2.1, 512-96-ft-r2.1, 1024-96-r2) - see docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md. Point forecast only.
+  tirex2    NX-AI/TiRex-2 (82 510 960 parameters measured, xLSTM), code: PyPI tirex-2 0.5.0 (github.com/NX-AI/tirex-2), Apache-2.0 (1.41).
+            Files config.json + model.safetensors (the format of tirex-2 >= 0.5.0; model.ckpt is legacy and not used). Quantiles 0.1..0.9.
   fincast   RETIRED in 1.40 (replaced by granite_ttm): Vincent05R/FinCast v1.pth (~1 B parameters - measured 991 436 960). The pin stays
             for the history (old forecasts keep their model id and revision); it is no longer installed, loaded or scheduled.
 
@@ -56,6 +58,23 @@ MODELS: dict[str, dict] = {
         "point": "point",             # MSE-trained head: a point forecast of the close; no quantiles / no OHLC are produced or invented
         "deterministic": True,
         "normalization": "z-score of the context window only (mean / std of the 512 closed bars before the origin), inverted on the output",
+    },
+    "tirex2": {
+        "model_id": "tirex2", "name": "TiRex-2", "variant": "NX-AI/TiRex-2 (xLSTM, safetensors, tirex-2 0.5.0)", "params_upstream": "~80M",
+        "params_measured": 82510960, "repo": "NX-AI/TiRex-2", "revision": "352636173653592b6dceb3fbeee9224ca97952a9", "license": "Apache-2.0",
+        "files": [
+            {"name": "config.json", "size": 1639, "git_blob_sha1": "6b4bd0982b3990d07db5dad5e92854615f14f252"},
+            {"name": "model.safetensors", "size": 330038664, "sha256": "17760e4eee4c14e0d8bad8b9d9ce6f5076aaeeb9d956a88b8e95cf1493a1c176"},
+            {"name": "LICENSE", "size": 10173, "git_blob_sha1": "d9a10c0d8e868ebf8da0b3dc95bb0be634c34bfe"},
+            {"name": "NOTICE", "size": 248, "git_blob_sha1": "f29c72730040d3bd1799b53d28c0d7ba03eecf25"},
+        ],
+        "required_files": ("config.json", "model.safetensors"),
+        "code": {"kind": "pypi", "package": "tirex-2", "version": "0.5.0", "repo": "https://github.com/NX-AI/tirex-2"},
+        "venv": ".venv_tirex2", "requirements": "requirements/requirements-tirex2-win.txt",
+        "max_context": 2048, "native_quantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+        "point": "median",
+        "deterministic": True,
+        "note": "model.ckpt / model-config.yaml (legacy) are NOT loaded by tirex-2 >= 0.5.0 - only config.json + model.safetensors",
     },
     "fincast": {
         "model_id": "fincast", "retired": True, "retired_in": "1.40.0", "replaced_by": "granite_ttm", "name": "FinCast", "variant": "Vincent05R/FinCast v1 (CIKM 2025, 1B)", "params_upstream": "1B",

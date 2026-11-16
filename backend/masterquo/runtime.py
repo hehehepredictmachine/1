@@ -40,6 +40,12 @@ def real_mt5_factory():
 class Runtime:
     def __init__(self, *, demo: bool = False, mt5_factory=None):
         self.demo = demo
+        if not demo:
+            try:                                            # 1.41: inventory "before" + configuration snapshot, once, before any 1.41 service
+                from .upgrade import migrate as _UM
+                _UM.before()
+            except Exception:  # noqa: BLE001 - never blocks the start; the after-report shows the missing step
+                log.exception("upgrade 1.41 before-step failed")
         self.cfg = ConfigStore()
         if demo:
             self.cfg.set_runtime_flag(synthetic_demo=True)
@@ -209,6 +215,10 @@ class Runtime:
         k = self.kronos
         self.governor.register("kronos", "heavy", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
                                release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
+        tb = self.quant.tabicl                                          # 1.41 TabICLv2 worker (heavy slot, idle release)
+        self.quant.tabicl.governor = self.governor
+        self.governor.register("tabicl", "heavy", lambda: tb.worker.proc.pid if (tb.worker.proc and tb.worker.proc.poll() is None) else None,
+                               release=lambda: tb.jobs.empty() and tb.worker.kill(), idle=lambda: _time.monotonic() - tb.worker.last_used)
         for mid, w in self.tsfm.workers.items():
             self.governor.register(mid, "heavy" if mid in HEAVY else "light",
                                    (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
@@ -295,9 +305,24 @@ class Runtime:
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
+        if not self.demo:
+            threading.Thread(target=self._upgrade_after, name="upgrade-1.41", daemon=True).start()
         if self.start_failures:
             self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
                            + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _upgrade_after(self) -> None:
+        """1.41: after-inventory + preservation report (60 s after start, when every registry is loaded) and the background installation
+        of TiRex-2 / TabICLv2 when they are missing (DIRECT_USER_REQUEST - the bot keeps working)."""
+        self._stop.wait(60)
+        if self._stop.is_set():
+            return
+        try:
+            from .upgrade import migrate as _UM
+            _UM.after(self)
+            _UM.auto_install(self)
+        except Exception:  # noqa: BLE001
+            log.exception("upgrade 1.41 after-step failed")
 
     def _start_part(self, name: str) -> None:
         part = getattr(self, name, None)

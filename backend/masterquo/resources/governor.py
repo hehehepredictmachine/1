@@ -33,7 +33,7 @@ from .. import sysres
 LEVELS = ("OK", "WARN", "LIMIT_HEAVY", "PAUSE_OPTIONAL")
 LEVEL_PL = {"OK": "pamięć w normie", "WARN": "wysokie użycie RAM – ostrzeżenie", "LIMIT_HEAVY": "ograniczenie: brak nowych ciężkich modeli",
             "PAUSE_OPTIONAL": "awaryjne wstrzymanie opcjonalnych prognoz AI"}
-HEAVY = ("kronos", "chronos2")           # >= ~1 GB per process (measured on CPU, float32)
+HEAVY = ("kronos", "chronos2", "tirex2", "tabicl", "sdformerflow")   # >= ~0.6-1 GB per process (measured on CPU, float32; TiRex-2 1.06 GB, TabICL 0.66 GB)
 LIGHT = ("granite_ttm",)                 # ~0.35 GB per process
 PROFILE_KEYS = ("warn_pct", "limit_heavy_pct", "pause_optional_pct", "reserve_os_mb", "budget_preferred_mb", "budget_max_mb",
                 "heavy_parallelism", "idle_release_s", "release_on_pressure", "threads_heavy", "threads_light", "lazy_loading", "dedup",

@@ -50,7 +50,7 @@ TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pami
              "STALE": "dane nieaktualne", "BLOCK": "dane odrzucone (jakość)", "WARMUP": "za mało świec", "ERROR": "błąd", "DISABLED": "wyłączony",
              "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
-NAMES = {"chronos2": "Chronos-2", "granite_ttm": "Granite TTM", "fincast": "FinCast (wycofany)"}
+NAMES = {"chronos2": "Chronos-2", "granite_ttm": "Granite TTM", "tirex2": "TiRex-2", "fincast": "FinCast (wycofany)"}
 RETIRED_PL = "wycofany w 1.40 – zastąpiony przez Granite TTM; historia prognoz zachowana, model nie jest uruchamiany"
 
 
@@ -922,7 +922,8 @@ class TsfmService:
         c = s.models[mid]
         tf = timeframe or c.use[path].timeframe
         if use == "OBSERVE":
-            self.settings.update({"models": {mid: {"use": {path: {"use": "OBSERVE", "timeframe": tf, "validation_report": None, "confirmed_at": None}}}}})
+            self.settings.update({"models": {mid: {"use": {path: {"use": "OBSERVE", "timeframe": tf, "validation_report": None, "confirmed_at": None,
+                                                                   "activation_policy": "VALIDATION", "activated_at": None}}}}})
             return {"ok": True, "use": "OBSERVE"}
         if use not in ("ASSIST", "REQUIRED"):
             return {"ok": False, "reason": "INVALID_USE"}
@@ -930,6 +931,15 @@ class TsfmService:
             return {"ok": False, "reason": f"CONFIRMATION_REQUIRED: {NAMES[mid]} jako {use} dla {path} wymaga świadomego potwierdzenia"}
         if tf not in c.timeframes:
             return {"ok": False, "reason": f"TIMEFRAME_DISABLED: {NAMES[mid]} nie liczy {tf}"}
+        from .settings import DIRECT_POLICY_IDS
+        if mid in DIRECT_POLICY_IDS and use == "ASSIST":
+            # 1.41 DIRECT_USER_REQUEST (TiRex-2): the user's instruction is the permission - no walk-forward report is required and NONE
+            # is invented (validation_report stays empty, calibration UNCALIBRATED). REQUIRED (blocking) keeps the validation rule.
+            self.settings.update({"models": {mid: {"use": {path: {"use": "ASSIST", "timeframe": tf, "validation_report": None, "confirmed_at": None,
+                                                                   "activation_policy": "DIRECT_USER_REQUEST", "activated_at": iso(utcnow())}}}}},
+                                 who="DIRECT_USER_REQUEST")
+            self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = ASSIST ({tf}) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).")
+            return {"ok": True, "use": "ASSIST", "activation_policy": "DIRECT_USER_REQUEST"}
         reps = {i: V.latest_report(i, tf) for i in c.instruments}
         bad = []
         for i, r in reps.items():
@@ -943,7 +953,8 @@ class TsfmService:
         if bad:
             return {"ok": False, "reason": "VALIDATION_REQUIRED: " + "; ".join(bad)}
         ids = ",".join(r["report_id"] for r in reps.values())
-        self.settings.update({"models": {mid: {"use": {path: {"use": use, "timeframe": tf, "validation_report": ids, "confirmed_at": iso(utcnow())}}}}})
+        self.settings.update({"models": {mid: {"use": {path: {"use": use, "timeframe": tf, "validation_report": ids, "confirmed_at": iso(utcnow()),
+                                                               "activation_policy": "VALIDATION", "activated_at": None}}}}})
         self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = {use} ({tf}), raporty {ids}.")
         return {"ok": True, "use": use, "reports": ids}
 

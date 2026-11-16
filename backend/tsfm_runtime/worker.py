@@ -1,6 +1,6 @@
 """Inference process of Chronos-2 / Granite TTM (started by masterquo/tsfm/service.py with the model's own interpreter).
 
-  python -m tsfm_runtime.worker --model chronos2|granite_ttm
+  python -m tsfm_runtime.worker --model chronos2|granite_ttm|tirex2
 Protocol: one JSON object per line on stdin -> one JSON object per line on stdout carrying the request "id".
   {"cmd": "hello"}  {"cmd": "load", "weights_root", "device", "threads", "verify_files"}  {"cmd": "predict", ...}  {"cmd": "selftest"}
   {"cmd": "ping"} (heartbeat)  {"cmd": "quit"}
@@ -15,12 +15,12 @@ import os
 import sys
 import traceback
 
-from . import RUNTIME_VERSION
+from . import RUNTIME_VERSION, lock
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=["chronos2", "granite_ttm"])
+    ap.add_argument("--model", required=True, choices=list(lock.ACTIVE))
     a = ap.parse_args(argv)
     proto = sys.stdout
     sys.stdout = sys.stderr

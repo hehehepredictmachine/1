@@ -1,6 +1,6 @@
 """Installer of Chronos-2 and Granite TTM (stdlib only; 1.40: FinCast retired) - used by 38_MODELE_CHRONOS2_GRANITE.bat and by the panel buttons "Zainstaluj".
 
-  python tools/tsfm_setup.py --model chronos2|granite_ttm|all --root <folder programu> --weights-root <folder wag | auto>
+  python tools/tsfm_setup.py --model chronos2|granite_ttm|tirex2|all --root <folder programu> --weights-root <folder wag | auto>
                              [--cuda cu126|cu128] [--from-dir DIR] [--status-file F] [--python EXE] [--log F]
 
 Steps per model (progress lines "[TSFM-SETUP] [k/5] ..."; the last line is "RESULT <json>"):
@@ -31,10 +31,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kronos_setup as KS  # noqa: E402 - same process helpers (streaming, RESULT parsing, python detection)
 
 TOTAL = 5
-TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.14.1"}        # = the pins of the requirement files
-VENV = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite"}
-NAME = {"chronos2": "Chronos-2 (amazon/chronos-2, ~0,5 GB wag)", "granite_ttm": "Granite TTM R2 (ibm-granite/granite-timeseries-ttm-r2, ~3 MB wag, ~0,35 GB RAM)"}
-NEED_DISK = {"chronos2": 0.6e9 + 1.2e9, "granite_ttm": 0.01e9 + 1.7e9}      # weights + environment (approx.)
+TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.14.1", "tirex2": "torch==2.14.1", "tabicl": "torch==2.14.1"}        # = the pins of the requirement files
+VENV = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite", "tirex2": ".venv_tirex2", "tabicl": ".venv_tabicl"}
+RUNTIME = {"tabicl": "tabicl_runtime"}                     # 1.41: TabICLv2 has its own runtime package (classifier, not a forecaster)
+NAME = {"chronos2": "Chronos-2 (amazon/chronos-2, ~0,5 GB wag)", "granite_ttm": "Granite TTM R2 (ibm-granite/granite-timeseries-ttm-r2, ~3 MB wag, ~0,35 GB RAM)",
+        "tirex2": "TiRex-2 (NX-AI/TiRex-2, ~0,33 GB wag, ~1,1 GB RAM)",
+        "tabicl": "TabICLv2 Classifier (jingang/TabICL v2, ~0,11 GB wag, ~0,8 GB RAM)"}
+NEED_DISK = {"chronos2": 0.6e9 + 1.2e9, "granite_ttm": 0.01e9 + 1.7e9, "tirex2": 0.35e9 + 1.2e9, "tabicl": 0.12e9 + 1.3e9}      # weights + environment (approx.)
 HINT = {"NETWORK": "brak połączenia z huggingface.co (internet, zapora albo proxy) – odblokuj huggingface.co i jego CDN, potem powtórz "
                    "(częściowo pobrany plik zostanie wznowiony)",
         "CHECKSUM": "plik niezgodny z przypiętą sumą SHA-256 – odrzucony, nic nie zostało oznaczone jako gotowe",
@@ -175,7 +178,8 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
         return result(out, 3, False, "PIP", error=f"instalacja pakietów nie powiodła się: {last[-300:]}", model=mid)
     env = dict(os.environ, PYTHONPATH=str(root / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_TELEMETRY="1")
     out.say(4, f"pobieram oficjalne wagi {NAME[mid]} (przypięta rewizja, rozmiar + SHA-256 każdego pliku)")
-    cmd = [str(vpy), "-m", "tsfm_runtime.install", "download", "--model", mid, "--weights-root", str(a.weights_root)]
+    rmod = RUNTIME.get(mid, "tsfm_runtime")
+    cmd = [str(vpy), "-m", f"{rmod}.install", "download", "--weights-root", str(a.weights_root)] + ([] if mid in RUNTIME else ["--model", mid])
     if a.from_dir:
         cmd += ["--from-dir", a.from_dir]
     rc, last = KS.run(cmd, out, 4, env)
@@ -184,7 +188,7 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
         return result(out, 4, False, "DOWNLOAD", error=msg, detail_code=code, model=mid)
     out.say(5, "sprawdzam instalację: sumy, ładowanie (raz), prognoza testowa, zgodność z oficjalnym API")
     env["HF_HUB_OFFLINE"] = "1"
-    rc, last = KS.run([str(vpy), "-m", "tsfm_runtime.install", "verify", "--model", mid, "--weights-root", str(a.weights_root), "--selftest"],
+    rc, last = KS.run([str(vpy), "-m", f"{rmod}.install", "verify", "--weights-root", str(a.weights_root), "--selftest"] + ([] if mid in RUNTIME else ["--model", mid]),
                       out, 5, env)
     if rc != 0:
         code, msg = child_error(last)
@@ -198,7 +202,7 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=("chronos2", "granite_ttm", "all"))
+    ap.add_argument("--model", required=True, choices=("chronos2", "granite_ttm", "tirex2", "tabicl", "ai141", "all"))
     ap.add_argument("--root", required=True)
     ap.add_argument("--weights-root", required=True)
     ap.add_argument("--cuda", choices=("cu126", "cu128"))
@@ -225,7 +229,7 @@ def main(argv=None) -> int:
         r = result(out, 1, False, "NO_PYTHON", error="brak Python 3.13/3.12 x64 (runtime\\python z paczki, --python albo bieżący)")
         KS.emit("RESULT " + json.dumps(r, ensure_ascii=False))
         return 1
-    models = ["chronos2", "granite_ttm"] if a.model == "all" else [a.model]
+    models = (["chronos2", "granite_ttm", "tirex2", "tabicl"] if a.model == "all" else ["tirex2", "tabicl"] if a.model == "ai141" else [a.model])
     res = [install_one(m, a, root, base, out) for m in models]
     ok = all(r["ok"] for r in res)
     first_bad = next((r for r in res if not r["ok"]), {})

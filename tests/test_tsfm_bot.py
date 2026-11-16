@@ -164,7 +164,13 @@ class TestInstallerManifest(unittest.TestCase):
             self.assertTrue(big and all(len(f["sha256"]) == 64 and f["size"] > 10 ** 6 for f in big))
         g = self.L.MODELS["granite_ttm"]
         self.assertEqual((g["repo"], g["params_measured"], g["license"], g["max_context"]), ("ibm-granite/granite-timeseries-ttm-r2", 805280, "Apache-2.0", 512))
-        self.assertEqual(self.L.ACTIVE, ("chronos2", "granite_ttm"))
+        self.assertEqual(self.L.ACTIVE, ("chronos2", "granite_ttm", "tirex2"))           # 1.41 TiRex-2
+        t = self.L.MODELS["tirex2"]
+        self.assertEqual((t["repo"], t["revision"], t["params_measured"], t["license"], t["max_context"]),
+                         ("NX-AI/TiRex-2", "352636173653592b6dceb3fbeee9224ca97952a9", 82510960, "Apache-2.0", 2048))
+        self.assertEqual(next(f for f in t["files"] if f["name"] == "model.safetensors")["sha256"],
+                         "17760e4eee4c14e0d8bad8b9d9ce6f5076aaeeb9d956a88b8e95cf1493a1c176")
+        self.assertNotIn("model.ckpt", [f["name"] for f in t["files"]])          # legacy format of tirex-2 < 0.5.0 - never loaded
         self.assertEqual(self.L.RETIRED, ("fincast",))                          # pin kept for the history, never installed
         self.assertTrue(self.L.MODELS["fincast"]["retired"])
         self.assertEqual(self.L.MODELS["fincast"]["params_measured"], 991436960)
@@ -352,7 +358,7 @@ class TestService(unittest.TestCase):
         svc.tick()
         self.run_queue()
         rows = TP.coordinator_rows(svc, "XAUUSD")
-        self.assertEqual({r["family"] for r in rows}, {"tsfm:chronos2", "tsfm:granite_ttm"})
+        self.assertEqual({r["family"] for r in rows}, {"tsfm:chronos2", "tsfm:granite_ttm", "tsfm:tirex2"})
         self.assertTrue(all(r["timeframe"] == "M15" and r["use"] == "SHADOW" for r in rows))   # ACTIVE role reads M15 by default
 
 
@@ -396,7 +402,7 @@ class TestFinCastRetirement(unittest.TestCase):
             st = SettingsStore(p)
             s = st.get()
             self.assertIsNone(st.load_error)
-            self.assertEqual(set(s.models), {"chronos2", "granite_ttm"})
+            self.assertEqual(set(s.models), {"chronos2", "granite_ttm", "tirex2"})
             self.assertEqual(s.models["chronos2"].timeframes, ["M5"])             # user values kept
             self.assertEqual(s.models["granite_ttm"].use["SCALPING"].use, "OBSERVE")  # FinCast role NOT carried over
             self.assertEqual(s.retired["fincast"]["status"], "RETIRED")
@@ -421,3 +427,41 @@ class TestFinCastRetirement(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTiRex2DirectPolicy(unittest.TestCase):
+    """1.41: TiRex-2 ASSIST without a validation report (DIRECT_USER_REQUEST) - no report is invented; Chronos-2 / Granite keep the rule."""
+
+    def test_direct_policy_only_for_tirex2_and_never_fakes_a_report(self):
+        from masterquo.tsfm import predictions as TP
+        from masterquo.tsfm.settings import SettingsStore, default_model
+        self.assertEqual(default_model("tirex2").device, "CPU")
+        self.assertEqual(default_model("tirex2").use["ACTIVE"].use, "OBSERVE")      # no new gate on existing strategies by default
+        td = TempData()
+        try:
+            from masterquo.tsfm.service import TsfmService
+
+            class Log:
+                def info(self, *a, **k): pass
+                warning = error = info
+
+            class Cfg:
+                def get(self):
+                    from masterquo.config import AppConfig
+                    return AppConfig()
+            svc = TsfmService.__new__(TsfmService)
+            svc.settings, svc.applog = SettingsStore(), Log()
+            r = svc.set_use("tirex2", "SCALPING", "ASSIST", confirm=True)
+            self.assertTrue(r["ok"], r)
+            u = svc.settings.get().models["tirex2"].use["SCALPING"]
+            self.assertEqual((u.use, u.activation_policy, u.validation_report, u.confirmed_at), ("ASSIST", "DIRECT_USER_REQUEST", None, None))
+            self.assertEqual(TP.approval_ok(svc, "tirex2", "XAUUSD", "SCALPING"), (True, None))
+            r2 = svc.set_use("chronos2", "SCALPING", "ASSIST", confirm=True)      # unchanged rule: needs a positive report
+            self.assertFalse(r2["ok"])
+            self.assertIn("VALIDATION_REQUIRED", r2["reason"])
+            r3 = svc.set_use("tirex2", "SCALPING", "REQUIRED", confirm=True)       # blocking role keeps the validation rule
+            self.assertFalse(r3["ok"])
+            self.assertTrue(svc.set_use("tirex2", "SCALPING", "OBSERVE")["ok"])
+            self.assertEqual(svc.settings.get().models["tirex2"].use["SCALPING"].activation_policy, "VALIDATION")
+        finally:
+            td.close()

@@ -13,6 +13,7 @@ rem zgodnosc adaptera z oficjalnym API. Glowne .venv bota i .venv_kronos NIE sa 
 rem Uzycie:  38_MODELE_CHRONOS2_GRANITE.bat                    (oba modele, CPU)
 rem          38_MODELE_CHRONOS2_GRANITE.bat chronos2           (tylko Chronos-2)
 rem          38_MODELE_CHRONOS2_GRANITE.bat granite            (tylko Granite TTM - ok. 3 MB wag, ok. 0,35 GB RAM)
+rem          38_MODELE_CHRONOS2_GRANITE.bat tirex2             (1.41: tylko TiRex-2 - ok. 0,33 GB wag, ok. 1,1 GB RAM)
 rem          38_MODELE_CHRONOS2_GRANITE.bat all cu126          (GPU NVIDIA: PyTorch dla CUDA 12.6; cu128 dla CUDA 12.8)
 rem Instalacja offline: 38_MODELE_CHRONOS2_GRANITE.bat all "" D:\wagi   (katalog z wczesniej pobranymi plikami wag)
 cd /d "%~dp0"
@@ -39,6 +40,7 @@ set "MODEL=all"
 if /i "%~1"=="chronos2" set "MODEL=chronos2"
 if /i "%~1"=="granite" set "MODEL=granite_ttm"
 if /i "%~1"=="granite_ttm" set "MODEL=granite_ttm"
+if /i "%~1"=="tirex2" set "MODEL=tirex2"
 set "CUDA_ARG="
 if /i "%~2"=="cu126" set "CUDA_ARG=--cuda cu126"
 if /i "%~2"=="cu128" set "CUDA_ARG=--cuda cu128"
