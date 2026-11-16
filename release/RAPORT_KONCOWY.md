@@ -1,3 +1,19 @@
+# Raport – PepeMarketWizard 1.41.0 (pełna aktualizacja: złoto zachowane, AI, moduły MQL5, 3 rynki, 90 strategii)
+
+| Plik | SHA-256 |
+|---|---|
+| `PepeMarketWizard_DESKTOP_1_41_0.zip` (2740 plików, aplikacja Windows) | `7193733ecb7bcc695e9c136da6dae8c565d985480816a2f4687145c72026223b` |
+| `PepeMarketWizard_1_41_0.zip` (1671 plików, folder programu) | `c8b0dc5e3be8df8ba59179b8bc24ca47127b96cd239d79663084dd6c7e8b9885` |
+
+Zakres: `docs/AKTUALIZACJA_1_41_PL.md`. Strategie złota: 38 zinwentaryzowanych, bez zmian, bez drugiej trasy wykonania.
+Katalog: 9 koszyków × 10 = 90 unikalnych ID, 10 różnych rodzin w każdym koszyku. Sprawdzenia: pełna regresja 1373 testy (2 poprawione:
+nowy model TiRex-2 w teście UI, zawijanie długich nazw predykcji w Wind Portal) – OK; testy 1.41 (13) – OK; Hyperliquid na żywo
+(565 rynków, świece, OI, funding, L2) – OK; SDformerFlow trening/resume/aktywacja/inferencja – OK; optymalizacja ETC – OK;
+UI (Playwright, bez błędów konsoli) – OK; `check_requirements_win.py` (TiRex-2 27, TabICL 33 pakiety, cp313/cp312) – OK;
+`verify_release.py --all` – OK. NOT RUN: Windows i MT5 (brak w środowisku), feed Gold OTC (brak źródła).
+
+---
+
 # Raport – PepeMarketWizard 1.40.6 (Granite TTM a Smart App Control)
 
 | Plik | SHA-256 |
