@@ -324,24 +324,24 @@ class TestService(unittest.TestCase):
         self.assertEqual((ctx["use"], ctx["relation"]), ("OBSERVE", "PRZECIWNY"))
         su = TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)
         self.assertEqual(su["status"], "READY")                               # OBSERVE: information only
+        # 1.42 DIRECT_USER_REQUEST: ASSIST without a report (none is invented); the contrary fresh forecast holds READY -> WAIT
         r = svc.set_use("chronos2", "SCALPING", "ASSIST", timeframe="M5", confirm=True)
-        self.assertFalse(r["ok"])
-        self.assertIn("VALIDATION_REQUIRED", r["reason"])
-        # a positive REAL report bound to the current settings -> ASSIST accepted; the contrary fresh forecast holds READY -> WAIT
-        b = V.binding(svc, "chronos2", "XAUUSD", "M5")
-        rep = {"schema": V.SCHEMA, "instrument": "XAUUSD", "timeframe": "M5", "status": "DONE", "bindings": {"chronos2": b},
-               "models": {"chronos2": {"verdict": {"positive": True, "reason": "test"}}}}
-        rep = V._save(rep)
-        self.assertTrue(svc.set_use("chronos2", "SCALPING", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["activation_policy"], "DIRECT_USER_REQUEST")
+        self.assertIsNone(svc.settings.get().models["chronos2"].use["SCALPING"].validation_report)
         ctx = TP.context(svc, "chronos2", "XAUUSD", "SCALPING", side="BUY")
         su = TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)
         self.assertEqual(su["status"], "WAIT")
         self.assertIn("ASSIST", su["status_reason"])
-        # a binding change (horizon) makes the approval stale: ASSIST -> no effect, REQUIRED -> hold (fail-closed)
+        # REQUIRED (blocking) keeps the validation rule: needs a positive REAL report bound to the current settings
+        self.assertFalse(svc.set_use("chronos2", "SCALPING", "REQUIRED", timeframe="M5", confirm=True)["ok"])
+        b = V.binding(svc, "chronos2", "XAUUSD", "M5")
+        rep = {"schema": V.SCHEMA, "instrument": "XAUUSD", "timeframe": "M5", "status": "DONE", "bindings": {"chronos2": b},
+               "models": {"chronos2": {"verdict": {"positive": True, "reason": "test"}}}}
+        rep = V._save(rep)
         svc.settings.update({"horizon_bars": {"M5": 6}})
         ctx = TP.context(svc, "chronos2", "XAUUSD", "SCALPING", side="BUY")
-        self.assertEqual(ctx["use"], "OBSERVE")
-        self.assertIn("nieaktualne", ctx["reason"])
+        self.assertEqual(ctx["use"], "ASSIST")                                # DIRECT ASSIST is not tied to a report binding
         svc.settings.update({"horizon_bars": {"M5": 12}})
         self.assertTrue(svc.set_use("chronos2", "SCALPING", "REQUIRED", timeframe="M5", confirm=True)["ok"])
         svc.settings.update({"models": {"chronos2": {"context_len": 256}}})
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 class TestTiRex2DirectPolicy(unittest.TestCase):
     """1.41: TiRex-2 ASSIST without a validation report (DIRECT_USER_REQUEST) - no report is invented; Chronos-2 / Granite keep the rule."""
 
-    def test_direct_policy_only_for_tirex2_and_never_fakes_a_report(self):
+    def test_direct_policy_assist_never_fakes_a_report(self):
         from masterquo.tsfm import predictions as TP
         from masterquo.tsfm.settings import SettingsStore, default_model
         self.assertEqual(default_model("tirex2").device, "CPU")
@@ -456,9 +456,9 @@ class TestTiRex2DirectPolicy(unittest.TestCase):
             u = svc.settings.get().models["tirex2"].use["SCALPING"]
             self.assertEqual((u.use, u.activation_policy, u.validation_report, u.confirmed_at), ("ASSIST", "DIRECT_USER_REQUEST", None, None))
             self.assertEqual(TP.approval_ok(svc, "tirex2", "XAUUSD", "SCALPING"), (True, None))
-            r2 = svc.set_use("chronos2", "SCALPING", "ASSIST", confirm=True)      # unchanged rule: needs a positive report
-            self.assertFalse(r2["ok"])
-            self.assertIn("VALIDATION_REQUIRED", r2["reason"])
+            r2 = svc.set_use("chronos2", "SCALPING", "ASSIST", confirm=True)      # 1.42: Chronos-2 / Granite TTM too (DIRECT_USER_REQUEST)
+            self.assertTrue(r2["ok"], r2)
+            self.assertEqual(r2["activation_policy"], "DIRECT_USER_REQUEST")
             r3 = svc.set_use("tirex2", "SCALPING", "REQUIRED", confirm=True)       # blocking role keeps the validation rule
             self.assertFalse(r3["ok"])
             self.assertTrue(svc.set_use("tirex2", "SCALPING", "OBSERVE")["ok"])

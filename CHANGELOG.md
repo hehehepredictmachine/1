@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 1.42.0 – nowy interfejs: cinematic, kula FOREX, panele systemowe; stary interfejs usunięty; modele ASSIST i zlecenia koszyków FX
+* **Interfejs (pełna przebudowa)**: `#/menu` – film intro (raz na sesję, „PRZEJDŹ DO MENU”, ESC, ograniczenie ruchu) i menu
+  PEPEMARKETWIZARD TEAM z planetami 01 FOREX · 02 CRYPTO · 03 OTC (CRYPTO / OTC: „tryb w przygotowaniu”, bez zmiany profilu bota);
+  `#/forex` – przelot do kuli FOREX, panele MODEL A (predykcje modeli) i MODEL B (silnik sygnałów) z prawdziwych danych, cztery planety:
+  **CHARTS** (wykres, wskaźniki, strefy, profil wolumenu, plan, sygnały AI, okno Kronos + wybór interwałów pracy Kronosa),
+  **SIGNALS** (sygnały silnika / scenariuszy / SH, bramki ścieżki, ocena wszystkich modeli, strategie, wyniki),
+  **MODELS & BACKTEST** (obserwatorium modeli, trening, backtest, Monte Carlo z raportem), **ROI** (PAPER / AUTO_DEMO / AUTO_LIVE);
+  `#/system?p=settings|mode|stop|diagnostics` – szuflada paneli systemowych nad bieżącym ekranem (ta sama logika co w 1.41).
+* Stary interfejs 1.41 przeniesiony do `archive/ui_1_41/` (poza buildem i paczkami). Przekierowania starych adresów:
+  `#/wykresy` → CHARTS, `#/pepe-signal`/`#/sygnal` → SIGNALS, `#/trening`/`#/modele` → MODELS, `#/profits` → ROI,
+  `#/ustawienia` → Ustawienia, `#/system-control` → Tryb pracy, `#/diagnostyka` → Diagnostyka, pozostałe (`#/galaxy`, `#/neural-city`, …) → menu.
+* Okno startowe Windows: nowy wygląd (czarna głębia, PEPEMARKETWIZARD TEAM, linie postępu) i przycisk **WEJDŹ**; protokół z Go bez zmian.
+* Nowy endpoint tylko do odczytu: `GET /api/v1/montecarlo/validations/{run_id}/report`.
+* **Modele: OBSERVE → ASSIST** (decyzja użytkownika, jednorazowa migracja `data/upgrade/1.42.0.json`): Chronos-2, Granite TTM i TiRex-2 na
+  ścieżkach ACTIVE / SCALPING / HEDGING oraz Kronos na SCALPING / HEDGING. ASSIST może tylko **wstrzymać** wejście przy świeżej prognozie
+  przeciwnej do strony setupu – nigdy nie otwiera pozycji. Nie wymaga raportu walidacji (żaden raport nie jest wymyślany); REQUIRED
+  ustawione wcześniej przez użytkownika zostaje. Moduły MQL5 pracują dalej w analizie (ACTIVE).
+* **90 strategii – zlecenia FOREX**: plany koszyków FX_SMC / FX_SCALP / FX_HEDGE (PositionPlan na symbolu bota) trafiają do istniejącej
+  ścieżki SH: koordynator → wspólny silnik ryzyka z Twoimi limitami → intent + atomowa rezerwacja ryzyka → executor. Jeden plan na
+  zdarzenie, każdy sygnał najwyżej raz, świeżość ≤ 3 świece (max 30 min), unieważnienie gdy cena jest za SL lub minęła TP1.
+  Przełącznik `baskets.profiles.FOREX_MT5.execution` = `AUTO_SH` | `SIGNALS_ONLY`. CRYPTO / OTC – nadal ręcznie.
+* Bez zmian: tryb wykonania rachunku, STOP, limity ryzyka, stawki, dźwignia, SL, strategie złota, silnik, MQL5.
+
 ## 1.41.0 – pełna aktualizacja: zachowanie strategii złota, TiRex-2 + TabICLv2, 6 modułów MQL5, 3 rynki, 9 koszyków / 90 strategii
 * **Zachowanie złota**: inwentaryzacja 38 strategii i 29 modeli przed/po, raport `strategy_preservation.json`, kopia konfiguracji
   `data/backups/pre-1.41.0`, migracja idempotentna; stare strategie bez nowych bramek i bez drugiej trasy wykonania.

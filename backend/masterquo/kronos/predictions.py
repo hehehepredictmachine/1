@@ -28,6 +28,7 @@ SERVICE_STATE = {"NOT_INSTALLED": "DISABLED", "NO_WEIGHTS": "DISABLED", "DISABLE
                  "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR"}
 INCOMPATIBLE_CODES = ("INCOMPATIBLE", "CHECKSUM", "CHECKSUM_MISMATCH", "MISSING_DEPENDENCY")
 USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – nie wpływa na decyzje ani zlecenia",
+          "ASSIST": "ASSIST (decyzja użytkownika 1.42) – świeża prognoza przeciwna do strony setupu wstrzymuje wejście (READY → WAIT)",
           "REQUIRED": "dodatkowy warunek wymagany (włączony po walidacji) – może tylko wstrzymać setup, nigdy nie otwiera pozycji"}
 KNOWS_ONLY = ("Kronos widzi wyłącznie OHLC (+ tick volume jako wolumen) i czasy zamkniętych świec – nie zna poziomów likwidacji, newsów, "
               "spreadu, prowizji, poślizgu ani pozycji")
@@ -145,6 +146,16 @@ def apply_to_setup(su: dict, ctx: dict) -> dict:
     """Attach the Kronos context to one SH evaluation. OBSERVE: information only. REQUIRED: may only turn READY into WAIT."""
     su["kronos"] = ctx
     cl = su.setdefault("checklist", [])
+    if ctx["use"] == "ASSIST":
+        lab = f"Kronos {ctx['timeframe']} (ASSIST)"
+        if su.get("status") == "READY" and ctx["available"] and ctx["relation"] == "PRZECIWNY":
+            f = ctx["forecast"]
+            cl.append({"id": "kronos", "label": lab, "status": "FAIL", "detail": f"prognoza {f['direction_pl']} ({f['delta_price']:+.3f}) przeciwna do {su.get('side')}"})
+            su.update(status="WAIT", status_reason=f"Kronos (ASSIST): prognoza {f['direction_pl']} przeciwna do {su.get('side')}"[:300])
+        else:
+            detail = (f"{ctx['forecast']['direction_pl']} – relacja: {ctx['relation']}") if ctx["forecast"] else f"niedostępny (bez wpływu): {ctx['reason']}"
+            cl.append({"id": "kronos", "label": lab, "status": "PASS" if ctx["relation"] == "ZGODNY" else "INFO", "detail": detail})
+        return su
     if ctx["use"] != "REQUIRED":
         detail = (f"{ctx['forecast']['direction_pl']} {ctx['forecast']['delta_price']:+.3f} w {ctx['forecast']['horizon_bars']} świecach {ctx['timeframe']} "
                   f"– relacja do strony setupu: {ctx['relation']}") if ctx["forecast"] else f"niedostępny: {ctx['reason']}"

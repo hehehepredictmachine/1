@@ -29,7 +29,7 @@ TF = Literal["M1", "M3", "M5", "M15", "M30", "H1"]
 TF_ALL = ("M1", "M3", "M5", "M15", "M30", "H1")
 PATHS = ("ACTIVE", "SCALPING", "HEDGING")
 MODEL_IDS = ("chronos2", "granite_ttm", "tirex2")                                 # 1.41 TiRex-2
-DIRECT_POLICY_IDS = ("tirex2",)                                                  # 1.41: ASSIST without a validation report (DIRECT_USER_REQUEST)
+DIRECT_POLICY_IDS = ("tirex2", "chronos2", "granite_ttm")                       # ASSIST without a validation report (DIRECT_USER_REQUEST: 1.41 TiRex-2, 1.42 all)
 RETIRED_IDS = ("fincast",)                                                       # 1.40: history only, never scheduled
 HORIZON_DEFAULT = {"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6}      # = Kronos defaults (starting values, not proven optimal)
 

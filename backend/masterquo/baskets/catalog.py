@@ -17,8 +17,8 @@ from . import detectors as D
 VERSION = "CATALOG-1.41.0"
 PROFILES = {
     "FOREX_MT5": {"name": "FOREX / MT5", "venue": "MT5", "products": ["CFD", "FX_SPOT_CFD", "METAL_CFD"], "settlement": "POSITION",
-                  "execution_capability": "SIGNALS_AND_MANUAL_TICKET",
-                  "execution_note": "1.41: nowe koszyki publikują sygnały i plany; zlecenia składa tylko istniejąca ścieżka bota (bez nowej, równoległej trasy)"},
+                  "execution_capability": "AUTO_VIA_SH_PATH",
+                  "execution_note": "1.42: plany koszyków FX trafiają do istniejącej ścieżki SH bota (ryzyko, STOP, tryb wykonania, deduplikacja) – bez nowej, równoległej trasy"},
     "CRYPTO_FOMO_PERPS": {"name": "CRYPTO PERPS / FOMO (fomo.family)", "venue": "HYPERLIQUID (perps używane przez FOMO)", "products": ["PERPETUAL"],
                           "settlement": "PERPETUAL", "execution_capability": "MANUAL_ONLY",
                           "execution_note": "brak udokumentowanego API rachunku FOMO – ticket do ręcznego wykonania w FOMO; dane: publiczne Hyperliquid Info API"},

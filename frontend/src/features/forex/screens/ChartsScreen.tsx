@@ -27,7 +27,7 @@ export default function ChartsScreen({ active }: ScreenProps) {
   const con = s.connection || {};
   const status = con.state === "CONNECTED" ? (s.dq?.status === "STALE" ? "stale" : "live") : con.state === "CONNECTING" ? "loading" : "offline";
   return (
-    <section id="charts-screen" aria-label="CHARTS">
+    <section id="charts-screen" aria-label="CHARTS" data-testid="forex-charts">
       <div id="ch-head" className="ci">
         <div id="ch-title" aria-hidden="true"><span className="n">01</span>CHARTS</div><span className="ch-sep" />
         <div id="ch-asset" className="segb" role="group" aria-label="Aktywny instrument"><button type="button" aria-pressed="true" data-autofocus>{s.symbol?.symbol ?? "—"}</button></div><span className="ch-sep" />

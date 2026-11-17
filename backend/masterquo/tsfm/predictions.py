@@ -175,7 +175,11 @@ def kronos_rows(kr, inst: str) -> list[dict]:
         rows = KP.contract_predictions(kr, inst)
     except Exception:  # noqa: BLE001
         return []
-    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "use": "SHADOW", "no_required": True} for p in rows]
+    try:                                                    # 1.42: ASSIST when Kronos is ASSIST on any SH path (DIRECT_USER_REQUEST)
+        assist = any(u.use == "ASSIST" for u in kr.settings.get().strategy_use.values())
+    except Exception:  # noqa: BLE001
+        assist = False
+    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "use": "ASSIST" if assist else "SHADOW", "no_required": True} for p in rows]
 
 
 def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None) -> dict:

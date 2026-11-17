@@ -263,7 +263,7 @@ class SHService:
                     rstate = self.risk_state(spec.symbol, fam, now, foreign)
                     if mode == "AUTO_LIVE":
                         rstate["live_validation"] = self.pack_live_validation(su) if is_pack else self.live_validation(inst, fam)
-                    prof = self.pack.profile(su, C.profile(shc, inst, fam)) if is_pack else C.profile(shc, inst, fam)
+                    prof = self.vprofile(su, C.profile(shc, inst, fam)) if is_pack else C.profile(shc, inst, fam)
                     risk = RK.evaluate(setup=su, spec=spec, prof=prof, cfg=shc, inst=inst, account=acc,
                                        state=rstate, exec_mode=mode, now=now, quote=q)
                     if is_pack:
@@ -296,7 +296,10 @@ class SHService:
             if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block and not model_block:
                 res = self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
                 if is_pack and (res or {}).get("status") in ("OPEN", "ABORTED", "FILLED", "PARTIAL", "REJECTED", "UNKNOWN", "DUPLICATE"):
-                    self.pack.consumed(su)
+                    if su.get("basket"):
+                        self.basket_consumed(su, res)
+                    else:
+                        self.pack.consumed(su)
         for fn in list(self.listeners):
             try:
                 fn(evals, inst=inst, symbol=spec.symbol, snap=snap, now=now)
@@ -320,6 +323,7 @@ class SHService:
         except Exception as exc:  # noqa: BLE001 - a failing pack never stops the legacy strategies or the management of open plans
             self.log.error("SH", "PACK", f"{type(exc).__name__}: {exc}"[:300])
             return []
+        out = list(out) + self.basket_setups(inst, spec, q, now)          # 1.42: FX basket plans enter the SAME pipeline
         fam = getattr(self, "families", None)
         res = []
         for su in out:
@@ -346,8 +350,95 @@ class SHService:
         art = fam._artifact("VOL_GARCH", inst, rid)
         return {"status": "READY", "run_id": rid, "omega": art["omega"], "alpha": art["alpha"], "beta": art["beta"], "dist": art.get("dist")}
 
+    # ------------------------------------------------------------------ 1.42: FX baskets (FX_SMC / FX_SCALP / FX_HEDGE) -> SH path
+    def vprofile(self, su: dict, fam_prof: dict) -> dict:
+        return self.basket_profile(su, fam_prof) if su.get("basket") else self.pack.profile(su, fam_prof)
+
+    @staticmethod
+    def basket_profile(su: dict, fam_prof: dict) -> dict:
+        """Frozen execution profile of a basket plan: its two planned targets (50 / 50), its own timeout, no BE, no SH hedge leg
+        (basket hedging stays with the basket hedge planners); risk sizing = the shared SH risk engine with the user's limits."""
+        mins = float(su.get("position_max_minutes") or 60)
+        return {"shares": list(su.get("shares") or [0.5, 0.5]), "shares_fallback_two": None, "position_max_minutes": mins, "horizon_minutes": mins,
+                "be_after": None, "be_rule": None, "min_net_rr": 1.0, "strategy_id": su.get("strategy_id"),
+                "strategy_version": (su.get("pack") or {}).get("strategy_version"), "config_hash": None, "_instrument": fam_prof.get("_instrument") or {}}
+
+    def basket_setups(self, inst: str, spec, q, now: float) -> list[dict]:
+        bs = getattr(self, "baskets", None)
+        if bs is None:
+            return []
+        try:
+            cands = bs.sh_candidates(spec.symbol, now)
+        except Exception as exc:  # noqa: BLE001 - the baskets never stop the SH cycle
+            self.log.warn("SH", "BASKET_CANDIDATES", f"{type(exc).__name__}: {exc}"[:200])
+            return []
+        out = []
+        for sg in cands:
+            try:
+                su = self.basket_su(sg, inst, spec, q, now)
+            except Exception as exc:  # noqa: BLE001 - a malformed plan is skipped (and consumed), never guessed
+                bs.ledger.mark_exec(sg["signal_id"], None, "MALFORMED", f"{type(exc).__name__}: {exc}"[:200])
+                continue
+            if su["status"] == "INVALIDATED":
+                bs.ledger.mark_exec(sg["signal_id"], None, "INVALIDATED", su["status_reason"])
+            out.append(su)
+        return out
+
+    @staticmethod
+    def basket_su(sg: dict, inst: str, spec, q, now: float) -> dict:
+        """Basket PositionPlan -> setup-shaped candidate (pack contract) for the shared coordinator / risk / intent / executor path."""
+        import hashlib
+        from ..baskets import catalog as BCAT
+        pl = sg.get("plan") or {}
+        side = "BUY" if pl.get("side") == "LONG" else "SELL"
+        sgn = 1 if side == "BUY" else -1
+        entry, sl = float(pl["entry_ref"]), float(pl["sl"])
+        tg = [float(t["price"]) for t in pl.get("targets") or []][:2]
+        if not tg:
+            raise ValueError("plan bez celów")
+        if len(tg) == 1:
+            tg = [tg[0], tg[0]]
+        status, reason = "READY", f"plan koszyka {sg.get('basket_id')} ({sg.get('strategy_id')}) – przekazany do ścieżki SH"
+        if q and q.get("bid") and q.get("ask"):
+            px = float(q["ask"] if side == "BUY" else q["bid"])
+            if sgn * (px - sl) <= 0:
+                status, reason = "INVALIDATED", "cena za SL planu koszyka przed wejściem"
+            elif sgn * (tg[0] - px) <= 0:
+                status, reason = "INVALIDATED", "cena minęła TP1 planu koszyka przed wejściem – brak pogoni"
+        spread = float((q or {}).get("spread") or 0.0)
+        R = abs(entry - sl)
+        rr = round(abs(tg[0] - entry) / R, 3) if R > 0 else None
+        mins = round(int(pl.get("timeout_bars") or 8) * {"M1": 1, "M3": 3, "M5": 5, "M15": 15, "M30": 30, "H1": 60}.get(sg.get("tf"), 5), 1)
+        meta = BCAT.BY_ID.get(sg.get("strategy_id")) or {}
+        sid = "SH-BK" + hashlib.sha256(str(sg["signal_id"]).encode()).hexdigest()[:20]
+        score = (sg.get("scores") or {}).get("setup_score")
+        return {"strategy": "SCALPING", "strategy_id": sg.get("strategy_id"), "signal_id": sid, "instrument": inst, "symbol": spec.symbol, "side": side,
+                "status": status, "status_reason": reason, "created_at": float(sg.get("created_at") or now), "valid_until": float(sg["valid_until"]),
+                "config_hash": None, "setup_version": BCAT.VERSION, "checklist": [],
+                "score": {"value": score, "definition": "setup_score koszyka 0–100 – NIE prawdopodobieństwo"},
+                "probability": {"value": None, "status": "BRAK_MODELU_ZDARZENIA"},
+                "entry_ref": entry, "sl": sl, "invalidation": sl,
+                "tps": [{"name": "TP1", "price": tg[0], "share": 0.5}, {"name": "TP2", "price": tg[1], "share": 0.5}], "shares": [0.5, 0.5],
+                "horizon_minutes": mins, "position_max_minutes": mins, "be": None, "model_mode": "OGRANICZONA", "mode": "PACK",
+                "costs": {"round_trip_price": spread, "commission_known": False, "note": "koszt do sizingu = spread (prowizja wg ustawień instrumentu)"},
+                "net_rr": rr, "entry_zone": [entry, entry],
+                "basket": {"signal_id": sg["signal_id"], "basket_id": sg.get("basket_id"), "event_id": sg.get("event_id"), "tf": sg.get("tf")},
+                "pack": {"contract": "PMW-PLAN-2", "strategy_id": sg.get("strategy_id"), "name": meta.get("name") or sg.get("strategy_id"), "family": "SCALPING",
+                         "cluster": sg.get("basket_id"), "setup_group_id": sg.get("event_id"), "signal_tf": sg.get("tf"), "context_tfs": meta.get("context_timeframes") or [],
+                         "management_policy_id": None, "strategy_version": meta.get("version"), "config_hash": meta.get("config_hash"),
+                         "validation": {"status": "NOT_VALIDATED"}, "reason_code": "OK" if status == "READY" else "PRE_FILL_INVALIDATION",
+                         "analytical_state": status, "source": "BASKET_1_42",
+                         "economics": {"cost_status": "SPREAD_ONLY", "c_round_trip": spread, "hedge_loss_bound_price": 0.0}}}
+
+    def basket_consumed(self, su: dict, res: dict | None) -> None:
+        bs = getattr(self, "baskets", None)
+        if bs is not None:
+            bs.ledger.mark_exec(su["basket"]["signal_id"], "PL-" + su["signal_id"][3:], str((res or {}).get("status")), (res or {}).get("reason"))
+
     @staticmethod
     def pack_live_validation(su: dict) -> dict:
+        if su.get("basket"):
+            return {"ok": False, "reason": f"koszyk {su['basket'].get('basket_id')}: brak walidacji OOS na danych MT5 użytkownika"}
         from .pack import catalog as CAT
         v = CAT.validation_status(su.get("strategy_id"))
         if v.get("status") == "VALIDATED" and v.get("data_kind") == "REAL_USER_DATA":
@@ -398,7 +489,7 @@ class SHService:
         if ts is None:
             return su
         from ..tsfm import predictions as TP
-        for mid in ("chronos2", "granite_ttm"):
+        for mid in ("chronos2", "granite_ttm", "tirex2"):                 # 1.42: TiRex-2 receiver too (ASSIST)
             try:
                 ctx = TP.context(ts, mid, inst, strat, side=su.get("side"))
             except Exception as exc:  # noqa: BLE001
@@ -461,7 +552,7 @@ class SHService:
     def open_plan(self, ex, su, risk, spec, q, mode, now, shc, inst, snap) -> dict:
         pid = "PL-" + su["signal_id"][3:]
         is_pack = bool(su.get("strategy_id"))
-        prof = self.pack.profile(su, C.profile(shc, inst, su["strategy"])) if is_pack else C.profile(shc, inst, su["strategy"])
+        prof = self.vprofile(su, C.profile(shc, inst, su["strategy"])) if is_pack else C.profile(shc, inst, su["strategy"])
         plan = {"plan_id": pid, "signal_id": su["signal_id"], "strategy": su["strategy"], "strategy_id": su.get("strategy_id"),
                 "pack": su.get("pack") if is_pack else None, "instrument": inst, "symbol": spec.symbol,
                 "side": su["side"], "exec_mode": mode, "account_key": self.bridge.account_key, "config_hash": shc["_hash"],

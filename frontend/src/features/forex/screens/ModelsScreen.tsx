@@ -41,7 +41,7 @@ export default function ModelsScreen({ engine }: ScreenProps) {
   const data = st.data?.data?.[inst];
   const notice = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3600); };
   return (
-    <section id="models-screen" aria-label="MODELS & BACKTEST" ref={screenRef}>
+    <section id="models-screen" aria-label="MODELS & BACKTEST" ref={screenRef} data-testid="forex-models">
       <div id="mb-head" className="ci">
         <div id="mb-title" aria-hidden="true"><span className="n">03</span>MODELS &amp; BACKTEST</div><span className="ch-sep" />
         <div id="mb-asset" className="segb" role="group" aria-label="Instrument (trenowane osobno)">{(["XAUUSD", "BTC"] as const).map((a) =>

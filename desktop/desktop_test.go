@@ -405,7 +405,7 @@ func TestWindowTitleHasNoEdition(t *testing.T) {
 	}
 }
 
-// 1.32: the launcher "JOIN THE CULT" is a small window; JOIN grows it to 85 % and opens the panel with the intro.
+// 1.32: the launcher "WEJDŹ" is a small window; JOIN grows it to 85 % and opens the panel with the intro.
 func TestLauncherAndPanelGeometry(t *testing.T) {
 	for _, c := range []struct{ sw, sh, w, h int }{
 		{1920, 1040, 960, 660}, {1366, 728, 956, 618}, {1024, 728, 716, 618}, {800, 560, 640, 476}, {0, 0, 960, 660},
@@ -446,7 +446,7 @@ func TestLauncherPageKeepsStartFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(b)
-	for _, want := range []string{"JOIN THE CULT", `id="btnJoin"`, `call("join")`, `call("state")`, `call("import"`, `call("fresh")`,
+	for _, want := range []string{"WEJDŹ", "PEPEMARKETWIZARD", `id="btnJoin"`, `call("join")`, `call("state")`, `call("import"`, `call("fresh")`,
 		`call("retry")`, `call("logs")`, `call("exit")`, `s.phase === "ready"`, "SYSTEM READY", "prefers-reduced-motion"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("splash.html: missing %q", want)

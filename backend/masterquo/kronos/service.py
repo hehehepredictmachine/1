@@ -766,6 +766,10 @@ class KronosService:
         if use == "OBSERVE":
             self.settings.update({"strategy_use": {strategy: {"use": "OBSERVE", "timeframe": tf, "validation_report": None, "confirmed_at": None}}})
             return {"ok": True, "use": "OBSERVE"}
+        if use == "ASSIST":                          # 1.42 DIRECT_USER_REQUEST: may only hold READY -> WAIT on a fresh contrary forecast
+            self.settings.update({"strategy_use": {strategy: {"use": "ASSIST", "timeframe": tf, "validation_report": None, "confirmed_at": iso(utcnow())}}})
+            self.applog.info("KRONOS", "STRATEGY_USE", f"{strategy}: Kronos {tf} = ASSIST (decyzja użytkownika 1.42, bez raportu walidacji).")
+            return {"ok": True, "use": "ASSIST", "activation_policy": "DIRECT_USER_REQUEST"}
         if use != "REQUIRED":
             return {"ok": False, "reason": "INVALID_USE"}
         if not confirm:

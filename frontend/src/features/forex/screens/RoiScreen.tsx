@@ -27,7 +27,7 @@ export default function RoiScreen({ engine }: ScreenProps) {
   const mmx = Math.max(1, ...months.map(([, v]) => Math.abs(v.net || 0)));
   const showRoi = mode !== "PAPER";
   return (
-    <section id="roi-screen" aria-label="ROI">
+    <section id="roi-screen" aria-label="ROI" data-testid="forex-roi">
       <div id="ro-head" className="ci">
         <div id="ro-title" aria-hidden="true"><span className="n">04</span>ROI</div><span className="ch-sep" />
         <div id="ro-mode" className="segb" role="group" aria-label="Tryb">{["PAPER", "AUTO_DEMO", "AUTO_LIVE"].map((m) =>

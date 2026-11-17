@@ -50,7 +50,7 @@ export default function SignalsScreen({ engine }: ScreenProps) {
   }); // eslint-disable-line react-hooks/exhaustive-deps
   const err = bot.err || setups.err;
   return (
-    <section id="signals-screen" aria-label="SIGNALS">
+    <section id="signals-screen" aria-label="SIGNALS" data-testid="forex-signals">
       <div id="sg-head" className="ci">
         <div id="sg-title" aria-hidden="true"><span className="n">02</span>SIGNALS</div><span className="ch-sep" />
         <div id="sg-asset" className="segb"><button type="button" aria-pressed="true">{s.symbol?.symbol ?? "—"}</button></div><span className="ch-sep" />

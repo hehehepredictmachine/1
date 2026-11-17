@@ -4,6 +4,14 @@
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.42 – nowy interfejs (cinematic + kula FOREX), modele ASSIST, zlecenia koszyków FX
+* Okno startowe Windows: **WEJDŹ** (dawniej JOIN THE CULT) → film intro → menu **FOREX / CRYPTO / OTC** → kula FOREX z ekranami
+  **CHARTS, SIGNALS, MODELS & BACKTEST, ROI**. Ustawienia, Tryb pracy, STOP i Diagnostyka – ikony w prawym dolnym rogu.
+* Modele Chronos-2, Granite TTM, TiRex-2 i Kronos pracują jako **ASSIST** (mogą tylko wstrzymać wejście); plany koszyków FX idą do
+  istniejącej ścieżki SH z Twoimi limitami ryzyka. Szczegóły: `docs/AKTUALIZACJA_1_42_PL.md`.
+* Opisy ekranów w sekcjach starszych wersji poniżej (Galaxy, wieże, Neural City, JOIN THE CULT) dotyczą interfejsu sprzed 1.42 –
+  stare adresy przekierowują do nowych ekranów.
+
 ## Nowe w 1.40 – Granite TTM zamiast FinCast, Memory Governor (16 GB), nowy WTC$PEPE
 * **FinCast wycofany**, w jego miejsce lekki **IBM Granite TTM** (0,8 M parametrów, ok. 0,35 GB RAM): `38_MODELE_CHRONOS2_GRANITE.bat` albo
   „Zainstaluj” w Wykresy bota → Modele prognoz. Rola OBSERVE (informacja). Historia FinCast zostaje.

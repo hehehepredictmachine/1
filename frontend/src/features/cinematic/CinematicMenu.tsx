@@ -47,7 +47,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
 
   return (
     <div className="app-cinematic" data-state="boot" ref={rootRef} data-testid="page-menu">
-      <canvas className="cin-universe" role="img" aria-label="Trzy srebrne planety z cząsteczek na tle gwiazd: FOREX z pierścieniem i czterema księżycami, CRYPTO z bloków z łańcuchem bloków na orbicie, OTC z rdzeniem w powłoce. Tryby wybiera się przyciskami FOREX, OTC i CRYPTO." />
+      <canvas className="cin-universe" data-testid="cinematic-menu" role="img" aria-label="Trzy srebrne planety z cząsteczek na tle gwiazd: FOREX z pierścieniem i czterema księżycami, CRYPTO z bloków z łańcuchem bloków na orbicie, OTC z rdzeniem w powłoce. Tryby wybiera się przyciskami FOREX, OTC i CRYPTO." />
       <div className="cin-vignette" aria-hidden="true" />
       <main className="cin-menu" aria-label="Wybierz tryb pracy bota" inert>
         <header className="cin-masthead"><h1>PEPEMARKETWIZARD <span className="team">TEAM</span></h1><p className="cin-motto">They call us cult but we are something more</p></header>

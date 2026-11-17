@@ -169,3 +169,73 @@ def rollback_config() -> dict:
     st.setdefault("rollbacks", []).append({"at": _now(), "restored": restored})
     _save(st)
     return {"ok": True, "restored": restored, "note": "ledgery, historia transakcji i zdarzeń po aktualizacji pozostają bez zmian"}
+
+
+# ====================================================================== 1.42 (DIRECT_USER_REQUEST, recorded in <data>/upgrade/1.42.0.json)
+V142 = "1.42.0"
+
+
+def _st142_path() -> Path:
+    p = paths.data_dir() / "upgrade"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{V142}.json"
+
+
+def state_142() -> dict:
+    try:
+        return json.loads(_st142_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def apply_142(rt) -> dict:
+    """Once per installation (idempotent): the user's 1.42 decision "Modele: OBSERVE -> ASSIST, 90 strategii: zlecenia FOREX".
+      * Chronos-2 / Granite TTM / TiRex-2: every path (ACTIVE / SCALPING / HEDGING) OBSERVE -> ASSIST (DIRECT_USER_REQUEST, no report is
+        invented; REQUIRED set by the user is kept);
+      * Kronos: SCALPING / HEDGING OBSERVE -> ASSIST (REQUIRED kept);
+      * FOREX_MT5 baskets: execution AUTO_SH (plans go to the existing SH path).
+    ASSIST may only HOLD an entry on a fresh contrary forecast - it never opens a position. Not changed: the account execution mode,
+    STOP, the user's risk limits, stakes, leverage, SL; CRYPTO / OTC stay manual. A later user change is never overwritten (runs once)."""
+    st = state_142()
+    if st.get("models_assist_done"):
+        return st
+    done, errors = [], []
+    ts = getattr(rt, "tsfm", None)
+    if ts is not None:
+        try:
+            s = ts.settings.get()
+            for mid, mc in s.models.items():
+                for path, u in mc.use.items():
+                    if u.use == "OBSERVE":
+                        tf = u.timeframe if u.timeframe in mc.timeframes else (mc.timeframes[0] if mc.timeframes else u.timeframe)
+                        r = ts.set_use(mid, path, "ASSIST", timeframe=tf, confirm=True)
+                        (done if r.get("ok") else errors).append(f"tsfm:{mid}:{path}:{tf}:" + ("ASSIST" if r.get("ok") else str(r.get("reason"))[:120]))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"tsfm: {type(exc).__name__}: {exc}"[:200])
+    kr = getattr(rt, "kronos", None)
+    if kr is not None:
+        try:
+            for strat, u in kr.settings.get().strategy_use.items():
+                if u.use == "OBSERVE":
+                    r = kr.set_strategy_use(strat, "ASSIST", timeframe=u.timeframe, confirm=True)
+                    (done if r.get("ok") else errors).append(f"kronos:{strat}:" + ("ASSIST" if r.get("ok") else str(r.get("reason"))[:120]))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"kronos: {type(exc).__name__}: {exc}"[:200])
+    bs = getattr(rt, "baskets", None)
+    if bs is not None:
+        try:
+            bs.update_settings({"profiles": {"FOREX_MT5": {"execution": "AUTO_SH"}}})
+            done.append("baskets:FOREX_MT5:AUTO_SH")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"baskets: {type(exc).__name__}: {exc}"[:200])
+    st.update(version=V142, models_assist_done=True, at=_now(), activation_policy="DIRECT_USER_REQUEST", applied=done, errors=errors,
+              not_changed=["account execution mode", "STOP", "risk limits / stakes / leverage / SL", "CRYPTO / OTC (manual)"])
+    p = _st142_path()
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(p)
+    try:
+        rt.log.info("UPGRADE", "1_42_ASSIST", f"1.42: modele ASSIST + zlecenia koszyków FX przez ścieżkę SH ({len(done)} zmian, {len(errors)} błędów)")
+    except Exception:  # noqa: BLE001
+        pass
+    return st

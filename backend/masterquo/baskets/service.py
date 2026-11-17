@@ -6,8 +6,10 @@ Flow per market context (profile + venue + environment + account/public + produc
   -> regime -> selector (OFF / AUTO / MANUAL_SELECT, separate from the execution mode) -> rule families -> plans
   -> event dedupe (one primary plan per event id; other strategies = justifications) -> direction conflict (WAIT) -> risk allocation
   (quantity / stake null without the profile's capital config) -> ledger -> API / UI; hedge planners on existing exposure.
-Execution: the baskets publish SIGNALS, plans and MANUAL tickets only. They never send an order, never change the account mode,
-STOP, risk, leverage or the existing gold strategies (which keep their own, unchanged execution route).
+Execution (1.42, DIRECT_USER_REQUEST "zlecenia FOREX"): PositionPlans of the FOREX_MT5 baskets (FX_SMC / FX_SCALP / FX_HEDGE) on the
+bridge symbol are handed to the EXISTING SH path (sh/service.py: coordinator -> shared risk engine with the user's limits -> intent /
+atomic risk reservation -> SH executor), one primary plan per event, each signal at most once (table `executions`). The baskets never
+send an order themselves and never change the account mode, STOP, risk limits, leverage or the gold strategies. CRYPTO / OTC: manual.
 """
 from __future__ import annotations
 
@@ -40,7 +42,8 @@ DEFAULT_SETTINGS = {
     "activation_policy": "DIRECT_USER_REQUEST",
     "active_profile": "FOREX_MT5",
     "profiles": {
-        "FOREX_MT5": {"enabled": True, "selection": "AUTO", "instruments": [], "capital": {"risk_money": None}, "fx_pairs": [], "pair_map": {}},
+        "FOREX_MT5": {"enabled": True, "selection": "AUTO", "instruments": [], "capital": {"risk_money": None}, "fx_pairs": [], "pair_map": {},
+                      "execution": "AUTO_SH"},      # 1.42: AUTO_SH = plans go to the SH execution path | SIGNALS_ONLY = 1.41 behaviour
         "CRYPTO_FOMO_PERPS": {"enabled": True, "selection": "AUTO", "instruments": ["BTC", "ETH", "SOL", "HYPE"], "flow_instrument": "BTC",
                               "capital": {"risk_money": None, "currency": "USDC"}, "fees": {"taker": None, "maker": None}, "pair_map": {}, "same_underlying": {}},
         "OTC_GOLD_POCKETOPTION": {"enabled": True, "selection": "AUTO", "instruments": ["GOLD_OTC"], "capital": {"stake": None, "currency": None}},
@@ -93,7 +96,17 @@ class Ledger:
             CREATE TABLE IF NOT EXISTS hedge_plans(plan_id TEXT PRIMARY KEY, strategy_id TEXT, basket_id TEXT, profile_id TEXT, created_at REAL, state TEXT,
               reason TEXT, plan TEXT);
             CREATE TABLE IF NOT EXISTS declared(id TEXT PRIMARY KEY, profile_id TEXT, kind TEXT, data TEXT, created_at REAL, status TEXT);
+            CREATE TABLE IF NOT EXISTS executions(signal_id TEXT PRIMARY KEY, plan_id TEXT, status TEXT, reason TEXT, at REAL);
             """)
+
+    def mark_exec(self, sid: str, plan_id: str | None, status: str, reason: str | None = None) -> None:
+        """1.42: a basket signal handed to the SH path is consumed once (idempotent; the first outcome stays)."""
+        with self._lock, self._c() as c:
+            c.execute("INSERT OR IGNORE INTO executions VALUES(?,?,?,?,?)", (sid, plan_id, status, reason, time.time()))
+
+    def executed(self) -> dict:
+        with self._c() as c:
+            return {r["signal_id"]: dict(r) for r in c.execute("SELECT * FROM executions ORDER BY at DESC LIMIT 500")}
 
     @contextlib.contextmanager
     def _c(self):
@@ -225,6 +238,8 @@ class BasketService:
                 raise ValueError(f"UNKNOWN_PROFILE:{p}")
             if "selection" in v and v["selection"] not in ("OFF", "AUTO", "MANUAL_SELECT"):
                 raise ValueError("selection: OFF | AUTO | MANUAL_SELECT")
+            if "execution" in v and (p != "FOREX_MT5" or v["execution"] not in ("AUTO_SH", "SIGNALS_ONLY")):
+                raise ValueError("execution: AUTO_SH | SIGNALS_ONLY (tylko FOREX_MT5; CRYPTO / OTC = ręcznie)")
         if patch.get("active_profile") and patch["active_profile"] not in CAT.PROFILES:
             raise ValueError("UNKNOWN_PROFILE")
         new = _merge(self._read(), patch)
@@ -658,7 +673,7 @@ class BasketService:
             sig = {"signal_id": f"{eid}|{s['strategy_id']}", "event_id": eid, "strategy_id": s["strategy_id"], "basket_id": s["basket_id"], "profile_id": c.profile,
                    "context_key": c.key, "instrument": c.instrument, "tf": s["signal_timeframe"], "side": plan.get("side") or plan.get("direction"),
                    "created_at": now, "bar_t": F.t[F.i], "status": "ACTIVE", "role": "PRIMARY",
-                   "plan": {**plan, "execution": CAT.PROFILES[c.profile]["execution_capability"], "execution_status": "SIGNAL (bez zlecenia)"},
+                   "plan": {**plan, "execution": CAT.PROFILES[c.profile]["execution_capability"], "execution_status": self._exec_status(c, plan, st)},
                    "setup": {**r, "justifications": [x[1]["strategy_id"] for x in ranked[1:]], "regime": c.regime}, "scores": sc}
             if self.ledger.add_signal(sig):
                 n += 1
@@ -667,6 +682,33 @@ class BasketService:
             for x in ranked[1:]:
                 c.state[x[1]["strategy_id"]] = {"state": "DUPLICATE_EVENT", "primary": s["strategy_id"], "event_id": eid}
         return n
+
+    @staticmethod
+    def _exec_status(c: Ctx, plan: dict, st: dict) -> str:
+        if c.profile == "FOREX_MT5" and plan.get("plan_type") == "PositionPlan" and \
+                (st["profiles"]["FOREX_MT5"].get("execution") or "AUTO_SH") == "AUTO_SH":
+            return "PRZEKAZANY DO ŚCIEŻKI SH (zlecenie wg trybu wykonania, ryzyka i STOP)"
+        return "SIGNAL (bez zlecenia)"
+
+    # ------------------------------------------------------------------ 1.42: hand-off to the SH execution path
+    def sh_candidates(self, symbol: str, now: float | None = None) -> list[dict]:
+        """ACTIVE FOREX_MT5 PositionPlans on `symbol` that were not handed over yet and are still fresh (<= 3 signal bars, max 30 min).
+        Conflicts / duplicates were already resolved in _resolve (one primary plan per event)."""
+        st = self.settings()
+        if (st["profiles"]["FOREX_MT5"].get("execution") or "AUTO_SH") != "AUTO_SH" or not st["profiles"]["FOREX_MT5"].get("enabled", True):
+            return []
+        now = time.time() if now is None else now
+        done = self.ledger.executed()
+        out = []
+        for sg in self.ledger.open_signals("FOREX_MT5"):
+            pl = sg.get("plan") or {}
+            if sg["signal_id"] in done or sg.get("instrument") != symbol or pl.get("plan_type") != "PositionPlan" or sg.get("role") != "PRIMARY":
+                continue
+            ttl = min(3 * TF_S.get(sg["tf"], 300), 1800)
+            if now - float(sg["created_at"]) > ttl:
+                continue
+            out.append({**sg, "valid_until": float(sg["created_at"]) + ttl})
+        return out
 
     def _publish(self, sig: dict) -> None:
         bus = getattr(self.rt, "bus", None)

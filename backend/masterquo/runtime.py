@@ -185,6 +185,7 @@ class Runtime:
         try:                                                                                        # 1.41 three market profiles, 9 baskets / 90 strategies
             from .baskets.service import BasketService
             self.baskets = BasketService(self)
+            self.sh.baskets = self.baskets                                                          # 1.42: FX basket plans -> SH execution path
         except Exception:  # noqa: BLE001
             log.exception("baskets unavailable")
             self.baskets = None
@@ -315,6 +316,11 @@ class Runtime:
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
         # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
         # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
+        try:                                                # 1.42 (DIRECT_USER_REQUEST): models OBSERVE -> ASSIST, FX baskets -> SH path, once
+            from .upgrade import migrate as _UM
+            _UM.apply_142(self)
+        except Exception:  # noqa: BLE001 - never blocks the start
+            log.exception("upgrade 1.42 step failed")
         for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets"):
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()

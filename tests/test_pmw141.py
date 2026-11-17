@@ -237,13 +237,51 @@ class TestBasketService(unittest.TestCase):
                 svc.cycle()
             sig = svc.ledger.recent(limit=500)
             self.assertEqual(len({s["event_id"] for s in sig}), len(sig))               # one primary plan per event
-            for s in sig:
-                self.assertEqual(s["plan"]["execution_status"], "SIGNAL (bez zlecenia)")
+            for s in sig:                                                                  # 1.42: FX plans are HANDED to the SH path
+                self.assertIn(s["plan"]["execution_status"], ("SIGNAL (bez zlecenia)", "PRZEKAZANY DO ŚCIEŻKI SH (zlecenie wg trybu wykonania, ryzyka i STOP)"))
                 self.assertIsNone(s["plan"]["quantity"])                                    # no capital configured -> no guessed size
             hedge = {k: v["state"] for k, v in svc.hedge_state.items()}
             self.assertTrue(all(v in ("NO_EXPOSURE", "WAITING_FOR_DATA") for v in hedge.values()), hedge)
             with self.assertRaises(ValueError):
                 svc.update_settings({"profiles": {"FOREX_MT5": {"selection": "YOLO"}}})
+            # 1.42: hand-off to the SH path - fresh, primary, once per signal; SH candidate keeps the plan levels
+            self._handoff(svc, sig)
+
+    def _handoff(self, svc, sig):
+        from masterquo.sh.service import SHService
+        if not sig:
+            self.skipTest("brak sygnałów w scenariuszu")
+        last = max(float(s["created_at"]) for s in sig)
+        cands = svc.sh_candidates("XAUUSD-", now=last)
+        self.assertTrue(cands)
+        self.assertTrue(all(c["profile_id"] == "FOREX_MT5" and c["role"] == "PRIMARY" for c in cands))
+        self.assertEqual(svc.sh_candidates("EURUSD", now=last), [])                     # other symbol: never
+        spec = types.SimpleNamespace(symbol="XAUUSD-")
+        c = cands[0]
+        su = SHService.basket_su(c, "XAUUSD", spec, None, last)
+        pl = c["plan"]
+        self.assertEqual(su["status"], "READY")
+        self.assertEqual(su["side"], "BUY" if pl["side"] == "LONG" else "SELL")
+        self.assertEqual((su["entry_ref"], su["sl"]), (pl["entry_ref"], pl["sl"]))
+        self.assertEqual(su["tps"][0]["price"], pl["targets"][0]["price"])
+        self.assertTrue(su["signal_id"].startswith("SH-BK"))
+        self.assertEqual(su["basket"]["signal_id"], c["signal_id"])
+        prof = SHService.basket_profile(su, {"_instrument": {}})
+        self.assertEqual(prof["shares"], [0.5, 0.5])
+        self.assertIsNone(prof["be_rule"])
+        self.assertNotIn("hedge", prof)                                                   # no SH hedge leg for basket plans
+        side = su["side"]
+        bad_q = {"bid": pl["sl"] - 5 if side == "BUY" else pl["sl"] + 5, "ask": pl["sl"] - 5 if side == "BUY" else pl["sl"] + 5, "spread": 0.1}
+        self.assertEqual(SHService.basket_su(c, "XAUUSD", spec, bad_q, last)["status"], "INVALIDATED")
+        svc.ledger.mark_exec(c["signal_id"], "PL-x", "OPEN")
+        svc.ledger.mark_exec(c["signal_id"], "PL-y", "REJECTED")                          # first outcome stays
+        self.assertEqual(svc.ledger.executed()[c["signal_id"]]["plan_id"], "PL-x")
+        self.assertNotIn(c["signal_id"], [x["signal_id"] for x in svc.sh_candidates("XAUUSD-", now=last)])
+        self.assertEqual(svc.sh_candidates("XAUUSD-", now=last + 7200), [])               # stale: never chased
+        svc.update_settings({"profiles": {"FOREX_MT5": {"execution": "SIGNALS_ONLY"}}})
+        self.assertEqual(svc.sh_candidates("XAUUSD-", now=last), [])
+        with self.assertRaises(ValueError):
+            svc.update_settings({"profiles": {"CRYPTO_FOMO_PERPS": {"execution": "AUTO_SH"}}})
 
 
 if __name__ == "__main__":
