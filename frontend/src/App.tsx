@@ -18,6 +18,7 @@ import NeuralCyberpunk from "./nc/NeuralCyberpunk";
 import { DataPage, LabDashboardTop, LabSettingsPage, ModelsPage, ResearchPage, SetupsPage } from "./pages/LabPages";
 import { CULT_PAGE_IDS, PAGES, TERMINAL_PAGE_IDS, TOWER_PAGE_IDS, WIZARD_PAGE_IDS, useRoute } from "./router";
 import Launcher, { launcherNeeded } from "./features/cult/Launcher";
+import CinematicMenu from "./features/cinematic/CinematicMenu";
 import WizardShell from "./features/wizard/WizardShell";
 import { TOWERS } from "./features/wizard/assets";
 import TerminalShell from "./features/shell/TerminalShell";
@@ -30,7 +31,6 @@ import { cls } from "./util";
 
 // tower views and the 1.32 CULT screens: lazy chunks
 const NeuralCityMenu = lazy(() => import("./features/neural-city/NeuralCityMenu"));
-const GalaxyMenu = lazy(() => import("./features/galaxy/GalaxyMenu"));
 const LightningTower = lazy(() => import("./features/cult/LightningTower"));
 const WindPortal = lazy(() => import("./features/cult/WindPortal"));
 const ControlTower = lazy(() => import("./features/cult/ControlTower"));
@@ -47,7 +47,9 @@ const WtcTower = lazy(() => import("./features/towers/WtcTower"));          // 1
 const SignalTower = lazy(() => import("./features/towers/SignalTower"));    // 1.36 PEPE$SIGNAL V1
 
 migrateLegacyViews();          // 1.10: zoom saved under the old positional chart ids -> new ids per page and TF (once)
-const NEED_LAUNCHER = launcherNeeded();   // decided once, before the router fills in an empty address
+// 1.42 (E1–E7): start = film intro + menu 3 planet; stary launcher JOIN THE CULT i boot intro 1.39 wyłączone flagą (usuwa je E8)
+export const CINEMATIC_START = true;
+const NEED_LAUNCHER = CINEMATIC_START ? false : launcherNeeded();   // decided once, before the router fills in an empty address
 
 export default function App() {
   const [gate, setGate] = useState(NEED_LAUNCHER);
@@ -64,8 +66,12 @@ function Panel() {
   const [look, setLook] = useState(false);
   const { prefs } = useAppearance();
 
+  const [firstRunPending, setFirstRunPending] = useState(false);
   useEffect(() => {
-    if (s.loaded && s.first_run_completed === false) setSettings(true);
+    // 1.42 (S2 §1, S5 F4): pierwsze uruchomienie – Ustawienia otwierają się PO intro (na trasie menu czekają na wejście do menu)
+    if (s.loaded && s.first_run_completed === false) {
+      if (route.page === "menu") setFirstRunPending(true); else setSettings(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.loaded]);
   useEffect(() => {
@@ -74,12 +80,18 @@ function Panel() {
 
   if (!s.loaded) return <><BackgroundLayer /><div className="loading">PepeMarketWizard – łączenie z lokalnym backendem…</div></>;
   const terminal = TERMINAL_PAGE_IDS.includes(route.page);
+  if (route.page === "menu") {
+    return (
+      <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
+        <CinematicMenu onSettings={() => setSettings(true)} onMenuReady={() => { if (firstRunPending) { setFirstRunPending(false); setSettings(true); } }} />
+        {settings && <SettingsModal onClose={() => setSettings(false)} />}
+      </UiCtx.Provider>);
+  }
   if (CULT_PAGE_IDS.includes(route.page)) {
     return (
       <UiCtx.Provider value={{ openSettings: () => setSettings(true) }}>
         <div className={cls("app", "app-cult", s.synthetic && "synthetic")}>
           <Suspense fallback={<div className="cu-loading" role="status">Ładowanie…</div>}>
-            {route.page === "menu" && <GalaxyMenu />}
             {route.page === "neural-city" && <NeuralCityMenu route={route} />}
             {route.page === "lightning" && <LightningTower />}
             {route.page === "wind" && <WindPortal />}

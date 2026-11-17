@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App, { CINEMATIC_START } from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import BootScreen from "./features/galaxy/BootScreen";
 import { AppearanceProvider } from "./appearance";
@@ -16,6 +16,6 @@ createRoot(document.getElementById("root")!).render(
         </ErrorBoundary>
       </StoreProvider>
     </AppearanceProvider>
-    <BootScreen />
+    {!CINEMATIC_START && <BootScreen />}
   </ThemeProvider>,
 );

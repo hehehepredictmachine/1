@@ -3157,6 +3157,29 @@ def create_app(rt, port: int) -> FastAPI:
     def montecarlo_status():
         return rt.montecarlo.status()
 
+    @app.get("/api/v1/montecarlo/validations/{run_id}/report")
+    def montecarlo_validation_report(run_id: str):
+        """1.42: read-only - the stored report.json of one Monte Carlo validation run (reliability / Brier for the MODELS & BACKTEST
+        screen). Only a run listed in the instrument's registry is served; nothing is computed or changed."""
+        import json as _json
+        import re as _re
+        from ..montecarlo import validate as _MV
+        if not _re.fullmatch(r"MC-[0-9A-Za-z\-]{8,64}", run_id):
+            raise HTTPException(400, "INVALID_RUN_ID")
+        inst, _ = rt.montecarlo._ctx()
+        d = _MV.root(inst)
+        try:
+            reg = _json.loads((d / "registry.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            reg = {}
+        if run_id not in (reg.get("runs") or {}):
+            raise HTTPException(404, "NOT_RUN")
+        f = d / "runs" / run_id / "report.json"
+        try:
+            return {"run_id": run_id, "instrument": inst, "summary": reg["runs"][run_id], "report": _json.loads(f.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            raise HTTPException(404, "REPORT_FILE_MISSING")
+
     @app.get("/api/v1/montecarlo/scenarios")
     def montecarlo_scenarios(horizon: int = Query(60, ge=5, le=240)):
         """P(price reaches +X / -X within the horizon) for X = 2.5 / 3 / 5 / 7.5 / 10 (price move, not account profit)."""
