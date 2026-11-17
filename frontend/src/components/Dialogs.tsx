@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { apiGet, apiSend, apiUpload } from "../api";
 import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
 import { LeverageSettings } from "./LeverageSettings";
 
+// 1.42 (E7): te same okna (ta sama logika, wywołania i potwierdzenia) osadzane w szufladzie paneli systemowych – bez tła modala.
+export const EmbedCtx = createContext(false);
+
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  const embedded = useContext(EmbedCtx);
+  if (embedded) return <div className="sys-embed" data-title={title}>{children}</div>;
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={cls("modal", wide && "wide")}>
@@ -100,7 +105,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["look", "Wygląd"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">

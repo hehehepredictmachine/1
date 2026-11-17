@@ -1,0 +1,54 @@
+/* Panele systemowe 1.42 (S6 §2): szuflada z prawej, tło .cs-win z narożnikami, przyciemnienie sceny, formularze w stylu nowego UI. */
+.sys-layer{position:fixed;inset:0;z-index:60;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#f2f2ef}
+.sys-dim{position:absolute;inset:0;background:rgba(0,0,0,.55);animation:sysFade .42s ease both}
+.sys-drawer{position:absolute;top:0;right:0;bottom:0;width:clamp(420px,34vw,560px);max-width:100vw;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,rgba(6,9,20,.94),rgba(3,3,8,.96));border-left:1px solid #1c2130;animation:sysIn .42s cubic-bezier(.22,1,.36,1) both}
+.sys-drawer .corner{position:absolute;width:12px;height:12px;border-color:#5a6274;border-style:solid;border-width:0}
+.sys-drawer .corner.tl{left:6px;top:6px;border-left-width:1px;border-top-width:1px}.sys-drawer .corner.tr{right:6px;top:6px;border-right-width:1px;border-top-width:1px}
+.sys-drawer .corner.bl{left:6px;bottom:6px;border-left-width:1px;border-bottom-width:1px}.sys-drawer .corner.br{right:6px;bottom:6px;border-right-width:1px;border-bottom-width:1px}
+@keyframes sysIn{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+@keyframes sysFade{from{opacity:0}}
+.sys-head{display:flex;align-items:baseline;gap:14px;padding:22px 26px 10px}
+.sys-num{font-size:9px;letter-spacing:.22em;color:#777d87}.sys-head b{font-size:15px;font-weight:300;letter-spacing:.3em}
+.sys-x{margin-left:auto;background:none;border:0;color:#9aa0aa;font-size:14px;cursor:pointer;padding:6px}
+.sys-tabs{display:flex;gap:2px;padding:0 22px 10px;border-bottom:1px solid #1c2130}
+.sys-tabs button{background:none;border:0;border-bottom:1px solid transparent;color:#9aa0aa;font:inherit;font-size:10px;letter-spacing:.18em;padding:9px 10px;cursor:pointer}
+.sys-tabs button[aria-selected="true"]{color:#fff;border-bottom-color:#dfe3eb}.sys-tabs button.danger{color:#e0b3b3}
+.sys-tabs button:focus-visible,.sys-drawer button:focus-visible{outline:1px solid #dfe3eb;outline-offset:3px}
+.sys-body{flex:1;overflow:auto;padding:16px 26px 30px;animation:sysRows .5s cubic-bezier(.2,.7,.2,1) both}
+@keyframes sysRows{from{opacity:0;transform:translateX(-12px);filter:blur(2px)}}
+/* osadzone okna 1.41 – ten sam kod, nowy wygląd */
+.sys-body .sys-embed{color:#dfe3eb;font-size:13px}
+.sys-body .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
+.sys-body .tabs button,.sys-body .btn,.sys-body button.btn,.sys-body .act{background:transparent;border:1px solid #3a4152;color:#dfe3eb;font:inherit;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;padding:8px 12px;cursor:pointer;border-radius:0}
+.sys-body .tabs button.on,.sys-body .btn:hover{border-color:#dfe3eb;color:#fff}
+.sys-body .btn.danger,.sys-body .danger{border-color:#e0b3b3;color:#e0b3b3}
+.sys-body input,.sys-body select,.sys-body textarea{background:transparent;border:0;border-bottom:1px solid #2b303b;color:#f2f2ef;font:inherit;padding:6px 2px;border-radius:0}
+.sys-body input:focus,.sys-body select:focus,.sys-body textarea:focus{outline:0;border-bottom-color:#dfe3eb}
+.sys-body select option{background:#05060c}
+.sys-body .field{display:flex;flex-direction:column;gap:4px;margin:10px 0}.sys-body .field>span{font-size:9px;letter-spacing:.16em;color:#9aa0aa;text-transform:uppercase}
+.sys-body .note,.sys-note{font-size:11px;line-height:1.6;color:#9aa0aa;border-left:1px solid #2b303b;padding:6px 10px;margin:10px 0}
+.sys-body .warn,.sys-body .bad{color:#e0b3b3}.sys-body .ok{color:#cfe8da}
+.sys-body h3,.sys-body h4,.sys-diag h4{font-size:10px;font-weight:400;letter-spacing:.2em;color:#9aa0aa;margin:18px 0 8px}
+.sys-row{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.sys-kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:12px;margin:0}.sys-kv dt{color:#777d87;font-size:10px;letter-spacing:.1em}.sys-kv dd{margin:0;color:#dfe3eb;word-break:break-word}
+.sys-tbl{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}.sys-tbl th{text-align:left;font-weight:400;font-size:9px;letter-spacing:.14em;color:#777d87;padding:4px}
+.sys-tbl td{padding:4px;border-top:1px solid #151925;color:#dfe3eb}
+.sys-st{font-size:9px;letter-spacing:.14em;padding:2px 6px;border:1px solid #3a4152}.sys-st.ok{color:#cfe8da;border-color:#3d5446}.sys-st.bad{color:#e0b3b3;border-color:#5a3b3b}.sys-st.warn{color:#d9c99a;border-color:#5b5236}
+.sys-err{color:#e0b3b3;font-size:11px}
+/* wskaźnik stanu i ikony na każdym ekranie */
+.sys-exec{position:fixed;top:18px;right:26px;z-index:40;display:flex;gap:8px;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+.sys-chip{display:inline-flex;align-items:center;gap:7px;background:rgba(0,0,0,.55);border:1px solid #2b303b;color:#c9cbd1;font:inherit;font-size:9px;letter-spacing:.18em;padding:7px 10px;cursor:pointer;text-transform:uppercase}
+.sys-chip b{font-weight:400;color:#fff;margin-left:4px}.sys-chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.sys-chip.ok{color:#cfe8da}.sys-chip.warn{color:#d9c99a;border-color:#5b5236}.sys-chip.bad{color:#e0b3b3;border-color:#5a3b3b}.sys-chip.muted{color:#898b91}
+.sys-chip.syn{color:#d9c99a;border-color:#b7a77a66;cursor:default}
+.sys-icons{position:fixed;right:22px;bottom:16px;z-index:40;display:flex;gap:2px;align-items:center}
+.sys-icon{background:none;border:0;padding:11px 10px;min-width:38px;height:42px;cursor:pointer;color:#9a9ea7;display:grid;place-items:center;position:relative;font:inherit;font-size:10px;letter-spacing:.18em}
+.sys-icon:hover{color:#fff}.sys-icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.15;stroke-linecap:round;stroke-linejoin:round}
+.sys-icon.stop{color:#e0b3b3;border:1px solid #5a3b3b;height:30px;padding:0 12px;margin-left:8px}.sys-icon.stop.on{background:#5a2323;color:#fff}
+.sys-icon:after{content:attr(data-label);position:absolute;bottom:50px;right:0;font-size:10px;white-space:nowrap;letter-spacing:.04em;opacity:0;pointer-events:none;background:#090b10;padding:7px 9px;transition:opacity .2s}
+.sys-icon:hover:after,.sys-icon:focus-visible:after{opacity:1}
+@media (prefers-reduced-motion:reduce){.sys-drawer,.sys-dim,.sys-body{animation-duration:.15s}}
+[data-motion="reduced"] .sys-drawer,[data-motion="reduced"] .sys-body{animation:sysFade .15s both}
+@media (max-width:700px){.sys-exec{top:10px;right:10px}.sys-exec .mode{display:none}}

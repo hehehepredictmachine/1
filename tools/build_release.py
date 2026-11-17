@@ -79,7 +79,8 @@ def tracked():
         print("brak .git – lista plików z MANIFEST_SHA256.txt (jawna lista poprzedniego wydania)")
         files = manifest_list()
     # Frog Wizard is a separate product
-    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/")) and f != "MANIFEST_SHA256.txt"]
+    # 1.42: archive/ (old UI 1.41) and update_1_42/ (update package, reference HTML, screenshots) never go into a release
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/")) and f != "MANIFEST_SHA256.txt"]
 
 
 def scan(files):

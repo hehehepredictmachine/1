@@ -8,13 +8,13 @@ import { prefersReducedMotion, shouldPlayIntro } from "./introGate";
 import "./cinematic.css";
 
 type Props = {
-  onSettings(): void;
+  onSettings?(): void;                                     // ustawienia otwiera pasek ikon systemowych (SystemIcons)
   onMenuReady?(): void;
   onForexReady?(pose: Pose): void;
   forceSoftware?: boolean;
 };
 
-export default function CinematicMenu({ onSettings, onMenuReady, onForexReady, forceSoftware }: Props) {
+export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware }: Props) {
   const { s } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const forexRef = useRef(onForexReady);
@@ -76,10 +76,7 @@ export default function CinematicMenu({ onSettings, onMenuReady, onForexReady, f
         <button className="tool cin-sound" type="button" aria-label="Włącz dźwięk oryginalnego intro" aria-pressed="false" data-label="Dźwięk oryginalnego intro"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6" /></svg></button>
         <button className="tool cin-motion" type="button" aria-label="Ogranicz ruch" aria-pressed="false" data-label="Ogranicz ruch"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4v12m6-12v12" /></svg></button>
         <button className="tool cin-fullscreen" type="button" aria-label="Pełny ekran" data-label="Pełny ekran"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4" /></svg></button>
-        <button className="tool cin-settings" type="button" aria-label="Ustawienia" data-label="Ustawienia" data-testid="menu-settings" onClick={onSettings}>
-          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.6" /><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6" /></svg></button>
       </nav>
-      {s.synthetic && <div className="cin-synthetic" data-testid="badge-synthetic">SYNTETYCZNE</div>}
       <div className="cin-notice" role="status" /><div className="cin-announcer sr-only" aria-live="polite" />
       <div className="cin-renderer-error" role="alert" hidden><h2>Renderer 3D jest niedostępny</h2>
         <p className="cin-renderer-message">Włącz akcelerację sprzętową w przeglądarce i otwórz ponownie panel. Menu potrzebuje dostępnego kontekstu graficznego przeglądarki.</p>
