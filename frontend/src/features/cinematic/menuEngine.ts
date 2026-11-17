@@ -55,7 +55,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   let buffers: WebGLBuffer[] = [], programs: WebGLProgram[] = [], glShaders: WebGLShader[] = [];
   let software: any = null;
 
-  function seeded(seed: number) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function prng(seed: number) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function announce(text: string) { el.announcer.textContent = text; }
   function notice(text: string) { el.notice.textContent = text; el.notice.classList.add("show"); clearTimeout(state.noticeTimer); state.noticeTimer = setTimeout(() => el.notice.classList.remove("show"), 4000); }
   let menuReadyFired = false;
@@ -70,8 +70,8 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   function link(v: string, f: string) { const g = gl!; const p = g.createProgram()!; programs.push(p); g.attachShader(p, compile(g.VERTEX_SHADER, v)); g.attachShader(p, compile(g.FRAGMENT_SHADER, f)); g.linkProgram(p); if (!g.getProgramParameter(p, g.LINK_STATUS)) throw new Error(g.getProgramInfoLog(p) || "program"); return p; }
   function locations(p: WebGLProgram, names: string[]) { const g = gl!; const l: any = { pos: g.getAttribLocation(p, "aPos"), info: g.getAttribLocation(p, "aInfo") }; for (const n of names) l[n] = g.getUniformLocation(p, "u" + n); return l; }
   function makeBuffer(data: ArrayBufferView, target?: number) { const g = gl!; target = target ?? g.ARRAY_BUFFER; const b = g.createBuffer()!; buffers.push(b); g.bindBuffer(target, b); g.bufferData(target, data as any, g.STATIC_DRAW); return b; }
-  function sphereData(count: number, seed: number) { const out = new Float32Array(count * 6), r = seeded(seed), golden = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < count; i++) { const z = 1 - 2 * (i + 0.5) / count; const rad = Math.sqrt(1 - z * z), a = i * golden + (r() - 0.5) * 0.008, k = i * 6; out[k] = Math.cos(a) * rad; out[k + 1] = Math.sin(a) * rad; out[k + 2] = z; out[k + 3] = r(); out[k + 4] = r(); out[k + 5] = r(); } return out; }
-  function starData(count: number, seed: number) { const out = new Float32Array(count * 6), r = seeded(seed); for (let i = 0; i < count; i++) { const k = i * 6; out[k] = r() * 2 - 1; out[k + 1] = r() * 2 - 1; out[k + 2] = r(); out[k + 3] = r(); out[k + 4] = r(); out[k + 5] = r(); } return out; }
+  function sphereData(count: number, seed: number) { const out = new Float32Array(count * 6), r = prng(seed), golden = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < count; i++) { const z = 1 - 2 * (i + 0.5) / count; const rad = Math.sqrt(1 - z * z), a = i * golden + (r() - 0.5) * 0.008, k = i * 6; out[k] = Math.cos(a) * rad; out[k + 1] = Math.sin(a) * rad; out[k + 2] = z; out[k + 3] = r(); out[k + 4] = r(); out[k + 5] = r(); } return out; }
+  function starData(count: number, seed: number) { const out = new Float32Array(count * 6), r = prng(seed); for (let i = 0; i < count; i++) { const k = i * 6; out[k] = r() * 2 - 1; out[k + 1] = r() * 2 - 1; out[k + 2] = r(); out[k + 3] = r(); out[k + 4] = r(); out[k + 5] = r(); } return out; }
   function bind(b: WebGLBuffer, l: any) { const g = gl!; g.bindBuffer(g.ARRAY_BUFFER, b); if (l.pos >= 0) { g.enableVertexAttribArray(l.pos); g.vertexAttribPointer(l.pos, 3, g.FLOAT, false, 24, 0); } if (l.info >= 0) { g.enableVertexAttribArray(l.info); g.vertexAttribPointer(l.info, 3, g.FLOAT, false, 24, 12); } }
   function makeMesh() { const cols = 144, rows = 80, verts: number[] = [], inds: number[] = []; for (let y = 0; y <= rows; y++) { const p = y / rows * Math.PI; for (let x = 0; x <= cols; x++) { const a = x / cols * Math.PI * 2; verts.push(Math.sin(p) * Math.cos(a), Math.sin(p) * Math.sin(a), Math.cos(p), 0.5, 0.5, 0.5); } } for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) { const k = y * (cols + 1) + x; inds.push(k, k + 1, k + cols + 1, k + 1, k + cols + 2, k + cols + 1); } meshBuffer = makeBuffer(new Float32Array(verts)); meshIndex = makeBuffer(new Uint16Array(inds), gl!.ELEMENT_ARRAY_BUFFER); meshIndexCount = inds.length; }
 
@@ -146,7 +146,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
     particleLoc = locations(program, uniformNames); meshLoc = locations(meshProgram, uniformNames); starLoc = locations(starProgram, ["Resolution", "Pointer", "Time", "Dpr", "Opacity", "Warp", "Dust"]); streakLoc = locations(streakProgram, ["Warp", "Opacity"]);
     orbs.forEach((o, i) => o.buffer = makeBuffer(sphereData(o.count, 8419 + i * 7351)));
     starBuffer = makeBuffer(starData(config.starCount, 12)); dustBuffer = makeBuffer(starData(config.dustCount, 78));
-    const r = seeded(765), st: number[] = []; for (let i = 0; i < 500; i++) { const x = r() * 2 - 1, y = r() * 2 - 1, z = r(); for (let j = 0; j < 2; j++) st.push(x, y, z, j, 0, 0); } streakBuffer = makeBuffer(new Float32Array(st));
+    const r = prng(765), st: number[] = []; for (let i = 0; i < 500; i++) { const x = r() * 2 - 1, y = r() * 2 - 1, z = r(); for (let j = 0; j < 2; j++) st.push(x, y, z, j, 0, 0); } streakBuffer = makeBuffer(new Float32Array(st));
     makeMesh(); gl.clearColor(0, 0, 0, 1); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); resize();
   }
   function resize() {

@@ -198,9 +198,9 @@ function attr(o,name,b,size,stride,off){const l=o.a[name];if(l<0)return;gl.bindB
 function use(o){gl.useProgram(o.p);for(let i=0;i<8;i++)gl.disableVertexAttribArray(i);return o;}
 function u1(o,n,v){if(o.u[n])gl.uniform1f(o.u[n],v);}function u2(o,n,a,b){if(o.u[n])gl.uniform2f(o.u[n],a,b);}
 function u3(o,n,a,b,c){if(o.u[n])gl.uniform3f(o.u[n],a,b,c);}function u4(o,n,a,b,c,d){if(o.u[n])gl.uniform4f(o.u[n],a,b,c,d);}
-function seeded(seed){return()=>{seed|=0;seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t^=t+Math.imul(t^(t>>>7),61|t);return((t^(t>>>14))>>>0)/4294967296;};}
-function sphereData(count,seed){const out=new Float32Array(count*6),r=seeded(seed),g=Math.PI*(3-Math.sqrt(5));for(let i=0;i<count;i++){const z=1-2*(i+.5)/count,rad=Math.sqrt(1-z*z),a=i*g+(r()-.5)*.008,k=i*6;out[k]=Math.cos(a)*rad;out[k+1]=Math.sin(a)*rad;out[k+2]=z;out[k+3]=r();out[k+4]=r();out[k+5]=r();}return out;}
-function randData(count,dim,seed){const out=new Float32Array(count*dim),r=seeded(seed);for(let i=0;i<out.length;i++)out[i]=r();return out;}
+function prng(seed){return()=>{seed|=0;seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t^=t+Math.imul(t^(t>>>7),61|t);return((t^(t>>>14))>>>0)/4294967296;};}
+function sphereData(count,seed){const out=new Float32Array(count*6),r=prng(seed),g=Math.PI*(3-Math.sqrt(5));for(let i=0;i<count;i++){const z=1-2*(i+.5)/count,rad=Math.sqrt(1-z*z),a=i*g+(r()-.5)*.008,k=i*6;out[k]=Math.cos(a)*rad;out[k+1]=Math.sin(a)*rad;out[k+2]=z;out[k+3]=r();out[k+4]=r();out[k+5]=r();}return out;}
+function randData(count,dim,seed){const out=new Float32Array(count*dim),r=prng(seed);for(let i=0;i<out.length;i++)out[i]=r();return out;}
 
 function setup(){
  programs.part=prog(PART_V,PART_F,['aPos','aInfo']);programs.ostreak=prog(OSTREAK_V,OSTREAK_F,['aPos','aInfo','aEnd']);
@@ -212,14 +212,14 @@ function setup(){
  const sc=CFG.streakCount,st=new Float32Array(sc*2*7),stride=CFG.orbCount/sc;
  for(let i=0;i<sc;i++){const s=Math.floor(i*stride)*6;for(let e=0;e<2;e++){const k=(i*2+e)*7;for(let j=0;j<6;j++)st[k+j]=orb[s+j];st[k+6]=e;}}bufs.ostreak=buf(st);
  bufs.star=buf(randData(CFG.starCount,6,12));bufs.dust=buf(randData(CFG.dustCount,6,78));
- const r=seeded(765),ss=[];for(let i=0;i<500;i++){const x=r()*2-1,y=r()*2-1,z=r();for(let j=0;j<2;j++)ss.push(x,y,z,j,0,0);}bufs.sstreak=buf(new Float32Array(ss));
+ const r=prng(765),ss=[];for(let i=0;i<500;i++){const x=r()*2-1,y=r()*2-1,z=r();for(let j=0;j<2;j++)ss.push(x,y,z,j,0,0);}bufs.sstreak=buf(new Float32Array(ss));
  bufs.quad=buf(new Float32Array([-1,-1,3,-1,-1,3]));
- const fr=seeded(4242),fil=[];for(let f=0;f<CFG.filaments;f++){const fv=fr(),s=fr();for(let j=0;j<CFG.filSegs;j++){fil.push(fv,j/CFG.filSegs,s,fv,(j+1)/CFG.filSegs,s);}}bufs.fil=buf(new Float32Array(fil));bufs.filN=fil.length/3;
+ const fr=prng(4242),fil=[];for(let f=0;f<CFG.filaments;f++){const fv=fr(),s=fr();for(let j=0;j<CFG.filSegs;j++){fil.push(fv,j/CFG.filSegs,s,fv,(j+1)/CFG.filSegs,s);}}bufs.fil=buf(new Float32Array(fil));bufs.filN=fil.length/3;
  bufs.spark=buf(randData(CFG.sparks,3,991));bufs.ring=buf(randData(16000,3,5151));
- const vr=seeded(3131),vo=new Float32Array(CFG.vortexCount*2*4);for(let i=0;i<CFG.vortexCount;i++){const a=vr(),b=vr(),c=vr();for(let e=0;e<2;e++){const k=(i*2+e)*4;vo[k]=a;vo[k+1]=b;vo[k+2]=c;vo[k+3]=e;}}bufs.vor=buf(vo);
+ const vr=prng(3131),vo=new Float32Array(CFG.vortexCount*2*4);for(let i=0;i<CFG.vortexCount;i++){const a=vr(),b=vr(),c=vr();for(let e=0;e<2;e++){const k=(i*2+e)*4;vo[k]=a;vo[k+1]=b;vo[k+2]=c;vo[k+3]=e;}}bufs.vor=buf(vo);
  bufs.dyn=gl.createBuffer();
  programs.planet=prog(PLANET_V,PART_F,['aPos','aInfo']);programs.hole=prog(QUAD_V,HOLE_F,['aQ']);programs.halo=prog(QUAD_V,HALO_F,['aQ']);programs.mw=prog(MW_V,MW_F,['aM']);
- const mwData=(n,seed)=>{const r=seeded(seed),o=new Float32Array(n*4);for(let i=0;i<n;i++){const g=Math.sqrt(-2*Math.log(Math.max(r(),1e-6)))*Math.cos(6.2832*r());o.set([r(),clamp(g,-3.2,3.2),r(),r()],i*4);}return o;};
+ const mwData=(n,seed)=>{const r=prng(seed),o=new Float32Array(n*4);for(let i=0;i<n;i++){const g=Math.sqrt(-2*Math.log(Math.max(r(),1e-6)))*Math.cos(6.2832*r());o.set([r(),clamp(g,-3.2,3.2),r(),r()],i*4);}return o;};
  bufs.mwMain=buf(mwData(72000,501));bufs.mwBranch=buf(mwData(24000,502));bufs.nebMain=buf(mwData(1800,503));bufs.nebBranch=buf(mwData(650,504));planets.forEach((q,i)=>q.buffer=buf(sphereData(q.count,2207+i*911)));
  gl.clearColor(0,0,0,1);gl.enable(gl.BLEND);gl.disable(gl.DEPTH_TEST);
 }
