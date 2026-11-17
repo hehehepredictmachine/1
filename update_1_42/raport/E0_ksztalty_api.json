@@ -1,0 +1,2421 @@
+{
+ "/api/v1/models/predictions?instrument=XAUUSD": {
+  "status": 200,
+  "shape": {
+   "instrument": "str",
+   "items": [
+    {
+     "contract": "str",
+     "instrument": "str",
+     "symbol": "NoneType",
+     "timeframe": "str",
+     "data_time": "NoneType",
+     "model_name": "str",
+     "model_version": "NoneType",
+     "run_id": "NoneType",
+     "feature_schema": "str",
+     "label_version": "NoneType",
+     "task_type": "str",
+     "task": "str",
+     "horizon": {
+      "bars": "int",
+      "seconds": "NoneType",
+      "timeframe": "str"
+     },
+     "result": "NoneType",
+     "unit": "str",
+     "calibration": {
+      "method": "NoneType",
+      "status": "str"
+     },
+     "data_quality": "str",
+     "freshness_s": "NoneType",
+     "compute_ms": "NoneType",
+     "state": "str",
+     "state_pl": "str",
+     "source": "NoneType",
+     "data_kind": "NoneType",
+     "available_at": "NoneType",
+     "computed_at": "float",
+     "ttl_s": "NoneType",
+     "unavailable_reason": "str",
+     "created_at": "float",
+     "model_key": "str",
+     "role": "str",
+     "decision_use": {
+      "SCALPING": "str",
+      "HEDGING": "str"
+     }
+    },
+    "…len=13"
+   ],
+   "contract": "str"
+  }
+ },
+ "/api/v1/bot-signals?limit=5": {
+  "status": 200,
+  "shape": {
+   "items": [
+    {
+     "signal_id": "str",
+     "created_at": "str",
+     "updated_at": "str",
+     "symbol": "str",
+     "trigger": "str",
+     "status": "str",
+     "action": "str",
+     "entry_type": "str",
+     "entry_price": "float",
+     "stop_loss": "float",
+     "rr1": "float",
+     "horizon": "str",
+     "price_at_signal": "float",
+     "filled_at": "NoneType",
+     "fill_price": "NoneType",
+     "closed_at": "NoneType",
+     "exit_price": "NoneType",
+     "outcome_r": "NoneType",
+     "tp_hit": "NoneType",
+     "account_key": "str",
+     "synthetic": "bool",
+     "error": "NoneType",
+     "source": "str",
+     "setup_id": "str",
+     "event_id": "str",
+     "strategy_id": "str",
+     "strategy_name": "str",
+     "timeframe": "str",
+     "setup_score": "float",
+     "ai_verdict": "NoneType",
+     "take_profits": [
+      "float",
+      "…len=2"
+     ],
+     "validation": {
+      "ok": "bool",
+      "reasons": [
+       "str",
+       "…len=1"
+      ],
+      "rr": [
+       "float",
+       "…len=2"
+      ],
+      "rr_weighted": "float",
+      "entry": "float",
+      "risk": "float"
+     },
+     "detail": {
+      "strategy_version": "str",
+      "family": "str",
+      "regime": "str",
+      "horizon": "str",
+      "phase": "str",
+      "entry_plan": {
+       "order_type": "str",
+       "kind": "str",
+       "reference_price": "float",
+       "zone": [
+        "float",
+        "…len=2"
+       ],
+       "trigger": "str",
+       "trigger_level": "float",
+       "max_wait_bars": "int",
+       "max_distance_atr": "float",
+       "send_when": "str"
+      },
+      "invalidation_level": "float",
+      "invalidation_rule": "str",
+      "reason_codes": [
+       "str",
+       "…len=3"
+      ],
+      "missing_confirmations": [
+       "str",
+       "…len=1"
+      ],
+      "countertrend": "bool",
+      "facts": {
+       "upper_px": "float",
+       "lower_px": "float",
+       "width_atr": "float",
+       "bar_range_atr": "float"
+      },
+      "score": {
+       "total": "float",
+       "points": "{…}",
+       "weights": "{…}",
+       "completeness": "float",
+       "momentum": "{…}",
+       "htf": "{…}",
+       "htf_countertrend": "bool",
+       "scale": "str"
+      },
+      "exit_rules": {
+       "time_exit_bars": "int",
+       "be_after_tp1": "bool",
+       "trailing": "NoneType"
+      },
+      "validation_status": "str",
+      "anchor_time": "str",
+      "source_time": "str",
+      "validation": {
+       "ok": "bool",
+       "reasons": [
+        "str",
+        "…len=1"
+       ],
+       "rr": [
+        "float",
+        "…len=2"
+       ],
+       "rr_weighted": "float",
+       "entry": "float",
+       "risk": "float"
+      }
+     }
+    },
+    "…len=4"
+   ],
+   "stats": {
+    "signals": "int",
+    "rejected": "int",
+    "open": "int",
+    "closed": "int",
+    "wins": "int",
+    "losses": "int",
+    "breakeven": "int",
+    "win_rate_pct": "NoneType",
+    "profit_factor_r": "NoneType",
+    "avg_r": "NoneType",
+    "total_r": "NoneType",
+    "basis": "str",
+    "note": "str"
+   },
+   "stats_by_ai": {
+    "ZGODA": {
+     "signals": "int",
+     "rejected": "int",
+     "open": "int",
+     "closed": "int",
+     "wins": "int",
+     "losses": "int",
+     "breakeven": "int",
+     "win_rate_pct": "NoneType",
+     "profit_factor_r": "NoneType",
+     "avg_r": "NoneType",
+     "total_r": "NoneType",
+     "basis": "str",
+     "note": "str"
+    },
+    "BRAK_ZGODY": {
+     "signals": "int",
+     "rejected": "int",
+     "open": "int",
+     "closed": "int",
+     "wins": "int",
+     "losses": "int",
+     "breakeven": "int",
+     "win_rate_pct": "NoneType",
+     "profit_factor_r": "NoneType",
+     "avg_r": "NoneType",
+     "total_r": "NoneType",
+     "basis": "str",
+     "note": "str"
+    },
+    "BRAK_OCENY": {
+     "signals": "int",
+     "rejected": "int",
+     "open": "int",
+     "closed": "int",
+     "wins": "int",
+     "losses": "int",
+     "breakeven": "int",
+     "win_rate_pct": "NoneType",
+     "profit_factor_r": "NoneType",
+     "avg_r": "NoneType",
+     "total_r": "NoneType",
+     "basis": "str",
+     "note": "str"
+    }
+   },
+   "ai_note": "str",
+   "enabled": "bool",
+   "scan_other_markets": "bool",
+   "rr_limit": "float",
+   "max_hold_hours": "int",
+   "strategy_sources": {
+    "scalping": "bool",
+    "hedging": "bool",
+    "range_sweep_retest": "bool",
+    "double_retest": "bool"
+   },
+   "strategies": [
+    "str",
+    "…len=5"
+   ]
+  }
+ },
+ "/api/v1/baskets/settings": {
+  "status": 200,
+  "shape": {
+   "activation_policy": "str",
+   "active_profile": "str",
+   "profiles": {
+    "FOREX_MT5": {
+     "enabled": "bool",
+     "selection": "str",
+     "instruments": [],
+     "capital": {
+      "risk_money": "NoneType"
+     },
+     "fx_pairs": [],
+     "pair_map": {}
+    },
+    "CRYPTO_FOMO_PERPS": {
+     "enabled": "bool",
+     "selection": "str",
+     "instruments": [
+      "str",
+      "…len=4"
+     ],
+     "flow_instrument": "str",
+     "capital": {
+      "risk_money": "NoneType",
+      "currency": "str"
+     },
+     "fees": {
+      "taker": "NoneType",
+      "maker": "NoneType"
+     },
+     "pair_map": {},
+     "same_underlying": {}
+    },
+    "OTC_GOLD_POCKETOPTION": {
+     "enabled": "bool",
+     "selection": "str",
+     "instruments": [
+      "str",
+      "…len=1"
+     ],
+     "capital": {
+      "stake": "NoneType",
+      "currency": "NoneType"
+     }
+    }
+   },
+   "baskets": {
+    "FX_SMC": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "FX_SCALP": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "FX_HEDGE": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "CP_SMC": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "CP_SCALP": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "CP_HEDGE": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "OTC_SMC": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "OTC_SCALP": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    },
+    "OTC_HEDGE": {
+     "enabled": "bool",
+     "risk_weight": "float",
+     "max_open_groups": "int",
+     "max_pending_intents": "int",
+     "cooldown_bars": "int",
+     "conflict_policy": "str",
+     "selection_policy": "str"
+    }
+   },
+   "strategies": {},
+   "manual_select": {},
+   "cycle_s": "float"
+  }
+ },
+ "/api/v1/candles?tf=M5": {
+  "status": 200,
+  "shape": {
+   "tf": "str",
+   "symbol": "str",
+   "bars": [
+    {
+     "t_raw": "int",
+     "open_utc": "str",
+     "o": "float",
+     "h": "float",
+     "l": "float",
+     "c": "float",
+     "tv": "int",
+     "rv": "int",
+     "spread": "int",
+     "closed": "bool",
+     "close_confirmed_utc": "str",
+     "available_at": "str",
+     "basis": "str",
+     "revision": "int",
+     "source": "str"
+    },
+    "…len=500"
+   ],
+   "indicators": {
+    "tf": "str",
+    "role": "str",
+    "lines": [
+     {
+      "id": "str",
+      "label": "str",
+      "points": [],
+      "visual_only": "bool",
+      "engine": "str"
+     },
+     "…len=2"
+    ],
+    "panels": {
+     "rsi": {
+      "period": "int",
+      "visual_only": "bool",
+      "points": []
+     },
+     "macd": {
+      "params": {
+       "fast": "int",
+       "slow": "int",
+       "signal": "int",
+       "signal_ma": "str"
+      },
+      "visual_only": "bool",
+      "signal_ma": "str",
+      "line": [],
+      "signal": [],
+      "histogram": []
+     }
+    },
+    "atr14": "NoneType"
+   },
+   "overlays": {
+    "breaks": [],
+    "fvgs": [],
+    "order_blocks": [],
+    "sweeps": [],
+    "liquidity_levels": [],
+    "pivots": [],
+    "premium_discount": "NoneType",
+    "regime": "NoneType",
+    "direction": "NoneType",
+    "status": "NoneType"
+   },
+   "quality": {
+    "tf": "str",
+    "status": "str",
+    "closed_bars": "int",
+    "required": "int",
+    "bars_total": "int",
+    "last_closed_raw": "int",
+    "last_closed_available_at": "NoneType",
+    "forming_open_raw": "int",
+    "invalid_bars": "int",
+    "duplicates": "int",
+    "non_monotonic": "int",
+    "future_bars": "int",
+    "gaps": [
+     {
+      "from_raw": "int",
+      "to_raw": "int",
+      "missing_bars": "int",
+      "kind": "str"
+     },
+     "…len=2"
+    ],
+    "gap_counts": {
+     "WEEKEND": "int",
+     "SESSION_BREAK": "int"
+    },
+    "stale": "bool",
+    "reasons": [],
+    "fix_hint": "NoneType"
+   },
+   "snapshot_id": "str",
+   "volatility": {
+    "model": "str",
+    "enabled": "bool",
+    "estimator": "str",
+    "window": "int",
+    "trading_days_per_year": "float",
+    "iv_source": "str",
+    "walls_sigma": [
+     "float",
+     "…len=2"
+    ],
+    "wall_band_sigma": "float",
+    "closed_d1": "int",
+    "required_d1": "int",
+    "previous_day": {
+     "open_utc": "str",
+     "high": "float",
+     "low": "float",
+     "close": "float"
+    },
+    "day": {
+     "open_utc": "str",
+     "open": "float",
+     "high": "float",
+     "low": "float",
+     "last": "float",
+     "state": "str",
+     "range_used_pct": "float"
+    },
+    "hv_daily_pct": "float",
+    "hv_annual_pct": "float",
+    "hv_percentile_1y": "float",
+    "source_type": "str",
+    "iv_note": "str",
+    "model_note": "str",
+    "iv_annual_pct": "float",
+    "iv_vs_hv": "float",
+    "expected_move_1s": "float",
+    "contract": {
+     "model": "str",
+     "expiry": "str",
+     "atm_strike": "float",
+     "atm_call": "float",
+     "atm_put": "float",
+     "straddle": "float",
+     "breakeven_up": "float",
+     "breakeven_down": "float"
+    },
+    "walls": [
+     {
+      "sigma": "float",
+      "side": "str",
+      "level": "float",
+      "zone_low": "float",
+      "zone_high": "float",
+      "option": "str",
+      "premium": "float",
+      "delta": "float",
+      "p_close_beyond": "float",
+      "p_touch": "float",
+      "reached": "bool"
+     },
+     "…len=4"
+    ],
+    "expected_high": "float",
+    "expected_low": "float",
+    "lines": [
+     {
+      "kind": "str",
+      "label": "str",
+      "price": "float"
+     },
+     "…len=9"
+    ],
+    "zones": [
+     {
+      "kind": "str",
+      "label": "str",
+      "source_type": "str",
+      "sigma": "float",
+      "side": "str",
+      "low": "float",
+      "high": "float",
+      "from_utc": "str"
+     },
+     "…len=4"
+    ],
+    "status": "str",
+    "as_of_day_utc": "str"
+   },
+   "clock": {
+    "offset_seconds": "int",
+    "offset_hours": "float",
+    "status": "str",
+    "samples": "int",
+    "residual_seconds": "float",
+    "measured_at": "str",
+    "last_raw_delta_seconds": "float",
+    "reasons": []
+   },
+   "synthetic": "bool"
+  }
+ },
+ "/api/v1/timeframes": {
+  "status": 200,
+  "shape": {
+   "timeframes": [
+    {
+     "tf": "str",
+     "seconds": "int",
+     "role": "str",
+     "core": "bool",
+     "data": "str",
+     "closed_bars": "int",
+     "required": "int",
+     "used_by": [
+      "str",
+      "…len=1"
+     ]
+    },
+    "…len=9"
+   ],
+   "strategies": {
+    "S01": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S02": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=1"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S03": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S04": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S05": {
+     "setup_tfs": [
+      "str",
+      "…len=1"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=1"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S06": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S07": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S08": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S09": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S10": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S11": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    },
+    "S12": {
+     "setup_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "required_tfs": [
+      "str",
+      "…len=2"
+     ],
+     "context_tf": "str",
+     "name": "str"
+    }
+   }
+  }
+ },
+ "/api/v1/market-zones/bars?instrument=BTC&tf=M5": {
+  "status": 200,
+  "shape": {
+   "status": "str",
+   "symbol": "str",
+   "tf": "str",
+   "bars": [
+    {
+     "open_utc": "str",
+     "o": "float",
+     "h": "float",
+     "l": "float",
+     "c": "float",
+     "tv": "int",
+     "spread": "int",
+     "closed": "bool"
+    },
+    "…len=300"
+   ]
+  }
+ },
+ "/api/v1/market-zones?instrument=XAUUSD": {
+  "status": 200,
+  "shape": {
+   "instrument": "str",
+   "symbol": "str",
+   "version": "str",
+   "timeframes": {
+    "M1": {
+     "status": {
+      "status": "str",
+      "reason": "NoneType",
+      "status_pl": "str"
+     },
+     "zones": [],
+     "visible": [],
+     "stale": "bool",
+     "computed": "bool"
+    },
+    "M5": {
+     "status": {
+      "status": "str",
+      "reason": "NoneType",
+      "status_pl": "str"
+     },
+     "zones": [],
+     "visible": [],
+     "stale": "bool",
+     "computed": "bool"
+    },
+    "M15": {
+     "status": {
+      "status": "str",
+      "reason": "NoneType",
+      "status_pl": "str"
+     },
+     "zones": [],
+     "visible": [],
+     "stale": "bool",
+     "computed": "bool"
+    },
+    "M30": {
+     "status": {
+      "status": "str",
+      "reason": "NoneType",
+      "status_pl": "str"
+     },
+     "zones": [],
+     "visible": [],
+     "stale": "bool",
+     "computed": "bool"
+    }
+   },
+   "job": "NoneType",
+   "live": {
+    "enabled": "bool"
+   },
+   "quote": "NoneType",
+   "rules": {
+    "detection": {
+     "SR": "str",
+     "DEMAND_SUPPLY": "str",
+     "FVG": "str",
+     "ORDER_BLOCK": "str",
+     "EQH_EQL": "str"
+    },
+    "confirmation": "str",
+    "test": "str",
+    "invalidation": "str",
+    "expiry": "str",
+    "liquidity_note": "str",
+    "score_note": "str"
+   },
+   "params": {
+    "version": "str",
+    "tf": {
+     "M1": {
+      "left": "int",
+      "right": "int",
+      "prom_atr": "float",
+      "max_age": "int",
+      "test_gap": "int",
+      "bars": "int"
+     },
+     "M5": {
+      "left": "int",
+      "right": "int",
+      "prom_atr": "float",
+      "max_age": "int",
+      "test_gap": "int",
+      "bars": "int"
+     },
+     "M15": {
+      "left": "int",
+      "right": "int",
+      "prom_atr": "float",
+      "max_age": "int",
+      "test_gap": "int",
+      "bars": "int"
+     },
+     "M30": {
+      "left": "int",
+      "right": "int",
+      "prom_atr": "float",
+      "max_age": "int",
+      "test_gap": "int",
+      "bars": "int"
+     }
+    },
+    "instrument": {
+     "min_width_bp": "float",
+     "min_width_ticks": "int",
+     "eq_tol_atr": "float",
+     "touch_tol_atr": "float",
+     "break_atr": "float",
+     "spread_mult": "float"
+    },
+    "common": {
+     "half_width_atr": "float",
+     "max_width_atr": "float",
+     "base_max_atr": "float",
+     "disp_atr": "float",
+     "disp_bars": "int",
+     "disp_body": "float",
+     "fvg_min_atr": "float",
+     "eq_min_gap": "int",
+     "eq_max_span": "int",
+     "reaction_bars": "int",
+     "visible_per_tf": "int",
+     "history_per_tf": "int",
+     "confluence_tol_atr": "float"
+    }
+   },
+   "counters": {
+    "jobs": "int",
+    "deduplicated_clicks": "int",
+    "discarded_older_results": "int",
+    "live_recomputes": "int"
+   },
+   "mode": "str",
+   "note": "str"
+  }
+ },
+ "/api/v1/zones/map": {
+  "status": 200,
+  "shape": {
+   "status": "str",
+   "map_id": "str",
+   "as_of": "str",
+   "data": {
+    "state": "str",
+    "reasons": [],
+    "bars": {
+     "M5": "int",
+     "M15": "int",
+     "D1": "int"
+    }
+   },
+   "volume_source": {
+    "source": "str",
+    "note": "str",
+    "bars": "int",
+    "bars_with_tick_volume": "int",
+    "bars_with_real_volume": "int",
+    "order_flow": "str",
+    "footprint": "str",
+    "order_book": "str"
+   },
+   "zones": [
+    {
+     "zone_id": "str",
+     "zone_type": "str",
+     "polarity": "str",
+     "role": "str",
+     "timeframes": [
+      "str",
+      "…len=1"
+     ],
+     "lower_price": "float",
+     "upper_price": "float",
+     "width_atr": "float",
+     "created_at": "str",
+     "confirmed_at": "NoneType",
+     "status": "str",
+     "provisional": "bool",
+     "confluence_score": "float",
+     "flags": [
+      "str",
+      "…len=1"
+     ],
+     "reaction_metrics": {
+      "retests": "int",
+      "rejection_max_atr": "int",
+      "penetration_max": "int",
+      "swept": "bool",
+      "age_bars": "int"
+     },
+     "distance_atr": "float"
+    },
+    "…len=36"
+   ],
+   "profile_developing": {
+    "profile_id": "str",
+    "session": "str",
+    "local_date": "str",
+    "state": "str",
+    "poc": "float",
+    "vah": "float",
+    "val": "float",
+    "hvn": [
+     "float",
+     "…len=3"
+    ],
+    "lvn": [
+     "float",
+     "…len=1"
+    ],
+    "start": "str",
+    "end": "str",
+    "volume_source": "str",
+    "method": "str",
+    "relative_volume": "float",
+    "coverage": "float"
+   },
+   "profile_last_completed": {
+    "profile_id": "str",
+    "session": "str",
+    "local_date": "str",
+    "state": "str",
+    "poc": "float",
+    "vah": "float",
+    "val": "float",
+    "hvn": [
+     "float",
+     "…len=2"
+    ],
+    "lvn": [],
+    "start": "str",
+    "end": "str",
+    "volume_source": "str",
+    "method": "str",
+    "relative_volume": "float",
+    "coverage": "float"
+   },
+   "summary": {
+    "price": "float",
+    "nearest_support": {
+     "zone_id": "str",
+     "zone_type": "str",
+     "lower_price": "float",
+     "upper_price": "float",
+     "confluence_score": "float",
+     "status": "str"
+    },
+    "nearest_resistance": {
+     "zone_id": "str",
+     "zone_type": "str",
+     "lower_price": "float",
+     "upper_price": "float",
+     "confluence_score": "float",
+     "status": "str"
+    },
+    "zones": "int",
+    "provisional": "int"
+   },
+   "generated_at": "str"
+  }
+ },
+ "/api/v1/svp/status": {
+  "status": 200,
+  "shape": {
+   "version": "str",
+   "live_runs": "int",
+   "last_error": "NoneType",
+   "ai": {
+    "jobs": "int",
+    "last": "NoneType"
+   },
+   "agent": {
+    "state": "str",
+    "model": "NoneType",
+    "spent_today_usd_estimate": "float"
+   },
+   "ai_inflight": [],
+   "note": "str"
+  }
+ },
+ "/api/v1/svp/profiles": {
+  "status": 200,
+  "shape": {
+   "items": []
+  }
+ },
+ "/api/v1/kronos/forecast?instrument=XAUUSD&tf=M5": {
+  "status": 200,
+  "shape": {
+   "target": {
+    "instrument": "str",
+    "timeframe": "str",
+    "symbol": "NoneType",
+    "state": "str",
+    "reason": "str",
+    "quality": "NoneType",
+    "checked_at": "NoneType",
+    "state_pl": "str",
+    "forecast_current": "bool",
+    "forecast_id": "NoneType",
+    "queued": "bool",
+    "running": "bool"
+   },
+   "forecast": "NoneType",
+   "is_current": "bool",
+   "context": [],
+   "scorecard": {
+    "REAL": {
+     "settled": "int",
+     "pending": "int"
+    },
+    "SYNTHETIC": {
+     "settled": "int",
+     "pending": "int"
+    }
+   },
+   "stale_note": "NoneType"
+  }
+ },
+ "/api/v1/kronos": {
+  "status": 200,
+  "shape": {
+   "status": "str",
+   "status_pl": "str",
+   "code": "str",
+   "reason": "str",
+   "updated_at": "str",
+   "mode": "str",
+   "execution_permission": "bool",
+   "decision_use": {
+    "SCALPING": "str",
+    "HEDGING": "str"
+   },
+   "worker": "NoneType",
+   "load": "NoneType",
+   "targets": [
+    {
+     "instrument": "str",
+     "timeframe": "str",
+     "symbol": "NoneType",
+     "state": "str",
+     "reason": "str",
+     "quality": "NoneType",
+     "checked_at": "NoneType",
+     "state_pl": "str",
+     "forecast_current": "bool",
+     "forecast_id": "NoneType",
+     "queued": "bool",
+     "running": "bool"
+    },
+    "…len=4"
+   ],
+   "queue": [],
+   "running": "NoneType",
+   "counters": {
+    "enqueued": "int",
+    "deduplicated": "int",
+    "dropped_queue_full": "int",
+    "done": "int",
+    "errors": "int",
+    "timeouts": "int",
+    "worker_starts": "int"
+   },
+   "jobs": {
+    "install": "NoneType",
+    "verify": "NoneType",
+    "validation": "NoneType"
+   },
+   "settings_error": "NoneType",
+   "env": {
+    "python": "str",
+    "python_found": "bool",
+    "weights_dir": "str",
+    "weights_installed": "bool",
+    "weights_reason": "str",
+    "installed_at": "NoneType",
+    "pinned": [
+     {
+      "kind": "str",
+      "repo": "str",
+      "revision": "str"
+     },
+     "…len=2"
+    ],
+    "manifest_components": "NoneType"
+   },
+   "settings": {
+    "enabled": "bool",
+    "instruments": [
+     "str",
+     "…len=2"
+    ],
+    "timeframes": [
+     "str",
+     "…len=2"
+    ],
+    "horizon_bars": {
+     "M1": "int",
+     "M3": "int",
+     "M5": "int",
+     "M15": "int",
+     "M30": "int",
+     "H1": "int"
+    },
+    "lookback": "int",
+    "max_context": "int",
+    "min_context": "int",
+    "temperature": "float",
+    "top_k": "int",
+    "top_p": "float",
+    "paths": "int",
+    "direction_band_atr": "float",
+    "direction_band_min_points": "float",
+    "volume_source": "str",
+    "timestamp_basis": "str",
+    "device": "str",
+    "cpu_threads": "NoneType",
+    "request_timeout_s": "float",
+    "load_timeout_s": "float",
+    "queue_max": "int",
+    "max_staleness_bars": "float",
+    "weights_dir": "NoneType",
+    "python_path": "NoneType",
+    "strategy_use": {
+     "SCALPING": {
+      "use": "str",
+      "timeframe": "str",
+      "validation_report": "NoneType",
+      "confirmed_at": "NoneType"
+     },
+     "HEDGING": {
+      "use": "str",
+      "timeframe": "str",
+      "validation_report": "NoneType",
+      "confirmed_at": "NoneType"
+     }
+    }
+   },
+   "model": {
+    "repo": "str",
+    "revision": "str",
+    "max_context": "int"
+   },
+   "tokenizer": {
+    "repo": "str",
+    "revision": "str"
+   },
+   "license": "str",
+   "data_kind": "str",
+   "data_source": "str"
+  }
+ },
+ "/api/v1/plans/chart": {
+  "status": 200,
+  "shape": {
+   "contract": "str",
+   "symbol": "str",
+   "account_key": "str",
+   "primary": "NoneType",
+   "plans": [],
+   "legend": {
+    "SCALP": "str",
+    "HEDGE": "str"
+   },
+   "note": "str",
+   "strategy": "str",
+   "layer": "str",
+   "generated_at": "float"
+  }
+ },
+ "/api/v1/sh/chart": {
+  "status": 200,
+  "shape": {
+   "tf": "str",
+   "bars": [
+    {
+     "t_raw": "int",
+     "open_utc": "str",
+     "o": "float",
+     "h": "float",
+     "l": "float",
+     "c": "float",
+     "tv": "int",
+     "rv": "int",
+     "spread": "int",
+     "closed": "bool",
+     "close_confirmed_utc": "str",
+     "available_at": "str",
+     "basis": "str",
+     "revision": "int",
+     "source": "str"
+    },
+    "…len=240"
+   ],
+   "quote": {
+    "bid": "float",
+    "ask": "float",
+    "spread": "float",
+    "age_s": "float",
+    "time": "float"
+   },
+   "last_eval": {},
+   "open_plans": []
+  }
+ },
+ "/api/v1/setups": {
+  "status": 200,
+  "shape": {
+   "schema": "str",
+   "items": [
+    {
+     "setup_id": "str",
+     "strategy_id": "str",
+     "strategy_name": "str",
+     "symbol": "str",
+     "direction": "str",
+     "timeframe": "str",
+     "created_at": "str",
+     "updated_at": "str",
+     "stage": "str",
+     "status": "str",
+     "scenario_status": "str",
+     "setup_score": "float",
+     "engine_selected": "bool",
+     "terminal_reason": "NoneType",
+     "terminal_reason_pl": "NoneType"
+    },
+    "…len=8"
+   ],
+   "strategies": [
+    {
+     "strategy_id": "str",
+     "name": "str"
+    },
+    "…len=12"
+   ],
+   "engine_selected": "str",
+   "setup_view": {
+    "mode": "str",
+    "strategy_id": "NoneType",
+    "focus_setup_id": "NoneType"
+   }
+  }
+ },
+ "/api/v1/sh/signals?limit=5": {
+  "status": 200,
+  "shape": {
+   "items": []
+  }
+ },
+ "/api/v1/models/catalog?instrument=XAUUSD": {
+  "status": 200,
+  "shape": {
+   "instrument": "str",
+   "items": [
+    {
+     "id": "str",
+     "name": "str",
+     "category": "str",
+     "location": "str",
+     "purpose": "str",
+     "required_data": "str",
+     "input": "str",
+     "output": "str",
+     "instruments": [
+      "str",
+      "…len=2"
+     ],
+     "training": "str",
+     "state": "str",
+     "state_pl": "str",
+     "reason": "str",
+     "probe_status": "str",
+     "group": "str",
+     "roles": {
+      "SCALPING": "str",
+      "HEDGING": "str"
+     },
+     "source": "str"
+    },
+    "…len=59"
+   ],
+   "counts_by_category": {
+    "RULE": "int",
+    "INDICATOR": "int",
+    "TRAINABLE": "int",
+    "EXTERNAL": "int",
+    "INFRA": "int",
+    "SIMULATION": "int"
+   },
+   "counts_by_state": {
+    "READY": "int",
+    "NOT_TRAINED": "int",
+    "TRAINING": "int",
+    "ERROR": "int",
+    "INCOMPATIBLE": "int",
+    "DISABLED": "int",
+    "BLOCKED_DATA": "int",
+    "STALE": "int"
+   },
+   "states": {
+    "READY": "str",
+    "NOT_TRAINED": "str",
+    "TRAINING": "str",
+    "ERROR": "str",
+    "INCOMPATIBLE": "str",
+    "DISABLED": "str",
+    "BLOCKED_DATA": "str",
+    "STALE": "str"
+   },
+   "note": "str"
+  }
+ },
+ "/api/v1/eval/report": {
+  "status": 200,
+  "shape": {
+   "groups": [],
+   "matured": "int",
+   "mode": "str",
+   "assist_readiness": {},
+   "outcome_distribution": {},
+   "outcome_note": "str",
+   "regimes": [
+    {
+     "active_regime": "str",
+     "sh_regime": "str",
+     "n": "int",
+     "matured": "int",
+     "mean_plan_r_net": "NoneType"
+    },
+    "…len=1"
+   ],
+   "regimes_note": "str",
+   "note": "str"
+  }
+ },
+ "/api/v1/sh/scenario": {
+  "status": 200,
+  "shape": {
+   "strategy": "str",
+   "instrument": "str",
+   "generated_at": "float",
+   "unit": "str",
+   "levels_usd": [
+    "float",
+    "…len=5"
+   ],
+   "horizon_minutes": "int",
+   "setup_status": "NoneType",
+   "setup_reason": "NoneType",
+   "trigger": [],
+   "invalidation": "NoneType",
+   "score": "NoneType",
+   "quote": {
+    "bid": "float",
+    "ask": "float",
+    "spread": "float"
+   },
+   "side": "NoneType",
+   "montecarlo": {
+    "status": "str",
+    "reason": "NoneType",
+    "variant": "str",
+    "variant_basis": "str",
+    "n_paths": "int",
+    "seed": "int",
+    "probability_kind": "str",
+    "calibrated": "bool",
+    "horizon_bars": "int",
+    "data": {
+     "bars": "int",
+     "first": "str",
+     "last_closed_open": "str",
+     "dropped_invalid": "int",
+     "flags": [],
+     "hash": "str",
+     "kind": "str"
+    },
+    "warning": "str",
+    "compute_ms": "float",
+    "scenarios": {
+     "horizon_bars": "int",
+     "levels_price": [
+      "float",
+      "…len=5"
+     ],
+     "p_up_reach": [
+      "float",
+      "…len=5"
+     ],
+     "p_down_reach": [
+      "float",
+      "…len=5"
+     ],
+     "note": "str"
+    }
+   },
+   "volume": {
+    "total": "float",
+    "split": {
+     "status": "str",
+     "legs": [
+      "float",
+      "…len=3"
+     ]
+    },
+    "volume_min": "float",
+    "volume_step": "float",
+    "on_broker_grid": "bool",
+    "basis": "str",
+    "if_split_impossible": "str"
+   },
+   "levels": [
+    {
+     "level_usd": "float",
+     "role": "str",
+     "price": "NoneType",
+     "distance_actual": "float",
+     "leg_volume": "float",
+     "move_needed_from_quote": "float",
+     "gross_account": "float",
+     "volume_used": "float",
+     "currency": "str",
+     "spread_value": "float",
+     "slippage_cost": "float",
+     "commission_cost": "NoneType",
+     "net_account": "NoneType",
+     "net_note": "str",
+     "p_up_reach": "float",
+     "p_down_reach": "float"
+    },
+    "…len=5"
+   ],
+   "break_even": {
+    "after": "str",
+    "rule": "str",
+    "offset_price": "NoneType",
+    "price": "NoneType",
+    "note": "str"
+   },
+   "costs": {
+    "spread_price": "float",
+    "commission_per_lot_side": "NoneType",
+    "commission_known": "bool",
+    "slippage_usd_per_side": "float",
+    "spread_rule": "str",
+    "note": "str"
+   },
+   "models": [
+    {
+     "model": "str",
+     "event": "str",
+     "status": "str",
+     "reason": "str",
+     "value": "NoneType",
+     "kind": "NoneType",
+     "use": "str"
+    },
+    "…len=40"
+   ],
+   "combined_probability": {
+    "value": "NoneType",
+    "status": "str",
+    "reason": "str"
+   },
+   "order": {
+    "exec_mode": "str",
+    "coordination": "NoneType",
+    "risk_status": "NoneType",
+    "volume": "NoneType",
+    "legs": "NoneType",
+    "why_no_order": "str",
+    "note": "str"
+   },
+   "status": "str",
+   "no_plan_reason": "str"
+  }
+ },
+ "/api/v1/decision": {
+  "status": 200,
+  "shape": {
+   "schema_version": "str",
+   "spec_version": "str",
+   "decision_id": "str",
+   "content_hash": "str",
+   "snapshot_id": "str",
+   "symbol": "str",
+   "account_key": "str",
+   "session_epoch": "int",
+   "as_of_utc": "str",
+   "expires_at_utc": "str",
+   "analysis_direction": "str",
+   "direction_basis": "str",
+   "signal_stage": "str",
+   "decision": "str",
+   "execution_permission": "str",
+   "system_state": "str",
+   "data_quality": "str",
+   "market_state": "str",
+   "setup": {
+    "setup_id": "str",
+    "created_at": "str",
+    "strategy_id": "str",
+    "strategy_version": "str",
+    "strategy_name": "str",
+    "profile": "str",
+    "setup_tf": "str",
+    "direction": "str",
+    "state": "str",
+    "signal_stage": "str",
+    "state_changed_at": "str",
+    "version": "int",
+    "setup_score": "float",
+    "horizon": "str",
+    "countertrend": "bool",
+    "invalidation_level": "float",
+    "missing_confirmations": [
+     "str",
+     "…len=2"
+    ],
+    "entry_plan": {
+     "order_type": "str",
+     "kind": "str",
+     "reference_price": "float",
+     "zone": [
+      "float",
+      "…len=2"
+     ],
+     "trigger": "str",
+     "trigger_level": "float",
+     "max_wait_bars": "int",
+     "max_distance_atr": "float",
+     "send_when": "str"
+    },
+    "event_id": "str",
+    "synthetic": "bool"
+   },
+   "levels": {
+    "rule_version": "str",
+    "status": "str",
+    "side": "str",
+    "stop_loss": "float",
+    "invalidation_level": "float",
+    "entry_zone": [
+     "float",
+     "…len=2"
+    ],
+    "targets": [
+     {
+      "price": "float",
+      "weight": "float",
+      "basis": "str"
+     },
+     "…len=2"
+    ],
+    "exit_rules": {
+     "time_exit_bars": "int",
+     "be_after_tp1": "bool",
+     "trailing": "NoneType"
+    },
+    "reasons": []
+   },
+   "risk": {
+    "engine": "str",
+    "side": "str",
+    "risk_gate": "str",
+    "sizing_status": "str",
+    "limits_missing": [
+     "str",
+     "…len=5"
+    ],
+    "commission": {
+     "per_lot_per_side": "NoneType",
+     "samples": "int",
+     "source": "str",
+     "note": "str"
+    },
+    "settings_version": "str",
+    "entry": "float",
+    "stop_loss": "float",
+    "targets": [
+     {
+      "price": "float",
+      "weight": "float",
+      "basis": "str"
+     },
+     "…len=2"
+    ],
+    "quote_side": "str",
+    "spread_points": "float",
+    "rr_gross": "float",
+    "per_lot": {
+     "stop_loss_gross": "float",
+     "commission_roundtrip": "NoneType",
+     "slippage_stress": "float",
+     "weighted_reward_gross": "float",
+     "total_loss_stress": "float"
+    },
+    "rr_net": "float",
+    "rr_complete": "bool",
+    "currency": "str",
+    "equity": "float",
+    "free_margin": "float",
+    "daily": {
+     "status": "str",
+     "used": "float",
+     "realized_today": "float",
+     "floating": "int"
+    },
+    "open_risk": {
+     "open_risk": "float",
+     "positions_without_sl": []
+    },
+    "positions_count": "int",
+    "margin_mode": "str",
+    "reason_codes": [
+     "str",
+     "…len=2"
+    ],
+    "entry_basis": "str"
+   },
+   "agent_gate": {
+    "status": "str",
+    "reason_codes": [
+     "str",
+     "…len=1"
+    ]
+   },
+   "mode_gate": {
+    "mode": "str",
+    "allowed": "bool",
+    "auto_trading": "bool",
+    "kill_switch": "bool",
+    "reason_codes": [
+     "str",
+     "…len=2"
+    ],
+    "primary_path": "str",
+    "path": "str",
+    "portfolio": {
+     "realized_today": "float",
+     "realized_by_path": {
+      "ACTIVE": "int",
+      "SH": "float"
+     },
+     "open_positions": "int",
+     "open_by_path": {
+      "ACTIVE": "int",
+      "SH": "int"
+     },
+     "day_start_utc": "str"
+    }
+   },
+   "decision_tree": [
+    {
+     "node": "str",
+     "status": "str",
+     "met": [
+      "str",
+      "…len=2"
+     ],
+     "unmet": [],
+     "reason_codes": []
+    },
+    "…len=9"
+   ],
+   "reason_codes": [
+    "str",
+    "…len=4"
+   ],
+   "ml": {
+    "contract": "str",
+    "setup_id": "str",
+    "setup_version": "int",
+    "model_id": "NoneType",
+    "model_family": "NoneType",
+    "model_version": "NoneType",
+    "feature_schema_version": "str",
+    "asof_utc": "NoneType",
+    "raw_score": "NoneType",
+    "calibrated_probability": "NoneType",
+    "calibration_status": "str",
+    "threshold": "NoneType",
+    "target_definition": "str",
+    "readiness": "str",
+    "uncertainty_reason": "str",
+    "data_quality": "NoneType",
+    "explanation_ref": "NoneType",
+    "ml_mode": "str"
+   },
+   "structure": {
+    "structural_direction": "NoneType",
+    "tactical_direction": "NoneType",
+    "regime_conflict": "NoneType",
+    "d1_direction": "NoneType",
+    "d1_conflict": "bool",
+    "conflict_rule": "str"
+   },
+   "profile": "str",
+   "synthetic": "bool",
+   "observation_note": "str",
+   "checklist": {
+    "version": "str",
+    "status": "str",
+    "met": [
+     {
+      "id": "str",
+      "label": "str",
+      "reading": "str"
+     },
+     "…len=10"
+    ],
+    "missing": [
+     {
+      "id": "str",
+      "label": "str",
+      "required": "str",
+      "status": "str"
+     },
+     "…len=4"
+    ],
+    "trigger": {
+     "description": "str",
+     "level": "float",
+     "zone": [
+      "float",
+      "…len=2"
+     ],
+     "reference_price": "float",
+     "timeframe": "str",
+     "closed_bar_required": "bool",
+     "max_wait_bars": "int",
+     "max_distance_atr": "float",
+     "send_when": "str",
+     "met": "bool"
+    },
+    "invalidation": {
+     "level": "float",
+     "event": "str",
+     "time": "str",
+     "time_rule": "str",
+     "stop_loss": "float",
+     "targets": [
+      "float",
+      "…len=2"
+     ],
+     "bar_seconds": "int"
+    },
+    "gates": [
+     {
+      "id": "str",
+      "label": "str",
+      "status": "str",
+      "reasons": []
+     },
+     "…len=6"
+    ],
+    "setup_id": "str",
+    "setup_version": "int",
+    "strategy_id": "str",
+    "strategy_name": "str",
+    "timeframe": "str",
+    "stage": "str",
+    "stale": "bool"
+   },
+   "context_tf": {
+    "M3": {
+     "status": "str",
+     "quality": "str",
+     "source": "str",
+     "parts": "NoneType",
+     "last_closed_open_utc": "str",
+     "last_closed_confirmed_utc": "str",
+     "forming": {
+      "open_utc": "str",
+      "o": "float",
+      "h": "float",
+      "l": "float",
+      "c": "float",
+      "note": "str"
+     },
+     "direction": "str",
+     "ema20": "float",
+     "ema50": "float",
+     "regime": "str",
+     "regime_reason": "str",
+     "levels": {
+      "last_high": "float",
+      "last_low": "float",
+      "high_20": "float",
+      "low_20": "float"
+     },
+     "closed_bars": "int",
+     "role": "str",
+     "role_pl": "NoneType",
+     "impact": "str"
+    },
+    "M30": {
+     "status": "str",
+     "quality": "str",
+     "source": "str",
+     "parts": "NoneType",
+     "last_closed_open_utc": "str",
+     "last_closed_confirmed_utc": "str",
+     "forming": {
+      "open_utc": "str",
+      "o": "float",
+      "h": "float",
+      "l": "float",
+      "c": "float",
+      "note": "str"
+     },
+     "direction": "str",
+     "ema20": "float",
+     "ema50": "float",
+     "regime": "str",
+     "regime_reason": "str",
+     "levels": {
+      "last_high": "float",
+      "last_low": "float",
+      "high_20": "float",
+      "low_20": "float"
+     },
+     "closed_bars": "int",
+     "role": "str",
+     "role_pl": "str",
+     "impact": "str"
+    },
+    "H8": {
+     "status": "str",
+     "quality": "str",
+     "source": "str",
+     "parts": "NoneType",
+     "last_closed_open_utc": "str",
+     "last_closed_confirmed_utc": "str",
+     "forming": {
+      "open_utc": "str",
+      "o": "float",
+      "h": "float",
+      "l": "float",
+      "c": "float",
+      "note": "str"
+     },
+     "direction": "str",
+     "ema20": "float",
+     "ema50": "float",
+     "regime": "str",
+     "regime_reason": "str",
+     "levels": {
+      "last_high": "float",
+      "last_low": "float",
+      "high_20": "float",
+      "low_20": "float"
+     },
+     "closed_bars": "int",
+     "role": "str",
+     "role_pl": "str",
+     "impact": "str"
+    }
+   },
+   "signal": {
+    "schema": "str",
+    "signal_id": "str",
+    "setup_id": "str",
+    "strategy_id": "str",
+    "strategy_version": "str",
+    "strategy_name": "str",
+    "symbol": "str",
+    "data_source": "str",
+    "decision_source": "str",
+    "status": "str",
+    "execution_state": "str",
+    "side": "str",
+    "entry_tf": "str",
+    "context_tfs": [
+     "str",
+     "…len=5"
+    ],
+    "snapshot_id": "str",
+    "generated_at": "str",
+    "valid_until": "str",
+    "reference_price": "float",
+    "quote": {
+     "bid": "float",
+     "ask": "float",
+     "time_utc": "str",
+     "age_seconds": "float"
+    },
+    "entry_type": "str",
+    "entry_price": "NoneType",
+    "entry_zone": [
+     "float",
+     "…len=2"
+    ],
+    "trigger_level": "float",
+    "fill_price": "NoneType",
+    "stop_loss": "float",
+    "targets": [
+     {
+      "price": "float",
+      "weight": "float",
+      "basis": "str"
+     },
+     "…len=2"
+    ],
+    "tp_rule": "NoneType",
+    "risk_money": "NoneType",
+    "risk_pct": "NoneType",
+    "volume": "NoneType",
+    "currency": "str",
+    "rr_gross": "float",
+    "rr_net": "float",
+    "rr_definitions": {
+     "gross": "str",
+     "net": "str"
+    },
+    "spread": {
+     "price": "float",
+     "points": "float",
+     "pct_of_sl_distance": "float"
+    },
+    "cost_assumptions": {
+     "commission_per_lot_side": "NoneType",
+     "commission_source": "str",
+     "slippage_stress_points": "float",
+     "rr_complete": "bool"
+    },
+    "data_flags": {
+     "data_quality": "str",
+     "market_state": "str",
+     "context": {
+      "M3": "str",
+      "M30": "str",
+      "H8": "str"
+     }
+    },
+    "conditions_met": [
+     "str",
+     "…len=10"
+    ],
+    "conditions_missing": [
+     "str",
+     "…len=4"
+    ],
+    "trigger": "str",
+    "invalidation": {
+     "level": "float",
+     "rule": "str"
+    },
+    "block_reasons": [],
+    "ai": {
+     "status": "str",
+     "detail": "str",
+     "verdict": "NoneType",
+     "explanation": "NoneType"
+    },
+    "quality": {
+     "score": "float",
+     "method": "str"
+    },
+    "probability_win": "NoneType",
+    "synthetic": "bool"
+   },
+   "signal_view": {
+    "view_schema": "str",
+    "symbol": "str",
+    "digits": "int",
+    "snapshot_id": "str",
+    "decision_id": "str",
+    "generated_at": "str",
+    "data_quality": "str",
+    "market_state": "str",
+    "synthetic": "bool",
+    "checklist": [
+     {
+      "id": "str",
+      "label": "str",
+      "desc": "str",
+      "status": "str"
+     },
+     "…len=8"
+    ],
+    "missing_summary": "str",
+    "execution_mode": "str",
+    "intent": "str",
+    "state": "str",
+    "plan_side": "str",
+    "signal_id": "str",
+    "setup_id": "str",
+    "strategy": "str",
+    "entry_tf": "str",
+    "context_tfs": [
+     "str",
+     "…len=5"
+    ],
+    "source": "str",
+    "data_source": "str",
+    "valid_until": "str",
+    "signal_status": "str",
+    "execution_state": "str",
+    "levels": {
+     "entry": {
+      "value": "float",
+      "kind": "str",
+      "note": "str"
+     },
+     "reference_price": "float",
+     "fill": {
+      "value": "NoneType",
+      "executed": "bool",
+      "note": "str"
+     },
+     "sl": {
+      "value": "float",
+      "note": "NoneType"
+     },
+     "tp": {
+      "value": "NoneType",
+      "values": [
+       "float",
+       "…len=2"
+      ],
+      "note": "NoneType",
+      "rule": "NoneType"
+     },
+     "rr": {
+      "net": "float",
+      "gross": "float",
+      "note": "NoneType"
+     }
+    },
+    "risk": {
+     "money": "NoneType",
+     "pct": "NoneType",
+     "volume": "NoneType",
+     "currency": "str",
+     "note": "str"
+    },
+    "reason": "str",
+    "trigger": "str",
+    "invalidation": {
+     "level": "float",
+     "rule": "str"
+    },
+    "block_reasons": [],
+    "quote": {
+     "bid": "float",
+     "ask": "float",
+     "age_seconds": "float"
+    },
+    "quality": {
+     "score": "float",
+     "method": "str"
+    },
+    "probability_win": "NoneType",
+    "ai": {
+     "status": "str",
+     "verdict": "NoneType",
+     "explanation": "NoneType"
+    },
+    "execution_note": "NoneType"
+   },
+   "tf_overview": [
+    {
+     "tf": "str",
+     "role": "str",
+     "direction": "str",
+     "data": "str",
+     "last_closed_utc": "str",
+     "forming": "bool",
+     "source": "str",
+     "conflict": "bool",
+     "conflict_impact": "NoneType"
+    },
+    "…len=9"
+   ]
+  }
+ },
+ "/api/v1/trainhub/registry?instrument=XAUUSD": {
+  "status": 200,
+  "shape": {
+   "instrument": "str",
+   "versions": [],
+   "active": {},
+   "history": [],
+   "python": "str"
+  }
+ },
+ "/api/v1/trainhub/status": {
+  "status": 200,
+  "shape": {
+   "jobs": [],
+   "queue": {
+    "running": "NoneType",
+    "queued": "int",
+    "recovered_interrupted": "int",
+    "process_isolated": "bool",
+    "note": "str"
+   },
+   "data": {
+    "XAUUSD": {
+     "symbol": "str",
+     "data_kind": "NoneType",
+     "timeframes": {},
+     "last_export": "NoneType",
+     "costs": "NoneType",
+     "time_model": "NoneType",
+     "updated_at": "NoneType",
+     "parquet": "NoneType"
+    },
+    "BTC": {
+     "symbol": "str",
+     "data_kind": "NoneType",
+     "timeframes": {},
+     "last_export": "NoneType",
+     "costs": "NoneType",
+     "time_model": "NoneType",
+     "updated_at": "NoneType",
+     "parquet": "NoneType"
+    }
+   },
+   "models": {
+    "TH_BASELINE": {
+     "name": "str",
+     "available": "bool"
+    },
+    "TH_LOGREG": {
+     "name": "str",
+     "available": "bool"
+    },
+    "TH_HGB": {
+     "name": "str",
+     "available": "bool"
+    },
+    "TH_XGB": {
+     "name": "str",
+     "available": "bool"
+    },
+    "TH_RF": {
+     "name": "str",
+     "available": "bool"
+    },
+    "TH_SVM": {
+     "name": "str",
+     "available": "bool"
+    }
+   },
+   "defaults": {
+    "base_tf": "str",
+    "horizon": "int",
+    "k_atr": "float",
+    "holdout_frac": "float",
+    "n_folds": "int",
+    "embargo_bars": "NoneType",
+    "min_samples": "int",
+    "min_train": "int",
+    "seed": "int",
+    "models": [
+     "str",
+     "…len=3"
+    ],
+    "start": "NoneType",
+    "end": "NoneType"
+   },
+   "note": "str"
+  }
+ },
+ "/api/v1/sh/validation?instrument=XAUUSD": {
+  "status": 200,
+  "shape": {
+   "instrument": "str",
+   "strategies": {
+    "SCALPING": {
+     "status": "str",
+     "reason": "str"
+    },
+    "HEDGING": {
+     "status": "str",
+     "reason": "str"
+    }
+   }
+  }
+ },
+ "/api/v1/montecarlo/status": {
+  "status": 200,
+  "shape": {
+   "version": "str",
+   "instrument": "str",
+   "variant": "str",
+   "calibrated": "bool",
+   "active_calibration": "NoneType",
+   "validations": [],
+   "synthetic": "bool",
+   "runs": "int",
+   "last_ms": "float",
+   "last_error": "NoneType",
+   "note": "str"
+  }
+ },
+ "/api/v1/stats?mode=PAPER": {
+  "status": 200,
+  "shape": {
+   "bot": {
+    "mode": "str",
+    "currency": "NoneType",
+    "all": {
+     "trades": "int",
+     "net": "float",
+     "win_rate": "NoneType",
+     "profit_factor": "NoneType",
+     "avg_r": "NoneType",
+     "expectancy_r": "NoneType",
+     "status": "str"
+    },
+    "day": {
+     "trades": "int",
+     "net": "float",
+     "win_rate": "NoneType",
+     "profit_factor": "NoneType",
+     "avg_r": "NoneType",
+     "expectancy_r": "NoneType",
+     "status": "str"
+    },
+    "week": {
+     "trades": "int",
+     "net": "float",
+     "win_rate": "NoneType",
+     "profit_factor": "NoneType",
+     "avg_r": "NoneType",
+     "expectancy_r": "NoneType",
+     "status": "str"
+    },
+    "month": {
+     "trades": "int",
+     "net": "float",
+     "win_rate": "NoneType",
+     "profit_factor": "NoneType",
+     "avg_r": "NoneType",
+     "expectancy_r": "NoneType",
+     "status": "str"
+    },
+    "recent": [],
+    "open_partial_positions": "int",
+    "unsettled_positions": "int",
+    "commission_unknown_trades": "int",
+    "note": "str"
+   },
+   "engines": {
+    "mode": "str",
+    "per_engine": {
+     "ACTIVE_S01_S12": {
+      "trades": "int",
+      "net": "float",
+      "win_rate": "NoneType",
+      "profit_factor": "NoneType",
+      "avg_r": "NoneType",
+      "expectancy_r": "NoneType",
+      "status": "str"
+     },
+     "SH_SCALPING": {
+      "trades": "int",
+      "net": "float",
+      "win_rate": "NoneType",
+      "profit_factor": "NoneType",
+      "avg_r": "NoneType",
+      "expectancy_r": "NoneType",
+      "status": "str"
+     },
+     "SH_HEDGING": {
+      "trades": "int",
+      "net": "float",
+      "win_rate": "NoneType",
+      "profit_factor": "NoneType",
+      "avg_r": "NoneType",
+      "expectancy_r": "NoneType",
+      "status": "str"
+     }
+    },
+    "combined": {
+     "trades": "int",
+     "net": "float",
+     "win_rate": "NoneType",
+     "profit_factor": "NoneType",
+     "avg_r": "NoneType",
+     "expectancy_r": "NoneType",
+     "status": "str"
+    },
+    "per_strategy": {},
+    "per_symbol": {},
+    "per_month": {},
+    "sh_unsettled_or_error_closed": "int",
+    "sh_commission_unknown_plans": "int",
+    "note": "str"
+   },
+   "equity": {
+    "mode": "str",
+    "points": [],
+    "first_snapshot": "NoneType",
+    "label": "str",
+    "status": "str"
+   },
+   "account": {
+    "trading_net_all_symbols": "int",
+    "trading_net_symbol": "int",
+    "trading_net_today": "int",
+    "balance_operations": "int",
+    "deposits": "int",
+    "withdrawals": "int",
+    "balance_operations_count": "int",
+    "deals": "int",
+    "credit_bonus_other_flows": "int",
+    "note": "str"
+   },
+   "account_roi": {
+    "status": "str",
+    "note": "str"
+   }
+  }
+ },
+ "/api/v1/training/runs": {
+  "status": 200,
+  "shape": {
+   "items": []
+  }
+ }
+}
