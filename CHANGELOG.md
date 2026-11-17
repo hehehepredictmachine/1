@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.42.1 – TiRex-2 na Windows bez kompilatora C++, profil 8 GB RAM (Granite TTM + TiRex-2)
+* **Naprawa instalacji TiRex-2** (`VERIFY` z „Set TORCHDYNAMO_VERBOSE=1…”): pakiet tirex-2 0.5.0 ma bezwarunkowe `@torch.compile`
+  na `ResidualBlock`; na Windows bez MSVC TorchInductor kończył się `InvalidCxxCompiler`. W procesie TiRex-2 TorchDynamo jest
+  wyłączony – model liczy w trybie eager (te same wagi i wyniki; zgodność z oficjalnym API PASS, różnica 0,0). Wymuszenie kompilacji:
+  `PMW_TIREX_COMPILE=1`. Wystarczy ponownie uruchomić `41_AI_TABICL_TIREX_INSTALUJ.bat tirex2` – zgodne pliki nie są pobierane drugi raz.
+* **Profil pamięci `LOW_MEMORY_8GB`**: tylko Granite TTM (lekki) + jeden ciężki model naraz (TiRex-2 albo TabICLv2); Kronos, Chronos-2
+  i SDformerFlow nie są ładowane; ciężki model zwalniany 90 s po ostatnim użyciu, a inny bezczynny ciężki proces – przed załadowaniem
+  nowego; budżet procesów PMW 2–3 GB; progi RAM 85 / 90 / 94 %; 2 wątki (ciężkie) / 1 (lekkie).
+* **`42_MODELE_8GB_GRANITE_TIREX.bat`**: instaluje tylko Granite TTM + TiRex-2 i (gdy bot nie działa) ustawia profil `LOW_MEMORY_8GB`.
+* Wybór profilu pamięci wrócił do UI: **Diagnostyka → Zasoby** (poziom, RAM, procesy modeli, zmiana profilu z potwierdzeniem).
+
 ## 1.42.0 – nowy interfejs: cinematic, kula FOREX, panele systemowe; stary interfejs usunięty; modele ASSIST i zlecenia koszyków FX
 * **Interfejs (pełna przebudowa)**: `#/menu` – film intro (raz na sesję, „PRZEJDŹ DO MENU”, ESC, ograniczenie ruchu) i menu
   PEPEMARKETWIZARD TEAM z planetami 01 FOREX · 02 CRYPTO · 03 OTC (CRYPTO / OTC: „tryb w przygotowaniu”, bez zmiany profilu bota);

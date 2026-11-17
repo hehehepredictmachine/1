@@ -125,10 +125,32 @@ class TestGovernor(unittest.TestCase):
         st["used"] = 82.0
         self.assertFalse(g.admit_training("kronos_train", "heavy", trading_active=False)[0])
 
+    def test_low_memory_8gb_profile(self):
+        """1.42.1: 8 GB computer - only Granite TTM + ONE heavy model (TiRex-2 / TabICLv2) resident; Kronos / Chronos-2 never loaded."""
+        g, st = gov(used=70.0, profile="LOW_MEMORY_8GB")
+        p = g.profile()
+        self.assertEqual((p["budget_max_mb"], p["max_resident_heavy"], p["idle_release_s"], p["threads_light"]), (3072, 1, 90, 1))
+        self.assertFalse(g.admit("kronos", loaded=False)[0])
+        self.assertFalse(g.admit("chronos2", loaded=True)[0])
+        self.assertTrue(g.admit("granite_ttm", loaded=False)[0])                      # light model
+        released = []
+        alive = {"tabicl": 11}
+        g.register("tabicl", "heavy", lambda: alive.get("tabicl"), release=lambda: (released.append("tabicl"), alive.pop("tabicl", None)), idle=lambda: 5)
+        g.register("tirex2", "heavy", lambda: alive.get("tirex2"), release=lambda: released.append("tirex2"), idle=lambda: 0)
+        st["rss"] = {11: 700.0}
+        self.assertTrue(g.admit("tirex2", loaded=False)[0])                          # TabICL released BEFORE TiRex-2 loads
+        self.assertEqual(released, ["tabicl"])
+        self.assertTrue(g.admit("tirex2", loaded=True)[0])                           # already loaded: nothing else released
+        self.assertEqual(released, ["tabicl"])
+        st["used"] = 88.0                                                               # 88 % on 8 GB: still OK for the light model
+        self.assertTrue(g.admit("granite_ttm", loaded=True)[0])
+        st["used"] = 95.0
+        self.assertFalse(g.admit("granite_ttm", loaded=True)[0])
+
     def test_profiles_threads_and_view(self):
         from masterquo.resources.governor import PROFILE_KEYS, profiles
         ps = profiles()
-        self.assertEqual(set(ps), {"LOW_MEMORY_16GB", "ECO", "BALANCED"})
+        self.assertEqual(set(ps), {"LOW_MEMORY_16GB", "LOW_MEMORY_8GB", "ECO", "BALANCED"})
         low = ps["LOW_MEMORY_16GB"]
         self.assertEqual((low["warn_pct"], low["limit_heavy_pct"], low["pause_optional_pct"], low["reserve_os_mb"], low["budget_preferred_mb"],
                           low["budget_max_mb"], low["heavy_parallelism"], low["background_training"], low["auto_download"], low["lazy_loading"]),

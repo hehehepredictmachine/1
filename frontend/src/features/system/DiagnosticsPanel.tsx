@@ -2,7 +2,7 @@
 // (GET /api/v1/analytics/diagnostics co 5 s, GET /api/v1/timeframes, stan połączenia ze store), te same pola. Pominięta tylko
 // sekcja „Inne rynki” (podgląd rynków starego UI, nie diagnostyka).
 import { useEffect, useState } from "react";
-import { apiGet } from "../../api";
+import { apiGet, apiSend } from "../../api";
 import { useStore } from "../../store";
 import { cls, fmtTime } from "../../util";
 
@@ -12,7 +12,13 @@ export default function DiagnosticsPanel() {
   const { s } = useStore();
   const [diag, setDiag] = useState<any>(null);
   const [tfm, setTfm] = useState<any>(null);
+  const [res, setRes] = useState<any>(null);
+  const [resErr, setResErr] = useState<string | null>(null);
+  const [askProf, setAskProf] = useState<string | null>(null);
+  const setProfile = (p: string) => apiSend("PUT", "/api/v1/resources/profile", { profile: p }).then((x: any) => { setRes(x); setResErr(null); setAskProf(null); })
+    .catch((e) => setResErr(String(e?.message || e)));
   const load = () => {
+    apiGet("/api/v1/resources").then(setRes).catch(() => setRes(null));
     apiGet("/api/v1/analytics/diagnostics").then(setDiag).catch(() => setDiag(null));
     apiGet("/api/v1/timeframes").then(setTfm).catch(() => setTfm(null));
   };
@@ -34,6 +40,22 @@ export default function DiagnosticsPanel() {
         <table className="sys-tbl"><thead><tr><th>TF</th><th>ROLA</th><th>DANE</th><th>ZAMKNIĘTE</th><th>WYMAGANE</th></tr></thead>
           <tbody>{(tfm?.timeframes || []).map((t: any) => <tr key={t.tf}><td>{t.tf}</td><td>{t.role}</td><td><span className={cls("sys-st", t.data === "OK" ? "ok" : "warn")}>{t.data ?? "?"}</span></td>
             <td>{t.closed_bars ?? "—"}</td><td>{t.required ?? "—"}</td></tr>)}</tbody></table></section>
+      <section data-testid="diag-resources"><h4>ZASOBY – MEMORY GOVERNOR</h4>
+        {res ? (<>
+          <p className="sys-note">Poziom: <span className={cls("sys-st", res.level === "OK" ? "ok" : res.level === "WARN" ? "warn" : "bad")}>{res.level}</span> {res.level_pl} ·
+            RAM {res.system?.used_pct ?? "—"} % z {res.system?.total_mb != null ? Math.round(res.system.total_mb / 1024) + " GB" : "—"} · procesy PMW {res.pmw_total_mb ?? "—"} MB</p>
+          <div className="sys-row" role="group" aria-label="Profil pamięci">
+            {Object.keys(res.profiles || {}).filter((k) => k !== "MANUAL").map((k) => (
+              <button key={k} type="button" className={cls("act", res.profile === k && "on")} aria-pressed={res.profile === k} data-testid={"res-prof-" + k}
+                title={res.profiles[k]?.label} onClick={() => (res.profile === k ? undefined : setAskProf(k))}>{k}</button>))}</div>
+          <p className="sys-note">{res.profile_pl}</p>
+          {askProf && <div className="sys-row"><span className="sys-note">Zmienić profil na {askProf}? ({res.profiles[askProf]?.label})</span>
+            <button type="button" className="act" data-testid="res-prof-confirm" onClick={() => setProfile(askProf)}>ZMIEŃ</button>
+            <button type="button" className="act" onClick={() => setAskProf(null)}>ANULUJ</button></div>}
+          {resErr && <p className="sys-note">{resErr}</p>}
+          <table className="sys-tbl"><thead><tr><th>PROCES</th><th>RODZAJ</th><th>RAM [MB]</th><th>SZCZYT [MB]</th></tr></thead>
+            <tbody>{Object.entries(res.processes || {}).map(([k, v]: any) => <tr key={k}><td>{k}</td><td>{v.kind}</td><td>{v.running ? v.rss_mb ?? "?" : "—"}</td><td>{v.peak_mb ?? "—"}</td></tr>)}</tbody></table></>)
+          : <p className="sys-note">BRAK DANYCH</p>}</section>
       <section data-testid="diag-analytics"><h4>MODUŁY ANALITYCZNE</h4>
         {diag ? (<>
           <table className="sys-tbl"><thead><tr><th>MODUŁ</th><th>WERSJA</th><th>P50 [MS]</th><th>P95 [MS]</th><th>N</th></tr></thead>

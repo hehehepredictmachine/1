@@ -405,8 +405,16 @@ class TiRex2Engine(BaseEngine):
         t0 = time.perf_counter()
         d = self._verify(weights_root, verify_files)
         os.environ["HF_HUB_OFFLINE"] = "1"
+        # 1.42.1: tirex-2 0.5.0 decorates ResidualBlock with an unconditional @torch.compile (and compiles flex_attention). On Windows
+        # without a C++ compiler (MSVC) TorchInductor fails at the first forward ("InvalidCxxCompiler" / "Set TORCHDYNAMO_VERBOSE=1").
+        # TorchDynamo is switched off in THIS process before tirex2 is imported: torch.compile becomes a no-op and the model runs eager
+        # (same weights, same math; only the optional kernel fusion is skipped). Override: PMW_TIREX_COMPILE=1.
+        if os.environ.get("PMW_TIREX_COMPILE") != "1":
+            os.environ["TORCHDYNAMO_DISABLE"] = "1"
         try:
             import torch
+            if os.environ.get("PMW_TIREX_COMPILE") != "1":
+                torch._dynamo.config.disable = True
             from tirex2 import load_model
         except Exception as exc:  # noqa: BLE001
             raise EngineError("MISSING_DEPENDENCY", f"{type(exc).__name__}: {exc}"[:300]) from None

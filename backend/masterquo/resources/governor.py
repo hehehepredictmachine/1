@@ -37,7 +37,8 @@ HEAVY = ("kronos", "chronos2", "tirex2", "tabicl", "sdformerflow")   # >= ~0.6-1
 LIGHT = ("granite_ttm",)                 # ~0.35 GB per process
 PROFILE_KEYS = ("warn_pct", "limit_heavy_pct", "pause_optional_pct", "reserve_os_mb", "budget_preferred_mb", "budget_max_mb",
                 "heavy_parallelism", "idle_release_s", "release_on_pressure", "threads_heavy", "threads_light", "lazy_loading", "dedup",
-                "forecast_cache", "background_training", "auto_download", "cpu_fallback", "monitoring", "auto_throttle")
+                "forecast_cache", "background_training", "auto_download", "cpu_fallback", "monitoring", "auto_throttle",
+                "heavy_allowed", "max_resident_heavy")
 
 
 def _cores() -> int:
@@ -50,9 +51,16 @@ def profiles() -> dict[str, dict]:
            "budget_max_mb": 8192, "heavy_parallelism": 1, "idle_release_s": None, "release_on_pressure": True,
            "threads_heavy": max(1, min(4, c // 2)), "threads_light": max(1, min(2, c // 4 or 1)), "lazy_loading": True, "dedup": True,
            "forecast_cache": True, "background_training": False, "auto_download": False, "cpu_fallback": True, "monitoring": True,
-           "auto_throttle": True}
+           "auto_throttle": True, "heavy_allowed": None, "max_resident_heavy": None}
     return {
         "LOW_MEMORY_16GB": low,
+        # 1.42.1: computer with 8 GB RAM - only the light Granite TTM (~0.35 GB) and ONE heavy model at a time from TiRex-2 (~1 GB) /
+        # TabICLv2 (~0.7 GB); Kronos, Chronos-2 and SDformerFlow are not loaded. A heavy model is released 90 s after its last use, the
+        # other idle heavy process is released BEFORE a new one loads. Thresholds in % are higher (Windows + MT5 alone use ~60 % of 8 GB);
+        # the PMW budget (bot + model processes) is the real limit. Threads: 2 heavy / 1 light.
+        "LOW_MEMORY_8GB": {**low, "warn_pct": 85.0, "limit_heavy_pct": 90.0, "pause_optional_pct": 94.0, "reserve_os_mb": 1536,
+                           "budget_preferred_mb": 2048, "budget_max_mb": 3072, "idle_release_s": 90, "threads_heavy": max(1, min(2, c // 2)),
+                           "threads_light": 1, "heavy_allowed": ["tirex2", "tabicl"], "max_resident_heavy": 1},
         "ECO": {**low, "warn_pct": 70.0, "limit_heavy_pct": 75.0, "pause_optional_pct": 80.0, "budget_preferred_mb": 4096, "budget_max_mb": 6144,
                 "idle_release_s": 600, "threads_heavy": max(1, min(2, c // 4 or 1)), "threads_light": 1},
         "BALANCED": {**low, "warn_pct": 80.0, "limit_heavy_pct": 85.0, "pause_optional_pct": 90.0, "budget_preferred_mb": 8192,
@@ -60,7 +68,8 @@ def profiles() -> dict[str, dict]:
     }
 
 
-PROFILE_PL = {"LOW_MEMORY_16GB": "Niska pamięć – komputer 16 GB (domyślny)", "ECO": "ECO – najmniej pamięci i CPU, ciężkie modele zwalniane po bezczynności",
+PROFILE_PL = {"LOW_MEMORY_16GB": "Niska pamięć – komputer 16 GB (domyślny)",
+              "LOW_MEMORY_8GB": "Komputer 8 GB – tylko Granite TTM + TiRex-2 / TabICLv2 (jeden ciężki model naraz)", "ECO": "ECO – najmniej pamięci i CPU, ciężkie modele zwalniane po bezczynności",
               "BALANCED": "BALANCED – więcej wątków, wyższe progi (komputer z zapasem RAM)", "MANUAL": "MANUAL – własne wartości"}
 
 
@@ -226,10 +235,41 @@ class Governor:
         lv = self.level()
         if optional and lv == "PAUSE_OPTIONAL":
             return self._refuse(model, f"RAM ≥ {p['pause_optional_pct']:.0f} % – opcjonalne prognozy AI wstrzymane (Memory Governor)")
+        allowed = p.get("heavy_allowed")
+        if model in HEAVY and allowed is not None and model not in allowed:
+            return self._refuse(model, f"profil {self.profile_name()}: model {model} nie jest uruchamiany (dozwolone ciężkie: {', '.join(allowed) or 'brak'})")
+        if model in HEAVY and not loaded and p.get("max_resident_heavy"):
+            self._make_room(model, int(p["max_resident_heavy"]))
         if model in HEAVY and not loaded and lv in ("LIMIT_HEAVY", "PAUSE_OPTIONAL"):
             return self._refuse(model, f"RAM ≥ {p['limit_heavy_pct']:.0f} % lub budżet PMW przekroczony – nowy ciężki model nie jest ładowany (Memory Governor)")
         self.counters["admitted"] += 1
         return True, None
+
+    def _make_room(self, model: str, keep: int) -> list[str]:
+        """Before a heavy model loads: release other RUNNING heavy processes that are not computing now (not the slot holder) so that at
+        most `keep` heavy processes stay resident. They start again on demand (lazy loading)."""
+        out = []
+        running = []
+        for name, src in list(self.sources.items()):
+            if name == model or src["kind"] != "heavy" or not src.get("release"):
+                continue
+            try:
+                pid = src["pid"]()
+            except Exception:  # noqa: BLE001
+                pid = None
+            if pid:
+                running.append((name, src))
+        for name, src in running[:max(0, len(running) - keep + 1)]:
+            if self._slot_holder == name:
+                continue
+            try:
+                src["release"]()
+                self.counters["released"] += 1
+                out.append(name)
+                self._event("RELEASED", f"{name}: zwolniony przed załadowaniem {model} (profil: max {keep} ciężki model w pamięci)")
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     def _refuse(self, model: str, reason: str) -> tuple[bool, str]:
         self.counters["refused"] += 1

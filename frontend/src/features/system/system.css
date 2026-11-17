@@ -52,3 +52,4 @@
 @media (prefers-reduced-motion:reduce){.sys-drawer,.sys-dim,.sys-body{animation-duration:.15s}}
 [data-motion="reduced"] .sys-drawer,[data-motion="reduced"] .sys-body{animation:sysFade .15s both}
 @media (max-width:700px){.sys-exec{top:10px;right:10px}.sys-exec .mode{display:none}}
+.sys-body .act.on{border-color:#e9ecf2;background:rgba(255,255,255,.08);color:#fff}

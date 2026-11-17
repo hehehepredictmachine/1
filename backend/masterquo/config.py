@@ -655,9 +655,9 @@ class DecisionConfig(_Strict):
 
 class ResourcesConfig(_Strict):
     """1.40 Memory Governor / AI scheduler profile (one resource manager - the profiles are its configurations, not separate schedulers).
-    LOW_MEMORY_16GB (default) | ECO | BALANCED | MANUAL; MANUAL uses `manual` (keys of governor.PROFILE_KEYS) over the LOW_MEMORY_16GB values.
+    LOW_MEMORY_16GB (default) | LOW_MEMORY_8GB (1.42.1) | ECO | BALANCED | MANUAL; MANUAL uses `manual` (keys of governor.PROFILE_KEYS) over the LOW_MEMORY_16GB values.
     Changes are effective at once (no rebuild) and written to the configuration history."""
-    profile: Literal["LOW_MEMORY_16GB", "ECO", "BALANCED", "MANUAL"] = "LOW_MEMORY_16GB"
+    profile: Literal["LOW_MEMORY_16GB", "LOW_MEMORY_8GB", "ECO", "BALANCED", "MANUAL"] = "LOW_MEMORY_16GB"
     manual: dict = Field(default_factory=dict)
 
 

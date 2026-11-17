@@ -200,9 +200,41 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
                   hardware=hw)
 
 
+def _data_dir(root: Path) -> Path:
+    if os.environ.get("MASTERQUO_DATA_DIR"):
+        return Path(os.environ["MASTERQUO_DATA_DIR"]).resolve()
+    sys.path.insert(0, str(root / "backend"))
+    from mq_instruments import default_data_dir
+    return default_data_dir(root)
+
+
+def set_profile_8gb(root: Path) -> str:
+    """1.42.1: Memory Governor profile LOW_MEMORY_8GB in <data>/config.json - only while the bot is NOT running (a running bot owns its
+    configuration; then the user switches the profile in Diagnostyka -> Zasoby). Nothing else in the configuration changes."""
+    import urllib.request
+    data = _data_dir(root)
+    cfg_p = data / "config.json"
+    try:
+        raw = json.loads(cfg_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "brak config.json (pierwsze uruchomienie bota jeszcze nie nastąpiło) – wybierz profil LOW_MEMORY_8GB w Diagnostyka → Zasoby"
+    port = int(((raw.get("server") or {}).get("port")) or 8765)
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2):
+            return "bot działa – wybierz profil LOW_MEMORY_8GB w panelu Diagnostyka → Zasoby (konfiguracji działającego bota nie zmieniam)"
+    except Exception:  # noqa: BLE001 - not running
+        pass
+    raw.setdefault("resources", {})["profile"] = "LOW_MEMORY_8GB"
+    raw["resources"].setdefault("manual", {})
+    tmp = cfg_p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(cfg_p)
+    return f"profil pamięci LOW_MEMORY_8GB ustawiony w {cfg_p}"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=("chronos2", "granite_ttm", "tirex2", "tabicl", "ai141", "all"))
+    ap.add_argument("--model", required=True, choices=("chronos2", "granite_ttm", "tirex2", "tabicl", "ai141", "low8gb", "all"))
     ap.add_argument("--root", required=True)
     ap.add_argument("--weights-root", required=True)
     ap.add_argument("--cuda", choices=("cu126", "cu128"))
@@ -229,9 +261,12 @@ def main(argv=None) -> int:
         r = result(out, 1, False, "NO_PYTHON", error="brak Python 3.13/3.12 x64 (runtime\\python z paczki, --python albo bieżący)")
         KS.emit("RESULT " + json.dumps(r, ensure_ascii=False))
         return 1
-    models = (["chronos2", "granite_ttm", "tirex2", "tabicl"] if a.model == "all" else ["tirex2", "tabicl"] if a.model == "ai141" else [a.model])
+    models = (["chronos2", "granite_ttm", "tirex2", "tabicl"] if a.model == "all" else ["tirex2", "tabicl"] if a.model == "ai141"
+              else ["granite_ttm", "tirex2"] if a.model == "low8gb" else [a.model])
     res = [install_one(m, a, root, base, out) for m in models]
     ok = all(r["ok"] for r in res)
+    if a.model == "low8gb" and ok:
+        KS.emit("[8GB] " + set_profile_8gb(root))
     first_bad = next((r for r in res if not r["ok"]), {})
     KS.emit("RESULT " + json.dumps({"ok": ok, "code": first_bad.get("code"), "error": first_bad.get("error"), "models": res}, ensure_ascii=False))
     return 0 if ok else 1
