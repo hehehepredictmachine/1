@@ -593,3 +593,6 @@
 
 /* CHARTS 1:1: przy otwartym ekranie planety wskaźnik trybu wykonania przechodzi na dolny pasek (obok STOP i ikon), nie zasłania nagłówka ekranu */
 .app-forex:not([data-sub="none"]) .sys-exec{top:auto;bottom:22px;right:250px}
+/* CHARTS bez WebGL (K6): otwarty ekran zasłania statyczne planety i panele kuli – jak w silniku po wejściu w planetę */
+.app-forex[data-static][data-sub="on"] .planet,.app-forex[data-static][data-sub="on"] #forex-screen .panel{visibility:hidden!important}
+.app-forex[data-static][data-sub="on"] #charts-screen{background:#000}

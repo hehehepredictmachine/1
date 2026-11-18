@@ -26,7 +26,9 @@ const s2 = await st();
 await p.screenshot({ path: path.join(OUT, '3_karta_zwinieta.png') });
 await p.click('#sig-card .sh'); await p.evaluate(() => __pmwRun(10));
 const s3 = await st();
-const r = { markers: s0.markers.length, before: { sel: s0.sel, head: h0 }, clicked: m.key, after: { sel: s1.sel, head: h1 }, collapsed: s2.cardMin, expanded: !s3.cardMin, errs };
-r.ok = s1.sel === m.key && h1 !== h0 && s2.cardMin === true && !s3.cardMin && !errs.length;
+await p.focus('#sig-card .sh'); await p.keyboard.press('Enter'); await p.evaluate(() => __pmwRun(5)); const k1 = (await st()).cardMin;   // E4: klawiatura
+await p.focus('#sig-card .sh'); await p.keyboard.press(' '); await p.evaluate(() => __pmwRun(5)); const k2 = (await st()).cardMin;
+const r = { markers: s0.markers.length, before: { sel: s0.sel, head: h0 }, clicked: m.key, after: { sel: s1.sel, head: h1 }, collapsed: s2.cardMin, expanded: !s3.cardMin, keyboard: { enter: k1, space: k2 }, errs };
+r.ok = s1.sel === m.key && h1 !== h0 && s2.cardMin === true && !s3.cardMin && k1 === true && k2 === false && !errs.length;
 fs.writeFileSync(path.join(OUT, 'wynik.json'), JSON.stringify(r, null, 1)); console.log(JSON.stringify(r, null, 1));
 await b.close(); process.exit(r.ok ? 0 : 1);

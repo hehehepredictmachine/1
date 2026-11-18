@@ -11,6 +11,10 @@
  },
  "collapsed": true,
  "expanded": true,
+ "keyboard": {
+  "enter": true,
+  "space": false
+ },
  "errs": [],
  "ok": true
 }

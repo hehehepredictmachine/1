@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* CHARTS 1:1 (pakiet update_charts, K1): kod rysowania przeniesiony z update_charts/referencje/kod/charts_wzorzec/charts.js (= REF_B 947–1386)
    bez zmian stałych, kolorów, czcionek, odstępów, kolejności rysowania, progów i tekstów. Usunięte (D1 / prompt §2): generatory DEMO
-   (genSeeded, genSessVol, genM1, genAgg, seriesFor, genBars), BOTDATA z danymi, losowanie w chartTick, demonstracyjny loadKronos.
+   wzorca (generatory świec, dane bota z podglądu, losowanie w chartTick, demonstracyjny Kronos).
    Dane: model widoku (chartsData.ts → setVM) albo fixture testu 1:1 (load). Dodane wyłącznie ochrony stanu pustego (brak świec → BRAK
    rysowania, status z API). Ekran jest wpięty w silnik kuli FOREX jak SCREENS[0] we wzorcu (planet / draw / tick / open / close). */
 import { SVP_PROFILES, svpWindows, svpCompute } from './svpPort.js';
@@ -30,9 +30,8 @@ const CH_MS={inMs:2400,outMs:1500};
 
 /* PMW-SVP-1 – port 1:1 w ./svpPort.js (K5: jeden moduł dla ekranu i testu zgodności 27/27) */
 
-/* BOTDATA – wygenerowane przez prawdziwy kod PepeMarketWizard 1.41.0 (baskets/rules+detectors, strategies/registry S01–S12, sh/replay.scan, zones/market) na deterministycznych świecach podglądu. DEMO. */
-/* BOTDATA – w aplikacji: model widoku z API (chartsData.ts toViewModel) albo fixture testu 1:1; dane DEMO nie są przenoszone. */
-const BOTDATA={sig:{},zones:{},states:{},meta:{FX_SMC:[],FX_SCALP:[],FX_HEDGE:[],LEGACY:[],SH:[]}};
+/* BOTVM – warstwy bota: model widoku z API (chartsData.ts) albo fixture testu 1:1. */
+const BOTVM={sig:{},zones:{},states:{},meta:{FX_SMC:[],FX_SCALP:[],FX_HEDGE:[],LEGACY:[],SH:[]}};
 const ASSETS={XAUUSD:{sym:'XAUUSD-',p:4012.4,d:2,v:1.15},BTC:{sym:'BTCUSDT-',p:96420,d:2,v:95}};
 let TFR=[['M1',60,'TRIGGER',1],['M3',180,'TRIGGER',0],['M5',300,'TRIGGER',1],['M15',900,'SETUP',1],['M30',1800,'SETUP_CONTEXT',0],['H1',3600,'LOCAL_CONTEXT',1],['H4',14400,'HTF',1],['H8',28800,'TREND_REGIME_CONTEXT',0],['D1',86400,'BACKGROUND',1]];
 let TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
@@ -46,13 +45,13 @@ const UNAVAIL_PROD={granite:'Granite TTM: linia prognozy nie jest podłączona d
 const UNAVAIL={bb:'BB na wykresie głównym: tylko w Chart Lab (silnik nie liczy tej linii)',iq:'IQ Gold Gann / IQ Star Lines: brak źródła – wymaga licencji MQL5 i mapowania eksportera',heat:'Heatmapa likwidacji: brak klucza dostawcy (CoinGlass) – nic nie jest symulowane'};
 /* ===================== CHARTS · warstwy bota (strategie z koszyków, strefy z wybranego TF, Session Volume Profile) =====================
    Aplikacja: /api/v1/baskets/signals (FX_SMC, FX_SCALP, FX_HEDGE), /api/v1/bot-signals + /api/v1/setups (S01–S12), /api/v1/sh/signals (SH, TP1–TP3),
-   /api/v1/market-zones?tf=<wybrany TF>, /api/v1/svp/* (PMW-SVP-1). Podgląd: BOTDATA = wynik uruchomienia kodu bota na tych samych świecach. */
+   /api/v1/market-zones?tf=<wybrany TF>, /api/v1/svp/* (PMW-SVP-1). */
 const BK_ORDER=['FX_SMC','FX_SCALP','FX_HEDGE','LEGACY','SH'];
 const BK_INFO={FX_SMC:['KOSZYK FX_SMC','SMC · FOREX / MT5'],FX_SCALP:['KOSZYK FX_SCALP','SCALP · FOREX / MT5'],FX_HEDGE:['KOSZYK FX_HEDGE','HEDGING · plany ochrony'],
  LEGACY:['S01–S12','dotychczasowe strategie złota (LEGACY)'],SH:['SH','SCALPING / HEDGING · TP1–TP3']};
 const BK_COL={FX_SMC:'207,198,255',FX_SCALP:'190,228,206',FX_HEDGE:'160,170,190',LEGACY:'236,239,245',SH:'232,214,160'};
 const BASKET_OF=sid=>sid.startsWith('FX_SMC')?'FX_SMC':sid.startsWith('FX_SCALP')?'FX_SCALP':sid.startsWith('FX_HEDGE')?'FX_HEDGE':sid.startsWith('SH_')?'SH':'LEGACY';
-const SMETA={};function rebuildMeta(){for(const k in SMETA)delete SMETA[k];for(const bk of BK_ORDER)for(const m of (BOTDATA.meta[bk]||[]))SMETA[m.id]={...m,bk};}
+const SMETA={};function rebuildMeta(){for(const k in SMETA)delete SMETA[k];for(const bk of BK_ORDER)for(const m of (BOTVM.meta[bk]||[]))SMETA[m.id]={...m,bk};}
 const STR={on:new Set(),sel:null,open:{FX_SMC:true,FX_SCALP:true,FX_HEDGE:false,LEGACY:true,SH:true}};
 const RES_PL={OTWARTY:'OTWARTY',SL:'SL',TIMEOUT:'CZAS MINĄŁ',TP1:'TP1',TP2:'TP2',TP3:'TP3'};
 const resPL=r=>RES_PL[r]||r.replace('SL_PO_','SL po ').replace('TIMEOUT_PO_','czas po ');
@@ -60,11 +59,11 @@ function idxOf(d,t){if(!d.length||t<d[0].t)return -1;let lo=0,hi=d.length-1;whil
 function stratAvail(sid){const m=SMETA[sid];if(!m)return 'brak w rejestrze';if(m.bk==='FX_HEDGE')return 'plan ochrony otwartej ekspozycji – nie generuje sygnałów wejścia';
  if(m.bk==='LEGACY'&&CH.asset!=='XAUUSD')return 'S01–S12 tylko XAUUSD (bot: UNSUPPORTED_ASSET)';
  if(m.bk==='SH'&&CH.asset==='BTC')return 'SH zablokowany w konfiguracji bota: '+(m.status.BTC||'').split('–')[0].trim();
- const st=(BOTDATA.states[CH.asset]||{})[sid];if(st&&st.un)return 'brak danych wejściowych: '+st.un;return null;}
+ const st=(BOTVM.states[CH.asset]||{})[sid];if(st&&st.un)return 'brak danych wejściowych: '+st.un;return null;}
 function botIndex(){const d=CH.data,list=[];
- for(const s of BOTDATA.sig[CH.asset]||[]){const onTf=s.src==='SH'?TFSEC[CH.tf]<=900:s.tf===CH.tf;if(!onTf)continue;const i=idxOf(d,s.t);if(i<0||(s.src!=='SH'&&d[i].t!==s.t))continue;
+ for(const s of BOTVM.sig[CH.asset]||[]){const onTf=s.src==='SH'?TFSEC[CH.tf]<=900:s.tf===CH.tf;if(!onTf)continue;const i=idxOf(d,s.t);if(i<0||(s.src!=='SH'&&d[i].t!==s.t))continue;
   list.push({...s,key:s.sid+'|'+s.t,idx:i,eidx:Math.max(i,idxOf(d,s.et)),bk:BASKET_OF(s.sid)});}
- CH.bsig=list;const Z=(BOTDATA.zones[CH.asset]||{})[CH.tf];CH.bzones=Z?Z.map(z=>({...z,i0:Math.max(0,idxOf(d,z.t0)),i1:z.t1?Math.max(0,idxOf(d,z.t1)):null})):null;CH.svpKey='';}
+ CH.bsig=list;const Z=(BOTVM.zones[CH.asset]||{})[CH.tf];CH.bzones=Z?Z.map(z=>({...z,i0:Math.max(0,idxOf(d,z.t0)),i1:z.t1?Math.max(0,idxOf(d,z.t1)):null})):null;CH.svpKey='';}
 const sigVisible=s=>L.strat&&STR.on.has(s.sid)&&!stratAvail(s.sid);
 function pickPlan(){const vis=(CH.bsig||[]).filter(sigVisible);let G=STR.sel?vis.find(s=>s.key===STR.sel):null;if(!G)G=vis.filter(s=>s.res==='OTWARTY').pop()||vis[vis.length-1]||null;CH.sig=G;}
 /* ---- Session Volume Profile (port PMW-SVP-1, zgodność z svp/engine.py sprawdzona 44/44) ---- */
@@ -160,7 +159,7 @@ function computeAll(){const d=CH.data,c=d.map(b=>b.c),atr=atrF(d);const e12=ema(
  const gr=[];let gp=lc;for(let k=1;k<=10;k++){gp+=Math.sin(k*.7)*A*.12+A*.05;gr.push(gp);}
  /* K3: demonstracyjny sygnał S07, historia sygnałów i szanse modeli wzorca usunięte – sygnały i szanse wyłącznie z API (D1 §3.2, §3.7) */
  CH.ind={ema20:ema(c,IP.ema[0]),ema50:IP.ema[1]!=null?ema(c,IP.ema[1]):c.map(()=>null),rsi:rsiF(c,IP.rsi),macd:ml,sig,atr,sar:sarF(d),av,up1,dn1,up2,dn2,fvg,ob,sr,sd,liq:liq.slice(-4),brk:brk.slice(-6),mz,ai,scalp,hedge,zmPrev,zmDev,walls:{o:dOpen,h:dHi,l:dLo,hv},pat,granite:gr};}
-function loadSeries(anim){CH.offset=0;if(CH.data.length)computeAll();else CH.ind=null;CH.probs=VM.probs||PROBS0;botIndex();STR.sel=null;pickPlan();if(CH.data.length){const sl=CH.data.slice(-CH.view);CH.yMin=Math.min(...sl.map(c=>c.l));CH.yMax=Math.max(...sl.map(c=>c.h));}if(anim)CH.swap=0;loadKronos();}
+function applySeries(anim){CH.offset=0;if(CH.data.length)computeAll();else CH.ind=null;CH.probs=VM.probs||PROBS0;botIndex();STR.sel=null;pickPlan();if(CH.data.length){const sl=CH.data.slice(-CH.view);CH.yMin=Math.min(...sl.map(c=>c.l));CH.yMax=Math.max(...sl.map(c=>c.h));}if(anim)CH.swap=0;loadKronos();}
 function loadKronos(){const K=CH.kr,k=VM.kronos;if(!k){K.data=[];K.fc=null;return;}if(k.tf)K.tf=k.tf;if(k.on)K.on={...K.on,...k.on};K.role=k.role;K.emptyTxt=k.emptyTxt;K.data=k.candles||[];K.fc=k.forecast?{...k.forecast,created_at:new Date(k.forecast.created_at)}:null;if(k.state)K.state=k.state;K.anim=0;}
 function setChartStatus(st){CH.status=st;const el=$('#ch-status');el.dataset.s=st;el.querySelector('.t').textContent={live:'MT5 POŁĄCZONY',loading:'ŁADOWANIE',offline:'ROZŁĄCZONO',stale:'DANE NIEAKTUALNE'}[st];}
 function chartsConnect(){++CH.token;setChartStatus(VM.status||'loading');}
@@ -320,9 +319,9 @@ function drawChart(cms,dt){const cv=CH.cv,ctx=CH.ctx,{w,h,dpr}=S.view;if(cv.widt
 /* ----- UI: nagłówek, okna, zakładki ----- */
 function buildChartUI(){
  $('#ch-asset').innerHTML=Object.keys(ASSETS).map(a=>`<button type="button" data-a="${a}" aria-pressed="${a===CH.asset}">${a}</button>`).join('');
- $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];loadSeries(true);chartsConnect();emitSel();}));
+ $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];applySeries(true);chartsConnect();emitSel();}));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane OK"><i></i>${t}</button>`).join('');
- $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));loadSeries(true);chartsConnect();renderOpts();}));
+ $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));applySeries(true);chartsConnect();renderOpts();}));
  $('#ch-tz').addEventListener('change',e=>{CH.tz=e.target.value;});
  $('#kr-tf').innerHTML=KR_TFS.map(t=>`<button type="button" data-k="${t}" aria-pressed="${t===CH.kr.tf}">${t}</button>`).join('');
  $$('#kr-tf button').forEach(b=>b.addEventListener('click',()=>{CH.kr.tf=b.dataset.k;$$('#kr-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.kr.fc=null;CH.kr.data=[];renderOpts();emitSel('kronos');}));
@@ -347,7 +346,7 @@ function renderOpts(){savePref();const tab=$('#opt-tabs [aria-selected="true"]')
    const info=un?un:!onTf?`sygnały na ${m.bk==='SH'?'M1–M15':tf}`:n?`${n} sygn. · TP ✓ ${tp[m.id]||0} · SL ${sl[m.id]||0}`:'brak sygnału na tych świecach';
    return `<li class="${un?'dis':''}"><span><i class="sdot" style="background:rgb(${BK_COL[m.bk]})"></i>${m.id.replace('FX_','')} · ${m.nm}<small>${tf}${m.notrade?' · BEZ HANDLU':''}</small><em>${info}</em></span>${!un&&!onTf&&m.tf?`<button type="button" class="mini" data-gotf="${m.tf}">→ ${m.tf}</button>`:''}<button type="button" class="sw" data-sid="${m.id}" aria-pressed="${on}" ${un?'disabled':''} aria-label="${m.id}"></button></li>`;};
   h=`<ul>${SW('strat','Sygnały strategii bota','markery ▲▼ przy świecy sygnału; kliknij marker, aby pokazać jego plan')}${SW('plan','Poziomy planu: wejście · SL · TP1–TP3','')}${SW('card','Karta planu','')}</ul><div class="row"><label>Poziomy</label>${SEG('stratLv',[['last','OSTATNI'],['sel','WYBRANY'],['all','WSZYSTKIE']])}</div>`+
-   BK_ORDER.map(bk=>{const ms=BOTDATA.meta[bk],allOn=ms.every(m=>STR.on.has(m.id)||stratAvail(m.id)),n=ms.reduce((a,m)=>a+(cnt[m.id]||0),0);return `<div class="bk"><div class="bkh"><button type="button" class="bkt" data-bk="${bk}" aria-expanded="${!!STR.open[bk]}"><i class="sdot" style="background:rgb(${BK_COL[bk]})"></i>${BK_INFO[bk][0]}<small>${BK_INFO[bk][1]} · ${ms.length} strategii · ${n} sygn. na ${CH.tf}</small></button><button type="button" class="sw" data-bkall="${bk}" aria-pressed="${allOn}" aria-label="Cały koszyk ${bk}"></button></div>${STR.open[bk]?`<ul>${ms.map(m=>rowS({...m,bk})).join('')}</ul>`:''}</div>`;}).join('')+
+   BK_ORDER.map(bk=>{const ms=BOTVM.meta[bk],allOn=ms.every(m=>STR.on.has(m.id)||stratAvail(m.id)),n=ms.reduce((a,m)=>a+(cnt[m.id]||0),0);return `<div class="bk"><div class="bkh"><button type="button" class="bkt" data-bk="${bk}" aria-expanded="${!!STR.open[bk]}"><i class="sdot" style="background:rgb(${BK_COL[bk]})"></i>${BK_INFO[bk][0]}<small>${BK_INFO[bk][1]} · ${ms.length} strategii · ${n} sygn. na ${CH.tf}</small></button><button type="button" class="sw" data-bkall="${bk}" aria-pressed="${allOn}" aria-label="Cały koszyk ${bk}"></button></div>${STR.open[bk]?`<ul>${ms.map(m=>rowS({...m,bk})).join('')}</ul>`:''}</div>`;}).join('')+
    `<div class="note">${CH.testTexts?'Sygnały, SL i TP policzone kodem bota 1.41.0 (baskets/rules.py, strategies/registry.py, sh/replay.scan) na świecach podglądu – DEMO. Każda strategia pokazuje sygnały tylko na swoim TF sygnału. Koszyki FX_SMC / FX_SCALP i S01–S12 mają TP1–TP2 (TP3 nie istnieje w ich kontrakcie planu); TP1–TP3 ma silnik SH. Wynik TP/SL to przebieg na tych świecach, nie walidacja.':'Sygnały, SL i TP z API bota (koszyki FX, S01–S12, silnik SH). Każda strategia pokazuje sygnały tylko na swoim TF sygnału. Koszyki FX_SMC / FX_SCALP i S01–S12 mają TP1–TP2 (TP3 nie istnieje w ich kontrakcie planu); TP1–TP3 ma silnik SH. Wynik według cyklu życia sygnału w bocie – nie walidacja skuteczności.'}</div>`;}
  else if(tab==='zones'){const Z=CH.bzones,cn={};(Z||[]).forEach(z=>{const k=(ZT[z.ty]||['mz'])[0];if(z.st!=='INVALIDATED'&&z.st!=='EXPIRED')cn[k]=(cn[k]||0)+1;});const nz=k=>Z?`${cn[k]||0} żywych · ${CH.tf}`:'';
   const zm=VM.zoneMsg&&VM.zoneMsg.tf===CH.tf&&VM.zoneMsg.a===CH.asset?VM.zoneMsg.t:null;
@@ -370,7 +369,7 @@ function renderOpts(){savePref();const tab=$('#opt-tabs [aria-selected="true"]')
  $$('#opt-body .sw[data-k]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;if(k==='onChart')CH.kr.onChart=!CH.kr.onChart;else CH.kr.on[k]=!CH.kr.on[k];renderOpts();}));
  $$('#opt-body [data-seg]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.seg,v=b.dataset.v;if(k==='krMode'){CH.kr.mode=v;$('#kr-mode').textContent=v;}else L[k]=isNaN(+v)?v:+v;if(k==='stratLv'&&v!=='sel')STR.sel=STR.sel;svpRecalc();renderOpts();}));
  $$('#opt-body [data-sid]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.sid;STR.on.has(id)?STR.on.delete(id):STR.on.add(id);pickPlan();renderOpts();}));
- $$('#opt-body [data-bkall]').forEach(b=>b.addEventListener('click',()=>{const ms=BOTDATA.meta[b.dataset.bkall].filter(m=>!stratAvail(m.id)),all=ms.every(m=>STR.on.has(m.id));ms.forEach(m=>all?STR.on.delete(m.id):STR.on.add(m.id));pickPlan();renderOpts();}));
+ $$('#opt-body [data-bkall]').forEach(b=>b.addEventListener('click',()=>{const ms=BOTVM.meta[b.dataset.bkall].filter(m=>!stratAvail(m.id)),all=ms.every(m=>STR.on.has(m.id));ms.forEach(m=>all?STR.on.delete(m.id):STR.on.add(m.id));pickPlan();renderOpts();}));
  $$('#opt-body [data-bk]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.bk;STR.open[k]=!STR.open[k];renderOpts();}));
  $$('#opt-body [data-gotf]').forEach(b=>b.addEventListener('click',()=>{const x=$(`#ch-tf [data-tf="${b.dataset.gotf}"]`);if(x)x.click();}));
  $$('#opt-body [data-svps]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.svps;L.svpOff={...L.svpOff,[k]:!L.svpOff[k]};svpRecalc();renderOpts();}));
@@ -384,17 +383,19 @@ const listeners=[];
 function emitSel(what='series'){listeners.forEach(f=>{try{f({what,asset:CH.asset,tf:CH.tf,kr:CH.kr.tf});}catch(e){}});}
 function setTfr(items){if(!items||!items.length)return;TFR=items.map(x=>[x.tf,x.seconds,x.role,x.core?1:0]);TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane ${(items.find(x=>x.tf===t)||{}).data||'—'}"><i></i>${t}</button>`).join('');
- $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];loadSeries(true);emitSel();chartsConnect();renderOpts();}));}
+ $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];applySeries(true);emitSel();chartsConnect();renderOpts();}));}
 /** Model widoku (D1 §3) – ta sama postać co fixtures testu 1:1. */
 function applyVM(vm){const A=vm.asset||CH.asset;CH.asset=A;if(vm.tf)CH.tf=vm.tf;if(vm.tz)CH.tz=vm.tz;if(vm.serverOff!=null)CH.serverOff=vm.serverOff;
- if(vm.meta){BOTDATA.meta={FX_SMC:[],FX_SCALP:[],FX_HEDGE:[],LEGACY:[],SH:[],...vm.meta};rebuildMeta();}
- BOTDATA.sig[A]=vm.signals||[];BOTDATA.zones[A]=vm.zones||{};BOTDATA.states[A]=vm.states||{};
+ if(vm.meta){BOTVM.meta={FX_SMC:[],FX_SCALP:[],FX_HEDGE:[],LEGACY:[],SH:[],...vm.meta};rebuildMeta();}
+ BOTVM.sig[A]=vm.signals||[];BOTVM.zones[A]=vm.zones||{};BOTVM.states[A]=vm.states||{};
  CH.iprof=vm.iprof||IPROF_REF;CH.data=vm.candles||[];VM.probs=vm.probs||null;if('kronos' in vm)VM.kronos=vm.kronos||null;   /* K5 poprawka: odświeżenie świec nie kasuje prognozy Kronosa (przychodzi osobno przez setKronos) */VM.status=vm.status||(CH.data.length?'live':'loading');VM.zoneMsg=vm.zoneMsg?{tf:CH.tf,a:A,t:vm.zoneMsg}:null;}
+/* E5 (O1): koszt rysowania ekranu CHARTS na klatkę (2D canvas + DOM opcji), bez sceny WebGL kuli */
+const PERF={n:0,sum:0,max:0};
 const api={
  /** wiązanie z silnikiem kuli FOREX (jego S i SUB – czas wejścia, postęp, widok, ograniczenie ruchu) */
  bind(s,sub){S=s;SUB=sub;},
- screen:{inMs:CH_MS.inMs,outMs:CH_MS.outMs,el:'#charts-screen',focus:'#mc-plot',planet:cms=>chartsPlanet(cms),draw:(c,d)=>drawChart(c,d),tick:n=>chartTick(n),
-  open:()=>{if(!CH.data.length)loadSeries(false);chartsConnect();},close:()=>{CH.token++;CH.hover=null;CH.khover=null;},
+ screen:{inMs:CH_MS.inMs,outMs:CH_MS.outMs,el:'#charts-screen',focus:'#mc-plot',planet:cms=>chartsPlanet(cms),draw:(c,d)=>{const t0=performance.now();drawChart(c,d);const ms=performance.now()-t0;PERF.n++;PERF.sum+=ms;if(ms>PERF.max)PERF.max=ms;},tick:n=>chartTick(n),
+  open:()=>{if(!CH.data.length)applySeries(false);chartsConnect();},close:()=>{CH.token++;CH.hover=null;CH.khover=null;},
   say:()=>'CHARTS. '+(ASSETS[CH.asset]?ASSETS[CH.asset].sym:CH.asset)+' '+CH.tf+'.'},
  onSelect(f){listeners.push(f);},
  setTimeframes:setTfr,
@@ -404,7 +405,7 @@ const api={
  setVM(vm,{keepView=true}={}){if(CH.frozen)return;const view=CH.view,off=CH.offset,sel=STR.sel;const first=!PROD&&!!vm.meta;applyVM(vm);
   if(first){PROD=true;const P=loadPref()||{};if(P.L)Object.assign(L,P.L);if(P.open)STR.open={...STR.open,...P.open};const off=new Set(P.off||[]);STR.on=new Set(Object.keys(SMETA).filter(id=>!off.has(id)));}
   {const A=CH.asset,k=x=>A+'|'+x.sid+'|'+x.t,fresh=(vm.signals||[]).filter(x=>!seenSig.has(k(x)));const boot=!seenSig.has(A);seenSig.add(A);fresh.forEach(x=>seenSig.add(k(x)));const nw=fresh[fresh.length-1],now=Date.now();
-   if(!boot&&nw&&now-lastAnn>=5000){lastAnn=now;announce(`Nowy sygnał ${nw.sid} ${nw.sd>0?'LONG':'SHORT'} ${nw.tf}`);}}loadSeries(false);if(keepView){CH.view=view;CH.offset=Math.min(off,Math.max(0,CH.data.length-CH.view));STR.sel=sel;pickPlan();}
+   if(!boot&&nw&&now-lastAnn>=5000){lastAnn=now;announce(`Nowy sygnał ${nw.sid} ${nw.sd>0?'LONG':'SHORT'} ${nw.tf}`);}}applySeries(false);if(keepView){CH.view=view;CH.offset=Math.min(off,Math.max(0,CH.data.length-CH.view));STR.sel=sel;pickPlan();}
   const sc=$('#sig-card');if(sc)sc.dataset.key='';svpRecalc();renderOpts();setChartStatus(VM.status);},
  /** tryb testowy 1:1 – odpowiednik PMW_PREVIEW._chartsLoad wzorca; fixture przez ten sam model widoku */
  load(fx){CH.token++;CH.asset=fx.asset;CH.tf=fx.tf;CH.tz=fx.tz;CH.serverOff=fx.serverOff;
@@ -423,6 +424,7 @@ const api={
   if(t===last.t){Object.assign(last,{o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,closed:b.closed});}else{last.closed=true;d.push({...b});if(CH.offset>0)CH.offset++;}CH.flash=1;},
  setKronos(k){if(CH.frozen)return;VM.kronos=k;loadKronos();},
  sel:()=>({asset:CH.asset,tf:CH.tf,kr:CH.kr.tf}),
+ perf:()=>{const r={frames:PERF.n,avgMs:PERF.n?+(PERF.sum/PERF.n).toFixed(3):null,maxMs:+PERF.max.toFixed(3)};PERF.n=0;PERF.sum=0;PERF.max=0;return r;},
  state:()=>({asset:CH.asset,tf:CH.tf,candles:CH.data.length,status:CH.status,sel:CH.sig?CH.sig.key:null,cardMin:!!CH.cardMin,
   markers:(CH.bsig||[]).filter(sigVisible).filter(s=>s._mx!=null).map(s=>({key:s.key,x:s._mx,y:s._my}))}),
  dispose(){CH.token++;listeners.length=0;}};

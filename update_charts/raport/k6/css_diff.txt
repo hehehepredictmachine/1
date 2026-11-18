@@ -1,0 +1,11 @@
+reguły wzorca: 121  reguły aplikacji: 114
+identyczne (po zdjęciu prefiksu zakresu): 113
+TYLKO WZORZEC: :root | color-scheme:dark;--white:#f2f2ef;--dim:#898b91;--muted:#63666c;--ease:cubic-bezier(.22,1,.36,1); --pw:max(220px,min(21v
+TYLKO WZORZEC: * | box-sizing:border-box
+TYLKO WZORZEC: html,body | width:100%;height:100%;margin:0;background:#000;overflow:hidden
+TYLKO WZORZEC: body | font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--white);-webkit-font-smoothing:antialiased
+TYLKO WZORZEC: button | font:inherit;color:inherit
+TYLKO WZORZEC: button:focus-visible | outline:1px solid #dfe3eb;outline-offset:6px
+TYLKO WZORZEC: [hidden] | display:none!important
+TYLKO WZORZEC: body[data-sub="on"] #charts-screen .ci | pointer-events:auto
+TYLKO APLIKACJA: :where(.app-forex[data-sub="on"]) #charts-screen .ci | pointer-events:auto

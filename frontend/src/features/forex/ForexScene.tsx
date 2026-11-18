@@ -55,7 +55,7 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
     eng.current = e;
     if (fromMenu) history.replaceState(null, "", location.hash.replace(/([?&])from=menu&?/, "$1").replace(/[?&]$/, ""));
     const w = window as any;
-    if (w.navigator?.webdriver) { w.__PMW_E2E__ = w.__PMW_E2E__ || {}; w.__PMW_E2E__.forex = { state: () => e.state(), result: (i: number) => e.result(i) }; }
+    if (w.navigator?.webdriver) { w.__PMW_E2E__ = w.__PMW_E2E__ || {}; w.__PMW_E2E__.forex = { state: () => e.state(), result: (i: number) => e.result(i), chartsPerf: () => charts.current?.perf() }; }
     if (import.meta.env.MODE === "test" && testMode) {   // tryb testowy 1:1 (tylko charts-test.html): jak PMW_PREVIEW._seek / _charts / _chartsLoad wzorca
       e.testSeek("menu", 0);
       w.__PMW_TEST__ = w.__PMW_TEST__ || {};
@@ -128,6 +128,24 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
   const subI = screen ? FOREX_SCREENS.indexOf(screen) : -1;
   const Screen = [null, SignalsScreen, ModelsScreen, RoiScreen][subI] || null;
   const shown = noGl ? subI : sub.state !== "none" ? sub.i : -1;
+  // CHARTS bez WebGL (O1 / K6): silnik kuli jest atrapą, więc ekran rysuje własna pętla – bez animacji przejścia (jak ograniczenie ruchu)
+  useEffect(() => {
+    const a: any = charts.current;
+    if (!noGl || subI !== 0 || !a) return;
+    const S0: any = { view: { w: innerWidth, h: innerHeight, dpr: Math.min(devicePixelRatio || 1, 2) }, reduced: true, phase: "static" };
+    const SUB0: any = { state: "on", p: 1, pi: 0 };
+    a.bind(S0, SUB0); a.screen.open();
+    const el = document.getElementById("charts-screen") as any;
+    if (el) { el.inert = false; el.style.opacity = "1"; }
+    if (root.current) root.current.dataset.sub = "on";                    // CSS ekranu: interakcje .ci jak po wejściu w silniku
+    let raf = 0, last = performance.now();
+    const loop = (t: number) => {
+      S0.view = { w: innerWidth, h: innerHeight, dpr: Math.min(devicePixelRatio || 1, 2) };
+      a.screen.draw(t, Math.min(100, t - last)); last = t; raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); a.screen.close(); if (el) { el.inert = true; el.style.opacity = "0"; } if (root.current) root.current.dataset.sub = "none"; };
+  }, [noGl, subI]);
   const ShownScreen = [null, SignalsScreen, ModelsScreen, RoiScreen][shown] || Screen;
   return (
     <div className="app-forex" data-state="dive" data-sub="none" ref={root} data-testid="page-forex" data-static={noGl ? "1" : undefined}>

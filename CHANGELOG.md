@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.42.5 – CHARTS 1:1 z wizualizacją
+* **Ekran CHARTS przebudowany 1:1 według wizualizacji** (pakiet `PMW_PAKIET_CHARTS_1DO1`): wykres główny, okna RSI / MACD, okno Kronos i panel
+  opcji w wyglądzie wzorca; rysowanie kodem wzorca (bez `lightweight-charts`), przejścia 2400 / 1500 ms w kuli FOREX. Test pikselowy 1:1
+  (8 scenariuszy, zegar wirtualny, szum wzorca 0 %): **8/8**, różnice 0,003–0,022 %.
+* **Dane wyłącznie z API bota** (ekran tylko odczytuje – żadnych zleceń ani zapisów): świece na żywo (XAUUSD + BTC z MT5), wskaźniki **jak
+  silnik bota** (okresy EMA / RSI z profilu interwału, sygnał MACD = SMA(9) – zgodność ≤ 5e-6), Kronos (rola ASSIST, stany puste).
+* **Strategie bota jako wskaźniki w koszykach** (FX_SMC, FX_SCALP, FX_HEDGE, S01–S12, SH) z markerami ▲▼, poziomami planu i kartą
+  **PLAN BOTA**; wynik sygnału tylko ze stanu w bocie; TP3 tylko tam, gdzie strategia go definiuje (SH); szanse modeli tylko ze
+  skalibrowanego prawdopodobieństwa (inaczej „—” ze stanem); komunikat czytnika ekranu o nowym sygnale; włączniki pamiętane lokalnie.
+* **Backend**: poziomy sygnałów SH (wejście, SL, TP1–TP3 z udziałami, RR netto, BE, horyzont) zapisywane razem z sygnałem (migracja 0028)
+  i zwracane przez `/api/v1/sh/signals` z wynikiem planu; sygnały koszyków zapisują `routed_auto` (czy reguła była w routingu AUTO).
+* **Strefy bota tylko z wybranego interwału** (`/api/v1/market-zones`); liczenie stref uruchamia nowa zakładka **Ustawienia → Strefy
+  rynkowe** (Przelicz / LIVE dla XAUUSD i BTC). Wybór interwałów pracy Kronosa przeniesiony do **Ustawienia → Kronos – interwały**.
+* **Session Volume Profile każdej sesji** (port PMW-SVP-1, zgodność z silnikiem **27/27**, test w zestawie testów); profil widocznego
+  zakresu z `GET /api/v1/svp/visible`.
+* CHARTS działa także **bez WebGL** (widok uproszczony); poprawki: chip trybu wykonania nie zasłania nagłówka ekranów planet.
+* Bez zmian: wykonanie MT5, strategie, modele, limity ryzyka i STOP.
+
 ## 1.42.4 – modele na komputerach 8 GB i 12 GB RAM, audyt kodu
 * **Zmierzone szczyty pamięci procesów modeli** (CPU, float32): Kronos 1,07 GB · TiRex-2 0,94 · Chronos-2 0,84 · TabICLv2 0,67 ·
   Granite TTM 0,37; bot ok. 0,7 GB. Budżety profili wynikają z tych pomiarów.
