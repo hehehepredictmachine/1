@@ -590,3 +590,6 @@
 /* wskaźnik stanu na otwartym ekranie planety: jeden chip, nagłówki ekranów zostawiają miejsce */
 .app-forex:not([data-sub="none"]) .sys-exec .mode,.app-forex:not([data-sub="none"]) .sys-exec .syn{display:none}
 .app-forex:not([data-sub="none"]) #sg-head,.app-forex:not([data-sub="none"]) #mb-head,.app-forex:not([data-sub="none"]) #ro-head{right:290px}
+
+/* CHARTS 1:1: przy otwartym ekranie planety wskaźnik trybu wykonania przechodzi na dolny pasek (obok STOP i ikon), nie zasłania nagłówka ekranu */
+.app-forex:not([data-sub="none"]) .sys-exec{top:auto;bottom:22px;right:250px}

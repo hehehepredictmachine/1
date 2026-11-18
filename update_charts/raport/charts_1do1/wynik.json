@@ -4,7 +4,7 @@
   "ekran_proc": 0.003,
   "obszary_proc": {
    "naglowek": 0,
-   "wykres_glowny": 0.001,
+   "wykres_glowny": 0,
    "karta_planu": 0,
    "kronos": 0,
    "kronos_stopka": 0,
@@ -39,10 +39,10 @@
  },
  {
   "scenariusz": "K3_xau_m5_svp",
-  "ekran_proc": 0.021,
+  "ekran_proc": 0.022,
   "obszary_proc": {
    "naglowek": 0,
-   "wykres_glowny": 0,
+   "wykres_glowny": 0.001,
    "karta_planu": 0,
    "kronos": 0,
    "kronos_stopka": 0,
@@ -80,7 +80,7 @@
   "ekran_proc": 0.003,
   "obszary_proc": {
    "naglowek": 0,
-   "wykres_glowny": 0,
+   "wykres_glowny": 0.001,
    "karta_planu": 0,
    "kronos": 0,
    "kronos_stopka": 0,
@@ -96,7 +96,7 @@
  },
  {
   "scenariusz": "K6_xau_m15_strefy",
-  "ekran_proc": 0.004,
+  "ekran_proc": 0.003,
   "obszary_proc": {
    "naglowek": 0,
    "wykres_glowny": 0.001,

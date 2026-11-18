@@ -13,7 +13,8 @@ const easeIO3=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2}, easeOu
 const seg=(ms,a,d)=>clamp((ms-a)/d);
 let S={view:{w:1,h:1,dpr:1},reduced:false}, SUB={state:'none',p:0,pi:0};          // podmieniane przez bind() na obiekty silnika
 const announce=t=>{try{env.announce&&env.announce(t);}catch(e){}};
-const VM={status:'loading',probs:null,kronos:null};                                // ostatni model widoku z API
+const VM={status:'loading',probs:null,kronos:null};
+const IPROF_REF={ema:[20,50],rsi:14,sig:'EMA'};   /* wzorzec (fixtures testu 1:1); produkcja: profil silnika z /api/v1/candles */                                // ostatni model widoku z API
 /* ---------- CHARTS — podgląd zgodny z architekturą PMW 1.41.0 (wartości DEMONSTRACYJNE) ----------
    Źródła w aplikacji (do podpięcia przez Claude Code): /api/v1/candles?tf, /api/v1/timeframes, /api/v1/structure, /api/v1/zones/map,
    /api/v1/market-zones, /api/v1/liquidity/sessions, /api/v1/svp/visible, /api/v1/kronos + /api/v1/kronos/forecast, WebSocket bar/quote/connection.
@@ -75,7 +76,7 @@ const ASSETS={XAUUSD:{sym:'XAUUSD-',p:4012.4,d:2,v:1.15},BTC:{sym:'BTCUSDT-',p:9
 let TFR=[['M1',60,'TRIGGER',1],['M3',180,'TRIGGER',0],['M5',300,'TRIGGER',1],['M15',900,'SETUP',1],['M30',1800,'SETUP_CONTEXT',0],['H1',3600,'LOCAL_CONTEXT',1],['H4',14400,'HTF',1],['H8',28800,'TREND_REGIME_CONTEXT',0],['D1',86400,'BACKGROUND',1]];
 let TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
 const KR_TFS=['M1','M5','M15','M30','H1'],KR_H={M1:15,M5:12,M15:8,M30:8,H1:6};
-const CH={cv:$('#chart'),ctx:$('#chart').getContext('2d'),asset:'XAUUSD',tf:'M15',data:[],ind:null,view:120,offset:0,yMin:0,yMax:1,hover:null,khover:null,status:'live',drag:null,lastTick:0,flash:0,swap:1,token:0,
+const CH={iprof:IPROF_REF,cv:$('#chart'),ctx:$('#chart').getContext('2d'),asset:'XAUUSD',tf:'M15',data:[],ind:null,view:120,offset:0,yMin:0,yMax:1,hover:null,khover:null,status:'live',drag:null,lastTick:0,flash:0,swap:1,token:0,
  kr:{tf:'M5',mode:'AUTO',on:{M1:true,M5:true,M15:true,M30:true,H1:true},onChart:true,data:[],fc:null,anim:1,state:'READY'},tz:'LOCAL',serverOff:2};
 const L={ema:true,avwap:true,rsi:true,macd:true,atr:true,sar:false,bb:false,vp:false,vpPoc:true,vpVa:true,vpAuto:false,strat:true,stratLv:'sel',mzHist:false,svpS:true,svpProf:'AUTO',svpBinX:50,svpBinB:2000,svpVa:.7,svpOff:{},vpHvn:true,vpLvn:true,vpTf:null,vpBars:200,vpMode:'AUTO',
  mz:true,fvg:false,ob:false,sd:false,sr:false,liq:false,zmap:false,svp:false,walls:false,structure:true,patterns:false,sessions:false,heat:false,iq:false,ai:false,
@@ -164,7 +165,8 @@ function volProfile(bars,bins){if(!bars.length)return null;let lo=Math.min(...ba
  const mean=tot/bins,hvn=[],lvn=[];for(let j=2;j<bins-2;j++){if(H[j]>H[j-1]&&H[j]>=H[j+1]&&H[j]>mean*1.35&&j!==pi)hvn.push(lo+(j+.5)*step);if(H[j]<H[j-1]&&H[j]<=H[j+1]&&H[j]<mean*.55)lvn.push(lo+(j+.5)*step);}
  return {lo,hi,step,H,max:Math.max(...H),poc:lo+(pi+.5)*step,val:lo+a*step,vah:lo+(z+1)*step,hvn:hvn.slice(0,4),lvn:lvn.slice(0,4)};}
 function computeAll(){const d=CH.data,c=d.map(b=>b.c),atr=atrF(d);const e12=ema(c,12),e26=ema(c,26),ml=c.map((_,i)=>e12[i]!=null&&e26[i]!=null?e12[i]-e26[i]:null);
- const sigSrc=ml.map(v=>v??0),sg=ema(sigSrc.slice(25),9);const sig=ml.map((_,i)=>i>=25&&sg[i-25]!=null?sg[i-25]:null);
+ const IP=CH.iprof;let sig;if(IP.sig==='SMA'){sig=ml.map((_,i)=>{if(i<8)return null;let s=0;for(let j=i-8;j<=i;j++){if(ml[j]==null)return null;s+=ml[j];}return s/9;});}   /* profil silnika M02I: sygnał MACD = SMA(9) */
+ else{const sigSrc=ml.map(v=>v??0),sg=ema(sigSrc.slice(25),9);sig=ml.map((_,i)=>i>=25&&sg[i-25]!=null?sg[i-25]:null);}
  const day=86400000;let anchor=-1,pv=0,vv=0,pv2=0;const av=[],up1=[],dn1=[],up2=[],dn2=[];
  d.forEach((b,i)=>{const dd=Math.floor(b.t/day);if(dd!==anchor){anchor=dd;pv=0;vv=0;pv2=0;}const tp=(b.h+b.l+b.c)/3;pv+=tp*b.v;vv+=b.v;pv2+=tp*tp*b.v;const m=pv/vv,sd=Math.sqrt(Math.max(0,pv2/vv-m*m));av.push(m);up1.push(m+sd);dn1.push(m-sd);up2.push(m+2*sd);dn2.push(m-2*sd);});
  const P=pivots(d,3),A=atr[atr.length-1]||1;const zones=[];const last=d.length-1;
@@ -198,9 +200,9 @@ function computeAll(){const d=CH.data,c=d.map(b=>b.c),atr=atrF(d);const e12=ema(
   mc:{name:'Monte Carlo PMW-MC-1',task:'P(TP przed SL) w H świecach M1',tp:[.66,.47,.29],state:'READY',cal:'NOT_APPLICABLE',src:'przedział ostrożny–optymistyczny'},
   dir:{name:'gold_candles · kierunek M5',task:'CANDLE_CLOSE_DIRECTION_H1_M5',p:long?{UP:.44,FLAT:.33,DOWN:.23}:{UP:.24,FLAT:.34,DOWN:.42},state:'READY',cal:'CALIBRATED_DEV',src:'próg ±0,20×ATR'}};
  CH.probs=probs;
- CH.ind={ema20:ema(c,20),ema50:ema(c,50),rsi:rsiF(c),macd:ml,sig,atr,sar:sarF(d),av,up1,dn1,up2,dn2,fvg,ob,sr,sd,liq:liq.slice(-4),brk:brk.slice(-6),mz,ai,scalp,hedge,zmPrev,zmDev,walls:{o:dOpen,h:dHi,l:dLo,hv},pat,granite:gr};}
+ CH.ind={ema20:ema(c,IP.ema[0]),ema50:IP.ema[1]!=null?ema(c,IP.ema[1]):c.map(()=>null),rsi:rsiF(c,IP.rsi),macd:ml,sig,atr,sar:sarF(d),av,up1,dn1,up2,dn2,fvg,ob,sr,sd,liq:liq.slice(-4),brk:brk.slice(-6),mz,ai,scalp,hedge,zmPrev,zmDev,walls:{o:dOpen,h:dHi,l:dLo,hv},pat,granite:gr};}
 function loadSeries(anim){CH.offset=0;if(CH.data.length)computeAll();else CH.ind=null;if(VM.probs)CH.probs=VM.probs;botIndex();STR.sel=null;pickPlan();if(CH.data.length){const sl=CH.data.slice(-CH.view);CH.yMin=Math.min(...sl.map(c=>c.l));CH.yMax=Math.max(...sl.map(c=>c.h));}if(anim)CH.swap=0;loadKronos();}
-function loadKronos(){const K=CH.kr,k=VM.kronos;if(!k){K.data=[];K.fc=null;return;}K.data=k.candles||[];K.fc=k.forecast?{...k.forecast,created_at:new Date(k.forecast.created_at)}:null;if(k.state)K.state=k.state;K.anim=0;}
+function loadKronos(){const K=CH.kr,k=VM.kronos;if(!k){K.data=[];K.fc=null;return;}if(k.tf)K.tf=k.tf;if(k.on)K.on={...K.on,...k.on};K.role=k.role;K.emptyTxt=k.emptyTxt;K.data=k.candles||[];K.fc=k.forecast?{...k.forecast,created_at:new Date(k.forecast.created_at)}:null;if(k.state)K.state=k.state;K.anim=0;}
 function setChartStatus(st){CH.status=st;const el=$('#ch-status');el.dataset.s=st;el.querySelector('.t').textContent={live:'MT5 POŁĄCZONY',loading:'ŁADOWANIE',offline:'ROZŁĄCZONO',stale:'DANE NIEAKTUALNE'}[st];}
 function chartsConnect(){++CH.token;setChartStatus(VM.status||'loading');}
 function chartsPlanet(cms){if(S.reduced){const k=SUB.p;return {move:0,rMul:1,op:1-smooth(k*2)};}
@@ -280,7 +282,7 @@ function drawMain(ctx,cms,dt,red){
  /* panele RSI / MACD */
  panes.forEach((pn,pi)=>{const t0=pb+10+pi*(paneH+10),t1=t0+paneH;ctx.globalAlpha=uiA*Math.max(dim,.35);ctx.strokeStyle='rgba(43,48,59,.9)';ctx.strokeRect(R.l+.5,t0+.5,R.r-R.l,paneH);
   ctx.fillStyle='rgba(137,139,145,.9)';ctx.textAlign='left';ctx.font='9px "Helvetica Neue",Helvetica,Arial,sans-serif';
-  if(pn==='rsi'){const yv=v=>t1-(v/100)*paneH;ctx.fillText('RSI 14',R.l+6,t0+9);[70,30].forEach(v=>{ctx.strokeStyle='rgba(200,210,230,.12)';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(R.l,Math.round(yv(v))+.5);ctx.lineTo(R.r,Math.round(yv(v))+.5);ctx.stroke();ctx.setLineDash([]);ctx.fillText(v,R.r+10,yv(v));});
+  if(pn==='rsi'){const yv=v=>t1-(v/100)*paneH;ctx.fillText('RSI '+CH.iprof.rsi,R.l+6,t0+9);[70,30].forEach(v=>{ctx.strokeStyle='rgba(200,210,230,.12)';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(R.l,Math.round(yv(v))+.5);ctx.lineTo(R.r,Math.round(yv(v))+.5);ctx.stroke();ctx.setLineDash([]);ctx.fillText(v,R.r+10,yv(v));});
    ctx.strokeStyle='rgba(220,228,245,.8)';ctx.beginPath();let st=false;for(let i=start;i<end;i++){const v=CH.ind.rsi[i];if(v==null)continue;const x=X(i),y=yv(v);st?ctx.lineTo(x,y):ctx.moveTo(x,y);st=true;}ctx.stroke();}
   else{const vals=[];for(let i=start;i<end;i++){const a=CH.ind.macd[i],b=CH.ind.sig[i];if(a!=null)vals.push(Math.abs(a));if(b!=null)vals.push(Math.abs(b));}const m=Math.max(...vals,1e-9),yv=v=>(t0+t1)/2-v/m*paneH*.45;
    ctx.fillText('MACD 12 · 26 · 9',R.l+6,t0+9);for(let i=start;i<end;i++){const a=CH.ind.macd[i],b=CH.ind.sig[i];if(a==null||b==null)continue;const hv=a-b;ctx.fillStyle=hv>=0?'rgba(220,226,236,.28)':'rgba(138,145,158,.28)';const y0=yv(0),y1=yv(hv);ctx.fillRect(X(i)-cw*.3,Math.min(y0,y1),cw*.6,Math.abs(y1-y0));}
@@ -295,7 +297,7 @@ function drawMain(ctx,cms,dt,red){
  ctx.restore();
  const hc=d[hi_],o=$('#mc-read');if(hc&&I){const chg=(hc.c-hc.o)/hc.o*100,f=v=>v==null?'—':fmtP(v);
   o.innerHTML=`<span>O<b>${f(hc.o)}</b>H<b>${f(hc.h)}</b>L<b>${f(hc.l)}</b>C<b>${f(hc.c)}</b><b>${chg>=0?'+':''}${chg.toFixed(2)}%</b></span>`+
-  (L.ema?`<span>EMA 20<b>${f(I.ema20[hi_])}</b>EMA 50<b>${f(I.ema50[hi_])}</b></span>`:'')+(L.avwap&&['M1','M5'].includes(CH.tf)?`<span>AVWAP<b>${f(I.av[hi_])}</b></span>`:'')+
+  (L.ema?`<span>EMA ${CH.iprof.ema[0]}<b>${f(I.ema20[hi_])}</b>${CH.iprof.ema[1]!=null?`EMA ${CH.iprof.ema[1]}<b>${f(I.ema50[hi_])}</b>`:''}</span>`:'')+(L.avwap&&['M1','M5'].includes(CH.tf)?`<span>AVWAP<b>${f(I.av[hi_])}</b></span>`:'')+
   (L.rsi?`<span>RSI<b>${I.rsi[hi_]!=null?I.rsi[hi_].toFixed(1):'—'}</b></span>`:'')+(L.atr?`<span>ATR 14<b>${f(I.atr[hi_])}</b></span>`:'')+(L.vp&&CH.vp?`<span>POC<b>${f(CH.vp.poc)}</b></span>`:'');}
  $('#mc-title').textContent=`${ASSETS[CH.asset].sym} · ${CH.tf}`;
  placeCard(R,uiA);
@@ -320,7 +322,7 @@ function placeCard(R,uiA){const el=$('#sig-card');el.hidden=!(L.card&&CH.sig);if
 function drawKronos(ctx,cms,dt,red){const R0=rectOf('#kr-plot');if(R0.w<40)return;const K=CH.kr,uiA=red?smooth(SUB.p*2-1):smooth(seg(cms,1950,450));
  const off=K.mode==='OFF'||!K.on[K.tf];ctx.save();ctx.beginPath();ctx.rect(R0.l,R0.t,R0.w,R0.h);ctx.clip();ctx.globalAlpha=uiA;ctx.font='10px "Helvetica Neue",Helvetica,Arial,sans-serif';ctx.textBaseline='middle';
  const axW=64,R={l:R0.l+4,r:R0.r-axW,t:R0.t+8,b:R0.b-20},d=K.data.slice(-34),fc=K.fc,H=fc?fc.horizon:0,N=d.length+H+2,cw=(R.r-R.l)/N,X=i=>R.l+(i+.5)*cw;
- if(!fc||!d.length){ctx.restore();return;}
+ if(!fc||!d.length){ctx.restore();if(!CH.frozen){$('#kr-dir').textContent='—';$('#kr-dir').dataset.d='';$('#kr-delta').textContent='';$('#kr-read').textContent=K.emptyTxt||'BRAK PROGNOZY';$('#kr-meta').textContent='';}return;}
  if(!red)K.anim=Math.min(1,K.anim+dt/1.6);const ka=red?1:K.anim;
  const all=[...d.flatMap(b=>[b.h,b.l]),...fc.pred.flatMap(b=>[b.h,b.l]),...fc.paths.flat()];let mn=Math.min(...all),mx=Math.max(...all);const pad=(mx-mn)*.08;mn-=pad;mx+=pad;const Y=v=>R.t+(mx-v)/(mx-mn)*(R.b-R.t);
  const stp=niceStep((mx-mn)/5);for(let v=Math.ceil(mn/stp)*stp;v<mx;v+=stp){const y=Math.round(Y(v))+.5;ctx.strokeStyle='rgba(200,210,230,.06)';ctx.setLineDash([1,5]);ctx.beginPath();ctx.moveTo(R.l,y);ctx.lineTo(R.r,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(137,139,145,.9)';ctx.textAlign='left';ctx.fillText(fmtP(v),R.r+8,y);}
@@ -344,11 +346,11 @@ function drawKronos(ctx,cms,dt,red){const R0=rectOf('#kr-plot');if(R0.w<40)retur
  else{ctx.fillStyle='#63666c';ctx.textAlign='center';ctx.font='9px "Helvetica Neue",Helvetica,Arial,sans-serif';ctx.fillText(K.mode==='OFF'?'K R O N O S   W Y Ł Ą C Z O N Y':`K R O N O S   ${K.tf}   W Y Ł Ą C Z O N Y`,(nx+R.r)/2,(R.t+R.b)/2);}
  const kh=CH.khover;if(kh&&kh.x>R.l&&kh.x<R.r&&kh.y>R.t&&kh.y<R.b){const i=Math.floor((kh.x-R.l)/cw);const b=i<d.length?d[i]:fc.pred[i-d.length];if(b){const x=Math.round(X(i))+.5;ctx.strokeStyle='rgba(220,226,236,.3)';ctx.beginPath();ctx.moveTo(x,R.t);ctx.lineTo(x,R.b);ctx.stroke();
   $('#kr-read').innerHTML=`${i<d.length?'RZECZYWISTA':'<b class="kv">PROGNOZA +'+(i-d.length+1)+'</b>'} · ${fmtT(b.t,true,K.tf)} · O ${fmtP(b.o)} H ${fmtP(b.h)} L ${fmtP(b.l)} C ${fmtP(b.c)}`;}}
- else $('#kr-read').innerHTML=off?'PROGNOZA WYŁĄCZONA':`ŚCIEŻKA ${H} ŚWIEC · ${fc.paths.length} ŚCIEŻEK NIEPEWNOŚCI · PASMO NEUTRALNE ±${fmtP(fc.neutral_band)}`;
+ else $('#kr-read').innerHTML=off?'PROGNOZA WYŁĄCZONA':`ŚCIEŻKA ${H} ŚWIEC · ${fc.paths.length?fc.paths.length+' ŚCIEŻEK NIEPEWNOŚCI':'BRAK ŚCIEŻEK NIEPEWNOŚCI'} · PASMO NEUTRALNE ±${fmtP(fc.neutral_band)}`;
  ctx.restore();
  const dir={UP:'↗ WZROST',DOWN:'↘ SPADEK',FLAT:'↔ BOCZNIE'}[fc.direction];$('#kr-dir').textContent=off?'—':dir;$('#kr-dir').dataset.d=off?'':fc.direction;
  $('#kr-delta').textContent=off?'—':`${fc.delta>=0?'+':''}${fmtP(fc.delta)} (${fc.delta_pct>=0?'+':''}${fc.delta_pct.toFixed(3)}%) → ${fmtP(fc.pred_close_h)}`;
- $('#kr-meta').textContent=`${fc.is_current?'AKTUALNA':'NIEAKTUALNA'} · ${fmtT(fc.created_at.getTime(),true,'M1')} · horyzont +${H} · SHADOW, bez zleceń · Kronos nie podaje confidence score`;
+ $('#kr-meta').textContent=`${fc.is_current?'AKTUALNA':'NIEAKTUALNA'} · ${fmtT(fc.created_at.getTime(),true,'M1')} · horyzont +${H} · ${K.role||'SHADOW, bez zleceń'} · Kronos nie podaje confidence score`;
 }
 function drawChart(cms,dt){const cv=CH.cv,ctx=CH.ctx,{w,h,dpr}=S.view;if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);}
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);if(SUB.p<=0)return;const red=S.reduced;
@@ -359,13 +361,13 @@ function drawChart(cms,dt){const cv=CH.cv,ctx=CH.ctx,{w,h,dpr}=S.view;if(cv.widt
 /* ----- UI: nagłówek, okna, zakładki ----- */
 function buildChartUI(){
  $('#ch-asset').innerHTML=Object.keys(ASSETS).map(a=>`<button type="button" data-a="${a}" aria-pressed="${a===CH.asset}">${a}</button>`).join('');
- $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));loadSeries(true);chartsConnect();}));
+ $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];loadSeries(true);chartsConnect();emitSel();}));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane OK"><i></i>${t}</button>`).join('');
  $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));loadSeries(true);chartsConnect();renderOpts();}));
  $('#ch-tz').addEventListener('change',e=>{CH.tz=e.target.value;});
  $('#kr-tf').innerHTML=KR_TFS.map(t=>`<button type="button" data-k="${t}" aria-pressed="${t===CH.kr.tf}">${t}</button>`).join('');
- $$('#kr-tf button').forEach(b=>b.addEventListener('click',()=>{CH.kr.tf=b.dataset.k;$$('#kr-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));loadKronos();renderOpts();}));
- $('#kr-refresh').addEventListener('click',()=>{loadKronos();});
+ $$('#kr-tf button').forEach(b=>b.addEventListener('click',()=>{CH.kr.tf=b.dataset.k;$$('#kr-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.kr.fc=null;CH.kr.data=[];renderOpts();emitSel('kronos');}));
+ $('#kr-refresh').addEventListener('click',()=>{emitSel('kronos');});   /* PRZELICZ = ponowny GET (bez zapisu) */
  $$('#opt-tabs button').forEach(b=>b.addEventListener('click',()=>{$$('#opt-tabs button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));renderOpts();}));
  renderOpts();
  const mp=$('#mc-plot');
@@ -419,14 +421,15 @@ function SWK(k,label){const dis=CH.kr.mode==='OFF',v=k==='onChart'?CH.kr.onChart
 
 buildChartUI();
 const listeners=[];
+function emitSel(what='series'){listeners.forEach(f=>{try{f({what,asset:CH.asset,tf:CH.tf,kr:CH.kr.tf});}catch(e){}});}
 function setTfr(items){if(!items||!items.length)return;TFR=items.map(x=>[x.tf,x.seconds,x.role,x.core?1:0]);TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane ${(items.find(x=>x.tf===t)||{}).data||'—'}"><i></i>${t}</button>`).join('');
- $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));listeners.forEach(f=>f({asset:CH.asset,tf:CH.tf}));loadSeries(true);chartsConnect();renderOpts();}));}
+ $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];loadSeries(true);emitSel();chartsConnect();renderOpts();}));}
 /** Model widoku (D1 §3) – ta sama postać co fixtures testu 1:1. */
 function applyVM(vm){const A=vm.asset||CH.asset;CH.asset=A;if(vm.tf)CH.tf=vm.tf;if(vm.tz)CH.tz=vm.tz;if(vm.serverOff!=null)CH.serverOff=vm.serverOff;
  if(vm.meta){BOTDATA.meta={FX_SMC:[],FX_SCALP:[],FX_HEDGE:[],LEGACY:[],SH:[],...vm.meta};rebuildMeta();}
  BOTDATA.sig[A]=vm.signals||[];BOTDATA.zones[A]=vm.zones||{};BOTDATA.states[A]=vm.states||{};
- CH.data=vm.candles||[];VM.probs=vm.probs||null;VM.kronos=vm.kronos||null;VM.status=vm.status||(CH.data.length?'live':'loading');}
+ CH.iprof=vm.iprof||IPROF_REF;CH.data=vm.candles||[];VM.probs=vm.probs||null;VM.kronos=vm.kronos||null;VM.status=vm.status||(CH.data.length?'live':'loading');}
 const api={
  /** wiązanie z silnikiem kuli FOREX (jego S i SUB – czas wejścia, postęp, widok, ograniczenie ruchu) */
  bind(s,sub){S=s;SUB=sub;},
@@ -453,6 +456,10 @@ const api={
   $$('#opt-tabs button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===fx.tab)));const sc=$('#sig-card');if(sc)sc.dataset.key='';svpRecalc();renderOpts();setChartStatus('live');CH.frozen=true;
   $('#ch-quote').innerHTML=`BID <b>${fmtP(fx.quote.bid)}</b> ASK <b>${fmtP(fx.quote.ask)}</b> SPREAD <b>${fmtP(fx.quote.spread)}</b>`;
   CH.testTexts=fx.test_texts||null;const tag=$('#ch-right .demo-tag');if(tag){tag.hidden=!(CH.testTexts&&CH.testTexts.headerTag);if(CH.testTexts&&CH.testTexts.headerTag)tag.textContent=CH.testTexts.headerTag;}},
+ liveBar(b){if(CH.frozen||!CH.data.length||!b)return;const t=b.t,d=CH.data,last=d[d.length-1];if(t==null||t<last.t)return;
+  if(t===last.t){Object.assign(last,{o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,closed:b.closed});}else{last.closed=true;d.push({...b});if(CH.offset>0)CH.offset++;}CH.flash=1;},
+ setKronos(k){if(CH.frozen)return;VM.kronos=k;loadKronos();},
+ sel:()=>({asset:CH.asset,tf:CH.tf,kr:CH.kr.tf}),
  state:()=>({asset:CH.asset,tf:CH.tf,candles:CH.data.length,status:CH.status,sel:CH.sig?CH.sig.key:null}),
  dispose(){CH.token++;listeners.length=0;}};
 return api;

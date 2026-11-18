@@ -1,6 +1,6 @@
 // CHARTS 1:1 – K1: adaptery API → model widoku (D1 §3) na kształtach odpowiedzi z K0 (dane syntetyczne, bez danych rachunku).
 import assert from "node:assert/strict";
-import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, probVM, kronosVM, chartStatus } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
+import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, probVM, kronosVM, iprofVM, chartStatus } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
 
 // /api/v1/candles
 const c = candlesVM({ bars: [
@@ -59,6 +59,21 @@ assert.deepEqual([k0.state, k0.forecast, k0.candles], ["BLOCK", null, []]);
 const k1 = kronosVM({ is_current: true, context: [{ open_utc: "2026-11-18T10:00:00Z", o: 1, h: 2, l: .5, c: 1.5, tv: 3 }],
   forecast: { direction: "UP", last_close: 1.5, pred_close_h: 2, delta_price: .5, delta_pct: 33, neutral_band: .1, horizon_bars: 12, created_at: "2026-11-18T10:05:00Z" } }, "M5");
 assert.deepEqual([k1.state, k1.forecast.horizon, k1.forecast.paths, k1.forecast.is_current, k1.candles.length], ["READY", 12, [], true, 1]);
+
+// K2: Kronos – rola, interwały pracy, stan „niezainstalowany” (bez symulacji)
+const kNI = kronosVM(null, "M5", { status: "NOT_INSTALLED" });
+assert.deepEqual([kNI.state, kNI.forecast, kNI.emptyTxt], ["NOT_INSTALLED", null, "KRONOS NIEZAINSTALOWANY – 33_KRONOS_INSTALUJ.bat"]);
+assert.equal(kronosVM(null, "H4", { status: "READY" }).emptyTxt, "TIMEFRAME_NOT_ALLOWED");
+const kA = kronosVM({ forecast: null }, "M5", { status: "READY", decision_use: { M5: "ASSIST" }, settings: { timeframes: ["M5", "M15"] } });
+assert.ok(kA.role.startsWith("ASSIST")); assert.deepEqual(kA.on, { M1: false, M5: true, M15: true, M30: false, H1: false });
+assert.ok(kronosVM({ forecast: null }, "M5", { status: "READY" }).role.startsWith("SHADOW"));
+
+// K2: profil wskaźników silnika z /api/v1/candles
+assert.deepEqual(iprofVM({ indicators: { lines: [{ id: "EMA9" }, { id: "EMA21" }, { id: "BB20_UP" }], panels: { rsi: { period: 9 }, macd: { signal_ma: "SMA" } } } }),
+  { ema: [9, 21], rsi: 9, sig: "SMA" });
+assert.deepEqual(iprofVM({ indicators: { lines: [{ id: "EMA20" }, { id: "BB_MID" }], panels: { rsi: { period: 14 }, macd: {} } } }), { ema: [20, null], rsi: 14, sig: "SMA" });
+assert.equal(iprofVM({ indicators: { lines: [], panels: { macd: { signal_ma: "EMA" } } } }).sig, "EMA");
+assert.equal(iprofVM(null), null);
 
 // status MT5
 assert.equal(chartStatus({ connection: { state: "CONNECTED" } }), "live");

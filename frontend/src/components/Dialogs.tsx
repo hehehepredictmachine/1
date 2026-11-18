@@ -105,7 +105,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["kronos", "Kronos – interwały"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">
@@ -240,6 +240,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="note">Skanowanie i dopuszczenie do handlu każdej strategii ustawiasz w panelu „Strategie (10)”. Powrót do poprzedniej konfiguracji: profil ORIGINAL (instrukcja w ROLLBACK.md).</div>
       </div>}
       {tab === "look" && <LookTab />}
+      {tab === "kronos" && <KronosTfs />}
       {tab === "other" && <div className="form">
         {field("Newsy/kalendarz M04N", "news.enabled", "bool")}
         {field("Telegram włączony", "telegram.enabled", "bool")}
@@ -400,4 +401,34 @@ function LookTab() {
       {msg && <div className="note">{msg}</div>}
     </div>
   );
+}
+
+
+/* 1.42.5: wybór interwałów PRACY Kronosa (funkcja dodana w 1.42 na prośbę użytkownika) – przeniesiony z ekranu CHARTS, który po pakiecie
+   CHARTS 1:1 jest tylko do odczytu. Zapis przez istniejące PUT /api/v1/kronos/settings, po potwierdzeniu. */
+const KR_ALL = ["M1", "M3", "M5", "M15", "M30", "H1"];
+export function KronosTfs() {
+  const [k, setK] = useState<any>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => apiGet<any>("/api/v1/kronos").then(setK).catch((e) => setMsg("BŁĄD: " + String(e?.message || e).slice(0, 200)));
+  useEffect(() => { load(); }, []);
+  const on: string[] = k?.settings?.timeframes || [];
+  const toggle = (tf: string) => {
+    const next = on.includes(tf) ? on.filter((x) => x !== tf) : [...on, tf];
+    if (!next.length) { setMsg("Kronos musi liczyć co najmniej jeden interwał."); return; }
+    if (!confirm(`Zmienić interwały pracy Kronosa na: ${next.join(", ")}? Każdy interwał to osobna prognoza (dodatkowe obciążenie CPU). Zmiana działa od następnej prognozy.`)) return;
+    apiSend("PUT", "/api/v1/kronos/settings", { timeframes: KR_ALL.filter((x) => next.includes(x)) }).then(() => { setMsg("Zapisano – od następnej prognozy."); load(); })
+      .catch((e) => setMsg("BŁĄD: " + String(e?.message || e).slice(0, 200)));
+  };
+  return (
+    <div className="form" data-testid="kronos-tfs">
+      <div className="note">Na których interwałach Kronos ma liczyć prognozy. Ekran CHARTS pokazuje prognozę wybranego interwału (tylko odczyt).</div>
+      {KR_ALL.map((tf) => (
+        <label key={tf} className="row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span>{tf} {on.includes(tf) ? "· liczony" : ""}</span>
+          <input type="checkbox" checked={on.includes(tf)} onChange={() => toggle(tf)} data-testid={"kronos-tf-" + tf} aria-label={"Kronos " + tf} />
+        </label>))}
+      {msg && <div className="note">{msg}</div>}
+      {k?.status && k.status !== "READY" && <div className="note">Stan Kronosa: {k.status_pl ?? k.status}. {k.reason ?? ""}</div>}
+    </div>);
 }

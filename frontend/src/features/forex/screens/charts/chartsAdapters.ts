@@ -85,17 +85,35 @@ export function probVM(p: any, name: string): Prob {
   return { name, task: p.task || "—", v: ok ? raw : null, state: p.state || "NO_DATA", cal, src: p.model_name || p.source || "—" };
 }
 
-/** Kronos (GET /api/v1/kronos/forecast): forecast.* bez symulacji; brak ścieżek niepewności = paths []. */
-export function kronosVM(resp: any, tf: string) {
+/** Kronos (GET /api/v1/kronos/forecast + GET /api/v1/kronos): forecast.* bez symulacji. API podaje kwantyle, nie pojedyncze ścieżki
+ *  niepewności → paths = [] (wachlarz nie jest rysowany, stopka: „BRAK ŚCIEŻEK NIEPEWNOŚCI”). Kontekst = ostatnie zamknięte świece modelu. */
+export function kronosVM(resp: any, tf: string, status?: any) {
   const f = resp?.forecast;
-  if (!f) return { tf, state: resp?.target?.state || "NO_DATA", candles: [] as Candle[], forecast: null };
-  const pred = (f.pred_ohlc || f.pred || []).map((b: any) => ({ t: ms(b.open_utc ?? b.t) as number, o: +b.o, h: +b.h, l: +b.l, c: +b.c }));
+  const st = String(status?.status || "");
+  const role = Object.values(status?.decision_use || {}).includes("ASSIST") ? "ASSIST – może tylko wstrzymać wejście, bez zleceń" : "SHADOW, bez zleceń";
+  const tfs: string[] = status?.settings?.timeframes || status?.timeframes || [];
+  const on = Object.fromEntries(["M1", "M5", "M15", "M30", "H1"].map((t) => [t, tfs.length ? tfs.includes(t) : true]));
+  const notInstalled = st === "NOT_INSTALLED" || st === "NO_WEIGHTS";
+  const emptyTxt = notInstalled ? "KRONOS NIEZAINSTALOWANY – 33_KRONOS_INSTALUJ.bat" : !["M1", "M5", "M15", "M30", "H1"].includes(tf) ? "TIMEFRAME_NOT_ALLOWED"
+    : (resp?.target?.reason || status?.status_pl || "BRAK PROGNOZY").toString().toUpperCase();
+  const candles = (resp?.context || []).map((b: any) => ({ t: ms(b.t ?? b.open_utc) as number, o: +b.o, h: +b.h, l: +b.l, c: +b.c, v: 0, closed: true }))
+    .filter((b: any) => b.t != null);
+  if (!f) return { tf, on, role, state: notInstalled ? "NOT_INSTALLED" : (resp?.target?.state || st || "NO_DATA"), emptyTxt, candles, forecast: null };
+  const pred = (f.pred || []).map((b: any) => ({ t: ms(b.t_utc ?? b.open_utc ?? b.t) as number, o: +b.o, h: +b.h, l: +b.l, c: +b.c }));
   return {
-    tf, state: "READY", candles: candlesVM({ bars: resp.context || [] }),
-    forecast: { pred, paths: f.uncertainty || [], last_close: num(f.last_close), pred_close_h: num(f.pred_close_h), delta: num(f.delta_price),
+    tf, on, role, state: "READY", emptyTxt, candles,
+    forecast: { pred, paths: [] as number[][], last_close: num(f.last_close), pred_close_h: num(f.pred_close_h), delta: num(f.delta_price),
       delta_pct: num(f.delta_pct), direction: f.direction, neutral_band: num(f.neutral_band), horizon: num(f.horizon_bars),
       created_at: ms(f.created_at), is_current: !!resp.is_current, atr: num(f.atr14) },
   };
+}
+
+/** Profil wskaźników silnika (M02I) dla TF z GET /api/v1/candles → indicators: okresy EMA, okres RSI, średnia sygnału MACD. */
+export function iprofVM(resp: any): { ema: (number | null)[]; rsi: number; sig: "SMA" | "EMA" } | null {
+  const I = resp?.indicators;
+  if (!I) return null;
+  const ema = (I.lines || []).filter((l: any) => /^EMA\d+$/.test(String(l.id))).map((l: any) => +String(l.id).slice(3)).slice(0, 2);
+  return { ema: [ema[0] ?? 20, ema[1] ?? null], rsi: +(I.panels?.rsi?.period || 14), sig: I.panels?.macd?.signal_ma === "EMA" ? "EMA" : "SMA" };
 }
 
 /** Status MT5 w nagłówku wzorca: live / loading / offline / stale. */
