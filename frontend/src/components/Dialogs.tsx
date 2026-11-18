@@ -4,6 +4,7 @@ import { useAppearance, type AnimMode } from "../appearance";
 import { useStore } from "../store";
 import { cls } from "../util";
 import { LeverageSettings } from "./LeverageSettings";
+import { computeZones, MZ_TFS, setZonesLive, useMarketZones } from "../features/market-zones/mzStore";
 
 // 1.42 (E7): te same okna (ta sama logika, wywołania i potwierdzenia) osadzane w szufladzie paneli systemowych – bez tła modala.
 export const EmbedCtx = createContext(false);
@@ -105,7 +106,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
-        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["kronos", "Kronos – interwały"], ["other", "Inne"]].map(([k, l]) =>
+        {[["mt5", "MT5"], ["agent", "Agent Claude"], ["risk", "Ryzyko"], ["costs", "Koszty"], ["active", "AUTO / ACTIVE"], ["strategy", "Strategia M07"], ["vol", "Zmienność / IV"], ["markets", "Rynki / Sygnały bota"], ["kronos", "Kronos – interwały"], ["zones", "Strefy rynkowe"], ["other", "Inne"]].map(([k, l]) =>
           <button key={k} className={cls(tab === k && "on")} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "mt5" && <div className="form">
@@ -241,6 +242,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>}
       {tab === "look" && <LookTab />}
       {tab === "kronos" && <KronosTfs />}
+      {tab === "zones" && <MarketZonesSettings />}
       {tab === "other" && <div className="form">
         {field("Newsy/kalendarz M04N", "news.enabled", "bool")}
         {field("Telegram włączony", "telegram.enabled", "bool")}
@@ -430,5 +432,31 @@ export function KronosTfs() {
         </label>))}
       {msg && <div className="note">{msg}</div>}
       {k?.status && k.status !== "READY" && <div className="note">Stan Kronosa: {k.status_pl ?? k.status}. {k.reason ?? ""}</div>}
+    </div>);
+}
+
+/** Strefy rynkowe (CHARTS K4, decyzja użytkownika): ekran CHARTS tylko czyta strefy (GET /api/v1/market-zones); liczenie uruchamia się tutaj –
+ *  jednorazowe „Przelicz” albo LIVE (przeliczenie po każdej zamkniętej świecy M1–M30). Analiza – bez zleceń i bez zmiany ustawień handlu.
+ *  LIVE działa do zatrzymania albo restartu bota; ostatnie wyniki są odtwarzane po restarcie jako nieaktualne. */
+export function MarketZonesSettings() {
+  return (
+    <div className="form" data-testid="zones-settings">
+      <div className="note">Bot wyznacza strefy (FVG, OB, popyt / podaż, wsparcie / opór, EQH / EQL) na M1, M5, M15 i M30. Ekran CHARTS pokazuje strefy wybranego interwału – tylko odczyt. LIVE przelicza po każdej zamkniętej świecy i działa do wyłączenia albo restartu bota.</div>
+      {["XAUUSD", "BTC"].map((inst) => <ZonesRow key={inst} inst={inst} />)}
+    </div>);
+}
+
+function ZonesRow({ inst }: { inst: string }) {
+  const mz = useMarketZones(inst);
+  const v = mz.view, live = !!v?.live?.enabled, busy = mz.busy;
+  const tfs = MZ_TFS.map((tf) => { const t = v?.timeframes?.[tf]; return `${tf}: ${t?.computed ? (t.stale ? "nieaktualne" : `${(t.zones || []).length} stref`) : (t?.status?.status_pl || "nie pobierano")}`; });
+  return (
+    <div className="row" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }} data-testid={"zones-" + inst}>
+      <b style={{ minWidth: 70 }}>{inst}</b>
+      <span style={{ flex: 1 }}>{tfs.join(" · ")}{v?.job && ["QUEUED", "RUNNING"].includes(v.job.status) ? " · liczenie…" : ""}</span>
+      <button type="button" disabled={!!busy} onClick={() => computeZones(inst, MZ_TFS)} data-testid={"zones-compute-" + inst}>Przelicz</button>
+      <label style={{ display: "flex", alignItems: "center", gap: 6 }}>LIVE
+        <input type="checkbox" checked={live} disabled={!!busy} onChange={() => setZonesLive(inst, !live, MZ_TFS)} aria-label={"Strefy LIVE " + inst} data-testid={"zones-live-" + inst} /></label>
+      {mz.err && <span className="note">BŁĄD: {mz.err.slice(0, 160)}</span>}
     </div>);
 }

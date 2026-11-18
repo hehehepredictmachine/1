@@ -1,6 +1,6 @@
 // CHARTS 1:1 – K1: adaptery API → model widoku (D1 §3) na kształtach odpowiedzi z K0 (dane syntetyczne, bez danych rachunku).
 import assert from "node:assert/strict";
-import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
+import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, zonesMsgVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
 
 // /api/v1/candles
 const c = candlesVM({ bars: [
@@ -46,6 +46,16 @@ const z = zonesVM(zr, "M5");
 assert.deepEqual(z[0], { ty: "FVG_BULL", lo: 4048.5, up: 4051.0, st: "ACTIVE", t0: Date.parse("2026-11-17T14:10:00Z"), t1: null, q: 76.3, why: "luka", v: 1 });
 assert.equal(z[1].v, 0); assert.equal(z[1].q, null); assert.equal(z[1].t1, Date.parse("2026-11-17T11:00:00Z"));
 assert.equal(zonesVM(zr, "H1"), null);                                  // H1: brak stref – nic z innego TF
+// K4: tylko wybrany TF; TF nieliczony = null + komunikat ze stanu API; zmiana TF nigdy nie zostawia stref poprzedniego TF
+const zr2 = { timeframes: { M5: zr.timeframes.M5, M15: { computed: false, status: { status: "IDLE", status_pl: "nie pobierano" }, zones: [], visible: [] },
+  M30: { computed: false, status: { status: "NO_DATA", status_pl: "brak danych", reason: "za mało świec" }, zones: [], visible: [] } } };
+assert.equal(zonesVM(zr2, "M15"), null);
+assert.match(zonesMsgVM(zr2, "M15"), /^Strefy M15: bot nie liczył stref\. Uruchom w Ustawieniach → Strefy rynkowe/);
+assert.match(zonesMsgVM(zr2, "M30"), /brak danych – za mało świec/);
+assert.equal(zonesMsgVM(zr2, "M5"), null); assert.equal(zonesMsgVM(zr2, "H1"), null);
+assert.match(zonesMsgVM({ timeframes: { M5: { ...zr.timeframes.M5, stale: true, status: { status_pl: "odtworzone" } } } }, "M5"), /nieaktualne/);
+const view = (tf) => { const z = zonesVM(zr2, tf); return z ? { [tf]: z } : {}; };     // = chartsData: zones tylko pod kluczem wybranego TF
+assert.deepEqual(Object.keys(view("M5")), ["M5"]); assert.deepEqual(view("M15"), {}); assert.deepEqual(view("H1"), {});
 
 // szanse modeli – % tylko skalibrowane prawdopodobieństwo
 assert.equal(probVM({ unit: "probability", calibration: { status: "CALIBRATED_DEV" }, result: { probability: .58 }, state: "READY", task: "T" }, "A").v, .58);

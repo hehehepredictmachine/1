@@ -3,7 +3,7 @@
 // Ten plik nie importuje Reacta w adapterach – testy w Node: tests/js/charts_adapters.test.mjs.
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { apiGet } from "../../../../api";
-import { basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM, statesVM,
+import { basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM, statesVM, zonesMsgVM, zonesVM,
   type Meta, type Sig } from "./chartsAdapters";
 export * from "./chartsAdapters";
 
@@ -66,11 +66,13 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     let alive = true;
     const xau = apiGet<any>(`/api/v1/candles?tf=${sel.tf}`);
     const src = sel.asset === "BTC" ? apiGet<any>(`/api/v1/market-zones/bars?instrument=BTC&tf=${sel.tf}&count=600`) : xau;
-    Promise.all([xau.catch(() => null), src, botLayers(sel.asset, s?.symbol?.symbol, sel.asset === "BTC" ? btcSym.current : s?.symbol?.symbol)]).then(([cx, r, B]) => {
+    const mz = apiGet<any>(`/api/v1/market-zones?instrument=${sel.asset}&all=true`).catch(() => null);
+    Promise.all([xau.catch(() => null), src, mz, botLayers(sel.asset, s?.symbol?.symbol, sel.asset === "BTC" ? btcSym.current : s?.symbol?.symbol)]).then(([cx, r, z, B]) => {
       if (!alive) return;
       const candles = candlesVM(r);
       if (r?.symbol && sel.asset === "BTC") { api.current?.setSymbol("BTC", r.symbol); btcSym.current = r.symbol; }
-      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, iprof: iprofVM(cx), ...B,
+      const zt = zonesVM(z, sel.tf);                                   // K4: wyłącznie wybrany TF – nic z innego interwału
+      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, iprof: iprofVM(cx), ...B, zones: zt ? { [sel.tf]: zt } : {}, zoneMsg: zonesMsgVM(z, sel.tf),
         status: candles.length ? chartStatus(s) : (r?.status === "NO_SYMBOL" ? "offline" : "loading") });
     }).catch(() => alive && api.current?.setStatus("offline"));
     return () => { alive = false; };

@@ -68,7 +68,7 @@ export function legacySignalVM(x: any): Sig | null {
 /** Strefy bota tylko z wybranego TF (GET /api/v1/market-zones → timeframes[tf]); v = 1 dla stref wybranych przez silnik. */
 export function zonesVM(resp: any, tf: string): Zone[] | null {
   const T = resp?.timeframes?.[tf];
-  if (!T) return null;
+  if (!T || T.computed === false) return null;
   const vis = new Set<string>(T.visible || []);
   return (T.zones || []).map((z: any) => ({
     ty: z.type, lo: +z.lower, up: +z.upper, st: z.state, t0: ms(z.origin_time) as number, t1: ms(z.invalidated_at ?? z.expired_at),
@@ -214,4 +214,18 @@ export function cardProbsVM(pred: any): Record<string, Prob> {
   const items: any[] = pred?.items || [];
   const find = (re: RegExp) => items.find((p) => re.test(String(p.task || "")) || re.test(String(p.model_key || "")));
   return { win: probVM(find(/NET_R_POSITIVE/), "Legacy ML · P(cel przed SL)"), tp2: probVM(find(/TP2_BEFORE_SL/), "SH tp_model · P(TP2 przed SL)") };
+}
+
+/** K4: komunikat w zakładce STREFY, gdy bot nie ma stref wybranego TF M1–M30 (nie liczone / błąd / brak danych) – stan z API, bez zgadywania.
+ *  Dla TF poza M1–M30 → null (komunikat wzorca). Strefy nieaktualne (odtworzone po restarcie, błąd danych) → ostrzeżenie obok stref. */
+export function zonesMsgVM(resp: any, tf: string): string | null {
+  const T = resp?.timeframes?.[tf];
+  if (!resp) return `Strefy ${tf}: brak odpowiedzi API.`;
+  if (!T) return null;
+  const st = T.status || {};
+  if (T.computed === false) {
+    const why = st.status === "IDLE" || !st.status ? "bot nie liczył stref" : `${st.status_pl || st.status}${st.reason ? " – " + st.reason : ""}`;
+    return `Strefy ${tf}: ${why}. Uruchom w Ustawieniach → Strefy rynkowe (Przelicz / LIVE). Nic nie jest przenoszone z innego interwału.`;
+  }
+  return T.stale ? `Strefy ${tf} nieaktualne (${st.status_pl || st.status || "odtworzone po restarcie"}) – przelicz w Ustawieniach → Strefy rynkowe.` : null;
 }
