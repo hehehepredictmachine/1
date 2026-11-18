@@ -436,7 +436,8 @@ function tick(now){
  /* 3) panele */
  drawPlanets(T,dt);
  drawPanel(panels[0],T.pA);drawPanel(panels[1],T.pB);
- {const on=SUB.p>0;$('#sub-screen').style.opacity=on?(S.reduced?smooth(SUB.p):smooth(seg(cms,SCR.inMs*.72,500))):0;subDraw(on?SUB.pi:-1,cms,dt);}
+ {const on=SUB.p>0,own=!!SCR.own;$('#sub-screen').style.opacity=on&&!own?(S.reduced?smooth(SUB.p):smooth(seg(cms,SCR.inMs*.72,500))):0;subDraw(on&&!own?SUB.pi:-1,cms,dt);
+ for(const k in SCREENS){if(!SCREENS[k].own)continue;const o=SUB.p>0&&+k===SUB.pi;$(SCREENS[k].el).style.opacity=o?1:0;if(o)SCREENS[k].draw(cms,dt);}}
  if(S.phase!=='dive'&&S.phase!=='surface'&&S.prog>=1&&!S.focusDone){S.focusDone=true;}
  quality(dt);
  S.raf=requestAnimationFrame(tick);
@@ -451,6 +452,8 @@ const PLANET_FN=[
 const NAMES=['CHARTS','SIGNALS','MODELS & BACKTEST','ROI'];
 const SCREENS={};[2400,2600,2600,2700].forEach((inMs,i)=>{SCREENS[i]={inMs,outMs:1500,el:'#sub-screen',tick:()=>{},focus:'#sub-screen [data-autofocus]',
  planet:cms=>S.reduced?{move:0,rMul:1,op:1-smooth(SUB.p*2)}:PLANET_FN[i](cms),say:()=>NAMES[i]+'. '+(DATA[i]&&DATA[i].say?DATA[i].say:'')};});
+/* pakiet CHARTS 1:1: ekran z własną implementacją (jak SCREENS[0] we wzorcu REF_B: el, planet, draw, tick, open, close, say) */
+for(const k in (opts.screens||{})){const impl=opts.screens[k];impl.bind&&impl.bind(S,SUB);SCREENS[k]={...impl.screen,own:true};}
 const DATA={};
 const sub2=$('#sub-canvas'),sctx=sub2.getContext('2d');let subSeed=1;
 function srnd(){subSeed=(subSeed*16807)%2147483647;return subSeed/2147483647;}
@@ -503,8 +506,8 @@ function subDraw(i,cms,dt){const {w,h,dpr}=S.view;if(sub2.width!==Math.round(w*d
 }
 function rectOf(sel){const e=$(sel);if(!e)return null;const r=e.getBoundingClientRect();return {l:r.left,t:r.top,w:r.width,h:r.height};}
 function subOpen(i){if(!SCREENS[i])return;if(S.phase!=='forex'&&S.phase!=='dive'){S.pendingSub=i;return;}if(SUB.state==='out'){S.pendingSub=i;return;}if(SUB.state!=='none'&&SUB.pi===i)return;
- if(SUB.state!=='none'){S.pendingSub=i;subClose();return;}SUB.pi=i;SUB.state='in';root.dataset.sub='in';$(SCREENS[i].el).inert=true;opts.onSubState&&opts.onSubState('in',i);wake();}
-function subClose(){if(SUB.state==='in'||SUB.state==='on'){SUB.state='out';root.dataset.sub='out';$(SCREENS[SUB.pi].el).inert=true;opts.onSubState&&opts.onSubState('out',SUB.pi);wake();}}
+ if(SUB.state!=='none'){S.pendingSub=i;subClose();return;}SUB.pi=i;SUB.state='in';root.dataset.sub='in';$(SCREENS[i].el).inert=true;SCREENS[i].open&&SCREENS[i].open();opts.onSubState&&opts.onSubState('in',i);wake();}
+function subClose(){if(SUB.state==='in'||SUB.state==='on'){SUB.state='out';root.dataset.sub='out';$(SCREENS[SUB.pi].el).inert=true;SCREENS[SUB.pi].close&&SCREENS[SUB.pi].close();opts.onSubState&&opts.onSubState('out',SUB.pi);wake();}}
 function quality(dt){if(S.q==='low')return;if(S.frameAvg>28){S.slow=(S.slow||0)+dt;if(S.slow>3){S.q='low';const w=innerWidth,h=innerHeight;S.view={w,h,dpr:1};canvas.width=w;canvas.height=h;resize();}}else S.slow=0;}
 const btn=$('#forex');let suppress=false;
 listen(btn,'pointerdown',e=>{if(S.phase!=='menu'||(e.pointerType==='mouse'&&e.button!==0))return;suppress=false;S.drag={id:e.pointerId,sx:e.clientX,sy:e.clientY,x:e.clientX,y:e.clientY,t:performance.now(),moved:false};S.vel=[0,0];btn.setPointerCapture(e.pointerId);});
@@ -534,7 +537,10 @@ const api={dispose,
  setPanel(i,status,err){const p=panels[i];if(!p)return;if(p.status!==status||p.err!==(err||'')){setStatus(p,status,err);if(S.phase!=='forex'&&S.phase!=='dive')updatePanelText(p);}},
  result(i){const p=panels[i];if(p)triggerResult(p);},
  stale(i,v){const p=panels[i];if(p&&p.stale!==!!v){p.stale=!!v;updatePanelText(p);}},
- openSub:subOpen,closeSub:subClose,surface(){if(SUB.state!=='none'){S.pendingSurface=true;subClose();return;}surface();},
+ openSub:subOpen,closeSub:subClose,
+ /* haki testu 1:1 (jak PMW_PREVIEW._seek / _charts wzorca) – używane wyłącznie przez tryb testowy */
+ testSeek(ph,prog){setPhase(ph);S.prog=prog;wake();},
+ testSub(i,p){SUB.pi=i;SUB.state=p>=1?'on':'in';SUB.p=p;root.dataset.sub=SUB.state;$(SCREENS[i].el).inert=SUB.state!=='on';SCREENS[i].open&&SCREENS[i].open();wake();},surface(){if(SUB.state!=='none'){S.pendingSurface=true;subClose();return;}surface();},
  setScreenData(i,d){DATA[i]=Object.assign(DATA[i]||{},d);},nodeAt(i,x,y){const n=(DATA[i]&&DATA[i].nodes)||[];return (n.find(n=>Math.hypot(n.x-x,n.y-y)<n.r)||{}).id;},
  setReduced(v){S.reduced=!!v;wake();},state:()=>({phase:S.phase,prog:S.prog,sub:SUB.state,subIndex:SUB.pi,frameAvg:S.frameAvg,dpr:S.view.dpr,quality:S.q||'full',panels:panels.map(p=>({name:p.name,status:p.status,lastAt:p.lastAt}))})};
 try{setup();resize();

@@ -3,7 +3,7 @@
 (a) "/" -> #/menu with the cinematic menu; (b) three planet buttons FOREX / CRYPTO / OTC; (c) CRYPTO / OTC -> "in preparation" without any
 write request; (d) #/forex with 4 planets and 2 panels (MODEL A / MODEL B); (e) every planet screen opens [data-testid=forex-*] and closes;
 (f) the four system panels open from the menu and from FOREX, ESC closes, opening sends GET only; (g) every LEGACY_REDIRECTS row.
-WebGL runs on SwiftShader (software) - the test waits on engine states (window.__PMW_TEST__, webdriver only), never on fixed frames."""
+WebGL runs on SwiftShader (software) - the test waits on engine states (window.__PMW_E2E__, webdriver only), never on fixed frames."""
 from __future__ import annotations
 
 import json
@@ -93,7 +93,7 @@ class TestUI142(unittest.TestCase):
     def forex(self, p):
         p.goto(BASE + "/#/forex")
         p.wait_for_selector("[data-testid=page-forex]", timeout=30000)
-        p.wait_for_function("() => window.__PMW_TEST__ && window.__PMW_TEST__.forex && window.__PMW_TEST__.forex.state().phase === 'forex'", timeout=90000)
+        p.wait_for_function("() => window.__PMW_E2E__ && window.__PMW_E2E__.forex && window.__PMW_E2E__.forex.state().phase === 'forex'", timeout=90000)
 
     # (a) (b) (c)
     def test_a_menu_planets_and_modes_in_preparation(self):
@@ -120,11 +120,11 @@ class TestUI142(unittest.TestCase):
         self.assertEqual(p.locator("[data-testid=panel-model-b]").count(), 1)
         for k in ("charts", "signals", "models", "roi"):
             p.click(f"[data-testid=planet-{k}]")
-            p.wait_for_function("() => window.__PMW_TEST__.forex.state().sub === 'on'", timeout=90000)
+            p.wait_for_function("() => window.__PMW_E2E__.forex.state().sub === 'on'", timeout=90000)
             p.wait_for_selector(f"[data-testid=forex-{k}]", timeout=30000)
             self.assertIn(f"s={k}", p.evaluate("location.hash"))
             p.click("[data-testid=forex-back]")
-            p.wait_for_function("() => window.__PMW_TEST__.forex.state().sub === 'none'", timeout=90000)
+            p.wait_for_function("() => window.__PMW_E2E__.forex.state().sub === 'none'", timeout=90000)
             self.assertEqual(p.evaluate("location.hash"), "#/forex")
         self.assertEqual(p.sent, [])                                    # opening screens = GET only
         self.assertEqual(p.errors, [])

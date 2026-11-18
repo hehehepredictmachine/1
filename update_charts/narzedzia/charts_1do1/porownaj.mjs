@@ -55,7 +55,9 @@ for (const s of SC) {
     const fx = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', s.id + '.json')));
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(String(e)));
     await p.goto(APP); await p.waitForTimeout(800); await p.evaluate(() => __pmwRun(15));
-    await p.waitForFunction(() => window.__PMW_TEST__?.charts?.load, null, { timeout: 30000 }); await p.evaluate(() => __pmwRun(15)); await p.waitForTimeout(1000);
+    await p.waitForFunction(() => window.__PMW_TEST__?.charts?.load, null, { timeout: 30000 });
+    await p.evaluate(() => window.__PMW_TEST__.charts.enter?.());   // odpowiednik PMW_PREVIEW._seek('forex',1) + _charts(1) wzorca
+    await p.evaluate(() => __pmwRun(15)); await p.waitForTimeout(1000);
     await p.evaluate(fx => { window.__PMW_TEST__.charts.load(fx); }, fx); await p.evaluate(() => __pmwRun(40)); await p.waitForTimeout(400);
     const mw = path.join(here, 'wzorce', s.id + '.maski.json'); const mWz = fs.existsSync(mw) ? JSON.parse(fs.readFileSync(mw)) : [];
     masks = mWz.concat(await p.evaluate(sel => sel.flatMap(q => [...document.querySelectorAll(q)].map(e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; })), MASKI));

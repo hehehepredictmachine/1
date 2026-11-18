@@ -5,7 +5,7 @@
 //  * film to plik /assets/cinematic/intro.mp4 (CSP), nie data: URI;
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
 //  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO/OTC – ekran „tryb w przygotowaniu”;
-//  * PMW_PREVIEW zastąpiony hakiem window.__PMW_TEST__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.
+//  * PMW_PREVIEW zastąpiony hakiem window.__PMW_E2E__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.
 import { meshFrag, particleFrag, starFrag, starVert, streakFrag, streakVert, vertexShared } from "./menuShaders";
 import { markIntroSeen, saveMotionChoice, testMode } from "./introGate";
 
@@ -276,13 +276,13 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
       gl.getExtension("WEBGL_lose_context")?.loseContext();      // kontekst zwolniony od razu (nasłuchy już odpięte) – bez kumulacji przy wejściach/wyjściach
     }
     buffers = []; programs = []; glShaders = []; gl = null; software = null;
-    if (hook) delete (window as any).__PMW_TEST__?.menu;
+    if (hook) delete (window as any).__PMW_E2E__?.menu;
   }
   // hak testowy – tylko w trybie testów; bez danych rynkowych, bez wpływu na produkcję
   const hook = testMode();
   if (hook) {
-    const w = window as any; w.__PMW_TEST__ = w.__PMW_TEST__ || {};
-    w.__PMW_TEST__.menu = Object.freeze({ getState: () => ({ phase: state.phase, selected: state.selected < 0 ? null : modes[state.selected], reducedMotion: state.reduced,
+    const w = window as any; w.__PMW_E2E__ = w.__PMW_E2E__ || {};
+    w.__PMW_E2E__.menu = Object.freeze({ getState: () => ({ phase: state.phase, selected: state.selected < 0 ? null : modes[state.selected], reducedMotion: state.reduced,
       particleCounts: config.counts, frame: state.frame, frameAvgMs: state.frameAvg, viewport: { ...view }, renderer: software ? "CPU full geometry" : "WebGL", webgl: !!gl, quality: state.quality }),
       choose: (m: Mode) => choose(modes.indexOf(m)), skip: () => enter() });
   }

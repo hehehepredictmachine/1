@@ -1,3 +1,5 @@
+/* CHARTS 1:1 (1.42.5): style aplikacji nie wchodzą do ekranu CHARTS (#charts-screen ma wyłącznie CSS wzorca – charts.css). */
+@scope (html) to (#charts-screen) {
 :root {
   /* theme tokens (defaults = preset "Matrix zielony"); overwritten at runtime by theme.tsx */
   --bg: #020805; --bg-glow: #0b3a20; --grid-line: rgba(43, 255, 136, 0.035);
@@ -951,3 +953,5 @@ pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: 
 .pmw-crash-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .pmw-crash-row button { padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3f66; background: #1b2040; color: #e8ecff; cursor: pointer; }
 .pmw-crash-row button:first-child { background: #2a5bd7; border-color: #2a5bd7; }
+
+}

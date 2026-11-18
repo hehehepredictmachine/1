@@ -14,7 +14,7 @@ import { ExecStatus, SystemIcons } from "../system/SystemBar";
 import type { SysPanel } from "../system/SystemDrawer";
 import { mountForex } from "./engine/forexEngine";
 import { usePoll } from "./data";
-import ChartsScreen from "./screens/ChartsScreen";
+import ChartsScreen, { type ChartsApi } from "./screens/charts/ChartsScreen";
 import SignalsScreen from "./screens/SignalsScreen";
 import ModelsScreen from "./screens/ModelsScreen";
 import RoiScreen from "./screens/RoiScreen";
@@ -25,7 +25,7 @@ const NAMES = ["CHARTS", "SIGNALS", "MODELS & BACKTEST", "ROI"];
 
 export type ScreenProps = { engine: any; active: boolean; onSystem(p: SysPanel): void };
 
-export default function ForexScene({ screen, fromMenu, onSystem }: { screen: ForexScreen | null; fromMenu: boolean; onSystem(p: SysPanel): void }) {
+export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { screen: ForexScreen | null; fromMenu: boolean; onSystem(p: SysPanel): void; testMode?: boolean }) {
   const { s } = useStore();
   const root = useRef<HTMLDivElement>(null);
   const eng = useRef<any>(null);
@@ -34,13 +34,14 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
   const [phase, setPhase] = useState("dive");
   const screenRef = useRef(screen);
   screenRef.current = screen;
-  const prof = usePoll<any>("/api/v1/baskets/settings", 30000);
+  const prof = usePoll<any>(testMode ? null : "/api/v1/baskets/settings", 30000);
+  const charts = useRef<ChartsApi | null>(null);
 
   // ---- silnik (montowany raz)
   useEffect(() => {
     let pose: any = null;
     try { const p = sessionStorage.getItem(POSE_KEY); if (p && fromMenu) pose = JSON.parse(p); sessionStorage.removeItem(POSE_KEY); } catch { /* brak */ }
-    const e = mountForex(root.current!, {
+    const e: any = mountForex(root.current!, {
       fromMenu, startPose: pose, reduced: prefersReducedMotion(),
       onNoWebGL: () => setNoGl(true),
       onPhase: (ph: string) => setPhase(ph),
@@ -49,12 +50,22 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
       onSurfaced: () => navigate("menu"),
       onSubState: (st: string, i: number) => setSub({ state: st, i }),
       escBlocked: () => !!document.querySelector(".sys-layer"),
+      screens: charts.current ? { 0: charts.current } : {},                 // CHARTS 1:1 – ekran z własnym rysowaniem (jak SCREENS[0] wzorca)
     });
     eng.current = e;
     if (fromMenu) history.replaceState(null, "", location.hash.replace(/([?&])from=menu&?/, "$1").replace(/[?&]$/, ""));
     const w = window as any;
-    if (w.navigator?.webdriver) { w.__PMW_TEST__ = w.__PMW_TEST__ || {}; w.__PMW_TEST__.forex = { state: () => e.state(), result: (i: number) => e.result(i) }; }
-    return () => { e.dispose(); eng.current = null; if (w.__PMW_TEST__) delete w.__PMW_TEST__.forex; };
+    if (w.navigator?.webdriver) { w.__PMW_E2E__ = w.__PMW_E2E__ || {}; w.__PMW_E2E__.forex = { state: () => e.state(), result: (i: number) => e.result(i) }; }
+    if (import.meta.env.MODE === "test" && testMode) {   // tryb testowy 1:1 (tylko charts-test.html): jak PMW_PREVIEW._seek / _charts / _chartsLoad wzorca
+      e.testSeek("menu", 0);
+      w.__PMW_TEST__ = w.__PMW_TEST__ || {};
+      w.__PMW_TEST__.charts = {
+        enter: () => { e.testSeek("forex", 1); e.testSub(0, 1); },
+        load: (fx: any) => new Promise<void>((res) => { if (e.state().sub !== "on") { e.testSeek("forex", 1); e.testSub(0, 1); } charts.current?.load(fx); requestAnimationFrame(() => requestAnimationFrame(() => res())); }),
+        state: () => charts.current?.state(),
+      };
+    }
+    return () => { e.dispose(); eng.current = null; if (w.__PMW_E2E__) delete w.__PMW_E2E__.forex; if (import.meta.env.MODE === "test" && w.__PMW_TEST__) delete w.__PMW_TEST__.charts; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- trasa ?s=… -> ekran planety (bez remontu sceny)
@@ -75,6 +86,7 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
   // ---- MODEL A: predykcje
   const lastPred = useRef<number>(0);
   useEffect(() => {
+    if (testMode) return;
     let alive = true;
     const tick = () => apiGet<any>("/api/v1/models/predictions?instrument=XAUUSD").then((r) => {
       if (!alive) return;
@@ -95,6 +107,7 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
   const closedSeq = Object.values(s.barTick || {}).filter((b: any) => b?.closed).map((b: any) => b.seq).join(",");
   useEffect(() => { if (closedSeq) lastBarAt.current = Date.now(); }, [closedSeq]);
   useEffect(() => {
+    if (testMode) return;
     let alive = true;
     const tick = () => {
       if (s.ws !== "OPEN") { eng.current?.setPanel(1, "error", "brak połączenia z silnikiem (WebSocket)"); return; }
@@ -113,9 +126,9 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
 
   const active = prof.data?.active_profile;
   const subI = screen ? FOREX_SCREENS.indexOf(screen) : -1;
-  const Screen = [ChartsScreen, SignalsScreen, ModelsScreen, RoiScreen][subI] || null;
+  const Screen = [null, SignalsScreen, ModelsScreen, RoiScreen][subI] || null;
   const shown = noGl ? subI : sub.state !== "none" ? sub.i : -1;
-  const ShownScreen = [ChartsScreen, SignalsScreen, ModelsScreen, RoiScreen][shown] || Screen;
+  const ShownScreen = [null, SignalsScreen, ModelsScreen, RoiScreen][shown] || Screen;
   return (
     <div className="app-forex" data-state="dive" data-sub="none" ref={root} data-testid="page-forex" data-static={noGl ? "1" : undefined}>
       <canvas id="c" aria-hidden="true" />
@@ -134,6 +147,7 @@ export default function ForexScene({ screen, fromMenu, onSystem }: { screen: For
           onClick={noGl ? () => (subI >= 0 ? navigate("forex") : navigate("menu")) : undefined}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg></button>
       </section>
+      <ChartsScreen register={(a) => { charts.current = a; }} active={subI === 0 || (sub.state !== "none" && sub.i === 0)} testMode={testMode} />
       <canvas id="sub-canvas" aria-hidden="true" />
       <div id="sub-screen" inert data-testid="sub-screen">
         {ShownScreen && <ShownScreen engine={eng.current} active={sub.state === "on" || noGl} onSystem={onSystem} />}
