@@ -42,7 +42,7 @@ export function basketSignalVM(x: any): Sig | null {
   const hit = res === "TP1" ? ["TP1"] : res === "TP2" ? ["TP1", "TP2"] : [];
   return {
     sid: x.strategy_id, src: "BASKET", tf: x.tf, t: ms(x.bar_t) as number, sd: pl.side === "SHORT" ? -1 : 1, e, sl, tp, res, hit,
-    et: ms(x.outcome_at), inv: num(su.invalidation), rg: su.regime?.state ?? su.regime ?? null, ro: typeof x.routed_auto === "boolean" ? x.routed_auto : (typeof su.routed_auto === "boolean" ? su.routed_auto : null),
+    et: ms(x.outcome_at), inv: num(su.invalidation), rg: su.regime?.regime ?? su.regime?.state ?? (typeof su.regime === "string" ? su.regime : null), ro: typeof x.routed_auto === "boolean" ? x.routed_auto : (typeof su.routed_auto === "boolean" ? su.routed_auto : null),
     ev: su.event?.type ?? null, tb: su.target != null ? "STRUKTURA" : "R", to: num(pl.timeout_bars),
   };
 }
@@ -58,7 +58,7 @@ export function legacySignalVM(x: any): Sig | null {
     : st === "TIMEOUT" ? (n ? "TIMEOUT_PO_TP" + n : "TIMEOUT") : st || "—";
   const d = x.detail || {};
   return {
-    sid: x.strategy_id, src: "LEGACY", tf: x.timeframe, t: ms(x.created_at) as number, sd: x.action === "SELL" ? -1 : 1, e, sl,
+    sid: x.strategy_id, src: "LEGACY", tf: x.timeframe, t: ms(x.detail?.source_time ?? x.created_at) as number, sd: x.action === "SELL" ? -1 : 1, e, sl,
     tp: (x.take_profits || []).map(num).filter((v: number | null): v is number => v != null), res, hit, et: ms(x.closed_at),
     inv: num(d.invalidation_level), rg: d.regime ?? null, tb: d.exit_rules ?? null, sc: num(x.setup_score),
     why: d.reason_codes || [], miss: d.missing_confirmations || [], trg: x.trigger ?? null,
@@ -123,3 +123,95 @@ export function chartStatus(s: any): "live" | "loading" | "offline" | "stale" {
   return st === "CONNECTING" || st == null ? "loading" : "offline";
 }
 
+
+/* ---------------- K3: strategie, sygnały, karta planu ---------------- */
+export type Meta = Record<string, any[]>;
+const FX_BK = ["FX_SMC", "FX_SCALP", "FX_HEDGE"];
+const SH_FAM = ["SCALPING", "HEDGING"];
+
+/** Katalog koszyków FX (GET /api/v1/baskets/catalog) → SMETA koszyków (D1 §3.4). Profil FOREX_MT5. */
+export function basketMetaVM(cat: any): Meta {
+  const out: Meta = { FX_SMC: [], FX_SCALP: [], FX_HEDGE: [] };
+  for (const s of cat?.strategies || []) {
+    if (!FX_BK.includes(s.basket_id)) continue;
+    const ps = s.parameter_schema || {};
+    out[s.basket_id].push({
+      id: s.strategy_id, nm: s.name, tf: s.signal_timeframe, ctx: s.context_timeframes || [], fam: s.family_id, grp: s.correlation_group,
+      setup: s.setup_rule ?? null, trig: s.trigger_rule ?? null, cancel: s.cancellation_rule ?? null, exit: s.exit_policy_or_expiry_policy ?? null,
+      plan: s.plan_type, tp_r: Array.isArray(ps.tp_r) ? ps.tp_r : null, need: s.required_inputs || [], kind: s.kind,
+    });
+  }
+  return out;
+}
+
+/** S01–S12 (GET /api/v1/strategy/auto → strategies = registry.describe() + flaga trade, funnel). */
+export function legacyMetaVM(auto: any): any[] {
+  const fn = auto?.funnel || {};
+  return (auto?.strategies || []).map((d: any) => ({
+    id: d.strategy_id, nm: d.name, fam: d.family, tfs: d.setup_tfs || [], val: d.validation_status ?? null, notrade: d.trade === false,
+    funnel: fn[d.strategy_id] || {},
+  }));
+}
+
+/** SH (GET /api/v1/sh/config → instruments[inst][SCALPING|HEDGING]): TP w USD, udziały, BE, SL min–max, horyzont, status instrumentu. */
+export function shMetaVM(cfg: any): any[] {
+  const I = cfg?.instruments || {}, base = I.XAUUSD || {};
+  return SH_FAM.filter((f) => base[f]).map((f) => {
+    const p = base[f];
+    return {
+      id: "SH_" + f, nm: "SH · " + f, tp_usd: p.tp_usd || [], shares: p.shares || [], be: p.be_after ?? null, sl_usd: [p.sl_min_usd, p.sl_max_usd],
+      hz: p.horizon_minutes ?? null, pos_max: p.position_max_minutes ?? null, regimes: p.allow_regimes || [],
+      status: Object.fromEntries(Object.entries(I).map(([k, v]: [string, any]) => [k, v?.status ?? "—"])), counts: {},
+    };
+  });
+}
+
+/** Stany strategii dla instrumentu (D1 §3.3): koszyki – bieżący stan z /api/v1/baskets, `un` = powód z API, gdy profil nie ma danych. */
+/** Instrument sygnału / kontekstu koszyka = nazwa aktywa albo jego symbol brokera MT5. */
+export const sameInstrument = (inst: unknown, asset: string, symbol?: string | null) => inst === asset || (!!symbol && inst === symbol);
+
+export function statesVM(baskets: any, asset: string, symbol?: string | null): Record<string, { st: Record<string, number>; un: string | null }> {
+  const out: Record<string, { st: Record<string, number>; un: string | null }> = {};
+  const key = (o: any) => (o && symbol && o[symbol] != null ? symbol : asset);       // kontekst profilu FOREX_MT5 = symbol brokera (np. XAUUSD-)
+  for (const b of baskets?.baskets || []) {
+    if (!FX_BK.includes(b.basket_id)) continue;
+    const ds = b.data_status || {}, mine = ds[key(ds)];
+    const un = mine ? (mine.state === "READY" ? null : mine.reason || mine.state) : (ds["-"] ? ds["-"].reason || ds["-"].state : `brak kontekstu ${asset} w profilu FOREX_MT5`);
+    for (const s of b.strategies || []) {
+      const cur = (s.states || {})[key(s.states)];
+      out[s.strategy_id] = { st: cur?.state ? { [cur.state]: 1 } : {}, un: s.enabled === false ? "strategia wyłączona" : un };
+    }
+  }
+  return out;
+}
+
+const SH_STATE_PL: Record<string, string> = { READY: "GOTOWY", EXPIRED: "WYGASŁY", INVALIDATED: "UNIEWAŻNIONY", BLOCKED: "ZABLOKOWANY" };
+/** SH (GET /api/v1/sh/signals → levels zapisane z sygnałem od K3, plan z wynikiem cyklu). Bez poziomów w zapisie → brak markera. */
+export function shSignalVM(x: any): Sig | null {
+  const L = x?.levels;
+  if (!L || num(L.entry) == null || num(L.sl) == null) return null;
+  const tg = (L.targets || []).filter((t: any) => num(t?.price) != null);
+  const P = x.plan;
+  const hit: string[] = P?.tp_done || [];
+  const n = hit.length, why = String(P?.close_reason || "");
+  let res: string;
+  if (!P) res = SH_STATE_PL[x.status] || x.status || "—";
+  else if (P.state !== "CLOSED") res = P.state === "REJECTED" || P.state === "ERROR_CLOSED" ? P.state : "OTWARTY";
+  else if (/TP3/.test(why)) res = "TP3";
+  else if (/SL|STOP|BE/.test(why)) res = n ? "SL_PO_TP" + n : "SL";
+  else if (/TIME|MAX|HORIZON/.test(why)) res = n ? "TIMEOUT_PO_TP" + n : "TIMEOUT";
+  else res = n ? "TP" + n : why || "ZAMKNIĘTY";
+  const side = String(L.side || x.side || "");
+  return {
+    sid: "SH_" + x.strategy, src: "SH", tf: "M1", t: ms(x.created_at) as number, sd: /SELL|SHORT/.test(side) ? -1 : 1, e: +L.entry, sl: +L.sl,
+    tp: tg.map((t: any) => +t.price), res, hit, et: ms(P?.closed_at ?? (x.status !== "READY" ? x.updated_at : null)),
+    sh: tg.map((t: any) => num(t.share) ?? 0), rr: num(L.net_rr), be: L.be_after ?? "—", hz: num(L.horizon_minutes),
+  };
+}
+
+/** Szanse w karcie planu (D1 §3.7): win = Legacy ML (NET_R_POSITIVE_S01_S12), tp2 = SH tp_model (TP2_BEFORE_SL_H) z /api/v1/models/predictions. */
+export function cardProbsVM(pred: any): Record<string, Prob> {
+  const items: any[] = pred?.items || [];
+  const find = (re: RegExp) => items.find((p) => re.test(String(p.task || "")) || re.test(String(p.model_key || "")));
+  return { win: probVM(find(/NET_R_POSITIVE/), "Legacy ML · P(cel przed SL)"), tp2: probVM(find(/TP2_BEFORE_SL/), "SH tp_model · P(TP2 przed SL)") };
+}

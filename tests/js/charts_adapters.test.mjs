@@ -1,6 +1,6 @@
 // CHARTS 1:1 – K1: adaptery API → model widoku (D1 §3) na kształtach odpowiedzi z K0 (dane syntetyczne, bez danych rachunku).
 import assert from "node:assert/strict";
-import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, probVM, kronosVM, iprofVM, chartStatus } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
+import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
 
 // /api/v1/candles
 const c = candlesVM({ bars: [
@@ -74,6 +74,49 @@ assert.deepEqual(iprofVM({ indicators: { lines: [{ id: "EMA9" }, { id: "EMA21" }
 assert.deepEqual(iprofVM({ indicators: { lines: [{ id: "EMA20" }, { id: "BB_MID" }], panels: { rsi: { period: 14 }, macd: {} } } }), { ema: [20, null], rsi: 14, sig: "SMA" });
 assert.equal(iprofVM({ indicators: { lines: [], panels: { macd: { signal_ma: "EMA" } } } }).sig, "EMA");
 assert.equal(iprofVM(null), null);
+
+// K3: meta strategii
+const bm = basketMetaVM({ strategies: [{ strategy_id: "FX_SMC_01", name: "Sweep", basket_id: "FX_SMC", signal_timeframe: "M5", context_timeframes: ["M15"], family_id: "f",
+  correlation_group: "G", setup_rule: "s", trigger_rule: "t", cancellation_rule: "c", exit_policy_or_expiry_policy: "x", plan_type: "PositionPlan",
+  parameter_schema: { tp_r: [2, 3] }, required_inputs: ["bid_ask"], kind: "SMC" }, { strategy_id: "CP_SMC_01", basket_id: "CP_SMC" }] });
+assert.deepEqual(bm.FX_SMC[0], { id: "FX_SMC_01", nm: "Sweep", tf: "M5", ctx: ["M15"], fam: "f", grp: "G", setup: "s", trig: "t", cancel: "c", exit: "x",
+  plan: "PositionPlan", tp_r: [2, 3], need: ["bid_ask"], kind: "SMC" });
+assert.equal(bm.FX_SCALP.length, 0); assert.ok(!bm.CP_SMC);
+const lm = legacyMetaVM({ strategies: [{ strategy_id: "S01", name: "TREND_PULLBACK", family: "TREND", setup_tfs: ["M5", "M15"], validation_status: "V", trade: false }], funnel: { S01: { OK: 3 } } });
+assert.deepEqual(lm[0], { id: "S01", nm: "TREND_PULLBACK", fam: "TREND", tfs: ["M5", "M15"], val: "V", notrade: true, funnel: { OK: 3 } });
+const sm = shMetaVM({ instruments: { XAUUSD: { status: "ROBOCZE", SCALPING: { tp_usd: [2.5, 3, 5], shares: [.5, .3, .2], be_after: "TP2", sl_min_usd: 1.5, sl_max_usd: 4,
+  horizon_minutes: 30, position_max_minutes: 90, allow_regimes: ["TREND"] } }, BTC: { status: "NIEZWERYFIKOWANE – x" } } });
+assert.deepEqual([sm.length, sm[0].id, sm[0].be, sm[0].sl_usd, sm[0].status.BTC], [1, "SH_SCALPING", "TP2", [1.5, 4], "NIEZWERYFIKOWANE – x"]);
+// K3: stany – powód niedostępności z API
+const bkr = { baskets: [{ basket_id: "FX_SMC", data_status: { "-": { state: "WAITING_FOR_DATA", reason: "profil jeszcze nie odczytał danych" } },
+  strategies: [{ strategy_id: "FX_SMC_01", enabled: true, states: {} }, { strategy_id: "FX_SMC_02", enabled: false, states: {} }] }] };
+assert.deepEqual(statesVM(bkr, "XAUUSD").FX_SMC_01, { st: {}, un: "profil jeszcze nie odczytał danych" });
+assert.equal(statesVM(bkr, "XAUUSD").FX_SMC_02.un, "strategia wyłączona");
+const bkr2 = { baskets: [{ basket_id: "FX_SMC", data_status: { XAUUSD: { state: "READY" } }, strategies: [{ strategy_id: "FX_SMC_01", states: { XAUUSD: { state: "NO_SETUP" } } }] }] };
+assert.deepEqual(statesVM(bkr2, "XAUUSD").FX_SMC_01, { st: { NO_SETUP: 1 }, un: null });
+const bkr3 = { baskets: [{ basket_id: "FX_SMC", data_status: { "XAUUSD-": { state: "READY" } }, strategies: [{ strategy_id: "FX_SMC_01", states: { "XAUUSD-": { state: "SIGNAL" } } }] }] };
+assert.deepEqual(statesVM(bkr3, "XAUUSD", "XAUUSD-").FX_SMC_01, { st: { SIGNAL: 1 }, un: null });          // kontekst = symbol brokera
+assert.equal(statesVM(bkr3, "BTC", "BTCUSD-").FX_SMC_01.un, "brak kontekstu BTC w profilu FOREX_MT5");
+// K3: sygnał SH z poziomami zapisanymi w sygnale + wynik planu
+const shr = { signal_id: "SH-1", strategy: "SCALPING", instrument: "XAUUSD", status: "READY", created_at: 1795009320, side: "BUY",
+  levels: { side: "BUY", entry: 4050.5, sl: 4049, targets: [{ name: "TP1", price: 4053, share: .5 }, { name: "TP2", price: 4053.5, share: .3 }, { name: "TP3", price: 4055.5, share: .2 }],
+    net_rr: 1.514, be_after: "TP2", horizon_minutes: 30 }, plan: null };
+const sv = shSignalVM(shr);
+assert.deepEqual([sv.sid, sv.src, sv.tf, sv.t, sv.sd, sv.e, sv.sl, sv.tp, sv.sh, sv.rr, sv.be, sv.hz, sv.res, sv.hit],
+  ["SH_SCALPING", "SH", "M1", 1795009320000, 1, 4050.5, 4049, [4053, 4053.5, 4055.5], [.5, .3, .2], 1.514, "TP2", 30, "GOTOWY", []]);
+assert.equal(shSignalVM({ ...shr, levels: null }), null);                       // stary zapis bez poziomów → brak markera
+assert.equal(shSignalVM({ ...shr, plan: { state: "OPEN", tp_done: ["TP1"] } }).res, "OTWARTY");
+assert.equal(shSignalVM({ ...shr, plan: { state: "CLOSED", tp_done: ["TP1", "TP2"], close_reason: "SL", closed_at: 1795010000 } }).res, "SL_PO_TP2");
+assert.equal(shSignalVM({ ...shr, plan: { state: "CLOSED", tp_done: ["TP1", "TP2", "TP3"], close_reason: "TP3" } }).res, "TP3");
+assert.equal(shSignalVM({ ...shr, status: "EXPIRED" }).res, "WYGASŁY");
+// K3: szanse w karcie – tylko skalibrowane prawdopodobieństwo
+const cp = cardProbsVM({ items: [{ task: "NET_R_POSITIVE_S01_S12", unit: "probability", calibration: { status: "CALIBRATED_DEV" }, result: { probability: .58 }, state: "READY", model_name: "champion" }] });
+assert.equal(cp.win.v, .58); assert.deepEqual([cp.tp2.v, cp.tp2.state], [null, "NO_DATA"]);
+assert.equal(cardProbsVM(null).win.state, "NO_DATA");
+// K3: S01–S12 – czas świecy sygnału z detail.source_time; basket – reżim i routing AUTO z zapisu
+assert.equal(legacySignalVM({ ...lg, detail: { ...lg.detail, source_time: "2026-11-13T16:00:00Z" } }).t, Date.parse("2026-11-13T16:00:00Z"));
+const bro = basketSignalVM({ ...bk, setup: { ...bk.setup, regime: { regime: "TREND" }, routed_auto: false } });
+assert.deepEqual([bro.rg, bro.ro], ["TREND", false]);
 
 // status MT5
 assert.equal(chartStatus({ connection: { state: "CONNECTED" } }), "live");

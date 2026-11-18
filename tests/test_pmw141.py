@@ -240,6 +240,7 @@ class TestBasketService(unittest.TestCase):
             for s in sig:                                                                  # 1.42: FX plans are HANDED to the SH path
                 self.assertIn(s["plan"]["execution_status"], ("SIGNAL (bez zlecenia)", "PRZEKAZANY DO ŚCIEŻKI SH (zlecenie wg trybu wykonania, ryzyka i STOP)"))
                 self.assertIsNone(s["plan"]["quantity"])                                    # no capital configured -> no guessed size
+                self.assertIs(s["setup"]["routed_auto"], True)                              # CHARTS K3: AUTO selection publishes only routed rules
             hedge = {k: v["state"] for k, v in svc.hedge_state.items()}
             self.assertTrue(all(v in ("NO_EXPOSURE", "WAITING_FOR_DATA") for v in hedge.values()), hedge)
             with self.assertRaises(ValueError):

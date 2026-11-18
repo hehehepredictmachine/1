@@ -674,7 +674,9 @@ class BasketService:
                    "context_key": c.key, "instrument": c.instrument, "tf": s["signal_timeframe"], "side": plan.get("side") or plan.get("direction"),
                    "created_at": now, "bar_t": F.t[F.i], "status": "ACTIVE", "role": "PRIMARY",
                    "plan": {**plan, "execution": CAT.PROFILES[c.profile]["execution_capability"], "execution_status": self._exec_status(c, plan, st)},
-                   "setup": {**r, "justifications": [x[1]["strategy_id"] for x in ranked[1:]], "regime": c.regime}, "scores": sc}
+                   "setup": {**r, "justifications": [x[1]["strategy_id"] for x in ranked[1:]], "regime": c.regime,
+                             # CHARTS K3: was the rule inside the AUTO regime routing at signal time (MANUAL_SELECT may publish outside it)
+                             "routed_auto": s["correlation_group"] in REGIME_GROUPS.get(c.regime.get("regime"), set())}, "scores": sc}
             if self.ledger.add_signal(sig):
                 n += 1
                 self._publish(sig)

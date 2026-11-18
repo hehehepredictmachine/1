@@ -1,0 +1,32 @@
+// K3: klik w marker wybiera plan, klik w nagłówek karty zwija ją (tryb testowy, zegar wirtualny). Zrzuty → raport/k3/.
+// Użycie: node k3_interakcje.mjs <URL charts-test.html>
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+import { VCLOCK } from './vclock.mjs';
+const here = path.dirname(fileURLToPath(import.meta.url)), OUT = path.join(here, '..', '..', 'raport', 'k3'), APP = process.argv[2];
+fs.mkdirSync(OUT, { recursive: true });
+const fx = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'K2_xau_m5_strategie.json'), 'utf8'));
+const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const ctx = await b.newContext({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 }); await ctx.addInitScript(VCLOCK);
+const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(String(e)));
+await p.goto(APP); await p.waitForTimeout(800); await p.evaluate(() => __pmwRun(15));
+await p.evaluate(() => window.__PMW_TEST__.charts.enter?.()); await p.evaluate(() => __pmwRun(15)); await p.waitForTimeout(800);
+await p.evaluate(f => window.__PMW_TEST__.charts.load(f), fx); await p.evaluate(() => __pmwRun(40));
+const st = () => p.evaluate(() => window.__PMW_TEST__.charts.state());
+const head = () => p.evaluate(() => document.querySelector('#sig-card .side')?.textContent);
+const s0 = await st(), h0 = await head();
+await p.screenshot({ path: path.join(OUT, '1_przed.png') });
+const m = s0.markers.find(x => x.key !== s0.sel);
+if (!m) throw new Error('brak drugiego markera');
+await p.mouse.click(m.x, m.y); await p.evaluate(() => __pmwRun(10));
+const s1 = await st(), h1 = await head();
+await p.screenshot({ path: path.join(OUT, '2_klik_marker.png') });
+await p.click('#sig-card .sh'); await p.evaluate(() => __pmwRun(10));
+const s2 = await st();
+await p.screenshot({ path: path.join(OUT, '3_karta_zwinieta.png') });
+await p.click('#sig-card .sh'); await p.evaluate(() => __pmwRun(10));
+const s3 = await st();
+const r = { markers: s0.markers.length, before: { sel: s0.sel, head: h0 }, clicked: m.key, after: { sel: s1.sel, head: h1 }, collapsed: s2.cardMin, expanded: !s3.cardMin, errs };
+r.ok = s1.sel === m.key && h1 !== h0 && s2.cardMin === true && !s3.cardMin && !errs.length;
+fs.writeFileSync(path.join(OUT, 'wynik.json'), JSON.stringify(r, null, 1)); console.log(JSON.stringify(r, null, 1));
+await b.close(); process.exit(r.ok ? 0 : 1);

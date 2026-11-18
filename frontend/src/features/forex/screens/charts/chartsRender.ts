@@ -14,6 +14,11 @@ const seg=(ms,a,d)=>clamp((ms-a)/d);
 let S={view:{w:1,h:1,dpr:1},reduced:false}, SUB={state:'none',p:0,pi:0};          // podmieniane przez bind() na obiekty silnika
 const announce=t=>{try{env.announce&&env.announce(t);}catch(e){}};
 const VM={status:'loading',probs:null,kronos:null};
+const PROBS0={win:{name:'Legacy ML · P(cel przed SL)',task:'—',v:null,state:'NO_DATA',cal:'NOT_APPLICABLE',src:'brak modelu w API'},tp2:{name:'SH tp_model · P(TP2 przed SL)',task:'—',v:null,state:'NO_DATA',cal:'NOT_APPLICABLE',src:'brak modelu w API'}};
+/* K3: włączniki warstw sygnałów i wybór strategii pamiętane lokalnie (bez zapisu w backendzie); tylko poza trybem testowym */
+const PKEY='pmw.charts.str.v1';let PROD=false;const seenSig=new Set();let lastAnn=0;
+function loadPref(){try{return JSON.parse(localStorage.getItem(PKEY)||'null');}catch(e){return null;}}
+function savePref(){if(!PROD)return;try{const all=Object.keys(SMETA);localStorage.setItem(PKEY,JSON.stringify({L:{strat:L.strat,plan:L.plan,card:L.card,stratLv:L.stratLv},off:all.filter(id=>!STR.on.has(id)),open:STR.open}));}catch(e){}}
 const IPROF_REF={ema:[20,50],rsi:14,sig:'EMA'};   /* wzorzec (fixtures testu 1:1); produkcja: profil silnika z /api/v1/candles */                                // ostatni model widoku z API
 /* ---------- CHARTS — podgląd zgodny z architekturą PMW 1.41.0 (wartości DEMONSTRACYJNE) ----------
    Źródła w aplikacji (do podpięcia przez Claude Code): /api/v1/candles?tf, /api/v1/timeframes, /api/v1/structure, /api/v1/zones/map,
@@ -81,6 +86,7 @@ const CH={iprof:IPROF_REF,cv:$('#chart'),ctx:$('#chart').getContext('2d'),asset:
 const L={ema:true,avwap:true,rsi:true,macd:true,atr:true,sar:false,bb:false,vp:false,vpPoc:true,vpVa:true,vpAuto:false,strat:true,stratLv:'sel',mzHist:false,svpS:true,svpProf:'AUTO',svpBinX:50,svpBinB:2000,svpVa:.7,svpOff:{},vpHvn:true,vpLvn:true,vpTf:null,vpBars:200,vpMode:'AUTO',
  mz:true,fvg:false,ob:false,sd:false,sr:false,liq:false,zmap:false,svp:false,walls:false,structure:true,patterns:false,sessions:false,heat:false,iq:false,ai:false,
  kronos:true,granite:false,plan:true,sigs:true,sigHist:true,card:true,mcTp:true,scalp:false,hedge:false,grid:true,volume:true,labels:true,sync:true,ctype:'candles'};
+const UNAVAIL_PROD={granite:'Granite TTM: linia prognozy nie jest podłączona do API na tym ekranie (stan modelu – PLAN · MODELE / Modele)',mcTp:'Monte Carlo przy TP: wynik PMW-MC-1 nie jest podłączony do API na tym ekranie'};
 const UNAVAIL={bb:'BB na wykresie głównym: tylko w Chart Lab (silnik nie liczy tej linii)',iq:'IQ Gold Gann / IQ Star Lines: brak źródła – wymaga licencji MQL5 i mapowania eksportera',heat:'Heatmapa likwidacji: brak klucza dostawcy (CoinGlass) – nic nie jest symulowane'};
 /* ===================== CHARTS · warstwy bota (strategie z koszyków, strefy z wybranego TF, Session Volume Profile) =====================
    Aplikacja: /api/v1/baskets/signals (FX_SMC, FX_SCALP, FX_HEDGE), /api/v1/bot-signals + /api/v1/setups (S01–S12), /api/v1/sh/signals (SH, TP1–TP3),
@@ -188,20 +194,9 @@ function computeAll(){const d=CH.data,c=d.map(b=>b.c),atr=atrF(d);const e12=ema(
  const dOpen=today.length?today[0].o:lc,dHi=today.length?Math.max(...today.map(b=>b.h)):lc,dLo=today.length?Math.min(...today.map(b=>b.l)):lc,hv=A*Math.sqrt(86400/TFSEC[CH.tf])*.55;
  const pat={range:{i0:Math.max(0,last-46),i1:last-6,lo:Math.min(...d.slice(-46,-6).map(b=>b.l)),hi:Math.max(...d.slice(-46,-6).map(b=>b.h))},label:'formacja: podwójny szczyt (WATCH)',pi:ph.length?ph[ph.length-1].i:last};
  const gr=[];let gp=lc;for(let k=1;k<=10;k++){gp+=Math.sin(k*.7)*A*.12+A*.05;gr.push(gp);}
- const e20=ema(c,20),e50=ema(c,50),long=(e20[last]??0)>=(e50[last]??0),sgn=long?1:-1,si=last-14,en=d[si].c,R1=A*1.35;
- const sigObj={idx:si,side:long?'LONG':'SHORT',strategy:'S07',strategy_name:'failed-breakout reclaim',tf:CH.tf,status:'POTWIERDZONY',execution:'BRAK',source:'STRATEGIA + AI',
-  entry:en,sl:en-sgn*R1,tps:[en+sgn*R1*1.0,en+sgn*R1*1.8,en+sgn*R1*2.8],inv:en-sgn*R1*1.2,rr_net:1.62,rr_gross:1.84,valid_until:d[last].t+TFSEC[CH.tf]*1000*6,
-  ai:{status:'OK',verdict:'ZGODA',explanation:'Retest poziomu po fałszywym wybiciu, wolumen potwierdza, kontekst H1 zgodny.'},block:[]};
- const hist=[];for(const k of [38,71,104,139,176]){const i=last-k;if(i<5)continue;const up=d[i].c>=d[i-3].c;hist.push({idx:i,side:up?'LONG':'SHORT',status:['WYKONANO','WYGASŁY','UNIEWAŻNIONY','WYKONANO','ZABLOKOWANY'][hist.length%5],ai:hist.length%2===0,strategy:['S01','S10','S04','S12','S07'][hist.length%5]});}
- const probs={win:{name:'Legacy ML · P(cel przed SL)',task:'NET_R_POSITIVE_S01_S12',v:.58,state:'READY',cal:'CALIBRATED_DEV',src:'probability_win (champion OOS)'},
-  tp2:{name:'SH tp_model · P(TP2 przed SL)',task:'TP2_BEFORE_SL_H',v:null,state:'NOT_TRAINED',cal:'NOT_APPLICABLE',src:'brak artefaktu na danych klienta'},
-  scB:{name:'Scalp B · P(TP1 przed SL)',task:'Range→Sweep→Retest',v:.61,state:'READY',cal:'CALIBRATED_DEV',src:'LR / HGB'},
-  quant:{name:'Quant · P(zdarzenia)',task:'EVENT_PROBABILITY · ASSIST',v:null,state:'DISABLED',cal:'NOT_APPLICABLE',src:'nieaktywny (wymaga walidacji i włączenia)'},
-  mc:{name:'Monte Carlo PMW-MC-1',task:'P(TP przed SL) w H świecach M1',tp:[.66,.47,.29],state:'READY',cal:'NOT_APPLICABLE',src:'przedział ostrożny–optymistyczny'},
-  dir:{name:'gold_candles · kierunek M5',task:'CANDLE_CLOSE_DIRECTION_H1_M5',p:long?{UP:.44,FLAT:.33,DOWN:.23}:{UP:.24,FLAT:.34,DOWN:.42},state:'READY',cal:'CALIBRATED_DEV',src:'próg ±0,20×ATR'}};
- CH.probs=probs;
+ /* K3: demonstracyjny sygnał S07, historia sygnałów i szanse modeli wzorca usunięte – sygnały i szanse wyłącznie z API (D1 §3.2, §3.7) */
  CH.ind={ema20:ema(c,IP.ema[0]),ema50:IP.ema[1]!=null?ema(c,IP.ema[1]):c.map(()=>null),rsi:rsiF(c,IP.rsi),macd:ml,sig,atr,sar:sarF(d),av,up1,dn1,up2,dn2,fvg,ob,sr,sd,liq:liq.slice(-4),brk:brk.slice(-6),mz,ai,scalp,hedge,zmPrev,zmDev,walls:{o:dOpen,h:dHi,l:dLo,hv},pat,granite:gr};}
-function loadSeries(anim){CH.offset=0;if(CH.data.length)computeAll();else CH.ind=null;if(VM.probs)CH.probs=VM.probs;botIndex();STR.sel=null;pickPlan();if(CH.data.length){const sl=CH.data.slice(-CH.view);CH.yMin=Math.min(...sl.map(c=>c.l));CH.yMax=Math.max(...sl.map(c=>c.h));}if(anim)CH.swap=0;loadKronos();}
+function loadSeries(anim){CH.offset=0;if(CH.data.length)computeAll();else CH.ind=null;CH.probs=VM.probs||PROBS0;botIndex();STR.sel=null;pickPlan();if(CH.data.length){const sl=CH.data.slice(-CH.view);CH.yMin=Math.min(...sl.map(c=>c.l));CH.yMax=Math.max(...sl.map(c=>c.h));}if(anim)CH.swap=0;loadKronos();}
 function loadKronos(){const K=CH.kr,k=VM.kronos;if(!k){K.data=[];K.fc=null;return;}if(k.tf)K.tf=k.tf;if(k.on)K.on={...K.on,...k.on};K.role=k.role;K.emptyTxt=k.emptyTxt;K.data=k.candles||[];K.fc=k.forecast?{...k.forecast,created_at:new Date(k.forecast.created_at)}:null;if(k.state)K.state=k.state;K.anim=0;}
 function setChartStatus(st){CH.status=st;const el=$('#ch-status');el.dataset.s=st;el.querySelector('.t').textContent={live:'MT5 POŁĄCZONY',loading:'ŁADOWANIE',offline:'ROZŁĄCZONO',stale:'DANE NIEAKTUALNE'}[st];}
 function chartsConnect(){++CH.token;setChartStatus(VM.status||'loading');}
@@ -305,7 +300,7 @@ function drawMain(ctx,cms,dt,red){
 }
 function placeCard(R,uiA){const el=$('#sig-card');el.hidden=!(L.card&&CH.sig);if(el.hidden)return;const host=$('.cs-win.main').getBoundingClientRect();el.style.left=(R.l-host.left+10)+'px';el.style.top=(R.t-host.top+6)+'px';el.style.opacity=uiA;
  const G=CH.sig,key=CH.asset+CH.tf+G.key+CH.cardMin;if(el.dataset.key===key)return;el.dataset.key=key;const M=SMETA[G.sid]||{},P=CH.probs,pc=v=>v==null?'—':Math.round(v*100)+'%',R_=Math.abs(G.e-G.sl)||1,pad=n=>String(n).padStart(2,'0');
- const row=(o,v)=>{const ok=o.state==='READY'&&v!=null;return `<div class="pm ${ok?'':'na'}" title="${o.task} · ${o.src}"><span class="nm">${o.name}</span><span class="v">${ok?pc(v):'—'}</span><span class="bar">${ok?`<i style="width:${v*100}%"></i>`:''}</span><span class="st">${ok?(o.cal==='CALIBRATED_DEV'?'SKALIBROWANY · ':'')+'GOTOWY':({NOT_TRAINED:'NIEWYTRENOWANY',DISABLED:'WYŁĄCZONY',STALE:'NIEAKTUALNY',ERROR:'BŁĄD'}[o.state]||o.state)} · ${o.src}</span></div>`;};
+ const row=(o,v)=>{const ok=o.state==='READY'&&v!=null;return `<div class="pm ${ok?'':'na'}" title="${o.task} · ${o.src}"><span class="nm">${o.name}</span><span class="v">${ok?pc(v):'—'}</span><span class="bar">${ok?`<i style="width:${v*100}%"></i>`:''}</span><span class="st">${ok?(o.cal==='CALIBRATED_DEV'?'SKALIBROWANY · ':'')+'GOTOWY':({NOT_TRAINED:'NIEWYTRENOWANY',DISABLED:'WYŁĄCZONY',STALE:'NIEAKTUALNY',ERROR:'BŁĄD',NO_DATA:'BRAK DANYCH'}[o.state]||o.state)} · ${o.src}</span></div>`;};
  const t=new Date(G.t+tzShift()),tl=`${pad(t.getUTCDate())}.${pad(t.getUTCMonth()+1)} ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
  const tps=[0,1,2].map(j=>G.tp[j]!=null?`<span>TP${j+1}</span><span>${fmtP(G.tp[j])}</span><span>${(Math.abs(G.tp[j]-G.e)/R_).toFixed(2)} R${G.hit.includes('TP'+(j+1))?' · ✓ osiągnięty':''}${G.sh?` · ${Math.round(G.sh[j]*100)}% poz.`:''}</span>`:`<span>TP3</span><span>—</span><span>brak w kontrakcie strategii</span>`).join('');
  const why=G.src==='BASKET'?`<div class="sec"><span>REGUŁA KOSZYKA</span><span>${M.fam||''}</span></div><div class="ai"><b>Setup:</b> ${M.setup||'—'}<br><b>Trigger:</b> ${M.trig||'—'}<br><b>Anulowanie:</b> ${M.cancel||'—'}<br><b>Wyjście:</b> ${M.exit||'—'}</div>
@@ -316,7 +311,7 @@ function placeCard(R,uiA){const el=$('#sig-card');el.hidden=!(L.card&&CH.sig);if
  <div class="sb"><div class="lv"><span>SYGNAŁ</span><span>${tl}</span><span>${(BK_INFO[G.bk]||[''])[0]}</span><span>WEJŚCIE</span><span>${fmtP(G.e)}</span><span>close świecy potwierdzającej</span><span>SL</span><span>${fmtP(G.sl)}</span><span>ryzyko ${fmtP(R_)}</span>${tps}${G.inv!=null?`<span>UNIEWAŻN.</span><span>${fmtP(G.inv)}</span><span></span>`:''}</div>
  ${why}
  <div class="sec"><span>SZANSE MODELI</span><span>UNIT = PROBABILITY</span></div>${row(P.win,P.win.v)}${row(P.tp2,P.tp2.v)}
- <div class="note">Sygnał i plan policzone kodem bota 1.41.0 na świecach podglądu. Wynik „${resPL(G.res)}” to przebieg na tych świecach (świeca z SL i TP liczona jako SL), nie walidacja skuteczności. Szanse modeli – DEMO.</div></div>`;
+ <div class="note">${CH.testTexts?CH.testTexts.cardNote:`Sygnał i plan z API bota. Wynik „${resPL(G.res)}” według cyklu życia sygnału w bocie. Szanse modeli: ${[P.win,P.tp2].map(o=>o.v!=null?`${o.src} (${o.cal})`:`${o.name.split(' · ')[0]} – ${({NOT_TRAINED:'niewytrenowany',DISABLED:'wyłączony',STALE:'nieaktualny',ERROR:'błąd',NO_DATA:'brak w API'}[o.state]||(o.state==='READY'?'niekalibrowany':o.state))}`).join('; ')}.`}</div></div>`;
  const h=el.querySelector('.sh');const tg=()=>{CH.cardMin=!CH.cardMin;el.dataset.key='';};h.addEventListener('click',tg);h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg();}});}
 /* ----- rysowanie: wykres Kronos ----- */
 function drawKronos(ctx,cms,dt,red){const R0=rectOf('#kr-plot');if(R0.w<40)return;const K=CH.kr,uiA=red?smooth(SUB.p*2-1):smooth(seg(cms,1950,450));
@@ -379,9 +374,9 @@ function buildChartUI(){
  const kp=$('#kr-plot');kp.addEventListener('pointermove',e=>{CH.khover={x:e.clientX,y:e.clientY};});kp.addEventListener('pointerleave',()=>{CH.khover=null;});
  $$('#ctl-chart [data-cs]').forEach(b=>b.addEventListener('click',()=>{CH.token++;setChartStatus(b.dataset.cs);}));
 }
-const SW=(k,label,hint,extra)=>{const un=UNAVAIL[k],dis=un||extra?.dis;return `<li class="${dis?'dis':''}" title="${(un||extra?.why||hint||'').replace(/"/g,'&quot;')}"><span>${label}${un?'<small>NIEDOSTĘPNE</small>':extra?.note?`<small>${extra.note}</small>`:''}</span><button type="button" class="sw" data-l="${k}" aria-pressed="${!!L[k]&&!dis}" ${dis?'disabled':''} aria-label="${label}"></button></li>`;};
+const SW=(k,label,hint,extra)=>{const un=UNAVAIL[k]||(PROD?UNAVAIL_PROD[k]:null),dis=un||extra?.dis;return `<li class="${dis?'dis':''}" title="${(un||extra?.why||hint||'').replace(/"/g,'&quot;')}"><span>${label}${un?'<small>NIEDOSTĘPNE</small>':extra?.note?`<small>${extra.note}</small>`:''}</span><button type="button" class="sw" data-l="${k}" aria-pressed="${!!L[k]&&!dis}" ${dis?'disabled':''} aria-label="${label}"></button></li>`;};
 const SEG=(k,opts)=>`<span class="seg">${opts.map(([v,l])=>`<button type="button" data-seg="${k}" data-v="${v}" aria-pressed="${String(k==='krMode'?CH.kr.mode:L[k])===String(v)}">${l}</button>`).join('')}</span>`;
-function renderOpts(){const tab=$('#opt-tabs [aria-selected="true"]').dataset.t,avOk=['M1','M5'].includes(CH.tf),K=CH.kr;let h='';
+function renderOpts(){savePref();const tab=$('#opt-tabs [aria-selected="true"]').dataset.t,avOk=['M1','M5'].includes(CH.tf),K=CH.kr;let h='';
  if(tab==='ind')h=`<ul>${SW('ema','EMA silnika','linie EMA z profilu M02I dla tego interwału')}${SW('avwap','AVWAP sesji ±1σ / ±2σ','PMW-IND-1',{dis:!avOk,why:'AVWAP tylko na M1 / M5 (config.indicators.avwap_tfs)',note:avOk?'':'TYLKO M1 / M5'})}${SW('rsi','RSI','okno pod wykresem')}${SW('macd','MACD','okno pod wykresem')}${SW('atr','ATR 14 – odczyt','wartość w pasku odczytu')}${SW('sar','Parabolic SAR','MQ_SAR_WILDER_PROFILE_V1')}${SW('bb','Bollinger Bands','')}${SW('iq','IQ Gold Gann / Star Lines','')}${SW('ai','Poziomy AI','oznaczone „AI:”, osobno od planu silnika')}</ul>`;
  else if(tab==='strat'){const cnt={},tp={},sl={};for(const s of CH.bsig||[]){cnt[s.sid]=(cnt[s.sid]||0)+1;if(s.hit.length)tp[s.sid]=(tp[s.sid]||0)+1;if(s.res.startsWith('SL'))sl[s.sid]=(sl[s.sid]||0)+1;}
   const rowS=m=>{const un=stratAvail(m.id),tf=m.tf||(m.tfs?m.tfs.join('/'):m.id.startsWith('SH_')?'M1':''),onTf=m.bk==='SH'?TFSEC[CH.tf]<=900:m.tf?m.tf===CH.tf:(m.tfs||[]).includes(CH.tf),n=cnt[m.id]||0,on=STR.on.has(m.id)&&!un;
@@ -389,7 +384,7 @@ function renderOpts(){const tab=$('#opt-tabs [aria-selected="true"]').dataset.t,
    return `<li class="${un?'dis':''}"><span><i class="sdot" style="background:rgb(${BK_COL[m.bk]})"></i>${m.id.replace('FX_','')} · ${m.nm}<small>${tf}${m.notrade?' · BEZ HANDLU':''}</small><em>${info}</em></span>${!un&&!onTf&&m.tf?`<button type="button" class="mini" data-gotf="${m.tf}">→ ${m.tf}</button>`:''}<button type="button" class="sw" data-sid="${m.id}" aria-pressed="${on}" ${un?'disabled':''} aria-label="${m.id}"></button></li>`;};
   h=`<ul>${SW('strat','Sygnały strategii bota','markery ▲▼ przy świecy sygnału; kliknij marker, aby pokazać jego plan')}${SW('plan','Poziomy planu: wejście · SL · TP1–TP3','')}${SW('card','Karta planu','')}</ul><div class="row"><label>Poziomy</label>${SEG('stratLv',[['last','OSTATNI'],['sel','WYBRANY'],['all','WSZYSTKIE']])}</div>`+
    BK_ORDER.map(bk=>{const ms=BOTDATA.meta[bk],allOn=ms.every(m=>STR.on.has(m.id)||stratAvail(m.id)),n=ms.reduce((a,m)=>a+(cnt[m.id]||0),0);return `<div class="bk"><div class="bkh"><button type="button" class="bkt" data-bk="${bk}" aria-expanded="${!!STR.open[bk]}"><i class="sdot" style="background:rgb(${BK_COL[bk]})"></i>${BK_INFO[bk][0]}<small>${BK_INFO[bk][1]} · ${ms.length} strategii · ${n} sygn. na ${CH.tf}</small></button><button type="button" class="sw" data-bkall="${bk}" aria-pressed="${allOn}" aria-label="Cały koszyk ${bk}"></button></div>${STR.open[bk]?`<ul>${ms.map(m=>rowS({...m,bk})).join('')}</ul>`:''}</div>`;}).join('')+
-   `<div class="note">Sygnały, SL i TP policzone kodem bota 1.41.0 (baskets/rules.py, strategies/registry.py, sh/replay.scan) na świecach podglądu – DEMO. Każda strategia pokazuje sygnały tylko na swoim TF sygnału. Koszyki FX_SMC / FX_SCALP i S01–S12 mają TP1–TP2 (TP3 nie istnieje w ich kontrakcie planu); TP1–TP3 ma silnik SH. Wynik TP/SL to przebieg na tych świecach, nie walidacja.</div>`;}
+   `<div class="note">${CH.testTexts?'Sygnały, SL i TP policzone kodem bota 1.41.0 (baskets/rules.py, strategies/registry.py, sh/replay.scan) na świecach podglądu – DEMO. Każda strategia pokazuje sygnały tylko na swoim TF sygnału. Koszyki FX_SMC / FX_SCALP i S01–S12 mają TP1–TP2 (TP3 nie istnieje w ich kontrakcie planu); TP1–TP3 ma silnik SH. Wynik TP/SL to przebieg na tych świecach, nie walidacja.':'Sygnały, SL i TP z API bota (koszyki FX, S01–S12, silnik SH). Każda strategia pokazuje sygnały tylko na swoim TF sygnału. Koszyki FX_SMC / FX_SCALP i S01–S12 mają TP1–TP2 (TP3 nie istnieje w ich kontrakcie planu); TP1–TP3 ma silnik SH. Wynik według cyklu życia sygnału w bocie – nie walidacja skuteczności.'}</div>`;}
  else if(tab==='zones'){const Z=CH.bzones,cn={};(Z||[]).forEach(z=>{const k=(ZT[z.ty]||['mz'])[0];if(z.st!=='INVALIDATED'&&z.st!=='EXPIRED')cn[k]=(cn[k]||0)+1;});const nz=k=>Z?`${cn[k]||0} żywych · ${CH.tf}`:'';
   h=`${Z?'':`<div class="note warn">Bot wyznacza strefy rynkowe tylko na M1, M5, M15 i M30. Na ${CH.tf} nie ma stref – nic nie jest przenoszone z innego interwału.</div>`}<ul>${SW('mz',`Strefy wybrane przez silnik · ${CH.tf}`,'zones/market.py – najlepsze żywe strefy tego TF',{dis:!Z,note:Z?(Z.filter(z=>z.v).length+' WIDOCZNYCH'):'BRAK NA TYM TF'})}${SW('fvg','FVG','',{dis:!Z,note:nz('fvg')})}${SW('ob','Order blocks','',{dis:!Z,note:nz('ob')})}${SW('sd','Popyt / podaż','',{dis:!Z,note:nz('sd')})}${SW('sr','Wsparcie / opór','',{dis:!Z,note:nz('sr')})}${SW('liq','Płynność EQH / EQL','hipoteza z OHLC',{dis:!Z,note:nz('liq')})}${SW('mzHist','Historia: unieważnione / wygasłe','',{dis:!Z})}
   ${SW('structure','BOS / CHoCH','struktura na wybranym TF')}${SW('zmap','POC / VAH / VAL poprzedniej sesji','z Session Volume Profile')}${SW('walls','Walls dzienne / Daily','HV_PROXY lub IV z importu; daily open / high / low')}${SW('patterns','Zakres / formacje','')}${SW('sessions','Boksy sesji','okna sesji profilu SVP (strefy IANA, czas letni)')}${SW('heat','Heatmapa likwidacji','')}</ul>
@@ -441,7 +436,10 @@ const api={
  setSymbol(a,sym){if(ASSETS[a]&&sym)ASSETS[a].sym=sym;},
  setQuote(q){if(CH.frozen||!q)return;$('#ch-quote').innerHTML=q.bid!=null?`BID <b>${fmtP(q.bid)}</b> ASK <b>${fmtP(q.ask)}</b> SPREAD <b>${fmtP(q.spread)}</b>`:'BRAK KWOTOWAŃ';},
  setStatus(st){if(!CH.frozen){const s2=CH.data.length||st==='offline'?st:'loading';VM.status=s2;setChartStatus(s2);}},
- setVM(vm,{keepView=true}={}){if(CH.frozen)return;const view=CH.view,off=CH.offset,sel=STR.sel;applyVM(vm);loadSeries(false);if(keepView){CH.view=view;CH.offset=Math.min(off,Math.max(0,CH.data.length-CH.view));STR.sel=sel;pickPlan();}
+ setVM(vm,{keepView=true}={}){if(CH.frozen)return;const view=CH.view,off=CH.offset,sel=STR.sel;const first=!PROD&&!!vm.meta;applyVM(vm);
+  if(first){PROD=true;const P=loadPref()||{};if(P.L)Object.assign(L,P.L);if(P.open)STR.open={...STR.open,...P.open};const off=new Set(P.off||[]);STR.on=new Set(Object.keys(SMETA).filter(id=>!off.has(id)));}
+  {const A=CH.asset,k=x=>A+'|'+x.sid+'|'+x.t,fresh=(vm.signals||[]).filter(x=>!seenSig.has(k(x)));const boot=!seenSig.has(A);seenSig.add(A);fresh.forEach(x=>seenSig.add(k(x)));const nw=fresh[fresh.length-1],now=Date.now();
+   if(!boot&&nw&&now-lastAnn>=5000){lastAnn=now;announce(`Nowy sygnał ${nw.sid} ${nw.sd>0?'LONG':'SHORT'} ${nw.tf}`);}}loadSeries(false);if(keepView){CH.view=view;CH.offset=Math.min(off,Math.max(0,CH.data.length-CH.view));STR.sel=sel;pickPlan();}
   const sc=$('#sig-card');if(sc)sc.dataset.key='';svpRecalc();renderOpts();setChartStatus(VM.status);},
  /** tryb testowy 1:1 – odpowiednik PMW_PREVIEW._chartsLoad wzorca; fixture przez ten sam model widoku */
  load(fx){CH.token++;CH.asset=fx.asset;CH.tf=fx.tf;CH.tz=fx.tz;CH.serverOff=fx.serverOff;
@@ -460,7 +458,8 @@ const api={
   if(t===last.t){Object.assign(last,{o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,closed:b.closed});}else{last.closed=true;d.push({...b});if(CH.offset>0)CH.offset++;}CH.flash=1;},
  setKronos(k){if(CH.frozen)return;VM.kronos=k;loadKronos();},
  sel:()=>({asset:CH.asset,tf:CH.tf,kr:CH.kr.tf}),
- state:()=>({asset:CH.asset,tf:CH.tf,candles:CH.data.length,status:CH.status,sel:CH.sig?CH.sig.key:null}),
+ state:()=>({asset:CH.asset,tf:CH.tf,candles:CH.data.length,status:CH.status,sel:CH.sig?CH.sig.key:null,cardMin:!!CH.cardMin,
+  markers:(CH.bsig||[]).filter(sigVisible).filter(s=>s._mx!=null).map(s=>({key:s.key,x:s._mx,y:s._my}))}),
  dispose(){CH.token++;listeners.length=0;}};
 return api;
 }

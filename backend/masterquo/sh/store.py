@@ -59,17 +59,32 @@ class SHStore:
         self.db = db
 
     # signals -------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def signal_levels(s: dict) -> dict | None:
+        """Plan levels of a READY setup as the signal record keeps them (CHARTS K3): entry, SL, targets in contract order with their shares,
+        net RR, BE rule and horizon. None when the setup has no complete plan (never filled in)."""
+        tps = [t for t in (s.get("tps") or []) if isinstance(t, dict) and t.get("price") is not None]
+        if s.get("status") != "READY" or s.get("entry_ref") is None or s.get("sl") is None or not tps:
+            return None
+        be = s.get("be")
+        return {"side": s.get("side"), "entry": s["entry_ref"], "sl": s["sl"], "invalidation": s.get("invalidation"),
+                "targets": [{"name": t.get("name"), "price": t["price"], "share": t.get("share")} for t in tps],
+                "net_rr": s.get("net_rr"), "be_after": be.get("after") if isinstance(be, dict) else None,
+                "horizon_minutes": s.get("horizon_minutes"), "position_max_minutes": s.get("position_max_minutes")}
+
     def save_signal(self, s: dict, *, risk: dict | None = None, coordination: dict | None = None, now: float | None = None) -> None:
         now = time.time() if now is None else now
+        lv = self.signal_levels(s)
         self.db.execute("""INSERT INTO sh_signals(signal_id, strategy, instrument, symbol, side, status, status_reason, created_at, updated_at,
-                           valid_until, config_hash, payload, risk, coordination, strategy_id, signal_tf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           valid_until, config_hash, payload, risk, coordination, strategy_id, signal_tf, levels) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                            ON CONFLICT(signal_id) DO UPDATE SET status=excluded.status, status_reason=excluded.status_reason,
                            updated_at=excluded.updated_at, payload=excluded.payload, risk=COALESCE(excluded.risk, sh_signals.risk),
-                           coordination=COALESCE(excluded.coordination, sh_signals.coordination)""",
+                           coordination=COALESCE(excluded.coordination, sh_signals.coordination),
+                           levels=COALESCE(sh_signals.levels, excluded.levels)""",
                         (s["signal_id"], s["strategy"], s["instrument"], s["symbol"], s.get("side"), s["status"], s.get("status_reason"),
                          s.get("created_at", now), now, s.get("valid_until"), s.get("config_hash"), dumps(s),
                          dumps(risk) if risk else None, dumps(coordination) if coordination else None, s.get("strategy_id"),
-                         (s.get("pack") or {}).get("signal_tf")))
+                         (s.get("pack") or {}).get("signal_tf"), dumps(lv) if lv else None))
 
     def expire_signals(self, now: float) -> int:
         return self.db.execute("""UPDATE sh_signals SET status='EXPIRED', status_reason='TTL minął przed wykonaniem', updated_at=?
@@ -99,6 +114,35 @@ class SHStore:
             q += " AND symbol=?"
             args.append(symbol)
         return self.db.query(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit))
+
+    def signals_with_levels(self, rows: list[dict]) -> list[dict]:
+        """CHARTS K3: list rows + stored levels and the outcome of the plan made from the signal (state, TP legs done, close time, R).
+        Levels / outcome absent in the record -> null (old rows, signals without a plan)."""
+        ids = [r["signal_id"] for r in rows]
+        if not ids:
+            return rows
+        qm = ",".join("?" * len(ids))
+        lv = {r["signal_id"]: r["levels"] for r in self.db.query(f"SELECT signal_id, levels FROM sh_signals WHERE signal_id IN ({qm})", ids)}
+        pl = {r["signal_id"]: r for r in self.db.query(f"SELECT signal_id, plan_id, state, fsm, result, closed_at FROM sh_plans WHERE signal_id IN ({qm})", ids)}
+        out = []
+        for r in rows:
+            o = {**r, "levels": json.loads(lv[r["signal_id"]]) if lv.get(r["signal_id"]) else None, "plan": None}
+            p = pl.get(r["signal_id"])
+            if p:
+                hit, end = [], None
+                try:
+                    obj = fsm_load(json.loads(p["fsm"])) if p.get("fsm") else None
+                    pos = obj.primary if isinstance(obj, Basket) else obj
+                    if pos is not None:
+                        hit = [lg.name for lg in pos.legs if lg.status == "DONE"]
+                        end = pos.realized[-1].get("leg") if pos.state == "CLOSED" and pos.realized else None
+                except (ValueError, KeyError, TypeError):
+                    pass
+                res = json.loads(p["result"]) if p.get("result") else None
+                o["plan"] = {"plan_id": p["plan_id"], "state": p["state"], "tp_done": hit, "close_reason": end, "closed_at": p["closed_at"],
+                             "r_multiple": (res or {}).get("r_multiple")}
+            out.append(o)
+        return out
 
     def signal(self, signal_id: str) -> dict | None:
         r = self.db.one("SELECT * FROM sh_signals WHERE signal_id=?", (signal_id,))

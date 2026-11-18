@@ -1106,7 +1106,8 @@ def create_app(rt, port: int) -> FastAPI:
         """SH signal history; 1.38 filters: strategy (family), strategy_id (PMW_.. or LEGACY_SCALPING / LEGACY_HEDGING), tf, symbol."""
         if strategy is not None and strategy not in ("SCALPING", "HEDGING"):
             raise HTTPException(400, "BAD_STRATEGY")
-        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit, strategy_id=_sh_vid(strategy_id), tf=_sh_tf(tf), symbol=symbol)}
+        rows = rt.sh.store.recent_signals(strategy, 0.0, limit, strategy_id=_sh_vid(strategy_id), tf=_sh_tf(tf), symbol=symbol)
+        return {"items": rt.sh.store.signals_with_levels(rows)}
 
     @app.get("/api/v1/sh/strategies")
     def sh_strategies():
