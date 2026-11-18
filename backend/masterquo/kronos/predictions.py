@@ -20,7 +20,7 @@ from ..modelhub import contract as C
 
 
 def model_name() -> str:
-    """Name of the PINNED (currently loaded) checkpoint - 1.37: Kronos-base. History rows keep their own revision / name."""
+    """Name of the PINNED (currently loaded) checkpoint - 1.42.8: Kronos-small. History rows keep their own revision / name."""
     from kronos_runtime import lock as LK
     return LK.MODEL_NAME
 

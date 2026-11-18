@@ -787,7 +787,7 @@ class TsfmService:
                 "retired": {k: {"name": NAMES.get(k, k), "status": "RETIRED", "status_pl": RETIRED_PL, "history_count": self._count(k),
                                 "settings": (s.retired.get(k) or {}).get("settings")} for k in RETIRED},
                 "settings_history": self.settings.history(20),
-                "memory_note": "pomiar procesów modeli: panel Zasoby (Memory Governor); Granite TTM ok. 0,35 GB, Chronos-2 ok. 1 GB, Kronos-base ok. 1,1 GB"}
+                "memory_note": "pomiar procesów modeli: panel Zasoby (Memory Governor); Granite TTM ok. 0,35 GB, Chronos-2 ok. 1 GB, Kronos-small ok. 0,5 GB"}
 
     def _count(self, mid: str) -> int:
         try:

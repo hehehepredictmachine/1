@@ -2045,7 +2045,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..modelhub import adapters as _AD
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
-    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-base since 1.37, SHADOW)
+    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small since 1.42.8; Kronos-base 1.37-1.42.7)
     _KR_TF = ("M1", "M5", "M15", "M30", "H1")
 
     def _kr_tf(tf: str) -> str:
@@ -2198,7 +2198,7 @@ def create_app(rt, port: int) -> FastAPI:
         return {**rt.tsfm.public(), "settings": rt.tsfm.settings.get().model_dump(mode="json"),
                 "kronos": {"name": _KL.MODEL_NAME, "repo": _KL.MODEL["repo"], "revision": _KL.MODEL["revision"], "params_upstream": _KL.MODEL["params_upstream"],
                            "status": kr.state.get("status"), "reason": kr.state.get("reason"), "load": kr.load_info, "legacy": list(_KL.LEGACY),
-                           "largest_public_note": "Kronos-large (499,2M) wg autorów nie jest publicznie dostępny – używany jest największy publiczny Kronos-base"},
+                           "largest_public_note": "1.42.8: używany Kronos-small (24,7M, ok. 0,5 GB RAM) – prognoza dostępna także przy małej ilości wolnej pamięci; Kronos-base (102,3M) – historia 1.37–1.42.7"},
                 "data_kind": rt.tsfm.data_kind()[0], "data_source": rt.tsfm.data_kind()[1]}
 
     @app.get("/api/v1/models/foundation/forecast")

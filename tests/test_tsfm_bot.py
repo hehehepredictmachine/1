@@ -86,9 +86,9 @@ class TestCoordinatorRegressionRoles(unittest.TestCase):
         self.assertEqual(r, ["MODEL_REQUIRED_STALE:tsfm:chronos2"])
 
     def test_no_required_is_observe_even_if_listed(self):
-        row = {"family": "kronos:Kronos-base@M5", "state": "READY", "use": "SHADOW", "no_required": True, "task_type": "REGRESSION",
+        row = {"family": "kronos:Kronos-small@M5", "state": "READY", "use": "SHADOW", "no_required": True, "task_type": "REGRESSION",
                "result": {"direction": "DOWN"}, "data_time": 990.0}
-        m, r = self.ev([row], required=["kronos:Kronos-base@M5"])
+        m, r = self.ev([row], required=["kronos:Kronos-small@M5"])
         self.assertEqual((m[0]["role"], r), ("OBSERVE", []))                   # Kronos keeps its own SH condition - never a second gate
 
 
@@ -363,16 +363,21 @@ class TestService(unittest.TestCase):
 
 
 class TestKronosMigration(unittest.TestCase):
-    def test_largest_public_variant_pinned(self):
+    def test_small_variant_pinned(self):
+        """1.42.8 (decyzja użytkownika): Kronos-small (24,7M, ~0,47 GB) zamiast Kronos-base (102,3M, 1.37–1.42.7 – historia)."""
         from kronos_runtime import lock as LK
-        self.assertEqual((LK.MODEL["repo"], LK.MODEL_NAME, LK.MODEL["params_measured"]), ("NeoQuasar/Kronos-base", "Kronos-base", 102310592))
+        self.assertEqual((LK.MODEL["repo"], LK.MODEL_NAME, LK.MODEL["params_measured"], LK.MODEL["revision"]),
+                         ("NeoQuasar/Kronos-small", "Kronos-small", 24741376, "901c26c1332695a2a8f243eb2f37243a37bea320"))
+        self.assertEqual(LK.MODEL["sha256"]["model.safetensors"], "b082dfcbd8e8c142a725c8bbb99781802f38fec81210e13479effb32b3c3e020")
+        self.assertEqual([c["name"] for c in LK.LEGACY], ["Kronos-base"])
         self.assertEqual(LK.TOKENIZER["repo"], "NeoQuasar/Kronos-Tokenizer-base")
         self.assertEqual(LK.MAX_CONTEXT, 512)
-        self.assertEqual(LK.name_of(None, "901c26c1332695a2a8f243eb2f37243a37bea320"), "Kronos-small")     # history stays Small
+        self.assertEqual(LK.name_of(None, "901c26c1332695a2a8f243eb2f37243a37bea320"), "Kronos-small")
+        self.assertEqual(LK.name_of(None, "2b554741eca47781b64468546e77fef3e85130e6"), "Kronos-base")       # history 1.37-1.42.7 stays Base
         self.assertEqual(LK.name_of("NeoQuasar/Kronos-base"), "Kronos-base")
         self.assertEqual(LK.REFERENCE_DATA_MODEL, "NeoQuasar/Kronos-small")
 
-    def test_old_small_approval_is_stale_for_base(self):
+    def test_old_base_approval_is_stale_for_small(self):
         from masterquo.kronos import validation as KV
         from kronos_runtime import lock as LK
         old = {"model_revision": LK.LEGACY[0]["revision"], "tokenizer_revision": LK.TOKENIZER["revision"]}

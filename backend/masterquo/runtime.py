@@ -169,7 +169,7 @@ class Runtime:
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
-        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-base (1.37): SHADOW, own .venv_kronos process
+        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-small (1.42.8; Kronos-base 1.37-1.42.7), own .venv_kronos process
         from .trainhub.inference import TrainhubInference
         from .trainhub.jobs import TrainingCenter
         self.trainhub = TrainingCenter(self.cfg, self.bridge, bus=self.bus, log=self.log)         # 1.28: Centrum treningu (kolejka, proces obok)
@@ -235,7 +235,7 @@ class Runtime:
         self.kronos.governor = self.governor
         self.governor.register("bot", "bot", lambda: _os.getpid())
         k = self.kronos
-        self.governor.register("kronos", "heavy", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
+        self.governor.register("kronos", "light", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
                                release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
         tb = self.quant.tabicl                                          # 1.41 TabICLv2 worker (heavy slot, idle release)
         self.quant.tabicl.governor = self.governor

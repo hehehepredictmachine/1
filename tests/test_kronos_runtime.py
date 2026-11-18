@@ -133,7 +133,7 @@ class TestKronosRuntime(unittest.TestCase):
                 self.assertEqual(cm.exception.code, "CONFIG")
             st = eng.selftest(reference=True)
             self.assertTrue(st["smoke"]["ok"])
-            # 1.37: the upstream regression files belong to Kronos-small; with Kronos-base pinned they are NOT_APPLICABLE
+            # the upstream regression files belong to Kronos-small (pinned again since 1.42.8); random-weight fixture -> any status
             self.assertIn(st["reference"]["status"], ("PASS", "DIFF_WITHIN_FLOAT_NOISE", "DIFF", "NOT_APPLICABLE"))
             self.assertEqual(st["parity"]["status"], "PASS")                 # bot path == direct official KronosPredictor call
         self.assertIs(socket.socket.connect, real_connect)
@@ -263,13 +263,13 @@ class TestOfficialWeights(unittest.TestCase):
         self.assertTrue(M.verify(wd)["ok"])
         eng = E.Engine()
         info = eng.load(wd, device="CPU", threads=2)
-        self.assertEqual(info["params_model"], 102310592)                      # Kronos-base: 102.3 M (upstream model zoo) - 1.37
-        self.assertEqual(info["model_name"], "Kronos-base")
+        self.assertEqual(info["params_model"], 24741376)                       # Kronos-small: 24.7 M (upstream model zoo) - 1.42.8
+        self.assertEqual(info["model_name"], "Kronos-small")
         st = eng.selftest(reference=True)
         print("\n[official] " + json.dumps({k: st[k] for k in ("parity", "reference")}))
         self.assertTrue(st["smoke"]["ok"])
         self.assertEqual(st["parity"]["status"], "PASS")
-        self.assertEqual(st["reference"]["status"], "NOT_APPLICABLE")       # authors' files are for Kronos-small
+        self.assertEqual(st["reference"]["status"], "PASS")                 # 1.42.8: the authors' regression files are for Kronos-small
 
 
 if __name__ == "__main__":

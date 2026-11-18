@@ -98,7 +98,7 @@ _OVR: dict[str, dict] = {
                          "tfs": ["M5", "M15"], "env": ".venv_granite", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
                          "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; "
                                   "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)"},
-    "kronos:Kronos-base": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
+    "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
                             "tfs": ["M1", "M5", "M15", "H1"], "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
                             "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera"},
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},

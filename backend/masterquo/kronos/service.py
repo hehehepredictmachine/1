@@ -172,6 +172,8 @@ class KronosService:
         from kronos_runtime import manifest as M
         ms = M.summary(self.weights_dir())
         if not ms["installed"]:
+            if self._auto_migrate(py):
+                return False
             self._set_state("NO_WEIGHTS", ms["reason"], "NO_WEIGHTS")
             return False
         self._set_state("STARTING", STATUS_PL["STARTING"])
@@ -294,7 +296,9 @@ class KronosService:
         if not env["python_found"]:
             self._set_state("NOT_INSTALLED", STATUS_PL["NOT_INSTALLED"], "NOT_INSTALLED")
         elif not env["weights_installed"]:
-            self._set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
+            py = find_python(s)
+            if not (py and self._auto_migrate(py)):                            # 1.42.8: Kronos-base -> Kronos-small (jednorazowe pobranie)
+                self._set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
         elif self.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING", "STARTING"):
             self._set_state("STARTING", "model zainstalowany – proces uruchomi się przy pierwszej prognozie")
         conn = (self.bridge.connection_status() or {}).get("state") == "CONNECTED"
@@ -702,6 +706,31 @@ class KronosService:
 
         threading.Thread(target=run, name=f"kronos-{name}", daemon=True).start()
         return {"ok": True, "job": name}
+
+    def _auto_migrate(self, py: str) -> bool:
+        """1.42.8 (decyzja użytkownika: Kronos-small): istniejąca instalacja z wagami poprzedniego modelu (Kronos-base, lock.LEGACY) w folderze
+        wag -> jednorazowe pobranie przypiętej pary Kronos-small + tokenizer (ok. 115 MB, te same sprawdzenia sum co instalator), bez ręcznego
+        33_KRONOS_INSTALUJ.bat. Nowa instalacja (brak poprzednich wag) – bez automatu, jak dotąd. Stare wagi zostają na dysku."""
+        from kronos_runtime import lock as LK
+        wd = self.weights_dir()
+        legacy = any((wd / LK.component_dir_name(c)).exists() for c in LK.LEGACY if c.get("revision"))
+        job = self.jobs.get("migrate")
+        if not legacy or (job and job.get("state") in ("RUNNING", "FAILED")):
+            if job and job.get("state") == "RUNNING":
+                self._set_state("INSTALLING", f"pobieram {LK.MODEL_NAME} (zmiana modelu z Kronos-base, ok. 115 MB)", "MIGRATING")
+                return True
+            return False
+        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_TELEMETRY="1")
+
+        def done(ok, job):
+            self.retry_at = 0.0
+            self.backoff = 30.0
+            self.applog.info("KRONOS", "MIGRATE", f"Zmiana modelu na {LK.MODEL_NAME}: {'OK – wagi pobrane i sprawdzone' if ok else 'BŁĄD ' + str(job.get('code')) + ' – uruchom 33_KRONOS_INSTALUJ.bat'}.")
+        r = self._run_job_proc("migrate", [py, "-m", "kronos_runtime.install", "download", "--weights-dir", str(wd)], env=env, on_done=done)
+        if r.get("ok"):
+            self.applog.info("KRONOS", "MIGRATE", f"Zmiana modelu Kronos-base → {LK.MODEL_NAME}: pobieram przypięte wagi (ok. 115 MB).")
+            self._set_state("INSTALLING", f"pobieram {LK.MODEL_NAME} (zmiana modelu z Kronos-base, ok. 115 MB)", "MIGRATING")
+        return bool(r.get("ok"))
 
     def start_install(self, cuda: str | None = None) -> dict:
         argv = [sys.executable, str(paths.ROOT_DIR / "tools" / "kronos_setup.py"), "--root", str(paths.ROOT_DIR), "--weights-dir", str(self.weights_dir())]

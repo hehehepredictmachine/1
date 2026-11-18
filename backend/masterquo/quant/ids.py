@@ -12,7 +12,7 @@ Known alias groups found in the 1.33/1.34 code (docs/quant/INVENTORY.md lists al
   returns None for them; the trainhub inference produces the prediction) -> canonical `trainhub:TH_*`;
 * family SEQ_GRU_EVENT, SH row mm_event_engine and MM artifact event_engine_dir3 are ONE model -> `mm:event_engine_dir3`;
 * SH row gold_forecast and the panel keys gold_candles_5m/15m/30m are one model with three horizons -> `forecast:gold_candles`;
-* SH row kronos and model_name Kronos-base -> `kronos:Kronos-base` (1.37; historical Kronos-small rows -> `kronos:Kronos-small`);
+* SH row kronos and model_name Kronos-small -> `kronos:Kronos-small` (1.42.8; historical Kronos-base rows 1.37-1.42.7 -> `kronos:Kronos-base`);
 * SH rows chronos2 / granite_ttm and model_name Chronos-2 / Granite TTM -> `tsfm:chronos2` / `tsfm:granite_ttm` (1.37, 1.40);
   `tsfm:fincast` stays as a HISTORY id (FinCast retired in 1.40 - old records keep it, it is never given to Granite TTM);
 * SH row th_direction is a GROUP (all active trainhub packages), SH rows lab / si_move are GROUPS of several families.
@@ -41,8 +41,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "mm:multi_indicator": ("mm_multi_indicator", "multi_indicator"),
     "mm:smc_fvg": ("mm_smc_fvg", "smc_fvg"),
     "forecast:gold_candles": ("gold_forecast", "gold_candles", "gold_candles_5m", "gold_candles_15m", "gold_candles_30m"),
-    "kronos:Kronos-base": ("kronos", "Kronos-base", "KRONOS_BASE"),
-    "kronos:Kronos-small": ("Kronos-small", "KRONOS_SMALL"),          # history only (used until 1.36.0)
+    "kronos:Kronos-small": ("kronos", "Kronos-small", "KRONOS_SMALL"),    # 1.42.8: current checkpoint again (also until 1.36.0)
+    "kronos:Kronos-base": ("Kronos-base", "KRONOS_BASE"),            # history only (used 1.37-1.42.7)
     "tsfm:chronos2": ("chronos2", "Chronos-2", "CHRONOS2"),
     "tsfm:granite_ttm": ("granite_ttm", "Granite TTM", "GRANITE_TTM"),
     "tsfm:fincast": ("fincast", "FinCast", "FINCAST"),               # history only (1.37-1.39, retired in 1.40)

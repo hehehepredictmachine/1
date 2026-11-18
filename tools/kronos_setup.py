@@ -247,7 +247,7 @@ def main(argv=None) -> int:
         return result(out, 3, False, "PIP", error=f"instalacja pakietów nie powiodła się: {last[-300:]}")
     env = dict(os.environ, PYTHONPATH=str(root / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_TELEMETRY="1")
     # 4. weights
-    out.say(4, "pobieram oficjalne wagi NeoQuasar/Kronos-base (największy publicznie dostępny wariant) i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy")
+    out.say(4, "pobieram oficjalne wagi NeoQuasar/Kronos-small (1.42.8: mniej pamięci – ok. 0,5 GB RAM) i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy")
     rc, last = run([str(vpy), "-m", "kronos_runtime.install", "download", "--weights-dir", a.weights_dir], out, 4, env)
     if rc != 0:
         code, msg = child_error(last)

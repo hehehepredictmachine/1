@@ -123,3 +123,7 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
   jeśli nie są potrzebne.
 * Bez cofania wersji: strategie „tylko sygnały” (S11, S12) i przełączniki handlu per strategia – Ustawienia → AUTO / ACTIVE;
   polityka AI – Ustawienia → Agent Claude (`VETO` / `REQUIRED`); Telegram – Centrum sterowania → MT5 i połączenia (wyłącz).
+
+## 1.42.8 → 1.42.7 (Kronos-small → Kronos-base)
+Wagi Kronos-base zostają w folderze wag (`NeoQuasar__Kronos-base@2b55…`). Po powrocie do 1.42.7 uruchom `33_KRONOS_INSTALUJ.bat` z folderu 1.42.7 –
+instalator 1.42.7 pobierze i sprawdzi parę Kronos-base (ok. 420 MB) i zapisze jej manifest.

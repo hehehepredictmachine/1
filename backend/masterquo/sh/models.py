@@ -99,7 +99,7 @@ REGISTRY: list[dict] = [
     {"id": "th_direction", "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)", "kind": "TRAINED",
      "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)", "group": "TH_DIRECTION",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "trainhub"},
-    {"id": "kronos", "name": "Kronos-base (NeoQuasar, przetrenowany, 102M) – prognoza świec OHLC", "kind": "TRAINED",
+    {"id": "kronos", "name": "Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC", "kind": "TRAINED",
      "output": "ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)", "group": "KRONOS_PRICE_PATH",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",

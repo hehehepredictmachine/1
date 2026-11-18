@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.42.8 – Kronos-small (prognoza na wykresie także przy małej ilości wolnej pamięci)
+* **Kronos przełączony na `NeoQuasar/Kronos-small`** (24,7M parametrów; rewizja `901c26c`, `model.safetensors` sha256 `b082dfcb…`) z tym samym
+  tokenizerem `Kronos-Tokenizer-base`, kontekst 512. Szczyt pamięci procesu **ok. 0,47 GB** (Kronos-base 1,07 GB). Sprawdzone na oficjalnych
+  wagach: parity z oficjalnym `KronosPredictor` **PASS**, dane referencyjne autorów (pliki regresji dla Kronos-small) **PASS**.
+* **Aktualizacja bez ręcznej instalacji:** jeśli Kronos był zainstalowany (wagi Kronos-base na dysku), bot przy starcie sam pobiera przypiętą
+  parę Kronos-small (ok. 115 MB, te same sprawdzenia sum ze źródłem co instalator) i ładuje model; stare wagi zostają w folderze do ręcznego
+  usunięcia. Nowa instalacja – jak dotąd `33_KRONOS_INSTALUJ.bat` (pobiera już Kronos-small).
+* **Memory Governor:** Kronos-small jest modelem lekkim (jak Granite TTM) – nie czeka na gniazdo ciężkich modeli, nie jest zwalniany jako ciężki,
+  a w roli ASSIST liczy (i startuje) także przy RAM komputera ≥ progu pauzy; w roli OBSERVE wstrzymywany jak inne opcjonalne prognozy.
+* Historia: prognozy z lat 1.37–1.42.7 zachowują nazwę Kronos-base (`kronos:Kronos-base`); identyfikator bieżący `kronos:Kronos-small`.
+
 ## 1.42.7 – nowa animacja startowa 3D
 * **Nowa animacja startowa 3D** (pakiet `PMW_PAKIET_INTRO_3D`) zamiast filmu: w galaktyce z ciemności wyłaniają się trzy postacie w garniturach,
   środkowa w czerwonej kominiarce; idą w stronę widza i zatrzymują się w połowie drogi; pojawiają się planety FOREX, CRYPTO, OTC; środkowa

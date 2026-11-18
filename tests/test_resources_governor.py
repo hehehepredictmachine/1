@@ -89,6 +89,22 @@ class TestGovernor(unittest.TestCase):
         st["used"] = 70.0
         self.assertTrue(g.admit("chronos2", loaded=False, essential=True)[0])        # below the pause -> normal rules
 
+    def test_kronos_small_is_light(self):
+        """1.42.8: Kronos-small (~0,47 GB) to model lekki – nie zajmuje gniazda ciężkich, przy ASSIST startuje także przy RAM >= progu pauzy;
+        w roli OBSERVE nadal wstrzymywany."""
+        from masterquo.resources import governor as GV
+        self.assertIn("kronos", GV.LIGHT)
+        self.assertNotIn("kronos", GV.HEAVY)
+        g, st = gov(used=90.0)
+        self.assertTrue(g.admit("kronos", loaded=False, essential=True)[0])
+        self.assertFalse(g.admit("kronos", loaded=False)[0])
+        st["used"] = 82.0                                                            # LIMIT_HEAVY: light model still starts
+        self.assertTrue(g.admit("kronos", loaded=False)[0])
+        with g.heavy("chronos2") as a:
+            with g.heavy("kronos") as b:                                             # does not wait for the heavy slot
+                self.assertTrue(a and b)
+        self.assertEqual(g.threads_for("kronos"), g.profile()["threads_heavy"])     # keeps the faster thread count
+
     def test_one_heavy_slot_shared_by_services(self):
         g, _ = gov()
         active, peak = [0], [0]
@@ -103,7 +119,7 @@ class TestGovernor(unittest.TestCase):
                 time.sleep(0.05)
                 with lock:
                     active[0] -= 1
-        ths = [threading.Thread(target=work, args=(m,)) for m in ("kronos", "chronos2", "kronos", "chronos2")]
+        ths = [threading.Thread(target=work, args=(m,)) for m in ("tirex2", "chronos2", "tirex2", "chronos2")]
         for t in ths:
             t.start()
         for t in ths:
@@ -111,7 +127,7 @@ class TestGovernor(unittest.TestCase):
         self.assertEqual(peak[0], 1)                                            # never two heavy models at once (parallelism 1)
         self.assertGreater(g.counters["heavy_waits"], 0)
         with g.heavy("granite_ttm") as got:                                     # light model does not take the slot
-            with g.heavy("kronos") as got2:
+            with g.heavy("chronos2") as got2:
                 self.assertTrue(got and got2)
 
     def test_idle_release_only_under_pressure_or_eco(self):

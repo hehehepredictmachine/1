@@ -4,7 +4,7 @@ gold_candles (forecast/ForecastService, SHADOW): one prediction per horizon (5/1
 the neutral band, timeframe M5; states mapped from the service status (NO_MODEL -> NOT_TRAINED, CONTRACT_MISMATCH / MODEL_FROM_FUTURE
 -> INCOMPATIBLE, DISABLED / NO_CANDLE_ENV / SYMBOL_SPEC -> DISABLED, STALE_DATA / NO_DATA / WARMUP / FORECAST_UNAVAILABLE -> ERROR).
 Only a SHADOW status with probabilities is READY. The service's own calibration is not asserted here (status UNCALIBRATED unless the
-report says otherwise). Kronos (kronos/predictions.py; 1.37: Kronos-base): REGRESSION of the close after H bars in price units, SHADOW. Other models (SH tp-model, scalp, legacy ML, lab, PMW-MM) publish task-specific payloads through their own
+report says otherwise). Kronos (kronos/predictions.py; 1.42.8: Kronos-small): REGRESSION of the close after H bars in price units, SHADOW. Other models (SH tp-model, scalp, legacy ML, lab, PMW-MM) publish task-specific payloads through their own
 panels; their state is in the catalog (catalog.py) - they are not re-labelled as something they are not.
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ def all_predictions(rt, inst: str) -> list[dict]:
     if kr is not None:
         try:
             from ..kronos import predictions as KP
-            out += KP.contract_predictions(kr, inst)                   # Kronos-base: REGRESSION in price units (SHADOW)
+            out += KP.contract_predictions(kr, inst)                   # Kronos-small: REGRESSION in price units
         except Exception as exc:  # noqa: BLE001 - an adapter failure is an ERROR prediction, never silence or a value
             out.append(C.make(instrument=inst, symbol=None, timeframe="M5", model_name=KP.model_name(), model_version=None, task_type="REGRESSION",
                               task="KRONOS_CLOSE_PATH_H1_M5", horizon_bars=1, unit="price", state="ERROR",

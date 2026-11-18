@@ -33,8 +33,9 @@ from .. import sysres
 LEVELS = ("OK", "WARN", "LIMIT_HEAVY", "PAUSE_OPTIONAL")
 LEVEL_PL = {"OK": "pamięć w normie", "WARN": "wysokie użycie RAM – ostrzeżenie", "LIMIT_HEAVY": "ograniczenie: brak nowych ciężkich modeli",
             "PAUSE_OPTIONAL": "awaryjne wstrzymanie opcjonalnych prognoz AI"}
-HEAVY = ("kronos", "chronos2", "tirex2", "tabicl", "sdformerflow")   # >= ~0.6-1 GB per process (measured on CPU, float32; TiRex-2 1.06 GB, TabICL 0.66 GB)
-LIGHT = ("granite_ttm",)                 # ~0.35 GB per process
+HEAVY = ("chronos2", "tirex2", "tabicl", "sdformerflow")   # >= ~0.6-1 GB per process (measured on CPU, float32; TiRex-2 1.06 GB, TabICL 0.66 GB)
+LIGHT = ("granite_ttm", "kronos")        # ~0.35 GB Granite TTM; 1.42.8 Kronos-small ~0.47 GB peak (was Kronos-base 1.07 GB -> HEAVY)
+LIGHT_THREADS = ("granite_ttm",)         # Kronos keeps the heavy thread count (faster forecast, still one small process)
 PROFILE_KEYS = ("warn_pct", "limit_heavy_pct", "pause_optional_pct", "reserve_os_mb", "budget_preferred_mb", "budget_max_mb",
                 "heavy_parallelism", "idle_release_s", "release_on_pressure", "threads_heavy", "threads_light", "lazy_loading", "dedup",
                 "forecast_cache", "background_training", "auto_download", "cpu_fallback", "monitoring", "auto_throttle",
@@ -59,7 +60,7 @@ def profiles() -> dict[str, dict]:
         # run - the others are released before it loads, a heavy model is released 90 s after its last use); SDformerFlow training off.
         "LOW_MEMORY_8GB": {**low, "warn_pct": 85.0, "limit_heavy_pct": 90.0, "pause_optional_pct": 94.0, "reserve_os_mb": 1536,
                            "budget_preferred_mb": 2560, "budget_max_mb": 3328, "idle_release_s": 90, "threads_heavy": max(1, min(2, c // 2)),
-                           "threads_light": 1, "heavy_allowed": ["tirex2", "tabicl", "kronos", "chronos2"], "max_resident_heavy": 1},
+                           "threads_light": 1, "heavy_allowed": ["tirex2", "tabicl", "chronos2"], "max_resident_heavy": 1},
         # 12 GB computer - PMW gets ~4-5 GB: Granite TTM + TWO heavy models resident, idle heavy released after 5 min.
         "LOW_MEMORY_12GB": {**low, "warn_pct": 82.0, "limit_heavy_pct": 87.0, "pause_optional_pct": 93.0, "reserve_os_mb": 2560,
                             "budget_preferred_mb": 3584, "budget_max_mb": 5120, "idle_release_s": 300, "threads_heavy": max(1, min(3, c // 2)),
@@ -193,7 +194,7 @@ class Governor:
 
     def threads_for(self, mid: str) -> int:
         p = self.profile()
-        return int(p["threads_light"] if mid in LIGHT else p["threads_heavy"])
+        return int(p["threads_light"] if mid in LIGHT_THREADS else p["threads_heavy"])
 
     # ------------------------------------------------------------------ registration
     def register(self, name: str, kind: str, pid, release=None, idle=None) -> None:
@@ -263,7 +264,7 @@ class Governor:
         if optional and lv == "PAUSE_OPTIONAL" and essential:
             if self._release_idle_heavy(except_model=model, min_idle_s=30.0, why=f"RAM ≥ {p['pause_optional_pct']:.0f} % – pamięć dla {model} (ASSIST)"):
                 lv = self.level()
-        if optional and lv == "PAUSE_OPTIONAL" and not (essential and loaded):
+        if optional and lv == "PAUSE_OPTIONAL" and not (essential and (loaded or model in LIGHT)):   # 1.42.8: a light ASSIST model (Kronos-small) also starts
             return self._refuse(model, f"RAM komputera ≥ {p['pause_optional_pct']:.0f} % – opcjonalne prognozy AI wstrzymane (Memory Governor)"
                                 + (" – model ASSIST nie jest ładowany, dopóki zajętość RAM nie spadnie" if essential else ""))
         allowed = p.get("heavy_allowed")
