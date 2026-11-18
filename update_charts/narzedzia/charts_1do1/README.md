@@ -36,3 +36,11 @@ Wzór działania: `PMW_PREVIEW._chartsLoad` w REF_B.
 - REF_B jako „aplikacja” przez `__PMW_TEST__`: 0–0,02 % (OK 8/8);
 - REF_B z tytułem większym o 0,5 px: nagłówek 3,7 % → BŁĄD 8/8;
 - REF_B z kartą planu i zakładkami o 1 px większymi: BŁĄD 7/8 w obszarach karta / zakładki / opcje.
+
+## Zegar wirtualny (1.42.5, decyzja użytkownika: szum = 0 %)
+`vclock.mjs` jest wstrzykiwany do każdej strony testu (wzorce `--tylko-wzorce` i aplikacja `--app`): `performance.now`, `Date.now`
+i znacznik klatki `requestAnimationFrame` stoją i przesuwają się tylko przez `window.__pmwRun(n)` (n klatek × 100 ms), `Math.random` ma ziarno.
+Kroki scenariusza: strona → 15 klatek → (wzorzec: przejście do CHARTS / aplikacja: hak testowy) → 15 klatek → `load(fixture)` → 40 klatek → zrzut.
+Wzorzec i aplikacja przechodzą tę samą sekwencję. `__szum.png` to niezależny drugi przebieg (inne opóźnienia rzeczywiste).
+Wynik w tym środowisku: szum 0 % w 8/8 scenariuszach (wcześniej 0–0,026 % – pulsowanie znaczników, dobieganie skali osi, tło WebGL).
+Wymaganie dla aplikacji: animacje CHARTS liczone z `performance.now()` / znacznika klatki (jak we wzorcu), bez własnych zegarów.

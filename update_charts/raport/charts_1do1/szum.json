@@ -11,7 +11,7 @@
  },
  {
   "scenariusz": "K2_xau_m5_strategie",
-  "ekran_proc": 0.001,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -21,7 +21,7 @@
  },
  {
   "scenariusz": "K3_xau_m5_svp",
-  "ekran_proc": 0.026,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -31,7 +31,7 @@
  },
  {
   "scenariusz": "K4_xau_h1_strefy",
-  "ekran_proc": 0.018,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -41,7 +41,7 @@
  },
  {
   "scenariusz": "K5_xau_m15_plan",
-  "ekran_proc": 0.006,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -51,7 +51,7 @@
  },
  {
   "scenariusz": "K6_xau_m15_strefy",
-  "ekran_proc": 0.008,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -61,7 +61,7 @@
  },
  {
   "scenariusz": "K7_btc_m15_strategie",
-  "ekran_proc": 0.001,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,
@@ -71,7 +71,7 @@
  },
  {
   "scenariusz": "K8_xau_m5_karta_zwinieta",
-  "ekran_proc": 0.026,
+  "ekran_proc": 0,
   "obszary_proc": {},
   "progi": {
    "ekran_proc": 0.1,

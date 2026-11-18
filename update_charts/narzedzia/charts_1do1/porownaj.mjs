@@ -6,6 +6,7 @@
 // Wynik: raport/charts_1do1/<scenariusz>__app.png, __roznica.png, wynik.json; kod wyjścia 1 przy przekroczeniu progu.
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { VCLOCK } from './vclock.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = k => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
 const APP = arg('--app'), SZUM = process.argv.includes('--szum');
@@ -21,6 +22,7 @@ const OBSZARY = { naglowek: '#ch-head', wykres_glowny: '#charts-screen .cs-win.m
 const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 const browser = await chromium.launch({ args: ARGS });
 const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1, timezoneId: 'Europe/Warsaw', locale: 'pl-PL', reducedMotion: 'no-preference' });
+await ctx.addInitScript(VCLOCK);                 // 1.42.5: aplikacja na tym samym zegarze wirtualnym co wzorce
 const b64 = f => 'data:image/png;base64,' + fs.readFileSync(f).toString('base64');
 async function diff(aPng, bPng, masks, outPng, regions) {
   const p = await ctx.newPage(); await p.setContent('<canvas id=c></canvas>');
@@ -52,8 +54,9 @@ for (const s of SC) {
   else {
     const fx = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', s.id + '.json')));
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(String(e)));
-    await p.goto(APP); await p.waitForFunction(() => window.__PMW_TEST__?.charts?.load, null, { timeout: 30000 });
-    await p.evaluate(fx => window.__PMW_TEST__.charts.load(fx), fx); await p.waitForTimeout(3000);
+    await p.goto(APP); await p.waitForTimeout(800); await p.evaluate(() => __pmwRun(15));
+    await p.waitForFunction(() => window.__PMW_TEST__?.charts?.load, null, { timeout: 30000 }); await p.evaluate(() => __pmwRun(15)); await p.waitForTimeout(1000);
+    await p.evaluate(fx => { window.__PMW_TEST__.charts.load(fx); }, fx); await p.evaluate(() => __pmwRun(40)); await p.waitForTimeout(400);
     const mw = path.join(here, 'wzorce', s.id + '.maski.json'); const mWz = fs.existsSync(mw) ? JSON.parse(fs.readFileSync(mw)) : [];
     masks = mWz.concat(await p.evaluate(sel => sel.flatMap(q => [...document.querySelectorAll(q)].map(e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; })), MASKI));
     regions = await p.evaluate(O => Object.fromEntries(Object.entries(O).map(([k, q]) => { const e = document.querySelector(q); if (!e || e.hidden) return [k, null]; const r = e.getBoundingClientRect(); return [k, r.width > 2 ? { l: r.left, t: r.top, r: r.right, b: r.bottom } : null]; }).filter(x => x[1])), OBSZARY);
