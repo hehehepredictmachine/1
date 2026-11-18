@@ -2173,7 +2173,7 @@ def create_app(rt, port: int) -> FastAPI:
     def resources_profile(body: dict = Body(...)):
         from ..resources.governor import PROFILE_KEYS
         prof = str(body.get("profile") or "")
-        if prof not in ("LOW_MEMORY_16GB", "LOW_MEMORY_8GB", "ECO", "BALANCED", "MANUAL"):
+        if prof not in ("LOW_MEMORY_16GB", "LOW_MEMORY_12GB", "LOW_MEMORY_8GB", "AUTO", "ECO", "BALANCED", "MANUAL"):
             raise HTTPException(400, "PROFILE_UNKNOWN")
         manual = body.get("manual") or {}
         if not isinstance(manual, dict) or any(k not in PROFILE_KEYS for k in manual):

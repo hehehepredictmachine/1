@@ -34,10 +34,10 @@ class Store:
         return self.cfg
 
 
-def gov(used=50.0, rss=None, profile="LOW_MEMORY_16GB", manual=None):
+def gov(used=50.0, rss=None, profile="LOW_MEMORY_16GB", manual=None, total_mb=16384):
     from masterquo.resources.governor import Governor
     state = {"used": used, "rss": rss or {}}
-    g = Governor(Store(Cfg(profile, manual)), memory=lambda: {"total_mb": 16384, "used_pct": state["used"], "process_mb": 300.0},
+    g = Governor(Store(Cfg(profile, manual)), memory=lambda: {"total_mb": total_mb, "used_pct": state["used"], "process_mb": 300.0},
                  proc_mem=lambda pid: (state["rss"].get(pid), state["rss"].get(pid)))
     return g, state
 
@@ -126,12 +126,12 @@ class TestGovernor(unittest.TestCase):
         self.assertFalse(g.admit_training("kronos_train", "heavy", trading_active=False)[0])
 
     def test_low_memory_8gb_profile(self):
-        """1.42.1: 8 GB computer - only Granite TTM + ONE heavy model (TiRex-2 / TabICLv2) resident; Kronos / Chronos-2 never loaded."""
+        """8 GB computer - Granite TTM + ONE heavy model resident; every model may run, the others are released before it loads."""
         g, st = gov(used=70.0, profile="LOW_MEMORY_8GB")
         p = g.profile()
-        self.assertEqual((p["budget_max_mb"], p["max_resident_heavy"], p["idle_release_s"], p["threads_light"]), (3072, 1, 90, 1))
-        self.assertFalse(g.admit("kronos", loaded=False)[0])
-        self.assertFalse(g.admit("chronos2", loaded=True)[0])
+        self.assertEqual((p["budget_max_mb"], p["max_resident_heavy"], p["idle_release_s"], p["threads_light"]), (3328, 1, 90, 1))
+        self.assertTrue(g.admit("kronos", loaded=False)[0])
+        self.assertFalse(g.admit("sdformerflow", loaded=False)[0])                    # not in heavy_allowed
         self.assertTrue(g.admit("granite_ttm", loaded=False)[0])                      # light model
         released = []
         alive = {"tabicl": 11}
@@ -147,10 +147,30 @@ class TestGovernor(unittest.TestCase):
         st["used"] = 95.0
         self.assertFalse(g.admit("granite_ttm", loaded=True)[0])
 
+    def test_12gb_and_auto_by_ram(self):
+        """1.42.4: 12 GB profile keeps TWO heavy models; AUTO / 16GB / BALANCED are lowered to the computer's RAM, ECO / MANUAL / explicit kept."""
+        g, st = gov(used=60.0, profile="LOW_MEMORY_12GB", total_mb=12 * 1024)
+        self.assertEqual((g.profile()["max_resident_heavy"], g.profile()["budget_max_mb"]), (2, 5120))
+        released = []
+        alive = {"kronos": 1, "chronos2": 2}
+        for n in ("kronos", "chronos2", "tirex2"):
+            g.register(n, "heavy", (lambda n=n: alive.get(n)), release=(lambda n=n: (released.append(n), alive.pop(n, None))), idle=lambda: 10)
+        self.assertTrue(g.admit("tirex2", loaded=False)[0])
+        self.assertEqual(len(released), 1)                                            # one released, two stay resident
+        for prof, total, want in (("AUTO", 8 * 1024, "LOW_MEMORY_8GB"), ("AUTO", 12 * 1024, "LOW_MEMORY_12GB"), ("AUTO", 16 * 1024, "LOW_MEMORY_16GB"),
+                                  ("LOW_MEMORY_16GB", 8 * 1024, "LOW_MEMORY_8GB"), ("BALANCED", 12 * 1024, "LOW_MEMORY_12GB"),
+                                  ("BALANCED", 32 * 1024, "BALANCED"), ("ECO", 8 * 1024, "ECO"), ("LOW_MEMORY_12GB", 32 * 1024, "LOW_MEMORY_12GB")):
+            g, _ = gov(profile=prof, total_mb=total)
+            self.assertEqual(g.effective_name(), want, (prof, total))
+        g, _ = gov(profile="AUTO", total_mb=8 * 1024)
+        v = g.public()
+        self.assertEqual((v["profile"], v["effective_profile"]), ("AUTO", "LOW_MEMORY_8GB"))
+        self.assertIn("AUTO", v["profiles"])
+
     def test_profiles_threads_and_view(self):
         from masterquo.resources.governor import PROFILE_KEYS, profiles
         ps = profiles()
-        self.assertEqual(set(ps), {"LOW_MEMORY_16GB", "LOW_MEMORY_8GB", "ECO", "BALANCED"})
+        self.assertEqual(set(ps), {"LOW_MEMORY_16GB", "LOW_MEMORY_12GB", "LOW_MEMORY_8GB", "ECO", "BALANCED"})
         low = ps["LOW_MEMORY_16GB"]
         self.assertEqual((low["warn_pct"], low["limit_heavy_pct"], low["pause_optional_pct"], low["reserve_os_mb"], low["budget_preferred_mb"],
                           low["budget_max_mb"], low["heavy_parallelism"], low["background_training"], low["auto_download"], low["lazy_loading"]),

@@ -8,7 +8,7 @@ rem Nie zmienia ustawien terminala, nie uruchamia handlu, nie tworzy fikcyjnego 
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 set "DATA=%~1"
 set "ME=%~2"
 if "%DATA%"=="" set /p "DATA=Podaj folder danych terminala (Plik > Otworz folder danych), np. C:\Users\X\AppData\Roaming\MetaQuotes\Terminal\HASH: "

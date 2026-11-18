@@ -8,8 +8,8 @@ setlocal EnableDelayedExpansion
 chcp 65001 >nul
 title PepeMarketWizard - Context indicators
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
-if not exist "%PY%" (echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat & pause & exit /b 2)
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)
 set "PYTHONIOENCODING=utf-8"
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"

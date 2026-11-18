@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.42.4 – modele na komputerach 8 GB i 12 GB RAM, audyt kodu
+* **Zmierzone szczyty pamięci procesów modeli** (CPU, float32): Kronos 1,07 GB · TiRex-2 0,94 · Chronos-2 0,84 · TabICLv2 0,67 ·
+  Granite TTM 0,37; bot ok. 0,7 GB. Budżety profili wynikają z tych pomiarów.
+* **`LOW_MEMORY_8GB`**: Granite TTM + **jeden** ciężki model w pamięci naraz – wszystkie modele (Kronos, Chronos-2, TiRex-2, TabICLv2)
+  mogą pracować, przed załadowaniem jednego pozostałe są zwalniane; budżet procesów PMW 2,5–3,3 GB; SDformerFlow (trening) wyłączony.
+* **Nowy `LOW_MEMORY_12GB`**: Granite TTM + **dwa** ciężkie modele naraz, bezczynny zwalniany po 5 min; budżet 3,5–5 GB.
+* **Nowy `AUTO`** i automatyczne dopasowanie: profile AUTO / LOW_MEMORY_16GB / BALANCED na komputerze z ≤ 10 GB RAM działają jako
+  LOW_MEMORY_8GB, z ≤ 14 GB – jako LOW_MEMORY_12GB (na 16 GB i więcej nic się nie zmienia). ECO / MANUAL / wybrane ręcznie 8 / 12 GB zostają.
+  Diagnostyka → Zasoby pokazuje profil wybrany i faktycznie stosowany.
+* **Audyt** (raport: `update_1_42/raport/AUDYT_1_42_4.md`): wyścig w walidacji biblioteki formacji (status COMPLETED widoczny przed
+  zapisem raportu – `report_id` pusty) naprawiony; skrypty 23–31, 39 i `tools/trening.cmd`, `tools/ic.cmd` działają także w aplikacji
+  Windows bez `.venv` (wspólny `tools/pmwpy.cmd`: `.venv` albo `runtime\python` + biblioteki aplikacji); drobne poprawki martwego kodu.
+
 ## 1.42.3 – TiRex-2 i TabICLv2 przy Smart App Control (numpy 2.5.5 zablokowany)
 * Zgłoszenie z logu `instalacja_chronos2_granite_*.log` (po 1.42.2 Chronos-2 i Granite TTM instalują się poprawnie, parity PASS):
   TabICLv2 – `DLL load failed while importing _pocketfft_umath: Zasady kontroli aplikacji zablokowały ten plik`; TiRex-2 – mylące

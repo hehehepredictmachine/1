@@ -48,7 +48,7 @@ export default function DiagnosticsPanel() {
             {Object.keys(res.profiles || {}).filter((k) => k !== "MANUAL").map((k) => (
               <button key={k} type="button" className={cls("act", res.profile === k && "on")} aria-pressed={res.profile === k} data-testid={"res-prof-" + k}
                 title={res.profiles[k]?.label} onClick={() => (res.profile === k ? undefined : setAskProf(k))}>{k}</button>))}</div>
-          <p className="sys-note">{res.profile_pl}</p>
+          <p className="sys-note" data-testid="res-effective">{res.profile_pl}{res.effective_profile && res.effective_profile !== res.profile ? ` · stosowany: ${res.effective_profile} (${res.effective_profile_pl ?? "dopasowany do RAM"})` : ""}</p>
           {askProf && <div className="sys-row"><span className="sys-note">Zmienić profil na {askProf}? ({res.profiles[askProf]?.label})</span>
             <button type="button" className="act" data-testid="res-prof-confirm" onClick={() => setProfile(askProf)}>ZMIEŃ</button>
             <button type="button" className="act" onClick={() => setAskProf(null)}>ANULUJ</button></div>}

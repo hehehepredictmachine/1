@@ -107,7 +107,7 @@ class ModeManager:
         paths[instrument] = path
         self.cfg_store.update({"execution": {"primary_path": paths}})
         self.log.warn("MODE", "PRIMARY_PATH", f"Ścieżka główna {instrument}: {PATH_LABEL[path]}"
-                      + ("" if path == "UNSET" else f"; druga ścieżka tylko analizuje (bez nowych wejść)"))
+                      + ("" if path == "UNSET" else "; druga ścieżka tylko analizuje (bez nowych wejść)"))
         self.changed_at = iso(utcnow())
         st = self.status()
         self.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)",

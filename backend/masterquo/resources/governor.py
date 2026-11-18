@@ -54,13 +54,16 @@ def profiles() -> dict[str, dict]:
            "auto_throttle": True, "heavy_allowed": None, "max_resident_heavy": None}
     return {
         "LOW_MEMORY_16GB": low,
-        # 1.42.1: computer with 8 GB RAM - only the light Granite TTM (~0.35 GB) and ONE heavy model at a time from TiRex-2 (~1 GB) /
-        # TabICLv2 (~0.7 GB); Kronos, Chronos-2 and SDformerFlow are not loaded. A heavy model is released 90 s after its last use, the
-        # other idle heavy process is released BEFORE a new one loads. Thresholds in % are higher (Windows + MT5 alone use ~60 % of 8 GB);
-        # the PMW budget (bot + model processes) is the real limit. Threads: 2 heavy / 1 light.
+        # 1.42.4 (measured peaks, CPU float32: Kronos 1.07 GB, TiRex-2 0.94, Chronos-2 0.84, TabICLv2 0.67, Granite TTM 0.37; bot ~0.7):
+        # 8 GB computer - Windows + MT5 take ~4.5-5 GB, PMW gets ~2.5-3 GB: Granite TTM + ONE heavy model resident at a time (every model may
+        # run - the others are released before it loads, a heavy model is released 90 s after its last use); SDformerFlow training off.
         "LOW_MEMORY_8GB": {**low, "warn_pct": 85.0, "limit_heavy_pct": 90.0, "pause_optional_pct": 94.0, "reserve_os_mb": 1536,
-                           "budget_preferred_mb": 2048, "budget_max_mb": 3072, "idle_release_s": 90, "threads_heavy": max(1, min(2, c // 2)),
-                           "threads_light": 1, "heavy_allowed": ["tirex2", "tabicl"], "max_resident_heavy": 1},
+                           "budget_preferred_mb": 2560, "budget_max_mb": 3328, "idle_release_s": 90, "threads_heavy": max(1, min(2, c // 2)),
+                           "threads_light": 1, "heavy_allowed": ["tirex2", "tabicl", "kronos", "chronos2"], "max_resident_heavy": 1},
+        # 12 GB computer - PMW gets ~4-5 GB: Granite TTM + TWO heavy models resident, idle heavy released after 5 min.
+        "LOW_MEMORY_12GB": {**low, "warn_pct": 82.0, "limit_heavy_pct": 87.0, "pause_optional_pct": 93.0, "reserve_os_mb": 2560,
+                            "budget_preferred_mb": 3584, "budget_max_mb": 5120, "idle_release_s": 300, "threads_heavy": max(1, min(3, c // 2)),
+                            "threads_light": 1, "heavy_allowed": None, "max_resident_heavy": 2},
         "ECO": {**low, "warn_pct": 70.0, "limit_heavy_pct": 75.0, "pause_optional_pct": 80.0, "budget_preferred_mb": 4096, "budget_max_mb": 6144,
                 "idle_release_s": 600, "threads_heavy": max(1, min(2, c // 4 or 1)), "threads_light": 1},
         "BALANCED": {**low, "warn_pct": 80.0, "limit_heavy_pct": 85.0, "pause_optional_pct": 90.0, "budget_preferred_mb": 8192,
@@ -69,7 +72,9 @@ def profiles() -> dict[str, dict]:
 
 
 PROFILE_PL = {"LOW_MEMORY_16GB": "Niska pamięć – komputer 16 GB (domyślny)",
-              "LOW_MEMORY_8GB": "Komputer 8 GB – tylko Granite TTM + TiRex-2 / TabICLv2 (jeden ciężki model naraz)", "ECO": "ECO – najmniej pamięci i CPU, ciężkie modele zwalniane po bezczynności",
+              "LOW_MEMORY_8GB": "Komputer 8 GB – Granite TTM + jeden ciężki model naraz (pozostałe zwalniane przed załadowaniem)",
+              "LOW_MEMORY_12GB": "Komputer 12 GB – Granite TTM + dwa ciężkie modele naraz",
+              "AUTO": "AUTO – profil dobierany do RAM komputera (≤ 10 GB → 8 GB, ≤ 14 GB → 12 GB, więcej → 16 GB)", "ECO": "ECO – najmniej pamięci i CPU, ciężkie modele zwalniane po bezczynności",
               "BALANCED": "BALANCED – więcej wątków, wyższe progi (komputer z zapasem RAM)", "MANUAL": "MANUAL – własne wartości"}
 
 
@@ -156,8 +161,27 @@ class Governor:
         except Exception:  # noqa: BLE001
             return "LOW_MEMORY_16GB"
 
-    def profile(self) -> dict:
+    AUTO_CAPPED = ("AUTO", "LOW_MEMORY_16GB", "BALANCED")      # 1.42.4: these never use more than the computer's RAM allows
+
+    def effective_name(self) -> str:
+        """The profile actually applied: AUTO / LOW_MEMORY_16GB / BALANCED are lowered to LOW_MEMORY_12GB or LOW_MEMORY_8GB on a computer
+        with <= 14 / <= 10 GB of RAM (measured total; unknown total -> the configured profile, AUTO -> LOW_MEMORY_16GB)."""
         name = self.profile_name()
+        if name not in self.AUTO_CAPPED:
+            return name
+        try:
+            total = (self._memory() or {}).get("total_mb")
+        except Exception:  # noqa: BLE001
+            total = None
+        if total:
+            if total <= 10 * 1024:
+                return "LOW_MEMORY_8GB"
+            if total <= 14 * 1024:
+                return "LOW_MEMORY_12GB"
+        return "LOW_MEMORY_16GB" if name == "AUTO" else name
+
+    def profile(self) -> dict:
+        name = self.effective_name()
         ps = profiles()
         if name == "MANUAL":
             try:
@@ -237,7 +261,7 @@ class Governor:
             return self._refuse(model, f"RAM ≥ {p['pause_optional_pct']:.0f} % – opcjonalne prognozy AI wstrzymane (Memory Governor)")
         allowed = p.get("heavy_allowed")
         if model in HEAVY and allowed is not None and model not in allowed:
-            return self._refuse(model, f"profil {self.profile_name()}: model {model} nie jest uruchamiany (dozwolone ciężkie: {', '.join(allowed) or 'brak'})")
+            return self._refuse(model, f"profil {self.effective_name()}: model {model} nie jest uruchamiany (dozwolone ciężkie: {', '.join(allowed) or 'brak'})")
         if model in HEAVY and not loaded and p.get("max_resident_heavy"):
             self._make_room(model, int(p["max_resident_heavy"]))
         if model in HEAVY and not loaded and lv in ("LIMIT_HEAVY", "PAUSE_OPTIONAL"):
@@ -394,8 +418,10 @@ class Governor:
     def public(self) -> dict:
         snap = self.sample()
         p = self.profile()
-        return {"version": "PMW-GOV-1", **snap, "profile_pl": PROFILE_PL.get(self.profile_name()), "settings": p,
-                "profiles": {k: {"label": PROFILE_PL[k], "settings": v} for k, v in profiles().items()} | {"MANUAL": {"label": PROFILE_PL["MANUAL"]}},
+        eff = self.effective_name()
+        return {"version": "PMW-GOV-1", **snap, "profile_pl": PROFILE_PL.get(self.profile_name()), "settings": p, "effective_profile": eff,
+                "effective_profile_pl": PROFILE_PL.get(eff),
+                "profiles": {k: {"label": PROFILE_PL[k], "settings": v} for k, v in profiles().items()} | {"AUTO": {"label": PROFILE_PL["AUTO"]}, "MANUAL": {"label": PROFILE_PL["MANUAL"]}},
                 "cpu_pct": sysres.cpu_percent(), "cpu_count": _cores(),
                 "inference": {k: self._pct(v) for k, v in self.timings.items()}, "load": {k: self._pct(v) for k, v in self.loads.items()},
                 "heavy_slot": {"parallelism": p["heavy_parallelism"], "holder": self._slot_holder}, "counters": dict(self.counters),

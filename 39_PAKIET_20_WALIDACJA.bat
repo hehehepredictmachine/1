@@ -9,9 +9,9 @@ rem 1.38: replay walk-forward 20 wariantow (PMW_SC01-SC10, PMW_HG01-HG10) na his
 rem Te same detektory, solver TP1/TP2 i polityki hedge co w bocie. Werdykt VALIDATED tylko na REAL_USER_DATA ze znana prowizja,
 rem >= 200 planow OOS, >= 3 odcinkach dodatnich i dodatniej dolnej granicy bootstrapu. Nic nie jest wysylane do terminala.
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (
-  echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat
+  echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje
   pause
   exit /b 2
 )
