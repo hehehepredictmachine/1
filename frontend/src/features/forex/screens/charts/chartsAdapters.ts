@@ -229,3 +229,12 @@ export function zonesMsgVM(resp: any, tf: string): string | null {
   }
   return T.stale ? `Strefy ${tf} nieaktualne (${st.status_pl || st.status || "odtworzone po restarcie"}) – przelicz w Ustawieniach → Strefy rynkowe.` : null;
 }
+
+/** K5: profil widocznego zakresu z GET /api/v1/svp/visible (PMW-SVP-1 VISIBLE) → kształt portu (hist = [indeks binu, waga], czasy w ms).
+ *  RATE_LIMITED / błąd → null (renderer zostawia poprzedni wynik API dla tego samego zakresu albo nic nie rysuje). */
+export function svpVisibleVM(r: any): any | null {
+  if (!r || !r.contract || !Array.isArray(r.histogram) || !(r.bin_size > 0)) return null;
+  const bin = +r.bin_size;
+  return { ...r, start: ms(r.start), end: ms(r.end), as_of: ms(r.as_of), known_at: ms(r.known_at),
+    hist: r.histogram.map((h: any) => [Math.round(+h.lo / bin), +h.weight] as [number, number]) };
+}

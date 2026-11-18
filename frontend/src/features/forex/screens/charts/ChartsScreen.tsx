@@ -4,7 +4,8 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../../../../store";
 import { createCharts } from "./chartsRender";
-import { useChartsData } from "./chartsData";
+import { svpVisibleVM, useChartsData } from "./chartsData";
+import { apiGet } from "../../../../api";
 import "./charts.css";
 
 export type ChartsApi = ReturnType<typeof createCharts>;
@@ -13,7 +14,10 @@ export default function ChartsScreen({ register, active, testMode }: { register:
   const { s } = useStore();
   const api = useRef<ChartsApi | null>(null);
   useEffect(() => {
-    const a = createCharts({ announce: (t) => { const el = document.getElementById("fx-announcer"); if (el) el.textContent = t; } });
+    const a = createCharts({ announce: (t) => { const el = document.getElementById("fx-announcer"); if (el) el.textContent = t; },
+      // K5: profil widocznego zakresu z API (GET, bez zapisu); w trybie testowym brak → port 1:1
+      visible: testMode ? undefined : (q) => apiGet<any>(`/api/v1/svp/visible?tf=${q.tf}&t0=${new Date(q.t0).toISOString()}&t1=${new Date(q.t1).toISOString()}&bin_ticks=${q.bin}&va_pct=${q.va}`)
+        .then(svpVisibleVM) });
     api.current = a;
     register(a);
     return () => { a.dispose(); api.current = null; register(null); };

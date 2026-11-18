@@ -1,6 +1,6 @@
 // CHARTS 1:1 – K1: adaptery API → model widoku (D1 §3) na kształtach odpowiedzi z K0 (dane syntetyczne, bez danych rachunku).
 import assert from "node:assert/strict";
-import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, zonesMsgVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
+import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, zonesMsgVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM, svpVisibleVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
 
 // /api/v1/candles
 const c = candlesVM({ bars: [
@@ -127,6 +127,12 @@ assert.equal(cardProbsVM(null).win.state, "NO_DATA");
 assert.equal(legacySignalVM({ ...lg, detail: { ...lg.detail, source_time: "2026-11-13T16:00:00Z" } }).t, Date.parse("2026-11-13T16:00:00Z"));
 const bro = basketSignalVM({ ...bk, setup: { ...bk.setup, regime: { regime: "TREND" }, routed_auto: false } });
 assert.deepEqual([bro.rg, bro.ro], ["TREND", false]);
+
+// K5: profil widocznego zakresu z API → kształt portu (indeks binu = lo / bin_size)
+const vv = svpVisibleVM({ contract: "PMW-SVP-1", mode: "VISIBLE", status: "READY", bin_size: 0.5, poc: 3471.25, vah: 3474, val: 3465.5, hvn: [], lvn: [],
+  start: "2026-11-18T10:00:00Z", end: "2026-11-18T14:00:00Z", histogram: [{ lo: 3462.0, hi: 3462.5, weight: 213.8 }, { lo: 3462.5, hi: 3463.0, weight: 374.5 }] });
+assert.deepEqual(vv.hist, [[6924, 213.8], [6925, 374.5]]); assert.equal(vv.start, Date.parse("2026-11-18T10:00:00Z"));
+assert.equal(svpVisibleVM({ status: "RATE_LIMITED" }), null); assert.equal(svpVisibleVM(null), null);
 
 // status MT5
 assert.equal(chartStatus({ connection: { state: "CONNECTED" } }), "live");
