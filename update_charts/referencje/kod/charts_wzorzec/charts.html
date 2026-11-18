@@ -1,0 +1,29 @@
+<!-- WZORZEC znaczników ekranu CHARTS – wycinek z REF_B (linie 456–483). Struktura, id, klasy, role i aria 1:1. -->
+<section id="charts-screen" aria-label="CHARTS" inert>
+ <canvas id="chart" aria-hidden="true"></canvas>
+ <div id="ch-head" class="ci">
+  <div id="ch-title" aria-hidden="true"><span class="n">01</span>CHARTS</div><span class="ch-sep"></span>
+  <div id="ch-asset" class="segb" role="group" aria-label="Aktywny instrument"></div><span class="ch-sep"></span>
+  <div id="ch-tf" class="segb" role="group" aria-label="Interwał"></div>
+  <div id="ch-right"><span id="ch-quote"></span>
+   <select id="ch-tz" aria-label="Strefa czasu wykresu"><option value="LOCAL">CZAS LOKALNY</option><option value="UTC">UTC</option><option value="SERVER">CZAS SERWERA</option></select>
+   <div id="ch-status" data-s="live" role="status"><i></i><span class="t">MT5 POŁĄCZONY</span></div><span class="demo-tag" title="Podgląd: wszystkie liczby są demonstracyjne">DEMO</span></div>
+ </div>
+ <div class="cs-wrap">
+  <div class="cs-win main ci"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+   <div class="wh"><span class="ttl" id="mc-title">XAUUSD- · M15</span><span>WYKRES GŁÓWNY</span><span class="sp">PRZECIĄGNIJ · KÓŁKO = ZOOM · 2× KLIK = TERAZ</span></div>
+   <div id="mc-read"></div><div id="sig-card" class="ci" aria-live="polite"></div><div id="mc-plot" tabindex="0" aria-label="Wykres główny. Strzałki przesuwają, plus i minus przybliżają."></div>
+  </div>
+  <div class="cs-side">
+   <div class="cs-win ci"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="wh"><span class="ttl">◈ KRONOS</span><div id="kr-tf" class="segb" role="group" aria-label="Interwał Kronos"></div><span class="sp">TRYB <span id="kr-mode">AUTO</span></span><button type="button" id="kr-refresh">PRZELICZ</button></div>
+    <div id="kr-plot" aria-label="Wykres Kronos: świece rzeczywiste i prognozowana ścieżka"></div>
+    <div id="kr-foot"><span id="kr-dir">—</span><span id="kr-delta"></span><span id="kr-read"></span><span id="kr-meta"></span></div>
+   </div>
+   <div class="cs-win ci"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div id="opt-tabs" role="tablist" aria-label="Warstwy wykresu"><button type="button" role="tab" data-t="ind" aria-selected="true">WSKAŹNIKI</button><button type="button" role="tab" data-t="strat" aria-selected="false">STRATEGIE</button><button type="button" role="tab" data-t="zones" aria-selected="false">STREFY</button><button type="button" role="tab" data-t="vp" aria-selected="false">VOLUME PROFILE</button><button type="button" role="tab" data-t="models" aria-selected="false">PLAN · MODELE</button><button type="button" role="tab" data-t="chart" aria-selected="false">WYKRES</button></div>
+    <div id="opt-body"></div>
+   </div>
+  </div>
+ </div>
+</section>
