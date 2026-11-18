@@ -20,7 +20,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.42.6"
+VERSION = "1.42.7"
 APP_ZIP = f"PepeMarketWizard_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
@@ -80,7 +80,7 @@ def tracked():
         files = manifest_list()
     # Frog Wizard is a separate product
     # 1.42: archive/ (old UI 1.41) and update_1_42/ (update package, reference HTML, screenshots) never go into a release
-    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/", "update_charts/")) and f != "MANIFEST_SHA256.txt"]
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/", "update_charts/", "update_intro3d/")) and f != "MANIFEST_SHA256.txt"]
 
 
 def scan(files):

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.42.7 – nowa animacja startowa 3D
+* **Nowa animacja startowa 3D** (pakiet `PMW_PAKIET_INTRO_3D`) zamiast filmu: w galaktyce z ciemności wyłaniają się trzy postacie w garniturach,
+  środkowa w czerwonej kominiarce; idą w stronę widza i zatrzymują się w połowie drogi; pojawiają się planety FOREX, CRYPTO, OTC; środkowa
+  postać kładzie na nie dłoń – błysk i przejście do menu głównego (13,8 s). Scena 3D w czasie rzeczywistym (three.js 0.187.0, fflate 0.8.2),
+  kod wzorca przeniesiony 1:1, bryła postaci bajt w bajt; każda klatka jest funkcją czasu. Test klatek 1:1 z wizualizacją: **9/9, 0 % różnicy**.
+* Bez dźwięku (przycisk dźwięku ukryty); „PRZEJDŹ DO MENU”, Esc, „Odtwórz intro”, R, Ctrl+Alt+B, raz na sesję i ograniczenie ruchu – jak dotąd.
+* Scena ładuje się dopiero przy odtwarzaniu (osobny fragment aplikacji) i jest zwalniana po wejściu do menu; poziom jakości PEŁNY / ŚREDNI /
+  NISKI dobierany do komputera w pierwszych sekundach (w ciemności) i zapamiętany; brak WebGL albo utrata kontekstu → komunikat i menu.
+* Film `intro.mp4` przeniesiony do `archive/` (nie wchodzi do wydania).
+* Bez zmian: silnik MT5, strategie, modele, ryzyko.
+
 ## 1.42.6 – Kronos przy wysokiej zajętości RAM
 * Zgłoszenie: okno Kronos na CHARTS puste z komunikatem „RAM ≥ 85 % – opcjonalne prognozy AI wstrzymane (Memory Governor)”. Governor
   mierzy zajętość RAM **całego komputera**; powyżej progu pauzy profilu (16 GB: 85 %) wstrzymywał wszystkie prognozy modeli, także tych,

@@ -1,10 +1,11 @@
-// Trasa #/menu (E1): film intro + menu 3 planet (FOREX / CRYPTO / OTC). Markup i style ze wzorca REF_A, silnik w menuEngine.ts
+// Trasa #/menu (E1; 1.42.7: intro 3D zamiast filmu – pakiet update_intro3d, I2): intro 3D + menu 3 planet (FOREX / CRYPTO / OTC). Markup i style ze wzorca REF_A, silnik w menuEngine.ts
 // montowany w useEffect (jeden kontekst WebGL, dispose przy odmontowaniu). CRYPTO / OTC: ekran „tryb w przygotowaniu” bez żadnego
 // wywołania API – wybór planety to nawigacja, nie przełączenie profilu rynku bota (S2 §4).
 import { useEffect, useRef } from "react";
 import { useStore } from "../../store";
 import { mountMenu, PREPARING_NOTE, type MenuElements, type Mode, type Pose } from "./menuEngine";
 import { prefersReducedMotion, shouldPlayIntro } from "./introGate";
+import { LazyIntro } from "../intro3d/lazyIntro";
 import "./cinematic.css";
 
 type Props = {
@@ -12,9 +13,10 @@ type Props = {
   onMenuReady?(): void;
   onForexReady?(pose: Pose): void;
   forceSoftware?: boolean;
+  testIntro?: boolean;                                     // strona testu 1:1 intro (tylko build --mode test): intro zawsze, poziom PEŁNY, hak seek
 };
 
-export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware }: Props) {
+export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware, testIntro }: Props) {
   const { s } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const forexRef = useRef(onForexReady);
@@ -25,8 +27,15 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
   useEffect(() => {
     const root = rootRef.current!;
     const q = <T extends Element>(c: string) => root.querySelector(".cin-" + c) as unknown as T;
+    // intro 3D z kontraktem <video> (REF_C: video = new PMW_Intro3D($('#intro')))
+    const intro = new LazyIntro(q<HTMLCanvasElement>("intro"), { forceFull: !!testIntro });
+    if (import.meta.env.MODE === "test" && testIntro) {
+      const w = window as any;
+      w.__PMW_TEST__ = w.__PMW_TEST__ || {};
+      w.__PMW_TEST__.intro = { seek: (t: number) => intro.seek(t).then(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))) };
+    }
     const el: MenuElements = {
-      root, canvas: q("universe"), video: q("intro"), cinema: q("cinema"), menu: q("menu"), selected: q("selected"), selectedName: q("selected-name"),
+      root, canvas: q("universe"), video: intro, cinema: q("cinema"), menu: q("menu"), selected: q("selected"), selectedName: q("selected-name"),
       selectedNote: q("selected-note"), returnBtn: q("return"), skip: q("skip"), videoStart: q("video-start"), progress: q("cinema-progress"),
       progressBar: root.querySelector(".cin-cinema-progress span") as HTMLElement, notice: q("notice"), announcer: q("announcer"),
       rendererError: q("renderer-error"), rendererMessage: q("renderer-message"), rendererRetry: q("renderer-retry"),
@@ -34,7 +43,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
     };
     const soft = forceSoftware || new URLSearchParams(location.hash.split("?")[1] || "").get("renderer") === "cpu";
     return mountMenu(el, {
-      playIntro: shouldPlayIntro(), reduced: prefersReducedMotion(), forceSoftware: soft,
+      playIntro: testIntro || shouldPlayIntro(), reduced: testIntro ? false : prefersReducedMotion(), forceSoftware: soft,
       onChoose: (_m: Mode) => undefined,
       onMenuReady: () => readyRef.current?.(),
       onForexReady: (pose) => {
@@ -43,7 +52,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
         el.returnBtn.focus({ preventScroll: true });
       },
     });
-  }, [forceSoftware]);
+  }, [forceSoftware, testIntro]);
 
   return (
     <div className="app-cinematic" data-state="boot" ref={rootRef} data-testid="page-menu">
@@ -66,14 +75,14 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
           <p className="cin-selected-note">{PREPARING_NOTE}</p></div>
       </section>
       <div className="cin-presentation-mark">PEPEMARKETWIZARD {s.app_version ? "/ " + s.app_version : ""}</div>
-      <div className="cin-cinema"><video className="cin-intro" src="/assets/cinematic/intro.mp4" playsInline muted preload="auto" disablePictureInPicture
-        aria-label="Oryginalna animacja uruchomienia" data-testid="intro-video" /><span className="cin-cinema-label">PEPEMARKETWIZARD / INITIATION</span></div>
+      <div className="cin-cinema"><canvas className="cin-intro" role="img" data-testid="intro-3d"
+        aria-label="Animacja startowa: w galaktyce trzech mężczyzn w garniturach wyłania się z ciemności, środkowy w czerwonej kominiarce kładzie dłoń na trzech planetach" /><span className="cin-cinema-label">PEPEMARKETWIZARD / INITIATION</span></div>
       <button className="cin-video-start" type="button" hidden>URUCHOM INTRO</button>
       <button className="cin-skip" type="button" data-testid="intro-skip">PRZEJDŹ DO MENU</button>
       <div className="cin-cinema-progress" aria-hidden="true"><span /></div>
       <nav className="cin-tools" aria-label="Sterowanie">
         <button className="tool cin-replay" type="button" aria-label="Odtwórz intro ponownie" data-label="Odtwórz intro ponownie (R)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6a7 7 0 1 1-1 7M4 2v4h4" /></svg></button>
-        <button className="tool cin-sound" type="button" aria-label="Włącz dźwięk oryginalnego intro" aria-pressed="false" data-label="Dźwięk oryginalnego intro"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6" /></svg></button>
+        <button className="tool cin-sound" type="button" hidden aria-label="Włącz dźwięk oryginalnego intro" aria-pressed="false" data-label="Dźwięk oryginalnego intro"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6" /></svg></button>
         <button className="tool cin-motion" type="button" aria-label="Ogranicz ruch" aria-pressed="false" data-label="Ogranicz ruch"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4v12m6-12v12" /></svg></button>
         <button className="tool cin-fullscreen" type="button" aria-label="Pełny ekran" data-label="Pełny ekran"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4" /></svg></button>
       </nav>

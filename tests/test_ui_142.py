@@ -151,6 +151,35 @@ class TestUI142(unittest.TestCase):
         self.assertEqual(p.sent, [])                                    # STOP panel opened, nothing confirmed -> no POST
         self.assertEqual(p.errors, [])
 
+    # pakiet update_intro3d (I2 / O1-B): intro 3D zamiast filmu – pełny przebieg do menu, pominięcie, brak filmu i dźwięku, tylko GET
+    def intro_page(self):
+        c = self.browser.new_context(viewport={"width": 1280, "height": 720})
+        c.add_init_script("try{localStorage.setItem('pmw.cinematic.force','1');localStorage.setItem('pmw.motion','full')}catch(e){}")
+        p = c.new_page()
+        p.errors, p.sent = [], []
+        p.on("pageerror", lambda e: p.errors.append(str(e)))
+        p.on("request", lambda r: p.sent.append((r.method, r.url)) if r.method != "GET" else None)
+        self.addCleanup(c.close)
+        return p
+
+    def test_e_intro3d_plays_into_menu(self):
+        p = self.intro_page()
+        p.goto(BASE + "/#/menu")
+        p.wait_for_selector("[data-testid=intro-3d]", timeout=30000)
+        self.assertEqual(p.locator("video").count(), 0)                                   # film nie istnieje
+        self.assertTrue(p.locator(".cin-sound").is_hidden())                                # intro bez dźwięku
+        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=240000)
+        self.assertEqual(p.errors, [])
+        self.assertEqual(p.sent, [])
+
+    def test_f_intro3d_skip(self):
+        p = self.intro_page()
+        p.goto(BASE + "/#/menu")
+        p.wait_for_selector("[data-testid=intro-skip]", state="visible", timeout=30000)
+        p.click("[data-testid=intro-skip]")
+        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=60000)
+        self.assertEqual(p.errors, [])
+
     # (g)
     def test_d_legacy_redirects(self):
         p = self.page()

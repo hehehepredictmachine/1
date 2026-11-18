@@ -2,7 +2,8 @@
 // Zachowane 1:1: fazy boot → enter → menu → selecting → selected → returning, liczby cząsteczek (110k/94k/66k), gwiazdy, pył, smugi,
 // okluzja siatką, renderer CPU (setupSoftware / swPlanet / swDepthMesh), przeciąganie, hover, klawiatura, contextlost/restored,
 // visibilitychange, dispose przez AbortController. Zmiany względem wzorca:
-//  * film to plik /assets/cinematic/intro.mp4 (CSP), nie data: URI;
+//  * 1.42.7 (pakiet update_intro3d): intro = scena 3D (LazyIntro → Intro3D, kontrakt <video> jak REF_C), nie film; po wejściu do menu
+//    scena jest zwalniana (release), przy odmontowaniu – także jej kontekst WebGL (dispose); przycisk dźwięku ukryty (intro bez dźwięku);
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
 //  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO/OTC – ekran „tryb w przygotowaniu”;
 //  * PMW_PREVIEW zastąpiony hakiem window.__PMW_E2E__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.
@@ -12,8 +13,12 @@ import { markIntroSeen, saveMotionChoice, testMode } from "./introGate";
 export type Mode = "FOREX" | "CRYPTO" | "OTC";
 export type Pose = { x: number; y: number; r: number };
 
+/** Obiekt intro z kontraktem <video> (play / pause / currentTime / duration / muted / readyState / style, zdarzenia ended / error). */
+export type IntroLike = EventTarget & { play(): Promise<void>; pause(): void; currentTime: number; readonly duration: number; muted: boolean;
+  readyState: number; readonly style: CSSStyleDeclaration; release?(): void; dispose?(): void };
+
 export type MenuElements = {
-  root: HTMLElement; canvas: HTMLCanvasElement; video: HTMLVideoElement; cinema: HTMLElement; menu: HTMLElement; selected: HTMLElement;
+  root: HTMLElement; canvas: HTMLCanvasElement; video: IntroLike; cinema: HTMLElement; menu: HTMLElement; selected: HTMLElement;
   selectedName: HTMLElement; selectedNote: HTMLElement; returnBtn: HTMLButtonElement; skip: HTMLButtonElement; videoStart: HTMLButtonElement;
   progress: HTMLElement; progressBar: HTMLElement; notice: HTMLElement; announcer: HTMLElement; rendererError: HTMLElement; rendererMessage: HTMLElement;
   rendererRetry: HTMLButtonElement; buttons: [HTMLButtonElement, HTMLButtonElement, HTMLButtonElement];
@@ -216,16 +221,16 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
     if (software) software.ctx.putImageData(software.image, 0, 0);
     if (!state.reduced || !["menu", "selected"].includes(state.phase)) state.raf = requestAnimationFrame(tick);
   }
-  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); }
+  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); video.release?.(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); }
   function enter() { if (state.phase !== "boot") return; video.pause(); clearTimeout(state.watchdog); setPhase("enter"); el.progress.hidden = true; wake(); }
-  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); wake(); }
+  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); video.release?.(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); wake(); }
   function playIntro() {
     if (state.contextLost) return; clearTimeout(state.watchdog); state.hover = -1; state.focus = -1; state.drag = null; setPhase("boot"); markIntroSeen();
     cinema.hidden = false; cinema.style.opacity = "1"; video.style.transform = "scale(1)"; video.style.filter = "none"; el.progress.hidden = false;
     video.currentTime = 0; video.muted = !state.audio;
     if (state.reduced) { enter(); return; }
     const pl = video.play(); if (pl && pl.catch) pl.catch(() => { el.videoStart.hidden = false; announce("Naciśnij Uruchom intro, aby rozpocząć."); });
-    state.watchdog = setTimeout(() => { if (state.phase === "boot" && video.readyState < 2) { notice("Nie udało się odczytać intro. Menu pozostaje dostępne."); enter(); } }, 12000);
+    state.watchdog = setTimeout(() => { if (state.phase === "boot" && video.readyState !== 4) { notice("Nie udało się uruchomić animacji. Menu pozostaje dostępne."); enter(); } }, 8000);   // I3: scena gotowa w 8 s
     wake();
   }
   function choose(i: number) {
@@ -250,7 +255,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   });
   listen(window, "pointermove", (e: PointerEvent) => { state.pointerTarget = [e.clientX / view.w * 2 - 1, e.clientY / view.h * 2 - 1]; });
   listen(window, "blur", () => { state.pointerTarget = [0, 0]; state.hover = -1; state.drag = null; });
-  listen(window, "resize", resize); listen(video, "ended", enter); listen(video, "error", () => { notice("Błąd odczytu filmu. Przechodzę do menu."); enter(); });
+  listen(window, "resize", resize); listen(video, "ended", enter); listen(video, "error", () => { if (state.phase !== "boot") return; notice("Nie udało się uruchomić animacji. Menu pozostaje dostępne."); enter(); });
   listen(el.skip, "click", enter); listen(el.videoStart, "click", () => { video.play().then(() => { el.videoStart.hidden = true; }).catch(() => notice("Odtwarzanie jest zablokowane. Możesz przejść do menu.")); });
   listen(el.replay, "click", () => { if (["enter", "selecting", "returning"].includes(state.phase)) return; playIntro(); }); listen(el.returnBtn, "click", goBack);
   listen(el.sound, "click", () => { state.audio = !state.audio; video.muted = !state.audio; el.sound.setAttribute("aria-pressed", String(state.audio)); el.sound.setAttribute("aria-label", state.audio ? "Wycisz oryginalne intro" : "Włącz dźwięk oryginalnego intro"); el.sound.innerHTML = state.audio ? SVG_SOUND_ON : SVG_SOUND_OFF; });
@@ -270,7 +275,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   listen(el.rendererRetry, "click", () => location.reload());
 
   function dispose() {
-    state.disposed = true; cancelAnimationFrame(state.raf); clearTimeout(state.watchdog); clearTimeout(state.noticeTimer); video.pause(); controller.abort();
+    state.disposed = true; cancelAnimationFrame(state.raf); clearTimeout(state.watchdog); clearTimeout(state.noticeTimer); video.pause(); video.dispose?.(); controller.abort();
     if (gl && !state.contextLost) {
       for (const b of buffers) gl.deleteBuffer(b); for (const p of programs) gl.deleteProgram(p); for (const s of glShaders) gl.deleteShader(s);
       gl.getExtension("WEBGL_lose_context")?.loseContext();      // kontekst zwolniony od razu (nasłuchy już odpięte) – bez kumulacji przy wejściach/wyjściach

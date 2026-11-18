@@ -107,6 +107,6 @@
 .app-cinematic .cin-synthetic{position:fixed;right:32px;top:29px;z-index:15;font-size:9px;letter-spacing:.22em;color:#d9c99a;border:1px solid #b7a77a66;padding:6px 10px;background:rgba(0,0,0,.55);pointer-events:none}
 .app-cinematic[data-state="boot"] .cin-synthetic{top:72px}
 .app-cinematic .cin-selected .cin-forex-wait{position:absolute;left:10%;right:10%;top:86%;text-align:center;font-size:10px;letter-spacing:.16em;color:#9298a5}
-.app-cinematic .cin-tools{right:300px}
+.app-cinematic:not([data-state="boot"]) .cin-tools{right:300px}   /* w intro ikony systemowe są ukryte – pasek jak we wzorcu */
 .app-cinematic[data-state="boot"]~.sys-exec,.app-cinematic[data-state="boot"]~.sys-icons,.app-cinematic[data-state="enter"]~.sys-icons{display:none}
 @media(max-width:700px){.app-cinematic .cin-tools{right:auto;left:12px}}
