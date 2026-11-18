@@ -410,7 +410,8 @@ class KronosService:
         t = self._target(k)
         gov = getattr(self, "governor", None)
         if gov is not None:
-            ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info))
+            essential = any(v.use in ("ASSIST", "REQUIRED") for v in self.settings.get().strategy_use.values())   # 1.42.6: Kronos w decyzjach
+            ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info), essential=essential)
             if not ok:
                 t.update(state="RESOURCE_PAUSED", reason=why)
                 return None

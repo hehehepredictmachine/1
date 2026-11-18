@@ -71,6 +71,24 @@ class TestGovernor(unittest.TestCase):
         g2, _ = gov(used=95.0, profile="MANUAL", manual={"auto_throttle": False})   # MANUAL can switch throttling off
         self.assertTrue(g2.admit("kronos", loaded=False)[0])
 
+    def test_assist_model_under_pause(self):
+        """1.42.6: at PAUSE_OPTIONAL a model used in decisions (ASSIST) gets memory from OTHER idle heavy processes at once; loaded it keeps
+        answering; not loaded it starts only after the level drops; OBSERVE models (essential=False) pause as before."""
+        g, st = gov(used=88.0)
+        released, alive = [], {"chronos2": 11, "tirex2": 12}
+        g.register("chronos2", "heavy", lambda: alive.get("chronos2"), release=lambda: (released.append("chronos2"), alive.pop("chronos2", None)), idle=lambda: 45.0)
+        g.register("tirex2", "heavy", lambda: alive.get("tirex2"), release=lambda: released.append("tirex2"), idle=lambda: 5.0)   # computes now
+        g.register("kronos", "heavy", lambda: 13, release=lambda: released.append("kronos"), idle=lambda: 999.0)
+        self.assertFalse(g.admit("kronos", loaded=True)[0])                          # OBSERVE: paused
+        self.assertEqual(released, [])
+        self.assertTrue(g.admit("kronos", loaded=True, essential=True)[0])           # ASSIST + loaded: answers
+        self.assertEqual(released, ["chronos2"])                                     # idle 45 s released, TiRex-2 (5 s) and Kronos kept
+        ok, why = g.admit("chronos2", loaded=False, essential=True)                  # ASSIST, not loaded, still >= 85 % -> not loaded
+        self.assertFalse(ok)
+        self.assertIn("ASSIST", why)
+        st["used"] = 70.0
+        self.assertTrue(g.admit("chronos2", loaded=False, essential=True)[0])        # below the pause -> normal rules
+
     def test_one_heavy_slot_shared_by_services(self):
         g, _ = gov()
         active, peak = [0], [0]

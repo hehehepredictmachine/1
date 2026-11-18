@@ -251,14 +251,21 @@ class Governor:
         return self.sample()["level"]
 
     # ------------------------------------------------------------------ admission + heavy slot
-    def admit(self, model: str, *, loaded: bool, optional: bool = True) -> tuple[bool, str | None]:
-        """May this model start an inference now? Returns (ok, reason). Never asked for market data, positions, risk or execution."""
+    def admit(self, model: str, *, loaded: bool, optional: bool = True, essential: bool = False) -> tuple[bool, str | None]:
+        """May this model start an inference now? Returns (ok, reason). Never asked for market data, positions, risk or execution.
+        1.42.6: essential = the model takes part in decisions (ASSIST / REQUIRED). At PAUSE_OPTIONAL such a model first gets memory back from
+        OTHER idle heavy processes (released at once, not after 120 s); when it is already loaded it keeps answering (a forecast on a resident
+        model allocates little); a not-loaded one is loaded only once the level has dropped below the pause. OBSERVE models pause as before."""
         p = self.profile()
         if not p["auto_throttle"]:
             return True, None
         lv = self.level()
-        if optional and lv == "PAUSE_OPTIONAL":
-            return self._refuse(model, f"RAM ≥ {p['pause_optional_pct']:.0f} % – opcjonalne prognozy AI wstrzymane (Memory Governor)")
+        if optional and lv == "PAUSE_OPTIONAL" and essential:
+            if self._release_idle_heavy(except_model=model, min_idle_s=30.0, why=f"RAM ≥ {p['pause_optional_pct']:.0f} % – pamięć dla {model} (ASSIST)"):
+                lv = self.level()
+        if optional and lv == "PAUSE_OPTIONAL" and not (essential and loaded):
+            return self._refuse(model, f"RAM komputera ≥ {p['pause_optional_pct']:.0f} % – opcjonalne prognozy AI wstrzymane (Memory Governor)"
+                                + (" – model ASSIST nie jest ładowany, dopóki zajętość RAM nie spadnie" if essential else ""))
         allowed = p.get("heavy_allowed")
         if model in HEAVY and allowed is not None and model not in allowed:
             return self._refuse(model, f"profil {self.effective_name()}: model {model} nie jest uruchamiany (dozwolone ciężkie: {', '.join(allowed) or 'brak'})")
@@ -268,6 +275,28 @@ class Governor:
             return self._refuse(model, f"RAM ≥ {p['limit_heavy_pct']:.0f} % lub budżet PMW przekroczony – nowy ciężki model nie jest ładowany (Memory Governor)")
         self.counters["admitted"] += 1
         return True, None
+
+    def _release_idle_heavy(self, *, except_model: str, min_idle_s: float, why: str) -> list[str]:
+        """Release heavy model processes (other than `except_model`, never the slot holder or one that computes now) idle >= min_idle_s."""
+        out = []
+        for name, src in list(self.sources.items()):
+            if name == except_model or src["kind"] != "heavy" or not src.get("release") or self._slot_holder == name:
+                continue
+            try:
+                running = bool(src["pid"]())
+                idle = float(src["idle"]()) if src.get("idle") else 0.0
+            except Exception:  # noqa: BLE001
+                continue
+            if not running or idle < min_idle_s:
+                continue
+            try:
+                src["release"]()
+                self.counters["released"] += 1
+                out.append(name)
+                self._event("RELEASED", f"{name}: proces zwolniony po {idle:.0f} s bezczynności ({why})")
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     def _make_room(self, model: str, keep: int) -> list[str]:
         """Before a heavy model loads: release other RUNNING heavy processes that are not computing now (not the slot holder) so that at

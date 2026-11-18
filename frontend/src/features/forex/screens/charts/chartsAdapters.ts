@@ -95,7 +95,8 @@ export function kronosVM(resp: any, tf: string, status?: any) {
   const on = Object.fromEntries(["M1", "M5", "M15", "M30", "H1"].map((t) => [t, tfs.length ? tfs.includes(t) : true]));
   const notInstalled = st === "NOT_INSTALLED" || st === "NO_WEIGHTS";
   const emptyTxt = notInstalled ? "KRONOS NIEZAINSTALOWANY – 33_KRONOS_INSTALUJ.bat" : !["M1", "M5", "M15", "M30", "H1"].includes(tf) ? "TIMEFRAME_NOT_ALLOWED"
-    : (resp?.target?.reason || status?.status_pl || "BRAK PROGNOZY").toString().toUpperCase();
+    : ((resp?.target?.reason || status?.status_pl || "BRAK PROGNOZY").toString()
+      + (/Memory Governor/.test(String(resp?.target?.reason || "")) ? " – zajętość pamięci: Diagnostyka → Zasoby" : "")).toUpperCase();
   const candles = (resp?.context || []).map((b: any) => ({ t: ms(b.t ?? b.open_utc) as number, o: +b.o, h: +b.h, l: +b.l, c: +b.c, v: 0, closed: true }))
     .filter((b: any) => b.t != null);
   if (!f) return { tf, on, role, state: notInstalled ? "NOT_INSTALLED" : (resp?.target?.state || st || "NO_DATA"), emptyTxt, candles, forecast: null };

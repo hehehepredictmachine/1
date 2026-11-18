@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.42.6 – Kronos przy wysokiej zajętości RAM
+* Zgłoszenie: okno Kronos na CHARTS puste z komunikatem „RAM ≥ 85 % – opcjonalne prognozy AI wstrzymane (Memory Governor)”. Governor
+  mierzy zajętość RAM **całego komputera**; powyżej progu pauzy profilu (16 GB: 85 %) wstrzymywał wszystkie prognozy modeli, także tych,
+  które od 1.42 biorą udział w decyzjach (ASSIST).
+* Model w roli **ASSIST / REQUIRED** (Kronos, modele TSFM) przy RAM ≥ progu pauzy: governor od razu zwalnia **inne bezczynne** ciężkie modele
+  (≥ 30 s bez pracy, nie ten, który właśnie liczy); model już załadowany **liczy dalej** (prognoza na załadowanym modelu prawie nie zajmuje
+  nowej pamięci); niezaładowany startuje dopiero, gdy zajętość spadnie poniżej progu. Modele OBSERVE – bez zmian (wstrzymywane).
+* CHARTS: komunikat wstrzymania Kronosa wskazuje Diagnostyka → Zasoby (co zajmuje pamięć, profil 8 / 12 / 16 GB / AUTO).
+* Bez zmian: progi profili, dane rynkowe, pozycje, ryzyko i wykonanie (governor nigdy ich nie wstrzymuje).
+
 ## 1.42.5 – CHARTS 1:1 z wizualizacją
 * **Ekran CHARTS przebudowany 1:1 według wizualizacji** (pakiet `PMW_PAKIET_CHARTS_1DO1`): wykres główny, okna RSI / MACD, okno Kronos i panel
   opcji w wyglądzie wzorca; rysowanie kodem wzorca (bez `lightweight-charts`), przejścia 2400 / 1500 ms w kuli FOREX. Test pikselowy 1:1

@@ -472,7 +472,8 @@ class TsfmService:
         gov = getattr(self, "governor", None)
         loaded = bool(w.proc and w.proc.poll() is None and w.load_info)
         if gov is not None:
-            ok, why = gov.admit(mid, loaded=loaded)
+            essential = any(c.use[pth].use in ("ASSIST", "REQUIRED") for pth in PATHS)          # 1.42.6: model w decyzjach
+            ok, why = gov.admit(mid, loaded=loaded, essential=essential)
             if not ok:
                 ms.update(state="RESOURCE_PAUSED", reason=why)                  # never a neutral value: the forecast is simply not there
                 return None

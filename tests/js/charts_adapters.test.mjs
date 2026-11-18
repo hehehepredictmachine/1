@@ -77,6 +77,8 @@ assert.equal(kronosVM(null, "H4", { status: "READY" }).emptyTxt, "TIMEFRAME_NOT_
 const kA = kronosVM({ forecast: null }, "M5", { status: "READY", decision_use: { M5: "ASSIST" }, settings: { timeframes: ["M5", "M15"] } });
 assert.ok(kA.role.startsWith("ASSIST")); assert.deepEqual(kA.on, { M1: false, M5: true, M15: true, M30: false, H1: false });
 assert.ok(kronosVM({ forecast: null }, "M5", { status: "READY" }).role.startsWith("SHADOW"));
+assert.match(kronosVM({ target: { state: "RESOURCE_PAUSED", reason: "RAM komputera ≥ 85 % – opcjonalne prognozy AI wstrzymane (Memory Governor)" }, forecast: null }, "M5",
+  { status: "READY" }).emptyTxt, /MEMORY GOVERNOR\) – ZAJĘTOŚĆ PAMIĘCI: DIAGNOSTYKA → ZASOBY$/);
 
 // K2: profil wskaźników silnika z /api/v1/candles
 assert.deepEqual(iprofVM({ indicators: { lines: [{ id: "EMA9" }, { id: "EMA21" }, { id: "BB20_UP" }], panels: { rsi: { period: 9 }, macd: { signal_ma: "SMA" } } } }),
