@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.42.3 – TiRex-2 i TabICLv2 przy Smart App Control (numpy 2.5.5 zablokowany)
+* Zgłoszenie z logu `instalacja_chronos2_granite_*.log` (po 1.42.2 Chronos-2 i Granite TTM instalują się poprawnie, parity PASS):
+  TabICLv2 – `DLL load failed while importing _pocketfft_umath: Zasady kontroli aplikacji zablokowały ten plik`; TiRex-2 – mylące
+  `cannot import name 'NP_SUPPORTED_MODULES' from 'torch._dynamo.utils'`. Wspólna przyczyna: Windows (Smart App Control) blokuje bibliotekę
+  DLL **numpy 2.5.5**, używanej tylko w `.venv_tirex2` i `.venv_tabicl`; torch łapie tylko „brak modułu”, więc zablokowany DLL psuł import torch.
+* `.venv_tirex2` i `.venv_tabicl` używają teraz **numpy 2.5.4** – tej samej wersji co Chronos-2 i Granite TTM (na tym komputerze ładuje się
+  bez blokady); te same pliki koła i sumy SHA-256; zależności tirex-2 (`numpy>=2.1.3`) i tabicl spełnione; TiRex-2 i TabICLv2: parity PASS.
+* TiRex-2 importuje numpy przed torch – blokada Windows pokazuje się jako `APP_CONTROL_BLOCKED` z prawdziwą przyczyną, nie „brak pakietu”.
+* Ponowne uruchomienie instalatora wymienia numpy 2.5.5 → 2.5.4 w tych dwóch środowiskach (reszta zostaje, wagi nie są pobierane drugi raz).
+
 ## 1.42.2 – instalatory modeli po przeniesieniu folderu programu („did not find executable at …”)
 * Zgłoszenie z logów `instalacja_kronos_*.log` / `instalacja_chronos2_granite_*.log`: folder programu skopiowany z innego miejsca /
   innego użytkownika Windows razem z gotowymi środowiskami `.venv_kronos`, `.venv_chronos2`, `.venv_granite`, `.venv_tirex2`,

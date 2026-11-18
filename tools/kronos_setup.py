@@ -129,7 +129,8 @@ def run(cmd: list[str], out: Out, step: int, env: dict | None = None) -> tuple[i
     return p.wait(), last
 
 
-APP_CONTROL = ("WinError 4551", "Zasady kontroli aplikacji", "Application Control policy", "application control policy")
+APP_CONTROL = ("WinError 4551", "Zasady kontroli aplikacji", "Application Control policy", "application control policy",
+               "NP_SUPPORTED_MODULES")   # 1.42.3: torch._dynamo after numpy's DLL was blocked (ImportError, not ModuleNotFoundError)
 
 
 def child_error(last: str) -> tuple[str | None, str]:

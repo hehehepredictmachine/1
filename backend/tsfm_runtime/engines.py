@@ -412,6 +412,8 @@ class TiRex2Engine(BaseEngine):
         if os.environ.get("PMW_TIREX_COMPILE") != "1":
             os.environ["TORCHDYNAMO_DISABLE"] = "1"
         try:
+            import numpy  # noqa: F401 - 1.42.3: first, so a DLL blocked by Windows App Control shows its OWN error (torch._dynamo
+            #                 would turn it into a misleading "cannot import name NP_SUPPORTED_MODULES")
             import torch
             if os.environ.get("PMW_TIREX_COMPILE") != "1":
                 torch._dynamo.config.disable = True
