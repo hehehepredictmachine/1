@@ -132,6 +132,9 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
         return result(out, 1, False, "DISK_SPACE", error=f"potrzeba ok. {NEED_DISK[mid] / 1e9:.1f} GB, wolne {free / 1e9:.1f} GB", model=mid)
     venv = root / VENV[mid]
     vpy = venv / ("Scripts/python.exe" if win else "bin/python")
+    rep = KS.venv_repair(root, venv, base, lambda m: out.say(2, m))  # 1.42.2: moved program folder
+    if rep["state"] == "FAILED":
+        return result(out, 2, False, "VENV", error=rep["detail"], model=mid)
     if not vpy.is_file():
         out.say(2, f"tworzę {venv}")
         rc, last = KS.run([base, "-m", "venv", str(venv)], out, 2)

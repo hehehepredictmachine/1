@@ -30,6 +30,14 @@ TORCH = "torch==2.14.1"
 LOG = {"f": None}
 
 
+def venv_repair(root: Path, venv: Path, base: str, say) -> dict:
+    """1.42.2: a .venv_* created in another folder / user profile points to a base Python that no longer exists ("did not find
+    executable at ..."); backend/mq_venv.py re-points it (same Python version, packages kept) or sets it aside for a fresh one."""
+    sys.path.insert(0, str(Path(root) / "backend"))
+    import mq_venv
+    return mq_venv.repair(venv, base, say)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -196,6 +204,9 @@ def main(argv=None) -> int:
     # 2. venv
     venv = root / ".venv_kronos"
     vpy = venv / ("Scripts/python.exe" if win else "bin/python")
+    rep = venv_repair(root, venv, base, lambda m: out.say(2, m))    # 1.42.2: folder moved -> re-point pyvenv.cfg or set the venv aside
+    if rep["state"] == "FAILED":
+        return result(out, 2, False, "VENV", error=rep["detail"])
     if not vpy.is_file():
         out.say(2, f"tworzę {venv}")
         rc, last = run([base, "-m", "venv", str(venv)], out, 2)

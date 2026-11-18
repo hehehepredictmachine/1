@@ -46,6 +46,15 @@ class Runtime:
                 _UM.before()
             except Exception:  # noqa: BLE001 - never blocks the start; the after-report shows the missing step
                 log.exception("upgrade 1.41 before-step failed")
+        try:                                                # 1.42.2: program folder moved -> model venvs re-pointed to this Python
+            import mq_venv
+            base = getattr(sys, "_base_executable", None) or sys.executable
+            fixed = mq_venv.repair_all(paths.ROOT_DIR, base, lambda m: log.warning("venv: %s", m))
+            bad = {k: v for k, v in fixed.items() if v["state"] not in ("OK", "MISSING")}
+            if bad:
+                log.warning("model environments after repair: %s", bad)
+        except Exception:  # noqa: BLE001 - never blocks the start; the installers repair too
+            log.exception("venv repair failed")
         self.cfg = ConfigStore()
         if demo:
             self.cfg.set_runtime_flag(synthetic_demo=True)

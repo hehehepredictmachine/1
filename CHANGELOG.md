@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.42.2 – instalatory modeli po przeniesieniu folderu programu („did not find executable at …”)
+* Zgłoszenie z logów `instalacja_kronos_*.log` / `instalacja_chronos2_granite_*.log`: folder programu skopiowany z innego miejsca /
+  innego użytkownika Windows razem z gotowymi środowiskami `.venv_kronos`, `.venv_chronos2`, `.venv_granite`, `.venv_tirex2`,
+  `.venv_tabicl`. Środowisko Pythona zapamiętuje w `pyvenv.cfg` bezwzględną ścieżkę do starego `runtime\python\python.exe` – instalator
+  „używał istniejącego” i kończył się błędem PIP / VENV.
+* Nowy `backend/mq_venv.py`: przy przeniesionym środowisku i tej samej wersji Pythona `pyvenv.cfg` jest przepinany na bieżący
+  `runtime\python` (zainstalowane pakiety zostają, nic nie jest pobierane ponownie; kopia oryginału: `pyvenv.cfg.moved_bak`); gdy to
+  niemożliwe (inna wersja Pythona, uszkodzenie) – środowisko jest odsuwane do `<nazwa>_old_<czas>` (nie kasowane) i tworzone od nowa.
+* Działa w `33_KRONOS_INSTALUJ.bat`, `34_DEEP_INSTALUJ.bat`, `38_MODELE_CHRONOS2_GRANITE.bat`, `41_AI_TABICL_TIREX_INSTALUJ.bat`,
+  `42_MODELE_8GB_GRANITE_TIREX.bat`, `10_PROGNOZY_INSTALUJ.bat` (`.venv_candles`) oraz przy każdym starcie bota (tylko przepięcie –
+  procesy modeli startują bez ponownej instalacji).
+
 ## 1.42.1 – TiRex-2 na Windows bez kompilatora C++, profil 8 GB RAM (Granite TTM + TiRex-2)
 * **Naprawa instalacji TiRex-2** (`VERIFY` z „Set TORCHDYNAMO_VERBOSE=1…”): pakiet tirex-2 0.5.0 ma bezwarunkowe `@torch.compile`
   na `ResidualBlock`; na Windows bez MSVC TorchInductor kończył się `InvalidCxxCompiler`. W procesie TiRex-2 TorchDynamo jest
