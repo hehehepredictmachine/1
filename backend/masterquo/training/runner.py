@@ -208,7 +208,7 @@ def t_scalp(run: Run, inst: str) -> None:
     com = plan["commissions"].get(inst)
     if com is None and (meta.get("costs") or {}).get("commission_per_lot_side") is None and inst != "XAUUSD":
         for i in ids:
-            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
+            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
         return
     cmd = [core.candles_python(), "-m", "gold_candles_runtime.scalp_train", "--instrument", inst, "--history", str(ds), "--data-kind", _kind(run),
            "--no-activate"] + (["--commission-per-lot-side", str(com)] if com is not None else []) + (["--small-test"] if plan["synthetic"] else [])
@@ -336,7 +336,7 @@ def t_indicator_context(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COMMISSION_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"indicator-context kod {rc}: {tail}")
     vs = {k: v.get("status") for k, v in (rep.get("variants") or {}).items()}
@@ -363,7 +363,7 @@ def t_ml_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"ml-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep["sides"].items()}
@@ -389,7 +389,7 @@ def t_neural_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"neural-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep.get("sides", {}).items()}

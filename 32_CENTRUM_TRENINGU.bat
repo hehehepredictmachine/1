@@ -6,12 +6,10 @@ setlocal
 chcp 65001 >nul
 title PepeMarketWizard - Centrum treningu
 set "ROOT=%~dp0"
-set "PY=%ROOT%.venv\Scripts\python.exe"
-if not exist "%PY%" (
-  echo [BLAD] Brak srodowiska .venv - uruchom najpierw 01_INSTALUJ.bat
-  pause
-  exit /b 2
-)
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
+set "ROOT=%ROOT%\"
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"
 :menu

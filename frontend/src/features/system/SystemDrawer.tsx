@@ -4,10 +4,12 @@
 import { useEffect, useRef } from "react";
 import { EmbedCtx, ModeDialog, PowerDialog, SettingsModal } from "../../components/Dialogs";
 import DiagnosticsPanel from "./DiagnosticsPanel";
+import TrainingCenterPanel from "./TrainingCenterPanel";
 import "./system.css";
 
-export type SysPanel = "settings" | "mode" | "stop" | "diagnostics";
-const TABS: [SysPanel, string][] = [["settings", "USTAWIENIA"], ["mode", "TRYB PRACY"], ["stop", "STOP"], ["diagnostics", "DIAGNOSTYKA"]];
+export type SysPanel = "settings" | "mode" | "stop" | "diagnostics" | "training";
+const TABS: [SysPanel, string][] = [["settings", "USTAWIENIA"], ["mode", "TRYB PRACY"], ["stop", "STOP"], ["diagnostics", "DIAGNOSTYKA"],
+  ["training", "CENTRUM TRENINGOWE PEPE"]];
 
 export default function SystemDrawer({ panel, onPanel, onClose }: { panel: SysPanel; onPanel(p: SysPanel): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -31,7 +33,7 @@ export default function SystemDrawer({ panel, onPanel, onClose }: { panel: SysPa
   return (
     <div className="sys-layer" data-testid="system-drawer">
       <div className="sys-dim" onMouseDown={onClose} />
-      <aside className="sys-drawer cs-win" role="dialog" aria-modal="true" aria-label={"Panel systemowy – " + TABS[idx][1]} ref={ref} data-testid={"system-" + panel}>
+      <aside className={"sys-drawer cs-win" + (panel === "training" ? " wide" : "")} role="dialog" aria-modal="true" aria-label={"Panel systemowy – " + TABS[idx][1]} ref={ref} data-testid={"system-" + panel}>
         <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
         <header className="sys-head"><span className="sys-num">SYS · {String(idx + 1).padStart(2, "0")}</span><b>{TABS[idx][1]}</b>
           <button type="button" className="sys-x" aria-label="Zamknij panel" onClick={onClose}>✕</button></header>
@@ -44,6 +46,7 @@ export default function SystemDrawer({ panel, onPanel, onClose }: { panel: SysPa
             {panel === "stop" && <PowerDialog onClose={onClose} />}
           </EmbedCtx.Provider>
           {panel === "diagnostics" && <DiagnosticsPanel />}
+          {panel === "training" && <TrainingCenterPanel />}
         </div>
       </aside>
     </div>);

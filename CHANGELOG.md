@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.42.10 – naprawy treningu i Centrum Treningowe Pepe
+* **Nowe Centrum Treningowe Pepe** – jeden prosty widok treningu wszystkich modeli bota (ikona birretu na pasku systemowym, zakładka
+  w panelu systemowym, przycisk w ekranie MODELS): wybór instrumentu (OBA / XAUUSD / BTC), **TRENUJ** przy modelu albo **TRENUJ WSZYSTKO**,
+  stan każdego modelu per instrument (wytrenowany / w toku / w kolejce / błąd z przyczyną / pominięty z powodem), kolejka z usuwaniem,
+  ZATRZYMAJ, historia i log. Treningi idą po kolei, jeden naraz; główny trening jednym przebiegiem `training run` (eksport z MT5 i kontrola
+  danych przed treningiem), dalej TrainHub, rodziny modeli, Granite TTM i SDformerFlow. Ustawienie **PROWIZJI** (XAUUSD / BTC) przekazywane
+  do treningu. API: `GET /api/v1/pepe-training`, `POST …/train|cancel|remove`, `PUT …/settings`, `GET …/log`.
+* **Naprawa:** po treningu SDformerFlow Memory Governor nie zwalniał miejsca treningu – kolejne treningi Granite i SDformerFlow były
+  odrzucane do restartu bota.
+* **Naprawa:** rodziny modeli (ARIMA / SARIMAX / GARCH / Kalman / breakout …) kończyły się „za mało świec M5: 0” bez wcześniejszego eksportu –
+  teraz przy krótkim archiwum biorą zamknięte świece prosto z MT5. Awaria procesu rodziny była niewidoczna (zadanie wisiało jako „w toku”) –
+  teraz log procesu i stan BŁĄD z przyczyną. „Trenuj wszystkie” uruchamiało ok. 12 procesów naraz – teraz najwyżej 2, reszta w kolejce.
+* **Naprawa:** równoczesny zapis stanu zadania rodziny (proces treningu i bot) kończył się błędem `FileNotFoundError …json.tmp`.
+* **Naprawa:** skrypty `11_EKSPORT_HISTORII_XAUUSD`, `16_EKSPORT_HISTORII_SCALP`, `19_REPLAY_SCALP`, `32_CENTRUM_TRENINGU`,
+  `35_RODZINY_MODELI`, `36_STUDIO`, `37_QUANT_CORE` wymagały `.venv` i nie działały w aplikacji DESKTOP – teraz używają Pythona aplikacji.
+* **Naprawa:** `33_KRONOS_INSTALUJ.bat` (od 1.42.8) miał końce linii LF zamiast CRLF – przywrócone CRLF.
+* **Naprawa:** przyciski treningu Scalp ML, NSS i kontekstu wskaźników padały od razu („brak eksportu REAL_USER_DATA”), a panel pokazywał
+  „uruchomiono” – w Centrum te modele trenują się w głównym przebiegu (najpierw eksport i kontrola danych).
+* Bez zmian: STOP / SL, limity ryzyka, dźwignia, strategie.
+
 ## 1.42.9 – Kronos zawsze, bez względu na zajętość RAM
 * Decyzja użytkownika: **Memory Governor nigdy nie wstrzymuje ani nie zwalnia Kronosa** – prognoza Kronos-small (ok. 0,47 GB) jest liczona
   i pokazywana na wykresie przy każdej zajętości RAM, w każdym profilu pamięci (8 / 12 / 16 GB, AUTO, ECO, BALANCED) i w każdej roli (OBSERVE / ASSIST).

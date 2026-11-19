@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.42.9"
+VERSION = "1.42.10"
 TAG = VERSION.replace(".", "_")
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
@@ -260,7 +260,20 @@ def admin(shots: Path | None) -> list:
               "oczekujące. Wynik jakości strefy 0–100 nie jest prawdopodobieństwem.", "warn"),
           PageBreak()]
     # 4
-    s += [P("4 / Eksport danych i trening modeli", "h1"), P("Centrum treningu (Modele i trening → Centrum treningu)", "h2"),
+    s += [P("4 / Eksport danych i trening modeli", "h1"),
+          P("Centrum Treningowe Pepe (1.42.10) – najprostsza droga", "h2"),
+          steps(["Otwórz: ikona birretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE PEPE</b> w panelu systemowym albo przycisk "
+                 "w ekranie <b>MODELS</b>.",
+                 "Wybierz instrument: <b>OBA</b>, <b>XAUUSD</b> albo <b>BTC</b>.",
+                 "Kliknij <b>TRENUJ</b> przy modelu albo <b>TRENUJ WSZYSTKO</b> (drugie kliknięcie potwierdza). Treningi idą po kolei – "
+                 "jeden naraz; bot sam pobiera historię z MT5 i sprawdza dane przed treningiem.",
+                 "Przy każdym modelu widać stan dla każdego instrumentu: wytrenowany / w toku / w kolejce / błąd (z przyczyną) / pominięty "
+                 "(z powodem). Filtry: DO TRENINGU, BŁĘDY, WYTRENOWANE.",
+                 "<b>PROWIZJA</b>: podaj prowizję za 1 lot na stronę (waluta konta), jeśli konto nie ma jeszcze transakcji danego "
+                 "instrumentu – bez niej modele Scalp i ML po kosztach są pomijane.",
+                 "<b>ZATRZYMAJ</b> przerywa bieżący trening i czyści kolejkę; <b>POKAŻ LOG</b> pokazuje przebieg."]),
+          box("Model trafia do bota tylko po walidacji. Trening nie składa zleceń i nie zmienia ustawień ryzyka.", "note"),
+          P("Centrum treningu (Modele i trening → Centrum treningu)", "h2"),
           steps(["Połącz MT5, sprawdź symbol i dostępność historii u brokera.",
                  "Wybierz XAUUSD albo BTC – instrumenty trenuj i oceniaj osobno.",
                  "<b>Eksportuj dane</b> (przyrostowo). Sprawdź okres, interwały, liczbę świec, luki i raport jakości.",

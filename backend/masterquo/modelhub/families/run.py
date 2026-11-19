@@ -23,7 +23,7 @@ def _status(p: Path, **kw):
     B._atomic_json(p, cur)
 
 
-def load_data(fam, inst: str, cfg: dict) -> dict:
+def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None) -> dict:
     """Training data for a family from the controlled stores (MT5 export Store, book archive, NLP corpus)."""
     from ...marketdata.store import Store
     st = Store()
@@ -32,7 +32,17 @@ def load_data(fam, inst: str, cfg: dict) -> dict:
     out = {"instrument": inst, "point": point, "data_kind": man.get("data_kind") or "UNKNOWN", "symbol": man.get("symbol")}
     kind = fam.DATA.get("kind")
     if kind == "BARS":
-        out["bars"] = B.bars_from_store(st, inst, fam.DATA.get("tf") or fam.TF)
+        try:
+            out["bars"] = B.bars_from_store(st, inst, fam.DATA.get("tf") or fam.TF)
+        except Exception:  # noqa: BLE001 - brak archiwum eksportu
+            out["bars"] = []
+        if bars_file and len(out["bars"]) < int(fam.DATA.get("min_bars") or 0):    # 1.42.10: świece z MT5 na żywo (archiwum za krótkie)
+            try:
+                live = json.loads(Path(bars_file).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                live = {}
+            if len(live.get("bars") or []) > len(out["bars"]):
+                out.update(bars=live["bars"], data_kind="MT5_LIVE_BRIDGE", symbol=live.get("symbol") or out.get("symbol"))
     elif kind == "MULTI_SERIES":
         if fam.ID == "PAIR_COINT":
             pair = (cfg.get("pairs") or [None])[0]
@@ -63,7 +73,8 @@ def books_from_archive(db_path, symbol) -> list[dict]:
     return [{"t": float(t), "bids": [tuple(x) for x in json.loads(b)], "asks": [tuple(x) for x in json.loads(a)]} for t, b, a in rows]
 
 
-def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None) -> dict:
+def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None,
+          bars_file: str | None = None) -> dict:
     from . import registry
     fam = registry()[fid]
     sf = status_file
@@ -81,7 +92,7 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         if sf:
             _status(sf, **res)
         return res
-    data = data if data is not None else load_data(fam, inst, cfg)
+    data = data if data is not None else load_data(fam, inst, cfg, bars_file)
     ok, why = fam.validate_data(data)
     if not ok:
         res = {"state": "BLOCKED", "reason": why, "family": fid}
@@ -133,8 +144,9 @@ def main(argv=None) -> int:
     ap.add_argument("--profile", default="smoke", choices=list(BUDGETS))
     ap.add_argument("--job-file")
     ap.add_argument("--config", default="{}")
+    ap.add_argument("--bars-file")
     a = ap.parse_args(argv)
-    res = train(a.family, a.instrument, a.profile, json.loads(a.config), Path(a.job_file) if a.job_file else None)
+    res = train(a.family, a.instrument, a.profile, json.loads(a.config), Path(a.job_file) if a.job_file else None, bars_file=a.bars_file)
     print(json.dumps({k: v for k, v in res.items() if k != "trace"}, ensure_ascii=False))
     return 0 if res["state"] in ("DONE", "DELEGATED") else 3
 

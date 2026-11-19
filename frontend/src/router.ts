@@ -11,7 +11,7 @@ export const PAGES: { id: Page; label: string }[] = [
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
 export const FOREX_SCREENS = ["charts", "signals", "models", "roi"] as const;
 export type ForexScreen = (typeof FOREX_SCREENS)[number];
-export const SYSTEM_PANELS = ["settings", "mode", "stop", "diagnostics"] as const;
+export const SYSTEM_PANELS = ["settings", "mode", "stop", "diagnostics", "training"] as const;
 
 const R = (page: Page, params?: Record<string, string>) => ({ page, params: params || {} });
 /** S2 §3 – stare hashe 1.41 -> nowe miejsce (stare zakładki i linki nie prowadzą w próżnię). */

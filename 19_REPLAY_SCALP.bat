@@ -11,13 +11,15 @@ cd /d "%~dp0"
 set "COMM=%~1"
 if "%COMM%"=="" set "COMM=0.50"
 echo Prowizja za 1 lot na strone: %COMM% ^(domyslnie 0.50 - inna wartosc: %~nx0 3.5^)
-if not exist "%~dp0.venv\Scripts\python.exe" (echo [BLAD] Brak .venv - uruchom 01_INSTALUJ.bat & pause & exit /b 1)
+for %%I in ("%~dp0.") do set "ROOT=%%~fI"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
 pushd "%~dp0backend"
-"%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM%
+"%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM%
 set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --cost-stress 1.5
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --margin-mode NETTING
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --variants
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --cost-stress 1.5
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --margin-mode NETTING
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --variants
 popd
 pause
 exit /b %RC%

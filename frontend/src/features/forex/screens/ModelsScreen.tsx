@@ -13,7 +13,7 @@ const ST_PL: Record<string, string> = { READY: "GOTOWY", RULE: "REGUŁA", NOT_TR
   ERROR: "BŁĄD", INCOMPATIBLE: "NIEZGODNY", BLOCKED_DATA: "BRAK DANYCH", EXTERNAL: "ZEWNĘTRZNY" };
 const TRAIN_DEFAULT = { models: ["TH_BASELINE", "TH_LOGREG", "TH_HGB"], base_tf: "M5", horizon: 6, k_atr: 0.25, mode: "incremental", timeframes: ["M1", "M5", "M15", "M30"], lookback_days: 90 };
 
-export default function ModelsScreen({ engine }: ScreenProps) {
+export default function ModelsScreen({ engine, onSystem }: ScreenProps) {
   const [inst, setInst] = useState<"XAUUSD" | "BTC">("XAUUSD");
   const [tab, setTab] = useState("obs");
   const cat = usePoll<any>(`/api/v1/models/catalog?instrument=${inst}`, 30000);
@@ -48,6 +48,7 @@ export default function ModelsScreen({ engine }: ScreenProps) {
           <button key={a} type="button" aria-pressed={inst === a} onClick={() => setInst(a)}>{a}</button>)}</div><span className="ch-sep" />
         <div id="mb-tabs" className="segb" role="group" aria-label="Widok">{[["obs", "OBSERWATORIUM"], ["train", "TRENING"], ["bt", "BACKTEST"], ["mc", "MONTE CARLO"]].map(([k, l]) =>
           <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} data-testid={"models-tab-" + k}>{l}</button>)}</div>
+        <button type="button" className="mb-ptc" data-testid="open-training-center" onClick={() => onSystem("training")}>CENTRUM TRENINGOWE PEPE</button>
         <div className="gates-sum"><span>HISTORIA MT5<b>{data?.timeframes && Object.keys(data.timeframes).length ? Object.keys(data.timeframes).join(" ") + " · " + (data.data_kind ?? "") : "BRAK EKSPORTU"}</b></span>
           <span>WORKER<b>{st.data?.queue?.running ? "PRACUJE" : (st.data?.queue?.queued ?? 0) + " W KOLEJCE"}</b></span><span>AKTYWACJA<b>RĘCZNA</b></span></div>
       </div>

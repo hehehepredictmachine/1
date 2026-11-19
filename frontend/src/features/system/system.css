@@ -53,3 +53,38 @@
 [data-motion="reduced"] .sys-drawer,[data-motion="reduced"] .sys-body{animation:sysFade .15s both}
 @media (max-width:700px){.sys-exec{top:10px;right:10px}.sys-exec .mode{display:none}}
 .sys-body .act.on{border-color:#e9ecf2;background:rgba(255,255,255,.08);color:#fff}
+/* 1.42.10 CENTRUM TRENINGOWE PEPE – szeroka szuflada, prosta lista modeli */
+.sys-drawer.wide{width:clamp(560px,68vw,1180px)}
+.ptc{color:#dfe3eb;font-size:12px}
+.ptc .dim{color:#8b919c}.ptc .warn{color:#e3cf9b}.ptc .bad{color:#e0b3b3}.ptc .ok{color:#cfe8da}.ptc .run{color:#bfd2ff}.ptc .off{color:#8b919c}
+.ptc-intro p{margin:0 0 8px;line-height:1.6;color:#b9bec7}.ptc-intro b{color:#fff;font-weight:500}
+.ptc-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 10px}
+.ptc-seg{display:inline-flex;gap:2px}.ptc-seg button{background:transparent;border:1px solid #2b303b;color:#9aa0aa;font:inherit;font-size:10px;letter-spacing:.16em;padding:7px 12px;cursor:pointer}
+.ptc-seg button[aria-pressed="true"]{border-color:#dfe3eb;color:#fff}.ptc-seg.sm{margin-left:auto}.ptc-seg.sm button{padding:5px 9px;font-size:9px}
+.ptc-big{background:#dfe3eb;color:#05060c;border:1px solid #dfe3eb;font:inherit;font-size:11px;letter-spacing:.2em;padding:11px 22px;cursor:pointer;font-weight:600}
+.ptc-big:hover{background:#fff}.ptc-big.armed,.sys-body .act.armed{background:#e3cf9b;border-color:#e3cf9b;color:#05060c}
+.ptc-big:disabled{opacity:.4;cursor:default}.ptc-hint{font-size:11px;color:#e3cf9b}
+.ptc-now{border:1px solid #2b303b;padding:10px 14px;margin:8px 0 12px;background:rgba(223,227,235,.02)}
+.ptc-now-h{display:flex;align-items:center;gap:8px}.ptc-now-h .act{margin-left:auto}
+.ptc-pulse{width:8px;height:8px;border-radius:50%;background:#bfd2ff;box-shadow:0 0 0 0 rgba(191,210,255,.6);animation:ptcPulse 1.4s infinite}
+@keyframes ptcPulse{0%{box-shadow:0 0 0 0 rgba(191,210,255,.6)}100%{box-shadow:0 0 0 9px rgba(191,210,255,0)}}
+.ptc-queue{margin:8px 0 0;padding-left:18px;color:#b9bec7}.ptc-queue li{padding:2px 0}
+.ptc-x{background:none;border:0;color:#8b919c;cursor:pointer;margin-left:8px;font-size:11px}.ptc-x:hover{color:#e0b3b3}
+.ptc-set{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:11px;color:#b9bec7;margin:0 0 10px}.ptc-set b{color:#fff;font-weight:500}
+.ptc-set label{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.14em}
+.ptc-set input{width:120px;background:#0b0e15;border:1px solid #2b303b;color:#fff;font:inherit;font-size:12px;padding:5px 8px}
+.ptc-sum{display:flex;flex-wrap:wrap;align-items:center;gap:16px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin:6px 0 4px}
+.ptc-sum b{font-size:14px;letter-spacing:0;margin-left:4px;color:inherit}
+.ptc-group h4{font-size:9px;letter-spacing:.22em;color:#8b919c;font-weight:400;margin:16px 0 4px;border-bottom:1px solid #1c2130;padding-bottom:4px}
+.ptc-row{display:grid;grid-template-columns:minmax(150px,230px) 1fr auto;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid #12161f}
+.ptc-name{color:#f2f2ef}
+.ptc-cells{display:flex;gap:8px;flex-wrap:wrap;min-width:0}
+.ptc-cell{flex:1 1 220px;min-width:0;display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;gap:6px;border-left:2px solid #2b303b;padding:2px 8px}
+.ptc-cell.ok{border-left-color:#7fbf9a}.ptc-cell.bad{border-left-color:#d98b8b}.ptc-cell.run{border-left-color:#8fb0ff}.ptc-cell.warn{border-left-color:#c9b47a}
+.ptc-inst{font-size:9px;letter-spacing:.16em;color:#8b919c}
+.ptc-pill{font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.ptc-det{font-size:11px;color:#8b919c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ptc-det i{font-style:normal;color:#6b717c}
+.ptc-hist{margin-top:18px}.ptc-hist h4{font-size:9px;letter-spacing:.22em;color:#8b919c;font-weight:400}
+.ptc-hist .act{margin-top:8px}
+.ptc-log{max-height:260px;overflow:auto;background:#05060c;border:1px solid #1c2130;padding:8px;font-size:10px;line-height:1.5;color:#b9bec7;white-space:pre-wrap}
+@media(max-width:760px){.sys-drawer.wide{width:100vw}.ptc-row{grid-template-columns:1fr}.ptc-seg.sm{margin-left:0}}

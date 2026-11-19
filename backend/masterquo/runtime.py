@@ -191,6 +191,8 @@ class Runtime:
         except Exception:  # noqa: BLE001 - a broken research state never stops the engine
             log.exception("research modules unavailable")
             self.research = None
+        from .training.pepe_center import PepeTrainingCenter                                        # 1.42.10 Centrum Treningowe Pepe (kolejka 1 naraz)
+        self.pepe_training = PepeTrainingCenter(self)
         try:                                                                                        # 1.41 three market profiles, 9 baskets / 90 strategies
             from .baskets.service import BasketService
             self.baskets = BasketService(self)

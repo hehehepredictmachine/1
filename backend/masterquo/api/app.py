@@ -3114,6 +3114,47 @@ def create_app(rt, port: int) -> FastAPI:
         subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, MQ_NO_BROWSER="1"), stdout=log, stderr=subprocess.STDOUT, **kw)
         return {"started": True}
 
+    # ------------------------------------------------------------ 1.42.10 Centrum Treningowe Pepe (PMW-TCP-1): jeden widok + kolejka 1 naraz
+    @app.get("/api/v1/pepe-training")
+    def pepe_training_status():
+        return rt.pepe_training.status()
+
+    @app.post("/api/v1/pepe-training/train")
+    def pepe_training_train(body: dict = Body(default={})):
+        units = body.get("units")
+        if units != "ALL" and not (isinstance(units, list) and units):
+            raise HTTPException(400, "UNITS: lista identyfikatorów albo \"ALL\"")
+        try:
+            return rt.pepe_training.enqueue(units, body.get("instruments"))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/api/v1/pepe-training/settings")
+    def pepe_training_settings(body: dict = Body(default={})):
+        try:
+            return rt.pepe_training.set_settings(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)[:200])
+
+    @app.post("/api/v1/pepe-training/cancel")
+    def pepe_training_cancel():
+        return rt.pepe_training.cancel()
+
+    @app.post("/api/v1/pepe-training/remove")
+    def pepe_training_remove(body: dict = Body(default={})):
+        return rt.pepe_training.remove(str(body.get("id") or ""))
+
+    @app.get("/api/v1/pepe-training/log")
+    def pepe_training_log(lines: int = Query(80, ge=10, le=400)):
+        from ..training import core as tc
+        out = {}
+        for name, f in (("center", tc.training_dir() / "pepe_center.log"),):
+            try:
+                out[name] = f.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+            except OSError:
+                out[name] = []
+        return out
+
     # ------------------------------------------------------------ 1.25 export of MT5 history for training (own process, read only)
     def _default_symbol(inst: str):
         c = rt.cfg.get()

@@ -27,6 +27,7 @@ import os
 import shutil
 import sys
 import time
+import threading
 import uuid
 from pathlib import Path
 
@@ -76,9 +77,19 @@ def root() -> Path:
 
 
 def _atomic_json(p: Path, obj) -> None:
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    # 1.42.10: unikalny plik tymczasowy na proces/wątek – stan zadania zapisują równolegle proces treningu i wątki bota
+    # (wspólne „.json.tmp” dawało FileNotFoundError przy jednoczesnym zapisie).
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1, default=_json_default), encoding="utf-8")
-    tmp.replace(p)
+    for i in range(5):
+        try:
+            tmp.replace(p)
+            return
+        except PermissionError:                     # Windows: plik chwilowo otwarty do odczytu przez drugi proces
+            if i == 4:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05 * (i + 1))
 
 
 def _json_default(o):

@@ -89,7 +89,62 @@ class FamilyService:
         return self.jobs_dir / f"{fid}__{inst}.json"
 
     def job(self, fid, inst) -> dict | None:
-        return B._read(self._job_file(fid, inst), None)
+        j = B._read(self._job_file(fid, inst), None)
+        if j and j.get("state") in ("RUNNING", "QUEUED") and not j.get("waiting"):   # 1.42.10: proces padł -> FAILED z końcówką logu
+            p = self.procs.get(f"{fid}__{inst}")
+            dead = (p.poll() is not None) if p is not None else (j.get("pid") and not _alive(j.get("pid")))
+            if dead:
+                fresh = B._read(self._job_file(fid, inst), None) or j           # proces mógł zdążyć zapisać wynik
+                if fresh.get("state") in ("RUNNING", "QUEUED"):
+                    fresh.update(state="FAILED", reason="proces treningu zakończył się bez wyniku: " + (self._log_tail(fid, inst) or "brak logu"),
+                                 updated_at=self.clock())
+                    B._atomic_json(self._job_file(fid, inst), fresh)
+                j = fresh
+        return j
+
+    def _log_file(self, fid, inst) -> Path:
+        return self.jobs_dir / f"{fid}__{inst}.log"
+
+    def _log_tail(self, fid, inst, n: int = 400) -> str:
+        try:
+            txt = self._log_file(fid, inst).read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+        lines = [x for x in txt.splitlines() if x.strip()]
+        err = next((x for x in reversed(lines) if "Error" in x or "Exception" in x), None)
+        return (err or (lines[-1] if lines else ""))[-n:]
+
+    def _live_bars_file(self, fid: str, inst: str) -> Path | None:
+        """1.42.10: dane świec rodziny pochodzą z archiwum eksportu (marketdata Store). Gdy archiwum ma za mało świec (np. przed pierwszym
+        eksportem w Centrum treningu), proces dostaje świece z MT5 na żywo (zamknięte, ten sam format) – zamiast błędu „0 świec”."""
+        f = self.fams[fid]
+        d = getattr(f, "DATA", {}) or {}
+        if d.get("kind") != "BARS" or self.bridge is None:
+            return None
+        tf, need = d.get("tf") or getattr(f, "TF", "M5"), int(d.get("min_bars") or 0)
+        try:
+            have = len(self.store_md().read(inst, tf)["time"])
+        except Exception:  # noqa: BLE001 - brak archiwum = 0
+            have = 0
+        if have >= max(need, 1):
+            return None
+        try:
+            m = self.cfg_store.get().assets.mappings.get(inst)
+            sym = m.broker_symbol if m and m.broker_symbol else None
+            rows = self.bridge.symbol_bars(sym, tf, int(min(20000, max(need * 3, 5000)))) if sym else []
+        except Exception:  # noqa: BLE001 - brak połączenia: zostaje komunikat o braku danych
+            rows = []
+        bars = B.bars_from_bridge([r for r in rows if r.get("closed", True)])
+        if len(bars) <= have:
+            return None
+        out = self.jobs_dir / f"{fid}__{inst}.bars.json"
+        B._atomic_json(out, {"source": "MT5_LIVE_BRIDGE", "symbol": sym, "tf": tf, "bars": bars})
+        return out
+
+    @staticmethod
+    def store_md():
+        from ...marketdata.store import Store
+        return Store()
 
     def _recover_orphans(self) -> None:
         for p in self.jobs_dir.glob("*.json"):
@@ -119,10 +174,21 @@ class FamilyService:
             from ... import paths
             argv = [sys.executable, "-m", "masterquo.modelhub.families.run", "--family", fid, "--instrument", inst, "--profile", profile,
                     "--job-file", str(jf), "--config", json.dumps(self._job_config())]
+            bf = self._live_bars_file(fid, inst)
+            if bf is not None:
+                argv += ["--bars-file", str(bf)]
             env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8",
                        PMW_FAMILIES_DIR=str(self.store.base))
-            p = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+            log = open(self._log_file(fid, inst), "w", encoding="utf-8")     # 1.42.10: log procesu (był DEVNULL – awaria bez śladu)
+            try:
+                p = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=log, stderr=subprocess.STDOUT,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+            except OSError as exc:
+                log.close()
+                B._atomic_json(jf, {"state": "FAILED", "family": fid, "instrument": inst, "reason": f"nie można uruchomić procesu: {exc}"[:300],
+                                    "updated_at": self.clock()})
+                return {"ok": False, "status": "FAILED", "reason": str(exc)[:300]}
+            log.close()
             self.procs[f"{fid}__{inst}"] = p
             return {"ok": True, "status": "STARTED", "pid": p.pid}
 
@@ -141,9 +207,14 @@ class FamilyService:
         B._atomic_json(self._job_file(fid, inst), j)
         return {"ok": True, "status": "CANCELLED"}
 
+    MAX_PARALLEL = 2                                     # 1.42.10: „trenuj wszystkie” – najwyżej 2 procesy naraz (było ~12 równolegle)
+
     def train_all(self, inst: str, profile: str = "smoke") -> dict:
-        """Starts every family that can run; reports started / blocked / delegated separately (never one global 'success')."""
-        out = {"started": [], "blocked": [], "delegated": []}
+        """Starts every family that can run; reports started / queued / blocked / delegated separately (never one global 'success').
+        1.42.10: at most MAX_PARALLEL family processes at once – the rest wait in a queue and start when a slot frees (on 8-16 GB computers
+        a dozen parallel trainings ran out of memory)."""
+        out = {"started": [], "queued": [], "blocked": [], "delegated": []}
+        todo = []
         for fid, f in self.fams.items():
             if fid == "SEQ_GRU_EVENT":
                 out["delegated"].append({"family": fid, "reason": "trening w Centrum MM (mm/event_engine)"})
@@ -155,9 +226,37 @@ class FamilyService:
             if impl != "AVAILABLE":
                 out["blocked"].append({"family": fid, "reason": why})
                 continue
+            todo.append(fid)
+        for fid in todo[:self.MAX_PARALLEL]:
             r = self.submit(fid, inst, profile)
             (out["started"] if r.get("ok") else out["blocked"]).append({"family": fid, **r})
+        rest = todo[self.MAX_PARALLEL:]
+        for fid in rest:
+            B._atomic_json(self._job_file(fid, inst), {"state": "QUEUED", "family": fid, "instrument": inst, "profile": profile,
+                                                      "submitted_at": self.clock(), "reason": "w kolejce – start po zwolnieniu miejsca",
+                                                      "waiting": True})
+            out["queued"].append({"family": fid, "status": "QUEUED"})
+        if rest:
+            threading.Thread(target=self._drain, args=(inst, profile, rest), name="families-queue", daemon=True).start()
         return out
+
+    def _running(self) -> int:
+        return sum(1 for p in list(self.procs.values()) if p.poll() is None)
+
+    def _drain(self, inst: str, profile: str, rest: list[str]) -> None:
+        for fid in rest:
+            while self._running() >= self.MAX_PARALLEL:
+                time.sleep(2.0)
+            if not self.jobs_dir.exists():                       # katalog danych usunięty (np. po zamknięciu) – kończymy kolejkę
+                return
+            j = B._read(self._job_file(fid, inst), {}) or {}
+            if j.get("state") == "CANCELLED":
+                continue
+            try:
+                self.submit(fid, inst, profile)
+            except Exception as exc:  # noqa: BLE001 - jedna rodzina nie zatrzymuje kolejki
+                B._atomic_json(self._job_file(fid, inst), {"state": "FAILED", "family": fid, "instrument": inst,
+                                                          "reason": f"{type(exc).__name__}: {exc}"[:300], "updated_at": self.clock()})
 
     # ------------------------------------------------------------------ activation / roles
     def activate(self, fid: str, inst: str, rid: str) -> dict:

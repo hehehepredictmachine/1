@@ -400,17 +400,27 @@ class ResearchModulesService:
                "base_active": s.get("active_run")}
         self.jobs["sdformer_bootstrap" if op == "from_scratch" and reason.startswith("BOOTSTRAP") else f"sdformer_{run_id}"] = job
         self.jobs["sdformer_last"] = job
-        self._sdf_proc = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                          text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            self._sdf_proc = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                              text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as exc:
+            if self.governor is not None:
+                self.governor.training_done("sdformerflow")
+            job.update(state="FAILED", finished_at=time.time(), error=f"nie można uruchomić procesu treningu: {exc}"[:300])
+            return {"ok": False, "reason": job["error"]}
         if self.governor is not None:
             p = self._sdf_proc
             self.governor.register("sdformerflow", "heavy", lambda: p.pid if p.poll() is None else None)
 
         def wait():
             last = ""
-            for line in self._sdf_proc.stdout:
-                last = line.strip() or last
-            self._sdf_proc.wait()
+            try:
+                for line in self._sdf_proc.stdout:
+                    last = line.strip() or last
+                self._sdf_proc.wait()
+            finally:
+                if self.governor is not None:                      # 1.42.10: zwolnij „slot” ciężkiego treningu (bez tego Granite / kolejny
+                    self.governor.training_done("sdformerflow")    # trening SDformerFlow były odrzucane do restartu bota)
             res = {}
             if last.startswith("RESULT "):
                 try:
