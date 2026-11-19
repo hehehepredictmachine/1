@@ -12,12 +12,18 @@
 * **Naprawa:** rodziny modeli (ARIMA / SARIMAX / GARCH / Kalman / breakout …) kończyły się „za mało świec M5: 0” bez wcześniejszego eksportu –
   teraz przy krótkim archiwum biorą zamknięte świece prosto z MT5. Awaria procesu rodziny była niewidoczna (zadanie wisiało jako „w toku”) –
   teraz log procesu i stan BŁĄD z przyczyną. „Trenuj wszystkie” uruchamiało ok. 12 procesów naraz – teraz najwyżej 2, reszta w kolejce.
+* **Naprawa:** dostrajanie Granite TTM kończyło się „zbiór danych odrzucony: za mało świec: 0 < 5000”, gdy archiwum świec nie było
+  wcześniej wyeksportowane – Centrum najpierw samo pobiera historię z MT5 (eksport przyrostowy). Gdy trwa inny ciężki trening (np. auto-trening
+  SDformerFlow przy starcie bota), Centrum czeka na jego koniec zamiast pomijać Granite („trwa inny trening”). Granite bez wag jest od razu
+  oznaczony jako niedostępny z instrukcją instalacji. Sprawdzone na żywo: eksport → czekanie → 6 epok → wersja dostrojona.
+* **Naprawa:** stan Granite w panelu – wersje liczone osobno dla XAUUSD i BTC, data najnowszej wersji (była najstarsza).
 * **Naprawa:** równoczesny zapis stanu zadania rodziny (proces treningu i bot) kończył się błędem `FileNotFoundError …json.tmp`.
 * **Naprawa:** skrypty `11_EKSPORT_HISTORII_XAUUSD`, `16_EKSPORT_HISTORII_SCALP`, `19_REPLAY_SCALP`, `32_CENTRUM_TRENINGU`,
   `35_RODZINY_MODELI`, `36_STUDIO`, `37_QUANT_CORE` wymagały `.venv` i nie działały w aplikacji DESKTOP – teraz używają Pythona aplikacji.
 * **Naprawa:** `33_KRONOS_INSTALUJ.bat` (od 1.42.8) miał końce linii LF zamiast CRLF – przywrócone CRLF.
 * **Naprawa:** przyciski treningu Scalp ML, NSS i kontekstu wskaźników padały od razu („brak eksportu REAL_USER_DATA”), a panel pokazywał
   „uruchomiono” – w Centrum te modele trenują się w głównym przebiegu (najpierw eksport i kontrola danych).
+* Instrukcje PDF (administrator, instalacja i trening): nowy rozdział „Centrum Treningowe Pepe” ze zrzutem; Kronos-small w opisie instalacji.
 * Bez zmian: STOP / SL, limity ryzyka, dźwignia, strategie.
 
 ## 1.42.9 – Kronos zawsze, bez względu na zajętość RAM

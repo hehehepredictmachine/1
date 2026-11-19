@@ -34,7 +34,7 @@ def story(shots: Path | None) -> list:
     V, TAG = M.VERSION, M.VERSION.replace(".", "_")
     s: list = [Spacer(1, 18 * mm), P("Instalacja bota,<br/>modeli i trening", "title"),
                P(f"PepeMarketWizard {V}: instalacja na Windows, pierwsze uruchomienie, tryb LIVE od startu, instalacja modeli prognoz "
-                 "(Kronos-base, Chronos-2, Granite TTM), Memory Governor (16 GB), rodziny modeli (ARIMA, GARCH, LSTM, PPO …), trening, aktywacja, GARCH w strategii "
+                 "(Kronos-small, Chronos-2, Granite TTM), Memory Governor (16 GB), rodziny modeli (ARIMA, GARCH, LSTM, PPO …), trening, aktywacja, GARCH w strategii "
                  "PMW_HG09, walidacja 20 wariantów, aktualizacja i powrót do poprzedniej wersji.", "lead"),
                box(f"<b>Stan:</b> instrukcja odpowiada wersji <b>{V}</b>. Polecenia i nazwy plików pochodzą z paczki i są sprawdzane testem "
                    "(tests/test_install_guide.py). Nie przeprowadzono tutaj testu na Twoim Windows ani z prawdziwym MT5 – zrzuty ekranu "
@@ -44,7 +44,7 @@ def story(shots: Path | None) -> list:
                    "rozdział 3 (co zostało zdjęte, co nadal chroni rachunek, jak wyłączyć LIVE).", "block"),
                P("Spis treści", "h2"),
                steps(["Wymagania", "Instalacja bota", "Tryb LIVE od startu – co się zmieniło", "Modele – przegląd",
-                      "Instalacja modeli prognoz (Kronos-base, Chronos-2, Granite TTM)", "Rodziny modeli – instalacja i trening",
+                      "Instalacja modeli prognoz (Kronos-small, Chronos-2, Granite TTM)", "Rodziny modeli – instalacja i trening",
                       "GARCH (VOL_GARCH) i strategia PMW_HG09", "Centrum treningu i eksport danych z MT5",
                       "Walidacja (replay 20 wariantów, prognozy, scalp)", "Nowe menu, intro i WTC PEPE 2.1",
                       "Aktualizacja z 1.38 i powrót", "Problemy i logi"]),
@@ -56,7 +56,7 @@ def story(shots: Path | None) -> list:
                  ["MetaTrader 5", "zainstalowany, zalogowany, symbol w Market Watch", "np. XAUUSD- u brokera; „Algo Trading” włączone dla LIVE."],
                  ["Python (wariant bez aplikacji)", "3.13 x64 (lub 3.12) z python.org", "01_INSTALUJ.bat sam wybiera interpreter; nie zmienia globalnego Pythona."],
                  ["RAM", "16 GB (zalecane)", "Profil LOW_MEMORY_16GB: Granite ≈ 0,35 GB, Chronos-2 ≈ 1 GB, Kronos ≈ 1,1 GB na proces; Memory Governor pilnuje progów 75/80/85 %."],
-                 ["Dysk", "ok. 2 GB bot + modele", "Kronos-base ≈ 0,7 GB (PyTorch + wagi), Chronos-2 ≈ 0,75 GB, Granite TTM ≈ 0,3 GB (wagi 3 MB + PyTorch)."],
+                 ["Dysk", "ok. 2 GB bot + modele", "Kronos-small ≈ 0,4 GB (PyTorch + wagi), Chronos-2 ≈ 0,75 GB, Granite TTM ≈ 0,3 GB (wagi 3 MB + PyTorch)."],
                  ["Internet", "przy instalacji", "Pakiety z sumami SHA-256; wagi modeli w przypiętych rewizjach. Instalacja offline: rozdz. 5."],
                  ["GPU (opcjonalnie)", "NVIDIA, CUDA 12.6 / 12.8", "Parametr cu126 / cu128 w instalatorach modeli; bez GPU działa na CPU."]],
                 [34, 52, 84]),
@@ -116,7 +116,7 @@ def story(shots: Path | None) -> list:
     # 4
     s += [P("4 / Modele – przegląd", "h1"),
           table([["Model / grupa", "Rola w bocie", "Instalacja", "Trening"],
-                 ["Kronos-base (NeoQuasar)", "prognoza świec M1/M5, SHADOW (bez zleceń)", "33_KRONOS_INSTALUJ.bat (.venv_kronos)",
+                 ["Kronos-small (NeoQuasar, od 1.42.8)", "prognoza świec M1/M5, SHADOW (bez zleceń)", "33_KRONOS_INSTALUJ.bat (.venv_kronos)",
                   "przetrenowany przez autorów – bot nie trenuje, tylko pobiera wagi"],
                  ["Chronos-2 (amazon, 120M)", "prognoza, rola OBSERVE + porównanie", "38_MODELE_CHRONOS2_GRANITE.bat chronos2 (.venv_chronos2)",
                   "zero-shot, wagi oficjalne"],
@@ -133,10 +133,10 @@ def story(shots: Path | None) -> list:
               "i predykcji; <b>rollback</b> przywraca poprzednią wersję. Trafność modelu to nie zysk."),
           PageBreak()]
     # 5
-    s += [P("5 / Instalacja modeli prognoz", "h1"), P("Kronos-base", "h2"),
+    s += [P("5 / Instalacja modeli prognoz", "h1"), P("Kronos-small (od 1.42.8)", "h2"),
           cmd("33_KRONOS_INSTALUJ.bat        (CPU)"), cmd("33_KRONOS_INSTALUJ.bat cu126  (GPU NVIDIA, CUDA 12.6)"),
-          P("Tworzy izolowane <b>.venv_kronos</b> (PyTorch CPU ≈ 250 MB), pobiera oficjalne wagi Kronos-base + Kronos-Tokenizer-base "
-            "(≈ 420 MB) w przypiętych rewizjach, sprawdza sumy i wykonuje prognozę testową. Główne .venv bota nie jest zmieniane. "
+          P("Tworzy izolowane <b>.venv_kronos</b> (PyTorch CPU ≈ 250 MB), pobiera oficjalne wagi Kronos-small + Kronos-Tokenizer-base "
+            "(≈ 115 MB; szczyt pamięci ok. 0,47 GB) w przypiętych rewizjach, sprawdza sumy i wykonuje prognozę testową. Główne .venv bota nie jest zmieniane. "
             "Status: <b>Wykresy bota → Kronos AI Forecast</b> oraz WTC PEPE → karta KRONOS."),
           P("Chronos-2 i Granite TTM (1.40: zamiast wycofanego FinCast)", "h2"),
           cmd("38_MODELE_CHRONOS2_GRANITE.bat                 (oba modele, CPU)"),

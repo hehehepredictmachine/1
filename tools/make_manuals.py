@@ -285,7 +285,7 @@ def admin(shots: Path | None) -> list:
           P("Bez bota: <b>32_CENTRUM_TRENINGU.bat</b>."),
           box("Wytrenowany model nie jest dowodem przewagi. Nowe modele działają w trybie OBSERVATION (nie głosują w strategiach). "
               "Wynik na danych syntetycznych nic nie mówi o rynku.", "warn"),
-          P("Kronos AI Forecast (1.31; od 1.37 Kronos-base) – przetrenowany model, bez treningu w bocie", "h2"),
+          P("Kronos AI Forecast (1.31; od 1.42.8 Kronos-small) – przetrenowany model, bez treningu w bocie", "h2"),
           bullets(["Instalacja: Wykresy bota → <b>Kronos AI Forecast</b> → <b>Zainstaluj model Kronos</b> albo <b>33_KRONOS_INSTALUJ.bat</b> "
                    "(osobne .venv_kronos, PyTorch CPU, oficjalne wagi NeoQuasar w przypiętych rewizjach, sumy sprawdzane ze źródłem).",
                    "<b>Sprawdź instalację</b> naprawdę ładuje model i robi prognozę testową. Po instalacji działa bez internetu.",
@@ -359,6 +359,8 @@ def admin(shots: Path | None) -> list:
           PageBreak()]
     # 4e - 1.37
     s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
+          box("Od 1.42.8 bot używa ponownie <b>Kronos-small</b> (ok. 0,47 GB pamięci) – wagi zmieniają się automatycznie przy starcie; "
+              "od 1.42.9 Kronos jest liczony i pokazywany zawsze, bez względu na zajętość RAM. Opis poniżej dotyczy wersji 1.37–1.42.7.", "note"),
           bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "
                    "Po aktualizacji uruchom <b>33_KRONOS_INSTALUJ.bat</b>; do tego czasu Kronos pokazuje „brak zweryfikowanych wag”. "
                    "Bot nigdy nie przechodzi po cichu na mniejszy model.",
