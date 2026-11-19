@@ -476,6 +476,8 @@ class PepeTrainingCenter:
             from ..tsfm import granite_train as GT
             trading = getattr(getattr(self.rt, "modes", None), "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
             err = self._ensure_bars(q, inst, "M5", GT.MIN_BARS)
+            if not err:
+                self._wait_heavy_slot(q)
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
             if err:
@@ -492,6 +494,9 @@ class PepeTrainingCenter:
             h1 = c.bars_fn("H1", 6000) if c else []
             if len(h1) < 600:
                 return {"state": "SKIPPED", "detail": f"za mało zamkniętych świec H1 ({len(h1)} < 600)"}
+            self._wait_heavy_slot(q)
+            if self._cancel.is_set():
+                return {"state": "CANCELLED", "detail": "anulowane"}
             res = r.start_training(c, h1, op="from_scratch", reason="Centrum Treningowe Pepe (DIRECT_USER_REQUEST)")
             if not res.get("ok"):
                 return {"state": "SKIPPED", "detail": res.get("reason") or ""}
@@ -499,6 +504,17 @@ class PepeTrainingCenter:
             self._wait(lambda: job.get("state") != "RUNNING", timeout=6 * 3600)
             return {"state": {"DONE": "DONE", "CANCELLED": "CANCELLED"}.get(job.get("state"), "FAILED"), "detail": job.get("error") or ""}
         return {"state": "FAILED", "detail": "nieznana jednostka"}
+
+    def _wait_heavy_slot(self, q: dict, timeout: float = 6 * 3600) -> None:
+        """1.42.10: Memory Governor dopuszcza jeden ciężki trening naraz (Granite, SDformerFlow – także auto-trening SDformerFlow przy
+        starcie bota). Centrum czeka na jego koniec zamiast pomijać model z „trwa inny trening”."""
+        gov = getattr(self.rt, "governor", None)
+        busy = lambda: [n for n, k in dict(getattr(gov, "training", {}) or {}).items() if k == "heavy"]  # noqa: E731
+        if gov is None or not busy():
+            return
+        q["detail"] = f"czeka na zakończenie innego treningu ({', '.join(busy())})"
+        self._wait(lambda: not busy(), timeout=timeout, step=5.0)
+        q["detail"] = ""
 
     def _ensure_bars(self, q: dict, inst: str, tf: str, need: int) -> str:
         """1.42.10: Granite i rodziny modeli czytają archiwum świec (marketdata Store). Gdy jest za krótkie (np. przed pierwszym eksportem),

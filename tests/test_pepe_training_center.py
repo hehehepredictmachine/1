@@ -220,6 +220,20 @@ class TestEnsureBars(unittest.TestCase):
         self.assertIn("MT5 rozłączony", row["BTC"]["detail"])
         self.assertEqual(row["XAUUSD"]["state"], "NOT_TRAINED")
 
+    def test_waits_for_other_heavy_training(self):
+        gov = types.SimpleNamespace(training={"sdformerflow": "heavy"})
+        self.c.rt.governor = gov
+        q = {"unit": "granite", "instruments": ["XAUUSD"]}
+        threading.Timer(0.3, lambda: gov.training.pop("sdformerflow")).start()
+        self.c.clock = time.time
+        orig = self.c._wait
+        self.c._wait = lambda done, timeout, step=3.0: orig(done, timeout=timeout, step=0.05)
+        t0 = time.time()
+        self.c._wait_heavy_slot(q)
+        self.assertGreaterEqual(time.time() - t0, 0.25)                                 # czekało, nie pominęło
+        self.assertEqual(gov.training, {})
+        self.assertEqual(q["detail"], "")
+
     def test_no_export_when_archive_long_enough(self):
         self.assertEqual(self.c._ensure_bars({}, "XAUUSD", "M5", 0), "")
         self.assertEqual(self.th.jobs, [])
