@@ -172,6 +172,10 @@ class PepeTrainingCenter:
             s = self.rt.tsfm.settings.get()
             if not find_python("granite_ttm", s.models["granite_ttm"]):
                 out["granite"] = "Granite TTM nie jest zainstalowany – uruchom 38_MODELE_CHRONOS2_GRANITE.bat"
+            else:                                               # 1.42.10: środowisko bez wag = trening skończyłby się błędem po eksporcie
+                from tsfm_runtime import manifest as TM
+                if TM.read(self.rt.tsfm.weights_root(), "granite_ttm") is None:
+                    out["granite"] = "brak wag Granite TTM (instalacja niedokończona) – uruchom 38_MODELE_CHRONOS2_GRANITE.bat"
         except Exception:  # noqa: BLE001
             out["granite"] = "moduł modeli prognoz niedostępny"
         try:

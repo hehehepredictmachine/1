@@ -234,6 +234,23 @@ class TestEnsureBars(unittest.TestCase):
         self.assertEqual(gov.training, {})
         self.assertEqual(q["detail"], "")
 
+    def test_granite_without_weights_is_unavailable(self):
+        from masterquo.tsfm import settings as TS
+        tmp = Path(self.td.dir)
+        tsfm = types.SimpleNamespace(settings=types.SimpleNamespace(get=lambda: types.SimpleNamespace(models={"granite_ttm": {}})),
+                                     weights_root=lambda: tmp / "weights")
+        self.c.rt.tsfm = tsfm
+        orig = TS.find_python
+        TS.find_python = lambda mid, c: sys.executable                                  # środowisko jest …
+        try:
+            why = self.c.availability().get("granite", "")
+            self.assertIn("brak wag Granite TTM", why)                                  # … ale wag brak -> NIEDOSTĘPNY z instrukcją
+            from tsfm_runtime import manifest as TM
+            TM.write(tmp / "weights", "granite_ttm", {"schema": "x", "files": []})
+            self.assertNotIn("granite", self.c.availability())
+        finally:
+            TS.find_python = orig
+
     def test_no_export_when_archive_long_enough(self):
         self.assertEqual(self.c._ensure_bars({}, "XAUUSD", "M5", 0), "")
         self.assertEqual(self.th.jobs, [])
