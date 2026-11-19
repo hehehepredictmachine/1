@@ -210,6 +210,7 @@ class PepeTrainingCenter:
                     s = pipe.get((u["id"], inst)) or _st("NOT_TRAINED", "jeszcze nie trenowany na tym komputerze")
                 else:
                     s = self._extra_status(u["id"], inst)
+                    s = self._last_attempt(u["id"], inst, s)
                 if (u["id"], inst) in running and s["state"] not in ("RUNNING",):
                     s = _st("RUNNING", (cur.get("detail") or "start…") if u["via"] != "pipeline" or s["state"] != "QUEUED" else s.get("detail"), s.get("at"))
                 elif (u["id"], inst) in queued and s["state"] not in ("RUNNING",):
@@ -219,6 +220,22 @@ class PepeTrainingCenter:
         return {"schema": "PMW-TCP-1", "settings": self.settings(), "units": rows, "queue": [self._pub(q) for q in self.queue], "current": self._pub(cur) if cur else None,
                 "history": self.history[-30:][::-1], "demo": bool(getattr(self.rt, "demo", False)), "instruments": list(INSTRUMENTS),
                 "one_at_a_time": True, "pipeline_running": _lock_alive()}
+
+    def _last_attempt(self, uid: str, inst: str, s: dict) -> dict:
+        """1.42.10: nieudana / pominięta próba z Centrum nowsza niż stan modelu jest pokazana przy modelu (z przyczyną), a nie znika
+        w historii – np. Granite „nie trenowany” po odrzuceniu zbioru danych."""
+        if s["state"] in ("RUNNING", "QUEUED", "FAILED"):
+            return s
+        h = next((x for x in reversed(self.history) if x.get("unit") == uid and inst in (x.get("instruments") or [])), None)
+        if not h or h.get("state") not in ("FAILED", "SKIPPED"):
+            return s
+        try:
+            at = float(s.get("at") or 0) if not isinstance(s.get("at"), str) else 0.0
+        except (TypeError, ValueError):
+            at = 0.0
+        if s["state"] == "DONE" and (not at or float(h.get("finished_at") or 0) <= at):
+            return s
+        return _st(h["state"], "ostatnia próba: " + (h.get("detail") or ""), h.get("finished_at"))
 
     def _covers(self, q: dict | None) -> list[str]:
         """Jednostki objęte zadaniem kolejki (przebieg głównego treningu obejmuje kilka modeli)."""
@@ -370,6 +387,11 @@ class PepeTrainingCenter:
             if u == "trainhub" and q.get("job_id"):
                 self.rt.trainhub.cancel(q["job_id"])
                 return "Centrum TH – anulowane"
+            if u in ("families", "granite") and q.get("job_id") and getattr(self.rt, "trainhub", None) is not None:
+                try:
+                    self.rt.trainhub.cancel(q["job_id"])       # eksport historii przed treningiem (1.42.10)
+                except Exception:  # noqa: BLE001 - eksport już zakończony
+                    pass
             if u == "families":
                 for i in q["instruments"]:
                     for f in self.rt.families.fams:
@@ -441,6 +463,7 @@ class PepeTrainingCenter:
             st = {"SUCCEEDED": "DONE", "CANCELLED": "CANCELLED"}.get(jj.get("status"), "FAILED")
             return {"state": st, "detail": jj.get("error") or jj.get("stage") or ""}
         if u == "families":
+            self._ensure_bars(q, inst, "M5", 5000)          # błąd eksportu nie blokuje: rodziny mają zapas świec z MT5 na żywo
             r = self.rt.families.train_all(inst, "research")
             q["detail"] = f"start {len(r['started'])}, w kolejce {len(r['queued'])}, zablokowane {len(r['blocked'])}"
 
@@ -452,6 +475,11 @@ class PepeTrainingCenter:
         if u == "granite":
             from ..tsfm import granite_train as GT
             trading = getattr(getattr(self.rt, "modes", None), "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
+            err = self._ensure_bars(q, inst, "M5", GT.MIN_BARS)
+            if self._cancel.is_set():
+                return {"state": "CANCELLED", "detail": "anulowane"}
+            if err:
+                return {"state": "FAILED", "detail": err}
             r = GT.start(self.rt.tsfm, inst, "M5", epochs=6, trading_active=trading)
             if not r.get("ok"):
                 return {"state": "SKIPPED", "detail": r.get("reason") or "nie uruchomiono"}
@@ -471,6 +499,32 @@ class PepeTrainingCenter:
             self._wait(lambda: job.get("state") != "RUNNING", timeout=6 * 3600)
             return {"state": {"DONE": "DONE", "CANCELLED": "CANCELLED"}.get(job.get("state"), "FAILED"), "detail": job.get("error") or ""}
         return {"state": "FAILED", "detail": "nieznana jednostka"}
+
+    def _ensure_bars(self, q: dict, inst: str, tf: str, need: int) -> str:
+        """1.42.10: Granite i rodziny modeli czytają archiwum świec (marketdata Store). Gdy jest za krótkie (np. przed pierwszym eksportem),
+        Centrum samo pobiera historię z MT5 – eksport TrainHub (przyrostowy, M1/M5/M15/M30, zamknięte świece) – zamiast „za mało świec: 0”.
+        Zwraca "" albo opis błędu eksportu."""
+        def have() -> int:
+            try:
+                from ..marketdata.store import Store
+                return len(Store().read(inst, tf)["time"])
+            except Exception:  # noqa: BLE001 - brak archiwum = 0
+                return 0
+        n, th = have(), getattr(self.rt, "trainhub", None)
+        if n >= need or th is None:
+            return ""
+        q["detail"] = f"pobieranie historii z MT5 – {inst} {tf}: {n} < {need} świec"
+        try:
+            j = th.submit("EXPORT", inst, {"mode": "incremental"})
+        except Exception as exc:  # noqa: BLE001
+            return f"eksport historii nie wystartował: {exc}"[:300]
+        q["job_id"] = j.get("id")
+        self._wait(lambda: (th.get(j["id"]) or {}).get("status") in ("SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"), timeout=2 * 3600)
+        jj = th.get(j["id"]) or {}
+        q["detail"] = ""
+        if jj.get("status") == "SUCCEEDED":
+            return ""
+        return f"eksport historii z MT5 nieudany: {jj.get('error') or jj.get('status') or 'brak wyniku'}"[:300]
 
     def _run_pipeline(self, q: dict) -> dict:
         # inny trening (np. 00_TRENING_START.bat) w toku -> czekamy, nigdy dwa naraz

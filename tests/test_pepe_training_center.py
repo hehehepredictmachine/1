@@ -192,6 +192,39 @@ class TestCommissionSettings(unittest.TestCase):
         self.assertIn("brak pliku", r["detail"])
 
 
+class TestEnsureBars(unittest.TestCase):
+    """Granite / rodziny: przy pustym archiwum świec Centrum najpierw pobiera historię z MT5 (eksport TrainHub), a nie kończy „0 świec”."""
+
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.training import pepe_center as P
+        self.th = FakeTrainhub()
+        self.c = P.PepeTrainingCenter(types.SimpleNamespace(demo=True, trainhub=self.th, families=None, research=None, tsfm=None))
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_empty_store_runs_export_first(self):
+        q = {"unit": "granite", "instruments": ["XAUUSD"]}
+        self.assertEqual(self.c._ensure_bars(q, "XAUUSD", "M5", 5000), "")
+        self.assertEqual([(j["kind"], j["instrument"]) for j in self.th.jobs], [("EXPORT", "XAUUSD")])
+        self.th.submit = lambda kind, inst, params: self.th.jobs.append({"id": "X", "kind": kind, "status": "FAILED", "error": "brak symbolu brokera"}) or self.th.jobs[-1]
+        err = self.c._ensure_bars(q, "BTC", "M5", 5000)
+        self.assertIn("brak symbolu brokera", err)
+
+    def test_failed_attempt_shown_at_model(self):
+        self.c.history.append({"id": "h1", "unit": "trainhub", "instruments": ["BTC"], "state": "FAILED", "detail": "MT5 rozłączony",
+                               "finished_at": time.time()})
+        row = {u["id"]: u for u in self.c.status()["units"]}["trainhub"]["status"]
+        self.assertEqual(row["BTC"]["state"], "FAILED")
+        self.assertIn("MT5 rozłączony", row["BTC"]["detail"])
+        self.assertEqual(row["XAUUSD"]["state"], "NOT_TRAINED")
+
+    def test_no_export_when_archive_long_enough(self):
+        self.assertEqual(self.c._ensure_bars({}, "XAUUSD", "M5", 0), "")
+        self.assertEqual(self.th.jobs, [])
+
+
 class FakeBridge:
     def __init__(self, n):
         self.n = n
