@@ -199,6 +199,14 @@ def story(shots: Path | None) -> list:
           PageBreak()]
     # 8
     s += [P("8 / Centrum treningu i eksport danych z MT5", "h1"),
+          P("Najprościej: Centrum Treningowe Pepe (1.42.10)", "h2"),
+          bullets(["Otwórz: ikona biretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE PEPE</b> w panelu systemowym albo przycisk w "
+                   "ekranie <b>MODELS</b>. Wybierz OBA / XAUUSD / BTC i kliknij <b>TRENUJ</b> przy modelu albo <b>TRENUJ WSZYSTKO</b>.",
+                   "Treningi idą po kolei, jeden naraz. Bot sam pobiera historię z MT5 i sprawdza dane przed treningiem; przy każdym modelu "
+                   "widać stan per instrument (wytrenowany / w toku / w kolejce / błąd z przyczyną / pominięty z powodem).",
+                   "<b>PROWIZJA</b> (1 lot, jedna strona, waluta konta): podaj, jeśli konto nie ma jeszcze transakcji danego instrumentu – "
+                   "bez niej Scalp, Scalp ML, Neural Scalp i kontekst wskaźników są pomijane.",
+                   "Poniżej – ręczna droga dla zaawansowanych (panel Centrum treningu, pliki .bat, CLI)."]),
           steps(["MT5 uruchomiony i zalogowany; w MT5: Narzędzia → Opcje → Wykresy → <b>Maks. barów na wykresie</b> ustaw wysoko "
                  "(np. Unlimited), inaczej terminal zwróci krótką historię.",
                  "Panel <b>Modele i trening → Centrum treningu</b> → <b>Eksportuj dane</b> (przyrostowo M1/M5/M15/M30) → "

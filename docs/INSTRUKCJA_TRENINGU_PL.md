@@ -4,7 +4,7 @@ Trening nigdy nie aktywuje modelu. Aktywacja to Twoje kliknięcie i przechodzi t
 model potrafi zwrócić wynik. Nie oznacza zgody na handel.
 
 ## 0. Centrum Treningowe Pepe (1.42.10) – najprostsza droga
-* **Gdzie:** ikona birretu na pasku systemowym, zakładka **CENTRUM TRENINGOWE PEPE** w panelu systemowym albo przycisk w ekranie **MODELS**.
+* **Gdzie:** ikona biretu na pasku systemowym, zakładka **CENTRUM TRENINGOWE PEPE** w panelu systemowym albo przycisk w ekranie **MODELS**.
 * **Jak:** wybierz instrument (OBA / XAUUSD / BTC) i kliknij **TRENUJ** przy modelu albo **TRENUJ WSZYSTKO** (drugie kliknięcie potwierdza).
 * Treningi idą **po kolei, jeden naraz** (bez braku pamięci). Główny trening (prognozy świec, Scalp A/B/C, ML, Lab, kontekst wskaźników,
   Scalp ML, Neural Scalp, Structure Intelligence, Flow, VAMD/FD/SMC, SCALPING/HEDGING, pakiet 20 strategii, Monte Carlo, Master models)

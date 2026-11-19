@@ -1,7 +1,7 @@
 # CHANGELOG
 
 ## 1.42.10 – naprawy treningu i Centrum Treningowe Pepe
-* **Nowe Centrum Treningowe Pepe** – jeden prosty widok treningu wszystkich modeli bota (ikona birretu na pasku systemowym, zakładka
+* **Nowe Centrum Treningowe Pepe** – jeden prosty widok treningu wszystkich modeli bota (ikona biretu na pasku systemowym, zakładka
   w panelu systemowym, przycisk w ekranie MODELS): wybór instrumentu (OBA / XAUUSD / BTC), **TRENUJ** przy modelu albo **TRENUJ WSZYSTKO**,
   stan każdego modelu per instrument (wytrenowany / w toku / w kolejce / błąd z przyczyną / pominięty z powodem), kolejka z usuwaniem,
   ZATRZYMAJ, historia i log. Treningi idą po kolei, jeden naraz; główny trening jednym przebiegiem `training run` (eksport z MT5 i kontrola

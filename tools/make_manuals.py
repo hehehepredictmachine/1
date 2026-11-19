@@ -262,7 +262,7 @@ def admin(shots: Path | None) -> list:
     # 4
     s += [P("4 / Eksport danych i trening modeli", "h1"),
           P("Centrum Treningowe Pepe (1.42.10) – najprostsza droga", "h2"),
-          steps(["Otwórz: ikona birretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE PEPE</b> w panelu systemowym albo przycisk "
+          steps(["Otwórz: ikona biretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE PEPE</b> w panelu systemowym albo przycisk "
                  "w ekranie <b>MODELS</b>.",
                  "Wybierz instrument: <b>OBA</b>, <b>XAUUSD</b> albo <b>BTC</b>.",
                  "Kliknij <b>TRENUJ</b> przy modelu albo <b>TRENUJ WSZYSTKO</b> (drugie kliknięcie potwierdza). Treningi idą po kolei – "
@@ -272,6 +272,8 @@ def admin(shots: Path | None) -> list:
                  "<b>PROWIZJA</b>: podaj prowizję za 1 lot na stronę (waluta konta), jeśli konto nie ma jeszcze transakcji danego "
                  "instrumentu – bez niej modele Scalp i ML po kosztach są pomijane.",
                  "<b>ZATRZYMAJ</b> przerywa bieżący trening i czyści kolejkę; <b>POKAŻ LOG</b> pokazuje przebieg."]),
+          *shot(shots, "ui_training_center/01_panel.png", "Centrum Treningowe Pepe: instrument, TRENUJ WSZYSTKO, prowizja, "
+                "trening w toku z kolejką i stan każdego modelu.", width_mm=170),
           box("Model trafia do bota tylko po walidacji. Trening nie składa zleceń i nie zmienia ustawień ryzyka.", "note"),
           P("Centrum treningu (Modele i trening → Centrum treningu)", "h2"),
           steps(["Połącz MT5, sprawdź symbol i dostępność historii u brokera.",
