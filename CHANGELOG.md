@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.42.9 – Kronos zawsze, bez względu na zajętość RAM
+* Decyzja użytkownika: **Memory Governor nigdy nie wstrzymuje ani nie zwalnia Kronosa** – prognoza Kronos-small (ok. 0,47 GB) jest liczona
+  i pokazywana na wykresie przy każdej zajętości RAM, w każdym profilu pamięci (8 / 12 / 16 GB, AUTO, ECO, BALANCED) i w każdej roli (OBSERVE / ASSIST).
+* Pozostałe modele (Chronos-2, TiRex-2, TabICLv2, Granite TTM, SDformerFlow) – reguły governora bez zmian; przy braku pamięci zwalniane są
+  one, nie Kronos.
+* Uwaga: przy bardzo pełnej pamięci Windows może korzystać z pliku stronicowania – Kronos działa wtedy wolniej, ale nie znika z wykresu.
+
 ## 1.42.8 – Kronos-small (prognoza na wykresie także przy małej ilości wolnej pamięci)
 * **Kronos przełączony na `NeoQuasar/Kronos-small`** (24,7M parametrów; rewizja `901c26c`, `model.safetensors` sha256 `b082dfcb…`) z tym samym
   tokenizerem `Kronos-Tokenizer-base`, kontekst 512. Szczyt pamięci procesu **ok. 0,47 GB** (Kronos-base 1,07 GB). Sprawdzone na oficjalnych

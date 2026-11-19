@@ -35,7 +35,8 @@ LEVEL_PL = {"OK": "pamięć w normie", "WARN": "wysokie użycie RAM – ostrzeż
             "PAUSE_OPTIONAL": "awaryjne wstrzymanie opcjonalnych prognoz AI"}
 HEAVY = ("chronos2", "tirex2", "tabicl", "sdformerflow")   # >= ~0.6-1 GB per process (measured on CPU, float32; TiRex-2 1.06 GB, TabICL 0.66 GB)
 LIGHT = ("granite_ttm", "kronos")        # ~0.35 GB Granite TTM; 1.42.8 Kronos-small ~0.47 GB peak (was Kronos-base 1.07 GB -> HEAVY)
-LIGHT_THREADS = ("granite_ttm",)         # Kronos keeps the heavy thread count (faster forecast, still one small process)
+LIGHT_THREADS = ("granite_ttm",)
+ALWAYS_ON = ("kronos",)                  # 1.42.9 (decyzja użytkownika): Kronos liczy ZAWSZE – governor nigdy go nie wstrzymuje ani nie zwalnia         # Kronos keeps the heavy thread count (faster forecast, still one small process)
 PROFILE_KEYS = ("warn_pct", "limit_heavy_pct", "pause_optional_pct", "reserve_os_mb", "budget_preferred_mb", "budget_max_mb",
                 "heavy_parallelism", "idle_release_s", "release_on_pressure", "threads_heavy", "threads_light", "lazy_loading", "dedup",
                 "forecast_cache", "background_training", "auto_download", "cpu_fallback", "monitoring", "auto_throttle",
@@ -258,7 +259,9 @@ class Governor:
         OTHER idle heavy processes (released at once, not after 120 s); when it is already loaded it keeps answering (a forecast on a resident
         model allocates little); a not-loaded one is loaded only once the level has dropped below the pause. OBSERVE models pause as before."""
         p = self.profile()
-        if not p["auto_throttle"]:
+        if not p["auto_throttle"] or model in ALWAYS_ON:
+            if model in ALWAYS_ON:
+                self.counters["admitted"] += 1
             return True, None
         lv = self.level()
         if optional and lv == "PAUSE_OPTIONAL" and essential:
@@ -281,7 +284,7 @@ class Governor:
         """Release heavy model processes (other than `except_model`, never the slot holder or one that computes now) idle >= min_idle_s."""
         out = []
         for name, src in list(self.sources.items()):
-            if name == except_model or src["kind"] != "heavy" or not src.get("release") or self._slot_holder == name:
+            if name == except_model or src["kind"] != "heavy" or name in ALWAYS_ON or not src.get("release") or self._slot_holder == name:
                 continue
             try:
                 running = bool(src["pid"]())
@@ -305,7 +308,7 @@ class Governor:
         out = []
         running = []
         for name, src in list(self.sources.items()):
-            if name == model or src["kind"] != "heavy" or not src.get("release"):
+            if name == model or src["kind"] != "heavy" or name in ALWAYS_ON or not src.get("release"):
                 continue
             try:
                 pid = src["pid"]()
@@ -394,7 +397,7 @@ class Governor:
         out = []
         pressure = LEVELS.index(snap["level"]) >= LEVELS.index("WARN") and p["release_on_pressure"]
         for name, src in list(self.sources.items()):
-            if src["kind"] != "heavy" or not src.get("release") or not snap["processes"].get(name, {}).get("running"):
+            if src["kind"] != "heavy" or name in ALWAYS_ON or not src.get("release") or not snap["processes"].get(name, {}).get("running"):
                 continue
             try:
                 idle = float(src["idle"]()) if src.get("idle") else 0.0

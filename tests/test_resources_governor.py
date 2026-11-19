@@ -65,8 +65,9 @@ class TestGovernor(unittest.TestCase):
         self.assertTrue(g.admit("chronos2", loaded=True)[0])                    # a loaded heavy model may still answer
         self.assertTrue(g.admit("granite_ttm", loaded=False)[0])                # light model runs until 85 %
         st["used"] = 86.0
-        for m in ("granite_ttm", "chronos2", "kronos"):
+        for m in ("granite_ttm", "chronos2", "tirex2"):
             self.assertFalse(g.admit(m, loaded=True)[0], m)
+        self.assertTrue(g.admit("kronos", loaded=True)[0])                     # 1.42.9: Kronos zawsze
         self.assertGreaterEqual(g.counters["refused"], 4)
         g2, _ = gov(used=95.0, profile="MANUAL", manual={"auto_throttle": False})   # MANUAL can switch throttling off
         self.assertTrue(g2.admit("kronos", loaded=False)[0])
@@ -78,11 +79,11 @@ class TestGovernor(unittest.TestCase):
         released, alive = [], {"chronos2": 11, "tirex2": 12}
         g.register("chronos2", "heavy", lambda: alive.get("chronos2"), release=lambda: (released.append("chronos2"), alive.pop("chronos2", None)), idle=lambda: 45.0)
         g.register("tirex2", "heavy", lambda: alive.get("tirex2"), release=lambda: released.append("tirex2"), idle=lambda: 5.0)   # computes now
-        g.register("kronos", "heavy", lambda: 13, release=lambda: released.append("kronos"), idle=lambda: 999.0)
-        self.assertFalse(g.admit("kronos", loaded=True)[0])                          # OBSERVE: paused
+        g.register("tabicl", "heavy", lambda: 13, release=lambda: released.append("tabicl"), idle=lambda: 999.0)
+        self.assertFalse(g.admit("tabicl", loaded=True)[0])                          # OBSERVE: paused
         self.assertEqual(released, [])
-        self.assertTrue(g.admit("kronos", loaded=True, essential=True)[0])           # ASSIST + loaded: answers
-        self.assertEqual(released, ["chronos2"])                                     # idle 45 s released, TiRex-2 (5 s) and Kronos kept
+        self.assertTrue(g.admit("tabicl", loaded=True, essential=True)[0])           # ASSIST + loaded: answers
+        self.assertEqual(released, ["chronos2"])                                     # idle 45 s released, TiRex-2 (5 s) and TabICL kept
         ok, why = g.admit("chronos2", loaded=False, essential=True)                  # ASSIST, not loaded, still >= 85 % -> not loaded
         self.assertFalse(ok)
         self.assertIn("ASSIST", why)
@@ -90,14 +91,27 @@ class TestGovernor(unittest.TestCase):
         self.assertTrue(g.admit("chronos2", loaded=False, essential=True)[0])        # below the pause -> normal rules
 
     def test_kronos_small_is_light(self):
-        """1.42.8: Kronos-small (~0,47 GB) to model lekki – nie zajmuje gniazda ciężkich, przy ASSIST startuje także przy RAM >= progu pauzy;
-        w roli OBSERVE nadal wstrzymywany."""
+        """1.42.8: Kronos-small (~0,47 GB) to model lekki – nie zajmuje gniazda ciężkich. 1.42.9 (decyzja użytkownika): Kronos liczy ZAWSZE –
+        bez względu na zajętość RAM, profil i rolę (OBSERVE / ASSIST); governor nigdy go nie zwalnia."""
         from masterquo.resources import governor as GV
         self.assertIn("kronos", GV.LIGHT)
         self.assertNotIn("kronos", GV.HEAVY)
+        self.assertIn("kronos", GV.ALWAYS_ON)
+        for used in (90.0, 99.0):
+            for prof in ("LOW_MEMORY_16GB", "LOW_MEMORY_8GB", "ECO"):
+                g, st = gov(used=used, profile=prof, total_mb=8192)
+                for ess in (False, True):
+                    for loaded in (False, True):
+                        self.assertEqual(g.admit("kronos", loaded=loaded, essential=ess), (True, None), (used, prof, ess, loaded))
+        released = []
+        for kind in ("light", "heavy"):                                              # nawet zarejestrowany jako ciężki – nie zwalniany
+            g, st = gov(used=99.0, profile="ECO")
+            g.register("kronos", kind, lambda: 13, release=lambda: released.append("kronos"), idle=lambda: 9999.0)
+            g.maintain()
+            g._release_idle_heavy(except_model="x", min_idle_s=0.0, why="t")
+            g._make_room("chronos2", 0)
+        self.assertEqual(released, [])
         g, st = gov(used=90.0)
-        self.assertTrue(g.admit("kronos", loaded=False, essential=True)[0])
-        self.assertFalse(g.admit("kronos", loaded=False)[0])
         st["used"] = 82.0                                                            # LIMIT_HEAVY: light model still starts
         self.assertTrue(g.admit("kronos", loaded=False)[0])
         with g.heavy("chronos2") as a:
@@ -140,10 +154,10 @@ class TestGovernor(unittest.TestCase):
         self.assertEqual(g.maintain(), ["chronos2"])                            # pressure: idle heavy model released, light one never
         self.assertEqual(released, ["chronos2"])
         eco, st2 = gov(used=50.0, rss={11: 1200.0}, profile="ECO")
-        eco.register("kronos", "heavy", lambda: 11, release=lambda: released.append("kronos"), idle=lambda: 601.0)
-        self.assertEqual(eco.maintain(), ["kronos"])
+        eco.register("tirex2", "heavy", lambda: 11, release=lambda: released.append("tirex2"), idle=lambda: 601.0)
+        self.assertEqual(eco.maintain(), ["tirex2"])
         busy, _ = gov(used=90.0, rss={11: 1200.0})
-        busy.register("kronos", "heavy", lambda: 11, release=lambda: released.append("busy"), idle=lambda: 0.0)   # running -> idle 0
+        busy.register("tirex2", "heavy", lambda: 11, release=lambda: released.append("busy"), idle=lambda: 0.0)   # running -> idle 0
         self.assertEqual(busy.maintain(), [])
 
     def test_training_gate(self):
@@ -186,8 +200,8 @@ class TestGovernor(unittest.TestCase):
         g, st = gov(used=60.0, profile="LOW_MEMORY_12GB", total_mb=12 * 1024)
         self.assertEqual((g.profile()["max_resident_heavy"], g.profile()["budget_max_mb"]), (2, 5120))
         released = []
-        alive = {"kronos": 1, "chronos2": 2}
-        for n in ("kronos", "chronos2", "tirex2"):
+        alive = {"tabicl": 1, "chronos2": 2}
+        for n in ("tabicl", "chronos2", "tirex2"):
             g.register(n, "heavy", (lambda n=n: alive.get(n)), release=(lambda n=n: (released.append(n), alive.pop(n, None))), idle=lambda: 10)
         self.assertTrue(g.admit("tirex2", loaded=False)[0])
         self.assertEqual(len(released), 1)                                            # one released, two stay resident
