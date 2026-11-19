@@ -131,6 +131,7 @@ class PepeTrainingCenter:
         self._cancel = threading.Event()
         self._proc: subprocess.Popen | None = None
         self.history: list[dict] = self._load_history()
+        self._granite_inst: str | None = None                # instrument bieżącego / ostatniego dostrajania Granite z Centrum
 
     # ------------------------------------------------------------------ ustawienia (prowizja – bez niej Scalp / ML po kosztach są pomijane)
     def settings(self) -> dict:
@@ -299,13 +300,14 @@ class PepeTrainingCenter:
             if uid == "granite":
                 from ..tsfm import granite_train as GT
                 j = self.rt.tsfm.job("granite_train") or {}
-                if j.get("state") == "RUNNING":
+                mine = self._granite_inst in (None, inst)           # zadanie Granite jest jedno – należy do instrumentu, który je uruchomił
+                if j.get("state") == "RUNNING" and mine:
                     return _st("RUNNING", j.get("message") or "trening Granite TTM")
-                runs = GT.runs()
-                if j.get("state") == "FAILED":
+                runs = [r for r in GT.runs() if (r.get("data") or {}).get("instrument") in (None, inst)]   # najnowsza pierwsza
+                if j.get("state") == "FAILED" and mine:
                     return _st("FAILED", j.get("message") or j.get("code") or "błąd treningu")
                 if runs:
-                    return _st("DONE", f"{len(runs)} wersji dostrojonych; aktywacja ręczna po werdykcie IMPROVED_VS_BASE", runs[-1].get("created_at"))
+                    return _st("DONE", f"{len(runs)} wersji dostrojonych; aktywacja ręczna po werdykcie IMPROVED_VS_BASE", runs[0].get("created_at"))
                 return _st("NOT_TRAINED", "model bazowy (bez dostrojenia)")
             if uid == "sdformer":
                 r = self.rt.research
@@ -487,6 +489,7 @@ class PepeTrainingCenter:
             if err:
                 return {"state": "FAILED", "detail": err}
             r = GT.start(self.rt.tsfm, inst, "M5", epochs=6, trading_active=trading)
+            self._granite_inst = inst if r.get("ok") else self._granite_inst
             if not r.get("ok"):
                 return {"state": "SKIPPED", "detail": r.get("reason") or "nie uruchomiono"}
             self._wait(lambda: (self.rt.tsfm.job("granite_train") or {}).get("state") != "RUNNING", timeout=6 * 3600)

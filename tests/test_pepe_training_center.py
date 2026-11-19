@@ -251,6 +251,23 @@ class TestEnsureBars(unittest.TestCase):
         finally:
             TS.find_python = orig
 
+    def test_granite_versions_per_instrument_newest_first(self):
+        from masterquo.tsfm import granite_train as GT
+        self.c.rt.tsfm = types.SimpleNamespace(job=lambda name: {"state": "RUNNING", "message": "epoka 2/6"})
+        orig = GT.runs
+        GT.runs = lambda: [{"data": {"instrument": "XAUUSD"}, "created_at": "2026-11-19T05:26:07Z"},
+                           {"data": {"instrument": "XAUUSD"}, "created_at": "2026-11-01T00:00:00Z"}]
+        try:
+            self.c._granite_inst = "XAUUSD"
+            self.assertEqual(self.c._extra_status("granite", "XAUUSD")["state"], "RUNNING")
+            self.assertEqual(self.c._extra_status("granite", "BTC")["state"], "NOT_TRAINED")    # dostrajany był tylko XAUUSD
+            self.c.rt.tsfm = types.SimpleNamespace(job=lambda name: {})
+            x = self.c._extra_status("granite", "XAUUSD")
+            self.assertEqual((x["state"], x["at"]), ("DONE", "2026-11-19T05:26:07Z"))       # data najnowszej wersji
+            self.assertTrue(x["detail"].startswith("2 wersji"))
+        finally:
+            GT.runs = orig
+
     def test_no_export_when_archive_long_enough(self):
         self.assertEqual(self.c._ensure_bars({}, "XAUUSD", "M5", 0), "")
         self.assertEqual(self.th.jobs, [])
