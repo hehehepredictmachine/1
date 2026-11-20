@@ -171,13 +171,13 @@ def admin(shots: Path | None) -> list:
                  "i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
                    "i sprawdzone testami w Chromium na symulatorze terminala. Czego nie dało się sprawdzić – oznaczono "
-                   "„nie sprawdzono”. <b>System licencji został usunięty</b> (na Twoją prośbę): program działa bez klucza, "
-                   "nie ma License Managera, okna KEY FOR MAGIC, wersji CLIENT ani serwera licencji."),
+                   "„nie sprawdzono”. <b>Licencje (od 1.43 / 1.44):</b> wersja właściciela działa bez klucza i ma GENERATOR LICENCJI; "
+                   "wersja klienta (osobna paczka) wymaga klucza PMW1 – rozdziały 4i i 4j. Nie ma serwera licencji."),
                P("Co znajdziesz w instrukcji", "h2"),
                bullets(["Uruchomienie aplikacji (launcher JOIN THE CULT) i połączenie z MT5.",
                         "Menu główne (sześć wież), panele Lightning / Wind / Control / Strategy Lab, menu boczne i pasek stanu.",
                         "Wykresy: „Wyznacz strefy”, własne ustawienia wykresu, warstwy.", "Eksport danych i trening modeli.",
-                        "Paczki do przekazania innym osobom (bez licencji).", "Aktualizacja z 1.29, kopia i powrót, typowe problemy."]),
+                        "Paczki do przekazania innym osobom (wersja klienta z licencją – rozdział 4j).", "Aktualizacja z 1.29, kopia i powrót, typowe problemy."]),
                box("Nie przeprowadzono tutaj testu na Twoim Windows ani połączenia z prawdziwym MT5. Zrzuty ekranu pochodzą "
                    "z symulatora (dane syntetyczne). Sprawdź działanie na rachunku DEMO, zanim użyjesz AUTO LIVE.", "warn"),
                PageBreak()]
