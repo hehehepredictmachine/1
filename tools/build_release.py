@@ -144,7 +144,7 @@ def client_public_key(allow_foreign: bool = False) -> str:
     v = (val or "").strip().lower()
     if not v:
         sys.exit(f"BŁĄD: {CLIENT_CONFIG}: PUBLIC_KEY_HEX jest pusty.\n"
-                 "Wklej klucz publiczny z wersji właściciela (panel systemowy → GENERATOR LICENCJI → Klucz publiczny (hex) → KOPIUJ).\n"
+                 "Wklej klucz publiczny z wersji właściciela (panel systemowy → zakładka „Generator licencji” → Klucz publiczny (hex) → Kopiuj).\n"
                  "Paczka klienta NIE została zbudowana.")
     if not re.fullmatch(r"[0-9a-f]{64}", v):
         sys.exit(f"BŁĄD: {CLIENT_CONFIG}: PUBLIC_KEY_HEX musi mieć dokładnie 64 znaki 0-9 a-f (jest {len(v)}). Paczka klienta NIE została zbudowana.")
@@ -158,7 +158,7 @@ def client_public_key(allow_foreign: bool = False) -> str:
                 sys.exit("BŁĄD KRYTYCZNY: PUBLIC_KEY_HEX to Twój klucz PRYWATNY! Wklej klucz PUBLICZNY. Paczka NIE została zbudowana.")
             if v != pub.hex() and not allow_foreign:
                 sys.exit(f"BŁĄD: PUBLIC_KEY_HEX nie pasuje do klucza właściciela na tym komputerze ({kp}) – licencje wydane tutaj nie "
-                         "zadziałałyby w tej paczce. Wklej klucz publiczny z GENERATORA LICENCJI albo użyj --allow-foreign-key.")
+                         "zadziałałyby w tej paczce. Wklej klucz publiczny z zakładki „Generator licencji” albo użyj --allow-foreign-key.")
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - brak PyNaCl / klucza na maszynie budującej: sprawdzenie zgodności pominięte
