@@ -271,6 +271,12 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
+        from .licensing.gate import LicenseGate      # 1.44.0: wersja klienta – Studio tylko z ważną licencją (aktywacja w głównej aplikacji)
+        lg = LicenseGate()
+        st = lg.evaluate(refresh_net=True)
+        if lg.locked:
+            print(f"[PepeTrainingStudio] Brak ważnej licencji: {st.get('message')} Aktywuj klucz w aplikacji PepeMarketWizard.", file=sys.stderr)
+            return 6
         from .studio.app import serve
         port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)

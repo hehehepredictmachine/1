@@ -224,6 +224,13 @@ class Runtime:
         self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
+        # 1.44.0: centralna kontrola licencji (wersja klienta). Wersja właściciela: licencja niepotrzebna (gate.required = False).
+        from .licensing.gate import LicenseGate
+        self.license = LicenseGate(log=self.log)
+        self.modes.license_ok = self.license.ok
+        self.start_failures: list[dict] = []
+        self._engine_started = False
+        self._engine_lock = threading.Lock()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
 
@@ -313,6 +320,25 @@ class Runtime:
         return mode, st.get("day") or {}, (self.bridge.account_status() or {}).get("currency")
 
     def start(self) -> None:
+        """1.44.0: wersja klienta bez ważnej licencji – silnik (MT5, strategie, tryby, modele) NIE startuje; działa tylko serwer z ekranem
+        aktywacji. Po aktywacji (gate.on_unlock) silnik startuje raz, tak jak przy zwykłym starcie."""
+        st = self.license.evaluate(refresh_net=True)
+        self.license.start_monitor(self._stop)
+        if self.license.locked:
+            self.log.warn("LICENSE", "LOCKED_AT_START", f"Brak ważnej licencji ({st.get('code')}) – silnik czeka na aktywację klucza.")
+            self.license.on_unlock.append(lambda: threading.Thread(target=self._start_engine, name="engine-start-after-license",
+                                                                   daemon=True).start())
+            return
+        self._start_engine()
+
+    def _start_engine(self) -> None:
+        with self._engine_lock:
+            if self._engine_started:
+                return
+            self._engine_started = True
+        self._start_engine_parts()
+
+    def _start_engine_parts(self) -> None:
         """1.40.1: every subsystem starts on its own - one failing part (MT5 terminal, a model worker, a broken settings file, a Windows
         API call) never takes the whole engine down; the failure is logged with its traceback and listed in start_failures (API health)."""
         self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")

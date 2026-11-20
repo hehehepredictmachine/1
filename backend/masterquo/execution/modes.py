@@ -58,6 +58,7 @@ class ModeManager:
         self.bound_account: str | None = ex.bound_account
         self.kill_switch = False
         self.kill_reason: str | None = None
+        self.license_ok = None                            # 1.44.0: () -> bool z licensing.gate (wersja klienta); None = bez licencji
         self.changed_at = iso(utcnow())
 
     def apply_start_mode(self) -> str | None:
@@ -206,6 +207,8 @@ class ModeManager:
                     reasons.append("AUTO_LIVE_ON_SYNTHETIC_DATA")
             if self.kill_switch:
                 reasons.append("NEW_ENTRIES_STOPPED")
+            if self.license_ok is not None and not self.license_ok():
+                reasons.append("LICENSE_REQUIRED")          # 1.44.0: bez ważnej licencji (wersja klienta) żadnych nowych wejść
             missing = limits_configured(self.cfg_store.get().risk)
             if missing and mode != "SIGNALS":
                 reasons.append("RISK_LIMITS_NOT_CONFIGURED")

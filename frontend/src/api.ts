@@ -20,8 +20,12 @@ export function getCsrf(): string | null {
   return csrf;
 }
 
+// 1.44.0: 402 = brak ważnej licencji (wersja klienta) – LicenseGate wraca do ekranu aktywacji
+const licenseLost = (status: number) => { if (status === 402) window.dispatchEvent(new CustomEvent("pmw-license-required")); };
+
 export async function apiGet<T = any>(path: string): Promise<T> {
   const r = await fetch(path, { credentials: "same-origin" });
+  licenseLost(r.status);
   if (!r.ok) throw new ApiError(r.status, await r.text());
   return r.json();
 }
@@ -33,6 +37,7 @@ export async function apiSend<T = any>(method: "POST" | "PUT" | "PATCH" | "DELET
     headers: { "Content-Type": "application/json", "X-MQ-CSRF": csrf ?? "" },
     body: JSON.stringify(body ?? {}),
   });
+  licenseLost(r.status);
   const text = await r.text();
   let data: any = null;
   try {

@@ -58,6 +58,34 @@ def _manifest(text: str) -> dict[str, str]:
     return out
 
 
+# 1.44.0 paczka KLIENTA (nazwa z „KLIENT”): bez generatora licencji, funkcji podpisywania i klucza prywatnego, z kluczem publicznym wydawcy.
+OWNER_ONLY = ("backend/masterquo/licensing/owner.py", "backend/masterquo/licensing/signing.py", "backend/masterquo/api/owner_routes.py",
+              "frontend/src/features/system/LicenseGeneratorPanel.tsx", "tests/test_licensing.py", "tests/test_license_client.py",
+              "docs/LICENCJE_PMW1_PL.md")
+CLIENT_MARKERS = (b"SigningKey", b"sign_license", b"/api/v1/owner/", b"LicenseGeneratorPanel", b"GENERATOR LICENCJI",
+                  b"PMW-OWNER-ED25519-PRIVATE-KEY")
+PUBKEY_RX = re.compile(rb'^PUBLIC_KEY_HEX\s*=\s*"([^"]*)"', re.M)
+
+
+def client_problems(read, rels) -> list[str]:
+    """read(rel) -> bytes; rels = ścieżki względne plików paczki."""
+    out = [f"{r}: plik wersji właściciela w paczce klienta" for r in rels if r in OWNER_ONLY]
+    for r in rels:
+        if (r.startswith("backend/") and r.endswith(".py")) or r.startswith("frontend/dist/"):
+            b = read(r)
+            for m in CLIENT_MARKERS:
+                if m in b:
+                    out.append(f"{r}: kod generatora / podpisywania w paczce klienta ({m.decode()})")
+    cfg = "backend/masterquo/licensing/client_config.py"
+    if cfg not in rels:
+        out.append(f"brak {cfg}")
+    else:
+        m = PUBKEY_RX.search(read(cfg))
+        if not m or not re.fullmatch(rb"[0-9a-fA-F]{64}", m.group(1)):
+            out.append(f"{cfg}: PUBLIC_KEY_HEX pusty albo nie ma 64 znaków hex")
+    return out
+
+
 def check_zip(path: Path, top: str | None = None) -> list[str]:
     path = Path(path)
     problems: list[str] = []
@@ -129,6 +157,8 @@ def check_zip(path: Path, top: str | None = None) -> list[str]:
                 unlisted = [r for r in files if r not in m and r != mname]
                 if unlisted:
                     problems.append(f"{mname}: pliki spoza manifestu {unlisted[:5]}")
+        if "KLIENT" in path.name.upper():
+            problems += client_problems(lambda r: z.read(files[r]), list(files))
         removed = [r for r in files if r.startswith(("license_server/", "backend/masterquo/license/")) or r == "edition.json"]
         if removed:
             problems.append(f"elementy usuniętego systemu licencji w paczce: {removed[:5]}")

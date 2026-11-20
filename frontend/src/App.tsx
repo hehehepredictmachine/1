@@ -7,10 +7,12 @@ import ForexScene, { POSE_KEY } from "./features/forex/ForexScene";
 import { ExecStatus, SystemIcons } from "./features/system/SystemBar";
 import SystemDrawer, { type SysPanel } from "./features/system/SystemDrawer";
 import { FOREX_SCREENS, navigate, parse, SYSTEM_PANELS, useRoute, type ForexScreen } from "./router";
+import { requireLicense, useLicense } from "./license/LicenseGate";
 import { useStore } from "./store";
 
 export default function App() {
   const { s } = useStore();
+  const lic = useLicense().st;
   const route = useRoute();
   const [firstRunPending, setFirstRunPending] = useState(false);
   // panel systemowy: #/system?p=…&from=<hash ekranu źródłowego>; pod szufladą zostaje ekran źródłowy (bez remontu)
@@ -34,8 +36,12 @@ export default function App() {
       ? <ForexScene key="forex" screen={screen} fromMenu={base.params.get("from") === "menu"} onSystem={openSystem} />
       : <><CinematicMenu key="menu" onSettings={() => openSystem("settings")}
           onMenuReady={() => { if (firstRunPending) { setFirstRunPending(false); openSystem("settings"); } }}
-          onForexReady={(pose) => { try { sessionStorage.setItem(POSE_KEY, JSON.stringify(pose)); } catch { /* */ } navigate("forex", { params: { from: "menu" }, replace: true }); }} />
+          onForexReady={(pose) => { try { sessionStorage.setItem(POSE_KEY, JSON.stringify(pose)); } catch { /* */ }
+            // 1.44.0: centralna kontrola licencji przed uruchomieniem trybu (402 -> ekran aktywacji)
+            void requireLicense("FOREX").then((ok) => { if (ok) navigate("forex", { params: { from: "menu" }, replace: true }); }); }} />
         <ExecStatus onOpen={openSystem} /><SystemIcons onOpen={openSystem} /></>}
+    {lic?.warn && <button type="button" className={"lic-warnchip" + (base.page === "forex" ? " forex" : "")} data-testid="license-warnchip" onClick={() => openSystem("license")}>
+      LICENCJA WYGASA ZA {lic.days_left} {lic.days_left === 1 ? "DZIEŃ" : "DNI"} · {lic.exp_local} · ZMIEŃ KLUCZ</button>}
     {panel && <SystemDrawer panel={panel} onPanel={(p) => navigate("system", { params: { p, from }, replace: true })} onClose={closeSystem} />}
   </>);
 }

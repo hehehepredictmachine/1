@@ -16,6 +16,7 @@ from _env import TempData
 
 from masterquo.licensing import hwid as H
 from masterquo.licensing import license_key as LK
+from masterquo.licensing import signing as SG
 from masterquo.licensing.owner import LicenseInputError, OwnerLicenses, owner_dir, parse_key_file
 
 import nacl.signing
@@ -30,7 +31,7 @@ class TestKeyFormat(unittest.TestCase):
         self.now = 1_800_000_000
 
     def key(self, hw=HW, exp=None, user="Jan Kowalski"):
-        return LK.sign_license(self.sk, user, hw, self.now, exp)
+        return SG.sign_license(self.sk, user, hw, self.now, exp)
 
     def test_generate_and_read_with_hwid(self):
         k = self.key(exp=self.now + 30 * 86400)

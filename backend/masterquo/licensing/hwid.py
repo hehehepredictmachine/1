@@ -147,7 +147,8 @@ def _board_uuid() -> str | None:
 
 @functools.lru_cache(maxsize=1)
 def _sources() -> tuple[str | None, str | None]:
-    if os.environ.get("PMW_TEST_HWID_SOURCES"):                  # testy: "guid|uuid"
+    from .edition import dev_overrides
+    if dev_overrides() and os.environ.get("PMW_TEST_HWID_SOURCES"):   # testy (tylko repozytorium / wersja właściciela): "guid|uuid"
         g, _, u = os.environ["PMW_TEST_HWID_SOURCES"].partition("|")
         return g or None, u or None
     return _machine_guid(), _board_uuid()

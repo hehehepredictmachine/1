@@ -18,6 +18,8 @@ Linux (cross-compilation, CGO is not used).
 
   python tools/build_desktop.py            # online variant (~40 MB)
   python tools/build_desktop.py --offline  # + wheels (~150 MB)
+  python tools/build_desktop.py --edition client   # 1.44.0 wersja KLIENTA: PepeMarketWizard_DESKTOP_KLIENT_<ver>.zip (bez generatora
+                                                   # licencji; wymaga PUBLIC_KEY_HEX – tools/build_release.py edition_entries)
 """
 from __future__ import annotations
 
@@ -109,24 +111,26 @@ def fetch_wheels() -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="include dependency wheels (no internet on the first start)")
+    ap.add_argument("--edition", choices=("owner", "client"), default="owner", help="client = wersja klienta z weryfikacją licencji")
+    ap.add_argument("--allow-foreign-key", action="store_true")
     a = ap.parse_args()
     ver = version()
-    files = build_release.tracked()
-    build_release.scan(files)
+    entries = build_release.edition_entries(a.edition, allow_foreign=a.allow_foreign_key)
     exe = build_exe(ver)
     studio_exe = build_exe(ver, "studio")
     nupkg = fetch_python()
     wheels = fetch_wheels() if a.offline else None
 
     suffix = "_OFFLINE" if a.offline else ""
-    name = f"PepeMarketWizard_DESKTOP_{ver.replace('.', '_')}{suffix}.zip"
+    ed = "_KLIENT" if a.edition == "client" else ""
+    name = f"PepeMarketWizard_DESKTOP{ed}_{ver.replace('.', '_')}{suffix}.zip"
     out = ROOT / "release" / name
     out.parent.mkdir(exist_ok=True)
     manifest = []
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for f in files:
-            z.write(ROOT / f, TOP + f)
-            manifest.append(f"{sha256(ROOT / f)}  {f}")
+        for f, src in entries:
+            z.write(src, TOP + f)
+            manifest.append(f"{sha256(src)}  {f}")
         z.write(exe, TOP + "PepeMarketWizardDesktop.exe")
         manifest.append(f"{sha256(exe)}  PepeMarketWizardDesktop.exe")
         z.write(studio_exe, TOP + "PepeTrainingStudio.exe")
@@ -146,7 +150,7 @@ def main() -> None:
                 manifest.append(f"{sha256(w)}  runtime/wheels/{w.name}")
         # the launcher PepeMarketWizard.exe and the .bat installers check for MANIFEST_SHA256.txt (complete unpacking) - same
         # file as in the folder package (program files); MANIFEST_DESKTOP_SHA256.txt below lists every file of this package
-        mtext = build_release.manifest_text(files, "aplikacja Windows").encode("utf-8")
+        mtext = build_release.manifest_entries(entries, "aplikacja Windows" + (" – wersja klienta" if a.edition == "client" else "")).encode("utf-8")
         z.writestr(TOP + "MANIFEST_SHA256.txt", mtext)
         manifest.append(f"{hashlib.sha256(mtext).hexdigest()}  MANIFEST_SHA256.txt")
         z.writestr(TOP + "MANIFEST_DESKTOP_SHA256.txt",

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import license_key as LK
 from .hwid import HWID_FORMAT_PL, get_hwid, hwid_sources, normalize_hwid
+from .signing import nacl_signing, sign_license
 
 KEY_HEADER = "PMW-OWNER-ED25519-PRIVATE-KEY v1"
 PRESET_DAYS = (7, 30, 90, 365)
@@ -44,7 +45,7 @@ def owner_dir() -> Path:
 
 
 def _signing():
-    return LK._nacl()[0]
+    return nacl_signing()
 
 
 def _key_text(seed: bytes, pub: bytes, created: str) -> str:
@@ -136,11 +137,8 @@ class OwnerLicenses:
 
     # ------------------------------------------------------------------------------------------------ klucze
     def state(self) -> dict:
-        nacl_ok, nacl_err = True, None
-        try:
-            LK._nacl()
-        except RuntimeError as exc:
-            nacl_ok, nacl_err = False, str(exc)
+        nacl_err = LK.crypto_available()
+        nacl_ok = nacl_err is None
         pub = created = None
         err = None
         if nacl_ok:
@@ -233,7 +231,7 @@ class OwnerLicenses:
         exp = self._expiry(validity, iat)
         with self._lock:
             sk, pub = self._signer()
-            key = LK.sign_license(sk, u, hw, iat, exp)
+            key = sign_license(sk, u, hw, iat, exp)
             with self._db() as c:
                 cur = c.execute("INSERT INTO licenses (user, hwid, iat, exp, note, license_key, public_key, created_at) VALUES (?,?,?,?,?,?,?,?)",
                                 (u, hw, iat, exp, note, key, pub.hex(), iat))

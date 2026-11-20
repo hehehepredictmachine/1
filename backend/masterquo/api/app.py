@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import desktop, paths, presets, stats, sysres
 from ..execution.modes import ModeError
+from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION
@@ -189,6 +190,12 @@ def create_app(rt, port: int) -> FastAPI:
                     return JSONResponse({"error": "CSRF_OR_SESSION_INVALID"}, status_code=403)
             elif path.startswith("/api/v1/") and path not in ("/api/v1/health",) and not sec.csrf_for(request.cookies.get(SESSION_COOKIE)):
                 return JSONResponse({"error": "SESSION_REQUIRED_OPEN_MONITOR_PAGE"}, status_code=401)
+            # 1.44.0 wersja klienta bez ważnej licencji: działa tylko ekran aktywacji (status / aktywacja), sesja, zdrowie i zamknięcie –
+            # API ekranów FOREX / CRYPTO / OTC, trybów i handlu odpowiada 402 (frontend wraca do ekranu licencji).
+            if rt.license.locked and path.startswith("/api/") and not path.startswith("/api/v1/license/") \
+                    and path not in ("/api/v1/health", "/api/v1/session", "/api/v1/admin/shutdown"):
+                st = rt.license.state()
+                return JSONResponse({"error": "LICENSE_REQUIRED", "code": st.get("code"), "message": st.get("message")}, status_code=402)
             resp: Response = await call_next(request)
             resp.headers["X-Content-Type-Options"] = "nosniff"
             resp.headers["Referrer-Policy"] = "no-referrer"
@@ -1600,6 +1607,10 @@ def create_app(rt, port: int) -> FastAPI:
     # ------------------------------------------------------------ modes & execution
     @app.post("/api/v1/mode")
     def set_mode(req: ModeReq):
+        try:
+            rt.license.require("zmiana trybu wykonania")              # 1.44.0: centralna kontrola licencji przed uruchomieniem trybu
+        except LicenseRequired as exc:
+            raise HTTPException(402, exc.state.get("message") or "Brak ważnej licencji") from None
         try:
             return rt.modes.set_mode(req.mode, confirm=req.confirm, account=rt.bridge.account_status(), account_key=rt.bridge.account_key,
                                      synthetic=rt.bridge.synthetic)
@@ -3115,62 +3126,34 @@ def create_app(rt, port: int) -> FastAPI:
         return {"started": True}
 
     # ------------------------------------------------------------ 1.42.10 Centrum Treningowe Pepe (PMW-TCP-1): jeden widok + kolejka 1 naraz
-    # ---------------------------------------------------------------- 1.43.0 GENERATOR LICENCJI (właściciel; offline, Ed25519)
-    # Klucz prywatny w %APPDATA%\PepeMarketWizard\owner (poza programem). Serwer słucha tylko na 127.0.0.1; zmiany i eksport klucza
-    # wyłącznie POST/DELETE z tokenem CSRF (Guard). Niczego nie blokuje w bocie.
-    from ..licensing.owner import LicenseInputError, OwnerLicenses
-    lic = OwnerLicenses()
+    # ---------------------------------------------------------------- 1.44.0 LICENCJA
+    # Wersja właściciela: generator licencji (api/owner_routes.py – plik NIE wchodzi do paczki klienta).
+    # Wersja klienta: status / aktywacja / sprawdzenie przed trybem; reszta API zablokowana w Guard do aktywacji.
+    if rt.license.edition == "OWNER":
+        from .owner_routes import register as _register_owner_routes
+        _register_owner_routes(app)
 
-    def _lic(fn, *a, **kw):
-        try:
-            return fn(*a, **kw)
-        except LicenseInputError as exc:
-            raise HTTPException(400, f"{exc.field}: {exc.message}") from None
-        except RuntimeError as exc:                                  # brak PyNaCl
-            raise HTTPException(503, f"crypto: {exc}"[:300]) from None
+    def _lic_payload(st: dict) -> dict:
+        return {k: v for k, v in st.items() if k not in ("detail",)}
 
-    @app.get("/api/v1/owner/license/state")
-    def owner_license_state():
-        return lic.state()
+    @app.get("/api/v1/license/status")
+    def license_status(refresh: int = Query(0)):
+        return _lic_payload(rt.license.evaluate(refresh_net=True) if refresh else rt.license.state())
 
-    @app.post("/api/v1/owner/license/keys")
-    def owner_license_create_keys():
-        return _lic(lic.create_keypair)
-
-    @app.post("/api/v1/owner/license/keys/export")
-    def owner_license_export_key():
-        return _lic(lic.export_key)
-
-    @app.post("/api/v1/owner/license/keys/import")
-    def owner_license_import_key(body: dict = Body(default={})):
-        if len(str(body.get("content") or "")) > 20000:
-            raise HTTPException(400, "key_file: plik za duży – to nie jest kopia klucza PepeMarketWizard")
-        return _lic(lic.import_key, str(body.get("content") or ""), bool(body.get("replace")))
-
-    @app.get("/api/v1/owner/license/hwid")
-    def owner_license_hwid():
-        return lic.this_hwid()
-
-    @app.post("/api/v1/owner/license/generate")
-    def owner_license_generate(body: dict = Body(default={})):
-        v = body.get("validity")
-        return _lic(lic.generate, str(body.get("user") or ""), body.get("hwid"), bool(body.get("no_hwid")),
-                    v if isinstance(v, dict) else None, str(body.get("note") or ""))
-
-    @app.post("/api/v1/owner/license/check")
-    def owner_license_check(body: dict = Body(default={})):
+    @app.post("/api/v1/license/activate")
+    def license_activate(body: dict = Body(default={})):
         key = str(body.get("key") or "")
         if len(key) > 4000:
-            raise HTTPException(400, "key: klucz za długi")
-        return _lic(lic.check, key)
+            raise HTTPException(400, "Klucz jest za długi – to nie jest klucz PepeMarketWizard.")
+        return _lic_payload(rt.license.activate(key))
 
-    @app.get("/api/v1/owner/licenses")
-    def owner_licenses():
-        return {"licenses": _lic(lic.list)}
-
-    @app.delete("/api/v1/owner/licenses/{rid}")
-    def owner_license_delete(rid: int):
-        return _lic(lic.delete, rid)
+    @app.post("/api/v1/license/require")
+    def license_require(body: dict = Body(default={})):
+        """Przed uruchomieniem trybu (FOREX / CRYPTO / OTC): 200 albo 402 z powodem."""
+        try:
+            return _lic_payload(rt.license.require(str(body.get("action") or "")))
+        except LicenseRequired as exc:
+            return JSONResponse({"error": "LICENSE_REQUIRED", **_lic_payload(exc.state)}, status_code=402)
 
     @app.get("/api/v1/pepe-training")
     def pepe_training_status():
@@ -3923,6 +3906,9 @@ def create_app(rt, port: int) -> FastAPI:
     async def ws(websocket: WebSocket):
         if not sec.host_ok(websocket.headers.get("host")) or not sec.origin_ok(websocket.headers.get("origin")):
             await websocket.close(code=4403)
+            return
+        if rt.license.locked:                                          # 1.44.0: bez ważnej licencji brak strumienia danych
+            await websocket.close(code=4402)
             return
         sid = websocket.cookies.get(SESSION_COOKIE)
         await websocket.accept()
