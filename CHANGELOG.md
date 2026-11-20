@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.42.11 – eksport danych i trening w aplikacji DESKTOP
+* **Naprawa eksportu historii z MT5 w aplikacji DESKTOP:** proces eksportu (i każdy inny proces treningu na Pythonie bota) dostawał
+  PYTHONPATH tylko z folderem `backend` – w aplikacji DESKTOP biblioteki (numpy, pandas, MetaTrader5 …) są dołączane właśnie przez PYTHONPATH,
+  więc eksport kończył się od razu `ModuleNotFoundError: No module named 'numpy'`, a wszystkie modele głównego treningu były pomijane
+  z „brak danych (eksport nie ukończony)”. Teraz procesy na Pythonie bota zachowują biblioteki aplikacji; osobne środowiska modeli
+  (.venv_candles, .venv_kronos, .venv_granite …) nadal dostają tylko `backend`.
+* Ta sama przyczyna – naprawione też: **Kierunek TH** („proces treningu zakończył się kodem 1”) i **rodziny modeli** („No module named 'numpy'”).
+* **Centrum Treningowe Pepe:** przyczyna nieudanego eksportu jest pokazana przy każdym modelu i na początku podsumowania (było „błędy 0”).
+  Przed Granite TTM i SDformerFlow Centrum zwalnia bezczynne modele prognoz (Kronos zostaje) i czeka do 15 min na wolną pamięć; gdy RAM
+  nadal ≥ progu Memory Governor (80 %), pokazuje zajętość RAM i co zrobić – zamiast „za mało pamięci (LIMIT_HEAVY)”.
+* Sprawdzone na Pythonie bez bibliotek z bibliotekami tylko w PYTHONPATH (jak w aplikacji DESKTOP): błąd odtworzony przed naprawą, po naprawie
+  eksport + Legacy ML + prognozy świec, Kierunek TH i rodziny modeli (5/9) wytrenowane.
+
 ## 1.42.10 – naprawy treningu i Centrum Treningowe Pepe
 * **Nowe Centrum Treningowe Pepe** – jeden prosty widok treningu wszystkich modeli bota (ikona biretu na pasku systemowym, zakładka
   w panelu systemowym, przycisk w ekranie MODELS): wybór instrumentu (OBA / XAUUSD / BTC), **TRENUJ** przy modelu albo **TRENUJ WSZYSTKO**,
