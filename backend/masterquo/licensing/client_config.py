@@ -10,4 +10,4 @@ zakładka „Generator licencji” → „Klucz publiczny (hex)” → Kopiuj, i
 * Zmiana klucza = wszystkie licencje wydane poprzednim kluczem przestają działać w nowej paczce.
 """
 
-PUBLIC_KEY_HEX = ""
+PUBLIC_KEY_HEX = "9e83abb1659c063ffab4eb039910311a286398b5b87dfb26feec00a8336e5bba"

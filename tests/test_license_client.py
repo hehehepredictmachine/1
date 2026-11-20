@@ -116,6 +116,10 @@ class TestGate(unittest.TestCase):
             self.assertEqual(g.state()["code"], "OWNER")
 
     def test_no_public_key_is_config_error(self):
+        from masterquo.licensing import client_config
+        orig = client_config.PUBLIC_KEY_HEX
+        client_config.PUBLIC_KEY_HEX = ""                                           # jak paczka bez wpisanego klucza
+        self.addCleanup(setattr, client_config, "PUBLIC_KEY_HEX", orig)
         with env(PMW_TEST_PUBLIC_KEY_HEX=None):
             g = self.gate()
             st = g.evaluate()
@@ -226,17 +230,21 @@ class TestGate(unittest.TestCase):
         self.assertTrue(M.license_ok())
 
     def test_dev_overrides_ignored_without_owner_module(self):
+        from masterquo.licensing import client_config
         from masterquo.licensing import edition as E
-        orig = E._OWNER_FILE
+        orig, orig_key = E._OWNER_FILE, client_config.PUBLIC_KEY_HEX
+        other = bytes(nacl.signing.SigningKey.generate().verify_key)
+        client_config.PUBLIC_KEY_HEX = other.hex()                                  # klucz wpisany w paczce
         try:
             E._OWNER_FILE = Path(self.tmp) / "brak_owner.py"                        # jak w paczce klienta
             self.assertEqual(E.edition(), "CLIENT")
             self.assertFalse(E.dev_overrides())
-            self.assertEqual(G.public_key()[1], "PUBLIC_KEY_HEX jest pusty")         # PMW_TEST_PUBLIC_KEY_HEX zignorowany
+            self.assertEqual(G.public_key()[0], other)                              # PMW_TEST_PUBLIC_KEY_HEX (=PUB) zignorowany
             with env(PMW_LICENSE_FILE=str(Path(self.tmp) / "inny.dat")):
                 self.assertNotEqual(G.license_path(), Path(self.tmp) / "inny.dat")
         finally:
             E._OWNER_FILE = orig
+            client_config.PUBLIC_KEY_HEX = orig_key
 
 
 class TestClientPackageRules(unittest.TestCase):
@@ -256,16 +264,35 @@ class TestClientPackageRules(unittest.TestCase):
         self.assertTrue(any("signing.py: plik wersji właściciela" in p for p in probs))
         self.assertTrue(any("b.js" in p for p in probs))
 
-    def test_build_refuses_empty_public_key(self):
+    def test_build_refuses_empty_or_bad_public_key(self):
+        """Na tymczasowej kopii client_config.py (niezależnie od klucza wpisanego w repozytorium)."""
         import sys
         sys.path.insert(0, str(_env.ROOT / "tools"))
         import build_release as B
+        tmp = Path(tempfile.mkdtemp(prefix="pmw_cfg_"))
+        cfg = tmp / B.CLIENT_CONFIG
+        cfg.parent.mkdir(parents=True)
+        orig = B.ROOT
+        B.ROOT = tmp
+        try:
+            for val, msg in (("", "PUBLIC_KEY_HEX jest pusty"), ("abc", "64 znaki")):
+                cfg.write_text(f'PUBLIC_KEY_HEX = "{val}"\n', encoding="utf-8")
+                with self.assertRaises(SystemExit) as cm:
+                    B.client_public_key()
+                self.assertIn(msg, str(cm.exception))
+            cfg.write_text(f'PUBLIC_KEY_HEX = "{PUB.hex()}"\n', encoding="utf-8")
+            self.assertEqual(B.client_public_key(allow_foreign=True), PUB.hex())
+        finally:
+            B.ROOT = orig
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_repository_public_key_is_valid(self):
         from masterquo.licensing import client_config
-        if client_config.PUBLIC_KEY_HEX:
-            self.skipTest("klucz publiczny już wklejony")
-        with self.assertRaises(SystemExit) as cm:
-            B.client_public_key()
-        self.assertIn("PUBLIC_KEY_HEX jest pusty", str(cm.exception))
+        v = client_config.PUBLIC_KEY_HEX
+        if v:                                                                      # wpisany klucz wydawcy: 64 hex i poprawny punkt Ed25519
+            import nacl.bindings
+            self.assertRegex(v, r"^[0-9a-f]{64}$")
+            nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(bytes.fromhex(v))
 
 
 class TestClientApi(unittest.TestCase):
