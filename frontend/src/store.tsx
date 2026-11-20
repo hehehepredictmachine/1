@@ -61,6 +61,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, forecast: d };
     case "kronos":
       return { ...s, kronos: d };
+    case "tsfm":
+      return { ...s, tsfm: d };
     case "scalp":
       return { ...s, scalp: d };
     case "analytics":
@@ -146,4 +148,10 @@ export function useStore() {
   const c = useContext(Ctx);
   if (!c) throw new Error("no store");
   return c;
+}
+
+/** CHARTS 1:1 (tryb testowy, charts-test.html): store o stałej wartości – bez WebSocketu i bez zapytań do API. */
+export function StaticStoreProvider({ value, children }: { value: AppState; children: React.ReactNode }) {
+  const v = useMemo(() => ({ s: value, refresh: async () => undefined }), [value]);
+  return <Ctx.Provider value={v}>{children}</Ctx.Provider>;
 }

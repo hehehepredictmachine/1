@@ -55,6 +55,7 @@ class Basket:
     seen: set = field(default_factory=set)
     issued: set = field(default_factory=set)
     transitions: list = field(default_factory=list)
+    policy: dict = field(default_factory=dict)       # 1.38 pack: variant hedge-policy state (MFE, armed flags, intent ids) - persisted
 
     # ------------------------------------------------------------------ helpers
     def _go(self, new: str, why: str, t: float) -> None:

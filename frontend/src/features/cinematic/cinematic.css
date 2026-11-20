@@ -1,0 +1,112 @@
+/* Menu główne 1.42 – style ze wzorca REF_A_menu_glowne_v1_1.html, zakres .app-cinematic, identyfikatory zamienione na klasy cin-*. */
+.app-cinematic{color-scheme:dark;--white:#f2f2ef;--dim:#898b91;--muted:#63666c;--ease:cubic-bezier(.22,1,.36,1)}
+.app-cinematic *{box-sizing:border-box}
+.app-cinematic{position:fixed;inset:0;width:100%;height:100%;margin:0;background:#000;overflow:hidden}
+.app-cinematic{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--white);-webkit-font-smoothing:antialiased}
+.app-cinematic button{font:inherit;color:inherit}
+.app-cinematic button:focus-visible{outline:1px solid #dfe3eb;outline-offset:9px}
+.app-cinematic button{touch-action:manipulation}
+.app-cinematic [hidden]{display:none!important}
+.app-cinematic ::selection{background:#eee;color:#000}
+.app-cinematic .cin-universe{display:block;position:fixed;inset:0;width:100%;height:100%;z-index:0;background:#000}
+.app-cinematic .cin-vignette{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at 50% 52%,transparent 35%,rgba(0,0,0,.22) 85%,#000 115%)}
+.app-cinematic .cin-menu{position:fixed;inset:0;z-index:3;opacity:0;pointer-events:none;transition:opacity .8s ease}
+.app-cinematic[data-state="menu"] .cin-menu{opacity:1;pointer-events:auto}
+.app-cinematic[data-state="enter"] .cin-menu{opacity:var(--reveal,0)}
+.app-cinematic .cin-masthead{text-align:center;position:absolute;left:5%;right:5%;top:clamp(40px,7.7vh,100px);transform:translateY(12px);opacity:0;filter:blur(8px);transition:opacity 1.5s ease,transform 1.8s var(--ease),filter 1.8s ease;pointer-events:none}
+.app-cinematic[data-state="menu"] .cin-masthead{transform:translateY(0);opacity:1;filter:blur(0)}
+.app-cinematic h1{font-size:clamp(20px,2.6vw,42px);font-weight:350;letter-spacing:.22em;line-height:1.25;margin:0;text-indent:.22em}
+.app-cinematic h1 .team{font-weight:200;color:#a6a8ae}
+.app-cinematic .cin-motto{font-size:clamp(11px,1.03vw,15px);font-weight:300;letter-spacing:.12em;color:#9da0a8;margin:18px 0 0}
+.app-cinematic .mode{position:absolute;display:flex;align-items:center;justify-content:flex-end;flex-direction:column;border:0;background:transparent;padding:0;margin:0;width:var(--hit);height:calc(var(--hit) + 78px);left:calc(var(--x) - var(--hit)/2);top:calc(var(--y) - var(--hit)/2);cursor:grab;border-radius:48% 48% 0 0;opacity:0;transition:opacity 1s ease;user-select:none;-webkit-user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent}
+.app-cinematic[data-state="menu"] .mode{opacity:1}
+.app-cinematic .mode:nth-of-type(2){transition-delay:.13s}
+.app-cinematic .mode:nth-of-type(3){transition-delay:.23s}
+.app-cinematic .mode:active{cursor:grabbing}
+.app-cinematic .mode:focus-visible{outline:0}
+.app-cinematic .mode:focus-visible .mode-name{outline:1px solid #e1e4ec;outline-offset:9px}
+.app-cinematic .mode .label{position:absolute;top:calc(var(--hit) + 8px);width:100%;display:flex;align-items:center;flex-direction:column;pointer-events:none;transition:transform .7s var(--ease)}
+.app-cinematic .mode .mode-name{font-size:clamp(19px,1.8vw,28px);font-weight:350;line-height:1.2;letter-spacing:.33em;text-indent:.33em;white-space:nowrap;transition:letter-spacing .5s ease,color .5s ease;color:#c9cbd1}
+.app-cinematic .mode .number{font-size:9px;letter-spacing:.18em;color:#777d87;line-height:1;margin-bottom:13px;display:flex;align-items:center;gap:10px}
+.app-cinematic .number:before,.app-cinematic .number:after{content:"";display:block;width:17px;height:1px;background:#363b44;transition:width .7s var(--ease),background .5s}
+.app-cinematic .mode:hover .number:before,.app-cinematic .mode:hover .number:after,.app-cinematic .mode:focus-visible .number:before,.app-cinematic .mode:focus-visible .number:after{width:28px;background:#8a94a6}
+.app-cinematic .mode:hover .mode-name,.app-cinematic .mode:focus-visible .mode-name{color:#fff;letter-spacing:.41em}
+.app-cinematic .mode:hover .label{transform:translateY(3px)}
+.app-cinematic .mode .enter-mark{display:block;margin-top:10px;width:22px;height:1px;background:linear-gradient(90deg,transparent,#bfc7da,transparent);opacity:0;transform:scaleX(.2);transition:opacity .5s,transform .8s var(--ease)}
+.app-cinematic .mode:hover .enter-mark,.app-cinematic .mode:focus-visible .enter-mark{opacity:.8;transform:scaleX(1)}
+.app-cinematic .cin-menu-hint{position:absolute;bottom:clamp(24px,4vh,44px);left:20%;right:20%;text-align:center;pointer-events:none;font-size:9px;letter-spacing:.19em;line-height:1.8;color:#747983;opacity:0;transition:opacity 2s ease}
+.app-cinematic[data-state="menu"] .cin-menu-hint{opacity:.85}
+.app-cinematic .hint-separator{padding:0 9px;color:#515660}
+.app-cinematic .cin-presentation-mark{position:fixed;bottom:32px;left:32px;z-index:6;font-size:8px;letter-spacing:.21em;color:#6c727d;opacity:0;pointer-events:none;transition:opacity 1s}
+.app-cinematic[data-state="menu"] .cin-presentation-mark,.app-cinematic[data-state="selected"] .cin-presentation-mark{opacity:.75}
+.app-cinematic .cin-tools{position:fixed;right:27px;bottom:20px;z-index:12;display:flex;gap:3px;align-items:center;opacity:.55;transition:opacity .5s}
+.app-cinematic .cin-tools:hover,.app-cinematic .cin-tools:focus-within{opacity:1}
+.app-cinematic .tool{background:none;border:0;padding:11px 10px;min-width:38px;height:42px;cursor:pointer;color:#9a9ea7;display:grid;place-items:center;position:relative}
+.app-cinematic .tool:hover,.app-cinematic .tool[aria-pressed="true"]{color:#fff}
+.app-cinematic .tool svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.15;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.app-cinematic .tool:after{content:attr(data-label);position:absolute;bottom:50px;right:0;font-size:10px;white-space:nowrap;letter-spacing:.04em;opacity:0;transform:translateY(4px);transition:opacity .2s,transform .2s;pointer-events:none;background:#090b10;padding:7px 9px}
+.app-cinematic .tool:hover:after,.app-cinematic .tool:focus-visible:after{opacity:1;transform:translateY(0)}
+.app-cinematic .cin-cinema{position:fixed;inset:0;z-index:8;background:#000;opacity:1;pointer-events:none;will-change:opacity,transform,filter}
+.app-cinematic .cin-intro{width:100%;height:100%;display:block;object-fit:contain;transform-origin:50% 50%;will-change:transform,filter,opacity}
+.app-cinematic .cin-cinema-label{position:absolute;left:32px;top:29px;font-size:9px;letter-spacing:.27em;color:#a1a2a5;mix-blend-mode:screen}
+.app-cinematic .cin-skip{position:fixed;z-index:14;top:22px;right:26px;border:0;background:transparent;cursor:pointer;font-size:9px;letter-spacing:.17em;padding:13px;color:#c1c4cb}
+.app-cinematic .cin-skip:after{content:' ⟶';padding-left:9px;color:#8b91a0}
+.app-cinematic .cin-video-start{position:fixed;z-index:13;left:50%;top:50%;transform:translate(-50%,-50%);border:1px solid #757982;background:#000a;padding:17px 26px;font-size:10px;letter-spacing:.2em;cursor:pointer}
+.app-cinematic .cin-cinema-progress{position:fixed;bottom:0;left:0;width:100%;height:1px;z-index:10;background:transparent;pointer-events:none}
+.app-cinematic .cin-cinema-progress span{display:block;height:100%;width:100%;background:#9ba7be;transform:scaleX(0);transform-origin:left;opacity:.55}
+.app-cinematic .cin-selected{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;transition:opacity 1.2s ease}
+.app-cinematic[data-state="selected"] .cin-selected{opacity:1;pointer-events:auto}
+.app-cinematic .cin-selected-top{position:absolute;left:6%;right:6%;top:7.5vh;text-align:center;font-size:11px;letter-spacing:.3em;color:#c4c8d1}
+.app-cinematic .cin-selected-label{position:absolute;left:10%;right:10%;top:73%;text-align:center}
+.app-cinematic .cin-selected-label .eyebrow{font-size:9px;letter-spacing:.26em;color:#858b97;margin:0 0 14px}
+.app-cinematic .cin-selected-name{font-size:clamp(28px,4vw,56px);font-weight:300;letter-spacing:.36em;text-indent:.36em;margin:0}
+.app-cinematic .cin-selected-note{font-size:11px;line-height:1.8;letter-spacing:.06em;color:#9298a5;margin:15px 0 0}
+.app-cinematic .cin-return{position:absolute;left:32px;top:29px;background:none;border:0;font-size:10px;letter-spacing:.1em;color:#b9bec8;cursor:pointer;padding:10px 0}
+.app-cinematic .cin-return span{margin-right:12px}
+.app-cinematic .cin-notice{position:fixed;z-index:20;left:50%;bottom:90px;transform:translate(-50%,8px);font-size:11px;letter-spacing:.04em;text-align:center;max-width:80%;padding:13px 20px;border:1px solid #2b303b;background:rgba(6,8,13,.95);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none}
+.app-cinematic .cin-notice.show{opacity:1;transform:translate(-50%,0)}
+.app-cinematic .cin-renderer-error{position:fixed;z-index:30;inset:0;display:grid;place-content:center;padding:36px;background:#000e;text-align:center;line-height:1.7}
+.app-cinematic .cin-renderer-error h2{font-size:20px;font-weight:400;letter-spacing:.1em}
+.app-cinematic .cin-renderer-error p{max-width:490px;font-size:13px;color:#b8bfce}
+.app-cinematic .cin-renderer-retry{justify-self:center;background:transparent;border:1px solid #525b6d;padding:13px 20px;cursor:pointer;margin-top:15px}
+.app-cinematic .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:700px){.app-cinematic h1{font-size:clamp(16px,3.55vw,25px);letter-spacing:.12em;text-indent:.12em}
+.app-cinematic .cin-masthead{left:4%;right:4%;top:7vh}
+.app-cinematic .cin-motto{font-size:10px;letter-spacing:.055em;margin-top:13px}
+.app-cinematic .cin-menu-hint{font-size:8px;letter-spacing:.06em;left:5%;right:5%;bottom:83px}
+.app-cinematic .cin-presentation-mark{left:18px;bottom:27px;font-size:7px;letter-spacing:.12em}
+.app-cinematic .cin-tools{right:12px;bottom:12px}
+.app-cinematic .tool{padding:11px 8px;min-width:35px}
+.app-cinematic .mode .mode-name{font-size:18px;letter-spacing:.24em}
+.app-cinematic .mode .number{font-size:8px;margin-bottom:10px}
+.app-cinematic .mode .label{top:calc(var(--hit) + 2px)}
+.app-cinematic .cin-cinema-label{left:18px;top:26px;font-size:8px;max-width:48%;line-height:1.9}
+.app-cinematic .cin-skip{right:10px;top:16px;font-size:8px}
+.app-cinematic .cin-selected-top{top:15%;font-size:10px}
+.app-cinematic .cin-selected-label{top:70%}
+.app-cinematic .cin-return{left:20px;top:20px}
+.app-cinematic .cin-selected-note{font-size:10px}
+}
+@media(max-height:620px) and (min-width:701px){.app-cinematic .cin-masthead{top:6vh}
+.app-cinematic h1{font-size:25px}
+.app-cinematic .cin-motto{font-size:11px;margin-top:10px}
+.app-cinematic .mode .mode-name{font-size:19px}
+.app-cinematic .mode .number{font-size:8px;margin-bottom:8px}
+.app-cinematic .mode .label{top:calc(var(--hit) + 2px)}
+.app-cinematic .cin-menu-hint{bottom:17px;font-size:8px}
+.app-cinematic .cin-presentation-mark{bottom:23px}
+.app-cinematic .cin-tools{bottom:10px}
+}
+@media(prefers-reduced-motion:reduce){.app-cinematic *,.app-cinematic *::before,.app-cinematic *::after{transition-duration:.15s!important}
+.app-cinematic .cin-masthead{filter:none!important}
+}
+.app-cinematic[data-motion="reduced"] *,.app-cinematic[data-motion="reduced"] *:before,.app-cinematic[data-motion="reduced"] *:after{transition-duration:.15s!important}
+.app-cinematic[data-motion="reduced"] .cin-masthead{filter:none!important}
+
+/* 1.42 – dodatki aplikacji (nie ma ich we wzorcu): znacznik SYNTETYCZNE i przycisk ustawień w pasku narzędzi */
+.app-cinematic .cin-synthetic{position:fixed;right:32px;top:29px;z-index:15;font-size:9px;letter-spacing:.22em;color:#d9c99a;border:1px solid #b7a77a66;padding:6px 10px;background:rgba(0,0,0,.55);pointer-events:none}
+.app-cinematic[data-state="boot"] .cin-synthetic{top:72px}
+.app-cinematic .cin-selected .cin-forex-wait{position:absolute;left:10%;right:10%;top:86%;text-align:center;font-size:10px;letter-spacing:.16em;color:#9298a5}
+.app-cinematic:not([data-state="boot"]) .cin-tools{right:300px}   /* w intro ikony systemowe są ukryte – pasek jak we wzorcu */
+.app-cinematic[data-state="boot"]~.sys-exec,.app-cinematic[data-state="boot"]~.sys-icons,.app-cinematic[data-state="enter"]~.sys-icons{display:none}
+@media(max-width:700px){.app-cinematic .cin-tools{right:auto;left:12px}}

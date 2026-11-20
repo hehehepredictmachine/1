@@ -10,8 +10,9 @@ set "INST=%~1"
 if "%INST%"=="" set "INST=XAUUSD"
 set "PROF=%~2"
 if "%PROF%"=="" set "PROF=smoke"
-set "PY=%~dp0.venv\Scripts\python.exe"
-if exist "%~dp0runtime\python\python.exe" if not exist "%PY%" set "PY=%~dp0runtime\python\python.exe"
+for %%I in ("%~dp0.") do set "ROOT=%%~fI"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
 if not exist "%PY%" (
   echo [BLAD] Brak srodowiska bota - uruchom najpierw 01_INSTALUJ.bat
   %MQ_PAUSE%

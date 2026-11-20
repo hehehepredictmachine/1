@@ -2,8 +2,12 @@
 
   release/PepeMarketWizard_<ver>.zip      the bot (all strategies, signals, panel) + training installers for Windows; no secrets
   (+ .sha256 next to the ZIP)
-1.30: the license system was removed at the user's request - one edition, no OWNER / CLIENT packages, no license server.
-The Windows application package is built by tools/build_desktop.py from the same file list.
+1.30: the license system was removed at the user's request. 1.44.0: two editions again, offline licences (Ed25519, no server):
+  release/PepeMarketWizard_<ver>.zip           OWNER  – wersja właściciela (z generatorem licencji)
+  release/PepeMarketWizard_KLIENT_<ver>.zip    CLIENT – python tools/build_release.py --edition client: bez generatora, funkcji
+                                               podpisywania i historii licencji; panel zbudowany z PMW_EDITION=CLIENT (kod generatora
+                                               wycięty przy kompilacji); wymaga PUBLIC_KEY_HEX w backend/masterquo/licensing/client_config.py
+The Windows application package is built by tools/build_desktop.py from the same file list (--edition client as well).
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
 Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
@@ -12,15 +16,19 @@ A copy WITHOUT .git (GitHub "Download ZIP", an unpacked package) builds from the
 (the previous build's list; files on disk that are not in it are reported, not packed). After writing, the ZIP is verified
 (tools/verify_release.py rules: no absolute / ../ paths, manifest hashes, no secrets).
 """
+import argparse
+import ast
 import hashlib
+import os
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.35.0"
+VERSION = "1.44.0"
 APP_ZIP = f"PepeMarketWizard_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
@@ -79,7 +87,8 @@ def tracked():
         print("brak .git – lista plików z MANIFEST_SHA256.txt (jawna lista poprzedniego wydania)")
         files = manifest_list()
     # Frog Wizard is a separate product
-    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/")) and f != "MANIFEST_SHA256.txt"]
+    # 1.42: archive/ (old UI 1.41) and update_1_42/ (update package, reference HTML, screenshots) never go into a release
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/", "update_charts/", "update_intro3d/")) and f != "MANIFEST_SHA256.txt"]
 
 
 def scan(files):
@@ -116,6 +125,98 @@ def manifest_text(files, label: str = "klient") -> str:
     return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
 
 
+# ------------------------------------------------------------------------------------------------ 1.44.0 edycje
+CLIENT_CONFIG = "backend/masterquo/licensing/client_config.py"
+
+
+def _verify_module():
+    sys.path.insert(0, str(ROOT / "tools"))
+    import verify_release
+    return verify_release
+
+
+def client_public_key(allow_foreign: bool = False) -> str:
+    """PUBLIC_KEY_HEX z client_config.py – pusty / zły = czytelny błąd i brak paczki. Gdy na tym komputerze jest klucz właściciela:
+    wpis nie może być jego kluczem PRYWATNYM i powinien być jego kluczem publicznym (inaczej licencje z tego generatora nie zadziałają)."""
+    tree = ast.parse((ROOT / CLIENT_CONFIG).read_text(encoding="utf-8"))
+    val = next((n.value.value for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "PUBLIC_KEY_HEX" for t in n.targets)
+                and isinstance(n.value, ast.Constant)), None)
+    v = (val or "").strip().lower()
+    if not v:
+        sys.exit(f"BŁĄD: {CLIENT_CONFIG}: PUBLIC_KEY_HEX jest pusty.\n"
+                 "Wklej klucz publiczny z wersji właściciela (panel systemowy → zakładka „Generator licencji” → Klucz publiczny (hex) → Kopiuj).\n"
+                 "Paczka klienta NIE została zbudowana.")
+    if not re.fullmatch(r"[0-9a-f]{64}", v):
+        sys.exit(f"BŁĄD: {CLIENT_CONFIG}: PUBLIC_KEY_HEX musi mieć dokładnie 64 znaki 0-9 a-f (jest {len(v)}). Paczka klienta NIE została zbudowana.")
+    try:
+        sys.path.insert(0, str(ROOT / "backend"))
+        from masterquo.licensing.owner import owner_dir, parse_key_file
+        kp = owner_dir() / "private.key"
+        if kp.exists():
+            seed, pub = parse_key_file(kp.read_text(encoding="ascii"))
+            if v == seed.hex():
+                sys.exit("BŁĄD KRYTYCZNY: PUBLIC_KEY_HEX to Twój klucz PRYWATNY! Wklej klucz PUBLICZNY. Paczka NIE została zbudowana.")
+            if v != pub.hex() and not allow_foreign:
+                sys.exit(f"BŁĄD: PUBLIC_KEY_HEX nie pasuje do klucza właściciela na tym komputerze ({kp}) – licencje wydane tutaj nie "
+                         "zadziałałyby w tej paczce. Wklej klucz publiczny z zakładki „Generator licencji” albo użyj --allow-foreign-key.")
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - brak PyNaCl / klucza na maszynie budującej: sprawdzenie zgodności pominięte
+        print(f"uwaga: zgodności PUBLIC_KEY_HEX z kluczem właściciela nie sprawdzono ({type(exc).__name__})")
+    return v
+
+
+def build_client_frontend() -> Path:
+    """Panel klienta: vite build z PMW_EDITION=CLIENT (kod generatora licencji wycięty przy kompilacji) do build/client_dist."""
+    out = ROOT / "build" / "client_dist"
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    if not npx:
+        sys.exit("BŁĄD: brak Node.js (npx) – panel klienta musi zostać zbudowany z PMW_EDITION=CLIENT. Paczka klienta NIE została zbudowana.")
+    r = subprocess.run([npx, "vite", "build", "--outDir", str(out), "--emptyOutDir"], cwd=ROOT / "frontend",
+                       env=dict(os.environ, PMW_EDITION="CLIENT"), capture_output=True, text=True)
+    if r.returncode != 0 or not (out / "index.html").exists():
+        sys.exit("BŁĄD: budowanie panelu klienta nieudane:\n" + (r.stdout + r.stderr)[-3000:])
+    return out
+
+
+def edition_entries(edition: str = "owner", *, allow_foreign: bool = False) -> list[tuple[str, Path]]:
+    """[(ścieżka w paczce, plik źródłowy)] dla edycji. OWNER = pliki z gita; CLIENT = bez plików właściciela, panel klienta zamiast
+    frontend/dist, kontrola: brak kodu generatora / podpisywania (te same reguły co tools/verify_release.py)."""
+    files = tracked()
+    scan(files)
+    if edition == "owner":
+        return [(f, ROOT / f) for f in files]
+    vr = _verify_module()
+    client_public_key(allow_foreign)
+    dist = build_client_frontend()
+    keep = [f for f in files if f not in vr.OWNER_ONLY and not f.startswith("frontend/dist/")]
+    entries = [(f, ROOT / f) for f in keep]
+    entries += [("frontend/dist/" + p.relative_to(dist).as_posix(), p) for p in sorted(dist.rglob("*")) if p.is_file()]
+    src = dict(entries)
+    bad = vr.client_problems(lambda r: src[r].read_bytes(), [r for r, _ in entries])
+    if bad:
+        sys.exit("BŁĄD: paczka klienta zawierałaby elementy wersji właściciela:\n" + "\n".join(bad[:20]))
+    return entries
+
+
+def manifest_entries(entries, label: str) -> str:
+    lines = [f"{hashlib.sha256(src.read_bytes()).hexdigest()}  {rel}" for rel, src in entries]
+    return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
+
+
+def write_zip_entries(name, top, entries, extra: dict[str, bytes]):
+    out = ROOT / "release" / name
+    out.parent.mkdir(exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for rel, src in entries:
+            z.write(src, top + rel)
+        for rel, data in extra.items():
+            z.writestr(top + rel, data)
+    digest = hashlib.sha256(out.read_bytes()).hexdigest()
+    (out.parent / (name + ".sha256")).write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
+    print(f"{name}: {len(entries) + len(extra)} files, {out.stat().st_size} bytes, sha256 {digest}")
+
+
 def check_windows_requirements() -> None:
     """1.34.1: a package is never built with a requirements file that does not install on Windows (tools/check_requirements_win.py).
     Without uv / network the check is reported as NOT RUN - it never counts as passed."""
@@ -128,6 +229,18 @@ def check_windows_requirements() -> None:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--edition", choices=("owner", "client"), default="owner", help="client = paczka klienta z weryfikacją licencji")
+    ap.add_argument("--allow-foreign-key", action="store_true", help="PUBLIC_KEY_HEX może nie pasować do klucza właściciela na tym komputerze")
+    a = ap.parse_args()
+    if a.edition == "client":
+        entries = edition_entries("client", allow_foreign=a.allow_foreign_key)
+        check_windows_requirements()
+        name = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"
+        write_zip_entries(name, "PepeMarketWizard/", entries,
+                          {"MANIFEST_SHA256.txt": manifest_entries(entries, "program – wersja klienta").encode("utf-8")})
+        verify(ROOT / "release" / name, "PepeMarketWizard/")
+        return
     files = tracked()
     scan(files)
     check_windows_requirements()

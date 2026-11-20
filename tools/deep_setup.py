@@ -40,7 +40,9 @@ def result(ok: bool, step: int, code: str | None = None, **kw) -> int:
 
 
 def run(cmd, env=None) -> tuple[int, str]:
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=env)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import kronos_setup as KS  # same clean child environment (the bot's PYTHONPATH never reaches pip in .venv_deep)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=KS.child_env(env))
     last = ""
     for ln in p.stdout:
         ln = ln.rstrip()
@@ -77,6 +79,11 @@ def main(argv=None) -> int:
     say(1, f"Python do środowiska: {base}")
     venv = root / ".venv_deep"
     vpy = venv / ("Scripts/python.exe" if win else "bin/python")
+    sys.path.insert(0, str(root / "backend"))
+    import mq_venv                                                   # 1.42.2: moved program folder
+    rep = mq_venv.repair(venv, base, lambda m: say(2, m))
+    if rep["state"] == "FAILED":
+        return result(False, 2, "VENV", error=rep["detail"])
     if not vpy.is_file():
         say(2, f"tworzę {venv}")
         rc, last = run([base, "-m", "venv", str(venv)])

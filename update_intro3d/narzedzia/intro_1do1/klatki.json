@@ -1,0 +1,11 @@
+[
+ {"id":"T01_ciemnosc","t":1.2,"opis":"z czerni – pierwsze kontury"},
+ {"id":"T02_wylaniaja_sie","t":3.0,"opis":"trzy postacie w garniturach idą przez galaktykę"},
+ {"id":"T03_blizej","t":5.0,"opis":"widać czerwoną kominiarkę"},
+ {"id":"T04_zatrzymanie","t":7.0,"opis":"zatrzymali się w połowie drogi"},
+ {"id":"T05_planety","t":8.6,"opis":"pojawiają się 3 małe planety"},
+ {"id":"T06_siegniecie","t":9.6,"opis":"środkowa postać sięga ręką"},
+ {"id":"T07_dlon_na_planetach","t":10.6,"opis":"dłoń na planetach, puls"},
+ {"id":"T08_najazd","t":12.4,"opis":"najazd kamery"},
+ {"id":"T09_blysk","t":13.4,"opis":"błysk – przejście do menu"}
+]

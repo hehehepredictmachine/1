@@ -82,11 +82,23 @@ def cmd_serve(args) -> int:
     if lock is None:
         print("[PepeMarketWizard] Inna instancja PepeMarketWizard już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
-    import uvicorn
-    from .api.app import create_app
-    from .runtime import Runtime
-    rt = Runtime(demo=args.demo)
-    app = create_app(rt, port)
+    try:                                                   # 1.40.1: a native crash (ctypes, DLL) leaves its stack in engine_console.log
+        import faulthandler
+        faulthandler.enable(file=sys.stderr, all_threads=True)
+    except Exception:  # noqa: BLE001 - no usable stderr (pythonw) = nothing to write to
+        pass
+    try:
+        import uvicorn
+        from .api.app import create_app
+        from .runtime import Runtime
+        rt = Runtime(demo=args.demo)
+        app = create_app(rt, port)
+    except Exception:  # noqa: BLE001 - the full reason goes to the console log the launcher shows
+        import traceback
+        print("[PepeMarketWizard] BŁĄD STARTU SILNIKA – przyczyna poniżej:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        _crash_report(traceback.format_exc())
+        return 5
     tok = _rt_dir() / "shutdown.token"
     tok.write_text(rt.security.shutdown_token, encoding="utf-8")
     try:
@@ -120,6 +132,15 @@ def cmd_serve(args) -> int:
                 pass
         print("[PepeMarketWizard] Zatrzymano.")
     return 0
+
+
+def _crash_report(text: str) -> None:
+    try:
+        d = paths.data_dir() / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "engine_crash.txt").write_text(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n{text}", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _port_busy(port: int) -> bool:
@@ -250,6 +271,12 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
+        from .licensing.gate import LicenseGate      # 1.44.0: wersja klienta – Studio tylko z ważną licencją (aktywacja w głównej aplikacji)
+        lg = LicenseGate()
+        st = lg.evaluate(refresh_net=True)
+        if lg.locked:
+            print(f"[PepeTrainingStudio] Brak ważnej licencji: {st.get('message')} Aktywuj klucz w aplikacji PepeMarketWizard.", file=sys.stderr)
+            return 6
         from .studio.app import serve
         port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)

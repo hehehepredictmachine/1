@@ -1,8 +1,8 @@
 package main
 
 // Geometry and addresses of the two faces of the window (platform independent, covered by desktop_test.go):
-//   - the launcher "JOIN THE CULT": a small fixed window, shown while the engine starts and after it is ready;
-//   - the panel: after JOIN THE CULT the same window grows to 85 % of the work area of its monitor and loads the panel.
+//   - the launcher "WEJDŹ": a small fixed window, shown while the engine starts and after it is ready;
+//   - the panel: after WEJDŹ the same window grows to 85 % of the work area of its monitor and loads the panel.
 
 import "strings"
 
@@ -46,7 +46,7 @@ func centred(w, h int, left, top, right, bottom int) (int, int) {
 }
 
 // panelURL: the address of the panel opened by the launcher. ?pmw_joined=1 tells the panel that the launcher was already shown
-// (its own browser launcher is skipped); intro=true plays the 6 s intro of the main menu once (after JOIN THE CULT), a reload
+// (its own browser launcher is skipped); intro=true plays the 6 s intro of the main menu once (after WEJDŹ), a reload
 // after an engine restart opens the panel without it.
 func panelURL(base string, intro bool) string {
 	if !strings.HasSuffix(base, "/") {

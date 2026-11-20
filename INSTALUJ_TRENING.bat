@@ -1,4 +1,7 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - instalacja / naprawa srodowiska treningu. Nie nadpisuje sprawnego srodowiska; uzywa istniejacych
 rem instalatorow (01_INSTALUJ.bat: .venv, 10_PROGNOZY_INSTALUJ.bat: .venv_candles) - Python 3.13/3.12 x64, pakiety z hashami, CPU.
 setlocal

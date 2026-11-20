@@ -26,6 +26,7 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
          ("context_indicators", "Kontekst VAMD / FD / Pullback+SMC: kalibracja dev (<=24 konfiguracje), model CONTEXT_MOVE_M5_V1 + ablacje"),
          ("sh_models", "SCALPING/HEDGING: replay strategii + model zdarzenia P(TP2 przed SL) + raport walidacji"),
+         ("sh_pack", "Pakiet 20 strategii SC/HG: replay walk-forward (te same detektory, solver i polityki hedge) + werdykt per wariant"),
          ("monte_carlo", "Monte Carlo ścieżek: walidacja wariantów IID/BLOCK/REGIME, P(TP przed SL) i kalibracja poza próbą"),
          ("master_models", "Master models (XXX.rar): HDC/GPR/event engine+STFS/STE-FlowNet + ewaluacja Kalman/Breakout/SMC/Multi-Indicator/TSVP/BUZOA"),
          ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
@@ -207,7 +208,7 @@ def t_scalp(run: Run, inst: str) -> None:
     com = plan["commissions"].get(inst)
     if com is None and (meta.get("costs") or {}).get("commission_per_lot_side") is None and inst != "XAUUSD":
         for i in ids:
-            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
+            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
         return
     cmd = [core.candles_python(), "-m", "gold_candles_runtime.scalp_train", "--instrument", inst, "--history", str(ds), "--data-kind", _kind(run),
            "--no-activate"] + (["--commission-per-lot-side", str(com)] if com is not None else []) + (["--small-test"] if plan["synthetic"] else [])
@@ -335,7 +336,7 @@ def t_indicator_context(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COMMISSION_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"indicator-context kod {rc}: {tail}")
     vs = {k: v.get("status") for k, v in (rep.get("variants") or {}).items()}
@@ -362,7 +363,7 @@ def t_ml_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"ml-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep["sides"].items()}
@@ -388,7 +389,7 @@ def t_neural_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"neural-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep.get("sides", {}).items()}
@@ -503,6 +504,39 @@ def t_monte_carlo(run: Run, inst: str) -> None:
             detail=f"wariant {rep['chosen_variant']}, werdykt {rep['verdict']}; TEST n={t['n']}: Brier skalibrowany {t['calibrated']['brier']:.4f} "
                    f"vs bazowy {t['base']['brier']:.4f}, CI95 różnicy {[round(x, 4) for x in rep['brier_diff_calibrated_minus_base_ci95']]}, "
                    f"niejednoznaczne świece {t['ambiguous_share']:.1%}")
+
+
+def t_sh_pack(run: Run, inst: str) -> None:
+    """1.38 PMW-SH-PACK-2: replay + walk-forward validation of the 20 variants with the live code. Real data with a known commission can
+    produce VALIDATED per variant (data/sh/pack_validation/<ID>.json, read by the catalog); synthetic data -> NOT_VALIDATED (technical)."""
+    tid, plan = f"{inst}:sh_pack", run.state["plan"]
+    if inst != "XAUUSD":
+        return _skip(run, tid, "pakiet 20 strategii jest zdefiniowany dla XAUUSD (definicja pipsa PMW_XAU_PRICE_0_10_V1)")
+    ds = _ready(run, inst, tid)
+    if ds is None:
+        return
+    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    out = run.dir / f"{inst}_sh_pack.json"
+    cmd = [core.bot_python(), "-m", "masterquo", "sh", "pack-replay", "--dataset", str(ds), "--out", str(out)]
+    comm = (plan.get("commissions") or {}).get(inst)
+    if comm is not None:
+        cmd += ["--commission-per-lot-side", str(comm)]
+    cmd += (["--last-m1", "8000"] if quick else []) + (["--allow-synthetic"] if plan["synthetic"] else [])
+    rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_sh_pack")
+    if rc is None:
+        return run.set(tid, execution="ANULOWANE")
+    res = _json(out)
+    if rc != 0 or not res:
+        return _fail(run, tid, f"sh pack-replay kod {rc}: {tail}")
+    vds = res.get("verdicts") or {}
+    ok = sorted({k.split("|")[0] for k, v in vds.items() if v == "VALIDATED"})
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if ok else "BRAK_PRZESLANEK")
+    run.set(tid, execution="UKONCZONE", quality=q, integration="RAPORT_WALIDACJI" if not plan["synthetic"] else "ZAPISANY_DO_BADAN",
+            detail=f"{len(vds)} wariantów × TF; VALIDATED: {', '.join(ok) or 'brak'}; " + ", ".join(f"{k}={v}" for k, v in list(vds.items())[:8])
+            + ("; replay ograniczony do 8000 M1 (test)" if quick else ""),
+            artifacts=[res.get("report")] + list(res.get("variant_files") or []),
+            unit={"task": "replay planów dwóch TP (i koszyka hedge) 20 wariantów", "tf": "M1/M3/M5/M15 sygnały, H1 kontekst",
+                  "horizons": "position_max_minutes wariantu", "side": "BUY i lustrzany SELL"})
 
 
 def t_sh_models(run: Run, inst: str) -> None:
@@ -676,7 +710,7 @@ STEPS = {"export": t_export, "quality": t_quality, "forecast": t_forecast, "scal
          "indicator_context": t_indicator_context, "ml_scalp": t_ml_scalp, "neural_scalp": t_neural_scalp,
          "structure_intelligence": t_structure_intelligence,
          "flow_context": t_flow_context, "context_indicators": t_context_indicators,
-         "sh_models": t_sh_models, "monte_carlo": t_monte_carlo, "master_models": t_master_models, "activate": t_activate, "bot": t_bot}
+         "sh_models": t_sh_models, "sh_pack": t_sh_pack, "monte_carlo": t_monte_carlo, "master_models": t_master_models, "activate": t_activate, "bot": t_bot}
 
 
 def execute(run: Run) -> int:

@@ -946,7 +946,6 @@ def _neutral_variants(data: dict) -> tuple[dict, np.ndarray, dict]:
     slope = [None if i < 5 or e[i] is None or e[i - 5] is None else (e[i] - e[i - 5]) / c[i] for i in range(len(c))]
     raw = NZ.roc20(c)
     rows = NZ.run_series(t, raw, {"volatility": vol, "trend_slope": slope}, "ROC20", "DETERMINISTIC", "dataset")
-    n = len(c)
     elig = np.array([r.get("eligible", False) for r in rows])
     g = lambda k: np.array([np.nan if r.get(k) is None else float(r[k]) for r in rows])  # noqa: E731
     V = np.stack([np.array([np.nan if x is None else x for x in vol], float), np.array([np.nan if x is None else x for x in slope], float)], axis=1)

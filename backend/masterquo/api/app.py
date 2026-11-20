@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import desktop, paths, presets, stats, sysres
 from ..execution.modes import ModeError
+from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION
@@ -189,6 +190,12 @@ def create_app(rt, port: int) -> FastAPI:
                     return JSONResponse({"error": "CSRF_OR_SESSION_INVALID"}, status_code=403)
             elif path.startswith("/api/v1/") and path not in ("/api/v1/health",) and not sec.csrf_for(request.cookies.get(SESSION_COOKIE)):
                 return JSONResponse({"error": "SESSION_REQUIRED_OPEN_MONITOR_PAGE"}, status_code=401)
+            # 1.44.0 wersja klienta bez ważnej licencji: działa tylko ekran aktywacji (status / aktywacja), sesja, zdrowie i zamknięcie –
+            # API ekranów FOREX / CRYPTO / OTC, trybów i handlu odpowiada 402 (frontend wraca do ekranu licencji).
+            if rt.license.locked and path.startswith("/api/") and not path.startswith("/api/v1/license/") \
+                    and path not in ("/api/v1/health", "/api/v1/session", "/api/v1/admin/shutdown"):
+                st = rt.license.state()
+                return JSONResponse({"error": "LICENSE_REQUIRED", "code": st.get("code"), "message": st.get("message")}, status_code=402)
             resp: Response = await call_next(request)
             resp.headers["X-Content-Type-Options"] = "nosniff"
             resp.headers["Referrer-Policy"] = "no-referrer"
@@ -236,7 +243,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/health")
     def health():
         return {"ok": True, "app": APP_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
-                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow())}
+                "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow()),
+                "start_failures": [f["part"] for f in getattr(rt, "start_failures", [])]}
 
     @app.get("/api/v1/session")
     def session(request: Request):
@@ -1082,9 +1090,96 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh import scenario as SHS
         return SHS.build(rt, strategy, volume)
 
+    _SH_TFS = ("M1", "M3", "M5", "M15", "H1")
+
+    def _sh_vid(v):
+        from ..sh.pack import catalog as _CAT
+        if v is None:
+            return None
+        if v not in _CAT.IDS and v not in ("LEGACY_SCALPING", "LEGACY_HEDGING"):
+            raise HTTPException(400, "STRATEGY_ID_UNKNOWN")
+        return v
+
+    def _sh_tf(v):
+        if v is None:
+            return None
+        if v not in _SH_TFS:
+            raise HTTPException(400, "INVALID_TIMEFRAME")
+        return v
+
     @app.get("/api/v1/sh/signals")
-    def sh_signals(strategy: str | None = None, limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.sh.store.recent_signals(strategy, 0.0, limit)}
+    def sh_signals(strategy: str | None = None, strategy_id: str | None = None, tf: str | None = None, symbol: str | None = None,
+                   limit: int = Query(100, ge=1, le=1000)):
+        """SH signal history; 1.38 filters: strategy (family), strategy_id (PMW_.. or LEGACY_SCALPING / LEGACY_HEDGING), tf, symbol."""
+        if strategy is not None and strategy not in ("SCALPING", "HEDGING"):
+            raise HTTPException(400, "BAD_STRATEGY")
+        rows = rt.sh.store.recent_signals(strategy, 0.0, limit, strategy_id=_sh_vid(strategy_id), tf=_sh_tf(tf), symbol=symbol)
+        return {"items": rt.sh.store.signals_with_levels(rows)}
+
+    @app.get("/api/v1/sh/strategies")
+    def sh_strategies():
+        """Catalog of the 20 variants (one owner of names / TFs / parameters / readiness / validation) + the live evaluation state."""
+        from ..sh.pack import catalog as _CAT
+        pk = getattr(rt.sh, "pack", None)
+        out = {**_CAT.public(), "live": pk.public() if pk is not None else None}
+        try:                                              # 1.39: VOL_GARCH state for HG09 (volatility_method VOL_GARCH) - read only
+            out["garch"] = rt.sh.garch_artifact(rt.sh.instrument() or "XAUUSD")
+        except Exception as exc:  # noqa: BLE001 - the catalog stays available
+            out["garch"] = {"status": "ERROR", "error": type(exc).__name__}
+        return out
+
+    @app.post("/api/v1/sh/strategies/config")
+    def sh_strategies_config(body: dict = Body(...)):
+        """Variant parameter override (validated, versioned). New candidates only - open plans keep their frozen variant."""
+        from ..sh.pack import catalog as _CAT
+        try:
+            cfg = _CAT.save_override(body, who="panel")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)[:400])
+        rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
+        return _CAT.public(cfg)
+
+    @app.get("/api/v1/sh/pack/stats")
+    def sh_pack_stats(strategy_id: str | None = None):
+        """Closed plans of the variants grouped by variant / TF / execution mode (PAPER is never mixed with AUTO_DEMO / AUTO_LIVE).
+        Whole-cycle results (one plan = one result, partials are not separate wins); R from the plan's own initial risk."""
+        vid = _sh_vid(strategy_id)
+        rows = rt.db.query("SELECT strategy_id, signal_tf, exec_mode, result FROM sh_plans WHERE strategy_id IS NOT NULL AND result IS NOT NULL"
+                           + (" AND strategy_id=?" if vid else ""), (vid,) if vid else ())
+        out: dict = {}
+        for r in rows:
+            res = json.loads(r["result"]) if r.get("result") else {}
+            k = f"{r['strategy_id']}|{r['signal_tf']}|{r['exec_mode']}"
+            g = out.setdefault(k, {"strategy_id": r["strategy_id"], "signal_tf": r["signal_tf"], "exec_mode": r["exec_mode"], "n": 0, "wins": 0,
+                                   "sum_r": 0.0, "n_r": 0, "net_money": 0.0, "hedge_activations": 0})
+            g["n"] += 1
+            if res.get("r_multiple") is not None:
+                g["n_r"] += 1
+                g["sum_r"] += float(res["r_multiple"])
+                g["wins"] += 1 if float(res["r_multiple"]) > 0 else 0
+            g["net_money"] += float(res.get("net_money") or 0.0)
+            g["hedge_activations"] += int(res.get("hedge_activations") or 0)
+        for g in out.values():
+            g["expectancy_r"] = round(g["sum_r"] / g["n_r"], 4) if g["n_r"] else None
+            g["net_money"] = round(g["net_money"], 2)
+        return {"items": sorted(out.values(), key=lambda x: (x["strategy_id"], x["signal_tf"] or "", x["exec_mode"])),
+                "note": "wynik całego cyklu planu; PAPER oddzielnie od rachunku – nie jest walidacją OOS (patrz replay pakietu)"}
+
+    @app.get("/api/v1/sh/pack/evaluations")
+    def sh_pack_evaluations(strategy_id: str | None = None, tf: str | None = None):
+        """Current evaluation of every variant x signal TF (READY / WAIT / NO_TRADE / INVALIDATED / EXPIRED with reason codes). Read-only:
+        a GET never runs a scan, a training or an order."""
+        pk = getattr(rt.sh, "pack", None)
+        if pk is None:
+            return {"items": []}
+        vid, f = _sh_vid(strategy_id), _sh_tf(tf)
+        items = []
+        for (k, stf), su in sorted(pk.last.items()):
+            if (vid and k != vid) or (f and stf != f):
+                continue
+            items.append({k2: su.get(k2) for k2 in ("strategy_id", "strategy", "signal_id", "side", "status", "status_reason", "entry_ref", "sl",
+                                                  "tps", "valid_until", "checklist", "risk", "coordination", "created_at")} | {"pack": su.get("pack")})
+        return {"items": items, "timing": pk.timing()}
 
     @app.get("/api/v1/sh/signals/{sid}")
     def sh_signal(sid: str):
@@ -1094,9 +1189,16 @@ def create_app(rt, port: int) -> FastAPI:
         return r
 
     @app.get("/api/v1/plans/chart")
-    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100)):
-        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills."""
+    def plans_chart(layer: str = Query("SCALP"), history: int = Query(10, ge=0, le=100), strategy_id: str | None = None, tf: str | None = None,
+                    plan_id: str | None = None, symbol: str | None = None, family: str | None = None):
+        """PMW-PLAN-1 chart layers: Pepe Scalp Plan (SCALPING) / Pepe Hedge Plan (HEDGING) - levels from the strategy plan and fills.
+        1.38: layer=PACK (or any strategy_id / tf / plan_id filter) -> PMW-PLAN-2 views of the 20 variants (family from layer SCALP/HEDGE)."""
         from ..plans import service as _PS
+        if layer.upper() == "PACK" or strategy_id or tf or plan_id:
+            fam = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get((family or layer).upper())
+            if plan_id is not None and not re.match(r"^PL-[0-9a-f]{14}$", plan_id):
+                raise HTTPException(400, "PLAN_ID_INVALID")
+            return _PS.collect_pack(rt.sh, strategy_id=_sh_vid(strategy_id), family=fam, tf=_sh_tf(tf), plan_id=plan_id, history=history, symbol=symbol)
         strat = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get(layer.upper())
         if strat is None:
             raise HTTPException(400, "LAYER_INVALID")
@@ -1167,7 +1269,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/sh/chart")
     def sh_chart(tf: str = Query("M1"), limit: int = Query(240, ge=20, le=1000)):
-        if tf not in ("M1", "M5", "M15"):
+        if tf not in ("M1", "M3", "M5", "M15"):
             raise HTTPException(400, "INVALID_TIMEFRAME")
         bars = [b for b in rt.bridge.bars(tf, limit, include_forming=True) if b.get("open_utc")]
         return {"tf": tf, "bars": bars, "quote": rt.sh.quote(time.time()), "last_eval": rt.sh.last_eval,
@@ -1506,6 +1608,10 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/mode")
     def set_mode(req: ModeReq):
         try:
+            rt.license.require("zmiana trybu wykonania")              # 1.44.0: centralna kontrola licencji przed uruchomieniem trybu
+        except LicenseRequired as exc:
+            raise HTTPException(402, exc.state.get("message") or "Brak ważnej licencji") from None
+        try:
             return rt.modes.set_mode(req.mode, confirm=req.confirm, account=rt.bridge.account_status(), account_key=rt.bridge.account_key,
                                      synthetic=rt.bridge.synthetic)
         except ModeError as exc:
@@ -1754,6 +1860,62 @@ def create_app(rt, port: int) -> FastAPI:
 
     _SAFE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
+    # ---- 1.41 Training Center components (dispatch by component kind): TH_SDFORMERFLOW (weights), ETC_LOG_CHANNEL (transform config)
+    def _comp():
+        return _research().components
+
+    @app.get("/api/v1/trainhub/components")
+    def th_components():
+        return _comp().status()
+
+    @app.post("/api/v1/trainhub/components/{cid}/jobs")
+    def th_component_job(cid: str, body: dict = Body(default={})):
+        try:
+            r = _comp().start_job(cid, str(body.get("kind") or "").upper(), body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        if not r.get("ok", True):
+            raise HTTPException(409, r.get("reason") or r.get("state"))
+        return r
+
+    @app.post("/api/v1/trainhub/components/{cid}/cancel")
+    def th_component_cancel(cid: str):
+        return _comp().cancel(cid)
+
+    @app.post("/api/v1/trainhub/components/{cid}/activate")
+    def th_component_activate(cid: str, body: dict = Body(...)):
+        c = _comp()
+        r = c.activate_sdf(str(body.get("version"))) if cid == "TH_SDFORMERFLOW" else c.etc_activate(str(body.get("version")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason") or "aktywacja nieudana")
+        return r
+
+    @app.post("/api/v1/trainhub/components/{cid}/rollback")
+    def th_component_rollback(cid: str):
+        c = _comp()
+        r = c.rollback_sdf() if cid == "TH_SDFORMERFLOW" else c.etc_rollback()
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.get("/api/v1/trainhub/components/{cid}/export.zip")
+    def th_component_export(cid: str, version: str):
+        try:
+            data = _comp().export_zip(cid, version)
+        except FileNotFoundError:
+            raise HTTPException(404, "brak wersji")
+        return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{cid}_{version}.zip"'})
+
+    @app.post("/api/v1/trainhub/components/{cid}/import")
+    async def th_component_import(cid: str, request: Request):
+        data = await request.body()
+        if not data or len(data) > 200 * 1024 * 1024:
+            raise HTTPException(400, "puste lub zbyt duże archiwum")
+        try:
+            return _comp().import_zip(cid, data)
+        except (ValueError, KeyError, __import__("zipfile").BadZipFile) as exc:
+            raise HTTPException(400, f"import odrzucony: {exc}")
+
     @app.get("/api/v1/trainhub/status")
     def trainhub_status():
         from ..marketdata.store import Store
@@ -1894,7 +2056,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..modelhub import adapters as _AD
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
-    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small, SHADOW)
+    # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small since 1.42.8; Kronos-base 1.37-1.42.7)
     _KR_TF = ("M1", "M5", "M15", "M30", "H1")
 
     def _kr_tf(tf: str) -> str:
@@ -1992,6 +2154,186 @@ def create_app(rt, port: int) -> FastAPI:
         use = str(body.get("use", "")).upper()
         tf = body.get("timeframe")
         r = rt.kronos.set_strategy_use(strat, use, timeframe=_kr_tf(tf) if tf else None, confirm=bool(body.get("confirm")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    # ------------------------------------------------------------------ 1.37 Chronos-2 / 1.40 Granite TTM (+ three-model comparison with Kronos)
+    _TS_TF = ("M1", "M3", "M5", "M15", "M30", "H1")
+
+    def _ts_tf(tf: str) -> str:
+        tf = (tf or "").upper()
+        if tf not in _TS_TF:
+            raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
+        return tf
+
+    def _ts_mid(m: str, history: bool = False) -> str:
+        m = (m or "").lower()
+        if m not in ("chronos2", "granite_ttm", "tirex2") and not (history and m == "fincast"):   # fincast: RETIRED in 1.40 - history only
+            raise HTTPException(400, "MODEL_RETIRED" if m == "fincast" else "MODEL_NOT_ALLOWED")
+        return m
+
+    # ------------------------------------------------------------------ 1.40 Memory Governor / AI scheduler (resources)
+    @app.get("/api/v1/resources")
+    def resources_get():
+        """RAM of the computer, memory of the bot + every model process (current / peak), level, profile, inference p50 / p95, events."""
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
+        return rt.governor.public()
+
+    @app.put("/api/v1/resources/profile")
+    def resources_profile(body: dict = Body(...)):
+        from ..resources.governor import PROFILE_KEYS
+        prof = str(body.get("profile") or "")
+        if prof not in ("LOW_MEMORY_16GB", "LOW_MEMORY_12GB", "LOW_MEMORY_8GB", "AUTO", "ECO", "BALANCED", "MANUAL"):
+            raise HTTPException(400, "PROFILE_UNKNOWN")
+        manual = body.get("manual") or {}
+        if not isinstance(manual, dict) or any(k not in PROFILE_KEYS for k in manual):
+            raise HTTPException(400, "MANUAL_KEYS_UNKNOWN")
+        before = rt.cfg.get().resources.model_dump(mode="json")
+        try:
+            rt.cfg.update({"resources": {"profile": prof, "manual": manual if prof == "MANUAL" else before.get("manual", {})}})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_RESOURCES: {exc}"[:300]) from exc
+        rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
+        if rt.governor is None:
+            raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
+        rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
+        return rt.governor.public()
+
+    @app.get("/api/v1/models/foundation")
+    def tsfm_status():
+        """Status of the three foundation models in one place: Kronos (existing service) + Chronos-2 + Granite TTM (+ retired FinCast)."""
+        from kronos_runtime import lock as _KL
+        kr = rt.kronos
+        return {**rt.tsfm.public(), "settings": rt.tsfm.settings.get().model_dump(mode="json"),
+                "kronos": {"name": _KL.MODEL_NAME, "repo": _KL.MODEL["repo"], "revision": _KL.MODEL["revision"], "params_upstream": _KL.MODEL["params_upstream"],
+                           "status": kr.state.get("status"), "reason": kr.state.get("reason"), "load": kr.load_info, "legacy": list(_KL.LEGACY),
+                           "largest_public_note": "1.42.8: używany Kronos-small (24,7M, ok. 0,5 GB RAM) – prognoza dostępna także przy małej ilości wolnej pamięci; Kronos-base (102,3M) – historia 1.37–1.42.7"},
+                "data_kind": rt.tsfm.data_kind()[0], "data_source": rt.tsfm.data_kind()[1]}
+
+    @app.get("/api/v1/models/foundation/forecast")
+    def tsfm_forecast(model: str = Query(...), instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.forecast(_ts_mid(model), _th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/compare")
+    def tsfm_compare(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        return rt.tsfm.compare(_th_inst(instrument), _ts_tf(tf))
+
+    @app.get("/api/v1/models/foundation/history")
+    def tsfm_history(model: str | None = Query(None), instrument: str = Query("XAUUSD"), tf: str | None = Query(None),
+                     limit: int = Query(100, ge=1, le=2000)):
+        return {"items": rt.tsfm.history(_ts_mid(model, history=True) if model else None, _th_inst(instrument), _ts_tf(tf) if tf else None, limit)}
+
+    @app.put("/api/v1/models/foundation/settings")
+    def tsfm_settings_put(body: dict = Body(...)):
+        def has_use(d):
+            return isinstance(d, dict) and any(k == "use" or has_use(v) for k, v in d.items())
+        if has_use(body.get("models")):
+            raise HTTPException(400, "USE_ONLY_VIA_/api/v1/models/foundation/use")
+        if any(isinstance(v, dict) and "checkpoint" in v for v in (body.get("models") or {}).values()) or "retired" in body:
+            raise HTTPException(400, "CHECKPOINT_ONLY_VIA_/api/v1/models/foundation/granite/activate")
+        try:
+            s = rt.tsfm.settings.update(body)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"INVALID_SETTINGS: {exc}"[:500]) from exc
+        rt.log.info("TSFM", "SETTINGS", "Zmieniono ustawienia Chronos-2/Granite TTM: " + ", ".join(sorted(body))[:200])
+        return {"ok": True, "settings": s.model_dump(mode="json")}
+
+    @app.post("/api/v1/models/foundation/install")
+    def tsfm_install(body: dict = Body(...)):
+        r = rt.tsfm.start_install(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/verify")
+    def tsfm_verify(body: dict = Body(...)):
+        r = rt.tsfm.start_verify(_ts_mid(body.get("model")))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/refresh")
+    def tsfm_refresh(body: dict = Body(...)):
+        r = rt.tsfm.refresh(_ts_mid(body.get("model")), _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))))
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/validate")
+    def tsfm_validate(body: dict = Body(...)):
+        n = int(body.get("max_origins", 200))
+        if not 20 <= n <= 1000:
+            raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
+        r = rt.tsfm.start_validation(_th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), n)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    # ---- 1.40 Granite TTM in the Training Center (export, fine-tune job, versions, activation, rollback)
+    @app.get("/api/v1/models/foundation/granite")
+    def granite_get():
+        from ..tsfm import granite_train as _GT
+        c = rt.tsfm.settings.get().models["granite_ttm"]
+        return {"checkpoint": c.checkpoint, "runs": _GT.runs(), "job": rt.tsfm.job("granite_train"),
+                "rule": "trening nie startuje z botem; aktywacja tylko ręczna i tylko z werdyktem IMPROVED_VS_BASE na niewidzianych danych; powrót = BASE"}
+
+    @app.post("/api/v1/models/foundation/granite/train")
+    def granite_train(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        epochs = int(body.get("epochs", 6))
+        if not 1 <= epochs <= 30:
+            raise HTTPException(400, "EPOCHS_OUT_OF_RANGE")
+        trading = getattr(rt.modes, "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
+        r = _GT.start(rt.tsfm, _th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), epochs=epochs,
+                      confirm_during_trading=bool(body.get("confirm_during_trading")), trading_active=trading)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/cancel")
+    def granite_cancel():
+        from ..tsfm import granite_train as _GT
+        r = _GT.cancel(rt.tsfm)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/activate")
+    def granite_activate(body: dict = Body(...)):
+        from ..tsfm import granite_train as _GT
+        rid = str(body.get("run_id") or "")
+        if not re.match(r"^GTR-[0-9A-Za-z_-]{6,64}$", rid):
+            raise HTTPException(400, "RUN_ID_INVALID")
+        r = _GT.activate(rt.tsfm, rid)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/models/foundation/granite/rollback")
+    def granite_rollback():
+        from ..tsfm import granite_train as _GT
+        return _GT.rollback(rt.tsfm)
+
+    @app.get("/api/v1/models/foundation/job/{name}")
+    def tsfm_job(name: str):
+        if not re.match(r"^(install|verify)_(chronos2|granite_ttm|tirex2|tabicl)$|^validation$|^granite_train$", name):
+            raise HTTPException(400, "JOB_UNKNOWN")
+        return {"job": rt.tsfm.job(name)}
+
+    @app.get("/api/v1/models/foundation/validation")
+    def tsfm_validation(instrument: str = Query("XAUUSD"), tf: str = Query("M5")):
+        from ..tsfm import validation as _TV
+        rep = _TV.latest_report(_th_inst(instrument), _ts_tf(tf))
+        if rep:
+            rep = {k: v for k, v in rep.items() if k != "rows"} | {"rows_tail": (rep.get("rows") or [])[-50:]}
+        return {"report": rep}
+
+    @app.post("/api/v1/models/foundation/use")
+    def tsfm_use(body: dict = Body(...)):
+        r = rt.tsfm.set_use(_ts_mid(body.get("model")), str(body.get("path", "")).upper(), str(body.get("use", "")).upper(),
+                            timeframe=_ts_tf(body["timeframe"]) if body.get("timeframe") else None, confirm=bool(body.get("confirm")))
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
@@ -2257,6 +2599,180 @@ def create_app(rt, port: int) -> FastAPI:
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
+
+    # ------------------------------------------------------------------ 1.41 TabICLv2 confidence estimator
+    @app.get("/api/v1/quant/tabicl")
+    def quant_tabicl():
+        return _quant().tabicl.status()
+
+    @app.put("/api/v1/quant/estimator")
+    def quant_estimator(body: dict = Body(...)):
+        r = _quant().set_estimator(str(body.get("estimator") or ""), by="PANEL")
+        if not r.get("ok"):
+            raise HTTPException(400, r.get("reason"))
+        rt.log.info("QUANT", "ESTIMATOR", f"Estymator confidence: {r['estimator']} (panel).")
+        return r
+
+    @app.post("/api/v1/quant/tabicl/reconstruct")
+    def quant_tabicl_reconstruct(body: dict = Body(default={})):
+        days = int(body.get("days") or 30)
+        if not 3 <= days <= 365:
+            raise HTTPException(400, "DAYS_OUT_OF_RANGE (3..365)")
+        r = _quant().tabicl.run_reconstruction(_quant().instrument(), days=days)
+        if not r.get("ok"):
+            raise HTTPException(409, r.get("reason"))
+        return r
+
+    @app.post("/api/v1/quant/tabicl/install")
+    def quant_tabicl_install():
+        import sys as _sys
+        from .. import paths as _P
+        from ..tsfm.settings import default_weights_root as _dwr
+        argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
+        return rt.tsfm._run_job_proc("install_tabicl", argv)
+
+    # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
+    def _research():
+        r = getattr(rt, "research", None)
+        if r is None:
+            raise HTTPException(503, "moduły badawcze niedostępne (błąd startu – patrz logs/engine_console.log)")
+        return r
+
+    @app.get("/api/v1/research-modules")
+    def research_status():
+        return _research().status()
+
+    @app.get("/api/v1/research-modules/settings")
+    def research_settings():
+        return _research().settings()
+
+    @app.put("/api/v1/research-modules/settings")
+    def research_settings_put(body: dict = Body(...)):
+        try:
+            return _research().update_settings(body, who="panel")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/v1/research-modules/features")
+    def research_features(t: float | None = None):
+        r = _research()
+        inst = rt.sh.instrument()
+        return {"instrument": inst, "asof": t, "features": r.features_for(inst, t), "snapshot": r.latest(inst)}
+
+    @app.get("/api/v1/research-modules/feature-graph")
+    def research_graph(target: str = "BPC10"):
+        return _research().feature_graph(target)
+
+    @app.get("/api/v1/research-modules/optimizer/jobs")
+    def research_opt_jobs():
+        return {"jobs": _research().optimizer_jobs(), "history": _research().param_history[-50:]}
+
+    @app.post("/api/v1/research-modules/optimizer/run")
+    def research_opt_run():
+        r = _research()
+        c = r.ensure_main_context()
+        rows = r._objective_rows(c) if c else []
+        if len(rows) < int(r.settings()["optimizer"]["min_mature_examples"]):
+            raise HTTPException(409, f"za mało dojrzałych etykiet ({len(rows)}) – optymalizator czeka na dane")
+        return r.optimise(c, rows)
+
+    @app.post("/api/v1/research-modules/parameters/rollback")
+    def research_rollback():
+        return _research().rollback_parameters()
+
+    @app.post("/api/v1/research-modules/sdformerflow/train")
+    def research_sdf_train(body: dict = Body(default={})):
+        r = _research()
+        c = r.ensure_main_context()
+        op = str(body.get("op") or "from_scratch")
+        if op not in ("from_scratch", "fine_tune", "resume"):
+            raise HTTPException(400, "op: from_scratch | fine_tune | resume")
+        h1 = c.bars_fn("H1", 6000) if c else []
+        ck = body.get("checkpoint") or (r.settings()["sdformer"].get("active_run") if op != "from_scratch" else None)
+        ckp = str(r._sdf_dir() / ck) if ck else None
+        res = r.start_training(c, h1, op=op, checkpoint=ckp, reason="panel (DIRECT_USER_REQUEST)")
+        if not res.get("ok"):
+            raise HTTPException(409, res.get("reason"))
+        return res
+
+    @app.post("/api/v1/research-modules/sdformerflow/cancel")
+    def research_sdf_cancel():
+        return _research().cancel_training()
+
+    # ---- 1.41 market profiles + 9 baskets / 90 strategies (signals, plans, manual tickets - no orders)
+    def _baskets():
+        b = getattr(rt, "baskets", None)
+        if b is None:
+            raise HTTPException(503, "koszyki niedostępne (błąd startu – patrz logs/engine_console.log)")
+        return b
+
+    @app.get("/api/v1/baskets")
+    def baskets_list(basket: str | None = None):
+        b = _baskets()
+        return {"status": b.status(), "baskets": b.basket_view(basket)}
+
+    @app.get("/api/v1/baskets/catalog")
+    def baskets_catalog():
+        from ..baskets import catalog as _BC
+        return _BC.manifest()
+
+    @app.get("/api/v1/baskets/settings")
+    def baskets_settings():
+        return _baskets().settings()
+
+    @app.put("/api/v1/baskets/settings")
+    def baskets_settings_put(body: dict = Body(...)):
+        try:
+            return _baskets().update_settings(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/v1/baskets/signals")
+    def baskets_signals(basket: str | None = None, limit: int = 100):
+        return {"signals": _baskets().ledger.recent(basket, min(500, max(1, limit)))}
+
+    @app.get("/api/v1/baskets/declared/{profile}")
+    def baskets_declared(profile: str):
+        return {"items": _baskets().ledger.declared(profile)}
+
+    @app.post("/api/v1/baskets/declared/{profile}")
+    def baskets_declare(profile: str, body: dict = Body(...)):
+        if profile not in ("CRYPTO_FOMO_PERPS", "OTC_GOLD_POCKETOPTION"):
+            raise HTTPException(400, "deklaracja ekspozycji tylko dla FOMO / OTC (FOREX: pozycje z terminala)")
+        need = ("instrument", "side", "size") if profile == "CRYPTO_FOMO_PERPS" else ("dir", "stake", "r", "strike", "expiry", "opened_at")
+        miss = [k for k in need if body.get(k) in (None, "")]
+        if miss:
+            raise HTTPException(400, f"brak pól: {miss}")
+        return {"id": _baskets().ledger.declare(profile, str(body.get("kind") or ("PERP" if profile.startswith("CRYPTO") else "OTC_CONTRACT")), body)}
+
+    @app.delete("/api/v1/baskets/declared/{item_id}")
+    def baskets_undeclare(item_id: str):
+        _baskets().ledger.close_declared(item_id)
+        return {"ok": True}
+
+    @app.get("/api/v1/baskets/otc")
+    def baskets_otc():
+        b = _baskets()
+        return {"state": b.otc.state(), "meta": b.otc.meta()}
+
+    @app.put("/api/v1/baskets/otc/meta")
+    def baskets_otc_meta(body: dict = Body(...)):
+        try:
+            return _baskets().otc.set_meta(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/api/v1/baskets/otc/ticks")
+    def baskets_otc_ticks(body: dict = Body(...)):
+        rows = body.get("ticks") or []
+        if not isinstance(rows, list) or not rows:
+            raise HTTPException(400, "ticks: [{t, price}]")
+        return {"accepted": _baskets().otc.push_ticks(rows, str(body.get("source") or "CONNECTOR"))}
+
+    @app.post("/api/v1/baskets/otc/payoff")
+    def baskets_otc_payoff(body: dict = Body(...)):
+        from ..baskets import payoff as _PO
+        return _PO.table(body.get("legs") or [], float(body.get("extra_cost") or 0.0))
 
     @app.post("/api/v1/quant/models/activate")
     def quant_activate(body: dict = Body(...)):
@@ -2609,6 +3125,76 @@ def create_app(rt, port: int) -> FastAPI:
         subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, MQ_NO_BROWSER="1"), stdout=log, stderr=subprocess.STDOUT, **kw)
         return {"started": True}
 
+    # ------------------------------------------------------------ 1.42.10 Centrum Treningowe Pepe (PMW-TCP-1): jeden widok + kolejka 1 naraz
+    # ---------------------------------------------------------------- 1.44.0 LICENCJA
+    # Wersja właściciela: generator licencji (api/owner_routes.py – plik NIE wchodzi do paczki klienta).
+    # Wersja klienta: status / aktywacja / sprawdzenie przed trybem; reszta API zablokowana w Guard do aktywacji.
+    if rt.license.edition == "OWNER":
+        from .owner_routes import register as _register_owner_routes
+        _register_owner_routes(app)
+
+    def _lic_payload(st: dict) -> dict:
+        return {k: v for k, v in st.items() if k not in ("detail",)}
+
+    @app.get("/api/v1/license/status")
+    def license_status(refresh: int = Query(0)):
+        return _lic_payload(rt.license.evaluate(refresh_net=True) if refresh else rt.license.state())
+
+    @app.post("/api/v1/license/activate")
+    def license_activate(body: dict = Body(default={})):
+        key = str(body.get("key") or "")
+        if len(key) > 4000:
+            raise HTTPException(400, "Klucz jest za długi – to nie jest klucz PepeMarketWizard.")
+        return _lic_payload(rt.license.activate(key))
+
+    @app.post("/api/v1/license/require")
+    def license_require(body: dict = Body(default={})):
+        """Przed uruchomieniem trybu (FOREX / CRYPTO / OTC): 200 albo 402 z powodem."""
+        try:
+            return _lic_payload(rt.license.require(str(body.get("action") or "")))
+        except LicenseRequired as exc:
+            return JSONResponse({"error": "LICENSE_REQUIRED", **_lic_payload(exc.state)}, status_code=402)
+
+    @app.get("/api/v1/pepe-training")
+    def pepe_training_status():
+        return rt.pepe_training.status()
+
+    @app.post("/api/v1/pepe-training/train")
+    def pepe_training_train(body: dict = Body(default={})):
+        units = body.get("units")
+        if units != "ALL" and not (isinstance(units, list) and units):
+            raise HTTPException(400, "UNITS: lista identyfikatorów albo \"ALL\"")
+        try:
+            return rt.pepe_training.enqueue(units, body.get("instruments"))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/api/v1/pepe-training/settings")
+    def pepe_training_settings(body: dict = Body(default={})):
+        try:
+            return rt.pepe_training.set_settings(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)[:200])
+
+    @app.post("/api/v1/pepe-training/cancel")
+    def pepe_training_cancel():
+        return rt.pepe_training.cancel()
+
+    @app.post("/api/v1/pepe-training/remove")
+    def pepe_training_remove(body: dict = Body(default={})):
+        return rt.pepe_training.remove(str(body.get("id") or ""))
+
+    @app.get("/api/v1/pepe-training/log")
+    def pepe_training_log(lines: int = Query(80, ge=10, le=400)):
+        from ..training import core as tc
+        out = {}
+        for name, f in (("center", tc.training_dir() / "pepe_center.log"),):
+            try:
+                out[name] = f.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+            except OSError:
+                out[name] = []
+        return out
+
     # ------------------------------------------------------------ 1.25 export of MT5 history for training (own process, read only)
     def _default_symbol(inst: str):
         c = rt.cfg.get()
@@ -2652,6 +3238,29 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/montecarlo/status")
     def montecarlo_status():
         return rt.montecarlo.status()
+
+    @app.get("/api/v1/montecarlo/validations/{run_id}/report")
+    def montecarlo_validation_report(run_id: str):
+        """1.42: read-only - the stored report.json of one Monte Carlo validation run (reliability / Brier for the MODELS & BACKTEST
+        screen). Only a run listed in the instrument's registry is served; nothing is computed or changed."""
+        import json as _json
+        import re as _re
+        from ..montecarlo import validate as _MV
+        if not _re.fullmatch(r"MC-[0-9A-Za-z\-]{8,64}", run_id):
+            raise HTTPException(400, "INVALID_RUN_ID")
+        inst, _ = rt.montecarlo._ctx()
+        d = _MV.root(inst)
+        try:
+            reg = _json.loads((d / "registry.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            reg = {}
+        if run_id not in (reg.get("runs") or {}):
+            raise HTTPException(404, "NOT_RUN")
+        f = d / "runs" / run_id / "report.json"
+        try:
+            return {"run_id": run_id, "instrument": inst, "summary": reg["runs"][run_id], "report": _json.loads(f.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            raise HTTPException(404, "REPORT_FILE_MISSING")
 
     @app.get("/api/v1/montecarlo/scenarios")
     def montecarlo_scenarios(horizon: int = Query(60, ge=5, le=240)):
@@ -3297,6 +3906,9 @@ def create_app(rt, port: int) -> FastAPI:
     async def ws(websocket: WebSocket):
         if not sec.host_ok(websocket.headers.get("host")) or not sec.origin_ok(websocket.headers.get("origin")):
             await websocket.close(code=4403)
+            return
+        if rt.license.locked:                                          # 1.44.0: bez ważnej licencji brak strumienia danych
+            await websocket.close(code=4402)
             return
         sid = websocket.cookies.get(SESSION_COOKIE)
         await websocket.accept()

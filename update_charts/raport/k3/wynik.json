@@ -1,0 +1,20 @@
+{
+ "markers": 33,
+ "before": {
+  "sel": "S03|1794925500000",
+  "head": "S03 · LONG · M5"
+ },
+ "clicked": "S10|1794893100000",
+ "after": {
+  "sel": "S10|1794893100000",
+  "head": "S10 · LONG · M5"
+ },
+ "collapsed": true,
+ "expanded": true,
+ "keyboard": {
+  "enter": true,
+  "space": false
+ },
+ "errs": [],
+ "ok": true
+}

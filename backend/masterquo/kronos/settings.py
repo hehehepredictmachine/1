@@ -23,7 +23,7 @@ STRATEGIES = ("SCALPING", "HEDGING")
 
 class StrategyUse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    use: Literal["OBSERVE", "REQUIRED"] = "OBSERVE"
+    use: Literal["OBSERVE", "ASSIST", "REQUIRED"] = "OBSERVE"   # 1.42: ASSIST (DIRECT_USER_REQUEST)
     timeframe: TF = "M5"
     validation_report: str | None = None          # report id that justified REQUIRED
     confirmed_at: str | None = None

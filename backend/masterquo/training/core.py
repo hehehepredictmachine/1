@@ -178,7 +178,7 @@ def free_ram_mb() -> float | None:
             m.dwLength = ctypes.sizeof(MS)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
             return round(m.ullAvailPhys / 1024 / 1024)
-        for line in Path("/proc/meminfo").read_text().splitlines():
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
             if line.startswith("MemAvailable:"):
                 return round(int(line.split()[1]) / 1024)
     except Exception:  # noqa: BLE001
@@ -275,6 +275,7 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
     with open(log_p, "a", encoding="utf-8") as lf:
         lf.write(f"\n=== {now()} {' '.join(cmd)}\n")
         lf.flush()
+        env = dict(env, PYTHONPATH=paths.child_pythonpath(cmd[0]))   # 1.42.11: Python bota dostaje biblioteki aplikacji (DESKTOP)
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
         _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
         beat = time.monotonic()

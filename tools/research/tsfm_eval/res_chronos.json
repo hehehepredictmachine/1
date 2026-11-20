@@ -1,0 +1,44 @@
+[
+ {
+  "model": "chronos2",
+  "n": 1611,
+  "mae": 8.71,
+  "rmse": 12.627,
+  "naive_mae": 8.471,
+  "skill_vs_naive": -0.0281,
+  "dir_n": 731,
+  "dir_hit": 0.506,
+  "pred_flat": 789,
+  "tf": "M5",
+  "H": 12,
+  "ms_per_origin": 37.99
+ },
+ {
+  "model": "chronos2",
+  "n": 805,
+  "mae": 11.96,
+  "rmse": 17.191,
+  "naive_mae": 11.721,
+  "skill_vs_naive": -0.0204,
+  "dir_n": 317,
+  "dir_hit": 0.527,
+  "pred_flat": 443,
+  "tf": "M15",
+  "H": 8,
+  "ms_per_origin": 19.88
+ },
+ {
+  "model": "chronos2",
+  "n": 268,
+  "mae": 22.342,
+  "rmse": 31.49,
+  "naive_mae": 21.72,
+  "skill_vs_naive": -0.0287,
+  "dir_n": 96,
+  "dir_hit": 0.573,
+  "pred_flat": 160,
+  "tf": "H1",
+  "H": 6,
+  "ms_per_origin": 19.97
+ }
+]

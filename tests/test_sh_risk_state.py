@@ -64,7 +64,11 @@ class Risk(Base):
         self.assertTrue(any("min_volume" in x for x in r2["reasons"]))
 
     def test_hedging_blocked_on_netting_account(self):
+        # 1.39: config netting_alternative REDUCE -> no opposite leg, REDUCE without the withdrawn validation gate (warning shown)
         r = self.risk(setup=_setup("HEDGING", sl=1996.2), acc=dict(ACC, margin_mode="NETTING"))
+        self.assertEqual(r["status"], "PASS", r.get("reasons"))
+        self.assertTrue(r["netting_reduce"])
+        r = self.risk(setup=_setup("HEDGING", sl=1996.2), acc=dict(ACC, margin_mode="EXCHANGE"))
         self.assertEqual(r["status"], "BLOCK")
         self.assertTrue(any("account_hedging" in x for x in r["reasons"]))
         self.assertEqual(self.risk(setup=_setup("SCALPING"), acc=dict(ACC, margin_mode="NETTING"))["status"], "PASS")
@@ -88,13 +92,15 @@ class Risk(Base):
         self.assertTrue(any("not_expired" in x for x in self.risk(setup=_setup(valid_until=NOW - 1))["reasons"]))
 
     def test_real_modes(self):
+        # 1.39 (user decision): validation / calibrated-model / known-commission gates withdrawn -> warnings, never silent
         r = self.risk(mode="AUTO_DEMO")
-        self.assertFalse(any("model_mode" in x for x in r["reasons"]))                  # 1.24: demo may run on the score (no money at risk)
-        self.assertTrue(any("commission_known" in x for x in r["reasons"]))
-        lim = self.risk(mode="AUTO_LIVE")["reasons"]
-        self.assertTrue(any("model_mode" in x for x in lim), lim)                       # real money: calibrated model required
-        live = self.risk(mode="AUTO_LIVE", setup=_setup(model_mode="PEŁNA"))["reasons"]
-        self.assertTrue(any(x.startswith("live_validation") for x in live), live)     # 1.24: LIVE needs a passed validation (reason shown)
+        self.assertEqual(r["status"], "PASS", r.get("reasons"))
+        self.assertTrue(any("prowizja instrumentu nieznana" in w for w in r["warnings"]))
+        live = self.risk(mode="AUTO_LIVE")
+        self.assertEqual(live["status"], "PASS", live.get("reasons"))
+        self.assertTrue(any("bez walidacji" in w for w in live["warnings"]), live["warnings"])
+        self.assertTrue(any("skalibrowanego modelu" in w for w in live["warnings"]), live["warnings"])
+        self.assertTrue(any("daily_loss" in x for x in self.risk(mode="AUTO_LIVE", state={"daily_realized_money": -250.0})["reasons"]))  # limits stay
 
 
 class Coordinator(Base):
@@ -188,13 +194,15 @@ class Executor(Base):
         self.assertEqual(self.fake.positions_get(), ())
 
     def test_live_entry_requires_validation(self):
+        # 1.39 (user decision): AUTO_LIVE no longer needs a validation report - only a REAL account
         ex = self.make()
-        ex.is_live = lambda: True                                               # REAL account, no validation report on the client's history
         q = self.quote()
+        ex.is_live = lambda: False
         r = ex.open(self.plan(), role="P", side="BUY", volume=0.1, sl=q["bid"] - 3, tp=0, mode="AUTO_LIVE", quote=q, tag="P")
-        self.assertEqual(r["status"], "BLOCKED")
-        self.assertTrue(r["reason"].startswith("SH_LIVE_WYMAGA_WALIDACJI"), r["reason"])
-        self.assertEqual(self.fake.positions_get(), ())
+        self.assertEqual((r["status"], r["reason"]), ("BLOCKED", "RACHUNEK_NIE_REAL"))
+        ex.is_live = lambda: True
+        r = ex.open(self.plan(), role="P", side="BUY", volume=0.1, sl=round(q["bid"] - 3, 2), tp=0, mode="AUTO_LIVE", quote=q, tag="P2")
+        self.assertEqual(r["status"], "FILLED", r)
 
     def test_demo_open_partial_modify_idempotent(self):
         ex = self.make()

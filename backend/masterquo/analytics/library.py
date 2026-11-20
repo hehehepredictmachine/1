@@ -224,17 +224,22 @@ class PatternLibrary:
             status = "FAILED_EXECUTION"
             self.db.execute("UPDATE pattern_jobs SET error=? WHERE job_id=?", (f"{type(exc).__name__}: {exc}"[:500], job_id))
         c = self._counts(job_id)
-        self.db.execute("UPDATE pattern_jobs SET status=?, counts=?, progress=?, finished_at=? WHERE job_id=?",
-                        (status, json.dumps(c), sum(c.values()), iso(utcnow()), job_id))
-        self.export(job_id)                                     # export success is separate from validation success
+        self.db.execute("UPDATE pattern_jobs SET counts=?, progress=?, finished_at=? WHERE job_id=?",
+                        (json.dumps(c), sum(c.values()), iso(utcnow()), job_id))
+        self.export(job_id, status=status)                      # export success is separate from validation success
+        # 1.42.4: the final status is published only AFTER the report exists - a reader never sees COMPLETED without report_id
+        self.db.execute("UPDATE pattern_jobs SET status=? WHERE job_id=?", (status, job_id))
         with self._lock:
             self._jobs.pop(job_id, None)
 
-    def export(self, job_id: str) -> dict:
-        """(Re)write the JSON + CSV report from STORED results - no validation is run. A failure keeps the results (EXPORT_FAILED)."""
+    def export(self, job_id: str, status: str | None = None) -> dict:
+        """(Re)write the JSON + CSV report from STORED results - no validation is run. A failure keeps the results (EXPORT_FAILED).
+        `status`: the final status of a job that is being finished (written to the report before it is published on the job row)."""
         j = self.job(job_id)
         if not j:
             return {"ok": False, "error": "JOB_NOT_FOUND"}
+        if status:
+            j = {**j, "status": status}
         report_id = f"DBR-{utcnow().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
         try:
             rid = self._write_report(report_id, j)

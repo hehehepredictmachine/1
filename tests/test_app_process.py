@@ -177,12 +177,12 @@ class TestAppProcess(unittest.TestCase):
         self.assertGreater(n2, n1)
 
     def test_08_gif_assets_and_upload(self):
+        # 1.42: the 1.41 built-in frog / matrix GIFs left with the old interface (archive/ui_1_41) - the endpoint says so (NONE), never fakes
         a = json.loads(req("/api/v1/appearance/assets", opener=self.op)[1])
-        self.assertEqual(a["frog"]["source"], "BUILT_IN")
-        self.assertEqual((a["frog"]["gif"]["width"], a["frog"]["gif"]["height"], a["frog"]["gif"]["frames"], a["frog"]["gif"]["transparency"]),
-                         (336, 468, 22, True))
-        self.assertFalse(a["background"]["animated_available"])          # the animated original was not delivered - static frame only
-        gif = (_env.ROOT / "frontend" / "public" / "assets" / "masterquo" / "frog-dance.gif").read_bytes()
+        self.assertEqual(a["frog"]["source"], "NONE")
+        self.assertFalse(a["background"]["animated_available"])
+        gif = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00"
+               b",\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")                    # valid 1x1 GIF
 
         def upload(data, headers):
             r = urllib.request.Request(BASE + "/api/v1/appearance/upload?slot=background", method="POST", data=data,
@@ -197,7 +197,7 @@ class TestAppProcess(unittest.TestCase):
         st, body = upload(gif, self.H())
         self.assertEqual(st, 200, body)
         a = json.loads(req("/api/v1/appearance/assets", opener=self.op)[1])
-        self.assertEqual((a["background"]["source"], a["background"]["gif"]["frames"]), ("USER_UPLOAD", 22))
+        self.assertEqual((a["background"]["source"], a["background"]["gif"]["frames"]), ("USER_UPLOAD", 1))
         with self.op.open(BASE + "/media/masterquo/background", timeout=10) as r:
             self.assertEqual(r.read(), gif)
         os.remove(os.path.join(self.td.dir, "assets", "masterquo", "background-matrix.gif"))

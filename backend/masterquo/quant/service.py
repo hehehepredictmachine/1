@@ -41,7 +41,14 @@ def iso_ts(t: float) -> str:
     return iso(from_epoch(float(t)))
 MODES = ("OFF", "SHADOW", "ASSIST")
 DEFAULT_SETTINGS = {"mode": "SHADOW", "assist": {"activated": False, "activated_at": None, "activated_by": None}, "cycle_s": 5.0,
-                    "assessment_max_age_s": 300.0}
+                    "assessment_max_age_s": 300.0,
+                    # 1.41: confidence estimator. tabicl_v2 = the new default of the 1.41 update (DIRECT_USER_REQUEST: active as soon as the
+                    # weights + a labelled context exist, no SHADOW / backtest / win-rate gate, raw = UNCALIBRATED); legacy_logistic = the
+                    # 1.35 meta-model artifacts, read with their original meaning. A user choice stored in settings.json is never overwritten.
+                    "estimator": "tabicl_v2",
+                    "tabicl": {"enabled": True, "autostart": True, "activation_policy": "DIRECT_USER_REQUEST", "context_target": 512,
+                               "context_max": 1024, "threads": 2, "auto_reconstruct": True, "reconstruct_days": 30, "max_queue_age_s": 120,
+                               "context_refresh_s": 900}}
 log = logging.getLogger("masterquo.quant")
 
 
@@ -83,6 +90,8 @@ class QuantService:
         self.ledger = QuantLedger(base / "ledger.sqlite")
         self.pub = Publisher(base / "snapshot.json")
         self.event_gru = A.EventGRU()
+        from .tabicl import TabICLService
+        self.tabicl = TabICLService(self)                # 1.41 TabICLv2 confidence estimator (own process, async)
         self.gen = 0
         self.dag = self._build_dag()
         self._stop = threading.Event()
@@ -139,6 +148,20 @@ class QuantService:
         s["mode"] = mode
         self.settings.put(s)
         return {"ok": True, "mode": mode, "assist": s["assist"]}
+
+    def set_estimator(self, kind: str, *, by: str = "panel") -> dict:
+        """1.41: tabicl_v2 (raw TabICLv2 confidence, DIRECT_USER_REQUEST) or legacy_logistic (1.35 artifacts, original meaning) -
+        the rollback to the previous estimator. Stored in settings.json; the upgrade never overwrites a stored choice."""
+        if kind not in ("tabicl_v2", "legacy_logistic"):
+            return {"ok": False, "reason": f"nieznany estymator {kind}"}
+        s = self.settings.get()
+        hist = list(s.get("estimator_history") or [])[-49:]
+        hist.append({"at": iso_ts(self.clock()), "from": s.get("estimator"), "to": kind, "by": by})
+        s.update(estimator=kind, estimator_history=hist)
+        self.settings.put(s)
+        if kind == "tabicl_v2":
+            self.tabicl.start()
+        return {"ok": True, "estimator": kind}
 
     # ------------------------------------------------------------------ cycle
     def _build_dag(self) -> Dag:
@@ -197,10 +220,13 @@ class QuantService:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="quant-core", daemon=True)
         self._thread.start()
+        if (self.settings.get().get("tabicl") or {}).get("autostart", True):
+            self.tabicl.start()
 
     def stop(self) -> None:
         self._stop.set()
         self.dag.shutdown()
+        self.tabicl.stop()
 
     def _run(self) -> None:
         last_mature = 0.0
@@ -265,9 +291,16 @@ class QuantService:
             a.update(status="INVALID_PLAN", reason=f"plan poza EventSpec: {exc}"[:200])
             return a
         th = spec.task_hash()
-        a.update(task_hash=th, event_id=spec.event_id, plan_hash=spec.plan_hash(), event=spec.task_dict())
+        a.update(task_hash=th, event_id=spec.event_id, plan_hash=spec.plan_hash(), event=spec.task_dict(),
+                 plan={"entry": spec.entry, "sl": spec.sl, "targets": [list(map(float, t)) for t in spec.targets]})
         preds, pub = self._eligible_at(float(cd.get("decision_ts") or now))
-        feats = F.build(cd, preds)
+        rs = getattr(self.rt, "research", None)
+        if rs is not None and "research_features" not in cd:       # 1.41 research-module features as known at decision time (as-of)
+            try:
+                cd = {**cd, "research_features": rs.features_for(inst, float(cd.get("decision_ts") or now))}
+            except Exception:  # noqa: BLE001 - missing research features = missing columns, never invented values
+                pass
+        feats = F.build2(cd, preds)                     # 1.41 FEAT-2 = FEAT-1 (same names / meaning) + price-forecast + research-module columns
         a["sources"] = {"generation": (pub or {}).get("generation"), "eligible": len(preds), "excluded": len((pub or {}).get("excluded") or []),
                         "snapshot_status": ((pub or {}).get("snapshot") or {}).get("status"), "features": len(feats)}
         edges = [v for k, v in feats.items() if k.endswith(":edge")]
@@ -276,6 +309,15 @@ class QuantService:
         cost_known = spec.cost_price is not None
         a["costs"] = {"cost_price": spec.cost_price, "status": "KNOWN" if cost_known else "UNKNOWN", "spread": "W CENACH (bid/ask)",
                       "basis": "koszt odjęty raz w etykiecie net R; brak drugiego odjęcia"}
+        # 1.41 TabICLv2: asynchronous, keyed by THIS plan_hash; the legacy meta-model path below is unchanged
+        tb = self.tabicl.submit(cd, spec, feats, (pub or {}).get("generation"))
+        a["tabicl"] = tb
+        a["confidence"] = {"heuristic_score": cd.get("score"), "confidence_score": tb.get("confidence_score") if tb.get("state") == "READY" else None,
+                           "p_event_raw": tb.get("p_event_raw") if tb.get("state") == "READY" else None, "event_id": spec.event_id,
+                           "task_hash": th, "plan_hash": a["plan_hash"], "estimator_kind": "tabicl_v2", "state": tb.get("state"),
+                           "reason": tb.get("reason"), "context_id": tb.get("context_id"), "calibration_status": "UNCALIBRATED",
+                           "computed_at": tb.get("computed_at"), "influence": "RANKING_AND_PRESENTATION" if tb.get("state") == "READY" else "NONE",
+                           "note": "surowy wynik modelu (nie zmierzony win rate); bez stałych premii; brak wyniku ≠ 50 %"}
         ver, model, man = self._model(inst, th)
         if model is None:
             n = self.ledger.counts(inst)
@@ -370,11 +412,48 @@ class QuantService:
                           and self.clock() - x["created_at"] <= maxage), None)
             if a is None:
                 return {**base, "state": "BLOCKED_DATA", "result": None, "unavailable_reason": "brak bieżącej oceny Quant dla tego kandydata"}
+        conf = a.get("confidence")
+        if conf and conf.get("plan_hash"):
+            cur = self.tabicl.lookup(conf["plan_hash"])          # the result may have arrived after the assessment - same plan only
+            if cur and cur.get("state") == "READY":
+                conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+        base["confidence"] = conf
         if a.get("status") != "READY":
             return {**base, "state": "NOT_TRAINED" if a.get("status") == "NOT_TRAINED" else "BLOCKED_DATA", "result": None,
                     "unavailable_reason": a.get("reason") or a.get("status")}
         return {**base, "state": "READY", "result": {"p": a["probability"]["p"], "e_net_r": (a.get("ev") or {}).get("e_net_r")},
                 "quant_hold": a.get("would_hold"), "assessment_id": a["assessment_id"]}
+
+    def confidence_for(self, strategy_id, side, entry, sl) -> dict | None:
+        """1.41: the TabICLv2 confidence of the SAME plan (strategy, side, entry and SL within one price tick of the assessment) from the
+        recent assessments - never another plan's value; None when there is none."""
+        want = {"BUY": "LONG", "SELL": "SHORT"}.get(str(side), str(side))
+        maxage = float(self.settings.get().get("assessment_max_age_s") or 300)
+        with self._lock:
+            rec = list(self.recent)
+        for a in rec:
+            if self.clock() - a["created_at"] > maxage or str(a.get("strategy")) != str(strategy_id) or a.get("direction") != want:
+                continue
+            ev = a.get("event") or {}
+            conf = a.get("confidence")
+            if not conf:
+                continue
+            try:
+                spec_e = float((a.get("plan") or {}).get("entry")) if a.get("plan") else None
+            except (TypeError, ValueError):
+                spec_e = None
+            if entry is not None and spec_e is not None and abs(float(entry) - spec_e) > 1e-6 * max(1.0, abs(spec_e)) + 0.011:
+                continue
+            cur = self.tabicl.lookup(conf.get("plan_hash") or "")
+            if cur and cur.get("state") == "READY":
+                conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+            elif cur:
+                conf = {**conf, "state": cur.get("state"), "reason": cur.get("reason")}
+            return {k: conf.get(k) for k in ("estimator_kind", "state", "confidence_score", "p_event_raw", "event_id", "plan_hash", "task_hash",
+                                             "calibration_status", "context_id", "computed_at", "influence", "reason", "heuristic_score")} | {"event": ev.get("event_id")}
+        return None
 
     # ------------------------------------------------------------------ labels
     def mature(self, now: float | None = None) -> int:
@@ -459,7 +538,8 @@ class QuantService:
                 "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:]},
                 "ledger": self.ledger.counts(inst), "loop": dict(self.loop), "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at",
                                                                                                           "error")} for j in self.jobs.values()][-10:],
-                "timings": percentiles(self.timings), "execution_allowed": False}
+                "timings": percentiles(self.timings), "execution_allowed": False,
+                "estimator": s.get("estimator"), "tabicl": _safe(self.tabicl.status, {})}
 
     def predictions(self) -> dict:
         pub = self.pub.current() or {}

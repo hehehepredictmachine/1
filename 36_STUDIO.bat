@@ -5,8 +5,9 @@ rem Eksport -> walidacja -> dataset -> trening -> test loadera -> przekazanie do
 rem Zalecane: PepeTrainingStudio.exe (okno). Ten skrypt uruchamia ten sam serwer i otwiera przegladarke.
 cd /d "%~dp0"
 chcp 65001 >nul
-set "PY=%~dp0.venv\Scripts\python.exe"
-if exist "%~dp0runtime\python\python.exe" if not exist "%PY%" set "PY=%~dp0runtime\python\python.exe"
+for %%I in ("%~dp0.") do set "ROOT=%%~fI"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
 if not exist "%PY%" (
   echo [BLAD] Brak srodowiska - uruchom najpierw 01_INSTALUJ.bat
   pause

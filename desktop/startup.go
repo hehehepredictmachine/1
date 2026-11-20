@@ -122,6 +122,7 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 		return eng.Start(ctx)
 	}
 	ui.Status("Sprawdzanie składników…")
+	cleanupBrokenEnvs(l.EnvRoot)
 	site, err := ensureEnv(ctx, l, ui.Status, ui.Detail)
 	if err != nil {
 		return err
@@ -131,7 +132,26 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 	eng.mu.Unlock()
 	ui.Status("Uruchamianie silnika (pierwszy start może potrwać do minuty – migracja bazy)…")
 	if err := eng.Start(ctx); err != nil {
-		return err
+		if !importFailure(err) || os.Getenv("PMW_SKIP_PYENV") == "1" {
+			return err
+		}
+		// 1.40.4: a component does not import (damaged dependency folder) - install the components again and start once more
+		logf("silnik: błąd importu składnika – ponowna instalacja składników i drugi start")
+		ui.Status("Składnik bota nie ładuje się – ponowna instalacja składników…")
+		eng.Stop(10 * time.Second)
+		invalidateEnv(l)
+		site, err2 := ensureEnv(ctx, l, ui.Status, ui.Detail)
+		if err2 != nil {
+			return fmt.Errorf("%w\n\nNaprawa składników nie powiodła się: %v", err, err2)
+		}
+		eng.mu.Lock()
+		eng.site = site
+		eng.mu.Unlock()
+		eng.ResetBackoff()
+		ui.Status("Uruchamianie silnika po naprawie składników…")
+		if err := eng.Start(ctx); err != nil {
+			return err
+		}
 	}
 	st.LastVersion = version
 	_ = saveState(l.Home, st)

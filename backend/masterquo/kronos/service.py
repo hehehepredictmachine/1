@@ -38,7 +38,7 @@ STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska .venv_kronos (przyc
              "NO_WEIGHTS": "brak zweryfikowanych wag modelu / tokenizera (instalacja niepełna)", "DISABLED": "wyłączony w ustawieniach",
              "INSTALLING": "instalacja w toku", "STARTING": "uruchamianie procesu modelu", "LOADING": "ładowanie modelu i tokenizera",
              "READY": "model załadowany – prognozy po każdej nowej zamkniętej świecy", "ERROR": "błąd modelu"}
-TARGET_PL = {"READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę / kolejkę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
+TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pamięci)", "READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę / kolejkę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
              "NO_SYMBOL": "brak potwierdzonego symbolu brokera", "MT5_DISCONNECTED": "MT5 rozłączony", "STALE": "dane nieaktualne",
              "WARMUP": "za mało zamkniętych świec", "BLOCK": "dane odrzucone przez kontrolę jakości", "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji",
              "CALENDAR_INSUFFICIENT": "za krótka historia do kalendarza sesji", "CALENDAR_NO_SESSION": "brak sesji w horyzoncie",
@@ -67,6 +67,7 @@ class KronosService:
         self.backoff = 30.0
         self.state = {"status": "STARTING", "code": None, "reason": None, "updated_at": None}
         self.counters = {"enqueued": 0, "deduplicated": 0, "dropped_queue_full": 0, "done": 0, "errors": 0, "timeouts": 0, "worker_starts": 0}
+        self.last_used = time.monotonic()
         self._cal: dict[tuple, tuple] = {}
         self._meta: dict[str, tuple] = {}
         self.jobs: dict[str, dict | None] = {"install": None, "verify": None, "validation": None}
@@ -150,6 +151,9 @@ class KronosService:
         return (str(self.weights_dir()), s.device, s.max_context, s.cpu_threads)
 
     def _threads_default(self) -> int:
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            return gov.threads_for("kronos")                                     # 1.40: resource profile
         return max(1, min(4, (os.cpu_count() or 2) // 2))
 
     def ensure_worker(self) -> bool:
@@ -168,6 +172,8 @@ class KronosService:
         from kronos_runtime import manifest as M
         ms = M.summary(self.weights_dir())
         if not ms["installed"]:
+            if self._auto_migrate(py):
+                return False
             self._set_state("NO_WEIGHTS", ms["reason"], "NO_WEIGHTS")
             return False
         self._set_state("STARTING", STATUS_PL["STARTING"])
@@ -290,7 +296,9 @@ class KronosService:
         if not env["python_found"]:
             self._set_state("NOT_INSTALLED", STATUS_PL["NOT_INSTALLED"], "NOT_INSTALLED")
         elif not env["weights_installed"]:
-            self._set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
+            py = find_python(s)
+            if not (py and self._auto_migrate(py)):                            # 1.42.8: Kronos-base -> Kronos-small (jednorazowe pobranie)
+                self._set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
         elif self.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING", "STARTING"):
             self._set_state("STARTING", "model zainstalowany – proces uruchomi się przy pierwszej prognozie")
         conn = (self.bridge.connection_status() or {}).get("state") == "CONNECTED"
@@ -404,7 +412,23 @@ class KronosService:
     def run_job(self, job: dict) -> dict | None:
         k = (job["instrument"], job["timeframe"])
         t = self._target(k)
+        gov = getattr(self, "governor", None)
+        if gov is not None:
+            essential = any(v.use in ("ASSIST", "REQUIRED") for v in self.settings.get().strategy_use.values())   # 1.42.6: Kronos w decyzjach
+            ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info), essential=essential)
+            if not ok:
+                t.update(state="RESOURCE_PAUSED", reason=why)
+                return None
+            with gov.heavy("kronos") as slot:
+                if not slot:
+                    t.update(state="RESOURCE_PAUSED", reason="slot ciężkiej inferencji zajęty zbyt długo – prognoza przy następnej świecy")
+                    return None
+                return self._run_job(job, k, t)
+        return self._run_job(job, k, t)
+
+    def _run_job(self, job: dict, k: tuple, t: dict) -> dict | None:
         s = self.settings.get()
+        self.last_used = time.monotonic()
         t.update(state="RUNNING", reason=None)
         if not self.ensure_worker():
             t.update(state="MODEL_UNAVAILABLE", reason=self.state.get("reason"))
@@ -447,6 +471,9 @@ class KronosService:
             t.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
             return None
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo)
+        self.last_used = time.monotonic()
+        if getattr(self, "governor", None) is not None:
+            self.governor.record("kronos", ms=r.get("ms"))
         self.latest[k] = fc
         self.context_tail[k] = [{"t": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"]} for b in bars[-120:]]
         t.update(state="READY", reason=None, last_key=job["bar_key"])
@@ -490,6 +517,7 @@ class KronosService:
                 "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "device": r.get("device"), "device_note": r.get("device_note"),
                 "compute_ms": r.get("ms"), "seed": r.get("seed"), "sampling": r.get("sampling"), "context_bars": r.get("context_bars"),
                 "model": comps.get("model"), "tokenizer": comps.get("tokenizer"), "runtime": (self.worker_info or {}).get("runtime"),
+                "model_name": (self.load_info or {}).get("model_name"), "params": (self.load_info or {}).get("params_model"),
                 "quality": job["quality"], "calendar": cinfo, "timestamp_basis": s.timestamp_basis, "data_kind": kind, "data_source": kind_pl,
                 "ohlc_inconsistent_steps": bad_geom, "mode": "SHADOW", "execution_permission": False,
                 "note": "pojedyncza próbkowana ścieżka modelu (sample_count=1) – nie jest pewnością ani skalibrowanym prawdopodobieństwem"}
@@ -505,7 +533,7 @@ class KronosService:
              fc["pred_close_h"], fc["delta_price"], fc["direction"], fc["neutral_band"],
              json.dumps([{"t_utc": x["t_utc"], "c": x["c"]} for x in fc["pred"]]), json.dumps(fc["uncertainty"]) if fc["uncertainty"] else None,
              (fc.get("model") or {}).get("revision"), (fc.get("tokenizer") or {}).get("revision"), fc["device"], fc["compute_ms"], fc["data_kind"],
-             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"]}), "PENDING"))
+             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"], "model": (fc.get("model") or {}).get("revision")}), "PENDING"))
 
     def settle(self, inst: str, tf: str, closed_bars: list[dict]) -> int:
         """Settle PENDING forecasts whose last target bar is already closed: per-step actual closes from REAL closed bars of exactly
@@ -553,7 +581,9 @@ class KronosService:
         if tf:
             q, a = q + " AND timeframe=?", a + [tf]
         rows = self.db.query(q + " ORDER BY id DESC LIMIT ?", tuple(a + [limit]))
+        from kronos_runtime import lock as LK
         for r in rows:
+            r["model_name"] = LK.name_of(None, r.get("model_revision"))       # 1.37: Kronos-small rows stay labelled Kronos-small
             r["path"] = json.loads(r.pop("path_json") or "[]")
             r["uncertainty"] = json.loads(r.pop("uncertainty_json")) if r.get("uncertainty_json") else None
             r["outcome"] = json.loads(r.pop("outcome_json")) if r.get("outcome_json") else None
@@ -677,6 +707,31 @@ class KronosService:
         threading.Thread(target=run, name=f"kronos-{name}", daemon=True).start()
         return {"ok": True, "job": name}
 
+    def _auto_migrate(self, py: str) -> bool:
+        """1.42.8 (decyzja użytkownika: Kronos-small): istniejąca instalacja z wagami poprzedniego modelu (Kronos-base, lock.LEGACY) w folderze
+        wag -> jednorazowe pobranie przypiętej pary Kronos-small + tokenizer (ok. 115 MB, te same sprawdzenia sum co instalator), bez ręcznego
+        33_KRONOS_INSTALUJ.bat. Nowa instalacja (brak poprzednich wag) – bez automatu, jak dotąd. Stare wagi zostają na dysku."""
+        from kronos_runtime import lock as LK
+        wd = self.weights_dir()
+        legacy = any((wd / LK.component_dir_name(c)).exists() for c in LK.LEGACY if c.get("revision"))
+        job = self.jobs.get("migrate")
+        if not legacy or (job and job.get("state") in ("RUNNING", "FAILED")):
+            if job and job.get("state") == "RUNNING":
+                self._set_state("INSTALLING", f"pobieram {LK.MODEL_NAME} (zmiana modelu z Kronos-base, ok. 115 MB)", "MIGRATING")
+                return True
+            return False
+        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_DISABLE_TELEMETRY="1")
+
+        def done(ok, job):
+            self.retry_at = 0.0
+            self.backoff = 30.0
+            self.applog.info("KRONOS", "MIGRATE", f"Zmiana modelu na {LK.MODEL_NAME}: {'OK – wagi pobrane i sprawdzone' if ok else 'BŁĄD ' + str(job.get('code')) + ' – uruchom 33_KRONOS_INSTALUJ.bat'}.")
+        r = self._run_job_proc("migrate", [py, "-m", "kronos_runtime.install", "download", "--weights-dir", str(wd)], env=env, on_done=done)
+        if r.get("ok"):
+            self.applog.info("KRONOS", "MIGRATE", f"Zmiana modelu Kronos-base → {LK.MODEL_NAME}: pobieram przypięte wagi (ok. 115 MB).")
+            self._set_state("INSTALLING", f"pobieram {LK.MODEL_NAME} (zmiana modelu z Kronos-base, ok. 115 MB)", "MIGRATING")
+        return bool(r.get("ok"))
+
     def start_install(self, cuda: str | None = None) -> dict:
         argv = [sys.executable, str(paths.ROOT_DIR / "tools" / "kronos_setup.py"), "--root", str(paths.ROOT_DIR), "--weights-dir", str(self.weights_dir())]
         if cuda:
@@ -741,6 +796,10 @@ class KronosService:
         if use == "OBSERVE":
             self.settings.update({"strategy_use": {strategy: {"use": "OBSERVE", "timeframe": tf, "validation_report": None, "confirmed_at": None}}})
             return {"ok": True, "use": "OBSERVE"}
+        if use == "ASSIST":                          # 1.42 DIRECT_USER_REQUEST: may only hold READY -> WAIT on a fresh contrary forecast
+            self.settings.update({"strategy_use": {strategy: {"use": "ASSIST", "timeframe": tf, "validation_report": None, "confirmed_at": iso(utcnow())}}})
+            self.applog.info("KRONOS", "STRATEGY_USE", f"{strategy}: Kronos {tf} = ASSIST (decyzja użytkownika 1.42, bez raportu walidacji).")
+            return {"ok": True, "use": "ASSIST", "activation_policy": "DIRECT_USER_REQUEST"}
         if use != "REQUIRED":
             return {"ok": False, "reason": "INVALID_USE"}
         if not confirm:

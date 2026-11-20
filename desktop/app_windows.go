@@ -3,7 +3,7 @@
 package main
 
 // The window: WebView2 with the start screen (setup, data choice, errors) and then the engine's panel. 1.32: the start screen is
-// the small launcher window "JOIN THE CULT" - when the engine is ready it waits for JOIN THE CULT, then the window grows to 85 % of
+// the small launcher window "WEJDŹ" - when the engine is ready it waits for WEJDŹ, then the window grows to 85 % of
 // the monitor and loads the panel (main menu with the intro). One instance per Windows
 // session (a second start brings the window to the front). Closing the window follows the preference from Centrum sterowania →
 // Praca aplikacji: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
@@ -153,7 +153,7 @@ func shellOpen(target string) {
 }
 
 type splashState struct {
-	Phase      string   `json:"phase"` // progress | choose | error | ready (engine running, waiting for JOIN THE CULT)
+	Phase      string   `json:"phase"` // progress | choose | error | ready (engine running, waiting for WEJDŹ)
 	Message    string   `json:"message"`
 	Lines      []string `json:"lines"`
 	Candidates []string `json:"candidates,omitempty"`
@@ -194,9 +194,9 @@ type winApp struct {
 	splash       splashState
 	choice       chan dataChoice
 	retry        chan struct{}
-	join         chan struct{} // JOIN THE CULT on the launcher
+	join         chan struct{} // WEJDŹ on the launcher
 	joinAbort    chan struct{} // the engine failed while the launcher waited for JOIN
-	awaiting     bool          // the launcher waits for JOIN THE CULT
+	awaiting     bool          // the launcher waits for WEJDŹ
 	tip          string
 	quitting     bool
 	balloonShown bool
@@ -363,7 +363,7 @@ func (a *winApp) showError(msg string) {
 	a.showWindow()
 }
 
-// readyMessage: the line under JOIN THE CULT while the engine runs.
+// readyMessage: the line under WEJDŹ while the engine runs.
 func (a *winApp) readyMessage() string {
 	if a.eng.Owned() {
 		return fmt.Sprintf("silnik bota działa (port %d)", a.eng.Port())
@@ -371,7 +371,7 @@ func (a *winApp) readyMessage() string {
 	return fmt.Sprintf("podłączono do działającego silnika (port %d)", a.eng.Port())
 }
 
-// awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for JOIN THE CULT (true), the engine failing
+// awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for WEJDŹ (true), the engine failing
 // meanwhile (false, the error is already shown) or the app quitting (false). The bot works in the background meanwhile.
 func (a *winApp) awaitJoin() bool {
 	msg := a.readyMessage() // engine calls stay outside a.mu
@@ -391,7 +391,7 @@ func (a *winApp) awaitJoin() bool {
 		}
 	}
 	a.push()
-	a.logf("start: silnik gotowy – oczekiwanie na JOIN THE CULT")
+	a.logf("start: silnik gotowy – oczekiwanie na WEJDŹ")
 	select {
 	case <-a.join:
 		return true
@@ -437,7 +437,7 @@ func (a *winApp) openApp() {
 	a.phase, a.appShown = "app", true
 	a.mu.Unlock()
 	url := panelURL(a.eng.URL(), true)
-	a.logf("okno: JOIN THE CULT → panel " + url)
+	a.logf("okno: WEJDŹ → panel " + url)
 	a.wv.Dispatch(func() {
 		wa := a.workArea()
 		w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
@@ -469,7 +469,7 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 	if quitting {
 		return
 	}
-	if awaiting { // the launcher waits for JOIN THE CULT: it always tells the true state of the engine
+	if awaiting { // the launcher waits for WEJDŹ: it always tells the true state of the engine
 		switch s {
 		case EngineRunning, EngineExternal:
 			msg := a.readyMessage()
@@ -762,7 +762,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 
 	sw, _, _ := pGetSystemMetrics.Call(smCxScreen)
 	sh, _, _ := pGetSystemMetrics.Call(smCyScreen)
-	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; JOIN THE CULT grows it to 85 %
+	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; WEJDŹ grows it to 85 %
 	w, h := uint(lw), uint(lh)
 	_ = os.MkdirAll(l.Home, 0o755)
 	wv := webview2.NewWithOptions(webview2.WebViewOptions{

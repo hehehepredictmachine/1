@@ -18,10 +18,17 @@ from __future__ import annotations
 
 from ..modelhub import contract as C
 
+
+def model_name() -> str:
+    """Name of the PINNED (currently loaded) checkpoint - 1.42.8: Kronos-small. History rows keep their own revision / name."""
+    from kronos_runtime import lock as LK
+    return LK.MODEL_NAME
+
 SERVICE_STATE = {"NOT_INSTALLED": "DISABLED", "NO_WEIGHTS": "DISABLED", "DISABLED": "DISABLED", "INSTALLING": "DISABLED", "STARTING": "ERROR",
                  "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR"}
 INCOMPATIBLE_CODES = ("INCOMPATIBLE", "CHECKSUM", "CHECKSUM_MISMATCH", "MISSING_DEPENDENCY")
 USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – nie wpływa na decyzje ani zlecenia",
+          "ASSIST": "ASSIST (decyzja użytkownika 1.42) – świeża prognoza przeciwna do strony setupu wstrzymuje wejście (READY → WAIT)",
           "REQUIRED": "dodatkowy warunek wymagany (włączony po walidacji) – może tylko wstrzymać setup, nigdy nie otwiera pozycji"}
 KNOWS_ONLY = ("Kronos widzi wyłącznie OHLC (+ tick volume jako wolumen) i czasy zamkniętych świec – nie zna poziomów likwidacji, newsów, "
               "spreadu, prowizji, poślizgu ani pozycji")
@@ -39,6 +46,8 @@ def _state(svc, k: tuple) -> tuple[str, str | None]:
             return mapped, svc.state.get("reason") or st
     if tv["state"] == "NO_SYMBOL":
         return "DISABLED", tv["reason"]
+    if tv["state"] == "RESOURCE_PAUSED":                          # 1.40 Memory Governor: not computed now -> STALE with the reason, no value
+        return "STALE", f"{tv['state_pl']}: {tv['reason'] or ''}"
     if not tv["forecast_current"]:
         return "ERROR", f"{tv['state_pl']}: {tv['reason'] or 'brak aktualnej prognozy dla ostatniej zamkniętej świecy'}"
     return "READY", None
@@ -56,7 +65,7 @@ def contract_predictions(svc, inst: str) -> list[dict]:
         if not s.enabled:
             state, why = "DISABLED", "Kronos wyłączony w ustawieniach"
         fc = svc.latest.get(k)
-        common = dict(instrument=inst, symbol=(fc or {}).get("symbol") or svc.target_view(k).get("symbol"), timeframe=tf, model_name="Kronos-small",
+        common = dict(instrument=inst, symbol=(fc or {}).get("symbol") or svc.target_view(k).get("symbol"), timeframe=tf, model_name=model_name(),
                       model_version=((fc or {}).get("model") or {}).get("revision"), feature_schema="KRONOS_OHLCV_TIME_V1", task_type="REGRESSION",
                       task=f"KRONOS_CLOSE_PATH_H{H}_{tf}", horizon_bars=H, unit="price", calibration={"method": None, "status": "NOT_APPLICABLE"},
                       extra={"model_key": f"kronos_{tf}", "role": USE_PL["OBSERVE"], "decision_use": {k2: v.use for k2, v in s.strategy_use.items()}})
@@ -125,7 +134,7 @@ def context(svc, inst: str, strategy: str, *, side: str | None = None, other_pre
             tr = st.get("internal")
             struct = {"timeframe": tf, "trend_internal": tr, "trend_major": st.get("major"),
                       "relation": "BRAK" if tr not in ("UP", "DOWN") or d == "FLAT" else ("ZGODNY" if tr == d else "KONFLIKT")}
-    return {"model": "Kronos-small", "timeframe": tf, "use": use.use, "use_pl": USE_PL[use.use], "validation_report": use.validation_report,
+    return {"model": model_name(), "timeframe": tf, "use": use.use, "use_pl": USE_PL[use.use], "validation_report": use.validation_report,
             "available": state == "READY", "state": state, "reason": why,
             "forecast": None if not fc else {k2: fc[k2] for k2 in ("id", "direction", "direction_pl", "delta_price", "delta_pct", "last_close",
                                                                     "pred_close_h", "horizon_bars", "last_bar_open_utc", "created_at", "neutral_band",
@@ -137,6 +146,16 @@ def apply_to_setup(su: dict, ctx: dict) -> dict:
     """Attach the Kronos context to one SH evaluation. OBSERVE: information only. REQUIRED: may only turn READY into WAIT."""
     su["kronos"] = ctx
     cl = su.setdefault("checklist", [])
+    if ctx["use"] == "ASSIST":
+        lab = f"Kronos {ctx['timeframe']} (ASSIST)"
+        if su.get("status") == "READY" and ctx["available"] and ctx["relation"] == "PRZECIWNY":
+            f = ctx["forecast"]
+            cl.append({"id": "kronos", "label": lab, "status": "FAIL", "detail": f"prognoza {f['direction_pl']} ({f['delta_price']:+.3f}) przeciwna do {su.get('side')}"})
+            su.update(status="WAIT", status_reason=f"Kronos (ASSIST): prognoza {f['direction_pl']} przeciwna do {su.get('side')}"[:300])
+        else:
+            detail = (f"{ctx['forecast']['direction_pl']} – relacja: {ctx['relation']}") if ctx["forecast"] else f"niedostępny (bez wpływu): {ctx['reason']}"
+            cl.append({"id": "kronos", "label": lab, "status": "PASS" if ctx["relation"] == "ZGODNY" else "INFO", "detail": detail})
+        return su
     if ctx["use"] != "REQUIRED":
         detail = (f"{ctx['forecast']['direction_pl']} {ctx['forecast']['delta_price']:+.3f} w {ctx['forecast']['horizon_bars']} świecach {ctx['timeframe']} "
                   f"– relacja do strony setupu: {ctx['relation']}") if ctx["forecast"] else f"niedostępny: {ctx['reason']}"

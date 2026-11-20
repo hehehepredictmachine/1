@@ -129,3 +129,65 @@ def vectorise(feats: dict, names: list[str]):
 
 def schema(names: list[str]) -> str:
     return VERSION + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------------------------------------------- 1.41 FEAT-2
+VERSION2 = "PMW-QUANT-FEAT-2"
+
+
+def price_forecast_features(preds: list[dict], c: dict) -> dict:
+    """1.41 (TabICLv2 input): REGRESSION forecasts in PRICE units (Chronos-2 / Granite TTM / TiRex-2 / Kronos) made dimensionally correct:
+      fcp:<cid>:<tf>:d_atr     side-aligned (forecast at the horizon - last close) / ATR of the candidate
+      fcp:<cid>:<tf>:to_tp1_r  side-aligned (forecast - TP1) / R  (negative = the forecast ends before the target)
+      fcp:<cid>:<tf>:to_sl_r   side-aligned (forecast - SL) / R   (positive = the forecast ends on the safe side of the stop)
+      fcp:<cid>:<tf>:band_atr  (q0.9 - q0.1) / ATR - only when the model really returned both quantiles (Granite TTM: absent, never invented)
+      fcp:<cid>:<tf>:med_vs_entry_r  side-aligned (median - entry) / R  (only with a real median)
+    Only READY + eligible records; no premium for the number of models, no independence is assumed (each is a separate named column)."""
+    sgn = 1 if c.get("direction") == "LONG" else -1
+    feats = c.get("features") or {}
+    atr = _f(feats.get("atr_m5")) or _f(feats.get("atr"))
+    e, sl = _f(c.get("entry_price")), _f(c.get("stop_loss"))
+    R = abs(e - sl) if e is not None and sl is not None and abs(e - sl) > 0 else None
+    tg = c.get("targets") or []
+    tp1 = _f(tg[0].get("price")) if tg and isinstance(tg[0], dict) else None
+    out = {}
+    for p in preds or []:
+        if p.get("state") != "READY" or p.get("unit") != "price" or p.get("task_type") != "REGRESSION":
+            continue
+        if not (p.get("eligibility") or {}).get("eligible", True):
+            continue
+        r = p.get("result") if isinstance(p.get("result"), dict) else {}
+        last, pc = _f(r.get("last_close")), _f(r.get("pred_close"))
+        if last is None or pc is None:
+            continue
+        cid = (p.get("extra") or {}).get("model_id") or p.get("canonical_id") or p.get("model_name")
+        base = f"fcp:{cid}:{p.get('timeframe')}"
+        if atr:
+            out[base + ":d_atr"] = sgn * (pc - last) / atr
+            q = r.get("quantiles_h") or {}
+            q1, q9 = _f(q.get("0.1")), _f(q.get("0.9"))
+            if q1 is not None and q9 is not None and q9 >= q1:
+                out[base + ":band_atr"] = (q9 - q1) / atr
+        if R:
+            if tp1 is not None:
+                out[base + ":to_tp1_r"] = sgn * (pc - tp1) / R
+            out[base + ":to_sl_r"] = sgn * (pc - sl) / R
+            med = _f(r.get("median"))
+            if med is not None and e is not None:
+                out[base + ":med_vs_entry_r"] = sgn * (med - e) / R
+    return out
+
+
+def build2(c: dict, preds: list[dict]) -> dict:
+    """FEAT-2 = every FEAT-1 feature (unchanged meaning) + the price-forecast group above (+ any research-module features attached to
+    the candidate by the 1.41 pipeline under rm:* - ETC / G7 / graph / SDformerFlow, each with its own provenance group)."""
+    f = build(c, preds)
+    f.update(price_forecast_features(preds, c))
+    for k, v in ((c.get("research_features") or {}).items()):
+        if _f(v) is not None:
+            f[f"rm:{k}"] = float(v)
+    return {k: v for k, v in f.items() if _f(v) is not None}
+
+
+def schema2(names: list[str]) -> str:
+    return VERSION2 + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]

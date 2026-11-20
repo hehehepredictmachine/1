@@ -64,7 +64,7 @@ class Engine:
         if self.predictor is not None and key == self.key:
             return self.info                                           # loaded once per process
         if int(max_context) > lock.MAX_CONTEXT or int(max_context) < 16:
-            raise EngineError("CONFIG", f"max_context {max_context} poza zakresem 16..{lock.MAX_CONTEXT} (Kronos-small)")
+            raise EngineError("CONFIG", f"max_context {max_context} poza zakresem 16..{lock.MAX_CONTEXT} ({lock.MODEL_NAME})")
         t0 = time.perf_counter()
         if verify_files:
             try:
@@ -93,6 +93,10 @@ class Engine:
                   "model_s2_bits": model.s2_bits, "tokenizer_d_in": tok.d_in, "max_context": int(max_context)}
         if tok.s1_bits != model.s1_bits or tok.s2_bits != model.s2_bits or tok.d_in != 6:
             raise EngineError("INCOMPATIBLE", f"para model/tokenizer niezgodna: {compat}")
+        n_model = sum(p.numel() for p in model.parameters())
+        if os.environ.get("MQ_KRONOS_ALLOW_FIXTURE") != "1" and n_model != lock.MODEL["params_measured"]:
+            raise EngineError("INCOMPATIBLE", f"załadowany model ma {n_model} parametrów, a przypięty {lock.MODEL_NAME} {lock.MODEL['params_measured']} "
+                                              "– inny wariant, nie zostanie użyty (brak cichego modelu zastępczego)")
         tok.eval()
         model.eval()
         for p in list(tok.parameters()) + list(model.parameters()):
@@ -101,7 +105,9 @@ class Engine:
         self.predictor = KronosPredictor(model, tok, device=dev, max_context=int(max_context))
         self.key = key
         man = M.read(weights_dir) or {}
-        self.info = {"device": dev, "device_requested": device, "device_note": note, "load_ms": round((time.perf_counter() - t0) * 1000, 1),
+        self.info = {"model_name": lock.MODEL_NAME, "variant": lock.MODEL["repo"], "params_upstream": lock.MODEL["params_upstream"],
+                     "fingerprint": lock.fingerprint(), "code": lock.CODE,
+                     "device": dev, "device_requested": device, "device_note": note, "load_ms": round((time.perf_counter() - t0) * 1000, 1),
                      "params_model": sum(p.numel() for p in model.parameters()), "params_tokenizer": sum(p.numel() for p in tok.parameters()),
                      "compat": compat, "threads": torch.get_num_threads(),
                      "components": [{k: c.get(k) for k in ("kind", "repo", "revision")} for c in man.get("components") or []],
@@ -195,9 +201,11 @@ class Engine:
 
     # ------------------------------------------------------------------ self test
     def selftest(self, reference: bool = False) -> dict:
-        """Short real forecast on the bundled upstream input; with reference=True also the upstream regression comparison
-        (CPU, greedy top_k=1, rtol 1e-5 - the authors' criterion). A float difference on another CPU / library build is reported
-        with its size; it does not change the checksum result."""
+        """Short real forecast on the bundled upstream input; with reference=True:
+        * PARITY: this engine's predict() (the path the bot uses) vs a DIRECT call of the official KronosPredictor.predict on the same
+          data, timestamps, seed and sampling parameters - an independent code path, the expected values are not produced by the wrapper;
+        * the authors' regression files (tests_data/) belong to Kronos-small + Tokenizer-base - they are compared only when that pair is
+          loaded; for Kronos-base they are NOT_APPLICABLE (a different model must not reproduce Kronos-small's numbers)."""
         import numpy as np
         import pandas as pd
         df = pd.read_csv(DATA / "regression_input.csv", parse_dates=["timestamps"])
@@ -210,29 +218,49 @@ class Engine:
                                          y_timestamp=df["timestamps"].iloc[256:264].reset_index(drop=True), pred_len=8, T=1.0, top_k=1, top_p=1.0,
                                          sample_count=1, verbose=False)
         smoke_ok = bool(np.isfinite(out[feats].to_numpy()).all()) and out.shape == (8, 6)
-        res = {"smoke": {"ok": smoke_ok, "pred_len": 8, "context": 256, "ms": round((time.perf_counter() - t0) * 1000, 1),
-                         "device": str(self.predictor.device), "first_close": float(out["close"].iloc[0])}}
-        if reference:
-            rows = []
-            dev0 = str(self.predictor.device)
-            if dev0 != "cpu":
-                self._to_cpu("porównanie referencyjne liczone na CPU (jak u autorów)")
-            for ctx in (512, 256):
-                exp = pd.read_csv(DATA / f"regression_output_{ctx}.csv", parse_dates=["timestamps"])
-                import random
-                random.seed(123)
-                np.random.seed(123)
-                torch.manual_seed(123)
-                with torch.inference_mode():
-                    got = self.predictor.predict(df=df.iloc[:ctx][feats].reset_index(drop=True),
-                                                 x_timestamp=df["timestamps"].iloc[:ctx].reset_index(drop=True),
-                                                 y_timestamp=df["timestamps"].iloc[ctx:ctx + len(exp)].reset_index(drop=True), pred_len=len(exp),
-                                                 T=1.0, top_k=1, top_p=1.0, sample_count=1, verbose=False)
-                a, e = got[feats].to_numpy(dtype=np.float32), exp[feats].to_numpy(dtype=np.float32)
-                absd = np.abs(a - e)
-                reld = absd / (np.abs(e) + 1e-9)
-                rows.append({"context": ctx, "max_abs_diff": float(absd.max()), "max_rel_diff": float(reld.max()),
-                             "pass_rtol_1e-5": bool(np.allclose(a, e, rtol=1e-5))})
-            status = "PASS" if all(r["pass_rtol_1e-5"] for r in rows) else ("DIFF_WITHIN_FLOAT_NOISE" if max(r["max_rel_diff"] for r in rows) <= 1e-3 else "DIFF")
-            res["reference"] = {"status": status, "rows": rows, "criterion": "upstream: np.testing.assert_allclose(rtol=1e-5), CPU, top_k=1"}
+        res = {"model": lock.MODEL_NAME, "smoke": {"ok": smoke_ok, "pred_len": 8, "context": 256, "ms": round((time.perf_counter() - t0) * 1000, 1),
+                                                   "device": str(self.predictor.device), "first_close": float(out["close"].iloc[0])}}
+        if not reference:
+            return res
+        dev0 = str(self.predictor.device)
+        if dev0 != "cpu":
+            self._to_cpu("porównanie referencyjne liczone na CPU (jak u autorów)")
+        # ---- parity: adapter vs official call (sampled path, the production settings T=1, top_p=0.9)
+        ctx, H, seed = 400, 12, 4242
+        sub = df.iloc[:ctx]
+        req = {"candles": {"t": [str(x) for x in sub["timestamps"]], **{k: [float(v) for v in sub[k]] for k in ("open", "high", "low", "close")},
+                           "volume": [float(v) for v in sub["volume"]]},
+               "y_t": [str(x) for x in df["timestamps"].iloc[ctx:ctx + H]], "pred_len": H, "T": 1.0, "top_k": 0, "top_p": 0.9, "seed": seed}
+        got = self.predict(req)["pred"]
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        with torch.inference_mode():
+            ref = self.predictor.predict(df=sub[["open", "high", "low", "close", "volume"]].reset_index(drop=True),
+                                         x_timestamp=pd.Series(pd.to_datetime(req["candles"]["t"])), y_timestamp=pd.Series(pd.to_datetime(req["y_t"])),
+                                         pred_len=H, T=1.0, top_k=0, top_p=0.9, sample_count=1, verbose=False)
+        d = max(float(np.abs(np.asarray(got[k]) - ref[k].to_numpy()).max()) for k in ("open", "high", "low", "close"))
+        res["parity"] = {"status": "PASS" if d <= 1e-6 else "DIFF", "max_abs_diff": d, "context": ctx, "pred_len": H, "seed": seed,
+                         "criterion": "|predict() bota − bezpośrednie KronosPredictor.predict| ≤ 1e-6 (te same dane, ziarno, T=1, top_p=0,9, CPU)"}
+        # ---- the authors' regression files: only for the pair they were generated with
+        if lock.MODEL["repo"] != lock.REFERENCE_DATA_MODEL:
+            res["reference"] = {"status": "NOT_APPLICABLE", "rows": [], "criterion": f"dane referencyjne autorów dotyczą {lock.REFERENCE_DATA_MODEL} – "
+                                f"{lock.MODEL_NAME} nie musi ich odtwarzać; tożsamość sprawdza parity + liczba parametrów"}
+            return res
+        rows = []
+        for c in (512, 256):
+            exp = pd.read_csv(DATA / f"regression_output_{c}.csv", parse_dates=["timestamps"])
+            import random
+            random.seed(123)
+            np.random.seed(123)
+            torch.manual_seed(123)
+            with torch.inference_mode():
+                g = self.predictor.predict(df=df.iloc[:c][feats].reset_index(drop=True), x_timestamp=df["timestamps"].iloc[:c].reset_index(drop=True),
+                                           y_timestamp=df["timestamps"].iloc[c:c + len(exp)].reset_index(drop=True), pred_len=len(exp),
+                                           T=1.0, top_k=1, top_p=1.0, sample_count=1, verbose=False)
+            a, e = g[feats].to_numpy(dtype=np.float32), exp[feats].to_numpy(dtype=np.float32)
+            absd = np.abs(a - e)
+            reld = absd / (np.abs(e) + 1e-9)
+            rows.append({"context": c, "max_abs_diff": float(absd.max()), "max_rel_diff": float(reld.max()), "pass_rtol_1e-5": bool(np.allclose(a, e, rtol=1e-5))})
+        status = "PASS" if all(r["pass_rtol_1e-5"] for r in rows) else ("DIFF_WITHIN_FLOAT_NOISE" if max(r["max_rel_diff"] for r in rows) <= 1e-3 else "DIFF")
+        res["reference"] = {"status": status, "rows": rows, "criterion": "upstream: np.testing.assert_allclose(rtol=1e-5), CPU, top_k=1"}
         return res

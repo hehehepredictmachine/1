@@ -1,0 +1,153 @@
+[
+ {
+  "scenariusz": "K1_xau_m5_wskazniki",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K2_xau_m5_strategie",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K3_xau_m5_svp",
+  "ekran_proc": 0.022,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0.146,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K4_xau_h1_strefy",
+  "ekran_proc": 0.004,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K5_xau_m15_plan",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K6_xau_m15_strefy",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K7_btc_m15_strategie",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ },
+ {
+  "scenariusz": "K8_xau_m5_karta_zwinieta",
+  "ekran_proc": 0.003,
+  "obszary_proc": {
+   "naglowek": 0,
+   "wykres_glowny": 0.001,
+   "karta_planu": 0,
+   "kronos": 0,
+   "kronos_stopka": 0,
+   "zakladki": 0,
+   "opcje": 0,
+   "odczyt": 0
+  },
+  "progi": {
+   "ekran_proc": 0.1,
+   "obszar_proc": 0.3
+  },
+  "wynik": "OK"
+ }
+]

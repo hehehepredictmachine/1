@@ -1,13 +1,16 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - SCALPING / HEDGING (PMW-SH-1): eksport historii, kontrola jakosci, replay obu strategii,
 rem model zdarzenia P(TP2 przed SL) i raport walidacji. Bez zlecen, bez zmian Execution Lock. Wyniki: data\sh\validation\.
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
 title PepeMarketWizard - SCALPING / HEDGING walidacja
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (
-  echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat
+  echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje
   pause
   exit /b 2
 )

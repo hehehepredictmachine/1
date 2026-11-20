@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Przywraca poprzedni zgodny model scalp (atomowo). 21_ROLLBACK_MODELU_SCALP.bat BRAK = brak aktywnego modelu (NO_MODEL).
 rem Nie zmienia strategii, ryzyka ani otwartych pozycji. Zmiana dziala od nastepnej zamknietej M1.
 cd /d "%~dp0"

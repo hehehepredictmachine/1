@@ -4,7 +4,7 @@ rem Bez EnableDelayedExpansion - sciezki ze spacjami, znakami narodowymi i ! dzi
 setlocal
 chcp 65001 >nul
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (
   echo [BLAD] Brak srodowiska .venv - uruchom INSTALUJ_TRENING.bat
   exit /b 2
