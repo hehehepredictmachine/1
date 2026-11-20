@@ -88,3 +88,23 @@
 .ptc-hist .act{margin-top:8px}
 .ptc-log{max-height:260px;overflow:auto;background:#05060c;border:1px solid #1c2130;padding:8px;font-size:10px;line-height:1.5;color:#b9bec7;white-space:pre-wrap}
 @media(max-width:760px){.sys-drawer.wide{width:100vw}.ptc-row{grid-template-columns:1fr}.ptc-seg.sm{margin-left:0}}
+/* 1.43.0 GENERATOR LICENCJI – ten sam układ co reszta szuflady (sekcje h4, pola .field, przyciski .act) */
+.lic{color:#dfe3eb;font-size:12px}.lic section{margin-bottom:6px}.lic .dim{color:#8b919c;font-style:normal}
+.lic-btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.lic-keyrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.lic-keyrow input{flex:1 1 260px;min-width:0}
+.lic-mono,.sys-body .lic-mono{font-family:"SF Mono",Consolas,"Liberation Mono",monospace;font-size:12px;letter-spacing:.04em;word-break:break-all}
+code.lic-mono{flex:1 1 320px;color:#fff;background:rgba(223,227,235,.04);border:1px solid #1c2130;padding:8px 10px}
+.lic-form{border:0;margin:0;padding:0;min-width:0}.lic-form[disabled]{opacity:.45}
+.lic-check{display:flex;align-items:center;gap:8px;font-size:11px;color:#b9bec7;margin-top:6px;cursor:pointer}
+.sys-body .lic-check input{width:14px;height:14px;accent-color:#dfe3eb}
+.lic-ferr{display:block;color:#e0b3b3;font-size:11px;font-style:normal;margin-top:3px}
+.lic-hint{color:#8b919c;font-size:10px}
+.sys-body input[type="date"]{color-scheme:dark;max-width:220px;margin-top:4px}
+.lic-out{border:1px solid #2b303b;background:rgba(223,227,235,.02);padding:10px 14px;margin:12px 0}
+.sys-body .lic-out textarea,.sys-body .lic-chk{width:100%;box-sizing:border-box;resize:vertical;border:1px solid #2b303b;padding:8px;background:rgba(0,0,0,.25)}
+.lic-search{width:100%;box-sizing:border-box;margin-bottom:8px}
+.lic-tblwrap{overflow-x:auto}.lic-tbl td{vertical-align:middle}.lic-tbl .sys-st+.sys-st{margin-left:4px}
+.lic-sort{background:none;border:0;color:inherit;font:inherit;letter-spacing:inherit;padding:0;cursor:pointer;text-transform:inherit}
+.lic-sort:hover{color:#fff}.lic-note{max-width:220px;color:#9aa0aa;word-break:break-word}
+.lic-acts{white-space:nowrap;text-align:right}.sys-body .lic-acts .act{padding:5px 8px;margin-left:4px}
+.lic-res{margin-top:12px}.lic-off h4{opacity:.6}

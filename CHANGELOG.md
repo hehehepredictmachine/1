@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.43.0 – Generator licencji (offline, Ed25519)
+* **Nowa zakładka GENERATOR LICENCJI** w panelu systemowym (Ustawienia · Tryb pracy · STOP · Diagnostyka · Centrum Treningowe),
+  ten sam wygląd. Narzędzie właściciela, bez logowania i haseł. Szczegóły formatu: `docs/LICENCJE_PMW1_PL.md`.
+* **Para kluczy Ed25519** (PyNaCl / libsodium): „Utwórz parę kluczy”, klucz publiczny (hex) z „Kopiuj”, „Eksportuj kopię zapasową klucza
+  prywatnego” (okno „Zapisz jako”), „Importuj klucz prywatny” (inny klucz – tylko po potwierdzeniu, poprzedni zachowany jako kopia).
+  Klucz prywatny w `%APPDATA%\PepeMarketWizard\owner\private.key` – poza folderem programu, nigdy w kodzie, repozytorium ani paczce
+  (`.gitignore`, weryfikator paczek sprawdza nazwę i treść).
+* **Generator**: nazwa / ID użytkownika, HWID (Wklej, „Użyj HWID tego komputera”, „bez przypisania HWID”), ważność 7 / 30 / 90 / 365 dni,
+  własna data (kalendarz) albo bezterminowa, notatka. Klucz `PMW1-…` = base64url(payload + podpis Ed25519),
+  payload `{v:1, u, hw, iat, exp}`. Walidacja: puste ID, zły format HWID, data z przeszłości.
+* **HWID**: MachineGuid (rejestr) + UUID płyty głównej (SMBIOS) → SHA-256 → `XXXXX-XXXXX-XXXXX-XXXXX` (Base32 Crockford).
+* **Historia licencji** (SQLite w folderze właściciela): wyszukiwanie, sortowanie, kopiowanie klucza, usuwanie wpisu; status aktywna /
+  wygasła liczony z daty.
+* **Sprawdź klucz**: odczytane dane, poprawność podpisu, wygaśnięcie, przypisany HWID (ten / inny komputer).
+* Zależności: `pynacl 1.6.2`, `cffi 2.1.1`, `pycparser 3.12` (sumy SHA-256 dla Windows x64, Python 3.12 / 3.13). Aplikacja DESKTOP po
+  aktualizacji raz odświeży swoje środowisko Pythona (paczki pobrane wcześniej pip bierze z pamięci podręcznej).
+* Testy: `tests/test_licensing.py` (16) – m.in. zmiana 1 znaku na każdej pozycji klucza = klucz nieważny, wygasły, bezterminowy,
+  z HWID i bez, API z CSRF.
+* Bez zmian: handel, strategie, STOP / SL, limity ryzyka. Licencje niczego jeszcze nie blokują w bocie.
+
 ## 1.42.11 – eksport danych i trening w aplikacji DESKTOP
 * **Naprawa eksportu historii z MT5 w aplikacji DESKTOP:** proces eksportu (i każdy inny proces treningu na Pythonie bota) dostawał
   PYTHONPATH tylko z folderem `backend` – w aplikacji DESKTOP biblioteki (numpy, pandas, MetaTrader5 …) są dołączane właśnie przez PYTHONPATH,

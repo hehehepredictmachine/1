@@ -23,13 +23,14 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN_NAMES = {"licenses.db", "license_owner.json", "signing_key.pem", ".env", "license_owner_key.dpapi", "license_owner_key.local.json",
+FORBIDDEN_NAMES = {"private.key", "licenses.db", "license_owner.json", "signing_key.pem", ".env", "license_owner_key.dpapi", "license_owner_key.local.json",
                    "secrets.json", "secrets.dpapi", "masterquo.sqlite", "config.json"}
 FORBIDDEN_SUFFIX = (".sqlite", ".sqlite3", ".db", ".pem", ".key", ".log", ".pyc")
 FORBIDDEN_PARTS = {".git", ".venv", "node_modules", "__pycache__"}
 ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
 SECRETS = [
     (re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
+    (re.compile(rb"^PMW-OWNER-ED25519-PRIVATE-KEY v1\r?\nseed: [0-9a-fA-F]{64}", re.M), "PMW_OWNER_PRIVATE_KEY"),   # 1.43.0 generator licencji
     (re.compile(rb"sk-ant-[A-Za-z0-9_\-]{20,}"), "ANTHROPIC_KEY"),
     (re.compile(rb"^(ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN|PMW_ADMIN_PASSWORD_HASH|PMW_SIGNING_KEY)=\S+", re.M), "SECRET_ASSIGNMENT"),
 ]
