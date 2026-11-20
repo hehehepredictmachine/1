@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.44.0 – Wersja KLIENTA z licencją offline (Ed25519)
+* **Dwie edycje.** Wersja właściciela (z generatorem licencji) działa jak dotąd – bez licencji. Wersja **klienta** powstaje poleceniem
+  `python tools/build_release.py --edition client` / `python tools/build_desktop.py --edition client` (PepeMarketWizard_KLIENT_… /
+  PepeMarketWizard_DESKTOP_KLIENT_…) i **nie zawiera** generatora, funkcji podpisywania, klucza prywatnego ani historii licencji – kod
+  generatora w panelu jest wycinany przy kompilacji (PMW_EDITION=CLIENT), a weryfikator paczek odrzuca paczkę klienta z takimi elementami.
+* **Klucz publiczny wydawcy**: `backend/masterquo/licensing/client_config.py` → `PUBLIC_KEY_HEX`. Pusty = paczka klienta się nie zbuduje
+  (czytelny błąd), a uruchomiony klient pokazuje błąd konfiguracji. Build sprawdza, że to nie jest klucz prywatny właściciela.
+* **Ekran aktywacji** przed intro i menu: logo, **TWÓJ HWID** + Kopiuj, **KLUCZ LICENCYJNY** + Wklej + Aktywuj; komunikaty: zły format /
+  podpis, licencja wygasła (z datą), inny komputer, cofnięcie / błąd zegara. Po aktywacji „Licencja aktywna”, zapis klucza w
+  `%APPDATA%\PepeMarketWizard\license.dat`, przejście do intro i menu.
+* **Weryfikacja przy każdym starcie** (i co 10 min): prefiks → base64url → podpis kluczem publicznym → v == 1 → exp → hw == get_hwid()
+  (ta sama funkcja HWID co w generatorze). Zapisany ważny klucz = bez ekranu aktywacji; wygasły / inny komputer = powrót do ekranu z powodem.
+* **Ochrona przed cofnięciem zegara**: ostatni znany czas w license.dat; zegar wcześniejszy o ponad 24 h = blokada „Wykryto cofnięcie
+  zegara systemowego”. Z internetem (nagłówek Date HTTPS, 3 s) wygaśnięcie liczone z czasu z internetu, a różnica zegara > 24 h =
+  „Błąd zegara systemowego”.
+* **Zakładka LICENCJA** (wersja klienta): użytkownik, typ, wygaśnięcie, pozostałe dni, HWID + Kopiuj, **Zmień klucz**; ostrzeżenie na
+  ekranie, gdy zostały ≤ 3 dni.
+* **Blokada funkcji** – jeden moduł `licensing/gate.py`: bez ważnej licencji silnik (MT5, strategie, modele) nie startuje, API ekranów
+  odpowiada 402, WebSocket jest zamykany, zmiana trybu i wejście w FOREX są odrzucane, bramka wykonania nie dopuszcza nowych wejść
+  (zarządzanie otwartymi pozycjami i SL/TP bez zmian); Training Studio też wymaga licencji. Po aktywacji silnik startuje bez restartu.
+* HWID: klucz jest przypisany do komputera tylko wtedy, gdy wydawca wpisze HWID klienta; klucz „bez przypisania HWID” działa na każdym
+  komputerze (offline nie da się go przypiąć przy pierwszej aktywacji).
+* Testy: `tests/test_license_client.py` (15) + test na rozpakowanej paczce klienta. Dokumentacja klienta: `docs/LICENCJA_PL.md`.
+
 ## 1.43.0 – Generator licencji (offline, Ed25519)
 * **Nowa zakładka GENERATOR LICENCJI** w panelu systemowym (Ustawienia · Tryb pracy · STOP · Diagnostyka · Centrum Treningowe),
   ten sam wygląd. Narzędzie właściciela, bez logowania i haseł. Szczegóły formatu: `docs/LICENCJE_PMW1_PL.md`.

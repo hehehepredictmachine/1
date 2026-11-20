@@ -316,6 +316,30 @@ def admin(shots: Path | None) -> list:
           PageBreak()]
     # 5
     # 4h - 1.40
+    s += [P("4j / Wersja klienta z licencją (1.44.0)", "h1"),
+          steps(["Skopiuj <b>klucz publiczny (hex)</b> z zakładki GENERATOR LICENCJI i wklej go w "
+                 "<b>backend/masterquo/licensing/client_config.py</b> (PUBLIC_KEY_HEX). Pusty klucz = paczka klienta się nie zbuduje.",
+                 "Paczki klienta: <b>python tools/build_release.py --edition client</b> → PepeMarketWizard_KLIENT_&lt;wersja&gt;.zip oraz "
+                 "<b>python tools/build_desktop.py --edition client</b> → PepeMarketWizard_DESKTOP_KLIENT_&lt;wersja&gt;.zip. Paczka klienta nie "
+                 "zawiera generatora, funkcji podpisywania ani historii licencji (weryfikator paczek to sprawdza).",
+                 "Klient przy pierwszym starcie widzi ekran aktywacji z HWID – wydaj klucz <b>z tym HWID</b>. Klucz „bez przypisania HWID” działa "
+                 "na każdym komputerze (offline nie da się go przypiąć do pierwszego komputera)."]),
+          *shot(shots, "ui_license/03_status.png", "Wersja klienta: zakładka LICENCJA (status, dni do końca, HWID, Zmień klucz).", width_mm=150),
+          box("Licencja offline to zabezpieczenie przed zwykłym kopiowaniem programu, nie przed osobą, która zmienia kod programu "
+              "(Python jest dostarczany w postaci źródłowej).", "warn"),
+          PageBreak()]
+    s += [P("4i / Generator licencji (1.43.0) – licencje offline podpisane Ed25519", "h1"),
+          steps(["Panel systemowy → zakładka <b>GENERATOR LICENCJI</b>. Bez logowania – narzędzie właściciela.",
+                 "<b>Utwórz parę kluczy</b> (raz). Klucz prywatny zostaje w <b>%APPDATA%\\PepeMarketWizard\\owner\\private.key</b>; od razu zrób "
+                 "<b>Eksportuj kopię zapasową klucza prywatnego</b> i przechowuj ją offline. Klucz publiczny (hex) – przycisk <b>Kopiuj</b>.",
+                 "Wpisz <b>nazwę / ID użytkownika</b>, wklej <b>HWID</b> klienta (format XXXXX-XXXXX-XXXXX-XXXXX) albo zaznacz "
+                 "<b>bez przypisania HWID</b>; wybierz ważność (7 / 30 / 90 / 365 dni, własna data, bezterminowa) i kliknij <b>GENERUJ</b>.",
+                 "<b>Kopiuj klucz</b> (PMW1-…) i wyślij go klientowi. Historia: wyszukiwanie, sortowanie, kopiowanie, usuwanie wpisu.",
+                 "<b>Sprawdź klucz</b> pokazuje dane, poprawność podpisu, datę wygaśnięcia i przypisany HWID."]),
+          *shot(shots, "ui_license/01_panel.png", "Generator licencji: para kluczy, formularz, wynik, historia i sprawdzanie klucza.", width_mm=150),
+          box("Kto ma plik klucza prywatnego, może wystawiać licencje – nie wysyłaj go nikomu. Utrata klucza = nowe licencje trzeba podpisać nowym "
+              "kluczem (stare zostają ważne tylko z kluczem publicznym, który je wydał). Format: docs/LICENCJE_PMW1_PL.md.", "warn"),
+          PageBreak()]
     s += [P("4h / Nowe w 1.40: Granite TTM zamiast FinCast, Memory Governor, trening Granite, nowy WTC$PEPE", "h1"),
           bullets(["<b>Granite TTM</b> (IBM, 0,8 M parametrów, Apache-2.0) zastępuje wycofany FinCast: instalacja <b>38_MODELE_CHRONOS2_GRANITE.bat</b> "
                    "albo „Zainstaluj” w sekcji Modele prognoz; ok. 3 MB wag, ok. 0,35 GB RAM. Prognoza punktowa (bez kwantyli i świec), rola OBSERVE.",
@@ -358,18 +382,6 @@ def admin(shots: Path | None) -> list:
               "dowodem przewagi.", "warn"),
           PageBreak()]
     # 4e - 1.37
-    s += [P("4g / Generator licencji (1.43.0) – licencje offline podpisane Ed25519", "h1"),
-          steps(["Panel systemowy → zakładka <b>GENERATOR LICENCJI</b>. Bez logowania – narzędzie właściciela.",
-                 "<b>Utwórz parę kluczy</b> (raz). Klucz prywatny zostaje w <b>%APPDATA%\\PepeMarketWizard\\owner\\private.key</b>; od razu zrób "
-                 "<b>Eksportuj kopię zapasową klucza prywatnego</b> i przechowuj ją offline. Klucz publiczny (hex) – przycisk <b>Kopiuj</b>.",
-                 "Wpisz <b>nazwę / ID użytkownika</b>, wklej <b>HWID</b> klienta (format XXXXX-XXXXX-XXXXX-XXXXX) albo zaznacz "
-                 "<b>bez przypisania HWID</b>; wybierz ważność (7 / 30 / 90 / 365 dni, własna data, bezterminowa) i kliknij <b>GENERUJ</b>.",
-                 "<b>Kopiuj klucz</b> (PMW1-…) i wyślij go klientowi. Historia: wyszukiwanie, sortowanie, kopiowanie, usuwanie wpisu.",
-                 "<b>Sprawdź klucz</b> pokazuje dane, poprawność podpisu, datę wygaśnięcia i przypisany HWID."]),
-          *shot(shots, "ui_license/01_panel.png", "Generator licencji: para kluczy, formularz, wynik, historia i sprawdzanie klucza.", width_mm=150),
-          box("Kto ma plik klucza prywatnego, może wystawiać licencje – nie wysyłaj go nikomu. Utrata klucza = nowe licencje trzeba podpisać nowym "
-              "kluczem (stare zostają ważne tylko z kluczem publicznym, który je wydał). Format: docs/LICENCJE_PMW1_PL.md.", "warn"),
-          PageBreak()]
     s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
           box("Od 1.42.8 bot używa ponownie <b>Kronos-small</b> (ok. 0,47 GB pamięci) – wagi zmieniają się automatycznie przy starcie; "
               "od 1.42.9 Kronos jest liczony i pokazywany zawsze, bez względu na zajętość RAM. Opis poniżej dotyczy wersji 1.37–1.42.7.", "note"),
@@ -466,8 +478,9 @@ def admin(shots: Path | None) -> list:
 def client(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>użytkownika", "title"),
                P("Instalacja, połączenie z MT5 i korzystanie z PepeMarketWizard 1.30.", "lead"),
-               box("<b>Stan:</b> wersja 1.30 działa <b>bez klucza licencji</b> – nie ma okna aktywacji. Ekrany opisane tutaj sprawdzono "
-                   "na symulatorze terminala; jeśli Twoja paczka wygląda inaczej, zapytaj osobę, od której ją dostałeś, o aktualną wersję."),
+               box("<b>Licencja (od 1.44.0):</b> paczka klienta wymaga klucza licencyjnego. Przy pierwszym starcie pokazuje się ekran "
+                   "<b>AKTYWACJA LICENCJI</b> – skopiuj swój <b>HWID</b>, wyślij go wydawcy, wklej otrzymany klucz <b>PMW1-…</b> i kliknij "
+                   "<b>AKTYWUJ</b> (rozdział 1). Ekrany opisane tutaj sprawdzono na symulatorze terminala."),
                P("Co przygotować", "h2"),
                bullets(["Komputer z Windows 10/11 i połączeniem z Internetem (pierwsze uruchomienie pobiera składniki).",
                         "Paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> i jej plik <b>.sha256</b>.",
@@ -485,6 +498,17 @@ def client(shots: Path | None) -> list:
                  "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b> (na dole ekranu). Okno się powiększy i po krótkim intro "
                  "(<b>Pomiń intro</b> / Esc) pokaże menu główne – <b>stół neuronowy</b> z ośmioma wieżami. Przy pierwszym starcie kreator prosi o "
                  "limity ryzyka i koszty."]),
+          P("Aktywacja licencji (od 1.44.0)", "h2"),
+          steps(["Przy pierwszym starcie – zanim pojawi się intro i menu – zobaczysz ekran <b>AKTYWACJA LICENCJI</b>.",
+                 "Kliknij <b>KOPIUJ</b> przy <b>TWÓJ HWID</b> i wyślij ten kod wydawcy programu. Klucz jest wydawany dla tego jednego komputera.",
+                 "Wklej otrzymany klucz (zaczyna się od <b>PMW1-</b>) przyciskiem <b>WKLEJ</b> albo Ctrl+V i kliknij <b>AKTYWUJ</b>. Po komunikacie "
+                 "<b>Licencja aktywna</b> program przechodzi do intro i menu. Klucz zostaje zapisany – kolejne starty pomijają ten ekran.",
+                 "Status licencji, dni do wygaśnięcia i <b>Zmień klucz</b>: panel systemowy → zakładka <b>LICENCJA</b>. Na 3 dni przed końcem "
+                 "licencji na ekranie pojawia się ostrzeżenie."]),
+          *shot(shots, "ui_license/02_activation.png", "Ekran aktywacji licencji: HWID tego komputera i pole klucza.", width_mm=130),
+          box("Licencja działa offline. Gdy komputer ma internet, datę sprawdza się z czasem z internetu. Cofnięcie zegara Windows o ponad dobę "
+              "albo zegar różniący się od czasu z internetu o ponad dobę blokuje program do czasu ustawienia poprawnej daty. Bez ważnej licencji "
+              "tryby FOREX, CRYPTO, OTC i handel nie startują (otwarte pozycje dalej chroni SL/TP u brokera).", "note"),
           *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
           *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – osiem wież.", width_mm=150),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
