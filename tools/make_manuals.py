@@ -358,6 +358,18 @@ def admin(shots: Path | None) -> list:
               "dowodem przewagi.", "warn"),
           PageBreak()]
     # 4e - 1.37
+    s += [P("4g / Generator licencji (1.43.0) – licencje offline podpisane Ed25519", "h1"),
+          steps(["Panel systemowy → zakładka <b>GENERATOR LICENCJI</b>. Bez logowania – narzędzie właściciela.",
+                 "<b>Utwórz parę kluczy</b> (raz). Klucz prywatny zostaje w <b>%APPDATA%\\PepeMarketWizard\\owner\\private.key</b>; od razu zrób "
+                 "<b>Eksportuj kopię zapasową klucza prywatnego</b> i przechowuj ją offline. Klucz publiczny (hex) – przycisk <b>Kopiuj</b>.",
+                 "Wpisz <b>nazwę / ID użytkownika</b>, wklej <b>HWID</b> klienta (format XXXXX-XXXXX-XXXXX-XXXXX) albo zaznacz "
+                 "<b>bez przypisania HWID</b>; wybierz ważność (7 / 30 / 90 / 365 dni, własna data, bezterminowa) i kliknij <b>GENERUJ</b>.",
+                 "<b>Kopiuj klucz</b> (PMW1-…) i wyślij go klientowi. Historia: wyszukiwanie, sortowanie, kopiowanie, usuwanie wpisu.",
+                 "<b>Sprawdź klucz</b> pokazuje dane, poprawność podpisu, datę wygaśnięcia i przypisany HWID."]),
+          *shot(shots, "ui_license/01_panel.png", "Generator licencji: para kluczy, formularz, wynik, historia i sprawdzanie klucza.", width_mm=150),
+          box("Kto ma plik klucza prywatnego, może wystawiać licencje – nie wysyłaj go nikomu. Utrata klucza = nowe licencje trzeba podpisać nowym "
+              "kluczem (stare zostają ważne tylko z kluczem publicznym, który je wydał). Format: docs/LICENCJE_PMW1_PL.md.", "warn"),
+          PageBreak()]
     s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
           box("Od 1.42.8 bot używa ponownie <b>Kronos-small</b> (ok. 0,47 GB pamięci) – wagi zmieniają się automatycznie przy starcie; "
               "od 1.42.9 Kronos jest liczony i pokazywany zawsze, bez względu na zajętość RAM. Opis poniżej dotyczy wersji 1.37–1.42.7.", "note"),
