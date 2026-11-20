@@ -55,6 +55,45 @@ class TestPipelineStatus(unittest.TestCase):
         self.assertIn("przerwany", st[("scalp_A", "BTC")]["detail"])
 
 
+class TestExportFailureVisible(TestPipelineStatus):
+    """1.42.11: nieudany eksport z MT5 – przyczyna przy każdym modelu „brak danych” i na początku podsumowania (było: „błędy 0”)."""
+
+    def test_export_reason_shown(self):
+        from masterquo.training import pepe_center as P
+        err = "eksport zakończony kodem 1, stan MISSING: Traceback (most recent call last): | ModuleNotFoundError: No module named 'numpy' (log: C:/x.log)"
+        rid = "TR-20261120T112700Z-cccc"
+        self.write(rid, _run_state(rid, "FINISHED", [
+            ("export", "XAUUSD", "BLAD_TECHNICZNY", "NIE_DOTYCZY", err),
+            ("ml", "XAUUSD", "POMINIETE", "NIE_DOTYCZY", "brak danych (eksport nie ukończony)")]))
+        st = P.pipeline_status()
+        self.assertEqual(st[("ml", "XAUUSD")]["state"], "SKIPPED")
+        self.assertIn("No module named 'numpy'", st[("ml", "XAUUSD")]["detail"])
+        self.assertNotIn("log:", st[("ml", "XAUUSD")]["detail"])
+        summ = P.PepeTrainingCenter._run_summary(rid, [])
+        self.assertTrue(summ.startswith("EKSPORT HISTORII Z MT5 NIEUDANY – XAUUSD:"), summ)
+
+
+class TestChildPythonpath(unittest.TestCase):
+    """1.42.11: dziecko na Pythonie bota zachowuje biblioteki aplikacji z PYTHONPATH (DESKTOP); osobne środowisko dostaje tylko backend."""
+
+    def test_bot_python_keeps_app_libraries_venv_does_not(self):
+        from masterquo import paths
+        site = os.path.join(os.sep, "pmw", "pyenv", "cp313-x", "site-packages")
+        prev = os.environ.get("PYTHONPATH")
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(paths.BACKEND_DIR), site])
+        try:
+            pp = paths.child_pythonpath(sys.executable).split(os.pathsep)
+            self.assertEqual(pp, [str(paths.BACKEND_DIR), site])                      # backend raz, biblioteki zostają
+            self.assertEqual(paths.child_pythonpath().split(os.pathsep), pp)          # None = Python bota
+            other = os.path.join(os.sep, "app", ".venv_candles", "bin", "python")
+            self.assertEqual(paths.child_pythonpath(other), str(paths.BACKEND_DIR))     # .venv_candles itp. – bez bibliotek bota
+        finally:
+            if prev is None:
+                os.environ.pop("PYTHONPATH", None)
+            else:
+                os.environ["PYTHONPATH"] = prev
+
+
 class FakeTrainhub:
     def __init__(self):
         self.jobs = []
@@ -267,6 +306,32 @@ class TestEnsureBars(unittest.TestCase):
             self.assertTrue(x["detail"].startswith("2 wersji"))
         finally:
             GT.runs = orig
+
+    def test_memory_wait_releases_idle_models_then_explains(self):
+        class Gov:
+            training = {}
+            released = 0
+            lv = "LIMIT_HEAVY"
+            def level(self): return self.lv
+            def sample(self): return {"system": {"used_pct": 86.4}}
+            def profile(self): return {"limit_heavy_pct": 80}
+            def _release_idle_heavy(self, **kw):
+                self.released += 1
+                return []
+        g = Gov()
+        self.c.rt.governor = g
+        self.c.clock = time.time
+        orig = self.c._wait
+        self.c._wait = lambda done, timeout, step=3.0: orig(done, timeout=0.2, step=0.05)
+        why = self.c._wait_memory({})
+        self.assertEqual(g.released, 1)                                                 # najpierw zwalnia bezczynne modele prognoz
+        self.assertIn("zajęte 86 %", why)
+        self.assertIn("kliknij TRENUJ ponownie", why)
+        threading.Timer(0.05, lambda: setattr(g, "lv", "WARN")).start()                 # pamięć się zwolniła w trakcie czekania
+        self.c._wait = lambda done, timeout, step=3.0: orig(done, timeout=2.0, step=0.02)
+        self.assertEqual(self.c._wait_memory({}), "")
+        g.lv = "OK"
+        self.assertEqual(self.c._wait_memory({}), "")
 
     def test_no_export_when_archive_long_enough(self):
         self.assertEqual(self.c._ensure_bars({}, "XAUUSD", "M5", 0), "")

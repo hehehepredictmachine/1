@@ -87,6 +87,8 @@ def pipeline_status(limit_runs: int = 40) -> dict:
         except (OSError, ValueError):
             continue
         live = st.get("status") == "RUNNING" and lock_alive == st.get("run_id")
+        exp_err = {t.get("instrument"): _short(t.get("detail")) for t in st.get("tasks") or []          # 1.42.11: przyczyna nieudanego eksportu
+                   if t.get("kind") == "export" and t.get("execution") == "BLAD_TECHNICZNY"}
         for t in st.get("tasks") or []:
             key = (t.get("kind"), t.get("instrument"))
             if key in out:
@@ -108,9 +110,18 @@ def pipeline_status(limit_runs: int = 40) -> dict:
             msg = QUALITY_PL.get(q, q.lower()) if state == "DONE" else det
             if state == "SKIPPED" and q == "BRAK_PRZESLANEK":
                 msg = "za mało danych / zdarzeń" + (f" – {det}" if det else "")
+            if state == "SKIPPED" and det.startswith("brak danych (eksport") and exp_err.get(t.get("instrument")):
+                msg = f"{det}: {exp_err[t.get('instrument')]}"
             out[key] = _st(state, msg, t.get("updated_at"), run_id=st.get("run_id"), quality=q or None, integration=t.get("integration"),
                            model_id=t.get("model_id"))
     return out
+
+
+def _short(detail: str | None, n: int = 220) -> str:
+    """Pierwsza istotna linia błędu procesu (bez ścieżki logu) – do pokazania przy modelu."""
+    d = (detail or "").split(" (log: ")[0]
+    parts = [x.strip() for x in d.split(" | ") if x.strip() and not x.strip().startswith("Traceback")]
+    return (" | ".join(parts[-2:]) if parts else d)[:n]
 
 
 def _lock_alive() -> str | None:
@@ -388,7 +399,7 @@ class PepeTrainingCenter:
             u = q["unit"]
             if u == "pipeline":
                 subprocess.run([sys.executable, "-m", "masterquo", "training", "cancel"], cwd=str(paths.ROOT_DIR / "backend"), timeout=60,
-                               capture_output=True, env=dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend")))
+                               capture_output=True, env=dict(os.environ, PYTHONPATH=paths.child_pythonpath()))
                 return "główny trening – anulowanie zgłoszone (wznowienie: menu treningu → Wznów)"
             if u == "trainhub" and q.get("job_id"):
                 self.rt.trainhub.cancel(q["job_id"])
@@ -484,6 +495,9 @@ class PepeTrainingCenter:
             err = self._ensure_bars(q, inst, "M5", GT.MIN_BARS)
             if not err:
                 self._wait_heavy_slot(q)
+                mem = self._wait_memory(q)
+                if mem and not self._cancel.is_set():
+                    return {"state": "SKIPPED", "detail": mem}
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
             if err:
@@ -502,8 +516,11 @@ class PepeTrainingCenter:
             if len(h1) < 600:
                 return {"state": "SKIPPED", "detail": f"za mało zamkniętych świec H1 ({len(h1)} < 600)"}
             self._wait_heavy_slot(q)
+            mem = self._wait_memory(q)
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
+            if mem:
+                return {"state": "SKIPPED", "detail": mem}
             res = r.start_training(c, h1, op="from_scratch", reason="Centrum Treningowe Pepe (DIRECT_USER_REQUEST)")
             if not res.get("ok"):
                 return {"state": "SKIPPED", "detail": res.get("reason") or ""}
@@ -522,6 +539,45 @@ class PepeTrainingCenter:
         q["detail"] = f"czeka na zakończenie innego treningu ({', '.join(busy())})"
         self._wait(lambda: not busy(), timeout=timeout, step=5.0)
         q["detail"] = ""
+
+    def _wait_memory(self, q: dict, timeout: float = 15 * 60) -> str:
+        """1.42.11: Memory Governor nie uruchamia ciężkiego treningu przy RAM ≥ progu LIMIT_HEAVY (domyślnie 80 %). Centrum najpierw zwalnia
+        bezczynne ciężkie modele prognoz (Chronos-2, TiRex-2 …; Kronos zostaje), potem czeka do 15 min na wolną pamięć; inaczej zwraca
+        czytelny powód z zajętością RAM (zamiast „za mało pamięci (LIMIT_HEAVY)”). Zwraca "" gdy można trenować."""
+        gov = getattr(self.rt, "governor", None)
+        if gov is None:
+            return ""
+
+        def bad() -> bool:
+            try:
+                return gov.level() in ("LIMIT_HEAVY", "PAUSE_OPTIONAL")
+            except Exception:  # noqa: BLE001
+                return False
+
+        def used() -> str:
+            try:
+                return f"{float(gov.sample()['system']['used_pct']):.0f}"
+            except Exception:  # noqa: BLE001
+                return "?"
+        if not bad():
+            return ""
+        try:
+            gov._release_idle_heavy(except_model="", min_idle_s=10.0, why="Centrum Treningowe Pepe – pamięć dla treningu")
+        except Exception:  # noqa: BLE001
+            pass
+        if not bad():
+            return ""
+        try:
+            limit = f"{float(gov.profile()['limit_heavy_pct']):.0f}"
+        except Exception:  # noqa: BLE001
+            limit = "80"
+        q["detail"] = f"czeka na wolną pamięć RAM – zajęte {used()} % (trening ciężkich modeli od {limit} % jest wstrzymany)"
+        self._wait(lambda: not bad(), timeout=timeout, step=10.0)
+        q["detail"] = ""
+        if not bad():
+            return ""
+        return (f"za mało wolnej pamięci RAM: zajęte {used()} % – Memory Governor nie uruchamia ciężkiego treningu od {limit} %. "
+                "Zamknij inne programy (np. przeglądarkę) i kliknij TRENUJ ponownie.")
 
     def _ensure_bars(self, q: dict, inst: str, tf: str, need: int) -> str:
         """1.42.10: Granite i rodziny modeli czytają archiwum świec (marketdata Store). Gdy jest za krótkie (np. przed pierwszym eksportem),
@@ -610,6 +666,8 @@ class PepeTrainingCenter:
             return ""
         c = {"UKONCZONE": 0, "POMINIETE": 0, "BLAD_TECHNICZNY": 0}
         errs = []
+        exp = [f"{t.get('instrument')}: {_short(t.get('detail'))}" for t in st.get("tasks") or []      # 1.42.11: błąd eksportu na początku
+               if t.get("kind") in ("export", "quality") and t.get("execution") == "BLAD_TECHNICZNY"]
         for t in st.get("tasks") or []:
             if t.get("kind") in ("export", "quality", "activate", "bot") or (t.get("detail") == "nie wybrano w planie"):
                 continue
@@ -619,6 +677,8 @@ class PepeTrainingCenter:
             if ex == "BLAD_TECHNICZNY":
                 errs.append(f"{t.get('instrument')} {t.get('kind')}: {(t.get('detail') or '')[:120]}")
         s = f"wytrenowane {c['UKONCZONE']}, pominięte {c['POMINIETE']}, błędy {c['BLAD_TECHNICZNY']}"
+        if exp:
+            s = "EKSPORT HISTORII Z MT5 NIEUDANY – " + " ; ".join(exp[:2]) + ". " + s
         return s + ("; " + " | ".join(errs[:3]) if errs else "")
 
     @staticmethod

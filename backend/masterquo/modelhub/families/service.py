@@ -177,7 +177,7 @@ class FamilyService:
             bf = self._live_bars_file(fid, inst)
             if bf is not None:
                 argv += ["--bars-file", str(bf)]
-            env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8",
+            env = dict(os.environ, PYTHONPATH=paths.child_pythonpath(sys.executable), PYTHONIOENCODING="utf-8",   # 1.42.11: numpy w DESKTOP
                        PMW_FAMILIES_DIR=str(self.store.base))
             log = open(self._log_file(fid, inst), "w", encoding="utf-8")     # 1.42.10: log procesu (był DEVNULL – awaria bez śladu)
             try:

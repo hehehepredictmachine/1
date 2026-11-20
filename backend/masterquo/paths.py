@@ -20,6 +20,30 @@ FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 DEFAULTS_FILE = ROOT_DIR / "config" / "masterquo.defaults.json"
 
 
+def _same_file(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def child_pythonpath(python: str | None = None) -> str:
+    """1.42.11: PYTHONPATH procesu potomnego.
+
+    * Proces na Pythonie bota (``sys.executable``; ``python=None`` też oznacza Pythona bota): ``backend`` + biblioteki aplikacji z bieżącego
+      PYTHONPATH. W aplikacji DESKTOP biblioteki (numpy, pandas, MetaTrader5 …) leżą w ``<home>\\pyenv\\cp313-*\\site-packages`` i trafiają
+      do Pythona tylko przez PYTHONPATH od launchera – dziecko z samym ``backend`` kończyło się ``ModuleNotFoundError: numpy``
+      (eksport historii, TrainHub, rodziny modeli).
+    * Proces w osobnym środowisku (.venv_candles, .venv_kronos, .venv_granite …): tylko ``backend`` – jego pakiety nie mogą się mieszać
+      z bibliotekami bota (inne wersje numpy / inny Python)."""
+    import sys
+    backend = str(BACKEND_DIR)
+    if python is not None and not _same_file(python, sys.executable):
+        return backend
+    keep = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p and not _same_file(p, backend)]
+    return os.pathsep.join([backend, *keep])
+
+
 def data_dir() -> Path:
     """Data folder; MASTERQUO_DATA_DIR allows isolated test/demo instances. Without it: <root>/data, or the data folder of the
     Windows app when the program runs from its folder (mq_instruments.default_data_dir - same rules as desktop/layout.go)."""

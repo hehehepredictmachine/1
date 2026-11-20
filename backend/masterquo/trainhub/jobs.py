@@ -262,7 +262,7 @@ class TrainingCenter:
         th = str(max(1, (os.cpu_count() or 2) // 2))
         env = dict(os.environ, PYTHONIOENCODING="utf-8", OMP_NUM_THREADS=th, MKL_NUM_THREADS=th, OPENBLAS_NUM_THREADS=th, MQ_TRAINING="1")
         from .. import paths
-        env["PYTHONPATH"] = str(paths.ROOT_DIR / "backend")
+        env["PYTHONPATH"] = paths.child_pythonpath(self.python)      # 1.42.11: biblioteki aplikacji DESKTOP (było: samo backend -> kod 1)
         env["MASTERQUO_DATA_DIR"] = str(paths.data_dir())
         kw: dict = {}
         if os.name == "nt":
