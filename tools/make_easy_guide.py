@@ -258,7 +258,8 @@ def story(sh: Path | None) -> list:
                                                             "Gdy zobaczysz zielony napis <b>„Licencja aktywna”</b> – gotowe. Program sam przejdzie dalej."]),
                                                     *shot(sh, "04_license_ok.png", "Licencja aktywna.", 120, crop=(0.27, 0.12, 0.73, 0.9)),
                                                     P("Czerwony napis? Zobacz rozdział „Co zrobić, gdy…”.", "small")])
-    s += step(11, "Intro i menu", [*doit(["Pojawi się krótka animacja. Możesz ją pominąć klawiszem <b>Esc</b>.",
+    s += step(11, "Intro i menu", [*doit(["Pojawi się krótki film (15 sekund, z dźwiękiem). Możesz go pominąć: <b>kliknij</b> w film albo naciśnij <b>Spację</b> lub <b>Esc</b>. "
+                                          "Głośnik w prawym dolnym rogu wycisza dźwięk.",
                                           "Potem zobaczysz menu z trzema planetami: <b>FOREX</b>, <b>CRYPTO</b> i <b>OTC</b>. Główna jest <b>FOREX</b>."]),
                                    *shot(sh, "05_menu.png", "Menu główne.", 150)])
     s += step(12, "Sprawdź połączenie z MT5", [*doit(["Za pierwszym razem program sam otworzy <b>Ustawienia</b>. Jeśli nie – kliknij ikonkę "

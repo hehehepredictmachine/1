@@ -4,8 +4,7 @@
 // visibilitychange, dispose przez AbortController. Zmiany względem wzorca:
 //  * 1.44.1: intro = film Apollo23_intro_land.mp4 (<video>, pełny ekran z zachowaniem proporcji, bez kontrolek, z dźwiękiem); koniec filmu,
 //    klik, Spacja, Esc i „Przejdź do menu” → enter() (wejście z czerni do menu, bez zmian); film nieodtwarzalny → od razu menu, bez błędu.
-//  * 1.42.7 (pakiet update_intro3d, zastąpione w 1.44.1): intro = scena 3D (LazyIntro → Intro3D, kontrakt <video> jak REF_C), nie film; po wejściu do menu
-//    scena jest zwalniana (release), przy odmontowaniu – także jej kontekst WebGL (dispose); przycisk dźwięku ukryty (intro bez dźwięku);
+//  * 1.42.7–1.44.0: intro = scena 3D bez dźwięku (usunięta w 1.44.1); IntroLike.release/dispose zostają opcjonalne;
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
 //  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO/OTC – ekran „tryb w przygotowaniu”;
 //  * PMW_PREVIEW zastąpiony hakiem window.__PMW_E2E__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.

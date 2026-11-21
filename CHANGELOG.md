@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 1.44.1 – nowe intro: film Apollo23
+* **Intro to teraz film** `Apollo23_intro_land.mp4` (1920×1080, 30 kl/s, 15 s, H.264 + AAC) zamiast sceny 3D: pełny ekran z zachowaniem
+  proporcji (czarne pasy, gdy okno ma inne proporcje), bez kontrolek odtwarzacza, z dźwiękiem (głośnik w prawym dolnym rogu wycisza –
+  wybór zapamiętany).
+* Po końcu filmu – to samo przejście do menu co dotąd (czarny kadr filmu płynnie przechodzi w kule FOREX / CRYPTO / OTC).
+* Pominięcie: **klik w film**, **Spacja**, **Esc** albo „Przejdź do menu”. „Odtwórz intro” (R) gra film ponownie; intro gra raz na sesję.
+* Film, którego nie da się odtworzyć (brak pliku, brak kodeka H.264/AAC, błąd) – od razu menu, bez komunikatu o błędzie.
+* Aplikacja Windows: okno WebView2 dostaje `--autoplay-policy=no-user-gesture-required` (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), żeby film
+  ruszył z dźwiękiem bez kliknięcia; gdy dźwięk i tak zostanie zablokowany, film gra bez dźwięku.
+* Plik: `frontend/src/assets/Apollo23_intro_land.mp4` → build panelu `frontend/dist/assets/Apollo23_intro_land-<hash>.mp4` (w paczkach
+  zwykłej i DESKTOP; serwowany przez bota z `/assets/`, z obsługą zakresów – Range).
+* Usunięte: intro 3D (`frontend/src/features/intro3d`, strona testu `intro-test.html`, three.js, fflate, testy intro 3D). Pakiet źródłowy
+  `update_intro3d/` zostaje w repozytorium (nie trafia do paczek).
+
 ## 1.44.0 – Wersja KLIENTA z licencją offline (Ed25519)
 * **Dwie edycje.** Wersja właściciela (z generatorem licencji) działa jak dotąd – bez licencji. Wersja **klienta** powstaje poleceniem
   `python tools/build_release.py --edition client` / `python tools/build_desktop.py --edition client` (PepeMarketWizard_KLIENT_… /

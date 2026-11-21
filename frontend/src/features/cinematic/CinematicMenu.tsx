@@ -17,10 +17,9 @@ type Props = {
   onMenuReady?(): void;
   onForexReady?(pose: Pose): void;
   forceSoftware?: boolean;
-  testIntro?: boolean;                                     // testy: intro zawsze (bez względu na „raz na sesję”)
 };
 
-export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware, testIntro }: Props) {
+export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware }: Props) {
   const { s } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const forexRef = useRef(onForexReady);
@@ -42,7 +41,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
     };
     const soft = forceSoftware || new URLSearchParams(location.hash.split("?")[1] || "").get("renderer") === "cpu";
     const dispose = mountMenu(el, {
-      playIntro: testIntro || shouldPlayIntro(), reduced: testIntro ? false : prefersReducedMotion(), forceSoftware: soft,
+      playIntro: shouldPlayIntro(), reduced: prefersReducedMotion(), forceSoftware: soft,
       audio: soundOn(), onSoundChange: saveSound,
       onChoose: (_m: Mode) => undefined,
       onMenuReady: () => readyRef.current?.(),
@@ -56,7 +55,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
       dispose();
       try { intro.pause(); intro.removeAttribute("src"); intro.load(); } catch { /* element już odpięty */ }   // zwolnij bufor filmu (ok. 28 MB)
     };
-  }, [forceSoftware, testIntro]);
+  }, [forceSoftware]);
 
   return (
     <div className="app-cinematic" data-state="boot" ref={rootRef} data-testid="page-menu">
