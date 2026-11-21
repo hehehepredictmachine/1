@@ -765,6 +765,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; WEJDŹ grows it to 85 %
 	w, h := uint(lw), uint(lh)
 	_ = os.MkdirAll(l.Home, 0o755)
+	_ = os.Setenv(webview2ArgsEnv, withAutoplay(os.Getenv(webview2ArgsEnv))) // 1.44.1: intro (film z dźwiękiem) rusza bez kliknięcia
 	wv := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     os.Getenv("PMW_DEBUG") == "1",
 		AutoFocus: true,

@@ -2,7 +2,9 @@
 // Zachowane 1:1: fazy boot → enter → menu → selecting → selected → returning, liczby cząsteczek (110k/94k/66k), gwiazdy, pył, smugi,
 // okluzja siatką, renderer CPU (setupSoftware / swPlanet / swDepthMesh), przeciąganie, hover, klawiatura, contextlost/restored,
 // visibilitychange, dispose przez AbortController. Zmiany względem wzorca:
-//  * 1.42.7 (pakiet update_intro3d): intro = scena 3D (LazyIntro → Intro3D, kontrakt <video> jak REF_C), nie film; po wejściu do menu
+//  * 1.44.1: intro = film Apollo23_intro_land.mp4 (<video>, pełny ekran z zachowaniem proporcji, bez kontrolek, z dźwiękiem); koniec filmu,
+//    klik, Spacja, Esc i „Przejdź do menu” → enter() (wejście z czerni do menu, bez zmian); film nieodtwarzalny → od razu menu, bez błędu.
+//  * 1.42.7 (pakiet update_intro3d, zastąpione w 1.44.1): intro = scena 3D (LazyIntro → Intro3D, kontrakt <video> jak REF_C), nie film; po wejściu do menu
 //    scena jest zwalniana (release), przy odmontowaniu – także jej kontekst WebGL (dispose); przycisk dźwięku ukryty (intro bez dźwięku);
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
 //  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO/OTC – ekran „tryb w przygotowaniu”;
@@ -33,7 +35,12 @@ export type MenuOptions = {
   onForexReady?(pose: Pose): void;
   onMotionChange?(reduced: boolean): void;
   onMenuReady?(): void;                                    // pierwsze wejście do fazy menu (np. Ustawienia przy pierwszym uruchomieniu – po intro)
+  audio?: boolean;                                         // 1.44.1: dźwięk filmu intro (domyślnie włączony; wybór użytkownika zapamiętany)
+  onSoundChange?(on: boolean): void;
 };
+
+/** 1.44.1: kodek filmu intro (H.264 High + AAC LC). Brak obsługi = od razu menu (bez komunikatu o błędzie). */
+export const INTRO_CODECS = 'video/mp4; codecs="avc1.640028, mp4a.40.2"';
 
 const SVG_SOUND_ON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7a5 5 0 0 1 0 6m2-9a8 8 0 0 1 0 12"/></svg>';
 const SVG_SOUND_OFF = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6"/></svg>';
@@ -49,7 +56,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   const ease = (x: number) => { x = clamp(x); return 1 - Math.pow(1 - x, 4); };
   const config = Object.freeze({ counts: [110000, 94000, 66000], starCount: 1500, dustCount: 11000, pixelRatioCap: 1.65, entrySeconds: 3.0, selectSeconds: 1.85, returnSeconds: 1.35 });
   const state: any = { phase: "boot", phaseT: 0, time: 0, rotationTime: 0, hidden: false, reduced: opts.reduced, pointer: [0, 0], pointerTarget: [0, 0], selected: -1, hover: -1,
-    focus: -1, drag: null, raf: 0, disposed: false, contextLost: false, frame: 0, last: 0, noticeTimer: 0, watchdog: 0, quality: "full", audio: false, slowSince: 0, frameAvg: 16 };
+    focus: -1, drag: null, raf: 0, disposed: false, contextLost: false, frame: 0, last: 0, noticeTimer: 0, watchdog: 0, quality: "full", audio: opts.audio ?? true, slowSince: 0, frameAvg: 16 };
   const modes: Mode[] = ["FOREX", "CRYPTO", "OTC"];
   const orbs: any[] = modes.map((name, i) => ({ name, button: el.buttons[i], kind: i, angles: [0.11 + i * 0.24, -0.22 + i * 1.8], velocity: [0, 0], hover: 0, mouse: [0, 0],
     layout: { x: 0, y: 0, r: 0 }, buffer: null, count: config.counts[i] }));
@@ -224,13 +231,36 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); video.release?.(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); }
   function enter() { if (state.phase !== "boot") return; video.pause(); clearTimeout(state.watchdog); setPhase("enter"); el.progress.hidden = true; wake(); }
   function skipToMenu() { clearTimeout(state.watchdog); video.pause(); video.release?.(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); wake(); }
+  // 1.44.1: intro = film (Apollo23_intro_land.mp4). Film, którego nie da się odtworzyć (brak pliku, brak kodeka), nie pokazuje błędu –
+  // od razu zaczyna się wejście do menu (ta sama ścieżka enter() co po końcu filmu).
+  function introUnplayable(why: string) { if (state.phase !== "boot") return; console.warn("[intro] " + why + " – od razu menu"); enter(); }
+  function soundUI(on: boolean) {
+    el.sound.setAttribute("aria-pressed", String(on)); el.sound.setAttribute("aria-label", on ? "Wycisz intro" : "Włącz dźwięk intro");
+    el.sound.dataset.label = on ? "Wycisz intro" : "Włącz dźwięk intro"; el.sound.innerHTML = on ? SVG_SOUND_ON : SVG_SOUND_OFF;
+  }
+  function startVideo(allowMutedRetry: boolean) {
+    const pl = video.play();
+    if (!pl || !pl.catch) return;
+    pl.catch((err: any) => {
+      if (state.phase !== "boot" || err?.name === "AbortError") return;           // przerwane pominięciem / pauzą
+      if (err?.name === "NotAllowedError") {
+        if (!video.muted && allowMutedRetry) {                                    // przeglądarka blokuje autoodtwarzanie z dźwiękiem
+          video.muted = true; soundUI(false); notice("Przeglądarka wstrzymała dźwięk intro – kliknij głośnik, aby go włączyć."); startVideo(false); return;
+        }
+        el.videoStart.hidden = false; announce("Naciśnij Uruchom intro, aby rozpocząć."); return;
+      }
+      introUnplayable("odtwarzanie niemożliwe: " + (err?.name || err));
+    });
+  }
   function playIntro() {
     if (state.contextLost) return; clearTimeout(state.watchdog); state.hover = -1; state.focus = -1; state.drag = null; setPhase("boot"); markIntroSeen();
     cinema.hidden = false; cinema.style.opacity = "1"; video.style.transform = "scale(1)"; video.style.filter = "none"; el.progress.hidden = false;
-    video.currentTime = 0; video.muted = !state.audio;
+    video.currentTime = 0; video.muted = !state.audio; soundUI(state.audio);
     if (state.reduced) { enter(); return; }
-    const pl = video.play(); if (pl && pl.catch) pl.catch(() => { el.videoStart.hidden = false; announce("Naciśnij Uruchom intro, aby rozpocząć."); });
-    state.watchdog = setTimeout(() => { if (state.phase === "boot" && video.readyState !== 4) { notice("Nie udało się uruchomić animacji. Menu pozostaje dostępne."); enter(); } }, 8000);   // I3: scena gotowa w 8 s
+    const can = (video as any).canPlayType;
+    if (typeof can === "function" && can.call(video, INTRO_CODECS) === "") { introUnplayable("brak kodeka H.264/AAC"); return; }
+    startVideo(true);
+    state.watchdog = setTimeout(() => { if (state.phase === "boot" && video.readyState < 3) introUnplayable("film nie wczytał się w 8 s"); }, 8000);
     wake();
   }
   function choose(i: number) {
@@ -255,16 +285,18 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   });
   listen(window, "pointermove", (e: PointerEvent) => { state.pointerTarget = [e.clientX / view.w * 2 - 1, e.clientY / view.h * 2 - 1]; });
   listen(window, "blur", () => { state.pointerTarget = [0, 0]; state.hover = -1; state.drag = null; });
-  listen(window, "resize", resize); listen(video, "ended", enter); listen(video, "error", () => { if (state.phase !== "boot") return; notice("Nie udało się uruchomić animacji. Menu pozostaje dostępne."); enter(); });
+  listen(window, "resize", resize); listen(video, "ended", enter); listen(video, "error", () => introUnplayable("błąd wczytania filmu"));
+  listen(cinema, "click", () => { if (state.phase === "boot") enter(); });       // 1.44.1: klik w film pomija intro
   listen(el.skip, "click", enter); listen(el.videoStart, "click", () => { video.play().then(() => { el.videoStart.hidden = true; }).catch(() => notice("Odtwarzanie jest zablokowane. Możesz przejść do menu.")); });
   listen(el.replay, "click", () => { if (["enter", "selecting", "returning"].includes(state.phase)) return; playIntro(); }); listen(el.returnBtn, "click", goBack);
-  listen(el.sound, "click", () => { state.audio = !state.audio; video.muted = !state.audio; el.sound.setAttribute("aria-pressed", String(state.audio)); el.sound.setAttribute("aria-label", state.audio ? "Wycisz oryginalne intro" : "Włącz dźwięk oryginalnego intro"); el.sound.innerHTML = state.audio ? SVG_SOUND_ON : SVG_SOUND_OFF; });
+  listen(el.sound, "click", () => { state.audio = video.muted; video.muted = !state.audio; soundUI(state.audio); opts.onSoundChange?.(state.audio); });
   function updateMotionUI() { root.dataset.motion = state.reduced ? "reduced" : "full"; el.motion.setAttribute("aria-pressed", String(state.reduced)); el.motion.setAttribute("aria-label", state.reduced ? "Włącz pełny ruch" : "Ogranicz ruch"); el.motion.dataset.label = state.reduced ? "Włącz pełny ruch" : "Ogranicz ruch"; el.motion.innerHTML = state.reduced ? SVG_PLAY : SVG_PAUSE; }
   listen(el.motion, "click", () => { state.reduced = !state.reduced; saveMotionChoice(state.reduced); opts.onMotionChange?.(state.reduced); orbs.forEach((o) => o.velocity = [0, 0]); updateMotionUI(); if (state.reduced && state.phase === "boot") enter(); notice(state.reduced ? "Ruch ograniczony. Obracanie i wybór kul pozostają dostępne." : "Pełne animacje włączone."); });
   listen(el.fullscreen, "click", async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); else notice("Pełny ekran uruchomisz klawiszem F11 w przeglądarce."); } catch { notice("Przeglądarka zablokowała pełny ekran. Użyj F11."); } });
   listen(document, "fullscreenchange", () => { el.fullscreen.setAttribute("aria-label", document.fullscreenElement ? "Opuść pełny ekran" : "Pełny ekran"); });
   listen(document, "keydown", (e: KeyboardEvent) => {
     if (e.key === "Escape") { if (state.phase === "boot") enter(); else if (state.phase === "selected") goBack(); }
+    if ((e.code === "Space" || e.key === " ") && state.phase === "boot") { e.preventDefault(); enter(); }     // 1.44.1: Spacja pomija intro
     const replayKey = (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.code === "KeyB" && e.ctrlKey && e.altKey);
     if (replayKey && ["menu", "selected"].includes(state.phase)) { const t = e.target as HTMLElement | null; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; e.preventDefault(); playIntro(); }
   });
@@ -292,7 +324,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
       choose: (m: Mode) => choose(modes.indexOf(m)), skip: () => enter() });
   }
   try {
-    setup(); updateMotionUI();
+    setup(); updateMotionUI(); soundUI(state.audio);
     if (opts.playIntro) playIntro(); else skipToMenu();          // obie ścieżki budzą pętlę (wake) – jedna klatka RAF naraz
   } catch (err) { console.error("PMW renderer:", err); rendererError(); }
   return dispose;

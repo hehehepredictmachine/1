@@ -1,19 +1,23 @@
-// Trasa #/menu (E1; 1.42.7: intro 3D zamiast filmu – pakiet update_intro3d, I2): intro 3D + menu 3 planet (FOREX / CRYPTO / OTC). Markup i style ze wzorca REF_A, silnik w menuEngine.ts
+// Trasa #/menu (E1; 1.44.1: intro = film Apollo23_intro_land.mp4 zamiast intro 3D z 1.42.7): intro + menu 3 planet (FOREX / CRYPTO / OTC). Markup i style ze wzorca REF_A, silnik w menuEngine.ts
 // montowany w useEffect (jeden kontekst WebGL, dispose przy odmontowaniu). CRYPTO / OTC: ekran „tryb w przygotowaniu” bez żadnego
 // wywołania API – wybór planety to nawigacja, nie przełączenie profilu rynku bota (S2 §4).
 import { useEffect, useRef } from "react";
 import { useStore } from "../../store";
 import { mountMenu, PREPARING_NOTE, type MenuElements, type Mode, type Pose } from "./menuEngine";
 import { prefersReducedMotion, shouldPlayIntro } from "./introGate";
-import { LazyIntro } from "../intro3d/lazyIntro";
+import introFilm from "../../assets/Apollo23_intro_land.mp4";      // build: dist/assets/Apollo23_intro_land-<hash>.mp4 (serwowane z /assets/)
 import "./cinematic.css";
+
+const SOUND_KEY = "pmw.intro.sound";
+const soundOn = () => { try { return localStorage.getItem(SOUND_KEY) !== "off"; } catch { return true; } };
+const saveSound = (on: boolean) => { try { localStorage.setItem(SOUND_KEY, on ? "on" : "off"); } catch { /* bez trwałości */ } };
 
 type Props = {
   onSettings?(): void;                                     // ustawienia otwiera pasek ikon systemowych (SystemIcons)
   onMenuReady?(): void;
   onForexReady?(pose: Pose): void;
   forceSoftware?: boolean;
-  testIntro?: boolean;                                     // strona testu 1:1 intro (tylko build --mode test): intro zawsze, poziom PEŁNY, hak seek
+  testIntro?: boolean;                                     // testy: intro zawsze (bez względu na „raz na sesję”)
 };
 
 export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware, testIntro }: Props) {
@@ -27,13 +31,8 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
   useEffect(() => {
     const root = rootRef.current!;
     const q = <T extends Element>(c: string) => root.querySelector(".cin-" + c) as unknown as T;
-    // intro 3D z kontraktem <video> (REF_C: video = new PMW_Intro3D($('#intro')))
-    const intro = new LazyIntro(q<HTMLCanvasElement>("intro"), { forceFull: !!testIntro });
-    if (import.meta.env.MODE === "test" && testIntro) {
-      const w = window as any;
-      w.__PMW_TEST__ = w.__PMW_TEST__ || {};
-      w.__PMW_TEST__.intro = { seek: (t: number) => intro.seek(t).then(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))) };
-    }
+    // 1.44.1: intro = <video> (kontrakt, z którego silnik korzysta od REF_C: play / pause / currentTime / ended / error)
+    const intro = q<HTMLVideoElement>("intro");
     const el: MenuElements = {
       root, canvas: q("universe"), video: intro, cinema: q("cinema"), menu: q("menu"), selected: q("selected"), selectedName: q("selected-name"),
       selectedNote: q("selected-note"), returnBtn: q("return"), skip: q("skip"), videoStart: q("video-start"), progress: q("cinema-progress"),
@@ -42,8 +41,9 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
       buttons: [q("mode-forex"), q("mode-crypto"), q("mode-otc")], replay: q("replay"), sound: q("sound"), motion: q("motion"), fullscreen: q("fullscreen"),
     };
     const soft = forceSoftware || new URLSearchParams(location.hash.split("?")[1] || "").get("renderer") === "cpu";
-    return mountMenu(el, {
+    const dispose = mountMenu(el, {
       playIntro: testIntro || shouldPlayIntro(), reduced: testIntro ? false : prefersReducedMotion(), forceSoftware: soft,
+      audio: soundOn(), onSoundChange: saveSound,
       onChoose: (_m: Mode) => undefined,
       onMenuReady: () => readyRef.current?.(),
       onForexReady: (pose) => {
@@ -52,6 +52,10 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
         el.returnBtn.focus({ preventScroll: true });
       },
     });
+    return () => {
+      dispose();
+      try { intro.pause(); intro.removeAttribute("src"); intro.load(); } catch { /* element już odpięty */ }   // zwolnij bufor filmu (ok. 28 MB)
+    };
   }, [forceSoftware, testIntro]);
 
   return (
@@ -75,14 +79,15 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
           <p className="cin-selected-note">{PREPARING_NOTE}</p></div>
       </section>
       <div className="cin-presentation-mark">PEPEMARKETWIZARD {s.app_version ? "/ " + s.app_version : ""}</div>
-      <div className="cin-cinema"><canvas className="cin-intro" role="img" data-testid="intro-3d"
-        aria-label="Animacja startowa: w galaktyce trzech mężczyzn w garniturach wyłania się z ciemności, środkowy w czerwonej kominiarce kładzie dłoń na trzech planetach" /><span className="cin-cinema-label">PEPEMARKETWIZARD / INITIATION</span></div>
+      <div className="cin-cinema" title="Kliknij, aby pominąć intro"><video className="cin-intro" data-testid="intro-video" src={introFilm} preload="metadata" playsInline
+        disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback" tabIndex={-1}
+        aria-label="Film startowy PepeMarketWizard. Kliknij, naciśnij Spację albo Esc, aby przejść do menu." /><span className="cin-cinema-label">PEPEMARKETWIZARD / INITIATION</span></div>
       <button className="cin-video-start" type="button" hidden>URUCHOM INTRO</button>
       <button className="cin-skip" type="button" data-testid="intro-skip">PRZEJDŹ DO MENU</button>
       <div className="cin-cinema-progress" aria-hidden="true"><span /></div>
       <nav className="cin-tools" aria-label="Sterowanie">
         <button className="tool cin-replay" type="button" aria-label="Odtwórz intro ponownie" data-label="Odtwórz intro ponownie (R)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6a7 7 0 1 1-1 7M4 2v4h4" /></svg></button>
-        <button className="tool cin-sound" type="button" hidden aria-label="Włącz dźwięk oryginalnego intro" aria-pressed="false" data-label="Dźwięk oryginalnego intro"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6" /></svg></button>
+        <button className="tool cin-sound" type="button" aria-label="Wycisz intro" aria-pressed="true" data-label="Wycisz intro" data-testid="intro-sound"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4 5 8H2v4h3l4 4zM13 7l5 6m0-6-5 6" /></svg></button>
         <button className="tool cin-motion" type="button" aria-label="Ogranicz ruch" aria-pressed="false" data-label="Ogranicz ruch"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4v12m6-12v12" /></svg></button>
         <button className="tool cin-fullscreen" type="button" aria-label="Pełny ekran" data-label="Pełny ekran"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4" /></svg></button>
       </nav>

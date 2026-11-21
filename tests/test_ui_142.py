@@ -151,7 +151,8 @@ class TestUI142(unittest.TestCase):
         self.assertEqual(p.sent, [])                                    # STOP panel opened, nothing confirmed -> no POST
         self.assertEqual(p.errors, [])
 
-    # pakiet update_intro3d (I2 / O1-B): intro 3D zamiast filmu – pełny przebieg do menu, pominięcie, brak filmu i dźwięku, tylko GET
+    # 1.44.1: intro = film Apollo23_intro_land.mp4 (pełny ekran z zachowaniem proporcji, bez kontrolek, z dźwiękiem); koniec filmu / klik /
+    # Spacja / Esc / „Przejdź do menu” -> wejście do menu; film nieodtwarzalny -> od razu menu, bez komunikatu o błędzie; tylko GET
     def intro_page(self):
         c = self.browser.new_context(viewport={"width": 1280, "height": 720})
         c.add_init_script("try{localStorage.setItem('pmw.cinematic.force','1');localStorage.setItem('pmw.motion','full')}catch(e){}")
@@ -162,23 +163,53 @@ class TestUI142(unittest.TestCase):
         self.addCleanup(c.close)
         return p
 
-    def test_e_intro3d_plays_into_menu(self):
+    def wait_menu(self, p, timeout=60000):
+        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=timeout)
+
+    def test_e_intro_film_plays_into_menu(self):
         p = self.intro_page()
         p.goto(BASE + "/#/menu")
-        p.wait_for_selector("[data-testid=intro-3d]", timeout=30000)
-        self.assertEqual(p.locator("video").count(), 0)                                   # film nie istnieje
-        self.assertTrue(p.locator(".cin-sound").is_hidden())                                # intro bez dźwięku
-        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=240000)
+        p.wait_for_function("() => (document.querySelector('[data-testid=intro-video]')||{}).currentTime > 1", timeout=60000)
+        v = p.evaluate("""() => { const v = document.querySelector('[data-testid=intro-video]');
+            return { src: v.currentSrc, controls: v.hasAttribute('controls'), fit: getComputedStyle(v).objectFit, w: v.videoWidth, h: v.videoHeight,
+                     d: v.duration, sound: !document.querySelector('[data-testid=intro-sound]').hidden }; }""")
+        self.assertRegex(v["src"], r"/assets/Apollo23_intro_land-[\w-]+\.mp4$")
+        self.assertEqual((v["controls"], v["fit"], v["w"], v["h"], v["sound"]), (False, "contain", 1920, 1080, True))
+        self.assertAlmostEqual(v["d"], 15.0, delta=0.2)
+        self.assertEqual(p.locator("[data-testid=intro-3d]").count(), 0)                    # stare intro 3D nie istnieje
+        self.wait_menu(p, 120000)                                                          # koniec filmu -> wejście do menu
         self.assertEqual(p.errors, [])
         self.assertEqual(p.sent, [])
 
-    def test_f_intro3d_skip(self):
-        p = self.intro_page()
-        p.goto(BASE + "/#/menu")
-        p.wait_for_selector("[data-testid=intro-skip]", state="visible", timeout=30000)
-        p.click("[data-testid=intro-skip]")
-        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=60000)
-        self.assertEqual(p.errors, [])
+    def test_f_intro_skip_button_click_space_esc(self):
+        for how in ("button", "click", "Space", "Escape"):
+            p = self.intro_page()
+            p.goto(BASE + "/#/menu")
+            p.wait_for_function("() => (document.querySelector('[data-testid=intro-video]')||{}).currentTime > 0.5", timeout=60000)
+            if how == "button":
+                p.click("[data-testid=intro-skip]")
+            elif how == "click":
+                p.mouse.click(640, 400)
+            else:
+                p.keyboard.press(how)
+            p.wait_for_function("() => ['enter','menu'].includes(document.querySelector('[data-testid=page-menu]').dataset.state)", timeout=5000)
+            self.wait_menu(p)
+            self.assertTrue(p.evaluate("document.querySelector('[data-testid=intro-video]').paused"), how)
+            self.assertEqual(p.errors, [], how)
+
+    def test_g_intro_missing_film_or_codec_goes_to_menu(self):
+        for case in ("missing", "codec"):
+            p = self.intro_page()
+            if case == "missing":
+                p.route("**/*.mp4", lambda r: r.fulfill(status=404, body="brak"))
+            else:
+                p.add_init_script("HTMLMediaElement.prototype.canPlayType = () => ''")
+            p.goto(BASE + "/#/menu")
+            p.wait_for_function("() => ['enter','menu'].includes((document.querySelector('[data-testid=page-menu]')||{dataset:{}}).dataset.state)",
+                                timeout=15000)
+            self.assertFalse(p.evaluate("document.querySelector('.cin-notice').classList.contains('show')"), case)   # bez komunikatu o błędzie
+            self.wait_menu(p)
+            self.assertEqual(p.errors, [], case)
 
     # (g)
     def test_d_legacy_redirects(self):

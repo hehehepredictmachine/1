@@ -679,3 +679,16 @@ func TestDamagedEnvIsDiscardedAndImportFailureRecognised(t *testing.T) {
 		t.Fatal("importFailure")
 	}
 }
+
+func TestWithAutoplay(t *testing.T) {
+	for in, want := range map[string]string{
+		"":              autoplayArg,
+		"  ":            autoplayArg,
+		"--disable-gpu": "--disable-gpu " + autoplayArg,
+		"--autoplay-policy=user-gesture-required": "--autoplay-policy=user-gesture-required", // wybór użytkownika zostaje
+	} {
+		if got := withAutoplay(in); got != want {
+			t.Fatalf("withAutoplay(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
