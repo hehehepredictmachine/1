@@ -11,7 +11,8 @@
   ruszył z dźwiękiem bez kliknięcia; gdy dźwięk i tak zostanie zablokowany, film gra bez dźwięku.
 * Plik: `frontend/src/assets/Apollo23_intro_land.mp4` → build panelu `frontend/dist/assets/Apollo23_intro_land-<hash>.mp4` (w paczkach
   zwykłej i DESKTOP; serwowany przez bota z `/assets/`, z obsługą zakresów – Range).
-* Usunięte: intro 3D (`frontend/src/features/intro3d`, strona testu `intro-test.html`, three.js, fflate, testy intro 3D). Pakiet źródłowy
+* Usunięte: intro 3D (`frontend/src/features/intro3d`, generator bryły `tools/intro3d/build_body.mjs`, strona testu `intro-test.html`,
+  three.js, fflate, testy intro 3D). Pakiet źródłowy
   `update_intro3d/` zostaje w repozytorium (nie trafia do paczek).
 
 ## 1.44.0 – Wersja KLIENTA z licencją offline (Ed25519)
