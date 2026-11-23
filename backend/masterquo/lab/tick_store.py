@@ -82,8 +82,18 @@ def load(inst: str, from_ms: int | None = None, to_ms: int | None = None) -> lis
         if hashlib.sha256(f.read_bytes()).hexdigest() != e["sha256"]:
             raise ValueError(f"TICK_CHUNK_HASH_MISMATCH: {e['file']}")
         with np.load(f, allow_pickle=False) as z:
-            for i in range(len(z["t_ms"])):
-                out.append({"t_ms": int(z["t_ms"][i]), "bid": float(z["bid"][i]), "ask": float(z["ask"][i]), "ord": int(z["ord"][i])})
+            # 1.46: every array read ONCE (NpzFile re-reads and decompresses the whole array on each z[key] - quadratic per chunk);
+            # the stored raw time_msc / flags are returned too (additive keys; callers of the 4 old keys are unchanged)
+            ta, bi, ak, od = z["t_ms"], z["bid"], z["ask"], z["ord"]
+            tm = z["time_msc"] if "time_msc" in z.files else None
+            fl = z["flags"] if "flags" in z.files else None
+            for i in range(len(ta)):
+                row = {"t_ms": int(ta[i]), "bid": float(bi[i]), "ask": float(ak[i]), "ord": int(od[i])}
+                if tm is not None:
+                    row["time_msc"] = int(tm[i])
+                if fl is not None:
+                    row["flags"] = int(fl[i])
+                out.append(row)
     out.sort(key=lambda k: (k["t_ms"], k["ord"]))
     return out
 

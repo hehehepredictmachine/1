@@ -818,3 +818,53 @@ class TestV32ModulesBatch2(unittest.TestCase):
             with self.assertRaises(MU.ProviderUnavailable):
                 br.candles("BTC", "1h", 10)
         self.assertEqual(Down.calls, n)                                          # no re-query on every request
+
+
+class TestTickArchiveForTsvp(unittest.TestCase):
+    """1.45.0: mm job_tsvp failed with KeyError 'time_msc' on a REAL tick archive (tick_store format); tick_store.load re-read every npz array
+    per tick (quadratic)."""
+
+    def test_archive_ticks_feed_tsvp_and_load_once(self):
+        import types
+        from unittest import mock
+
+        from _env import TempData
+
+        from masterquo.lab import tick_store
+        from masterquo.mm import jobs as J
+        td = TempData()
+        try:
+            base = 1_795_000_000_000
+            ticks = [{"t_ms": base + 100 * i, "time_msc": base + 7_200_000 + 100 * i, "bid": 2000 + (i % 7) * 0.01, "ask": 2000.2 + (i % 7) * 0.01,
+                      "flags": 6} for i in range(3000)]
+            tick_store.save_chunk("XAUUSD", ticks, "TEST", "NONE", False)
+            got = tick_store.load("XAUUSD")
+            self.assertEqual((len(got), got[0]["time_msc"], got[0]["flags"]), (3000, base + 7_200_000, 6))
+            ctx = types.SimpleNamespace(inst="XAUUSD", synthetic=False, snap=types.SimpleNamespace(tick_size=0.01))
+            tk, src = J._ticks(ctx)
+            self.assertEqual(src, "REAL_TICK_ARCHIVE")
+            self.assertTrue(all("time_msc" in t and "last" in t for t in tk))
+            res = J.job_tsvp(ctx)                                               # 1.45.0: KeyError 'time_msc'
+            self.assertIsInstance(res, dict)
+            import numpy as np
+            real_load = np.load
+            reads = {"n": 0}
+
+            class Counting:
+                def __init__(self, z):
+                    self.z, self.files = z, z.files
+
+                def __getitem__(self, k):
+                    reads["n"] += 1
+                    return self.z[k]
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    self.z.close()
+            with mock.patch.object(tick_store.np, "load", side_effect=lambda *a, **k: Counting(real_load(*a, **k))):
+                tick_store.load("XAUUSD")
+            self.assertLessEqual(reads["n"], 6)                                 # each array once, not 4 x 3000 reads
+        finally:
+            td.close()

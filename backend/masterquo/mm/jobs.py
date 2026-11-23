@@ -197,7 +197,11 @@ def _ticks(ctx) -> tuple[list[dict], str]:
         from ..lab import tick_store
         tk = tick_store.load(ctx.inst)
         if tk:
-            return tk, "REAL_TICK_ARCHIVE"
+            # 1.46: the archive is the tick_store format (t_ms / bid / ask / ord [+ time_msc / flags]) - TSVP reads the MT5 copy_ticks format
+            # (time_msc, last, volume, flags): 1.45.0 failed with KeyError 'time_msc'. The archive has no trade price / volume -> 0 (no
+            # executed-volume information, not an estimate).
+            return [{"time_msc": int(t.get("time_msc", t["t_ms"])), "bid": t["bid"], "ask": t["ask"], "last": 0.0, "volume": 0, "volume_real": 0.0,
+                     "flags": int(t.get("flags", 0))} for t in tk], "REAL_TICK_ARCHIVE"
     except Exception:  # noqa: BLE001
         pass
     if not ctx.synthetic:
