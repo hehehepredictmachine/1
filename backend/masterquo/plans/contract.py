@@ -10,7 +10,8 @@ shown NEXT to it (the plan history is not replaced by an ideal fill). Targets co
 fill price, or PAPER fills) - never from a candle crossing a line.
 
 States: WAIT (no levels yet, reason shown) / NO_TRADE (conditions failed, reason) / READY (levels valid, not executed) / ACTIVE (open
-position) / EXPIRED (TTL passed without a position) / INVALIDATED (setup invalidated or levels inconsistent) / CLOSED (position closed).
+position) / EXPIRED (TTL passed without a position) / INVALIDATED (setup invalidated or levels inconsistent) / CLOSED (position closed) /
+UNKNOWN (1.46: entry sent but its result not verified - ENTRY_UNKNOWN / PENDING_ENTRY; a position may exist, never "without a position").
 """
 from __future__ import annotations
 
@@ -20,8 +21,9 @@ import time
 
 VERSION = "PMW-PLAN-1"
 LAYERS = {"SCALPING": ("SCALP", "Pepe Scalp Plan"), "HEDGING": ("HEDGE", "Pepe Hedge Plan")}
-STATES = ("WAIT", "NO_TRADE", "READY", "ACTIVE", "EXPIRED", "INVALIDATED", "CLOSED")
+STATES = ("WAIT", "NO_TRADE", "READY", "ACTIVE", "EXPIRED", "INVALIDATED", "CLOSED", "UNKNOWN")      # 1.46: + UNKNOWN
 CLOSED_STATES = ("CLOSED", "ERROR_CLOSED", "REJECTED", "ENTRY_UNKNOWN")
+LEG_LIVE = ("OPEN", "CLOSING")                                   # 1.46: hedge-leg statuses drawn as a HEDGE_ENTRY fill line
 
 
 def _lvl(name: str, price, kind: str, **kw) -> dict | None:
@@ -82,10 +84,20 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
         bad = None
     # ---- state
     pr = plan_row or {}
+    bstate = (basket or {}).get("state")
     if pr and pr.get("state") not in (None,) and pr.get("primary_ticket") is not None or position:
-        state = "CLOSED" if pr.get("state") in CLOSED_STATES or (position or {}).get("state") == "CLOSED" else "ACTIVE"
-    elif pr and pr.get("state") in ("REJECTED", "ENTRY_UNKNOWN"):
+        # 1.46: a HEDGING basket is CLOSED only when the BASKET is - its primary can be closed while the hedge leg is still open or its
+        # close was rejected (UNWINDING / EXIT_PENDING / ERROR); the primary's CLOSED hid the open leg and its HEDGE_ENTRY line
+        pos_closed = bstate == "CLOSED" if bstate is not None else (position or {}).get("state") == "CLOSED"
+        state = "CLOSED" if pr.get("state") in CLOSED_STATES or pos_closed else "ACTIVE"
+    elif pr and pr.get("state") == "REJECTED":
         state, reason = "INVALIDATED", f"wejście {pr['state']}: {(pr.get('result') or {}).get('reason')}"
+    elif pr and pr.get("state") in ("ENTRY_UNKNOWN", "PENDING_ENTRY"):
+        # 1.46: the entry result is not verified (UNKNOWN answer / no result recorded): a position may exist and recover() may adopt it -
+        # it was INVALIDATED / READY / EXPIRED "bez otwarcia pozycji"
+        why = (pr.get("result") or {}).get("reason")
+        state, reason = "UNKNOWN", (f"wejście {pr['state']}: stan pozycji niezweryfikowany – pozycja mogła zostać otwarta "
+                                    "(rozstrzyga rekoncyliacja z terminalem)" + (f"; {why}" if why else ""))
     elif bad:
         state, reason = "INVALIDATED", f"niespójne poziomy: {bad}"
     elif status == "READY":
@@ -96,13 +108,17 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
         state = "NO_TRADE"
     elif status == "INVALIDATED":
         state = "INVALIDATED"
+    elif status == "EXPIRED":                                   # 1.46: a pack candidate with TTL passed was shown as WAIT
+        state = "EXPIRED"
+        reason = reason or "minął czas ważności setupu (TTL)"
     else:
         state = "WAIT"
     if state in ("WAIT", "NO_TRADE") and not out["levels"]:
         reason = reason or "brak poziomów – warunki setupu niespełnione"
     out["state"], out["state_reason"] = state, reason
     out["readiness"] = {"analytical": status, "execution_permission": ((su.get("risk") or {}).get("status")),
-                        "coordination": ((su.get("coordination") or {}).get("decision")), "position_open": state == "ACTIVE",
+                        "coordination": ((su.get("coordination") or {}).get("decision")),
+                        "position_open": None if state == "UNKNOWN" else state == "ACTIVE",            # 1.46: unverified = null
                         "entry_block": su.get("entry_block")}
     # ---- execution (real fills only)
     if position:
@@ -116,7 +132,9 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
                                          "fill_volume": lg.get("fill_volume"), "reached": lg.get("status") == "DONE"} for lg in legs],
                             "source": "PAPER (jawny tryb symulacji)" if pr.get("exec_mode") == "PAPER" else "dane wykonania MT5"}
         if position.get("entry") is not None:
-            out["levels"].append(_lvl("ENTRY_FILL", position["entry"], "FILL", label=f"FILL #{pr.get('primary_ticket')}"))
+            tk = pr.get("primary_ticket")                       # 1.46: PAPER has no ticket - the label read "FILL #None"
+            out["levels"].append(_lvl("ENTRY_FILL", position["entry"], "FILL",
+                                      label=f"FILL #{tk}" if tk is not None else ("FILL (PAPER)" if pr.get("exec_mode") == "PAPER" else "FILL")))
         if out["execution"]["sl_version"] > 1:
             out["levels"].append(_lvl("SL_CURRENT", position["sl"], "MANAGED", label=f"SL v{out['execution']['sl_version']}"))
     # ---- hedge (HEDGING only)
@@ -125,7 +143,7 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
         if out["hedge"].get("activation_level") is not None:
             out["levels"].append(_lvl("HEDGE_ACTIVATION", out["hedge"]["activation_level"], "HEDGE", label="HEDGE aktywacja"))
         leg = out["hedge"].get("leg") or {}
-        if leg.get("entry") is not None:
+        if leg.get("entry") is not None and leg.get("status") in LEG_LIVE:      # 1.46: a CLOSED leg stays in the data, not as a fill line
             out["levels"].append(_lvl("HEDGE_ENTRY", leg["entry"], "HEDGE_FILL", label=f"HEDGE {leg.get('side')} {leg.get('volume')}"))
         out["basket"] = (basket or {}).get("basket")
     out["plan_key"] = "PV-" + hashlib.sha256(json.dumps([out["signal_id"], out["plan_id"], out["state"], out["levels"]], default=str)
@@ -134,37 +152,45 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
 
 
 def hedge_view(su: dict, pr: dict, basket: dict | None, margin_mode: str | None, position: dict | None) -> dict:
+    hb = (basket or {}).get("hedge") or {}
+    leg = {"side": hb.get("side"), "volume": hb.get("volume"), "entry": hb.get("entry"), "status": hb.get("status"),
+           "activations": hb.get("activations")} if hb.get("entry") is not None else None
     mm = (margin_mode or "").upper()
-    if mm and "HEDG" not in mm:
-        return {"available": False, "reason": f"konto {margin_mode}: brak hedgingu (NETTING) – noga przeciwna niedostępna, strategia nie jest "
-                                               "cicho zamieniana w inną", "activation_level": None, "leg": None}
+    if "HEDG" not in mm and ("NETT" in mm or "EXCH" in mm):
+        # 1.46: the real mode in the text (EXCHANGE was reported as "(NETTING)"); a recorded leg is still reported (real data)
+        return {"available": False, "availability": "NOT_AVAILABLE",
+                "reason": f"konto {margin_mode} (nie HEDGING): brak hedgingu – noga przeciwna niedostępna, strategia nie jest cicho "
+                          "zamieniana w inną", "activation_level": None, "leg": leg}
+    if "HEDG" not in mm:
+        # 1.46: an unknown / missing margin mode (SH not RUNNING yet, no account, "None") was reported as available=True with a line
+        return {"available": None, "availability": "NOT_VERIFIED",
+                "reason": f"tryb marży rachunku nieznany ({margin_mode or 'brak danych'}) – dostępność hedge niezweryfikowana, próg nie jest rysowany",
+                "activation_level": None, "leg": leg}
     prof = (pr.get("plan") or {}).get("profile") or {}
     h = prof.get("hedge") or {}
     entry = (position or {}).get("entry") or _entry_price(su)
-    sl = (position or {}).get("sl_plan") or su.get("sl")
+    sl = su.get("sl")                                           # 1.46: Position.snapshot() has no 'sl_plan' key (dead lookup removed)
     act = None
     if entry is not None and sl is not None and h.get("trigger_fraction_of_sl") is not None:
         d = abs(float(entry) - float(sl)) * float(h["trigger_fraction_of_sl"])
         act = float(entry) - d if su.get("side") == "BUY" else float(entry) + d
-    hb = (basket or {}).get("hedge") or {}
-    leg = {"side": hb.get("side"), "volume": hb.get("volume"), "entry": hb.get("entry"), "status": hb.get("status"),
-           "activations": hb.get("activations")} if hb.get("entry") is not None else None
     cond = None
     if prof:
         lim = ((pr.get("plan") or {}).get("risk") or {}).get("basket_loss_limit_money")
         cond = (f"wyjście koszykowe: strata netto koszyka ≥ {lim} (waluta rachunku) lub czas koszyka > {prof.get('position_max_minutes')} min; "
                 "warunek w pieniądzu – nie jest rysowany jako jedna linia ceny") if lim else "wyjście koszykowe: limit czasu / SL pozycji głównej"
-    return {"available": True, "activation_level": act if act is not None else None,
+    return {"available": True, "availability": "AVAILABLE", "reason": None, "activation_level": act,
             "activation_rule": (f"niekorzystny ruch ≥ {h.get('trigger_fraction_of_sl')} × odległość SL" if h else None), "leg": leg,
             "leg_levels": [], "leg_levels_note": "strategia HEDGING nie definiuje osobnych TP/SL nogi zabezpieczającej – nie są dorysowywane",
             "basket_condition": cond, "note": "stop, cel i wyjście koszykowe nie gwarantują wykonania po wskazanej cenie"}
 
 
-def chart_payload(plans: list[dict], *, symbol: str, account_key: str | None, primary: str | None = None) -> dict:
+def chart_payload(plans: list[dict], *, symbol: str, account_key: str | None) -> dict:
     """Only plans of one symbol + account; primary = newest ACTIVE, else newest READY, else newest."""
+    # 1.46: the unused 'primary' parameter was removed (no caller passed it)
     plans = [p for p in plans if p.get("symbol") == symbol]
     order = sorted(plans, key=lambda p: (p.get("signal_time") or 0), reverse=True)
-    pick = primary or next((p["plan_key"] for p in order if p["state"] == "ACTIVE"), None) or \
+    pick = next((p["plan_key"] for p in order if p["state"] == "ACTIVE"), None) or \
         next((p["plan_key"] for p in order if p["state"] == "READY"), None) or (order[0]["plan_key"] if order else None)
     return {"contract": VERSION, "symbol": symbol, "account_key": account_key, "primary": pick, "plans": order,
             "legend": {"SCALP": "Pepe Scalp Plan", "HEDGE": "Pepe Hedge Plan"},
@@ -190,8 +216,9 @@ def from_pack(su: dict, *, now: float | None = None, plan_row: dict | None = Non
         if x["name"] in ("TP1", "TP2"):
             x["optional"] = False
             t = next((t for t in su.get("tps") or [] if t.get("name") == x["name"]), {})
-            x.update(distance_price=t.get("distance_actual"), distance_pips=t.get("distance_pips"),
-                     label=f"{x['name']} {t.get('distance_pips')} pips ({round(100 * float(t.get('share') or 0))}%)")
+            x.update(distance_price=t.get("distance_actual"), distance_pips=t.get("distance_pips"))
+            if t.get("distance_pips") is not None:              # 1.46: a legacy plan (no pips) kept its label instead of "TP1 None pips"
+                x["label"] = f"{x['name']} {t.get('distance_pips')} pips ({round(100 * float(t.get('share') or 0))}%)"
     an = pk.get("analytical_state") or su.get("status")
     out.update(contract=VERSION2, strategy_id=su.get("strategy_id"), family=pk.get("family") or su.get("strategy"), name=pk.get("name"),
                strategy_version=pk.get("strategy_version"), management_policy_id=pk.get("management_policy_id"), signal_tf=pk.get("signal_tf"),
@@ -216,10 +243,14 @@ def from_pack(su: dict, *, now: float | None = None, plan_row: dict | None = Non
                  activations_used=bh.get("activations", 0), basket_net=((basket or {}).get("basket") or {}).get("net_after_costs"),
                  last_decision=pol.get("last_decision"), refused=pol.get("hedge_refused"),
                  margin_mode=account_margin_mode, note="stop koszyka w pieniądzu nie jest rysowany jako linia ceny; brak hedgingu na NETTING")
+        # 1.46: keep the account check of hedge_view (NETTING / EXCHANGE -> False, unknown -> None) - it was overwritten by pack.hedge
+        hv = out.get("hedge") or hedge_view(su, plan_row or {}, basket, account_margin_mode, position)
+        h.update(available=hv.get("available"), availability=hv.get("availability"), reason=hv.get("reason"))
         out["hedge"] = h
-        if h.get("activation_level_if_scalar") is not None:
+        # 1.46: the condition threshold only where a hedge leg can open at all (HEDGING account) - never on NETTING / unknown accounts
+        if h.get("activation_level_if_scalar") is not None and h.get("available") is True:
             out["levels"].append({"name": "HEDGE_ACTIVATION", "price": float(h["activation_level_if_scalar"]), "kind": "HEDGE", "label": "HEDGE – próg warunku"})
-        if (h.get("leg") or {}).get("entry") is not None:
+        if (h.get("leg") or {}).get("entry") is not None and (h.get("leg") or {}).get("status") in LEG_LIVE:
             out["levels"].append({"name": "HEDGE_ENTRY", "price": float(h["leg"]["entry"]), "kind": "HEDGE_FILL",
                                   "label": f"HEDGE {h['leg'].get('side')} {h['leg'].get('volume')}"})
     for x in out["levels"]:

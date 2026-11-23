@@ -17,6 +17,38 @@ def _meta_su(row: dict) -> dict:
     return su
 
 
+# 1.46: plans still open (the SH store's own definition, SHStore.open_plans) - always part of a chart answer
+OPEN_SQL = " AND state NOT IN ('CLOSED','ERROR_CLOSED','REJECTED')"
+
+
+def _rows(sh, sql: str, args: tuple, history: int) -> list[dict]:
+    """The `history` newest plans + EVERY plan still open with the same filters (deduplicated by plan_id).
+
+    1.46: only `ORDER BY created_at DESC LIMIT history` was read - an open position older than `history` newer (e.g. closed) plans
+    vanished from the answer, and with it its SL / TP / FILL lines on the chart."""
+    rows = [dict(r) for r in sh.store.db.query(sql + " ORDER BY created_at DESC LIMIT ?", (*args, int(history)))]
+    have = {r["plan_id"] for r in rows}
+    for r in sh.store.db.query(sql + OPEN_SQL + " ORDER BY created_at DESC", tuple(args)):
+        if r["plan_id"] not in have:
+            have.add(r["plan_id"])
+            rows.append(dict(r))
+    return rows
+
+
+def _basket_report(o, q: dict | None) -> dict:
+    """Basket report also without a quote. 1.46: without bid/ask there was no report at all, so the hedge leg (side / entry / status /
+    volume / activations - known from the state machine) read NOT_ACTIVE with 0 activations; now only the P&L that needs a quote
+    (unrealized / net) is null and the report says the quote is UNAVAILABLE."""
+    if q:
+        return o.report(q["bid"], q["ask"])
+    r = o.report(o.primary.entry, o.primary.entry)            # quote-independent fields only; the P&L below is cleared
+    r["primary"]["unrealized"] = None
+    r["hedge"]["unrealized"] = None
+    r["basket"].update(unrealized=None, net_after_costs=None)
+    r["quote"] = "UNAVAILABLE"
+    return r
+
+
 def collect(sh, strategy: str, *, now: float | None = None, history: int = 10) -> dict:
     now = now if now is not None else time.time()
     st = sh.state if hasattr(sh, "state") else {}
@@ -27,8 +59,8 @@ def collect(sh, strategy: str, *, now: float | None = None, history: int = 10) -
     digits = (getattr(sh.bridge, "symbol_info", None) or {}).get("digits")
     plans = []
     seen_signals = set()
-    rows = sh.store.db.query("SELECT * FROM sh_plans WHERE strategy=? AND strategy_id IS NULL AND symbol=? AND (account_key IS NULL OR account_key=?) "
-                             "ORDER BY created_at DESC LIMIT ?", (strategy, symbol, acct, int(history)))      # 1.38: variant plans -> layer PACK
+    rows = _rows(sh, "SELECT * FROM sh_plans WHERE strategy=? AND strategy_id IS NULL AND symbol=? AND (account_key IS NULL OR account_key=?)",
+                 (strategy, symbol, acct), history)                                                # 1.38: variant plans -> layer PACK
     for r in rows:
         row = sh.store._plan_row(dict(r))
         o = row.get("fsm_obj")
@@ -37,7 +69,7 @@ def collect(sh, strategy: str, *, now: float | None = None, history: int = 10) -
             from ..sh.hedge_fsm import Basket
             if isinstance(o, Basket):
                 pos = o.primary.snapshot()
-                basket = o.report(q["bid"], q["ask"]) if q else None
+                basket = _basket_report(o, q)
             else:
                 pos = o.snapshot()
         plans.append(PC.from_setup(_meta_su(row), now=now, plan_row=row, position=pos, basket=basket, account_margin_mode=mm, digits=digits))
@@ -64,13 +96,20 @@ def collect_pack(sh, *, strategy_id: str | None = None, family: str | None = Non
     q = getattr(sh.bridge, "quote", None)
     acct = getattr(sh.bridge, "account_key", None)
     digits = (getattr(sh.bridge, "symbol_info", None) or {}).get("digits")
-    sql = "SELECT * FROM sh_plans WHERE strategy_id IS NOT NULL AND symbol=? AND (account_key IS NULL OR account_key=?)"
-    args: list = [sym, acct]
-    for col, val in (("strategy_id", strategy_id), ("strategy", family), ("signal_tf", tf), ("plan_id", plan_id)):
+    # 1.46: LEGACY_SCALPING / LEGACY_HEDGING (accepted by the API) = plans without a variant, as in SHStore.recent_signals; the filter
+    # strategy_id='LEGACY_X' together with strategy_id IS NOT NULL always gave an empty list
+    legacy = strategy_id[len("LEGACY_"):] if strategy_id and strategy_id.startswith("LEGACY_") else None
+    if legacy:
+        sql = "SELECT * FROM sh_plans WHERE strategy_id IS NULL AND strategy=? AND symbol=? AND (account_key IS NULL OR account_key=?)"
+        args: list = [legacy, sym, acct]
+    else:
+        sql = "SELECT * FROM sh_plans WHERE strategy_id IS NOT NULL AND symbol=? AND (account_key IS NULL OR account_key=?)"
+        args = [sym, acct]
+    for col, val in (("strategy_id", None if legacy else strategy_id), ("strategy", family), ("signal_tf", tf), ("plan_id", plan_id)):
         if val:
             sql += f" AND {col}=?"
             args.append(val)
-    rows = sh.store.db.query(sql + " ORDER BY created_at DESC LIMIT ?", (*args, int(history)))
+    rows = _rows(sh, sql, tuple(args), history)
     plans, seen = [], set()
     from ..sh.hedge_fsm import Basket
     for r in rows:
@@ -78,7 +117,7 @@ def collect_pack(sh, *, strategy_id: str | None = None, family: str | None = Non
         o = row.get("fsm_obj")
         pos = basket = pol = None
         if isinstance(o, Basket):
-            pos, basket, pol = o.primary.snapshot(), (o.report(q["bid"], q["ask"]) if q else None), o.policy
+            pos, basket, pol = o.primary.snapshot(), _basket_report(o, q), o.policy
         elif o is not None:
             pos = o.snapshot()
         su = _meta_su(row)
