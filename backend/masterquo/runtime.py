@@ -364,6 +364,12 @@ class Runtime:
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
         if not self.demo:
             threading.Thread(target=self._upgrade_after, name="upgrade-1.41", daemon=True).start()
+        try:                                                # 1.45 (TASK 013): verify-first bootstrap; heavy runtimes sequential, after start
+            from .bootstrap import Bootstrap
+            self.bootstrap = Bootstrap(self)
+            self.bootstrap.start()                         # no-op in demo / PMW_BOOTSTRAP=0
+        except Exception:  # noqa: BLE001 - never blocks the start
+            log.exception("bootstrap failed to start")
         if self.start_failures:
             self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
                            + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")

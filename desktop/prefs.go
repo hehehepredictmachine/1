@@ -15,9 +15,16 @@ type Prefs struct {
 	CloseAction    string `json:"close_action"` // ask | background | exit
 	Autostart      bool   `json:"autostart"`
 	StartMinimized bool   `json:"start_minimized"`
+	// 1.45 (Apollo23 TASK 013): borderless fullscreen, adaptive UI scale and automatic entry into the panel - ON by default.
+	// Missing keys keep the defaults (JSON is decoded over defaultPrefs). The Windows display resolution is never changed.
+	Fullscreen bool `json:"fullscreen"`
+	AutoScale  bool `json:"auto_scale"`
+	AutoEnter  bool `json:"auto_enter"`
 }
 
-func defaultPrefs() Prefs { return Prefs{CloseAction: "ask"} }
+func defaultPrefs() Prefs {
+	return Prefs{CloseAction: "ask", Fullscreen: true, AutoScale: true, AutoEnter: true}
+}
 
 func loadPrefs(dataDir string) Prefs {
 	p := defaultPrefs()

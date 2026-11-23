@@ -102,6 +102,9 @@ const (
 
 	monitorDefaultToNearest           = 2
 	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10
+	swpFrameChanged, swpShowWindow    = 0x20, 0x40
+	wsPopup, wsVisible                = 0x80000000, 0x10000000
+	hwndTop                           = 0
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
 	mutexName      = `Local\PepeMarketWizardDesktop`
@@ -110,6 +113,7 @@ const (
 )
 
 var gwlpWndProc = ^uintptr(3) // GWLP_WNDPROC (-4)
+var gwlStyle = ^uintptr(15)   // GWL_STYLE (-16)
 
 type notifyIconData struct {
 	CbSize           uint32
@@ -391,6 +395,10 @@ func (a *winApp) awaitJoin() bool {
 		}
 	}
 	a.push()
+	if loadPrefs(a.l.DataDir).AutoEnter { // 1.45 (TASK 013): the dashboard opens automatically once the engine is ready
+		a.logf("start: silnik gotowy – automatyczne wejście do panelu (auto_enter)")
+		return true
+	}
 	a.logf("start: silnik gotowy – oczekiwanie na WEJDŹ")
 	select {
 	case <-a.join:
@@ -438,13 +446,34 @@ func (a *winApp) openApp() {
 	a.mu.Unlock()
 	url := panelURL(a.eng.URL(), true)
 	a.logf("okno: WEJDŹ → panel " + url)
+	full := loadPrefs(a.l.DataDir).Fullscreen
 	a.wv.Dispatch(func() {
-		wa := a.workArea()
-		w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
-		a.resizeCentred(w, h, false)
+		if full {
+			a.borderlessFullscreen() // 1.45 (TASK 013): monitor rectangle, no frame; Windows resolution untouched
+		} else {
+			wa := a.workArea()
+			w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
+			a.resizeCentred(w, h, false)
+		}
 		a.wv.SetTitle(a.l.WindowTitle(version))
 		a.wv.Navigate(url)
 	})
+}
+
+// borderlessFullscreen (UI thread): WS_POPUP window covering the whole monitor of the window (rcMonitor, native DPI).
+func (a *winApp) borderlessFullscreen() {
+	mon, _, _ := pMonitorFromWindow.Call(a.hwnd, monitorDefaultToNearest)
+	mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if mon == 0 {
+		return
+	}
+	if ok, _, _ := pGetMonitorInfoW.Call(mon, uintptr(unsafe.Pointer(&mi))); ok == 0 {
+		return
+	}
+	r := mi.RcMonitor
+	_, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlStyle, wsPopup|wsVisible)
+	_, _, _ = pSetWindowPos.Call(a.hwnd, hwndTop, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top),
+		swpFrameChanged|swpShowWindow)
 }
 
 func (a *winApp) onEngineState(s EngineState, detail string) {

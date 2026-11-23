@@ -395,3 +395,31 @@ def register(app, rt) -> None:
             for s in res["segments"]:
                 s["start_utc"], s["end_utc"] = times[s["start"] + 1] if s["start"] + 1 < len(times) else None, times[min(s["end"], len(times) - 1)]
         return {**res, "timeframe": timeframe, "computed_on": "closed bars only"}
+
+    # ------------------------------------------------------------------ TASK 013: bootstrap status / profile
+    @app.get("/api/v1/bootstrap")
+    def bootstrap_status():
+        b = getattr(rt, "bootstrap", None)
+        if b is None:
+            from ..bootstrap import Bootstrap
+            b = lazy("bootstrap_view", lambda: Bootstrap(rt))
+        return b.status()
+
+    @app.put("/api/v1/bootstrap")
+    def bootstrap_profile(body: dict = Body(...)):
+        b = getattr(rt, "bootstrap", None)
+        if b is None:
+            raise HTTPException(409, "BOOTSTRAP_DISABLED (tryb demo / PMW_BOOTSTRAP=0)")
+        try:
+            return b.set_profile(str(body.get("profile") or ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.post("/api/v1/desktop/display")
+    def desktop_display(body: dict = Body(...)):
+        from .. import desktop as DK
+        bad = [k for k in body if k not in DK.DISPLAY_KEYS]
+        if bad or not all(isinstance(body.get(k, True), bool) for k in DK.DISPLAY_KEYS):
+            raise HTTPException(400, f"klucze: {DK.DISPLAY_KEYS} (bool)")
+        cur = DK.load_prefs()
+        return DK.save_display(*(body.get(k, cur[k]) for k in DK.DISPLAY_KEYS))

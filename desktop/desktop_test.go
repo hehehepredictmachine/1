@@ -692,3 +692,19 @@ func TestWithAutoplay(t *testing.T) {
 		}
 	}
 }
+
+// 1.45 (TASK 013): fullscreen / auto scale / auto enter are ON by default and survive an old prefs file without the keys.
+func TestDisplayPrefsDefaults(t *testing.T) {
+	d := t.TempDir()
+	if p := loadPrefs(d); !p.Fullscreen || !p.AutoScale || !p.AutoEnter {
+		t.Fatalf("defaults: %+v", p)
+	}
+	_ = os.WriteFile(filepath.Join(d, "desktop_prefs.json"), []byte(`{"close_action":"exit","autostart":true}`), 0o644)
+	if p := loadPrefs(d); !p.Fullscreen || !p.AutoEnter || p.CloseAction != "exit" {
+		t.Fatalf("old file: %+v", p)
+	}
+	_ = os.WriteFile(filepath.Join(d, "desktop_prefs.json"), []byte(`{"close_action":"ask","fullscreen":false,"auto_enter":false}`), 0o644)
+	if p := loadPrefs(d); p.Fullscreen || p.AutoEnter || !p.AutoScale {
+		t.Fatalf("explicit: %+v", p)
+	}
+}
