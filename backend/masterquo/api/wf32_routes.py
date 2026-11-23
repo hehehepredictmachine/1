@@ -309,3 +309,53 @@ def register(app, rt) -> None:
                 "bubbles": OA.bubbles(ev), "volume_profile": OA.volume_profile(ev, row) if ev else {"status": "NO_DATA"},
                 "footprint": OA.footprint(ev, tf_seconds, row) if ev else {"status": "NO_DATA"}, "cvd": OA.cvd(ev), "ledger": stats,
                 "side_semantics": SIDE_SEMANTICS.get("HYPERLIQUID"), "mode": "READ_ONLY"}
+
+    # ------------------------------------------------------------------ TASK 005 / 006 / 010 / 011 / 016: model layers (OFF / OBSERVE / SHADOW)
+    from ..evaluation import pt_skill as PT
+    from ..ml import association_rules as AR
+    from ..ml import dt_ranker as DT
+    from ..mm.bat_encoder import BATEncoder
+
+    _ranker: dict = {"bundle": None, "manifest": None}
+
+    @app.post("/api/v1/models/pt/evaluate")
+    def pt_evaluate(body: dict = Body(...)):
+        f, y = body.get("forecasts") or [], body.get("outcomes") or []
+        if not isinstance(f, list) or not isinstance(y, list) or len(f) != len(y) or len(f) > 200_000:
+            raise HTTPException(400, "forecasts / outcomes: listy tej samej długości")
+        prof = body.get("profile") or "ARTICLE_25105_V1"
+        if prof not in PT.PROFILES:
+            raise HTTPException(400, f"profile: {PT.PROFILES}")
+        return PT.evaluate(f, y, prof)
+
+    @app.get("/api/v1/models/association/snapshot")
+    def ar_snapshot(timeframe: str = "H1", horizon: int = 24):
+        bars = _bars(timeframe, 5000)
+        if not bars:
+            return {"status": "NOT_CONFIGURED", "reason": "brak zamkniętych świec", "mode": "OBSERVE"}
+        from datetime import datetime as _d
+        rows = [{**b, "hour": _d.fromisoformat(b["open_utc"].replace("Z", "+00:00")).hour if b.get("open_utc") else -1} for b in bars]
+        masks = AR.event_bits(rows)
+        m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], max(1, min(horizon, 200)), 0.0), scope={"timeframe": timeframe, "horizon": horizon})
+        cur = masks[-1] if masks else None
+        return {"status": m["status"], "mode": "OBSERVE", "n_labeled": m.get("n_labeled"), "rules": len(m.get("rules", [])), "current_mask": cur,
+                "current_events": [AR.CATALOG[k] for k in range(len(AR.CATALOG)) if cur is not None and cur >> k & 1],
+                "assess_long": AR.assess(m, cur, "LONG"), "assess_short": AR.assess(m, cur, "SHORT"), "schema": AR.SCHEMA}
+
+    @app.get("/api/v1/models/dt-ranker/status")
+    def dtr_status():
+        return {"schema": DT.SCHEMA, "feature_schema": DT.FEATURE_SCHEMA, "mode": DT.DEFAULT_POLICY["mode"], "ready": _ranker["bundle"] is not None,
+                "manifest": _ranker["manifest"], "note": "osobna rodzina; legacy DECISION_TREE / XGBOOST / selektor bez zmian"}
+
+    @app.post("/api/v1/models/dt-ranker/rank")
+    def dtr_rank(body: dict = Body(...)):
+        try:
+            cands = [DT.candidate_from_dict(c) for c in (body.get("candidates") or [])]
+        except DT.CandidateError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return DT.rank(_ranker["bundle"], cands, {"mode": "SHADOW"})
+
+    @app.get("/api/v1/models/bat/shadow")
+    def bat_shadow(timeframe: str = "H1"):
+        bars = [{**b, "v": b.get("tv", 0)} for b in _bars(timeframe, 600)]
+        return {**lazy("bat", BATEncoder).run(bars), "timeframe": timeframe} if bars else {"status": "NOT_CONFIGURED", "reason": "brak świec"}
