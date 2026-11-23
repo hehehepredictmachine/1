@@ -129,7 +129,8 @@ class StatArb(B.Family):
         for s in series[1:]:
             common &= set(x["t"] for x in s)
         ts = np.asarray(sorted(common))
-        P = np.column_stack([np.asarray([dict((x["t"], x["c"]) for x in s)[t] for t in ts], dtype=float) for s in series])
+        maps = [dict((x["t"], x["c"]) for x in s) for s in series]    # 1.46: one map per series (was rebuilt for every t: O(n^2))
+        P = np.column_stack([np.asarray([m[t] for t in ts], dtype=float) for m in maps])
         return ts, np.diff(np.log(P), axis=0)
 
     def fit(self, data, cfg, tmp, budget):

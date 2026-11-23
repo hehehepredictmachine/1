@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -23,12 +24,32 @@ def _status(p: Path, **kw):
     B._atomic_json(p, cur)
 
 
-def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None) -> dict:
+def _pos(x) -> float | None:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
+def _mapped_symbol(inst: str) -> str | None:
+    """The broker symbol of the instrument from the configuration (assets.mappings) - the symbol IndicatorService records books under."""
+    try:
+        from ...config import ConfigStore
+        m = ConfigStore().get().assets.mappings.get(inst)
+        return (m.broker_symbol or None) if m is not None else None
+    except Exception:  # noqa: BLE001 - no readable configuration = unknown symbol (never "all symbols")
+        return None
+
+
+def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows: int | None = None) -> dict:
     """Training data for a family from the controlled stores (MT5 export Store, book archive, NLP corpus)."""
     from ...marketdata.store import Store
     st = Store()
     man = st.manifest(inst) or {}
-    point = float(((man.get("costs") or {}).get("spread") or {}).get("point") or 0.01)
+    # 1.46: the point size comes from the broker's symbol spec written by the export (symbol_spec / costs.spread.point) or by the live
+    # bars file; missing = None (the families that convert the spread refuse to train) - 1.45.0 assumed 0.01
+    point = _pos((man.get("symbol_spec") or {}).get("point")) or _pos(((man.get("costs") or {}).get("spread") or {}).get("point"))
     out = {"instrument": inst, "point": point, "data_kind": man.get("data_kind") or "UNKNOWN", "symbol": man.get("symbol")}
     kind = fam.DATA.get("kind")
     if kind == "BARS":
@@ -42,9 +63,9 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None) -> dict:
             except (OSError, ValueError):
                 live = {}
             if len(live.get("bars") or []) > len(out["bars"]):
-                syn = live.get("synthetic")                     # 1.46: unknown origin is not REAL (never guessed)
-                out.update(bars=live["bars"], data_kind="MT5_LIVE_BRIDGE" if syn is False else "SYNTHETIC_TEST" if syn is True else "UNKNOWN",
-                           symbol=live.get("symbol") or out.get("symbol"))
+                # 1.46: the demo simulator (MarketBridge.synthetic = True) is SYNTHETIC_TEST - it was labelled MT5_LIVE_BRIDGE (= REAL for ASSIST)
+                out.update(bars=live["bars"], data_kind="SYNTHETIC_TEST" if live.get("synthetic") is True else "MT5_LIVE_BRIDGE",
+                           symbol=live.get("symbol") or out.get("symbol"), point=_pos(live.get("point")) or out.get("point"))
     elif kind == "MULTI_SERIES":
         if fam.ID == "PAIR_COINT":
             pair = (cfg.get("pairs") or [None])[0]
@@ -57,22 +78,43 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None) -> dict:
             if len(uni) >= 3:
                 out["basket_bars"] = [B.bars_from_store(st, s, fam.TF) for s in uni]
     elif kind == "L2_BOOK":
-        out["books"] = books_from_archive(cfg.get("indicators_db"), out.get("symbol"))
+        # 1.46: without the instrument's broker symbol the query had no WHERE - snapshots of every symbol (XAUUSD and BTC after an
+        # instrument switch) were mixed and the label mid_j - mid_i crossed instruments. Symbol: store manifest -> job config ->
+        # assets.mappings; none -> no books (BLOCKED with the reason). Only the newest rows within the budget are read (1.45.0 loaded the
+        # whole 14-day archive at 1 s, ~6 GB) and only the book levels the features use.
+        sym = out.get("symbol") or cfg.get("broker_symbol") or _mapped_symbol(inst)
+        out["symbol"] = sym
+        if not sym:
+            out["books"] = []
+            out["books_reason"] = f"brak symbolu brokera dla {inst} (assets.mappings) – snapshoty arkusza nie są mieszane między symbolami"
+        else:
+            from .micro import BOOK_LEVELS, MIN_SNAPSHOTS
+            lim = max(int(max_rows or BUDGETS["smoke"]["max_rows"]), 4 * MIN_SNAPSHOTS)
+            out["books"] = books_from_archive(cfg.get("indicators_db"), sym, limit=lim, levels=BOOK_LEVELS)
     elif kind == "TEXT":
         from .nlp import load_corpus
         out["corpus"] = load_corpus()
     return out
 
 
-def books_from_archive(db_path, symbol) -> list[dict]:
+def books_from_archive(db_path, symbol, limit: int | None = None, levels: int | None = None) -> list[dict]:
+    """Book snapshots of ONE broker symbol in time order: the newest `limit` rows (all when None), `levels` levels per side."""
     import sqlite3
-    if not db_path or not Path(db_path).exists():
+    if not db_path or not symbol or not Path(db_path).exists():          # 1.46: no symbol -> nothing (never every symbol's rows)
         return []
     con = sqlite3.connect(str(db_path))
-    q = "SELECT t, bids, asks FROM book_snapshots" + (" WHERE symbol=?" if symbol else "") + " ORDER BY t"
-    rows = con.execute(q, (symbol,) if symbol else ()).fetchall()
-    con.close()
-    return [{"t": float(t), "bids": [tuple(x) for x in json.loads(b)], "asks": [tuple(x) for x in json.loads(a)]} for t, b, a in rows]
+    try:
+        if limit:
+            cur = con.execute("SELECT t, bids, asks FROM book_snapshots WHERE symbol=? ORDER BY t DESC LIMIT ?", (symbol, int(limit)))
+        else:
+            cur = con.execute("SELECT t, bids, asks FROM book_snapshots WHERE symbol=? ORDER BY t", (symbol,))
+        out = [{"t": float(t), "bids": [tuple(x) for x in json.loads(b)[:levels]], "asks": [tuple(x) for x in json.loads(a)[:levels]]}
+               for t, b, a in cur]
+    finally:
+        con.close()
+    if limit:
+        out.reverse()
+    return out
 
 
 def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None,
@@ -94,7 +136,8 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         if sf:
             _status(sf, **res)
         return res
-    data = data if data is not None else load_data(fam, inst, cfg, bars_file)
+    budget = dict(BUDGETS.get(profile, BUDGETS["smoke"]), profile=profile)
+    data = data if data is not None else load_data(fam, inst, cfg, bars_file, max_rows=budget["max_rows"])
     ok, why = fam.validate_data(data)
     if not ok:
         res = {"state": "BLOCKED", "reason": why, "family": fid}
@@ -103,7 +146,6 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         return res
     store = store or B.Store()
     rid, tmp = store.new_run(fid, inst)
-    budget = dict(BUDGETS.get(profile, BUDGETS["smoke"]), profile=profile)
     t0 = time.time()
     try:
         if sf:
@@ -123,11 +165,15 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         if sf:
             _status(sf, **res)
         return res
-    bars = data.get("bars") or []
+    allbars = data.get("bars") or []
+    # 1.46: every bar family fits on the newest budget["max_rows"] bars (fit slices bars[-max_rows:]) - rows / hash / range describe that
+    # slice, not the whole archive (1.45.0: the provenance of the model card did not identify the training set); the archive size is
+    # kept separately (rows_available)
+    bars = allbars[-int(budget["max_rows"]):] if budget.get("max_rows") else allbars
     man = {"name": fam.NAME, "kind": fam.KIND, "task_type": fam.TASK_TYPE, "task": fam.TASK, "unit": fam.UNIT, "tf": fam.TF,
            "horizons": list(fam.HORIZONS), "symbol": data.get("symbol"), "data_kind": data.get("data_kind"), "profile": profile,
            "data": {"rows": len(bars), "hash": B.data_hash(bars) if bars else None, "range": [bars[0]["t"], bars[-1]["t"]] if bars else None,
-                    "requirements": fam.data_requirements()},
+                    "rows_available": len(allbars), "requirements": fam.data_requirements()},
            "config": cfg, "budget": budget, "seconds": round(time.time() - t0, 2), "deps": B.dep_versions(fam.DEPS),
            "metrics": parts.get("metrics"), "validation": parts.get("validation"), "sample": parts.get("sample"),
            "model_card": {"purpose": fam.TASK, "receivers": list(fam.RECEIVERS), "limits": "ocena na danych historycznych; nie jest obietnicą wyniku",

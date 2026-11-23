@@ -17,12 +17,21 @@ import numpy as np
 from . import base as B
 
 MIN_SNAPSHOTS = 5000
+BOOK_LEVELS = 5                      # 1.46: deepest level any feature reads (depth_imbalance over 5 levels; the rest use the best level)
+LEGACY_OFI_WINDOW_S = 30.0           # 1.46: window of ofi_window in artifacts trained by 1.33-1.45 (no ofi_window_s in micro.json)
 
 
-def features_from_books(books: list[dict], horizon_s: float = 10.0, max_gap_s: float = 5.0):
+def live_ofi_window_s() -> float:
+    """1.46: the ofi_window window of the live IndicatorService accumulator (OFIAccumulator default) - training uses the same window."""
+    from ...indicators import ofi as OF
+    return float(OF.OFIAccumulator().window_s)
+
+
+def features_from_books(books: list[dict], horizon_s: float = 10.0, max_gap_s: float = 5.0, window_s: float | None = None):
     from ...indicators import ofi as OF
     X, y, ts = [], [], []
-    acc = OF.OFIAccumulator(max_gap_s=max_gap_s, window_s=30.0)
+    # 1.46: 1.45.0 trained ofi_window over 30 s while the live value (IndicatorService) sums 60 s - another feature distribution on line
+    acc = OF.OFIAccumulator(max_gap_s=max_gap_s, window_s=float(window_s) if window_s else live_ofi_window_s())
     mids = [((b["bids"][0][0] + b["asks"][0][0]) / 2, b["t"]) for b in books]
     j = 0
     for i, b in enumerate(books):
@@ -32,7 +41,7 @@ def features_from_books(books: list[dict], horizon_s: float = 10.0, max_gap_s: f
         if j >= len(books) or books[j]["t"] - b["t"] > horizon_s + max_gap_s:
             continue
         bi = OF.best_imbalance(b)
-        di = OF.depth_imbalance(b, 5)
+        di = OF.depth_imbalance(b, BOOK_LEVELS)
         mp, mid = OF.microprice(b)
         spr = b["asks"][0][0] - b["bids"][0][0]
         if bi is None or mp is None or spr <= 0:
@@ -61,13 +70,16 @@ class Micro(B.Family):
 
     def validate_data(self, data):
         books = data.get("books") or []
+        if data.get("books_reason"):                                 # 1.46: e.g. no broker symbol - not "the collector is still running"
+            return False, data["books_reason"]
         if len(books) < MIN_SNAPSHOTS:
             return False, f"za mało snapshotów arkusza: {len(books)} < {MIN_SNAPSHOTS} (kolektor działa – trening po zebraniu danych)"
         return True, None
 
     def fit(self, data, cfg, tmp, budget):
         from sklearn.linear_model import LogisticRegression
-        X, y, ts = features_from_books(data["books"])
+        win = live_ofi_window_s()
+        X, y, ts = features_from_books(data["books"], window_s=win)
         if len(y) < 1000:
             raise B.Unavailable("BLOCKED_DATA", f"za mało ciągłych próbek po filtrze luk: {len(y)}")
         n = len(y)
@@ -80,7 +92,8 @@ class Micro(B.Family):
         m = LogisticRegression(max_iter=500).fit(X[:b], y[:b])
         ph = proba3(m, X[b:])
         hold = {"log_loss": logloss(ph, y[b:]), "baseline_log_loss": logloss(Prior().fit(X[:b], y[:b]).predict_proba(X[b:]), y[b:]), "n": int(n - b)}
-        art = {"coef": m.coef_.tolist(), "intercept": m.intercept_.tolist(), "classes": m.classes_.tolist(), "horizon_s": 10.0}
+        art = {"coef": m.coef_.tolist(), "intercept": m.intercept_.tolist(), "classes": m.classes_.tolist(), "horizon_s": 10.0,
+               "ofi_window_s": win}                                  # 1.46: checked against the live window before every prediction
         (tmp / "micro.json").write_text(json.dumps(art), encoding="utf-8")
         vm = {"val_skill": 1 - val["val_log_loss"] / val["val_baseline_log_loss"] if val["val_baseline_log_loss"] else None}
         return {"metrics": {**val, "holdout": hold, "features": ["best_imbalance", "depth_imbalance", "ofi_window", "microprice_dev/spread"]},
@@ -116,9 +129,30 @@ class Micro(B.Family):
                 "ofi_window": v.get("ofi_window"), "microprice_dev": v.get("microprice_dev"), "mid": v.get("mid"),
                 "ofi_mode": ((ind_result.get("ofi_state") or {}).get("mode"))}
 
+    @staticmethod
+    def window_mismatch(art, ind_result) -> str | None:
+        """1.46: None when the live ofi_window has the window the classifier was trained on, otherwise the reason. The live window is the
+        one the measurement declares (ofi_state / cfg window_s) or else the IndicatorService accumulator's (OFIAccumulator default -
+        poll_book sets only period_s and max_gap_s)."""
+        want = float(art.get("ofi_window_s") or LEGACY_OFI_WINDOW_S)
+        r = ind_result or {}
+        got = (r.get("ofi_state") or {}).get("window_s")
+        if not B.finite(got):
+            got = (r.get("cfg") or {}).get("window_s")
+        if not B.finite(got):
+            got = live_ofi_window_s()
+        if abs(float(got) - want) > 1e-9:
+            return (f"okno ofi_window na żywo {float(got):g} s ≠ {want:g} s w treningu – klasyfikator reakcji zablokowany (INCOMPATIBLE); "
+                    "wytrenuj ponownie")
+        return None
+
     def predict(self, art, live):
         m = self.measure(live.get("micro"))
         if art is not None:
+            why = self.window_mismatch(art, live.get("micro"))
+            if why:                                                  # measurements stay; the probabilities are never computed off-distribution
+                m.update(classifier_state="INCOMPATIBLE", classifier_reason=why)
+                return m
             v = live["micro"]["values"]
             spr = live.get("spread")
             if not spr or spr <= 0:

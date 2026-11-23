@@ -97,13 +97,15 @@ class Breakout(B.Family):
     TF = "M5"
     RECEIVERS = ("SH_CONTEXT:breakout_state", "STRATEGY:S05/S12 BREAKOUT_RETEST context", "PANEL:model_status")
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 1500}
+    NEEDS_POINT = True                                               # 1.46: the validation cost = median bar spread x point
 
     def fit(self, data, cfg, tmp, budget):
         bars = data["bars"][-int(budget.get("max_rows", 8000)):]
         n = len(bars)
         dev = bars[: int(n * 0.8)]
         hold = bars[int(n * 0.8):]
-        spread_pts = float(np.median([b.get("spread") or 0 for b in bars])) * float(data.get("point") or 0.01)
+        # 1.46: point from the symbol spec - was `or 0.01` (unknown spec = an assumed point)
+        spread_pts = float(np.median([b.get("spread") or 0 for b in bars])) * B.point_of(data)
         grid = [(N, k) for N in (12, 20, 36) for k in (2.0, 3.0, 4.5)]
         res = []
         for N, k in grid:

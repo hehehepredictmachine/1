@@ -29,7 +29,11 @@ def main(argv=None) -> int:
     cfg = ConfigStore()
     svc = FamilyService(cfg)
     c = cfg.get().families
-    jc = {"pairs": c.pairs, "basket": c.basket, "nlp_transformer_path": c.nlp_transformer_path}
+    from ...paths import data_dir
+    # 1.46: the book archive as FamilyService._job_config passes it (IndicatorService default dir) - without it MICROSTRUCTURE from the CLI
+    # always read 0 snapshots and reported "the collector is still running"
+    jc = {"pairs": c.pairs, "basket": c.basket, "indicators_db": str(data_dir() / "indicators" / "indicators.sqlite"),
+          "nlp_transformer_path": c.nlp_transformer_path}
     if a.cmd == "list":
         for it in svc.catalog(a.instrument):
             st = it["status"]

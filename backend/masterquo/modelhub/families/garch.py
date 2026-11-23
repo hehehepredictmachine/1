@@ -102,6 +102,13 @@ class GARCH(B.Family):
     def load(self, d):
         return json.loads((d / "garch.json").read_text(encoding="utf-8"))
 
+    def pred(self, **kw) -> dict:
+        # 1.46: result.sigma / variance cover HORIZONS[1] = 6 bars, but the record's horizon defaulted to HORIZONS[0] = 1 bar (service.predict
+        # passes no horizon) - a reader of PMW-PRED-2 scaled a 6-bar sigma (~sqrt(6) larger) as a 1-bar one
+        if kw.get("horizon_bars") is None and kw.get("horizon_seconds") is None:
+            kw["horizon_bars"] = self.HORIZONS[1]
+        return super().pred(**kw)
+
     def _forecast(self, art, c):
         r = np.diff(np.log(np.asarray(c, dtype=float)[-(art["window"] + 1):])) * 100.0
         om, al, be = art["omega"], art["alpha"], art["beta"]
@@ -120,7 +127,7 @@ class GARCH(B.Family):
         if len(c) < 200:
             raise B.Unavailable("BLOCKED_DATA", "za mało świec do filtra GARCH")
         f = self._forecast(art, c)
-        H = str(self.HORIZONS[1])
+        H = str(self.HORIZONS[1])                                      # the record's horizon is the same (pred above)
         s = f["horizons"][H]["sigma"]
         return {"sigma": s, "variance": f["horizons"][H]["variance"], "scale": "decimal", "sigma_bar": f["sigma_bar"], "horizon_bars": int(H),
                 "price_move_1sigma": float(c[-1] * s), "horizons": f["horizons"],

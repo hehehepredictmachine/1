@@ -46,7 +46,8 @@ def evidence(preds: list[dict], strategy: str, inst: str) -> dict:
         if route is None:
             why = ("prognoza ceny (regresja, jednostka: cena) – osobny kontekst Kronos w strategii; nie łączona z prawdopodobieństwami"
                    if p.get("unit") == "price" else "brak jawnego mapowania zadania na rolę strategii")
-            excluded.append({"model": p.get("model_key"), "state": "READY", "reason": why})
+            # 1.46: families / research modules have no model_key - the entry read {"model": None} (same fallback as the non-READY branch)
+            excluded.append({"model": p.get("model_key") or p["model_name"], "state": "READY", "reason": why})
             continue
         groups.setdefault(route["group"], []).append((p, route))
     out = []
@@ -54,7 +55,8 @@ def evidence(preds: list[dict], strategy: str, inst: str) -> dict:
         # one correlation group = ONE speaker (best development skill); the others are listed, never averaged in (their task /
         # horizon / unit may differ - such results are not combined)
         scored = [(dev_skill(inst, p.get("model_key"), p["model_version"]), p, r) for p, r in items]
-        scored.sort(key=lambda x: (x[0] is not None, x[0] or -1), reverse=True)
+        # 1.46: a dev skill of exactly 0.0 is a value - `x[0] or -1` ranked it below a negative skill (the worse model spoke)
+        scored.sort(key=lambda x: (x[0] is not None, x[0] if x[0] is not None else float("-inf")), reverse=True)
         sk, p, r = scored[0]
         res = p["result"]
         out.append({"group": grp, "task": p["task"], "horizon_bars": p["horizon"]["bars"], "unit": p["unit"], "role": r.get(strategy),
