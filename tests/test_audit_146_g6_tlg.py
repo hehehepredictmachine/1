@@ -201,3 +201,33 @@ class SpecialPsychoQuestDescription(unittest.TestCase):
         self.assertEqual(q[5], 8)
         self.assertIn("poziomu 2", q[3])
         self.assertIn("umiejętności", q[3])
+
+
+class SharedConnectionIsSerialized(unittest.TestCase):
+    """focus_X3#3: one SQLite connection shared by the API threads; reads ran without the lock -> InterfaceError / missing profile rows when
+    the panel loads /tlg/state, /tlg/quests and /tlg/skills at the same time."""
+
+    def test_parallel_panel_reads_are_complete(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        g = GameService(Path(tmp.name), ReadOnlyAccountView(deals=lambda: []))
+        self.addCleanup(g.close)
+        g.create_profile({"username": "Kuba", "class_id": "THE_ROOKIE", "difficulty": "EASY", "currency": "usd", "virtual_capital": 10000})
+        errors, missing = [], []
+
+        def worker():
+            for _ in range(150):
+                try:
+                    if g._profile(required=False) is None:
+                        missing.append(1)
+                    g.quests()
+                    g.skills()
+                except Exception as exc:  # noqa: BLE001 - collected and asserted below
+                    errors.append(f"{type(exc).__name__}: {exc}")
+        ts = [threading.Thread(target=worker) for _ in range(6)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(120)
+        self.assertEqual(errors[:3], [])
+        self.assertEqual(missing, [])

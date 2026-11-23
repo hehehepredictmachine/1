@@ -140,6 +140,46 @@ def _week(ts: float) -> str:
     return f"{y}-W{w:02d}"
 
 
+class _Result:
+    """Rows fetched while the lock was held (the shared cursor is never read outside it)."""
+    __slots__ = ("_rows", "lastrowid", "rowcount")
+
+    def __init__(self, rows, lastrowid, rowcount):
+        self._rows, self.lastrowid, self.rowcount = rows, lastrowid, rowcount
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _LockedConnection:
+    """1.46: the game's one SQLite connection is shared by the API threads. 1.45.0 ran most reads and several writes without the lock:
+    parallel /tlg/state, /tlg/quests and /tlg/skills of one panel interleaved statements on it (InterfaceError -> 500, a missing profile row
+    -> a false NO_PROFILE / needs_character). Every statement now runs - and is fetched - under the service RLock."""
+
+    def __init__(self, conn: sqlite3.Connection, lock):
+        self._conn, self._lock = conn, lock
+
+    def execute(self, sql, args=()):
+        with self._lock:
+            cur = self._conn.execute(sql, args)
+            rows = cur.fetchall() if cur.description else []
+            return _Result(rows, cur.lastrowid, cur.rowcount)
+
+    def executescript(self, script):
+        with self._lock:
+            return self._conn.executescript(script)
+
+    def close(self):
+        with self._lock:
+            self._conn.close()
+
+
 class GameService:
     def __init__(self, data_dir: Path, account: ReadOnlyAccountView | None = None, clock=time.time):
         self.dir = Path(data_dir)
@@ -147,8 +187,9 @@ class GameService:
         self.account = account if isinstance(account, ReadOnlyAccountView) else ReadOnlyAccountView()
         self.clock = clock
         self._lock = threading.RLock()
-        self.db = sqlite3.connect(str(self.dir / "game.sqlite"), check_same_thread=False, isolation_level=None)
-        self.db.row_factory = sqlite3.Row
+        conn = sqlite3.connect(str(self.dir / "game.sqlite"), check_same_thread=False, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        self.db = _LockedConnection(conn, self._lock)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(_DDL)
         self.db.execute("INSERT OR IGNORE INTO meta(k, v) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -157,12 +198,16 @@ class GameService:
         self.db.close()
 
     # ------------------------------------------------------------------ helpers
+    # 1.46: one connection shared by the API threads - reads ran without the lock; parallel /tlg/state, /quests, /skills of one panel
+    # interleaved statements on it (InterfaceError -> 500, a missing profile row -> false NO_PROFILE / needs_character)
     def _q(self, sql, args=()):
-        return [dict(r) for r in self.db.execute(sql, args).fetchall()]
+        with self._lock:
+            return [dict(r) for r in self.db.execute(sql, args).fetchall()]
 
     def _one(self, sql, args=()):
-        r = self.db.execute(sql, args).fetchone()
-        return dict(r) if r else None
+        with self._lock:
+            r = self.db.execute(sql, args).fetchone()
+            return dict(r) if r else None
 
     def _profile(self, required=True):
         p = self._one("SELECT * FROM profile WHERE id = 1")
