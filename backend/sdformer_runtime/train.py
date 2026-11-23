@@ -98,7 +98,7 @@ def main(argv=None) -> int:
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     epoch0, step, best = 0, 0, float("inf")
     if a.op in ("fine_tune", "resume"):
-        ck = torch.load(Path(a.checkpoint) / "last.pt", map_location="cpu", weights_only=False)
+        ck = torch.load(Path(a.checkpoint) / "last.pt", map_location="cpu", weights_only=True)   # 1.46: no pickle code execution (imported ZIP)
         if ck.get("implementation_id") != IMPLEMENTATION_ID or ck.get("arch") != model.arch:
             print("RESULT " + json.dumps({"ok": False, "code": "INCOMPATIBLE", "error": "checkpoint innej implementacji / architektury"}))
             return 1

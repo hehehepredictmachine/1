@@ -165,6 +165,9 @@ class ResearchModulesService:
         return bool(s.get("enabled", True)) and bool(((s.get("modules") or {}).get(m) or {}).get("enabled", True))
 
     # ------------------------------------------------------------------ contexts
+    def _bridge_symbol(self) -> str | None:
+        return getattr(getattr(getattr(self.rt, "bridge", None), "cfg", None), "symbol", None)
+
     def _bridge_bars(self, tf: str, n: int = 1500) -> list[dict]:
         br = getattr(self.rt, "bridge", None)
         if br is None:
@@ -186,11 +189,13 @@ class ResearchModulesService:
             inst = self.rt.sh.instrument()
         except Exception:  # noqa: BLE001
             inst = "XAUUSD"
-        sym = getattr(getattr(getattr(self.rt, "bridge", None), "cfg", None), "symbol", None) or inst
+        sym = self._bridge_symbol() or inst
         key = f"FOREX_MT5|MT5|{'SYNTHETIC' if getattr(self.rt, 'demo', False) else 'LIVE'}|ACCOUNT|CFD|{sym}"
         with self._lock:
             if key not in self.contexts:
-                c = Context(key, inst, self._bridge_bars)
+                # 1.46: a main context reads ONLY its own symbol - after an asset switch the old context waits (no bars) instead of learning
+                # from the new symbol's candles (move = new close - stored close of the old symbol corrupted weights / cell PnL)
+                c = Context(key, inst, lambda tf, n=1500, _sym=sym: self._bridge_bars(tf, n) if (self._bridge_symbol() or inst) == _sym else [])
                 self._load_ctx(c)
                 self.contexts[key] = c
             return self.contexts[key]
@@ -364,8 +369,12 @@ class ResearchModulesService:
         if j and j.get("state") in ("RUNNING", "QUEUED"):
             c.sdf = {**st, "state": "TRAINING", "job": j}
             return
-        if j and j.get("state") == "FAILED" and time.time() - j.get("finished_at", 0) < 6 * 3600:
-            c.sdf = {**st, "state": "ERROR", "reason": j.get("error"), "job": j}
+        if j and j.get("state") == "CANCELLED":           # 1.46: the user's cancel is final for the automatic bootstrap (manual start only)
+            c.sdf = {**st, "state": "MISSING", "reason": "bootstrap anulowany przez użytkownika – trening tylko ręcznie (panel)", "job": j}
+            return
+        failed = j and (j.get("state") == "FAILED" or (j.get("state") == "DONE" and not run))      # DONE without an active run = activation failed
+        if failed and time.time() - j.get("finished_at", 0) < 6 * 3600:
+            c.sdf = {**st, "state": "ERROR", "reason": j.get("error") or "trening zakończony bez aktywnego checkpointu", "job": j}
             return
         if len(h1) < 600:
             c.sdf = {**st, "state": "NO_DATA", "reason": f"za mało zamkniętych świec H1 ({len(h1)} < 600) do bootstrap treningu"}

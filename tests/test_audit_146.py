@@ -182,3 +182,101 @@ class TestAgentGateAndBudget(unittest.TestCase):
         self.assertEqual(self.agent._cost("claude-opus-5-5-20261101", usage), 4.0)             # dated id -> base model price
         self.assertEqual(self.agent._cost("some-unknown-model", usage, requested="claude-opus-5-5"), 4.0)
         self.assertEqual(self.agent._cost("some-unknown-model", usage), 10.0)                  # no price at all -> upper bound, never 0 / None
+
+
+class TestQuoteBandUnscored(unittest.TestCase):
+    """1.45.0: an UNSCORED_GAP row (no 'error') in QuoteEngine.matured made every later _band() raise KeyError -> quote forecasts frozen."""
+
+    def test_band_ignores_unscored_rows(self):
+        from masterquo.lab import quotes as Q
+        eng = Q.QuoteEngine("X", 0.01, 0.01, {"calib_min": 2})
+        eng.matured = [{"side": "BID", "scale": 20, "se_model": 0.5, "status": "UNSCORED_GAP"},
+                       {"side": "BID", "scale": 20, "se_model": 0.5, "status": "SCORED", "error": 0.25},
+                       {"side": "BID", "scale": 20, "se_model": 0.5, "status": "SCORED", "error": -0.5}]
+        b = eng._band("BID", 20, 0.5)
+        self.assertEqual((b["status"], b["n"]), ("EMPIRICAL", 2))
+        eng.matured = eng.matured[:1]
+        self.assertEqual(eng._band("BID", 20, 0.5)["status"], "MODEL_BAND_UNCALIBRATED")
+
+
+class TestSetupDatasetNoLookahead(unittest.TestCase):
+    """1.45.0: build_setup_dataset mapped a setup to the M1 that OPENS at the decision time (decision = CLOSE of the trigger bar) - features
+    and windows contained the first minute after the decision (the entry bar)."""
+
+    def test_setup_maps_to_trigger_bar(self):
+        from masterquo.lab import structure_task as ST
+        t0 = 1_795_000_020
+        t0 -= t0 % 60
+        tpos = {t0 + 60 * k: k for k in range(5)}
+        trigger = 2                                                     # bar opening at t0+120 closes at t0+180 = decision time
+        sig = __import__("datetime").datetime.fromtimestamp(t0 + 60 * trigger + 60, __import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
+        self.assertEqual(ST.setup_bar_index(tpos, sig), trigger)
+
+
+class TestNoPickleCheckpointLoads(unittest.TestCase):
+    """1.45.0: sdformer_runtime infer.py / train.py loaded last.pt (also from an imported ZIP) with torch.load(weights_only=False) - a crafted
+    pickle executes code in the process that holds the MT5 session and the secrets. Every torch.load in the runtimes must be weights_only=True."""
+
+    def test_every_torch_load_is_weights_only(self):
+        import ast
+        from pathlib import Path
+        root = Path(_env.ROOT) / "backend"
+        bad = []
+        for p in [x for x in root.rglob("*.py") if "vendor" not in x.parts and "__pycache__" not in x.parts]:
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "load" and \
+                        isinstance(n.func.value, ast.Name) and n.func.value.id == "torch":
+                    kw = {k.arg: k.value for k in n.keywords}
+                    v = kw.get("weights_only")
+                    if not (isinstance(v, ast.Constant) and v.value is True):
+                        bad.append(f"{p.relative_to(root)}:{n.lineno}")
+        self.assertEqual(bad, [])
+
+
+class TestResearchContexts(unittest.TestCase):
+    """1.45.0: (a) after an asset switch the old main research context kept learning from the NEW symbol's candles; (b) the automatic SDformerFlow
+    bootstrap restarted every H1 bar after the user CANCELLED it (and after a DONE run that left no active checkpoint)."""
+
+    def _svc(self, d):
+        import types
+        from pathlib import Path
+
+        from masterquo.research import service as RS
+        bars = [{"open_utc": f"2026-11-20T{h:02d}:{m:02d}:00Z", "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "tv": 1} for h in range(10) for m in range(0, 60, 5)]
+
+        class Br:
+            cfg = types.SimpleNamespace(symbol="EURUSD-")
+
+            def bars(self, tf, include_forming=False):
+                return bars
+        rt = types.SimpleNamespace(demo=True, bridge=Br(), sh=types.SimpleNamespace(instrument=lambda: "XAUUSD"))
+        return RS.ResearchModulesService(rt, data_dir=Path(d)), rt
+
+    def test_old_context_gets_no_bars_of_the_new_symbol(self):
+        import tempfile
+        svc, rt = self._svc(tempfile.mkdtemp())
+        old = svc.ensure_main_context()
+        self.assertGreater(len(old.bars_fn("M5", 1500)), 0)
+        rt.bridge.cfg.symbol = "XAUUSD-"                                     # asset switch
+        new = svc.ensure_main_context()
+        self.assertNotEqual(old.key, new.key)
+        self.assertEqual(old.bars_fn("M5", 1500), [])                        # the EURUSD context waits instead of reading XAUUSD
+        self.assertGreater(len(new.bars_fn("M5", 1500)), 0)
+
+    def test_cancelled_bootstrap_is_not_restarted(self):
+        import tempfile
+        import time
+        from unittest import mock
+        svc, _ = self._svc(tempfile.mkdtemp())
+        c = svc.ensure_main_context()
+        h1 = [{"t": 1_700_000_000 + 3600 * i, "o": 1, "h": 1, "l": 1, "c": 1, "tv": 1} for i in range(700)]
+        started = []
+        with mock.patch("masterquo.research.service.torch_python", return_value="/x/python"), \
+                mock.patch.object(svc, "start_training", side_effect=lambda *a, **k: started.append(1) or {"ok": True}):
+            svc.jobs["sdformer_bootstrap"] = {"state": "CANCELLED", "finished_at": time.time()}
+            svc._sdformer(c, h1)
+            self.assertEqual((started, c.sdf["state"]), ([], "MISSING"))
+            svc.jobs["sdformer_bootstrap"] = {"state": "DONE", "finished_at": time.time()}     # done, but no active checkpoint
+            svc._sdformer(c, h1)
+            self.assertEqual((started, c.sdf["state"]), ([], "ERROR"))

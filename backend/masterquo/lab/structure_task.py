@@ -274,6 +274,13 @@ def load_dataset(d: Path, task: str) -> dict:
             "rows_idx": arr["rows_idx"], **({k: arr[k] for k in ("setup_y", "setup_r", "setup_idx")} if "setup_y" in arr else {})}
 
 
+def setup_bar_index(tpos: dict[int, int], signal_time: str) -> int | None:
+    """1.46: row of the TRIGGER bar of a setup. signal_time = decision time = CLOSE of the trigger M1 (scalp Series.close_time = open + 60 s),
+    while tpos is keyed by M1 OPEN time - 1.45.0 looked up the bar that OPENS at the decision (one minute after it: look-ahead into the
+    entry bar, whose high / low / close decide TP1 / SL)."""
+    return tpos.get(int(_ts(signal_time)) - 60)
+
+
 def build_setup_dataset(inst: str, ds: Path, commission: float | None = None, log=print) -> dict:
     """Real qualifying setups only (scalp replay with costs); no setups -> NO_SETUP."""
     from ..ml import scalp_task as stk
@@ -283,7 +290,7 @@ def build_setup_dataset(inst: str, ds: Path, commission: float | None = None, lo
     ev = {"TP1": 0, "SL": 1, "TIME": 2, "TIMEOUT": 2}
     sy, sr, si = [], [], []
     for r in base["rows"]:
-        b = tpos.get(int(_ts(r["signal_time"])))
+        b = setup_bar_index(tpos, r["signal_time"])
         k = ev.get(str(r.get("first_exit") or "").upper().split("_")[0])
         if b is None or k is None or b < WARMUP:
             continue

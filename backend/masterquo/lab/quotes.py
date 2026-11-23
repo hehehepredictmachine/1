@@ -358,7 +358,8 @@ class QuoteEngine:
         return out
 
     def _band(self, side: str, N: int, se: float) -> dict:
-        errs = [abs(m["error"]) / m["se_model"] for m in self.matured if m["side"] == side and m["scale"] == N and m.get("se_model")]
+        errs = [abs(m["error"]) / m["se_model"] for m in self.matured                 # 1.46: only SCORED rows carry an error (UNSCORED_GAP
+                if m["side"] == side and m["scale"] == N and m.get("se_model") and m.get("error") is not None]   # raised KeyError forever)
         if len(errs) < self.cfg["calib_min"]:
             return {"status": "MODEL_BAND_UNCALIBRATED", "n": len(errs)}
         k = float(np.quantile(errs, self.cfg["band_q"]))
