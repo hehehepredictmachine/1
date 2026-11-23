@@ -34,6 +34,53 @@ class TestMarketZonesEmptySeries(unittest.TestCase):
         self.assertIn("M5", str(out))
 
 
+class TestBootstrapProbe(unittest.TestCase):
+    """1.45.0: Bootstrap.verify_all raised KeyError 'tabicl' (tsfm_runtime.lock has no such model) -> the bootstrap thread died on every start,
+    the components after it were never verified and no heavy runtime was ever queued."""
+
+    def test_verify_all_survives_and_tabicl_uses_its_own_env(self):
+        import pathlib
+        import tempfile
+        import types
+
+        from masterquo.bootstrap import COMPONENTS, Bootstrap
+        from masterquo.tsfm.service import TsfmService
+        from masterquo.tsfm.settings import SettingsStore
+        td = pathlib.Path(tempfile.mkdtemp())
+        st = SettingsStore(td / "s.json")
+
+        class Svc:
+            settings = st
+            jobs: dict = {}
+
+            def env_status(self, mid):
+                return TsfmService.env_status(self, mid)
+
+            def weights_root(self):
+                return td / "w"
+        b = Bootstrap(types.SimpleNamespace(tsfm=Svc(), kronos=None, demo=False), state_file=td / "b.json")
+        out = b.verify_all()
+        states = {c["id"]: c["state"] for c in out["components"]}
+        self.assertEqual(len(states), len(COMPONENTS))
+        self.assertEqual(states["tsfm_tabicl"], "NOT_INSTALLED")          # not a crash, not FAILED: the env / weights are simply absent
+        self.assertEqual(states["kronos_model"], "NOT_INSTALLED")        # the component AFTER tabicl is verified too
+        self.assertTrue(all(v != "PENDING" for v in states.values()))
+
+    def test_a_raising_probe_is_recorded_not_fatal(self):
+        import pathlib
+        import tempfile
+
+        from masterquo.bootstrap import Bootstrap
+
+        def boom():
+            raise KeyError("x")
+        td = pathlib.Path(tempfile.mkdtemp())
+        b = Bootstrap(state_file=td / "b.json", probes={"tsfm_chronos2": boom})
+        states = {c["id"]: c for c in b.verify_all()["components"]}
+        self.assertEqual(states["tsfm_chronos2"]["state"], "FAILED")
+        self.assertIn("PROBE_ERROR", states["tsfm_chronos2"]["detail"])
+
+
 class TestApiInputValidation(unittest.TestCase):
     """Smoke test 1.45.0: these requests answered 500 (Internal Server Error) - now 400 with a reason."""
 

@@ -131,6 +131,10 @@ class Bootstrap:
                 return True, FEATURE_MODULES[cid]
             except Exception as exc:  # noqa: BLE001
                 return False, f"{type(exc).__name__}: {exc}"[:200]
+        if cid == "tsfm_tabicl":                     # 1.46: TabICLv2 is NOT a TSFM model id (tsfm MODEL_IDS) - own env + weights (quant/tabicl.py)
+            from .quant import tabicl as QT
+            inst = QT.installed()
+            return bool(inst.get("python") and inst.get("weights")), ".venv_tabicl + wagi"
         if cid.startswith("tsfm_"):
             svc = getattr(self.rt, "tsfm", None)
             if svc is None:
@@ -154,6 +158,13 @@ class Bootstrap:
     def _installer(self, cid: str):
         if cid in self.installers:
             return self.installers[cid]
+        if cid == "tsfm_tabicl" and getattr(self.rt, "tsfm", None) is not None:     # 1.46: the existing TabICL installer (API /quant/tabicl/install)
+            import sys
+            from .tsfm.settings import default_weights_root
+            svc = self.rt.tsfm
+            argv = [sys.executable, str(paths.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(paths.ROOT_DIR),
+                    "--weights-root", str(default_weights_root())]
+            return (lambda: svc._run_job_proc("install_tabicl", argv)), (lambda: (svc.jobs.get("install_tabicl") or {}).get("state"))
         if cid.startswith("tsfm_") and getattr(self.rt, "tsfm", None) is not None:
             svc, mid = self.rt.tsfm, cid[5:]
             return (lambda: svc.start_install(mid)), (lambda: (svc.jobs.get(f"install_{mid}") or {}).get("state"))
@@ -170,7 +181,11 @@ class Bootstrap:
             if not deps_ok:
                 self._set(cid, "BLOCKED", "zależność niegotowa")
                 continue
-            ok, detail = self._probe(cid)
+            try:
+                ok, detail = self._probe(cid)
+            except Exception as exc:  # noqa: BLE001 - 1.46: one bad probe must not kill the whole bootstrap thread (was KeyError 'tabicl')
+                self._set(cid, "FAILED", f"PROBE_ERROR {type(exc).__name__}: {exc}"[:200])
+                continue
             self._set(cid, "VERIFIED" if ok else ("NOT_INSTALLED" if comps[cid][4] else "FAILED"), detail)
         return self.status()
 
@@ -191,6 +206,8 @@ class Bootstrap:
                 continue
             start, poll = inst
             r = start() or {}
+            if not r.get("ok", True) and "już trwa" in str(r.get("reason")):
+                r = {"ok": True}                       # 1.46: the same installer already runs (e.g. upgrade auto_install) - wait for it, never a 2nd one
             if not r.get("ok", True):
                 self._set(cid, "FAILED", str(r.get("reason") or r))
                 done.append({"id": cid, "state": "FAILED"})
@@ -215,8 +232,13 @@ class Bootstrap:
         def run():
             if self._stop.wait(delay_s):
                 return
-            self.verify_all()
-            self.run_heavy()
+            try:
+                self.verify_all()
+                self.run_heavy()
+            except Exception as exc:  # noqa: BLE001 - 1.46: a crash is recorded in the state file instead of a silent thread death
+                with self._lock:
+                    self.state["error"] = f"{type(exc).__name__}: {exc}"[:300]
+                    self._save()
         self._thread = threading.Thread(target=run, name="bootstrap", daemon=True)
         self._thread.start()
         return True
