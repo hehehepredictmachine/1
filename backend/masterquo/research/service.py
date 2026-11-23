@@ -21,7 +21,6 @@ import logging
 import math
 import os
 import subprocess
-import sys
 import threading
 import time
 from datetime import datetime, timezone

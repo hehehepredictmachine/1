@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import json
-import re
 
 import numpy as np
 import pandas as pd

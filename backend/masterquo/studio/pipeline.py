@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .package import ARTIFACT, DATASET, EVAL, LOADER, RAW, VAL_DS, VAL_RAW, Package, atomic_json, read_json
+from .package import ARTIFACT, DATASET, RAW, VAL_RAW, Package, atomic_json, read_json
 
 VERSION = "PMW-STUDIO-PIPE-1"
 FULL_HISTORY_FROM = 946684800            # 2000-01-01: "all available history" - the source decides what exists

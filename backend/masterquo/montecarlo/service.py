@@ -5,7 +5,6 @@ result says that the variant was NOT chosen by validation and that the probabili
 from __future__ import annotations
 
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 
 from . import engine as E

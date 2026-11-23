@@ -257,7 +257,6 @@ class TrainingCenter:
         return {k: v for k, v in res.items() if k != "source"}
 
     def _child(self, jid: str) -> None:
-        from .registry import root
         job = self.get(jid)
         th = str(max(1, (os.cpu_count() or 2) // 2))
         env = dict(os.environ, PYTHONIOENCODING="utf-8", OMP_NUM_THREADS=th, MKL_NUM_THREADS=th, OPENBLAS_NUM_THREADS=th, MQ_TRAINING="1")

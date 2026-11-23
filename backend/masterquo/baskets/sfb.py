@@ -86,7 +86,6 @@ def _block_bootstrap_lcb(xs: list[float], block: int, reps: int, conf: float, se
     if n < 2:
         return None
     rnd = random.Random(seed)
-    nb = max(1, n // block)
     means = []
     for _ in range(reps):
         s = []

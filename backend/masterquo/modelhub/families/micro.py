@@ -11,7 +11,6 @@ DOM of the XAUUSD broker is that broker's quote book, not the global gold market
 from __future__ import annotations
 
 import json
-import math
 
 import numpy as np
 

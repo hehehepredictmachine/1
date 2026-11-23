@@ -467,7 +467,6 @@ class TiRex2Engine(BaseEngine):
                 "note": "kwantyle TiRex-2 (0,1–0,9; nieskalibrowane na danych użytkownika); punkt = mediana (kwantyl 0,5)"}
 
     def _direct(self, close, H, qs) -> dict:
-        import numpy as np
         import torch
         from tirex2 import TimeseriesType
         with torch.inference_mode():                                                        # official call, own conversion of the output

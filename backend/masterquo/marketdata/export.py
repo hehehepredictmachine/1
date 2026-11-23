@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from . import quality as Q
 from .sources import SourceError, retry

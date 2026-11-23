@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from ..zones import dsvie as DS
 from ..zones.series import Series

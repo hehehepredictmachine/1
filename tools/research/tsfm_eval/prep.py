@@ -1,4 +1,4 @@
-import csv, json, sys
+import csv, json
 from datetime import datetime
 rows=[]
 for fn in ("m1_2025.csv","m1_202601.csv"):

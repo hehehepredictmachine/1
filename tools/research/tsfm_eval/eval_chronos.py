@@ -1,6 +1,6 @@
 import sys, os, json, time, resource, glob
 sys.path.insert(0, os.path.dirname(__file__))
-import numpy as np, torch
+import torch
 from common import *
 from chronos import Chronos2Pipeline
 torch.set_num_threads(4)

@@ -9,7 +9,7 @@ import time
 import numpy as np
 import pandas as pd
 from .analysis import analyze
-from .data import Config, DataError, clean_json, read_csv, utc, validate_bars, write_json
+from .data import Config, DataError, clean_json, read_csv, validate_bars, write_json
 from .model import load_model, train
 from .mt5_reader import read_mt5
 
