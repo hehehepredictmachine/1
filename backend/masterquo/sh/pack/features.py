@@ -4,7 +4,7 @@
   series uses inputs 0..i only; warm-up positions are None (WARMING_UP), never back-filled.
 * SELL is the exact mirror of BUY: a mirrored view negates prices and swaps high/low (o'=-o, h'=-l, l'=-h, c'=-c), so every rule is
   written once for BUY and evaluated on the mirror for SELL (all inequalities, highs/lows, signs and indicator sides flip together).
-  Levels returned by a rule on the mirror are mapped back with level_out().
+  Levels returned by a rule on the mirror are mapped back with TF.out().
 * Indicators: EMA (SMA seed), Wilder ATR/ADX/RSI, BB(20,2) + BandWidth, Stochastic(14,3,3), MACD(12,26,9), Donchian of PRIOR bars,
   confirmed pivots 2/2 (known only after the two right bars closed), session VWAP from an anchor (tick volume = feed activity, not global
   gold volume; zero volume -> NO_DATA, never replaced by ones), std of log returns.
@@ -235,10 +235,6 @@ class TF:
         return self._m(("sigma", window), calc)
 
 
-def warm_needed(tf: str, ema_max: int, mult: int = 5) -> int:
-    return ema_max * mult
-
-
 def trend_up(v: TF, i: int, htf: bool) -> bool | None:
     """TrendUp(H1): close > EMA50 > EMA200 and EMA50 rising over 3 bars; TrendUp(LTF): close > EMA20 > EMA50, EMA20 rising over 3 bars.
     None = not enough history (WARMING_UP), never 'neutral'."""
@@ -348,9 +344,6 @@ class Context:
             p["session_start"], p["session_end"] = iso(prev), iso(cur)
             self._prof[key] = p
         return self._prof[key]
-
-
-VOL_METHODS = ("STD_LOGRET_60_M5", "VOL_GARCH")
 
 
 def vol_series(m5: TF, method: str, *, window: int = 60, garch: dict | None = None) -> tuple[list | None, str]:

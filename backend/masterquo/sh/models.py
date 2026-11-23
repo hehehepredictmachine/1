@@ -263,6 +263,8 @@ def matrix(rt, inst: str) -> dict:
     return {"instrument": inst, "rows": rows,
             "mode": "PEŁNA" if tp["status"] == "READY" else "OGRANICZONA",
             "mode_note": None if tp["status"] == "READY" else
-            ("TRYB OGRANICZONY (zdefiniowany): brak skalibrowanego modelu zdarzenia strategii – setup ma tylko score, "
-             "sygnały wyłącznie SIGNALS/PAPER; AUTO zablokowane do czasu treningu i walidacji sh_tp_model"),
+            # 1.46: the text matches the 1.39 user decision (risk.evaluate: AUTO_LIVE only warns, AUTO_DEMO does not check the model)
+            ("TRYB OGRANICZONY (zdefiniowany): brak skalibrowanego modelu zdarzenia strategii – setup ma tylko score, bez prawdopodobieństwa. "
+             "Od 1.39 (decyzja użytkownika) bramka modelu jest zdjęta: AUTO_DEMO i AUTO_LIVE są dozwolone, AUTO_LIVE pokazuje ostrzeżenie "
+             "(wcześniej: AUTO zablokowane do czasu treningu i walidacji sh_tp_model)."),
             "correlation_groups": sorted({r["group"] for r in rows})}

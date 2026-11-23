@@ -134,7 +134,9 @@ def simulate(m1: list[dict], j_entry: int, su: dict, *, spread_fb: float, slip: 
     fill = (b0["o"] + sp0 + slip) if side == "BUY" else (b0["o"] - slip)
     sl, tp1, tp2 = su["sl"], su["tps"][0]["price"], su["tps"][1]["price"]
     econ = su["pack"]["economics"]
-    hl = float(econ.get("hedge_loss_bound_price") or 0.0) if hedge_ctx else 0.0
+    # 1.46: R of the PLAN in every mode (HEDGE / NO_HEDGE / REDUCE): the plan's initial budget r + C + bounded hedge loss - comparing the modes
+    # in different R units made the same money result a different net_r (a SCALPING plan has no hedge bound: 0)
+    hl = float(econ.get("hedge_loss_bound_price") or 0.0)
     r_plan = abs(su["entry_ref"] - sl)
     R = r_plan + c_rt + hl
     if sg * (fill - sl) <= 0 or sg * (tp1 - fill) <= 0:
@@ -186,7 +188,7 @@ def simulate(m1: list[dict], j_entry: int, su: dict, *, spread_fb: float, slip: 
             end_reason = "SL"
             rem = 0.0
             if hedge:
-                hp = sl + (sp if side == "BUY" else -sp)
+                hp = px + (sp if side == "BUY" else -sp)                  # 1.46: same moment / gap price as the base (was the SL level)
                 hedge_pnl += -sg * (hp - hedge["entry"]) * hedge["vol"]
                 hedge = None
             break
@@ -269,7 +271,16 @@ def simulate(m1: list[dict], j_entry: int, su: dict, *, spread_fb: float, slip: 
         sp = bar.get("spread_price") if bar.get("spread_price") is not None else spread_fb
         realized += rem * sg * (_px_close(bar, side, sp, "c") - fill)
         end_reason = end_reason or "DATA_END"
-    cost = c_rt * (1.0 + extra_vol)
+    if hedge:                                                            # 1.46: an open hedge leg is settled too (was left out of hedge_pnl)
+        bar = m1[-1]
+        sp = bar.get("spread_price") if bar.get("spread_price") is not None else spread_fb
+        hp = bar["c"] + (sp if side == "BUY" else 0.0)                   # opposite side closes on the other quote
+        hedge_pnl += -sg * (hp - hedge["entry"]) * hedge["vol"]
+        hedge = None
+    # 1.46: the entry slippage is already in the fill price of the base (and of the hedge leg's entry), so of c_rt = 2*slip + commission
+    # only the exit slippage + commission remain for those legs; a REDUCE part (closed / re-opened at the bar price) pays the full c_rt
+    c_rest = c_rt - slip
+    cost = c_rest + (c_rest if mode == "HEDGE" else c_rt) * extra_vol
     net = realized + hedge_pnl - cost
     t_end = F.ts(m1[min(j, len(m1) - 1)]["open_utc"])
     return {"path": "→".join(path) or end_reason, "end": end_reason, "net_r": net / R, "gross_price": realized, "hedge_price": hedge_pnl,
@@ -321,7 +332,8 @@ def stats(trades: list[dict], seed: int = 7, boot: int = 1000) -> dict:
             "avg_loss_r": round(sum(loss) / len(loss), 4) if loss else None, "max_drawdown_r": round(dd, 3),
             "expectancy_ci95_day_block": [round(bs[int(0.025 * len(bs))], 4), round(bs[int(0.975 * len(bs)) - 1], 4)] if bs else None,
             "avg_minutes": round(sum(t["minutes"] for t in trades) / n, 1), "ambiguous_stop_first": sum(1 for t in trades if t["ambiguous"]),
-            "expectancy_ex_ambiguous": round(sum(t["net_r"] for t in trades if not t["ambiguous"]) / max(1, sum(1 for t in trades if not t["ambiguous"])), 4),
+            "expectancy_ex_ambiguous": (round(sum(t["net_r"] for t in trades if not t["ambiguous"]) / sum(1 for t in trades if not t["ambiguous"]), 4)
+                                        if any(not t["ambiguous"] for t in trades) else None),     # 1.46: no unambiguous trade = None, not 0R
             "mae_r_avg": round(sum(t["mae_r"] for t in trades) / n, 3), "mfe_r_avg": round(sum(t["mfe_r"] for t in trades) / n, 3),
             "paths": paths, "segments": [{"n": len(s), "expectancy_r": round(sum(s) / len(s), 4)} for s in segs if s],
             "days": len(days)}
@@ -360,6 +372,11 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
     eng = PackEngine()
     pipdef = (cfg["instruments"] or {}).get(meta.get("instrument") or "XAUUSD")
     ic = {"slippage_usd": slip, "commission_per_lot_side": None}
+    mpp = None
+    if commission_price_rt is not None:
+        # 1.46: the plans are solved with the SAME known commission the simulation charges (was always the 0.10 scenario in the solver):
+        # price units per 1.0 volume (mpp 1) -> SV.costs gives commission_price_rt = 2 * side / 1 exactly
+        ic, mpp = {"slippage_usd": slip, "commission_per_lot_side": commission_price_rt / 2.0}, 1.0
     c_rt = 2 * slip + (commission_price_rt if commission_price_rt is not None else float(cfg["common"].get("commission_scenario_price_rt", 0.10)))
     m1 = bars["M1"]
     m5_full = bars["M5"]
@@ -392,7 +409,7 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
                 if busy.get(key, 0) > t:
                     continue
                 eng.active.clear()
-                su = eng._one(X, v, tf, X.instrument, spec, ic, q, t, pipdef, cfg, None, "USD")
+                su = eng._one(X, v, tf, X.instrument, spec, ic, q, t, pipdef, cfg, mpp, "USD")
                 c = counts.setdefault(f"{vid}|{tf}", {})
                 code = (su.get("pack") or {}).get("reason_code") or su["status"]
                 c[f"{su['status']}:{code}"] = c.get(f"{su['status']}:{code}", 0) + 1
@@ -446,14 +463,15 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
             if tfs_only and tf not in tfs_only:
                 continue
             key = f"{vid}|{tf}"
-            row = {"counts": counts.get(key, {})}
+            row = {"counts": counts.get(key, {}), "config_hash": v["config_hash"]}       # 1.46: the variant configuration of this verdict
             if v["family"] == "HEDGING":
                 modes = {m: stats(trades.get(f"{key}|{m}", [])) for m in ("HEDGE", "NO_HEDGE", "REDUCE")}
                 e = {m: (s.get("expectancy_r") if s.get("n") else None) for m, s in modes.items()}
                 dom = None
                 if e["HEDGE"] is not None:
-                    better = [m for m in ("REDUCE", "NO_HEDGE") if e[m] is not None and e[m] > e["HEDGE"] and
-                              (modes[m].get("max_drawdown_r") or -1e9) >= (modes["HEDGE"].get("max_drawdown_r") or -1e9)]
+                    # 1.46: a drawdown of 0.0 is a value (no drawdown), not "missing" - only None is the worst case
+                    dd = {m: (s["max_drawdown_r"] if s.get("max_drawdown_r") is not None else -1e9) for m, s in modes.items()}
+                    better = [m for m in ("REDUCE", "NO_HEDGE") if e[m] is not None and e[m] > e["HEDGE"] and dd[m] >= dd["HEDGE"]]
                     dom = better[0] if better else None
                 row.update(modes=modes, hedge_comparison={"expectancy": e, "dominated_by": dom,
                                                           "activations": sum(t.get("activations", 0) for t in trades.get(f"{key}|HEDGE", [])),
@@ -490,7 +508,9 @@ def write(rep: dict, live: bool = True) -> dict:
             vds = [r["verdict"] for r in rows]
             vd = "VALIDATED" if all(x == "VALIDATED" for x in vds) else ("REJECTED_OOS" if "REJECTED_OOS" in vds else "INSUFFICIENT_EVIDENCE")
             obj = {"strategy_id": vid, "verdict": vd, "verdict_reason": "; ".join(f"{k}: {r['verdict_reason']}" for k, r in zip(vds, rows))[:600],
-                   "report_id": rep["report_id"], "data_kind": rep["data_kind"], "created_at": rep["created_at"]}
+                   "report_id": rep["report_id"], "data_kind": rep["data_kind"], "created_at": rep["created_at"],
+                   # 1.46 (additive): the verdict holds only for this variant configuration (catalog.validation_status compares it)
+                   "config_hash": rows[0].get("config_hash"), "pack_version": rep.get("pack_version"), "pack_hash": rep.get("pack_hash")}
             q = d / f"{vid}.json"
             q.write_text(json.dumps(obj, indent=1, ensure_ascii=False), encoding="utf-8")
             written.append(str(q))

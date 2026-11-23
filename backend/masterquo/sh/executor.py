@@ -28,6 +28,8 @@ class SHExecutor:
         self.deviation = int(deviation_points)
         self.is_demo = is_demo
         self.is_live = is_live
+        # 1.46 note: live_check and log are kept for call compatibility only - since 1.39 _gate does not read the validation result
+        # (the AUTO_LIVE validation warning comes from risk.evaluate) and nothing is logged from here.
         self.live_check = live_check or (lambda strategy: {"ok": False, "reason": "brak walidacji ścieżki SH na danych klienta"})
         self.symbol_info = symbol_info or {}
         self.log = log or (lambda *a, **k: None)
@@ -192,6 +194,8 @@ class SHExecutor:
         if self.terminal is None:
             return []
         ds = self.terminal(lambda m: m.history_deals_get(position=int(ticket))) or ()
+        # 1.46: every closing deal - DEAL_ENTRY_OUT (1), INOUT (2, reversal) and OUT_BY (3, 'Close By' of the primary with the hedge on
+        # a hedging account); OUT only made a Close By look like "no deal" and the caller substituted a price
         return [{"ticket": int(d.ticket), "entry": int(d.entry), "volume": float(d.volume), "price": float(d.price), "time": float(d.time),
-                 "comment": str(d.comment)} for d in ds if int(d.entry) == 1]
+                 "comment": str(d.comment)} for d in ds if int(d.entry) in (1, 2, 3)]
 
