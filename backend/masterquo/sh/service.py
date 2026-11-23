@@ -1053,7 +1053,11 @@ class SHService:
         prim = sum(r["volume"] * r["move"] for r in pos.realized) * mpp
         hedge = b.hedge_realized_money if b else 0.0
         gross = prim + hedge
-        sl_risk = abs(pos.entry - pos.sl) * pos.volume * mpp
+        try:                                                     # 1.46: R from the INITIAL risk (frozen plan SL), never from the current SL
+            sl0 = float(((row.get("plan") or {}).get("setup") or {})["sl"])     # (after BE the current SL ~ entry: R was ~7x too big or None)
+        except (KeyError, TypeError, ValueError):
+            sl0 = pos.sl
+        sl_risk = abs(pos.entry - sl0) * pos.volume * mpp
         return {"primary_money": round(prim, 2), "hedge_money": round(hedge, 2), "gross_money": round(gross, 2),
                 "commission_money": None if comm_money is None else round(comm_money, 2),
                 "net_money": round(gross - (comm_money or 0.0), 2), "commission_known": comm is not None,

@@ -396,3 +396,21 @@ class TestTrainingImportTraversal(unittest.TestCase):
                 panel.import_package(self._zip("../../../tmp/x", "run1"))
         finally:
             td.close()
+
+
+class TestShRMultipleInitialRisk(unittest.TestCase):
+    """1.45.0: sh/service.cycle_result divided the result by |entry - CURRENT sl|; after BE (TP2) the SL sits at entry(+costs) -> R ~7x too big
+    or None. R must use the plan's initial (frozen) stop."""
+
+    def test_r_from_initial_stop_after_be(self):
+        import types
+
+        from masterquo.sh.lifecycle import Leg, Position
+        from masterquo.sh.service import SHService
+        pos = Position("P1", "BUY", 2000.0, 1.0, 2000.3, [Leg("TP1", 2004.0, 1.0, status="DONE", fill_price=2004.0, fill_volume=1.0)])
+        pos.realized = [{"volume": 1.0, "move": 4.0}]
+        pos.remaining = 0.0
+        row = {"plan": {"setup": {"sl": 1998.0}, "instrument_profile": {"commission_per_lot_side": 0.0}}, "plan_id": "P1"}
+        spec = types.SimpleNamespace(money_per_price=lambda v: 100.0)
+        res = SHService.cycle_result(types.SimpleNamespace(store=None), row, pos, spec)
+        self.assertEqual(res["r_multiple"], 2.0)                    # +4.00 move / 2.00 initial risk (not / 0.30 after BE)
