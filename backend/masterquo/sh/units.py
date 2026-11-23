@@ -8,7 +8,7 @@ silently rescaled."""
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 EPS = 1e-9
 
@@ -54,9 +54,7 @@ class SymbolSpec:
             raise UnitError(f"QUOTE_CURRENCY_{self.currency_profit or 'UNKNOWN'}_NEEDS_EXPLICIT_UNIT_CONVERSION")
 
     # ------------------------------------------------------------------ prices
-    def ticks(self, price: float) -> float:
-        return price / self.tick_size
-
+    # 1.46: the unused SymbolSpec.ticks() and the unused Costs class (a second, conflicting round_trip_price contract) were removed
     def snap(self, price: float, mode: str = "nearest") -> float:
         q = price / self.tick_size
         n = math.floor(q + EPS) if mode == "down" else math.ceil(q - EPS) if mode == "up" else math.floor(q + 0.5)
@@ -79,6 +77,7 @@ class SymbolSpec:
         return self.snap(raw, "down" if side == "BUY" else "up")
 
     def stops_level_ok(self, price: float, ref: float) -> bool:
+        # 1.46 note: not called by any order path yet - adding the broker stops-level check to SL / TP / BE orders is an owner decision
         return self.stops_level_points <= 0 or abs(price - ref) >= self.stops_level_points * (self.point or self.tick_size) - EPS
 
     # ------------------------------------------------------------------ money
@@ -117,20 +116,3 @@ class SymbolSpec:
                     "reason": f"przy wolumenie {total} i min. lot {self.volume_min} (krok {self.volume_step}) nie każda część osiąga minimum"}
         return {"status": "OK", "legs": legs}
 
-
-@dataclass
-class Costs:
-    """Per-instrument cost model in PRICE units (USD per unit of price) - measured, never assumed zero because of an account
-    name. commission_per_lot_side is in account currency."""
-    spread_price: float
-    commission_per_lot_side: float | None
-    slippage_price: float = 0.0
-    swap_per_lot_day: float | None = None
-    source: dict = field(default_factory=dict)
-
-    def round_trip_price(self, spec: SymbolSpec, volume: float = 1.0) -> float | None:
-        """Total round-trip cost expressed as a PRICE move (spread + 2x slippage + 2x commission converted)."""
-        if self.commission_per_lot_side is None:
-            return None
-        mpp = spec.money_per_price(volume)
-        return self.spread_price + 2 * self.slippage_price + (2 * self.commission_per_lot_side * volume / mpp if mpp else 0.0)

@@ -215,8 +215,11 @@ class SHService:
     def cycle(self, inst, bars, q, spec, acc, mode, now, shc, ex, entry_block: list | None = None) -> dict:
         r = shc["risk"]
         ic = shc["instruments"][inst]
+        ep = getattr(self.bridge, "session_epoch", None)
+        for k in [k for k in self.snap_cache if k[1] != ep]:   # 1.46: the epoch only grows - entries of an older epoch are never read again
+            del self.snap_cache[k]                              # (1.45.0 kept one heavy analysis cache per reconnect for the process lifetime)
         snap = CX.snapshot(bars, q, tick=spec.tick_size, now=now, cfg={"max_bar_age_s": r["max_bar_age_s"], "max_quote_age_s": r["max_quote_age_s"],
-                                                                      "max_spread_usd": ic.get("max_spread_usd")}, cache=self.snap_cache.setdefault((inst, getattr(self.bridge, "session_epoch", None)), {}))
+                                                                      "max_spread_usd": ic.get("max_spread_usd")}, cache=self.snap_cache.setdefault((inst, ep), {}))
         self.snapshot = snap
         mx = MR.matrix(None, inst)
         evals = {}
@@ -281,7 +284,9 @@ class SHService:
                 (su.get("status") == "READY" or self.last_saved.get(strat, (None,))[0] != su.get("status"))
             if arc is not None and record:
                 try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
-                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, coord.get(strat))
+                    # 1.46: the coordinator result of THIS candidate (coord is keyed by signal_id - coord.get(strat) was always None) with
+                    # the "allowed" flag record_sh reads; audit trail only - entries still follow cd["decision"] above
+                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, dict(cd, allowed=cd.get("decision") == "PROCEED") if cd else None)
                     su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
                     req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith(("MODEL_REQUIRED", "MODEL_QUANT_HOLD"))]
                     if req and su.get("status") == "READY":

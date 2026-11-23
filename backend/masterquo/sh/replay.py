@@ -284,8 +284,11 @@ def simulate_hedge(market: Market, i: int, su: dict, spec: SymbolSpec, prof: dic
         if pos.remaining > 1e-9 and _adverse(b, side, sp, pos.sl):
             if any(lg.status == "PENDING" and _fav(b, side, sp, lg.price) for lg in pos.legs):
                 ambiguous = True
+            # 1.46: the hedge leg closes at the quote of the STOP moment (live: broker TP of the hedge = primary SL, the bot closes it at
+            # once) - 1.45.0 used the bar CLOSE, a later price (look-ahead): a bar closing beyond the SL overstated the hedge profit
+            stop_bid = min(b["o"], pos.sl) if side == "BUY" else max(b["o"] + sp, pos.sl) - sp
             for a in bk.on_primary_closed(f"sl{k}", t, pos.remaining, _stop_fill(b, side, sp, pos.sl, slip), "SL"):
-                close_hedge(a, b["c"], b["c"] + sp, t, f"sl{k}")
+                close_hedge(a, stop_bid, stop_bid + sp, t, f"sl{k}")
             break
         path = [b["o"], b["l"], b["h"], b["c"]] if side == "BUY" else [b["o"], b["h"], b["l"], b["c"]]
         for j, px in enumerate(path[1:]):
@@ -458,19 +461,20 @@ def report(res: dict, strategy: str, *, meta: dict | None = None, model: dict | 
     if strategy == "SCALPING":
         tr = res["trades"]
         done = [x for x in tr if x.get("status") == "DONE"]
-        n = max(1, len(done))
+        n = len(done)
+        # 1.46: no completed trade = no hit rate (None), not 0.0 (1.45.0 divided by max(1, n) and reported a zero success rate)
         rep.update(metrics=metrics(tr), metrics_price=metrics(tr, "net_price"), by_side=breakdown(tr, "side"), by_session=breakdown(tr, "session"),
                    by_mode=breakdown(tr, "mode"), by_exit=breakdown(tr, "exit"), folds=folds(tr),
-                   hit_rates={"TP1": sum("TP1" in (x.get("legs_done") or []) for x in done) / n,
-                              "TP2": sum("TP2" in (x.get("legs_done") or []) for x in done) / n,
-                              "TP3": sum("TP3" in (x.get("legs_done") or []) for x in done) / n,
-                              "event_TP2_before_SL_in_horizon": sum(x.get("label_tp2_before_sl", 0) for x in done) / n})
+                   hit_rates={"TP1": sum("TP1" in (x.get("legs_done") or []) for x in done) / n if n else None,
+                              "TP2": sum("TP2" in (x.get("legs_done") or []) for x in done) / n if n else None,
+                              "TP3": sum("TP3" in (x.get("legs_done") or []) for x in done) / n if n else None,
+                              "event_TP2_before_SL_in_horizon": sum(x.get("label_tp2_before_sl", 0) for x in done) / n if n else None})
     else:
         rep["variants"] = {v: metrics(t) for v, t in res["variants"].items()}
         rep["variants_price"] = {v: metrics(t, "net_price") for v, t in res["variants"].items()}
         h = res["variants"]["HEDGE"]
         rep.update(metrics=rep["variants"]["HEDGE"], by_side=breakdown(h, "side"), by_session=breakdown(h, "session"), by_mode=breakdown(h, "mode"),
-                   folds=folds(h), hedge_activation_share=(sum(1 for x in h if x.get("hedge_activations")) / max(1, len(h))),
+                   folds=folds(h), hedge_activation_share=(sum(1 for x in h if x.get("hedge_activations")) / len(h) if h else None),   # 1.46: None, not 0
                    variants_note="HEDGE vs NO_HEDGE vs REDUCE na tych samych setupach; automat wybiera wariant tylko przy n ≥ 30")
     rep["baseline"] = metrics(res["baseline"])
     rep["baseline_note"] = "naiwna reguła (co 60 min, kierunek ostatniej godziny), te same TP/SL/zarządzanie/koszty, bez filtra setupu"

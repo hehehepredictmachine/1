@@ -184,8 +184,14 @@ def promote(inst: str, strategy: str, run_id: str) -> dict:
         raise ValueError("NIEZGODNY:" + why)
     if run.get("verdict") != "HOLDOUT_PASSED":
         raise ValueError(f"RUN_NIE_PRZESZEDŁ_BRAMKI:{run.get('verdict')}")
-    if (run.get("provenance") or {}).get("data_kind") not in (None, "REAL_USER_DATA"):
+    prov = run.get("provenance") or {}
+    if prov.get("data_kind") not in (None, "REAL_USER_DATA"):
         raise ValueError("DANE_TESTOWE_BEZ_PROMOCJI")
+    # 1.46: unknown origin = NOT_VERIFIED, never promoted. 1.45.0 let data_kind None through: a train_cli run on a dataset without
+    # data_kind (treated there as non-real: --allow-synthetic, no promotion) or an imported run without provenance could be activated
+    # here. Only a local run with no provenance record at all (runs of versions that did not record it) keeps the previous rule.
+    if prov.get("data_kind") is None and ("data_kind" in prov or run.get("imported")):
+        raise ValueError("DANE_NIEZWERYFIKOWANE_BEZ_PROMOCJI")
     f = root(inst, strategy) / f"{run_id}.npz"
     if not f.exists() or hashlib.sha256(f.read_bytes()).hexdigest() != run.get("sha256"):
         raise ValueError("PLIK_MODELU_USZKODZONY")
