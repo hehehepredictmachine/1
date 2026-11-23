@@ -200,3 +200,34 @@ def register(app, rt) -> None:
     @app.get("/api/v1/indicators/diagnostics")
     def ind_diag():
         return {"engine": SM.ENGINE_VERSION, "states": len(_ind._st), "keys": sorted(_ind._st)[:50], "mode": "CHART_ONLY / SHADOW (opt-in)"}
+
+    # ------------------------------------------------------------------ TASK 008 / 009: session context clock + server-hour boxes (read-only)
+    from datetime import datetime as _dt, timezone as _tz
+    from ..analytics import session_context as SC
+
+    def _ctx_inputs(tf: str):
+        b = getattr(rt, "bridge", None)
+        if b is None:
+            return None, None, [], [], {}, ""
+        q = b.quote_status()
+        ev = b.clock.evidence.as_dict() if getattr(b, "clock", None) else {}
+        bars = b.bars(tf, 2000, include_forming=True) if tf in getattr(b, "tfs", {}) else []
+        d1 = b.bars("D1", 40, include_forming=True) if "D1" in getattr(b, "tfs", {}) else []
+        return q, ev, bars, d1, dict(b.symbol_info or {}), getattr(b.cfg, "symbol", "")
+
+    @app.get("/api/v1/session-context")
+    def session_ctx(timeframe: str = "M5", mode: str = "AUTO_DST"):
+        if mode not in ("AUTO_DST", "FIXED_GMT"):
+            raise HTTPException(400, "mode: AUTO_DST | FIXED_GMT")
+        q, ev, bars, d1, _, sym = _ctx_inputs(timeframe)
+        last = next((b for b in reversed(bars) if b.get("open_utc")), None)
+        lo = _dt.fromisoformat(last["open_utc"].replace("Z", "+00:00")) if last else None
+        return SC.snapshot(instrument=sym, timeframe=timeframe, as_of=_dt.now(_tz.utc), mode=mode, quote=q, clock_evidence=ev,
+                           last_bar_open_utc=lo, d1_bars=d1)
+
+    @app.get("/api/v1/session-context/boxes")
+    def session_boxes(timeframe: str = "M5", days: int = 5):
+        q, ev, bars, _, meta, sym = _ctx_inputs(timeframe)
+        return {"instrument": sym, "timeframe": timeframe, "boxes": SC.range_boxes(bars, history_days=max(1, min(days, 30)),
+                tf_seconds=SC.TF_SECONDS.get(timeframe, 300)), "definition": SC.SERVER_BOXES, "hud": SC.hud(q, meta, bars, ev),
+                "mode": "OBSERVABILITY_ONLY", "time_basis": "BROKER_SERVER_TIME (godziny serwera, nie strefy IANA)"}
