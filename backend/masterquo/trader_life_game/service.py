@@ -42,7 +42,8 @@ class ReadOnlyAccountView:
     __slots__ = ("_deals", "_account", "_bars")
 
     def __init__(self, deals=None, account=None, bars=None):
-        object.__setattr__(self, "_deals", deals or (lambda: []))
+        # 1.46: no deal source = deal history UNAVAILABLE (None), not "0 trades" ([])
+        object.__setattr__(self, "_deals", deals or (lambda: None))
         object.__setattr__(self, "_account", account or (lambda: None))
         object.__setattr__(self, "_bars", bars or (lambda symbol, tf, count: []))
 
@@ -53,6 +54,10 @@ class ReadOnlyAccountView:
 
         def deals():
             with bridge._lock:
+                # 1.46: bridge.deals is [] until the first successful history read (deals_loaded_at None) - that is "not loaded",
+                # never "no trades"; a bridge object without the attribute keeps the previous behaviour
+                if getattr(bridge, "deals_loaded_at", True) is None:
+                    return None
                 return [dict(d) for d in (bridge.deals or [])]
 
         def account():
@@ -63,7 +68,8 @@ class ReadOnlyAccountView:
             return [dict(b) for b in (bridge.symbol_bars(symbol, tf, count) or [])]
         return cls(deals, account, bars)
 
-    def deals(self) -> list[dict]:
+    def deals(self) -> list[dict] | None:
+        """Canonical MT5 deals, or None when the history is not available (no bridge / not loaded yet)."""
         return self._deals()
 
     def account(self) -> dict | None:
@@ -291,9 +297,12 @@ class GameService:
         self._profile()
         try:
             deals = self.account.deals()
-            src = "MT5_REAL"
         except Exception:  # noqa: BLE001
-            deals, src = [], "UNAVAILABLE"
+            deals = None
+        if deals is None:       # 1.46: history not loaded / no bridge / read error -> UNAVAILABLE with items null, never "MT5_REAL, 0 trades"
+            return {"source": "UNAVAILABLE", "items": None,
+                    "note": "historia transakcji MT5 niedostępna (terminal niepołączony lub historia jeszcze niewczytana) – brak danych, nie 0 transakcji"}
+        src = "MT5_REAL"
         notes = {r["ref"]: json.loads(r["data"]) for r in self._q("SELECT ref, data FROM journal")}
         pos: dict[str, dict] = {}
         for d in sorted(deals, key=lambda x: (x.get("time") or 0, x.get("ticket") or 0)):
@@ -331,7 +340,10 @@ class GameService:
 
     def annotate(self, ref: str, body: dict) -> dict:
         self._profile()
-        refs = {x["ref"] for x in self.journal()["items"]}
+        items = self.journal()["items"]
+        if items is None:       # 1.46: unknown history is not "unknown trade" (404) - the trade may exist, retry once MT5 history is loaded
+            raise GameError("DEALS_UNAVAILABLE", "historia transakcji MT5 nie jest wczytana – spróbuj ponownie po połączeniu terminala", 409)
+        refs = {x["ref"] for x in items}
         if ref not in refs:
             raise GameError("UNKNOWN_TRADE_REF", "adnotacja tylko do istniejącej transakcji MT5", 404)
         bad = [k for k in body if k not in self._JOURNAL_FIELDS]
@@ -448,7 +460,7 @@ class GameService:
     def _period(self, cat: str, now: float) -> str:
         return {"DAILY": _day(now), "WEEKLY": _week(now)}.get(cat, "LIFETIME")
 
-    def _progress(self, activity: str, cat: str, now: float) -> int:
+    def _progress(self, activity: str, cat: str, now: float, count: int | None = None) -> int:
         if activity == "DISCIPLINE_DAYS":
             return self._one("SELECT COUNT(DISTINCT day) n FROM events WHERE kind IN ('JOURNAL_NOTE_COMPLETED', 'PLAN_PREPARED')")["n"]
         if activity == "JOURNAL_DAYS_WEEK":
@@ -456,7 +468,12 @@ class GameService:
         if activity == "LESSON_COMPLETED" and cat == "SPECIAL":     # psychology track = level-2 PSY lessons + level-2 skills
             return self._one("SELECT COUNT(*) n FROM events WHERE kind = 'LESSON_COMPLETED' AND key LIKE 'lesson:L2_%'")["n"]
         if activity == "QUIZ_PASSED" and cat == "MAIN":
-            return self._one("SELECT COUNT(*) n FROM events WHERE kind = 'QUIZ_PASSED'")["n"]
+            if count is None:
+                return self._one("SELECT COUNT(*) n FROM events WHERE kind = 'QUIZ_PASSED'")["n"]
+            # 1.46: a MAIN campaign of N = quizzes of academy levels 1..N (M_EASY 1-2, M_MEDIUM 1-3, M_HARD 1-4) - passing levels 3 and 4
+            # must not complete M_EASY; key 'quiz:<level>' is unique per level
+            passed = {r["key"] for r in self._q("SELECT key FROM events WHERE kind = 'QUIZ_PASSED'")}
+            return sum(f"quiz:{lv}" in passed for lv in range(1, int(count) + 1))
         if cat == "DAILY":
             return self._one("SELECT COUNT(*) n FROM events WHERE kind = ? AND day = ?", (activity, _day(now)))["n"]
         if cat == "WEEKLY":
@@ -471,7 +488,7 @@ class GameService:
             per = self._period(cat, now)
             claimed = self._one("SELECT ts FROM quest_claims WHERE key = ?", (f"{qid}|{per}",))
             locked = diff is not None and C.DIFF_ORDER[prof["difficulty"]] < C.DIFF_ORDER[diff]
-            pr = min(cnt, self._progress(act, cat, now))
+            pr = min(cnt, self._progress(act, cat, now, cnt))
             status = "LOCKED" if locked else ("CLAIMED" if claimed else ("COMPLETED" if pr >= cnt else ("IN_PROGRESS" if pr else "AVAILABLE")))
             out.append({"id": qid, "category": cat, "title": title, "description": desc, "difficulty": diff or "ANY", "requirement": {"activity": act,
                         "count": cnt}, "progress": pr, "xp_reward": xp, "gold_reward": gold, "status": status, "period": per,
@@ -522,7 +539,8 @@ class GameService:
         prof = self._profile()
         count = max(warmup + 20, min(int(count), 3000))
         try:
-            bars = [b for b in self.account.bars(symbol, tf, count) if not b.get("forming")]
+            # 1.46: MarketBridge.symbol_bars marks the newest bar closed=False (it has no 'forming' key) - drop it, only closed bars
+            bars = [b for b in self.account.bars(symbol, tf, count) if b.get("closed") is not False and not b.get("forming")]
         except Exception:  # noqa: BLE001
             bars = []
         if len(bars) < warmup + 20:
@@ -635,7 +653,8 @@ class GameService:
             return {**self.sim_view(sid), "reward": rew, "analytics": self._sim_analytics(s["id"])}
 
     def _sim_analytics(self, sid: int) -> dict:
-        tr = [t for t in self._q("SELECT * FROM sim_trades WHERE session_id = ? AND pnl IS NOT NULL", (sid,))]
+        # 1.46: equity curve / drawdown in the order PnL was realised (closed_idx), not in insertion (= opening) order
+        tr = [t for t in self._q("SELECT * FROM sim_trades WHERE session_id = ? AND pnl IS NOT NULL ORDER BY closed_idx, id", (sid,))]
         wins = [t["pnl"] for t in tr if t["pnl"] > 0]
         losses = [t["pnl"] for t in tr if t["pnl"] < 0]
         eq, peak, dd = 0.0, 0.0, 0.0
@@ -658,11 +677,13 @@ class GameService:
         except ValueError:
             raise GameError("INVALID_MONTH", "YYYY-MM") from None
         days: dict[str, dict] = {}
+        jr = self.journal()
+        real_ok = jr["items"] is not None       # 1.46: MT5 history unavailable -> real trades/PnL per day are null, not 0
 
         def d(k):
-            return days.setdefault(k, {"date": k, "real_trades": 0, "real_net_pnl": 0.0, "xp": 0, "activities": {}, "sim_sessions": 0})
-        jr = self.journal()
-        for p in jr["items"]:
+            return days.setdefault(k, {"date": k, "real_trades": 0 if real_ok else None, "real_net_pnl": 0.0 if real_ok else None, "xp": 0,
+                                       "activities": {}, "sim_sessions": 0})
+        for p in jr["items"] or []:
             if p["status"] == "CLOSED" and p["closed"]:
                 k = datetime.fromtimestamp(p["closed"], timezone.utc).strftime("%Y-%m-%d")
                 if k.startswith(month):
@@ -680,7 +701,9 @@ class GameService:
             if k.startswith(month):
                 d(k)["sim_sessions"] += 1
         for x in days.values():
-            x["type"] = ("TRADING" if x["real_trades"] else "SIMULATOR" if x["sim_sessions"] else "LEARNING" if x["activities"] else "REST")
+            # 1.46: REST means "no trades" - with the MT5 history unavailable that is unknown (UNAVAILABLE), not a rest day
+            x["type"] = ("TRADING" if x["real_trades"] else "SIMULATOR" if x["sim_sessions"] else "LEARNING" if x["activities"] else
+                         "REST" if real_ok else "UNAVAILABLE")
         return {"month": month, "days": sorted(days.values(), key=lambda x: x["date"]), "real_source": jr["source"],
                 "time_basis": {"real_trades": "BROKER_SERVER_TIME (czas zamknięcia z MT5)", "game_events": "UTC"},
                 "note": "dzień bez transakcji jest neutralny (REST), nie negatywny"}
@@ -696,11 +719,14 @@ class GameService:
         nxt = next((ls for L in ac["levels"] for ls in L["lessons"] if not ls["completed"]), None)
         if nxt:
             plan.append(f"Następna lekcja: {nxt['title']}")
-        missing = [p["ref"] for p in jr["items"] if p["status"] == "CLOSED" and not p["annotation"]][:5]
+        items = jr["items"] or []
+        missing = [p["ref"] for p in items if p["status"] == "CLOSED" and not p["annotation"]][:5]
         obs = []
+        if jr["items"] is None:     # 1.46: no MT5 history -> say so instead of silently reporting "no trades without a journal entry"
+            obs.append({"kind": "OBSERVATION", "text": "Historia transakcji MT5 niedostępna (UNAVAILABLE) – nie sprawdzono wpisów w dzienniku."})
         if missing:
             obs.append({"kind": "OBSERVATION", "text": f"{len(missing)} zamkniętych transakcji bez wpisu w dzienniku.", "refs": missing})
-        ann = [p["annotation"] for p in jr["items"] if p["annotation"]]
+        ann = [p["annotation"] for p in items if p["annotation"]]
         nc = sum(1 for a in ann if a.get("rule_compliance") is False)
         if ann:
             obs.append({"kind": "OBSERVATION", "text": f"Zgodność z regułami: {len(ann) - nc}/{len(ann)} opisanych transakcji."})

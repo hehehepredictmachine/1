@@ -119,7 +119,7 @@ QUESTS = [
     ("S_PERFECT_WEEK", "SPECIAL", "Perfekcyjny tydzień dziennika", "Wpisy w dzienniku w 5 różnych dniach jednego tygodnia.", "JOURNAL_DAYS_WEEK", 5, 250, 120, None),
     ("S_RISK_MASTER", "SPECIAL", "Mistrz ryzyka", "Zalicz 5 ćwiczeń z ryzyka.", "RISK_EXERCISE", 5, 300, 150, None),
     ("S_BUILDER", "SPECIAL", "Budowniczy strategii", "Ukończ 10 sesji symulatora.", "SIM_SESSION_COMPLETED", 10, 300, 150, None),
-    ("S_PSYCHO", "SPECIAL", "Trening psychologii", "Ukończ wszystkie lekcje psychologii (poziom 2).", "LESSON_COMPLETED", 8, 250, 120, None),
+    ("S_PSYCHO", "SPECIAL", "Trening psychologii", "Ukończ wszystkie lekcje poziomu 2 akademii (umiejętności i psychologia).", "LESSON_COMPLETED", 8, 250, 120, None),
     ("M_EASY", "MAIN", "Kampania Apprentice", "Ukończ poziom 1 i 2 akademii oraz zalicz ich testy.", "QUIZ_PASSED", 2, 500, 250, "EASY"),
     ("M_MEDIUM", "MAIN", "Kampania Professional", "Zalicz testy poziomów 1–3 akademii.", "QUIZ_PASSED", 3, 800, 400, "MEDIUM"),
     ("M_HARD", "MAIN", "Kampania Legend", "Zalicz testy wszystkich 4 poziomów akademii.", "QUIZ_PASSED", 4, 1200, 600, "HARD"),
