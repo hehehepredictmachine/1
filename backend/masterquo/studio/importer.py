@@ -7,12 +7,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import time
 import uuid
 from pathlib import Path
 
 from .package import ARTIFACT, LOADER
+
+# 1.46: every path segment taken from the package (manifest task / train_result) is checked before it becomes a path - 1.45.0 joined
+# instrument / model_key / version / run_id / model_id as given: '../..' in a crafted package wrote (and the import rollback rmtree'd)
+# outside the registries. Same rules as the SH training-package import (sh/tpmodel.import_run).
+IMPORT_INSTRUMENTS = ("XAUUSD", "BTC")
+SEGMENT_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
+
+
+def _segments_ok(inst, *names) -> str | None:
+    if inst not in IMPORT_INSTRUMENTS:
+        return f"instrument {inst!r} spoza {'/'.join(IMPORT_INSTRUMENTS)}"
+    bad = [n for n in names if not isinstance(n, str) or not SEGMENT_RX.match(n)]
+    return f"niedozwolona nazwa w paczce: {bad[0]!r}"[:200] if bad else None
+
+
+def _inside(p: Path, base: Path) -> bool:
+    try:
+        return p.resolve().is_relative_to(base.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def _sha(p: Path) -> str:
@@ -67,12 +88,18 @@ def import_package(pkg: str | Path) -> dict:
     iid = "IMP-" + uuid.uuid4().hex[:10]
     if res["kind"] == "TRAINHUB":
         from ..trainhub import registry as R
+        why = _segments_ok(inst, res["model_key"], res["version"])
+        if why:
+            return {"ok": False, "reason": why}
         dst = R.root() / "models" / inst / res["model_key"] / res["version"]
+        src = pkg / ARTIFACT / "trainhub" / res["model_key"] / res["version"]
+        if not _inside(dst, R.root()) or not _inside(src, pkg):
+            return {"ok": False, "reason": "ścieżka paczki poza rejestrem – nic nie zapisano"}
         if dst.exists():
             return {"ok": False, "reason": f"wersja {res['version']} już istnieje w rejestrze – nic nie nadpisano"}
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst.with_name(dst.name + ".importing")
-        shutil.copytree(pkg / ARTIFACT / "trainhub" / res["model_key"] / res["version"], tmp)
+        shutil.copytree(src, tmp)
         tmp.replace(dst)
         reg = R._reg(inst)
         from ..marketdata.store import iso as _iso                     # 1.46: ISO text like native versions (a float broke summary() sorting)
@@ -82,12 +109,19 @@ def import_package(pkg: str | Path) -> dict:
         rec = {"import_id": iid, "kind": "TRAINHUB", "instrument": inst, "model_key": res["model_key"], "version": res["version"]}
     elif res["kind"] == "FAMILY":
         from ..modelhub.families import base as FB
+        from ..modelhub.families import registry as famreg
+        why = _segments_ok(inst, task["model_id"], res["run_id"])
+        if why or task["model_id"] not in famreg():
+            return {"ok": False, "reason": why or f"nieznana rodzina {task['model_id']!r}"[:200]}
         st = FB.Store()
         dst = st.fam_dir(task["model_id"], inst) / res["run_id"]
+        src = pkg / ARTIFACT / "families" / task["model_id"] / inst / res["run_id"]
+        if not _inside(dst, st.base) or not _inside(src, pkg):
+            return {"ok": False, "reason": "ścieżka paczki poza magazynem rodzin – nic nie zapisano"}
         if dst.exists():
             return {"ok": False, "reason": f"run {res['run_id']} już istnieje – nic nie nadpisano"}
         tmp = dst.with_name(".importing-" + dst.name)
-        shutil.copytree(pkg / ARTIFACT / "families" / task["model_id"] / inst / res["run_id"], tmp)
+        shutil.copytree(src, tmp)
         tmp.replace(dst)
         rec = {"import_id": iid, "kind": "FAMILY", "instrument": inst, "family": task["model_id"], "run_id": res["run_id"]}
     else:
@@ -105,6 +139,11 @@ def rollback(import_id: str) -> dict:
     rec = next((r for r in items if r["import_id"] == import_id and r.get("state") == "CANDIDATE"), None)
     if rec is None:
         return {"ok": False, "reason": "nieznany import albo już wycofany"}
+    # 1.46: the rollback removes directories (rmtree) - names of a record written by 1.45.0 (unchecked import) are checked first
+    why = _segments_ok(rec.get("instrument"), *((rec.get("model_key"), rec.get("version")) if rec["kind"] == "TRAINHUB"
+                                                 else (rec.get("family"), rec.get("run_id"))))
+    if why:
+        return {"ok": False, "reason": why}
     if rec["kind"] == "TRAINHUB":
         from ..trainhub import registry as R
         if (R._reg(rec["instrument"]).get("active") or {}).get(rec["model_key"]) == rec["version"]:

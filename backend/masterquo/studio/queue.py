@@ -5,6 +5,7 @@ crash (RUNNING with a dead worker -> INTERRUPTED, resumable from the last commit
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import subprocess
@@ -23,6 +24,13 @@ CREATE TABLE IF NOT EXISTS jobs (job_id TEXT PRIMARY KEY, task_key TEXT, op TEXT
   pause INTEGER DEFAULT 0, cancel INTEGER DEFAULT 0, run_id TEXT, depends_on TEXT);
 """
 ACTIVE = ("QUEUED", "RUNNING", "EXPORTING", "VALIDATING_RAW", "BUILDING_DATASET", "VALIDATING_DATASET", "TRAINING", "EVALUATING", "PACKAGING")
+log = logging.getLogger(__name__)
+
+
+def _dedup_source(source: dict) -> str:
+    """1.46: the source WITHOUT the frozen cutoff (app.source_for stamps int(time.time()) into every submission - two submissions of the same
+    task a second apart never matched, so the documented QUEUED / RUNNING dedup never worked through the API)."""
+    return json.dumps({k: v for k, v in (source or {}).items() if k != "cutoff"}, sort_keys=True)
 
 
 class Queue:
@@ -43,8 +51,10 @@ class Queue:
 
     def submit(self, task_key: str, op: str, *, source: dict, profile: str = "smoke") -> dict:
         with self._mu:
-            dup = self.db.execute(f"SELECT job_id, state FROM jobs WHERE task_key=? AND op=? AND source=? AND state IN ({','.join('?' * len(ACTIVE))})",
-                                  (task_key, op, json.dumps(source, sort_keys=True), *ACTIVE)).fetchone()
+            rows = self.db.execute(f"SELECT job_id, state, source FROM jobs WHERE task_key=? AND op=? AND state IN ({','.join('?' * len(ACTIVE))}) "
+                                   "ORDER BY order_idx", (task_key, op, *ACTIVE)).fetchall()
+            want = _dedup_source(source)
+            dup = next((r for r in rows if _dedup_source(json.loads(r["source"] or "{}")) == want), None)   # 1.46: cutoff ignored
             if dup:
                 return {"ok": True, "deduplicated": True, "job_id": dup["job_id"], "state": dup["state"]}
             jid = "JOB-" + uuid.uuid4().hex[:10]
@@ -64,13 +74,21 @@ class Queue:
         return d
 
     def jobs(self, limit: int = 200) -> list[dict]:
-        rows = self.db.execute("SELECT * FROM jobs ORDER BY CASE WHEN state='QUEUED' THEN 0 ELSE 1 END, order_idx, created_at DESC LIMIT ?",
-                               (limit,)).fetchall()
-        return [self._row(r) for r in rows]
+        # 1.46: QUEUED in queue order, then the running job, then the rest NEWEST first - 1.45.0 sorted finished jobs by order_idx ascending
+        # (oldest first), so after `limit` jobs the running and the latest finished ones were cut off (UI showed neither).
+        # One shared connection: every statement under _mu (1.45.0 read without it from the API thread pool and the queue thread at once ->
+        # wrong / empty rows, sqlite InterfaceError).
+        act = ",".join("?" * (len(ACTIVE) - 1))
+        with self._mu:
+            rows = self.db.execute(f"SELECT * FROM jobs ORDER BY CASE WHEN state='QUEUED' THEN 0 WHEN state IN ({act}) THEN 1 ELSE 2 END, "
+                                   "CASE WHEN state='QUEUED' THEN order_idx END, COALESCE(finished_at, started_at, created_at) DESC, "
+                                   "created_at DESC LIMIT ?", (*ACTIVE[1:], limit)).fetchall()
+            return [self._row(r) for r in rows]
 
     def job(self, jid: str) -> dict | None:
-        r = self.db.execute("SELECT * FROM jobs WHERE job_id=?", (jid,)).fetchone()
-        return self._row(r) if r else None
+        with self._mu:                                                       # 1.46: shared connection - see jobs()
+            r = self.db.execute("SELECT * FROM jobs WHERE job_id=?", (jid,)).fetchone()
+            return self._row(r) if r else None
 
     def move(self, jid: str, before: str | None) -> bool:
         with self._mu:
@@ -81,17 +99,23 @@ class Queue:
                 b = self.job(before)
                 if not b:
                     return False
-                idx = b["order_idx"] - 0.5
+                # 1.46: halfway between `before` and the job right ahead of it - b-0.5 could tie with another job moved the same way
+                # (the tie fell to created_at: A,C,B -> C before B twice gave C,A,B)
+                prev = self.db.execute("SELECT MAX(order_idx) m FROM jobs WHERE order_idx < ? AND job_id NOT IN (?, ?)",
+                                       (b["order_idx"], jid, before)).fetchone()["m"]
+                idx = (b["order_idx"] + (prev if prev is not None else b["order_idx"] - 1)) / 2.0
             else:
                 idx = self.db.execute("SELECT COALESCE(MAX(order_idx), 0) m FROM jobs").fetchone()["m"] + 1
             self.db.execute("UPDATE jobs SET order_idx=? WHERE job_id=?", (idx, jid))
             return True
 
     def delete(self, jid: str) -> bool:
-        return self.db.execute("DELETE FROM jobs WHERE job_id=? AND state IN ('QUEUED','CANCELLED','PAUSED','INTERRUPTED')", (jid,)).rowcount > 0
+        with self._mu:
+            return self.db.execute("DELETE FROM jobs WHERE job_id=? AND state IN ('QUEUED','CANCELLED','PAUSED','INTERRUPTED')", (jid,)).rowcount > 0
 
     def pause(self, jid: str) -> bool:
-        return self.db.execute("UPDATE jobs SET pause=1 WHERE job_id=?", (jid,)).rowcount > 0
+        with self._mu:
+            return self.db.execute("UPDATE jobs SET pause=1 WHERE job_id=?", (jid,)).rowcount > 0
 
     def cancel(self, jid: str) -> bool:
         with self._mu:
@@ -102,18 +126,26 @@ class Queue:
             return n > 0
 
     def resume(self, jid: str) -> bool:
-        return self.db.execute("UPDATE jobs SET state='QUEUED', pause=0, cancel=0, error=NULL WHERE job_id=? AND state IN ('PAUSED','INTERRUPTED','FAILED')",
-                               (jid,)).rowcount > 0
+        with self._mu:
+            return self.db.execute("UPDATE jobs SET state='QUEUED', pause=0, cancel=0, error=NULL WHERE job_id=? AND state IN "
+                                   "('PAUSED','INTERRUPTED','FAILED')", (jid,)).rowcount > 0
+
+    def transferred(self, jid: str, info: dict) -> None:
+        """1.46: the transfer endpoint wrote to the shared connection without _mu (see jobs())."""
+        with self._mu:
+            self.db.execute("UPDATE jobs SET state='TRANSFERRED', progress=? WHERE job_id=?", (json.dumps(info, default=str), jid))
 
     def recover(self) -> None:
-        for r in self.db.execute(f"SELECT job_id, pid FROM jobs WHERE state IN ({','.join('?' * (len(ACTIVE) - 1))})", ACTIVE[1:]).fetchall():
-            if not _alive(r["pid"]):
-                self.db.execute("UPDATE jobs SET state='INTERRUPTED', error='proces zadania zakończył się bez wyniku (restart / awaria) – Wznów' "
-                                "WHERE job_id=?", (r["job_id"],))
+        with self._mu:
+            for r in self.db.execute(f"SELECT job_id, pid FROM jobs WHERE state IN ({','.join('?' * (len(ACTIVE) - 1))})", ACTIVE[1:]).fetchall():
+                if not _alive(r["pid"]):
+                    self.db.execute("UPDATE jobs SET state='INTERRUPTED', error='proces zadania zakończył się bez wyniku (restart / awaria) – Wznów' "
+                                    "WHERE job_id=?", (r["job_id"],))
 
     def next_job(self) -> dict | None:
-        r = self.db.execute("SELECT job_id FROM jobs WHERE state='QUEUED' ORDER BY order_idx, created_at LIMIT 1").fetchone()
-        return self.job(r["job_id"]) if r else None
+        with self._mu:
+            r = self.db.execute("SELECT job_id FROM jobs WHERE state='QUEUED' ORDER BY order_idx, created_at LIMIT 1").fetchone()
+            return self.job(r["job_id"]) if r else None
 
     def busy(self) -> dict | None:
         """Who holds the export lock (another Studio / the bot export) when we do not."""
@@ -144,12 +176,33 @@ class Queue:
             if not ok:
                 return f"BUSY:{(owner or {}).get('app')}:{(owner or {}).get('job')}"
             self.db.execute("UPDATE jobs SET state='RUNNING', started_at=?, pid=NULL, heartbeat=? WHERE job_id=?", (time.time(), time.time(), j["job_id"]))
+            # 1.46: own session on POSIX (process group = the job's whole tree) so a cancel ends the stage children too - see _kill_tree()
             self.proc = subprocess.Popen([self.python, "-m", "masterquo.studio.jobrun", str(self.path), j["job_id"]], env=dict(os.environ, **self.env),
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0),
+                                         start_new_session=os.name != "nt")
             self.current = j["job_id"]
             self.db.execute("UPDATE jobs SET pid=? WHERE job_id=?", (self.proc.pid, j["job_id"]))
             return "STARTED"
+
+    def _kill_tree(self) -> None:
+        """1.46: end the job process AND its children. 1.45.0 terminated only the jobrun process - the stage subprocesses (runner export
+        with its own MT5 session up to 6 h, verify_loader, runner training steps) kept running orphaned while step() already released the
+        export lock and started the next job next to them. Windows: taskkill /T (the process tree); POSIX: the job's own process group."""
+        p = self.proc
+        if p is None or p.poll() is not None:
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
+            elif os.getpgid(p.pid) == p.pid:                                 # started with start_new_session -> the group is the job tree
+                import signal
+                os.killpg(p.pid, signal.SIGTERM)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if p.poll() is None:
+            p.terminate()
 
     def kill_current_if_cancelled(self) -> None:
         if self.proc is None:
@@ -157,17 +210,22 @@ class Queue:
         j = self.job(self.current)
         if j and j["cancel"] and self.proc.poll() is None:
             time.sleep(2)                                                     # the job checks cancel between chunks; then terminate
-            if self.proc.poll() is None:
-                self.proc.terminate()
-                self.db.execute("UPDATE jobs SET state='CANCELLED', finished_at=? WHERE job_id=?", (time.time(), self.current))
+            with self._mu:
+                if self.proc is not None and self.proc.poll() is None:
+                    self._kill_tree()
+                    self.db.execute("UPDATE jobs SET state='CANCELLED', finished_at=? WHERE job_id=?", (time.time(), self.current))
 
     def loop(self, period: float = 1.0) -> None:
+        last = None
         while not self._stop.wait(period):
             try:
                 self.kill_current_if_cancelled()
                 self.step()
-            except Exception:  # noqa: BLE001
-                pass
+                last = None
+            except Exception as exc:
+                if repr(exc) != last:                                         # 1.46: logged (once per distinct error) instead of `pass`
+                    last = repr(exc)
+                    log.exception("studio queue tick failed")
 
     def start(self) -> None:
         threading.Thread(target=self.loop, name="studio-queue", daemon=True).start()
