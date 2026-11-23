@@ -222,23 +222,30 @@ def create_app(rt, port: int) -> FastAPI:
     app.add_middleware(Guard)
 
     # ------------------------------------------------------------ page + session
-    def _index() -> Response:
+    def _index(request: Request | None = None) -> Response:
         idx = paths.FRONTEND_DIST / "index.html"
         if not idx.exists():
             resp: Response = HTMLResponse("<h1>MasterQUO AI</h1><p>Brak zbudowanego frontendu (frontend/dist). "
                                           "Paczka zawiera gotowy build – sprawdź, czy rozpakowano cały ZIP.</p>", status_code=503)
         else:
             resp = FileResponse(idx, headers={"Cache-Control": "no-cache"})
-        sid, _ = sec.new_session()
-        resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="strict", secure=False, path="/")
+        cur = request.cookies.get(SESSION_COOKIE) if request is not None else None
+        site = (request.headers.get("sec-fetch-site") or "").lower() if request is not None else ""
+        if cur and sec.csrf_for(cur):
+            pass                                        # 1.46: a reload keeps its session (no new one per GET /)
+        elif site in ("cross-site", "same-site"):
+            pass                                        # 1.46: a request started by ANOTHER site never creates (and evicts) sessions
+        else:
+            sid, _ = sec.new_session()
+            resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="strict", secure=False, path="/")
         resp.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                                                    "img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:%d ws://localhost:%d; "
                                                    "frame-ancestors 'none'; base-uri 'none'" % (port, port))
         return resp
 
     @app.get("/")
-    def index():
-        return _index()
+    def index(request: Request):
+        return _index(request)
 
     @app.get("/assets/{name:path}")
     def assets(name: str):

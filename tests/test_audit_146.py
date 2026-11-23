@@ -138,6 +138,18 @@ class TestApiInputValidation(unittest.TestCase):
         code, body = c("/api/v1/market-zones/as-of?as_of=2020-01-01T00:00:00Z")
         self.assertEqual(code, 200, body)                              # was 503 "IndexError: list index out of range"
 
+    def test_foreign_page_cannot_log_the_panel_out(self):
+        """1.45.0: every GET / created a session and at >200 ALL sessions were cleared - any web page could log the panel out (no STOP)."""
+        import urllib.request
+        from _demo_server import BASE
+        code, before = self.S.call("/api/v1/session")
+        self.assertTrue(before.get("csrf"))
+        for _ in range(250):                                   # no cookies, as an <img src> / no-cors fetch from another site
+            urllib.request.urlopen(urllib.request.Request(BASE + "/", headers={"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}),
+                                   timeout=10).read(0)
+        code, after = self.S.call("/api/v1/session")
+        self.assertEqual(after.get("csrf"), before["csrf"])
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -332,3 +344,55 @@ class TestSettingsNumberField(unittest.TestCase):
                            capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertIn("num_text OK", r.stdout)
+
+
+class TestSessionEviction(unittest.TestCase):
+    def test_least_recently_used_is_evicted_never_all(self):
+        from masterquo.api.security import MAX_SESSIONS, LocalSecurity
+        sec = LocalSecurity(8765)
+        mine, _ = sec.new_session()
+        for i in range(3 * MAX_SESSIONS):
+            sec.new_session()
+            if i % 50 == 0:
+                self.assertIsNotNone(sec.csrf_for(mine))            # the panel polls -> stays most recently used
+        self.assertIsNotNone(sec.csrf_for(mine))
+        self.assertEqual(len(sec.sessions), MAX_SESSIONS)
+
+
+class TestTrainingImportTraversal(unittest.TestCase):
+    """1.45.0: POST /api/v1/training/import -> sh/tpmodel.import_run used run_id / instrument from the package as path parts ('../' wrote files
+    outside <data>/sh/models)."""
+
+    def _zip(self, inst, run_id):
+        import hashlib
+        import io
+        import json
+        import zipfile
+        npz = b"not-really-npz"
+        run = {"run_id": run_id, "sha256": hashlib.sha256(npz).hexdigest()}
+        files = {f"models/sh_tp_model/{inst}/SCALPING/registry.json": json.dumps({"runs": [run]}).encode(),
+                 f"models/sh_tp_model/{inst}/SCALPING/{run_id}.npz": npz}
+        man = {"instrument": inst, "files": [{"path": k, "sha256": hashlib.sha256(v).hexdigest()} for k, v in files.items()]}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("MANIFEST.json", json.dumps(man))
+            for k, v in files.items():
+                z.writestr(k, v)
+        return buf.getvalue()
+
+    def test_package_paths_are_validated(self):
+        from pathlib import Path
+
+        from _env import TempData
+
+        from masterquo.training import panel
+        td = TempData()
+        try:
+            rep = panel.import_package(self._zip("XAUUSD", "../../../../evil_run"))
+            self.assertEqual(rep["imported"], [])
+            self.assertTrue(any("NIEDOZWOLONY_RUN_ID" in x for x in rep["skipped"]))
+            self.assertEqual([p for p in Path(td.dir).rglob("evil_run*")], [])
+            with self.assertRaises(ValueError):
+                panel.import_package(self._zip("../../../tmp/x", "run1"))
+        finally:
+            td.close()

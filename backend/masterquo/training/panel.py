@@ -408,6 +408,8 @@ def import_package(data: bytes) -> dict:
         return {"imported": [], "rejected": bad, "reason": "SUMY_KONTROLNE_NIEZGODNE"}
     from ..sh import tpmodel as TM
     inst = man.get("instrument")
+    if inst not in TM.IMPORT_INSTRUMENTS:                     # 1.46: never a path component taken blindly from the package
+        raise ValueError(f"NIEDOZWOLONY_INSTRUMENT: {inst!r}")
     out, skipped = [], []
     for strat in ("SCALPING", "HEDGING"):
         arc = f"models/sh_tp_model/{inst}/{strat}/registry.json"
@@ -418,8 +420,11 @@ def import_package(data: bytes) -> dict:
             npz = f"models/sh_tp_model/{inst}/{strat}/{run['run_id']}.npz"
             if npz not in z.namelist():
                 continue
-            out.append({"strategy": strat, "run_id": run["run_id"], **TM.import_run(inst, strat, run, z.read(npz))})
+            try:
+                out.append({"strategy": strat, "run_id": run["run_id"], **TM.import_run(inst, strat, run, z.read(npz))})
+            except ValueError as exc:
+                skipped.append(f"{strat}/{str(run.get('run_id'))[:40]}: {exc}")
     other = sorted({p.split("/")[1] for p in z.namelist() if p.startswith("models/") and p.split("/")[1] != "sh_tp_model"})
     if other:
-        skipped = [f"{o}: import automatyczny nieobsługiwany – odtwórz trening poleceniem z manifestu" for o in other]
+        skipped += [f"{o}: import automatyczny nieobsługiwany – odtwórz trening poleceniem z manifestu" for o in other]
     return {"instrument": inst, "imported": out, "skipped": skipped, "manifest": {k: man.get(k) for k in ("created_at", "scope", "dataset_id", "code")}}
