@@ -274,7 +274,10 @@ class ClaudeAgent:
             return
         self._seq += 1
         seq = self._seq
-        if req["setup_id"]:
+        # 1.46: only runs that ASSESS the setup feed the AI gate. A user question ("nie zmienia blokad") neither replaces the assessment
+        # (it used to: a WAIT answer vetoed a confirmed entry, a BUY answer lifted a veto) nor marks the running assessment as superseded.
+        assesses = req["trigger"] != "USER_QUESTION"
+        if req["setup_id"] and assesses:
             self._started_seq[req["setup_id"]] = seq
         if req["trigger"] == "USER_QUESTION":
             self.last_user_run = time.monotonic()
@@ -284,7 +287,9 @@ class ClaudeAgent:
         self.bus.publish("agent", self.status())
         result = await self.run_once(req, ctx)
         # A late answer never overrides a newer run for the same setup.
-        if req["setup_id"] and self._started_seq.get(req["setup_id"]) != seq:
+        if req["setup_id"] and not assesses:
+            result["status_note"] = "ANSWER_ONLY_NOT_A_GATE_ASSESSMENT"
+        elif req["setup_id"] and self._started_seq.get(req["setup_id"]) != seq:
             result["status_note"] = "SUPERSEDED_BY_NEWER_RUN"
         elif req["setup_id"]:
             self.by_setup[req["setup_id"]] = result
@@ -320,10 +325,28 @@ class ClaudeAgent:
                             (now, "PLAYBOOK_PROPOSAL", req["setup_id"], "PROPOSED", dumps({**prop, "run_id": result["run_id"],
                              "promotion_rule": "Wymaga testu M06R/M06T na danych OOS + forward DEMO i zatwierdzenia użytkownika; nie zmienia LIVE."})))
 
-    def _cost(self, model: str, usage: dict) -> float | None:
-        price = self.cfg.price_per_mtok.get(model)
+    def _price(self, *models: str | None) -> tuple[float, float] | None:
+        """Exact id first (served, then requested), then the longest table key the id starts with (dated / suffixed ids)."""
+        table = self.cfg.price_per_mtok or {}
+        for m in models:
+            if m and table.get(m):
+                return table[m]
+        for m in models:
+            if not m:
+                continue
+            keys = sorted((k for k in table if m.startswith(k)), key=len, reverse=True)
+            if keys:
+                return table[keys[0]]
+        return None
+
+    def _cost(self, model: str, usage: dict, requested: str | None = None) -> float | None:
+        price = self._price(model, requested)
         if not price:
-            return None
+            # 1.46: unknown price must not count as 0 (the daily budget was never enforced) - upper bound = the most expensive rate in the table
+            table = [v for v in (self.cfg.price_per_mtok or {}).values() if v]
+            if not table:
+                return None
+            price = (max(v[0] for v in table), max(v[1] for v in table))
         pin, pout = price
         cost = (usage.get("input_tokens", 0) * pin + usage.get("cache_creation_input_tokens", 0) * pin * 1.25 +
                 usage.get("cache_read_input_tokens", 0) * pin * 0.1 + usage.get("output_tokens", 0) * pout) / 1_000_000
@@ -430,7 +453,7 @@ class ClaudeAgent:
         except anthropic.APIStatusError as e:
             status, error = "API_ERROR", f"HTTP {getattr(e, 'status_code', '?')}"
         latency = int((time.monotonic() - t0) * 1000)
-        cost = self._cost(served_model or model, usage_total)
+        cost = self._cost(served_model or model, usage_total, requested=model)
         now = utcnow()
         rec = None
         if status == "OK" and assessment is not None:

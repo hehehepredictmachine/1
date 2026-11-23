@@ -81,6 +81,32 @@ class TestBootstrapProbe(unittest.TestCase):
         self.assertIn("PROBE_ERROR", states["tsfm_chronos2"]["detail"])
 
 
+class TestWallsStoreRestart(unittest.TestCase):
+    """1.45.0: the fingerprint held a tuple; after the JSON round trip (first freeze after a restart) it was a list -> never equal -> every restart
+    created version N+1 with a new snapshot_id for the same input (and S12 got a new setup identity for the same market event)."""
+
+    def test_same_input_after_restart_keeps_snapshot_id(self):
+        from _env import TempData
+
+        from masterquo.analysis.walls import WallsStore
+        from masterquo.db.database import Database
+        td = TempData()
+        try:
+            db = Database()
+            snap = {"status": "OK", "symbol": "XAUUSD-", "anchor_time": "2026-11-20T00:00:00Z", "source_type": "HV_PROXY", "sigma_annual": 0.18,
+                    "obs_id": None, "band_sigma": 0.15, "available_at": "2026-11-20T00:05:00Z",
+                    "walls": [{"k": 1.0, "side": "UPPER", "level": 2410.0}, {"k": 2.0, "side": "UPPER", "level": 2430.0},
+                              {"k": 1.0, "side": "LOWER", "level": 2390.0}]}
+            a = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))
+            b = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))     # new store = application restart
+            self.assertEqual((b["snapshot_id"], b["snapshot_version"]), (a["snapshot_id"], 1))
+            self.assertEqual(db.one("SELECT COUNT(*) n FROM walls_snapshots")["n"], 1)
+            c = WallsStore(db).freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))   # a real change -> next version
+            self.assertEqual(c["snapshot_version"], 2)
+        finally:
+            td.close()
+
+
 class TestApiInputValidation(unittest.TestCase):
     """Smoke test 1.45.0: these requests answered 500 (Internal Server Error) - now 400 with a reason."""
 
@@ -115,3 +141,44 @@ class TestApiInputValidation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAgentGateAndBudget(unittest.TestCase):
+    """1.45.0: (a) a USER_QUESTION run with the setup id replaced the AI gate assessment of a CONFIRMED setup (WAIT answer -> DISAGREE veto) and
+    marked a running SETUP_CONFIRMED assessment as superseded; (b) a model id without an exact price (e.g. a dated id returned by the API)
+    stored est_cost_usd = NULL and the daily budget counted it as 0."""
+
+    def setUp(self):
+        import test_agent as TA
+        self.TA = TA
+        self.t = TA.TestAgent("test_veto_policy")
+        self.t.setUp()
+        self.agent = self.t.agent
+
+    def tearDown(self):
+        self.t.tearDown()
+
+    def _handle(self, trigger, ans, question=None):
+        import asyncio
+        import json
+        TA = self.TA
+        client = TA.ScriptedClient([TA.msg([TA.text(json.dumps(ans))], "end_turn")])
+        self.agent._client_get = lambda: client
+        self.agent.last_auto_run = self.agent.last_user_run = 0
+        self.agent.loop = None
+        req = {"trigger": trigger, "snapshot_id": "SNP-1", "setup_id": "MQS-1", "setup_state": "CONFIRMED", "question": question, "key": trigger}
+        asyncio.run(self.agent._handle(req))
+
+    def test_user_question_does_not_replace_gate_assessment(self):
+        TA = self.TA
+        self._handle("SETUP_CONFIRMED", TA.answer())                                   # SELL for a SHORT setup -> PASS
+        self.assertEqual(self.agent.by_setup["MQS-1"]["record"]["proposed_action"], "SELL")
+        self._handle("USER_QUESTION", TA.answer(proposed_action="WAIT", answer_pl="Ryzyka newsów: ..."), question="Jakie są ryzyka?")
+        self.assertEqual(self.agent.by_setup["MQS-1"]["record"]["proposed_action"], "SELL")   # the question's WAIT is not a veto
+        self.assertEqual(self.agent.last_result["status_note"], "ANSWER_ONLY_NOT_A_GATE_ASSESSMENT")
+
+    def test_unknown_or_dated_model_price_is_not_zero(self):
+        usage = {"input_tokens": 1_000_000, "output_tokens": 0}
+        self.assertEqual(self.agent._cost("claude-opus-5-5-20261101", usage), 4.0)             # dated id -> base model price
+        self.assertEqual(self.agent._cost("some-unknown-model", usage, requested="claude-opus-5-5"), 4.0)
+        self.assertEqual(self.agent._cost("some-unknown-model", usage), 10.0)                  # no price at all -> upper bound, never 0 / None
