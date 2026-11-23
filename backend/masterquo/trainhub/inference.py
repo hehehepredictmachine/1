@@ -53,8 +53,12 @@ class TrainhubInference:
                 try:
                     self.run_instrument(inst)
                 except Exception as exc:  # noqa: BLE001 - inference never stops the bot
-                    if self.log:
-                        self.log.warning("trainhub", f"inferencja {inst}: {type(exc).__name__}: {exc}"[:200])
+                    # 1.46: AppLog has warn(category, code, message) - .warning() raised AttributeError here and killed this thread for good
+                    try:
+                        if self.log:
+                            self.log.warn("TRAINHUB", "INFERENCE_ERROR", f"inferencja {inst}: {type(exc).__name__}: {exc}"[:200])
+                    except Exception:  # noqa: BLE001 - logging never ends the loop
+                        pass
 
     def symbol(self, inst: str) -> str | None:
         m = self.cfg_store.get().assets.mappings.get(inst)

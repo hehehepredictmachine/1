@@ -75,7 +75,8 @@ def import_package(pkg: str | Path) -> dict:
         shutil.copytree(pkg / ARTIFACT / "trainhub" / res["model_key"] / res["version"], tmp)
         tmp.replace(dst)
         reg = R._reg(inst)
-        reg.setdefault("versions", {}).setdefault(res["model_key"], []).append({"version": res["version"], "created_at": time.time(),
+        from ..marketdata.store import iso as _iso                     # 1.46: ISO text like native versions (a float broke summary() sorting)
+        reg.setdefault("versions", {}).setdefault(res["model_key"], []).append({"version": res["version"], "created_at": _iso(time.time()),
                                                                                 "source": "STUDIO", "import_id": iid, "package": str(pkg)})
         R._save_reg(inst, reg)
         rec = {"import_id": iid, "kind": "TRAINHUB", "instrument": inst, "model_key": res["model_key"], "version": res["version"]}

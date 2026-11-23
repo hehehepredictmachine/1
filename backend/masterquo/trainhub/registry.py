@@ -278,5 +278,11 @@ def summary(inst: str) -> dict:
         act = (reg.get("active") or {}).get(key)
         for v in vers:
             out.append({**v, "model_key": key, "active": v["version"] == act})
-    return {"instrument": inst, "versions": sorted(out, key=lambda v: v["created_at"], reverse=True), "active": reg.get("active") or {},
+    def _when(v):                                   # 1.46: tolerant to a numeric created_at written by Studio 1.45.0 imports
+        c = v.get("created_at")
+        if isinstance(c, (int, float)):
+            from ..marketdata.store import iso as _iso
+            return _iso(c)
+        return str(c or "")
+    return {"instrument": inst, "versions": sorted(out, key=_when, reverse=True), "active": reg.get("active") or {},
             "history": (reg.get("history") or [])[-30:], "python": sys.version.split()[0]}

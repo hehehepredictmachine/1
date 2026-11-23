@@ -11,9 +11,11 @@ from pathlib import Path
 
 
 def _alive(pid) -> bool:
+    """1.46: on Windows os.kill(pid, 0) is GenerateConsoleCtrlEvent(CTRL_C_EVENT) - for a process outside the caller's console it fails, so
+    every owner looked dead and the shared export lock never excluded anything. Same check as training.core (OpenProcess + STILL_ACTIVE)."""
     try:
-        os.kill(int(pid), 0)
-        return True
+        from ..training.core import _pid_alive
+        return _pid_alive(int(pid))
     except (OSError, ValueError, TypeError):
         return False
 
