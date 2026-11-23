@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -169,6 +169,7 @@ class SettingsStore:
         self.path = path or (tsfm_dir() / "settings.json")
         self._lock = threading.Lock()
         self.load_error: str | None = None
+        self._keep_original = False          # 1.46: the file on disk was not loaded (unreadable / invalid) - kept before the first write
         self._s = self._load()
 
     def _load(self) -> TsfmSettings:
@@ -178,6 +179,7 @@ class SettingsStore:
             return TsfmSettings()
         except (OSError, ValueError) as exc:
             self.load_error = f"settings.json nieczytelny ({type(exc).__name__}) – użyto ustawień domyślnych (obserwacja)"
+            self._keep_original = True
             return TsfmSettings()
         if isinstance(raw, dict) and isinstance(raw.get("models"), dict) and any(k in raw["models"] for k in RETIRED_IDS):
             raw = self._migrate_retired(raw)
@@ -185,6 +187,7 @@ class SettingsStore:
             return TsfmSettings.model_validate(raw)
         except Exception as exc:  # noqa: BLE001 - a broken file never enables anything: defaults = observation only
             self.load_error = f"settings.json niepoprawny ({str(exc)[:200]}) – użyto ustawień domyślnych (obserwacja)"
+            self._keep_original = True
             return TsfmSettings()
 
     def _migrate_retired(self, raw: dict) -> dict:
@@ -234,16 +237,30 @@ class SettingsStore:
         with self._lock:
             return self._s.model_copy(deep=True)
 
+    def _backup_original(self) -> str | None:
+        """1.46: the user's file that could not be loaded (one bad value, a key of another version, a hand edit) was replaced by the
+        defaults + the patch on the first change, without a copy (instruments, TFs, context, horizons, roles lost). It is now copied
+        byte for byte to settings.invalid-<UTC>.json first; when the copy fails nothing is overwritten (OSError)."""
+        if not self._keep_original or not self.path.is_file():
+            return None
+        bak = self.path.with_name(f"settings.invalid-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.json")
+        bak.write_bytes(self.path.read_bytes())
+        return bak.name
+
     def update(self, patch: dict, who: str = "panel") -> TsfmSettings:
         with self._lock:
             merged = _merge(self._s.model_dump(mode="json"), patch)
             s = TsfmSettings.model_validate(merged)
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            backup = self._backup_original()
             tmp = self.path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(s.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
             tmp.replace(self.path)
             self._s = s
             self.load_error = None
+            self._keep_original = False
+            if backup:
+                self._history("invalid_file_kept", {"backup": backup})
             self._history(who, patch)
             return s.model_copy(deep=True)
 

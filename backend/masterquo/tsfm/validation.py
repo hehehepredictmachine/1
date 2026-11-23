@@ -19,6 +19,7 @@ direction accuracy above momentum and p < 0.05. A positive verdict is a necessar
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import time
@@ -28,6 +29,7 @@ from pathlib import Path
 from ..kronos import calendar as CAL
 from ..kronos import quality as Q
 from ..timeutil import TF_SECONDS, iso, utcnow
+from .service import neutral_band, predict_request
 from .settings import MODEL_IDS, tsfm_dir
 
 SCHEMA = "PMW-TSFM-WF-1"
@@ -101,7 +103,7 @@ def _metrics(rows: list[dict], key: str, band_k: float) -> dict:
     naive = [r["last"] - r["actual"] for r in got]
     hits = n = mom_hits = 0
     for r in got:
-        band = band_k * r["atr"]
+        band = r["band"] if r.get("band") is not None else band_k * r["atr"]   # 1.46: the live band rule per origin (see run)
         act = r["actual"] - r["last"]
         prd = r["pred"][key]["point"] - r["last"]
         if abs(act) <= band or abs(prd) <= band or r["momentum"] == 0:
@@ -181,6 +183,7 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 200, progress=None, inclu
     tf_sec = TF_SECONDS[tf]
     base = {"schema": SCHEMA, "instrument": inst, "symbol": sym, "timeframe": tf, "horizon_bars": H, "context_len": ctx_len, "started_at": started,
             "data_kind": kind, "data_source": kind_pl, "caveat": CAVEAT, "band_k": s.direction_band_atr,
+            "band_min_points": s.direction_band_min_points, "lookback": s.lookback,
             "bindings": {m: binding(svc, m, inst, tf) for m in MODEL_IDS}}
     if not sym:
         return _save({**base, "status": "BLOCKED", "reason": why, "models": {}})
@@ -197,11 +200,22 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 200, progress=None, inclu
     dev_end_raw = int(bars[origins[n_dev] - 1]["t_raw"]) if n_dev < len(origins) else int(bars[-1]["t_raw"])
     cal = CAL.Calendar([int(b["t_raw"]) for b in bars if int(b["t_raw"]) <= dev_end_raw], CAL.slot_seconds(tf_sec))
     models = [m for m in MODEL_IDS if s.models[m].enabled]
+    pt, _ = svc._point(sym)                                   # 1.46: band = the live rule max(k x ATR14, min_points x point)
+    gov = getattr(svc, "governor", None)
+
+    def busy(m: str, timeout: float):
+        """1.46: a validation request is USE of the model process for the Memory Governor - last_used is refreshed and a heavy model holds
+        the heavy slot while it loads / answers (maintain() never releases the slot holder); before, the idle release killed the process
+        in the middle of the walk-forward (LOW_MEMORY_8GB after 90 s, RAM >= WARN after 120 s)."""
+        svc.workers[m].last_used = time.monotonic()
+        return gov.heavy(m, timeout=timeout) if gov is not None else contextlib.nullcontext(True)
+
     ready = {}
     for m in models:
-        with svc.exec_lock:
-            ok = svc.workers[m].ensure()
-        ready[m] = ok or svc.workers[m].state.get("reason")
+        with svc.exec_lock, busy(m, s.models[m].load_timeout_s) as slot:
+            ok = svc.workers[m].ensure() if slot else False
+            svc.workers[m].last_used = time.monotonic()
+        ready[m] = ok or svc.workers[m].state.get("reason") or (None if slot else "slot ciężkiej inferencji zajęty (Memory Governor)")
     kr = None
     kr_note = None
     if include_kronos and svc.kronos is not None:
@@ -224,22 +238,31 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 200, progress=None, inclu
                 continue
             last = float(ctx[-1]["c"])
             prev = float(bars[i - 1 - H]["c"]) if i - 1 - H >= 0 else last
+            atr = Q.atr(ctx, 14)
             row = {"t": ctx[-1]["open_utc"], "split": "DEV" if j < n_dev else "TEST", "last": last, "actual": float(fut[-1]["c"]),
-                   "atr": Q.atr(ctx, 14) or 0.0, "momentum": last - prev, "pred": {}}
+                   "atr": atr or 0.0, "band": neutral_band(s, atr, pt), "momentum": last - prev, "pred": {}}
             for m in models:
                 if ready[m] is not True:
                     row["pred"][m] = None
                     continue
                 c = s.models[m]
-                req = {"cmd": "predict", "close": [float(b["c"]) for b in ctx[-c.context_len:]], "pred_len": H, "context_len": min(c.context_len, len(ctx)),
-                       "profile": "CLOSE_V1", "quantiles": s.quantiles, "freq_tf": tf}
-                with svc.exec_lock:                                       # never interleaved with a live forecast of the same process
+                # 1.46: the request the live path would send for this bar - configured profile (+ open/high/low/volume covariates for
+                # CLOSE_OHLCV_PAST_V1) and the context cut to the quality window (lookback), as the report binding claims
+                req, _n = predict_request(c, s, ctx[-s.lookback:], tf, H, q["volume_source"])
+                with svc.exec_lock, busy(m, c.request_timeout_s) as slot:   # never interleaved with a live forecast of the same process
                     try:
+                        if not slot:
+                            raise RuntimeError("slot ciężkiej inferencji zajęty (Memory Governor)")
                         r = svc.workers[m].ask(req, c.request_timeout_s)
                     except (TimeoutError, RuntimeError) as exc:
                         r = {"ok": False, "error": str(exc)}
-                        svc.workers[m].fail("VALIDATION", str(exc))
-                        ready[m] = svc.workers[m].ensure() or str(exc)
+                        if slot:
+                            svc.workers[m].fail("VALIDATION", str(exc))
+                            ready[m] = svc.workers[m].ensure() or str(exc)
+                        else:
+                            ready[m] = str(exc)
+                    finally:
+                        svc.workers[m].last_used = time.monotonic()
                 if not r.get("ok"):
                     errors[m] += 1
                     row["pred"][m] = None
@@ -286,6 +309,8 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 200, progress=None, inclu
                          "verdict": {"positive": not reasons, "reason": "; ".join(reasons) if reasons else
                                      "pozytywna w teście końcowym (warunek konieczny dopuszczenia – nie dowód przewagi handlowej)"},
                          "ready": True if k == "kronos" else ready.get(k)}
+        if k != "kronos":                                     # 1.46: what the model was asked (= the live request of this configuration)
+            out_models[k]["request"] = {"profile": s.models[k].profile, "context_bars": min(s.models[k].context_len, s.lookback, ctx_len)}
     summary = ", ".join(f"{k}: MAE {_fmt(v['test_own'].get('mae'))} vs ostatnia cena {_fmt(v['test_own'].get('mae_naive_last_price'))}"
                         for k, v in out_models.items())
     rep = {**base, "status": "DONE", "finished_at": iso(utcnow()), "duration_s": round(time.time() - t0, 1), "bars_used": len(bars),

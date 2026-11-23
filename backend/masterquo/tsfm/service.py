@@ -33,8 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import paths
-from ..kronos import calendar as CAL  # noqa: F401 - used through the shared helpers
-from ..kronos import quality as Q
+from ..kronos import quality as Q                   # 1.46: unused `kronos.calendar as CAL` import removed (the borrowed helpers use their own)
 from ..kronos.service import KronosService
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
 from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
@@ -315,7 +314,7 @@ class TsfmService:
                     out.setdefault((i, tf), []).append(mid)
         return out
 
-    def tick(self, force: tuple | None = None) -> None:
+    def tick(self, force: tuple | None = None, force_model: str | None = None) -> None:
         s = self.settings.get()
         ready_models = []
         for mid, w in self.workers.items():
@@ -336,6 +335,11 @@ class TsfmService:
             else:
                 if w.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
                     w.set_state("IDLE", STATUS_PL["IDLE"])
+                elif w.state["status"] == "ERROR" and w.state.get("code") == "TICK":
+                    # 1.46: a one-off scheduler exception (sqlite lock, manifest read, ...) is not a model failure - it no longer leaves
+                    # every worker in ERROR/TICK until a restart; a failure that repeats sets it again in _loop
+                    loaded = bool(w.proc and w.proc.poll() is None and w.load_info)
+                    w.set_state("READY" if loaded else "IDLE", STATUS_PL["READY" if loaded else "IDLE"])
                 ready_models.append(mid)
         wanted = self._wanted(s)
         for k in list(self.targets):
@@ -349,13 +353,14 @@ class TsfmService:
                 if m not in mids:
                     self._ms((m, inst, tf)).update(state="MODEL_UNAVAILABLE", reason=self.workers[m].state.get("reason"))
             if mids:
-                self._check_target(inst, tf, mids, s, conn, now, force=(force == (inst, tf)))
+                self._check_target(inst, tf, mids, s, conn, now, force=(force == (inst, tf)), force_model=force_model)
 
     def _target(self, key: tuple) -> dict:
         return self.targets.setdefault(key, {"instrument": key[0], "timeframe": key[1], "state": "WAITING", "reason": None, "next_check": 0.0,
                                              "quality": None, "symbol": None, "checked_at": None, "snapshot_id": None, "bar_key": None})
 
-    def _check_target(self, inst: str, tf: str, mids: list[str], s, connected: bool, now: float, force: bool = False) -> None:
+    def _check_target(self, inst: str, tf: str, mids: list[str], s, connected: bool, now: float, force: bool = False,
+                      force_model: str | None = None) -> None:
         t = self._target((inst, tf))
         sym, why = self.symbol(inst)
         t["symbol"] = sym
@@ -398,7 +403,7 @@ class TsfmService:
         t.update(state="READY", reason=None, snapshot_id=snap, bar_key=bar_key)
         for m in mids:
             ms = self._ms((m, inst, tf))
-            if ms["last_key"] == bar_key and not force:
+            if ms["last_key"] == bar_key and not (force and force_model in (None, m)):   # 1.46: refresh forces only the requested model
                 fc = self.latest.get((m, inst, tf))
                 if fc and fc["last_bar_open_utc"] == bar_key:
                     ms.update(state="READY", reason=None)
@@ -439,7 +444,7 @@ class TsfmService:
             return {"ok": False, "reason": "prognoza już liczona / w kolejce (ochrona przed przeciążeniem)"}
         self._ms((mid, inst, tf))["last_key"] = None
         self._target((inst, tf))["next_check"] = 0.0
-        self.tick(force=(inst, tf))
+        self.tick(force=(inst, tf), force_model=mid)           # 1.46: not a forced re-forecast of every model of (inst, tf)
         return {"ok": True, "target": self.target_view((mid, inst, tf))}
 
     # ================================================================== execution (ONE thread for both models)
@@ -499,15 +504,7 @@ class TsfmService:
         if y_raw is None:
             ms.update(state=cinfo["status"], reason=cinfo["reason"], last_key=job["bar_key"])
             return None
-        ctx = min(c.context_len, len(bars))
-        req = {"cmd": "predict", "close": [float(b["c"]) for b in bars[-ctx:]], "pred_len": H, "context_len": ctx, "profile": c.profile,
-               "quantiles": s.quantiles, "freq_tf": tf}
-        if c.profile == "CLOSE_OHLCV_PAST_V1":
-            vsrc = job["quality"]["volume_source"]
-            vol = [float(b.get("rv") or 0) for b in bars[-ctx:]] if vsrc == "REAL_VOLUME" else \
-                [float(b.get("tv") or 0) for b in bars[-ctx:]] if vsrc == "TICK_VOLUME" else None
-            req["covariates"] = {"open": [b["o"] for b in bars[-ctx:]], "high": [b["h"] for b in bars[-ctx:]], "low": [b["l"] for b in bars[-ctx:]],
-                                 "volume": vol}
+        req, ctx = predict_request(c, s, bars, tf, H, (job.get("quality") or {}).get("volume_source"))
         try:
             r = w.ask(req, c.request_timeout_s)
         except TimeoutError as exc:
@@ -557,7 +554,7 @@ class TsfmService:
         last = bars[-1]
         pt, digits = self._point(job["symbol"])
         a = Q.atr(bars, 14)
-        band = max(s.direction_band_atr * (a or 0.0), s.direction_band_min_points * (pt or 0.0))
+        band = neutral_band(s, a, pt)
         last_close = float(last["c"])
         point = [float(x) for x in r["point"]]
         pc = point[-1]
@@ -597,20 +594,42 @@ class TsfmService:
                 "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem"}
 
     # ================================================================== ledger + settlement
-    def record(self, fc: dict) -> None:
-        settings = {"quantiles": fc["quantile_levels"], "band_rule": fc["band_rule"], "superseded": fc.get("superseded", False)}
+    def record(self, fc: dict) -> bool:
+        """Store the forecast BEFORE its outcome. -> True when fc["id"] is a row of the ledger.
+        1.46: the ledger key (model, fingerprint, profile, instrument, TF, last bar, horizon) had no checkpoint and INSERT OR IGNORE silently
+        dropped a re-forecast of the same bar while `latest` and the decisions used its new id. Now a Granite TTM fine-tune is stored under
+        fingerprint "<pinned>+<checkpoint>" (own rows; the checkpoint is also in settings_json); an identical re-run of the same bar (restart,
+        refresh) takes the id of the stored forecast; a DIFFERENT re-forecast is marked REFORECAST_NOT_RECORDED with the stored id - the first
+        forecast (stored before the outcome) is never overwritten or deleted."""
+        lfp = ledger_fingerprint(fc["fingerprint"], fc.get("checkpoint"))
+        path_json = json.dumps([{"t_utc": p["t_utc"], "c": p["point"]} for p in fc["path"]])
+        settings = {"quantiles": fc["quantile_levels"], "band_rule": fc["band_rule"], "superseded": fc.get("superseded", False),
+                    "checkpoint": fc.get("checkpoint") or "BASE"}
         self.db.execute(
             """INSERT OR IGNORE INTO tsfm_forecasts(forecast_id, model_id, model_name, model_revision, fingerprint, profile, snapshot_id, created_at,
                instrument, symbol, data_source, timeframe, horizon_bars, context_bars, last_bar_open_utc, data_available_at, valid_until, last_close,
                point_kind, pred_close_h, median_close_h, delta_price, direction, neutral_band, path_json, quantiles_json, input_hash, device,
                compute_ms, data_kind, quality_status, settings_json, outcome_status)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (fc["id"], fc["model_id"], fc["model_name"], fc["model_revision"], fc["fingerprint"], fc["profile"], fc["snapshot_id"], fc["created_at"],
+            (fc["id"], fc["model_id"], fc["model_name"], fc["model_revision"], lfp, fc["profile"], fc["snapshot_id"], fc["created_at"],
              fc["instrument"], fc["symbol"], fc["data_source"], fc["timeframe"], fc["horizon_bars"], fc["context_bars"], fc["last_bar_open_utc"],
              fc["data_available_at"], fc["valid_until"], fc["last_close"], fc["point_kind"], fc["pred_close_h"], fc["median_close_h"], fc["delta_price"],
-             fc["direction"], fc["neutral_band"], json.dumps([{"t_utc": p["t_utc"], "c": p["point"]} for p in fc["path"]]),
+             fc["direction"], fc["neutral_band"], path_json,
              json.dumps({"levels": fc["quantile_levels"], "path": [{k: v for k, v in p.items() if k.startswith("q")} for p in fc["path"]]}),
              fc["input_hash"], fc["device"], fc["compute_ms"], fc["data_kind"], fc["quality"]["status"], json.dumps(settings), "PENDING"))
+        if self.db.one("SELECT id FROM tsfm_forecasts WHERE forecast_id=?", (fc["id"],)):
+            fc["ledger"] = {"status": "RECORDED", "forecast_id": fc["id"]}
+            return True
+        row = self.db.one("SELECT forecast_id, created_at, direction, path_json FROM tsfm_forecasts WHERE model_id=? AND fingerprint=? AND profile=? "
+                          "AND instrument=? AND timeframe=? AND last_bar_open_utc=? AND horizon_bars=?",
+                          (fc["model_id"], lfp, fc["profile"], fc["instrument"], fc["timeframe"], fc["last_bar_open_utc"], fc["horizon_bars"]))
+        if row and row["path_json"] == path_json and row["direction"] == fc["direction"]:
+            fc["id"] = row["forecast_id"]                                  # the same forecast: every reference resolves to the stored row
+            fc["ledger"] = {"status": "SAME_AS_RECORDED", "forecast_id": row["forecast_id"], "recorded_at": row["created_at"]}
+            return True
+        fc["ledger"] = {"status": "REFORECAST_NOT_RECORDED", "forecast_id": None, "recorded_forecast_id": row["forecast_id"] if row else None,
+                        "reason": "ponowna prognoza tej samej świecy różni się od zapisanej w księdze (zapisana przed wynikiem) – nie jest rozliczana"}
+        return False
 
     def settle(self, inst: str, tf: str, closed_bars: list[dict]) -> int:
         """PENDING forecasts whose last target bar is closed: actual closes of EXACTLY the target times from real closed bars; a missing
@@ -670,15 +689,23 @@ class TsfmService:
         return rows
 
     def scorecard(self, mid: str, inst: str, tf: str) -> dict:
+        # 1.46: only forecasts of the CURRENT model artefact (pinned fingerprint + Granite TTM checkpoint, see ledger_fingerprint) - the
+        # filter on model_id alone mixed BASE with GTR-... fine-tunes; rows of 1.37-1.45 carry the plain fingerprint (checkpoint not stored)
+        try:
+            from tsfm_runtime import lock as L
+            lfp = ledger_fingerprint(L.fingerprint(mid), self.settings.get().models[mid].checkpoint)
+        except Exception:  # noqa: BLE001 - unknown pin: no filter (as before)
+            lfp = None
+        fsql, farg = (" AND fingerprint=?", (lfp,)) if lfp else ("", ())
         out = {}
         for label, kinds in (("REAL", ("MT5", "MT5_DEMO", "MT5_REAL")), ("SYNTHETIC", ("SYNTHETIC",))):
             ph = ",".join("?" * len(kinds))
             rows = self.db.query(f"SELECT * FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='SETTLED' "
-                                 f"AND data_kind IN ({ph}) ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds))
+                                 f"AND data_kind IN ({ph}){fsql} ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds, *farg))
             pend = self.db.one(f"SELECT COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='PENDING' "
-                               f"AND data_kind IN ({ph})", (mid, inst, tf, *kinds))["n"]
+                               f"AND data_kind IN ({ph}){fsql}", (mid, inst, tf, *kinds, *farg))["n"]
             if not rows:
-                out[label] = {"settled": 0, "pending": pend}
+                out[label] = {"settled": 0, "pending": pend, "fingerprint": lfp}
                 continue
             rows = rows[::-1]
             h = rows[0]["horizon_bars"] or 1
@@ -691,7 +718,8 @@ class TsfmService:
                           "direction_hit_rate": (sum(hits) / len(hits)) if hits else None,
                           "non_overlapping": {"n": len(nonover), "mae_h": _mean(r["abs_err_h"] for r in nonover),
                                               "naive_mae_h": _mean(r["naive_abs_err_h"] for r in nonover)},
-                          "note": "kolejne prognozy co świecę mają nakładające się horyzonty – wiarygodniejszy jest podzbiór bez nakładania i raport walidacji"}
+                          "note": "kolejne prognozy co świecę mają nakładające się horyzonty – wiarygodniejszy jest podzbiór bez nakładania i raport walidacji",
+                          "fingerprint": lfp}
         return out
 
     # ================================================================== views
@@ -705,9 +733,6 @@ class TsfmService:
                 "state_pl": TARGET_PL.get(ms["state"], ms["state"]), "quality": t.get("quality"), "checked_at": t.get("checked_at"),
                 "snapshot_id": t.get("snapshot_id"), "forecast_current": current, "forecast_id": fc["id"] if fc else None,
                 "queued": k in self.queue, "running": self.running == k}
-
-    def is_current(self, k: tuple) -> bool:
-        return self.target_view(k)["forecast_current"]
 
     def forecast(self, mid: str, inst: str, tf: str) -> dict:
         k = (mid, inst, tf)
@@ -767,6 +792,8 @@ class TsfmService:
     def public(self) -> dict:
         s = self.settings.get()
         from tsfm_runtime import lock as L
+        with self._qlock:                       # 1.46: copied under the queue lock (sched / exec threads mutate it: "OrderedDict mutated")
+            queue = [list(k) for k in self.queue]
         out = {}
         for mid, w in self.workers.items():
             c = s.models[mid]
@@ -781,7 +808,7 @@ class TsfmService:
                         "jobs": {n: (j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})
                                  for n, j in self.jobs.items() if n.endswith(mid)}}
         return {"version": "PMW-TSFM-1", "mode": "SHADOW", "execution_permission": False, "models": out, "horizon_bars": s.horizon_bars,
-                "quantiles": s.quantiles, "queue": [list(k) for k in self.queue], "running": list(self.running) if self.running else None,
+                "quantiles": s.quantiles, "queue": queue, "running": list(self.running) if self.running else None,
                 "counters": dict(self.counters), "settings_error": self.settings.load_error,
                 "jobs": {"validation": (lambda j: j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})(self.jobs.get("validation"))},
                 "retired": {k: {"name": NAMES.get(k, k), "status": "RETIRED", "status_pl": RETIRED_PL, "history_count": self._count(k),
@@ -958,6 +985,33 @@ class TsfmService:
                                                                "activation_policy": "VALIDATION", "activated_at": None}}}}})
         self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = {use} ({tf}), raporty {ids}.")
         return {"ok": True, "use": use, "reports": ids}
+
+
+def ledger_fingerprint(fingerprint: str, checkpoint: str | None) -> str:
+    """1.46: ledger fingerprint of a forecast - the pinned model fingerprint, + "+<checkpoint>" for a Granite TTM fine-tune (GTR-...), so a
+    fine-tune never shares the ledger key / scorecard of the pinned base model. BASE (every 1.37-1.45 row) keeps the plain fingerprint."""
+    return fingerprint if (checkpoint or "BASE") == "BASE" else f"{fingerprint}+{checkpoint}"
+
+
+def predict_request(c, s, bars: list[dict], tf: str, H: int, volume_source: str | None) -> tuple[dict, int]:
+    """(request, context bars) of ONE forecast from `bars` = the closed bars of the quality window (<= settings.lookback).
+    1.46: shared by the live forecast and the walk-forward validation - the validation used to send CLOSE_V1 without covariates and the
+    full context_len although its report binds the configured profile / context (the live input is cut to the lookback window)."""
+    ctx = min(c.context_len, len(bars))
+    win = bars[-ctx:]
+    req = {"cmd": "predict", "close": [float(b["c"]) for b in win], "pred_len": H, "context_len": ctx, "profile": c.profile,
+           "quantiles": s.quantiles, "freq_tf": tf}
+    if c.profile == "CLOSE_OHLCV_PAST_V1":
+        vol = [float(b.get("rv") or 0) for b in win] if volume_source == "REAL_VOLUME" else \
+            [float(b.get("tv") or 0) for b in win] if volume_source == "TICK_VOLUME" else None
+        req["covariates"] = {"open": [b["o"] for b in win], "high": [b["h"] for b in win], "low": [b["l"] for b in win], "volume": vol}
+    return req, ctx
+
+
+def neutral_band(s, atr14: float | None, point: float | None) -> float:
+    """The neutral band of the direction rule: max(k x ATR14, min_points x point) - 1.46: one definition for the live forecast and the
+    walk-forward validation (the validation used k x ATR only). Unchanged rule (a missing ATR / point still counts as 0 here)."""
+    return max(s.direction_band_atr * (atr14 or 0.0), s.direction_band_min_points * (point or 0.0))
 
 
 class _nullslot:
