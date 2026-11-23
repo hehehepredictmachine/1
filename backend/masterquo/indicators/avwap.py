@@ -167,7 +167,9 @@ def event_anchor(bars: list[dict], tf_s: int, as_of: float, *, tick: float = 0.0
 
 
 def manual_anchor(source_time, created_at, label: str | None = None) -> dict:
-    return {"mode": "MANUAL", "kind": label or "MANUAL", "source_time": C.iso(C.ts(source_time)), "confirmed_at": C.iso(C.ts(created_at)),
+    # 1.46: user input - a time without a zone is rejected (was read in the local zone), an out-of-range epoch is a ValueError
+    st, ca = C.ts(source_time, strict=True), C.ts(created_at, strict=True)
+    return {"mode": "MANUAL", "kind": label or "MANUAL", "source_time": C.iso(st), "confirmed_at": C.iso(ca),
             "anchor_id": anchor_id("MANUAL", label or "MANUAL", source_time, created_at)}
 
 
@@ -186,7 +188,12 @@ def compute(bars: list[dict], tf: str, anchor: dict | None, *, as_of: float, ins
     if C.ts(anchor["confirmed_at"]) > as_of + 1e-6:
         return C.result(iid, VERSION, status="WARMUP", reason="ANCHOR_NOT_CONFIRMED_YET", extra={"anchor": anchor}, **base)
     seq = _closed(bars, tf_s, as_of)
-    pts, src, zero = line(seq, C.ts(anchor["source_time"]), price_mode=price_mode)
+    anchor_t = C.ts(anchor["source_time"])
+    if seq and C.ts(seq[0]["open_utc"]) > anchor_t + 1e-6:
+        # 1.46: the buffered history starts AFTER the anchor - line() would start at the first buffered bar (another AVWAP, shown READY)
+        return C.result(iid, VERSION, status="WARMUP", reason="ANCHOR_OLDER_THAN_HISTORY", sample_count=len(seq),
+                        extra={"anchor": dict(anchor, version=anchor_version), "history_from": seq[0]["open_utc"]}, **base)
+    pts, src, zero = line(seq, anchor_t, price_mode=price_mode)
     extra = {"anchor": dict(anchor, version=anchor_version), "price_mode": price_mode, "zero_weight_bars": zero,
              "volume_note": "tick_volume = liczba zmian kwotowania (proxy aktywności), nie wolumen transakcyjny" if src == "TICK_VOLUME" else None}
     if not pts:

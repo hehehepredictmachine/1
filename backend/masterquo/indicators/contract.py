@@ -29,14 +29,31 @@ def iso(t) -> str | None:
     return datetime.fromtimestamp(float(t), timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def ts(x) -> float | None:
+TS_MAX = 253402300799.0          # 9999-12-31T23:59:59Z - the last epoch a datetime can show
+
+
+def ts(x, strict: bool = False) -> float | None:
+    """Epoch seconds of a number / datetime / ISO text. strict=True (user input such as a manual anchor) rejects a text without a
+    zone: the computer's local zone is never assumed (timeutil.parse_iso convention)."""
     if x is None:
         return None
     if isinstance(x, (int, float)) and not isinstance(x, bool):
-        return float(x)
+        # 1.46: 1e20 / NaN passed here and crashed later in iso() (OverflowError / ValueError outside the caller's validation)
+        try:
+            v = float(x)
+        except OverflowError:
+            raise ValueError("TIMESTAMP_OUT_OF_RANGE") from None
+        if not math.isfinite(v) or abs(v) > TS_MAX:
+            raise ValueError("TIMESTAMP_OUT_OF_RANGE")
+        return v
     if isinstance(x, datetime):
+        if strict and x.tzinfo is None:
+            raise ValueError("NAIVE_TIMESTAMP")
         return x.timestamp()
-    return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+    d = datetime.fromisoformat(str(x).replace("Z", "+00:00"))
+    if strict and d.tzinfo is None:
+        raise ValueError("NAIVE_TIMESTAMP")       # 1.46: a naive text was read in the local zone (anchor shifted by the UTC offset)
+    return d.timestamp()
 
 
 def finite(x) -> bool:

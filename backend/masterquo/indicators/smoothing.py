@@ -218,6 +218,8 @@ class IndicatorEngine:
     """Per-key state (venue|instrument|tf|config_hash): incremental update on appended closed bars; any revision / shrink / instrument or
     spec change -> deterministic full replay. Full == incremental is asserted by the tests."""
 
+    MAX_STATES = 64                   # 1.46: the key holds any timeframe / bars from a request body - bounded LRU (a miss = full replay)
+
     def __init__(self):
         self._st: dict[str, dict] = {}
 
@@ -226,7 +228,8 @@ class IndicatorEngine:
         return f"{spec.venue}|{spec.instrument}|{spec.timeframe}|{spec.config_hash}|{spec.algorithm_version}"
 
     def calculate(self, spec: IndicatorSpec, bars: list[dict], *, revision: str | int | None = None, now: float | None = None) -> dict:
-        closed = [b for b in bars if not b.get("forming")] if spec.closed_only else list(bars)
+        # 1.46: the bridge marks a forming bar closed=False (not 'forming') - it was counted as closed
+        closed = [b for b in bars if not b.get("forming") and b.get("closed", True) is not False] if spec.closed_only else list(bars)
         if not closed:
             return self._result(spec, [], [], "NO_DATA", "brak zamkniętych świec", revision)
         for b in closed:
@@ -254,7 +257,10 @@ class IndicatorEngine:
                     state.commit(v)
                 mode = "INCREMENTAL"
             vals = list(state.committed)
-            self._st[k] = {"state": state, "ident": ident, "x": x, "revision": revision}
+            self._st.pop(k, None)
+            self._st[k] = {"state": state, "ident": ident, "x": x, "revision": revision}   # most recent last
+            while len(self._st) > self.MAX_STATES:
+                self._st.pop(next(iter(self._st)))
         need = spec.bars_required()
         status = "READY" if any(v is not None for v in vals) else "WARMUP"
         res = self._result(spec, vals, closed, status, None if status == "READY" else f"za mało świec: {len(closed)}/{need}", revision)
@@ -268,7 +274,8 @@ class IndicatorEngine:
                 "spec": {k: v for k, v in asdict(spec).items() if k != "warnings"}, "label": f"{spec.method}({spec.period})",
                 "seed_policy": spec.seed_policy, "applied_price": spec.applied_price, "algorithm_version": spec.algorithm_version,
                 "config_hash": spec.config_hash, "source_revision": revision, "warnings": list(spec.warnings),
-                "available_at": (closed[-1].get("available_at") or closed[-1].get("t") or closed[-1].get("time") or closed[-1].get("t_raw")) if closed else None, "engine": ENGINE_VERSION,
+                # 1.46: only an explicit availability time - the fallback was the OPEN time of the last bar (server time for t_raw)
+                "available_at": closed[-1].get("available_at") if closed else None, "engine": ENGINE_VERSION,
                 "mode": "DESCRIPTIVE (bez sygnału, bez zleceń)"}
 
 

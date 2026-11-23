@@ -15,6 +15,7 @@ import json
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from . import avwap as AV
@@ -26,6 +27,8 @@ from . import semivar as SV
 from . import spread as SP
 
 VERSION = "PMW-IND-SERVICE-1"
+SAMPLE_MAX_QUOTE_AGE_S = 30.0     # 1.46: a spread sample needs a quote that changed recently (same limit as the STALE spread)
+SNAPSHOT_MAX_AGE_S = 180.0        # 1.46: the snapshot is refreshed on every closed M1 bar - older than this it is served as STALE
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS spread_samples (id INTEGER PRIMARY KEY AUTOINCREMENT, instrument TEXT, symbol TEXT, t REAL, spread REAL,
   session TEXT, slot INTEGER, instance TEXT, instance_start REAL);
@@ -91,12 +94,14 @@ class IndicatorService:
 
     def tick(self, now: float | None = None) -> None:
         cfg = self._cfg()
+        if (not cfg.enabled or not cfg.book_enabled) and self.book.symbol:
+            self.book.close()                         # 1.46: switched off -> the market depth subscription is released
         if not cfg.enabled:
             return
         now = now if now is not None else self.clock()
         q = getattr(self.bridge, "quote", None)
         self.intensity.observe(q, now)
-        if q and now - self._last_sample >= cfg.spread_sample_s:
+        if q and now - self._last_sample >= cfg.spread_sample_s and self._quote_fresh(q, now):
             self._last_sample = now
             self.sample_spread(q, now)
         if cfg.book_enabled and now - self._last_book >= cfg.book_period_s:
@@ -107,6 +112,22 @@ class IndicatorService:
         if t and t != self.last_m1:
             self.last_m1 = t
             self.refresh(now)
+
+    @staticmethod
+    def _quote_fresh(q: dict, now: float) -> bool:
+        """1.46: the bridge keeps the last quote when the market is closed (weekend, daily break) - a frozen quote is not a spread
+        sample of the session (it entered the percentile reference as a normal session instance). Unknown age = not sampled."""
+        last_new = q.get("_last_new_received")
+        try:
+            if isinstance(last_new, datetime):
+                age = now - last_new.timestamp()
+            elif q.get("time_utc"):
+                age = now - C.ts(q["time_utc"])
+            else:
+                return False
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return age <= SAMPLE_MAX_QUOTE_AGE_S
 
     # ------------------------------------------------------------------ inputs
     def _inst(self) -> tuple[str, str, float, dict]:
@@ -130,8 +151,9 @@ class IndicatorService:
         self.state["spread_samples"] += 1
 
     def _spread_samples(self, inst: str, sym: str, session: str, slot: int) -> list[dict]:
-        rows = self.db.execute("SELECT t, spread, session, slot, instance, instance_start FROM spread_samples WHERE instrument=? AND symbol=? "
-                               "AND session=? AND slot=? ORDER BY t DESC LIMIT 20000", (inst, sym, session, slot)).fetchall()
+        with self._lock:                              # 1.46: the connection is shared by the loop thread and API threads
+            rows = self.db.execute("SELECT t, spread, session, slot, instance, instance_start FROM spread_samples WHERE instrument=? AND symbol=? "
+                                   "AND session=? AND slot=? ORDER BY t DESC LIMIT 20000", (inst, sym, session, slot)).fetchall()
         return [dict(r) for r in rows]
 
     def _record_book(self, sym: str, book: dict) -> None:
@@ -173,7 +195,9 @@ class IndicatorService:
     def manual_anchors(self, tf: str | None = None) -> list[dict]:
         inst, sym, _, _ = self._inst()
         q = "SELECT * FROM avwap_anchors WHERE active=1 AND instrument=? AND symbol=?" + (" AND tf=?" if tf else "") + " ORDER BY created_at"
-        return [dict(r) for r in self.db.execute(q, (inst, sym, tf) if tf else (inst, sym)).fetchall()]
+        with self._lock:                              # 1.46: shared connection - reads under the same lock as the writes
+            rows = self.db.execute(q, (inst, sym, tf) if tf else (inst, sym)).fetchall()
+        return [dict(r) for r in rows]
 
     def _version(self, key: str, anchor_id: str | None) -> int:
         if anchor_id is None:
@@ -222,7 +246,8 @@ class IndicatorService:
         ss = SP.session_slot(pid, as_of, cfg.spread_slot_minutes)
         out["spread"] = SP.compute(q, self._spread_samples(inst, sym, ss["session"], ss["slot"]), now=as_of, instrument=inst, broker_symbol=sym,
                                    profile_id=pid, tick=tick, atr_v=atr_m1, slot_minutes=cfg.spread_slot_minutes, min_sessions=cfg.spread_min_sessions,
-                                   max_sessions=cfg.spread_max_sessions, intensity=self.intensity.view(), sample_every_s=cfg.spread_sample_s)
+                                   max_sessions=cfg.spread_max_sessions, intensity=self.intensity.view(), sample_every_s=cfg.spread_sample_s,
+                                   unusual_pct=cfg.spread_unusual_pct)
         app = self.cfg_store.get()
         dsym = app.mt5.dxy_symbol
         dbars = self.bridge.bars("DXY_H1", include_forming=False)[-cfg.dxy_history_bars:] if dsym else []
@@ -242,8 +267,13 @@ class IndicatorService:
         else:
             out["microstructure"] = C.result("MICROSTRUCTURE", OF.VERSION, instrument=inst, broker_symbol=sym, source="MT5_MARKET_BOOK(broker)",
                                              timeframe=None, status="DISABLED", reason="book_enabled=false")
-        out["snapshot_id"] = "INDS-" + hashlib.sha256(json.dumps({k: (v.get("snapshot_id") if isinstance(v, dict) else None)
-                                                                   for k, v in out.items()}, sort_keys=True, default=str).encode()).hexdigest()[:16]
+        def sid(v):
+            return v.get("snapshot_id") if isinstance(v, dict) else None
+        key = {k: sid(v) for k, v in out.items()}
+        # 1.46: the AVWAP results (incl. MANUAL) and as_of are part of the identity of the frozen snapshot (they were hashed as None)
+        key["as_of"] = out["as_of"]
+        key["avwap"] = {tf: {m: ([sid(x) for x in r] if isinstance(r, list) else sid(r)) for m, r in modes.items()} for tf, modes in out["avwap"].items()}
+        out["snapshot_id"] = "INDS-" + hashlib.sha256(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()[:16]
         return out
 
     def refresh(self, now: float | None = None) -> dict:
@@ -273,11 +303,44 @@ class IndicatorService:
             return None
 
     # ------------------------------------------------------------------ outputs
-    @staticmethod
-    def compact(s: dict | None) -> dict:
-        """Small view for MarketView.context, agent snapshot and the WS event: status + main values per indicator."""
+    def freshness(self, s: dict | None) -> tuple[str, str | None, float | None]:
+        """1.46: (READY | STALE | DISABLED, reason, age_s) of a stored snapshot. It is refreshed only on a new closed M1 bar, so over a
+        weekend / break, with the module switched off or with compute() failing it stayed READY for hours ('a restored snapshot is
+        never presented as fresh')."""
+        age = None
+        if s and s.get("as_of"):
+            try:
+                age = self.clock() - C.ts(s["as_of"])
+            except (TypeError, ValueError):
+                age = None
+        if not self._cfg().enabled:
+            return "DISABLED", "indicators.enabled=false", age
+        if age is None:
+            return "STALE", "SNAPSHOT_AGE_UNKNOWN", None
+        if age > SNAPSHOT_MAX_AGE_S:
+            return "STALE", f"SNAPSHOT_AGE_{int(age)}S", age
+        return "READY", None, age
+
+    def compact(self, s: dict | None) -> dict:
+        """Small view for MarketView.context, agent snapshot and the WS event: status + main values per indicator.
+        1.46: an old snapshot (or a switched-off module) is shown with STALE / DISABLED statuses - the stored snapshot is not changed."""
         if not s:
             return {"status": "NO_SNAPSHOT"}
+        out = self._compact(s)
+        st, why, age = self.freshness(s)
+        out["snapshot_status"], out["snapshot_age_s"] = st, (round(age, 1) if age is not None else None)
+        if st != "READY":
+            def mark(v):
+                if isinstance(v, dict) and (v.get("status") == "READY" or st == "DISABLED"):
+                    return dict(v, status=st, reason=why)
+                return v
+            for k in ("semivar", "spread", "dxy", "profile", "microstructure"):
+                out[k] = mark(out.get(k))
+            out["avwap"] = {k: mark(v) for k, v in (out.get("avwap") or {}).items()}
+        return out
+
+    @staticmethod
+    def _compact(s: dict) -> dict:
 
         def sv(r, keys):
             return {"status": r.get("status"), "reason": r.get("reason"), **{k: (r.get("values") or {}).get(k) for k in keys}} if r else None
@@ -302,9 +365,15 @@ class IndicatorService:
 
     def status(self) -> dict:
         s = self.current()
+        fst, _, age = self.freshness(s) if s else (None, None, None)
+
+        def st(v):                                     # 1.46: the summary follows the snapshot freshness (see compact)
+            x = v.get("status") if isinstance(v, dict) else None
+            return fst if (fst in ("STALE", "DISABLED") and (x == "READY" or fst == "DISABLED") and x is not None) else x
         return {**self.state, "book": {"status": self.book.status, "reason": self.book.reason, "symbol": self.book.symbol,
                                        "ofi": self.ofi.view()},
-                "summary": {k: (v.get("status") if isinstance(v, dict) else None) for k, v in (s or {}).items()
+                "snapshot_status": fst, "snapshot_age_s": round(age, 1) if age is not None else None,
+                "summary": {k: st(v) for k, v in (s or {}).items()
                             if k in ("semivar", "spread", "dxy", "profile", "microstructure")},
                 "note": "wskaźniki analityczne – same nie blokują strategii; pasma σ nie są przedziałami prawdopodobieństwa"}
 
@@ -316,7 +385,8 @@ class IndicatorService:
     def manifest(self) -> dict:
         """Source archive manifest (spread samples, DXY bars, book snapshots) for dataset export / replay."""
         def one(q):
-            r = self.db.execute(q).fetchone()
+            with self._lock:                          # 1.46: shared connection - reads under the same lock as the writes
+                r = self.db.execute(q).fetchone()
             return dict(r) if r else {}
         return {"version": VERSION, "contract": C.VERSION, "db": str(self.dir / "indicators.sqlite"),
                 "spread_samples": one("SELECT COUNT(*) n, MIN(t) t0, MAX(t) t1, COUNT(DISTINCT instance) instances FROM spread_samples"),

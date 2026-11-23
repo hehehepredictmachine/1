@@ -16,7 +16,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import pickle
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -35,11 +37,29 @@ MIN_HOLDOUT = 20
 VARIANTS = (("BASE",), ("BASE", "SAR"), ("BASE", "IQ_GOLD_GANN"), ("BASE", "IQ_STAR_LINES"), ("BASE", "PAL02M"))
 
 
+_REG_LOCK = threading.Lock()
+
+
 def root(inst: str) -> Path:
     import mq_instruments
+    # 1.46: the asset comes from API bodies (activate / rollback) - '../forecast' rewrote another registry and any value created
+    # directories outside the data folder; only a profiled instrument names a folder
+    if not isinstance(inst, str) or inst not in mq_instruments.profiles():
+        raise ValueError(f"UNKNOWN_INSTRUMENT:{inst}")
     d = mq_instruments.data_dir() / "indicator_context" / inst
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _write_registry(reg_p: Path, reg: dict) -> None:
+    # 1.46: one fixed 'registry.tmp' was shared by every writer (train process, API activate / rollback) - a concurrent writer or a
+    # leftover broke the replace; each write has its own temporary file
+    tmp = reg_p.with_name(f"{reg_p.stem}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
+        tmp.replace(reg_p)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 # ------------------------------------------------------------------ dataset
@@ -261,7 +281,14 @@ def calibrate_sar(data: dict, sp: dict) -> dict:
             "live_default_unchanged": {"step": 0.02, "max": 0.2}}
 
 
-def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_dir: Path | None = None, log=print) -> dict:
+def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_dir: Path | None = None, log=print,
+          groups: list[str] | None = None) -> dict:
+    variants = VARIANTS
+    if groups:                                          # 1.46: CLI --groups - BASE + the named groups only (was ignored)
+        unknown = sorted(set(groups) - {g for v in VARIANTS for g in v[1:]})
+        if unknown:
+            raise ValueError("UNKNOWN_GROUPS:" + ",".join(unknown))
+        variants = tuple(v for v in VARIANTS if len(v) == 1 or v[1] in groups)
     data = build_dataset(inst, ds, commission, db, log)
     synthetic = data["data_kind"] != "REAL_USER_DATA"
     rid = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "_" + uuid.uuid4().hex[:4] + ("_FIXTURE" if synthetic else "")
@@ -269,7 +296,7 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_
     rd.mkdir(parents=True, exist_ok=True)
     sp = split(data["rows"])
     plan = {"task_id": F.TASK_ID, "schema": F.FEATURE_SCHEMA, "instrument": inst, "blocks": {k: int(len(v)) for k, v in sp.items()},
-            "embargo_s": EMBARGO_S, "sar_grid": SAR_GRID, "variants": [list(v) for v in VARIANTS], "frozen_at": datetime.now(timezone.utc).isoformat(),
+            "embargo_s": EMBARGO_S, "sar_grid": SAR_GRID, "variants": [list(v) for v in variants], "frozen_at": datetime.now(timezone.utc).isoformat(),
             "label": "y=1 gdy replay zamrożonej polityki rozliczył TP1 przed SL; net_R raportowane obok (to nie P(net_R>0))"}
     (rd / "plan.json").write_text(json.dumps(plan, indent=1), encoding="utf-8")
     rep = {"run_id": rid, "instrument": inst, "dataset_id": data["dataset_id"], "data_kind": data["data_kind"], "cycles": len(data["rows"]),
@@ -280,7 +307,7 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_
         rep["sar_calibration"] = calibrate_sar(data, sp)
         sel = rep["sar_calibration"].get("selected") or {"step": 0.02, "max": 0.2}
         base = None
-        for v in VARIANTS:
+        for v in variants:
             r = run_variant(data, v, sp, (sel["step"], sel["max"]) if "SAR" in v else (0.02, 0.2))
             if r["status"] == "EVALUATED" and v == ("BASE",):
                 base = r
@@ -300,12 +327,11 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_
             rep["variants_better_than_base_ci95"] = better
     (rd / "report.json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
     reg_p = root(inst) / "registry.json"
-    reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {"schema": "pmw-indicator-context-registry-1", "active": None, "runs": {}}
-    reg["runs"][rid] = {"run_dir": str(rd), "status": rep["status"], "role": rep["role"], "created_at": plan["frozen_at"], "data_kind": data["data_kind"],
-                        "artifacts": [p.name for p in rd.glob("model_*.json")]}
-    tmp = reg_p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
-    tmp.replace(reg_p)
+    with _REG_LOCK:                                     # 1.46: read-modify-write of the registry is serialised in the process
+        reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {"schema": "pmw-indicator-context-registry-1", "active": None, "runs": {}}
+        reg["runs"][rid] = {"run_dir": str(rd), "status": rep["status"], "role": rep["role"], "created_at": plan["frozen_at"], "data_kind": data["data_kind"],
+                            "artifacts": [p.name for p in rd.glob("model_*.json")]}
+        _write_registry(reg_p, reg)
     return rep
 
 
@@ -357,8 +383,8 @@ def load_artifact(rd: Path, name: str, man: dict | None = None) -> ContextModel:
 
 
 def active_model(inst: str) -> ContextModel | None:
-    reg_p = root(inst) / "registry.json"
     try:
+        reg_p = root(inst) / "registry.json"              # 1.46: unknown instrument (ValueError from root) = no model
         reg = json.loads(reg_p.read_text(encoding="utf-8"))
         a = reg.get("active")
         if not a:
@@ -370,26 +396,24 @@ def active_model(inst: str) -> ContextModel | None:
 
 def activate(inst: str, run_id: str, variant: str) -> dict:
     reg_p = root(inst) / "registry.json"
-    reg = json.loads(reg_p.read_text(encoding="utf-8"))
-    e = reg["runs"].get(run_id)
-    if not e or f"model_{variant}.json" not in e["artifacts"]:
-        raise ValueError("UNKNOWN_RUN_OR_VARIANT")
-    man = json.loads((Path(e["run_dir"]) / f"model_{variant}.json").read_text(encoding="utf-8"))
-    if man["role"] == "fixture_only" or man["parity"]["status"] != "OK":
-        raise ValueError("NOT_ACTIVATABLE_FIXTURE_OR_PARITY")
-    reg.setdefault("history", []).append(reg.get("active"))
-    reg["active"] = {"run_id": run_id, "variant": variant, "mode": "SHADOW"}
-    tmp = reg_p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
-    tmp.replace(reg_p)
+    with _REG_LOCK:
+        reg = json.loads(reg_p.read_text(encoding="utf-8"))
+        e = reg["runs"].get(run_id)
+        if not e or f"model_{variant}.json" not in e["artifacts"]:
+            raise ValueError("UNKNOWN_RUN_OR_VARIANT")
+        man = json.loads((Path(e["run_dir"]) / f"model_{variant}.json").read_text(encoding="utf-8"))
+        if man["role"] == "fixture_only" or man["parity"]["status"] != "OK":
+            raise ValueError("NOT_ACTIVATABLE_FIXTURE_OR_PARITY")
+        reg.setdefault("history", []).append(reg.get("active"))
+        reg["active"] = {"run_id": run_id, "variant": variant, "mode": "SHADOW"}
+        _write_registry(reg_p, reg)
     return reg["active"]
 
 
 def rollback(inst: str) -> dict | None:
     reg_p = root(inst) / "registry.json"
-    reg = json.loads(reg_p.read_text(encoding="utf-8"))
-    reg["active"] = (reg.get("history") or [None]).pop() if reg.get("history") else None
-    tmp = reg_p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reg, indent=1), encoding="utf-8")
-    tmp.replace(reg_p)
+    with _REG_LOCK:
+        reg = json.loads(reg_p.read_text(encoding="utf-8"))
+        reg["active"] = (reg.get("history") or [None]).pop() if reg.get("history") else None
+        _write_registry(reg_p, reg)
     return reg["active"]

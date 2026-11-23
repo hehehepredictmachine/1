@@ -10,19 +10,45 @@ from pathlib import Path
 INSTR = ("XAUUSD", "BTC")
 
 
+def _meta_time(meta: dict, key: str) -> float | None:
+    try:
+        from ..timeutil import parse_iso
+        return parse_iso(meta.get(key)).timestamp() if meta.get(key) else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
 def _latest_real(inst: str) -> Path | None:
+    # 1.46: the newest export was picked by the directory NAME ('TR-...' > 'EXP-...' as text, so an old runner export always beat a
+    # fresh panel export); now by the data cutoff from source_metadata.json (then export time, then file mtime), usable exports only.
     import mq_instruments as mi
-    cands = sorted((mi.data_dir() / "training" / "datasets" / inst).glob("*/source_metadata.json"))
-    for m in reversed(cands):
-        if json.loads(m.read_text(encoding="utf-8")).get("data_kind") == "REAL_USER_DATA":
-            return m.parent
-    return None
+
+    from ..forecast.export import dataset_state
+    cands = []
+    for m in (mi.data_dir() / "training" / "datasets" / inst).glob("*/source_metadata.json"):
+        try:
+            meta = json.loads(m.read_text(encoding="utf-8"))
+            mtime = m.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict) or meta.get("data_kind") != "REAL_USER_DATA" or not dataset_state(m.parent)["usable"]:
+            continue
+        exported = _meta_time(meta, "exported_at_utc")
+        cutoff = _meta_time(meta, "cutoff_utc")
+        cands.append((cutoff if cutoff is not None else (exported if exported is not None else mtime),
+                      exported if exported is not None else mtime, m.parent.name, m.parent))
+    return max(cands)[3] if cands else None
 
 
 def _dataset(a) -> Path | None:
     if a.dataset:
         return Path(a.dataset)
     return _latest_real(a.asset)
+
+
+def _out(a, res: dict) -> None:
+    if a.out:                                          # 1.46: --out worked only for 'train'
+        Path(a.out).write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:
@@ -35,11 +61,11 @@ def main(argv: list[str]) -> int:
         s = sub.add_parser(n)
         s.add_argument("--asset", choices=INSTR, default="XAUUSD")
         s.add_argument("--dataset", help="katalog eksportu treningowego (domyślnie najnowszy REAL_USER_DATA)")
-        s.add_argument("--latest-real", action="store_true")
+        s.add_argument("--latest-real", action="store_true", help="najnowszy REAL_USER_DATA (domyślne bez --dataset; zgodność wstecz)")
         s.add_argument("--commission", type=float)
         s.add_argument("--allow-synthetic-fixture", action="store_true", help="tylko testy: dane syntetyczne -> fixture_runs, nigdy aktywne")
-        s.add_argument("--groups", nargs="*", default=None)
-        s.add_argument("--out")
+        s.add_argument("--groups", nargs="*", default=None, help="train: tylko warianty BASE + podane grupy (SAR IQ_GOLD_GANN IQ_STAR_LINES PAL02M)")
+        s.add_argument("--out", help="zapis pełnego wyniku (JSON) do pliku")
     e = sub.add_parser("evaluate")
     e.add_argument("--asset", choices=INSTR, default="XAUUSD")
     e.add_argument("--run", required=True)
@@ -81,8 +107,12 @@ def main(argv: list[str]) -> int:
             print(f"[BLAD] {exc}")
             return 2
     if a.c == "rollback":
-        print(trainer.rollback(a.asset))
-        return 0
+        try:                                           # 1.46: no registry yet -> error code like 'activate', not a traceback
+            print(trainer.rollback(a.asset))
+            return 0
+        except (ValueError, OSError, KeyError) as exc:
+            print(f"[BLAD] {exc}")
+            return 2
     ds = _dataset(a)
     if ds is None or not (ds / "source_metadata.json").exists():
         print("[BLAD] BLOCKED_NO_DATA: brak eksportu REAL_USER_DATA – uruchom trening (00_TRENING_START.bat) albo podaj --dataset")
@@ -95,20 +125,22 @@ def main(argv: list[str]) -> int:
     try:
         if a.c == "dataset":
             d = trainer.build_dataset(a.asset, ds, a.commission, db)
-            print(json.dumps({"cycles": len(d["rows"]), "dataset_id": d["dataset_id"], "costs": d["costs"],
-                              "ext_coverage": {g: sum(1 for r in d["rows"] if r["ext"].get(g)) for g in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}}, indent=1))
+            res = {"cycles": len(d["rows"]), "dataset_id": d["dataset_id"], "costs": d["costs"],
+                   "ext_coverage": {g: sum(1 for r in d["rows"] if r["ext"].get(g)) for g in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}}
+            _out(a, res)
+            print(json.dumps(res, indent=1))
             return 0
         if a.c == "calibrate-sar":
             d = trainer.build_dataset(a.asset, ds, a.commission, db)
             res = trainer.calibrate_sar(d, trainer.split(d["rows"]))
+            _out(a, res)
             print(json.dumps(res, indent=1))
             return 0 if res["status"] == "OK" else 4
-        rep = trainer.train(a.asset, ds, commission=a.commission, db=db)
+        rep = trainer.train(a.asset, ds, commission=a.commission, db=db, groups=a.groups)   # 1.46: --groups was parsed and ignored
     except ValueError as exc:
         print(f"[BLAD] {exc}")
         return 2
-    if a.out:
-        Path(a.out).write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
+    _out(a, rep)
     print(json.dumps({"run_id": rep["run_id"], "status": rep["status"], "role": rep["role"],
                       "variants": {k: v["status"] for k, v in rep["variants"].items()}}, indent=1))
     return 0 if rep["status"] == "EVALUATED" else 4
