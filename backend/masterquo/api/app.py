@@ -94,6 +94,22 @@ class CloseReq(BaseModel):
 SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
 
 
+def body_num(body: dict, key: str, default, cast=int, lo=None, hi=None):
+    """1.46: number from a JSON body - a wrong type / NaN / out-of-range value is a 400 with the field name (was an unhandled 500)."""
+    raw = body.get(key) if isinstance(body, dict) else None
+    if raw is None or raw == "":
+        return default
+    if isinstance(raw, bool):
+        raise HTTPException(400, f"INVALID_{key.upper()}")
+    try:
+        v = cast(raw)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(400, f"INVALID_{key.upper()}") from None
+    if v != v or v in (float("inf"), float("-inf")) or (lo is not None and v < lo) or (hi is not None and v > hi):
+        raise HTTPException(400, f"{key.upper()}_OUT_OF_RANGE" + (f" ({lo}..{hi})" if lo is not None or hi is not None else ""))
+    return v
+
+
 class AskReq(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
 
@@ -343,6 +359,11 @@ def create_app(rt, port: int) -> FastAPI:
         from ..lab.sessions import memory_sequence
         if tf not in TIMEFRAMES:
             raise HTTPException(400, "INVALID_TIMEFRAME")
+        from ..timeutil import parse_iso
+        try:
+            parse_iso(t)                                  # 1.46: garbage / naive time was an unhandled 500
+        except (TypeError, ValueError):
+            raise HTTPException(400, "INVALID_TIME: ISO-8601 z Z albo przesunięciem") from None
         by = {x: [b for b in rt.bridge.bars(x, 500, include_forming=False) if b.get("open_utc")] for x in ("M1", "M5", "M15", "M30", "H1", "H4", "D1")}
         return {"asset": rt.cfg.get().assets.active, **memory_sequence(by, tf, t)}
 
@@ -359,8 +380,10 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(409, "MT5_NOT_CONNECTED")
         fams = [f for f in (body.get("families") or FAMILIES) if f in FAMILIES]
         exps = [e for e in (body.get("experiments") if body.get("experiments") is not None else EXPERIMENTS) if e in EXPERIMENTS]
-        bars = [b for b in rt.bridge.symbol_bars(sym, "M5", int(min(max(body.get("bars") or 20000, 2000), 100000))) if b.get("closed") and b.get("open_utc")]
-        prot = default_protocol(a, families=fams, experiments=exps, min_events=int(body.get("min_events") or 600))
+        nbars = int(min(max(body_num(body, "bars", 20000, int), 2000), 100000))
+        min_events = body_num(body, "min_events", 600, int, 1, 10_000_000)
+        bars = [b for b in rt.bridge.symbol_bars(sym, "M5", nbars) if b.get("closed") and b.get("open_utc")]
+        prot = default_protocol(a, families=fams, experiments=exps, min_events=min_events)
         meta = rt.bridge.symbol_meta(sym) or {}
         src = "SYNTHETIC" if (rt.demo or rt.bridge.synthetic or rt.cfg.get().synthetic_demo) else "MT5"
         return rt.lab.trainer.start(a, bars, point=float(meta.get("point") or 0.01), data_source=src,
@@ -579,7 +602,7 @@ def create_app(rt, port: int) -> FastAPI:
     def manual_execute(iid: str, body: dict = Body(default={})):
         from ..execution.manual import PlanError
         try:
-            return rt.manual.execute(iid, int(body.get("action_revision") or 1))
+            return rt.manual.execute(iid, body_num(body, "action_revision", 1, int) or 1)
         except PlanError as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -587,8 +610,8 @@ def create_app(rt, port: int) -> FastAPI:
     def manual_manage(iid: str, body: dict = Body(...)):
         from ..execution.manual import PlanError
         try:
-            return rt.manual.manage(iid, str(body.get("action")), int(body.get("action_revision") or 1), offset_points=float(body.get("offset_points") or 0),
-                                    volume=None if body.get("volume") is None else float(body["volume"]))
+            return rt.manual.manage(iid, str(body.get("action")), body_num(body, "action_revision", 1, int) or 1,
+                                    offset_points=body_num(body, "offset_points", 0.0, float) or 0.0, volume=body_num(body, "volume", None, float))
         except PlanError as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -2132,7 +2155,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/kronos/validate")
     def kronos_validate(body: dict = Body(...)):
-        n = int(body.get("max_origins", 300))
+        n = body_num(body, "max_origins", 300, int)
         if not 20 <= n <= 2000:
             raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
         r = rt.kronos.start_validation(_th_inst(str(body.get("instrument", ""))), _kr_tf(str(body.get("tf", ""))), n)
@@ -2263,7 +2286,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/models/foundation/validate")
     def tsfm_validate(body: dict = Body(...)):
-        n = int(body.get("max_origins", 200))
+        n = body_num(body, "max_origins", 200, int)
         if not 20 <= n <= 1000:
             raise HTTPException(400, "MAX_ORIGINS_OUT_OF_RANGE")
         r = rt.tsfm.start_validation(_th_inst(str(body.get("instrument", ""))), _ts_tf(str(body.get("tf", ""))), n)
@@ -2282,7 +2305,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/models/foundation/granite/train")
     def granite_train(body: dict = Body(...)):
         from ..tsfm import granite_train as _GT
-        epochs = int(body.get("epochs", 6))
+        epochs = body_num(body, "epochs", 6, int)
         if not 1 <= epochs <= 30:
             raise HTTPException(400, "EPOCHS_OUT_OF_RANGE")
         trading = getattr(rt.modes, "mode", "SIGNALS") in ("AUTO_DEMO", "AUTO_LIVE")
@@ -2615,7 +2638,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/quant/tabicl/reconstruct")
     def quant_tabicl_reconstruct(body: dict = Body(default={})):
-        days = int(body.get("days") or 30)
+        days = body_num(body, "days", 30, int) or 30
         if not 3 <= days <= 365:
             raise HTTPException(400, "DAYS_OUT_OF_RANGE (3..365)")
         r = _quant().tabicl.run_reconstruction(_quant().instrument(), days=days)

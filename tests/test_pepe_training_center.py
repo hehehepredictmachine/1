@@ -13,6 +13,7 @@ import threading
 import time
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import _env
@@ -116,6 +117,11 @@ class TestQueue(unittest.TestCase):
         from masterquo.training import pepe_center as P
         self.P = P
         rt = types.SimpleNamespace(demo=True, trainhub=FakeTrainhub(), families=None, research=None, tsfm=None)
+        # 1.46: the queue logic must not depend on the developer machine - .venv_candles (forecast / scalp units) is assumed installed here;
+        # its absence is covered by availability() itself (test_unit_unavailable_*).
+        self._candles = mock.patch.object(P.PepeTrainingCenter, "_candles_ok", staticmethod(lambda: True))
+        self._candles.start()
+        self.addCleanup(self._candles.stop)
         self.c = P.PepeTrainingCenter(rt)
         self.ran = []
         gate = self.gate = threading.Event()

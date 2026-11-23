@@ -11,6 +11,7 @@ import time
 from fastapi import Body, HTTPException
 
 from .. import paths
+from .app import body_num
 
 
 def register(app, rt) -> None:
@@ -133,7 +134,7 @@ def register(app, rt) -> None:
     @app.post("/api/v1/tlg/sim")
     def tlg_sim_start(body: dict = Body(...)):
         sym = str(body.get("symbol") or getattr(getattr(rt.cfg.get(), "mt5", None), "symbol", "XAUUSD"))
-        return g(tlg().sim_start, sym, str(body.get("tf") or "H1"), int(body.get("count") or 400))
+        return g(tlg().sim_start, sym, str(body.get("tf") or "H1"), body_num(body, "count", 400, int, 1, 5000) or 400)
 
     @app.get("/api/v1/tlg/sim/{sid}")
     def tlg_sim_view(sid: int):
@@ -141,7 +142,7 @@ def register(app, rt) -> None:
 
     @app.post("/api/v1/tlg/sim/{sid}/step")
     def tlg_sim_step(sid: int, body: dict = Body(default={})):
-        return g(tlg().sim_step, sid, int(body.get("n") or 1))
+        return g(tlg().sim_step, sid, body_num(body, "n", 1, int, 1, 5000) or 1)
 
     @app.post("/api/v1/tlg/sim/{sid}/open")
     def tlg_sim_open(sid: int, body: dict = Body(...)):
@@ -195,8 +196,13 @@ def register(app, rt) -> None:
             sym = getattr(getattr(rt.cfg.get(), "mt5", None), "symbol", "") if getattr(rt, "cfg", None) else ""
             spec = SM.IndicatorSpec.make(body.get("method"), body.get("period"), body.get("applied_price") or "CLOSE",
                                          body.get("policy") or "PMW_LEGACY_V1", sym, tf, "MT5")
-            bars = body.get("bars") if isinstance(body.get("bars"), list) else _bars(tf, max(10, min(int(body.get("count") or 500), 20000)))
-            rev = sum(int(b.get("revision") or 0) for b in bars) if bars else None
+            bars = body.get("bars") if isinstance(body.get("bars"), list) else _bars(tf, max(10, min(body_num(body, "count", 500, int) or 500, 20000)))
+            if not all(isinstance(b, dict) for b in bars):
+                raise HTTPException(400, "bars: lista obiektów świec")
+            try:
+                rev = sum(int(b.get("revision") or 0) for b in bars) if bars else None
+            except (TypeError, ValueError):
+                raise HTTPException(400, "bars: revision musi być liczbą całkowitą") from None
             return _ind.calculate(spec, bars, revision=rev)
         except SM.SpecError as exc:
             raise HTTPException(400, str(exc)) from None
@@ -554,11 +560,15 @@ def register(app, rt) -> None:
 
     @app.post("/api/v1/asge/run")
     def asge_run(body: dict = Body(...)):
+        seeds = body.get("seeds") or []                            # 1.46: input validated before any data work (was a 500 on bad types)
+        if not isinstance(seeds, list) or not all(isinstance(x, dict) for x in seeds) or len(seeds) > 20:
+            raise HTTPException(400, "seeds: lista 0-20 obiektów IR")
+        children = body_num(body, "children", 10, int, 0, 50) or 10
         bars = [{"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(str(body.get("timeframe") or "H1"), 5000)]
         if len(bars) < 600:
             return {"status": "INSUFFICIENT_DATA", "bars": len(bars)}
         try:
-            return ASG.run(bars, body.get("seeds") or [], int(body.get("children") or 10), ledger=_trials)
+            return ASG.run(bars, seeds, children, ledger=_trials)
         except ASG.IRError as exc:
             raise HTTPException(400, str(exc)) from None
 

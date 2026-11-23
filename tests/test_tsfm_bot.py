@@ -207,6 +207,9 @@ class TestService(unittest.TestCase):
         py = stub_python(self.dir, mode) if mode else str(self.dir / "missing")
         mc = {m: {"python_path": py, "timeframes": list(tfs), "instruments": ["XAUUSD"], "request_timeout_s": 5.0, **models.get(m, {})}
               for m in ("chronos2", "granite_ttm")}
+        # 1.46: the third model (TiRex-2, MODEL_IDS since 1.41) gets the same test interpreter and NO weights - before, its status depended on
+        # a .venv_tirex2 / MQ_TIREX2_PYTHON on the developer machine (NOT_INSTALLED vs NO_WEIGHTS)
+        mc["tirex2"] = {"python_path": py, "timeframes": list(tfs), "instruments": ["XAUUSD"], "request_timeout_s": 5.0, **models.get("tirex2", {})}
         st.update({"weights_root": str(root), "models": mc})
         self.svc = TsfmService(self.cfg, self.bridge, Database(self.dir / "t.sqlite"), K.Bus(), K.Log(), clock=lambda: self.now[0], settings=st)
         return self.svc
