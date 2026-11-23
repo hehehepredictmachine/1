@@ -1,15 +1,16 @@
 """BasketService (1.41) - registry, selector, conflict resolver, risk allocator, hedge planner host, ledger and scheduler of the
-9 baskets / 90 strategies across the three market profiles. One instance in Runtime, own thread, autostart (DIRECT_USER_REQUEST).
+6 baskets / 60 strategies across the two market profiles (1.46 docstring: OTC retired in TASK 020 - history only, never scanned).
+One instance in Runtime, own thread, autostart (DIRECT_USER_REQUEST).
 
 Flow per market context (profile + venue + environment + account/public + product + native instrument):
-  closed bars (MT5 bridge | Hyperliquid public API | own Gold OTC feed) -> shared detectors (one Feat per instrument / TF / bar)
+  closed bars (MT5 bridge | Hyperliquid public API, core perps only) -> shared detectors (one Feat per instrument / TF / bar)
   -> regime -> selector (OFF / AUTO / MANUAL_SELECT, separate from the execution mode) -> rule families -> plans
   -> event dedupe (one primary plan per event id; other strategies = justifications) -> direction conflict (WAIT) -> risk allocation
   (quantity / stake null without the profile's capital config) -> ledger -> API / UI; hedge planners on existing exposure.
 Execution (1.42, DIRECT_USER_REQUEST "zlecenia FOREX"): PositionPlans of the FOREX_MT5 baskets (FX_SMC / FX_SCALP / FX_HEDGE) on the
 bridge symbol are handed to the EXISTING SH path (sh/service.py: coordinator -> shared risk engine with the user's limits -> intent /
 atomic risk reservation -> SH executor), one primary plan per event, each signal at most once (table `executions`). The baskets never
-send an order themselves and never change the account mode, STOP, risk limits, leverage or the gold strategies. CRYPTO / OTC: manual.
+send an order themselves and never change the account mode, STOP, risk limits, leverage or the gold strategies. CRYPTO: manual.
 """
 from __future__ import annotations
 
@@ -47,6 +48,8 @@ DEFAULT_SETTINGS = {
         "CRYPTO_FOMO_PERPS": {"enabled": True, "selection": "AUTO", "instruments": ["BTC", "ETH", "SOL", "HYPE"], "flow_instrument": "BTC",
                               "capital": {"risk_money": None, "currency": "USDC"}, "fees": {"taker": None, "maker": None}, "pair_map": {}, "same_underlying": {}},
     },
+    # 1.46 (audit note): risk_weight / max_open_groups / conflict_policy / selection_policy are informational only - _resolve reads
+    # enabled, max_pending_intents and cooldown_bars; the keys stay (stable config keys, old settings.json files keep loading)
     "baskets": {b: {"enabled": True, "risk_weight": 1 / 3, "max_open_groups": 2, "max_pending_intents": 3, "cooldown_bars": 3,
                     "conflict_policy": "WAIT_ON_OPPOSITE", "selection_policy": "REGIME_ROUTED"} for b in CAT.BASKETS},
     "strategies": {},            # id -> {"enabled": bool, "params": {...}} (overrides of the catalog parameters)
@@ -63,9 +66,116 @@ def bdir() -> Path:
 
 def _merge(a, b):
     out = json.loads(json.dumps(a))
-    for k, v in (b or {}).items():
+    for k, v in (b if isinstance(b, dict) else {}).items():      # 1.46: a non-object settings.json ([1], "x") raised AttributeError
+        if isinstance(out.get(k), dict) and not isinstance(v, dict):
+            continue          # 1.46: a stored non-object (profiles.FOREX_MT5 = "x", baskets.FX_SMC = 5) never replaces an object -> no 500 / dead cycle
         out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
     return out
+
+
+def _research_only(name) -> bool:
+    """1.46: a Hyperliquid HIP-3 market ("xyz:NVDA", "xyz:SP500" - Trade[XYZ] INDICES / FOMO_STOCK_PERPS) is RESEARCH_ONLY (workflow v3.2:
+    read-only data, execution DISABLED) - never an instrument, flow source, pair / same-underlying leg or hedge leg of CRYPTO_FOMO_PERPS."""
+    return isinstance(name, str) and ":" in name
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _like(default, v) -> bool:
+    """1.46: a parameter override has the type of the catalog default (None default = scalar of an open type)."""
+    if default is None:
+        return v is None or isinstance(v, str) or _num(v)
+    if isinstance(default, bool):
+        return isinstance(v, bool)
+    if isinstance(default, (int, float)):
+        return _num(v)
+    if isinstance(default, str):
+        return isinstance(v, str)
+    if isinstance(default, (list, tuple)):
+        return isinstance(v, list) and (not default or all(_like(default[0], x) for x in v))
+    if isinstance(default, dict):
+        return isinstance(v, dict)
+    return True
+
+
+def _need(ok: bool, where: str, what: str) -> None:
+    if not ok:
+        raise ValueError(f"SETTINGS_TYPE:{where}: {what}")
+
+
+def _names(v, where: str) -> None:
+    _need(isinstance(v, list) and all(isinstance(x, str) and x for x in v), where, "lista nazw (tekst)")
+
+
+def _check_shape(patch) -> None:
+    """1.46: PUT /api/v1/baskets/settings - the structure is checked BEFORE anything else reads it (a string / null / number entry was
+    stored and then broke status / basket_view / the cycle, or raised TypeError = HTTP 500). Raises ValueError (HTTP 400)."""
+    _need(isinstance(patch, dict), "body", "obiekt")
+    for sec in ("profiles", "baskets", "strategies", "manual_select"):
+        _need(patch.get(sec) is None or isinstance(patch[sec], dict), sec, "obiekt")
+    for sec in ("profiles", "baskets", "strategies"):
+        for k, v in (patch.get(sec) or {}).items():
+            _need(isinstance(v, dict), f"{sec}.{k}", "obiekt")
+    for p, ids in (patch.get("manual_select") or {}).items():
+        if ids is not None:
+            _names(ids, f"manual_select.{p}")
+    _need(patch.get("active_profile") is None or isinstance(patch["active_profile"], str), "active_profile", "tekst")
+
+
+def _check_fields(patch: dict) -> None:
+    """1.46: known fields of profiles / baskets / strategies (ids already validated) have the right type and range. Unknown keys inside
+    an entry stay allowed (forward compatibility)."""
+    for p, v in (patch.get("profiles") or {}).items():
+        w = f"profiles.{p}"
+        _need("enabled" not in v or isinstance(v["enabled"], bool), f"{w}.enabled", "true / false")
+        for k in ("instruments", "fx_pairs"):
+            if k in v:
+                _names(v[k], f"{w}.{k}")
+        for k in ("pair_map", "same_underlying"):
+            m = v.get(k)
+            _need(m is None or (isinstance(m, dict) and all(x is None or isinstance(x, str) for x in m.values())), f"{w}.{k}", "obiekt nazwa -> nazwa")
+        _need(v.get("flow_instrument") is None or isinstance(v["flow_instrument"], str), f"{w}.flow_instrument", "tekst")
+        for k in ("capital", "fees"):
+            _need(v.get(k) is None or isinstance(v[k], dict), f"{w}.{k}", "obiekt")
+        cap = v.get("capital") or {}
+        _need(cap.get("risk_money") is None or (_num(cap["risk_money"]) and cap["risk_money"] >= 0), f"{w}.capital.risk_money", "null lub liczba >= 0")
+        _need(cap.get("currency") is None or isinstance(cap["currency"], str), f"{w}.capital.currency", "tekst")
+        for k, x in (v.get("fees") or {}).items():
+            _need(x is None or _num(x), f"{w}.fees.{k}", "null lub liczba")
+    for b, v in (patch.get("baskets") or {}).items():
+        w = f"baskets.{b}"
+        _need("enabled" not in v or isinstance(v["enabled"], bool), f"{w}.enabled", "true / false")
+        for k in ("max_pending_intents", "cooldown_bars", "max_open_groups"):
+            _need(k not in v or (isinstance(v[k], int) and not isinstance(v[k], bool) and v[k] >= 0), f"{w}.{k}", "liczba całkowita >= 0")
+        _need("risk_weight" not in v or (_num(v["risk_weight"]) and v["risk_weight"] >= 0), f"{w}.risk_weight", "liczba >= 0")
+        for k in ("conflict_policy", "selection_policy"):
+            _need(k not in v or isinstance(v[k], str), f"{w}.{k}", "tekst")
+    for sid, v in (patch.get("strategies") or {}).items():
+        w = f"strategies.{sid}"
+        _need("enabled" not in v or isinstance(v["enabled"], bool), f"{w}.enabled", "true / false")
+        _need(v.get("params") is None or isinstance(v["params"], dict), f"{w}.params", "obiekt")
+        schema = CAT.BY_ID[sid]["parameter_schema"]
+        for k, x in (v.get("params") or {}).items():
+            if k in schema:
+                _need(_like(schema[k], x), f"{w}.params.{k}", f"typ jak domyślnie ({json.dumps(schema[k], default=str)})")
+
+
+def _check_research_only(patch: dict) -> None:
+    """1.46 (rule: INDICES / FOMO_STOCK_PERPS stay RESEARCH_ONLY): CRYPTO_FOMO_PERPS settings never name a Trade[XYZ] market."""
+    pr = (patch.get("profiles") or {}).get("CRYPTO_FOMO_PERPS") or {}
+    names = list(pr.get("instruments") or []) + [pr.get("flow_instrument")]
+    for k in ("pair_map", "same_underlying"):
+        names += [n for kv in (pr.get(k) or {}).items() for n in kv]
+    for sid, v in (patch.get("strategies") or {}).items():
+        if CAT.BY_ID[sid]["profile_id"] == "CRYPTO_FOMO_PERPS":
+            prm = v.get("params") or {}
+            pairs = prm.get("pairs") if isinstance(prm.get("pairs"), dict) else {}
+            names += [prm.get("factor"), prm.get("partner")] + [n for kv in pairs.items() for n in kv]
+    bad = sorted({n for n in names if _research_only(n)})
+    if bad:
+        raise ValueError(f"RESEARCH_ONLY_MARKET:{bad} – rynki Trade[XYZ] (INDICES / FOMO_STOCK_PERPS) są tylko do badań, bez sygnałów i ticketów")
 
 
 def _iso(t):
@@ -133,7 +243,8 @@ class Ledger:
     def open_signals(self, profile: str | None = None) -> list[dict]:
         q = "SELECT * FROM signals WHERE status='ACTIVE'" + (" AND profile_id=?" if profile else "")
         with self._c() as c:
-            return [self._row(r) for r in c.execute(q, [profile] if profile else [])]
+            rows = [self._row(r) for r in c.execute(q, [profile] if profile else [])]
+        return [d for d in rows if d["status"] == "ACTIVE"]          # 1.46: retired-profile rows are never open (see _row)
 
     def recent(self, basket: str | None = None, limit: int = 100) -> list[dict]:
         q = "SELECT * FROM signals" + (" WHERE basket_id=?" if basket else "") + " ORDER BY created_at DESC LIMIT ?"
@@ -158,6 +269,11 @@ class Ledger:
                     d[k] = json.loads(d[k])
                 except ValueError:
                     pass
+        why = CAT.retired_reason(profile_id=d.get("profile_id")) if d.get("status") == "ACTIVE" else None
+        if why:
+            # 1.46: an ACTIVE signal of the retired OTC profile (written by <= 1.44) is never tracked again - it hung as ACTIVE in
+            # GET /api/v1/baskets/signals. View only: the stored row keeps its original status (history / rollback untouched).
+            d.update(status="RETIRED", stored_status="ACTIVE", retired_reason=why)
         return d
 
     def add_hedge(self, row: dict) -> None:
@@ -192,7 +308,7 @@ class Ctx:
         self.reason: str | None = None
         self.oi: list[tuple[float, float]] = []
         self.flow: list[dict] = []
-        self.cache: dict[str, tuple[float, list]] = {}
+        self.cache: dict[str, tuple] = {}                  # coin|tf -> (fetched_at, bars, requested n) - 1.46: n remembered
         self.sfb: dict | None = None                       # TASK 018: last SFB snapshot meta for this scope (diagnostic)
 
 
@@ -204,7 +320,9 @@ class BasketService:
         self.ledger = Ledger(self.base / "ledger.sqlite")
         self.hl = hl or Hyperliquid()
         # TASK 020: OTC retired - the feed object stays only as a lazy, read-only legacy history reader (never polled by cycle())
-        self.otc = OTC.OTCFeed(self.base / "otc") if data_dir else OTC.OTCFeed()
+        # 1.46: really lazy now (property `otc`) - it used to mkdir <data>/otc/import and read the whole ticks.jsonl at every start
+        self._otc_base = (self.base / "otc") if data_dir else None
+        self._otc_feed: OTC.OTCFeed | None = None
         self.ctx: dict[str, Ctx] = {}
         self.hedge_state: dict[str, dict] = {}
         self._stop = threading.Event()
@@ -215,18 +333,33 @@ class BasketService:
         self.hl_ctx_at = 0.0
         from .sfb import ConfigError, StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
         try:
-            cfg, requested = self._sfb_effective(self._sfb_cfg())
-        except ConfigError as exc:                     # 1.46: a damaged sfb.json no longer kills the whole BasketService (-> OFF + reason)
-            cfg, requested = {}, f"INVALID_CONFIG: {exc}"[:200]
+            raw = self._sfb_cfg()
+            if not isinstance(raw, dict):              # 1.46: valid JSON that is not an object (null / [] / 5) raised TypeError -> service gone
+                raise ConfigError(f"CONFIG_NOT_OBJECT ({type(raw).__name__})")
+            cfg, requested = self._sfb_effective(raw)
+        except (TypeError, ValueError) as exc:         # 1.46: a damaged sfb.json no longer kills the whole BasketService (-> OFF + reason)
+            cfg, requested = {}, f"INVALID_CONFIG: {exc}"[:200]          # ConfigError is a ValueError; the file is left as it is
         self.sfb = StrategyFilterBucket(cfg)
         self.sfb.mode_requested = requested
+
+    @property
+    def otc(self) -> OTC.OTCFeed:
+        """Retired Gold OTC legacy history reader (read-only), created on first use."""
+        if self._otc_feed is None:
+            self._otc_feed = OTC.OTCFeed(self._otc_base) if self._otc_base else OTC.OTCFeed()
+        return self._otc_feed
+
+    @otc.setter
+    def otc(self, feed) -> None:
+        self._otc_feed = feed
 
     # ------------------------------------------------------------------ settings
     def _read(self):
         try:
-            return json.loads((self.base / "settings.json").read_text(encoding="utf-8"))
+            d = json.loads((self.base / "settings.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
+        return d if isinstance(d, dict) else {}     # 1.46: a non-object settings.json ([1], 5) = defaults (was AttributeError -> dead thread)
 
     def _sfb_cfg(self) -> dict:
         try:
@@ -289,6 +422,7 @@ class BasketService:
         return st
 
     def update_settings(self, patch: dict) -> dict:
+        _check_shape(patch)                               # 1.46: structure first (string / null / number entries were stored or gave 500)
         bad = [k for k in patch if k not in ("active_profile", "profiles", "baskets", "strategies", "manual_select")]
         if bad:
             raise ValueError(f"SETTINGS_KEYS_NOT_ALLOWED:{bad}")
@@ -315,10 +449,14 @@ class BasketService:
             bad_ids = [i for i in (ids or []) if CAT.retired_reason(i) or i not in CAT.BY_ID]
             if CAT.retired_reason(profile_id=p) or bad_ids:
                 raise ValueError(f"RETIRED_STRATEGY_ID:{bad_ids or p}")
+            if p not in CAT.PROFILES:                     # 1.46: was stored silently
+                raise ValueError(f"UNKNOWN_PROFILE:{p}")
         if patch.get("active_profile") and CAT.retired_reason(profile_id=patch["active_profile"]):
             raise ValueError("RETIRED_PROFILE")
         if patch.get("active_profile") and patch["active_profile"] not in CAT.PROFILES:
             raise ValueError("UNKNOWN_PROFILE")
+        _check_fields(patch)                              # 1.46: types / ranges of the known fields (text in numeric fields broke the cycle)
+        _check_research_only(patch)                       # 1.46: Trade[XYZ] markets (INDICES / FOMO_STOCK_PERPS) stay RESEARCH_ONLY
         new = _merge(self._read(), patch)                 # retired entries already stored stay in the file (rollback) - never active
         tmp = self.base / "settings.json.tmp"
         tmp.write_text(json.dumps(new, indent=1), encoding="utf-8")
@@ -352,7 +490,16 @@ class BasketService:
                 self.loop["errors"] += 1
                 self.loop["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
                 log.exception("basket cycle failed")
-            self._stop.wait(float(self.settings().get("cycle_s") or 5.0))
+            self._stop.wait(self._cycle_wait())
+
+    def _cycle_wait(self) -> float:
+        """1.46: computed inside a guard - cycle_s = "abc" (or an unreadable settings.json) killed the 'baskets' thread for good, a negative
+        value made a loop without a pause. Invalid -> 5 s, at least 1 s."""
+        try:
+            w = float(self.settings().get("cycle_s") or 5.0)
+        except Exception:  # noqa: BLE001
+            return 5.0
+        return max(1.0, w) if math.isfinite(w) else 5.0
 
     def cycle(self) -> dict:
         st = self.settings()
@@ -440,14 +587,18 @@ class BasketService:
         sec = HL_TF_S[tf]
         now = time.time()
         got = c.cache.get(key)
-        if got and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
-            return got[1]
+        # 1.46: the cache remembers how many candles were requested - a smaller auxiliary request first (M15 300, BTC M1 400, ETH M5 300)
+        # truncated the signal series of the same coin / TF (ETH M5 = 300, every M15 = 300 instead of 500) for the whole session
+        have = (got[2] if len(got) > 2 else len(got[1])) if got else 0
+        if got and have >= n and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
+            return got[1][-n:]
+        want = max(n, have)
         try:
-            b = self.hl.candles(coin, tf, n)
+            b = self.hl.candles(coin, tf, want)
         except HLError:
-            return got[1] if got else []
-        c.cache[key] = (now, b)
-        return b
+            return got[1][-n:] if got else []
+        c.cache[key] = (now, b, want)
+        return b[-n:]
 
     def _crypto(self, st: dict) -> dict:
         pr = st["profiles"]["CRYPTO_FOMO_PERPS"]
@@ -464,7 +615,17 @@ class BasketService:
                 pass
         out = {}
         bench = {}
+
+        def core(name) -> bool:                       # 1.46: Hyperliquid core perps only - Trade[XYZ] (any non-core dex) is RESEARCH_ONLY
+            return not _research_only(name) and (cat.get(name) or {}).get("dex", "core") == "core"
+        # 1.46: settings stored before the validation existed may still name xyz markets - kept in the file, never used as a leg
+        pair_map = {k: v for k, v in (pr.get("pair_map") or {}).items() if core(k) and (v is None or core(v))}
+        same_underlying = {k: v for k, v in (pr.get("same_underlying") or {}).items() if core(k) and (v is None or core(v))}
         for coin in pr.get("instruments") or []:
+            if not core(coin):                        # 1.46: was scanned by the 30 CP_* strategies and published as ACTIVE signals / tickets
+                out[coin] = {"state": "RESEARCH_ONLY", "reason": "RESEARCH_ONLY_MARKET: rynek Trade[XYZ] (INDICES / FOMO_STOCK_PERPS) – tylko dane "
+                                                                  "badawcze, bez sygnałów i ticketów (ustawienie zachowane w pliku)"}
+                continue
             if coin not in cat or cat[coin]["delisted"]:
                 out[coin] = {"state": "UNSUPPORTED", "reason": "kontrakt nieobecny w aktualnym katalogu"}
                 continue
@@ -504,27 +665,14 @@ class BasketService:
                 feats[("ETH", "M5")] = D.build(e5, 10 ** (math.floor(math.log10(e5[-1]["c"])) - 4))
             extra = {"exposure": exposure, "spec": spec, "bars": hb, "feats": feats, "bench": bench.get("M5"),
                      "funding": {k: (self.hl_ctx.get(k) or {}).get("funding_rate") for k in ("BTC", "ETH")}, "fees": pr.get("fees") or {},
-                     "pair_map": pr.get("pair_map") or {}, "same_underlying": pr.get("same_underlying") or {}, "symbol": coin,
+                     "pair_map": pair_map, "same_underlying": same_underlying, "symbol": coin,
                      "market": {"mark": hc.get("mark"), "oracle": hc.get("oracle"), "funding_rate_1h": hc.get("funding_rate"), "open_interest": hc.get("open_interest")}}
-            out[coin] = self._run_ctx(c, st, lambda tf, n=500, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 500)), q, extra)
+            # 1.46: up to 600 candles (as _run_ctx asks): CP_SMC_09 (previous UTC day) needs the whole previous day + today = up to 576 M5;
+            # with the old 500 cap it was Unavailable every day 20:00-24:00 UTC although the data exists
+            out[coin] = self._run_ctx(c, st, lambda tf, n=600, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 600)), q, extra)
         return out
 
-    def _otc(self, st: dict) -> dict:
-        self.otc.import_dir()
-        s = self.otc.state()
-        c = self._context("OTC_GOLD_POCKETOPTION", OTC.INSTRUMENT, "POCKET_OPTION", "LIVE", "USER", "FIXED_EXPIRY")
-        if s["state"] == "WAITING_FOR_OTC_FEED":
-            c.data_state, c.reason = "WAITING_FOR_OTC_FEED", s["reason"]
-            for sd in CAT.CATALOG:
-                if sd["profile_id"] == "OTC_GOLD_POCKETOPTION":
-                    c.state[sd["strategy_id"]] = {"state": "WAITING_FOR_DATA", "reason": "WAITING_FOR_OTC_FEED"}
-            return {"state": "WAITING_FOR_OTC_FEED"}
-        m = self.otc.meta()
-        b1 = self.otc.bars("S15", 50)
-        q = 10 ** (math.floor(math.log10(b1[-1]["c"])) - 4) if b1 else 0.01
-        extra = {"exposure": [d for d in self.ledger.declared("OTC_GOLD_POCKETOPTION")],
-                 "otc": {**m, "payout_history": self.otc.payout_history}, "symbol": OTC.INSTRUMENT}
-        return self._run_ctx(c, st, lambda tf, n=500: self.otc.bars(tf, n), q, extra)
+    # 1.46: the dead `_otc` scanner (retired in TASK 020, never called by cycle()) was removed - the legacy history reader stays (`otc`)
 
     # ------------------------------------------------------------------ evaluation
     def _regime(self, F: D.Feat) -> dict:
@@ -635,21 +783,7 @@ class BasketService:
     def _plan(self, c: Ctx, s: dict, F: D.Feat, side: int, r: dict, p: dict, st: dict, extra: dict) -> dict:
         prof = s["profile_id"]
         cap = st["profiles"][prof].get("capital") or {}
-        if s["plan_type"] == "FixedExpiryPlan":
-            m = (extra.get("otc") or {})
-            D_ = float(s["expiry_target_s"])
-            exp = OTC.choose_expiry(D_, [float(e) for e in m.get("expiries_s") or []])
-            dirn = "CALL" if side > 0 else "PUT"
-            payout = (m.get("payout") or {}).get(dirn)
-            sig_t = F.t[F.i] + TF_S[s["signal_timeframe"]]
-            return {"plan_type": "FixedExpiryPlan", "version": 1, "direction": dirn, "stake": cap.get("stake"), "currency": cap.get("currency") or m.get("currency"),
-                    "payout_profit_ratio": payout, "payout_at": m.get("payout_at"), "signal_price": r["entry"], "strike": None, "strike_basis": "potwierdzona cena otwarcia",
-                    "requested_duration_s": D_, "selected_duration_s": exp, "expiry_ts": None,
-                    "entry_deadline": sig_t + min(TF_S[s["signal_timeframe"]] / 2, 0.1 * D_), "invalidation_before_entry": r["invalidation"],
-                    "settlement_rule": m.get("tie_rule", "REFUND"), "executable": exp is not None and payout is not None,
-                    "not_executable_reason": None if exp is not None and payout is not None else
-                    ("brak zgodnego terminu expiry w [0.8D, 1.2D]" if exp is None else "brak aktualnego payout"),
-                    "no_sl_tp": "kontrakt OTC nie ma SL/TP – unieważnienie dotyczy tylko sygnału przed otwarciem"}
+        # 1.46: the FixedExpiryPlan (OTC) branch was removed - OTC retired (TASK 020), no active strategy has that plan type
         entry, sl = r["entry"], r["sl"]
         R = abs(entry - sl)
         tp_r = p.get("tp_r", [2.0, 3.0])
@@ -813,25 +947,17 @@ class BasketService:
             if sg["context_key"] != c.key:
                 continue
             pl = sg["plan"] or {}
-            b = [x for x in bars.get(sg["tf"]) or [] if x["t"] > float(sg["bar_t"])]
             if pl.get("plan_type") == "FixedExpiryPlan":
-                if time.time() > float(pl.get("entry_deadline") or 0) and not pl.get("selected_duration_s"):
-                    self.ledger.update(sg["signal_id"], status="EXPIRED", outcome_kind="NOT_EXECUTABLE", outcome_at=time.time())
-                    continue
-                dur = pl.get("selected_duration_s") or pl.get("requested_duration_s")
-                start = float(sg["bar_t"]) + TF_S[sg["tf"]]
-                end = start + float(dur)
-                if time.time() < end + 2:
-                    continue
-                p0, p1 = self.otc.price_at(start), self.otc.price_at(end)
-                if p0 is None or p1 is None:
-                    self.ledger.update(sg["signal_id"], status="CLOSED", outcome_kind="UNKNOWN", outcome_at=time.time(),
-                                       outcome={"reason": "brak ceny feedu w chwili otwarcia / wygaśnięcia – nie oznaczam jako LOSS"})
-                    continue
-                k = "REFUND" if p1 == p0 else ("WIN" if (p1 > p0) == (pl["direction"] == "CALL") else "LOSS")
-                self.ledger.update(sg["signal_id"], status="CLOSED", outcome_kind=k, outcome_at=time.time(),
-                                   outcome={"kind": "SIGNAL_SIMULATION", "start_price": p0, "end_price": p1, "note": "wynik hipotetyczny z własnego feedu, nie rozliczenie platformy"})
+                continue                                  # 1.46: retired OTC plan type - dead branch removed (FOREX / CRYPTO contexts only)
+            series = bars.get(sg["tf"]) or []
+            if series and series[0]["t"] > float(sg["bar_t"]) + TF_S[sg["tf"]]:
+                # 1.46: the loaded window starts after the bar that follows the signal (downtime longer than the window): the bars right
+                # after the signal are unknown, a SL / TP / TIMEOUT from a later bar would be a guess -> UNKNOWN (missing data is never guessed)
+                self.ledger.update(sg["signal_id"], status="CLOSED", outcome_kind="UNKNOWN", outcome_at=time.time(),
+                                   outcome={"kind": "SIGNAL_SIMULATION", "reason": "luka w danych: brak świec bezpośrednio po sygnale w oknie danych – "
+                                                                                     "wynik nieznany (nie zgaduję SL / TP / TIMEOUT)"})
                 continue
+            b = [x for x in series if x["t"] > float(sg["bar_t"])]
             side = 1 if pl.get("side") == "LONG" else -1
             sl, tg = float(pl["sl"]), [float(t["price"]) for t in pl.get("targets") or []]
             res = None
@@ -863,9 +989,14 @@ class BasketService:
         try:
             r = HG.PLANNERS[s["family_id"]](ctx)
         except RL.Unavailable as exc:
-            r = {"state": "WAITING_FOR_DATA", "reason": str(exc)}
+            why = self._unsupplied_input(s, ctx)
+            r = {"state": "UNSUPPORTED_INPUT", "reason": why, "detail": str(exc)} if why else {"state": "WAITING_FOR_DATA", "reason": str(exc)}
         except Exception as exc:  # noqa: BLE001
             r = {"state": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        legs = [lg.get("instrument") for lg in ((r.get("plan") or {}).get("legs") or []) if isinstance(lg, dict)]
+        if s["profile_id"] == "CRYPTO_FOMO_PERPS" and r.get("state") == "HEDGE_PLAN" and any(_research_only(x) for x in legs):
+            # 1.46: a Trade[XYZ] market (INDICES / FOMO_STOCK_PERPS) is RESEARCH_ONLY - never a hedge leg / manual ticket
+            r = {"state": "NO_HEDGE", "reason": f"RESEARCH_ONLY_MARKET: noga {[x for x in legs if _research_only(x)]} na rynku tylko do badań"}
         r["evaluated_at"] = time.time()
         self.hedge_state[sid] = r
         c.state[sid] = {"state": r["state"], "reason": r.get("reason")}
@@ -874,7 +1005,25 @@ class BasketService:
             self.ledger.add_hedge({"plan_id": pid, "strategy_id": sid, "basket_id": s["basket_id"], "profile_id": s["profile_id"], "created_at": time.time(),
                                    "state": "PROPOSED", "reason": r.get("reason"), "plan": r.get("plan")})
 
+    @staticmethod
+    def _unsupplied_input(s: dict, ctx: dict) -> str | None:
+        """1.46: inputs the FOREX context never supplies -> the planner can never plan. FX_HEDGE_08/09/10 read ctx['bars'] (M15 of other
+        symbols - the service reads only the bot's symbol from MT5), FX_HEDGE_04 reads spec['spread_median_price'] (never computed). They
+        were WAITING_FOR_DATA with a false reason ("XAGUSD niedostępny w terminalu", "brak bieżącego ... spreadu")."""
+        fam = s["family_id"]
+        if fam in ("beta_pair", "pair_relative", "min_variance") and "bars" not in ctx:
+            return "UNSUPPORTED_INPUT: serwis koszyków nie pobiera świec M15 innych symboli z MT5 (tylko symbol bota) – planer nie ma danych do relacji"
+        if fam == "session_transition" and not any(isinstance(v, dict) and v.get("spread_median_price") is not None for v in (ctx.get("spec") or {}).values()):
+            return "UNSUPPORTED_INPUT: serwis koszyków nie liczy referencyjnej mediany spreadu – planer nie ma progu porównania"
+        return None
+
     # ------------------------------------------------------------------ views
+    def _ctxs(self, prof: str | None = None) -> list[Ctx]:
+        """1.46: snapshot taken under the lock - the API threads iterated self.ctx while the basket thread added contexts
+        ("dictionary changed size during iteration" -> HTTP 500 on GET /api/v1/baskets)."""
+        with self._lock:
+            return [c for c in list(self.ctx.values()) if prof is None or c.profile == prof]
+
     def basket_view(self, basket: str | None = None) -> list[dict]:
         st = self.settings()
         stats = self.ledger.stats()
@@ -884,7 +1033,7 @@ class BasketService:
                 continue
             cfg = st["baskets"][b["basket_id"]]
             prof = b["profile_id"]
-            ctxs = [c for c in self.ctx.values() if c.profile == prof]
+            ctxs = self._ctxs(prof)
             rows = []
             for sid in b["strategy_ids"]:
                 s = CAT.BY_ID[sid]
@@ -909,8 +1058,8 @@ class BasketService:
         return {"catalog": CAT.validate(), "version": CAT.VERSION, "activation_policy": st["activation_policy"], "active_profile": st["active_profile"],
                 "profiles": {p: {**CAT.PROFILES[p], "enabled": st["profiles"][p].get("enabled", True), "selection": st["profiles"][p].get("selection"),
                                  "contexts": [{"key": c.key, "instrument": c.instrument, "data_state": c.data_state, "reason": c.reason, "regime": c.regime}
-                                              for c in self.ctx.values() if c.profile == p], "error": self.loop["profile_errors"].get(p)} for p in CAT.PROFILES},
+                                              for c in self._ctxs(p)], "error": self.loop["profile_errors"].get(p)} for p in CAT.PROFILES},
                 "otc_feed": {"state": "RETIRED", "reason": "RETIRED_PROFILE", "history": "READ_ONLY"}, "retired": CAT.manifest()["retired"], "hyperliquid": {"errors": self.hl.errors, "last_error": self.hl.last_error, "capabilities": __import__(
                     "masterquo.baskets.hyperliquid", fromlist=["CAPABILITIES"]).CAPABILITIES}, "loop": dict(self.loop),
-                "counts": {"implemented": len(CAT.CATALOG), "executable_now": sum(1 for c in self.ctx.values() for v in c.state.values()
+                "counts": {"implemented": len(CAT.CATALOG), "executable_now": sum(1 for c in self._ctxs() for v in c.state.copy().values()   # 1.46: copy
                                                                                     if (v or {}).get("state") in ("NO_SETUP", "SIGNAL", "DUPLICATE_EVENT", "CONFLICT", "NO_HEDGE", "HEDGE_PLAN", "NO_EXPOSURE", "COOLDOWN", "LIMIT"))}}

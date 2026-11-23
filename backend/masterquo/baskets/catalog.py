@@ -1,5 +1,5 @@
 """Manifest of the ACTIVE 6 baskets x 10 = 60 canonical strategies (CATALOG-1.45.0, TASK 020: OTC retired) + the LEGACY/CUSTOM section (the existing gold strategies,
-outside the 90 counter - first-class, untouched, never re-routed through the baskets).
+outside the 60 counter - first-class, untouched, never re-routed through the baskets).
 
 Every entry carries the full contract of spec section 3 (strategy_id, version, basket_id, profile_id, family_id, correlation_group,
 supported_product_types, required_capabilities, required_inputs, signal_timeframe, context_timeframes, min_history, parameter_schema,
