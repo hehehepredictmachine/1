@@ -166,3 +166,37 @@ def register(app, rt) -> None:
     @app.get("/api/v1/tlg/leaderboard")
     def tlg_board():
         return g(tlg().leaderboard)
+
+    # ------------------------------------------------------------------ TASK 007: Modular Indicator & Smoothing Engine
+    from ..indicators import smoothing as SM
+    _ind = SM.IndicatorEngine()
+
+    def _bars(tf: str, count: int) -> list[dict]:
+        b = getattr(rt, "bridge", None)
+        if b is None:
+            return []
+        try:
+            return b.bars(tf, count, include_forming=False)
+        except Exception:  # noqa: BLE001
+            return []
+
+    @app.get("/api/v1/indicators/catalog")
+    def ind_catalog():
+        return SM.catalog()
+
+    @app.post("/api/v1/indicators/calculate")
+    def ind_calculate(body: dict = Body(...)):
+        try:
+            tf = str(body.get("timeframe") or "H1")
+            sym = getattr(getattr(rt.cfg.get(), "mt5", None), "symbol", "") if getattr(rt, "cfg", None) else ""
+            spec = SM.IndicatorSpec.make(body.get("method"), body.get("period"), body.get("applied_price") or "CLOSE",
+                                         body.get("policy") or "PMW_LEGACY_V1", sym, tf, "MT5")
+            bars = body.get("bars") if isinstance(body.get("bars"), list) else _bars(tf, max(10, min(int(body.get("count") or 500), 20000)))
+            rev = sum(int(b.get("revision") or 0) for b in bars) if bars else None
+            return _ind.calculate(spec, bars, revision=rev)
+        except SM.SpecError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.get("/api/v1/indicators/diagnostics")
+    def ind_diag():
+        return {"engine": SM.ENGINE_VERSION, "states": len(_ind._st), "keys": sorted(_ind._st)[:50], "mode": "CHART_ONLY / SHADOW (opt-in)"}
