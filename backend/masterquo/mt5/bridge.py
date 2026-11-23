@@ -123,6 +123,7 @@ class MarketBridge:
         self.attempts = 0
         self.next_retry = 0.0
         self.consecutive_errors = 0
+        self._reconnect_requests = 0              # 1.46: counter of reconnect requests (API thread) - see request_reconnect()
         self._last_ok = time.monotonic()
         self.disconnect_grace_s = 20.0
         self.busy_waits = 0
@@ -312,7 +313,18 @@ class MarketBridge:
         info["terminal_path"] = cfg.terminal_path or self._detected_path
         self.login_info = info
 
+    def request_reconnect(self, reason: str | None = None) -> None:
+        """1.46: a reconnect asked by the API (asset / MT5 settings changed, button). The API thread used to write `state` directly: a
+        request landing inside a running connect() was overwritten by its final CONNECTED, and the buffers could hold two symbols."""
+        with self._lock:
+            self._reconnect_requests += 1
+        self._set_state("RECONNECTING", reason or "RECONNECT_REQUESTED")
+        self.next_retry = 0
+
     def connect(self) -> None:
+        with self._lock:
+            req0 = self._reconnect_requests
+        sym0 = self.cfg.symbol                    # 1.46: one symbol for the whole connect (history of every TF, buffer_symbol)
         self._set_state("CONNECTING", None)
         self._initialize()
         from .fake import is_fake
@@ -343,8 +355,15 @@ class MarketBridge:
         self.clock.reset()
         self._load_stored_offset(account["server"])
         self._check_symbol()
-        self._load_all_history()
+        self._load_all_history(sym0)
         self._load_dxy()
+        with self._lock:
+            again = self._reconnect_requests != req0
+        if again or self.cfg.symbol != sym0:
+            # 1.46: the symbol / MT5 settings changed (or a reconnect was asked) during this connect - its data is not CONNECTED
+            self._set_state("RECONNECTING", "RECONNECT_REQUESTED_DURING_CONNECT")
+            self.next_retry = 0
+            return
         self.connected_since = self.now()
         self._last_ok = time.monotonic()
         self.attempts = 0
@@ -464,11 +483,12 @@ class MarketBridge:
     def buffer_size(self, tf: str) -> int:
         return min(2000, max(self.cfg.chart_bars, self.required_bars.get(tf, 260) + 60))
 
-    def _load_all_history(self) -> None:
+    def _load_all_history(self, symbol: str | None = None) -> None:
+        symbol = symbol or self.cfg.symbol        # 1.46: read once - cfg.symbol per TF mixed two symbols when it changed meanwhile
         with self._lock:
             self.buffer_symbol = None             # buffers of the previous symbol are never served as the new one
         for tf in TIMEFRAMES:
-            bars = self._fetch(self.cfg.symbol, tf, self.buffer_size(tf) + 1)
+            bars = self._fetch(symbol, tf, self.buffer_size(tf) + 1)
             for i in range(len(bars) - 1):
                 bars[i].closed = True
                 bars[i].available_raw_next_open = bars[i + 1].t_raw
@@ -478,7 +498,7 @@ class MarketBridge:
                 st.bars, st.loaded, st.last_poll, st.last_error = bars, True, time.monotonic(), None
             self.bus.publish("bars_reloaded", {"tf": tf, "count": len(bars)})
         with self._lock:
-            self.buffer_symbol = self.cfg.symbol
+            self.buffer_symbol = symbol
 
     def _load_dxy(self) -> None:
         sym = self.cfg.dxy_symbol

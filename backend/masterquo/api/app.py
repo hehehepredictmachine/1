@@ -1453,8 +1453,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"active_asset": req.asset})))
         if rt.cfg.get().mt5.symbol != old:
             rt.modes.reset("ACTIVE_ASSET_CHANGED")
-            rt.bridge.state = "RECONNECTING"
-            rt.bridge.next_retry = 0
+            rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")      # 1.46: not a bare state write (lost inside a running connect)
         rt.engine.mark_dirty()
         rt.bus.publish("assets", st)
         return st
@@ -1634,8 +1633,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.log.info("CONFIG", "UPDATED", "Zmieniono konfigurację: " + ", ".join(sorted(patch.keys())))
         if (old.mt5.symbol, old.mt5.terminal_path, old.mt5.dxy_symbol) != (new.mt5.symbol, new.mt5.terminal_path, new.mt5.dxy_symbol):
             rt.modes.reset("MT5_CONFIG_CHANGED")
-            rt.bridge.state = "RECONNECTING"
-            rt.bridge.next_retry = 0
+            rt.bridge.request_reconnect("MT5_CONFIG_CHANGED")
         if old.risk != new.risk:
             rt.log.info("CONFIG", "RISK_LIMITS_CHANGED", "Zmieniono limity ryzyka – obowiązują od następnej decyzji.")
         rt.engine.mark_dirty()
@@ -3933,8 +3931,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/mt5/reconnect")
     def reconnect():
-        rt.bridge.state = "RECONNECTING"
-        rt.bridge.next_retry = 0
+        rt.bridge.request_reconnect("USER_REQUEST")
         return {"ok": True}
 
     @app.post("/api/v1/news/refresh")
