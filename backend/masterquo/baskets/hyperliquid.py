@@ -3,7 +3,8 @@ markets; this adapter reads PUBLIC market data only (POST https://api.hyperliqui
 it signs nothing, sends no orders and moves no funds.
 
 Requests used (official Info endpoint): perpDexs, meta (core / dex="xyz"), metaAndAssetCtxs (mark / oracle / funding / OI),
-candleSnapshot (closed candles with real base volume "v"), l2Book (top levels), recentTrades (side "B" = aggressive buy, "A" = sell).
+candleSnapshot (closed candles with real base volume "v"), l2Book (top levels), recentTrades (raw side "B" / "A"; whether "B" is the
+aggressive buyer is NOT_VERIFIED - TASK 004, so the capability trades_aggressor is NOT_VERIFIED, never True).
 Instrument identity: core coins by name ("BTC"); Trade[XYZ] markets keep their native "xyz:NAME" - never an invented "...USDT".
 Capabilities are declared; a failed request is a visible error state, never zeros.
 """
@@ -14,11 +15,15 @@ import threading
 import time
 import urllib.request
 
+from ..orderflow.trades import capability as _side_capability
+
 URL = "https://api.hyperliquid.xyz/info"
 TF = {"M1": "1m", "M3": "3m", "M5": "5m", "M15": "15m", "M30": "30m", "H1": "1h", "H4": "4h", "D1": "1d"}
 TF_S = {"M1": 60, "M3": 180, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 CAPABILITIES = {"history": True, "closed_bar": True, "bid_ask": "L2_TOP", "mark_oracle": True, "real_volume": True, "tick_activity": False,
-                "trades_aggressor": True, "l2_orderbook": True, "open_interest": True, "funding": True, "payout": False, "expiry": False,
+                # 1.46: was True although the side semantics is NOT_VERIFIED (TASK 004) - the status panel showed it as available
+                "trades_aggressor": True if _side_capability("HYPERLIQUID") == "SUPPORTED" else "NOT_VERIFIED",
+                "l2_orderbook": True, "open_interest": True, "funding": True, "payout": False, "expiry": False,
                 "account_state": False, "orders": False, "settlement": False}
 
 

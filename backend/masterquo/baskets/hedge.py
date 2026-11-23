@@ -53,15 +53,24 @@ def _fx_same_symbol(ctx, parent, reason_trigger: str, extra=None):
     F = ctx["F"]
     px = float(F.c[F.i])
     cs = float(spec.get("trade_contract_size") or 0) or None
-    spread = float(spec.get("spread_price") or 0.0)
     if vol is None:
         return {"state": "NO_HEDGE", "reason": f"{reason_trigger}; ilość {ratio:.0%} rodzica poniżej minimalnego wolumenu"}
     sens_parent = float(parent["volume"]) * (cs or 1.0)
     legs = [{"instrument": parent["symbol"], "side": side, "volume": vol, "unit": "lots", "price_ref": px}]
-    cost = spread * vol * cs if cs else None
+    # 1.46: no bid/ask (spread_price None) was shown as a 0.0 cost; spread x volume x contract size is in the QUOTE currency (JPY for
+    # EURJPY), not "money" -> account currency via tick value / tick size, otherwise None with the reason and the quote-currency amount
+    sp = spec.get("spread_price")
+    tv, ts = float(spec.get("trade_tick_value") or 0), float(spec.get("trade_tick_size") or 0)
+    if sp is None:
+        cost = {"spread_money": None, "reason": "NO_QUOTE: brak bid/ask – koszt spreadu nieznany"}
+    elif tv > 0 and ts > 0:
+        cost = {"spread_money": float(sp) / ts * tv * vol, "currency": acc.get("currency")}
+    else:
+        cost = {"spread_money": None, "reason": "NO_TICK_VALUE: brak wartości ticka – koszt w walucie konta nieznany",
+                "spread_quote_ccy": float(sp) * vol * cs if cs else None, "quote_currency": spec.get("currency_profit")}
     plan = _plan({"id": parent["id"], "engine": parent.get("engine"), "side": parent["side"], "volume": parent["volume"]}, legs, ratio=ratio,
                  risk_before={"net_units": sens_parent}, risk_after={"net_units": sens_parent - vol * (cs or 1.0), "gross_units": sens_parent + vol * (cs or 1.0)},
-                 cost={"spread_money": cost, "note": "koszt spreadu wejścia; margin drugiej nogi nie jest zakładany jako zero"},
+                 cost={**cost, "note": "koszt spreadu wejścia; margin drugiej nogi nie jest zakładany jako zero"},
                  residual=1 - vol / float(parent["volume"]), exit_rule=ctx["strategy"]["exit_policy_or_expiry_policy"], timeout=int(ctx["p"].get("timeout_bars", 6)),
                  extra=extra)
     if acc.get("margin_mode") != "HEDGING":
@@ -268,11 +277,18 @@ def _beta_hedge(ctx, partner: str | None):
     if vol is None:
         return {"state": "NO_HEDGE", "reason": "ilość z bety poniżej minimalnego wolumenu partnera", "hedge_notional": hn}
     leg = {"instrument": partner, "side": "SHORT" if hn < 0 else "LONG", "volume": vol, "unit": "lots", "notional": vol * cs_h * px_h}
+    # 1.46: the parent's factor exposure to the hedge instrument is beta x PN and the leg adds ±HN (was PN before and PN ± HN x beta after:
+    # at beta > 1 the plan showed an over-hedge with a sign flip). The quote currencies of both legs are shown: the leg volume is computed
+    # without an FX conversion (different quote currencies -> DIFFERENT_NOT_CONVERTED; the conversion itself is an owner decision)
+    qc_p, qc_h = (spec.get(par["symbol"]) or {}).get("currency_profit"), hs.get("currency_profit")
+    qc = {"parent": qc_p, "partner": qc_h, "status": ("SAME" if qc_p == qc_h else "DIFFERENT_NOT_CONVERTED") if qc_p and qc_h else "NOT_VERIFIED"}
     return {"state": "HEDGE_PLAN", "reason": f"beta {b1['beta']:.3f} (120) / {b2['beta']:.3f} (60), korelacja {b1['corr']:.2f}",
             "plan": _plan({"id": par["id"], "symbol": par["symbol"], "side": par["side"], "volume": par["volume"]}, [leg], ratio=ratio,
-                          risk_before={"factor_notional": parent_notional}, risk_after={"factor_notional": parent_notional + math.copysign(leg["notional"], hn) * b1["beta"]},
+                          risk_before={"factor_notional": b1["beta"] * parent_notional},
+                          risk_after={"factor_notional": b1["beta"] * parent_notional + math.copysign(leg["notional"], hn)},
                           cost=None, residual={"basis_risk": "jawne – relacja może się rozpaść"}, exit_rule=ctx["strategy"]["exit_policy_or_expiry_policy"],
-                          timeout=int(ctx["p"].get("timeout_bars", 6)), extra={"beta": {"w120": b1, "w60": b2}, "formula": "−coverage × beta × parent_notional"})}
+                          timeout=int(ctx["p"].get("timeout_bars", 6)), extra={"beta": {"w120": b1, "w60": b2}, "formula": "−coverage × beta × parent_notional",
+                                                                               "quote_currency": qc})}
 
 
 def beta_pair(ctx):
@@ -579,7 +595,8 @@ def funding_aware(ctx):
         return {"state": "NO_EXPOSURE"}
     fund = ctx.get("funding") or {}
     fee = (ctx.get("fees") or {}).get("taker")
-    if not fund or fee is None:
+    # 1.46: {"BTC": None, "ETH": None} (contexts() failed) is truthy - every option was skipped and the result was a NO_HEDGE market verdict
+    if not fund or all(v is None for v in fund.values()) or fee is None:
         raise Unavailable("brak bieżącego funding / stawki fee")
     opts = []
     for f in ("BTC", "ETH"):
