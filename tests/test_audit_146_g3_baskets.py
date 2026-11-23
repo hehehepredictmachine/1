@@ -396,3 +396,22 @@ class TestTrackDataGap(_Svc):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRetiredDeclaredHistory(_Svc):
+    """focus_X1#7: declared exposures - a client id of another profile REPLACED that record (retired OTC history vanished), and DELETE
+    /baskets/declared/{id} closed OTC records although the retired history is read-only."""
+
+    def test_foreign_id_does_not_replace_and_otc_cannot_be_closed(self):
+        led = self.svc().ledger
+        with led._c() as c:
+            c.execute("INSERT INTO declared VALUES(?,?,?,?,?,?)", ("OTC-1", "OTC_GOLD_POCKETOPTION", "OTC", '{"instrument": "XAUUSD"}', 1.0, "OPEN"))
+        did = led.declare("CRYPTO_FOMO_PERPS", "PERP", {"id": "OTC-1", "instrument": "BTC", "side": "LONG", "size": 1})
+        self.assertNotEqual(did, "OTC-1")
+        led.close_declared("OTC-1")
+        with led._c() as c:
+            row = c.execute("SELECT profile_id, status FROM declared WHERE id='OTC-1'").fetchone()
+        self.assertEqual((row["profile_id"], row["status"]), ("OTC_GOLD_POCKETOPTION", "OPEN"))
+        self.assertEqual([d["id"] for d in led.declared("CRYPTO_FOMO_PERPS")], [did])
+        led.close_declared(did)                                       # an own record still closes
+        self.assertEqual(led.declared("CRYPTO_FOMO_PERPS"), [])

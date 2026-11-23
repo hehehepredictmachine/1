@@ -283,18 +283,26 @@ class Ledger:
 
     def declared(self, profile: str) -> list[dict]:
         with self._c() as c:
-            return [{"id": r["id"], **json.loads(r["data"]), "status": r["status"]} for r in
+            return [{**json.loads(r["data"]), "id": r["id"], "status": r["status"]} for r in      # 1.46: the row id wins over an "id" in the payload
                     c.execute("SELECT * FROM declared WHERE profile_id=? AND status='OPEN'", (profile,))]
 
     def declare(self, profile: str, kind: str, data: dict) -> str:
         did = data.get("id") or ("DCL-" + hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:12])
         with self._lock, self._c() as c:
+            # 1.46: the id comes from the client - an id of another profile (e.g. retired OTC history) was REPLACED by this row; such an
+            # id is ignored and the row gets its own content id (the other record stays as it was)
+            cur = c.execute("SELECT profile_id FROM declared WHERE id=?", (did,)).fetchone()
+            if cur is not None and cur["profile_id"] != profile:
+                data = {k: v for k, v in data.items() if k != "id"}
+                did = "DCL-" + hashlib.sha256(json.dumps([profile, data], sort_keys=True, default=str).encode()).hexdigest()[:12]
             c.execute("INSERT OR REPLACE INTO declared VALUES(?,?,?,?,?,?)", (did, profile, kind, json.dumps({**data, "source": "MANUAL_DECLARED"}), time.time(), "OPEN"))
         return did
 
     def close_declared(self, did: str) -> None:
         with self._lock, self._c() as c:
-            c.execute("UPDATE declared SET status='CLOSED' WHERE id=?", (did,))
+            # 1.46: the history of a retired profile (OTC) is read-only - DELETE /baskets/declared/{id} closed OTC records
+            c.execute("UPDATE declared SET status='CLOSED' WHERE id=? AND profile_id NOT IN (%s)" % ",".join("?" * len(CAT.RETIRED_PROFILE_IDS)),  # noqa: S608 - placeholders only
+                      (did, *sorted(CAT.RETIRED_PROFILE_IDS)))
 
 
 class Ctx:
