@@ -490,6 +490,23 @@ def register(app, rt) -> None:
         return {"roi_pct": r.get("roi_pct"), "status": r.get("status") or ("OK" if r.get("roi_pct") is not None else "NO_DATA"),
                 "deals": deals_n, "net": net, "currency": cur}
 
+    def _acct_deals_fn(b):
+        """1.46: bridge.deals is [] until the first history poll and still holds the PREVIOUS account's deals after an account switch
+        (connect() / _poll_account() do not clear it, a deal carries no account) - the Telegram baseline written from it replayed the
+        whole history, and the other account's deals were reported as the pinned account's events. The list is tagged with the account
+        it was loaded for (bridge "deals" notification, sent by _poll_deals in the bridge thread); None = NOT LOADED for this account."""
+        tracked = hasattr(b, "add_listener")
+        owner = {"key": None}
+        if tracked:
+            b.add_listener(lambda kind, data: owner.update(key=b.account_key) if kind == "deals" else None)
+
+        def deals():
+            with b._lock:
+                if getattr(b, "deals_loaded_at", None) is None or (tracked and owner["key"] != b.account_key):
+                    return None
+                return [dict(d) for d in (b.deals or [])]
+        return deals
+
     def acct():
         def make():
             b = getattr(rt, "bridge", None)
@@ -503,7 +520,7 @@ def register(app, rt) -> None:
             except Exception:  # noqa: BLE001 - no SH config: only the main magic
                 pass
             return AccountCenter(paths.data_dir() / "telegram_account", deliver=(tg.account_event if tg else None),
-                                 deals_fn=(lambda: [dict(d) for d in (b.deals or [])]) if b else None,
+                                 deals_fn=_acct_deals_fn(b) if b else None,
                                  account_fn=(lambda: b.account_status()) if b else None, pmw_magics=magics,
                                  roi_fn=_acct_roi if b else None)
         return lazy("acct", make)
@@ -512,8 +529,9 @@ def register(app, rt) -> None:
         import logging as _lg
         import time as _t
         lg, last = _lg.getLogger("masterquo.telegram_account"), {}
-        while True:
-            _t.sleep(10)
+        stop = getattr(rt, "_stop", None)
+        # 1.46: ends with Runtime.stop() (was `while True` - after the engine stopped it kept polling and rewriting the state every 10 s)
+        while not (stop.wait(10) if isinstance(stop, threading.Event) else (_t.sleep(10) or False)):
             # 1.46: each step on its own (a failing report no longer blocks the delivery of queued events) and errors are logged
             # (at most once per 10 min per step) instead of disappearing
             for step in ("poll", "queue_reports", "flush"):

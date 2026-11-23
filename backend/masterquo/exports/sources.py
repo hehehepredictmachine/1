@@ -458,7 +458,9 @@ def telegram_center(ctx: SourceContext) -> Collected:
             for k, v in {**DEFAULTS, **cfg}.items()] if (cfg or st) else []
     outbox = [{"dedup_key": m(x.get("key")), "text": m(x.get("text")), "state": "PENDING"} for x in st.get("outbox") or []]
     sent = [{"dedup_key": m(k), "state": "SENT"} for k in st.get("sent_keys") or []]
-    pos = [{"position_id": pid, "side": p.get("side"), "volume_in": p.get("vin"), "volume_out": p.get("vout"), "net": p.get("net")}
+    # 1.46: an entry volume never seen (position opened before the baseline) is null, not 0
+    pos = [{"position_id": pid, "side": p.get("side"), "volume_in": p.get("vin") if p.get("vin_known", bool(p.get("vin"))) else None,
+            "volume_out": p.get("vout"), "net": p.get("net")}
            for pid, p in (st.get("positions") or {}).items()]
     seen = [{"deal_ticket": t} for t in st.get("cursor") or []]
     meta = [{"baseline_at_utc": utc_iso(st.get("baseline_at")), "paused": st.get("paused"), "outbox_pending": len(outbox), "sent_keys": len(sent),
