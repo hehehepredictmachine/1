@@ -868,7 +868,8 @@ class TestTickArchiveForTsvp(unittest.TestCase):
                     self.z.close()
             with mock.patch.object(tick_store.np, "load", side_effect=lambda *a, **k: Counting(real_load(*a, **k))):
                 tick_store.load("XAUUSD")
-            self.assertLessEqual(reads["n"], 6)                                 # each array once, not 4 x 3000 reads
+            # a constant number of reads per chunk (each array once; 1.46 iter_ticks also reads t_ms for the chunk span), not 4 x 3000 reads
+            self.assertLessEqual(reads["n"], 10)
         finally:
             td.close()
 

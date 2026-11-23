@@ -9,12 +9,14 @@ from __future__ import annotations
 
 T = "tests/test_lab.py"
 
+# 1.46: evidence names only tests that exist (TestArtifacts / TestMiniRocket / TestExecutionLock / test_prefix_invariance never did; M18 also
+# migration 0021 + TestZonesV2); M32 'implemented' was outside the documented implementation_status set -> implemented_unverified
 ROWS: list[dict] = [
     {"id": "M01", "element": "Neural Networks i Machine Learning", "source": "R13 R14 R15 R16", "function": "wspólny interfejs fit/predict (Fitted), rejestr prób, artefakty z manifestem i blokadą aktywa/schematu",
      "io": "cechy FS-1.0.0 + sekwencje → p(TP przed SL)", "deps": "numpy, scikit-learn, xgboost", "platform": "Python",
      "files": "lab/protocol.py, lab/nets.py, lab/features.py", "integration": "LabTrainer → /api/v1/lab/train, /lab/models; LabService inferencja → Pulpit (NN Activity), Modele i trening",
      "implementation_status": "verified", "availability": "missing_data", "decision_role": "research",
-     "evidence": f"{T}::TestProtocol, TestArtifacts", "limits": "trening na prawdziwych danych nie wykonany (brak MT5 w środowisku budowania)"},
+     "evidence": f"{T}::TestProtocol, TestProtocol.test_study_insufficient_and_holdout_once_and_artifact", "limits": "trening na prawdziwych danych nie wykonany (brak MT5 w środowisku budowania)"},
     {"id": "M02", "element": "SpikingBrain", "source": "R04 R05 R06 (niedostępne z sieci budowania)", "function": "eksperyment event-driven: prąd z cech, progi LIF, pamięć stanu, routing 2 ekspertów wg reżimu zmienności",
      "io": "sekwencja cech → spiki → p", "deps": "numpy", "platform": "Python", "files": "lab/nets.py (SEWSNN router=True)",
      "integration": "rodzina SEW_SNN w badaniu; telemetria raster/firing rate", "implementation_status": "verified", "availability": "available",
@@ -30,7 +32,7 @@ ROWS: list[dict] = [
     {"id": "M05", "element": "MiniRocket", "source": "R01 R02 (GPL-3, nie kopiowano) R03", "function": "84 jądra, dylatacje, biasy z kwantyli przykładu TRENINGOWEGO, PPV + regularyzowana regresja logistyczna",
      "io": "okna (kanały×L) → cechy PPV → p", "deps": "numpy, scikit-learn", "platform": "Python", "files": "lab/minirocket.py",
      "integration": "rodzina MINIROCKET; stan transformacji w artefakcie", "implementation_status": "verified", "availability": "available",
-     "decision_role": "research", "evidence": f"{T}::TestMiniRocket", "limits": "zgodności numerycznej z kodem autorów nie sprawdzono (brak dostępu do referencji w sieci)"},
+     "decision_role": "research", "evidence": f"{T}::TestNets.test_minirocket_fit_on_train_only", "limits": "zgodności numerycznej z kodem autorów nie sprawdzono (brak dostępu do referencji w sieci)"},
     {"id": "M06", "element": "Decision Tree, XGBoost, CatBoost", "source": "istniejący moduł ml/ (1.2)", "function": "audyt DT/XGB; w badaniu lab: TREE i XGB jako kontrolowany challenger",
      "io": "cechy → p", "deps": "scikit-learn, xgboost", "platform": "Python", "files": "ml/*, lab/protocol.py", "integration": "ML (XAUUSD, setupy S01–S12) + lab per aktywo",
      "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestProtocol; tests/test_ml.py",
@@ -50,7 +52,7 @@ ROWS: list[dict] = [
      "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestStructure", "limits": "własna metoda – kod źródła niedostępny"},
     {"id": "M11", "element": "Volatility Regime Shader", "source": "R19", "function": "percentyl ATR14 w oknie 200 → COMPRESSION/NORMAL/EXPANSION (seria do cieniowania wykresu)",
      "io": "świece → stan/seria", "deps": "numpy", "platform": "Python", "files": "lab/market.py::vol_regime", "integration": "Wykresy (pas reżimu), Pulpit",
-     "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestStructure.test_prefix_invariance", "limits": "—"},
+     "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestStructure.test_prefix_invariance_features_and_modules", "limits": "—"},
     {"id": "M12", "element": "Market Behavior Analyzer", "source": "R20", "function": "pivoty z origin_time/confirmed_at, HH/HL/LH/LL, odcinki impuls/pullback, retracement, Market Story",
      "io": "świece → struktura", "deps": "numpy", "platform": "Python", "files": "lab/market.py::swing_structure", "integration": "Wykresy (Swing Inspector), Pulpit",
      "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestStructure.test_pivot_confirmed_at", "limits": "—"},
@@ -72,8 +74,9 @@ ROWS: list[dict] = [
      "io": "próbki → statusy", "deps": "numpy", "platform": "Python", "files": "analytics/double_bottom.py, analytics/library.py", "integration": "Badania i walidacja → Formacje",
      "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": "tests/test_analytics.py", "limits": "biblioteka ręczna ma selection bias – patrz docs"},
     {"id": "M18", "element": "Supply/Demand Zone Manager V", "source": "R26", "function": "strefy z wersją schematu, transakcyjny zapis, snapshot + .bak, odtworzenie po awarii; ręczne strefy UNRATED",
-     "io": "świece → strefy (DB)", "deps": "sqlite", "platform": "Python", "files": "lab/zones.py, migracja 0014", "integration": "LabService (zapis), Wykresy",
-     "implementation_status": "verified", "availability": "available", "decision_role": "shadow", "evidence": f"{T}::TestZones", "limits": "—"},
+     "io": "świece → strefy (DB)", "deps": "sqlite", "platform": "Python", "files": "lab/zones.py, migracje 0014, 0021", "integration": "LabService (zapis), Wykresy",
+     "implementation_status": "verified", "availability": "available", "decision_role": "shadow",
+     "evidence": f"{T}::TestZones; tests/test_structure_intelligence.py::TestZonesV2", "limits": "—"},
     {"id": "M19", "element": "Multi TimeFrame Dashboard", "source": "—", "function": "wykresy M1–D1 z niezależnym zoomem (1.7), łączenie TF po czasie dostępności",
      "io": "bary → panel", "deps": "lightweight-charts", "platform": "Python+TS", "files": "lab/sessions.py::as_of_join, frontend ChartPanel", "integration": "Wykresy",
      "implementation_status": "verified", "availability": "available", "decision_role": "visual_only", "evidence": f"{T}::TestMTF", "limits": "—"},
@@ -118,7 +121,7 @@ ROWS: list[dict] = [
      "function": "adapter CoinGlass (PAIR/AGGREGATED) + import pliku; walidacja macierzy model1; archiwum point-in-time (first_received_at); strefy kwantylowe; polityka OBSERVE",
      "io": "API/plik → siatka cena×czas → strefy", "deps": "dostawca zewnętrzny, COINGLASS_API_KEY", "platform": "API",
      "files": "analytics/liquidation/{contract,provider,service}.py, analytics/liquidity_context.py", "integration": "panel Heatmapa likwidacji (oś źródła), agent, ocena B2/B3",
-     "implementation_status": "implemented", "availability": "missing_license", "decision_role": "research", "evidence": "tests/test_liquidity.py",
+     "implementation_status": "implemented_unverified", "availability": "missing_license", "decision_role": "research", "evidence": "tests/test_liquidity.py",
      "limits": "bez klucza/uprawnień MISSING_API_KEY/ENTITLEMENT_REQUIRED; XAUT ≠ XAUUSD- (osobna oś, brak mapowania); nic nie jest symulowane"},
     {"id": "M33", "element": "Black-76 / IV walls", "source": "R30; moduł volzones/walls (1.3–1.10)", "function": "XAUUSD: HV proxy lub IV z ręcznego importu (jawnie oznaczone); BTC: brak źródła opcji",
      "io": "D1 + IV → poziomy", "deps": "numpy", "platform": "Python", "files": "engine/volzones.py, engine/walls_service.py", "integration": "S12 (XAUUSD), wykresy",
@@ -149,7 +152,7 @@ ROWS: list[dict] = [
      "implementation_status": "verified", "availability": "available", "decision_role": "research", "evidence": f"{T}::TestEdge", "limits": "—"},
     {"id": "M42", "element": "Manual Trade Pad MT5", "source": "R39", "function": "plan + symulacja P&L z kontraktu; wykonanie zawsze przez bramkę, tryb wykonania i potwierdzenie",
      "io": "plan → symulacja", "deps": "—", "platform": "Python+TS", "files": "lab/edge.py::trade_pad_plan, /api/v1/lab/tradepad", "integration": "Setupy",
-     "implementation_status": "verified", "availability": "available", "decision_role": "visual_only", "evidence": f"{T}::TestExecutionLock", "limits": "brak przycisku realnego zlecenia"},
+     "implementation_status": "verified", "availability": "available", "decision_role": "visual_only", "evidence": f"{T}::TestTradePadPlan.test_trade_pad_is_simulation_only", "limits": "brak przycisku realnego zlecenia"},
 ]
 
 

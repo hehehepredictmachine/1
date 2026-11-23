@@ -6,7 +6,9 @@ forecast scoreboard split by time; it is NOT supervised training by itself."""
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
+import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,8 +23,14 @@ FEATURES = ["bid16_zv", "bid16_za", "ask16_zv", "ask16_za", "bid256_zv", "bid256
 PHASES = ("EXPANSION", "RETRACEMENT", "CONSOLIDATION", "STRESSED")
 
 
+MAX_EXPORT_DAYS = 365.0
+
+
 def root(inst: str) -> Path:
     import mq_instruments
+    # 1.46: the instrument becomes a directory name - a path-like value ('../..', absolute, separators) wrote outside the data dir
+    if not isinstance(inst, str) or inst in ("", ".", "..") or any(ch in inst for ch in "/\\:\0"):
+        raise ValueError(f"INSTRUMENT_INVALID: {inst!r}")
     d = mq_instruments.data_dir() / "ticks" / inst
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -30,7 +38,33 @@ def root(inst: str) -> Path:
 
 def _index(inst: str) -> list[dict]:
     p = root(inst) / "index.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    if not p.exists():
+        return []
+    raw = p.read_bytes()
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except ValueError:
+        # 1.46: a torn index.json (crash during the in-place write of 1.45) made every read and every later export fail although the chunks
+        # are intact - the damaged file is kept aside (never deleted) and the index is rebuilt from the ticks_*.npz files themselves
+        bak = p.with_name(f"index.json.corrupt-{hashlib.sha256(raw).hexdigest()[:12]}")
+        if not bak.exists():
+            bak.write_bytes(raw)
+        return _rebuild_index(inst)
+
+
+def _rebuild_index(inst: str) -> list[dict]:
+    out = []
+    for f in sorted(root(inst).glob("ticks_*.npz")):
+        try:
+            with np.load(f, allow_pickle=False) as z:
+                ta = z["t_ms"]
+        except Exception:                                       # noqa: BLE001 - an unreadable chunk stays on disk, just not indexed
+            ta = ()
+        if len(ta):
+            out.append({"file": f.name, "from_ms": int(ta[0]), "to_ms": int(ta[-1]), "count": len(ta), "sha256": hashlib.sha256(f.read_bytes()).hexdigest(),
+                        "source": None, "clock_transform": None, "truncated": None, "availability_basis": "HISTORICAL_SOURCE_TIME_ESTIMATE",
+                        "saved_at": None, "index_rebuilt": True})
+    return sorted(out, key=lambda e: e["from_ms"])
 
 
 def save_chunk(inst: str, ticks: list[dict], source: str, clock_transform: str, truncated: bool) -> dict | None:
@@ -46,17 +80,34 @@ def save_chunk(inst: str, ticks: list[dict], source: str, clock_transform: str, 
            "clock_transform": clock_transform, "truncated": truncated, "availability_basis": "HISTORICAL_SOURCE_TIME_ESTIMATE",
            "saved_at": datetime.now(timezone.utc).isoformat()}
     idx = [e for e in _index(inst) if e["file"] != f.name] + [ent]
-    (root(inst) / "index.json").write_text(json.dumps(sorted(idx, key=lambda e: e["from_ms"]), indent=1), encoding="utf-8")
+    p = root(inst) / "index.json"
+    tmp = p.with_name("index.json.tmp")                  # 1.46: atomic replace - an interrupted in-place write left a torn index
+    tmp.write_text(json.dumps(sorted(idx, key=lambda e: e["from_ms"]), indent=1), encoding="utf-8")
+    tmp.replace(p)
     return ent
+
+
+def check_days(days) -> float:
+    """1.46: export range in days, 0 < days <= MAX_EXPORT_DAYS. 'inf' looped for ever (t = -inf, endless bridge calls, job RUNNING for good),
+    NaN / negative returned complete=True with no data."""
+    try:
+        d = float(days)
+    except (TypeError, ValueError):
+        raise ValueError(f"DAYS_INVALID: {days!r}") from None
+    if not math.isfinite(d) or not 0 < d <= MAX_EXPORT_DAYS:
+        raise ValueError(f"DAYS_INVALID: {days!r} (0 < days <= {MAX_EXPORT_DAYS:g})")
+    return d
 
 
 def export_via_bridge(bridge, symbol: str, inst: str, days: float, chunk_hours: float = 6.0, max_count: int = 500_000, progress=None, cancel=None) -> dict:
     """Bounded chunks through the existing bridge (worker queue). Progress per chunk; no direct terminal connection."""
+    days = check_days(days)
     now = time.time()
     start = now - days * 86400
-    out, t = [], start
+    out, t, stopped = [], start, False
     while t < now:
         if cancel and cancel():
+            stopped = True
             break
         t1 = min(now, t + chunk_hours * 3600)
         r = bridge.ticks_range(symbol, t, t1, max_count)
@@ -70,10 +121,12 @@ def export_via_bridge(bridge, symbol: str, inst: str, days: float, chunk_hours: 
         if progress:
             progress((t1 - start) / max(1.0, now - start))
         t = t1
-    return {"chunks": out, "complete": all(c["status"] in ("OK", "EMPTY") for c in out)}
+    # 1.46: a cancelled export (also one cancelled before its first chunk: all([]) == True) is never 'complete'
+    return {"chunks": out, "complete": not stopped and all(c["status"] in ("OK", "EMPTY") for c in out), **({"cancelled": True} if stopped else {})}
 
 
-def load(inst: str, from_ms: int | None = None, to_ms: int | None = None) -> list[dict]:
+def _selected(inst: str, from_ms: int | None, to_ms: int | None) -> list[Path]:
+    """Chunk files whose indexed range overlaps [from_ms, to_ms] (whole chunks, as before), hash-checked, in index order."""
     out = []
     for e in _index(inst):
         if (from_ms is not None and e["to_ms"] < from_ms) or (to_ms is not None and e["from_ms"] > to_ms):
@@ -81,21 +134,51 @@ def load(inst: str, from_ms: int | None = None, to_ms: int | None = None) -> lis
         f = root(inst) / e["file"]
         if hashlib.sha256(f.read_bytes()).hexdigest() != e["sha256"]:
             raise ValueError(f"TICK_CHUNK_HASH_MISMATCH: {e['file']}")
-        with np.load(f, allow_pickle=False) as z:
-            # 1.46: every array read ONCE (NpzFile re-reads and decompresses the whole array on each z[key] - quadratic per chunk);
-            # the stored raw time_msc / flags are returned too (additive keys; callers of the 4 old keys are unchanged)
-            ta, bi, ak, od = z["t_ms"], z["bid"], z["ask"], z["ord"]
-            tm = z["time_msc"] if "time_msc" in z.files else None
-            fl = z["flags"] if "flags" in z.files else None
-            for i in range(len(ta)):
-                row = {"t_ms": int(ta[i]), "bid": float(bi[i]), "ask": float(ak[i]), "ord": int(od[i])}
-                if tm is not None:
-                    row["time_msc"] = int(tm[i])
-                if fl is not None:
-                    row["flags"] = int(fl[i])
-                out.append(row)
-    out.sort(key=lambda k: (k["t_ms"], k["ord"]))
+        out.append(f)
     return out
+
+
+def iter_ticks(inst: str, from_ms: int | None = None, to_ms: int | None = None):
+    """1.46: the ticks of load() in the SAME order, streamed - load() built one dict per tick of the whole archive (~300 B/tick, GBs for
+    90 days of XAUUSD) in the bot process. Chunks whose real time spans do not overlap are read and yielded one group at a time from numpy
+    arrays; overlapping / touching chunks are merged and ordered together by (t_ms, ord), ties in index order (the global sort of 1.45)."""
+    files = _selected(inst, from_ms, to_ms)
+    spans = []
+    for k, f in enumerate(files):
+        with np.load(f, allow_pickle=False) as z:
+            ta = z["t_ms"]
+        if len(ta):
+            spans.append((int(ta.min()), int(ta.max()), k))
+    groups, hi = [], None
+    for lo_, hi_, k in sorted(spans):
+        if not groups or lo_ > hi:
+            groups.append([])
+            hi = hi_
+        groups[-1].append(k)
+        hi = max(hi, hi_)
+    for g in groups:
+        cols: dict[str, list] = {c: [] for c in ("t_ms", "bid", "ask", "ord", "time_msc", "flags", "has_tm", "has_fl")}
+        for k in sorted(g):
+            with np.load(files[k], allow_pickle=False) as z:
+                # every array read ONCE (NpzFile re-reads and decompresses the whole array on each z[key]); time_msc / flags when stored
+                for c in ("t_ms", "bid", "ask", "ord"):
+                    cols[c].append(z[c])
+                n = len(cols["t_ms"][-1])
+                for c, h in (("time_msc", "has_tm"), ("flags", "has_fl")):
+                    cols[c].append(z[c] if c in z.files else np.zeros(n, np.int64))
+                    cols[h].append(np.full(n, c in z.files))
+        a = {c: np.concatenate(v) for c, v in cols.items()}
+        for i in np.lexsort((np.arange(len(a["t_ms"])), a["ord"], a["t_ms"])):
+            row = {"t_ms": int(a["t_ms"][i]), "bid": float(a["bid"][i]), "ask": float(a["ask"][i]), "ord": int(a["ord"][i])}
+            if a["has_tm"][i]:
+                row["time_msc"] = int(a["time_msc"][i])
+            if a["has_fl"][i]:
+                row["flags"] = int(a["flags"][i])
+            yield row
+
+
+def load(inst: str, from_ms: int | None = None, to_ms: int | None = None) -> list[dict]:
+    return list(iter_ticks(inst, from_ms, to_ms))
 
 
 def feature_row(snap: dict, tick: float) -> list:
@@ -116,15 +199,18 @@ def feature_row(snap: dict, tick: float) -> list:
 
 def replay(inst: str, tick: float, point: float, cfg: dict | None = None, progress=None) -> dict:
     """Process the archive in time order; snapshot + emission + scoring at every M1 close of tick time."""
-    ticks = load(inst)
-    if not ticks:
+    it = iter_ticks(inst)                                # 1.46: streamed (the bot thread held the whole archive as dicts)
+    first = next(it, None)
+    if first is None:
         return {"status": "BLOCKED_NO_TICK_HISTORY"}
     eng = Q.QuoteEngine(inst, tick, point, cfg)
     rows_t, rows_f = [], []
-    nxt = (ticks[0]["t_ms"] // 60000 + 1) * 60000
+    nxt = (first["t_ms"] // 60000 + 1) * 60000
     buf = []
+    n_ticks = 0
     t_start = time.time()
-    for k in ticks:
+    for k in itertools.chain([first], it):
+        n_ticks += 1
         while k["t_ms"] >= nxt:
             eng.ingest(buf)
             buf = []
@@ -150,7 +236,7 @@ def replay(inst: str, tick: float, point: float, cfg: dict | None = None, progre
         e2 = Q.QuoteEngine(inst, tick, point, cfg)
         e2.matured = ms
         return e2.scoreboard()
-    man = {"replay_id": rid, "profile": Q.VERSION, "instrument": inst, "features": FEATURES, "rows": int(len(t)), "ticks": len(ticks),
+    man = {"replay_id": rid, "profile": Q.VERSION, "instrument": inst, "features": FEATURES, "rows": int(len(t)), "ticks": n_ticks,
            "clock": eng.clock, "flags": sorted(eng.flags), "scoreboard_dev": board(dev), "scoreboard_holdout_reported_once": board(hold),
            "seconds": round(time.time() - t_start, 1), "sha256": hashlib.sha256((d / "quote_features.npz").read_bytes()).hexdigest(),
            "note": "deterministyczny fit kinematyczny + scoreboard; to nie jest trening nadzorowany"}

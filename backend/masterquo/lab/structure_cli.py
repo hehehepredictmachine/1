@@ -144,7 +144,9 @@ def main(argv: list[str]) -> int:
             if meta.get("instrument", "XAUUSD") != a.asset:
                 print(f"[BLAD] INSTRUMENT_MISMATCH {meta.get('instrument')} != {a.asset}")
                 return 2
-            _print({"imported_source": a.path, "data_kind": meta.get("data_kind"), "note": "import offline – jawne źródło, bez łączenia z MT5"})
+            # 1.46: nothing is copied or registered here (the note said "import" - a following `dataset --latest` still found nothing)
+            _print({"imported_source": a.path, "data_kind": meta.get("data_kind"), "registered": False,
+                    "note": f"zweryfikowano (bez kopiowania i rejestracji) – użyj: dataset --asset {a.asset} --dataset {a.path} (albo pipeline --dataset)"})
             return 0
         if a.c == "dataset":
             ds, err = raw(a.dataset, a.allow_synthetic_fixture)

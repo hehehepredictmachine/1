@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -61,6 +62,9 @@ TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 
 def root(inst: str) -> Path:
     import mq_instruments
+    # 1.46: the instrument becomes a directory name - a path-like value ('../..', absolute, separators) created / wrote outside the data dir
+    if not isinstance(inst, str) or inst in ("", ".", "..") or any(ch in inst for ch in "/\\:\0"):
+        raise ValueError(f"INSTRUMENT_INVALID: {inst!r}")
     d = mq_instruments.data_dir() / "structure_intelligence" / inst
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -98,7 +102,8 @@ def labels(t: list[float], c: list[float], atr: list) -> tuple[np.ndarray, np.nd
         b = 0.15 * math.sqrt(h)
         for i in range(n - h):
             a = atr[i]
-            if not a or a <= 0 or run[i + h] - run[i] != h:
+            # 1.46: `not a` let NaN through (NaN ATR -> r NaN -> class FLAT); a missing ATR is a missing label, never a class
+            if a is None or not math.isfinite(a) or a <= 0 or run[i + h] - run[i] != h:
                 continue
             r = (c[i + h] - c[i]) / a
             R[i, j] = r
@@ -249,9 +254,12 @@ def save_dataset(inst: str, data: dict) -> dict:
            "knowledge_cutoff": _iso(data["fe"]["t"][-1] + 60), "sha256": hashlib.sha256((d / "data.npz").read_bytes()).hexdigest()}
     (d / "manifest.json").write_text(json.dumps(man, indent=1), encoding="utf-8")
     idx = root(inst) / "datasets" / "index.json"
-    lst = json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
-    lst.append({"dataset_id": did, "task": data["task"], "created_at": man["created_at"], "profile_hash": data["profile"]["hash"]})
-    idx.write_text(json.dumps(lst, indent=1), encoding="utf-8")
+    with _REG_LOCK:                     # 1.46: re-read + atomic replace under the lock (concurrent dataset jobs, interrupted in-place write)
+        lst = json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
+        lst.append({"dataset_id": did, "task": data["task"], "created_at": man["created_at"], "profile_hash": data["profile"]["hash"]})
+        tmp = idx.with_suffix(".tmp")
+        tmp.write_text(json.dumps(lst, indent=1), encoding="utf-8")
+        tmp.replace(idx)
     return man
 
 
@@ -517,8 +525,10 @@ def _fit_family(fam: str, data: dict, task: str, blocks: dict, prof: dict, seed:
             return windows(F, bars[self.src[k]], sc)
     pos = np.arange(len(bars))
     Xl = Lazy(pos)
+    # 1.46: cancel reaches the StructureNet fit too (it was passed to the spike family only - 'Anuluj' let up to trial_minutes run on)
     info = SN.fit(net, Xl, Y, R, fit, tune[-2000:] if len(tune) else None, epochs=prof["epochs"], batch=prof["batch"], lr=prof["lr"],
-                  patience=prof["patience"], seed=seed, budget_s=min(60 * prof["trial_minutes"], max(1.0, deadline - time.time())), log=None)
+                  patience=prof["patience"], seed=seed, budget_s=min(60 * prof["trial_minutes"], max(1.0, deadline - time.time())), log=None,
+                  cancel=cancel)
     return (net, sc), info
 
 
@@ -596,10 +606,20 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
             continue
         fr = {"fold": f["fold"], "status": "OK", "sizes": {k: int(len(v)) for k, v in b.items()}, "eval_n": int(len(f["eval"])), "families": {}}
         for fam in fams:
+            if cancel and cancel():            # 1.46: cancel honoured between families / seeds (was: only at the start of a fold)
+                rep["status"] = fr["status"] = "CANCELLED"
+                break
             seeds = prof["seeds"] if (fam in SN.FAMILIES or fam in SF.FAMILIES) else [0]
             res = []
             for sd in seeds:
+                if cancel and cancel():
+                    rep["status"] = fr["status"] = "CANCELLED"
+                    break
                 model, info = _fit_family(fam, data, task, b, prof, sd, log, deadline, cancel)
+                if info.get("status") == "CANCELLED":   # 1.46: a fit stopped by cancel is not evaluated as if it had finished
+                    res.append({"seed": sd, "status": "CANCELLED"})
+                    rep["status"] = fr["status"] = "CANCELLED"
+                    break
                 if model is None:
                     res.append({"seed": sd, **info})
                     continue
@@ -613,7 +633,11 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
                             **({"diagnostics": _diag(model, info)} if fam in SF.FAMILIES else {})})
             fr["families"][fam] = res
             log(f"fold {f['fold'] + 1} {fam}: {[r.get('status') for r in res]}")
+            if rep.get("status") == "CANCELLED":
+                break
         rep["folds"].append(fr)
+        if rep.get("status") == "CANCELLED":
+            break
     rep["comparison"] = _compare(rep)
     rep.setdefault("status", "EVALUATED_DEV" if ev["status"] == "OK" else "INSUFFICIENT_EVIDENCE")
     # final candidates on the whole dev (inner blocks), saved for SHADOW selection - holdout NOT opened here
@@ -622,9 +646,18 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
     rep["candidates"] = {}
     if rep["status"] != "CANCELLED" and min(len(v) for v in fb.values()) >= 5:
         for fam in families:
+            if cancel and cancel():            # 1.46: the final-candidate loop never checked cancel
+                rep["status"] = "CANCELLED"
+                break
             model, info = _fit_family(fam, data, task, fb, prof, prof["seeds"][0], log, deadline, cancel)
+            if info.get("status") == "CANCELLED":       # a half-trained network is never saved as a final candidate
+                rep["status"] = "CANCELLED"
+                break
             if model is None:
                 rep["candidates"][fam] = info
+                continue
+            if info.get("status") == "NAN_LOSS" and info.get("best_restored") is False:     # 1.46: NaN weights are never saved as a candidate
+                rep["candidates"][fam] = {"status": "NAN_LOSS", "reason": "brak skończonego najlepszego checkpointu – kandydat nie zapisany"}
                 continue
             Pc, _ = _predict(model, fam, data, task, fb["CALIBRATION"])
             temps = [_temperature(Pc[:, j], Yall[fb["CALIBRATION"], j]) for j in range(Yall.shape[1])]
@@ -634,9 +667,8 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
                                       "holdout": "NOT_EVALUATED_ON_HOLDOUT_BY_DESIGN"}
     rep["run_dir"] = str(rd)
     (rd / "report.json").write_text(json.dumps(rep, indent=1, default=_jd), encoding="utf-8")
-    reg = _reg(inst)
-    reg["runs"][rid] = {"run_dir": str(rd), "task": task, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"]}
-    _save_reg(inst, reg)
+    ent = {"run_dir": str(rd), "task": task, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"]}
+    _update_reg(inst, lambda reg: reg["runs"].update({rid: ent}))
     return rep
 
 
@@ -771,38 +803,78 @@ def _save_reg(inst: str, reg: dict) -> None:
     tmp.replace(p)
 
 
-def select_shadow(inst: str, candidate_id: str) -> dict:
-    """Manual SHADOW pointer (never execution). TEST_ONLY candidates are refused; the previous pointer is kept for rollback."""
-    reg = _reg(inst)
+_REG_LOCK = threading.RLock()
+
+
+def _update_reg(inst: str, fn):
+    """1.46: read-modify-write of registry.json in ONE short critical section - the registry is re-read right before the write and only the
+    caller's change is applied (evaluate_holdout held the object read before a minutes-long prediction and wrote it back, dropping runs /
+    SHADOW moves made meanwhile). In-process lock; another process (CLI) can only race inside this millisecond window."""
+    with _REG_LOCK:
+        reg = _reg(inst)
+        out = fn(reg)
+        _save_reg(inst, reg)
+        return out
+
+
+def _candidate_dir(reg: dict, candidate_id: str) -> tuple[str, str, Path]:
+    """(run_id, family, directory) of a candidate. 1.46: the family part is ONE directory name inside <run>/models - '<run>-../x' pointed the
+    SHADOW pointer / the holdout evaluation at any directory holding a candidate.json."""
     rid = next((r for r in reg["runs"] if candidate_id.startswith(r + "-")), None)
     if rid is None:
         raise ValueError("RUN_NOT_FOUND")
-    fam, run = candidate_id[len(rid) + 1:], reg["runs"][rid]
-    d = Path(run["run_dir"]) / "models" / fam
-    meta, _ = load_candidate(d)                      # full compatibility + hash check before the pointer moves
-    if meta["role"] == "TEST_ONLY":
-        raise ValueError("TEST_ONLY_ARTIFACT: model z danych syntetycznych nie trafia do SHADOW")
-    prev = reg["shadow"].get(meta["task_id"])
-    reg["shadow"][meta["task_id"]] = {"candidate_id": candidate_id, "dir": str(d), "model_hash": meta["model_hash"], "at": datetime.now(timezone.utc).isoformat()}
-    reg["history"].append({"task": meta["task_id"], "from": prev, "to": candidate_id, "at": datetime.now(timezone.utc).isoformat()})
-    _save_reg(inst, reg)
-    return {"ok": True, "shadow": reg["shadow"][meta["task_id"]], "previous": prev, "execution": "NEVER_AUTOMATIC"}
+    fam = candidate_id[len(rid) + 1:]
+    base = Path(reg["runs"][rid]["run_dir"]) / "models"
+    if fam in ("", ".", "..") or any(ch in fam for ch in "/\\:\0") or (base / fam).resolve().parent != base.resolve():
+        raise ValueError(f"CANDIDATE_INVALID: {candidate_id}")
+    return rid, fam, base / fam
+
+
+def select_shadow(inst: str, candidate_id: str) -> dict:
+    """Manual SHADOW pointer (never execution). TEST_ONLY candidates are refused; the previous pointer is kept for rollback."""
+    def fn(reg):
+        rid, fam, d = _candidate_dir(reg, candidate_id)
+        # 1.46: experiment candidates (own feature columns: 3 / 6 / 39+20) and unknown families never become the SHADOW forecaster
+        if reg["runs"][rid].get("experiment") or (d / "experiment.json").exists() or fam.partition("@")[0] not in FAMILIES_ALL:
+            raise ValueError(f"INCOMPATIBLE_CANDIDATE: {fam} – kandydat eksperymentu albo nieznana rodzina (nie jest modelem zadania)")
+        meta, _ = load_candidate(d)                      # full compatibility + hash check before the pointer moves
+        if meta["role"] == "TEST_ONLY":
+            raise ValueError("TEST_ONLY_ARTIFACT: model z danych syntetycznych nie trafia do SHADOW")
+        prev = reg["shadow"].get(meta["task_id"])
+        reg["shadow"][meta["task_id"]] = {"candidate_id": candidate_id, "dir": str(d), "model_hash": meta["model_hash"],
+                                          "at": datetime.now(timezone.utc).isoformat()}
+        reg["history"].append({"task": meta["task_id"], "from": prev, "to": candidate_id, "at": datetime.now(timezone.utc).isoformat()})
+        return {"ok": True, "shadow": reg["shadow"][meta["task_id"]], "previous": prev, "execution": "NEVER_AUTOMATIC"}
+    return _update_reg(inst, fn)
 
 
 def rollback(inst: str, task: str) -> dict:
-    reg = _reg(inst)
-    hist = [h for h in reg["history"] if h["task"] == task]
-    if not hist:
-        raise ValueError("NO_HISTORY")
-    prev = hist[-1]["from"]
-    if prev is None:
-        reg["shadow"].pop(task, None)
-    else:
-        reg["shadow"][task] = prev
-    reg["history"].append({"task": task, "from": hist[-1]["to"], "to": prev["candidate_id"] if prev else None, "at": datetime.now(timezone.utc).isoformat(),
-                           "rollback": True})
-    _save_reg(inst, reg)
-    return {"ok": True, "shadow": reg["shadow"].get(task)}
+    def fn(reg):
+        # 1.46: undo stack - every rollback cancels the latest selection not undone yet. 1.45 took hist[-1]["from"], which after a rollback
+        # entry is a candidate_id STRING: the second rollback in a row raised TypeError (HTTP 500). Registries written by 1.45 still work.
+        stack = []
+        for h in reg["history"]:
+            if h.get("task") != task:
+                continue
+            if h.get("rollback"):
+                if stack:
+                    stack.pop()
+            else:
+                stack.append(h)
+        if not stack:
+            raise ValueError("NO_HISTORY")
+        prev = stack[-1].get("from")
+        if prev is not None and not isinstance(prev, dict):
+            raise ValueError("ROLLBACK_TARGET_UNKNOWN")
+        cur = reg["shadow"].get(task)
+        if prev is None:
+            reg["shadow"].pop(task, None)
+        else:
+            reg["shadow"][task] = prev
+        reg["history"].append({"task": task, "from": cur.get("candidate_id") if isinstance(cur, dict) else cur,
+                               "to": prev["candidate_id"] if prev else None, "at": datetime.now(timezone.utc).isoformat(), "rollback": True})
+        return {"ok": True, "shadow": reg["shadow"].get(task)}
+    return _update_reg(inst, fn)
 
 
 def evaluate_holdout(inst: str, candidate_id: str, protocol_id: str, db=None) -> dict:
@@ -813,13 +885,10 @@ def evaluate_holdout(inst: str, candidate_id: str, protocol_id: str, db=None) ->
     reg = _reg(inst)
     if candidate_id in reg["holdout_access"]:
         return dict(reg["holdout_access"][candidate_id], status="ALREADY_EVALUATED")
-    rid = next((r for r in reg["runs"] if candidate_id.startswith(r + "-")), None)
-    if rid is None:
-        raise ValueError("RUN_NOT_FOUND")
-    fam = candidate_id[len(rid) + 1:]
+    rid, fam, cdir = _candidate_dir(reg, candidate_id)
     rd = Path(reg["runs"][rid]["run_dir"])
     rep = json.loads((rd / "report.json").read_text(encoding="utf-8"))
-    meta, model = load_candidate(rd / "models" / fam)
+    meta, model = load_candidate(cdir)
     data = load_dataset(root(inst) / "datasets" / rep["dataset_id"], rep["task_id"])
     if rep["task_id"] == TASK_SETUP:
         data["rows_idx"] = data["setup_idx"]
@@ -838,9 +907,14 @@ def evaluate_holdout(inst: str, candidate_id: str, protocol_id: str, db=None) ->
     out = {"candidate_id": candidate_id, "protocol_id": protocol_id, "ledger": led, "metrics": metrics(P, Q, Y[hold], R[hold]),
            "at": datetime.now(timezone.utc).isoformat(), "model_hash": meta["model_hash"], "role": meta["role"],
            "edge_status": "TEST_ONLY" if meta["role"] == "TEST_ONLY" else "NO_VALIDATED_EDGE_CLAIM (ruch ≠ rentowność)"}
-    reg["holdout_access"][candidate_id] = out
-    _save_reg(inst, reg)
-    return dict(out, status="EVALUATED_ONCE")
+
+    def store(reg2):            # 1.46: merged into the CURRENT registry (the one read above is minutes old - runs / SHADOW moves were lost)
+        acc = reg2.setdefault("holdout_access", {})
+        if candidate_id in acc:                          # a concurrent evaluation stored first: one access per candidate
+            return dict(acc[candidate_id], status="ALREADY_EVALUATED")
+        acc[candidate_id] = out
+        return dict(out, status="EVALUATED_ONCE")
+    return _update_reg(inst, store)
 
 
 # ------------------------------------------------------------------ runtime forecaster (SHADOW only)
@@ -858,13 +932,32 @@ class Forecaster:
                 self.reason = None
             except (ValueError, OSError) as exc:
                 self.reason = f"ARTIFACT_REJECTED: {exc}"
+        why = self._live_incompatible(Path(s["dir"])) if self.model is not None else None
+        if why:                                          # 1.46: refused at load, never an exception per snapshot
+            self.model, self.reason = None, f"ARTIFACT_REJECTED: {why}"
 
-    def forecast(self, m1: list[dict], ctx: dict, tick: float) -> dict:
+    def _live_incompatible(self, d: Path) -> str | None:
+        """1.46: pointers that load but cannot produce a live STRUCTURE_MOVE_M1_V1 forecast (stored before select_shadow refused them)."""
+        m = self.model
+        if (d / "experiment.json").exists():
+            return "EXPERIMENT_CANDIDATE: model eksperymentu ma własne kolumny cech"
+        if isinstance(m, Tabular) and len(np.atleast_1d(m.mu)) != len(TAB):
+            return f"FEATURE_COUNT: {len(np.atleast_1d(m.mu))} != {len(TAB)} ({FEATURE_SCHEMA})"
+        if isinstance(m, tuple) and len(m) == 4 and isinstance(m[0], str) and m[0] == "SB" and m[3] == "QUOTE_EVENT_V1":
+            return "QUOTE_EVENT_V1: brak żywego strumienia ticków dla prognozy SHADOW (profil tylko dla replay / treningu)"
+        return None
+
+    def forecast(self, m1: list[dict], ctx: dict, tick: float, point: float | None = None) -> dict:
         if self.model is None:
             return {"forecast_status": "ABSTAIN", "reason": self.reason}
         if len(m1) < WARMUP + WINDOW:
             return {"forecast_status": "ABSTAIN", "reason": "INSUFFICIENT_HISTORY"}
-        fe = features(m1, ctx, tick, indicator_profile(self.inst))
+        prof = indicator_profile(self.inst)
+        # 1.46: the hash was checked only at load - after `calibrate` a cached forecaster fed features of the NEW profile to a model trained on
+        # the old one (forecast_status OK). point: MT5 spread is in POINTS - the dataset builder scales it by spec.point, runtime used tick.
+        if prof.get("hash") != self.meta.get("indicator_profile_hash"):
+            return {"forecast_status": "ABSTAIN", "reason": f"STALE_INDICATOR_PROFILE: {self.meta.get('indicator_profile_hash')} != {prof.get('hash')}"}
+        fe = features(m1, ctx, tick, prof, point)
         run = contiguous_run(fe["t"])
         b = len(m1) - 1
         if run[b] < WINDOW - 1 or not np.isfinite(fe["atr"][b]):
@@ -872,7 +965,10 @@ class Forecaster:
         fam = self.meta["family"]
         data = {"fe": fe, "rows_idx": np.array([b]), "Y": np.full((len(m1), 3), -1), "R": np.full((len(m1), 3), np.nan), "tick": tick,
                 "manifest": {"instrument": self.inst, "tick": tick}}
-        P, Q = _predict(self.model, fam, data, TASK_MOVE, np.array([0]))
+        try:
+            P, Q = _predict(self.model, fam, data, TASK_MOVE, np.array([0]))
+        except ValueError as exc:                        # 1.46: an incompatible artefact abstains, it never breaks the SI snapshot
+            return {"forecast_status": "ABSTAIN", "reason": f"PREDICT_FAILED: {exc}"[:200]}
         C, A = float(fe["c"][b]), float(fe["atr"][b])
         heads = []
         for j, hh in enumerate(HORIZONS):
@@ -934,7 +1030,9 @@ def calibrate_indicators(inst: str, ds: Path | None = None, log=print) -> dict:
         hist = root(inst) / "indicator_profiles"
         hist.mkdir(exist_ok=True)
         (hist / f"{json.loads(p.read_text(encoding='utf-8')).get('version', 'OLD')}.json").write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
-    p.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    tmp = p.with_suffix(".tmp")                          # 1.46: atomic replace (a torn profile file broke every reader)
+    tmp.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    tmp.replace(p)
     return prof
 
 
@@ -1056,7 +1154,6 @@ def train_experiment(inst: str, dsdir: Path, experiment: str, families: list[str
     rep["note"] = ("residual ≠ alpha; porównanie RAW/NEUTRAL/RAW_PLUS_FACTORS na tych samych wierszach" if experiment == "MQ_NEUTRAL_REACTION_V1"
                    else "CORE vs ENRICHED na wspólnym okresie z kontekstem ticków")
     (rd / "report.json").write_text(json.dumps(rep, indent=1, default=_jd), encoding="utf-8")
-    reg = _reg(inst)
-    reg["runs"][rid] = {"run_dir": str(rd), "task": TASK_MOVE, "experiment": experiment, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"]}
-    _save_reg(inst, reg)
+    ent = {"run_dir": str(rd), "task": TASK_MOVE, "experiment": experiment, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"]}
+    _update_reg(inst, lambda reg: reg["runs"].update({rid: ent}))      # 1.46: re-read + merge under the registry lock
     return rep
