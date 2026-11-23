@@ -4,7 +4,7 @@ MT5 raw epochs are kept separately (see mt5/clock.py); nothing here guesses offs
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 UTC = timezone.utc
 # Anything above this is certainly milliseconds, not seconds (year ~2286 in seconds).
@@ -68,13 +68,4 @@ def epoch_seconds(value: int | float) -> float:
 
 def from_epoch(value: int | float) -> datetime:
     return datetime.fromtimestamp(epoch_seconds(value), UTC)
-
-
-def from_epoch_ms(value: int) -> datetime:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("EPOCH_MS_NOT_INT")
-    return datetime.fromtimestamp(value / 1000.0, UTC)
-
-
-def tf_delta(tf: str) -> timedelta:
-    return timedelta(seconds=TF_SECONDS[tf])
+# 1.46: from_epoch_ms / tf_delta removed - never called (backend, tools, tests)

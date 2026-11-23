@@ -28,6 +28,7 @@ from .news.service import NewsService
 from .notify.telegram import TelegramNotifier
 from .timeutil import iso, utcnow
 from .secrets_store import SecretStore
+from .version import DISPLAY_NAME
 
 log = logging.getLogger("masterquo.runtime")
 
@@ -341,7 +342,7 @@ class Runtime:
     def _start_engine_parts(self) -> None:
         """1.40.1: every subsystem starts on its own - one failing part (MT5 terminal, a model worker, a broken settings file, a Windows
         API call) never takes the whole engine down; the failure is logged with its traceback and listed in start_failures (API health)."""
-        self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
+        self.log.info("APP", "START", f"{DISPLAY_NAME} start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")   # 1.46: brand
         self.start_failures: list[dict] = []
         for name in ("worker", "bridge", "news", "engine", "manager", "telegram", "ml", "scanner", "forecast", "scalp", "analytics", "lab",
                      "extind", "nss", "mtf", "si", "liquidity", "sh", "mm", "zones", "indicators", "svp"):
@@ -412,44 +413,32 @@ class Runtime:
     def attach_loop(self, loop) -> None:
         self.agent.attach(loop)
 
+    # 1.46: stop order (unchanged); every part stops on its own - an exception in one .stop() skipped all later parts (bridge, MT5
+    # worker) and the cleanup of shutdown.token / server.pid in __main__
+    _STOP_ORDER = ("ml", "forecast", "scalp", "sh", "mm", "zones", "indicators", "svp", "market_zones", "trainhub", "trainhub_inference",
+                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "analytics", "lab", "extind", "nss", "mtf", "si",
+                   "liquidity", "scanner", "engine", "manager", "news", "bridge", "worker")
+
+    def _stop_part(self, name: str, method: str = "stop") -> None:
+        part = getattr(self, name, None)
+        if part is None:
+            return
+        try:
+            getattr(part, method)()
+        except Exception:                               # logged, the remaining parts still stop
+            log.exception("stop of %s failed", name)
+
     def stop(self) -> None:
-        self.telegram.stop()
+        self._stop_part("bootstrap")                    # 1.46: was never stopped - it could start another installer after the services
+        self._stop_part("telegram")
         self._stop.set()
-        if getattr(self, "governor", None) is not None:
-            self.governor.stop()
-        self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
-        self.ml.stop()
-        self.forecast.stop()
-        self.scalp.stop()
-        self.sh.stop()
-        self.mm.stop()
-        self.zones.stop()
-        self.indicators.stop()
-        self.svp.stop()
-        self.market_zones.stop_service()
-        self.trainhub.stop()
-        self.trainhub_inference.stop()
-        self.kronos.stop()
-        self.tsfm.stop()
-        self.montecarlo.stop()
-        self.quant.stop()
-        if getattr(self, "research", None) is not None:
-            self.research.stop()
-        if getattr(self, "baskets", None) is not None:
-            self.baskets.stop()
-        self.analytics.stop()
-        self.lab.stop()
-        self.extind.stop()
-        self.nss.stop()
-        self.mtf.stop()
-        self.si.stop()
-        self.liquidity.stop()
-        self.scanner.stop()
-        self.engine.stop()
-        self.manager.stop()
-        self.news.stop()
-        self.bridge.stop()
-        self.worker.stop()
+        self._stop_part("governor")
+        try:
+            self.log.info("APP", "STOP", f"Zatrzymywanie {DISPLAY_NAME} (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
+        except Exception:
+            log.exception("stop log failed")
+        for name in self._STOP_ORDER:
+            self._stop_part(name, "stop_service" if name == "market_zones" else "stop")
 
 
 def platform_info() -> dict:

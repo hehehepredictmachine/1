@@ -27,6 +27,9 @@ import numpy as np
 from . import engine as E
 
 DEFAULT_EVENTS = [{"side": s, "tp": tp, "sl": 3.0} for s in ("BUY", "SELL") for tp in (2.5, 5.0)]
+# 1.46: the default events are USD distances sized for gold. Another instrument (BTC: spread of tens of USD > SL 3 USD -> every event
+# SL on the first bar, always "one class") gets NOT_CONFIGURED unless events are passed explicitly (validate(events=...)).
+EVENTS_BY_INSTRUMENT = {"XAUUSD": DEFAULT_EVENTS}
 
 
 # ------------------------------------------------------------------ data
@@ -108,13 +111,32 @@ def actual(bars: list[dict], i: int, H: int, side: str, tp_d: float, sl_d: float
     return 0, False
 
 
-def outcomes(bars: list[dict], H: int, ev: dict, ticks: Ticks | None, step: int, fallback_spread: float) -> tuple[np.ndarray, np.ndarray]:
-    """Outcome of the event opened at the close of every bar (spread of that bar, fallback the median): y[k], ambiguous[k] for k = 1..n-H."""
+def past_spread_fill(bars: list[dict]) -> np.ndarray:
+    """1.46: spread of every bar, a missing one replaced by the last KNOWN spread before it (never a value from later bars - the dataset
+    median used before was computed also from the TEST period / the future); NaN while no spread is known yet (never 0)."""
+    out = np.full(len(bars), np.nan)
+    last = math.nan
+    for k, b in enumerate(bars):
+        sp = b.get("spread_price")
+        if sp is not None and math.isfinite(float(sp)):
+            last = float(sp)
+        out[k] = last
+    return out
+
+
+def outcomes(bars: list[dict], H: int, ev: dict, ticks: Ticks | None, step: int, fallback_spread) -> tuple[np.ndarray, np.ndarray]:
+    """Outcome of the event opened at the close of every bar (spread of that bar, fallback: a number or the past_spread_fill array):
+    y[k], ambiguous[k] for k = 1..n-H; y[k] stays NaN when the entry spread is unknown (1.46)."""
     n = len(bars)
     y, amb = np.full(n, np.nan), np.zeros(n, bool)
+    per_bar = np.ndim(fallback_spread) > 0
     for k in range(1, n - H):
         sp = bars[k - 1]["spread_price"]
-        y[k], amb[k] = actual(bars, k, H, ev["side"], ev["tp"], ev["sl"], fallback_spread if sp is None else sp, ticks, step)
+        if sp is None:
+            sp = fallback_spread[k - 1] if per_bar else fallback_spread
+        if sp is None or not math.isfinite(float(sp)):
+            continue
+        y[k], amb[k] = actual(bars, k, H, ev["side"], ev["tp"], ev["sl"], float(sp), ticks, step)
     return y, amb
 
 
@@ -175,7 +197,13 @@ def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, st
     bars, meta = load_dataset(ds)
     synthetic = meta.get("data_kind") != "REAL_USER_DATA"
     point = float((meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
-    events = events or DEFAULT_EVENTS
+    inst = meta.get("instrument") or "XAUUSD"                                     # exports without the key: gold only (file prefix XAUUSD)
+    if not events and inst not in EVENTS_BY_INSTRUMENT:
+        return {"version": E.VERSION, "dataset": str(Path(ds).resolve()), "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
+                "instrument": meta.get("instrument"), "symbol": meta.get("symbol"), "status": "NOT_CONFIGURED",
+                "reason": f"brak zdefiniowanych zdarzeń walidacji Monte Carlo dla {inst} (domyślne SL 3 / TP 2,5 i 5 USD dotyczą XAUUSD) – "
+                          "podaj zdarzenia jawnie"}
+    events = events or EVENTS_BY_INSTRUMENT[inst]
     step = 60
     ticks = Ticks(ds)
     pts = list(range(window, len(bars) - horizon, stride))
@@ -185,6 +213,9 @@ def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, st
            "instrument": meta.get("instrument"), "symbol": meta.get("symbol"), "tf": "M1", "horizon_bars": horizon, "window_bars": window,
            "stride_bars": stride, "n_paths": n_paths, "seed": seed, "events": events, "variants": list(variants),
            "ticks_available": ticks.t is not None, "protocol": "walk-forward: CAL 50% / TEST 50% punktów, embargo H, wybór wariantu i kalibracja tylko na CAL"}
+    if not any(b["spread_price"] is not None for b in bars):
+        # 1.46: no spread at all - was filled with 0.0 (BUY entered at Bid, SELL left at Bid: missing cost taken as zero)
+        return dict(rep, status="INSUFFICIENT_DATA", reason="NO_SPREAD_DATA – zbiór nie zawiera spreadu świec (koszt wejścia/wyjścia nieznany)")
     if len(pts) < 60:
         return dict(rep, status="INSUFFICIENT_DATA", reason=f"{len(pts)} punktów decyzji < 60 (potrzeba ≥ {window + horizon + 60 * stride} świec M1)")
     cut = len(pts) // 2
@@ -192,19 +223,22 @@ def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, st
     test_pts = pts[cut:]
     rows = []
     log(f"[..] Monte Carlo walidacja: {len(pts)} punktów decyzji, warianty {', '.join(variants)}, {n_paths} ścieżek")
-    sps = [b["spread_price"] for b in bars if b["spread_price"] is not None]
-    med_sp = float(np.median(sps)) if sps else 0.0
-    outc = {json.dumps(ev, sort_keys=True): outcomes(bars, horizon, ev, ticks, step, med_sp) for ev in events}
+    sp_fill = past_spread_fill(bars)                                              # 1.46: past-only fill (was the whole-dataset median)
+    outc = {json.dumps(ev, sort_keys=True): outcomes(bars, horizon, ev, ticks, step, sp_fill) for ev in events}
     cal_set, test_set = set(cal_pts), set(test_pts)
     for j, i in enumerate(pts):
         as_of = E._ts(bars[i - 1]["open_utc"]) + step
         hist = E.history(bars[max(0, i - window):i], as_of, "M1", point, window)
         if hist.n < E.MIN_BARS:
             continue
+        sp0 = bars[i - 1]["spread_price"] if bars[i - 1]["spread_price"] is not None else sp_fill[i - 1]
+        if sp0 is None or not math.isfinite(float(sp0)):
+            continue                                                              # 1.46: entry spread unknown at this point - skipped, not 0
         sims = {v: E.simulate(hist, n_paths, horizon, v, seed + i) for v in variants}
-        sp0 = bars[i - 1]["spread_price"] if bars[i - 1]["spread_price"] is not None else med_sp
         for ev in events:
             ys, ambs = outc[json.dumps(ev, sort_keys=True)]
+            if not math.isfinite(ys[i]):
+                continue
             c0 = bars[i - 1]["c"]
             entry = c0 + sp0 if ev["side"] == "BUY" else c0
             plan = E.Plan(ev["side"], entry, entry - ev["sl"] if ev["side"] == "BUY" else entry + ev["sl"],
@@ -213,6 +247,8 @@ def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, st
                    "y": int(ys[i]), "ambiguous": bool(ambs[i]), "base": climatology(ys, i, horizon, window)}
             for v, pth in sims.items():
                 row[v] = E.evaluate(pth, c0, plan)["levels"][0]["p_tp_before_sl_conservative"]
+            if any(row[v] is None for v in sims):
+                continue                                                          # 1.46: SELL without a spread in the window: NOT_VERIFIED
             rows.append(row)
         if (j + 1) % 50 == 0:
             log(f"[POSTEP] montecarlo {j + 1}/{len(pts)}")
@@ -302,8 +338,15 @@ def active_calibrator(inst: str) -> dict | None:
 
 def rollback(inst: str) -> dict:
     reg_p = root(inst) / "registry.json"
-    reg = json.loads(reg_p.read_text(encoding="utf-8"))
-    prev = reg["history"].pop() if reg.get("history") else None
+    try:
+        reg = json.loads(reg_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        reg = None
+    if not isinstance(reg, dict):                    # 1.46: no / damaged registry (before the first validation) - was a FileNotFoundError traceback
+        return {"active": None, "reason": "NO_REGISTRY"}
+    hist = reg.get("history") if isinstance(reg.get("history"), list) else []
+    prev = hist.pop() if hist else None
+    reg["history"] = hist
     reg["active"] = prev
     _write(reg_p, reg)
     return {"active": prev}

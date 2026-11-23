@@ -96,6 +96,8 @@ def history(bars: list[dict], as_of: float, tf: str = "M1", point: float = 0.01,
     jumps = np.abs(a[1:, 1] - a[:-1, 4])                                            # open vs previous close
     if med > 0 and (jumps > 25 * med).any():
         flags.append("PRICE_JUMP_GT_25_MEDIAN_RANGES")
+    if not np.isfinite(a[:, 5]).any():
+        flags.append("NO_SPREAD_DATA")                                              # 1.46: SELL (Ask = Bid + spread) cannot be evaluated
     hsh = hashlib.sha256(a.tobytes()).hexdigest()[:16]
     return History(tf, a[:, 0], a[:, 1], a[:, 2], a[:, 3], a[:, 4], a[:, 5], flags=flags, dropped=dropped, data_hash=hsh)
 
@@ -143,7 +145,7 @@ def simulate(h: History, n_paths: int = 2000, horizon: int = 60, variant: str = 
     else:
         L = max(1, min(block, horizon))
         nb = int(math.ceil(horizon / L))
-        starts_all = np.arange(1, n - L)
+        starts_all = np.arange(1, n - L + 1)                                         # 1.46: last start n-L (was n-L-1: bar n-1 never drawn)
         starts = starts_all
         if variant == "REGIME":
             atr = _atr(h)
@@ -178,19 +180,30 @@ def _first_hit(mask: np.ndarray) -> np.ndarray:
     return np.where(any_, first, mask.shape[1])
 
 
+LEVEL_P_KEYS = ("p_tp_before_sl_conservative", "p_tp_before_sl_optimistic", "p_ambiguous_same_bar", "p_tp_within_h", "mc_error_95",
+                "median_bars_to_tp")
+
+
 def evaluate(paths: dict, base: float, plan: Plan) -> dict:
     """Events of one plan on simulated paths (prices relative to `base` = last closed Bid close)."""
     H = min(plan.horizon, paths["close"].shape[1])
     hi, lo, sp = base + paths["high"][:, :H], base + paths["low"][:, :H], paths["spread"][:, :H]
-    if plan.side == "BUY":
-        sl_hit = lo <= plan.sl
-        tp_hit = [hi >= tp for tp in plan.tps]
-    else:
-        sl_hit = hi + sp >= plan.sl
-        tp_hit = [lo + sp <= tp for tp in plan.tps]
     n = hi.shape[0]
-    fs = _first_hit(sl_hit)
-    out = {"n_paths": n, "horizon": H, "sl_within_h": float((fs < H).mean()), "levels": []}
+    if plan.side != "BUY" and not np.isfinite(sp).all():
+        # 1.46: no spread in the window -> Ask unknown. NaN comparisons were always False: SELL never hit SL / TP and showed P = 0
+        # (missing data as zero). The SELL events are NOT_VERIFIED (None); the Bid-only quantities below stay.
+        out = {"n_paths": n, "horizon": H, "status": "NOT_VERIFIED", "reason": "NO_SPREAD_DATA – brak spreadu w oknie, cena Ask nieznana",
+               "sl_within_h": None, "levels": [{"tp": tp, "distance": abs(tp - plan.entry), **dict.fromkeys(LEVEL_P_KEYS)} for tp in plan.tps]}
+        tp_hit = []
+    else:
+        if plan.side == "BUY":
+            sl_hit = lo <= plan.sl
+            tp_hit = [hi >= tp for tp in plan.tps]
+        else:
+            sl_hit = hi + sp >= plan.sl
+            tp_hit = [lo + sp <= tp for tp in plan.tps]
+        fs = _first_hit(sl_hit)
+        out = {"n_paths": n, "horizon": H, "status": "OK", "sl_within_h": float((fs < H).mean()), "levels": []}
     for tp, m in zip(plan.tps, tp_hit):
         ft = _first_hit(m)
         tp_first = ft < fs
@@ -214,9 +227,26 @@ def move_scenarios(paths: dict, levels=(2.5, 3.0, 5.0, 7.5, 10.0), horizon: int 
     H = horizon or paths["close"].shape[1]
     up = paths["high"][:, :H].max(axis=1)
     dn = -paths["low"][:, :H].min(axis=1)
-    return {"horizon_bars": H, "levels_price": list(levels),
-            "p_up_reach": [float((up >= x).mean()) for x in levels], "p_down_reach": [float((dn >= x).mean()) for x in levels],
-            "note": "ruch ceny instrumentu (np. 2,5 USD za uncję), nie wynik rachunku"}
+    out = {"horizon_bars": H, "levels_price": list(levels),
+           "p_up_reach": [float((up >= x).mean()) for x in levels], "p_down_reach": [float((dn >= x).mean()) for x in levels],
+           "note": "ruch ceny instrumentu (np. 2,5 USD za uncję), nie wynik rachunku"}
+    if not levels:                                  # 1.46: no levels defined for the instrument (the gold USD levels are not reused for BTC)
+        out.update(status="NOT_CONFIGURED", reason="brak zdefiniowanych poziomów scenariuszy dla tego instrumentu")
+    return out
+
+
+def _calibrator_event_match(cal: dict, plan: Plan, tp: float, horizon: int, point: float) -> bool:
+    """1.46: the isotonic calibrator of validate.py was fitted on its own events only (side, TP / SL distance from the entry, horizon
+    in bars - calibrator["events"] / ["horizon_bars"]). A level of another plan (other SL / TP / horizon, e.g. a strategy profile) is not
+    calibrated by it; tolerance 1 % of the distance or one point (TP prices rounded to the tick)."""
+    evs, ch = cal.get("events"), cal.get("horizon_bars")
+    if not evs or ch is None or int(ch) != int(horizon):
+        return False
+    tp_d, sl_d = abs(tp - plan.entry), abs(plan.entry - plan.sl)
+
+    def near(a: float, ref) -> bool:
+        return abs(a - float(ref)) <= max(0.01 * abs(float(ref)), point)
+    return any(isinstance(ev, dict) and ev.get("side") == plan.side and near(tp_d, ev.get("tp")) and near(sl_d, ev.get("sl")) for ev in evs)
 
 
 def run(bars: list[dict], as_of: float, plans: list[Plan] | None = None, *, tf: str = "M1", point: float = 0.01, variant: str = "BLOCK",
@@ -238,10 +268,18 @@ def run(bars: list[dict], as_of: float, plans: list[Plan] | None = None, *, tf: 
         if calibrator and calibrator.get("status") == "ACTIVE" and calibrator.get("variant") == variant and not synthetic:
             from .validate import apply_calibrator
             for lv in ev["levels"]:
-                lv["p_calibrated"] = apply_calibrator(calibrator, lv["p_tp_before_sl_conservative"])
-            ev["calibrated_by"] = calibrator.get("run_id")
+                # 1.46: only levels that ARE a validation event of the calibrator (was: every level of every plan -> "SKALIBROWANE")
+                if lv["p_tp_before_sl_conservative"] is None:
+                    lv["p_calibrated"], lv["calibration_status"] = None, "NOT_VERIFIED"
+                elif _calibrator_event_match(calibrator, p, lv["tp"], ev["horizon"], point):
+                    lv["p_calibrated"] = apply_calibrator(calibrator, lv["p_tp_before_sl_conservative"])
+                    lv["calibration_status"] = "CALIBRATED"
+                else:
+                    lv["p_calibrated"], lv["calibration_status"] = None, "CALIBRATOR_EVENT_MISMATCH"
+            if any(lv["p_calibrated"] is not None for lv in ev["levels"]):
+                ev["calibrated_by"] = calibrator.get("run_id")
         res["plans"].append({"side": p.side, "entry": p.entry, "sl": p.sl, "tps": p.tps, **ev})
-    if any("p_calibrated" in lv for pl in res["plans"] for lv in pl["levels"]):
+    if any(lv.get("p_calibrated") is not None for pl in res["plans"] for lv in pl["levels"]):
         res["calibrated"] = True
     res["compute_ms"] = round((time.perf_counter() - t0) * 1000, 1)
     if synthetic:

@@ -245,7 +245,7 @@ class Governor:
         prev = (self.last or {}).get("level")
         self.last = out
         if prev and prev != level:
-            self._event("LEVEL", f"poziom pamięci {prev} → {level} (RAM {used} %, PMW {out['pmw_total_mb']} MB)")
+            self._event("LEVEL", f"poziom pamięci {prev} → {level} (RAM {used} %, Apollo23 {out['pmw_total_mb']} MB)")   # 1.46: brand
         return out
 
     def level(self) -> str:
@@ -276,9 +276,17 @@ class Governor:
         if model in HEAVY and not loaded and p.get("max_resident_heavy"):
             self._make_room(model, int(p["max_resident_heavy"]))
         if model in HEAVY and not loaded and lv in ("LIMIT_HEAVY", "PAUSE_OPTIONAL"):
-            return self._refuse(model, f"RAM ≥ {p['limit_heavy_pct']:.0f} % lub budżet PMW przekroczony – nowy ciężki model nie jest ładowany (Memory Governor)")
+            return self._refuse(model, f"RAM ≥ {p['limit_heavy_pct']:.0f} % lub budżet Apollo23 przekroczony – nowy ciężki model nie jest ładowany "
+                                       "(Memory Governor)")                       # 1.46: brand (the API key pmw_total_mb stays)
         self.counters["admitted"] += 1
         return True, None
+
+    @staticmethod
+    def _released(src: dict) -> bool:
+        """1.46: release() refused = nothing released. The registered release functions return False for a busy worker or no process
+        (runtime._wire_governor: kronos `running is None and _kill()`, tabicl `jobs.empty() and worker.kill()`, tsfm `(not computing) and
+        w.kill()`; kill() returns None / True after stopping it) - such a call was still counted and logged as RELEASED."""
+        return src["release"]() is not False
 
     def _release_idle_heavy(self, *, except_model: str, min_idle_s: float, why: str) -> list[str]:
         """Release heavy model processes (other than `except_model`, never the slot holder or one that computes now) idle >= min_idle_s."""
@@ -294,10 +302,10 @@ class Governor:
             if not running or idle < min_idle_s:
                 continue
             try:
-                src["release"]()
-                self.counters["released"] += 1
-                out.append(name)
-                self._event("RELEASED", f"{name}: proces zwolniony po {idle:.0f} s bezczynności ({why})")
+                if self._released(src):
+                    self.counters["released"] += 1
+                    out.append(name)
+                    self._event("RELEASED", f"{name}: proces zwolniony po {idle:.0f} s bezczynności ({why})")
             except Exception:  # noqa: BLE001
                 pass
         return out
@@ -320,10 +328,10 @@ class Governor:
             if self._slot_holder == name:
                 continue
             try:
-                src["release"]()
-                self.counters["released"] += 1
-                out.append(name)
-                self._event("RELEASED", f"{name}: zwolniony przed załadowaniem {model} (profil: max {keep} ciężki model w pamięci)")
+                if self._released(src):
+                    self.counters["released"] += 1
+                    out.append(name)
+                    self._event("RELEASED", f"{name}: zwolniony przed załadowaniem {model} (profil: max {keep} ciężki model w pamięci)")
             except Exception:  # noqa: BLE001
                 pass
         return out
@@ -406,11 +414,11 @@ class Governor:
             limit = 120.0 if pressure else p["idle_release_s"]
             if limit is not None and idle >= limit and self._slot_holder != name:
                 try:
-                    src["release"]()
-                    self.counters["released"] += 1
-                    out.append(name)
-                    self._event("RELEASED", f"{name}: proces zwolniony po {idle:.0f} s bezczynności ({'presja pamięci' if pressure else 'profil'}) – "
-                                            "zostanie uruchomiony przy następnej potrzebnej prognozie")
+                    if self._released(src):
+                        self.counters["released"] += 1
+                        out.append(name)
+                        self._event("RELEASED", f"{name}: proces zwolniony po {idle:.0f} s bezczynności ({'presja pamięci' if pressure else 'profil'}) – "
+                                                "zostanie uruchomiony przy następnej potrzebnej prognozie")
                 except Exception:  # noqa: BLE001
                     pass
         return out
@@ -430,22 +438,27 @@ class Governor:
 
     # ------------------------------------------------------------------ training gate
     def admit_training(self, name: str, kind: str, *, trading_active: bool, force: bool = False) -> tuple[bool, str | None]:
-        p = self.profile()
-        heavy_now = [n for n, k in self.training.items() if k == "heavy"]
-        if heavy_now:
-            self.counters["training_refused"] += 1
-            return False, f"trwa inny trening ({', '.join(heavy_now)}) – na komputerze 16 GB treningi nie są uruchamiane równolegle"
-        if trading_active and not p["background_training"] and not force:
-            self.counters["training_refused"] += 1
-            return False, "aktywny handel AUTO – trening w tle wyłączony w profilu (uruchom świadomie z potwierdzeniem albo w trybie SIGNALS/PAPER)"
-        if self.level() in ("LIMIT_HEAVY", "PAUSE_OPTIONAL"):
-            self.counters["training_refused"] += 1
-            return False, f"za mało pamięci ({self.level()}) – trening wstrzymany"
-        self.training[name] = kind
-        return True, None
+        # 1.46: check, measurement and reservation under the lock - two threads (bootstrap SDformerFlow, a Granite training from the
+        # Training Center) could both pass the heavy_now test while level() measured (I/O) and run two heavy trainings together
+        with self._lock:
+            p = self.profile()
+            heavy_now = [n for n, k in self.training.items() if k == "heavy"]
+            if heavy_now:
+                self.counters["training_refused"] += 1
+                return False, f"trwa inny trening ({', '.join(heavy_now)}) – na komputerze 16 GB treningi nie są uruchamiane równolegle"
+            if trading_active and not p["background_training"] and not force:
+                self.counters["training_refused"] += 1
+                return False, "aktywny handel AUTO – trening w tle wyłączony w profilu (uruchom świadomie z potwierdzeniem albo w trybie SIGNALS/PAPER)"
+            lv = self.level()
+            if lv in ("LIMIT_HEAVY", "PAUSE_OPTIONAL"):
+                self.counters["training_refused"] += 1
+                return False, f"za mało pamięci ({lv}) – trening wstrzymany"
+            self.training[name] = kind
+            return True, None
 
     def training_done(self, name: str) -> None:
-        self.training.pop(name, None)
+        with self._lock:
+            self.training.pop(name, None)
 
     # ------------------------------------------------------------------ view
     def public(self) -> dict:

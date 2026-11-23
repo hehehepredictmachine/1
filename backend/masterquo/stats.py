@@ -23,6 +23,9 @@ def _from_epoch(t):
 DEAL_TYPE_BALANCE = 2
 # external flows for ROI: balance, credit, charge, correction, bonus (MT5 ENUM_DEAL_TYPE 2..6) - never trading profit
 EXTERNAL_FLOW_TYPES = (2, 3, 4, 5, 6)
+# 1.46: commission charged by separate deals (MT5 ENUM_DEAL_TYPE 7..11: per deal, daily, monthly, agent daily, agent monthly) - a trading
+# cost; brokers that book commission this way showed a trading result without it
+COMMISSION_DEAL_TYPES = (7, 8, 9, 10, 11)
 
 
 BE_BAND_R = 0.05          # |R| <= 0.05 after costs = breakeven (reported separately, not a win and not a loss)
@@ -77,7 +80,10 @@ def _agg(rows: list[dict]) -> dict:
             "win_rate_all_closed": round(wins / n * 100, 1),
             "profit_factor": round(gp / gl, 2) if gl > 0 else None, "profit_factor_note": None if gl > 0 else "BRAK_STRAT",
             "gross_profit": round(gp, 2), "gross_loss": round(gl, 2),
-            "commission": round(sum(r["commission"] for r in rows), 2), "swap": round(sum(r["swap"] for r in rows), 2),
+            # 1.46: a row with an unknown commission (SH plan, commission_known False) makes the sum unknown (was added as 0.0)
+            "commission": round(sum(r["commission"] for r in rows), 2) if all(r.get("commission") is not None for r in rows) else None,
+            "commission_unknown_trades": sum(1 for r in rows if r.get("commission") is None),
+            "swap": round(sum(r["swap"] for r in rows), 2),
             "avg_r": exp_r, "expectancy_r": exp_r, "status": "OK" if n >= 30 else "SMALL_SAMPLE", "definitions": DEFINITIONS}
 
 
@@ -141,7 +147,9 @@ def engine_stats(db, mode: str, account_key: str | None = None) -> dict:
             continue
         comm_unknown += 0 if res.get("commission_known") else 1
         sh.setdefault(r["strategy"], []).append({"net_pnl": float(res["net_money"]), "r_multiple": res.get("r_multiple"),
-                                                  "commission": float(res.get("commission_money") or 0.0), "swap": 0.0,
+                                                  "commission": (float(res["commission_money"]) if res.get("commission_money") is not None
+                                                                 else None),                      # 1.46: unknown commission = None, not 0.0
+                                                  "swap": 0.0,
                                                   "strategy_id": r["strategy"], "symbol": r.get("symbol"), "closed_at": iso(_from_epoch(r["closed_at"]))})
     per = {"ACTIVE_S01_S12": _agg(legacy), **{"SH_" + k: _agg(v) for k, v in sh.items()}}
     allr = sorted(legacy + [x for v in sh.values() for x in v], key=lambda r: str(r.get("closed_at") or ""))
@@ -178,7 +186,9 @@ def equity_curve(db, mode: str, account_key: str | None, days: int = 30) -> dict
 
 
 def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -> dict:
-    trading = [d for d in deals if d.get("type") in (0, 1)]
+    trade_deals = [d for d in deals if d.get("type") in (0, 1)]
+    comm_deals = [d for d in deals if d.get("type") in COMMISSION_DEAL_TYPES]
+    trading = trade_deals + comm_deals                                              # 1.46: commission deals are trading costs
     balance_ops = [d for d in deals if d.get("type") == DEAL_TYPE_BALANCE]
     other_flows = [d for d in deals if d.get("type") in EXTERNAL_FLOW_TYPES and d.get("type") != DEAL_TYPE_BALANCE]
 
@@ -190,21 +200,31 @@ def account_stats(deals: list[dict], symbol: str, day_start_raw: float | None) -
             "balance_operations": round(sum(float(d.get("profit") or 0) for d in balance_ops), 2),
             "deposits": round(sum(float(d.get("profit") or 0) for d in balance_ops if float(d.get("profit") or 0) > 0), 2),
             "withdrawals": round(sum(float(d.get("profit") or 0) for d in balance_ops if float(d.get("profit") or 0) < 0), 2),
-            "balance_operations_count": len(balance_ops), "deals": len(trading),
+            "balance_operations_count": len(balance_ops), "deals": len(trade_deals),
+            "commission_deals": net(comm_deals), "commission_deals_count": len(comm_deals),
             "credit_bonus_other_flows": round(sum(float(d.get("profit") or 0) for d in other_flows), 2),
             "note": "Wpłaty/wypłaty (operacje balance) są wykazane osobno i nie są zyskiem strategii."}
 
 
-def account_roi(db, account_key: str | None, deals: list[dict], server_offset: float | None, days: int = 30) -> dict:
+def account_roi(db, account_key: str | None, deals: list[dict], server_offset: float | None, days: int = 30,
+                deals_from_utc: float | None = None) -> dict:
     """ROI of the MT5 account over the stored equity history (equity snapshots every 60 s while the program runs),
     modified Dietz: deposits / withdrawals (balance deals) are external flows, never profit. Without at least two
-    snapshots, or without the server time offset (deal times are server time), there is no ROI - never a guess."""
+    snapshots, or without the server time offset (deal times are server time), there is no ROI - never a guess.
+    1.46: deals_from_utc = start (UTC epoch) of the period the `deals` list covers (bridge: mt5.deals_history_days back from the poll).
+    A flow before it is not in the list, so the snapshot window is clipped to it (was: a deposit older than the deal history but newer
+    than the first snapshot counted as profit). Without it the coverage is NOT_VERIFIED (reported, window as before)."""
     if not account_key:
         return {"status": "NO_ACCOUNT"}
-    frm = iso(utcnow() - timedelta(days=days))
+    start = utcnow() - timedelta(days=days)
+    clipped = deals_from_utc is not None and deals_from_utc > start.timestamp()
+    if clipped:
+        start = _from_epoch(deals_from_utc)
+    frm = iso(start)
     rows = db.query("SELECT ts, equity FROM equity_snapshots WHERE mode='ACCOUNT' AND account_key=? AND ts>=? ORDER BY ts", (account_key, frm))
     if len(rows) < 2:
-        return {"status": "NO_DATA", "note": "za mało zapisanych snapshotów equity (zapis co 60 s podczas pracy programu)"}
+        return {"status": "NO_DATA", "note": "za mało zapisanych snapshotów equity (zapis co 60 s podczas pracy programu)"
+                + (" w okresie objętym historią transakcji" if clipped else ""), "period_clipped_to_deal_history": clipped}
     if server_offset is None:
         return {"status": "NO_DATA", "note": "nieznany offset czasu serwera – nie można przypisać wpłat/wypłat do okresu"}
     t0, t1 = parse_iso(rows[0]["ts"]).timestamp(), parse_iso(rows[-1]["ts"]).timestamp()
@@ -222,4 +242,6 @@ def account_roi(db, account_key: str | None, deals: list[dict], server_offset: f
             "start_equity": round(e0, 2), "end_equity": round(e1, 2), "net_flows": round(sum(a for a, _ in flows), 2), "flows_count": len(flows),
             "method": "modified Dietz – wpłaty/wypłaty, credit/bonus i korekty jako przepływy zewnętrzne, nie zysk", "snapshots": len(rows),
             "scope": "cały rachunek (także transakcje ręczne) – to nie jest ROI samego bota",
-            "sampling_note": "equity próbkowane co 60 s podczas pracy programu – głębsze obsunięcia wewnątrz minuty i poza pracą programu nie są widoczne"}
+            "sampling_note": "equity próbkowane co 60 s podczas pracy programu – głębsze obsunięcia wewnątrz minuty i poza pracą programu nie są widoczne",
+            "deals_coverage": "VERIFIED" if deals_from_utc is not None else "NOT_VERIFIED", "period_clipped_to_deal_history": clipped,
+            "deals_coverage_from": iso(_from_epoch(deals_from_utc)) if deals_from_utc is not None else None}

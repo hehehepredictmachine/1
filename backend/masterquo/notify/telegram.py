@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
@@ -24,6 +25,13 @@ from ..timeutil import iso, utcnow
 log = logging.getLogger("masterquo.telegram")
 
 API = "https://api.telegram.org"
+# 1.46: account-center outbox (account_event) - sent synchronously from the outbox thread, about one message per second, at most
+# ACCOUNT_MAX_PER_WINDOW per ACCOUNT_WINDOW_S (Telegram: ~1 msg/s per chat, ~20/min per group); after a failure the outbox waits
+# ACCOUNT_BACKOFF_S (or Telegram's "retry after") - unsent messages stay in the outbox
+ACCOUNT_MIN_INTERVAL_S = 1.0
+ACCOUNT_WINDOW_S = 10.0
+ACCOUNT_MAX_PER_WINDOW = 3
+ACCOUNT_BACKOFF_S = 60.0
 
 
 def _num(v, digits: int = 2) -> str:
@@ -198,6 +206,10 @@ class TelegramNotifier:
         self.templates = SignalTemplateStore(template_path)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._sleep = time.sleep
+        self._acct_lock = threading.Lock()
+        self._acct_sent: list[float] = []             # clock() of the account messages accepted in the last ACCOUNT_WINDOW_S
+        self._acct_backoff_until = 0.0
 
     # ------------------------------------------------------------------ state
     def _token(self) -> str | None:
@@ -298,15 +310,35 @@ class TelegramNotifier:
         return True
 
     def account_event(self, dedup_key: str, text: str) -> bool:
-        """TASK 017: outbound account-center message (own flags live in notify/account_center.py; master switch + dedup here)."""
+        """TASK 017: outbound account-center message (own flags live in notify/account_center.py; master switch + dedup here).
+        1.46: returns whether Telegram ACCEPTED the message - sent synchronously (AccountCenter.flush runs in its own background thread),
+        the dedup key written only after ok. Before, the key was written and True returned before an asynchronous send: a network error or
+        HTTP 429 lost the message (the outbox dropped it) and a full outbox started one thread per message (hundreds of requests at once).
+        False = not sent now (back-off after an error, rate limit) - the message stays in the outbox for a later flush."""
         cfg = self.cfg_store.get().telegram
         token = self._token()
         if not (cfg.enabled and cfg.chat_id and token):
             return False
         if self.db.one("SELECT 1 AS x FROM notifications_sent WHERE dedup_key=?", (dedup_key,)):
             return True                                   # already delivered earlier - treat as done
+        with self._acct_lock:
+            now = self.clock()
+            if now < self._acct_backoff_until:
+                return False
+            recent = [t for t in self._acct_sent if 0 <= now - t < ACCOUNT_WINDOW_S]
+            if len(recent) >= ACCOUNT_MAX_PER_WINDOW:
+                return False
+            if recent and now - recent[-1] < ACCOUNT_MIN_INTERVAL_S:
+                self._sleep(ACCOUNT_MIN_INTERVAL_S - (now - recent[-1]))
+            ok, err = self._post(token, cfg.chat_id, text)
+            self._record(ok, err)
+            if not ok:
+                m = re.search(r"retry after (\d+)", err or "", re.IGNORECASE)
+                self._acct_backoff_until = self.clock() + (float(m.group(1)) if m else ACCOUNT_BACKOFF_S)
+                self._acct_sent = recent
+                return False
+            self._acct_sent = recent + [self.clock()]
         self.db.execute("INSERT OR IGNORE INTO notifications_sent(dedup_key, ts) VALUES (?,?)", (dedup_key, iso(utcnow())))
-        self._send_async(token, cfg.chat_id, text)
         return True
 
     # ------------------------------------------------------------------ public notifications
