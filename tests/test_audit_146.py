@@ -657,3 +657,34 @@ class TestWf32Units(unittest.TestCase):
         with mock.patch("masterquo.stats.account_roi", return_value=roi):
             r = app.state.wf32["acct_roi"](30)
         self.assertEqual((r["net"], r["deals"], r["currency"]), (50.0, 1, "USD"))
+
+
+class TestSfbAssistDisabled(unittest.TestCase):
+    """1.45.0 (KRYTYCZNY, rule 2): SFB ASSIST set through PUT /api/v1/strategy-filter/config narrowed the strategies of the FOREX baskets that
+    reach the SH execution path. The application now refuses ASSIST and runs a stored ASSIST as SHADOW (nothing filtered)."""
+
+    def test_assist_refused_and_stored_assist_runs_as_shadow(self):
+        import json
+        import tempfile
+        import types
+        from pathlib import Path
+
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import service as BS
+        from masterquo.baskets.sfb import ConfigError
+        d = Path(tempfile.mkdtemp())
+        rt = types.SimpleNamespace(demo=True, bridge=None, db=None, bus=None, quant=None, news=None)
+        svc = BS.BasketService(rt, data_dir=d)
+        with self.assertRaises(ConfigError):
+            svc.set_sfb({"mode": "ASSIST"})
+        (d / "sfb.json").write_text(json.dumps({"mode": "ASSIST"}), encoding="utf-8")          # stored by 1.45.0
+        svc2 = BS.BasketService(rt, data_dir=d)
+        st = svc2.sfb.status()
+        self.assertEqual(st["mode"], "SHADOW")
+        self.assertTrue(st["mode_requested"].startswith("ASSIST"))
+        strats = [s for s in CAT.strategies() if s["profile_id"] == "FOREX_MT5"]
+        kept, snap = svc2.sfb.filter(strats, {"profile": "FOREX_MT5", "venue": "MT5", "environment": "PAPER", "product": None, "instrument": "XAUUSD"})
+        self.assertEqual(kept, strats)                                                     # nothing filtered
+        self.assertEqual(json.loads((d / "sfb.json").read_text())["mode"], "ASSIST")          # the user's file is not rewritten
+        (d / "sfb.json").write_text(json.dumps({"mode": "OFF", "apply_to_execution": True}), encoding="utf-8")
+        self.assertEqual(BS.BasketService(rt, data_dir=d).sfb.status()["mode"], "OFF")        # damaged config -> OFF, service still starts

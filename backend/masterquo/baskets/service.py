@@ -213,8 +213,13 @@ class BasketService:
         self.loop = {"cycles": 0, "errors": 0, "last_error": None, "profile_errors": {}}
         self.hl_ctx: dict = {}
         self.hl_ctx_at = 0.0
-        from .sfb import StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
-        self.sfb = StrategyFilterBucket(self._sfb_cfg())
+        from .sfb import ConfigError, StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
+        try:
+            cfg, requested = self._sfb_effective(self._sfb_cfg())
+        except ConfigError as exc:                     # 1.46: a damaged sfb.json no longer kills the whole BasketService (-> OFF + reason)
+            cfg, requested = {}, f"INVALID_CONFIG: {exc}"[:200]
+        self.sfb = StrategyFilterBucket(cfg)
+        self.sfb.mode_requested = requested
 
     # ------------------------------------------------------------------ settings
     def _read(self):
@@ -229,11 +234,26 @@ class BasketService:
         except (OSError, ValueError):
             return {}
 
-    def set_sfb(self, cfg: dict) -> dict:
-        from .sfb import StrategyFilterBucket, validate_config
+    @staticmethod
+    def _sfb_effective(cfg: dict) -> tuple[dict, str | None]:
+        """1.46 (rule: workflow v3.2 modules stay OFF / SHADOW / read-only): a stored ASSIST - the only SFB mode that narrows the strategies
+        reaching execution - runs as SHADOW (records what it would filter, filters nothing). The file is not rewritten."""
+        from .sfb import validate_config
         clean = validate_config(cfg)
-        (self.base / "sfb.json").write_text(json.dumps({k: v for k, v in clean.items()}, indent=1), encoding="utf-8")
+        if clean["mode"] == "ASSIST":
+            return {**clean, "mode": "SHADOW"}, "ASSIST (wyłączony: moduły v3.2 tylko do odczytu – działa jako SHADOW)"
+        return clean, None
+
+    def set_sfb(self, cfg: dict) -> dict:
+        from .sfb import ConfigError, StrategyFilterBucket, validate_config
+        clean = validate_config(cfg)
+        if clean["mode"] == "ASSIST":
+            raise ConfigError("ASSIST_DISABLED: moduły workflow v3.2 są tylko do odczytu – dozwolone OFF / OBSERVE / SHADOW / MANUAL_RESEARCH")
+        tmp = self.base / "sfb.json.tmp"
+        tmp.write_text(json.dumps({k: v for k, v in clean.items()}, indent=1), encoding="utf-8")
+        tmp.replace(self.base / "sfb.json")
         self.sfb = StrategyFilterBucket(clean, self.sfb.outcomes_fn)
+        self.sfb.mode_requested = None
         return self.sfb.status()
 
     def settings(self) -> dict:
