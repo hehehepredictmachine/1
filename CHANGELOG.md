@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 1.45.0 – Apollo23: workflow v3.2 (TASK 001–025)
+Wszystkie nowe moduły są domyślnie **OFF / SHADOW / tylko do odczytu**; żaden nie ma ścieżki zleceń i żaden nie zmienia STOP, SL, limitów
+ryzyka, dźwigni ani trybu wykonania. Projektowanie interfejsu pominięte (zgodnie z poleceniem) – moduły mają API, a gra prostą stronę.
+* **Apollo23 (T019):** nowa nazwa wyświetlana (menu, okno Windows, splash, licencja, zasoby wersji, Telegram, `health.display_name`).
+  Identyfikatory wewnętrzne bez zmian: `masterquo`, `PMW_*`, folder danych `%LOCALAPPDATA%\PepeMarketWizard`, plik exe, mutex, licencje.
+* **TraderLifeGame (T019):** trzecia kula menu zamiast OTC → trasa `#/trader-life-game`; 8 modułów (postać i klasy, Grand Master Coach w
+  trybie RULES_ONLY, dziennik jako adnotacje nad transakcjami MT5 tylko do odczytu, kalendarz, XP / poziomy 1–100 / umiejętności, questy z
+  weryfikacją zdarzeń, akademia 4 poziomy z testami ocenianymi na serwerze + symulator bez podglądu przyszłości, lifestyle + ranking lokalny).
+  Salda realne / wirtualne / Trader Gold / XP rozdzielone. API `/api/v1/tlg/*`.
+* **Wycofanie OTC (T020):** aktywny katalog 60 strategii / 6 koszyków / 2 profile; 30 strategii OTC tylko jako historia (`RETIRED`),
+  stare ustawienia oznaczone jako wycofane bez kasowania, API OTC → 410 `RETIRED_PROFILE`.
+* **Rynki (T003):** CRYPTO (Hyperliquid core, ręcznie), INDICES i FOMO_STOCK_PERPS (Trade[XYZ] HIP-3, RESEARCH_ONLY), seed FOMO 101
+  rozpoznawany przez metadane venue (na żywo: 99 ACTIVE, SAMSUNG / SKHYNIX NOT_FOUND), 10 interwałów z deterministycznym M10, rejestr zdolności.
+* **Order flow (T001/T002/T004):** jeden ledger transakcji, Volume Profile z transakcji (POC / VA), Footprint (A+B+U=V, imbalance), DOM +
+  heatmapa z wykrywaniem luk; strona agresora tylko zweryfikowana (Hyperliquid NOT_VERIFIED → CP_SCALP_09 zablokowany na tej zdolności).
+* **Wskaźniki i sesje (T007–T009):** silnik SMA / EMA / SMMA / LWMA (PMW_LEGACY_V1 = dotychczasowe wartości, MQL5_STANDARD_V1), zegar sesji
+  z DST, odliczanie świecy, spread, ADR14, boksy sesji w czasie serwera + HUD.
+* **Modele (T005/T006/T016/T010/T011/T012/T015):** ranker CART (net R, NO_TRADE/ABSTAIN), koder BAT z BTC/SATMA (przyczynowy), reguły
+  asocjacyjne (filtr), test Pesarana–Timmermanna, rozkład prognozy 24–72 h, PELT z odroczonym przycinaniem.
+* **ROI strategii (T014), SFB (T018), Telegram rachunku (T017), bootstrap + pełny ekran (T013), relacje (T021), pułapki (T022),
+  SMMA-CCI (T023), generator strategii (T024), RiskLoot (T025)** – szczegóły w kodzie i testach `tests/test_wf32_*`.
+* Aplikacja Windows: domyślnie pełny ekran bez ramki, auto-skalowanie i automatyczne wejście do panelu (można wyłączyć:
+  `POST /api/v1/desktop/display`); rozdzielczość Windows nie jest zmieniana.
+
 ## 1.44.1 – nowe intro: film Apollo23
 * **Intro to teraz film** `Apollo23_intro_land.mp4` (1920×1080, 30 kl/s, 15 s, H.264 + AAC) zamiast sceny 3D: pełny ekran z zachowaniem
   proporcji (czarne pasy, gdy okno ma inne proporcje), bez kontrolek odtwarzacza, z dźwiękiem (głośnik w prawym dolnym rogu wycisza –
