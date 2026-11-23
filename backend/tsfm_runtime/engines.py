@@ -28,11 +28,8 @@ from pathlib import Path
 from . import lock
 from . import manifest as M
 
-PROFILES = {
-    "CLOSE_V1": "target = close zamkniętych świec; bez zmiennych dodatkowych",
-    "CLOSE_OHLCV_PAST_V1": "target = close; zmienne historyczne (past covariates, Chronos-2): open, high, low, wolumen – tylko przeszłość, "
-                           "bez wartości przyszłych",
-}
+# 1.46: the unused PROFILES dict was removed (dead constant). Input profiles handled in Chronos2Engine._inputs: CLOSE_V1 = close of closed
+# bars only; CLOSE_OHLCV_PAST_V1 = close + past covariates (open, high, low, volume - past only, never future values).
 
 
 class EngineError(RuntimeError):
@@ -249,6 +246,8 @@ class Chronos2Engine(BaseEngine):
 
 
 FINETUNE_MANIFEST = "granite_finetune.json"
+FINETUNE_SCHEMA = "PMW-GRANITE-FT-1"
+FINETUNE_REQUIRED = ("config.json", "model.safetensors")
 
 
 def verify_finetune(finetune_dir: str | None, run_id: str) -> tuple[Path, dict]:
@@ -261,8 +260,15 @@ def verify_finetune(finetune_dir: str | None, run_id: str) -> tuple[Path, dict]:
         man = json.loads((d / FINETUNE_MANIFEST).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise EngineError("NO_WEIGHTS", f"checkpoint {run_id}: brak / nieczytelny {FINETUNE_MANIFEST}") from None
+    if man.get("schema") != FINETUNE_SCHEMA:
+        raise EngineError("INCOMPATIBLE", f"checkpoint {run_id}: schemat manifestu {man.get('schema')!r} ≠ {FINETUNE_SCHEMA}")
     if man.get("base_fingerprint") != lock.fingerprint("granite_ttm"):
         raise EngineError("INCOMPATIBLE", f"checkpoint {run_id} powstał z innego modelu bazowego ({man.get('base_fingerprint')})")
+    # 1.46: a manifest without a file list (or without one of the loaded files) passed and from_pretrained loaded UNVERIFIED weights
+    listed = {f.get("name") for f in man.get("files") or [] if isinstance(f, dict)}
+    missing = [n for n in FINETUNE_REQUIRED if n not in listed]
+    if missing:
+        raise EngineError("CHECKSUM", f"checkpoint {run_id}: manifest bez sumy {', '.join(missing)} – nie zostanie użyty")
     for f in man.get("files") or []:
         p = d / f["name"]
         if not p.is_file() or M.sha256_file(p) != f["sha256"]:

@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,6 +73,10 @@ def download(weights_root, status_file: str | None = None, retries: int = 4, fro
                 break
             except Exception as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"[:240]
+                # 1.46: no 'ponowienie 5/4' + 30 s sleep after the LAST attempt; 401 / 403 / 404 are permanent - not retried. A complete
+                # .part (HTTP 416 on every run) is handled by the shared _download (verified without a request, 416 -> start from zero).
+                if attempt >= retries or (isinstance(exc, urllib.error.HTTPError) and exc.code in (401, 403, 404)):
+                    break
                 print(f"{f['name']}: przerwane pobieranie ({err}) – ponowienie {attempt + 1}/{retries}", flush=True)
                 time.sleep(min(30, 2 ** (attempt + 1)))
         if err:

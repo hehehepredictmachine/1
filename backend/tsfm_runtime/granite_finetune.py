@@ -141,6 +141,7 @@ def main(argv=None) -> int:
                                      f"(backbone zamrożony); wątki CPU {torch.get_num_threads()}")
         best, best_state, history = val_loss(model), None, []
         base_val = best
+        best_epoch = 0                                                     # 0 = the pretrained base (no epoch improved the validation)
         t0 = time.perf_counter()
         rng = np.random.default_rng(a.seed)
         for ep in range(a.epochs):
@@ -159,10 +160,14 @@ def main(argv=None) -> int:
             vl = val_loss(model)
             history.append({"epoch": ep + 1, "val_mse": vl})
             if vl < best:
-                best, best_state = vl, {k: v.detach().clone() for k, v in model.state_dict().items()}
+                best, best_state, best_epoch = vl, {k: v.detach().clone() for k, v in model.state_dict().items()}, ep + 1
             say(a.status_file, 3, total, f"epoka {ep + 1}/{a.epochs}: MSE walidacji {vl:.5f} (bazowy {base_val:.5f}, najlepszy {best:.5f})")
         if best_state is not None:
             model.load_state_dict(best_state)
+        else:
+            # 1.46: no epoch beat the base on validation - early stopping selected the BASE, but the LAST (worse) epoch was evaluated,
+            # saved and reported with val_mse_best of the base. The saved model is now the selected one (base weights restored).
+            model.load_state_dict(base.state_dict())
         train_s = time.perf_counter() - t0
         say(a.status_file, 4, total, "ocena na niewidzianej części testowej")
         pf, pb = predict(model, te), predict(base, te)
@@ -183,9 +188,14 @@ def main(argv=None) -> int:
                     "direction_hit": (hits / n) if n else None}
         mf, mb = metrics(pf), metrics(pb)
         naive = {"mae_h": float(np.mean(np.abs(last - y))), "rmse_h": float(np.sqrt(np.mean((last - y) ** 2)))}
-        verdict = ("IMPROVED_VS_BASE" if mf["mae_h"] < mb["mae_h"] else "NOT_BETTER_THAN_BASE")
+        verdict = ("IMPROVED_VS_BASE" if best_epoch and mf["mae_h"] < mb["mae_h"] else "NOT_BETTER_THAN_BASE")
         note = ("lepszy od modelu bazowego" if verdict == "IMPROVED_VS_BASE" else "nie lepszy od modelu bazowego – nie aktywuj") + \
                ("; lepszy od prognozy „ostatnia cena”" if mf["mae_h"] < naive["mae_h"] else "; NIE lepszy od prognozy „ostatnia cena” (błądzenie losowe)")
+        if not best_epoch:
+            note += "; żadna epoka nie poprawiła MSE walidacji – zapisany model = bazowy"
+        if len(te) < 100:
+            # 1.46 (display only; the activation rule is unchanged): with 10-26 test windows the MAE difference can be noise
+            note += f"; mała próba testowa ({len(te)} okien < 100) – różnica MAE może być szumem"
         if STOP["flag"]:
             raise KeyboardInterrupt
         say(a.status_file, 5, total, "zapis checkpointu (bez aktywacji)")
@@ -201,6 +211,7 @@ def main(argv=None) -> int:
                          "threads": torch.get_num_threads(), "trainable_params": n_train, "frozen": "backbone", "train_s": round(train_s, 1),
                          "windows": {"train": len(tr), "val": len(va), "test": len(te)}, "embargo_bars": ctx + H, "history": history},
                "metrics": {"test_finetuned": mf, "test_base": mb, "test_naive_last_price": naive, "val_mse_base": base_val, "val_mse_best": best,
+                           "val_mse_saved": best, "selected_epoch": best_epoch, "test_windows": len(te),     # 1.46: the saved model
                            "verdict": verdict, "note": note,
                            "rule": "część testowa (15 % końca) nie była używana w treningu ani do wyboru epoki; horyzonty bez nakładania"}}
         (out / "granite_finetune.json").write_text(json.dumps(man, indent=2, ensure_ascii=False), encoding="utf-8")

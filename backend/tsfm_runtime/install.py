@@ -18,6 +18,7 @@ import json
 import shutil
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,16 +56,31 @@ def _download(url: str, part: Path, size: int, status_file: str | None, label: s
     if have > size:
         part.unlink()
         have = 0
+    if have and have == size:
+        # 1.46: a COMPLETE .part (interrupted between the last byte and the rename) was requested with `Range: bytes=<size>-` -> HTTP 416
+        # on every attempt and every later run (NETWORK, the installer stuck until the user deleted the file). Nothing is left to fetch:
+        # the caller verifies the file (_check) and drops it on a mismatch, so the next run starts from zero.
+        print(f"{label}: plik częściowy kompletny ({size / 1e6:.0f} MB) – weryfikacja bez pobierania", flush=True)
+        return
     req = urllib.request.Request(url, headers={"User-Agent": f"PepeMarketWizard-tsfm/{RUNTIME_VERSION}"})
     if have:
         req.add_header("Range", f"bytes={have}-")
-    with urllib.request.urlopen(req, timeout=60) as r:
+    try:
+        resp = urllib.request.urlopen(req, timeout=60)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 416 and have:
+            # 1.46: range not satisfiable for a partial file (stale / changed upstream) -> drop it and start from zero (no Range header,
+            # so this cannot loop), as kronos_runtime.install._fetch; it was retried unchanged and reported as NETWORK on every run
+            part.unlink(missing_ok=True)
+            return _download(url, part, size, status_file, label)
+        raise
+    with resp as r:
         if have and r.status != 206:                 # server ignored the range -> start again
             have = 0
             mode = "wb"
         else:
             mode = "ab" if have else "wb"
-        t0, last = time.time(), 0.0
+        t0, last, start = time.time(), 0.0, have     # 1.46: speed from the bytes of THIS connection (was inflated after a resume)
         with open(part, mode) as out:
             while True:
                 b = r.read(CHUNK)
@@ -74,7 +90,7 @@ def _download(url: str, part: Path, size: int, status_file: str | None, label: s
                 have += len(b)
                 if time.time() - last > 2:
                     last = time.time()
-                    mbps = have / max(1e-6, time.time() - t0) / 1e6
+                    mbps = (have - start) / max(1e-6, time.time() - t0) / 1e6
                     print(f"{label}: {have / 1e6:.0f} / {size / 1e6:.0f} MB ({mbps:.1f} MB/s)", flush=True)
                     _status(status_file, step=have, total=size, file=label)
 
@@ -113,6 +129,9 @@ def download(mid: str, weights_root: str, from_dir: str | None = None, status_fi
                         break
                     except Exception as exc:  # noqa: BLE001 - network: resume on the next attempt
                         err = f"{type(exc).__name__}: {exc}"[:240]
+                        # 1.46: no 'ponowienie 5/4' + 30 s sleep after the LAST attempt; 401 / 403 / 404 are permanent - not retried
+                        if attempt >= retries or (isinstance(exc, urllib.error.HTTPError) and exc.code in (401, 403, 404)):
+                            break
                         print(f"{f['name']}: przerwane pobieranie ({err}) – ponowienie {attempt + 1}/{retries}", flush=True)
                         time.sleep(min(30, 2 ** (attempt + 1)))
                 if err:
