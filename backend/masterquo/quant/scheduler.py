@@ -4,7 +4,10 @@
 * One OWNER per task name (re-registering a task under another owner is refused - no double execution paths).
 * A task runs in a bounded worker pool with its own deadline; a task that misses it is TIMEOUT and its late answer is DISCARDED (the
   result is bound to the generation it was started for - a late worker never writes into a newer generation).
-* A failed / timed-out task makes its dependents BLOCKED_DEPENDENCY (with the cause); independent branches still run.
+* A failed / timed-out task makes its dependents BLOCKED_DEPENDENCY (with the cause); independent branches still run. A SOFT dependency
+  (`soft_deps`) that failed is passed as None instead - the task works with the branches that succeeded.
+* Every task has its own worker thread: a call that missed its deadline and is still running is never queued again (BUSY_PREVIOUS)
+  and cannot starve the other tasks.
 * The finished generation is published atomically (one reference swap under a lock + an atomic file replace) with its id, completeness
   and per-task timings; readers always see one consistent generation.
 """
@@ -32,12 +35,26 @@ class OwnershipError(ValueError):
 class Dag:
     def __init__(self, max_workers: int = 2):
         self.tasks: dict[str, dict] = {}
-        self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="quant-task")
+        # 1.46: one shared pool of 2 threads - a task past its deadline kept its thread (fut.cancel() does not stop a running call), two
+        # hung tasks starved even the fast snapshot of the next cycles (TIMEOUT) and every generation was published empty. Now one worker
+        # thread per task (created on first use) and a task whose previous call still runs is not queued again (BUSY_PREVIOUS).
+        self.max_workers = max_workers                    # kept for callers; the per-task workers replace the shared pool
+        self._pools: dict[str, ThreadPoolExecutor] = {}
+        self._running: dict[str, object] = {}
+        self._plock = threading.Lock()
 
-    def add(self, name: str, fn, *, deps=(), owner: str, deadline_s: float = 10.0, optional: bool = False) -> None:
+    def _pool(self, name: str) -> ThreadPoolExecutor:
+        with self._plock:
+            pool = self._pools.get(name)
+            if pool is None:
+                pool = self._pools[name] = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"quant-task-{name}")
+            return pool
+
+    def add(self, name: str, fn, *, deps=(), owner: str, deadline_s: float = 10.0, optional: bool = False, soft_deps=()) -> None:
         if name in self.tasks and self.tasks[name]["owner"] != owner:
             raise OwnershipError(f"TASK_ALREADY_OWNED:{name}:{self.tasks[name]['owner']}")
-        self.tasks[name] = {"fn": fn, "deps": tuple(deps), "owner": owner, "deadline_s": float(deadline_s), "optional": optional}
+        self.tasks[name] = {"fn": fn, "deps": tuple(deps), "soft_deps": tuple(soft_deps), "owner": owner, "deadline_s": float(deadline_s),
+                            "optional": optional}
         try:
             self.order()
         except CycleError:
@@ -55,7 +72,7 @@ class Dag:
             if n not in self.tasks:
                 raise CycleError(f"UNKNOWN_DEPENDENCY:{n}")
             temp.add(n)
-            for d in self.tasks[n]["deps"]:
+            for d in self.tasks[n]["deps"] + self.tasks[n].get("soft_deps", ()):
                 visit(d, path + [n])
             temp.discard(n)
             seen.add(n)
@@ -73,8 +90,16 @@ class Dag:
             if bad:
                 res[name] = {"status": "BLOCKED_DEPENDENCY", "reason": ",".join(bad), "ms": 0.0, "owner": t["owner"]}
                 continue
+            prev = self._running.get(name)
+            if prev is not None and not prev.done():
+                res[name] = {"status": "BUSY_PREVIOUS", "reason": "poprzednie wywołanie zadania jeszcze trwa (po przekroczeniu terminu)", "ms": 0.0,
+                             "owner": t["owner"], "generation": generation}
+                continue
             t0 = time.perf_counter()
-            fut = self.pool.submit(t["fn"], ctx, {d: res[d]["value"] for d in t["deps"]})
+            dv = {d: res[d]["value"] for d in t["deps"]}
+            dv.update({d: (res[d]["value"] if res.get(d, {}).get("status") == "OK" else None) for d in t.get("soft_deps", ())})
+            fut = self._pool(name).submit(t["fn"], ctx, dv)
+            self._running[name] = fut
             try:
                 val = fut.result(timeout=t["deadline_s"])
                 res[name] = {"status": "OK", "value": val, "ms": round((time.perf_counter() - t0) * 1000, 3), "owner": t["owner"]}
@@ -90,7 +115,10 @@ class Dag:
         return {"generation": generation, "complete": complete, "tasks": res, "cycle_ms": round((time.perf_counter() - t_all) * 1000, 3)}
 
     def shutdown(self) -> None:
-        self.pool.shutdown(wait=False, cancel_futures=True)
+        with self._plock:
+            pools, self._pools = list(self._pools.values()), {}
+        for pool in pools:
+            pool.shutdown(wait=False, cancel_futures=True)
 
 
 class Publisher:

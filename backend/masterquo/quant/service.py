@@ -13,8 +13,10 @@ path, changes no limit and never turns WAIT into ENTER. execution_allowed is alw
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
+import math
 import threading
 import time
 import uuid
@@ -28,6 +30,7 @@ from . import adapters as A
 from . import checks as CK
 from . import events as EV
 from . import features as F
+from . import ids as I
 from . import metamodel as M
 from . import snapshot as S
 from . import units as U
@@ -71,9 +74,25 @@ class Settings:
         except (OSError, ValueError) as exc:
             self.error = f"ustawienia Quant nieczytelne ({type(exc).__name__}) – użyto domyślnych (SHADOW)"
             return json.loads(json.dumps(DEFAULT_SETTINGS))
+        if not isinstance(d, dict):
+            # 1.46: valid JSON that is not an object ([] after a damaged / hand edit) was a TypeError in {**DEFAULT, **d} - it killed the
+            # quant-core thread (settings are read outside its try) and /quant/status answered 500
+            self.error = f"ustawienia Quant nie są obiektem JSON ({type(d).__name__}) – użyto domyślnych (SHADOW)"
+            return json.loads(json.dumps(DEFAULT_SETTINGS))
         out = {**json.loads(json.dumps(DEFAULT_SETTINGS)), **d}
         if out.get("mode") not in MODES:
             self.error, out["mode"] = f"nieznany tryb {out.get('mode')!r} – SHADOW", "SHADOW"
+        for k in ("assist", "tabicl"):                      # 1.46: sections read with .get() must stay objects
+            if not isinstance(out.get(k), dict):
+                self.error, out[k] = f"sekcja {k!r} ustawień Quant nie jest obiektem – domyślna", json.loads(json.dumps(DEFAULT_SETTINGS[k]))
+        cs = out.get("cycle_s")
+        if isinstance(cs, bool) or not isinstance(cs, (int, float)) or not math.isfinite(cs) or cs <= 0:
+            # 1.46: '5s' (ValueError in float()) ended the loop thread; a negative value was a loop without a pause (100 % CPU)
+            if cs is not None:
+                self.error = f"cycle_s {cs!r} nie jest dodatnią liczbą – 5 s"
+            out["cycle_s"] = DEFAULT_SETTINGS["cycle_s"]
+        else:
+            out["cycle_s"] = min(300.0, max(1.0, float(cs)))
         return out
 
     def put(self, d: dict) -> None:
@@ -170,26 +189,32 @@ class QuantService:
         d.add("snapshot", lambda c, _: S.build(c["rt"].bridge, instrument=c["inst"], now=c["now"]), owner="quant.snapshot", deadline_s=5.0)
         d.add("base_predictions", lambda c, _: MA.all_predictions(c["rt"], c["inst"]), deps=("snapshot",), owner="modelhub.adapters", deadline_s=20.0)
         d.add("extended_predictions", self._extended, deps=("snapshot",), owner="quant.adapters", deadline_s=25.0)
-        d.add("contract_checks", self._checks, deps=("snapshot", "base_predictions", "extended_predictions"), owner="quant.checks", deadline_s=5.0)
+        # 1.46: the predictions are SOFT dependencies - a timed-out / failed branch no longer throws away the records of the other one
+        # (the generation stays complete=False)
+        d.add("contract_checks", self._checks, deps=("snapshot",), soft_deps=("base_predictions", "extended_predictions"), owner="quant.checks",
+              deadline_s=5.0)
         return d
 
     def _extended(self, c, deps) -> list[dict]:
         snap = deps["snapshot"]
         m1 = S.last_closed(snap, "M1")
-        new_m1 = m1 is not None and m1["t"] != self._last_m1
+        # 1.46: the cache was keyed by the M1 bar only - after a switch of the instrument (same minute) the scalp A records of the previous
+        # instrument went into the new generation; the key is (instrument, bar) and only records of this instrument are reused
+        key = (c["inst"], m1["t"]) if m1 is not None else None
+        new_m1 = key is not None and key != self._last_m1
         out = A.extended(c["rt"], c["inst"], self.event_gru, with_scalp=new_m1)
         if new_m1:
-            self._last_m1 = m1["t"]
+            self._last_m1 = key
             self._last_scalp = [p for p in out if p.get("canonical_id") == "scalp:A_direction"]
         else:
-            out += self._last_scalp                       # scalp A: one inference per closed M1 bar (cached between bars)
+            out += [p for p in self._last_scalp if p.get("instrument") == c["inst"]]   # scalp A: one inference per closed M1 bar (cached)
         return out
 
     def _checks(self, c, deps) -> dict:
         snap = deps["snapshot"]
         floor = {tf: (bs[-1]["t"] if bs else None) for tf, bs in (snap.get("bars") or {}).items()}
-        return CK.screen(deps["base_predictions"] + deps["extended_predictions"], now=c["now"], snapshot_kind=snap.get("data_kind"),
-                         generation_floor=floor)
+        base, ext = _prefer_fresh(list(deps.get("base_predictions") or []), list(deps.get("extended_predictions") or []))
+        return CK.screen(base + ext, now=c["now"], snapshot_kind=snap.get("data_kind"), generation_floor=floor)
 
     def cycle(self) -> dict:
         inst = self.instrument()
@@ -231,7 +256,11 @@ class QuantService:
     def _run(self) -> None:
         last_mature = 0.0
         while not self._stop.is_set():
-            s = self.settings.get()
+            try:
+                s = self.settings.get()
+            except Exception as exc:  # noqa: BLE001 - 1.46: unreadable settings never end the loop thread (SHADOW defaults)
+                self.loop["last_error"] = f"settings: {type(exc).__name__}: {exc}"[:300]
+                s = json.loads(json.dumps(DEFAULT_SETTINGS))
             if s["mode"] != "OFF":
                 try:
                     self.cycle()
@@ -245,7 +274,11 @@ class QuantService:
                         self.mature()
                     except Exception as exc:  # noqa: BLE001
                         self.loop["last_error"] = f"mature: {type(exc).__name__}: {exc}"[:300]
-            self._stop.wait(float(s.get("cycle_s") or 5.0))
+            try:
+                wait_s = min(300.0, max(1.0, float(s.get("cycle_s") or 5.0)))
+            except (TypeError, ValueError):
+                wait_s = 5.0
+            self._stop.wait(wait_s)
 
     # ------------------------------------------------------------------ candidates
     def _eligible_at(self, t: float) -> tuple[list[dict], dict | None]:
@@ -369,7 +402,7 @@ class QuantService:
             row = {"row_id": str(cd.get("candidate_key") or cd.get("setup_id")) + ":" + th, "instrument": inst, "engine": cd.get("engine"), "strategy": cd.get("strategy_id"),
                    "direction": cd.get("direction"), "decision_ts": float(cd["decision_ts"]), "task_hash": th, "event_id": spec.event_id,
                    "spec": spec.to_dict(), "features": feats, "snapshot_id": ((pub or {}).get("snapshot") or {}).get("snapshot_id"),
-                   "generation": (pub or {}).get("generation"), "data_kind": ((pub or {}).get("snapshot") or {}).get("data_kind") or "UNKNOWN",
+                   "generation": (pub or {}).get("generation"), "data_kind": ((pub or {}).get("snapshot") or {}).get("data_kind") or self._bridge_kind(),
                    "matures_at": matures}
             a["row_id"] = row["row_id"]
             if self.ledger.add_row(row):
@@ -378,6 +411,13 @@ class QuantService:
             with self._lock:
                 self.recent = ([a] + self.recent)[:200]
         return a
+
+    def _bridge_kind(self) -> str:
+        """1.46: data kind of a row logged before the first published generation (bot start, failed snapshot) - from the bridge itself
+        (an explicit synthetic flag only), else UNKNOWN. Such rows were always UNKNOWN and blocked the data_real gate of the task."""
+        br = getattr(self.rt, "bridge", None)
+        syn = getattr(br, "synthetic", getattr(br, "_synthetic", None)) if br is not None else None
+        return ("SYNTHETIC" if syn else "REAL") if isinstance(syn, bool) else "UNKNOWN"
 
     def on_candidate(self, c, ad: dict | None = None) -> None:
         """EvaluationService listener (after its own ledger write). Never raises into the caller."""
@@ -439,11 +479,15 @@ class QuantService:
             conf = a.get("confidence")
             if not conf:
                 continue
+            # 1.46: `sl` was never compared - an SH variant with the same market entry and another SL got another plan's confidence; now
+            # entry AND SL must match the assessed plan within one tick, otherwise there is no confidence for this plan (None)
+            plan = a.get("plan") or {}
             try:
-                spec_e = float((a.get("plan") or {}).get("entry")) if a.get("plan") else None
+                spec_e, spec_sl = float(plan.get("entry")), float(plan.get("sl"))
+                want_e, want_sl = float(entry), float(sl)
             except (TypeError, ValueError):
-                spec_e = None
-            if entry is not None and spec_e is not None and abs(float(entry) - spec_e) > 1e-6 * max(1.0, abs(spec_e)) + 0.011:
+                continue
+            if any(abs(w - v) > 1e-6 * max(1.0, abs(v)) + 0.011 for w, v in ((want_e, spec_e), (want_sl, spec_sl))):
                 continue
             cur = self.tabicl.lookup(conf.get("plan_hash") or "")
             if cur and cur.get("state") == "READY":
@@ -458,7 +502,14 @@ class QuantService:
     # ------------------------------------------------------------------ labels
     def mature(self, now: float | None = None) -> int:
         now = self.clock() if now is None else now
-        rows = self.ledger.pending(now)
+        inst = self.instrument()
+        # 1.46: pending() returned the 500 oldest rows of ALL instruments and rows of another instrument are skipped below - with >= 500 of
+        # them (after a switch BTC -> XAUUSD) the rows of the current instrument were never labelled. The instrument filter is used when
+        # the ledger offers it.
+        if "instrument" in inspect.signature(self.ledger.pending).parameters:
+            rows = self.ledger.pending(now, instrument=inst)
+        else:
+            rows = self.ledger.pending(now)
         if not rows:
             return 0
         br = self.rt.bridge
@@ -473,15 +524,28 @@ class QuantService:
         sym_now = getattr(br, "buffer_symbol", None)
         n = 0
         for r in rows:
-            spec_d = json.loads(r["spec_json"])
-            if r["instrument"] != self.instrument() or (sym_now and getattr(getattr(br, "cfg", None), "symbol", sym_now) != sym_now):
+            if r["instrument"] != inst or (sym_now and getattr(getattr(br, "cfg", None), "symbol", sym_now) != sym_now):
                 continue                                              # bars of another instrument buffered now: wait, never mislabel
             if r["decision_ts"] < first - 60:
                 self.ledger.label(r["row_id"], "NO_BARS", {"reason": "okno starsze niż bufor M1"}, None)
                 n += 1
                 continue
-            spec = EV.EventSpec(**{k: (tuple(map(tuple, v)) if k == "targets" else v) for k, v in spec_d.items() if k not in ("task_hash", "plan_hash")})
-            lab = EV.simulate(spec, bars, r["decision_ts"], available_until=last_close)
+            # 1.46: one row whose spec no longer builds (field changed in a newer EventSpec, NaN plan of an older version) raised out of
+            # mature() on every call - labelling stopped for good. Such a row is marked INVALID_SPEC (kept, with the reason); any other
+            # error of one row leaves it PENDING and the loop goes on.
+            try:
+                spec_d = json.loads(r["spec_json"])
+                spec = EV.EventSpec(**{k: (tuple(map(tuple, v)) if k == "targets" else v) for k, v in spec_d.items() if k not in ("task_hash", "plan_hash")})
+            except (EV.EventError, TypeError, ValueError, AttributeError) as exc:
+                self.ledger.label(r["row_id"], "INVALID_SPEC", {"reason": f"{type(exc).__name__}: {exc}"[:200]}, None)
+                n += 1
+                continue
+            try:
+                lab = EV.simulate(spec, bars, r["decision_ts"], available_until=last_close)
+            except Exception as exc:  # noqa: BLE001 - one row never stops the labelling of the others
+                self.loop["errors"] += 1
+                self.loop["last_error"] = f"mature {r['row_id']}: {type(exc).__name__}: {exc}"[:300]
+                continue
             if not lab.get("mature"):
                 continue
             if lab.get("scenario") == "NO_BARS" or lab.get("y_event") is None:
@@ -545,12 +609,34 @@ class QuantService:
         pub = self.pub.current() or {}
         return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "eligible", "excluded", "aliases_dropped")}
 
-    def bench(self, n: int = 20) -> dict:
-        t0 = time.perf_counter()
-        for _ in range(n):
-            self.cycle()
-        out = {"cycles": n, "wall_s": round(time.perf_counter() - t0, 3), "timings": percentiles(self.timings)}
-        return out
+
+def _fresher(a: dict, b: dict) -> bool:
+    """a was computed later than b (computed_at, then data_time); unknown times never win."""
+    for k in ("computed_at", "data_time"):
+        ta, tb = CK.ts(a.get(k)), CK.ts(b.get(k))
+        if ta is not None and tb is not None and ta != tb:
+            return ta > tb
+    return False
+
+
+def _prefer_fresh(base: list[dict], ext: list[dict]) -> tuple[list[dict], list[dict]]:
+    """1.46: ids.dedup keeps the FIRST record of one identity - base + extended kept the Event GRU answer of the PREVIOUS cycle (families
+    read event_gru.latest before the extended adapters refresh it) and dropped the fresh one as an alias; a fresh ERROR never replaced an
+    old READY. When base and extended carry the same identity, the later-computed record takes the base position (the other one is still
+    reported as the dropped alias)."""
+    if not base or not ext:
+        return base, ext
+    pos: dict[tuple, int] = {}
+    for i, q in enumerate(ext):
+        pos.setdefault(I.identity({**q, "canonical_id": I.canonical(q)}), i)
+    base, ext = list(base), list(ext)
+    for j, p in enumerate(base):
+        k = I.identity({**p, "canonical_id": I.canonical(p)})
+        i = pos.get(k)
+        if i is not None and _fresher(ext[i], p):
+            base[j], ext[i] = ext[i], p
+            pos.pop(k)                                   # one swap per identity
+    return base, ext
 
 
 def percentiles(tim: dict) -> dict:
@@ -572,12 +658,26 @@ def _safe(fn, default):
 
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:
     rows = ledger.training_rows(inst, task_hash)
+    # 1.46: a row logged before the first published generation had data_kind UNKNOWN - a few such rows from the start window kept the
+    # task out of VALIDATED_SHADOW for good (gate data_real needs kinds == [REAL]). A row of unknown data origin proves nothing: it stays in
+    # the ledger but is not training evidence (counted in the result).
+    unknown: dict[str, int] = {}
+    known = []
+    for r in rows:
+        if r.get("data_kind") in ("REAL", "SYNTHETIC"):
+            known.append(r)
+        else:
+            unknown[r["task_hash"]] = unknown.get(r["task_hash"], 0) + 1
+    if unknown:
+        log(f"[QUANT] {inst}: pominięto {sum(unknown.values())} wierszy o nieznanym rodzaju danych (UNKNOWN) – nie są dowodem do treningu")
+    rows = known
     by: dict[str, list] = {}
     for r in rows:
         by.setdefault(r["task_hash"], []).append(r)
     if not by:
         log(f"[QUANT] {inst}: brak oznaczonych wierszy w ledgerze – trening nieuruchomiony (INSUFFICIENT_EVIDENCE)")
-        return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE", "reason": "brak oznaczonych wierszy"}]
+        return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE", "reason": "brak oznaczonych wierszy",
+                 "excluded_unknown_data_kind": sum(unknown.values())}]
     out = []
     for th, rs in sorted(by.items()):
         spec = rs[0]["spec"]
@@ -585,7 +685,8 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         log(f"[QUANT] {inst} zadanie {th} ({spec.get('event_id')}): {len(rs)} wierszy")
         res = M.train(rs, task={"task_hash": th, "event_id": spec.get("event_id")}, crit=crit, seen_tests=seen)
         item = {"task_hash": th, "event_id": spec.get("event_id"), "status": res["status"], "n_rows": len(rs),
-                "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates")}
+                "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
+                "excluded_unknown_data_kind": unknown.get(th, 0)}
         if "model" in res:
             ver = M.save(inst, res, spec=spec)
             M.record_test(inst, th, res["report"]["test_row_ids"])

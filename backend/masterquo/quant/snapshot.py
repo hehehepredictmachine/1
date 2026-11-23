@@ -55,14 +55,47 @@ def normalise(rows: list[dict], tf: str) -> list[dict]:
     return out
 
 
+WEEKEND_MAX_S = 4 * 86400                 # a break longer than this is never only a weekend
+
+
+def _weekday_seconds(t0: float, t1: float) -> float:
+    """Seconds of [t0, t1) that fall on Monday-Friday (UTC)."""
+    out, t = 0.0, t0
+    while t < t1:
+        day = math.floor(t / 86400.0)
+        seg_end = min((day + 1) * 86400.0, t1)
+        if (day + 3) % 7 < 5:                                # 1970-01-01 (day 0) was a Thursday (weekday 3)
+            out += seg_end - t
+        t = seg_end
+    return out
+
+
+def _session_break(a_close: float, b_open: float, sec: int) -> bool:
+    """1.46: a gap that is the weekend market closure - less than one bar of the missing span falls on a weekday (UTC). D1 / H4 of a market
+    closed at the weekend had one 'gap' per week, so 500 clean D1 bars were always DEGRADED (> 50 gaps) with no issue named."""
+    span = b_open - a_close
+    if span <= 0 or span > WEEKEND_MAX_S:
+        return False
+    return _weekday_seconds(a_close, b_open) < sec
+
+
 def qc(bars: list[dict], tf: str, *, max_gap_report: int = 20) -> dict:
     sec = TF_SECONDS.get(tf, 60)
     issues, gaps, bad = [], [], 0
+    if not bars:
+        # 1.46: a TF without a single bar was status OK (n=0, no issue) and the whole snapshot OK with as_of None - missing data is a state
+        return {"tf": tf, "n": 0, "status": "MISSING", "issues": ["NO_BARS"], "gaps": [], "gap_count": 0, "session_breaks": 0, "revised_bars": 0,
+                "bars_without_spread": 0, "source": None, "volume_kind": "TICK_VOLUME (aktywność feedu, nie wolumen obrotu)", "last_close_t": None,
+                "last_available_at": None}
     dup = sum(1 for a, b in zip(bars, bars[1:]) if b["t"] == a["t"])
     unordered = sum(1 for a, b in zip(bars, bars[1:]) if b["t"] < a["t"])
+    breaks = 0
     for a, b in zip(bars, bars[1:]):
         d = b["t"] - a["t"]
         if d > sec * 1.5:
+            if _session_break(a["t"] + sec, b["t"], sec):
+                breaks += 1                                  # weekend closure: reported separately, not a missing bar
+                continue
             gaps.append({"after": a["t"], "missing_bars": int(round(d / sec)) - 1})
     for b in bars:
         vals = [b[k] for k in ("o", "h", "l", "c")]
@@ -83,9 +116,11 @@ def qc(bars: list[dict], tf: str, *, max_gap_report: int = 20) -> dict:
         issues.append(f"OHLC_INVALID:{bad}")
     if incomplete:
         issues.append(f"RESAMPLED_INCOMPLETE:{incomplete}")
+    if len(gaps) > 50:
+        issues.append(f"GAPS:{len(gaps)}")                   # 1.46: DEGRADED because of gaps names its reason
     status = "BLOCK" if (dup or unordered or bad) else ("DEGRADED" if incomplete or (gaps and len(gaps) > 50) else "OK")
     return {"tf": tf, "n": len(bars), "status": status, "issues": issues, "gaps": gaps[-max_gap_report:], "gap_count": len(gaps),
-            "revised_bars": revised, "bars_without_spread": no_spread,
+            "session_breaks": breaks, "revised_bars": revised, "bars_without_spread": no_spread,
             "source": sorted({b["source"] for b in bars}) or None, "volume_kind": "TICK_VOLUME (aktywność feedu, nie wolumen obrotu)",
             "last_close_t": bars[-1]["close_t"] if bars else None, "last_available_at": bars[-1]["available_at"] if bars else None}
 
@@ -131,7 +166,9 @@ def build(bridge, *, instrument: str, tfs=DEFAULT_TFS, limit: int = 600, now: fl
     as_of = max((b[-1]["available_at"] for b in bars.values() if b), default=None)
     rev = revision_id(bars)
     status = "BLOCK" if any(q.get("status") == "BLOCK" for q in quality.values()) else (
-        "DEGRADED" if any(q.get("status") in ("DEGRADED", "ERROR") for q in quality.values()) or qstate != "OK" else "OK")
+        "DEGRADED" if any(q.get("status") in ("DEGRADED", "ERROR", "MISSING") for q in quality.values()) or qstate != "OK" else "OK")
+    if as_of is None and status != "BLOCK":
+        status = "MISSING"                                   # 1.46: no bar of any TF - never OK
     snap = {"version": VERSION, "instrument": instrument, "symbol": symbol, "server": (getattr(bridge, "account_key", None) or "").split(":")[0] or None,
             "spec": {k: info.get(k) for k in ("point", "trade_tick_size", "trade_tick_value", "trade_contract_size", "volume_min", "volume_step",
                                               "volume_max", "digits")},
@@ -157,7 +194,8 @@ def _extra_sources(bridge) -> dict:
 
 
 def asof(snap: dict, t: float) -> dict:
-    """Bars available at time t per TF (availability <= t). Used for replay / training rows (no look-ahead)."""
+    """Bars available at time t per TF (availability <= t) - the point-in-time view of a snapshot (no look-ahead). 1.46: a helper for
+    replay checks and tests; the live cycle uses `last_closed(snap, tf, t)` and the ledger stores the features as known at the decision."""
     return {tf: [b for b in bars if b["available_at"] <= t + 1e-9] for tf, bars in (snap.get("bars") or {}).items()}
 
 

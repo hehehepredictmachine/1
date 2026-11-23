@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import numbers
 from dataclasses import asdict, dataclass, field
 
 VERSION = "PMW-QUANT-EVENT-1"
@@ -59,6 +61,22 @@ class EventSpec:
             raise EventError("AMBIGUITY_POLICY_INVALID")
         if not self.targets:
             raise EventError("NO_TARGETS")
+        # 1.46: NaN / Inf passed every comparison below (NaN <= 0 is False) - a plan with entry / SL / horizon / target NaN got a task_hash,
+        # R = NaN and a 'mature' TIMEOUT label with gross_r NaN. Every number of the plan must be finite.
+        nums = [("entry", self.entry), ("sl", self.sl), ("horizon_s", self.horizon_s), ("be_offset_price", self.be_offset_price)]
+        if self.cost_price is not None:
+            nums.append(("cost_price", self.cost_price))
+        for name, v in nums:
+            if isinstance(v, bool) or not isinstance(v, numbers.Real) or not math.isfinite(v):
+                raise EventError(f"NOT_FINITE:{name}")
+        for i, t in enumerate(self.targets):                      # targets are read with float() below - same here
+            for v in tuple(t)[:2]:
+                try:
+                    ok = not isinstance(v, bool) and math.isfinite(float(v))
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    raise EventError(f"NOT_FINITE:target[{i}]")
         w = sum(float(t[1]) for t in self.targets)
         if abs(w - 1.0) > 1e-6:
             raise EventError(f"TARGET_WEIGHTS_SUM:{w:.6f}")
@@ -187,7 +205,9 @@ def simulate(spec: EventSpec, bars: list[dict], decision_ts: float, *, tf_s: flo
            "net_r": None if net_r is None else round(net_r, 6), "cost_r": None if spec.cost_price is None else round(spec.cost_price / R, 6),
            "cost_status": "KNOWN" if spec.cost_price is not None else "UNKNOWN", "ambiguous": ambiguous, "gap": gap, "policy": policy,
            "spread_known": spread_known, "mfe_r": round(mfe, 6), "mae_r": round(mae, 6), "fills": fills, "label_version": spec.label_version,
-           "task_hash": spec.task_hash(), "event_id": spec.event_id, "y_event": bool(events.get(spec.event_id, False)) if spec.event_id in events else None}
+           "task_hash": spec.task_hash(), "event_id": spec.event_id,
+           # 1.46: an event whose value is unknown (NET_R_POSITIVE with unknown costs = None) is no label, never y = 0
+           "y_event": None if events.get(spec.event_id) is None else bool(events[spec.event_id])}
     if spec.ambiguity == "BOUNDS" and _policy is None and ambiguous:
         alt = simulate(spec, bars, decision_ts, tf_s=tf_s, available_until=available_until, _policy="TP_FIRST")
         out["net_r_bounds"] = [out["net_r"], alt.get("net_r")]

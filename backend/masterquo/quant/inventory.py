@@ -196,7 +196,8 @@ def _lab_rows() -> list[dict]:
     out = []
     for f in P.FAMILIES:
         out.append(_e(f"lab:{f}", name=f"Lab {f}", category="MODEL_TRAINED" if f not in ("DUMMY", "RULE") else "BASELINE",
-                      files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="score_0_100", task_type="SCORE",
+                      # 1.46: the lab adapter publishes raw_score as unit 'ratio' (0-1, lab.service round(p, 4)), not score_0_100
+                      files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="ratio", task_type="SCORE",
                       task="TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)", timeframes=["M5"], owner_train="lab (training: lab)", owner_infer="lab.service",
                       artifact="<data>/lab/models/<asset>/", validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if f not in ("DUMMY", "RULE") else "TOOL",
                       adapter=A_EXT, source_registry=["lab.protocol.FAMILIES"], notes="score innego zdarzenia niż TP setupu – cecha pod własną nazwą"))
@@ -387,7 +388,7 @@ def _count(es, k) -> dict:
 
 def to_markdown(inv: dict) -> str:
     c = inv["coverage"]
-    L = [f"# Inwentaryzacja komponentów obliczeniowych – PMW Quant Core", "",
+    L = ["# Inwentaryzacja komponentów obliczeniowych – Apollo23 Quant Core", "",      # 1.46: display name (identifiers unchanged)
          f"Wygenerowano: {inv['generated_at']} · instrument: {inv['instrument']} · tryb: {inv['runtime']} · generator: `python -m masterquo quant inventory` ({VERSION})", "",
          "Plik maszynowy: `docs/quant/INVENTORY.json`. Kanoniczne identyfikatory i aliasy: `backend/masterquo/quant/ids.py`.", "",
          "## Pokrycie (cztery osobne miary)", "",

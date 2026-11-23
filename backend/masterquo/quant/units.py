@@ -88,6 +88,8 @@ class InstrumentSpec:
     def money(self, price_move: float, lots: float, account_ccy: str | None = None) -> float:
         if self.tick_value is None:
             raise UnitsError("TICK_VALUE_UNKNOWN")
+        if not self.tick_value_ccy:
+            raise UnitsError("CURRENCY_UNKNOWN")          # 1.46: tick_value in an unknown currency is not an amount in the account currency
         if account_ccy and self.tick_value_ccy and account_ccy != self.tick_value_ccy:
             raise UnitsError("CURRENCY_CONVERSION_UNKNOWN")
         return _fin(price_move, "move") / self.tick_size * self.tick_value * _fin(lots, "lots")
@@ -99,7 +101,7 @@ class CostModel:
     spread_price: float | None = None        # only used when spread_in_prices is False
     commission_per_lot_side: float | None = None   # account currency; None = unknown
     slippage_ticks_per_fill: float = 0.0
-    swap_per_lot_day: float | None = 0.0     # None = unknown
+    swap_per_lot_day: float | None = None    # None = unknown (1.46: was 0.0 by default - an unknown swap reported as KNOWN)
     source: dict = field(default_factory=dict)
 
     def basis(self) -> dict:
@@ -164,7 +166,9 @@ def ev_for_plan(*, p_event: float | None, event_id: str, targets: list[dict], be
     """EV only where it is defined: a binary plan whose event is exactly 'the single TP before SL'. Otherwise EV_NEEDS_SCENARIOS."""
     if p_event is None:
         return {"ev_r": None, "status": "NO_PROBABILITY", "reason": "brak skalibrowanego prawdopodobieństwa nazwanego zdarzenia"}
-    if not plan_is_binary(targets, be_after, timeout) or event_id != "TP_BEFORE_SL":
+    # 1.46: events.py names the single-target event TP1_BEFORE_STOP (spec_from_candidate) - only 'TP_BEFORE_SL' was accepted, so every real
+    # plan got EV_NEEDS_SCENARIOS; both names are 'the single TP before the stop'
+    if not plan_is_binary(targets, be_after, timeout) or event_id not in ("TP_BEFORE_SL", "TP1_BEFORE_STOP"):
         return {"ev_r": None, "status": "EV_NEEDS_SCENARIOS", "reason": "plan z częściowymi wyjściami / BE / timeoutem – P(jednego TP) nie jest "
                 "rozkładem wypłat planu; potrzebny rozkład scenariuszy lub model E[net R]"}
     r = binary_ev(p_event, gain_r, loss_r)

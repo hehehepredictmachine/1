@@ -160,7 +160,9 @@ def price_forecast_features(preds: list[dict], c: dict) -> dict:
         last, pc = _f(r.get("last_close")), _f(r.get("pred_close"))
         if last is None or pc is None:
             continue
-        cid = (p.get("extra") or {}).get("model_id") or p.get("canonical_id") or p.get("model_name")
+        # 1.46: C.make spreads `extra` into the record, so (p.get("extra") or {}).get("model_id") was always None - dead lookup removed;
+        # the column name stays the canonical id (the name trained models know)
+        cid = p.get("canonical_id") or p.get("model_name")
         base = f"fcp:{cid}:{p.get('timeframe')}"
         if atr:
             out[base + ":d_atr"] = sgn * (pc - last) / atr
