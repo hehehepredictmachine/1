@@ -338,8 +338,21 @@ def manifest() -> dict:
                         "status": "RETIRED", "history": "PRESERVE_READ_ONLY"}}
 
 
-def preservation_view() -> list[dict]:
+# 1.46: preservation_view declared execution_route SIGNALS_ONLY for all 60, although the FX PositionPlans go to the SH path (AUTO_SH)
+def _execution_route(s: dict, fx_execution: str) -> str:
+    """The route a plan of this strategy really takes (mirrors BasketService._exec_status / sh_candidates): FOREX_MT5 PositionPlans
+    -> the existing SH execution path when execution = AUTO_SH; hedge plans are plans only; CRYPTO = ticket for manual execution."""
+    if s["plan_type"] == "HedgePlan":
+        return "PLAN_ONLY"
+    if s["profile_id"] == "FOREX_MT5" and s["plan_type"] == "PositionPlan":
+        return "SH_PATH (AUTO_SH)" if fx_execution == "AUTO_SH" else "SIGNALS_ONLY"
+    return "MANUAL_TICKET"
+
+
+def preservation_view(fx_execution: str = "AUTO_SH") -> list[dict]:
     """For upgrade.preservation.compare(new_catalog=...): the 60 active canonical entries with their execution route and legacy aliases.
-    No gold strategy is aliased into a basket (the multi-market strategies did not exist before 1.41) and the baskets publish
-    signals / plans / manual tickets only - so no second execution route exists next to the preserved gold strategies."""
-    return [{"strategy_id": s["strategy_id"], "basket_id": s["basket_id"], "legacy_aliases": [], "execution_route": "SIGNALS_ONLY"} for s in CATALOG]
+    No gold strategy is aliased into a basket (the multi-market strategies did not exist before 1.41), so no basket route duplicates
+    the route of a preserved gold strategy. The FOREX_MT5 PositionPlans use the EXISTING SH path (1.42, no new parallel route);
+    fx_execution = the baskets setting profiles.FOREX_MT5.execution (default AUTO_SH; SIGNALS_ONLY = 1.41 behaviour)."""
+    return [{"strategy_id": s["strategy_id"], "basket_id": s["basket_id"], "legacy_aliases": [], "execution_route": _execution_route(s, fx_execution)}
+            for s in CATALOG]
