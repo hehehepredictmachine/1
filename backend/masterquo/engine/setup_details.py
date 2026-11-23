@@ -41,7 +41,8 @@ RISK_PL = {"SPREAD_LIMIT": "spread powyżej limitu", "STOPS_LEVEL_VIOLATION": "S
            "LIVE_PRICE_OUTSIDE_PLAN_GEOMETRY": "cena poza geometrią planu", "BROKER_MARGIN_CALC_UNAVAILABLE": "brak kalkulacji marginu brokera",
            "OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED": "otwarta pozycja bez SL", "PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED": "zlecenie oczekujące bez SL",
            "NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL": "rachunek netting z pozycją na symbolu", "DRAWDOWN_BREACH": "przekroczone obsunięcie",
-           "COOLDOWN_AFTER_LOSS": "przerwa po stracie", "SYMBOL_TRADE_MODE_NOT_FULL": "symbol nie pozwala na pełny handel"}
+           "COOLDOWN_AFTER_LOSS": "przerwa po stracie", "SYMBOL_TRADE_MODE_NOT_FULL": "symbol nie pozwala na pełny handel",
+           "SPREAD_UNKNOWN_PREVIEW": "brak notowania – podgląd liczony bez spreadu"}
 
 
 # ---- presentation grouping of the checklist (MQ-SETUP-DETAILS-1.1.0). Purely descriptive: the rows and their statuses are
@@ -163,6 +164,10 @@ def details(eng, setup_id: str) -> dict | None:
     levels = levels_for(rec)
     quote = eng.bridge.quote_status()
     live = row["stage"] == "CONFIRMED" and row["status"] == "ACTIVE"
+    if live:
+        # 1.46: the same levels as the engine's decision - a confirmed RR_FROM_FILL plan (S11) has its TP from the planned entry
+        # (Ask / Bid), not from the signal close; RR, volume and the result at TP were shown for a plan the gateway never sends
+        levels = eng._tp_from_entry({"state": "CONFIRMED", "direction": rec["direction"]}, levels, quote)
     hypo = ep.get("trigger_level") or ep.get("reference_price")
     risk = eng._risk(rec["direction"], levels, quote, live, hypo) if row["status"] == "ACTIVE" else {"risk_gate": "NOT_EVALUATED",
                                                                                                     "reason_codes": ["SCENARIO_ENDED"]}
@@ -263,10 +268,19 @@ def details(eng, setup_id: str) -> dict | None:
         st = "BRAK DANYCH" if o["direction"] is None else ("ZGODNY" if o["direction"] == want else ("NEUTRALNY" if o["direction"] == "FLAT" else "KONFLIKT"))
         tf_rows.append({**o, "agreement": st})
     # ---- real historical results of this strategy (closed bot trades only)
-    trades = eng.db.query("SELECT * FROM trades WHERE strategy_id=? AND source IN ('BOT','ADOPTED') AND status='CLOSED' ORDER BY closed_at", (sid,))
+    # 1.46: only THIS account's trades (like the rest of the details) and never one sum over different modes / currencies - 1.45 mixed
+    # every account, PAPER with real fills and account currencies in one net / drawdown
+    trades = eng.db.query("SELECT * FROM trades WHERE strategy_id=? AND source IN ('BOT','ADOPTED') AND status='CLOSED' "
+                          "AND IFNULL(account_key,'')=IFNULL(?, '') ORDER BY closed_at", (sid, eng.bridge.account_key))
+    groups: dict[tuple, list[dict]] = {}
+    for t in trades:
+        groups.setdefault((t.get("mode"), t.get("currency")), []).append(t)
     hist = {"trades": len(trades), "period_from": trades[0].get("opened_at") or trades[0]["closed_at"] if trades else None,
-            "period_to": trades[-1]["closed_at"] if trades else None, "stats": stats_mod._agg(trades) if trades else None,
-            "note": "z rozliczonych transakcji bota (po kosztach)" if trades else "brak rozliczonych transakcji tej strategii – brak statystyk"}
+            "period_to": trades[-1]["closed_at"] if trades else None, "stats": stats_mod._agg(trades) if len(groups) == 1 else None,
+            "by_mode": [{"mode": m, "currency": c, "trades": len(g), "stats": stats_mod._agg(g)} for (m, c), g in groups.items()],
+            "note": ("z rozliczonych transakcji bota tego rachunku (po kosztach)" if len(groups) == 1 else
+                     "wyniki w rozbiciu na tryb i walutę (by_mode) – różnych trybów / walut się nie sumuje") if trades
+            else "brak rozliczonych transakcji tej strategii na tym rachunku – brak statystyk"}
     reg = (act.selector.state or {}).get("regime") or {}
     reason_txt = ", ".join(c for c in rec.get("reason_codes") or [] if c != "COUNTERTREND") or "struktura wykryta"
     inv = rec.get("invalidation_level")
@@ -290,7 +304,7 @@ def details(eng, setup_id: str) -> dict | None:
         "checklist": rows, "summary": summary, "selector_mode": (act.prefs.get("setup_view")["mode"] if act.prefs else "AUTO"),
         "levels": {"entry_zone": ep.get("zone"), "trigger": ep.get("trigger"), "trigger_level": ep.get("trigger_level"), "reference_price": ep.get("reference_price"),
                    "planned_entry": risk.get("entry"), "entry_basis": risk.get("entry_basis"), "stop_loss": rec.get("stop_loss"),
-                   "targets": [t.get("price") for t in rec.get("targets") or []], "invalidation_level": inv,
+                   "targets": [t.get("price") for t in (levels or {}).get("targets") or []], "invalidation_level": inv,
                    "invalidation_rule": f"zamknięcie świecy {tf} za poziomem {inv}" if inv is not None else "—",
                    "expires_at": row.get("expires_at")},
         "rr": {"gross": risk.get("rr_gross"), "net": risk.get("rr_net"), "net_complete": risk.get("rr_complete"),

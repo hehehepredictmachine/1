@@ -59,6 +59,9 @@ def hv_parkinson(highs: list[float], lows: list[float]) -> float | None:
 def black76(f: float, k: float, sigma: float, t: float) -> dict:
     """European option on a forward, zero rate. Returns call/put prices, deltas and N(d2)."""
     v = sigma * math.sqrt(t)
+    if not (v > 0 and f > 0 and k > 0):
+        # 1.46: sigma 0 (flat D1 bars) was a ZeroDivisionError deep inside the pricing - an explicit, named refusal instead
+        raise ValueError("BLACK76_REQUIRES_POSITIVE_VOLATILITY_AND_PRICES")
     d1 = (math.log(f / k) + 0.5 * v * v) / v
     d2 = d1 - v
     call = f * _ncdf(d1) - k * _ncdf(d2)
@@ -131,6 +134,10 @@ def compute(d1_bars: list[dict], cfg, digits: int = 2, quote: dict | None = None
         out["iv_note"] = "MT5 nie udostępnia opcji na XAUUSD- – użyto zmienności HISTORYCZNEJ (HV) jako przybliżenia; to nie jest zmienność implikowana."
     out["model_note"] = ("Wycena i P(...) to wielkości modelu (lognormalny, stała zmienność, r=0, bez dryfu) – nie rynkowe ceny opcji i nie "
                          "prawdopodobieństwo wygranej transakcji; P(dotknięcie) = 2·N(d2) to przybliżenie. Nie są używane w warunkach wejścia.")
+    if not (math.isfinite(iv_ann) and iv_ann > 0):
+        # 1.46: flat D1 history (HV = 0) divided by zero in black76 - the chart endpoint answered 404 SYMBOL_UNAVAILABLE and the
+        # scanner listed the symbol as an error. No volatility = no pricing and no walls (never a made-up sigma).
+        return {**out, "status": "ZERO_VOLATILITY", "iv_annual_pct": round(100 * iv_ann, 2) if math.isfinite(iv_ann) else None}
     t = 1.0 / tdy
     move = iv_ann * math.sqrt(t)                     # 1 sigma of the daily log return
     out["iv_annual_pct"] = round(100 * iv_ann, 2)

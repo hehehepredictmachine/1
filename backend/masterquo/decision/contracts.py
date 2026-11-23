@@ -109,7 +109,9 @@ def inputs_hash(obj) -> str:
 def instrument_spec(symbol: str, info: dict | None) -> dict:
     i = info or {}
     f = (lambda k: float(i[k]) if i.get(k) is not None else None)
-    return make("InstrumentSpec", symbol=symbol, digits=int(i.get("digits") or 2), point=float(i.get("point") or 0.01),
-                tick_size=float(i.get("trade_tick_size") or i.get("point") or 0.01), tick_value=f("trade_tick_value"),
+    # 1.46: no invented defaults - 'digits or 2' turned a valid digits=0 into 2 and a missing point / tick size became 0.01; a missing
+    # required field is now a ContractViolation (a broken spec never travels further as if it were valid)
+    return make("InstrumentSpec", symbol=symbol, digits=None if i.get("digits") is None else int(i["digits"]), point=f("point"),
+                tick_size=f("trade_tick_size"), tick_value=f("trade_tick_value"),
                 contract_size=f("trade_contract_size"), volume_min=f("volume_min"), volume_step=f("volume_step"), volume_max=f("volume_max"),
                 currency_profit=i.get("currency_profit"), margin_mode=i.get("margin_mode_name"))

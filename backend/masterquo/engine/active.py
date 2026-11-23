@@ -233,8 +233,9 @@ class ActiveEngine:
         if not compact:
             out["setups"] = [public(r) for r in self.tracker.recent(60)]
             out["funnel"] = {k: dict(v) for k, v in self.funnel.items()}
+            # 1.46: 'trade' of a strategy without a toggle is what trade_allowed() applies (S11/S12 signal-only), not True
             out["strategies"] = [{**d, "scan": (ac.strategies.get(d["strategy_id"]).scan if ac.strategies.get(d["strategy_id"]) else True),
-                                  "trade": (ac.strategies.get(d["strategy_id"]).trade if ac.strategies.get(d["strategy_id"]) else True)}
+                                  "trade": trade_allowed(ac, d["strategy_id"])}
                                  for d in registry.describe()]
             out["why_no_setup"] = self.why_no_setup()
         return out

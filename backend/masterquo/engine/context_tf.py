@@ -13,11 +13,14 @@ from ..strategies.base import TFView
 from ..timeutil import CONTEXT_TIMEFRAMES, TF_REGISTRY
 
 ROLE_PL = {"SETUP_CONTEXT": "kontekst setupu (S11 liczy setupy także na M30)", "TREND_REGIME_CONTEXT": "trend / reżim / poziomy (filtr H8 dla S11 – opcja)"}
+# 1.46: the context timeframes are the ones with a context ROLE (M30, H8). M3 (core=False since 1.33) is a TRIGGER timeframe - it was
+# summarised as context with role_pl None and the M30 impact text
+CONTEXT_TFS = tuple(tf for tf in CONTEXT_TIMEFRAMES if TF_REGISTRY[tf]["role"] in ROLE_PL)
 
 
 def summarize(bars_by_tf: dict[str, list[dict]], dq_tf: dict, s11_params: dict | None = None) -> dict:
     out = {}
-    for tf in CONTEXT_TIMEFRAMES:
+    for tf in CONTEXT_TFS:
         bars = bars_by_tf.get(tf) or []
         q = (dq_tf or {}).get(tf) or {}
         closed = [b for b in bars if b.get("closed") and b.get("open_utc")]

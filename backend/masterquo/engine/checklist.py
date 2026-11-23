@@ -55,14 +55,17 @@ MISSING_PL = {
 }
 
 GATE_PL = {"DATA": "Dane MT5 aktualne i kompletne", "MARKET": "Rynek otwarty, brak blokady makro", "RISK": "Ryzyko i koszty w limitach",
-           "AI": "Agent Claude (wg polityki bramki)", "ML": "Model ML (wg trybu ML)", "PERMISSION": "Tryb wykonania dopuszcza zlecenia"}
+           "AI": "Agent Claude (wg polityki bramki)", "ML": "Model ML (wg trybu ML)",
+           "MODELS": "Modele (koordynator): role REQUIRED / ASSIST dopuszczają wejście",
+           "PERMISSION": "Tryb wykonania dopuszcza zlecenia"}
 
 
 def _fmt(v):
     if isinstance(v, bool):
         return "tak" if v else "nie"
     if isinstance(v, float):
-        return f"{v:.2f}" if abs(v) < 1000 else f"{v:.2f}"
+        # 1.46: both branches were '.2f' - small readings (stdev, EMA50 slope [ATR/bar], threshold 0.02) showed as 0.00
+        return f"{v:.2f}" if (abs(v) >= 1 or v == 0) else f"{v:.4g}"
     return "brak danych" if v is None else str(v)
 
 
@@ -80,7 +83,7 @@ def build(decision: dict | None, row: dict | None, *, no_setup_reasons: list[str
     out = {"version": VERSION, "status": "NO_SCENARIO", "met": [], "missing": [], "trigger": None, "invalidation": None, "gates": []}
     nodes = {n["node"]: n for n in (decision or {}).get("decision_tree") or []}
     data_fail = nodes.get("DATA", {}).get("status") == "FAIL"
-    for key in ("DATA", "MARKET", "RISK", "AI", "ML", "PERMISSION"):
+    for key in ("DATA", "MARKET", "RISK", "AI", "ML", "MODELS", "PERMISSION"):     # 1.46: + MODELS (it blocked without a checklist row)
         n = nodes.get(key)
         if not n:
             continue

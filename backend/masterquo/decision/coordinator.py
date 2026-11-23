@@ -212,19 +212,23 @@ class DecisionCoordinator:
                      "unavailable_reason": f"Quant: {type(exc).__name__}: {exc}"[:160]}]
 
     def decide(self, cand: dict, *, gates: dict, mode: str, account_key: str | None, preds: list[dict] | None = None,
-               persist: bool = True) -> dict:
-        """cand: StrategyCandidate; gates: {name: [reason codes]}; -> DecisionRecord (persisted once per inputs)."""
+               persist: bool = True, evaluated: tuple[list[dict], list[str]] | None = None) -> dict:
+        """cand: StrategyCandidate; gates: {name: [reason codes]}; -> DecisionRecord (persisted once per inputs).
+        evaluated = (models, reason codes) the path's own MODELS gate already produced - recorded as they are, not re-evaluated."""
         errs = K.validate("StrategyCandidate", cand)
         if errs:
             raise K.ContractViolation("StrategyCandidate: " + ",".join(errs[:8]))
         c = self._cfg()
-        fam_cfg = getattr(self.cfg_store.get(), "families", None)
-        required = set(getattr(c, "required_models", []) or [])
-        preds = self._preds() if preds is None else preds
-        assist_ok = cand["path"] == "SH" or bool(getattr(c, "assist_on_active", True))
-        models, mreasons = evaluate_models(preds, cand["side"], required=required,
-                                           assist_threshold=float(getattr(fam_cfg, "assist_hold_threshold", 0.6)),
-                                           max_age_s=float(getattr(c, "required_max_age_s", 900.0)), now=self.clock(), assist_enabled=assist_ok)
+        if evaluated is not None:
+            models, mreasons = list(evaluated[0] or []), list(evaluated[1] or [])
+        else:
+            fam_cfg = getattr(self.cfg_store.get(), "families", None)
+            required = set(getattr(c, "required_models", []) or [])
+            preds = self._preds() if preds is None else preds
+            assist_ok = cand["path"] == "SH" or bool(getattr(c, "assist_on_active", True))
+            models, mreasons = evaluate_models(preds, cand["side"], required=required,
+                                               assist_threshold=float(getattr(fam_cfg, "assist_hold_threshold", 0.6)),
+                                               max_age_s=float(getattr(c, "required_max_age_s", 900.0)), now=self.clock(), assist_enabled=assist_ok)
         greasons = [r for v in gates.values() for r in (v or [])]
         verdict = final_verdict(cand["base_verdict"], greasons, mreasons)
         core = {k: cand.get(k) for k in ("path", "strategy_id", "source_id", "side", "base_verdict", "reasons")}   # prices move every tick
@@ -296,12 +300,14 @@ class DecisionCoordinator:
         try:
             cand = self.active_candidate(d)
             gates = {"mode": list((d.get("mode_gate") or {}).get("reason_codes") or [])} if cand["base_verdict"] == "ENTER" else {}
-            preds = [{"family": m["model_id"], "state": m["state"], "use": {"ASSIST": "ASSIST", "REQUIRED": "REQUIRED"}.get(m["role"], "SHADOW"),
-                      "no_required": m["role"] == "OBSERVE" and (m["model_id"].startswith("kronos:") or m["model_id"].startswith("tsfm:")),
-                      "task_type": m["task_type"], "result": m["result"], "data_time": m["data_time"], "unavailable_reason": m["reason"],
-                      "quant_hold": m["reason"] if m["influence"] == "HOLD" and m["model_id"] == "quant:metamodel" else None}
-                     for m in (model_gate or {}).get("models") or []]
-            rec = self.decide(cand, gates=gates, mode=mode, account_key=d.get("account_key"), preds=preds)
+            if model_gate and (model_gate.get("models") or model_gate.get("codes")):
+                # 1.46: the record carries the MODELS node exactly as the gate decided it. 1.45 rebuilt the forecasts from the
+                # ModelForecast rows (no max_age_s -> the 900 s default, a later 'now') and evaluated them again: an ASSIST HOLD on a
+                # fresh tsfm forecast was recorded as ENTER -> ENTER, a REQUIRED pass as BLOCKED MODEL_REQUIRED_STALE.
+                rec = self.decide(cand, gates=gates, mode=mode, account_key=d.get("account_key"),
+                                  evaluated=(list(model_gate.get("models") or []), list(model_gate.get("codes") or [])))
+            else:
+                rec = self.decide(cand, gates=gates, mode=mode, account_key=d.get("account_key"), preds=[])
             d["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"],
                                     "models": [{k: m[k] for k in ("model_id", "role", "state", "influence", "reason")} for m in rec["models"]]}
             return rec
