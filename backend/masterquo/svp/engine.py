@@ -21,6 +21,7 @@ import hashlib
 import json
 from datetime import date, datetime, timezone
 
+from ..timeutil import parse_iso
 from ..zones import dsvie as DS
 from ..zones.series import Series
 
@@ -30,8 +31,10 @@ MODES = ("SESSION", "RANGE", "VISIBLE", "LIVE", "FROZEN")
 
 def _ts(x) -> float:
     if isinstance(x, (int, float)) and not isinstance(x, bool):
-        return float(x)
-    return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+        return float(x)                                                 # epoch seconds UTC
+    # 1.46: a string without a zone was read in the machine's local zone (Windows TZ shifted RANGE bounds / as_of / valid_until);
+    # the project rule (timeutil.parse_iso) rejects it: ValueError NAIVE_TIMESTAMP -> 400
+    return parse_iso(str(x)).timestamp()
 
 
 def _iso(t: float | None) -> str | None:
@@ -41,6 +44,8 @@ def _iso(t: float | None) -> str | None:
 def custom_window(tz: str, start_hm: str, end_hm: str, local_day: str | date) -> tuple[float, float]:
     """UTC [start, end) of a user session (IANA zone, DST via zoneinfo); end <= start = crosses midnight."""
     from ..analytics import session_engine as SE
+    if not local_day:                                                   # 1.46: was TypeError (500) for a profile without a date
+        raise ValueError("SVP_LOCAL_DATE_REQUIRED")
     d = date.fromisoformat(local_day) if isinstance(local_day, str) else local_day
     a, b = SE.local_window(("CUSTOM", tz, start_hm, end_hm), d)
     return a.timestamp(), b.timestamp()
@@ -48,8 +53,15 @@ def custom_window(tz: str, start_hm: str, end_hm: str, local_day: str | date) ->
 
 def session_window(profile_id: str, session: str, local_day: str | date) -> tuple[float, float]:
     from ..analytics import session_engine as SE
+    if not local_day:
+        raise ValueError("SVP_LOCAL_DATE_REQUIRED")
     d = date.fromisoformat(local_day) if isinstance(local_day, str) else local_day
-    s = next(x for x in SE.PROFILES[profile_id]["sessions"] if x[0] == session)
+    # 1.46: an unknown session / profile set raised StopIteration / KeyError (500 or a misleading 404) - now ValueError (400)
+    if profile_id not in SE.PROFILES:
+        raise ValueError("SVP_PROFILE_SET_INVALID")
+    s = next((x for x in SE.PROFILES[profile_id]["sessions"] if x[0] == session), None)
+    if s is None:
+        raise ValueError("SVP_SESSION_INVALID")
     a, b = SE.local_window(s, d)
     return a.timestamp(), b.timestamp()
 
@@ -85,13 +97,14 @@ def compute(bars: list[dict], tf: str, t0, t1, *, as_of: float, tick: float, bin
     idx = [i for i in range(len(s)) if s.t[i] >= a - 1e-6 and s.close_time(i) <= upto + 1e-6]
     vs = DS.volume_source(s) if len(s) else {"source": "NONE"}
     src = vs["source"]
-    expected = max(0, int((upto - a) // s.tf_s)) if len(s) or True else 0
+    expected = max(0, int((upto - a) // s.tf_s))                     # 1.46: dead `if len(s) or True else 0` removed
     pid_src = f"{instrument}|{symbol}|{tf}|{_iso(a)}|{_iso(b)}|{bin_size}|{value_area_pct}|{grid_version}"
     out = {"contract": VERSION, "mode": mode, "label": label, "instrument": instrument, "symbol": symbol, "tf": tf, "start": _iso(a), "end": _iso(b),
            "as_of": _iso(as_of), "state": "DEVELOPING" if as_of < b else "COMPLETED", "tick": tick, "bin_ticks": int(bin_ticks), "bin_size": bin_size,
            "grid_version": grid_version, "value_area_pct": value_area_pct, "volume_source": src, "method": DS.METHOD,
            "method_note": "rozkład wagi świecy równomiernie w jej zakresie [low, high] – estymata aktywności, nie footprint transakcji",
-           "bars": len(idx), "expected_bars": expected, "coverage": round(len(idx) / expected, 4) if expected else 0.0,
+           # 1.46: no expected bar (range shorter than one bar) = coverage undefined -> None, not 0.0 (missing data is never 0)
+           "bars": len(idx), "expected_bars": expected, "coverage": round(len(idx) / expected, 4) if expected else None,
            "geometry_id": "SVP-" + hashlib.sha256(pid_src.encode()).hexdigest()[:12]}
     if not idx:
         out.update(status="NO_DATA", reason="brak zamkniętych świec w zakresie (lub historia niedostępna)")
@@ -109,8 +122,10 @@ def compute(bars: list[dict], tf: str, t0, t1, *, as_of: float, tick: float, bin
     hvn, lvn = DS.nodes(hist, poc, _Cfg(smoothing, hvn_share, lvn_share))
     va_w = sum(v for k, v in hist.items() if val_b <= k <= vah_b)
     hi, lo = max(s.h[i] for i in idx), min(s.l[i] for i in idx)
-    out.update(status="READY" if out["coverage"] >= 0.9 or out["state"] == "DEVELOPING" else "PARTIAL",
-               reason=None if out["coverage"] >= 0.9 else f"pokrycie {out['coverage']:.0%} – historia częściowa",
+    cov_ok = out["coverage"] is not None and out["coverage"] >= 0.9    # 1.46: None (undefined) is treated like the old 0.0 (PARTIAL)
+    out.update(status="READY" if cov_ok or out["state"] == "DEVELOPING" else "PARTIAL",
+               reason=None if cov_ok else (f"pokrycie {out['coverage']:.0%}" if out["coverage"] is not None else "pokrycie nieokreślone")
+               + " – historia częściowa",
                total_weight=round(total, 6), input_weight=round(total_in, 6), weight_conserved=abs(total - total_in) <= 1e-6 * max(1.0, total_in),
                poc=round((poc + 0.5) * bin_size, 10), vah=round((vah_b + 1) * bin_size, 10), val=round(val_b * bin_size, 10),
                va_share=round(va_w / total, 4), hvn=[round((k + 0.5) * bin_size, 10) for k in hvn], lvn=[round((k + 0.5) * bin_size, 10) for k in lvn],

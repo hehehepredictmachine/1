@@ -14,7 +14,9 @@ Analytical only: no order path. Persistence: data/svp/svp.sqlite (profiles and z
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
 import sqlite3
 import threading
 import time
@@ -58,6 +60,7 @@ class SVPService:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
+        self._migrate()
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None
@@ -65,16 +68,41 @@ class SVPService:
         self.ai_inflight: set[str] = set()
         self.ai_last: dict[str, float] = {}
         self.last_bar: str | None = None
-        self.state = {"version": VERSION, "live_runs": 0, "last_error": None, "ai": {"jobs": 0, "last": None}}
+        self.state = {"version": VERSION, "live_runs": 0, "last_error": None, "ai": {"jobs": 0, "last": None}, "profile_errors": {}}
         self.ai_min_interval_s = 300.0
         self.visible_last: float | None = None
 
+    def _migrate(self) -> None:
+        # 1.46: additive + idempotent - the time a zone version was deactivated (delete / edit / clear / refresh); zones(as_of) showed
+        # zones removed before as_of. Rows of older versions keep NULL (time unknown -> shown as before); older code ignores the column.
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(svp_zones)").fetchall()}
+        if "deactivated_at" not in cols:
+            self.db.execute("ALTER TABLE svp_zones ADD COLUMN deactivated_at REAL")
+
+    # 1.46: ONE connection is shared by the svp thread (live_tick), the engine thread (_svp_view) and the API thread pool; reads ran
+    # without the lock and the same SQL text executed in two threads corrupted the statement (InterfaceError / IndexError / UTF-8
+    # errors or silently shortened lists). Every read now runs (fetch included) under the same RLock as the writes.
+    def _all(self, sql: str, args=()) -> list:
+        with self._lock:
+            return self.db.execute(sql, args).fetchall()
+
+    def _one(self, sql: str, args=()):
+        with self._lock:
+            return self.db.execute(sql, args).fetchone()
+
     # ------------------------------------------------------------------ context
-    def _ctx(self) -> tuple[str, str, str | None, float]:
+    def _ctx(self) -> tuple[str, str, str | None, float | None]:
         app = self.cfg_store.get()
         info = getattr(self.bridge, "symbol_info", None) or {}
-        tick = float(info.get("trade_tick_size") or info.get("point") or 0.01)
+        raw = info.get("trade_tick_size") or info.get("point")
+        # 1.46: no symbol_info (MT5 not connected) -> tick UNKNOWN (None) instead of an invented 0.01 (grid, profile and geometry_id were
+        # computed from a guess); compute / visible answer NO_DATA TICK_UNKNOWN
+        tick = float(raw) if raw else None
         return app.assets.active, app.mt5.symbol, getattr(self.bridge, "account_key", None), tick
+
+    def _default_pset(self) -> str:
+        app = self.cfg_store.get()
+        return app.zones.session_profile.get(app.assets.active) or "LAB_XAU_REFERENCE_V1"
 
     def _bars(self, tf: str, t0: float) -> list[dict]:
         from ..timeutil import TF_SECONDS
@@ -86,6 +114,72 @@ class SVPService:
             return self.bridge.bars(tf, include_forming=False)
 
     # ------------------------------------------------------------------ profiles
+    def _check(self, row: dict, keys) -> dict:
+        """1.46: one validation for create AND update (update stored anything: mode='live' -> StopIteration in compute = 500 and a LIVE
+        loop failing on every bar; tf / session / date / zone were checked by neither). `row` = the profile after the change, `keys` =
+        the fields being set. Returns the normalised values; ValueError -> 400."""
+        from datetime import date
+        from zoneinfo import ZoneInfo
+
+        from ..analytics import session_engine as SE
+        from ..timeutil import TIMEFRAMES
+        keys, out = set(keys), {}
+        if "mode" in keys:
+            m = str(row.get("mode") or "").upper()
+            if m not in EN.MODES or m == "FROZEN":                       # FROZEN only through freeze()
+                raise ValueError("SVP_MODE_INVALID")
+            out["mode"] = m
+        if "tf" in keys:
+            tf = str(row.get("tf") or "").upper()
+            if tf not in TIMEFRAMES:
+                raise ValueError("SVP_TF_INVALID")
+            out["tf"] = tf
+        for k, lo, hi, code in (("bin_ticks", 1, None, "SVP_BIN_TICKS_INVALID"), ("va_pct", None, None, "SVP_VA_PCT_INVALID"),
+                                ("opacity", 0.0, 1.0, "SVP_OPACITY_INVALID")):
+            if k not in keys:
+                continue
+            v = row.get(k)
+            try:
+                x = int(v) if k == "bin_ticks" else float(v)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(code) from None
+            if isinstance(v, bool) or not math.isfinite(x) or (lo is not None and x < lo) or (hi is not None and x > hi) or \
+                    (k == "va_pct" and not 0.3 < x < 1.0):
+                raise ValueError(code)
+            out[k] = x
+        if "profile_set" in keys and row.get("profile_set") and str(row["profile_set"]) not in SE.PROFILES:
+            raise ValueError("SVP_PROFILE_SET_INVALID")
+        if keys & {"session", "profile_set"} and row.get("session"):
+            pset = str(row.get("profile_set") or self._default_pset())
+            if str(row["session"]) not in {x[0] for x in SE.PROFILES.get(pset, {}).get("sessions", [])}:
+                raise ValueError("SVP_SESSION_INVALID")
+        if "local_date" in keys and row.get("local_date"):
+            try:
+                date.fromisoformat(str(row["local_date"]))
+            except ValueError:
+                raise ValueError("SVP_LOCAL_DATE_INVALID") from None
+        if "tz" in keys and row.get("tz"):
+            try:
+                ZoneInfo(str(row["tz"]))
+            except Exception:  # noqa: BLE001 - ZoneInfoNotFoundError / ValueError for a malformed key
+                raise ValueError("SVP_TZ_INVALID") from None
+        for k in ("start_hm", "end_hm"):
+            if k in keys and row.get(k):
+                try:
+                    SE._hm(str(row[k]))
+                except (TypeError, ValueError):
+                    raise ValueError("SVP_TIME_OF_DAY_INVALID") from None
+        for k in ("t0", "t1"):
+            if k in keys and row.get(k) not in (None, ""):
+                try:
+                    EN._ts(row[k])                                            # naive ISO -> NAIVE_TIMESTAMP
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"SVP_{k.upper()}_INVALID: {exc}") from None
+        for k in ("hidden", "pinned"):
+            if k in keys:
+                out[k] = int(bool(row.get(k)))
+        return out
+
     def create_profile(self, spec: dict) -> dict:
         inst, sym, acct, _ = self._ctx()
         pid = "UP-" + uuid.uuid4().hex[:12]
@@ -94,10 +188,7 @@ class SVPService:
                    va_pct=float(spec.get("va_pct") or 0.70), name=spec.get("name") or "Session Volume Profile", color=spec.get("color") or "#c8a24a",
                    opacity=float(spec.get("opacity") if spec.get("opacity") is not None else 0.6), hidden=int(bool(spec.get("hidden"))),
                    pinned=int(bool(spec.get("pinned"))))
-        if row["mode"] not in EN.MODES or row["mode"] == "FROZEN":
-            raise ValueError("SVP_MODE_INVALID")
-        if not (0.3 < row["va_pct"] < 1.0):
-            raise ValueError("SVP_VA_PCT_INVALID")
+        row.update(self._check(row, EDITABLE))                            # 1.46: shared validation (SVP_MODE_INVALID / SVP_VA_PCT_INVALID ...)
         now = self.clock()
         with self._lock:
             self.db.execute(f"INSERT INTO svp_profiles(profile_id, instrument, symbol, account_key, {', '.join(row)}, live, created_at, updated_at) "
@@ -106,13 +197,13 @@ class SVPService:
         return self.profile(pid)
 
     def profile(self, pid: str) -> dict | None:
-        r = self.db.execute("SELECT * FROM svp_profiles WHERE profile_id=? AND deleted=0", (pid,)).fetchone()
+        r = self._one("SELECT * FROM svp_profiles WHERE profile_id=? AND deleted=0", (pid,))
         return dict(r) if r else None
 
     def profiles(self) -> list[dict]:
         inst, sym, acct, _ = self._ctx()
         q = "SELECT * FROM svp_profiles WHERE deleted=0 AND instrument=? AND symbol=? AND (account_key IS ? OR account_key=?) ORDER BY created_at"
-        return [dict(r) for r in self.db.execute(q, (inst, sym, acct, acct)).fetchall()]
+        return [dict(r) for r in self._all(q, (inst, sym, acct, acct))]
 
     def update_profile(self, pid: str, patch: dict) -> dict:
         p = self.profile(pid)
@@ -123,11 +214,12 @@ class SVPService:
         upd = {k: patch[k] for k in EDITABLE if k in patch}
         if not upd:
             return p
+        upd.update(self._check({**p, **upd}, list(upd)))                 # 1.46: validated + normalised like create (mode 'live' -> 'LIVE')
         geo = any(k in upd and upd[k] != p[k] for k in GEOMETRY)
         upd["version"] = p["version"] + (1 if geo else 0)
         upd["updated_at"] = self.clock()
         if "mode" in upd:
-            upd["live"] = int(str(upd["mode"]).upper() == "LIVE")
+            upd["live"] = int(upd["mode"] == "LIVE")
         with self._lock:
             self.db.execute(f"UPDATE svp_profiles SET {', '.join(k + '=?' for k in upd)} WHERE profile_id=?", (*upd.values(), pid))
         return self.profile(pid)
@@ -157,8 +249,7 @@ class SVPService:
         m = p["mode"]
         if m in ("RANGE", "VISIBLE"):
             return EN._ts(p["t0"]), EN._ts(p["t1"])
-        app = self.cfg_store.get()
-        pset = p.get("profile_set") or app.zones.session_profile.get(app.assets.active) or "LAB_XAU_REFERENCE_V1"
+        pset = p.get("profile_set") or self._default_pset()
         if m == "LIVE" or (m == "SESSION" and not p.get("local_date") and not p.get("tz")):
             cur = EN.current_session(pset, as_of)
             if cur is None:
@@ -177,11 +268,23 @@ class SVPService:
             return dict(snap or {"status": "NO_DATA", "reason": "brak zapisanego snapshotu"}, profile_id=pid, frozen=True)
         as_of = as_of if as_of is not None else self.clock()
         inst, sym, _, tick = self._ctx()
-        self.gen[pid] = self.gen.get(pid, 0) + 1
-        g = self.gen[pid]
+        with self._lock:                                              # 1.46: counter shared by the svp thread and the API threads
+            self.gen[pid] = self.gen.get(pid, 0) + 1
+            g = self.gen[pid]
         t0, t1 = self.window(p, as_of)
+        if tick is None:                                              # 1.46: tick unknown -> NO_DATA, never a profile on a guessed grid
+            return {"contract": EN.VERSION, "mode": p["mode"], "label": p["name"], "instrument": inst, "symbol": sym, "tf": p["tf"],
+                    "start": EN._iso(t0), "end": EN._iso(t1), "as_of": EN._iso(as_of), "tick": None, "status": "NO_DATA",
+                    "reason": "TICK_UNKNOWN: brak symbol_info (MT5 niepołączony) – rozmiar ticka nie jest zgadywany",
+                    "profile_id": pid, "profile_version": p["version"], "color": p["color"], "opacity": p["opacity"]}
         prof = EN.compute(self._bars(p["tf"], t0), p["tf"], t0, t1, as_of=as_of, tick=tick, bin_ticks=p["bin_ticks"], value_area_pct=p["va_pct"],
                           instrument=inst, symbol=sym, mode=p["mode"], label=p["name"])
+        if prof.get("snapshot_id"):
+            # 1.46: the engine id depends on geometry + data only - two profiles with the same geometry shared one snapshot (INSERT OR
+            # IGNORE kept the first profile's row: latest_snapshot(p2) = None, p2's frozen view = p1's name / colour) and, through it, the
+            # ALGORITHM / AI zone ids (a refresh of p2 moved p1's zones). The stored id is bound to the profile; old ids stay valid.
+            prof["engine_snapshot_id"] = prof["snapshot_id"]
+            prof["snapshot_id"] = "SVS-" + hashlib.sha256(f"{prof['snapshot_id']}|{pid}".encode()).hexdigest()[:14]
         prof.update(profile_id=pid, profile_version=p["version"], color=p["color"], opacity=p["opacity"])
         if g != self.gen.get(pid):                                    # a newer computation started meanwhile: drop this one
             prof["superseded"] = True
@@ -198,6 +301,9 @@ class SVPService:
             return {"status": "RATE_LIMITED", "reason": "zakres widoczny przeliczany najwyżej raz na sekundę"}
         self.visible_last = now
         inst, sym, _, tick = self._ctx()
+        if tick is None:                                              # 1.46: no invented tick
+            return {"status": "NO_DATA", "reason": "TICK_UNKNOWN: brak symbol_info (MT5 niepołączony) – rozmiar ticka nie jest zgadywany",
+                    "mode": "VISIBLE", "instrument": inst, "symbol": sym, "tf": tf}
         a = EN._ts(t0)
         return EN.compute(self._bars(tf, a), tf, a, t1, as_of=now, tick=tick, bin_ticks=bin_ticks, value_area_pct=va_pct, instrument=inst,
                           symbol=sym, mode="VISIBLE")
@@ -215,11 +321,11 @@ class SVPService:
     def snapshot(self, sid: str | None) -> dict | None:
         if not sid:
             return None
-        r = self.db.execute("SELECT payload FROM svp_snapshots WHERE snapshot_id=?", (sid,)).fetchone()
+        r = self._one("SELECT payload FROM svp_snapshots WHERE snapshot_id=?", (sid,))
         return json.loads(r["payload"]) if r else None
 
     def latest_snapshot(self, pid: str) -> dict | None:
-        r = self.db.execute("SELECT payload FROM svp_snapshots WHERE profile_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1", (pid,)).fetchone()
+        r = self._one("SELECT payload FROM svp_snapshots WHERE profile_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1", (pid,))
         return json.loads(r["payload"]) if r else None
 
     # ------------------------------------------------------------------ zones
@@ -238,9 +344,11 @@ class SVPService:
         if as_of is None:
             q, args = "SELECT * FROM svp_zones WHERE active=1 AND symbol=? AND (account_key IS ? OR account_key=?)", [sym, acct, acct]
         else:                                                         # state as known at as_of: latest version created <= as_of
+            # 1.46: ... and not deactivated by as_of (a zone deleted / replaced before as_of was still shown)
             q = ("SELECT z.* FROM svp_zones z JOIN (SELECT zone_id, MAX(version) v FROM svp_zones WHERE created_at <= ? AND symbol=? GROUP BY zone_id) m "
-                 "ON z.zone_id=m.zone_id AND z.version=m.v WHERE (z.account_key IS ? OR z.account_key=?)")
-            args = [as_of, sym, acct, acct]
+                 "ON z.zone_id=m.zone_id AND z.version=m.v WHERE (z.account_key IS ? OR z.account_key=?) "
+                 "AND (z.deactivated_at IS NULL OR z.deactivated_at > ?)")
+            args = [as_of, sym, acct, acct, as_of]
         if source:
             q += " AND source=?"
             args.append(source)
@@ -248,7 +356,7 @@ class SVPService:
             q += " AND profile_id=?"
             args.append(profile_id)
         out = []
-        for r in self.db.execute(q, args).fetchall():
+        for r in self._all(q, args):
             d = dict(r)
             d.update({k: v for k, v in json.loads(d.pop("payload") or "{}").items() if k not in d})
             out.append(d)
@@ -285,23 +393,25 @@ class SVPService:
             if float(z["lower"]) >= float(z["upper"]):
                 raise ValueError("ZONE_BOUNDS_INVALID")
             z["created_at"] = self.clock()
-            self.db.execute("UPDATE svp_zones SET active=0 WHERE zone_id=? AND active=1", (zone_id,))
+            self.db.execute("UPDATE svp_zones SET active=0, deactivated_at=? WHERE zone_id=? AND active=1", (z["created_at"], zone_id))
             self._insert_zone(z, version=cur["version"] + 1)
         return dict(z, version=cur["version"] + 1)
 
     def delete_zone(self, zone_id: str) -> bool:
         with self._lock:
-            return self.db.execute("UPDATE svp_zones SET active=0 WHERE zone_id=? AND active=1", (zone_id,)).rowcount > 0
+            return self.db.execute("UPDATE svp_zones SET active=0, deactivated_at=? WHERE zone_id=? AND active=1",
+                                   (self.clock(), zone_id)).rowcount > 0
 
     def zone_history(self, zone_id: str) -> list[dict]:
-        return [dict(r) for r in self.db.execute("SELECT zone_id, version, source, lower, upper, name, pinned, locked, created_at, active "
-                                                 "FROM svp_zones WHERE zone_id=? ORDER BY version", (zone_id,)).fetchall()]
+        return [dict(r) for r in self._all("SELECT zone_id, version, source, lower, upper, name, pinned, locked, created_at, active "
+                                           "FROM svp_zones WHERE zone_id=? ORDER BY version", (zone_id,))]
 
     def _replace_auto(self, pid: str, source: str, new: list[dict], snapshot_id: str) -> None:
         with self._lock:
             keep = {r["zone_id"] for r in self.db.execute("SELECT zone_id FROM svp_zones WHERE profile_id=? AND source=? AND active=1 AND pinned=1",
                                                            (pid, source)).fetchall()}
-            self.db.execute("UPDATE svp_zones SET active=0 WHERE profile_id=? AND source=? AND active=1 AND pinned=0", (pid, source))
+            self.db.execute("UPDATE svp_zones SET active=0, deactivated_at=? WHERE profile_id=? AND source=? AND active=1 AND pinned=0",
+                            (self.clock(), pid, source))
             for z in new:
                 if z["zone_id"] in keep:
                     continue
@@ -309,6 +419,7 @@ class SVPService:
                 self._insert_zone(z)
 
     def algo_now(self, pid: str) -> dict:
+        prev = self.latest_snapshot(pid)
         prof = self.compute(pid)
         if prof.get("superseded"):
             return {"status": "SUPERSEDED"}
@@ -318,14 +429,18 @@ class SVPService:
         zs = [ZN.evolve(z, bars, tf_s=TF_SECONDS[prof["tf"]], as_of=self.clock()) for z in zs]
         if prof.get("snapshot_id"):
             self._replace_auto(pid, "ALGORITHM", zs, prof["snapshot_id"])
-        return {"profile": prof, "zones": zs, "events": ZN.profile_events(prof, bars, tf_s=TF_SECONDS[prof["tf"]])}
+        # 1.46: POC_MIGRATION was dead (prev_poc never passed) - the previous snapshot of the SAME geometry gives it; the forming candle
+        # and bars not closed by as_of never count (as_of passed, closed flag checked)
+        prev_poc = prev.get("poc") if prev and prev.get("geometry_id") == prof.get("geometry_id") else None
+        return {"profile": prof, "zones": zs, "events": ZN.profile_events(prof, bars, tf_s=TF_SECONDS[prof["tf"]], prev_poc=prev_poc,
+                                                                          as_of=self.clock())}
 
     def clear_auto(self, pid: str | None = None) -> int:
-        q = "UPDATE svp_zones SET active=0 WHERE source IN ('ALGORITHM','AI') AND active=1 AND pinned=0"
-        args: tuple = ()
+        q = "UPDATE svp_zones SET active=0, deactivated_at=? WHERE source IN ('ALGORITHM','AI') AND active=1 AND pinned=0"
+        args: tuple = (self.clock(),)
         if pid:
             q += " AND profile_id=?"
-            args = (pid,)
+            args = (*args, pid)
         with self._lock:
             return self.db.execute(q, args).rowcount
 
@@ -346,7 +461,14 @@ class SVPService:
                 "rules": "propozycje tylko z poziomów profilu; backend odrzuci ceny bez podstawy"}
 
     async def ai_propose(self, pid: str) -> dict:
-        snap = self.latest_snapshot(pid) or self.compute(pid)
+        snap = self.latest_snapshot(pid)
+        if not snap:
+            # 1.46: compute reads up to 20000 bars through the MT5 worker - it ran ON the event loop (blocked other requests and the
+            # WebSockets); and its ValueError / KeyError (e.g. NO_ACTIVE_SESSION) was a 500 - now NO_PROFILE with the reason
+            try:
+                snap = await asyncio.to_thread(self.compute, pid)
+            except (KeyError, ValueError) as exc:
+                return {"status": "NO_PROFILE", "reason": str(exc).strip("'")[:200], "accepted": [], "rejected": []}
         if not snap or not snap.get("snapshot_id"):
             return {"status": "NO_PROFILE", "accepted": [], "rejected": []}
         st = self.agent_status()
@@ -357,8 +479,9 @@ class SVPService:
             return {"status": "IN_PROGRESS", "accepted": [], "rejected": []}
         self.ai_inflight.add(pid)
         job = "SVJ-" + uuid.uuid4().hex[:12]
-        self.db.execute("INSERT INTO svp_ai_jobs(job_id, profile_id, snapshot_id, status, requested_at) VALUES (?,?,?,?,?)",
-                        (job, pid, snap["snapshot_id"], "RUNNING", self.clock()))
+        with self._lock:                                              # 1.46: writes of the shared connection under the lock
+            self.db.execute("INSERT INTO svp_ai_jobs(job_id, profile_id, snapshot_id, status, requested_at) VALUES (?,?,?,?,?)",
+                            (job, pid, snap["snapshot_id"], "RUNNING", self.clock()))
         try:
             res = await self.agent.propose_zones(self.ai_payload(dict(snap, profile_id=pid)))
         finally:
@@ -378,15 +501,16 @@ class SVPService:
             self._replace_auto(pid, "AI", acc, snap["snapshot_id"])
         status = "ERROR" if not res.get("ok") else ("STALE_RESULT_DROPPED" if stale and acc else "OK")
         if job:
-            self.db.execute("UPDATE svp_ai_jobs SET status=?, finished_at=?, reason=?, accepted=?, rejected=?, cost_usd=? WHERE job_id=?",
-                            (status, self.clock(), res.get("error"), len(acc), len(rej), res.get("cost_usd_estimate"), job))
+            with self._lock:
+                self.db.execute("UPDATE svp_ai_jobs SET status=?, finished_at=?, reason=?, accepted=?, rejected=?, cost_usd=? WHERE job_id=?",
+                                (status, self.clock(), res.get("error"), len(acc), len(rej), res.get("cost_usd_estimate"), job))
         self.ai_last[pid] = self.clock()
         self.state["ai"] = {"jobs": self.state["ai"]["jobs"] + 1, "last": {"profile_id": pid, "status": status, "accepted": len(acc), "rejected": len(rej)}}
         return {"status": status, "error": res.get("error"), "accepted": acc if not stale else [], "rejected": rej, "snapshot_id": snap.get("snapshot_id"),
                 "cost_usd_estimate": res.get("cost_usd_estimate")}
 
     def ai_jobs(self, limit: int = 50) -> list[dict]:
-        return [dict(r) for r in self.db.execute("SELECT * FROM svp_ai_jobs ORDER BY requested_at DESC LIMIT ?", (limit,)).fetchall()]
+        return [dict(r) for r in self._all("SELECT * FROM svp_ai_jobs ORDER BY requested_at DESC LIMIT ?", (limit,))]
 
     @staticmethod
     def significant_change(prev: dict | None, cur: dict, bins: int = 2) -> bool:
@@ -417,11 +541,18 @@ class SVPService:
             return 0
         self.last_bar = t
         n = 0
+        errs: dict[str, str] = {}
         for p in self.profiles():
             if not p["live"] or p["mode"] == "FROZEN":
                 continue
-            prev = self.latest_snapshot(p["profile_id"])
-            r = self.algo_now(p["profile_id"])
+            # 1.46: the first failing profile (NO_ACTIVE_SESSION between sessions, a broken stored row) ended the whole tick - the other
+            # LIVE profiles were not recomputed on this bar nor on the next ones; the error is kept per profile and the loop goes on
+            try:
+                prev = self.latest_snapshot(p["profile_id"])
+                r = self.algo_now(p["profile_id"])
+            except Exception as exc:  # noqa: BLE001
+                errs[p["profile_id"]] = f"{type(exc).__name__}: {exc}"[:300]
+                continue
             n += 1
             cur = r.get("profile") or {}
             if p["ai_live"] and cur.get("snapshot_id") and self.significant_change(prev, cur) and \
@@ -429,6 +560,7 @@ class SVPService:
                 loop = getattr(self.agent, "loop", None)
                 if loop is not None and p["profile_id"] not in self.ai_inflight:
                     asyncio.run_coroutine_threadsafe(self.ai_propose(p["profile_id"]), loop)
+        self.state["profile_errors"] = errs                           # replaced (not mutated): status() may be serialising the old dict
         self.state["live_runs"] += n
         return n
 

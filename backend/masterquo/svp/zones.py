@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import hashlib
 import time
-from datetime import datetime
+
+from ..timeutil import parse_iso
 
 VERSION = "PMW-SVP-ZONES-1"
 SOURCES = ("MANUAL", "ALGORITHM", "AI")
@@ -32,8 +33,9 @@ AI_TYPES = ("POC", "HVN", "LVN", "VA_EDGE", "VALUE_AREA", "ACCEPTANCE", "REJECTI
 
 def _ts(x) -> float:
     if isinstance(x, (int, float)) and not isinstance(x, bool):
-        return float(x)
-    return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+        return float(x)                                                 # epoch seconds UTC
+    # 1.46: a naive string was read in the machine's local zone (e.g. an AI valid_until); NAIVE_TIMESTAMP -> ValueError (rejected)
+    return parse_iso(str(x)).timestamp()
 
 
 def zone_id(source: str, symbol: str | None, snapshot_id: str | None, kind: str, lo: float, hi: float) -> str:
@@ -110,11 +112,14 @@ def evolve(z: dict, bars: list[dict], *, tf_s: int, break_closes: int = 2, accep
     return z
 
 
-def profile_events(p: dict, bars: list[dict], *, tf_s: int, n_accept: int = 3, prev_poc: float | None = None, migration_bins: int = 2) -> list[dict]:
+def profile_events(p: dict, bars: list[dict], *, tf_s: int, n_accept: int = 3, prev_poc: float | None = None, migration_bins: int = 2,
+                   as_of: float | None = None) -> list[dict]:
     if p.get("vah") is None:
         return []
     t0 = _ts(p["known_at"]) if p.get("known_at") else 0.0
-    seq = [b for b in bars if b.get("open_utc") and _ts(b["open_utc"]) >= t0]
+    # 1.46: the forming candle (closed=False) was counted as one of the N closes - only CLOSED bars (and, with as_of, closed by as_of)
+    seq = [b for b in bars if b.get("closed", True) and b.get("open_utc") and _ts(b["open_utc"]) >= t0
+           and (as_of is None or _ts(b["open_utc"]) + tf_s <= as_of + 1e-6)]
     ev, run_up, run_dn, accepted = [], 0, 0, None
     for b in seq:
         c = float(b["c"])
