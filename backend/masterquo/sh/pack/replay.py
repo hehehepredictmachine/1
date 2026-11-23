@@ -472,7 +472,7 @@ def run(bars: dict, meta: dict, *, variants: list[str] | None = None, tfs_only: 
     return out
 
 
-def write(rep: dict) -> dict:
+def write(rep: dict, live: bool = True) -> dict:
     """Run report -> data/sh/pack_validation/runs/; on REAL_USER_DATA also the per-variant status file read by the catalog (the best TF is
     NOT picked after the fact: a variant is VALIDATED only if every enabled signal TF of it is)."""
     d = paths.data_dir() / "sh" / "pack_validation"
@@ -482,7 +482,7 @@ def write(rep: dict) -> dict:
     tmp.write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     os.replace(tmp, p)
     written = []
-    if rep.get("data_kind") == "REAL_USER_DATA":
+    if rep.get("data_kind") == "REAL_USER_DATA" and live:       # 1.46: live=False (test run) never rewrites the catalog's variant status
         by: dict = {}
         for key, row in rep["variants"].items():
             by.setdefault(key.split("|")[0], []).append(row)

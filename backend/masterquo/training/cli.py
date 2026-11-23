@@ -188,6 +188,10 @@ def cmd_resume(a) -> int:
     if run.state.get("status") == "FINISHED" and not any(t["execution"] in ("ANULOWANE", "BLAD_TECHNICZNY", "NIE_URUCHOMIONE") for t in run.state["tasks"]):
         print(f"Run {rid} jest zakończony – nic do wznowienia.")
         return 0
+    holder = core.acquire_lock(run.run_id)                 # 1.46: lock BEFORE touching the state (a live run is not reset under its owner)
+    if holder:
+        print(f"[BLAD] Trwa trening ({holder}) w innym procesie – wznowienie odrzucone.")
+        return 2
     for t in run.state["tasks"]:
         if t["execution"] in ("ANULOWANE", "BLAD_TECHNICZNY", "W_TOKU"):
             t["execution"] = "NIE_URUCHOMIONE"

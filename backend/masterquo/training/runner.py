@@ -522,6 +522,8 @@ def t_sh_pack(run: Run, inst: str) -> None:
     if comm is not None:
         cmd += ["--commission-per-lot-side", str(comm)]
     cmd += (["--last-m1", "8000"] if quick else []) + (["--allow-synthetic"] if plan["synthetic"] else [])
+    if quick or not plan.get("activate", True):          # 1.46: a test / no-activation run never rewrites the live AUTO_LIVE gates
+        cmd += ["--no-live-write"]
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_sh_pack")
     if rc is None:
         return run.set(tid, execution="ANULOWANE")
@@ -550,6 +552,8 @@ def t_sh_models(run: Run, inst: str) -> None:
     quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
     cmd = [core.bot_python(), "-m", "masterquo", "sh", "train", "--instrument", inst, "--dataset", str(ds), "--out", str(out)]
     cmd += (["--last-m1", "6000"] if quick else []) + (["--allow-synthetic"] if plan["synthetic"] else [])
+    if quick or not plan.get("activate", True):          # 1.46: TEST_INSTALACJI ("modele nie są aktywowane") - no live validation / promotion
+        cmd += ["--no-live-write"]
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_sh_models")
     if rc is None:
         return run.set(tid, execution="ANULOWANE")

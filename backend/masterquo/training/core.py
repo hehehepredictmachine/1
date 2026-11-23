@@ -147,9 +147,12 @@ def acquire_lock(run_id: str) -> str | None:
     p = lock_path()
     try:
         cur = json.loads(p.read_text(encoding="utf-8"))
-        if _pid_alive(int(cur.get("pid", 0))) and cur.get("run_id") != run_id:
+        pid = int(cur.get("pid", 0))
+        # 1.46: ANY other live process holds the lock - also for the same run_id (1.45.0 handed the lock of a running run to a second process
+        # resuming the same run: two processes wrote one run folder / state.json)
+        if _pid_alive(pid) and (pid != os.getpid() or cur.get("run_id") != run_id):   # re-entrant only for the SAME run in the SAME process
             return cur.get("run_id")
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError):
         pass
     write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "at": now()})
     return None
