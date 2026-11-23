@@ -54,7 +54,13 @@ type Engine struct {
 	starting *exec.Cmd // the process spawn() is still waiting for: its early exit is reported by spawn, not auto-restarted
 	client   *http.Client
 	extra    []string // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
+
+	restartMu sync.Mutex // 1.46: one Restart at a time (two quick tray clicks started two engines and the shell lost the running one)
 }
+
+// errNeedsEnv: the running engine is an outdated one of this folder and was stopped, but this supervisor has no Python package folder yet -
+// the caller prepares it (ensureEnv) and starts again (1.46; before, spawn ran without site-packages -> ModuleNotFoundError, bot stopped).
+var errNeedsEnv = errors.New("silnik do wymiany: najpierw przygotowanie środowiska Pythona")
 
 func newEngine(l Layout, site string, logf func(string), onState func(EngineState, string)) *Engine {
 	return &Engine{l: l, site: site, logf: logf, onState: onState, state: EngineStopped, client: &http.Client{Timeout: 3 * time.Second}}
@@ -225,6 +231,12 @@ func (e *Engine) Start(ctx context.Context) error {
 		}
 		if running != "" && version != "" && running != version && !isStudio() {
 			if e.replaceOutdated(running) {
+				e.mu.Lock()
+				noSite := e.site == ""
+				e.mu.Unlock()
+				if noSite {
+					return errNeedsEnv
+				}
 				return e.spawn(ctx)
 			}
 			e.set(EngineExternal, "działa silnik w wersji "+running+" (ta aplikacja: "+version+") – podłączono; zamknij go, aby używać nowej wersji")
@@ -407,6 +419,13 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 		_ = e.spawn(ctx)
 		return
 	}
+	if werr == nil {
+		// 1.46: a CLEAN exit (code 0: "Zatrzymaj Apollo23" in the panel, 04_STOP_MASTERQUO.bat, python -m masterquo stop) is the user's stop,
+		// not a crash - 1.45.0 restarted the engine after 2 s, so a stopped bot came back by itself
+		e.logf("silnik zakończył pracę (czyste wyjście) – bez ponownego uruchomienia")
+		e.set(EngineStopped, "silnik zatrzymany na żądanie (czyste wyjście) – uruchom ponownie z menu, gdy zechcesz")
+		return
+	}
 	now := time.Now()
 	e.mu.Lock()
 	recent := e.restarts[:0]
@@ -438,6 +457,11 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 
 // Restart from the shell (tray / start screen): stop the owned engine and start it again.
 func (e *Engine) Restart(ctx context.Context) error {
+	if !e.restartMu.TryLock() {
+		e.logf("silnik: ponowne uruchomienie już trwa – drugie żądanie pominięte")
+		return nil
+	}
+	defer e.restartMu.Unlock()
 	e.Stop(20 * time.Second)
 	e.ResetBackoff()
 	return e.Start(ctx)

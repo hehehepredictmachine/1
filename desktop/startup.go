@@ -119,7 +119,9 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 	eng.ResetBackoff()
 	if eng.healthy() { // already running (second shell, or started by the classic BAT launcher) - nothing to install
 		ui.Status("Silnik już działa – podłączanie…")
-		return eng.Start(ctx)
+		if err := eng.Start(ctx); !errors.Is(err, errNeedsEnv) {
+			return err
+		} // 1.46: an outdated engine of this folder was stopped -> prepare the environment below and start the new one
 	}
 	ui.Status("Sprawdzanie składników…")
 	cleanupBrokenEnvs(l.EnvRoot)
