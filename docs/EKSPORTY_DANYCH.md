@@ -69,7 +69,7 @@ Folder powstaje atomowo (`.<id>.partial` → `<id>`) i nigdy nie jest nadpisywan
 | `fomo-universe` | seed FOMO 101 + aktualne metadane venue | `fomo_101_resolution` (101 wierszy), `metadata_versions` | SHA-256 seeda i `metadata_version` w provenance. |
 | `strategy-roi` | `evaluation.strategy_roi` nad tabelą `trades` (tylko odczyt, `mode=ro`) | `roi_paper` (VIRTUAL), `roi_auto_demo` (DEMO), `roi_auto_live` (REAL) | Konto zamaskowane (`server:***123`). Brak bazy daje pusty eksport, a baza nie jest tworzona. |
 | `sfb-snapshots` | `StrategyFilterBucket.snapshots` (pamięć, ostatnie 200) | `sfb_snapshots`, `sfb_items` | Wymaga działającej aplikacji. `apply_to_execution = false`. |
-| `asge-trials` | `apollo.asge.TrialLedger` – od 1.46 trwały plik `<dane>/apollo/asge_trials.jsonl` (append-only) | `asge_trials` | Każda próba z rodowodem, `execution_allowed = false`. Działa też z CLI bez aplikacji. |
+| `asge-trials` | `apollo.asge.TrialLedger` – od 1.46 trwały plik `<dane>/apollo/asge_trials.jsonl` (append-only) | `asge_trials` | Każda próba z rodowodem. `execution_allowed` to zawsze stała `false`, niezależnie od zawartości pliku; wiersz z inną wartością w pliku ma `integrity = EXECUTION_ALLOWED_TAMPERED`. Działa też z CLI bez aplikacji. |
 | `change-points` | PELT na zamkniętych świecach MT5 | `segments`, `change_points` | Wymaga działającej aplikacji. Czas UTC i czas serwera z etykietą. |
 | `long-horizon` | prognoza 24/36/48/72 h na zamkniętych świecach MT5 | `forecasts` | Wymaga działającej aplikacji. Bez zweryfikowanego offsetu czasu status `UNAVAILABLE`. |
 | `association-rules` | reguły asocjacyjne na zamkniętych świecach MT5 | `rules`, `assessment` | Wymaga działającej aplikacji. Tryb OBSERVE. |
@@ -102,6 +102,7 @@ Eksporty istniejące wcześniej działają bez zmian:
 
 - Najpierw weryfikowany jest manifest, czyli schemat, SHA-256 i liczba wierszy każdego pliku. Wymagany jest JSONL.
 - **Import jest addytywny i idempotentny.** Wiersze wstawiane są jako `INSERT OR IGNORE` po kluczach tabel (klucze idempotencji ledgerów, klucze główne). Istniejący wiersz nie jest zmieniany ani usuwany, istniejący profil zostaje. Powtórny import tej samej kopii nic nie zmienia.
+- Tabele numerowane przez AUTOINCREMENT (`events`, ledgery XP i Gold, `quiz`, `notes`, `sim_sessions`, `sim_trades`, `coach_memory`) dopasowywane są po tożsamości wiersza (klucz idempotencji albo kolumny niezmienne po zapisie), a nie po lokalnym `id`. Numer z kopii zostaje, gdy jest wolny; w przeciwnym razie wiersz dostaje nowy numer, a `sim_trades` idą za swoją sesją. Import do gry, która ma już własne dane, nie gubi więc wierszy kopii i nie podpina transakcji symulatora pod obce sesje.
 - **Import jest odwracalny.** Przed pierwszym zapisem bieżąca baza kopiowana jest do `<dane>/backups/tlg-before-import-<UTC>.sqlite`. Żeby cofnąć import, zatrzymaj aplikację i skopiuj ten plik w miejsce `game.sqlite`.
 - Nazwy kolumn sprawdzane są z `PRAGMA table_info`. Cały import odbywa się w jednej transakcji.
 - `--dry-run` pokazuje podgląd bez zapisu.

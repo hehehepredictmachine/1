@@ -297,7 +297,10 @@ def asge_trials(ctx: SourceContext) -> Collected:
     rows = [{"trial_id": r.get("trial_id"), "created_at_utc": utc_iso(r.get("created_at")), "ir_hash": r.get("ir_hash"), "parent": r.get("parent"),
              "data_hash": r.get("data_hash"), "status": r.get("status"), "reasons": r.get("reasons"), "dev_trades": r.get("dev_trades"),
              "dev_mean_net_r": r.get("dev_mean_net_r"), "positive_folds": r.get("positive_folds"), "holdout_mean_net_r": r.get("holdout_mean_net_r"),
-             "execution_allowed": r.get("execution_allowed"), "version": r.get("version"), "ir": r.get("ir")} for r in list(trials.rows)]
+             # 1.46: the constant, never the value stored in the row (a restored / edited ledger file could say true); `integrity` shows it
+             "execution_allowed": ASG.EXECUTION_ALLOWED, "integrity": r.get("integrity"), "hurdle_net_r": r.get("hurdle_net_r"),
+             "holdout_reused_from": r.get("holdout_reused_from"), "data_hash_basis": r.get("data_hash_basis"), "version": r.get("version"),
+             "ir": r.get("ir")} for r in list(trials.rows)]
     prov["persistence"] = getattr(trials, "path", None) and str(Path(trials.path).name)
     return Collected([Dataset("asge_trials", rows, "DERIVED", time_columns={"created_at_utc": "UTC"},
                               description="każda próba generatora (także odrzucone) z rodowodem parent/child; execution_allowed = false")], prov)

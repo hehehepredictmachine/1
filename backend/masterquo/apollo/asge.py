@@ -14,6 +14,8 @@ import time
 
 VERSION = "APOLLO23-ASGE-IR-1"
 EXECUTION_ALLOWED = False
+TAMPERED_FLAG = "EXECUTION_ALLOWED_TAMPERED"     # 1.46: ledger row read from the file with execution_allowed != False (restored / edited file)
+DATA_HASH_BASIS = "t,o,h,l,c"                    # 1.46: data_hash covers the whole bar (before: closes only - no "data_hash_basis" in the row)
 CONDITIONS = {   # allowlist: name -> (params with bounds)
     "close_above_sma": {"n": (5, 200)}, "close_below_sma": {"n": (5, 200)}, "sma_cross_up": {"fast": (3, 50), "slow": (10, 200)},
     "sma_cross_down": {"fast": (3, 50), "slow": (10, 200)}, "breakout_high": {"n": (5, 100)}, "breakdown_low": {"n": (5, 100)},
@@ -102,7 +104,7 @@ def _cond(c, h, lo, cond, i):
 
 def backtest(ir: dict, bars: list[dict], cost_r: float = 0.05) -> list[float]:
     """Closed-bar evaluation: signal on close of bar i, entry at open of bar i+1, SL = sl_atr x ATR14, TP = tp_r x risk, time stop; SL first
-    when both inside one bar. Returns net R per trade after cost."""
+    when both inside one bar; a bar that OPENS beyond the SL (gap) exits at its open. Returns net R per trade after cost."""
     c = [b["c"] for b in bars]
     h = [b["h"] for b in bars]
     lo = [b["l"] for b in bars]
@@ -122,7 +124,8 @@ def backtest(ir: dict, bars: list[dict], cost_r: float = 0.05) -> list[float]:
             r = None
             for j in range(i + 1, min(len(bars), i + 1 + int(ex["max_bars"]))):
                 if (s > 0 and lo[j] <= sl) or (s < 0 and h[j] >= sl):
-                    r = -1.0
+                    # 1.46: a gap through the SL (weekend / news) fills at the open, not at the SL - it was booked as -1R (optimistic expectancy)
+                    r = s * (o[j] - entry) / risk if (s > 0 and o[j] <= sl) or (s < 0 and o[j] >= sl) else -1.0
                     break
                 if (s > 0 and h[j] >= tp) or (s < 0 and lo[j] <= tp):
                     r = ex["tp_r"]
@@ -148,6 +151,20 @@ def mutate(parent: dict, rnd: random.Random) -> dict:
     return validate_ir(child)
 
 
+def _sealed(row: dict) -> dict:
+    """1.46: execution_allowed was read from the file verbatim - a row with `true` (file restored from a backup, another version, edited) was
+    published by /asge/ledger and the export as allowed. It is a constant: the row carries EXECUTION_ALLOWED, a different value in the file
+    is flagged (TAMPERED_FLAG), and the append-only file itself is never rewritten."""
+    if "execution_allowed" in row and row["execution_allowed"] is not EXECUTION_ALLOWED:
+        row = {**row, "integrity": TAMPERED_FLAG}
+    return {**row, "execution_allowed": EXECUTION_ALLOWED}
+
+
+def _holdout_judged(row: dict) -> bool:
+    """The candidate of this ledger row was evaluated on the frozen holdout (passed or failed); tampered rows are never trusted."""
+    return not row.get("integrity") and (row.get("status") == "SHADOW_CHALLENGER" or "HOLDOUT_FAILED" in (row.get("reasons") or []))
+
+
 class TrialLedger:
     """Append-only. 1.46: with `path` every trial is appended to a JSONL file (lineage survives a restart - before it lived only in memory)
     and ids are assigned under a lock (parallel /asge/run calls could reuse a trial_id)."""
@@ -162,13 +179,16 @@ class TrialLedger:
             with open(self.path, encoding="utf-8") as f:
                 for line in f:
                     try:
-                        self.rows.append(json.loads(line))
+                        row = json.loads(line)
                     except ValueError:
                         continue                              # a torn last line (crash while writing) is skipped, never repaired by guessing
+                    if isinstance(row, dict):
+                        self.rows.append(_sealed(row))
 
     def add(self, row: dict) -> dict:
         with self._lock:
-            row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}", "created_at": row.get("created_at") or time.time()}   # 1.46: UTC epoch
+            row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}", "created_at": row.get("created_at") or time.time(),   # 1.46: UTC epoch
+                   "execution_allowed": EXECUTION_ALLOWED}    # 1.46: the constant, whatever the caller passed
             if self.path:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self.path, "a", encoding="utf-8") as f:
@@ -180,12 +200,16 @@ class TrialLedger:
 def run(bars: list[dict], seeds: list[dict], n_children: int = 10, *, holdout_frac: float = 0.25, folds: int = 3, min_trades: int = 20,
         seed: int = 7, ledger: TrialLedger | None = None) -> dict:
     """Walk-forward on the development part, frozen holdout evaluated ONCE per surviving candidate. Multiple-testing aware: the number of
-    trials is reported and the hurdle rises with log(trials)."""
+    trials is reported and the hurdle rises with log(trials).
+    1.46: both were counted only inside one call (every POST /asge/run started from a low hurdle and re-used the same holdout). Now the
+    hurdle uses every DISTINCT candidate (ir_hash) tried on the same data (data_hash) in the ledger, earlier calls included, and a candidate
+    already judged on this holdout is not evaluated again - the recorded result is returned (`holdout_reused_from`)."""
     led = ledger or TrialLedger()
     rnd = random.Random(seed)
     cut = int(len(bars) * (1 - holdout_frac))
     dev, hold = bars[:cut], bars[cut:]
-    data_hash = hashlib.sha256(json.dumps([[b["c"]] for b in bars]).encode()).hexdigest()[:16]
+    # 1.46: the hash covered only the closes - bars with other open / high / low (or times) got the same lineage although the backtest differs
+    data_hash = hashlib.sha256(json.dumps([[b.get("t"), b["o"], b["h"], b["l"], b["c"]] for b in bars], default=str).encode()).hexdigest()[:16]
     cands = []
     for sd in seeds:
         validate_ir(sd)
@@ -193,7 +217,13 @@ def run(bars: list[dict], seeds: list[dict], n_children: int = 10, *, holdout_fr
         for _ in range(n_children):
             cands.append(mutate(sd, rnd))
     n_trials = len(cands)
-    hurdle = 0.05 * math.log(max(2, n_trials))
+    prior = [r for r in list(led.rows) if r.get("data_hash") == data_hash]
+    hold_done: dict = {}                                  # ir_hash -> first ledger row judged on this holdout
+    for r in prior:
+        if r.get("ir_hash") and _holdout_judged(r):
+            hold_done.setdefault(r["ir_hash"], r)
+    n_cum = len({r["ir_hash"] for r in prior if r.get("ir_hash")} | {ir_hash(c) for c in cands})    # distinct candidates on these data
+    hurdle = 0.05 * math.log(max(2, n_trials, n_cum))     # never below the per-call count used before (the gate only gets stricter)
     results = []
     for ir in cands:
         fold_len = len(dev) // folds
@@ -208,18 +238,27 @@ def run(bars: list[dict], seeds: list[dict], n_children: int = 10, *, holdout_fr
             reasons.append("DEV_EXPECTANCY_BELOW_HURDLE")
         if pos < folds - 1:
             reasons.append("UNSTABLE_FOLDS")
-        hold_mean = None
+        hold_mean, reused = None, None
         if not reasons:
-            hr = backtest(ir, hold)
-            hold_mean = sum(hr) / len(hr) if hr else None
-            if hold_mean is None or hold_mean <= 0 or len(hr) < max(5, min_trades // 4):
+            done = hold_done.get(ir_hash(ir))
+            if done is not None:                          # 1.46: frozen holdout - judged once per (data, candidate)
+                reused, hold_mean, passed = done.get("trial_id"), done.get("holdout_mean_net_r"), done.get("status") == "SHADOW_CHALLENGER"
+            else:
+                hr = backtest(ir, hold)
+                hold_mean = sum(hr) / len(hr) if hr else None
+                passed = not (hold_mean is None or hold_mean <= 0 or len(hr) < max(5, min_trades // 4))
+            if not passed:
                 reasons.append("HOLDOUT_FAILED")
             else:
                 status = "SHADOW_CHALLENGER"
         row = led.add({"ir": ir, "ir_hash": ir_hash(ir), "parent": ir.get("parent"), "data_hash": data_hash, "dev_trades": len(allr),
                        "dev_mean_net_r": mean, "positive_folds": pos, "holdout_mean_net_r": hold_mean, "status": status, "reasons": reasons,
-                       "execution_allowed": EXECUTION_ALLOWED, "version": VERSION})
+                       "execution_allowed": EXECUTION_ALLOWED, "version": VERSION, "hurdle_net_r": hurdle, "holdout_reused_from": reused,
+                       "data_hash_basis": DATA_HASH_BASIS})
+        if _holdout_judged(row):
+            hold_done.setdefault(row["ir_hash"], row)
         results.append(row)
-    return {"trials": n_trials, "hurdle_net_r": hurdle, "challengers": [r for r in results if r["status"] == "SHADOW_CHALLENGER"],
+    return {"trials": n_trials, "trials_cumulative": n_cum, "holdout_evaluations": len(hold_done), "hurdle_net_r": hurdle,
+            "challengers": [r for r in results if r["status"] == "SHADOW_CHALLENGER"],
             "rejected": sum(1 for r in results if r["status"] == "REJECTED"), "ledger_size": len(led.rows),
             "next_step": "HUMAN_REVIEW (brak automatycznej promocji, brak Deploy Live)", "execution_allowed": EXECUTION_ALLOWED}
