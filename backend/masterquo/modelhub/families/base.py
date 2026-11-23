@@ -24,6 +24,7 @@ import importlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -39,6 +40,17 @@ VERSION = "PMW-FAM-1"
 IMPL = ("AVAILABLE", "MISSING_DEPENDENCY", "NO_SOURCE", "ERROR")
 ARTIFACT = ("NOT_TRAINED", "TRAINING", "CANDIDATE", "VALIDATION_FAILED", "APPROVED", "INCOMPATIBLE", "STALE")
 USE = ("OFF", "SHADOW", "ASSIST")
+NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+# 1.46: one vocabulary for the data kind of an artifact. The marketdata Store writes REAL_USER_DATA / SYNTHETIC_TEST / UNKNOWN_SOURCE, the live
+# bridge path MT5_LIVE_BRIDGE (real terminal) or SYNTHETIC_TEST (demo simulator); 1.45.0 compared only with 'REAL' / 'SYNTHETIC'.
+_REAL_KINDS = {"REAL", "REAL_USER_DATA", "MT5_LIVE_BRIDGE"}
+_SYNTH_KINDS = {"SYNTHETIC", "SYNTHETIC_TEST", "SYNTHETIC_DEMO", "SIMULATED"}
+
+
+def kind_class(data_kind) -> str | None:
+    """'REAL' / 'SYNTHETIC' / None (unknown - never treated as real)."""
+    k = str(data_kind or "").upper()
+    return "REAL" if k in _REAL_KINDS else "SYNTHETIC" if k in _SYNTH_KINDS else None
 
 
 class Unavailable(Exception):
@@ -154,6 +166,10 @@ class Store:
         self.base = Path(base) if base else root()
 
     def fam_dir(self, family: str, inst: str) -> Path:
+        # 1.46: no path separators / '..' in a family or instrument segment (1.45.0: fid '..' wrote state.json outside model_families)
+        for seg in (family, inst):
+            if not isinstance(seg, str) or not NAME_RX.match(seg):
+                raise KeyError("FAMILY_OR_INSTRUMENT_INVALID")
         d = self.base / family / inst
         d.mkdir(parents=True, exist_ok=True)
         return d
@@ -213,8 +229,28 @@ class Store:
         st["active"] = rid
         if rid and st.get("use") == "OFF":
             st["use"] = "SHADOW"                                     # a newly activated artifact starts observing, never influencing
+        self._recheck_assist(family, inst, st)
         self._save_state(family, inst, st)
         return st
+
+    def assist_ok(self, family: str, inst: str, rid: str | None) -> tuple[bool, str | None]:
+        """1.46: THE ASSIST gate (one place): an active artifact with validation APPROVED, trained on data verified as REAL."""
+        m = _read(self.run_dir(family, inst, rid) / "manifest.json") if rid else None
+        if not m or (m.get("validation") or {}).get("status") != "APPROVED":
+            return False, "ASSIST wymaga aktywnego artefaktu ze statusem APPROVED (kryteria promocji spełnione na danych rozwojowych)"
+        if kind_class(m.get("data_kind")) != "REAL":
+            return False, f"artefakt na danych {m.get('data_kind') or 'NIEZNANYCH'} (nie REAL) nie uzyskuje roli ASSIST"
+        return True, None
+
+    def _recheck_assist(self, family: str, inst: str, st: dict) -> None:
+        # 1.45.0: activate / rollback kept ASSIST on an artifact that never passed the gate (VALIDATION_FAILED, SYNTHETIC) - it could hold SH
+        # entries. The role drops to SHADOW (or OFF without an active run) and the change is written to the history.
+        if st.get("use") != "ASSIST":
+            return
+        ok, why = self.assist_ok(family, inst, st.get("active"))
+        if not ok:
+            st["use"] = "SHADOW" if st.get("active") else "OFF"
+            st.setdefault("history", []).append({"at": time.time(), "action": "USE", "use": st["use"], "reason": "bramka ASSIST: " + (why or "")})
 
     def rollback(self, family: str, inst: str) -> dict:
         st = self.state(family, inst)
@@ -222,6 +258,7 @@ class Store:
         prev = acts[-1]["previous"] if acts and acts[-1]["run_id"] == st.get("active") else None
         st["history"].append({"at": time.time(), "action": "ROLLBACK", "run_id": prev, "previous": st.get("active")})
         st["active"] = prev
+        self._recheck_assist(family, inst, st)
         self._save_state(family, inst, st)
         return st
 
@@ -230,11 +267,9 @@ class Store:
             raise ValueError(f"USE_INVALID:{use}")
         st = self.state(family, inst)
         if use == "ASSIST":
-            m = _read(self.run_dir(family, inst, st["active"]) / "manifest.json") if st.get("active") else None
-            if not m or (m.get("validation") or {}).get("status") != "APPROVED":
-                raise ValueError("ASSIST wymaga aktywnego artefaktu ze statusem APPROVED (kryteria promocji spełnione na danych rozwojowych)")
-            if m.get("data_kind") == "SYNTHETIC":
-                raise ValueError("artefakt na danych SYNTETYCZNYCH nie uzyskuje roli ASSIST")
+            ok, why = self.assist_ok(family, inst, st.get("active"))     # 1.46: allowlist REAL (1.45.0 refused only the literal 'SYNTHETIC')
+            if not ok:
+                raise ValueError(why)
         st["use"] = use
         st.setdefault("history", []).append({"at": time.time(), "action": "USE", "use": use})
         self._save_state(family, inst, st)

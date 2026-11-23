@@ -80,7 +80,13 @@ class FamilyService:
             out.append({**f.capabilities(), "status": st, "data_requirements": f.data_requirements()})
         return out
 
+    def _known(self, fid: str) -> None:
+        # 1.46: runs / rollback / set_use / cancel / activate checked nothing - GET /runs of an unknown name created folders and state.json
+        if fid not in self.fams:
+            raise KeyError("FAMILY_UNKNOWN")
+
     def runs(self, fid: str, inst: str) -> list[dict]:
+        self._known(fid)
         return [{k: r.get(k) for k in ("run_id", "created_at", "profile", "data_kind", "validation", "metrics", "data", "seconds", "deps")}
                 for r in self.store.runs(fid, inst)]
 
@@ -138,7 +144,8 @@ class FamilyService:
         if len(bars) <= have:
             return None
         out = self.jobs_dir / f"{fid}__{inst}.bars.json"
-        B._atomic_json(out, {"source": "MT5_LIVE_BRIDGE", "symbol": sym, "tf": tf, "bars": bars})
+        syn = getattr(self.bridge, "synthetic", None)       # 1.46: the demo simulator is not REAL data (decides the ASSIST gate)
+        B._atomic_json(out, {"source": "MT5_LIVE_BRIDGE", "symbol": sym, "tf": tf, "bars": bars, "synthetic": syn if isinstance(syn, bool) else None})
         return out
 
     @staticmethod
@@ -151,6 +158,10 @@ class FamilyService:
             j = B._read(p, {}) or {}
             if j.get("state") == "RUNNING" and not _alive(j.get("pid")):
                 j.update(state="FAILED", reason="proces treningu zakończył się bez wyniku (restart / awaria) – uruchom ponownie")
+                B._atomic_json(p, j)
+            elif j.get("state") == "QUEUED" and (j.get("waiting") or not j.get("pid") or not _alive(j.get("pid"))):
+                # 1.46: the train_all queue thread does not survive a restart - a QUEUED job (waiting, or never started) waited forever
+                j.update(state="CANCELLED", waiting=False, reason="kolejka przerwana restartem aplikacji – uruchom ponownie", updated_at=self.clock())
                 B._atomic_json(p, j)
 
     def _job_config(self) -> dict:
@@ -169,6 +180,9 @@ class FamilyService:
             j = self.job(fid, inst)
             if j and j.get("state") == "RUNNING" and _alive(j.get("pid")):
                 return {"ok": False, "status": "ALREADY_RUNNING", "job": j}
+            own = self.procs.get(f"{fid}__{inst}")
+            if own is not None and own.poll() is None:          # 1.46: QUEUED until the child writes RUNNING - still one job per family+instrument
+                return {"ok": False, "status": "ALREADY_RUNNING", "job": j}
             jf = self._job_file(fid, inst)
             B._atomic_json(jf, {"state": "QUEUED", "family": fid, "instrument": inst, "profile": profile, "submitted_at": self.clock()})
             from ... import paths
@@ -182,7 +196,8 @@ class FamilyService:
             log = open(self._log_file(fid, inst), "w", encoding="utf-8")     # 1.42.10: log procesu (był DEVNULL – awaria bez śladu)
             try:
                 p = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=log, stderr=subprocess.STDOUT,
-                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0),
+                                     start_new_session=os.name != "nt")     # 1.46: own group - cancel ends the whole tree
             except OSError as exc:
                 log.close()
                 B._atomic_json(jf, {"state": "FAILED", "family": fid, "instrument": inst, "reason": f"nie można uruchomić procesu: {exc}"[:300],
@@ -193,16 +208,14 @@ class FamilyService:
             return {"ok": True, "status": "STARTED", "pid": p.pid}
 
     def cancel(self, fid: str, inst: str) -> dict:
+        self._known(fid)
         p = self.procs.get(f"{fid}__{inst}")
         j = self.job(fid, inst) or {}
-        pid = j.get("pid") or (p.pid if p else None)
-        if p is not None and p.poll() is None:
-            p.terminate()
-        elif pid and _alive(pid):
-            try:
-                os.kill(int(pid), 15)
-            except OSError:
-                pass
+        pid = (p.pid if p is not None else None) or j.get("pid")
+        # 1.46: the whole process tree - 1.45.0 terminated only the run process; the .venv_deep worker (SEQ_LSTM / SEQ_GRU / RL_PPO) kept
+        # training for hours, outside MAX_PARALLEL
+        if (p is not None and p.poll() is None) or (pid and _alive(pid)):
+            _kill_tree(int(pid), p)
         j.update(state="CANCELLED", reason="anulowano przez użytkownika", updated_at=self.clock())
         B._atomic_json(self._job_file(fid, inst), j)
         return {"ok": True, "status": "CANCELLED"}
@@ -250,7 +263,7 @@ class FamilyService:
             if not self.jobs_dir.exists():                       # katalog danych usunięty (np. po zamknięciu) – kończymy kolejkę
                 return
             j = B._read(self._job_file(fid, inst), {}) or {}
-            if j.get("state") == "CANCELLED":
+            if j.get("state") != "QUEUED" or not j.get("waiting"):     # 1.46: cancelled, or started by hand meanwhile - never a second run
                 continue
             try:
                 self.submit(fid, inst, profile)
@@ -260,6 +273,7 @@ class FamilyService:
 
     # ------------------------------------------------------------------ activation / roles
     def activate(self, fid: str, inst: str, rid: str) -> dict:
+        self._known(fid)
         ok, why = self.store.verify(fid, inst, rid)
         if not ok:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": why}
@@ -307,11 +321,13 @@ class FamilyService:
                 "reason": None if diff <= tol + 1e-12 else f"wynik po wczytaniu różni się od próbki ({diff:.3g} > {tol})"}
 
     def rollback(self, fid, inst) -> dict:
+        self._known(fid)
         st = self.store.rollback(fid, inst)
         self.invalidate(fid, inst)
         return {"ok": True, "state": st}
 
     def set_use(self, fid, inst, use) -> dict:
+        self._known(fid)
         st = self.store.set_use(fid, inst, use)
         self.invalidate(fid, inst)
         return {"ok": True, "state": st}
@@ -368,6 +384,8 @@ class FamilyService:
             use = "SHADOW"                                       # measurements need no artifact
         if use == "OFF" and fid != "MICROSTRUCTURE":
             return None
+        if use == "ASSIST" and not self.store.assist_ok(fid, inst, rid)[0]:
+            use = "SHADOW"                                       # 1.46: a state saved by 1.45 (ASSIST kept on an unapproved / non-REAL artifact)
         live = self._live(f, inst)
         bar_t = (live.get("bars") or [{}])[-1].get("t") if live.get("bars") else None
         data_t = bar_t
@@ -380,7 +398,7 @@ class FamilyService:
             if ck in self._cache and (bar_t is not None or self.clock() - self._cache[ck]["at"] < 5):
                 return self._cache[ck]["pred"]
         man = B._read(self.store.run_dir(fid, inst, rid) / "manifest.json", {}) if rid else {}
-        kind = man.get("data_kind") if man.get("data_kind") in ("REAL", "SYNTHETIC") else None
+        kind = B.kind_class(man.get("data_kind"))           # 1.46: REAL_USER_DATA / SYNTHETIC_TEST were published as None
         impl, why = f.implementation()
         t0 = time.perf_counter()
         try:
@@ -398,6 +416,9 @@ class FamilyService:
             pred = f.pred(inst=inst, symbol=symbol, state="ERROR", reason=f"{type(exc).__name__}: {exc}"[:200], run_id=rid, extra={"use": use})
         pred["compute_ms"] = round((time.perf_counter() - t0) * 1000, 2)
         with self._lock:
+            # 1.46: one entry per family+instrument - the key holds the bar time, 1.45.0 kept every bar for weeks
+            for k in [k for k in self._cache if k[:2] == ck[:2] and k != ck]:
+                self._cache.pop(k, None)
             self._cache[ck] = {"pred": pred, "at": self.clock()}
         return pred
 
@@ -449,13 +470,31 @@ def apply_to_setup(su: dict, fc: dict) -> dict:
 
 
 def _alive(pid) -> bool:
-    if not pid:
-        return False
+    # 1.46: os.kill(pid, 0) on Windows is TerminateProcess(pid, 0) - "is it alive?" killed the training process
+    from ...training.core import _pid_alive
     try:
-        os.kill(int(pid), 0)
-        return True
-    except OSError:
+        return bool(pid) and _pid_alive(int(pid))
+    except (TypeError, ValueError):
         return False
+
+
+def _kill_tree(pid: int, proc: subprocess.Popen | None = None) -> None:
+    """Ends the process and its children (the .venv_deep worker): taskkill /T on Windows, the process group elsewhere."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=20,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            import signal
+            pgid = os.getpgid(pid)
+            if pgid == pid:                                      # started by submit() in its own session
+                os.killpg(pgid, signal.SIGTERM)
+            elif proc is not None:
+                proc.terminate()
+            else:
+                os.kill(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def _maxdiff(a, b) -> float:

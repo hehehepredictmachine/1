@@ -868,3 +868,308 @@ class TestTickArchiveForTsvp(unittest.TestCase):
             self.assertLessEqual(reads["n"], 6)                                 # each array once, not 4 x 3000 reads
         finally:
             td.close()
+
+
+class TestTrainhubStudioRobustness(unittest.TestCase):
+    """1.45.0: (a) the trainhub inference loop called AppLog.warning (no such method) -> AttributeError killed the thread on the first error;
+    (b) Studio lock liveness used os.kill(pid, 0) (on Windows a console CTRL-C event, failing for other processes -> every owner 'dead');
+    (c) a Studio TRAINHUB import wrote created_at as a float -> registry.summary() TypeError (500) next to native ISO versions."""
+
+    def test_inference_loop_survives_an_error(self):
+        import threading
+        import types
+
+        from masterquo.events import AppLog, EventBus
+        from masterquo.trainhub import inference as INF
+        calls = {"n": 0}
+
+        class Db:
+            def execute(self, *a, **k):
+                return None
+        svc = INF.TrainhubInference.__new__(INF.TrainhubInference)
+        svc.log = AppLog(Db(), EventBus())
+        svc.poll_s = 0.01
+        svc._stop = threading.Event()
+
+        def boom(inst, force=False):
+            calls["n"] += 1
+            if calls["n"] > 6:
+                svc._stop.set()
+            raise RuntimeError("x")
+        svc.run_instrument = boom
+        t = threading.Thread(target=svc._loop, daemon=True)
+        t.start()
+        t.join(5)
+        self.assertGreater(calls["n"], 2)                           # 1.45.0: the thread died after the first error
+
+    def test_studio_lock_uses_process_query(self):
+        import os as _os
+        from unittest import mock
+
+        from masterquo.studio import lock as L
+        self.assertTrue(L._alive(_os.getpid()))
+        with mock.patch("masterquo.training.core._pid_alive", return_value=True) as m:
+            self.assertTrue(L._alive(123456))
+            m.assert_called_once_with(123456)
+
+    def test_registry_summary_with_numeric_created_at(self):
+        from _env import TempData
+
+        from masterquo.trainhub import registry as R
+        td = TempData()
+        try:
+            reg = R._reg("XAUUSD")
+            reg.setdefault("versions", {})["k"] = [{"version": "a", "created_at": "2026-11-20T10:00:00Z"}, {"version": "b", "created_at": 1_795_000_000.0}]
+            R._save_reg("XAUUSD", reg)
+            out = R.summary("XAUUSD")
+            self.assertEqual([v["version"] for v in out["versions"]], ["a", "b"])        # 2026-11-20 is newer than 1_795_000_000 (2026-11-17)
+        finally:
+            td.close()
+
+
+class TestTrainingTestProfileAndLock(unittest.TestCase):
+    """1.45.0 (KRYTYCZNY): profile TEST_INSTALACJI ("modele nie są aktywowane") on REAL data rewrote data/sh/validation/* and the pack variant
+    status files that gate AUTO_LIVE SH entries (and could promote the SH model) from ~4 days of history. And the training lock was handed to a
+    second process resuming the SAME run while the owner was alive."""
+
+    def test_sh_train_no_live_write(self):
+        import types
+        from pathlib import Path
+        from unittest import mock
+
+        from _env import TempData
+
+        from masterquo import paths
+        from masterquo.sh import train_cli as TC
+        td = TempData()
+        try:
+            out = Path(td.dir) / "run" / "x.json"
+            out.parent.mkdir()
+            calls = {}
+            res = {"samples": [], "counts": {}}
+            with mock.patch.object(TC.RP, "load_dataset", return_value=({"M1": [1]}, {"instrument": "XAUUSD", "data_kind": "REAL_USER_DATA"})), \
+                    mock.patch.object(TC.C, "load", return_value={"_hash": "h", "instruments": {"XAUUSD": {"enabled": True}}}), \
+                    mock.patch.object(TC.C, "profile", return_value={"horizon_minutes": 30}), \
+                    mock.patch.object(TC.SymbolSpec, "from_mt5", return_value=types.SimpleNamespace(check_usd=lambda x: None)), \
+                    mock.patch.object(TC.RP, "Market", return_value=types.SimpleNamespace(m1=[1])), \
+                    mock.patch.object(TC.RP, "run", return_value={"SCALPING": res}), \
+                    mock.patch.object(TC.TM, "train", side_effect=lambda *a, **k: calls.setdefault("promo", k["allow_promotion"]) and {} or {}), \
+                    mock.patch.object(TC.RP, "report", return_value={"event_model": {}, "baseline": {}}):
+                TC.train(Path("ds"), "XAUUSD", out, strategies=("SCALPING",), live_write=False)
+            self.assertIs(calls["promo"], False)
+            self.assertFalse((paths.data_dir() / "sh" / "validation" / "XAUUSD_SCALPING.json").exists())
+        finally:
+            td.close()
+
+    def test_pack_write_live_false_keeps_catalog_status(self):
+        from _env import TempData
+
+        from masterquo import paths
+        from masterquo.sh.pack import replay as PR
+        td = TempData()
+        try:
+            rep = {"report_id": "R1", "data_kind": "REAL_USER_DATA", "created_at": "2026-11-20T00:00:00Z",
+                   "variants": {"PMW_SC01|M5": {"verdict": "VALIDATED", "verdict_reason": "x"}}}
+            self.assertEqual(PR.write(rep, live=False)["variant_files"], [])
+            self.assertFalse((paths.data_dir() / "sh" / "pack_validation" / "PMW_SC01.json").exists())
+            self.assertEqual(len(PR.write(dict(rep, report_id="R2"))["variant_files"]), 1)          # a real run still writes it
+        finally:
+            td.close()
+
+    def test_runner_passes_no_live_write_for_test_profile(self):
+        from pathlib import Path
+        from unittest import mock
+
+        from masterquo.training import runner as RN
+        cmds = []
+
+        class Run:
+            dir = Path("/tmp")
+            state = {"plan": {"profile": "TEST_INSTALACJI", "synthetic": False, "activate": False, "profile_params": {"task_timeout_minutes": 1},
+                              "commissions": {}}}
+
+            def set(self, *a, **k):
+                return None
+        with mock.patch.object(RN, "_ready", return_value=Path("/tmp/ds")), \
+                mock.patch.object(RN.core, "run_child", side_effect=lambda run, tid, cmd, *a, **k: cmds.append(cmd) or (None, "")), \
+                mock.patch.object(RN.core, "child_env", return_value={}):
+            RN.t_sh_models(Run(), "XAUUSD")
+            RN.t_sh_pack(Run(), "XAUUSD")
+        self.assertEqual(len(cmds), 2)
+        self.assertTrue(all("--no-live-write" in c for c in cmds), cmds)
+
+    def test_lock_refused_for_same_run_in_another_live_process(self):
+        import json
+        import os
+
+        from _env import TempData
+
+        from masterquo.training import core
+        td = TempData()
+        try:
+            p = core.lock_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"run_id": "RUN-1", "pid": os.getppid(), "at": "x"}), encoding="utf-8")   # a live other process
+            self.assertEqual(core.acquire_lock("RUN-1"), "RUN-1")
+            p.write_text(json.dumps({"run_id": "RUN-1", "pid": 999_999_9, "at": "x"}), encoding="utf-8")       # dead owner -> taken over
+            self.assertIsNone(core.acquire_lock("RUN-1"))
+        finally:
+            td.close()
+
+
+class TestGoldCandlesContractHashStable(unittest.TestCase):
+    """1.46 regression found by the audit: the ruff F401 cleanup removed unused imports from gold_candles/data.py and model.py. contract_hash()
+    hashes the RAW BYTES of data/patterns/features/model.py, so every forecast model trained in 1.45 became CONTRACT_MISMATCH. The bytes are
+    restored; this pins the 1.45.0 contract of the default XAUUSD config (any byte change of those four files must be a deliberate new contract)."""
+
+    def test_default_contract_hash_is_the_1_45_one(self):
+        import sys
+
+        from _env import ROOT
+        sys.path.insert(0, str(ROOT / "backend"))
+        from gold_candles.data import Config
+        self.assertEqual(Config().contract_hash(), "403283d916e01f528ac74186b6724784e37c1f6c8ceb8d56171a2314b2f1e77c")
+
+
+class TestFamiliesServiceSafety(unittest.TestCase):
+    """1.45.0 (WYSOKI x5): model families - ASSIST kept on artifacts that never passed the gate (activate / rollback, SYNTHETIC_TEST data);
+    `_alive` = os.kill(pid, 0) (TerminateProcess on Windows); cancel left the .venv_deep worker running; the prediction cache grew per bar;
+    unknown family names created folders; a train_all queue interrupted by a restart waited forever; a second submit while QUEUED."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from masterquo.modelhub.families import base as B
+        self.td = tempfile.mkdtemp(prefix="fam146_")
+        self.addCleanup(shutil.rmtree, self.td, True)
+        self.B, self.store = B, B.Store(Path(self.td))
+
+    def run_(self, rid, status, kind, fid="TS_ARIMA"):
+        d = self.store.run_dir(fid, "XAUUSD", rid)
+        d.mkdir(parents=True)
+        self.B._atomic_json(d / "manifest.json", {"run_id": rid, "validation": {"status": status}, "data_kind": kind, "created_at": 1})
+
+    def svc(self):
+        from masterquo.config import ConfigStore
+        from masterquo.modelhub.families.service import FamilyService
+        return FamilyService(ConfigStore(), None, store=self.store)
+
+    def test_activate_and_rollback_drop_assist_from_unapproved_artifact(self):
+        self.run_("R1", "APPROVED", "REAL_USER_DATA")
+        self.run_("R2", "VALIDATION_FAILED", "REAL_USER_DATA")
+        self.store.set_active("TS_ARIMA", "XAUUSD", "R1", "t")
+        self.assertEqual(self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")["use"], "ASSIST")      # REAL_USER_DATA + APPROVED passes
+        self.assertEqual(self.store.set_active("TS_ARIMA", "XAUUSD", "R2", "t")["use"], "SHADOW")  # 1.45.0: stayed ASSIST
+        self.store.set_active("TS_ARIMA", "XAUUSD", "R1", "t")
+        self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")
+        self.store._save_state("TS_ARIMA", "XAUUSD", dict(self.store.state("TS_ARIMA", "XAUUSD"),
+                                                          history=[{"action": "ACTIVATE", "run_id": "R1", "previous": "R2"}]))
+        self.assertEqual(self.store.rollback("TS_ARIMA", "XAUUSD")["use"], "SHADOW")              # back to the unapproved R2
+
+    def test_synthetic_test_and_unknown_data_never_get_assist(self):
+        for kind in ("SYNTHETIC_TEST", "UNKNOWN", None):
+            self.store._save_state("TS_ARIMA", "XAUUSD", {"active": None, "use": "OFF", "history": []})
+            rid = f"S-{kind}"
+            self.run_(rid, "APPROVED", kind)
+            self.store.set_active("TS_ARIMA", "XAUUSD", rid, "t")
+            with self.assertRaises(ValueError, msg=kind):
+                self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")
+        self.assertEqual(self.B.kind_class("SYNTHETIC_TEST"), "SYNTHETIC")
+        self.assertEqual(self.B.kind_class("REAL_USER_DATA"), "REAL")
+        self.assertIsNone(self.B.kind_class("UNKNOWN_SOURCE"))
+
+    def test_saved_assist_on_bad_artifact_predicts_as_shadow(self):
+        from unittest import mock
+        self.run_("R9", "APPROVED", "SYNTHETIC_TEST")
+        self.store._save_state("TS_ARIMA", "XAUUSD", {"active": "R9", "use": "ASSIST", "history": []})    # written by 1.45
+        s = self.svc()
+        with mock.patch.object(s, "_live", return_value={"bars": [{"t": 60.0}]}):
+            p = s.predict("TS_ARIMA", "XAUUSD")
+        self.assertEqual(p.get("use"), "SHADOW", p)
+
+    def test_prediction_cache_keeps_one_entry_per_family(self):
+        from unittest import mock
+        self.run_("R1", "APPROVED", "REAL")
+        self.store._save_state("TS_ARIMA", "XAUUSD", {"active": "R1", "use": "SHADOW", "history": []})
+        s = self.svc()
+        for t in range(50):
+            with mock.patch.object(s, "_live", return_value={"bars": [{"t": 60.0 * t}]}):
+                s.predict("TS_ARIMA", "XAUUSD")
+        self.assertEqual(len(s._cache), 1)
+
+    def test_unknown_family_and_traversal_refused_without_disk_writes(self):
+        from pathlib import Path
+        s = self.svc()
+        for call in (lambda: s.runs("NOPE", "XAUUSD"), lambda: s.rollback("NOPE", "XAUUSD"), lambda: s.set_use("NOPE", "XAUUSD", "SHADOW"),
+                     lambda: s.cancel("NOPE", "XAUUSD"), lambda: s.runs("..", "XAUUSD")):
+            with self.assertRaises(KeyError):
+                call()
+        with self.assertRaises(KeyError):
+            self.store.fam_dir("..", "XAUUSD")
+        self.assertFalse((Path(self.td) / "NOPE").exists())
+        self.assertFalse((Path(self.td) / "XAUUSD").exists())
+
+    def test_alive_never_signals_the_process(self):
+        from unittest import mock
+
+        from masterquo.modelhub.families import service as FS
+        with mock.patch("os.kill", side_effect=AssertionError("os.kill(pid, 0) = TerminateProcess on Windows")), \
+                mock.patch("masterquo.training.core._pid_alive", return_value=True) as pa:
+            self.assertTrue(FS._alive(1234))
+        pa.assert_called_once_with(1234)
+
+    def test_restart_cancels_interrupted_queue(self):
+        jobs = self.store.base / "_jobs"
+        jobs.mkdir(parents=True)
+        self.B._atomic_json(jobs / "BREAKOUT__XAUUSD.json", {"state": "QUEUED", "family": "BREAKOUT", "waiting": True})
+        self.B._atomic_json(jobs / "KALMAN_LS__XAUUSD.json", {"state": "QUEUED", "family": "KALMAN_LS"})          # submit died before Popen
+        s = self.svc()
+        self.assertEqual(s.job("BREAKOUT", "XAUUSD")["state"], "CANCELLED")
+        self.assertEqual(s.job("KALMAN_LS", "XAUUSD")["state"], "CANCELLED")
+
+    def test_second_submit_while_queued_and_own_process_group(self):
+        from unittest import mock
+        s = self.svc()
+        seen = []
+
+        class P:
+            pid = 4242
+
+            def poll(self):
+                return None
+        with mock.patch("subprocess.Popen", side_effect=lambda *a, **k: seen.append(k) or P()):
+            self.assertTrue(s.submit("KALMAN_LS", "XAUUSD")["ok"])
+            self.assertEqual(s.job("KALMAN_LS", "XAUUSD")["state"], "QUEUED")         # the child has not written RUNNING yet
+            self.assertEqual(s.submit("KALMAN_LS", "XAUUSD")["status"], "ALREADY_RUNNING")
+        self.assertEqual(len(seen), 1)
+        import os
+        if os.name != "nt":
+            self.assertTrue(seen[0].get("start_new_session"))
+
+    @unittest.skipIf(__import__("os").name == "nt", "process groups: POSIX branch")
+    def test_kill_tree_ends_the_grandchild(self):
+        import os
+        import subprocess
+        import sys
+        import time
+
+        from masterquo.modelhub.families import service as FS
+        code = "import subprocess,sys,time; c=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); print(c.pid, flush=True); time.sleep(60)"
+        p = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True, start_new_session=True)
+        child = int(p.stdout.readline())
+        p.stdout.close()
+        FS._kill_tree(p.pid, p)
+        p.wait(10)
+        for _ in range(40):
+            try:
+                os.kill(child, 0)
+                with open(f"/proc/{child}/stat") as fh:
+                    if fh.read().split()[2] == "Z":
+                        break
+            except (OSError, FileNotFoundError):
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("the grandchild survived cancel")

@@ -42,7 +42,9 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None) -> dict:
             except (OSError, ValueError):
                 live = {}
             if len(live.get("bars") or []) > len(out["bars"]):
-                out.update(bars=live["bars"], data_kind="MT5_LIVE_BRIDGE", symbol=live.get("symbol") or out.get("symbol"))
+                syn = live.get("synthetic")                     # 1.46: unknown origin is not REAL (never guessed)
+                out.update(bars=live["bars"], data_kind="MT5_LIVE_BRIDGE" if syn is False else "SYNTHETIC_TEST" if syn is True else "UNKNOWN",
+                           symbol=live.get("symbol") or out.get("symbol"))
     elif kind == "MULTI_SERIES":
         if fam.ID == "PAIR_COINT":
             pair = (cfg.get("pairs") or [None])[0]
