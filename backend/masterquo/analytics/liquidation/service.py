@@ -8,6 +8,7 @@ as_of(D) returns only a snapshot whose first_received_at <= D (never "latest cut
 """
 from __future__ import annotations
 
+import http.client
 import json
 import random
 import threading
@@ -17,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ... import paths
-from ...timeutil import iso, utcnow
+from ...timeutil import iso, parse_iso, utcnow
 from .. import session_engine as se
 from . import contract, provider
 
@@ -61,12 +62,13 @@ class LiquidityService:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            try:
-                self.poll_once()
-                self.scan_inbox()
-            except Exception as exc:  # noqa: BLE001 - the base bot never depends on this module
-                if self.log:
-                    self.log.error("LIQ", "LOOP", f"{type(exc).__name__}: {exc}"[:300])
+            # 1.46: poll and inbox in ONE try - an exception of the poll skipped the file import on every pass
+            for step in (self.poll_once, self.scan_inbox):
+                try:
+                    step()
+                except Exception as exc:  # noqa: BLE001 - the base bot never depends on this module
+                    if self.log:
+                        self.log.error("LIQ", "LOOP", f"{type(exc).__name__}: {exc}"[:300])
             self._stop.wait(5.0)
 
     def poll_once(self, now_mono: float | None = None) -> list[str]:
@@ -87,7 +89,11 @@ class LiquidityService:
                 self._fail[key] = 0
                 self._next[key] = t + self.cfg.poll_seconds
                 self._status(key, res["status"], res.get("detail"))
-            except provider.ProviderError as e:
+            except Exception as exc:  # noqa: BLE001
+                # 1.46: only ProviderError backed off - a connection reset / IncompleteRead / non-object JSON body left poll_once
+                # without _next/_fail/status, so the source was hit again every 5 s; every failure now backs off with its status
+                e = exc if isinstance(exc, provider.ProviderError) else provider.ProviderError(
+                    "NETWORK_ERROR" if isinstance(exc, (OSError, http.client.HTTPException)) else "UNEXPECTED_ERROR", f"{type(exc).__name__}: {exc}"[:200])
                 n = self._fail.get(key, 0) + 1
                 self._fail[key] = n
                 wait = e.retry_after or min(3600.0, self.cfg.poll_seconds * (2 ** min(n, 6)))
@@ -138,15 +144,20 @@ class LiquidityService:
                 if f.stat().st_size > contract.MAX_BYTES:
                     raise contract.HeatmapError("TOO_LARGE")
                 doc = json.loads(f.read_text(encoding="utf-8"))
-                if doc.get("schema") != "pmw-liq-export-1":
+                # 1.46: a JSON document that is not an object ('[]', a number) raised AttributeError and a non-text target_asset an
+                # sqlite InterfaceError - outside the caught types, so the file stayed in the inbox and blocked every later file forever
+                if not isinstance(doc, dict) or doc.get("schema") != "pmw-liq-export-1":
                     raise contract.HeatmapError("UNSUPPORTED_SCHEMA", "schema != pmw-liq-export-1")
+                if not isinstance(doc.get("target_asset"), str) or not doc["target_asset"] or isinstance(doc.get("declared_received_at"), (dict, list)):
+                    raise contract.HeatmapError("UNSUPPORTED_SCHEMA", "target_asset (tekst) / declared_received_at")
                 from ...config import HeatmapSource
                 src = HeatmapSource(enabled=False, variant=doc.get("variant", "AGGREGATED"), source_symbol=doc["source_symbol"], exchange=doc.get("exchange"),
                                     range=doc.get("range", "24h"))
                 out.append(self.ingest(doc["target_asset"], src, doc["data"], origin="FILE", declared_received_at=doc.get("declared_received_at")))
                 f.rename(f.with_suffix(".done"))
-            except (ValueError, KeyError, OSError, contract.HeatmapError) as exc:
-                out.append({"status": "REJECTED", "file": f.name, "detail": str(exc)[:200]})
+            except Exception as exc:  # noqa: BLE001 - one bad file is rejected, never blocks the inbox
+                known = isinstance(exc, (ValueError, KeyError, OSError))
+                out.append({"status": "REJECTED", "file": f.name, "detail": (str(exc) if known else f"{type(exc).__name__}: {exc}")[:200]})
                 try:
                     f.rename(f.with_suffix(".rejected"))
                 except OSError:
@@ -155,14 +166,33 @@ class LiquidityService:
 
     # -------------------------------------------------- read side
     def as_of(self, asset: str, D: str | None = None) -> dict | None:
-        """Latest OK snapshot of the asset's configured source received at or before D (point in time)."""
+        """Latest OK snapshot of the asset's configured source received at or before D (point in time). D = UTC ISO time WITH a zone
+        (HeatmapError INVALID_AS_OF otherwise)."""
         src = self.cfg.sources.get(asset)
         if src is None or not src.source_symbol:
             return None
         key = self.source_key(asset, src)
-        q = "SELECT * FROM liq_heatmap_snapshots WHERE source_key=? AND status='OK'" + (" AND first_received_at<=?" if D else "") + \
-            " ORDER BY first_received_at DESC LIMIT 1"
-        row = self.db.one(q, (key, D) if D else (key,))
+        if not D:
+            row = self.db.one("SELECT * FROM liq_heatmap_snapshots WHERE source_key=? AND status='OK' ORDER BY first_received_at DESC LIMIT 1", (key,))
+        else:
+            # 1.46: D was compared as TEXT with first_received_at ('...11:30:00.123456Z' <= '...12:00:00+02:00' is True although
+            # 11:30Z > 10:00Z - a map received AFTER D was returned; a bare date skipped the whole day). D is parsed (zone required);
+            # SQL only narrows to rows up to D's second, the exact comparison is done on parsed times
+            try:
+                Dt = parse_iso(str(D))
+            except ValueError as exc:
+                raise contract.HeatmapError("INVALID_AS_OF", f"{D!r}: wymagany czas UTC ISO ze strefą ({exc})") from None
+            cands = self.db.query("SELECT snapshot_id, first_received_at FROM liq_heatmap_snapshots WHERE source_key=? AND status='OK' "
+                                  "AND first_received_at < ? ORDER BY first_received_at DESC LIMIT 50", (key, Dt.strftime("%Y-%m-%dT%H:%M:%S") + "~"))
+            best = None
+            for c in cands:
+                try:
+                    ft = parse_iso(c["first_received_at"])
+                except (TypeError, ValueError):
+                    continue
+                if ft <= Dt and (best is None or ft > best[0]):
+                    best = (ft, c["snapshot_id"])
+            row = self.db.one("SELECT * FROM liq_heatmap_snapshots WHERE snapshot_id=?", (best[1],)) if best else None
         if not row:
             return None
         r = dict(row)
@@ -182,7 +212,10 @@ class LiquidityService:
                 "key_status": (self.secrets.source("COINGLASS_API_KEY") if self.secrets else "MISSING"), "source_status": st}
         if src is None or not src.source_symbol:
             return dict(base, status="NO_SOURCE_FOR_INSTRUMENT", reason=f"Brak danych heatmapy dla {asset} (brak skonfigurowanego, zweryfikowanego źródła; XAUT ≠ XAUUSD-)")
-        snap = self.as_of(asset, D)
+        try:
+            snap = self.as_of(asset, D)
+        except contract.HeatmapError as exc:                              # 1.46: an invalid as_of is reported, never served as "latest"
+            return dict(base, status="INVALID_AS_OF", reason=str(exc)[:200])
         if snap is None:
             return dict(base, status=(st or {}).get("status") or ("DISABLED" if not src.enabled else "NO_SNAPSHOT"),
                         reason="brak zarchiwizowanej mapy" + (f" otrzymanej do {D}" if D else ""))

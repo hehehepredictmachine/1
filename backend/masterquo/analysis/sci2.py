@@ -26,10 +26,10 @@ from . import candles as CA
 from . import structure_v2 as S
 
 VERSION = "MQ_STRUCTURE_CANDLES_V2"
-ROLE_DIR = {"NECKLINE_BREAK": None, "BREAKOUT_FAILURE": None, "RETEST_HOLD": None, "SWEEP_RECLAIM": None, "TREND_PULLBACK": None,
-            "COMPRESSION": "NEUTRAL", "MID_RANGE": "NEUTRAL", "STRUCTURE_ONLY": None, "NO_STRUCTURAL_CONTEXT": None}
 BULL_FAMILIES = ("DOUBLE_BOTTOM", "INVERSE_HEAD", "TRIPLE_BOTTOM")
-BEAR_FAMILIES = ("DOUBLE_TOP", "HEAD_AND_SHOULDERS", "TRIPLE_TOP")
+# 1.46: chart_patterns names the bearish pattern HEAD_SHOULDERS (not HEAD_AND_SHOULDERS) - its neckline break was never NECKLINE_BREAK;
+# the unused ROLE_DIR table was removed
+BEAR_FAMILIES = ("DOUBLE_TOP", "HEAD_SHOULDERS", "TRIPLE_TOP")
 
 
 def _atr(h, lo, c, i, n=14):
@@ -119,8 +119,11 @@ def read(t: list[str], o, h, lo, c, tf: str, *, i: int | None = None, tick: floa
                          "interpretation": "świeca wspiera rolę strukturalną (warunkowo, nie sygnał)" if sup else
                          "świeca bez wsparcia roli / rola neutralna"})
     if level is None and pat_ref:
+        # 1.46: boundary['price'] does not exist in chart_patterns records -> the frozen v2 confirm level (structure_v2.upgrade_patterns)
         b = pat_ref.get("boundary")
-        level = b.get("price") if isinstance(b, dict) else b
+        level = pat_ref.get("v2_confirm_level")
+        if level is None:
+            level = b.get("price") if isinstance(b, dict) else b
     rid = "SCI2-" + hashlib.sha256(f"{tf}|{t[i]}|{role}".encode()).hexdigest()[:12]
     return dict(base, reading_id=rid, role=role, role_direction=direction, structural_level=level,
                 chart_pattern_id=(pat_ref or {}).get("pattern_id"), chart_pattern_revision=(pat_ref or {}).get("revision"),

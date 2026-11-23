@@ -9,7 +9,16 @@ import time
 from pathlib import Path
 
 
+def sessions_as_of(m1: list[dict]) -> float | None:
+    """1.46: as_of = CLOSE of the last M1 bar - its open time excluded that (closed) bar (session_engine keeps o + tf_s <= T)."""
+    if not m1:
+        return None
+    from ..timeutil import parse_iso
+    return parse_iso(str(m1[-1]["open_utc"])).timestamp() + 60
+
+
 def main(argv: list[str]) -> int:
+    from . import session_engine as se
     ap = argparse.ArgumentParser(prog="masterquo liquidity", description="Boksy sesji + heatmapa likwidacji (PMW-UPD-06)")
     sub = ap.add_subparsers(dest="c", required=True)
     for n in ("status", "sessions", "poll", "import", "evaluate"):
@@ -20,7 +29,7 @@ def main(argv: list[str]) -> int:
             s.add_argument("--commission", type=float)
             s.add_argument("--allow-synthetic-fixture", action="store_true")
         if n == "sessions":
-            s.add_argument("--profile")
+            s.add_argument("--profile", choices=tuple(se.PROFILES))         # 1.46: an unknown profile was a KeyError traceback
     a = ap.parse_args(argv)
     from ..config import ConfigStore
     from ..db.database import Database
@@ -48,7 +57,7 @@ def main(argv: list[str]) -> int:
         from ..extind.trainer import _bars
         meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
         m1 = _bars(ds, meta.get("file_prefix") or "XAUUSD", "M1")
-        r = liq.sessions(m1, 60, a.asset, (m1[-1]["open_utc"] if m1 else None), a.profile, days=3)
+        r = liq.sessions(m1, 60, a.asset, sessions_as_of(m1), a.profile, days=3)
         print(json.dumps(r, indent=1, ensure_ascii=False, default=str)[:20000])
         return 0
     from . import liquidity_eval as le

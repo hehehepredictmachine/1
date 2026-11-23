@@ -55,8 +55,13 @@ class PatternLibrary:
         if not 10 <= len(bars) <= 2000:
             return {"ok": False, "error": "SAMPLE_SIZE_10_2000"}
         sha = _sha(bars)
-        ex = self.db.one("SELECT id FROM pattern_samples WHERE symbol=? AND timeframe=? AND start_utc=? AND end_utc=? AND data_sha256=?",
+        ex = self.db.one("SELECT id, deleted FROM pattern_samples WHERE symbol=? AND timeframe=? AND start_utc=? AND end_utc=? AND data_sha256=?",
                          (symbol, tf, bars[0]["open_utc"], bars[-1]["open_utc"], sha))
+        if ex and ex.get("deleted"):
+            # 1.46: re-adding / importing a soft-deleted sample answered duplicate=True with the id of the invisible row (and the UNIQUE
+            # key blocked a new one) - the sample could never come back; the same immutable row is restored instead
+            self.db.execute("UPDATE pattern_samples SET deleted=0 WHERE id=?", (ex["id"],))
+            return {"ok": True, "id": ex["id"], "duplicate": False, "restored": True, "bars": len(bars), "data_sha256": sha}
         if ex:
             return {"ok": True, "id": ex["id"], "duplicate": True}
         self.db.execute("""INSERT INTO pattern_samples(created_at, symbol, timeframe, start_utc, end_utc, bars, data_sha256, origin, note)
@@ -89,7 +94,10 @@ class PatternLibrary:
         return r
 
     def delete(self, sid: int) -> bool:
-        return bool(self.db.execute("UPDATE pattern_samples SET deleted=1 WHERE id=? AND deleted=0", (sid,)))
+        # 1.46: Database.execute returns `lastrowid or rowcount` - for an UPDATE the connection's last INSERT id, so a missing or
+        # already deleted sample also answered True; the number of changed rows decides
+        with self.db.tx() as c:
+            return c.execute("UPDATE pattern_samples SET deleted=1 WHERE id=? AND deleted=0", (sid,)).rowcount > 0
 
     def export_samples(self) -> dict:
         return {"schema": "mq-pattern-library-1", "exported_at": iso(utcnow()),
@@ -121,7 +129,10 @@ class PatternLibrary:
         s = self.get(sid)
         if not s:
             return {"ok": False, "error": "SAMPLE_NOT_FOUND"}
-        r = DB.validate(s["bars"], cfg or self.db_cfg(), symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
+        try:
+            r = DB.validate(s["bars"], cfg or self.db_cfg(), symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
+        except (KeyError, TypeError, ValueError) as exc:          # 1.46: a data error of the sample is an error result, not HTTP 500
+            return {"ok": False, "sample_id": sid, "error": f"DATA_ERROR: {type(exc).__name__}: {exc}"[:300]}
         return {"ok": True, "sample_id": sid, "result": r}
 
     def start_job(self, ids: list[int] | None, cfg: dict | None = None) -> dict:
@@ -171,7 +182,13 @@ class PatternLibrary:
             return {"ok": False, "error": f"NOT_RESUMABLE: {j['status']}"}
         if not j["manifest"]:
             return {"ok": False, "error": "LEGACY_JOB_WITHOUT_MANIFEST"}
-        self.db.execute("UPDATE pattern_jobs SET status='RUNNING', resumed=resumed+1, finished_at=NULL WHERE job_id=?", (job_id,))
+        # 1.46: read-then-update was not atomic - two quick resumes started two threads on one manifest (two reports, and the first
+        # thread's exit removed the second one's cancel handle); only the call that moves the status out of a resumable one spawns
+        with self.db.tx() as c:
+            n = c.execute("UPDATE pattern_jobs SET status='RUNNING', resumed=resumed+1, finished_at=NULL WHERE job_id=? "
+                          "AND status IN ('INTERRUPTED','CANCELLED','FAILED_EXECUTION')", (job_id,)).rowcount
+        if n != 1:
+            return {"ok": False, "error": "NOT_RESUMABLE: RUNNING"}
         self._spawn(job_id)
         return {"ok": True, "job_id": job_id, "resumed": True}
 
@@ -211,9 +228,14 @@ class PatternLibrary:
                 if not s or it["sample_sha"] is None or s["data_sha256"] != it["sample_sha"]:
                     st, res = "MISSING", {"error": "SAMPLE_NOT_FOUND" if not s else "SAMPLE_REVISION_MISMATCH"}
                 else:
-                    r = DB.validate(json.loads(s["bars"]), cfg, symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
-                    st = "ERROR" if r["status"] == "error" else (r["values"]["status"] if r["values"]["status"] in DB.STATUSES else "ERROR")
-                    res = r
+                    # 1.46: a data error of ONE sample (e.g. an unparsable open_utc) left validate() as an exception and ended the whole
+                    # job as FAILED_EXECUTION without a result for that sample - every resume failed on it again; it is that sample's ERROR
+                    try:
+                        r = DB.validate(json.loads(s["bars"]), cfg, symbol=s["symbol"], tf=s["timeframe"], mode_label="offline_full_sample")
+                        st = "ERROR" if r["status"] == "error" else (r["values"]["status"] if r["values"]["status"] in DB.STATUSES else "ERROR")
+                        res = r
+                    except (KeyError, TypeError, ValueError) as exc:
+                        st, res = "ERROR", {"error": f"DATA_ERROR: {type(exc).__name__}: {exc}"[:300]}
                 usable = (res.get("values") or {}).get("usable_at") if isinstance(res, dict) else None
                 self.db.execute("INSERT OR IGNORE INTO pattern_results(job_id, sample_id, status, result, result_id, sample_sha, usable_at, created_at) "
                                 "VALUES (?,?,?,?,?,?,?,?)", (job_id, sid, st, json.dumps(res, default=str), self._result_id(job_id, sid), it["sample_sha"],
@@ -230,7 +252,8 @@ class PatternLibrary:
         # 1.42.4: the final status is published only AFTER the report exists - a reader never sees COMPLETED without report_id
         self.db.execute("UPDATE pattern_jobs SET status=? WHERE job_id=?", (status, job_id))
         with self._lock:
-            self._jobs.pop(job_id, None)
+            if (self._jobs.get(job_id) or {}).get("cancel") is cancel:      # 1.46: never remove another (resumed) run's handle
+                self._jobs.pop(job_id, None)
 
     def export(self, job_id: str, status: str | None = None) -> dict:
         """(Re)write the JSON + CSV report from STORED results - no validation is run. A failure keeps the results (EXPORT_FAILED).
