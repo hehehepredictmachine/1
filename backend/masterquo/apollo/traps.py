@@ -7,6 +7,8 @@ spoofing / layering-like patterns need MBO/L3, executed-flow divergence needs ve
 """
 from __future__ import annotations
 
+import bisect
+
 VERSION = "PMW-MTD-1"
 WEIGHTS = {"STRUCTURE_LIQUIDITY": 25, "EXECUTED_FLOW": 20, "CROSS_MARKET": 15, "PRICE_RESPONSE": 20, "REGIME_NEWS": 10, "EXECUTION_STRESS": 10}
 ALTERNATIVES = {"FALSE_BREAKOUT_ACCEPTANCE_FAIL": ["zwykła zmienność", "brak płynności po wybiciu", "news / dane makro"],
@@ -61,9 +63,12 @@ def detect(bars: list[dict], *, spread_points=None, spread_baseline=None, planne
     pattern_reasons = [r for r in reasons if r in ALTERNATIVES]
     sev = None if score is None else (1 + min(4, int(score // 20)))
     rec = "WAIT" if (score is not None and score >= 60 and coverage >= 0.3) else "NONE"
+    # 1.46: with OHLC only (PRICE_RESPONSE, weight 20) coverage is 0.2 < 0.3, so a high score silently said NONE - the reason is explicit now
+    rec_status = "UNAVAILABLE" if score is None else ("INSUFFICIENT_COVERAGE" if score >= 60 and coverage < 0.3 else "OK")
     return {"version": VERSION, "mode": mode, "market_trap_score": score, "confidence": round(coverage, 2), "severity": sev,
             "components": comps, "reason_codes": reasons, "alternative_explanations": {r: ALTERNATIVES[r] for r in pattern_reasons},
-            "recommendation": rec, "recommendation_scope": "tylko nowe wejście, przez istniejącą bramę Risk/STOP/Execution; brak akcji na zleceniach",
+            "recommendation": rec, "recommendation_status": rec_status, "recommendation_min_coverage": 0.3,
+            "recommendation_scope": "tylko nowe wejście, przez istniejącą bramę Risk/STOP/Execution; brak akcji na zleceniach",
             "disclaimer": "wzorzec ryzyka, nie dowód manipulacji ani identyfikacja uczestników; wynik 0–100 nie jest prawdopodobieństwem",
             "spoofing_layering": "UNAVAILABLE (wymaga MBO/L3)" if not mbo_available else "NOT_IMPLEMENTED"}
 
@@ -76,10 +81,18 @@ def behaviour(trades: list[dict], *, window_s: float = 900, chase_atr: float = 2
     flags = []
     sizes = [x["size"] for x in t]
     base = sorted(sizes)[len(sizes) // 2]
-    for prev, cur in zip(t, t[1:]):
-        if prev["net"] < 0 and cur["size"] > 1.5 * base:
+    # 1.46: "after a loss" = the trade CLOSED most recently before `cur` opened (was: the previous one by open time - a trade opened while
+    # a later loser was still open got both post-loss flags, with a negative gap); the chase check covers the first trade too
+    by_close = sorted(t, key=lambda x: x["closed"])
+    closes = [x["closed"] for x in by_close]
+    for cur in t:
+        j = bisect.bisect_right(closes, cur["opened"]) - 1
+        while j >= 0 and by_close[j] is cur:
+            j -= 1
+        prev = by_close[j] if j >= 0 else None
+        if prev is not None and prev["net"] < 0 and cur["size"] > 1.5 * base:
             flags.append({"code": "POST_LOSS_SIZE_ESCALATION", "at": cur["opened"]})
-        if prev["net"] < 0 and cur["opened"] - prev["closed"] < window_s:
+        if prev is not None and prev["net"] < 0 and cur["opened"] - prev["closed"] < window_s:
             flags.append({"code": "RAPID_REENTRY_AFTER_LOSS", "at": cur["opened"]})
         if (cur.get("entry_move_atr") or 0) >= chase_atr:
             flags.append({"code": "LATE_MOVE_CHASE_POOR_RR", "at": cur["opened"]})

@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 ALLOWED = ("XAUUSD", "BTC")
 
@@ -33,6 +33,10 @@ CALC_MODE = {0: "FOREX", 1: "FUTURES", 2: "CFD", 3: "CFD_INDEX", 4: "CFD_LEVERAG
 
 class SymbolNotAllowed(PermissionError):
     pass
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _up(v) -> str:
@@ -86,7 +90,7 @@ class AssetRegistry:
         self._lock = threading.Lock()
         self._meta: dict[str, dict] = {}            # asset -> last metadata read from the terminal
         self._check: dict[str, dict] = {}           # asset -> {"status": OK/CONFLICT/UNVERIFIED, "reasons": [...], "at": iso}
-        self.rejections: list[dict] = []            # last allowlist rejections (diagnostics)
+        self.rejections: list[dict] = []            # last rejected automatic adoptions (diagnostics; 1.46: filled by autodetect)
 
     # ------------------------------------------------------------------ queries
     def mapping(self, asset: str):
@@ -229,7 +233,20 @@ class AssetRegistry:
         patch = {"assets": {"mappings": {asset: {"broker_symbol": sym, "status": "AUTO_DETECTED"}}}}
         if self.active() == asset:
             patch["mt5"] = {"symbol": sym}
-        self.cfg_store.update(patch)
+        try:
+            self.cfg_store.update(patch)
+        except ValueError as exc:
+            # 1.46: a terminal name outside config.SYMBOL_RE (e.g. 'BTC/USD') raised pydantic's ValidationError out of check_asset / switch
+            # -> HTTP 500 in /assets/active, /lab/*; nothing was saved then and nothing is now - the asset stays "no symbol" (409) and
+            # the rejected name is listed in state()["rejections"]
+            note = {"asset": asset, "broker_symbol": sym, "reason": "INVALID_BROKER_SYMBOL" if "INVALID_BROKER_SYMBOL" in str(exc)
+                    else f"CONFIG_REJECTED:{type(exc).__name__}", "at": _now_iso()}
+            with self._lock:
+                self.rejections.append(note)
+                del self.rejections[:-50]
+            if self.log is not None:
+                self.log.write("WARNING", "ASSETS", "AUTO_DETECT_REJECTED", f"{asset}: symbol z rachunku {sym!r} ma niedozwoloną nazwę – nie został przyjęty")
+            return None
         if self.log is not None:
             self.log.info("ASSETS", "AUTO_DETECTED", f"{asset}: używam symbolu z rachunku – {sym}")
         return sym
@@ -245,8 +262,14 @@ class AssetRegistry:
                 try:
                     self.verify(a, b.symbol_meta(m.broker_symbol, guard=False))
                 except Exception as exc:  # terminal hiccup: keep the previous result, record it
+                    # 1.46: the old entry kept its status (e.g. OK) next to READ_FAILED and the dict returned by verify() was mutated;
+                    # now a new UNVERIFIED entry, the last real check kept under "previous" (repeated failures do not nest)
+                    now = _now_iso()
                     with self._lock:
-                        self._check.setdefault(a, {"status": "UNVERIFIED", "reasons": [], "at": None})["reasons"] = [f"READ_FAILED:{type(exc).__name__}"]
+                        prev = self._check.get(a)
+                        if prev and str((prev.get("reasons") or [""])[0]).startswith("READ_FAILED:"):
+                            prev = prev.get("previous")
+                        self._check[a] = {"status": "UNVERIFIED", "reasons": [f"READ_FAILED:{type(exc).__name__}"], "at": now, "previous": prev}
 
     def candidates(self, asset: str) -> list[dict]:
         """Terminal symbols whose metadata classify as `asset` (no prefix guessing). Shown to the user, never auto-applied."""
