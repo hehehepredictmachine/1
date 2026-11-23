@@ -516,3 +516,100 @@ def trader_life_game(ctx: SourceContext) -> Collected:
             tc.update({f"{c}_utc": "UTC" for c in TLG_EPOCH_COLS if c in cols})
             ds.append(Dataset(t, rows, kind, columns=cols + [f"{c}_utc" for c in TLG_EPOCH_COLS if c in cols], time_columns=tc))
     return Collected(ds, prov)
+
+
+# ================================================================================================ persistent stores without a bulk export (X6 inventory)
+# store -> (file relative to <data>, tables NEVER exported). Excluded: personal data and audit of settings (account logins, AI questions / memory,
+# Telegram dedup keys, settings change log) - "no personal data beyond need". Secrets are never in these stores (SecretStore is a separate file).
+STORES = {
+    "main": ("masterquo.sqlite", {"accounts_seen", "account_prefs", "agent_runs", "agent_memory", "notifications_sent", "settings_audit"}),
+    "svp": ("svp/svp.sqlite", set()),
+    "indicators": ("indicators/indicators.sqlite", set()),          # book_snapshots = DOM snapshots MT5, spread_samples, AVWAP anchors, DXY bars
+    "baskets": ("baskets/ledger.sqlite", set()),
+    "zones": ("zones/zones.sqlite", set()),
+    "market-zones": ("zones/market_zones.sqlite", set()),
+    "evaluation": ("evaluation/ledger.sqlite", set()),
+    "mm": ("mm/ledger.sqlite", set()),
+    "quant": ("quant/ledger.sqlite", set()),
+    "trainhub": ("trainhub/jobs.sqlite", set()),
+    "news": ("m04n/M04N_STATE.sqlite", set()),
+}
+MODE_KINDS = {"PAPER": "VIRTUAL", "AUTO_DEMO": "DEMO", "AUTO_LIVE": "REAL"}
+TABLE_KINDS = {"paper_account": "VIRTUAL", "schema_migrations": "STATE", "book_snapshots": "PROVIDER", "spread_samples": "PROVIDER",
+               "dxy_bars": "PROVIDER", "articles": "PROVIDER", "calendar": "PROVIDER", "observations": "PROVIDER"}
+ACCOUNT_COLUMNS = ("account_key", "account")
+
+
+def _time_labels(db: ReadOnlyDB, table: str, cols: list[str]) -> dict:
+    """A column is labelled UTC only when its stored values are ISO-8601 strings with an explicit UTC designator (checked on data)."""
+    out = {}
+    for c in cols:
+        if not (c.endswith("_at") or c.endswith("_utc") or c in ("ts", "at", "t", "as_of", "bar_t", "anchor_time")):
+            continue
+        r = db.query(f'SELECT "{c}" AS v FROM "{table}" WHERE "{c}" IS NOT NULL LIMIT 1')
+        v = r[0]["v"] if r else None
+        if isinstance(v, str) and (v.endswith("Z") or v.endswith("+00:00")) and utc_iso(v):
+            out[c] = "UTC"
+    return out
+
+
+def store_tables(ctx: SourceContext, store: str = "main", tables: list[str] | None = None) -> Collected:
+    if store not in STORES:
+        raise ValueError(f"store: {', '.join(STORES)}")
+    rel, excluded = STORES[store]
+    dbp = ctx.data_dir / rel
+    prov = {"source": f"SQLite <dane>/{rel} (tylko odczyt, URI mode=ro)", "store": store, "excluded_tables": sorted(excluded),
+            "excluded_reason": "dane osobowe / audyt ustawień – poza zakresem eksportu", "account_ids": "zamaskowane (server:***123)",
+            "split": "tabele z kolumną mode / exec_mode: osobny plik na tryb (PAPER = VIRTUAL, AUTO_DEMO = DEMO, AUTO_LIVE = REAL, inne = DERIVED); "
+                     "kolumna synthetic = 1 -> osobny plik SYNTHETIC",
+            "time_policy": "kolumny czasu oznaczone UTC tylko gdy wartości mają jawne Z / +00:00; liczbowe znaczniki czasu bez konwersji (strefa wg modułu)"}
+    if not dbp.exists():
+        return Collected([], {**prov, "database_present": False}, status="EMPTY", notes=[f"NO_DATABASE: brak <dane>/{rel}"])
+    db = ReadOnlyDB(dbp)
+    try:
+        allowed = [t for t in db.tables() if t not in excluded]
+        sel = list(tables) if tables else allowed
+        bad = [t for t in sel if t not in allowed]
+        if bad:
+            raise ValueError(f"tables: {bad} (dozwolone w '{store}': {', '.join(allowed)})")
+        datasets, used = [], set()
+
+        def rows_of(table, cols, where, args):
+            def gen():
+                cur = db.conn.execute(f'SELECT * FROM "{table}"{where} ORDER BY rowid', args)
+                for r in cur:
+                    d = dict(r)
+                    for c in ACCOUNT_COLUMNS:
+                        if c in d and isinstance(d[c], str):
+                            d[c] = mask_account(d[c])
+                    yield d
+            return gen()
+
+        for t in sel:
+            cols = db.columns(t)
+            tl = _time_labels(db, t, cols)
+            split_col = "mode" if "mode" in cols else ("exec_mode" if "exec_mode" in cols else None)
+            if split_col:
+                vals = [r["v"] for r in db.query(f'SELECT DISTINCT "{split_col}" AS v FROM "{t}" ORDER BY v')]
+                for v in vals:
+                    name = f"{_slug(t)}__{_slug(v) if v is not None else 'no_mode'}"
+                    if name in used:
+                        continue
+                    used.add(name)
+                    where, args = (f' WHERE "{split_col}" = ?', (v,)) if v is not None else (f' WHERE "{split_col}" IS NULL', ())
+                    datasets.append(Dataset(name, rows_of(t, cols, where, args), MODE_KINDS.get(str(v), "DERIVED"), columns=cols, time_columns=tl,
+                                            description=f"{t} ({split_col} = {v})"))
+                if not vals:
+                    datasets.append(Dataset(_slug(t), [], TABLE_KINDS.get(t, "DERIVED"), columns=cols, time_columns=tl, description=t))
+            elif "synthetic" in cols:
+                datasets.append(Dataset(_slug(t), rows_of(t, cols, ' WHERE COALESCE("synthetic", 0) = 0', ()), TABLE_KINDS.get(t, "DERIVED"),
+                                        columns=cols, time_columns=tl, description=f"{t} (dane rzeczywiste rynku)"))
+                datasets.append(Dataset(f"{_slug(t)}__synthetic", rows_of(t, cols, ' WHERE "synthetic" = 1', ()), "SYNTHETIC", columns=cols,
+                                        time_columns=tl, description=f"{t} (DANE SYNTETYCZNE)"))
+            else:
+                datasets.append(Dataset(_slug(t), rows_of(t, cols, "", ()), TABLE_KINDS.get(t, "DERIVED"), columns=cols, time_columns=tl, description=t))
+        prov["tables"] = sel
+    except BaseException:
+        db.close()
+        raise
+    return Collected(datasets, prov, cleanup=[db.close])

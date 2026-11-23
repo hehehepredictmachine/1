@@ -73,6 +73,7 @@ class Collected:
     provenance: dict
     status: str = "OK"
     notes: list[str] = field(default_factory=list)
+    cleanup: list = field(default_factory=list)       # callables run after writing (e.g. close a read-only SQLite connection of a stream)
 
 
 # ------------------------------------------------------------------------------------------------------------ value helpers
@@ -182,11 +183,11 @@ def mask_account(key: str | None) -> str | None:
 
 
 # ------------------------------------------------------------------------------------------------------------ writing
-def _columns(ds: Dataset) -> list[str]:
-    if ds.columns:
-        extra = [k for r in ds.rows for k in r if k not in ds.columns]
-        return list(ds.columns) + list(dict.fromkeys(extra))
-    cols: dict[str, None] = {}
+def _columns(ds: Dataset) -> list[str] | None:
+    """Columns of a dataset: declared ones (+ any extra key met in a list), the union of keys of a list, None for an undeclared stream."""
+    if not isinstance(ds.rows, list):
+        return list(ds.columns) if ds.columns else None
+    cols: dict[str, None] = dict.fromkeys(ds.columns or [])
     for r in ds.rows:
         for k in r:
             cols.setdefault(str(k), None)
@@ -203,36 +204,60 @@ def _csv_cell(v):
     return v
 
 
-def _render(ds: Dataset, fmt: str, cols: list[str]) -> str:
-    if fmt == "jsonl":
-        return "".join(json.dumps({c: r.get(c) for c in cols}, ensure_ascii=False, allow_nan=False) + "\n" for r in ds.rows)
-    if not cols and not ds.rows:
-        return ""                                     # no columns known and no rows: an empty file (not a blank header line)
+def _csv_line(values: list) -> str:
     buf = io.StringIO()
-    w = csv.writer(buf, lineterminator="\n")
-    w.writerow(cols)
-    for r in ds.rows:
-        w.writerow([_csv_cell(r.get(c)) for c in cols])
+    csv.writer(buf, lineterminator="\n").writerow(values)
     return buf.getvalue()
 
 
-def _range(datasets: list[Dataset]) -> dict | None:
-    lo = hi = None
-    basis = []
-    for ds in datasets:
-        for c, b in ds.time_columns.items():
-            if b != "UTC":
-                continue
-            basis.append(f"{ds.name}.{c}")
-            for r in ds.rows:
-                v = r.get(c)
-                if not isinstance(v, str) or not v:
-                    continue
-                lo = v if lo is None or v < lo else lo
-                hi = v if hi is None or v > hi else hi
-    if lo is None:
-        return {"from_utc": None, "to_utc": None, "basis": basis, "status": "NO_TIMESTAMPS"}
-    return {"from_utc": lo, "to_utc": hi, "basis": basis, "status": "OK"}
+class _Range:
+    def __init__(self):
+        self.lo = self.hi = None
+        self.basis: list[str] = []
+
+    def add(self, v):
+        if isinstance(v, str) and v:
+            self.lo = v if self.lo is None or v < self.lo else self.lo
+            self.hi = v if self.hi is None or v > self.hi else self.hi
+
+    def result(self) -> dict:
+        if self.lo is None:
+            return {"from_utc": None, "to_utc": None, "basis": self.basis, "status": "NO_TIMESTAMPS"}
+        return {"from_utc": self.lo, "to_utc": self.hi, "basis": self.basis, "status": "OK"}
+
+
+def _write_dataset(ds: Dataset, folder: Path, fmts: tuple, red: "Redactor", rng: _Range) -> tuple[int, list[str]]:
+    """One pass over the rows (a list or a stream), every format written at once; each rendered line is checked for secrets."""
+    cols = _columns(ds)
+    rows = ds.rows
+    if cols is None:                                   # undeclared stream: materialise once to learn the columns
+        rows = list(rows)
+        cols = _columns(Dataset(ds.name, rows, ds.data_kind))
+    utc_cols = [c for c, b in ds.time_columns.items() if b == "UTC"]
+    rng.basis += [f"{ds.name}.{c}" for c in utc_cols]
+    handles = {f: open(folder / f"{ds.name}.{f}", "w", encoding="utf-8", newline="") for f in fmts}
+    n = 0
+    try:
+        if "csv" in handles and cols:
+            handles["csv"].write(_csv_line(cols))
+        for raw in rows:
+            r = red.value(_clean(dict(raw)))
+            extra = [k for k in r if k not in cols]
+            if extra:                                  # a stream may only carry declared columns (keeps CSV rectangular)
+                raise ExportError(f"UNDECLARED_COLUMNS in {ds.name}: {extra[:5]}")
+            for c in utc_cols:
+                rng.add(r.get(c))
+            for f, h in handles.items():
+                line = (json.dumps({c: r.get(c) for c in cols}, ensure_ascii=False, allow_nan=False) + "\n" if f == "jsonl"
+                        else _csv_line([_csv_cell(r.get(c)) for c in cols]))
+                if red.leaks(line):                    # defence in depth: the rendered bytes are checked again
+                    raise ExportError(f"SECRET_DETECTED in {ds.name}.{f}")
+                h.write(line)
+            n += 1
+    finally:
+        for h in handles.values():
+            h.close()
+    return n, cols
 
 
 def sha256_file(p: Path) -> str:
@@ -276,31 +301,25 @@ def write_export(name: str, col: Collected, *, out_root: Path | None = None, for
     if final.exists() or tmp.exists():
         raise ExportError("EXPORT_EXISTS")
     red = Redactor(known_secret_values(data_dir) if secret_values is None else secret_values)
-    datasets = [Dataset(d.name, [red.value(_clean(dict(r))) for r in d.rows], d.data_kind, d.columns, dict(d.time_columns), d.description)
-                for d in col.datasets]
-    files = []
+    files, counts, rng = [], {}, _Range()
     tmp.mkdir(parents=True)
     try:
-        for ds in datasets:
-            cols = _columns(ds)
+        for ds in col.datasets:
+            n, cols = _write_dataset(ds, tmp, fmts, red, rng)
+            counts[ds.name] = n
             for fmt in fmts:
-                text = _render(ds, fmt, cols)
-                if red.leaks(text):                               # defence in depth: the rendered bytes are checked again
-                    raise ExportError(f"SECRET_DETECTED in {ds.name}.{fmt}")
                 p = tmp / f"{ds.name}.{fmt}"
-                with open(p, "w", encoding="utf-8", newline="") as f:
-                    f.write(text)
-                files.append({"path": p.name, "dataset": ds.name, "format": fmt, "rows": len(ds.rows), "bytes": p.stat().st_size,
+                files.append({"path": p.name, "dataset": ds.name, "format": fmt, "rows": n, "bytes": p.stat().st_size,
                               "sha256": sha256_file(p), "data_kind": ds.data_kind, "columns": cols, "time_columns": ds.time_columns,
                               "description": ds.description})
-        total = sum(len(d.rows) for d in datasets)
+        total = sum(counts.values())
         status = col.status if col.status != "OK" else ("EMPTY" if total == 0 else "OK")
         manifest = {
             "schema_version": SCHEMA_VERSION, "export_id": export_id, "export_name": name, "status": status,
             "created_at_utc": utc_iso(now), "app": {"name": APP_NAME, "display_name": DISPLAY_NAME, "version": APP_VERSION},
-            "provenance": _clean(red.value(col.provenance)), "params": _clean(red.value(params or {})), "date_range": _range(datasets),
-            "row_counts": {d.name: len(d.rows) for d in datasets}, "total_rows": total, "formats": list(fmts), "files": files,
-            "data_kinds": sorted({d.data_kind for d in datasets}), "csv_null": "puste pole CSV = null (brak danych, nigdy 0)",
+            "provenance": _clean(red.value(col.provenance)), "params": _clean(red.value(params or {})), "date_range": rng.result(),
+            "row_counts": counts, "total_rows": total, "formats": list(fmts), "files": files,
+            "data_kinds": sorted({d.data_kind for d in col.datasets}), "csv_null": "puste pole CSV = null (brak danych, nigdy 0)",
             "time_policy": "kolumny *_utc = UTC ISO-8601; *_server = czas serwera brokera MT5 (etykieta w time_columns); brak czasu = null",
             "redactions": red.count, "notes": list(col.notes),
         }
@@ -312,6 +331,12 @@ def write_export(name: str, col: Collected, *, out_root: Path | None = None, for
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
+    finally:
+        for fn in col.cleanup:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - closing a read-only source never fails the export
+                pass
     manifest["path"] = str(final)
     return manifest
 

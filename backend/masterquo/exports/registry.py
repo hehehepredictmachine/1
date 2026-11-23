@@ -111,6 +111,9 @@ EXPORTERS: dict[str, Exporter] = {e.name: e for e in (
     Exporter("trader-life-game", "TraderLifeGame – kopia zapasowa (profil, XP, Gold, questy, dziennik, symulator, inwentarz)", S.trader_life_game, (),
              task="TASK 019"),
     Exporter("bootstrap", "Stan bootstrapu (komponenty, stany)", S.bootstrap_state, (), task="TASK 013"),
+    Exporter("store-tables", "Tabele trwałych magazynów SQLite bez eksportu zbiorczego (biała lista; tryby i dane syntetyczne osobno)",
+             S.store_tables, (Param("store", "str", "main", tuple(S.STORES)), Param("tables", "list", None, help="domyślnie wszystkie dozwolone",
+                                                                                     max_items=100)), task="inwentarz X6"),
 )}
 
 

@@ -499,6 +499,47 @@ class TestShadowModels(Base):
         self.assertFalse(m["provenance"]["apply_to_execution"])
 
 
+class TestStoreTables(Base):
+    def test_rows_equal_source_modes_split_accounts_masked_excluded_tables(self):
+        from masterquo.db.database import Database
+        db = Database(self.data / "masterquo.sqlite")
+        with db.tx() as c:
+            for i, mode in enumerate(["PAPER", "PAPER", "AUTO_LIVE", "AUTO_DEMO", "SIGNALS"]):
+                c.execute("INSERT INTO equity_snapshots(ts, mode, account_key, balance, equity, margin, free_margin, currency) VALUES(?,?,?,?,?,?,?,?)",
+                          (f"2026-11-2{i}T10:00:00Z", mode, "Broker-Live:55554444", 1000.0 + i, 1000.0, 0.0, 1000.0, "USD"))
+            c.execute("INSERT INTO accounts_seen(account_key, login, server, company, currency, trade_mode, margin_mode, first_seen, last_seen) "
+                      "VALUES('Broker-Live:55554444', 55554444, 'Broker-Live', 'X', 'USD', 'REAL', 'HEDGING', '2026-11-01T00:00:00Z', '2026-11-02T00:00:00Z')")
+            for i in range(2500):
+                c.execute("INSERT INTO app_events(ts, level, category, code, message, data_json) VALUES(?,?,?,?,?,?)",
+                          (f"2026-11-20T10:{i % 60:02d}:00Z", "INFO", "TEST", "T", f"m{i}", None))
+        man = self.run_export("store-tables", params={"store": "main", "tables": "equity_snapshots,app_events"})
+        m, folder = self.check(man, {"equity_snapshots__paper": 2, "equity_snapshots__auto_live": 1, "equity_snapshots__auto_demo": 1,
+                                     "equity_snapshots__signals": 1, "app_events": 2500})
+        kinds = {f["dataset"]: f["data_kind"] for f in m["files"]}
+        self.assertEqual((kinds["equity_snapshots__paper"], kinds["equity_snapshots__auto_live"], kinds["equity_snapshots__auto_demo"]),
+                         ("VIRTUAL", "REAL", "DEMO"))
+        txt = all_text(folder)
+        self.assertNotIn("55554444", txt)
+        self.assertIn("Broker-Live:***444", txt)
+        self.assertEqual(m["files"][0]["time_columns"].get("ts"), "UTC")
+        self.assertEqual(m["date_range"]["from_utc"], "2026-11-20T10:00:00Z")
+        from masterquo.exports.core import ExportError
+        with self.assertRaises(ExportError):
+            self.run_export("store-tables", params={"store": "main", "tables": "accounts_seen"})        # personal data never exported
+        with self.assertRaises(ExportError):
+            self.run_export("store-tables", params={"store": "main", "tables": "trades;DROP TABLE trades"})
+        with self.assertRaises(ExportError):
+            self.run_export("store-tables", params={"store": "../secrets"})
+        full = self.run_export("store-tables", params={"store": "main"})
+        self.assertNotIn("accounts_seen", full["row_counts"])
+        self.assertEqual(full["row_counts"]["app_events"], 2500)
+
+    def test_missing_store_is_empty_and_not_created(self):
+        m, _ = self.check(self.run_export("store-tables", params={"store": "svp"}))
+        self.assertEqual((m["status"], m["total_rows"]), ("EMPTY", 0))
+        self.assertFalse((self.data / "svp" / "svp.sqlite").exists())
+
+
 # ---------------------------------------------------------------------------------------------------- CLI + API
 class TestCli(Base):
     def test_cli_out_folder_and_unavailable_exit_code(self):
@@ -541,7 +582,10 @@ class TestExportApi(unittest.TestCase):
         self.assertEqual(code, 200)
         names = {e["name"] for e in idx["exporters"]}
         self.assertTrue({"orderflow", "market-candles", "fomo-universe", "strategy-roi", "sfb-snapshots", "asge-trials", "change-points", "long-horizon",
-                         "association-rules", "pt-skill", "dt-ranker", "telegram-center", "trader-life-game", "bootstrap"} <= names)
+                         "association-rules", "pt-skill", "dt-ranker", "telegram-center", "trader-life-game", "bootstrap", "store-tables"} <= names)
+        code, st = c("/api/v1/exports/store-tables?store=main&tables=app_events")
+        self.assertEqual(code, 200, st)
+        self.assertGreater(st["row_counts"]["app_events"], 0)
         self.assertEqual(c("/api/v1/exports/nope")[0], 404)
         self.assertEqual(c("/api/v1/exports/bootstrap?out=/tmp/x")[0], 400)          # no path parameter
         self.assertEqual(c("/api/v1/exports/change-points?lookback=-5")[0], 400)
