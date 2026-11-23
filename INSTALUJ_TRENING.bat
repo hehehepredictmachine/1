@@ -5,7 +5,7 @@ set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - instalacja / naprawa srodowiska treningu. Nie nadpisuje sprawnego srodowiska; uzywa istniejacych
 rem instalatorow (01_INSTALUJ.bat: .venv, 10_PROGNOZY_INSTALUJ.bat: .venv_candles) - Python 3.13/3.12 x64, pakiety z hashami, CPU.
 setlocal
-title PepeMarketWizard - instalacja treningu
+title Apollo23 - instalacja treningu
 set "MQ_NO_PAUSE=1"
 rem ---- 0. kompletnosc rozpakowania (brak plikow to nie problem z Pythonem)
 set "MQ_MISSING="

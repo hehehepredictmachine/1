@@ -34,7 +34,7 @@ def register(app: FastAPI) -> None:
     @app.post("/api/v1/owner/license/keys/import")
     def owner_license_import_key(body: dict = Body(default={})):
         if len(str(body.get("content") or "")) > 20000:
-            raise HTTPException(400, "key_file: plik za duży – to nie jest kopia klucza PepeMarketWizard")
+            raise HTTPException(400, "key_file: plik za duży – to nie jest kopia klucza Apollo23")
         return _lic(lic.import_key, str(body.get("content") or ""), bool(body.get("replace")))
 
     @app.get("/api/v1/owner/license/hwid")

@@ -6,7 +6,7 @@ rem PepeMarketWizard - Context indicators (PMW-UPD-14): VAMD, bounded Katz FD, P
 rem Kalibracja tylko na dev (max 24 konfiguracje), trening SHADOW/OBSERVE, brak zlecen, brak zmian AutoTrading i Execution Lock.
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title PepeMarketWizard - Context indicators
+title Apollo23 - Context indicators
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

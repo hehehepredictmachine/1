@@ -24,7 +24,7 @@ LAB_EXPERIMENTS = ["LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED"]
 
 
 def say(msg: str) -> None:
-    print(f"[PepeMarketWizard] {msg}", flush=True)
+    print(f"[Apollo23] {msg}", flush=True)
 
 
 class Bot:

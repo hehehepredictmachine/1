@@ -8,7 +8,7 @@ rem Domyslnie 12 miesiecy (mozna podac liczbe miesiecy jako argument, np. 11_EKS
 cd /d "%~dp0"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
-if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje Apollo23 - PepeMarketWizard.exe & pause & exit /b 2)
 set "MONTHS=%~1"
 if "%MONTHS%"=="" set "MONTHS=12"
 if not exist "%~dp0data\logs" mkdir "%~dp0data\logs"

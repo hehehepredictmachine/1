@@ -3,7 +3,7 @@ rem PepeMarketWizard - moduly IQ Gold Gann / IQ Star Lines / PAL02M / Parabolic 
 rem Kolejnosc: gotowosc zrodel -> rejestracja (dziala w bocie) -> zbior -> kalibracja SAR -> trening -> raport.
 rem Nie wysyla zlecen, nie zmienia Execution Lock, nowe modele tylko SHADOW (aktywacja recznie w panelu).
 setlocal
-title PepeMarketWizard - moduly IQ / PAL / SAR
+title Apollo23 - moduly IQ / PAL / SAR
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"
 for %%C in (status record dataset calibrate-sar train) do (

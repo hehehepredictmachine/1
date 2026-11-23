@@ -6,7 +6,7 @@ rem PepeMarketWizard - Flow context (PMW-UPD-11): Markov 3-stanowy i koszyki, He
 rem Kalibracja i Markov tylko na czesci dev; holdout wylacznie evaluate-holdout; SHADOW recznie; brak zlecen i zmian Execution Lock.
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title PepeMarketWizard - Flow context
+title Apollo23 - Flow context
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

@@ -6,7 +6,7 @@ rem PepeMarketWizard - Scalp ML: P(dodatni wynik netto cyklu) + net_R, XGBoost L
 rem Nie wysyla zlecen, nie zmienia Execution Lock. Nowy model nigdy nie jest wybierany automatycznie (OBSERVE / SHADOW_GATE recznie).
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - Scalp ML
+title Apollo23 - Scalp ML
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

@@ -19,7 +19,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=tsfm"
 set "LOG=%ROOT%data\logs\instalacja_ai141_%TS%.log"
-echo [PepeMarketWizard] Instalacja TiRex-2 + TabICLv2 - log: "%LOG%"
+echo [Apollo23] Instalacja TiRex-2 + TabICLv2 - log: "%LOG%"
 set "PYEXE="
 if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
 for %%V in (3.13 3.12) do (

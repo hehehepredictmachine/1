@@ -6,7 +6,7 @@ rem PepeMarketWizard - SCALPING / HEDGING (PMW-SH-1): eksport historii, kontrola
 rem model zdarzenia P(TP2 przed SL) i raport walidacji. Bez zlecen, bez zmian Execution Lock. Wyniki: data\sh\validation\.
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title PepeMarketWizard - SCALPING / HEDGING walidacja
+title Apollo23 - SCALPING / HEDGING walidacja
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (

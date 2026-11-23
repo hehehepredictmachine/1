@@ -11,12 +11,12 @@ if not exist "%~dp0.venv\Scripts\python.exe" (
 )
 rem masterquo_start: uruchamia serwer PepeMarketWizard w tym oknie (monitor: http://127.0.0.1:8765/).
 rem Opcja: masterquo_start.bat --demo  = DANE SYNTETYCZNE (symulator, osobna baza).
-title PepeMarketWizard server
+title Apollo23 server
 cd /d "%~dp0backend"
 "%~dp0.venv\Scripts\python.exe" -m masterquo serve %*
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
-  echo [PepeMarketWizard] Program zakonczyl sie kodem %RC%.
+  echo [Apollo23] Program zakonczyl sie kodem %RC%.
   pause
 )
 exit /b %RC%

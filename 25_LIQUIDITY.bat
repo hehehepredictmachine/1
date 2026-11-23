@@ -5,7 +5,7 @@ set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - boksy sesji + heatmapa likwidacji (PMW-UPD-06). OBSERVE: nie wysyla zlecen, nie zmienia Execution Lock.
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - sesje i heatmapa
+title Apollo23 - sesje i heatmapa
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

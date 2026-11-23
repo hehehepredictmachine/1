@@ -73,7 +73,7 @@ def parse_key_file(text: str) -> tuple[bytes, bytes]:
         elif re.fullmatch(r"[0-9a-fA-F]{128}", compact):
             seed_hex, pub_hex = compact[:64], compact[64:]
     if not seed_hex or not re.fullmatch(r"[0-9a-fA-F]{64}", seed_hex):
-        raise LicenseInputError("key_file", "to nie jest klucz prywatny PepeMarketWizard (brak ziarna Ed25519)")
+        raise LicenseInputError("key_file", "to nie jest klucz prywatny Apollo23 (PMW1) (brak ziarna Ed25519)")
     seed = bytes.fromhex(seed_hex)
     pub = bytes(_signing().SigningKey(seed).verify_key)
     if pub_hex is not None and (not re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex) or bytes.fromhex(pub_hex) != pub):

@@ -26,7 +26,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=install"
 set "LOG=%ROOT%data\logs\instalacja_%TS%.log"
-echo [PepeMarketWizard] Instalacja - log: "%LOG%"
+echo [Apollo23] Instalacja - log: "%LOG%"
 echo PepeMarketWizard install %DATE% %TIME% > "%LOG%"
 
 rem ---- 1. wybor sprawnego interpretera: Python z paczki aplikacji Windows (runtime\python), potem Python 3.13 x64, potem 3.12

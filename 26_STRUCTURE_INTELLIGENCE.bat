@@ -6,7 +6,7 @@ rem PepeMarketWizard - Structure Intelligence (PMW-UPD-07). Dane, kalibracja na 
 rem Nie wysyla zlecen, nie zmienia Execution Lock, nie wybiera modelu automatycznie (SHADOW tylko recznie).
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - Structure Intelligence
+title Apollo23 - Structure Intelligence
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

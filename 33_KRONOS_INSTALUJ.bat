@@ -16,7 +16,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=kronos"
 set "LOG=%ROOT%data\logs\instalacja_kronos_%TS%.log"
-echo [PepeMarketWizard] Instalacja Kronos - log: "%LOG%"
+echo [Apollo23] Instalacja Kronos - log: "%LOG%"
 set "PYEXE="
 if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
 for %%V in (3.13 3.12) do (

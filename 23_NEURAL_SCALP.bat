@@ -6,7 +6,7 @@ rem PepeMarketWizard - Neural Scalp System (PMW-UPD-04): TCN M1/M5 + kontekst M1
 rem Nie wysyla zlecen, nie zmienia Execution Lock. Nowy model nigdy nie jest wybierany automatycznie (OBSERVE / SHADOW_GATE recznie).
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - Neural Scalp System
+title Apollo23 - Neural Scalp System
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)

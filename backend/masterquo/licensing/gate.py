@@ -39,7 +39,7 @@ MSG = {
                      "programu.",
     "NO_CRYPTO": "Brak biblioteki kryptograficznej (PyNaCl) – nie można sprawdzić licencji. Uruchom aplikację ponownie (doinstaluje ją) "
                  "albo skontaktuj się z wydawcą.",
-    "NO_LICENSE": "Wklej klucz licencyjny, aby uruchomić PepeMarketWizard.",
+    "NO_LICENSE": "Wklej klucz licencyjny, aby uruchomić Apollo23.",
     "CLOCK_ROLLBACK": "Wykryto cofnięcie zegara systemowego. Ustaw poprawną datę i godzinę w Windows (Ustawienia → Czas i język → Ustaw "
                       "czas automatycznie) i uruchom aplikację ponownie.",
     "CLOCK_ERROR": "Błąd zegara systemowego: czas komputera różni się od czasu z internetu o {hours} h. Ustaw poprawną datę i godzinę w "

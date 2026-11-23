@@ -8,7 +8,7 @@ rem Domyslnie 6 miesiecy (argument = liczba miesiecy, np. 16_EKSPORT_HISTORII_SC
 cd /d "%~dp0"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
-if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje PepeMarketWizard & pause & exit /b 2)
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje Apollo23 - PepeMarketWizard.exe & pause & exit /b 2)
 set "MONTHS=%~1"
 if "%MONTHS%"=="" set "MONTHS=6"
 pushd "%~dp0backend"

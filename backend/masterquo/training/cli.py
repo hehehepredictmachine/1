@@ -371,7 +371,7 @@ def cmd_diag(a) -> int:
 # ------------------------------------------------------------------ menu
 MENU = """
 ==============================================================
-  PepeMarketWizard – TRENING MODELI (XAUUSD / BTC)
+  Apollo23 – TRENING MODELI (XAUUSD / BTC)
   Trening nie wysyła zleceń i nie zmienia trybu wykonania.
 ==============================================================
   1) Instalacja / naprawa środowiska

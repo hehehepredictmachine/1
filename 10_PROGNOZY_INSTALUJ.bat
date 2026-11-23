@@ -13,7 +13,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=candles"
 set "LOG=%ROOT%data\logs\instalacja_prognoz_%TS%.log"
-echo [PepeMarketWizard] Srodowisko prognoz - log: "%LOG%"
+echo [Apollo23] Srodowisko prognoz - log: "%LOG%"
 set "PYEXE="
 rem Python z paczki aplikacji Windows (runtime\python) ma pierwszenstwo - paczka DESKTOP nie wymaga osobnej instalacji Pythona
 if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
