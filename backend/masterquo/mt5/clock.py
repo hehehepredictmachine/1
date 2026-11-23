@@ -23,7 +23,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..timeutil import UTC, from_epoch, iso
+from ..timeutil import from_epoch, iso
 
 
 @dataclass
@@ -130,9 +130,3 @@ class ServerClock:
         if off is None:
             return None
         return from_epoch(float(raw_epoch) - off)
-
-    def utc_to_raw(self, d: datetime) -> float | None:
-        off = self.offset
-        if off is None:
-            return None
-        return d.astimezone(UTC).timestamp() + off

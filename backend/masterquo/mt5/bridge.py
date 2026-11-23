@@ -332,6 +332,10 @@ class MarketBridge:
             self.account = account
             self.account_key = new_key
             self.session_epoch += 1
+            if prev_key is not None and prev_key != new_key:
+                # 1.46: another account after a reconnect - its positions / deals are loaded by the first poll, the old lists are not served
+                self.positions, self.orders, self.deals = [], [], []
+                self.deals_loaded_at = None
         self._record_account(account)
         if prev_key is not None and (prev_key != new_key or prev_path != terminal.get("path")):
             self.log.warn("MT5", "ACCOUNT_OR_TERMINAL_CHANGED", f"Zmiana rachunku/terminala: {prev_key} -> {new_key}")
@@ -384,7 +388,10 @@ class MarketBridge:
                 sym = got
                 info = self._call(lambda m: m.symbol_info(sym))
         if info is None:
-            cands = self._call(lambda m: m.symbols_get(group="*XAU*,*GOLD*")) or ()
+            # 1.46: candidates of the ACTIVE asset (BTC showed gold symbols); name hints of the asset registry
+            hints = (getattr(self.assets, "NAME_HINTS", None) or {}).get(self.cfg_store.get().assets.active) if self.assets is not None else None
+            group = ",".join(f"*{h}*" for h in hints) if hints else "*XAU*,*GOLD*"
+            cands = self._call(lambda m: m.symbols_get(group=group)) or ()
             self.symbol_candidates = sorted({_row(c)["name"] for c in cands})[:30]
             self.symbol_status = "NOT_FOUND"
             self.symbol_info = None
@@ -572,6 +579,10 @@ class MarketBridge:
         recv = iso(self.now())
         if arr is None:
             return {"status": "unsupported", "reason": "COPY_TICKS_UNAVAILABLE", "ticks": []}
+        # 1.46: the terminal returns at most max_count ticks from raw_from; a full answer that ends before to_utc (or a full "last N
+        # seconds" answer) is cut - reported from the RAW answer, because dropped duplicates / invalid quotes made the length check miss it
+        raw_count = len(arr)
+        truncated = raw_count > 0 and raw_count >= int(max_count) and (to_utc is None or int(arr[raw_count - 1]["time_msc"]) / 1000.0 - off <= to_utc)
         out, last = [], None
         for r in arr:
             msc = int(r["time_msc"])
@@ -586,6 +597,7 @@ class MarketBridge:
             out.append({"t": (msc / 1000.0) - off, "bid": float(r["bid"]), "ask": float(r["ask"]), "flags": int(r["flags"]),
                         "time_msc": msc, "t_ms": int(round(msc - off * 1000.0)), "ord": len(out)})   # raw source time kept (PMW-UPD-08)
         return {"status": "ok" if out else "missing_data", "symbol": symbol, "received_at_utc": recv, "count": len(out), "ticks": out,
+                "raw_count": raw_count, "truncated": bool(truncated),
                 "source": "SYNTHETIC" if self._synthetic else "MT5", "clock_transform": f"t_ms = time_msc - server_offset ({off} s)"}
 
     def _merge_tail(self, st: TFState, tf: str, tail: list[Bar], symbol: str) -> list[Bar]:
@@ -609,13 +621,17 @@ class MarketBridge:
                 i = index.get(nb.t_raw)
                 if i is not None:
                     old = bars[i]
+                    # 1.46: resampled buckets (M3 / H8 fallback) also take the source-bar count: a bucket first seen with 1 of 3 minutes
+                    # stayed parts=1 / complete=False after it closed full (and was dropped by consumers that skip incomplete bars)
                     if old.closed:
-                        if not old.same_values(nb):
+                        if not old.same_values(nb) or old.parts != nb.parts:
                             old.o, old.h, old.l, old.c, old.tv = nb.o, nb.h, nb.l, nb.c, nb.tv
+                            old.source, old.parts, old.complete = nb.source, nb.parts, nb.complete
                             old.revision += 1
                             st.revisions += 1
                     else:
                         old.o, old.h, old.l, old.c, old.tv, old.rv, old.spread = nb.o, nb.h, nb.l, nb.c, nb.tv, nb.rv, nb.spread
+                        old.source, old.parts, old.complete = nb.source, nb.parts, nb.complete
                 elif not bars or nb.t_raw > bars[-1].t_raw:
                     if bars and not bars[-1].closed:
                         prev = bars[-1]
@@ -718,17 +734,28 @@ class MarketBridge:
             raise BridgeError("ACCOUNT_INFO_NONE")
         a = self._account_dict(_row(acct))
         key = f"{a['server']}:{a['login']}"
-        if key != self.account_key:
+        changed = key != self.account_key
+        if changed:
             prev = self.account_key
             with self._lock:
                 self.account, self.account_key = a, key
                 self.session_epoch += 1
+                # 1.46: positions / orders / deals of the previous account are never served under the new account_key (deals stayed
+                # up to history_poll_seconds); deals_loaded_at=None = "history of this account not loaded yet" for every consumer
+                self.positions, self.orders, self.deals = [], [], []
+                self.deals_loaded_at = None
             self._record_account(a)
             self.log.warn("MT5", "ACCOUNT_CHANGED", f"Zmieniono rachunek w terminalu: {prev} -> {key}. Decyzje wygaszone; wysyłka zleceń zablokowana do zgodności rachunku z trybem.")
             self.clock.reset()
             self._load_stored_offset(a["server"])
-            self._load_all_history()
-            self._notify("account_changed", {"previous": prev, "current": key})
+            try:
+                self._check_symbol()                  # 1.46: symbol metadata of the new broker (was kept until a reconnect)
+                self._load_all_history()
+            except Exception:
+                self._set_state("RECONNECTING", "ACCOUNT_CHANGED_RELOAD_FAILED")   # full connect() repeats the symbol / history checks
+                raise
+            finally:
+                self._notify("account_changed", {"previous": prev, "current": key})
         sym = self.cfg.symbol
         pos = self._call(lambda m: m.positions_get()) or ()
         ords = self._call(lambda m: m.orders_get()) or ()
@@ -738,6 +765,9 @@ class MarketBridge:
             self.orders = [{k: v for k, v in _row(o).items() if k in ("ticket", "time_setup", "type", "symbol", "volume_current", "price_open", "sl", "tp", "magic", "comment")} for o in ords]
         self.bus.publish("account", self.account_status())
         self.bus.publish("positions", {"positions": self.positions, "orders": self.orders, "symbol": sym})
+        if changed:
+            self._t_hist = time.monotonic()
+            self._poll_deals()                        # 1.46: deal history of the new account right away (after its positions)
 
     def _pos_dict(self, p: dict) -> dict:
         return {"ticket": p.get("ticket"), "symbol": p.get("symbol"), "side": "BUY" if p.get("type") == 0 else "SELL",
@@ -853,10 +883,6 @@ class MarketBridge:
 
     def raw_call(self, fn, prio=PRIO_QUOTE, timeout: float | None = None) -> Any:
         return self.worker.call(fn, priority=prio, timeout=timeout or self.cfg.call_timeout_seconds)
-
-    def server_now_raw(self) -> float | None:
-        off = self.clock.offset
-        return None if off is None else self.now().timestamp() + off
 
     def server_day_start_utc(self) -> datetime | None:
         """Start of the current broker-server day, in UTC (daily-loss boundary)."""

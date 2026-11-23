@@ -16,7 +16,7 @@ PRICE_BREAK_EVEN moves SL to entry +- offset and never worsens a better SL (not 
 """
 from __future__ import annotations
 
-import hashlib
+import contextlib
 import json
 import math
 import sqlite3
@@ -43,6 +43,22 @@ def _align(price: float, tick: float, mode: str) -> float:
 
 def _floor_step(v: float, step: float) -> float:
     return round(math.floor(v / step + 1e-9) * step, 10)
+
+
+def _body_num(body: dict, key: str) -> float | None:
+    """1.46: number from the plan request - text / NaN / inf is a PlanError (400) with the field name (was ValueError / OverflowError -> 500)."""
+    v = body.get(key)
+    if v is None or v == "":
+        return None
+    if isinstance(v, bool):
+        raise PlanError(f"INVALID_{key.upper()}")
+    try:
+        f = float(v)
+    except (TypeError, ValueError, OverflowError):
+        raise PlanError(f"INVALID_{key.upper()}") from None
+    if not math.isfinite(f):
+        raise PlanError(f"INVALID_{key.upper()}")
+    return f
 
 
 def plan_math(*, side: str, quote: dict, meta: dict, sl: float | None = None, tp: float | None = None, sl_points: float | None = None,
@@ -187,27 +203,44 @@ class ManualPad:
         with b._lock:
             deals = list(b.deals)
         com = resolve_commission(cfg.costs, deals, cfg.mt5.symbol)
-        num = lambda k: None if body.get(k) in (None, "") else float(body[k])  # noqa: E731
-        p = plan_math(side=str(body.get("side")), quote=q, meta=meta, sl=num("sl"), tp=num("tp"), sl_points=num("sl_points"), tp_points=num("tp_points"),
-                      rr=num("rr"), sizing_mode=str(body.get("sizing_mode") or "RISK_PCT"), lots=num("lots"), risk_pct=num("risk_pct"),
-                      basis_value=basis, risk_basis=str(body.get("risk_basis") or "equity"), calc_profit=b.calc_profit, calc_margin=b.calc_margin,
-                      commission=com, free_margin=acc.get("free_margin"), max_risk_pct=float(cfg.risk.risk_per_trade_pct or 2.0),
-                      account_currency=acc.get("currency"))
+        num = lambda k: _body_num(body, k)  # noqa: E731
+        ttl = num("ttl_s") or None                       # 0 / empty = the server default (as before; the range is unchanged - owner decision)
+        try:
+            p = plan_math(side=str(body.get("side")), quote=q, meta=meta, sl=num("sl"), tp=num("tp"), sl_points=num("sl_points"), tp_points=num("tp_points"),
+                          rr=num("rr"), sizing_mode=str(body.get("sizing_mode") or "RISK_PCT"), lots=num("lots"), risk_pct=num("risk_pct"),
+                          basis_value=basis, risk_basis=str(body.get("risk_basis") or "equity"), calc_profit=b.calc_profit, calc_margin=b.calc_margin,
+                          commission=com, free_margin=acc.get("free_margin"), max_risk_pct=float(cfg.risk.risk_per_trade_pct or 2.0),
+                          account_currency=acc.get("currency"))
+        except PlanError:
+            raise
+        except (ArithmeticError, ValueError) as exc:        # 1.46: huge finite inputs overflowing inside the math -> 400, not 500
+            raise PlanError(f"PLAN_INPUT_INVALID:{type(exc).__name__}") from None
         pid = "MPL-" + uuid.uuid4().hex[:12]
         now = utcnow()
         prefs = getattr(self.gateway.engine, "prefs", None)
+        mode = self.modes.gate(b.account_key)["mode"]
+        try:
+            expires = iso(now + timedelta(seconds=ttl if ttl is not None else self.ttl_s))
+        except OverflowError:                            # 1.46: ttl_s=1e12 overflowed timedelta / datetime -> 400, not 500
+            raise PlanError("INVALID_TTL_S") from None
         p.update(plan_id=pid, instrument=cfg.mt5.symbol, account_key=b.account_key, session_epoch=b.session_epoch, quote_time=q.get("time_utc"),
-                 frozen_at=iso(now), expires_at=iso(now + timedelta(seconds=float(body.get("ttl_s") or self.ttl_s))),
+                 frozen_at=iso(now), expires_at=expires,
                  settings_version=prefs.settings_version() if prefs is not None else None, source_pattern_id=body.get("source_pattern_id"),
-                 mode=self.modes.gate(b.account_key)["mode"])
+                 mode=mode)
+        if p["tp"] is None and mode in ("AUTO_DEMO", "AUTO_LIVE"):
+            p["reason_codes"].append("TP_REQUIRED_FOR_REAL")      # 1.46: shown before execution (see _validate_manual)
+            p["execution_eligible"] = False
         with self._lock:
+            for k in [k for k, v in self._plans.items() if parse_iso(v["expires_at"]) <= now]:
+                del self._plans[k]                  # 1.46: expired plans are dropped (the dict grew with every request)
             self._plans[pid] = p
         return p
 
     # ------------------------------------------------------------ intent
     def create_intent(self, plan_id: str) -> dict:
-        p = self._plans.get(plan_id)
-        if not p:
+        with self._lock:
+            p = self._plans.get(plan_id)
+        if not p or parse_iso(p["expires_at"]) <= utcnow():     # 1.46: an expired plan (execute() refused it anyway) is not turned into an intent
             raise PlanError("PLAN_NOT_FOUND_OR_EXPIRED")
         iid = "MTI-" + uuid.uuid4().hex[:12]
         now = iso(utcnow())
@@ -244,6 +277,10 @@ class ManualPad:
         mode = self.gateway.common_checks(side=p["side"], entry=p["entry"], require_real=False)
         if mode == "SIGNALS":
             raise PlanError("MODE_SIGNALS_NO_EXECUTION")
+        if p["tp"] is None and mode != "PAPER":
+            # 1.46: an account order without TP went to the gateway as tp=None and always failed as PRECHECK_FAILED:TypeError;
+            # it is refused here with the real reason (sending orders without TP on the account is an owner decision)
+            raise PlanError("TP_REQUIRED_FOR_REAL")
         return mode, p
 
     def execute(self, iid: str, action_revision: int = 1) -> dict:
@@ -312,6 +349,13 @@ class ManualPad:
                             (key, iid, action, int(action_revision), "PREPARED", now, now))
         except sqlite3.IntegrityError:
             return {"status": "DUPLICATE", "reason": "ACTION_ALREADY_ATTEMPTED"}
+        # 1.46: serialized with the position manager's tick (it closes PAPER positions on SL/TP/time): positions are read and changed
+        # under the same lock, so one position is never closed - and booked - twice
+        mgr_lock = getattr(getattr(self.gateway, "manager", None), "_lock", None)
+        with mgr_lock if mgr_lock is not None else contextlib.nullcontext():
+            return self._manage_locked(iid, key, action, offset_points=offset_points, volume=volume)
+
+    def _manage_locked(self, iid: str, key: str, action: str, *, offset_points: float, volume: float | None) -> dict:
         pos = self._positions(iid)
         if not pos:
             self._act(key, "REJECTED", {"reason": "NO_OPEN_POSITION_FOR_INTENT"})
@@ -320,6 +364,11 @@ class ManualPad:
         point, vmin, vstep = float(meta.get("point") or 0.01), float(meta.get("volume_min") or 0.01), float(meta.get("volume_step") or 0.01)
         out = []
         for mp in pos:
+            if action == "PARTIAL_CLOSE" and mp["mode"] == "PAPER" and _floor_step(float(volume or 0), vstep) > float(mp["volume_open"]) + 1e-9:
+                # 1.46: more than the open volume - PAPER booked P/L for lots that never existed (the account path is unchanged:
+                # what is sent to MT5 is an owner decision, see docs/AUDYT_1_45.md)
+                out.append({"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "VOLUME_ABOVE_OPEN"})
+                continue
             if mp["mode"] != "PAPER":
                 out.append({"ticket": mp["position_ticket"], **self.gateway.manual_modify(mp, action, offset_points=offset_points, volume=volume)})
                 continue
@@ -364,55 +413,3 @@ class ManualPad:
                 fixed.append(r["idempotency_key"])
         return {"unknown": len(rows), "reconciled": fixed, "resend": "NEVER"}
 
-
-# ------------------------------------------------------------------ historical practice (hidden future, separate journal)
-class Drill:
-    """Ordered replay of CLOSED bars with the future hidden; orders are resolved only on revealed bars (SL first when both hit in one
-    bar - conservative). Separate journal; never mixed with PAPER live-feed or real fills."""
-
-    def __init__(self, bars: list[dict], start: int, spread: float, tick: float, journal_path=None):
-        if start < 1 or start >= len(bars):
-            raise PlanError("DRILL_START_INVALID")
-        self.bars, self.i, self.spread, self.tick = bars, start, spread, tick
-        self.positions, self.journal = [], []
-        self.id = "DRL-" + hashlib.sha256(f"{bars[0]['open_utc']}|{start}".encode()).hexdigest()[:10]
-        self.path = journal_path
-
-    def visible(self) -> list[dict]:
-        return self.bars[: self.i + 1]
-
-    def order(self, side: str, sl: float, tp: float, lots: float) -> dict:
-        c = self.bars[self.i]["c"]
-        entry = c + (self.spread if side == "BUY" else 0.0)
-        if (side == "BUY" and not sl < entry < tp) or (side == "SELL" and not tp < entry < sl):
-            raise PlanError("SL_TP_WRONG_SIDE")
-        p = {"side": side, "entry": entry, "sl": sl, "tp": tp, "lots": lots, "opened_bar": self.bars[self.i]["open_utc"], "state": "OPEN"}
-        self.positions.append(p)
-        self._log({"event": "OPEN", **p})
-        return p
-
-    def step(self, n: int = 1) -> dict:
-        for _ in range(n):
-            if self.i + 1 >= len(self.bars):
-                break
-            self.i += 1
-            b = self.bars[self.i]
-            for p in self.positions:
-                if p["state"] != "OPEN":
-                    continue
-                lo_x, hi_x = (b["l"], b["h"]) if p["side"] == "BUY" else (b["l"] + self.spread, b["h"] + self.spread)
-                hit_sl = lo_x <= p["sl"] if p["side"] == "BUY" else hi_x >= p["sl"]
-                hit_tp = hi_x >= p["tp"] if p["side"] == "BUY" else lo_x <= p["tp"]
-                if hit_sl or hit_tp:
-                    p["state"] = "SL" if hit_sl else "TP"
-                    p["ambiguous"] = bool(hit_sl and hit_tp)
-                    p["exit"] = p["sl"] if hit_sl else p["tp"]
-                    p["closed_bar"] = b["open_utc"]
-                    self._log({"event": "CLOSE", **p})
-        return {"bar": self.bars[self.i], "index": self.i, "positions": self.positions}
-
-    def _log(self, e: dict) -> None:
-        self.journal.append(e)
-        if self.path:
-            with open(self.path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(dict(e, drill_id=self.id)) + "\n")

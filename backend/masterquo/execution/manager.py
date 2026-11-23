@@ -21,7 +21,6 @@ import time
 from datetime import timedelta
 
 from ..db.database import dumps
-from ..engine.lifecycle import TERMINAL
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from . import policy as exit_policy
 from ..timeutil import from_epoch, iso, parse_iso, utcnow
@@ -45,6 +44,7 @@ class PositionManager:
         self._last_equity = 0.0
         self.last_error: str | None = None
         self._lock = threading.Lock()
+        self._offset_wait: set = set()      # position keys whose settlement waits for the server offset (logged once)
 
     def start(self) -> None:
         threading.Thread(target=self._loop, name="position-manager", daemon=True).start()
@@ -175,11 +175,15 @@ class PositionManager:
         with b._lock:
             positions = {p["ticket"]: p for p in b.positions}
             deals = list(b.deals)
+            deals_at = b.deals_loaded_at
         q = b.quote_status()
         for mp in rows:
             p = positions.get(mp["position_ticket"])
             if p is None:
-                self._settle_mt5(mp, deals)
+                # 1.46: no settlement before the deal history of THIS account is loaded (after an account switch / at start the lists
+                # were empty or another account's, and an open position was marked CLOSED_UNSETTLED)
+                if deals_at is not None:
+                    self._settle_mt5(mp, deals)
                 continue
             vol_now = float(p.get("volume") or 0)
             self._reconcile_partial(mp, vol_now)
@@ -314,7 +318,8 @@ class PositionManager:
         except Exception as exc:  # noqa: BLE001 - F-08
             note["tp_sync"] = f"REFUSED_{type(exc).__name__}"
         self._save_note(mp, note)
-        self.db.execute("UPDATE managed_positions SET tp2=? WHERE position_key=?", (want, mp["position_key"]))
+        if note["tp_sync"] == "DONE":            # 1.46: the stored TP follows the broker - not written after REJECTED / UNKNOWN / REFUSED
+            self.db.execute("UPDATE managed_positions SET tp2=? WHERE position_key=?", (want, mp["position_key"]))
 
     def _time_exit_mt5(self, mp: dict, p: dict) -> None:
         note = self._note(mp)
@@ -396,7 +401,15 @@ class PositionManager:
                 self.db.execute("UPDATE managed_positions SET state='CLOSED_UNSETTLED', closed_at=? WHERE position_key=?", (iso(utcnow()), mp["position_key"]))
                 self.log.warn("EXECUTION", "CLOSED_UNSETTLED", f"Pozycja {mp['position_ticket']} zniknęła, brak transakcji w historii – sprawdź historię w terminalu.")
             return
-        off = self.bridge.clock.offset or 0
+        off = self.bridge.clock.offset
+        if off is None:
+            # 1.46: an unknown server offset is never taken as 0 (closed_at would be server wall time stored as UTC and land in the
+            # wrong day for realized_today / cooldown) - settled on a later tick, once the offset is measured or loaded
+            if mp["position_key"] not in self._offset_wait:
+                self._offset_wait.add(mp["position_key"])
+                self.log.write("WARNING", "EXECUTION", "SETTLE_WAITS_FOR_SERVER_OFFSET", f"Pozycja {mp['position_ticket']}: rozliczenie czeka na pomiar przesunięcia czasu serwera.")
+            return
+        self._offset_wait.discard(mp["position_key"])
         gross = sum(float(d.get("profit") or 0) for d in mine)
         comm = sum(float(d.get("commission") or 0) for d in mine)
         swap = sum(float(d.get("swap") or 0) for d in mine)
@@ -480,12 +493,18 @@ class PositionManager:
                             (now, "ACCOUNT", self.bridge.account_key, a.get("balance"), a.get("equity"), a.get("margin"), a.get("free_margin"), a.get("currency")))
         if self.db.one("SELECT 1 AS x FROM paper_account WHERE id=1"):
             pa = self.paper.account()
+            if pa.get("equity") is None:
+                return                          # 1.46: incomplete PAPER valuation (no quote / P&L unknown) is not stored as equity
             self.db.execute("INSERT INTO equity_snapshots(ts, mode, account_key, balance, equity, margin, free_margin, currency) VALUES (?,?,?,?,?,?,?,?)",
                             (now, "PAPER", None, pa["balance"], pa["equity"], None, None, pa["currency"]))
 
     # ------------------------------------------------------------ user operations
     def close_positions(self, scope: str, ticket: int | None = None) -> dict:
         """Explicit, confirmed close of positions managed by this app (separate from 'stop new entries')."""
+        with self._lock:                        # 1.46: serialized with the manager tick (a PAPER position was closed - and booked - twice)
+            return self._close_positions(scope, ticket)
+
+    def _close_positions(self, scope: str, ticket: int | None = None) -> dict:
         b = self.bridge
         cfg = self.cfg_store.get()
         rows = self.db.query("SELECT * FROM managed_positions WHERE state='OPEN'" + (" AND position_ticket=?" if ticket else ""), (ticket,) if ticket else ())
@@ -493,9 +512,12 @@ class PositionManager:
         q = b.quote_status()
         for mp in rows:
             if mp["mode"] == "PAPER":
-                if q:
-                    self.paper.close_part(mp, mp["volume_open"], q["bid"] if mp["side"] == "BUY" else q["ask"], "MANUAL_CLOSE")
-                    done.append(mp["position_ticket"])
+                # 1.46: no quote / a stale quote is reported (was: skipped silently - "0 done, 0 errors" with the position still open)
+                if not q or q.get("age_seconds") is None or q["age_seconds"] > cfg.mt5.max_quote_age_seconds:
+                    errors.append({"ticket": mp["position_ticket"], "error": "NO_QUOTE" if not q else "QUOTE_STALE"})
+                    continue
+                self.paper.close_part(mp, mp["volume_open"], q["bid"] if mp["side"] == "BUY" else q["ask"], "MANUAL_CLOSE")
+                done.append(mp["position_ticket"])
                 continue
             if mp["account_key"] != b.account_key:
                 errors.append({"ticket": mp["position_ticket"], "error": "OTHER_ACCOUNT"})
@@ -544,4 +566,4 @@ class PositionManager:
         return {"ok": True}
 
 
-__all__ = ["PositionManager", "TERMINAL"]
+__all__ = ["PositionManager"]          # 1.46: unused re-export of engine.lifecycle.TERMINAL removed
