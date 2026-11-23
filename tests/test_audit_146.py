@@ -280,3 +280,55 @@ class TestResearchContexts(unittest.TestCase):
             svc.jobs["sdformer_bootstrap"] = {"state": "DONE", "finished_at": time.time()}     # done, but no active checkpoint
             svc._sdformer(c, h1)
             self.assertEqual((started, c.sdf["state"]), ([], "ERROR"))
+
+
+class TestStudioHostGuard(unittest.TestCase):
+    """1.45.0: the Studio API (127.0.0.1:8780) had no Host / Origin check - a DNS-rebinding page could change settings (bot_data_dir), start
+    jobs and transfer packages. Now: Host must be 127.0.0.1 / localhost; a browser write needs a loopback Origin."""
+
+    def _call(self, app, method, path, headers):
+        import asyncio
+        import json
+        sent = []
+        body = json.dumps({}).encode() if method == "POST" else b""
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(msg):
+            sent.append(msg)
+        hdrs = [(k.lower().encode(), v.encode()) for k, v in headers.items()] + ([(b"content-type", b"application/json")] if body else [])
+        scope = {"type": "http", "method": method, "path": path, "raw_path": path.encode(), "query_string": b"", "headers": hdrs,
+                 "scheme": "http", "server": ("127.0.0.1", 8780), "client": ("127.0.0.1", 5555), "http_version": "1.1", "root_path": ""}
+        asyncio.run(app(scope, receive, send))
+        return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+    def test_rebinding_host_and_foreign_origin_rejected(self):
+        from _env import TempData
+        td = TempData()
+        os.environ["MQ_STUDIO_DATA_DIR"] = td.dir
+        try:
+            from masterquo.studio.app import create_app
+            app = create_app(start_worker=False)
+            self.assertEqual(self._call(app, "GET", "/api/studio/health", {"host": "127.0.0.1:8780"}), 200)
+            self.assertEqual(self._call(app, "GET", "/api/studio/health", {"host": "localhost:8780"}), 200)
+            self.assertEqual(self._call(app, "GET", "/api/studio/health", {"host": "attacker.example:8780"}), 421)
+            self.assertEqual(self._call(app, "POST", "/api/studio/settings", {"host": "attacker.example"}), 421)
+            self.assertEqual(self._call(app, "POST", "/api/studio/settings", {"host": "127.0.0.1:8780", "origin": "http://evil.example"}), 403)
+        finally:
+            os.environ.pop("MQ_STUDIO_DATA_DIR", None)
+            td.close()
+
+
+class TestSettingsNumberField(unittest.TestCase):
+    """1.45.0: Settings number fields (risk %, costs, sigma ...) swallowed the decimal separator: typing 0.5 stored 5 (frontend Dialogs.tsx)."""
+
+    def test_fraction_typed_key_by_key(self):
+        import shutil
+        import subprocess
+        if not shutil.which("node"):
+            self.skipTest("node not installed")
+        r = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", str(_env.ROOT / "tests" / "js" / "num_text.test.mjs")],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertIn("num_text OK", r.stdout)

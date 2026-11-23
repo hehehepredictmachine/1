@@ -28,6 +28,40 @@ def _bot_health(port: int) -> dict | None:
         return None
 
 
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def _host_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    v = value.strip().lower()
+    if v.startswith("["):                                    # [::1]:port - not used by Studio (binds 127.0.0.1)
+        return None
+    return v.rsplit(":", 1)[0] if v.count(":") == 1 else v
+
+
+def _guard(app) -> None:
+    """1.46: same local-request rules as the bot API (api/app.py Guard), minus the session: the Host header must be the loopback name
+    (DNS-rebinding protection - a page served from attacker.example resolving to 127.0.0.1 sends Host: attacker.example) and a state-
+    changing request coming from a browser must carry a loopback Origin. Studio binds 127.0.0.1 only."""
+    from fastapi.responses import JSONResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    class StudioGuard(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            if _host_name(request.headers.get("host")) not in LOCAL_HOSTS:
+                return JSONResponse({"error": "HOST_NOT_ALLOWED"}, status_code=421)
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                origin = request.headers.get("origin")
+                if origin is not None and _host_name(origin.split("://", 1)[-1]) not in LOCAL_HOSTS:
+                    return JSONResponse({"error": "ORIGIN_NOT_ALLOWED"}, status_code=403)
+            resp = await call_next(request)
+            resp.headers["X-Frame-Options"] = "DENY"
+            resp.headers["X-Content-Type-Options"] = "nosniff"
+            return resp
+    app.add_middleware(StudioGuard)
+
+
 def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> FastAPI:
     from .. import paths
     from ..config import ConfigStore
@@ -38,6 +72,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
                             "MQ_BOT_DATA_DIR": str(S.bot_data_dir())})
     app = FastAPI(title="Pepe Data & Training Studio", version=APP_VERSION)
     app.state.queue = q
+    _guard(app)
     if start_worker:
         q.start()
 

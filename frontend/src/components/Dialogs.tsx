@@ -5,6 +5,17 @@ import { useStore } from "../store";
 import { cls } from "../util";
 import { LeverageSettings } from "./LeverageSettings";
 import { computeZones, MZ_TFS, setZonesLive, useMarketZones } from "../features/market-zones/mzStore";
+import { parseNumText, syncNumText } from "./numText";
+
+// 1.46: numeric field with its own text state - a fraction can be typed key by key ("0." stays "0.", "0,5" -> 0.5); only a complete number is
+// committed (1.45.0: Number(text) on every key turned "0.5" into 5).
+function NumInput({ value, onValue, placeholder }: { value: number | null | undefined; onValue: (v: number | null) => void; placeholder?: string }) {
+  const [text, setText] = useState<string>(value == null ? "" : String(value));
+  useEffect(() => { setText((t) => syncNumText(t, value)); }, [value]);
+  const bad = parseNumText(text) === undefined;
+  return <input value={text} inputMode="decimal" placeholder={placeholder} className={cls(bad && "bad")} aria-invalid={bad || undefined}
+    onChange={(e) => { const t = e.target.value; setText(t); const n = parseNumText(t); if (n !== undefined) onValue(n); }} />;
+}
 
 // 1.42 (E7): te same okna (ta sama logika, wywołania i potwierdzenia) osadzane w szufladzie paneli systemowych – bez tła modala.
 export const EmbedCtx = createContext(false);
@@ -40,7 +51,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     const upd = (obj: any, i: number): any => (i === keys.length - 1 ? { ...obj, [keys[i]]: value } : { ...obj, [keys[i]]: upd(obj?.[keys[i]] ?? {}, i + 1) });
     setCfg(upd(cfg, 0));
   };
-  const num = (v: string) => (v === "" ? null : Number(v.replace(",", ".")));
   const save = async (extra: any = {}) => {
     setMsg(null);
     try {
@@ -97,7 +107,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         ) : type === "bool" ? (
           <input type="checkbox" checked={!!v} onChange={(e) => set(path, e.target.checked)} />
         ) : (
-          <input value={v ?? ""} placeholder={type === "num" ? "nie ustawiono" : ""} onChange={(e) => set(path, type === "num" ? num(e.target.value) : (e.target.value || null))} />
+          type === "num" ? <NumInput value={v} placeholder="nie ustawiono" onValue={(n) => set(path, n)} />
+            : <input value={v ?? ""} onChange={(e) => set(path, e.target.value || null)} />
         )}
       </label>
     );
