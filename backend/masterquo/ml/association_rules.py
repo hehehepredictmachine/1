@@ -106,6 +106,7 @@ def assess(model: dict, mask: int | None, direction: str, edge_threshold: float 
     supported = best_for[key] >= edge_threshold
     contrary = best_against[opp] >= edge_threshold and best_against[opp] > best_for[key]
     action = "HOLD" if (mode == "ASSIST" and contrary) else "PASS"
-    return {"mode": mode, "action": action, "candidate_direction_supported": True if supported else (False if contrary else None),
+    # 1.46: a contrary edge wins - "supported" and CONTRARY_EDGE / HOLD were reported together
+    return {"mode": mode, "action": action, "candidate_direction_supported": False if contrary else (True if supported else None),
             "best_rule_for": best_for, "best_rule_against": best_against, "reason": "CONTRARY_EDGE" if contrary else ("SUPPORTED" if supported else "WEAK_EDGE"),
             "matched_rules": len(matched), "note": "estymata kierunkowa – nie gwarancja; ASSIST może tylko wstrzymać, nigdy dodać stronę"}

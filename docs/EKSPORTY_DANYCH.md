@@ -69,7 +69,7 @@ Folder powstaje atomowo (`.<id>.partial` → `<id>`) i nigdy nie jest nadpisywan
 | `fomo-universe` | seed FOMO 101 + aktualne metadane venue | `fomo_101_resolution` (101 wierszy), `metadata_versions` | SHA-256 seeda i `metadata_version` w provenance. |
 | `strategy-roi` | `evaluation.strategy_roi` nad tabelą `trades` (tylko odczyt, `mode=ro`) | `roi_paper` (VIRTUAL), `roi_auto_demo` (DEMO), `roi_auto_live` (REAL) | Konto zamaskowane (`server:***123`). Brak bazy daje pusty eksport, a baza nie jest tworzona. |
 | `sfb-snapshots` | `StrategyFilterBucket.snapshots` (pamięć, ostatnie 200) | `sfb_snapshots`, `sfb_items` | Wymaga działającej aplikacji. `apply_to_execution = false`. |
-| `asge-trials` | `apollo.asge.TrialLedger` (pamięć) | `asge_trials` | Wymaga działającej aplikacji. Każda próba z rodowodem, `execution_allowed = false`. |
+| `asge-trials` | `apollo.asge.TrialLedger` – od 1.46 trwały plik `<dane>/apollo/asge_trials.jsonl` (append-only) | `asge_trials` | Każda próba z rodowodem, `execution_allowed = false`. Działa też z CLI bez aplikacji. |
 | `change-points` | PELT na zamkniętych świecach MT5 | `segments`, `change_points` | Wymaga działającej aplikacji. Czas UTC i czas serwera z etykietą. |
 | `long-horizon` | prognoza 24/36/48/72 h na zamkniętych świecach MT5 | `forecasts` | Wymaga działającej aplikacji. Bez zweryfikowanego offsetu czasu status `UNAVAILABLE`. |
 | `association-rules` | reguły asocjacyjne na zamkniętych świecach MT5 | `rules`, `assessment` | Wymaga działającej aplikacji. Tryb OBSERVE. |
@@ -109,5 +109,5 @@ Eksporty istniejące wcześniej działają bez zmian:
 ## Czego nie da się wyeksportować i dlaczego
 
 - **EventBus, wyniki skanera rynków, stany `IndicatorEngine`, encoder BAT:** to bufory w pamięci, odtwarzane od startu, bez stanu do zachowania.
-- **Ledger orderflow, próby ASGE, snapshoty SFB, dziennik PT/DT:** istnieją tylko w pamięci działającej aplikacji. Eksport działa przez API albo przez CLI połączone z działającą aplikacją.
+- **Ledger orderflow, snapshoty SFB, dziennik PT/DT:** istnieją tylko w pamięci działającej aplikacji. Eksport działa przez API albo przez CLI połączone z działającą aplikacją.
 - **Sekrety** (`secrets.*.json`) **oraz klucz i baza licencji właściciela** są celowo poza zakresem eksportu.

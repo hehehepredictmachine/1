@@ -286,9 +286,14 @@ def sfb_snapshots(ctx: SourceContext) -> Collected:
 def asge_trials(ctx: SourceContext) -> Collected:
     from ..apollo import asge as ASG
     trials = ctx.wf32.get("trials")
-    prov = {"source": "apollo.asge.TrialLedger", "version": ASG.VERSION, "execution_allowed": ASG.EXECUTION_ALLOWED}
-    if trials is None:
-        return _unavailable("APP_NOT_RUNNING: ledger prób ASGE jest w pamięci działającej aplikacji", prov)
+    prov = {"source": "apollo.asge.TrialLedger (<dane>/apollo/asge_trials.jsonl, append-only)", "version": ASG.VERSION,
+            "execution_allowed": ASG.EXECUTION_ALLOWED}
+    if trials is None:                                   # CLI: the durable ledger file (1.46), read only
+        f = ctx.data_dir / "apollo" / "asge_trials.jsonl"
+        if not f.exists():
+            return Collected([Dataset("asge_trials", [], "DERIVED")], {**prov, "file_present": False}, status="EMPTY",
+                             notes=["NO_TRIALS: generator nie był uruchamiany"])
+        trials = ASG.TrialLedger(f)
     rows = [{"trial_id": r.get("trial_id"), "created_at_utc": utc_iso(r.get("created_at")), "ir_hash": r.get("ir_hash"), "parent": r.get("parent"),
              "data_hash": r.get("data_hash"), "status": r.get("status"), "reasons": r.get("reasons"), "dev_trades": r.get("dev_trades"),
              "dev_mean_net_r": r.get("dev_mean_net_r"), "positive_folds": r.get("positive_folds"), "holdout_mean_net_r": r.get("holdout_mean_net_r"),

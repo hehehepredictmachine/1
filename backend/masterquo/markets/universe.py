@@ -43,6 +43,10 @@ class UniverseError(ValueError):
     pass
 
 
+class ProviderUnavailable(RuntimeError):
+    """1.46: the venue metadata could not be read (network / provider) - reported as unavailable, never as a bad request."""
+
+
 def load_seed(path: Path = SEED_FILE) -> list[dict]:
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
@@ -175,7 +179,11 @@ class MarketBridge:
         return [i.to_dict() | {"capabilities": capabilities(i)} for i in self.universe.instruments() if i.market == self.MARKET]
 
     def _ins(self, instrument_id: str) -> Instrument:
-        ins = next((i for i in self.universe.instruments() if i.instrument_id == instrument_id or i.native_symbol == instrument_id
+        all_ins = self.universe.instruments()
+        if not all_ins and self.universe.error:
+            # 1.46: no catalogue because the provider is down - that is "unavailable" (503), not "unknown instrument" (400)
+            raise ProviderUnavailable(f"PROVIDER_UNAVAILABLE: {self.universe.error}")
+        ins = next((i for i in all_ins if i.instrument_id == instrument_id or i.native_symbol == instrument_id
                     or (i.display == instrument_id and i.market == self.MARKET)), None)
         if ins is None or ins.market != self.MARKET:
             raise UniverseError(f"UNKNOWN_INSTRUMENT: {instrument_id}")
@@ -241,10 +249,11 @@ class FomoStockPerpsBridge(MarketBridge):
 class Universe:
     """Cached instrument master built from live venue metadata (perpDexs, meta core, meta dex=xyz)."""
 
-    def __init__(self, hl, ttl: float = 3600.0):
-        self.hl, self.ttl = hl, ttl
+    def __init__(self, hl, ttl: float = 3600.0, retry_after: float = 60.0):
+        self.hl, self.ttl, self.retry_after = hl, ttl, retry_after
         self._ins: list[Instrument] = []
         self._at = 0.0
+        self._fail_at = 0.0
         self.error: str | None = None
         self.raw_versions: dict = {}
 
@@ -258,12 +267,14 @@ class Universe:
         return self._ins
 
     def instruments(self) -> list[Instrument]:
-        if not self._ins or time.time() - self._at > self.ttl:
+        now = time.time()
+        if (not self._ins or now - self._at > self.ttl) and now - self._fail_at >= self.retry_after:
             try:
                 self.refresh()
                 self.error = None
             except Exception as exc:  # noqa: BLE001 - keep the last good catalogue, report the error
                 self.error = f"{type(exc).__name__}: {exc}"[:200]
+                self._fail_at = now             # 1.46: back off - every request re-queried the provider while it was down
         return self._ins
 
 

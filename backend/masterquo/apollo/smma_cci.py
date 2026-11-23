@@ -14,7 +14,7 @@ DEFAULT = {"mode": "OFF", "periods": (13, 21, 35), "cci_period": 8, "slope_lookb
 
 def evaluate(bars: list[dict], cfg: dict | None = None) -> dict:
     c = {**DEFAULT, **(cfg or {})}
-    closed = [b for b in bars if not b.get("forming")]
+    closed = [b for b in bars if not b.get("forming") and b.get("closed", True) is not False]   # 1.46: the bridge marks closed=False
     need = max(c["periods"]) + c["slope_lookback"] + 2
     if len(closed) < need:
         return {"status": "WARMUP", "bars": len(closed), "need": need, "version": VERSION}
@@ -34,8 +34,8 @@ def evaluate(bars: list[dict], cfg: dict | None = None) -> dict:
     cross_dn = prev >= 0 > cur
     tr = [max(x["h"] - x["l"], abs(x["h"] - closed[j - 1]["c"]), abs(x["l"] - closed[j - 1]["c"])) for j, x in enumerate(closed) if j > 0]
     atr = float(np.mean(tr[-14:]))
-    spread_atr = abs(a - d) / atr if atr > 0 else 0.0
-    noise = spread_atr < c["noise_min_spread_atr"]
+    spread_atr = abs(a - d) / atr if atr > 0 else None              # 1.46: unknown (ATR 0) is not 0.0
+    noise = spread_atr is None or spread_atr < c["noise_min_spread_atr"]
     side = "LONG" if (up and cross_up) else ("SHORT" if (dn and cross_dn) else None)
     reasons = []
     if side is None:
@@ -47,6 +47,8 @@ def evaluate(bars: list[dict], cfg: dict | None = None) -> dict:
     if side and not noise:
         score = round(min(100.0, 40 + 30 * min(1.0, spread_atr) + 15 * (1 if (slope > 0) == (side == "LONG") else 0) + 15 * (1 if close_reclaim else 0)), 1)
     return {"status": "SIGNAL" if side and not noise else "NO_SIGNAL", "side": side if not noise else None, "signal_quality_score": score,
-            "bar_index": i, "bar_t": closed[i].get("t") or closed[i].get("t_raw"), "smma": {p: sm[p][i] for p in c["periods"]}, "cci": cur,
+            "bar_index": i, "bar_t": closed[i].get("t") or closed[i].get("t_raw"), "bar_open_utc": closed[i].get("open_utc"),
+            "bar_t_basis": "UTC_EPOCH" if closed[i].get("t") is not None else ("BROKER_SERVER_TIME" if closed[i].get("t_raw") is not None else None),
+            "smma": {p: sm[p][i] for p in c["periods"]}, "cci": cur,
             "cci_prev": prev, "spread_atr": spread_atr, "reason_codes": reasons, "mode": c["mode"], "version": VERSION,
             "rule_status": "DESIGN_INFERENCE_UNVALIDATED", "execution": "NONE (OFF/SHADOW – sygnał tylko do porównania z FX_SCALP_01 / CP_SCALP_01)"}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import time
 
@@ -41,6 +42,18 @@ def validate_config(cfg: dict) -> dict:
     out = {**DEFAULT_CONFIG, **cfg}
     if out["mode"] not in MODES:
         raise ConfigError(f"mode: {MODES}")
+    # 1.46: types / ranges (reps=0 -> IndexError, block<=0 -> endless loop, strings -> TypeError)
+    ints = {"min_independent_events": (1, 10**6), "min_local_instrument_events": (0, 10**6), "min_active_days": (0, 3650), "min_outer_folds": (1, 100),
+            "min_positive_oos_folds": (0, 100), "min_observed_regimes": (0, 100), "stale_after_hours": (1, 10**5), "bootstrap_block": (1, 10**4),
+            "bootstrap_reps": (10, 10**5)}
+    for k, (lo, hi) in ints.items():
+        v = out[k]
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            raise ConfigError(f"{k}: liczba całkowita {lo}..{hi}")
+    for k, lo, hi in (("min_cost_coverage", 0.0, 1.0), ("bootstrap_confidence", 0.5, 0.999), ("min_net_r_lcb", -100.0, 100.0)):
+        v = out[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= float(v) <= hi:
+            raise ConfigError(f"{k}: liczba {lo}..{hi}")
     if out["allow_cross_profile_pooling"]:
         raise ConfigError("allow_cross_profile_pooling: false (TASK 018 v1)")
     return out
@@ -89,8 +102,11 @@ def evidence(strategy: dict, outcomes: list[dict], cfg: dict, now: float | None 
     """outcomes: TASK 014 canonical rows for this exact scope {strategy_id, version, config_hash, net_R, closed_ts, event_group_id, regime,
     cost_complete, source}. Rows with wrong lineage or SIGNAL_SIMULATION are excluded (never evidence)."""
     now = time.time() if now is None else now
+    # 1.46: only finite net_R (NaN passed and skipped the LCB gate) and only rows CLOSED by `now` (no look-ahead when evaluated as of a past time)
     rows = [o for o in outcomes if o.get("strategy_id") == strategy["strategy_id"] and o.get("config_hash") == strategy["config_hash"]
-            and o.get("version") == strategy["version"] and o.get("source") != "SIGNAL_SIMULATION" and o.get("net_R") is not None]
+            and o.get("version") == strategy["version"] and o.get("source") != "SIGNAL_SIMULATION"
+            and isinstance(o.get("net_R"), (int, float)) and not isinstance(o.get("net_R"), bool) and math.isfinite(o["net_R"])
+            and isinstance(o.get("closed_ts"), (int, float)) and o["closed_ts"] <= now]
     excluded = len(outcomes) - len(rows)
     if not rows:
         return {"status": "COMPATIBLE_UNVALIDATED", "reason_codes": ["NO_LINEAGE_EVIDENCE"], "n_events": 0, "excluded_rows": excluded}

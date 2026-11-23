@@ -457,9 +457,11 @@ class TestShadowModels(Base):
         self.assertTrue(any("TIME_OFFSET_UNVERIFIED" in n for n in m["notes"]))
 
     def test_without_app_unavailable(self):
-        for name in ("change-points", "long-horizon", "association-rules", "pt-skill", "dt-ranker", "asge-trials", "sfb-snapshots"):
+        for name in ("change-points", "long-horizon", "association-rules", "pt-skill", "dt-ranker", "sfb-snapshots"):
             m, _ = self.check(self.run_export(name))
             self.assertEqual((m["status"], m["total_rows"]), ("UNAVAILABLE", 0), name)
+        m, _ = self.check(self.run_export("asge-trials"))                 # durable ledger (1.46): no file -> valid EMPTY export
+        self.assertEqual((m["status"], m["total_rows"]), ("EMPTY", 0))
 
     def test_pt_and_dt_journal_rows(self):
         from masterquo.evaluation import pt_skill as PT
@@ -556,9 +558,9 @@ class TestCli(Base):
         self.assertEqual(len(made), 1)
         man = json.loads((made[0] / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(man["formats"], ["jsonl"])
-        p = subprocess.run([sys.executable, "-m", "masterquo", "export-asge-trials", "--out", str(out)], env=env, cwd=str(_env.ROOT / "backend"),
+        p = subprocess.run([sys.executable, "-m", "masterquo", "export-sfb-snapshots", "--out", str(out)], env=env, cwd=str(_env.ROOT / "backend"),
                            capture_output=True, text=True, timeout=120)
-        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)             # in-memory source, app not running -> UNAVAILABLE
         p = subprocess.run([sys.executable, "-m", "masterquo", "export-change-points", "--lookback", "abc"], env=env, cwd=str(_env.ROOT / "backend"),
                            capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 2)
@@ -616,3 +618,14 @@ class TestExportApi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class TestAsgeDurableExport(Base):
+    def test_cli_reads_the_durable_ledger(self):
+        from masterquo.apollo import asge as ASG
+        led = ASG.TrialLedger(self.data / "apollo" / "asge_trials.jsonl")
+        for i in range(7):
+            led.add({"ir": {"side": "LONG"}, "status": "REJECTED", "execution_allowed": False})
+        m, _ = self.check(self.run_export("asge-trials"), {"asge_trials": 7})
+        self.assertEqual(m["status"], "OK")

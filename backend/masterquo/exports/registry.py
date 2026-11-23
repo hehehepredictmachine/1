@@ -95,7 +95,7 @@ EXPORTERS: dict[str, Exporter] = {e.name: e for e in (
     Exporter("fomo-universe", "Rozpoznanie FOMO 101 z wersją metadanych venue", S.fomo_universe, (), task="TASK 003"),
     Exporter("strategy-roi", "ROI strategii (TASK 014) – PAPER / AUTO_DEMO / AUTO_LIVE osobno", S.strategy_roi, (), task="TASK 014"),
     Exporter("sfb-snapshots", "Snapshoty Strategy Filter Bucket", S.sfb_snapshots, (), needs_app=True, task="TASK 018"),
-    Exporter("asge-trials", "Ledger prób generatora strategii (ASGE)", S.asge_trials, (), needs_app=True, task="TASK 024"),
+    Exporter("asge-trials", "Ledger prób generatora strategii (ASGE)", S.asge_trials, (), task="TASK 024"),
     Exporter("change-points", "Wyniki PELT (punkty zmiany)", S.change_points, (
         Param("timeframe", "str", "H1", SHADOW_TF), Param("lookback", "int", 500, lo=20, hi=5000), Param("min_segment", "int", 10, lo=2, hi=200),
         Param("sensitivity", "bool", False)), needs_app=True, task="TASK 015"),

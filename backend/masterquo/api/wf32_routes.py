@@ -607,7 +607,7 @@ def register(app, rt) -> None:
             raise HTTPException(400, "timeframe: M5 | M15")
         return SCC.evaluate([{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(timeframe, 400)])
 
-    _trials = ASG.TrialLedger()
+    _trials = ASG.TrialLedger(paths.data_dir() / "apollo" / "asge_trials.jsonl")      # 1.46: durable append-only ledger
 
     @app.post("/api/v1/asge/run")
     def asge_run(body: dict = Body(...)):

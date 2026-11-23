@@ -749,3 +749,72 @@ class TestBootstrapNoParallelInstalls(unittest.TestCase):
         out = b.run_heavy(timeout_s=0.05)
         self.assertEqual(started, ["tsfm_chronos2"])                                # the second install never starts in parallel
         self.assertEqual(out[0]["state"], "INSTALLING")
+
+
+class TestV32ModulesBatch2(unittest.TestCase):
+    """Chunks 05 / 07 / 18 / 19 (SREDNI / NISKI) in workflow v3.2 modules."""
+
+    def test_asge_ledger_durable_locked_and_ir_types(self):
+        import tempfile
+        import threading
+        from pathlib import Path
+
+        from masterquo.apollo import asge as A
+        p = Path(tempfile.mkdtemp()) / "asge_trials.jsonl"
+        led = A.TrialLedger(p)
+        ts = [threading.Thread(target=lambda: [led.add({"x": 1}) for _ in range(50)]) for _ in range(4)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        self.assertEqual(len({r["trial_id"] for r in led.rows}), 200)           # no duplicated ids
+        self.assertEqual(len(A.TrialLedger(p).rows), 200)                         # survives a restart
+        for bad in ({"side": "LONG", "conditions": "x", "exit": {}}, {"side": "LONG", "conditions": [{"type": "close_above_sma", "n": 20.5}],
+                                                                       "exit": {"tp_r": 2, "sl_atr": 1, "max_bars": 10}}, "x"):
+            with self.assertRaises(A.IRError):
+                A.validate_ir(bad)
+
+    def test_sfb_nan_lookahead_and_config_types(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import sfb as F
+        s = CAT.strategies()[0]
+        base = {"strategy_id": s["strategy_id"], "config_hash": s["config_hash"], "version": s["version"], "source": "PAPER"}
+        rows = [dict(base, net_R=float("nan"), closed_ts=1_700_000_000 + i) for i in range(5)]
+        self.assertEqual(F.evidence(s, rows, F.validate_config({}), now=1_800_000_000)["n_events"], 0)   # NaN never counts
+        fut = [dict(base, net_R=1.0, closed_ts=1_900_000_000)]
+        self.assertEqual(F.evidence(s, fut, F.validate_config({}), now=1_800_000_000)["n_events"], 0)    # closed after `now`
+        for bad in ({"bootstrap_reps": 0}, {"bootstrap_block": 0}, {"bootstrap_confidence": "x"}, {"min_outer_folds": "5"}):
+            with self.assertRaises(F.ConfigError):
+                F.validate_config(bad)
+
+    def test_association_contrary_is_not_supported(self):
+        from masterquo.ml import association_rules as AR
+        m = {"status": "READY", "rules": [{"mask": 1, "edge_up": 0.10, "edge_down": 0.30}]}
+        a = AR.assess(m, 1, "LONG", mode="ASSIST")
+        self.assertEqual((a["candidate_direction_supported"], a["reason"], a["action"]), (False, "CONTRARY_EDGE", "HOLD"))
+
+    def test_smma_cci_unknown_spread_and_forming_bar(self):
+        from masterquo.apollo import smma_cci as S
+        bars = [{"t": 1_700_000_000 + 300 * i, "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "closed": True} for i in range(60)]
+        r = S.evaluate(bars + [{"t": 1_700_018_000, "o": 1, "h": 999, "l": 1, "c": 999, "closed": False}])
+        self.assertIsNone(r["spread_atr"])                                       # flat bars: ATR 0 -> unknown, not 0.0
+        self.assertEqual(r["bar_index"], 59)                                     # the forming bar is excluded
+        self.assertEqual(r["bar_t_basis"], "UTC_EPOCH")
+
+    def test_provider_down_is_unavailable_and_backs_off(self):
+        from masterquo.markets import universe as MU
+
+        class Down:
+            calls = 0
+
+            def post(self, body):
+                Down.calls += 1
+                raise OSError("network down")
+        hl = Down()
+        u = MU.Universe(hl)
+        br = MU.CryptoMarketBridge(hl, u)
+        with self.assertRaises(MU.ProviderUnavailable):
+            br.candles("BTC", "1h", 10)
+        n = Down.calls
+        for _ in range(5):
+            with self.assertRaises(MU.ProviderUnavailable):
+                br.candles("BTC", "1h", 10)
+        self.assertEqual(Down.calls, n)                                          # no re-query on every request

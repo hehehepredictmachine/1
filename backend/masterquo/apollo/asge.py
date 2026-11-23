@@ -27,6 +27,11 @@ class IRError(ValueError):
 
 
 def validate_ir(ir: dict) -> dict:
+    if not isinstance(ir, dict):
+        raise IRError("IR: obiekt")
+    if not isinstance(ir.get("conditions"), list) or not all(isinstance(c, dict) for c in ir["conditions"]) or \
+            not isinstance(ir.get("exit") or {}, dict):
+        raise IRError("conditions: lista obiektów, exit: obiekt")          # 1.46: wrong types were a TypeError / AttributeError (500)
     if set(ir) - {"side", "conditions", "exit", "parent", "family"}:
         raise IRError(f"UNKNOWN_KEYS: {sorted(set(ir) - {'side', 'conditions', 'exit', 'parent', 'family'})}")
     if ir.get("side") not in ("LONG", "SHORT"):
@@ -40,7 +45,7 @@ def validate_ir(ir: dict) -> dict:
             raise IRError(f"CONDITION_NOT_ALLOWED: {c.get('type')}")
         for k, (lo, hi) in spec.items():
             v = c.get(k)
-            if not isinstance(v, (int, float)) or not lo <= v <= hi:
+            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:      # 1.46: window lengths are integers (float sliced -> 500)
                 raise IRError(f"PARAM_OUT_OF_BOUNDS: {c['type']}.{k}")
         if set(c) - set(spec) - {"type"}:
             raise IRError("UNKNOWN_PARAM")
@@ -144,13 +149,32 @@ def mutate(parent: dict, rnd: random.Random) -> dict:
 
 
 class TrialLedger:
-    def __init__(self):
+    """Append-only. 1.46: with `path` every trial is appended to a JSONL file (lineage survives a restart - before it lived only in memory)
+    and ids are assigned under a lock (parallel /asge/run calls could reuse a trial_id)."""
+
+    def __init__(self, path=None):
+        import threading
+        from pathlib import Path as _P
         self.rows: list[dict] = []
+        self.path = _P(path) if path else None
+        self._lock = threading.Lock()
+        if self.path and self.path.exists():
+            with open(self.path, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        self.rows.append(json.loads(line))
+                    except ValueError:
+                        continue                              # a torn last line (crash while writing) is skipped, never repaired by guessing
 
     def add(self, row: dict) -> dict:
-        row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}", "created_at": row.get("created_at") or time.time()}   # 1.46: UTC epoch
-        self.rows.append(row)
-        return row
+        with self._lock:
+            row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}", "created_at": row.get("created_at") or time.time()}   # 1.46: UTC epoch
+            if self.path:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+            self.rows.append(row)
+            return row
 
 
 def run(bars: list[dict], seeds: list[dict], n_children: int = 10, *, holdout_frac: float = 0.25, folds: int = 3, min_trades: int = 20,
