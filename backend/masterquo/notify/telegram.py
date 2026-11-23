@@ -297,6 +297,18 @@ class TelegramNotifier:
         self._send_async(token, cfg.chat_id, text)
         return True
 
+    def account_event(self, dedup_key: str, text: str) -> bool:
+        """TASK 017: outbound account-center message (own flags live in notify/account_center.py; master switch + dedup here)."""
+        cfg = self.cfg_store.get().telegram
+        token = self._token()
+        if not (cfg.enabled and cfg.chat_id and token):
+            return False
+        if self.db.one("SELECT 1 AS x FROM notifications_sent WHERE dedup_key=?", (dedup_key,)):
+            return True                                   # already delivered earlier - treat as done
+        self.db.execute("INSERT OR IGNORE INTO notifications_sent(dedup_key, ts) VALUES (?,?)", (dedup_key, iso(utcnow())))
+        self._send_async(token, cfg.chat_id, text)
+        return True
+
     # ------------------------------------------------------------------ public notifications
     def notify(self, dedup_key: str, text: str) -> None:
         """Legacy free-text signal notification."""

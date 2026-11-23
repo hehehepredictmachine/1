@@ -423,3 +423,67 @@ def register(app, rt) -> None:
             raise HTTPException(400, f"klucze: {DK.DISPLAY_KEYS} (bool)")
         cur = DK.load_prefs()
         return DK.save_display(*(body.get(k, cur[k]) for k in DK.DISPLAY_KEYS))
+
+    # ------------------------------------------------------------------ TASK 017: Telegram account center (outbound only, OFF by default)
+    from ..notify.account_center import AccountCenter, CenterError
+
+    def _acct_roi(days: int) -> dict:
+        b = rt.bridge
+        with b._lock:
+            deals = list(b.deals)
+        from .. import stats as _ST
+        r = _ST.account_roi(rt.db, b.account_key, deals, b.clock.offset, days=days) or {}
+        return {"roi_pct": r.get("roi_pct"), "status": r.get("status") or ("OK" if r.get("roi_pct") is not None else "NO_DATA"),
+                "deals": r.get("deals"), "net": r.get("net"), "currency": r.get("currency")}
+
+    def acct():
+        def make():
+            b = getattr(rt, "bridge", None)
+            tg = getattr(rt, "telegram", None)
+            magic = getattr(getattr(rt.cfg.get(), "mt5", None), "magic_number", None) if getattr(rt, "cfg", None) else None
+            return AccountCenter(paths.data_dir() / "telegram_account", deliver=(tg.account_event if tg else None),
+                                 deals_fn=(lambda: [dict(d) for d in (b.deals or [])]) if b else None,
+                                 account_fn=(lambda: b.account_status()) if b else None, pmw_magics=[magic] if magic else [],
+                                 roi_fn=_acct_roi if b else None)
+        return lazy("acct", make)
+
+    def _acct_loop():
+        import time as _t
+        while True:
+            _t.sleep(10)
+            try:
+                c = acct()
+                c.poll()
+                c.queue_reports()
+                c.flush()
+            except Exception:  # noqa: BLE001 - never breaks the engine
+                pass
+    if getattr(rt, "bridge", None) is not None and not getattr(rt, "_acct_thread", None):
+        rt._acct_thread = threading.Thread(target=_acct_loop, name="telegram-account", daemon=True)
+        rt._acct_thread.start()
+
+    def ac(fn, *a):
+        try:
+            return fn(*a)
+        except CenterError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.get("/api/v1/telegram/account")
+    def tg_account():
+        return acct().status()
+
+    @app.post("/api/v1/telegram/account/bind")
+    def tg_bind(body: dict = Body(...)):
+        return ac(acct().bind, str(body.get("account_key") or ""))
+
+    @app.post("/api/v1/telegram/account/unbind")
+    def tg_unbind():
+        return acct().unbind()
+
+    @app.put("/api/v1/telegram/account")
+    def tg_update(body: dict = Body(...)):
+        return ac(acct().update, body)
+
+    @app.put("/api/v1/telegram/account/templates/{kind}")
+    def tg_template(kind: str, body: dict = Body(...)):
+        return ac(acct().set_template, kind, body.get("template"))
