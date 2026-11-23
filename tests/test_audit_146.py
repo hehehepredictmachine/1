@@ -138,6 +138,43 @@ class TestApiInputValidation(unittest.TestCase):
         code, body = c("/api/v1/market-zones/as-of?as_of=2020-01-01T00:00:00Z")
         self.assertEqual(code, 200, body)                              # was 503 "IndexError: list index out of range"
 
+    def test_wf32_routes_validate_input(self):
+        """Chunk 04 (SREDNI): wrong types in v3.2 routes answered 500; loot scores > 100 granted LEGENDARY; non-ASCII CSRF was a 500."""
+        c = self.S.call
+        self.assertEqual(c("/api/v1/models/pt/evaluate", {"forecasts": ["a"] * 40, "outcomes": [1] * 40})[0], 400)
+        self.assertEqual(c("/api/v1/models/dt-ranker/rank", {"candidates": ["x"]})[0], 400)
+        self.assertEqual(c("/api/v1/models/dt-ranker/rank", {"candidates": "x"})[0], 400)
+        bad_ir = {"side": "LONG", "conditions": ["close_above_sma"], "exit": {"tp_r": 2, "sl_atr": 1, "max_bars": 10}}
+        self.assertIn(c("/api/v1/asge/run", {"seeds": [bad_ir]})[0], (200, 400))             # 200 only when INSUFFICIENT_DATA (demo)
+        self.assertEqual(c("/api/v1/tlg/loot/evaluate", {"scores": {"evidence_quality": 500}})[0], 400)
+        self.assertEqual(c("/api/v1/tlg/loot/evaluate", {"scores": "x"})[0], 400)
+        self.assertEqual(c("/api/v1/tlg/sim/1/open", {"side": "BUY", "size": 1, "sl": "x"})[0], 400)
+        import json as _j
+        import urllib.error as _ue
+        import urllib.request as _ur
+        from _demo_server import BASE as _B
+        put = _ur.Request(_B + "/api/v1/telegram/account/templates/nope", data=_j.dumps({"template": None}).encode(), method="PUT",
+                          headers={"Content-Type": "application/json", "Origin": _B, "X-MQ-CSRF": self.S.csrf})
+        try:
+            pc = self.S.op.open(put, timeout=10).status
+        except _ue.HTTPError as e:
+            pc = e.code
+        self.assertEqual(pc, 400)
+        self.assertEqual(c("/api/v1/tlg/xp?limit=-5")[0], 200)
+        self.assertEqual(c("/api/v1/orderflow/CRYPTO/workspace?instrument=BTC&row=nan")[0], 400)
+        self.assertEqual(c("/api/v1/orderflow/CRYPTO/workspace?instrument=BTC&tf_seconds=0")[0], 400)
+        self.assertEqual(c("/api/v1/indicators/calculate", {"method": "SMA", "period": 3, "bars": [{"o": 1, "h": 1, "l": 1, "c": "inf"}]})[0], 400)
+        import urllib.error
+        import urllib.request
+        from _demo_server import BASE
+        req = urllib.request.Request(BASE + "/api/v1/tlg/notes/PLAN", data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json", "Origin": BASE, "X-MQ-CSRF": "\u00e9t\u00e9"})
+        try:
+            code = self.S.op.open(req, timeout=10).status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        self.assertEqual(code, 403)
+
     def test_foreign_page_cannot_log_the_panel_out(self):
         """1.45.0: every GET / created a session and at >200 ALL sessions were cleared - any web page could log the panel out (no STOP)."""
         import urllib.request
@@ -549,3 +586,74 @@ class TestMlRetryBackoff(unittest.TestCase):
                 self.assertTrue(any(x.startswith(code) for x in r["reasons"]), r["reasons"])
         finally:
             t.tearDown()
+
+
+
+class TestWf32Units(unittest.TestCase):
+    """Chunk 04 (SREDNI): offset 0 in long-horizon, hour -1 in association rules, unbounded ledger, Telegram loop writes / ROI keys / SH magic."""
+
+    def _app(self, rt):
+        from fastapi import FastAPI
+
+        from masterquo.api import wf32_routes
+        app = FastAPI()
+        wf32_routes.register(app, rt)
+        ep = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
+        return app, ep
+
+    def test_unknown_offset_is_not_zero(self):
+        import types
+        bars = [{"t_raw": 1_790_000_000 + 3600 * i, "open_utc": None, "o": 1, "h": 1, "l": 1, "c": 1.0 + i * 1e-3, "tv": 1} for i in range(800)]
+        br = types.SimpleNamespace(bars=lambda tf, n, include_forming=False: bars[-n:], clock=types.SimpleNamespace(offset=None), tfs={"H1": 1})
+        app, ep = self._app(types.SimpleNamespace(bridge=None, baskets=None, cfg=None))
+        import masterquo.api.wf32_routes as W  # noqa: F401
+        rt2 = types.SimpleNamespace(bridge=br, baskets=None, cfg=None)
+        app2, ep2 = self._app(rt2)
+        r = ep2["/api/v1/forecast/long-horizon"](horizon="24h", timeframe="H1")
+        self.assertEqual(r["status"], "UNAVAILABLE")
+        self.assertIn("TIME_OFFSET_UNVERIFIED", r["reason"])
+        a = ep2["/api/v1/models/association/snapshot"](timeframe="H1", horizon=24)
+        self.assertEqual(a["status"], "UNAVAILABLE")
+
+    def test_trade_ledger_is_bounded_oldest_first(self):
+        from masterquo.orderflow.trades import TradeEvent, TradeLedger
+        led = TradeLedger(max_per_instrument=100)
+        for i in range(500):
+            led.add(TradeEvent("BINANCE", "X", str(i), 1_700_000_000 + i, 100.0, 1.0, "BUY"))
+        ev = led.events("X")
+        self.assertLessEqual(len(ev), 110)
+        self.assertEqual(ev[-1].trade_id, "499")
+        self.assertGreater(int(ev[0].trade_id), 300)
+
+    def test_account_center_no_idle_writes_and_queued_report_once(self):
+        import tempfile
+        import time
+        from pathlib import Path
+
+        from masterquo.notify.account_center import AccountCenter
+        d = Path(tempfile.mkdtemp())
+        c = AccountCenter(d, account_fn=lambda: {"server": "S", "login": 1}, clock=lambda: 1_795_000_000.0)
+        st = d / "telegram_account_state.json"
+        self.assertEqual((c.flush(), c.queue_reports()), (0, 0))
+        self.assertFalse(st.exists())                                    # nothing to do -> nothing written
+        c.cfg.update(bound_account_key="S:1", send_account_daily_report=True, report_time="00:00")
+        n1 = c.queue_reports(now=time.time())
+        n2 = c.queue_reports(now=time.time())
+        self.assertEqual((n1, n2, len(c.state["outbox"])), (1, 0, 1))      # the waiting report is not queued again every 10 s
+
+    def test_account_roi_keys_and_sh_magic(self):
+        import types
+        from unittest import mock
+        rt = types.SimpleNamespace(bridge=None, baskets=None, cfg=types.SimpleNamespace(get=lambda: types.SimpleNamespace(mt5=types.SimpleNamespace(magic_number=4108_2026))),
+                                   db=None, telegram=None)
+        app, _ = self._app(rt)
+        with mock.patch("masterquo.sh.config.load", return_value={"magic_number": 41082100}):
+            self.assertIn(41082100, app.state.wf32["acct"]().pmw_magics)
+        br = types.SimpleNamespace(_lock=__import__("threading").Lock(), deals=[{"type": 0, "time": 1_795_000_100 + 7200}, {"type": 2, "time": 1}],
+                                   account_key="S:1", clock=types.SimpleNamespace(offset=7200), account_status=lambda: {"currency": "USD"})
+        rt.bridge = br
+        roi = {"status": "OK", "roi_pct": 1.5, "start_equity": 1000.0, "end_equity": 1100.0, "net_flows": 50.0,
+               "period_from": "2026-11-18T00:00:00Z", "period_to": "2026-11-30T00:00:00Z"}
+        with mock.patch("masterquo.stats.account_roi", return_value=roi):
+            r = app.state.wf32["acct_roi"](30)
+        self.assertEqual((r["net"], r["deals"], r["currency"]), (50.0, 1, "USD"))

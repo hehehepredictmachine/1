@@ -215,6 +215,8 @@ class AccountCenter:
 
     def flush(self) -> int:
         with self._lock:
+            if not self.state["outbox"]:
+                return 0                                   # 1.46: nothing queued -> no state write every 10 s
             sent = 0
             keep = []
             done = set(self.state["sent_keys"])
@@ -248,6 +250,10 @@ class AccountCenter:
 
     def queue_reports(self, now: float | None = None) -> int:
         keys = self.report_due(now)
+        if not keys:
+            return 0                                       # 1.46: no due report -> no state write
+        queued = {m["key"] for m in self.state["outbox"]}
+        keys = [k for k in keys if k not in queued]         # 1.46: a report already waiting in the outbox is not queued again every 10 s
         for k in keys:
             roi = self.roi_fn(self.cfg["account_roi_days"]) if self.roi_fn else {"status": "NO_DATA"}
             ev = {"period": k.split(":")[1], "roi": roi.get("roi_pct") if roi.get("roi_pct") is not None else "—", "roi_status": roi.get("status", "NO_DATA"),

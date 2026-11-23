@@ -59,4 +59,7 @@ class LocalSecurity:
 
     def csrf_ok(self, sid: str | None, token: str | None) -> bool:
         exp = self.csrf_for(sid)
-        return bool(exp and token and hmac.compare_digest(exp, token))
+        if not (exp and isinstance(token, str) and token):
+            return False
+        # 1.46: bytes - compare_digest(str, str) raises TypeError for non-ASCII text (a 500 instead of a 403)
+        return hmac.compare_digest(exp.encode("utf-8"), token.encode("utf-8", "surrogatepass"))

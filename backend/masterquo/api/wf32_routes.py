@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import hashlib
 import json
+import math
 import threading
 import time
 
@@ -57,7 +58,7 @@ def register(app, rt) -> None:
 
     @app.get("/api/v1/tlg/xp")
     def tlg_xp(limit: int = 100):
-        return {"items": g(tlg().xp_history, limit)}
+        return {"items": g(tlg().xp_history, max(1, min(int(limit), 5000)))}          # 1.46: bounded (negative = all, huge = 500)
 
     @app.get("/api/v1/tlg/journal")
     def tlg_journal():
@@ -146,7 +147,8 @@ def register(app, rt) -> None:
 
     @app.post("/api/v1/tlg/sim/{sid}/open")
     def tlg_sim_open(sid: int, body: dict = Body(...)):
-        return g(tlg().sim_open, sid, str(body.get("side") or ""), body.get("size"), body.get("sl"), body.get("tp"))
+        return g(tlg().sim_open, sid, str(body.get("side") or ""), body_num(body, "size", None, float, 0, 1e9),
+                 body_num(body, "sl", None, float, 0, 1e12), body_num(body, "tp", None, float, 0, 1e12))
 
     @app.post("/api/v1/tlg/sim/{sid}/close/{trade_id}")
     def tlg_sim_close(sid: int, trade_id: int):
@@ -175,6 +177,7 @@ def register(app, rt) -> None:
     # ------------------------------------------------------------------ TASK 007: Modular Indicator & Smoothing Engine
     from ..indicators import smoothing as SM
     _ind = SM.IndicatorEngine()
+    _ind_lock = threading.Lock()                     # 1.46: the incremental state is shared by every request (race corrupted it)
 
     def _bars(tf: str, count: int) -> list[dict]:
         b = getattr(rt, "bridge", None)
@@ -201,9 +204,17 @@ def register(app, rt) -> None:
                 raise HTTPException(400, "bars: lista obiektów świec")
             try:
                 rev = sum(int(b.get("revision") or 0) for b in bars) if bars else None
-            except (TypeError, ValueError):
-                raise HTTPException(400, "bars: revision musi być liczbą całkowitą") from None
-            return _ind.calculate(spec, bars, revision=rev)
+                for b in bars:
+                    for k in ("o", "h", "l", "c"):
+                        if k in b and b[k] is not None and not math.isfinite(float(b[k])):
+                            raise ValueError(k)
+            except (TypeError, ValueError, OverflowError):
+                raise HTTPException(400, "bars: o/h/l/c liczbowe i skończone, revision całkowite") from None
+            with _ind_lock:
+                try:
+                    return _ind.calculate(spec, bars, revision=rev)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise HTTPException(400, f"bars: {type(exc).__name__}: {exc}"[:200]) from None
         except SM.SpecError as exc:
             raise HTTPException(400, str(exc)) from None
 
@@ -258,7 +269,8 @@ def register(app, rt) -> None:
         return lazy("universe", lambda: MU.Universe(_hl()))
 
     _BR = {"CRYPTO": MU.CryptoMarketBridge, "INDICES": MU.IndicesMarketBridge, "FOMO_STOCK_PERPS": MU.FomoStockPerpsBridge}
-    _ledger = TradeLedger()
+    _ledger = TradeLedger(max_per_instrument=200_000)     # 1.46: bounded (the oldest events of an instrument are dropped first)
+    _ledger_lock = threading.Lock()                         # 1.46: one ledger, many request threads
 
     def bridge(market: str):
         if market not in _BR:
@@ -304,12 +316,15 @@ def register(app, rt) -> None:
     @app.get("/api/v1/orderflow/{market}/workspace")
     def orderflow_workspace(market: str, instrument: str, row: float = 0.0, tf_seconds: int = 60):
         """Bookmap-style workspace data: DOM + depth column + trade bubbles + trade-based VP + footprint (one ledger)."""
+        if not (math.isfinite(row) and row >= 0) or not (1 <= tf_seconds <= 86400):
+            raise HTTPException(400, "row >= 0 (skończone), tf_seconds 1..86400")
         br = bridge(market)
         book = mu(br.book, instrument)
         evs = mu(br.trades, instrument)
-        stats = _ledger.extend(evs)
-        ins_id = evs[0].instrument_id if evs else book["instrument_id"]
-        ev = _ledger.events(ins_id)
+        with _ledger_lock:
+            stats = _ledger.extend(evs)
+            ins_id = evs[0].instrument_id if evs else book["instrument_id"]
+            ev = _ledger.events(ins_id)
         if row <= 0:
             row = OA.auto_row(book["bids"][0][0] if book["bids"] else (ev[-1].price if ev else 1.0))
         ob = OA.OrderBook()
@@ -340,6 +355,8 @@ def register(app, rt) -> None:
         prof = body.get("profile") or "ARTICLE_25105_V1"
         if prof not in PT.PROFILES:
             raise HTTPException(400, f"profile: {PT.PROFILES}")
+        if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in f + y):
+            raise HTTPException(400, "forecasts / outcomes: tylko skończone liczby")              # 1.46: text / NaN was a 500
         res = PT.evaluate(f, y, prof)
         _remember("pt", [f, y, prof], len(f), res, profile=prof)
         return res
@@ -350,7 +367,10 @@ def register(app, rt) -> None:
         if not bars:
             return {"status": "NOT_CONFIGURED", "reason": "brak zamkniętych świec", "mode": "OBSERVE"}
         from datetime import datetime as _d
-        rows = [{**b, "hour": _d.fromisoformat(b["open_utc"].replace("Z", "+00:00")).hour if b.get("open_utc") else -1} for b in bars]
+        bars = [b for b in bars if b.get("open_utc")]         # 1.46: unknown time is not "outside the EU session" (hour -1 made SESSION_EU False)
+        if not bars:
+            return {"status": "UNAVAILABLE", "reason": "TIME_OFFSET_UNVERIFIED: brak czasu UTC świec", "mode": "OBSERVE"}
+        rows = [{**b, "hour": _d.fromisoformat(b["open_utc"].replace("Z", "+00:00")).hour} for b in bars]
         masks = AR.event_bits(rows)
         m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], max(1, min(horizon, 200)), 0.0), scope={"timeframe": timeframe, "horizon": horizon})
         cur = masks[-1] if masks else None
@@ -365,10 +385,13 @@ def register(app, rt) -> None:
 
     @app.post("/api/v1/models/dt-ranker/rank")
     def dtr_rank(body: dict = Body(...)):
+        raw = body.get("candidates") or []
+        if not isinstance(raw, list) or not all(isinstance(c, dict) for c in raw) or len(raw) > 500:
+            raise HTTPException(400, "candidates: lista 0-500 obiektów")
         try:
-            cands = [DT.candidate_from_dict(c) for c in (body.get("candidates") or [])]
-        except DT.CandidateError as exc:
-            raise HTTPException(400, str(exc)) from None
+            cands = [DT.candidate_from_dict(c) for c in raw]
+        except (DT.CandidateError, KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(400, f"{type(exc).__name__}: {exc}"[:200]) from None
         res = DT.rank(_ranker["bundle"], cands, {"mode": "SHADOW"})
         _remember("dt", [DT.to_dict(c) for c in cands], len(cands), res)
         return res
@@ -394,12 +417,15 @@ def register(app, rt) -> None:
     def long_horizon(horizon: str = "24h", timeframe: str = "H1"):
         if horizon not in LH.HORIZONS_S:
             raise HTTPException(400, f"horizon: {list(LH.HORIZONS_S)}")
-        bars = [b for b in _bars(timeframe, 5000) if b.get("t_raw")]
+        bars = _bars(timeframe, 5000)
         if not bars:
             return {"status": "UNAVAILABLE", "reason": "brak świec"}
-        clk = getattr(getattr(rt, "bridge", None), "clock", None)
-        off = getattr(clk, "offset", None) or 0
-        return LH.forecast([b["t_raw"] - off for b in bars], [float(b["c"]) for b in bars], horizon)
+        # 1.46: UTC from the bridge (open_utc); an unverified server offset is NOT replaced with 0 (server time was presented as UTC)
+        from ..timeutil import parse_iso as _pi
+        pts = [(_pi(b["open_utc"]).timestamp(), float(b["c"])) for b in bars if b.get("open_utc")]
+        if not pts:
+            return {"status": "UNAVAILABLE", "reason": "TIME_OFFSET_UNVERIFIED: offset czasu serwera MT5 nieustalony"}
+        return LH.forecast([t for t, _ in pts], [c for _, c in pts], horizon)
 
     @app.get("/api/v1/change-points")
     def change_points(timeframe: str = "H1", lookback: int = 500, min_segment: int = 10, sensitivity: bool = False):
@@ -450,32 +476,53 @@ def register(app, rt) -> None:
         with b._lock:
             deals = list(b.deals)
         from .. import stats as _ST
-        r = _ST.account_roi(rt.db, b.account_key, deals, b.clock.offset, days=days) or {}
+        off = b.clock.offset
+        r = _ST.account_roi(rt.db, b.account_key, deals, off, days=days) or {}
+        # 1.46: account_roi has no deals / net / currency keys - the report always showed "—". Net = equity change minus external flows
+        # (same Modified-Dietz window), deals = trade deals in that window; unknown stays None ("—").
+        net = deals_n = None
+        if r.get("status") == "OK" and None not in (r.get("start_equity"), r.get("end_equity"), r.get("net_flows")):
+            net = round(r["end_equity"] - r["start_equity"] - r["net_flows"], 2)
+            from ..timeutil import parse_iso as _pi
+            t0, t1 = _pi(r["period_from"]).timestamp(), _pi(r["period_to"]).timestamp()
+            deals_n = sum(1 for d in deals if d.get("type") in (0, 1) and off is not None and t0 < float(d.get("time") or 0) - off <= t1)
+        cur = (b.account_status() or {}).get("currency") if hasattr(b, "account_status") else None
         return {"roi_pct": r.get("roi_pct"), "status": r.get("status") or ("OK" if r.get("roi_pct") is not None else "NO_DATA"),
-                "deals": r.get("deals"), "net": r.get("net"), "currency": r.get("currency")}
+                "deals": deals_n, "net": net, "currency": cur}
 
     def acct():
         def make():
             b = getattr(rt, "bridge", None)
             tg = getattr(rt, "telegram", None)
             magic = getattr(getattr(rt.cfg.get(), "mt5", None), "magic_number", None) if getattr(rt, "cfg", None) else None
+            magics = [magic] if magic else []
+            try:                                                   # 1.46: SH engine deals (own magic) are PMW_ENGINES too, not EXTERNAL_MAGIC
+                from ..sh import config as _SHC
+                if _SHC.load().get("magic_number"):
+                    magics.append(int(_SHC.load()["magic_number"]))
+            except Exception:  # noqa: BLE001 - no SH config: only the main magic
+                pass
             return AccountCenter(paths.data_dir() / "telegram_account", deliver=(tg.account_event if tg else None),
                                  deals_fn=(lambda: [dict(d) for d in (b.deals or [])]) if b else None,
-                                 account_fn=(lambda: b.account_status()) if b else None, pmw_magics=[magic] if magic else [],
+                                 account_fn=(lambda: b.account_status()) if b else None, pmw_magics=magics,
                                  roi_fn=_acct_roi if b else None)
         return lazy("acct", make)
 
     def _acct_loop():
+        import logging as _lg
         import time as _t
+        lg, last = _lg.getLogger("masterquo.telegram_account"), {}
         while True:
             _t.sleep(10)
-            try:
-                c = acct()
-                c.poll()
-                c.queue_reports()
-                c.flush()
-            except Exception:  # noqa: BLE001 - never breaks the engine
-                pass
+            # 1.46: each step on its own (a failing report no longer blocks the delivery of queued events) and errors are logged
+            # (at most once per 10 min per step) instead of disappearing
+            for step in ("poll", "queue_reports", "flush"):
+                try:
+                    getattr(acct(), step)()
+                except Exception as exc:  # noqa: BLE001 - never breaks the engine
+                    if _t.time() - last.get(step, 0) > 600:
+                        last[step] = _t.time()
+                        lg.warning("telegram account %s: %s: %s", step, type(exc).__name__, str(exc)[:300])
     if getattr(rt, "bridge", None) is not None and not getattr(rt, "_acct_thread", None):
         rt._acct_thread = threading.Thread(target=_acct_loop, name="telegram-account", daemon=True)
         rt._acct_thread.start()
@@ -504,7 +551,11 @@ def register(app, rt) -> None:
 
     @app.put("/api/v1/telegram/account/templates/{kind}")
     def tg_template(kind: str, body: dict = Body(...)):
-        return ac(acct().set_template, kind, body.get("template"))
+        from ..notify.account_center import TEMPLATE_FIELDS
+        t = body.get("template")
+        if kind not in TEMPLATE_FIELDS or (t is not None and not isinstance(t, str)):
+            raise HTTPException(400, f"kind: {list(TEMPLATE_FIELDS)}; template: tekst albo null")
+        return ac(acct().set_template, kind, t)
 
     # ------------------------------------------------------------------ TASK 018: Strategy Filter Bucket
     @app.get("/api/v1/strategy-filter/status")
@@ -563,13 +614,13 @@ def register(app, rt) -> None:
         seeds = body.get("seeds") or []                            # 1.46: input validated before any data work (was a 500 on bad types)
         if not isinstance(seeds, list) or not all(isinstance(x, dict) for x in seeds) or len(seeds) > 20:
             raise HTTPException(400, "seeds: lista 0-20 obiektów IR")
-        children = body_num(body, "children", 10, int, 0, 50) or 10
+        children = body_num(body, "children", 10, int, 1, 50)
         bars = [{"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(str(body.get("timeframe") or "H1"), 5000)]
         if len(bars) < 600:
             return {"status": "INSUFFICIENT_DATA", "bars": len(bars)}
         try:
             return ASG.run(bars, seeds, children, ledger=_trials)
-        except ASG.IRError as exc:
+        except (ASG.IRError, TypeError, AttributeError, KeyError) as exc:
             raise HTTPException(400, str(exc)) from None
 
     @app.get("/api/v1/asge/ledger")
@@ -580,15 +631,26 @@ def register(app, rt) -> None:
     def loot_catalog():
         return {"items": RLC.catalog(), "policy_version": RLC.POLICY_VERSION, "weights": RLC.WEIGHTS}
 
+    def _loot_body(body: dict) -> dict:
+        sc = body.get("scores")
+        if sc is not None and (not isinstance(sc, dict) or not all(
+                v is None or (isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 100) for v in sc.values())):
+            raise HTTPException(400, "scores: słownik wartości 0-100")          # 1.46: >100 let a client grant itself LEGENDARY
+        for k in ("setup_family", "source_mode", "event_id", "position_id", "strategy_status", "sfb_status"):
+            if body.get(k) is not None and not isinstance(body.get(k), str):
+                raise HTTPException(400, f"{k}: tekst")
+        return body
+
     @app.post("/api/v1/tlg/loot/evaluate")
     def loot_evaluate(body: dict = Body(...)):
-        return RLC.evaluate(body)
+        return RLC.evaluate(_loot_body(body))
 
     @app.post("/api/v1/tlg/loot/grant")
     def loot_grant(body: dict = Body(...)):
         if body.get("source_mode") != "SIMULATOR":
             raise HTTPException(409, "GRANT_SOURCE_NOT_ENABLED: w tej wersji nagrody tylko z symulatora (MT5 / dziennik: tylko ocena)")
-        return g(RLC.grant, tlg(), body)
+        return g(RLC.grant, tlg(), _loot_body(body))
 
     # 1.46: the exporters (api/export_routes.py) read THESE objects - one ledger / journal, never a copy
-    app.state.wf32 = {"ledger": _ledger, "trials": _trials, "shadow_journal": _journal, "hl": _hl, "universe": universe, "tlg": tlg}
+    app.state.wf32 = {"ledger": _ledger, "trials": _trials, "shadow_journal": _journal, "hl": _hl, "universe": universe, "tlg": tlg,
+                      "acct": acct, "acct_roi": _acct_roi}

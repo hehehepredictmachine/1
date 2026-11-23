@@ -68,16 +68,30 @@ class TradeEvent:
 class TradeLedger:
     """Dedupe by (provider, instrument, trade_id); a correction (same id, higher revision) replaces the event; output ordered by (ts, id)."""
 
-    def __init__(self):
+    def __init__(self, max_per_instrument: int | None = None):
         self._ev: dict[tuple, TradeEvent] = {}
         self.duplicates = 0
         self.corrections = 0
+        self.max_per_instrument = max_per_instrument      # 1.46: bound for a process running for weeks (None = unbounded)
+        self._n: dict[str, int] = {}
+        self.dropped = 0
+
+    def _prune(self, instrument_id: str) -> None:
+        keep = self.max_per_instrument
+        mine = sorted((e.ts, e.trade_id, k) for k, e in self._ev.items() if e.instrument_id == instrument_id)
+        for _, _, k in mine[:max(0, len(mine) - keep)]:
+            del self._ev[k]
+            self.dropped += 1
+        self._n[instrument_id] = min(len(mine), keep)
 
     def add(self, e: TradeEvent) -> str:
         k = (e.provider, e.instrument_id, e.trade_id)
         cur = self._ev.get(k)
         if cur is None:
             self._ev[k] = e
+            n = self._n[e.instrument_id] = self._n.get(e.instrument_id, 0) + 1
+            if self.max_per_instrument and n > self.max_per_instrument * 1.1:     # prune in batches: the OLDEST events go first
+                self._prune(e.instrument_id)
             return "ADDED"
         if e.revision > cur.revision:
             self._ev[k] = e
