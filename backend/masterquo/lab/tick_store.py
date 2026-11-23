@@ -116,8 +116,11 @@ def export_via_bridge(bridge, symbol: str, inst: str, days: float, chunk_hours: 
             if r.get("reason") == "SERVER_OFFSET_UNKNOWN":
                 break
         else:
-            ent = save_chunk(inst, r["ticks"], r.get("source", "MT5"), r.get("clock_transform", ""), len(r["ticks"]) >= max_count)
-            out.append({"from": t, "to": t1, "status": "TRUNCATED" if ent and ent["truncated"] else ("OK" if ent else "EMPTY"), "count": len(r["ticks"])})
+            # 1.46: truncation from the RAW terminal answer (bridge 'truncated'): the filtered list could be shorter than max_count although
+            # the terminal returned max_count ticks and stopped before t1 - such a cut chunk was saved as OK
+            trunc = bool(r.get("truncated", len(r["ticks"]) >= max_count))
+            ent = save_chunk(inst, r["ticks"], r.get("source", "MT5"), r.get("clock_transform", ""), trunc)
+            out.append({"from": t, "to": t1, "status": "TRUNCATED" if trunc and r["ticks"] else ("OK" if ent else "EMPTY"), "count": len(r["ticks"])})
         if progress:
             progress((t1 - start) / max(1.0, now - start))
         t = t1

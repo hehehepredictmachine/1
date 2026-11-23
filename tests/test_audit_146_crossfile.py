@@ -104,3 +104,23 @@ class BridgeReconnectDuringConnect(unittest.TestCase):
         self.assertTrue(asked)
         self.assertEqual(set(asked), {first})
         self.assertEqual(b.buffer_symbol, first)
+
+
+class TickExportUsesRawTruncation(unittest.TestCase):
+    """chunk_24#12: tick_store guessed truncation from the FILTERED list (len >= max_count); a full raw terminal answer that ended before t1
+    with one invalid quote dropped was saved as OK. The bridge reports `truncated` from the raw answer."""
+
+    def test_raw_truncated_flag_is_used(self):
+        import types
+        from unittest import mock
+
+        from masterquo.lab import tick_store as TS
+        td = __import__("_env").TempData()
+        self.addCleanup(td.close)
+        ticks = [{"t_ms": 1_700_000_000_000 + i, "bid": 1.0, "ask": 1.1, "ord": i, "time_msc": 1_700_000_000_000 + i, "flags": 2} for i in range(9)]
+        br = types.SimpleNamespace(ticks_range=lambda sym, a, b, n: {"status": "ok", "ticks": ticks, "truncated": True, "source": "MT5",
+                                                                       "clock_transform": "x"})
+        with mock.patch.object(TS.time, "time", return_value=1_700_000_000.0 + 3600):
+            r = TS.export_via_bridge(br, "XAUUSD-", "XAUUSD", days=1 / 24, chunk_hours=1.0, max_count=10)
+        self.assertEqual([c["status"] for c in r["chunks"]], ["TRUNCATED"])
+        self.assertFalse(r["complete"])
