@@ -193,6 +193,7 @@ class Ctx:
         self.oi: list[tuple[float, float]] = []
         self.flow: list[dict] = []
         self.cache: dict[str, tuple[float, list]] = {}
+        self.sfb: dict | None = None                       # TASK 018: last SFB snapshot meta for this scope (diagnostic)
 
 
 class BasketService:
@@ -212,6 +213,8 @@ class BasketService:
         self.loop = {"cycles": 0, "errors": 0, "last_error": None, "profile_errors": {}}
         self.hl_ctx: dict = {}
         self.hl_ctx_at = 0.0
+        from .sfb import StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
+        self.sfb = StrategyFilterBucket(self._sfb_cfg())
 
     # ------------------------------------------------------------------ settings
     def _read(self):
@@ -219,6 +222,19 @@ class BasketService:
             return json.loads((self.base / "settings.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
+
+    def _sfb_cfg(self) -> dict:
+        try:
+            return json.loads((self.base / "sfb.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def set_sfb(self, cfg: dict) -> dict:
+        from .sfb import StrategyFilterBucket, validate_config
+        clean = validate_config(cfg)
+        (self.base / "sfb.json").write_text(json.dumps({k: v for k, v in clean.items()}, indent=1), encoding="utf-8")
+        self.sfb = StrategyFilterBucket(clean, self.sfb.outcomes_fn)
+        return self.sfb.status()
 
     def settings(self) -> dict:
         """Active settings view. TASK 020: entries of the retired OTC profile / baskets / strategies stored by older versions are NOT
@@ -513,6 +529,14 @@ class BasketService:
         prof = c.profile
         pst = st["profiles"][prof]
         strats = [s for s in CAT.CATALOG if s["profile_id"] == prof]
+        scope = {"profile": prof, "venue": CAT.PROFILES[prof]["venue"], "environment": "LIVE_DATA", "product": CAT.PROFILES[prof]["products"][0],
+                 "instrument": c.instrument}
+        strats, snap = self.sfb.filter(strats, scope)       # TASK 018: OFF = unchanged; ASSIST = only ELIGIBLE (never adds anything)
+        c.sfb = ({**{k: snap.get(k) for k in ("snapshot_id", "bucket_key", "mode", "bucket_status")},
+                  "items": {k: v["eligibility_status"] for k, v in snap["items"].items()}} if snap else None)
+        if not strats:
+            c.data_state, c.reason = "NO_TRADE_BUCKET", "SFB ASSIST: brak strategii ELIGIBLE w tym zakresie"
+            return {"state": "NO_TRADE_BUCKET"}
         tfs = sorted({s["signal_timeframe"] for s in strats} | {t for s in strats for t in s["context_timeframes"]}, key=lambda t: TF_S[t])
         bars = {tf: bars_fn(tf, 600) for tf in tfs}
         new_tfs = []
@@ -717,7 +741,9 @@ class BasketService:
                    "plan": {**plan, "execution": CAT.PROFILES[c.profile]["execution_capability"], "execution_status": self._exec_status(c, plan, st)},
                    "setup": {**r, "justifications": [x[1]["strategy_id"] for x in ranked[1:]], "regime": c.regime,
                              # CHARTS K3: was the rule inside the AUTO regime routing at signal time (MANUAL_SELECT may publish outside it)
-                             "routed_auto": s["correlation_group"] in REGIME_GROUPS.get(c.regime.get("regime"), set())}, "scores": sc}
+                             "routed_auto": s["correlation_group"] in REGIME_GROUPS.get(c.regime.get("regime"), set())}, "scores": sc,
+                   **({"sfb": {**{k: v for k, v in c.sfb.items() if k != "items"}, "eligibility_status": c.sfb["items"].get(s["strategy_id"])}}
+                      if c.sfb else {})}
             if self.ledger.add_signal(sig):
                 n += 1
                 self._publish(sig)

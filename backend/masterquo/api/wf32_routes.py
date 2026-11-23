@@ -487,3 +487,22 @@ def register(app, rt) -> None:
     @app.put("/api/v1/telegram/account/templates/{kind}")
     def tg_template(kind: str, body: dict = Body(...)):
         return ac(acct().set_template, kind, body.get("template"))
+
+    # ------------------------------------------------------------------ TASK 018: Strategy Filter Bucket
+    @app.get("/api/v1/strategy-filter/status")
+    def sfb_status():
+        b = getattr(rt, "baskets", None)
+        if b is None:
+            raise HTTPException(503, "koszyki niedostępne")
+        return b.sfb.status()
+
+    @app.put("/api/v1/strategy-filter/config")
+    def sfb_config(body: dict = Body(...)):
+        from ..baskets.sfb import ConfigError
+        b = getattr(rt, "baskets", None)
+        if b is None:
+            raise HTTPException(503, "koszyki niedostępne")
+        try:
+            return b.set_sfb(body)
+        except ConfigError as exc:
+            raise HTTPException(400, str(exc)) from None
