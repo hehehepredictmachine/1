@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import numbers
 from dataclasses import asdict, dataclass, field
 
 SCHEMA = "MQ-DT-SIGNAL-RANKER-1.0.0"
@@ -25,6 +26,21 @@ DEFAULT_POLICY = {"mode": "SHADOW", "lambda_uncertainty": 0.5, "min_leaf_events"
 
 class CandidateError(ValueError):
     pass
+
+
+def _real(v, finite: bool = True) -> bool:
+    """A real number (bool is not a number; numpy scalars are); `finite` also rejects NaN / inf."""
+    return isinstance(v, numbers.Real) and not isinstance(v, bool) and (not finite or math.isfinite(v))
+
+
+def _missing_inputs(c: Candidate) -> list[str]:
+    # 1.46: unknown spread / slippage / funding (None or non-finite) was silently priced as 0.0 - only commission_R was checked
+    out = []
+    if not all(_real(v) for v in (c.spread, c.commission_R, c.slippage_R, c.funding_R)):
+        out.append("COST_UNKNOWN")
+    if not _real(c.setup_score):
+        out.append("SETUP_SCORE_MISSING")
+    return out
 
 
 @dataclass(frozen=True)
@@ -74,8 +90,7 @@ class Candidate:
             bad.append("EXPIRED")
         if self.status != "READY":
             bad.append(f"SOURCE_{self.status}")
-        if self.commission_R is None:
-            bad.append("COST_UNKNOWN")
+        bad.extend(_missing_inputs(self))                               # 1.46: any unknown cost component -> COST_UNKNOWN (was commission only)
         if not self.trade_allowed:
             bad.append("TRADE_NOT_ALLOWED")
         return bad
@@ -89,10 +104,12 @@ def features(c: Candidate) -> list[float]:
     """Point-in-time plan / cost / context features (no outcome, no future bar, no hindsight)."""
     r = c.risk or 1e-12
     rr = abs(c.target - c.entry) / r
-    cost_R = (c.spread / r) + (c.commission_R or 0.0) + (c.slippage_R or 0.0) + (c.funding_R or 0.0)
+    miss = _missing_inputs(c)                                           # 1.46: unknown cost / score is NaN, never a 0.0 (under-stated cost_R)
+    cost_R = math.nan if "COST_UNKNOWN" in miss else (c.spread / r) + c.commission_R + c.slippage_R + c.funding_R
+    score = math.nan if "SETUP_SCORE_MISSING" in miss else c.setup_score
     tf_min = {"M1": 1, "M3": 3, "M5": 5, "M10": 10, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "H8": 480, "D1": 1440}.get(c.timeframe.upper(), 0)
     hour = int((c.decision_ts % 86400) // 3600)
-    return [rr, cost_R, c.setup_score, (r / c.atr) if c.atr else -1.0, 1.0 if c.direction == "LONG" else -1.0, math.log1p(tf_min),
+    return [rr, cost_R, score, (r / c.atr) if c.atr else -1.0, 1.0 if c.direction == "LONG" else -1.0, math.log1p(tf_min),
             float(MARKETS.index(c.market)), math.sin(2 * math.pi * hour / 24), math.cos(2 * math.pi * hour / 24)]
 
 
@@ -103,16 +120,16 @@ def net_r_label(c: Candidate, exit_price: float | None, filled: bool = True) -> 
     """net_R = gross_R - spread_R - commission_R - slippage_R - funding_R (each component kept for audit)."""
     if not filled:
         return {"label_status": "NO_ENTRY", "net_R": None}
-    if c.commission_R is None:
+    if "COST_UNKNOWN" in _missing_inputs(c):                            # 1.46: unknown slippage / funding / spread no longer labelled as 0 cost
         return {"label_status": "COST_UNKNOWN", "net_R": None}
     if exit_price is None:
         return {"label_status": "UNRESOLVED", "net_R": None}
     s = 1 if c.direction == "LONG" else -1
     gross = s * (exit_price - c.entry) / c.risk
     spread_R = c.spread / c.risk
-    net = gross - spread_R - c.commission_R - (c.slippage_R or 0) - (c.funding_R or 0)
+    net = gross - spread_R - c.commission_R - c.slippage_R - c.funding_R
     return {"label_status": "LABELED", "label_version": LABEL_VERSION, "gross_R": gross, "spread_R": spread_R, "commission_R": c.commission_R,
-            "slippage_R": c.slippage_R or 0.0, "funding_or_borrow_R": c.funding_R or 0.0, "net_R": net, "positive_net_R": net > 0}
+            "slippage_R": c.slippage_R, "funding_or_borrow_R": c.funding_R, "net_R": net, "positive_net_R": net > 0}
 
 
 def chrono_split(samples: list[dict], fractions=(0.6, 0.2, 0.2), purge_s: float = 0.0, embargo_s: float = 0.0) -> dict:
@@ -142,8 +159,9 @@ class RankerBundle:
     def __init__(self, reg, clf, calib, leaf_stats: dict, manifest: dict):
         self.reg, self.clf, self.calib, self.leaf_stats, self.manifest = reg, clf, calib, leaf_stats, manifest
 
-    def predict(self, c: Candidate) -> dict:
+    def predict(self, c: Candidate, z: float | None = None) -> dict:
         import numpy as np
+        z = DEFAULT_POLICY["z"] if z is None else float(z)             # 1.46: policy z was ignored (always DEFAULT_POLICY["z"])
         x = np.array([features(c)])
         leaf = int(self.reg.apply(x)[0])
         st = self.leaf_stats.get(leaf, {"events": 0, "mean": 0.0, "std": float("inf")})
@@ -156,7 +174,7 @@ class RankerBundle:
             p, pst = None, "UNCALIBRATED"
         se = st["std"] / math.sqrt(st["events"]) if st["events"] > 0 and math.isfinite(st["std"]) else float("inf")
         return {"expected_net_R": exp, "p_positive_net_R": p, "probability_status": pst, "leaf_id": leaf, "leaf_support_events": st["events"],
-                "leaf_net_r": st, "uncertainty_R": se, "conservative_net_R": st["mean"] - DEFAULT_POLICY["z"] * se if math.isfinite(se) else None}
+                "leaf_net_r": st, "uncertainty_R": se, "conservative_net_R": st["mean"] - z * se if math.isfinite(se) else None}
 
 
 def _fit_sigmoid(p, y):
@@ -187,10 +205,14 @@ def train(samples: list[dict], policy: dict | None = None) -> dict:
     from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
     pol = {**DEFAULT_POLICY, **(policy or {})}
     rows = [s for s in samples if s.get("net_R") is not None]
+    n_lab = len(rows)
+    rows = [s for s in rows if not _missing_inputs(s["candidate"])]    # 1.46: unknown cost / score rows were trained as 0-cost (NaN features)
+    excluded = n_lab - len(rows)
     sp = chrono_split(rows, purge_s=pol["purge_s"], embargo_s=pol["embargo_s"])
     fit, cal, test = sp["fit"], sp["calib"], sp["test"]
     if len({s["event_group_id"] for s in fit}) < 2 * pol["min_leaf_events"]:
-        return {"status": "NOT_READY", "reason": "INSUFFICIENT_EVENT_GROUPS", "counts": {k: len(v) for k, v in sp.items()}}
+        return {"status": "NOT_READY", "reason": "INSUFFICIENT_EVENT_GROUPS", "counts": {k: len(v) for k, v in sp.items()},
+                "excluded_missing_inputs": excluded}
     X = np.array([features(s["candidate"]) for s in fit])
     y = np.array([s["net_R"] for s in fit])
     yb = np.array([bool(s["net_R"] > 0) for s in fit])
@@ -224,7 +246,7 @@ def train(samples: list[dict], policy: dict | None = None) -> dict:
         raw = [float(clf.predict_proba(np.array([features(s["candidate"])]))[0][list(clf.classes_).index(True)]) for s in cal]
         calib = _fit_sigmoid(raw, [1.0 if s["net_R"] > 0 else 0.0 for s in cal])
     manifest = {"schema": SCHEMA, "feature_schema": FEATURE_SCHEMA, "label_version": LABEL_VERSION, "ccp_alpha": alpha, "min_samples_leaf": min_leaf,
-                "policy": pol, "split": {k: len(v) for k, v in sp.items()},
+                "policy": pol, "split": {k: len(v) for k, v in sp.items()}, "excluded_missing_inputs": excluded,
                 "data_hash": hashlib.sha256(json.dumps([[s["event_group_id"], s["decision_ts"], s["net_R"]] for s in rows]).encode()).hexdigest()[:16]}
     bundle = RankerBundle(reg, clf, calib, leaf_stats, manifest)
     return {"status": "READY", "bundle": bundle, "manifest": manifest, "test": test,
@@ -244,7 +266,7 @@ def rank(bundle: RankerBundle | None, candidates: list[Candidate], policy: dict 
         bad = c.validate()
         row = {"candidate_id": c.candidate_id, "strategy_id": c.strategy_id, "eligible": not bad, "reason_codes": bad}
         if not bad:
-            pr = bundle.predict(c)
+            pr = bundle.predict(c, z=pol["z"])
             if pr["leaf_support_events"] < pol["min_leaf_events"]:
                 row["reason_codes"].append("LOW_LEAF_SUPPORT")
             if pr["conservative_net_R"] is None or pr["conservative_net_R"] <= pol["min_conservative_net_r"]:
@@ -257,11 +279,14 @@ def rank(bundle: RankerBundle | None, candidates: list[Candidate], policy: dict 
     dirs = {next(c.direction for c in candidates if c.candidate_id == r["candidate_id"]) for r in elig}
     if len(dirs) > 1:
         groups = {}
+        elig_ids = {r["candidate_id"] for r in elig}
         for c in candidates:
-            groups.setdefault(c.event_group_id, set()).add(c.direction)
+            if c.candidate_id in elig_ids:                              # 1.46: an ineligible (e.g. EXPIRED) opposite candidate forced ABSTAIN
+                groups.setdefault(c.event_group_id, set()).add(c.direction)
         if any(len(v) > 1 for v in groups.values()):
             return {**out, "decision": "ABSTAIN", "reason_codes": ["SAME_EVENT_OPPOSING_CANDIDATES"]}
-    out["ranked_candidates"].sort(key=lambda r: (-(r.get("rank_utility") or -1e18), r["candidate_id"]))
+    # 1.46: `rank_utility or -1e18` sorted a real 0.0 like a missing value (behind negative utilities)
+    out["ranked_candidates"].sort(key=lambda r: (-r["rank_utility"] if r.get("rank_utility") is not None else math.inf, r["candidate_id"]))
     if not elig:
         codes = sorted({c for r in out["ranked_candidates"] for c in r["reason_codes"]})
         return {**out, "decision": "ABSTAIN" if any(r.get("leaf_id") is not None for r in out["ranked_candidates"]) else "NO_TRADE", "reason_codes": codes}
@@ -289,11 +314,32 @@ def evaluate_policies(bundle: RankerBundle, test: list[dict], pol: dict) -> dict
     return {k: summ(v) for k, v in res.items()}
 
 
+_STR_FIELDS = ("candidate_id", "strategy_id", "source", "market", "instrument", "timeframe", "direction", "event_group_id", "status")
+_TIME_FIELDS = ("decision_ts", "feature_as_of")                         # required, finite (NaN would pass the FUTURE_FEATURE check)
+_PLAN_FIELDS = ("entry", "stop", "target")                              # required numbers; non-finite is reported by validate() (NON_FINITE_PLAN)
+_OPT_FINITE = ("expires_at", "atr")                                     # optional, finite when given
+_OPT_REAL = ("setup_score", "spread", "commission_R", "slippage_R", "funding_R")   # optional numbers; non-finite -> COST_UNKNOWN / SETUP_SCORE_MISSING
+_UNKNOWN_IF_ABSENT = ("setup_score", "spread", "slippage_R", "funding_R")
+
+
 def candidate_from_dict(d: dict) -> Candidate:
+    if not isinstance(d, dict):                                         # 1.46: a non-object raised a raw TypeError (500), not CandidateError
+        raise CandidateError("CANDIDATE_NOT_OBJECT")
     keys = {f for f in Candidate.__dataclass_fields__}
     bad = [k for k in d if k not in keys]
     if bad:
         raise CandidateError(f"UNKNOWN_FIELDS: {bad}")
+    # 1.46: field types were not checked - e.g. decision_ts "abc" crashed validate() / features() inside rank() (500)
+    wrong = [k for k in _STR_FIELDS if k in d and not isinstance(d[k], str)]
+    wrong += [k for k in _TIME_FIELDS if k in d and not _real(d[k])]
+    wrong += [k for k in _PLAN_FIELDS if k in d and not _real(d[k], finite=False)]
+    wrong += [k for k in _OPT_FINITE if d.get(k) is not None and not _real(d[k])]
+    wrong += [k for k in _OPT_REAL if d.get(k) is not None and not _real(d[k], finite=False)]
+    wrong += [k for k, t in (("trade_allowed", bool), ("extra", dict)) if k in d and not isinstance(d[k], t)]
+    if wrong:
+        raise CandidateError(f"BAD_FIELD_TYPES: {wrong}")
+    # 1.46: a cost / score field absent from the payload is UNKNOWN (None -> COST_UNKNOWN), not the 0.0 dataclass default
+    d = {**{k: None for k in _UNKNOWN_IF_ABSENT}, **d}
     try:
         return Candidate(**d)
     except TypeError as exc:
