@@ -10,11 +10,14 @@
 The Windows application package is built by tools/build_desktop.py from the same file list (--edition client as well).
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
-Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build.
+Every packaged text file is scanned for private keys and secret assignments; a hit aborts the build (1.46: the rules of
+tools/verify_release.py - one list of secret names, owner key formats, forbidden key / database names).
 
 A copy WITHOUT .git (GitHub "Download ZIP", an unpacked package) builds from the explicit file list of MANIFEST_SHA256.txt
 (the previous build's list; files on disk that are not in it are reported, not packed). After writing, the ZIP is verified
-(tools/verify_release.py rules: no absolute / ../ paths, manifest hashes, no secrets).
+(tools/verify_release.py rules: no absolute / ../ paths, manifest hashes, no secrets). 1.46: the ZIP is written and verified in a
+staging folder release/.<name>.*.tmp (ignored by git) and moved into release/ only when verification passed - a failed build leaves no
+package and never overwrites the previous release of the version; the root MANIFEST_SHA256.txt is written after that as well.
 """
 import argparse
 import ast
@@ -24,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -31,13 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.45.0"
 APP_ZIP = f"PepeMarketWizard_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
-# exact dummy values used by tests to prove that secrets are never returned/logged (not real credentials)
-ALLOWED_DUMMIES = {b"sk-ant-api03-SECRETVALUE-1234567890"}
-SECRET_PATTERNS = [
-    (re.compile(rb"-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----"), "PRIVATE_KEY"),
-    (re.compile(rb"sk-ant-[A-Za-z0-9_\-]{20,}"), "ANTHROPIC_KEY"),
-    (re.compile(rb"^(ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN)=\S+", re.M), "SECRET_ASSIGNMENT"),
-]
+# 1.46: secret patterns, test dummies and forbidden names live in ONE place - tools/verify_release.py (SECRETS, CONFIG_SECRETS,
+# ALLOWED_DUMMIES, forbidden_file); the old 3-pattern list here did not know the owner key, FRED / CoinGlass / MT5, *.key or *.db
 
 
 SAFE_REL = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[^\\\0]+$")      # relative, forward slashes, no '..'
@@ -92,31 +91,56 @@ def tracked():
 
 
 def scan(files):
+    vr = _verify_module()
+    # 1.46: + the name rules of tools/verify_release.py (private.key, licenses.db, *.key, *.db, config.json, .env.*)
     bad = [f for f in files if FORBIDDEN_PARTS & set(Path(f).parts) or f.startswith("data/")
-           or f.endswith((".env", ".sqlite", ".sqlite3", ".log", ".pem")) or Path(f).name.startswith("secrets.")]
+           or f.endswith((".env", ".sqlite", ".sqlite3", ".log", ".pem")) or Path(f).name.startswith("secrets.") or vr.forbidden_file(f)]
     if bad:
         sys.exit(f"forbidden paths tracked: {bad}")
+    seeds = vr.owner_seed_markers()
     hits = []
     for f in files:
-        b = (ROOT / f).read_bytes()
-        if b"\0" in b[:4096]:
-            continue
-        for rx, kind in SECRET_PATTERNS:
-            if any(m.group(0) not in ALLOWED_DUMMIES for m in rx.finditer(b)):
-                hits.append((f, kind))
+        # 1.46: the content rules of tools/verify_release.py (owner key in every form, every secret name, raw Telegram token, UTF-16)
+        hits += [(f, kind) for kind in vr.secret_hits(f, (ROOT / f).read_bytes(), seeds)]
     if hits:
         sys.exit(f"secret-like content in packaged files: {hits}")
 
 
-def write_zip(name, top, files):
-    out = ROOT / "release" / name
-    out.parent.mkdir(exist_ok=True)
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+def publish_zip(name: str, top: str, fill) -> str:
+    """1.46: writes release/<name> through a staging folder: fill(zipfile) writes the entries into release/.<name>.*.tmp/<name> (ignored by
+    git), the .sha256 is written next to it, verify() checks both there, and only then are they moved into release/. A failed verification
+    (sys.exit) leaves nothing behind and never overwrites the published package of the same version (was: written first, verified after).
+    Returns the SHA-256 of the published ZIP."""
+    rel = ROOT / "release"
+    rel.mkdir(exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{name}.", suffix=".tmp", dir=rel))
+    try:
+        tmp = stage / name
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            fill(z)
+        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        side = stage / (name + ".sha256")
+        side.write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
+        verify(tmp, top)
+        os.replace(tmp, rel / name)
+        os.replace(side, rel / (name + ".sha256"))
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return digest
+
+
+def write_zip(name, top, files, data: dict[str, bytes] | None = None):
+    """data: content of a listed file taken from memory instead of disk (1.46: the new MANIFEST_SHA256.txt before it is written)."""
+    data = data or {}
+
+    def fill(z):
         for f in files:
-            z.write(ROOT / f, top + f)
-    digest = hashlib.sha256(out.read_bytes()).hexdigest()
-    (out.parent / (name + ".sha256")).write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
-    print(f"{name}: {len(files)} files, {out.stat().st_size} bytes, sha256 {digest}")
+            if f in data:
+                z.writestr(top + f, data[f])
+            else:
+                z.write(ROOT / f, top + f)
+    digest = publish_zip(name, top, fill)
+    print(f"{name}: {len(files)} files, {(ROOT / 'release' / name).stat().st_size} bytes, sha256 {digest}")
 
 
 def manifest_text(files, label: str = "klient") -> str:
@@ -205,16 +229,13 @@ def manifest_entries(entries, label: str) -> str:
 
 
 def write_zip_entries(name, top, entries, extra: dict[str, bytes]):
-    out = ROOT / "release" / name
-    out.parent.mkdir(exist_ok=True)
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    def fill(z):
         for rel, src in entries:
             z.write(src, top + rel)
         for rel, data in extra.items():
             z.writestr(top + rel, data)
-    digest = hashlib.sha256(out.read_bytes()).hexdigest()
-    (out.parent / (name + ".sha256")).write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
-    print(f"{name}: {len(entries) + len(extra)} files, {out.stat().st_size} bytes, sha256 {digest}")
+    digest = publish_zip(name, top, fill)              # 1.46: staged + verified before it replaces release/<name>
+    print(f"{name}: {len(entries) + len(extra)} files, {(ROOT / 'release' / name).stat().st_size} bytes, sha256 {digest}")
 
 
 def check_windows_requirements() -> None:
@@ -237,16 +258,17 @@ def main():
         entries = edition_entries("client", allow_foreign=a.allow_foreign_key)
         check_windows_requirements()
         name = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"
-        write_zip_entries(name, "PepeMarketWizard/", entries,
+        write_zip_entries(name, "PepeMarketWizard/", entries,      # verified inside (publish_zip)
                           {"MANIFEST_SHA256.txt": manifest_entries(entries, "program – wersja klienta").encode("utf-8")})
-        verify(ROOT / "release" / name, "PepeMarketWizard/")
         return
     files = tracked()
     scan(files)
     check_windows_requirements()
-    (ROOT / "MANIFEST_SHA256.txt").write_text(manifest_text(files, "program"), encoding="utf-8", newline="\n")
-    write_zip(APP_ZIP, "PepeMarketWizard/", files + ["MANIFEST_SHA256.txt"])
-    verify(ROOT / "release" / APP_ZIP, "PepeMarketWizard/")
+    mtext = manifest_text(files, "program")
+    # 1.46: the package takes the new manifest from memory and is verified before it is published; the root MANIFEST_SHA256.txt (the
+    # explicit file list of copies without git) is overwritten only after that - a failed build changes neither
+    write_zip(APP_ZIP, "PepeMarketWizard/", files + ["MANIFEST_SHA256.txt"], {"MANIFEST_SHA256.txt": mtext.encode("utf-8")})
+    (ROOT / "MANIFEST_SHA256.txt").write_text(mtext, encoding="utf-8", newline="\n")
 
 
 def verify(path: Path, top: str) -> None:

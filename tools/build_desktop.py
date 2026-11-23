@@ -6,12 +6,14 @@
 Contents of the program folder (top folder PepeMarketWizard_Desktop/):
   PepeMarketWizardDesktop.exe   the app (window, engine supervision, tray) - Go + WebView2, built here (cross-compiled)
   runtime/python/               official CPython for Windows x64 (NuGet package "python", hash-pinned below)
-  runtime/wheels/               only with --offline: every dependency wheel (no internet needed on the first start)
+  runtime/wheels/               only with --offline: every dependency wheel pinned in requirements-win.txt (no internet on the first start)
   everything tracked in git     engine, panel (frontend/dist), launchers, docs - the same file selection as build_release.py
 
 Without --offline the app installs the dependencies itself on the first start from PyPI with
 requirements/requirements-win.txt (--require-hashes). No data/, keys, logs or databases can enter the package (git-tracked
-files only + the secret scan of build_release.py).
+files only + the secret scan of build_release.py). 1.46: like the folder package, the build first runs check_windows_requirements() and
+the finished ZIP is checked by tools/verify_release.py (paths, both manifests, forbidden files, secrets in every text entry incl. the
+bundled runtime) in a staging folder - it reaches release/ only when that passes.
 
 Requirements of the build machine: git, Go >= 1.23, network (NuGet, Go proxy; PyPI only for --offline). Works on Windows and
 Linux (cross-compilation, CGO is not used).
@@ -99,6 +101,11 @@ def build_exe(ver: str, mode: str = "bot") -> Path:
     return out
 
 
+def pinned_wheel_hashes() -> set[str]:
+    """SHA-256 of every wheel pinned (--hash) in requirements-win.txt."""
+    return set(re.findall(r"--hash=sha256:([0-9a-f]{64})", (ROOT / "requirements" / "requirements-win.txt").read_text(encoding="utf-8")))
+
+
 def fetch_wheels() -> Path:
     d = ROOT / "build" / "wheels"
     d.mkdir(parents=True, exist_ok=True)
@@ -116,6 +123,7 @@ def main() -> None:
     a = ap.parse_args()
     ver = version()
     entries = build_release.edition_entries(a.edition, allow_foreign=a.allow_foreign_key)
+    build_release.check_windows_requirements()   # 1.46: same gate as the folder package (was never run for the Windows app package)
     exe = build_exe(ver)
     studio_exe = build_exe(ver, "studio")
     nupkg = fetch_python()
@@ -124,10 +132,9 @@ def main() -> None:
     suffix = "_OFFLINE" if a.offline else ""
     ed = "_KLIENT" if a.edition == "client" else ""
     name = f"PepeMarketWizard_DESKTOP{ed}_{ver.replace('.', '_')}{suffix}.zip"
-    out = ROOT / "release" / name
-    out.parent.mkdir(exist_ok=True)
     manifest = []
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+
+    def fill(z: zipfile.ZipFile) -> None:
         for f, src in entries:
             z.write(src, TOP + f)
             manifest.append(f"{sha256(src)}  {f}")
@@ -145,9 +152,15 @@ def main() -> None:
                 z.writestr(TOP + rel, data)
                 manifest.append(f"{hashlib.sha256(data).hexdigest()}  {rel}")
         if wheels:
+            # 1.46: build/wheels is a download cache - wheels of earlier releases stay in it; only the ones pinned now are packed
+            pinned = pinned_wheel_hashes()
             for w in sorted(wheels.glob("*.whl")):
+                d = sha256(w)
+                if d not in pinned:
+                    print(f"pominięte koło spoza requirements-win.txt (z poprzedniego wydania): {w.name}")
+                    continue
                 z.write(w, TOP + "runtime/wheels/" + w.name)
-                manifest.append(f"{sha256(w)}  runtime/wheels/{w.name}")
+                manifest.append(f"{d}  runtime/wheels/{w.name}")
         # the launcher PepeMarketWizard.exe and the .bat installers check for MANIFEST_SHA256.txt (complete unpacking) - same
         # file as in the folder package (program files); MANIFEST_DESKTOP_SHA256.txt below lists every file of this package
         mtext = build_release.manifest_entries(entries, "aplikacja Windows" + (" – wersja klienta" if a.edition == "client" else "")).encode("utf-8")
@@ -156,9 +169,10 @@ def main() -> None:
         z.writestr(TOP + "MANIFEST_DESKTOP_SHA256.txt",
                    f"# PepeMarketWizard {ver} - aplikacja Windows - SHA-256 każdego pliku paczki (format sha256sum)\n"
                    + "\n".join(manifest) + "\n")
-    digest = sha256(out)
-    (out.parent / (name + ".sha256")).write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
-    print(f"{name}: {len(manifest)} files, {out.stat().st_size} bytes, sha256 {digest}")
+    # 1.46: written in a staging folder, verified there (tools/verify_release.py check_zip, like build_release.py) and only then moved
+    # into release/ with its .sha256 - a package that fails verification never reaches release/ (was: never verified at all)
+    digest = build_release.publish_zip(name, TOP, fill)
+    print(f"{name}: {len(manifest)} files, {(ROOT / 'release' / name).stat().st_size} bytes, sha256 {digest}")
 
 
 if __name__ == "__main__":
