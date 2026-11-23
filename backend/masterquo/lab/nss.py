@@ -35,6 +35,9 @@ SEQ_CH = ("ret_atr", "range_atr", "body_atr", "wick_up_atr", "wick_dn_atr", "z20
 CTX_TF = ("ret4_atr", "range_atr", "z20", "er10", "atr_ratio")
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 MAX_GAP_S = {"M1": 90 * 60, "M5": 90 * 60}             # daily break of the instrument allowed, a longer hole = DATA_GAP
+# 1.46: freshness of the LAST closed bar vs T (decision time): at most one still-forming bar + the same 90 min daily-break allowance;
+# an older last bar (hole in a higher-TF export, a stalled series) = DATA_GAP:STALE_<TF>, never a normal snapshot
+STALE_S = {tf: s + 90 * 60 for tf, s in TF_S.items()}
 TRAIN = {"members": [17, 29, 43], "epochs": 60, "batch": 64, "lr": 1e-3, "patience": 7, "budget_minutes": 120}
 POLICY_GRID = [(p, e) for p in (0.45, 0.55, 0.65) for e in (0.00, 0.05, 0.10)]
 CRITERIA = {"min_fit_tune_per_side": 1000, "min_cal": 200, "min_cal_per_class": 30, "min_eval": 200, "fold_share_logloss_gain": 0.75,
@@ -130,20 +133,35 @@ def snapshot(idx: dict, T: float, setup_features: dict, cfg: dict | None = None)
     from ..scalp.strategy import SETUP_FEATURES
     cfg = dict(sn.DEFAULT_CFG, **(cfg or {}))
     inputs, st = [], "OK"
-    m1, s1 = seq_matrix(idx["M1"].upto(T, cfg["m1_len"] + 20), cfg["m1_len"], "M1")
-    m5, s5 = seq_matrix(idx["M5"].upto(T, cfg["m5_len"] + 20), cfg["m5_len"], "M5")
+
+    def _close(bb, tf):                                         # 1.46: the CLOSE time of the last bar (open + TF), not its open time
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_ts(bb[-1]["open_utc"]) + TF_S[tf])) if bb else None
+
+    def _stale(bb, tf):
+        return bool(bb) and T - (_ts(bb[-1]["open_utc"]) + TF_S[tf]) > STALE_S[tf]
+    seq = {}
+    for tf in ("M1", "M5"):
+        L = cfg[f"{tf.lower()}_len"]
+        bb = idx[tf].upto(T, L + 20)
+        m, s = seq_matrix(bb, L, tf)
+        if m is not None and _stale(bb, tf):
+            m, s = None, f"DATA_GAP:STALE_{tf}"
+        seq[tf] = (m, s, bb)
+    m1, m5 = seq["M1"][0], seq["M5"][0]
     ctx = []
     for tf in ("M15", "H1"):
         bb = idx[tf].upto(T, 30)
         v, s = ctx_vector(bb)
-        inputs.append({"tf": tf, "rows": len(bb), "last_bar_close": bb[-1]["open_utc"] if bb else None, "quality": s})
+        if v is not None and _stale(bb, tf):
+            v, s = None, f"DATA_GAP:STALE_{tf}"
+        inputs.append({"tf": tf, "rows": len(bb), "last_bar_close": _close(bb, tf), "quality": s})
         if v is None:
             st = s if st == "OK" else st
             v = [NAN] * len(CTX_TF)
         ctx += v
-    for tf, b, s in (("M1", m1, s1), ("M5", m5, s5)):
-        bb = idx[tf].upto(T, 1)
-        inputs.insert(0, {"tf": tf, "rows": cfg[f"{tf.lower()}_len"], "last_bar_close": bb[-1]["open_utc"] if bb else None, "quality": s})
+    for tf in ("M1", "M5"):
+        b, s, bb = seq[tf]
+        inputs.insert(0, {"tf": tf, "rows": len(bb), "last_bar_close": _close(bb, tf), "quality": s})     # 1.46: rows = bars available
         if b is None and st == "OK":
             st = s
     sf = setup_features or {}
@@ -194,7 +212,8 @@ def build_dataset(inst: str, ds: Path, commission: float | None = None, cfg: dic
            "ctx": np.array(CTX, float).reshape(len(keep), len(ctx_names())), "side": np.array([0 if r["side"] == "BUY" else 1 for r in keep], int),
            "y": np.array([r["event"] for r in keep], int), "r": np.array([r["net_r"] for r in keep], float)}
     content = hashlib.sha256(b"".join(np.ascontiguousarray(arr[k]).tobytes() for k in ("m1", "m5", "ctx", "side", "y", "r"))).hexdigest()[:16]
-    return dict(base, rows=keep, arr=arr, bars=bars, skipped=skipped, cfg=cfg, content_hash=content,
+    # 1.46: all_rows = every replay cycle (EARLY_EXIT and incomplete snapshots included) - the baseline population of policy_replay
+    return dict(base, rows=keep, all_rows=base["rows"], arr=arr, bars=bars, skipped=skipped, cfg=cfg, content_hash=content,
                 availability_basis="HISTORICAL_CLOSE_ASSUMPTION", population="kandydaci po bramkach strategii z wykonalnym wejściem MARKET (replay, 1 cykl/cooldown)")
 
 
@@ -280,11 +299,18 @@ def _train_ensemble(data: dict, blocks: dict, cfg: dict, train: dict, log, deadl
     sc = fit_scaler(arr, blocks["FIT"])
     a, b, c = scale(sc, arr["m1"], arr["m5"], arr["ctx"])
     sd = {"m1": a, "m5": b, "ctx": c, "side": arr["side"], "y": arr["y"], "r": arr["r"]}
-    members, hist = [], {}
+    members, hist, cut = [], {}, []
+
+    def _cancel(seed):                                          # 1.46: remember members whose epochs were cut by the budget deadline
+        if time.time() > deadline:
+            if seed not in cut:
+                cut.append(seed)
+            return True
+        return False
     for seed in train["members"]:
         net = sn.CausalMTFTCN(len(SEQ_CH), len(SEQ_CH), arr["ctx"].shape[1], cfg, seed=seed)
         h = sn.fit(net, sd, blocks["FIT"], blocks["TUNE"], epochs=train["epochs"], batch=train["batch"], lr=train["lr"], patience=train["patience"],
-                   seed=seed, cancel=lambda: time.time() > deadline)
+                   seed=seed, cancel=lambda seed=seed: _cancel(seed))
         members.append(net)
         hist[str(seed)] = h
         log(f"  członek seed={seed}: epoki {h['epochs_run']}, najlepsza {h['best_epoch']}")
@@ -309,7 +335,8 @@ def _train_ensemble(data: dict, blocks: dict, cfg: dict, train: dict, log, deadl
                 best = trials[-1]
         chosen[str(s)] = {"p_tp1_min": best["p_tp1_min"], "net_r_min": best["net_r_min"]} if best else None
     ens.policy = chosen
-    return ens, {"history": hist, "policy_trials": trials, "temperatures": ens.temps, "sizes": {k: int(len(v)) for k, v in blocks.items()}}
+    return ens, {"history": hist, "policy_trials": trials, "temperatures": ens.temps, "sizes": {k: int(len(v)) for k, v in blocks.items()},
+                 "budget_cut_members": cut}
 
 
 def _baselines(data: dict, fit_idx: np.ndarray, ev: np.ndarray) -> dict:
@@ -393,6 +420,9 @@ def run_protocol(inst: str, data: dict, *, db=None, train_cfg: dict | None = Non
             break
         log(f"fold {k + 1}: {sizes}, ocena {len(ev)}")
         ens, info = _train_ensemble(data, b, data["cfg"], tcfg, log, deadline)
+        if info["budget_cut_members"]:                          # 1.46: a fold cut by the budget is not evaluated as if fully trained
+            folds.append({"fold": k, "status": "BUDGET_EXCEEDED", "sizes": sizes, "budget_cut_members": info["budget_cut_members"]})
+            break
         raw = ens.raw(arr["m1"][ev], arr["m5"][ev], arr["ctx"][ev], arr["side"][ev])
         pe = ens.calibrated(raw["proba"], arr["side"][ev])
         base = _baselines(data, ft, ev)
@@ -416,6 +446,11 @@ def run_protocol(inst: str, data: dict, *, db=None, train_cfg: dict | None = Non
     ens, info = _train_ensemble(data, b, data["cfg"], tcfg, log, deadline)
     rep["final"] = {"sizes": info["sizes"], "temperatures": info["temperatures"], "policy": ens.policy, "policy_trials": info["policy_trials"],
                     "history": info["history"]}
+    if info["budget_cut_members"]:
+        # 1.46: the deadline passed DURING the final ensemble - members with cut (possibly zero) epochs are never saved or evaluated
+        rep["final"]["budget_cut_members"] = info["budget_cut_members"]
+        rep.update(status="BUDGET_EXCEEDED", reason=f"przekroczony budżet {tcfg['budget_minutes']} min w trakcie finalnego ensemble – brak finalnego artefaktu")
+        return _finish(inst, rid, rd, rep)
     bdir = rd / "bundle"
     mhash = save_bundle(bdir, ens, rep, data)
     rep["model_hash"] = mhash
@@ -475,18 +510,31 @@ def policy_replay(data: dict, s: int, cut: float, bl: "NSSBundle") -> dict:
     side = "BUY" if s == 0 else "SELL"
     idx = index_bars(data["bars"])
 
+    not_ready = set()
+
     def accept(plan):
         if plan["direction"] != side or _ts(plan["decision_time"]) < cut:
             return True
         o = bl.predict(snapshot(idx, plan["decision_ts"], plan.get("features") or {}, bl.cfg), instrument=data["instrument"],
                        profile_hash=data["profile_hash"], side=side)
+        if o.get("technical_status") != "READY_INFERENCE":
+            not_ready.add((plan.get("setup_id"), plan["decision_time"]))     # 1.46: no inference != a policy decision (counted apart)
         return bool(o.get("candidate_output", {}).get("proposed_filter_result"))
     res = replay.run(data["m1"], data["prof"], data["tick"], data["replay_costs"], accept=accept)
     ml = [c for c in res["cycles"] if c["direction"] == side and _ts(c["decision_time"]) >= cut]
-    base = [r for r in data["rows"] if r["side"] == side and _ts(r["signal_time"]) >= cut]
+    # 1.46: the baseline is the SAME population as the NSS replay (every cycle, EARLY_EXIT and incomplete snapshots included) - the
+    # training rows (data["rows"]) are filtered; an older dataset dict without all_rows gets it from a replay without the filter
+    if data.get("all_rows") is not None:
+        base = [r for r in data["all_rows"] if r["side"] == side and _ts(r["signal_time"]) >= cut]
+    else:
+        base = [{"net_r": c["net_r"]} for c in replay.run(data["m1"], data["prof"], data["tick"], data["replay_costs"])["cycles"]
+                if c["direction"] == side and _ts(c["decision_time"]) >= cut]
+    rej = [b for b in res["blocked"] if b.get("reason") == "ML_POLICY_REJECTED"]
+    nr = sum(1 for b in rej if (b.get("setup_id"), b.get("decision_time")) in not_ready)
     return {"nss_cycles": len(ml), "nss_net_r_total": float(sum(c["net_r"] for c in ml)), "baseline_cycles": len(base),
             "baseline_net_r_total": float(sum(r["net_r"] for r in base)), "nss_max_dd_r": _dd(np.array([c["net_r"] for c in ml])),
-            "rejected_by_policy": sum(1 for b in res["blocked"] if b.get("reason") == "ML_POLICY_REJECTED"), "note": "replay OHLC (bez ticków)"}
+            "rejected_by_policy": len(rej) - nr, "rejected_nss_not_ready": nr, "baseline_population": "wszystkie cykle replay (ta sama populacja)",
+            "note": "replay OHLC (bez ticków)"}
 
 
 def _finish(inst: str, rid: str, rd: Path, rep: dict) -> dict:
@@ -661,8 +709,21 @@ def selected_bundle(inst: str) -> tuple[NSSBundle | None, dict | None]:
         return None, None
     key = (inst, sel["model_hash"], mt)
     if key not in _cache:
+        # 1.46: a missing / moved / damaged artefact of the selected run is reported (ARTIFACT_UNAVAILABLE, no active gate) instead of
+        # raising out of public() (HTTP 500) and _candidate() (no nss_inferences row). run_dir is an ABSOLUTE path written on the machine
+        # that trained the run; when it is gone the same run under THIS data folder is tried (read-only, hash-checked, no migration).
+        try:
+            run = reg["runs"][sel["run_id"]]
+            cands = [Path(run["run_dir"]) / "bundle"] + [root(inst) / sub / sel["run_id"] / "bundle" for sub in ("runs", "fixture_runs")]
+            d = next((c for c in cands if (c / "manifest.json").exists()), cands[0])
+            b = load_bundle(d)
+            if b.man.get("model_hash") != sel["model_hash"]:
+                raise ValueError("ARTIFACT_MODEL_HASH_MISMATCH")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return None, dict(sel, status="ARTIFACT_UNAVAILABLE", reason=f"{type(exc).__name__}: {exc}"[:300], gated_sides=[],
+                              registered_gated_sides=sel.get("gated_sides") or [])
         _cache.clear()
-        _cache[key] = load_bundle(Path(reg["runs"][sel["run_id"]]["run_dir"]) / "bundle")
+        _cache[key] = b
     return _cache[key], sel
 
 

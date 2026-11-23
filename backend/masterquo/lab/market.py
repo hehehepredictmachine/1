@@ -180,7 +180,7 @@ def trendlines(bars: list[dict], tf: str, max_pivots: int = 8, tol_atr: float = 
     pv = pivots(bars, tf)
     lines = []
     n = len(bars)
-    for kind, price_arr, side in (("L", a["l"], "SUPPORT"), ("H", a["h"], "RESISTANCE")):
+    for kind, side in (("L", "SUPPORT"), ("H", "RESISTANCE")):                # 1.46: unused price array dropped from the loop tuple
         ps = [p for p in pv if p["kind"] == kind][-max_pivots:]
         for x in range(len(ps)):
             for y in range(x + 1, len(ps)):
@@ -244,7 +244,11 @@ def liquidity(bars: list[dict], tf: str, d1: list[dict] | None = None, tol_atr: 
         for x, p in enumerate(ps):
             if x in used:
                 continue
-            grp = [p] + [q for y, q in enumerate(ps) if y > x and abs(q["price"] - p["price"]) <= tol and not used.add(y)]
+            # 1.46: a pivot already assigned to a pool is not taken again (the old `not used.add(y)` was always True, so one pivot
+            # landed in several EQUAL_HIGHS/LOWS pools and inflated the touches)
+            mem = [y for y in range(x + 1, len(ps)) if y not in used and abs(ps[y]["price"] - p["price"]) <= tol]
+            used.update(mem)
+            grp = [p] + [ps[y] for y in mem]
             lvl = float(np.mean([g["price"] for g in grp]))
             start = max(g["confirmed_i"] for g in grp)
             pools.append(_pool_status({"id": f"LQ-{tf}-{side}-{p['origin_time']}", "kind": "EQUAL_HIGHS" if kind == "H" and len(grp) > 1 else
@@ -433,8 +437,21 @@ def zscore(bars: list[dict], n: int = 20, min_rel_std: float = 1e-5) -> dict:
                 ("LONG_CANDIDATE" if trend == "UP" and z[-2] < -H["H_TP"]["band"] <= z[-1] else
                  "SHORT_CANDIDATE" if trend == "DOWN" and z[-2] > H["H_TP"]["band"] >= z[-1] else "NONE"),
     }
+    # 1.46: open time of the first bar of the CURRENT uninterrupted state (H_BO is a held state z beyond ±entry; H_MR / H_TP are
+    # one-bar crossings) - the scenario anchor, so a lasting state keeps one setup_id / created_at / TTL instead of a new one per bar
+    since = {}
+    for h, v in st.items():
+        if v not in ("LONG_CANDIDATE", "SHORT_CANDIDATE"):
+            continue
+        j = len(z) - 1
+        if h == "H_BO":
+            sg = 1.0 if v == "LONG_CANDIDATE" else -1.0
+            while j > 0 and not np.isnan(z[j - 1]) and sg * z[j - 1] > H["H_BO"]["entry"]:
+                j -= 1
+        since[h] = bars[j]["open_utc"]
     return {"status": "ready", "z": round(float(z[-1]), 3), "z_prev": round(float(z[-2]), 3), "window": n, "trend_ema200": trend,
-            "hypotheses_state": st, "hypotheses": ZSCORE_HYPOTHESES, "series": [None if np.isnan(v) else round(float(v), 3) for v in z[-120:]]}
+            "hypotheses_state": st, "hypotheses_since": since, "hypotheses": ZSCORE_HYPOTHESES,
+            "series": [None if np.isnan(v) else round(float(v), 3) for v in z[-120:]]}
 
 
 # ----------------------------------------------------------------------------- M24 PSAR (shared implementation)

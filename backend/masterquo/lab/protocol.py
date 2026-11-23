@@ -209,10 +209,13 @@ def fit_family(family: str, Xtr, Xseq_tr, ytr, Xin=None, Xseq_in=None, yin=None,
             m.fit(Xtr, ytr, eval_set=[(Xin, yin)], verbose=False)
             s = ll(m.predict_proba(Xin)[:, 1], yin)
             if best is None or s < best[0]:
-                best = (s, dpt, int(m.best_iteration or 200))
-        m = xgb.XGBClassifier(n_estimators=max(10, best[2] + 1), max_depth=best[1], learning_rate=0.05, subsample=0.8,
+                bi = getattr(m, "best_iteration", None)          # 1.46: 0-based - a best iteration 0 is ONE tree, not `0 or 200` -> 201 trees
+                best = (s, dpt, int(bi) if bi is not None else 200)
+        n_est = max(10, best[2] + 1)
+        m = xgb.XGBClassifier(n_estimators=n_est, max_depth=best[1], learning_rate=0.05, subsample=0.8,
                               colsample_bytree=0.8, random_state=seed, n_jobs=2)
-        return Fitted(family, m.fit(np.vstack([Xtr, Xin]), np.concatenate([ytr, yin])), {"max_depth": best[1], "trees": best[2] + 1})
+        return Fitted(family, m.fit(np.vstack([Xtr, Xin]), np.concatenate([ytr, yin])), {"max_depth": best[1], "trees": n_est,
+                                                                                           "best_iteration": best[2]})
     if family == "MINIROCKET":
         mr = MiniRocket(num_features=1008, seed=seed).fit(Xseq_tr)
         Ztr, Zin = mr.transform(Xseq_tr), mr.transform(Xseq_in)

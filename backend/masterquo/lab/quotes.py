@@ -37,7 +37,10 @@ VERSION = "MQ_NEWTONIAN_QUOTES_V2"
 SCALES = (16, 64, 256)
 CFG = {"min_unique_times": 8, "min_neff": 12.0, "tail_weight": 1e-6, "max_hist": 4000, "max_side_age_s": 5.0, "gap_reset_s": 30.0, "z_sig": 2.0,
        "z_flat": 1.0, "h_frac": 0.25, "h_max_s": 10.0, "turn_max_s": 60.0, "max_cond": 1e12, "hyst_updates": 3, "hyst_s": 1.0, "max_spread": None,
-       "calib_min": 50, "band_q": 0.9}
+       "calib_min": 50, "band_q": 0.9, "quality_stress_s": 5.0}
+# 1.46: quality_stress_s - a crossed quote / out-of-order tick makes the phase STRESSED at the first snapshot after it and for this many
+# seconds after the event (the flags stay as diagnostics); before, one event set a never-cleared flag and the phase stayed STRESSED until
+# the session reset
 
 
 def kish(w: np.ndarray) -> float:
@@ -55,6 +58,7 @@ class Side:
         self.last_price: float | None = None
         self.updates = 0
         self.flags: set[str] = set()
+        self.quality_event_ms: int | None = None                     # 1.46: time of the last OUT_OF_ORDER tick (stress window)
 
     def push(self, t_ms: int, price: float, origin_ms: int, cfg: dict) -> None:
         if self.last_price is not None and price == self.last_price:
@@ -63,6 +67,7 @@ class Side:
         if self.pending is not None:
             if t_ms < self.pending[0]:
                 self.flags.add("OUT_OF_ORDER")
+                self.quality_event_ms = max(self.quality_event_ms or 0, self.pending[0])
                 return
             if t_ms == self.pending[0]:
                 self.pending = (t_ms, price)                         # last price of the bucket in source order
@@ -235,6 +240,8 @@ class QuoteEngine:
         self._seen_last_ms: set = set()
         self.clock = {"mode": "UNKNOWN", "checked": 0, "whole_seconds": 0}
         self.flags: set[str] = set()
+        self.quality_event_ms: int | None = None                     # 1.46: last CROSSED_QUOTE (ms) - STRESSED only inside the window
+        self._quality_reported_ms = 0                                # latest quality event already shown by a snapshot
         self.phase, self._cand, self._cand_n, self._cand_t = "WARMING", None, 0, None
         self.open_fc: dict[str, dict] = {}
         self.matured: list[dict] = []
@@ -279,6 +286,7 @@ class QuoteEngine:
                 continue
             if a < b:
                 self.flags.add("CROSSED_QUOTE")
+                self.quality_event_ms = max(self.quality_event_ms or 0, t_ms)
                 continue
             tc = self._clock(t_ms)
             self.sides["BID"].push(tc, b, self.origin_ms, self.cfg)
@@ -308,7 +316,12 @@ class QuoteEngine:
                 f["side_age_s"] = age
                 fits[nm][N] = f
         sp = spread_model(self.spread_t, self.spread)
-        ph = classify_phase(fits["BID"], fits["ASK"], sp, self.cfg, stressed_quality=bool({"CROSSED_QUOTE", "OUT_OF_ORDER"} & self.flags))
+        ev = max((x for x in [self.quality_event_ms] + [sd.quality_event_ms for sd in self.sides.values()] if x is not None), default=None)
+        # 1.46: a quality event stresses the phase once (first snapshot after it, even if snapshots are sparse) and within the window only
+        stressed = ev is not None and (ev > self._quality_reported_ms or now_ms - ev <= 1000.0 * self.cfg["quality_stress_s"])
+        if ev is not None:
+            self._quality_reported_ms = max(self._quality_reported_ms, ev)
+        ph = classify_phase(fits["BID"], fits["ASK"], sp, self.cfg, stressed_quality=stressed)
         self._phase_update(ph, now)
         self.seq += 1
         return {"version": VERSION, "context": self.context, "seq": self.seq, "as_of_s": now, "clock": dict(self.clock), "flags": sorted(self.flags),

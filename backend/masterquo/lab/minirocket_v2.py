@@ -264,6 +264,8 @@ def price_path_atr(c: np.ndarray, end: int, atr_end: float, tick: float, L: int 
 def cg_solve(matvec, b: np.ndarray, diag: np.ndarray, tol: float = 1e-6, max_iter: int = 500) -> tuple[np.ndarray, dict]:
     """Preconditioned CG for an SPD operator (one right-hand side)."""
     x = np.zeros_like(b)
+    if not float(np.linalg.norm(b)):
+        return x, {"converged": True, "iterations": 0, "rel_residual": 0.0}     # 1.46: b = 0 -> x = 0 (was 0.0/0.0 ZeroDivisionError)
     r = b.copy()
     z = r / diag
     p = z.copy()
@@ -272,7 +274,10 @@ def cg_solve(matvec, b: np.ndarray, diag: np.ndarray, tol: float = 1e-6, max_ite
     it = 0
     for it in range(1, max_iter + 1):
         Ap = matvec(p)
-        a = rz / float(p @ Ap)
+        pAp = float(p @ Ap)
+        if not pAp > 0:                                                        # 1.46: breakdown (not SPD / exhausted) - stop, never divide by 0
+            return x, {"converged": False, "iterations": it, "rel_residual": float(np.linalg.norm(r)) / bn}
+        a = rz / pAp
         x += a * p
         r -= a * Ap
         rel = float(np.linalg.norm(r)) / bn
@@ -683,6 +688,17 @@ def native_status(status_file: Path | None) -> dict:
 def parity(fixtures: Path, reference_python: str | None = None, native_scores: Path | None = None, model_dir: Path | None = None,
            native_status_file: Path | None = None) -> dict:
     """Separate results per scope; nothing is PASS without the actual comparison having run."""
+    import shutil
+    tmps: list[Path] = []
+    try:
+        return _parity(fixtures, reference_python, native_scores, model_dir, native_status_file, tmps)
+    finally:
+        for t in tmps:                                                 # 1.46: the mr2_ref_* fixture dir of a live reference run was leaked
+            shutil.rmtree(t, ignore_errors=True)
+
+
+def _parity(fixtures: Path, reference_python: str | None, native_scores: Path | None, model_dir: Path | None,
+            native_status_file: Path | None, tmps: list[Path]) -> dict:
     import subprocess
     import tempfile
     fixtures = Path(fixtures)
@@ -692,6 +708,7 @@ def parity(fixtures: Path, reference_python: str | None = None, native_scores: P
     prov = fixtures / "provenance.json"
     if reference_python:                                              # live run of the pinned reference in its own interpreter
         tmp = Path(tempfile.mkdtemp(prefix="mr2_ref_"))
+        tmps.append(tmp)
         tool = Path(__file__).resolve().parents[3] / "tools" / "minirocket_sktime_reference.py"
         r = subprocess.run([reference_python, str(tool), str(tmp)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=600, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
@@ -703,7 +720,8 @@ def parity(fixtures: Path, reference_python: str | None = None, native_scores: P
     if not fx.exists():
         details["sktime"] = {"status": "SKIP", "reason": "brak fixture sktime i brak --reference-python z przypiętym sktime"}
     else:
-        z = np.load(fx)
+        with np.load(fx) as zz:                                        # 1.46: NpzFile closed (the zip handle locked the file on Windows)
+            z = {k: zz[k] for k in zz.files}
         X, ref = z["X"], z["features"]
         L = X.shape[1]
         mr = MiniRocketV2().configure(L, 10000, 32)
@@ -718,7 +736,7 @@ def parity(fixtures: Path, reference_python: str | None = None, native_scores: P
         details["frozen_state"] = {"windows": int(len(X)), "features": int(H.shape[1]), "count_mismatches": int(len(mism)),
                                    "first_mismatch": mism[0].tolist() if len(mism) else None, "dtype": "float32 conv, int hit counts",
                                    "ppv_exact_float32": bool((H / den[None, :]).astype(np.float32).tobytes() == ref.astype(np.float32).tobytes())}
-        if "biases_single_window2" in z.files:
+        if "biases_single_window2" in z:
             m2 = MiniRocketV2().configure(L, 10000, 32).fit(X[2:3], mode="SINGLE_WINDOW")
             dlt = np.abs(m2.biases.astype(np.float64) - z["biases_single_window2"].astype(np.float64))
             scale = float(np.abs(z["biases_single_window2"]).max()) or 1.0
@@ -744,7 +762,10 @@ def parity(fixtures: Path, reference_python: str | None = None, native_scores: P
         details["oracle"] = {"checks": checks, "mismatch": bad}
     if native_scores and model_dir and Path(native_scores).exists():
         mr2, head, temps, man = import_native(model_dir)
-        zf = np.load(fx) if fx.exists() else None
+        zf = None
+        if fx.exists():
+            with np.load(fx) as zz:                                    # 1.46: closed after reading
+                zf = {"X": zz["X"]}
         if zf is not None:
             S, f = head.raw(mr2.transform(zf["X"]))
             py = np.concatenate([S, f[:, :, None]], axis=-1).reshape(len(zf["X"]), -1)

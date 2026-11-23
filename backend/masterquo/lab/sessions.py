@@ -5,11 +5,11 @@ UTC. A session box's high/low is final (available) only after the session end; b
 """
 from __future__ import annotations
 
-from datetime import datetime, time as dtime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
-
 from ..analytics.ta import TF_SEC
+from ..timeutil import TF_SECONDS, parse_iso
 from .common import iso, ts
 
 VERSION = "MQ-LAB-TIME-1.0.0"
@@ -22,11 +22,6 @@ SESSIONS = {
     "BTC": [("ASIA", "Asia/Singapore", "08:00", "16:00"), ("EUROPE", "Europe/London", "08:00", "16:30"),
             ("US", "America/New_York", "09:30", "16:00")],
 }
-
-
-def _hm(s: str) -> dtime:
-    h, m = s.split(":")
-    return dtime(int(h), int(m))
 
 
 PROFILE = {"XAUUSD": "LAB_XAU_REFERENCE_V1", "BTC": "LAB_BTC_REFERENCE_V1"}
@@ -73,14 +68,21 @@ def memory_sequence(bars_by_tf: dict[str, list[dict]], host_tf: str, host_open_u
     """M20: the host candle's interval [open, close) projected on the other TFs of the SAME asset. Lower TFs: bars fully
     inside; higher TFs: the containing bar, flagged `forming_at_host_close` when it was still open at the host's close
     (in replay its final OHLC was not yet known then)."""
-    t0 = ts(host_open_utc)
-    t1 = t0 + TF_SEC[host_tf]
+    # 1.46: the TF registry seconds (M3 / H8 included - TF_SEC has no M3 -> KeyError -> HTTP 500); an unknown TF and a time without
+    # a zone are rejected (ValueError) - a naive time was read in the computer's LOCAL zone and shifted the window
+    if host_tf not in TF_SECONDS:
+        raise ValueError(f"INVALID_TIMEFRAME:{host_tf}")
+    t0 = parse_iso(host_open_utc).timestamp()
+    t1 = t0 + TF_SECONDS[host_tf]
     out = {}
     for tf, bars in bars_by_tf.items():
         if tf == host_tf:
             continue
-        sec = TF_SEC[tf]
-        if sec <= TF_SEC[host_tf]:
+        if tf not in TF_SECONDS:
+            out[tf] = {"relation": "NONE", "reason": "UNKNOWN_TIMEFRAME"}
+            continue
+        sec = TF_SECONDS[tf]
+        if sec <= TF_SECONDS[host_tf]:
             sel = [b for b in bars if t0 <= ts(b["open_utc"]) and ts(b["open_utc"]) + sec <= t1]
             out[tf] = {"relation": "INSIDE", "bars": [{k: b[k] for k in ("open_utc", "o", "h", "l", "c")} for b in sel]}
         else:

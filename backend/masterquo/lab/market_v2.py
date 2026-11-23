@@ -650,6 +650,9 @@ def percent_b_from_z(z: float, k: float) -> float:
 
 
 # ===================================================================== calibration (dev only) - R14.7
+SMMA_MIN_EVENTS = 30                                   # 1.46: minimum events per SMMA trial for a false-break rate to be measured
+
+
 def calibrate_profiles(bars: list[dict], tick: float, profiles: list[str], dev_frac: float = 0.8, tf_s: int = 60) -> dict:
     """Threshold/parameter choice on the DEVELOPMENT part only (first dev_frac of time; inner fit 60% / score rest). Criteria are
     stability/false-break statistics, never a 'true regime' label from future returns. Holdout is not read."""
@@ -669,16 +672,19 @@ def calibrate_profiles(bars: list[dict], tick: float, profiles: list[str], dev_f
                 sw = sum(1 for a, b in zip(sts, sts[1:]) if a != b)
                 trials.append({"confirm": confirm, "trend_e": te, "switches_per_1000": 1000 * sw / max(1, len(sts)),
                                "share": {s: sts.count(s) / max(1, len(sts)) for s in set(sts)}})
-        best = min(trials, key=lambda x: (x["switches_per_1000"] if x["share"].get("TRANSITION", 0) < 0.8 else 1e9))
-        out["profiles"][REGIME_PROFILE] = {"trials": trials, "chosen": {k2: best[k2] for k2 in ("confirm", "trend_e")},
+        # 1.46: only trials meeting TRANSITION<80 % are eligible; with none, nothing is 'chosen' (the defaults stay) - before, every key
+        # was 1e9 and min() silently returned the first trial labelled as calibrated
+        ok = [x for x in trials if x["share"].get("TRANSITION", 0) < 0.8]
+        best = min(ok, key=lambda x: x["switches_per_1000"]) if ok else None
+        out["profiles"][REGIME_PROFILE] = {"trials": trials, "chosen": {k2: best[k2] for k2 in ("confirm", "trend_e")} if best else None,
+                                           "status": "OK" if best else "INSUFFICIENT_EVIDENCE",
                                            "criterion": "stabilność (zmiany/1000 świec) przy TRANSITION<80% – bez etykiety 'prawdziwego reżimu'"}
     if SMMA_PROFILE in profiles:
         trials = []
         c = np.array([b["c"] for b in ev])
         for boundary in ("CURRENT_CLOSED", "PREVIOUS_BOUNDARY"):
             for dbt in (1, 2, 4):
-                s = smma_series(ev, boundary=boundary, deadband=dbt * tick)
-                ch = SmmaChannel(boundary=boundary, deadband=dbt * tick)
+                ch = SmmaChannel(boundary=boundary, deadband=dbt * tick)       # 1.46: the discarded duplicate smma_series() run removed
                 recs = [ch.update(b) for b in ev]
                 fb, nev = 0, 0
                 for i, r in enumerate(recs):
@@ -687,10 +693,13 @@ def calibrate_profiles(bars: list[dict], tick: float, profiles: list[str], dev_f
                         fwd = c[i + 5] - c[i]
                         if (fwd < 0) if r["event"] == "UP" else (fwd > 0):
                             fb += 1
-                trials.append({"boundary": boundary, "deadband_ticks": dbt, "events": nev, "false_break_5": fb / max(1, nev)})
-                _ = s
-        best = min(trials, key=lambda x: (x["false_break_5"], -x["events"]))
-        out["profiles"][SMMA_PROFILE] = {"trials": trials, "chosen": {k2: best[k2] for k2 in ("boundary", "deadband_ticks")},
+                # 1.46: fewer than SMMA_MIN_EVENTS events = no measurement (None), not a 0 % false-break rate that min() then preferred
+                trials.append({"boundary": boundary, "deadband_ticks": dbt, "events": nev,
+                               "false_break_5": fb / nev if nev >= SMMA_MIN_EVENTS else None})
+        ok = [x for x in trials if x["false_break_5"] is not None]
+        best = min(ok, key=lambda x: (x["false_break_5"], -x["events"])) if ok else None
+        out["profiles"][SMMA_PROFILE] = {"trials": trials, "chosen": {k2: best[k2] for k2 in ("boundary", "deadband_ticks")} if best else None,
+                                         "status": "OK" if best else "INSUFFICIENT_EVIDENCE", "min_events": SMMA_MIN_EVENTS,
                                          "criterion": "odsetek fałszywych wybić po 5 świecach (bez kosztów – kontekst, nie wejście)"}
     if Z_PROFILE in profiles:
         trials = []
