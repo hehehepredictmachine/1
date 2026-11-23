@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -17,6 +18,8 @@ import numpy as np
 from ..db.database import dumps
 from ..timeutil import iso, utcnow
 from .models import Bundle
+
+log = logging.getLogger("masterquo.ml")
 
 
 class Registry:
@@ -28,6 +31,8 @@ class Registry:
         self.champion_id: str | None = None
         self.challengers: dict[str, Bundle] = {}
         self.load_error: str | None = None
+        self.challenger_errors: dict[str, str] = {}
+        self.compare_error: str | None = None
         self.reload()
 
     def _path(self, p: str) -> Path:
@@ -45,11 +50,11 @@ class Registry:
                 except Exception as exc:  # corrupt files -> explicit fallback, no fake model
                     self.load_error = f"CHAMPION_LOAD_FAILED:{type(exc).__name__}"
             self.challengers = {}
+            self.challenger_errors = {}        # 1.46: reset on every reload (old errors stayed after the model was fixed / retired)
             for r in self.db.query("SELECT * FROM ml_models WHERE status='CHALLENGER' ORDER BY created_at DESC LIMIT 2"):
                 try:
                     self.challengers[r["model_id"]] = Bundle.load(self._path(r["path"]))
-                except Exception as exc:          # audit A-08: a broken challenger is reported, not silently skipped
-                    self.challenger_errors = getattr(self, "challenger_errors", {})
+                except Exception as exc:          # audit A-08: a broken challenger is reported (MLService.status), not silently skipped
                     self.challenger_errors[r["model_id"]] = f"CHALLENGER_LOAD_FAILED:{type(exc).__name__}"
 
     def models(self, limit: int = 30) -> list[dict]:
@@ -94,18 +99,27 @@ class Registry:
         best = min(cand) if cand else None
         if best and self.champion is not None and promotion_cfg.get("must_beat_champion_brier", True):
             champ_brier = self._champion_brier_on(result)
-            if champ_brier is not None and best[0] >= champ_brier:
+            if champ_brier is None:
+                # 1.46: an impossible comparison (exception, results without test ids, empty test set) promoted the challenger WITHOUT
+                # beating the champion - "a weaker challenger never replaces a better champion" requires the comparison
+                decisions[best[1]]["passed"] = False
+                decisions[best[1]]["reasons"].append("CHAMPION_COMPARISON_UNAVAILABLE" + (f":{self.compare_error}" if self.compare_error else ""))
+                best = None
+            elif best[0] >= champ_brier:
                 decisions[best[1]]["passed"] = False
                 decisions[best[1]]["reasons"].append(f"NOT_BETTER_THAN_CHAMPION_BRIER_{champ_brier:.4f}")
                 best = None
         for mid, d in decisions.items():
             status = "REJECTED" if not d["passed"] else ("CHALLENGER" if not best or mid != best[1] else "CANDIDATE")
+            if d["passed"] and not allow_promotion:
+                status = "RESEARCH_APPROX"     # 1.46: only the best APPROX model was RESEARCH_APPROX - the others became CHALLENGER (shadow-scored)
             self.db.execute("UPDATE ml_models SET status=?, promotion_json=? WHERE model_id=?",
                             (status, dumps({"passed": d["passed"], "reasons": d["reasons"], "rules": promotion_cfg}), mid))
             self.event("REJECT" if status == "REJECTED" else "EVALUATED", mid, d)
-        if best and not allow_promotion:
-            self.db.execute("UPDATE ml_models SET status='RESEARCH_APPROX' WHERE model_id=?", (best[1],))
-            self.event("NOT_PROMOTED_APPROX", best[1], {"reason": "trening na etykietach APPROX (backfill OHLC) – tylko do badań"})
+        if not allow_promotion:
+            for mid, d in decisions.items():
+                if d["passed"]:
+                    self.event("NOT_PROMOTED_APPROX", mid, {"reason": "trening na etykietach APPROX (backfill OHLC) – tylko do badań"})
             best = None
         if best:
             self.promote(best[1], "PASSED_RULES_AND_BEAT_CHAMPION" if self.champion else "PASSED_RULES_FIRST_CHAMPION")
@@ -113,6 +127,7 @@ class Registry:
         return decisions
 
     def _champion_brier_on(self, result: dict) -> float | None:
+        self.compare_error = None
         if self.champion is None:
             return None
         try:
@@ -121,10 +136,12 @@ class Registry:
             rows = load_snapshot(result["snapshot"])
             ids = result["validation"].get("test_sample_ids")
             if ids is None:                                 # results from 1.9 without ids: no comparison instead of a different set
+                self.compare_error = "NO_TEST_SAMPLE_IDS"
                 return None
             want = set(ids)
             test = [r for r in rows if r["sample_id"] in want]      # the SAME samples the challenger was tested on
             if not test:
+                self.compare_error = "EMPTY_TEST_SET"
                 return None
             f = [fe.from_json(json.loads(r["features_json"])) for r in test]
             raw = self.champion.raw(f)
@@ -132,7 +149,9 @@ class Registry:
             p = raw if p is None else p
             y = np.array([r["label"] for r in test])
             return float(np.mean((p - y) ** 2))
-        except Exception:
+        except Exception as exc:                            # 1.46: logged and reported (CHAMPION_COMPARISON_UNAVAILABLE), never swallowed
+            log.exception("champion comparison")
+            self.compare_error = type(exc).__name__
             return None
 
     @staticmethod

@@ -129,7 +129,9 @@ def policy_eval(rows: list[dict], take: np.ndarray) -> dict:
     busy_until = None
     rs, t_in = [], 0.0
     order = sorted(range(len(rows)), key=lambda i: rows[i]["asof_utc"])
-    span = (_t(rows[order[-1]]["label_end_utc"]) - _t(rows[order[0]]["asof_utc"])).total_seconds() if rows else 0
+    # 1.46: the span ended at label_end of the LAST (by asof) row - an earlier row with a longer label window ended later and the
+    # exposure (share of time in a position) exceeded 1. Span = latest label end of the block - first decision.
+    span = (max(_t(r["label_end_utc"]) for r in rows) - _t(rows[order[0]]["asof_utc"])).total_seconds() if rows else 0
     for i in order:
         if not take[i]:
             continue

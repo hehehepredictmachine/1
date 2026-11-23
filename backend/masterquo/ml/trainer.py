@@ -37,6 +37,11 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
     t0 = time.time()
     rows = load_snapshot(snapshot_path)
     rows = [dict(r, **{"f": fe.from_json(json.loads(r["features_json"]))}) for r in rows]
+    for r in rows:
+        # 1.46: up to MQ-FEAT-1.1.0 dxy_missing was the CONSTANT 1.0 (not the availability of DXY); mixed with 1.2.0 rows it became an
+        # "old data" marker and the 1.2.0 model saw another meaning at prediction. Unknown for those rows -> NaN (never a guessed value).
+        if r.get("feature_schema_version") in getattr(fe, "LEGACY_CONSTANT_DXY", ()) and "dxy_missing" in r["f"]:
+            r["f"]["dxy_missing"] = float("nan")
     schema = {r["feature_schema_version"] for r in rows}
     if schema and not schema <= set(getattr(fe, "COMPATIBLE_SCHEMAS", (fe.FEATURE_SCHEMA_VERSION,))):
         return {"status": "FAILED", "reason": f"FEATURE_SCHEMA_MISMATCH:{sorted(schema)}"}

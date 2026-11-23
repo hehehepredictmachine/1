@@ -35,22 +35,26 @@ class SampleStore:
                cost: dict, synthetic: bool) -> bool:
         """Idempotent: a (setup_id, version) is stored once. Returns True when a new sample was created."""
         sid = f"{setup_id}:{version}"
-        if "COMMISSION_UNKNOWN" in (cost.get("flags") or []):
+        if {"COMMISSION_UNKNOWN", "SPREAD_UNKNOWN"} & set(cost.get("flags") or []):     # 1.46: unknown spread too (was labelled as spread 0)
             quality = "COST_UNKNOWN"                   # the net label cannot be computed honestly -> never trained on
         if self.db.one("SELECT 1 AS x FROM ml_samples WHERE sample_id=?", (sid,)):
             return False
         if rec.get("stop_loss") is None or not rec.get("targets"):
             status, feats = "NO_ENTRY", {}
+            # 1.46: make_spec -> execution.policy.from_plan(float(stop_loss)) raised TypeError for a setup without SL: the documented
+            # NO_ENTRY / NO_VALID_LEVELS row was never written (collector error; a backfill aborted). No levels -> no label policy.
+            entry = {"spec": None, "state": None, "reason": "NO_VALID_LEVELS"}
         else:
             feats = fe.to_json_safe(fe.compute(view, rec, asof))
             status = "PENDING"
-        spec = lb.make_spec(rec, iso(asof), spread=cost["spread"], slippage=cost["slippage"], commission=cost["commission"], cost_flags=cost["flags"])
+            spec = lb.make_spec(rec, iso(asof), spread=cost["spread"], slippage=cost["slippage"], commission=cost["commission"], cost_flags=cost["flags"])
+            entry = {"spec": spec, "state": lb.new_state(spec)}
         now = iso(utcnow())
         self.db.execute("""INSERT OR IGNORE INTO ml_samples(sample_id, setup_id, setup_version, group_id, event_id, symbol, feed_id, strategy_id, strategy_version,
                            direction, timeframe, asof_utc, feature_schema_version, features_json, entry_json, cost_model_version, label_policy_version, source,
                            quality, status, exit_reason, synthetic, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (sid, setup_id, version, setup_id, rec.get("event_id"), rec.get("symbol") or "XAUUSD-", feed_id, rec["strategy_id"], rec["strategy_version"],
-                         rec["direction"], rec["timeframe"], iso(asof), fe.FEATURE_SCHEMA_VERSION, json.dumps(feats), dumps({"spec": spec, "state": lb.new_state(spec)}),
+                         rec["direction"], rec["timeframe"], iso(asof), fe.FEATURE_SCHEMA_VERSION, json.dumps(feats), dumps(entry),
                          lb.COST_MODEL_VERSION, lb.LABEL_POLICY_VERSION, source, quality, status, None if status == "PENDING" else "NO_VALID_LEVELS",
                          int(synthetic), now, now))
         return True
@@ -96,8 +100,10 @@ class SampleStore:
                 out["pos" if r["label"] == 1 else "neg"] += r["n"]
         out["unique_setups"] = (self.db.one(f"SELECT COUNT(DISTINCT setup_id) AS n FROM ml_samples WHERE status='LABELED'{q}") or {}).get("n", 0)
         out["samples"] = sum(out["by_status"].values())
-        out["approx_excluded"] = 0 if include_approx else (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality NOT IN ('HIGH','COST_UNKNOWN') AND status='LABELED'") or {}).get("n", 0)
-        out["cost_unknown_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality='COST_UNKNOWN'") or {}).get("n", 0)
+        world = " AND synthetic=1" if synthetic else " AND synthetic=0"      # 1.46: the excluded counts mixed the synthetic and the real world
+        out["approx_excluded"] = 0 if include_approx else (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality NOT IN ('HIGH','COST_UNKNOWN') AND status='LABELED'"
+                                                                       + world) or {}).get("n", 0)
+        out["cost_unknown_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality='COST_UNKNOWN'" + world) or {}).get("n", 0)
         return out
 
     def eligible(self, include_approx: bool, cutoff: datetime, synthetic: bool) -> list[dict]:

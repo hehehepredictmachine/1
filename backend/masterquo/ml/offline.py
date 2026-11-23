@@ -87,7 +87,8 @@ def train(inst: str, dataset: Path, *, include_approx: bool = True, days: int = 
     t0 = time.time()
     log(f"backfill {inst} ({meta['symbol']}): {len(data['M15'])} M15, koszty {cost['commission_source']} {cost['commission_per_lot_per_side']}")
     bf = backfill.run(db, data, feed=feed, synthetic=synthetic, cost=cost, symbol=meta["symbol"], warmup_days=30,
-                      progress=lambda p: log(f"backfill krok {p['step']}/{p['steps']}, próbki {p['created']}"))
+                      progress=lambda p: log(f"backfill krok {p['step']}/{p['steps']}, próbki {p['created']}"),
+                      cfg=ConfigStore().get().active)          # 1.46: the user's thresholds / regime / tracker settings (was package defaults)
     store = SampleStore(db)
     c = ConfigStore().get().ml
     cnt = store.counts(include_approx, synthetic)
@@ -106,7 +107,13 @@ def train(inst: str, dataset: Path, *, include_approx: bool = True, days: int = 
     db.execute("INSERT INTO ml_jobs(job_id, kind, status, created_at, started_at, snapshot_id, detail_json) VALUES (?,?,?,?,?,?,?)",
                (job_id, "TRAIN", "RUNNING", iso(utcnow()), iso(utcnow()), snap["snapshot_id"],
                 dumps({"initiated_by": "TRAINING_INSTALLER", "rows": snap["rows"], "include_approx": include_approx, "instrument": inst})))
-    res = trainer.run(snap["path"], jcfg, str(root / "models"), reg.last_test_end(), lambda ph: log(f"ML {inst}: {ph}"))
+    try:
+        res = trainer.run(snap["path"], jcfg, str(root / "models"), reg.last_test_end(), lambda ph: log(f"ML {inst}: {ph}"))
+    except Exception as exc:          # 1.46: an exception of the trainer left the ml_jobs row RUNNING (until an MLService restart)
+        db.execute("UPDATE ml_jobs SET status='FAILED', finished_at=?, detail_json=? WHERE job_id=?",
+                   (iso(utcnow()), dumps({"initiated_by": "TRAINING_INSTALLER", "rows": snap["rows"], "include_approx": include_approx, "instrument": inst,
+                                          "reason": f"{type(exc).__name__}: {exc}"[:300]}), job_id))
+        raise
     (root / "jobs" / f"{job_id}.report.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
     if res.get("status") != "DONE":
         db.execute("UPDATE ml_jobs SET status=?, finished_at=? WHERE job_id=?", (res.get("status") or "FAILED", iso(utcnow()), job_id))

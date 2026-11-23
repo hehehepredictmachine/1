@@ -4,19 +4,23 @@ Same logic as live: at every close of `step_tf` only bars whose availability tim
 scanner / tracker / FeatureEngine create samples at the first CONFIRMED of every setup version, and the same
 labeller (MQ-LABEL-1.0.0) labels them from M1 bars that follow. Differences to live, stated in every sample:
 * no recorded quotes -> a bar touching SL and TP is AMBIGUOUS (never assumed);
-* spread from the bar's spread field (or the cost model), not from the live quote;
+* spread from the bar's spread field (or the cost model), not from the live quote; a bar without a spread and no cost-model
+  spread -> flag SPREAD_UNKNOWN and quality COST_UNKNOWN (never trained on, never a spread of 0);
 therefore quality = 'APPROX' and source = 'BACKFILL_<feed>'. APPROX samples are excluded from training unless
 ml.use_backfill_approx is switched on; synthetic and real samples are never mixed.
 """
 from __future__ import annotations
 
 import bisect
+import hashlib
+import json
+import math
+import shutil
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..config import AppConfig
 from ..db.database import Database
 from ..strategies import adapter, registry
 from ..strategies.tracker import SetupTracker
@@ -35,15 +39,44 @@ def _iso(t: datetime) -> str:
     return t.isoformat().replace("+00:00", "Z")
 
 
+def _spread(bar: dict, cost: dict) -> tuple[float, list[str]]:
+    """1.46: a missing bar spread fell back to cost["spread"], which the offline trainer sets to 0.0 - the sample was labelled with a
+    spread of 0 (optimistic net_R) under the flag SPREAD_FROM_BAR_SPREAD_FIELD. Returns (spread, cost flags of the sample) with the
+    real source of the spread; no source -> SPREAD_UNKNOWN (dataset.create stores the sample as COST_UNKNOWN, never trained on)."""
+    flags = list(cost.get("flags") or [])
+    base = [f for f in flags if f not in ("SPREAD_FROM_BAR_SPREAD_FIELD", "SPREAD_UNKNOWN")]
+    sp = bar.get("spread_points")
+    if isinstance(sp, (int, float)) and math.isfinite(sp) and sp > 0:
+        return float(sp) * cost["point"], [f for f in base if f != "SPREAD_FROM_SYMBOL_INFO"] + ["SPREAD_FROM_BAR_SPREAD_FIELD"]
+    cs = cost.get("spread")
+    if "SPREAD_UNKNOWN" not in flags and isinstance(cs, (int, float)) and math.isfinite(cs) and cs > 0:
+        return float(cs), base + ["SPREAD_FROM_COST_MODEL"]
+    return 0.0, [f for f in base if f != "SPREAD_FROM_SYMBOL_INFO"] + ["SPREAD_UNKNOWN"]    # 0.0 = placeholder of an excluded sample
+
+
 def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_tf: str = "M15", warmup_days: int = 30,
-        max_steps: int | None = None, progress=None, should_stop=None, symbol: str = "XAUUSD-") -> dict:
+        max_steps: int | None = None, progress=None, should_stop=None, symbol: str = "XAUUSD-", cfg=None) -> dict:
     """`symbol` = exact broker symbol of the instrument whose setups are replayed (each instrument has its own ML database).
-    `data[tf]` = list of closed bars {"open_utc","o","h","l","c","tv","available_at","spread_points"} in time order."""
+    `data[tf]` = list of closed bars {"open_utc","o","h","l","c","tv","available_at","spread_points"} in time order.
+    `cfg` = the ACTIVE config of the user (ConfigStore().get().active) - the same thresholds / regime / tracker settings as live."""
+    if cfg is None:                                    # 1.46: was AppConfig().active - package defaults, not the user's settings
+        from ..config import ConfigStore
+        cfg = ConfigStore().get().active
     store = SampleStore(target_db)
     tmp = Path(tempfile.mkdtemp(prefix="mq_backfill_"))
-    work = Database(tmp / "bf.sqlite")                 # tracker state of the replay is private (never mixes with live setups)
+    try:                                               # 1.46: the private replay database was never closed on error nor removed
+        work = Database(tmp / "bf.sqlite")             # tracker state of the replay is private (never mixes with live setups)
+        try:
+            return _replay(target_db, store, work, data, cfg, feed=feed, synthetic=synthetic, cost=cost, step_tf=step_tf, warmup_days=warmup_days,
+                           max_steps=max_steps, progress=progress, should_stop=should_stop, symbol=symbol)
+        finally:
+            work.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)         # only the temporary replay folder created above (no user data)
+
+
+def _replay(target_db, store, work, data: dict, cfg, *, feed, synthetic, cost, step_tf, warmup_days, max_steps, progress, should_stop, symbol) -> dict:
     tr = SetupTracker(work)
-    cfg = AppConfig().active
     steps = [_p(b["available_at"]) for b in data.get(step_tf) or []]
     steps = [t for t in steps if steps and t >= steps[0] + timedelta(days=warmup_days)]
     if max_steps:
@@ -64,7 +97,7 @@ def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_t
         last = bars.get("M1") or bars.get("M5")
         if not last:
             continue
-        spread = (last[-1].get("spread_points") or 0) * cost["point"] or cost["spread"]
+        spread, sflags = _spread(last[-1], cost)
         view = adapter.build_view(symbol=symbol, bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + spread, point=cost["point"], as_of=_iso(t),
                                   synthetic=synthetic, regime_params=cfg.regime)
         res = registry.scan(view, enabled={}, overrides={}, thresholds=cfg.thresholds.model_dump(), account_key="backfill")
@@ -74,7 +107,7 @@ def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_t
             if kind not in ("NEW_CONFIRMED", "STAGE_CONFIRMED") or not r:
                 continue
             sid = f"BF-{feed}-{r['setup_id']}"
-            c = dict(cost, spread=spread)
+            c = dict(cost, spread=spread, flags=sflags)
             if store.create(rec=dict(r["record"], symbol=symbol), setup_id=sid, version=int(r["version"]), view=view, asof=t,
                             source=f"BACKFILL_{feed}", quality="APPROX", feed_id=f"BACKFILL:{feed}", cost=c, synthetic=synthetic):
                 created += 1
@@ -87,9 +120,9 @@ def run(target_db, data: dict, *, feed: str, synthetic: bool, cost: dict, step_t
         i = bisect.bisect_left(m1_t, _p(s["asof_utc"]))
         st = store.advance(s["sample_id"], s["entry_json"], m1[i:i + 6000], [], now, outcome_source="BACKFILL_M1_OHLC")
         labeled[st] = labeled.get(st, 0) + 1
-    work.close()
+    chash = hashlib.sha256(json.dumps(cfg.model_dump(mode="json"), sort_keys=True, default=str).encode()).hexdigest()[:16]
     return {"feed": feed, "steps": len(steps), "created": created, "labels": labeled, "elapsed_s": round(time.time() - t0, 1),
-            "quality": "APPROX", "label_policy_version": lb.LABEL_POLICY_VERSION}
+            "quality": "APPROX", "label_policy_version": lb.LABEL_POLICY_VERSION, "config_hash": chash}
 
 
 def synthetic_data(days: int, seed: int = 7) -> dict:
