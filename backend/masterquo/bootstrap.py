@@ -220,6 +220,12 @@ class Bootstrap:
                 if st in ("DONE", "FAILED", "CANCELLED"):
                     break
                 self._stop.wait(self.poll_s)
+            if st not in ("DONE", "FAILED", "CANCELLED"):
+                # 1.46: timeout / stop while the installer process still runs - never mark it FAILED and start the NEXT heavy install
+                # (two heavy installs at once); the remaining queue waits for the next start
+                self._set(cid, "INSTALLING", f"instalator nadal działa ({st}) – kolejka wstrzymana")
+                done.append({"id": cid, "state": "INSTALLING"})
+                break
             ok = st == "DONE" and self._probe(cid)[0]
             self._set(cid, "INSTALLED" if ok else "FAILED", st)
             done.append({"id": cid, "state": "INSTALLED" if ok else "FAILED"})

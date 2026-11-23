@@ -712,3 +712,40 @@ class TestTrackerEnteredNotResurrected(unittest.TestCase):
             self.assertEqual(t.tr.active("XAUUSD-", "acc"), [])
         finally:
             t.tearDown()
+
+
+class TestConfigIntegrity(unittest.TestCase):
+    """1.45.0: (a) config_version was writable through ConfigStore.update / PUT /api/v1/config -> the next start re-ran the migrations over the
+    user's settings; (b) scalp.commission_per_lot_side = null (UNKNOWN) was replaced with 0.50 on EVERY load."""
+
+    def test_config_version_not_patchable_and_null_commission_kept(self):
+        from _env import TempData
+
+        from masterquo.config import ConfigStore
+        td = TempData()
+        try:
+            st = ConfigStore()
+            cur = st.get().config_version
+            st.update({"config_version": 1})
+            self.assertEqual(st.get().config_version, cur)
+            self.assertEqual(ConfigStore().get().config_version, cur)          # after a "restart"
+            st.update({"scalp": {"commission_per_lot_side": None}})
+            self.assertIsNone(ConfigStore().get().scalp.commission_per_lot_side)
+            self.assertIsNone(ConfigStore().get().scalp.commission_per_lot_side)
+        finally:
+            td.close()
+
+
+class TestBootstrapNoParallelInstalls(unittest.TestCase):
+    def test_timeout_keeps_installing_and_stops_the_queue(self):
+        import pathlib
+        import tempfile
+
+        from masterquo.bootstrap import Bootstrap
+        started = []
+        inst = {c: ((lambda c=c: started.append(c) or {"ok": True}), (lambda: "RUNNING")) for c in ("tsfm_chronos2", "tsfm_granite_ttm")}
+        b = Bootstrap(state_file=pathlib.Path(tempfile.mkdtemp()) / "b.json", installers=inst, poll_s=0.01)
+        b.state["components"] = {c: {"state": "NOT_INSTALLED"} for c in inst}
+        out = b.run_heavy(timeout_s=0.05)
+        self.assertEqual(started, ["tsfm_chronos2"])                                # the second install never starts in parallel
+        self.assertEqual(out[0]["state"], "INSTALLING")

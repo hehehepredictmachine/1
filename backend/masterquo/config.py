@@ -725,9 +725,10 @@ class ConfigStore:
                 if not bak.exists():
                     bak.write_text(text, encoding="utf-8")
             sc = raw.get("scalp")
-            if isinstance(sc, dict) and sc.get("commission_per_lot_side", 0.5) is None:
-                sc["commission_per_lot_side"] = 0.5            # 1.12.0 wrote null (unknown); package default is 0.50 per lot per side
-                migrated = True
+            # 1.12.0 wrote null (unknown); package default is 0.50 per lot per side. 1.46: done only while MIGRATING an older file - a null
+            # the user keeps in a current config stays UNKNOWN (rule: missing = UNKNOWN, never a made-up value; 1.45.0 replaced it on every load)
+            if migrated and isinstance(sc, dict) and sc.get("commission_per_lot_side", 0.5) is None:
+                sc["commission_per_lot_side"] = 0.5
             cfg = AppConfig.model_validate(raw)
             if migrated:
                 self._write(cfg)
@@ -755,6 +756,9 @@ class ConfigStore:
             merged = _deep_merge(self._cfg.model_dump(mode="json"), patch)
             merged.pop("synthetic_demo", None)
             merged["synthetic_demo"] = self._cfg.synthetic_demo
+            # 1.46: the schema version is owned by the migrations - a patch (PUT /api/v1/config) writing config_version < current re-ran the whole
+            # migration chain on the next start (assets reset to UNMAPPED, RR thresholds, AUTO mode -> PAPER)
+            merged["config_version"] = self._cfg.config_version
             cfg = AppConfig.model_validate(merged)
             self._write(cfg)
             self._cfg = cfg
