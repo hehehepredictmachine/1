@@ -113,6 +113,13 @@ def stage_export(ctx: Ctx) -> dict:
             raise Blocked("BLOCKED_DATA", f"brak symbolu brokera dla {inst} (konfiguracja aktywów)")
         summ = EX.run(source, dst, inst, sym, timeframes=tfs, mode="historical", start=start, end=ctx.source.get("end") or cutoff,
                       progress=lambda d: ctx.progress({"stage": "export", **d}), cancel=lambda: ctx.cancel() or ctx.pause())
+        # 1.46: EX.run RETURNS (does not raise) CANCELLED / FAILED - an interrupted or failed export must not be committed as the stage
+        # (1.45.0 committed partial data; a pause even became a "done" export stage). Checkpoints stay in the store for the resume.
+        if summ.get("status") == "CANCELLED":
+            ctx.check()                                           # raises PAUSED / CANCELLED with the user's reason
+            raise Blocked("CANCELLED", summ.get("reason") or "eksport przerwany")
+        if summ.get("status") != "COMPLETE":
+            raise Blocked("FAILED", f"eksport MT5: {summ.get('status')} {summ.get('reason') or ''}".strip())
         for tf in tfs:
             t = dst.read(inst, tf)["time"]
             report["timeframes"][tf] = {"rows": len(t), "from": t[0] if t else None, "to": t[-1] if t else None,

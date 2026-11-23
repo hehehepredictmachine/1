@@ -58,7 +58,10 @@ def main(argv=None) -> int:
     from . import pipeline as P
     from . import registry as R
     cfg_all = ConfigStore().get()
-    store = Store()
+    from ..marketdata.store import default_root
+    # 1.46: --demo (simulator) never writes into the REAL candle store - its own folder next to it (1.45.0 merged synthetic candles into
+    # the user's real store and relabelled it); EX.run additionally refuses to mix data kinds in one store
+    store = Store(default_root().parent / "marketdata_synthetic") if getattr(a, "demo", False) else Store()
     params = {k: v for k, v in {"base_tf": a.base_tf, "horizon": a.horizon, "k_atr": a.k_atr, "seed": a.seed, "start": a.start, "end": a.end,
                                 "commission_price": a.commission_price, "profile": a.profile,
                                 "models": a.models.split(",") if a.models else None}.items() if v is not None}

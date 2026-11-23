@@ -136,6 +136,12 @@ def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPOR
         raise ExportBusy(f"eksport {instrument} już trwa (pid {prev.get('pid')}) – poczekaj albo zatrzymaj go w Centrum treningu")
     resume = prev.get("request") == req and prev.get("status") in ("FAILED", "CANCELLED", "RUNNING") and prev.get("frozen")
     man = store.manifest(instrument)
+    have, new = man.get("data_kind"), _kind(source)
+    if have in ("REAL_USER_DATA", "SYNTHETIC_TEST") and new in ("REAL_USER_DATA", "SYNTHETIC_TEST") and have != new:
+        # 1.46: one store = one data kind. 1.45.0 merged simulator candles into the real store (conflicting real rows were then rejected
+        # as "conflicts") and relabelled the whole store with the kind of the LAST export. Nothing is deleted - the export is refused.
+        raise ValueError(f"DATA_KIND_MISMATCH: magazyn {store.inst_dir(instrument)} zawiera {have}, źródło to {new} – "
+                         "użyj osobnego folderu danych (np. MASTERQUO_DATA_DIR dla danych testowych)")
     if resume:
         frozen = prev["frozen"]
         done = {k: set(map(tuple, v)) for k, v in (prev.get("done") or {}).items()}
@@ -198,7 +204,7 @@ def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPOR
         summary["status"] = "COMPLETE"
     except ExportCancelled as exc:
         summary.update(status="CANCELLED", reason=str(exc))
-    except Exception as exc:  # noqa: BLE001 - recorded for resume; re-raised after the state is saved
+    except Exception as exc:  # noqa: BLE001 - recorded for resume and RETURNED as status FAILED (callers check summary["status"])
         summary.update(status="FAILED", reason=f"{type(exc).__name__}: {exc}"[:400])
     state.update(status=summary["status"], heartbeat=_now(), finished_at=iso(_now()), reason=summary.get("reason"))
     atomic_json(st_path, state)

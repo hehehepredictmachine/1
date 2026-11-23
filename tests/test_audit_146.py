@@ -414,3 +414,53 @@ class TestShRMultipleInitialRisk(unittest.TestCase):
         spec = types.SimpleNamespace(money_per_price=lambda v: 100.0)
         res = SHService.cycle_result(types.SimpleNamespace(store=None), row, pos, spec)
         self.assertEqual(res["r_multiple"], 2.0)                    # +4.00 move / 2.00 initial risk (not / 0.30 after BE)
+
+
+class TestExportIntegrity(unittest.TestCase):
+    """1.45.0: (a) Studio committed the 'export' stage when EX.run RETURNED CANCELLED / FAILED (a pause = a 'done' partial export);
+    (b) a simulator export was merged into the REAL candle store and relabelled it."""
+
+    def test_studio_does_not_commit_interrupted_export(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from masterquo.studio import pipeline as SP
+        commits = []
+
+        class Pkg:
+            def tmp(self, name):
+                return Path(tempfile.mkdtemp())
+
+            def commit(self, *a, **k):
+                commits.append(a)
+        task = {"adapter": "TRAINHUB", "instrument": "XAUUSD", "sources": [{"kind": "BARS", "tf": "M5"}], "broker_symbol": "XAUUSD-"}
+        for status, paused, want in (("CANCELLED", True, "PAUSED"), ("CANCELLED", False, "CANCELLED"), ("FAILED", False, "FAILED")):
+            ctx = SP.Ctx(task, Pkg(), source={"mode": "SYNTHETIC", "days": 2, "cutoff": 1_795_000_000}, pause=lambda p=paused: p)
+            with mock.patch("masterquo.marketdata.export.run", return_value={"status": status, "reason": "x", "timeframes": {}}), \
+                    mock.patch.object(SP, "needed_tfs", return_value=["M5"]):
+                with self.assertRaises(SP.Blocked) as cm:
+                    SP.stage_export(ctx)
+            self.assertEqual(cm.exception.state, want)
+        self.assertEqual(commits, [])
+
+    def test_synthetic_source_never_merges_into_real_store(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from masterquo.marketdata import export as EX
+        from masterquo.marketdata.sources import DirectSource
+        from masterquo.marketdata.store import Store
+        from masterquo.mt5.fake import FakeMT5
+        store = Store(Path(tempfile.mkdtemp()))
+        d = store.inst_dir("XAUUSD")
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(json.dumps({"instrument": "XAUUSD", "data_kind": "REAL_USER_DATA"}), encoding="utf-8")
+        f = FakeMT5(history_days=3)
+        f.initialize()
+        src = DirectSource(f, offset=f.offset, offset_basis="SIMULATOR")
+        with self.assertRaises(ValueError) as cm:
+            EX.run(src, store, "XAUUSD", "XAUUSD-", timeframes=("M5",), lookback_days=1, sleep=lambda s: None)
+        self.assertIn("DATA_KIND_MISMATCH", str(cm.exception))
+        self.assertEqual(json.loads((d / "manifest.json").read_text())["data_kind"], "REAL_USER_DATA")
