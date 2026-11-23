@@ -2503,8 +2503,8 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "SOURCE_TIME_REQUIRED")
         try:
             from ..indicators import contract as _IC
-            _IC.ts(st)
-        except (TypeError, ValueError):
+            _IC.ts(st, strict=True)     # 1.46: naive / out-of-range time -> 400 (the anchor rejects it with strict=True: was a 500)
+        except (TypeError, ValueError, OverflowError):
             raise HTTPException(400, "SOURCE_TIME_INVALID") from None
         label = str(body.get("label") or "")[:40] or None
         return rt.indicators.add_manual_anchor(tf, st, label)

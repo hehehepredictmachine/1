@@ -137,6 +137,9 @@ class TestApiInputValidation(unittest.TestCase):
         self.assertEqual(c("/api/v1/quant/tabicl/reconstruct", {"days": "x"})[0], 400)
         code, body = c("/api/v1/market-zones/as-of?as_of=2020-01-01T00:00:00Z")
         self.assertEqual(code, 200, body)                              # was 503 "IndexError: list index out of range"
+        # chunk_12#4 (1.46): a naive anchor time was read in the local zone; with the strict anchor check it gave a 500 - now 400
+        self.assertEqual(c("/api/v1/indicators/anchors", {"timeframe": "M5", "source_time": "2026-01-05T10:00:00"})[0], 400)
+        self.assertEqual(c("/api/v1/indicators/anchors", {"timeframe": "M5", "source_time": 1e20})[0], 400)
 
     def test_wf32_routes_validate_input(self):
         """Chunk 04 (SREDNI): wrong types in v3.2 routes answered 500; loot scores > 100 granted LEGENDARY; non-ASCII CSRF was a 500."""

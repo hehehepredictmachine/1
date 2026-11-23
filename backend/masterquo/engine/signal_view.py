@@ -27,7 +27,9 @@ GATE_DESC = {"DATA": ("Dane z MT5", "świeże notowania i kompletne, zamknięte 
              "MARKET": ("Rynek otwarty", "sesja otwarta, brak blokującego okna makro"),
              "RISK": ("Ryzyko i koszty", "SL, wolumen, spread i koszty mieszczą się w limitach ryzyka"),
              "AI": ("Agent AI", "ocena agenta Claude zgodnie z ustawioną polityką (VETO / WYMAGANA / DORADCZA)"),
-             "ML": ("Model ML", "zgodnie z trybem ML (wyłączony / doradczy / wymagany)")}
+             "ML": ("Model ML", "zgodnie z trybem ML (wyłączony / doradczy / wymagany)"),
+             # 1.46: the MODELS gate (PMW-ARC-1) was skipped on the card - a signal held only by model roles said "brakuje: nic"
+             "MODELS": ("Modele (koordynator)", "role modeli REQUIRED / ASSIST dopuszczają wejście")}
 STAGE_PL = {"WATCH": "obserwacja", "EARLY": "wczesny", "EARLY_SETUP": "wczesny", "QUALIFIED": "kwalifikacja", "ARMED": "uzbrojony",
             "TRIGGERED": "wyzwolony", "CONFIRMED": "potwierdzony"}
 
