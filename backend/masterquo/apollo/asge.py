@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import random
+import time
 
 VERSION = "APOLLO23-ASGE-IR-1"
 EXECUTION_ALLOWED = False
@@ -147,7 +148,7 @@ class TrialLedger:
         self.rows: list[dict] = []
 
     def add(self, row: dict) -> dict:
-        row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}"}
+        row = {**row, "trial_id": f"T{len(self.rows) + 1:05d}", "created_at": row.get("created_at") or time.time()}   # 1.46: UTC epoch
         self.rows.append(row)
         return row
 

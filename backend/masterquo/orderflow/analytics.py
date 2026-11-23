@@ -22,6 +22,14 @@ def row_of(price: float, row: float) -> float:
     return float((Decimal(str(price)) / r).to_integral_value(rounding=ROUND_FLOOR) * r)
 
 
+def auto_row(px: float | None) -> float:
+    """Default price-row height of the order-flow workspace (and its export): 0.05 % of the price, 2 significant digits; 0.01 when the
+    price is unknown or the rounding gives 0."""
+    if not px or px <= 0:
+        return 0.01
+    return float(f"{px * 0.0005:.2g}") or 0.01
+
+
 def _directional(events) -> bool:
     return any(e.aggressor != "UNKNOWN" for e in events)
 

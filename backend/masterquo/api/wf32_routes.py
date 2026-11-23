@@ -2,7 +2,11 @@
 modify or close an order or change risk / STOP / execution mode."""
 from __future__ import annotations
 
+import collections
+import hashlib
+import json
 import threading
+import time
 
 from fastapi import Body, HTTPException
 
@@ -301,8 +305,7 @@ def register(app, rt) -> None:
         ins_id = evs[0].instrument_id if evs else book["instrument_id"]
         ev = _ledger.events(ins_id)
         if row <= 0:
-            px = (book["bids"][0][0] if book["bids"] else (ev[-1].price if ev else 1.0))
-            row = float(f"{px * 0.0005:.2g}") or 0.01
+            row = OA.auto_row(book["bids"][0][0] if book["bids"] else (ev[-1].price if ev else 1.0))
         ob = OA.OrderBook()
         ob.snapshot(book["bids"], book["asks"])
         return {"instrument_id": ins_id, "dom": ob.dom(), "heatmap": OA.heatmap([{"t": book["t"], "bids": book["bids"], "asks": book["asks"]}], row),
@@ -317,6 +320,11 @@ def register(app, rt) -> None:
     from ..mm.bat_encoder import BATEncoder
 
     _ranker: dict = {"bundle": None, "manifest": None}
+    _journal: collections.deque = collections.deque(maxlen=500)      # 1.46: results of PT / DT calls since start (export: pt-skill, dt-ranker)
+
+    def _remember(kind: str, inputs, n: int, result: dict, **extra) -> None:
+        digest = hashlib.sha256(json.dumps(inputs, sort_keys=True, default=str).encode()).hexdigest()
+        _journal.append({"kind": kind, "at": time.time(), "n": n, "inputs_sha256": digest, "result": result, **extra})
 
     @app.post("/api/v1/models/pt/evaluate")
     def pt_evaluate(body: dict = Body(...)):
@@ -326,7 +334,9 @@ def register(app, rt) -> None:
         prof = body.get("profile") or "ARTICLE_25105_V1"
         if prof not in PT.PROFILES:
             raise HTTPException(400, f"profile: {PT.PROFILES}")
-        return PT.evaluate(f, y, prof)
+        res = PT.evaluate(f, y, prof)
+        _remember("pt", [f, y, prof], len(f), res, profile=prof)
+        return res
 
     @app.get("/api/v1/models/association/snapshot")
     def ar_snapshot(timeframe: str = "H1", horizon: int = 24):
@@ -353,7 +363,9 @@ def register(app, rt) -> None:
             cands = [DT.candidate_from_dict(c) for c in (body.get("candidates") or [])]
         except DT.CandidateError as exc:
             raise HTTPException(400, str(exc)) from None
-        return DT.rank(_ranker["bundle"], cands, {"mode": "SHADOW"})
+        res = DT.rank(_ranker["bundle"], cands, {"mode": "SHADOW"})
+        _remember("dt", [DT.to_dict(c) for c in cands], len(cands), res)
+        return res
 
     @app.get("/api/v1/models/bat/shadow")
     def bat_shadow(timeframe: str = "H1"):
@@ -567,3 +579,6 @@ def register(app, rt) -> None:
         if body.get("source_mode") != "SIMULATOR":
             raise HTTPException(409, "GRANT_SOURCE_NOT_ENABLED: w tej wersji nagrody tylko z symulatora (MT5 / dziennik: tylko ocena)")
         return g(RLC.grant, tlg(), body)
+
+    # 1.46: the exporters (api/export_routes.py) read THESE objects - one ledger / journal, never a copy
+    app.state.wf32 = {"ledger": _ledger, "trials": _trials, "shadow_journal": _journal, "hl": _hl, "universe": universe, "tlg": tlg}

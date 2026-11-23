@@ -351,6 +351,8 @@ def main(argv=None) -> int:
     ta.add_argument("--demo", action="store_true", help="tylko test: uruchamia bota na danych syntetycznych, jeśli nie działa")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
+    from .exports import cli as _exports_cli                       # 1.46: export-<nazwa>, export-list, import-trader-life-game
+    _exports_cli.add_parsers(sub)
     a = ap.parse_args(argv)
     _load_dotenv()
     if a.cmd == "serve":
@@ -382,6 +384,12 @@ def main(argv=None) -> int:
     if a.cmd == "train-all":
         from .train_all import train_all
         return train_all(a)
+    if a.cmd == "export-list":
+        return _exports_cli.list_cmd()
+    if a.cmd == "import-trader-life-game":
+        return _exports_cli.import_tlg_cmd(a)
+    if a.cmd.startswith("export-") and a.cmd[len("export-"):] in _exports_cli.R.EXPORTERS:
+        return _exports_cli.run_export(a.cmd[len("export-"):], a)
     return 1
 
 

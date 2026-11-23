@@ -3943,4 +3943,6 @@ def create_app(rt, port: int) -> FastAPI:
 
     from .wf32_routes import register as _wf32_register
     _wf32_register(app, rt)               # Apollo23 workflow v3.2 (TASK 001-025)
+    from .export_routes import register as _exports_register
+    _exports_register(app, rt)            # 1.46: data exporters (GET /api/v1/exports/...), write only into <data>/exports
     return app
