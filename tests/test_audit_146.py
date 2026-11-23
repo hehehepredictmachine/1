@@ -688,3 +688,27 @@ class TestSfbAssistDisabled(unittest.TestCase):
         self.assertEqual(json.loads((d / "sfb.json").read_text())["mode"], "ASSIST")          # the user's file is not rewritten
         (d / "sfb.json").write_text(json.dumps({"mode": "OFF", "apply_to_execution": True}), encoding="utf-8")
         self.assertEqual(BS.BasketService(rt, data_dir=d).sfb.status()["mode"], "OFF")        # damaged config -> OFF, service still starts
+
+
+class TestTrackerEnteredNotResurrected(unittest.TestCase):
+    """1.45.0: the scan thread saved rows read at its start; an ENTERED set meanwhile by the execution (API thread, POST /api/v1/execute) was
+    overwritten back to ACTIVE (lost update) - the setup could be selected and executed again."""
+
+    def test_stale_copy_cannot_overwrite_entered(self):
+        import test_strategies as TS
+        t = TS.TestTracker("test_dedupe_invalidation_expiry_restore")
+        t.setUp()
+        try:
+            sid = TS.ALL[0]
+            bars = TS.scenario(sid)
+            v, cands = t._scan(bars, sid)
+            now = t._now(bars)
+            t.tr.update(cands, view=v, symbol="XAUUSD-", account_key="acc", data_ok=True, new_data=True, now=now, cfg=t.cfg, scanned={sid})
+            row = t.tr.active("XAUUSD-", "acc")[0]                 # the scan's copy (status ACTIVE)
+            t.tr.mark_entered(row["setup_id"], "AUTO_DEMO_FILLED", "2026-11-20T10:00:00Z")   # execution thread
+            row["updated_at"] = "2026-11-20T10:00:01Z"
+            t.tr._save(row)                                         # the scan finishes and writes its stale copy
+            self.assertEqual(t.tr.get(row["setup_id"])["status"], "ENTERED")
+            self.assertEqual(t.tr.active("XAUUSD-", "acc"), [])
+        finally:
+            t.tearDown()
