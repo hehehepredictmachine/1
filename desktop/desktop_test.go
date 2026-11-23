@@ -400,7 +400,7 @@ func tail(p string) string {
 func TestWindowTitleHasNoEdition(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "edition.json"), []byte(`{"edition":"OWNER"}`), 0o644) // a leftover 1.27-1.29 file changes nothing
-	if got := (Layout{AppDir: dir}).WindowTitle("1.30.0"); got != "PepeMarketWizard 1.30.0" {
+	if got := (Layout{AppDir: dir}).WindowTitle("1.30.0"); got != "Apollo23 1.30.0" {
 		t.Fatalf("title %q", got)
 	}
 }

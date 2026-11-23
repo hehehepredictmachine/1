@@ -3,10 +3,11 @@
 // nowe miejsce według LEGACY_REDIRECTS; nieznany adres -> #/menu.
 import { useEffect, useState } from "react";
 
-export type Page = "menu" | "forex" | "system";
+export type Page = "menu" | "forex" | "system" | "trader-life-game";       // 1.45: TraderLifeGame = cel nawigacji (nie profil rynku)
 export type Route = { page: Page; setupId: string | null; params: URLSearchParams };
 export const PAGES: { id: Page; label: string }[] = [
   { id: "menu", label: "Menu główne" }, { id: "forex", label: "FOREX" }, { id: "system", label: "Panele systemowe" },
+  { id: "trader-life-game", label: "TraderLifeGame" },
 ];
 export const PAGE_IDS = PAGES.map((p) => p.id) as string[];
 export const FOREX_SCREENS = ["charts", "signals", "models", "roi"] as const;
@@ -26,6 +27,8 @@ export const LEGACY_REDIRECTS: Record<string, { page: Page; params: Record<strin
   ...Object.fromEntries(["ustawienia", "settings", "licencje", "dane"].map((k) => [k, R("system", { p: "settings" })])),
   "system-control": R("system", { p: "mode" }),
   diagnostyka: R("system", { p: "diagnostics" }),
+  // 1.45 (TASK 020): OTC wycofane – stare linki do OTC wracają do menu (bez aktywnego selektora OTC)
+  otc: R("menu", { retired: "otc" }), "otc-gold": R("menu", { retired: "otc" }),
 };
 const LAST = "mq.lastHash";
 

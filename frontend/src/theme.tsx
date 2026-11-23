@@ -156,8 +156,8 @@ const TOWERS: Tokens = {
 };
 
 export const PRESETS: Record<string, { label: string; scheme: "dark" | "light"; tokens: Tokens }> = {
-  wieze: { label: "PepeMarketWizard – trzy wieże (domyślny)", scheme: "dark", tokens: TOWERS },
-  gold: { label: "PepeMarketWizard – złoty (1.13–1.28)", scheme: "dark", tokens: GOLD },
+  wieze: { label: "Apollo23 – trzy wieże (domyślny)", scheme: "dark", tokens: TOWERS },
+  gold: { label: "Apollo23 – złoty (1.13–1.28)", scheme: "dark", tokens: GOLD },
   matrix: { label: "Matrix zielony", scheme: "dark", tokens: MATRIX },
   dark: { label: "Ciemny", scheme: "dark", tokens: DARK },
   light: { label: "Jasny", scheme: "light", tokens: LIGHT },

@@ -74,8 +74,13 @@ func (l Layout) WindowTitle(version string) string {
 	if isStudio() {
 		return "Pepe Data & Training Studio " + version
 	}
-	return "PepeMarketWizard " + version
+	return displayName + " " + version
 }
+
+// displayName (1.45, Apollo23 TASK 019): the user-visible product name. Stable identifiers stay unchanged for compatibility with existing
+// installs: the data home %LOCALAPPDATA%\PepeMarketWizard, PMW_HOME / portable mode, PepeMarketWizardDesktop.exe, the single-instance mutex,
+// the engine health identity (appName) and every PMW_* variable.
+const displayName = "Apollo23"
 
 // StudioDir: data folder of Pepe Data & Training Studio (separate from the bot's data folder, same home).
 func (l Layout) StudioDir() string { return filepath.Join(l.Home, "data_studio") }

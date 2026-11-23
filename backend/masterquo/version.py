@@ -1,6 +1,7 @@
 """Single source of version identifiers used across API, DB and agent records."""
 
-APP_NAME = "PepeMarketWizard"        # 1.13: product name (internal package / data paths stay "masterquo" for compatibility)
+APP_NAME = "PepeMarketWizard"        # STABLE engine identity (health "app", desktop handshake, data paths) - do not rename
+DISPLAY_NAME = "Apollo23"            # 1.45 (TASK 019): user-visible product name
 APP_VERSION = "1.44.1"
 # Backend <-> frontend contract. Bump on any breaking change of /api/v1 or WS payloads.
 API_CONTRACT_VERSION = "1.0.0"

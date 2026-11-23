@@ -279,7 +279,7 @@ class TelegramNotifier:
         token = self._token()
         if not token or not cfg.chat_id:
             return {"ok": False, "error": "NOT_CONFIGURED: zapisz token bota i chat_id"}
-        text = _pick(cfg.language, "✅ PepeMarketWizard: test message – notifications are configured.", "✅ PepeMarketWizard：测试消息 – 通知已配置。")
+        text = _pick(cfg.language, "✅ Apollo23: test message – notifications are configured.", "✅ Apollo23：测试消息 – 通知已配置。")
         if template is not None:                   # 1.32 Message Studio: the edited signal template, marked as a test
             text = "🧪 TEST\n" + self.preview(template)["text"]
         ok, err = self._post(token, cfg.chat_id, text)

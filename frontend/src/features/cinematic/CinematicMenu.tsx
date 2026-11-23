@@ -16,14 +16,17 @@ type Props = {
   onSettings?(): void;                                     // ustawienia otwiera pasek ikon systemowych (SystemIcons)
   onMenuReady?(): void;
   onForexReady?(pose: Pose): void;
+  onGameReady?(): void;
   forceSoftware?: boolean;
 };
 
-export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware }: Props) {
+export default function CinematicMenu({ onMenuReady, onForexReady, onGameReady, forceSoftware }: Props) {
   const { s } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const forexRef = useRef(onForexReady);
   forexRef.current = onForexReady;
+  const gameRef = useRef(onGameReady);
+  gameRef.current = onGameReady;
   const readyRef = useRef(onMenuReady);
   readyRef.current = onMenuReady;
 
@@ -37,7 +40,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
       selectedNote: q("selected-note"), returnBtn: q("return"), skip: q("skip"), videoStart: q("video-start"), progress: q("cinema-progress"),
       progressBar: root.querySelector(".cin-cinema-progress span") as HTMLElement, notice: q("notice"), announcer: q("announcer"),
       rendererError: q("renderer-error"), rendererMessage: q("renderer-message"), rendererRetry: q("renderer-retry"),
-      buttons: [q("mode-forex"), q("mode-crypto"), q("mode-otc")], replay: q("replay"), sound: q("sound"), motion: q("motion"), fullscreen: q("fullscreen"),
+      buttons: [q("mode-forex"), q("mode-crypto"), q("mode-tlg")], replay: q("replay"), sound: q("sound"), motion: q("motion"), fullscreen: q("fullscreen"),
     };
     const soft = forceSoftware || new URLSearchParams(location.hash.split("?")[1] || "").get("renderer") === "cpu";
     const dispose = mountMenu(el, {
@@ -45,6 +48,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
       audio: soundOn(), onSoundChange: saveSound,
       onChoose: (_m: Mode) => undefined,
       onMenuReady: () => readyRef.current?.(),
+      onGameReady: () => gameRef.current?.(),
       onForexReady: (pose) => {
         if (forexRef.current) { forexRef.current(pose); return; }
         el.selectedNote.textContent = "Kula FOREX – ekran FOREX zostanie podłączony w etapie E2 (przelot i 4 planety).";       // tymczasowo do E2
@@ -59,28 +63,28 @@ export default function CinematicMenu({ onMenuReady, onForexReady, forceSoftware
 
   return (
     <div className="app-cinematic" data-state="boot" ref={rootRef} data-testid="page-menu">
-      <canvas className="cin-universe" data-testid="cinematic-menu" role="img" aria-label="Trzy srebrne planety z cząsteczek na tle gwiazd: FOREX z pierścieniem i czterema księżycami, CRYPTO z bloków z łańcuchem bloków na orbicie, OTC z rdzeniem w powłoce. Tryby wybiera się przyciskami FOREX, OTC i CRYPTO." />
+      <canvas className="cin-universe" data-testid="cinematic-menu" role="img" aria-label="Trzy srebrne planety z cząsteczek na tle gwiazd: FOREX z pierścieniem i czterema księżycami, CRYPTO z bloków z łańcuchem bloków na orbicie, TraderLifeGame z rdzeniem w powłoce. Cel wybiera się przyciskami FOREX, CRYPTO i TraderLifeGame." />
       <div className="cin-vignette" aria-hidden="true" />
       <main className="cin-menu" aria-label="Wybierz tryb pracy bota" inert>
-        <header className="cin-masthead"><h1>PEPEMARKETWIZARD <span className="team">TEAM</span></h1><p className="cin-motto">They call us cult but we are something more</p></header>
+        <header className="cin-masthead"><h1>APOLLO23 <span className="team">TEAM</span></h1><p className="cin-motto">They call us cult but we are something more</p></header>
         <button className="mode cin-mode-forex" type="button" data-mode="FOREX" aria-label="Wybierz tryb FOREX. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-forex">
           <span className="label"><span className="number">01</span><span className="mode-name">FOREX</span><span className="enter-mark" /></span></button>
         <button className="mode cin-mode-crypto" type="button" data-mode="CRYPTO" aria-label="Wybierz tryb CRYPTO. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-crypto">
           <span className="label"><span className="number">02</span><span className="mode-name">CRYPTO</span><span className="enter-mark" /></span></button>
-        <button className="mode cin-mode-otc" type="button" data-mode="OTC" aria-label="Wybierz tryb OTC. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-otc">
-          <span className="label"><span className="number">03</span><span className="mode-name">OTC</span><span className="enter-mark" /></span></button>
+        <button className="mode cin-mode-otc cin-mode-tlg" type="button" data-mode="TRADER_LIFEGAME" aria-label="Otwórz TraderLifeGame – grę edukacyjną. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-tlg">
+          <span className="label"><span className="number">03</span><span className="mode-name">TRADERLIFEGAME</span><span className="enter-mark" /></span></button>
         <div className="cin-menu-hint">PRZECIĄGNIJ, ABY OBRÓCIĆ<span className="hint-separator">·</span>KLIKNIJ, ABY WYBRAĆ</div>
       </main>
       <section className="cin-selected" aria-label="Wybrany tryb" inert data-testid="menu-selected">
-        <div className="cin-selected-top">PEPEMARKETWIZARD TEAM</div>
+        <div className="cin-selected-top">APOLLO23 TEAM</div>
         <button className="cin-return" type="button" data-testid="menu-return"><span aria-hidden="true">⟵</span> POWRÓT DO MENU</button>
         <div className="cin-selected-label"><p className="eyebrow">WYBRANY TRYB PRACY</p><h2 className="cin-selected-name">FOREX</h2>
           <p className="cin-selected-note">{PREPARING_NOTE}</p></div>
       </section>
-      <div className="cin-presentation-mark">PEPEMARKETWIZARD {s.app_version ? "/ " + s.app_version : ""}</div>
+      <div className="cin-presentation-mark">APOLLO23 {s.app_version ? "/ " + s.app_version : ""}</div>
       <div className="cin-cinema" title="Kliknij, aby pominąć intro"><video className="cin-intro" data-testid="intro-video" src={introFilm} preload="metadata" playsInline
         disablePictureInPicture disableRemotePlayback controlsList="nodownload nofullscreen noremoteplayback" tabIndex={-1}
-        aria-label="Film startowy PepeMarketWizard. Kliknij, naciśnij Spację albo Esc, aby przejść do menu." /><span className="cin-cinema-label">PEPEMARKETWIZARD / INITIATION</span></div>
+        aria-label="Film startowy Apollo23. Kliknij, naciśnij Spację albo Esc, aby przejść do menu." /><span className="cin-cinema-label">APOLLO23 / INITIATION</span></div>
       <button className="cin-video-start" type="button" hidden>URUCHOM INTRO</button>
       <button className="cin-skip" type="button" data-testid="intro-skip">PRZEJDŹ DO MENU</button>
       <div className="cin-cinema-progress" aria-hidden="true"><span /></div>

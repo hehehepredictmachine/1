@@ -24,7 +24,7 @@ from ..execution.modes import ModeError
 from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
-from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION
+from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION, DISPLAY_NAME
 from .security import SESSION_COOKIE, LocalSecurity
 
 log = logging.getLogger("masterquo.api")
@@ -242,7 +242,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/health")
     def health():
-        return {"ok": True, "app": APP_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
+        return {"ok": True, "app": APP_NAME, "display_name": DISPLAY_NAME, "version": APP_VERSION, "contract": API_CONTRACT_VERSION, "boot_id": rt.bus.boot_id,
                 "synthetic": rt.demo, "mt5_state": rt.bridge.state, "time": iso(utcnow()),
                 "start_failures": [f["part"] for f in getattr(rt, "start_failures", [])]}
 
@@ -2737,8 +2737,10 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/baskets/declared/{profile}")
     def baskets_declare(profile: str, body: dict = Body(...)):
-        if profile not in ("CRYPTO_FOMO_PERPS", "OTC_GOLD_POCKETOPTION"):
-            raise HTTPException(400, "deklaracja ekspozycji tylko dla FOMO / OTC (FOREX: pozycje z terminala)")
+        if profile == "OTC_GOLD_POCKETOPTION":
+            return JSONResponse(_OTC_RETIRED, status_code=410)
+        if profile != "CRYPTO_FOMO_PERPS":
+            raise HTTPException(400, "deklaracja ekspozycji tylko dla FOMO (FOREX: pozycje z terminala; OTC wycofane)")
         need = ("instrument", "side", "size") if profile == "CRYPTO_FOMO_PERPS" else ("dir", "stake", "r", "strike", "expiry", "opened_at")
         miss = [k for k in need if body.get(k) in (None, "")]
         if miss:
@@ -2750,29 +2752,25 @@ def create_app(rt, port: int) -> FastAPI:
         _baskets().ledger.close_declared(item_id)
         return {"ok": True}
 
+    _OTC_RETIRED = {"error": "RETIRED_PROFILE", "profile_id": "OTC_GOLD_POCKETOPTION",
+                    "message": "Strategie OTC zostały wycofane (Apollo23, TASK 020). Historia zostaje tylko do odczytu."}
+
     @app.get("/api/v1/baskets/otc")
     def baskets_otc():
-        b = _baskets()
-        return {"state": b.otc.state(), "meta": b.otc.meta()}
+        """TASK 020: retired - read-only legacy status (no scanning, no polling); stored OTC history is untouched on disk."""
+        return {**_OTC_RETIRED, "state": "RETIRED", "history": "READ_ONLY", "legacy_history_provider": {"enabled": False}}
 
     @app.put("/api/v1/baskets/otc/meta")
     def baskets_otc_meta(body: dict = Body(...)):
-        try:
-            return _baskets().otc.set_meta(body)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
+        return JSONResponse(_OTC_RETIRED, status_code=410)
 
     @app.post("/api/v1/baskets/otc/ticks")
     def baskets_otc_ticks(body: dict = Body(...)):
-        rows = body.get("ticks") or []
-        if not isinstance(rows, list) or not rows:
-            raise HTTPException(400, "ticks: [{t, price}]")
-        return {"accepted": _baskets().otc.push_ticks(rows, str(body.get("source") or "CONNECTOR"))}
+        return JSONResponse(_OTC_RETIRED, status_code=410)
 
     @app.post("/api/v1/baskets/otc/payoff")
     def baskets_otc_payoff(body: dict = Body(...)):
-        from ..baskets import payoff as _PO
-        return _PO.table(body.get("legs") or [], float(body.get("extra_cost") or 0.0))
+        return JSONResponse(_OTC_RETIRED, status_code=410)
 
     @app.post("/api/v1/quant/models/activate")
     def quant_activate(body: dict = Body(...)):
@@ -3144,7 +3142,7 @@ def create_app(rt, port: int) -> FastAPI:
     def license_activate(body: dict = Body(default={})):
         key = str(body.get("key") or "")
         if len(key) > 4000:
-            raise HTTPException(400, "Klucz jest za długi – to nie jest klucz PepeMarketWizard.")
+            raise HTTPException(400, "Klucz jest za długi – to nie jest klucz Apollo23.")
         return _lic_payload(rt.license.activate(key))
 
     @app.post("/api/v1/license/require")
@@ -3943,4 +3941,6 @@ def create_app(rt, port: int) -> FastAPI:
         finally:
             unsub()
 
+    from .wf32_routes import register as _wf32_register
+    _wf32_register(app, rt)               # Apollo23 workflow v3.2 (TASK 001-025)
     return app

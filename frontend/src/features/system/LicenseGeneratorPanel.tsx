@@ -33,7 +33,7 @@ async function saveFile(name: string, content: string): Promise<"saved" | "downl
   const w = window as any;
   if (typeof w.showSaveFilePicker === "function") {                       // okno „Zapisz jako” – wybór miejsca zapisu
     try {
-      const h = await w.showSaveFilePicker({ suggestedName: name, types: [{ description: "Klucz prywatny PepeMarketWizard", accept: { "application/octet-stream": [".key"] } }] });
+      const h = await w.showSaveFilePicker({ suggestedName: name, types: [{ description: "Klucz prywatny Apollo23", accept: { "application/octet-stream": [".key"] } }] });
       const wr = await h.createWritable(); await wr.write(content); await wr.close(); return "saved";
     } catch (e: any) { if (e?.name === "AbortError") return "cancelled"; }
   }
@@ -106,7 +106,7 @@ export default function LicenseGeneratorPanel() {
   const onFile = async (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files?.[0]; ev.target.value = "";
     if (!f) return;
-    if (f.size > 20000) { flash("BŁĄD importu: plik za duży – to nie jest kopia klucza PepeMarketWizard."); return; }
+    if (f.size > 20000) { flash("BŁĄD importu: plik za duży – to nie jest kopia klucza Apollo23."); return; }
     importKey(await f.text(), false);
   };
 

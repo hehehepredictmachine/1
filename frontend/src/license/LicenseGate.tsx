@@ -48,7 +48,7 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
     return () => { window.clearInterval(t); window.removeEventListener("pmw-license-required", lost); };
   }, [refresh]);
 
-  if (!st) return <div className="pmw-loading" role="status">{err ? `PEPEMARKETWIZARD · brak połączenia z lokalnym backendem (${err})` : "PEPEMARKETWIZARD · sprawdzanie licencji…"}</div>;
+  if (!st) return <div className="pmw-loading" role="status">{err ? `APOLLO23 · brak połączenia z lokalnym backendem (${err})` : "PEPEMARKETWIZARD · sprawdzanie licencji…"}</div>;
   if (st.required && !st.valid) return <LicenseScreen status={st} onActivated={(x) => setSt(x)} />;
   return (
     <LicenseCtx.Provider value={{ st, refresh, openActivation: () => setModal(true) }}>

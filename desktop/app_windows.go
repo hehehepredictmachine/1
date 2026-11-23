@@ -451,17 +451,17 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 	port := a.eng.Port()
 	switch s {
 	case EngineRunning:
-		a.setTip(fmt.Sprintf("PepeMarketWizard – bot działa (port %d)", port))
+		a.setTip(fmt.Sprintf(displayName+" – bot działa (port %d)", port))
 	case EngineExternal:
-		a.setTip("PepeMarketWizard – podłączono do działającego silnika")
+		a.setTip(displayName + " – podłączono do działającego silnika")
 	case EngineStarting:
-		a.setTip("PepeMarketWizard – uruchamianie silnika…")
+		a.setTip(displayName + " – uruchamianie silnika…")
 	case EngineCrashed:
-		a.setTip("PepeMarketWizard – silnik zatrzymał się, ponowne uruchomienie…")
+		a.setTip(displayName + " – silnik zatrzymał się, ponowne uruchomienie…")
 	case EngineFailed:
-		a.setTip("PepeMarketWizard – silnik nie działa (szczegóły w oknie)")
+		a.setTip(displayName + " – silnik nie działa (szczegóły w oknie)")
 	case EngineStopped:
-		a.setTip("PepeMarketWizard – silnik zatrzymany")
+		a.setTip(displayName + " – silnik zatrzymany")
 	}
 	a.mu.Lock()
 	inApp, shown, quitting, awaiting := a.phase == "app", a.appShown, a.quitting, a.awaiting
@@ -558,7 +558,7 @@ func (a *winApp) onClose() {
 			text = "Silnik bota został uruchomiony poza tą aplikacją i będzie działał dalej niezależnie od okna.\n\n" +
 				"Tak – ukryj okno (ikona przy zegarze).\nNie – zamknij okno aplikacji.\nAnuluj – wróć do okna."
 		}
-		switch messageBox(a.hwnd, text, "PepeMarketWizard", mbYesNoCancel|mbIconQuestion) {
+		switch messageBox(a.hwnd, text, displayName, mbYesNoCancel|mbIconQuestion) {
 		case idYes:
 			a.toBackground()
 		case idNo:
@@ -574,7 +574,7 @@ func (a *winApp) toBackground() {
 	a.balloonShown = true
 	a.mu.Unlock()
 	if first {
-		a.balloon("PepeMarketWizard działa w tle", "Bot pracuje dalej. Kliknij ikonę, aby otworzyć okno; prawy przycisk → Zamknij aplikację.")
+		a.balloon(displayName+" działa w tle", "Bot pracuje dalej. Kliknij ikonę, aby otworzyć okno; prawy przycisk → Zamknij aplikację.")
 	}
 }
 
@@ -599,7 +599,7 @@ func (a *winApp) quit() {
 	a.quitting = true
 	a.mu.Unlock()
 	_, _, _ = pShowWindow.Call(a.hwnd, swHide)
-	a.setTip("PepeMarketWizard – zatrzymywanie bota…")
+	a.setTip(displayName + " – zatrzymywanie bota…")
 	go func() {
 		a.cancel()
 		if a.eng.Owned() {
@@ -741,7 +741,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 			"(w Windows 11 jest wbudowany, w Windows 10 instaluje go zwykle Microsoft Edge).\n\n"+
 			"Tak – otwórz stronę Microsoftu z instalatorem (Evergreen), potem uruchom aplikację ponownie.\n"+
 			"Nie – uruchom bota i otwórz panel w domyślnej przeglądarce (bez ikony przy zegarze).",
-			"PepeMarketWizard", mbYesNoCancel|mbIconWarning) {
+			displayName, mbYesNoCancel|mbIconWarning) {
 		case idYes:
 			shellOpen(webview2URL)
 			return 0
@@ -755,7 +755,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &winApp{l: l, o: o, logf: logf, ctx: ctx, cancel: cancel, phase: "splash",
 		choice: make(chan dataChoice, 1), retry: make(chan struct{}, 1), join: make(chan struct{}, 1), joinAbort: make(chan struct{}, 1),
-		tip: "PepeMarketWizard – uruchamianie…"}
+		tip: displayName + " – uruchamianie…"}
 	a.splash = splashState{Phase: "progress", Message: "Przygotowanie…", LogPath: filepath.Join(l.LogsDir(), "engine_console.log"),
 		DataDir: l.DataDir, Version: version}
 	a.eng = newEngine(l, "", logf, a.onEngineState)
@@ -776,7 +776,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	})
 	if wv == nil {
 		logf("WebView2: nie udało się utworzyć okna")
-		messageBox(0, "Nie udało się utworzyć okna WebView2. Panel zostanie otwarty w domyślnej przeglądarce.", "PepeMarketWizard", mbOK|mbIconError)
+		messageBox(0, "Nie udało się utworzyć okna WebView2. Panel zostanie otwarty w domyślnej przeglądarce.", displayName, mbOK|mbIconError)
 		cancel()
 		return runBrowserFallback(l, o, logf)
 	}
@@ -823,7 +823,7 @@ func runBrowserFallback(l Layout, o options, logf func(string)) int {
 		}
 	})
 	if err := boot(ctx, l, fallbackUI{}, o.importSrc, logf, eng); err != nil {
-		messageBox(0, "Nie udało się uruchomić bota:\n\n"+err.Error(), "PepeMarketWizard", mbOK|mbIconError)
+		messageBox(0, "Nie udało się uruchomić bota:\n\n"+err.Error(), displayName, mbOK|mbIconError)
 		eng.Stop(10 * time.Second)
 		return 1
 	}
@@ -842,7 +842,7 @@ func (fallbackUI) Detail(string) {}
 func (fallbackUI) ChooseData(cands []string, lastErr string) (string, bool, bool) {
 	if lastErr == "" && len(cands) > 0 {
 		r := messageBox(0, "Znaleziono dane poprzedniej instalacji:\n"+strings.Join(cands, "\n")+
-			"\n\nTak – skopiuj je (oryginał pozostaje bez zmian).\nNie – zacznij od zera.", "PepeMarketWizard", mbYesNo|mbIconQuestion)
+			"\n\nTak – skopiuj je (oryginał pozostaje bez zmian).\nNie – zacznij od zera.", displayName, mbYesNo|mbIconQuestion)
 		if r == idYes {
 			return cands[0], false, true
 		}

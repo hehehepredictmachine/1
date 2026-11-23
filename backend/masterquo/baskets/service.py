@@ -46,7 +46,6 @@ DEFAULT_SETTINGS = {
                       "execution": "AUTO_SH"},      # 1.42: AUTO_SH = plans go to the SH execution path | SIGNALS_ONLY = 1.41 behaviour
         "CRYPTO_FOMO_PERPS": {"enabled": True, "selection": "AUTO", "instruments": ["BTC", "ETH", "SOL", "HYPE"], "flow_instrument": "BTC",
                               "capital": {"risk_money": None, "currency": "USDC"}, "fees": {"taker": None, "maker": None}, "pair_map": {}, "same_underlying": {}},
-        "OTC_GOLD_POCKETOPTION": {"enabled": True, "selection": "AUTO", "instruments": ["GOLD_OTC"], "capital": {"stake": None, "currency": None}},
     },
     "baskets": {b: {"enabled": True, "risk_weight": 1 / 3, "max_open_groups": 2, "max_pending_intents": 3, "cooldown_bars": 3,
                     "conflict_policy": "WAIT_ON_OPPOSITE", "selection_policy": "REGIME_ROUTED"} for b in CAT.BASKETS},
@@ -203,6 +202,7 @@ class BasketService:
         self.base.mkdir(parents=True, exist_ok=True)
         self.ledger = Ledger(self.base / "ledger.sqlite")
         self.hl = hl or Hyperliquid()
+        # TASK 020: OTC retired - the feed object stays only as a lazy, read-only legacy history reader (never polled by cycle())
         self.otc = OTC.OTCFeed(self.base / "otc") if data_dir else OTC.OTCFeed()
         self.ctx: dict[str, Ctx] = {}
         self.hedge_state: dict[str, dict] = {}
@@ -221,28 +221,69 @@ class BasketService:
             return {}
 
     def settings(self) -> dict:
-        return _merge(DEFAULT_SETTINGS, self._read())
+        """Active settings view. TASK 020: entries of the retired OTC profile / baskets / strategies stored by older versions are NOT
+        deleted from settings.json (rollback) - they are moved out of the active view into `retired` with a machine-readable reason."""
+        st = _merge(DEFAULT_SETTINGS, self._read())
+        retired = {"profiles": {}, "baskets": {}, "strategies": {}, "manual_select": {}}
+        for p in list(st.get("profiles") or {}):
+            if p not in CAT.PROFILES:
+                retired["profiles"][p] = {**st["profiles"].pop(p), "enabled": False, "reason": CAT.retired_reason(profile_id=p) or "UNKNOWN_PROFILE"}
+        for b in list(st.get("baskets") or {}):
+            if b not in CAT.BASKETS:
+                retired["baskets"][b] = {**st["baskets"].pop(b), "enabled": False, "reason": CAT.retired_reason(basket_id=b) or "UNKNOWN_BASKET"}
+        for sid in list(st.get("strategies") or {}):
+            if sid not in CAT.BY_ID:
+                retired["strategies"][sid] = {**(st["strategies"].pop(sid) or {}), "enabled": False,
+                                              "reason": CAT.retired_reason(sid) or "UNKNOWN_STRATEGY"}
+        for p in list(st.get("manual_select") or {}):
+            ids = st["manual_select"][p] or []
+            keep = CAT.active_only(ids)
+            if p not in CAT.PROFILES or keep != list(ids):
+                retired["manual_select"][p] = [i for i in ids if i not in keep]
+                if p in CAT.PROFILES:
+                    st["manual_select"][p] = keep
+                else:
+                    st["manual_select"].pop(p)
+        if st.get("active_profile") not in CAT.PROFILES:
+            retired["active_profile"] = st.get("active_profile")
+            st["active_profile"] = "FOREX_MT5"               # the default profile, never a "replacement" market for OTC
+        if any(retired[k] for k in retired):
+            st["retired"] = {**retired, "notice": "Zestaw strategii OTC został wycofany (Apollo23, TASK 020) – wpisy OTC są wyłączone, "
+                                                  "historia zostaje tylko do odczytu."}
+        return st
 
     def update_settings(self, patch: dict) -> dict:
         bad = [k for k in patch if k not in ("active_profile", "profiles", "baskets", "strategies", "manual_select")]
         if bad:
             raise ValueError(f"SETTINGS_KEYS_NOT_ALLOWED:{bad}")
         for sid in (patch.get("strategies") or {}):
+            if CAT.retired_reason(sid):
+                raise ValueError(f"RETIRED_STRATEGY_ID:{sid}")
             if sid not in CAT.BY_ID:
                 raise ValueError(f"UNKNOWN_STRATEGY:{sid}")
         for b in (patch.get("baskets") or {}):
+            if CAT.retired_reason(basket_id=b):
+                raise ValueError(f"RETIRED_STRATEGY_ID:{b}")
             if b not in CAT.BASKETS:
                 raise ValueError(f"UNKNOWN_BASKET:{b}")
         for p, v in (patch.get("profiles") or {}).items():
+            if CAT.retired_reason(profile_id=p):
+                raise ValueError(f"RETIRED_PROFILE:{p}")
             if p not in CAT.PROFILES:
                 raise ValueError(f"UNKNOWN_PROFILE:{p}")
             if "selection" in v and v["selection"] not in ("OFF", "AUTO", "MANUAL_SELECT"):
                 raise ValueError("selection: OFF | AUTO | MANUAL_SELECT")
             if "execution" in v and (p != "FOREX_MT5" or v["execution"] not in ("AUTO_SH", "SIGNALS_ONLY")):
                 raise ValueError("execution: AUTO_SH | SIGNALS_ONLY (tylko FOREX_MT5; CRYPTO / OTC = ręcznie)")
+        for p, ids in (patch.get("manual_select") or {}).items():
+            bad_ids = [i for i in (ids or []) if CAT.retired_reason(i) or i not in CAT.BY_ID]
+            if CAT.retired_reason(profile_id=p) or bad_ids:
+                raise ValueError(f"RETIRED_STRATEGY_ID:{bad_ids or p}")
+        if patch.get("active_profile") and CAT.retired_reason(profile_id=patch["active_profile"]):
+            raise ValueError("RETIRED_PROFILE")
         if patch.get("active_profile") and patch["active_profile"] not in CAT.PROFILES:
             raise ValueError("UNKNOWN_PROFILE")
-        new = _merge(self._read(), patch)
+        new = _merge(self._read(), patch)                 # retired entries already stored stay in the file (rollback) - never active
         tmp = self.base / "settings.json.tmp"
         tmp.write_text(json.dumps(new, indent=1), encoding="utf-8")
         tmp.replace(self.base / "settings.json")
@@ -280,7 +321,7 @@ class BasketService:
     def cycle(self) -> dict:
         st = self.settings()
         out = {}
-        for prof, fn in (("FOREX_MT5", self._forex), ("CRYPTO_FOMO_PERPS", self._crypto), ("OTC_GOLD_POCKETOPTION", self._otc)):
+        for prof, fn in (("FOREX_MT5", self._forex), ("CRYPTO_FOMO_PERPS", self._crypto)):     # TASK 020: OTC retired - never scanned
             if not st["profiles"][prof].get("enabled", True):
                 continue
             try:                                               # one profile without data never stops the others
@@ -823,7 +864,7 @@ class BasketService:
                 "profiles": {p: {**CAT.PROFILES[p], "enabled": st["profiles"][p].get("enabled", True), "selection": st["profiles"][p].get("selection"),
                                  "contexts": [{"key": c.key, "instrument": c.instrument, "data_state": c.data_state, "reason": c.reason, "regime": c.regime}
                                               for c in self.ctx.values() if c.profile == p], "error": self.loop["profile_errors"].get(p)} for p in CAT.PROFILES},
-                "otc_feed": self.otc.state(), "hyperliquid": {"errors": self.hl.errors, "last_error": self.hl.last_error, "capabilities": __import__(
+                "otc_feed": {"state": "RETIRED", "reason": "RETIRED_PROFILE", "history": "READ_ONLY"}, "retired": CAT.manifest()["retired"], "hyperliquid": {"errors": self.hl.errors, "last_error": self.hl.last_error, "capabilities": __import__(
                     "masterquo.baskets.hyperliquid", fromlist=["CAPABILITIES"]).CAPABILITIES}, "loop": dict(self.loop),
                 "counts": {"implemented": len(CAT.CATALOG), "executable_now": sum(1 for c in self.ctx.values() for v in c.state.values()
                                                                                     if (v or {}).get("state") in ("NO_SETUP", "SIGNAL", "DUPLICATE_EVENT", "CONFLICT", "NO_HEDGE", "HEDGE_PLAN", "NO_EXPOSURE", "COOLDOWN", "LIMIT"))}}

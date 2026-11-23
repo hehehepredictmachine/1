@@ -1,9 +1,11 @@
-// PepeMarketWizard 1.42 – aplikacja ma trzy trasy (S2): #/menu (film intro + menu FOREX / CRYPTO / OTC), #/forex (kula FOREX i 4 ekrany
+// Apollo23 (dawniej PepeMarketWizard) – trasy: #/menu (film intro + menu FOREX / CRYPTO / TraderLifeGame), #/trader-life-game (gra, 1.45), #/forex (kula FOREX i 4 ekrany
 // planet) oraz #/system?p=… (panele systemowe w szufladzie nad ekranem, z którego je otwarto). Stary interfejs 1.41 jest w archive/ui_1_41.
 // Store (jeden WebSocket) jest nad tym komponentem (main.tsx), więc przejścia między trasami nie zrywają połączenia.
 import { useEffect, useState } from "react";
 import CinematicMenu from "./features/cinematic/CinematicMenu";
 import ForexScene, { POSE_KEY } from "./features/forex/ForexScene";
+import TraderLifeGame from "./features/trader-life-game/TraderLifeGame";
+import { BRAND } from "./brand";
 import { ExecStatus, SystemIcons } from "./features/system/SystemBar";
 import SystemDrawer, { type SysPanel } from "./features/system/SystemDrawer";
 import { FOREX_SCREENS, navigate, parse, SYSTEM_PANELS, useRoute, type ForexScreen } from "./router";
@@ -27,18 +29,21 @@ export default function App() {
     if (s.loaded && s.first_run_completed === false) { if (base.page === "menu") setFirstRunPending(true); else openSystem("settings"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.loaded]);
-  useEffect(() => { document.title = base.page === "forex" ? "PepeMarketWizard – FOREX" : "PepeMarketWizard"; }, [base.page]);
+  useEffect(() => { document.title = base.page === "forex" ? `${BRAND} – FOREX` : base.page === "trader-life-game" ? `${BRAND} – TraderLifeGame` : BRAND; }, [base.page]);
 
-  if (!s.loaded) return <div className="pmw-loading" role="status">PEPEMARKETWIZARD · łączenie z lokalnym backendem…</div>;
+  if (!s.loaded) return <div className="pmw-loading" role="status">{BRAND.toUpperCase()} · łączenie z lokalnym backendem…</div>;
   const screen = base.page === "forex" ? ((FOREX_SCREENS as readonly string[]).includes(base.params.get("s") || "") ? base.params.get("s") as ForexScreen : null) : null;
   return (<>
-    {base.page === "forex"
+    {base.page === "trader-life-game"
+      ? <TraderLifeGame key="tlg" onBack={() => navigate("menu")} />
+      : base.page === "forex"
       ? <ForexScene key="forex" screen={screen} fromMenu={base.params.get("from") === "menu"} onSystem={openSystem} />
       : <><CinematicMenu key="menu" onSettings={() => openSystem("settings")}
           onMenuReady={() => { if (firstRunPending) { setFirstRunPending(false); openSystem("settings"); } }}
           onForexReady={(pose) => { try { sessionStorage.setItem(POSE_KEY, JSON.stringify(pose)); } catch { /* */ }
             // 1.44.0: centralna kontrola licencji przed uruchomieniem trybu (402 -> ekran aktywacji)
-            void requireLicense("FOREX").then((ok) => { if (ok) navigate("forex", { params: { from: "menu" }, replace: true }); }); }} />
+            void requireLicense("FOREX").then((ok) => { if (ok) navigate("forex", { params: { from: "menu" }, replace: true }); }); }}
+          onGameReady={() => navigate("trader-life-game")} />
         <ExecStatus onOpen={openSystem} /><SystemIcons onOpen={openSystem} /></>}
     {lic?.warn && <button type="button" className={"lic-warnchip" + (base.page === "forex" ? " forex" : "")} data-testid="license-warnchip" onClick={() => openSystem("license")}>
       LICENCJA WYGASA ZA {lic.days_left} {lic.days_left === 1 ? "DZIEŃ" : "DNI"} · {lic.exp_local} · ZMIEŃ KLUCZ</button>}

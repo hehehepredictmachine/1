@@ -1,0 +1,397 @@
+{
+ "source": "CATALOG-1.41.0 (v1.44.1 baseline)",
+ "active": [
+  {
+   "strategy_id": "FX_SMC_01",
+   "basket_id": "FX_SMC",
+   "config_hash": "c28f9d58894077b3",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_02",
+   "basket_id": "FX_SMC",
+   "config_hash": "777a754e1e1e555a",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_03",
+   "basket_id": "FX_SMC",
+   "config_hash": "2b3f907aaa532a5e",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_04",
+   "basket_id": "FX_SMC",
+   "config_hash": "e4521ec78cab3523",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_05",
+   "basket_id": "FX_SMC",
+   "config_hash": "bf8ceed2c06aca2d",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_06",
+   "basket_id": "FX_SMC",
+   "config_hash": "fcb370b2ee5c07c6",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "FX_SMC_07",
+   "basket_id": "FX_SMC",
+   "config_hash": "f27f07c3951bf2dc",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_08",
+   "basket_id": "FX_SMC",
+   "config_hash": "97d1987ee8da5328",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_09",
+   "basket_id": "FX_SMC",
+   "config_hash": "76ad0e10796d3aa8",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SMC_10",
+   "basket_id": "FX_SMC",
+   "config_hash": "4671e0e0fb303551",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SCALP_01",
+   "basket_id": "FX_SCALP",
+   "config_hash": "bb124c12359c1818",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "FX_SCALP_02",
+   "basket_id": "FX_SCALP",
+   "config_hash": "82552bd4271b5038",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SCALP_03",
+   "basket_id": "FX_SCALP",
+   "config_hash": "ceb623fa1368dbd9",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SCALP_04",
+   "basket_id": "FX_SCALP",
+   "config_hash": "0a04cd3d99e46663",
+   "signal_timeframe": "M1"
+  },
+  {
+   "strategy_id": "FX_SCALP_05",
+   "basket_id": "FX_SCALP",
+   "config_hash": "c068ee04917e8eaa",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "FX_SCALP_06",
+   "basket_id": "FX_SCALP",
+   "config_hash": "bc84e389b8fa9363",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "FX_SCALP_07",
+   "basket_id": "FX_SCALP",
+   "config_hash": "8aa36a8c77d6d3f0",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "FX_SCALP_08",
+   "basket_id": "FX_SCALP",
+   "config_hash": "198194218ce452e2",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_SCALP_09",
+   "basket_id": "FX_SCALP",
+   "config_hash": "0aee6a8b5638b761",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "FX_SCALP_10",
+   "basket_id": "FX_SCALP",
+   "config_hash": "30fa00eaa4525869",
+   "signal_timeframe": "M1"
+  },
+  {
+   "strategy_id": "FX_HEDGE_01",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "00d3e94c59b263ec",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_HEDGE_02",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "b312b0db468ea8ae",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_HEDGE_03",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "1d2ff71991c418ac",
+   "signal_timeframe": "M1"
+  },
+  {
+   "strategy_id": "FX_HEDGE_04",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "d2de2e1ee0b3a3ea",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_HEDGE_05",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "607e00420dde8b62",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_HEDGE_06",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "97641d0c3c6bf5c2",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "FX_HEDGE_07",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "3a219837bcfd451c",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "FX_HEDGE_08",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "ad8d2d513365a4c1",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "FX_HEDGE_09",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "0eb6be74f39ca3ec",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "FX_HEDGE_10",
+   "basket_id": "FX_HEDGE",
+   "config_hash": "11f38766e4236723",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_SMC_01",
+   "basket_id": "CP_SMC",
+   "config_hash": "daaf3e3c9659c6a7",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_02",
+   "basket_id": "CP_SMC",
+   "config_hash": "4ff68970c3602023",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_03",
+   "basket_id": "CP_SMC",
+   "config_hash": "78e917d969fc3693",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_04",
+   "basket_id": "CP_SMC",
+   "config_hash": "6d559824854b64c0",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_05",
+   "basket_id": "CP_SMC",
+   "config_hash": "4e1c6d56e773f923",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_06",
+   "basket_id": "CP_SMC",
+   "config_hash": "f0e356d7313e11c8",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_SMC_07",
+   "basket_id": "CP_SMC",
+   "config_hash": "7227f433df747972",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_08",
+   "basket_id": "CP_SMC",
+   "config_hash": "ed8600eea5ee877c",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_09",
+   "basket_id": "CP_SMC",
+   "config_hash": "0a9bdce2cb354354",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SMC_10",
+   "basket_id": "CP_SMC",
+   "config_hash": "441329417ccdfdbc",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_01",
+   "basket_id": "CP_SCALP",
+   "config_hash": "0749ba6e7548d05c",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "CP_SCALP_02",
+   "basket_id": "CP_SCALP",
+   "config_hash": "df707f69734a7acd",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_03",
+   "basket_id": "CP_SCALP",
+   "config_hash": "8f3bfd3bb6cdcf1c",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_04",
+   "basket_id": "CP_SCALP",
+   "config_hash": "f24f48704243d7fc",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_05",
+   "basket_id": "CP_SCALP",
+   "config_hash": "eaad2027ba34fded",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "CP_SCALP_06",
+   "basket_id": "CP_SCALP",
+   "config_hash": "3cbc8fc33df62240",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_07",
+   "basket_id": "CP_SCALP",
+   "config_hash": "66a20dcb662c8d8a",
+   "signal_timeframe": "M3"
+  },
+  {
+   "strategy_id": "CP_SCALP_08",
+   "basket_id": "CP_SCALP",
+   "config_hash": "752d61569db44204",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_SCALP_09",
+   "basket_id": "CP_SCALP",
+   "config_hash": "f7dda1829a5340f8",
+   "signal_timeframe": "M1"
+  },
+  {
+   "strategy_id": "CP_SCALP_10",
+   "basket_id": "CP_SCALP",
+   "config_hash": "08b02ab06d3492c5",
+   "signal_timeframe": "M5"
+  },
+  {
+   "strategy_id": "CP_HEDGE_01",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "e63e07d3fbee6783",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_02",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "8655f57cff3ed22f",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_03",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "b8dea8617b965867",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_04",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "333b773c13c0ed59",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_05",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "edb74298e7bd9b23",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_06",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "8c6e5026af153a05",
+   "signal_timeframe": "M1"
+  },
+  {
+   "strategy_id": "CP_HEDGE_07",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "407900366d3e25b6",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_08",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "17cfc6e772a0c487",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_09",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "361fe6062f9d6f4d",
+   "signal_timeframe": "M15"
+  },
+  {
+   "strategy_id": "CP_HEDGE_10",
+   "basket_id": "CP_HEDGE",
+   "config_hash": "dd64858409820a38",
+   "signal_timeframe": "M15"
+  }
+ ],
+ "retired_otc": [
+  "OTC_SMC_01",
+  "OTC_SMC_02",
+  "OTC_SMC_03",
+  "OTC_SMC_04",
+  "OTC_SMC_05",
+  "OTC_SMC_06",
+  "OTC_SMC_07",
+  "OTC_SMC_08",
+  "OTC_SMC_09",
+  "OTC_SMC_10",
+  "OTC_SCALP_01",
+  "OTC_SCALP_02",
+  "OTC_SCALP_03",
+  "OTC_SCALP_04",
+  "OTC_SCALP_05",
+  "OTC_SCALP_06",
+  "OTC_SCALP_07",
+  "OTC_SCALP_08",
+  "OTC_SCALP_09",
+  "OTC_SCALP_10",
+  "OTC_HEDGE_01",
+  "OTC_HEDGE_02",
+  "OTC_HEDGE_03",
+  "OTC_HEDGE_04",
+  "OTC_HEDGE_05",
+  "OTC_HEDGE_06",
+  "OTC_HEDGE_07",
+  "OTC_HEDGE_08",
+  "OTC_HEDGE_09",
+  "OTC_HEDGE_10"
+ ]
+}

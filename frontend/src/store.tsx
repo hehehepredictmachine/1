@@ -136,7 +136,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   if (error)
     return (
       <div className="fatal">
-        <h1>PepeMarketWizard</h1>
+        <h1>Apollo23</h1>
         <p>Nie można połączyć się z lokalnym backendem: {error}</p>
         <p>Uruchom 03_START_MASTERQUO.bat i odśwież stronę.</p>
       </div>

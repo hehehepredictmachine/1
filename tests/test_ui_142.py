@@ -1,7 +1,7 @@
 """1.42 interface in a real browser (Chromium + demo backend on the SYNTHETIC terminal) - E8 §5 (a)-(g), S6 §4.
 
-(a) "/" -> #/menu with the cinematic menu; (b) three planet buttons FOREX / CRYPTO / OTC; (c) CRYPTO / OTC -> "in preparation" without any
-write request; (d) #/forex with 4 planets and 2 panels (MODEL A / MODEL B); (e) every planet screen opens [data-testid=forex-*] and closes;
+(a) "/" -> #/menu with the cinematic menu; (b) three planet buttons FOREX / CRYPTO / TRADERLIFEGAME (1.45: OTC retired); (c) CRYPTO -> "in
+preparation", TRADERLIFEGAME -> #/trader-life-game and back, without any write request; (d) #/forex with 4 planets and 2 panels (MODEL A / MODEL B); (e) every planet screen opens [data-testid=forex-*] and closes;
 (f) the four system panels open from the menu and from FOREX, ESC closes, opening sends GET only; (g) every LEGACY_REDIRECTS row.
 WebGL runs on SwiftShader (software) - the test waits on engine states (window.__PMW_E2E__, webdriver only), never on fixed frames."""
 from __future__ import annotations
@@ -22,7 +22,8 @@ CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 GL_ARGS = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 REDIRECTS = {"#/wykresy": "#/forex?s=charts", "#/pepe-signal": "#/forex?s=signals", "#/trening": "#/forex?s=models",
              "#/profits": "#/forex?s=roi", "#/ustawienia": "#/system?p=settings", "#/system-control": "#/system?p=mode",
-             "#/diagnostyka": "#/system?p=diagnostics", "#/galaxy": "#/menu", "#/neural-city": "#/menu", "#/cokolwiek": "#/menu"}
+             "#/diagnostyka": "#/system?p=diagnostics", "#/galaxy": "#/menu", "#/neural-city": "#/menu", "#/cokolwiek": "#/menu",
+             "#/otc": "#/menu?retired=otc"}                                     # 1.45 TASK 020: OTC retired
 try:
     from playwright.sync_api import sync_playwright
     HAVE_PW = True
@@ -100,13 +101,22 @@ class TestUI142(unittest.TestCase):
         p = self.page()
         self.menu(p)
         self.assertTrue(p.evaluate("location.hash").startswith("#/menu"))
-        for k in ("forex", "crypto", "otc"):
+        for k in ("forex", "crypto", "tlg"):
             self.assertTrue(p.is_visible(f"[data-testid=menu-{k}]"), k)
-        for k in ("crypto", "otc"):
-            p.click(f"[data-testid=menu-{k}]")
-            p.wait_for_selector("[data-testid=menu-return]", state="visible", timeout=30000)
-            p.click("[data-testid=menu-return]")
-            p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=60000)
+        self.assertEqual(p.locator("[data-testid=menu-otc]").count(), 0)          # TASK 020: no OTC planet
+        self.assertIn("APOLLO23", p.inner_text(".cin-masthead"))                  # TASK 019: display brand
+        p.click("[data-testid=menu-crypto]")
+        p.wait_for_selector("[data-testid=menu-return]", state="visible", timeout=30000)
+        p.click("[data-testid=menu-return]")
+        p.wait_for_function("() => document.querySelector('[data-testid=page-menu]').dataset.state === 'menu'", timeout=60000)
+        p.click("[data-testid=menu-tlg]")                                         # TraderLifeGame: own route, not a market profile
+        p.wait_for_selector("[data-testid=page-tlg]", timeout=60000)
+        self.assertTrue(p.evaluate("location.hash").startswith("#/trader-life-game"))
+        p.wait_for_selector("[data-testid=tlg-create]", timeout=30000)            # fresh data dir -> character creation
+        self.assertIn("TraderLifeGame", p.evaluate("document.title"))
+        p.click("[data-testid=tlg-back]")
+        p.wait_for_selector("[data-testid=page-menu]", timeout=60000)
+        self.assertTrue(p.evaluate("location.hash").startswith("#/menu"))
         self.assertEqual(p.sent, [])                                    # no profile switch, no write
         self.assertEqual(p.errors, [])
 

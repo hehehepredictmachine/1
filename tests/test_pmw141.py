@@ -28,14 +28,14 @@ def walk(n: int, seed: int = 7, start: float = 2000.0, step: float = 300.0) -> l
 
 
 class TestCatalog(unittest.TestCase):
-    def test_nine_baskets_ninety_unique_strategies_full_contract(self):
+    def test_six_active_baskets_sixty_unique_strategies_full_contract(self):    # 1.45 (TASK 020): OTC retired
         from masterquo.baskets import catalog as C, hedge as H, rules as R
         v = C.validate()
         self.assertTrue(v["ok"], v)
-        self.assertEqual(v["total"], 90)
+        self.assertEqual(v["total"], 60)
         self.assertEqual(set(v["per_basket"].values()), {10})
         self.assertEqual(set(v["distinct_families_per_basket"].values()), {10})      # no basket = 10 aliases of one rule
-        for s in C.CATALOG:
+        for s in [*C.CATALOG, *C.HISTORICAL_STRATEGIES.values()]:
             self.assertIn(s["family_id"], R.FAMILIES if s["kind"] != "HEDGING" else H.PLANNERS, s["strategy_id"])
             if s["profile_id"] == "OTC_GOLD_POCKETOPTION" and s["kind"] != "HEDGING":
                 self.assertEqual(s["plan_type"], "FixedExpiryPlan")
@@ -45,7 +45,7 @@ class TestCatalog(unittest.TestCase):
         from masterquo.baskets import catalog as C
         from masterquo.upgrade import preservation as P
         view = C.preservation_view()
-        self.assertEqual(len(view), 90)
+        self.assertEqual(len(view), 60)
         rep = P.compare([{"strategy_id": "S01", "source": "ACTIVE"}], [{"strategy_id": "S01", "source": "ACTIVE"}], new_catalog=view)
         self.assertEqual(rep["duplicate_execution_routes"], [])
         self.assertEqual(rep["missing_strategy_ids"], [])
@@ -231,7 +231,7 @@ class TestBasketService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             rt = types.SimpleNamespace(demo=True, bridge=Br(), db=None, bus=None, quant=None, news=None)
             svc = BS.BasketService(rt, data_dir=Path(d))
-            svc.update_settings({"profiles": {"CRYPTO_FOMO_PERPS": {"enabled": False}, "OTC_GOLD_POCKETOPTION": {"enabled": False}}})
+            svc.update_settings({"profiles": {"CRYPTO_FOMO_PERPS": {"enabled": False}}})
             for k in range(150):
                 st["n"] = 3000 + k
                 svc.cycle()

@@ -6,12 +6,14 @@
 //    klik, Spacja, Esc i „Przejdź do menu” → enter() (wejście z czerni do menu, bez zmian); film nieodtwarzalny → od razu menu, bez błędu.
 //  * 1.42.7–1.44.0: intro = scena 3D bez dźwięku (usunięta w 1.44.1); IntroLike.release/dispose zostają opcjonalne;
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
-//  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO/OTC – ekran „tryb w przygotowaniu”;
+//  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO – ekran „tryb w przygotowaniu”; TRADER_LIFEGAME – onGameReady() (trasa #/trader-life-game);
 //  * PMW_PREVIEW zastąpiony hakiem window.__PMW_E2E__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.
 import { meshFrag, particleFrag, starFrag, starVert, streakFrag, streakVert, vertexShared } from "./menuShaders";
 import { markIntroSeen, saveMotionChoice, testMode } from "./introGate";
 
-export type Mode = "FOREX" | "CRYPTO" | "OTC";
+// 1.45 (Apollo23 TASK 019/020): trzecia kula = TraderLifeGame (cel nawigacji / gra), nie profil rynku; OTC wycofane.
+export type Mode = "FOREX" | "CRYPTO" | "TRADER_LIFEGAME";
+export const MODE_LABEL: Record<Mode, string> = { FOREX: "FOREX", CRYPTO: "CRYPTO", TRADER_LIFEGAME: "TraderLifeGame" };
 export type Pose = { x: number; y: number; r: number };
 
 /** Obiekt intro z kontraktem <video> (play / pause / currentTime / duration / muted / readyState / style, zdarzenia ended / error). */
@@ -32,6 +34,7 @@ export type MenuOptions = {
   forceSoftware?: boolean;
   onChoose?(mode: Mode): void;
   onForexReady?(pose: Pose): void;
+  onGameReady?(): void;
   onMotionChange?(reduced: boolean): void;
   onMenuReady?(): void;                                    // pierwsze wejście do fazy menu (np. Ustawienia przy pierwszym uruchomieniu – po intro)
   audio?: boolean;                                         // 1.44.1: dźwięk filmu intro (domyślnie włączony; wybór użytkownika zapamiętany)
@@ -56,7 +59,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   const config = Object.freeze({ counts: [110000, 94000, 66000], starCount: 1500, dustCount: 11000, pixelRatioCap: 1.65, entrySeconds: 3.0, selectSeconds: 1.85, returnSeconds: 1.35 });
   const state: any = { phase: "boot", phaseT: 0, time: 0, rotationTime: 0, hidden: false, reduced: opts.reduced, pointer: [0, 0], pointerTarget: [0, 0], selected: -1, hover: -1,
     focus: -1, drag: null, raf: 0, disposed: false, contextLost: false, frame: 0, last: 0, noticeTimer: 0, watchdog: 0, quality: "full", audio: opts.audio ?? true, slowSince: 0, frameAvg: 16 };
-  const modes: Mode[] = ["FOREX", "CRYPTO", "OTC"];
+  const modes: Mode[] = ["FOREX", "CRYPTO", "TRADER_LIFEGAME"];
   const orbs: any[] = modes.map((name, i) => ({ name, button: el.buttons[i], kind: i, angles: [0.11 + i * 0.24, -0.22 + i * 1.8], velocity: [0, 0], hover: 0, mouse: [0, 0],
     layout: { x: 0, y: 0, r: 0 }, buffer: null, count: config.counts[i] }));
   let gl: WebGLRenderingContext | null = null;
@@ -218,7 +221,8 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
       if (k >= 1) {
         if (phase === "selecting") {
           if (o.name === "FOREX" && opts.onForexReady) { setPhase("selected"); root.dataset.forex = "1"; opts.onForexReady(selectPose()); }
-          else { setPhase("selected"); el.returnBtn.focus({ preventScroll: true }); announce("Wybrano tryb " + o.name + ". " + PREPARING_NOTE); }
+          else if (o.name === "TRADER_LIFEGAME" && opts.onGameReady) { setPhase("selected"); opts.onGameReady(); }
+          else { setPhase("selected"); el.returnBtn.focus({ preventScroll: true }); announce("Wybrano tryb " + MODE_LABEL[o.name as Mode] + ". " + PREPARING_NOTE); }
         } else { setPhase("menu"); orbs[state.selected].button.focus({ preventScroll: true }); }
       }
     } else if (phase === "selected") {
@@ -227,9 +231,9 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
     if (software) software.ctx.putImageData(software.image, 0, 0);
     if (!state.reduced || !["menu", "selected"].includes(state.phase)) state.raf = requestAnimationFrame(tick);
   }
-  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); video.release?.(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); }
+  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); video.release?.(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); }
   function enter() { if (state.phase !== "boot") return; video.pause(); clearTimeout(state.watchdog); setPhase("enter"); el.progress.hidden = true; wake(); }
-  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); video.release?.(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz tryb pracy bota: FOREX, CRYPTO lub OTC."); wake(); }
+  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); video.release?.(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); wake(); }
   // 1.44.1: intro = film (Apollo23_intro_land.mp4). Film, którego nie da się odtworzyć (brak pliku, brak kodeka), nie pokazuje błędu –
   // od razu zaczyna się wejście do menu (ta sama ścieżka enter() co po końcu filmu).
   function introUnplayable(why: string) { if (state.phase !== "boot") return; console.warn("[intro] " + why + " – od razu menu"); enter(); }
@@ -264,7 +268,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   }
   function choose(i: number) {
     if (state.phase !== "menu" || state.drag) return; state.selected = i; orbs.forEach((o, j) => o.button.setAttribute("aria-pressed", String(j === i)));
-    el.selectedName.textContent = orbs[i].name; el.selectedNote.textContent = PREPARING_NOTE; delete root.dataset.forex; setPhase("selecting"); opts.onChoose?.(orbs[i].name);
+    el.selectedName.textContent = MODE_LABEL[orbs[i].name as Mode]; el.selectedNote.textContent = PREPARING_NOTE; delete root.dataset.forex; setPhase("selecting"); opts.onChoose?.(orbs[i].name);
   }
   function goBack() { if (state.phase === "selected" || state.phase === "selecting") { delete root.dataset.forex; setPhase("returning"); wake(); } }
   function pointerXY(e: PointerEvent, o: any) { return [(e.clientX - o.layout.x) / o.layout.r, -(e.clientY - o.layout.y) / o.layout.r]; }

@@ -1,4 +1,4 @@
-"""Manifest of the 9 baskets x 10 = 90 canonical strategies (CATALOG-1.41.0) + the LEGACY/CUSTOM section (the existing gold strategies,
+"""Manifest of the ACTIVE 6 baskets x 10 = 60 canonical strategies (CATALOG-1.45.0, TASK 020: OTC retired) + the LEGACY/CUSTOM section (the existing gold strategies,
 outside the 90 counter - first-class, untouched, never re-routed through the baskets).
 
 Every entry carries the full contract of spec section 3 (strategy_id, version, basket_id, profile_id, family_id, correlation_group,
@@ -14,7 +14,7 @@ import json
 
 from . import detectors as D
 
-VERSION = "CATALOG-1.41.0"
+VERSION = "CATALOG-1.45.0"          # 1.45 (TASK 020): 60 active / 6 baskets / 2 profiles; OTC = RETIRED (history only)
 PROFILES = {
     "FOREX_MT5": {"name": "FOREX / MT5", "venue": "MT5", "products": ["CFD", "FX_SPOT_CFD", "METAL_CFD"], "settlement": "POSITION",
                   "execution_capability": "AUTO_VIA_SH_PATH",
@@ -22,15 +22,25 @@ PROFILES = {
     "CRYPTO_FOMO_PERPS": {"name": "CRYPTO PERPS / FOMO (fomo.family)", "venue": "HYPERLIQUID (perps używane przez FOMO)", "products": ["PERPETUAL"],
                           "settlement": "PERPETUAL", "execution_capability": "MANUAL_ONLY",
                           "execution_note": "brak udokumentowanego API rachunku FOMO – ticket do ręcznego wykonania w FOMO; dane: publiczne Hyperliquid Info API"},
-    "OTC_GOLD_POCKETOPTION": {"name": "OTC GOLD / Pocket Option", "venue": "POCKET_OPTION", "products": ["FIXED_EXPIRY"], "settlement": "FIXED_EXPIRY",
+}
+# TASK 020: the OTC line is RETIRED. Kept ONLY so old history rows keep their original identifiers (read-only); never consulted by
+# selection, scanning, SFB, rankers or the API candidate lists.
+LEGACY_RETIRED_PROFILES = {
+    "OTC_GOLD_POCKETOPTION": {"name": "OTC GOLD / Pocket Option (WYCOFANY)", "venue": "POCKET_OPTION", "products": ["FIXED_EXPIRY"], "settlement": "FIXED_EXPIRY",
                               "execution_capability": "MANUAL_ONLY",
                               "execution_note": "brak dopuszczonego interfejsu zleceń – sygnał + ticket ręczny; feed wyłącznie własny Gold OTC (import / konektor)"},
 }
 BASKETS = {
     "FX_SMC": ("FOREX_MT5", "SMC"), "FX_SCALP": ("FOREX_MT5", "SCALP"), "FX_HEDGE": ("FOREX_MT5", "HEDGING"),
     "CP_SMC": ("CRYPTO_FOMO_PERPS", "SMC"), "CP_SCALP": ("CRYPTO_FOMO_PERPS", "SCALP"), "CP_HEDGE": ("CRYPTO_FOMO_PERPS", "HEDGING"),
+}
+LEGACY_RETIRED_BASKETS = {
     "OTC_SMC": ("OTC_GOLD_POCKETOPTION", "SMC"), "OTC_SCALP": ("OTC_GOLD_POCKETOPTION", "SCALP"), "OTC_HEDGE": ("OTC_GOLD_POCKETOPTION", "HEDGING"),
 }
+RETIRED_PROFILE_IDS = frozenset(LEGACY_RETIRED_PROFILES)
+RETIRED_BASKET_IDS = frozenset(LEGACY_RETIRED_BASKETS)
+RETIRED_STRATEGY_PREFIXES = ("OTC_SMC_", "OTC_SCALP_", "OTC_HEDGE_")
+
 
 # id, name, family, signal_tf, context_tfs, params, required_inputs(extra), correlation_group, setup, trigger, cancel, [D seconds for OTC]
 _FX_SMC = [
@@ -221,7 +231,8 @@ def _hash(d: dict) -> str:
 
 
 def _entry(basket: str, row: tuple, kind: str) -> dict:
-    profile = BASKETS[basket][0]
+    profile = {**BASKETS, **LEGACY_RETIRED_BASKETS}[basket][0]
+    pdef = {**PROFILES, **LEGACY_RETIRED_PROFILES}[profile]
     otc = profile == "OTC_GOLD_POCKETOPTION"
     if kind == "HEDGING":
         sid, name, fam, tf, ctx, params, req, trig, plan, ext = row
@@ -247,7 +258,7 @@ def _entry(basket: str, row: tuple, kind: str) -> dict:
             params = {"tp_r": [2.0, 3.0] if smc else [1.0, 2.0], "partial": 0.5, "timeout_bars": 20 if smc else 8, **params}
         e["correlation_group"] = cg
     e.update(strategy_id=sid, name=name, version="1.0.0", basket_id=basket, profile_id=profile, family_id=fam, kind=kind,
-             supported_product_types=PROFILES[profile]["products"], required_capabilities=["closed_bars"] + req,
+             supported_product_types=pdef["products"], required_capabilities=["closed_bars"] + req,
              required_inputs=_PROFILE_INPUTS[profile] + req, signal_timeframe=tf, context_timeframes=ctx, min_history=_MIN_HISTORY[kind],
              parameter_schema=params, risk_policy=("wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu"),
              model_feature_schema="BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
@@ -260,16 +271,42 @@ def _entry(basket: str, row: tuple, kind: str) -> dict:
 
 
 def strategies() -> list[dict]:
+    """The 60 ACTIVE strategies (FX_* + CP_*), unchanged definitions / order / config hashes."""
     out = []
     for basket, rows in (("FX_SMC", _FX_SMC), ("FX_SCALP", _FX_SCALP), ("FX_HEDGE", _FX_HEDGE), ("CP_SMC", _CP_SMC), ("CP_SCALP", _CP_SCALP),
-                         ("CP_HEDGE", _CP_HEDGE), ("OTC_SMC", _OTC_SMC), ("OTC_SCALP", _OTC_SCALP), ("OTC_HEDGE", _OTC_HEDGE)):
+                         ("CP_HEDGE", _CP_HEDGE)):
         kind = BASKETS[basket][1]
         out += [_entry(basket, r, kind) for r in rows]
     return out
 
 
+def _retired() -> list[dict]:
+    out = []
+    for basket, rows in (("OTC_SMC", _OTC_SMC), ("OTC_SCALP", _OTC_SCALP), ("OTC_HEDGE", _OTC_HEDGE)):
+        out += [{**_entry(basket, r, LEGACY_RETIRED_BASKETS[basket][1]), "runtime_status": "RETIRED", "history_label": "RETIRED_OTC"} for r in rows]
+    return out
+
+
 CATALOG = strategies()
 BY_ID = {s["strategy_id"]: s for s in CATALOG}
+# TASK 020: the 30 retired OTC definitions - read-only labels for historical rows (journal / ROI / old snapshots). NOT a selection source.
+HISTORICAL_STRATEGIES = {s["strategy_id"]: s for s in _retired()}
+
+
+def retired_reason(strategy_id: str | None = None, *, basket_id: str | None = None, profile_id: str | None = None) -> str | None:
+    """RETIRED_PROFILE / RETIRED_STRATEGY_ID for a retired OTC identifier, None for anything else (TASK 020)."""
+    if profile_id and profile_id in RETIRED_PROFILE_IDS:
+        return "RETIRED_PROFILE"
+    if basket_id and basket_id in RETIRED_BASKET_IDS:
+        return "RETIRED_STRATEGY_ID"
+    if strategy_id and (strategy_id in HISTORICAL_STRATEGIES or str(strategy_id).startswith(RETIRED_STRATEGY_PREFIXES)):
+        return "RETIRED_STRATEGY_ID"
+    return None
+
+
+def active_only(strategy_ids) -> list[str]:
+    """Hard allowlist for every candidate consumer (SFB, rankers, rules, selectors): only ids of the active catalog survive."""
+    return [s for s in strategy_ids if s in BY_ID]
 
 
 def baskets() -> list[dict]:
@@ -290,15 +327,19 @@ def validate() -> dict:
                 "config_hash", "detector_version")
     missing = {s["strategy_id"]: [k for k in required if k not in s] for s in CATALOG if any(k not in s for k in required)}
     return {"total": len(ids), "unique": len(set(ids)), "baskets": len(per), "per_basket": per, "distinct_families_per_basket": fams, "missing_fields": missing,
-            "ok": len(ids) == 90 and len(set(ids)) == 90 and all(v == 10 for v in per.values()) and not missing and all(v == 10 for v in fams.values())}
+            "retired_in_active": sorted(i for i in ids if retired_reason(i)),
+            "profiles": len(PROFILES),
+            "ok": len(ids) == 60 and len(set(ids)) == 60 and len(per) == 6 and len(PROFILES) == 2 and not any(retired_reason(i) for i in ids) and all(v == 10 for v in per.values()) and not missing and all(v == 10 for v in fams.values())}
 
 
 def manifest() -> dict:
-    return {"version": VERSION, "profiles": PROFILES, "baskets": baskets(), "strategies": CATALOG, "validation": validate()}
+    return {"version": VERSION, "profiles": PROFILES, "baskets": baskets(), "strategies": CATALOG, "validation": validate(),
+            "retired": {"profiles": sorted(RETIRED_PROFILE_IDS), "baskets": sorted(RETIRED_BASKET_IDS), "strategy_count": len(HISTORICAL_STRATEGIES),
+                        "status": "RETIRED", "history": "PRESERVE_READ_ONLY"}}
 
 
 def preservation_view() -> list[dict]:
-    """For upgrade.preservation.compare(new_catalog=...): the 90 canonical entries with their execution route and legacy aliases.
+    """For upgrade.preservation.compare(new_catalog=...): the 60 active canonical entries with their execution route and legacy aliases.
     No gold strategy is aliased into a basket (the multi-market strategies did not exist before 1.41) and the baskets publish
     signals / plans / manual tickets only - so no second execution route exists next to the preserved gold strategies."""
     return [{"strategy_id": s["strategy_id"], "basket_id": s["basket_id"], "legacy_aliases": [], "execution_route": "SIGNALS_ONLY"} for s in CATALOG]

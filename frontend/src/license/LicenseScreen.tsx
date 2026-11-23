@@ -44,11 +44,11 @@ export default function LicenseScreen({ status, modal = false, onClose, onActiva
   const copyHwid = async () => { setCopied((await copyText(status.hwid || "")) ? "Skopiowano HWID." : "Nie udało się skopiować – zaznacz kod i Ctrl+C."); };
 
   return (
-    <div className={cls("lic-screen", modal && "modal")} role="dialog" aria-modal="true" aria-label="Aktywacja licencji PepeMarketWizard" data-testid="license-screen">
+    <div className={cls("lic-screen", modal && "modal")} role="dialog" aria-modal="true" aria-label="Aktywacja licencji Apollo23" data-testid="license-screen">
       <div className="lic-scene" aria-hidden="true" />
       <section className="lic-card">
         <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
-        <header className="lic-brand"><span className="lic-logo">PEPEMARKETWIZARD</span><span className="lic-sub">{modal ? "ZMIANA KLUCZA LICENCJI" : "AKTYWACJA LICENCJI"}</span></header>
+        <header className="lic-brand"><span className="lic-logo">APOLLO23</span><span className="lic-sub">{modal ? "ZMIANA KLUCZA LICENCJI" : "AKTYWACJA LICENCJI"}</span></header>
 
         <div className="lic-blk">
           <span className="lic-lbl">TWÓJ HWID</span>
@@ -70,7 +70,7 @@ export default function LicenseScreen({ status, modal = false, onClose, onActiva
 
         {shown && <p className={cls("lic-msg", shown.tone)} role={shown.tone === "bad" ? "alert" : "status"} data-testid="license-msg">{shown.text}</p>}
         {modal && <button type="button" className="lic-btn ghost" onClick={onClose}>ANULUJ – ZOSTAW OBECNY KLUCZ</button>}
-        <small className="lic-foot">Licencja działa offline – klucz zostaje zapisany na tym komputerze. Bez ważnej licencji tryby FOREX, CRYPTO, OTC i handel nie startują.</small>
+        <small className="lic-foot">Licencja działa offline – klucz zostaje zapisany na tym komputerze. Bez ważnej licencji tryby FOREX, CRYPTO i handel nie startują.</small>
       </section>
     </div>);
 }
