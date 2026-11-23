@@ -122,7 +122,8 @@ class StrategyAutoSelector:
                 self._log(now=now_s, mode=mode, account_key=account_key, prev=prev, new=None, snapshot_id=snapshot_id,
                           reason="DATA_STALE_OR_UNAVAILABLE", ranking=grouped)
             self.state.update(system_state="STALE", ranking=grouped)
-            return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, ["DATA_STALE_OR_UNAVAILABLE"], signal_only)
+            return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, ["DATA_STALE_OR_UNAVAILABLE"], signal_only,
+                                 stale=True)
         best = grouped[0] if grouped else None
         # same-horizon LONG/SHORT conflict
         if best and len(grouped) > 1:
@@ -168,9 +169,10 @@ class StrategyAutoSelector:
                 reasons.append("ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS")
         return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only)
 
-    def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=()) -> dict:
+    def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=(), *, stale: bool = False) -> dict:
         sel = next((x for x in grouped if self.selected and x["setup_id"] == self.selected["setup_id"]), None)
-        if sel is None and self.state.get("system_state") == "STALE":
+        # 1.46: STALE only for THIS evaluation's data (was read from the previous state - stuck at STALE on fresh data until a selection)
+        if sel is None and stale:
             st = "STALE"
         elif sel is None:
             st = "SCANNING"

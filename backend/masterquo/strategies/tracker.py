@@ -55,12 +55,15 @@ class SetupTracker:
     def _save(self, r: dict) -> None:
         # 1.46: a final status that is never republished (ENTERED / INVALIDATED / EXPIRED / MISSED_ENTRY) is not overwritten by a stale copy -
         # the scan thread wrote rows read at its start, so an ENTERED set meanwhile by the execution (API thread) went back to ACTIVE
+        # 1.46: strategy_version / config_hash / event_id follow record_json on update (were frozen at the first write - the playbook
+        # report showed a strategy version different from the plan after a reactivation or a parameter change)
         rec = r["record"]
         self.db.execute("""INSERT INTO strategy_setups(setup_id, account_key, symbol, strategy_id, strategy_version, config_hash, direction, timeframe,
                            structure_key, event_id, stage, status, version, score, first_seen_at, first_price, updated_at, stage_changed_at, data_updates,
                            expires_at, terminal_reason, terminal_at, stale, synthetic, record_json, history_json)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                            ON CONFLICT(setup_id) DO UPDATE SET stage=excluded.stage, status=excluded.status, version=excluded.version, score=excluded.score,
+                           strategy_version=excluded.strategy_version, config_hash=excluded.config_hash, event_id=excluded.event_id,
                            updated_at=excluded.updated_at, stage_changed_at=excluded.stage_changed_at, data_updates=excluded.data_updates,
                            expires_at=excluded.expires_at, terminal_reason=excluded.terminal_reason, terminal_at=excluded.terminal_at, stale=excluded.stale,
                            record_json=excluded.record_json, history_json=excluded.history_json
@@ -158,8 +161,8 @@ class SetupTracker:
                     changed = True
             else:
                 pend = 0
-            keep = {k: rec.get(k) for k in ("pending_downgrade", "misses")}
-            r["record"] = {**c, **keep, "pending_downgrade": pend, "misses": 0, "stage": r["stage"]}
+            # 1.46: the unused `keep` dict (both keys were always overwritten below) removed - no behaviour change
+            r["record"] = {**c, "pending_downgrade": pend, "misses": 0, "stage": r["stage"]}
             if new_data:
                 r["data_updates"] += 1
             r["updated_at"] = now_s

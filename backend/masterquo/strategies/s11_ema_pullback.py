@@ -109,12 +109,14 @@ class EmaPullback(Strategy):
                 continue
             tp = ref + cp.rr * risk
             setup_bar = t[sid] if 0 <= sid < len(t) else t[i]
+            # 1.46: 'EMA20>EMA50' has no '_' tokens - mirror_code / mirror_text left it unchanged, so SHORT setups showed the LONG trend
+            trend_code = "EMA20<EMA50" if view.mirrored else "EMA20>EMA50"
             wait_left = None if not waiting or cp.max_pullback_bars == 0 else cp.max_pullback_bars - (i - waiting["touch_i"])
             out.append(Draft(
                 strategy_id=self.id, direction="LONG", timeframe=tf, phase=phase,
                 structure_key=f"{tf}:{setup_bar}", event_key=f"EMA20_PULLBACK:LONG:{tf}:{setup_bar}", anchor_time=setup_bar,
                 entry_plan=plan("EMA20_PULLBACK_CONFIRM", ref, (e20[i] * (1 - cp.touch_tolerance_pct / 100), e20[i] * (1 + cp.touch_tolerance_pct / 100)),
-                                "zamknięcie świecy powyżej EMA20 na świecy PÓŹNIEJSZEJ niż dotknięcie, trend EMA20>EMA50 nadal ważny",
+                                f"zamknięcie świecy powyżej EMA20 na świecy PÓŹNIEJSZEJ niż dotknięcie, trend {trend_code} nadal ważny",
                                 e20[i], 1, 0.5),
                 invalidation_level=stop, invalidation_rule="CLOSE_BEYOND", stop_loss=stop,
                 targets=[{"price": tp, "weight": 1.0, "basis": f"RR_{cp.rr:g}_FROM_ENTRY"}],
@@ -123,7 +125,7 @@ class EmaPullback(Strategy):
                 components={"structure": min(1.0, (adx[i] or 0) / 35.0), "formation": 1.0 if (conf or waiting) else 0.4,
                             "trigger": 1.0 if conf else 0.0},
                 momentum_mode="CONTINUATION", missing=missing,
-                reason_codes=["EMA20>EMA50", f"ADX_{adx[i]:.0f}", f"SETUP_{setup_bar}"] + ([f"WAIT_LEFT_{wait_left}"] if wait_left is not None else []),
+                reason_codes=[trend_code, f"ADX_{adx[i]:.0f}", f"SETUP_{setup_bar}"] + ([f"WAIT_LEFT_{wait_left}"] if wait_left is not None else []),
                 facts={"ema20_px": round(e20[i], 5), "ema50_px": round(e50[i], 5), "atr": round(atr[i], 5), "adx": round(adx[i], 2),
                        "touch_bar": setup_bar, "confirm_bar": t[i] if conf else None, "rr": cp.rr, "core": core.CORE_VERSION},
                 horizon="INTRADAY" if tf in ("M15", "M30") else "SCALP"))
