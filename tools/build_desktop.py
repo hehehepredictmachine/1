@@ -1,7 +1,7 @@
-"""Builds the Windows desktop package of PepeMarketWizard.
+"""Builds the Windows desktop package of Apollo23 (internal name PepeMarketWizard).
 
-  release/PepeMarketWizard_DESKTOP_<ver>.zip          program folder: PepeMarketWizardDesktop.exe + bundled Python + application
-  release/PepeMarketWizard_DESKTOP_<ver>.zip.sha256
+  release/Apollo23_DESKTOP_<ver>.zip                  program folder: PepeMarketWizardDesktop.exe + bundled Python + application
+  release/Apollo23_DESKTOP_<ver>.zip.sha256
 
 Contents of the program folder (top folder PepeMarketWizard_Desktop/):
   PepeMarketWizardDesktop.exe   the app (window, engine supervision, tray) - Go + WebView2, built here (cross-compiled)
@@ -20,7 +20,7 @@ Linux (cross-compilation, CGO is not used).
 
   python tools/build_desktop.py            # online variant (~40 MB)
   python tools/build_desktop.py --offline  # + wheels (~150 MB)
-  python tools/build_desktop.py --edition client   # 1.44.0 wersja KLIENTA: PepeMarketWizard_DESKTOP_KLIENT_<ver>.zip (bez generatora
+  python tools/build_desktop.py --edition client   # 1.44.0 wersja KLIENTA: Apollo23_DESKTOP_KLIENT_<ver>.zip (bez generatora
                                                    # licencji; wymaga PUBLIC_KEY_HEX – tools/build_release.py edition_entries)
 """
 from __future__ import annotations
@@ -131,7 +131,7 @@ def main() -> None:
 
     suffix = "_OFFLINE" if a.offline else ""
     ed = "_KLIENT" if a.edition == "client" else ""
-    name = f"PepeMarketWizard_DESKTOP{ed}_{ver.replace('.', '_')}{suffix}.zip"
+    name = f"Apollo23_DESKTOP{ed}_{ver.replace('.', '_')}{suffix}.zip"      # 1.46: display name in the package file name
     manifest = []
 
     def fill(z: zipfile.ZipFile) -> None:
@@ -167,7 +167,7 @@ def main() -> None:
         z.writestr(TOP + "MANIFEST_SHA256.txt", mtext)
         manifest.append(f"{hashlib.sha256(mtext).hexdigest()}  MANIFEST_SHA256.txt")
         z.writestr(TOP + "MANIFEST_DESKTOP_SHA256.txt",
-                   f"# PepeMarketWizard {ver} - aplikacja Windows - SHA-256 każdego pliku paczki (format sha256sum)\n"
+                   f"# Apollo23 {ver} - aplikacja Windows - SHA-256 każdego pliku paczki (format sha256sum)\n"
                    + "\n".join(manifest) + "\n")
     # 1.46: written in a staging folder, verified there (tools/verify_release.py check_zip, like build_release.py) and only then moved
     # into release/ with its .sha256 - a package that fails verification never reaches release/ (was: never verified at all)

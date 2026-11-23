@@ -127,7 +127,7 @@ class TestDesktopPackageIsVerified(DesktopBuildCase):
 
     def test_clean_desktop_package_is_published_and_passes_verify_release(self):
         self.run_main(self.entries({"docs/x.md": b"# doc\n"}))
-        out = self.root / "release" / "PepeMarketWizard_DESKTOP_9_9_9.zip"
+        out = self.root / "release" / "Apollo23_DESKTOP_9_9_9.zip"
         self.assertEqual(sorted(p.name for p in (self.root / "release").iterdir()), [out.name, out.name + ".sha256"])
         self.assertEqual(VR.check_zip(out, BD.TOP), [])
         self.assertEqual(self.calls, ["requirements"])
@@ -216,7 +216,7 @@ class TestOfflineWheels(DesktopBuildCase):
             f"pkg==2.0 \\\n    --hash=sha256:{sha(b'current wheel')}\n", encoding="utf-8")
         with mock.patch.object(BD, "fetch_wheels", lambda: wheels), mock.patch.object(sys, "argv", ["build_desktop.py", "--offline"]):
             self.run_main(self.entries({}))
-        out = self.root / "release" / "PepeMarketWizard_DESKTOP_9_9_9_OFFLINE.zip"
+        out = self.root / "release" / "Apollo23_DESKTOP_9_9_9_OFFLINE.zip"
         with zipfile.ZipFile(out) as z:
             names = [n for n in z.namelist() if n.endswith(".whl")]
         self.assertEqual(names, [BD.TOP + "runtime/wheels/pkg-2.0-py3-none-any.whl"])

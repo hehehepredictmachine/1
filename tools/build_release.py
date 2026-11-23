@@ -1,10 +1,10 @@
 """Builds MANIFEST_SHA256.txt and the package from git-tracked files only:
 
-  release/PepeMarketWizard_<ver>.zip      the bot (all strategies, signals, panel) + training installers for Windows; no secrets
+  release/Apollo23_<ver>.zip              the bot (all strategies, signals, panel) + training installers for Windows; no secrets
   (+ .sha256 next to the ZIP)
 1.30: the license system was removed at the user's request. 1.44.0: two editions again, offline licences (Ed25519, no server):
-  release/PepeMarketWizard_<ver>.zip           OWNER  – wersja właściciela (z generatorem licencji)
-  release/PepeMarketWizard_KLIENT_<ver>.zip    CLIENT – python tools/build_release.py --edition client: bez generatora, funkcji
+  release/Apollo23_<ver>.zip                   OWNER  – wersja właściciela (z generatorem licencji)
+  release/Apollo23_KLIENT_<ver>.zip            CLIENT – python tools/build_release.py --edition client: bez generatora, funkcji
                                                podpisywania i historii licencji; panel zbudowany z PMW_EDITION=CLIENT (kod generatora
                                                wycięty przy kompilacji); wymaga PUBLIC_KEY_HEX w backend/masterquo/licensing/client_config.py
 The Windows application package is built by tools/build_desktop.py from the same file list (--edition client as well).
@@ -33,7 +33,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.45.0"
-APP_ZIP = f"PepeMarketWizard_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
+# 1.46: package file names carry the display name Apollo23 (the folder inside the ZIP, exe names, data paths and ids stay PepeMarketWizard)
+APP_ZIP = f"Apollo23_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
 # 1.46: secret patterns, test dummies and forbidden names live in ONE place - tools/verify_release.py (SECRETS, CONFIG_SECRETS,
 # ALLOWED_DUMMIES, forbidden_file); the old 3-pattern list here did not know the owner key, FRED / CoinGlass / MT5, *.key or *.db
@@ -146,7 +147,7 @@ def write_zip(name, top, files, data: dict[str, bytes] | None = None):
 def manifest_text(files, label: str = "klient") -> str:
     """MANIFEST_SHA256.txt of the program files - required by the launcher and the installers (complete unpacking check)."""
     lines = [f"{hashlib.sha256((ROOT / f).read_bytes()).hexdigest()}  {f}" for f in files]
-    return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
+    return f"# Apollo23 {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
 
 
 # ------------------------------------------------------------------------------------------------ 1.44.0 edycje
@@ -225,7 +226,7 @@ def edition_entries(edition: str = "owner", *, allow_foreign: bool = False) -> l
 
 def manifest_entries(entries, label: str) -> str:
     lines = [f"{hashlib.sha256(src.read_bytes()).hexdigest()}  {rel}" for rel, src in entries]
-    return f"# PepeMarketWizard {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
+    return f"# Apollo23 {VERSION} ({label}) - SHA-256 of every packaged file (sha256sum format)\n" + "\n".join(lines) + "\n"
 
 
 def write_zip_entries(name, top, entries, extra: dict[str, bytes]):
@@ -257,7 +258,7 @@ def main():
     if a.edition == "client":
         entries = edition_entries("client", allow_foreign=a.allow_foreign_key)
         check_windows_requirements()
-        name = f"PepeMarketWizard_KLIENT_{VERSION.replace('.', '_')}.zip"
+        name = f"Apollo23_KLIENT_{VERSION.replace('.', '_')}.zip"
         write_zip_entries(name, "PepeMarketWizard/", entries,      # verified inside (publish_zip)
                           {"MANIFEST_SHA256.txt": manifest_entries(entries, "program – wersja klienta").encode("utf-8")})
         return
