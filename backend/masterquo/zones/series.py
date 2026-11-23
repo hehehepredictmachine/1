@@ -3,7 +3,7 @@ time (open + TF) is <= as_of; a forming bar or a bar from the future never enter
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..timeutil import TF_SECONDS
 
@@ -11,7 +11,12 @@ from ..timeutil import TF_SECONDS
 def ts(x) -> float:
     if isinstance(x, (int, float)):
         return float(x)
-    return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+    d = datetime.fromisoformat(str(x).replace("Z", "+00:00"))
+    if d.tzinfo is None:
+        # 1.46: a naive ISO string was read in the LOCAL time zone of the machine (Windows Europe/Warsaw: as_of shifted by 1-2 h);
+        # every caller passes UTC (bar open_utc, API as_of) - naive = UTC explicitly, independent of the machine
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
 
 
 def iso(t: float | None) -> str | None:
@@ -61,17 +66,4 @@ class Series:
             s.v.append(float(b.get("tv") or 0.0))
             s.rv.append(float(b.get("rv") or 0.0))
         return s
-
-    @classmethod
-    def from_tfview(cls, v, tf: str, as_of: float | None = None) -> "Series":
-        """strategies.base.TFView (closed bars only) -> Series, cut at as_of."""
-        bars = [{"open_utc": t, "o": o, "h": h, "l": lo, "c": c, "tv": tv} for t, o, h, lo, c, tv in zip(v.t, v.o, v.h, v.l, v.c, v.tv)]
-        return cls.from_bars(bars, tf, as_of)
-
-    def tail(self, n: int) -> "Series":
-        if n >= len(self):
-            return self
-        s = Series(self.tf, self.tf_s)
-        for k in ("t", "o", "h", "l", "c", "v", "rv"):
-            setattr(s, k, getattr(self, k)[-n:])
-        return s
+    # 1.46: unused from_tfview() / tail() removed (no caller in backend/, tools/, tests/)

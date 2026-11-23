@@ -46,8 +46,18 @@ def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, li
     hl = HZ.build(series, cfg, tick, m5_bars=m5_bars, d1=d1 if len(d1) else None, boxes=boxes, as_of=as_of)
     refs = [z for z in hl["zones"] if z["zone_type"].startswith(("PREVIOUS_", "INTRADAY_", "CONSOLIDATION_")) or z.get("range_state")]
     prof_series = series.get(cfg.profile_tf) if cfg.profile_tf in series else Series.from_bars(cut.get(cfg.profile_tf) or [], cfg.profile_tf, as_of)
+    # 1.46: profile_tf without closed bars (M1 is allowed by the config, the caller may not read it) gave volume_source NONE
+    # ("no usable volume") with data.state OK - missing data reported as a property of the market. Now: DEGRADED + reason.
+    prof_missing = len(prof_series) == 0
+    if prof_missing:
+        reasons.append(f"profile_tf {cfg.profile_tf}: brak zamkniętych świec – profile wolumenu niedostępne")
+        if data_state == "OK":
+            data_state = "DEGRADED"
     dv = DV.build(prof_series, profile_id=pid, instrument=instrument, cfg=cfg, as_of=as_of, tick=tick, piv_by_tf=hl["pivots"],
                   series_by_tf=series, refs=refs)
+    if prof_missing:
+        dv["volume_source"] = dict(dv["volume_source"], missing_series=cfg.profile_tf,
+                                   note=f"brak świec {cfg.profile_tf} – profile wolumenu niedostępne (brak danych, nie własność rynku)")
     a5 = HZ.atr_series(m5)
     atr = HZ._atr_at(a5, len(m5) - 1) or (tick * 100)
     price = m5.c[-1]

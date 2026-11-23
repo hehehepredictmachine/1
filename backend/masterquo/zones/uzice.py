@@ -19,8 +19,8 @@ Score (0-100, design defaults in config.zones.score_weights, NOT empirically val
   freshness    - linear in age; minus 2 per retest above weaken_after_retests
   data_quality - 5 complete / 2 developing or degraded / 0 stale
 Correlated evidence counts once: every evidence item has a `root` (pivot id, profile id, box id ...) and each root is scored once per group.
-Penalties: WIDE -10, CONFLICT -10, provisional -10, INSUFFICIENT_HISTORY -5. confidence_status stays UNVALIDATED (no calibrated
-model of zone outcomes exists yet).
+Penalties: WIDE -10, CONFLICT -10, provisional -10 (a map with INSUFFICIENT_HISTORY has no zones - engine.compute_map returns before
+UZICE). confidence_status stays UNVALIDATED (no calibrated model of zone outcomes exists yet).
 """
 from __future__ import annotations
 
@@ -216,8 +216,8 @@ def unify(hlz: list[dict], ds: list[dict], profiles: list[dict], *, cfg, atr: fl
             z["flags"].append("CONFLICT")
             z["conflicting_zone_ids"] = [o["zone_id"] for o in opp]
     for z in out:
-        pen = 10 * ("WIDE" in z["flags"]) + 10 * ("CONFLICT" in z["flags"]) + 10 * ("PROVISIONAL" in z["flags"]) + \
-              5 * ("INSUFFICIENT_HISTORY" in z["flags"])
+        # 1.46: the dead "+ 5 x INSUFFICIENT_HISTORY" term removed - that flag is never set on a zone (score unchanged)
+        pen = 10 * ("WIDE" in z["flags"]) + 10 * ("CONFLICT" in z["flags"]) + 10 * ("PROVISIONAL" in z["flags"])
         z["penalty"] = pen
         z["confluence_score"] = round(max(0.0, min(100.0, sum(z["score_components"].values()) - pen)), 1)
     out.sort(key=lambda z: (z["distance_atr"] if z["distance_atr"] is not None else 9e9, -z["confluence_score"]))
