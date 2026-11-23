@@ -198,6 +198,17 @@ class AssetRegistry:
                 s += 10
             elif not any(h in name for h in self.NAME_HINTS[asset]):
                 return None
+            else:
+                # 1.46: the NAME fallback must not contradict the metadata - a currency conflict found by classify() (BTCUSDT, BTCEUR,
+                # XAUEUR) or a known quote / base outside the asset spec (ETHBTC: base ETH, profit BTC) is never adopted automatically
+                sp = SPECS[asset]
+                base, profit = _up(d.get("currency_base")), _up(d.get("currency_profit"))
+                if any(x.startswith(f"{asset}_") for x in c["conflicts"]):
+                    return None
+                if profit and profit not in sp["profit"]:
+                    return None
+                if base and base not in sp["base"] and base != profit:
+                    return None
             if name.startswith(self.NAME_HINTS[asset][0]):
                 s += 3
             if d.get("visible"):

@@ -251,6 +251,17 @@ class MLService:
             if hours < c.min_hours_between_trainings:
                 reasons.append(f"OD_OSTATNIEGO_TRENINGU_{hours:.1f}/{c.min_hours_between_trainings}H")
         last_any = self.db.one("SELECT * FROM ml_jobs WHERE kind='TRAIN' ORDER BY created_at DESC LIMIT 1")
+        # 1.46: a failed / interrupted / cancelled run is not restarted on the next scheduler tick (1.45.0: a new snapshot + process every
+        # 60 s without end). CANCELLED waits for a manual start; FAILED / INTERRUPTED wait min_hours_between_trainings.
+        if last_any and last_any["status"] == "CANCELLED":
+            reasons.append("ANULOWANO_RECZNIE_START_TYLKO_RECZNY")
+        elif last_any and last_any["status"] in ("FAILED", "INTERRUPTED"):
+            try:
+                hrs = (utcnow() - parse_iso(last_any["finished_at"] or last_any["created_at"])).total_seconds() / 3600
+            except (TypeError, ValueError):
+                hrs = 0.0
+            if hrs < c.min_hours_between_trainings:
+                reasons.append(f"PO_BLEDZIE_{last_any['status']}_{hrs:.1f}/{c.min_hours_between_trainings}H")
         if last_any and last_any["status"] == "NOT_READY":
             d = json.loads(last_any["detail_json"] or "{}")
             if cnt["labeled"] - int(d.get("labeled_at_start") or 0) < max(25, c.retrain_after_new_labels // 5):

@@ -498,3 +498,54 @@ class TestForexEngineStub(unittest.TestCase):
         r = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", str(_env.ROOT / "tests" / "js" / "forex_engine_stub.test.mjs")],
                            capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+
+
+class TestAssetAutodetectCurrency(unittest.TestCase):
+    """1.45.0: find_on_account adopted a symbol by NAME although its currencies contradict the asset (BTCUSDT / BTCEUR / ETHBTC as BTC,
+    XAUEUR as XAUUSD) - and autodetect() saved it as the mapping without confirmation."""
+
+    def _reg(self, symbols):
+        import types
+
+        from masterquo.assets.registry import AssetRegistry
+        br = types.SimpleNamespace(_call=lambda fn: fn(types.SimpleNamespace(symbols_get=lambda: symbols)))
+        reg = AssetRegistry.__new__(AssetRegistry)
+        reg.bridge = br
+        return reg
+
+    def test_conflicting_currencies_are_not_adopted(self):
+        bad = [{"name": "BTCUSDT", "currency_base": "BTC", "currency_profit": "USDT", "visible": True},
+               {"name": "BTCEUR", "currency_base": "BTC", "currency_profit": "EUR", "visible": True},
+               {"name": "ETHBTC", "currency_base": "ETH", "currency_profit": "BTC", "visible": True},
+               {"name": "XAUEUR", "currency_base": "XAU", "currency_profit": "EUR", "visible": True}]
+        self.assertIsNone(self._reg(bad).find_on_account("BTC"))
+        self.assertIsNone(self._reg(bad).find_on_account("XAUUSD"))
+        good = bad + [{"name": "BTCUSD.m", "currency_base": "BTC", "currency_profit": "USD", "visible": True},
+                      {"name": "GOLD", "currency_base": "USD", "currency_profit": "USD", "visible": True}]
+        self.assertEqual(self._reg(good).find_on_account("BTC"), "BTCUSD.m")
+        self.assertEqual(self._reg(good).find_on_account("XAUUSD"), "GOLD")
+
+
+class TestMlRetryBackoff(unittest.TestCase):
+    """1.45.0: _readiness ignored FAILED / INTERRUPTED / CANCELLED jobs -> the scheduler restarted training every 60 s with a new snapshot."""
+
+    def test_failed_or_cancelled_job_blocks_automatic_restart(self):
+        import test_ml as TM
+        if not TM.HAVE_ML:
+            self.skipTest("scikit-learn/xgboost not installed")
+        t = TM.TestService("test_no_model_contract_and_fallback")
+        t.setUp()
+        try:
+            from masterquo.timeutil import iso, utcnow
+            ml = t.svc()
+            ml.store.counts = lambda *a, **k: {"unique_setups": 10_000, "pos": 5_000, "neg": 5_000, "labeled": 10_000}
+            self.assertTrue(ml._readiness()["ready"])
+            for status, code in (("FAILED", "PO_BLEDZIE_FAILED"), ("INTERRUPTED", "PO_BLEDZIE_INTERRUPTED"), ("CANCELLED", "ANULOWANO_RECZNIE")):
+                t.db.execute("DELETE FROM ml_jobs")
+                t.db.execute("INSERT INTO ml_jobs(job_id, kind, status, created_at, finished_at, detail_json) VALUES (?,?,?,?,?,?)",
+                             (f"J-{status}", "TRAIN", status, iso(utcnow()), iso(utcnow()), "{}"))
+                r = ml._readiness()
+                self.assertFalse(r["ready"], status)
+                self.assertTrue(any(x.startswith(code) for x in r["reasons"]), r["reasons"])
+        finally:
+            t.tearDown()
