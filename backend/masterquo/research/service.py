@@ -16,10 +16,12 @@ status with the four separate state axes (enabled, runtime, artifact, contributi
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import os
+import re
 import subprocess
 import threading
 import time
@@ -51,6 +53,7 @@ DEFAULT_SETTINGS = {
     "cycle_s": 5.0,
 }
 COMPOSITE_NAMES = ["bias", "graph_bpc10_raw", "etc_position_z_closed", "g7_score_div100"]
+RUN_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")          # 1.46: an SDformerFlow version is a folder NAME directly in research/sdformer
 
 
 def rdir() -> Path:
@@ -67,9 +70,73 @@ def _merge(a: dict, b: dict) -> dict:
 
 
 def _atomic(p: Path, obj) -> None:
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, default=str), encoding="utf-8")
-    os.replace(tmp, p)
+    # 1.46: the temp name is unique per writer thread - two threads writing the same file shared "<file>.tmp" (one os.replace failed
+    # with FileNotFoundError, the other could publish a half-written file)
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(json.dumps(obj, ensure_ascii=False, default=str), encoding="utf-8")
+        os.replace(tmp, p)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _is_num(v, lo: float, hi: float, *, integer: bool = False) -> bool:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+        return False
+    return lo <= float(v) <= hi and (not integer or float(v).is_integer())
+
+
+def check_settings(s: dict, patch: dict, sdf_dir: Path) -> None:
+    """1.46: PUT research-modules/settings checked etc.* and graph.cells only (None / a non-object was a TypeError -> 500), g7.ob_lookback
+    < 15 gave an IndexError in every cycle, sdformer numbers broke the training start (governor slot kept) and sdformer.active_run was any
+    path given to the worker. Raises ValueError (400). etc and graph.cells are always checked (as before); every other value only when the
+    change sets it, so a legacy value elsewhere never blocks e.g. a module switch. `s` = DEFAULT_SETTINGS merged with the new file."""
+    def need(ok: bool, code: str) -> None:
+        if not ok:
+            raise ValueError(code)
+    for k in ("etc", "graph"):
+        need(isinstance(s.get(k), dict), f"SETTINGS_SECTION_NOT_AN_OBJECT:{k}")
+    e = s["etc"]
+    need(isinstance(e.get("window_set"), str) and e["window_set"] in ("SHORT", "LONG") and isinstance(e.get("price"), str)
+         and e["price"] in ETC.PRICES and _is_num(e.get("width"), 0.1, 10), "ETC_PARAMETERS_INVALID")
+    need(_is_num(s["graph"].get("cells"), 100, 40000, integer=True), "GRAPH_CELLS_OUT_OF_RANGE (100..40000)")
+    for sec, sub in patch.items():
+        if sec == "enabled":
+            need(isinstance(sub, bool), "SETTINGS_ENABLED_NOT_BOOL")
+            continue
+        need(isinstance(sub, dict), f"SETTINGS_SECTION_NOT_AN_OBJECT:{sec}")
+        for k in sub:
+            v = s[sec].get(k)
+            if sec == "modules":
+                need(k in MODULES and isinstance(v, dict), f"MODULE_UNKNOWN:{k}")
+                need(all(isinstance(v.get(f), bool) for f in ("enabled", "autostart") if f in v), f"MODULE_FLAGS_NOT_BOOL:{k}")
+                need(isinstance(v.get("use", ""), str), f"MODULE_USE_INVALID:{k}")
+            elif (sec, k) in _SETTING_RANGES:
+                lo, hi, integer = _SETTING_RANGES[(sec, k)]
+                need(_is_num(v, lo, hi, integer=integer), f"{sec.upper()}_{k.upper()}_OUT_OF_RANGE ({lo}..{hi})")
+            elif (sec, k) in (("optimizer", "enabled"), ("sdformer", "auto_bootstrap")):
+                need(isinstance(v, bool), f"{sec.upper()}_{k.upper()}_NOT_BOOL")
+            elif (sec, k) in (("etc", "param_version"), ("etc", "previous_version")):
+                need(v is None or isinstance(v, str), f"ETC_{k.upper()}_INVALID")
+            elif (sec, k) in (("sdformer", "active_run"), ("sdformer", "previous_run")):
+                need(v is None or (isinstance(v, str) and bool(RUN_ID.match(v))), f"SDFORMER_{k.upper()}_INVALID")
+                need(k != "active_run" or v is None or (sdf_dir / v / "last.pt").is_file(), "SDFORMER_ACTIVE_RUN_NOT_FOUND")
+
+
+# 1.46: (section, key) -> (min, max, integer). g7: CheckOB reads the series up to index 14 and the radar gets the last 80 H1 bars (15..80);
+# the DXY correlation needs 3..80 common H1 bars.
+_SETTING_RANGES = {
+    ("g7", "ob_lookback"): (15, 80, True), ("g7", "impulse_factor"): (0.01, 100, False), ("g7", "corr_periods"): (3, 80, True),
+    ("graph", "cells"): (100, 40000, True), ("graph", "ticks"): (1, 1000, True),
+    ("optimizer", "min_interval_seconds"): (0, 30 * 86400, False), ("optimizer", "min_mature_examples"): (1, 1_000_000, True),
+    ("optimizer", "min_new_mature_examples"): (0, 1_000_000, True), ("optimizer", "coa_evals"): (1, 1_000_000, True),
+    ("optimizer", "bchimp_evals"): (1, 1_000_000, True), ("optimizer", "deadline_s"): (0.1, 3600, False),
+    ("optimizer", "max_changed"): (1, len(COMPOSITE_NAMES), True), ("optimizer", "max_norm_change"): (1e-6, 100, False),
+    ("optimizer", "seed"): (0, 2**32 - 1, True),
+    ("sdformer", "epochs"): (1, 1000, True), ("sdformer", "minutes"): (0.1, 24 * 60, False), ("sdformer", "batch"): (1, 4096, True),
+    ("sdformer", "threads"): (1, 256, True),
+}
 
 
 def _iso(t) -> str | None:
@@ -103,6 +170,7 @@ class Context:
         self.last_m5: float | None = None
         self.last_h1: float | None = None
         self.snaps: list[dict] = []                       # as-of snapshots (newest last, bounded)
+        self.gen = 0                                      # 1.46: snapshots made (generation was len(snaps) + 1 - stuck at 3001 after the cap)
         self.etc_prev: dict | None = None
         self.zones = G7.ZoneBook(inst)
         self.graph = {t: GR.TargetState(t) for t in GR.TARGETS}
@@ -117,6 +185,9 @@ class ResearchModulesService:
         self.base.mkdir(parents=True, exist_ok=True)
         self.contexts: dict[str, Context] = {}
         self._lock = threading.RLock()
+        # 1.46: one lock for every read-modify-write of settings.json / parameter_history.json / optimizer_jobs.json (API thread, research
+        # loop, etc-optimize and sdformer-train threads wrote them concurrently - lost updates, e.g. a module switched off came back on)
+        self._settings_lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.loop = {"cycles": 0, "errors": 0, "last_error": None, "last_cycle_at": None}
@@ -135,29 +206,32 @@ class ResearchModulesService:
         except (OSError, ValueError):
             return default
 
+    def _raw_settings(self) -> dict:
+        raw = self._read(self.base / "settings.json", {})
+        return raw if isinstance(raw, dict) else {}
+
     def settings(self) -> dict:
-        return _merge(DEFAULT_SETTINGS, self._read(self.base / "settings.json", {}))
+        return _merge(DEFAULT_SETTINGS, self._raw_settings())
 
     def update_settings(self, patch: dict, who: str = "panel") -> dict:
         allowed = {"enabled", "modules", "etc", "g7", "graph", "optimizer", "sdformer"}
-        bad = [k for k in patch if k not in allowed]
+        bad = [k for k in patch if k not in allowed] if isinstance(patch, dict) else [f"<{type(patch).__name__}>"]   # 1.46: not an object = 400
         if bad:
             raise ValueError(f"SETTINGS_KEYS_NOT_ALLOWED:{bad}")
-        cur = self._read(self.base / "settings.json", {})
-        new = _merge(cur, patch)
-        s = _merge(DEFAULT_SETTINGS, new)
-        if s["etc"]["window_set"] not in ("SHORT", "LONG") or s["etc"]["price"] not in ETC.PRICES or not 0.1 <= float(s["etc"]["width"]) <= 10:
-            raise ValueError("ETC_PARAMETERS_INVALID")
-        if not 100 <= int(s["graph"]["cells"]) <= 40000:
-            raise ValueError("GRAPH_CELLS_OUT_OF_RANGE (100..40000)")
-        _atomic(self.base / "settings.json", new)
-        self._history("SETTINGS", who, patch)
+        with self._settings_lock:
+            cur = self._raw_settings()
+            new = _merge(cur, patch)
+            s = _merge(DEFAULT_SETTINGS, new)
+            check_settings(s, patch, self._sdf_dir())
+            _atomic(self.base / "settings.json", new)
+            self._history("SETTINGS", who, patch)
         return s
 
     def _history(self, kind: str, who: str, change) -> None:
-        self.param_history.append({"at": _iso(time.time()), "kind": kind, "who": who, "change": change})
-        self.param_history = self.param_history[-500:]
-        _atomic(self.base / "parameter_history.json", self.param_history)
+        with self._settings_lock:
+            self.param_history.append({"at": _iso(time.time()), "kind": kind, "who": who, "change": change})
+            self.param_history = self.param_history[-500:]
+            _atomic(self.base / "parameter_history.json", self.param_history)
 
     def module_on(self, m: str) -> bool:
         s = self.settings()
@@ -290,7 +364,8 @@ class ResearchModulesService:
         c.last_m5 = m5[-1]["t"]
         h1 = c.bars_fn("H1", 1100)
         m15 = c.bars_fn("M15", 300)
-        snap = {"t": m5[-1]["t"] + 300, "bar_t": m5[-1]["t"], "context": c.key, "generation": len(c.snaps) + 1, "modules": {}}
+        c.gen += 1
+        snap = {"t": m5[-1]["t"] + 300, "bar_t": m5[-1]["t"], "context": c.key, "generation": c.gen, "modules": {}}
         if self.module_on("exponential_trend_channel"):
             p = {k: s["etc"][k] for k in ("price", "window_set", "width")}
             e5 = ETC.snapshot(m5, len(m5) - 1, p, c.etc_prev)
@@ -358,6 +433,9 @@ class ResearchModulesService:
         if not py:
             c.sdf = {**st, "state": "WAITING_DEPENDENCY", "reason": "brak środowiska z torch 2.14.1 (np. .venv_tirex2 po instalacji modeli 1.41)"}
             return
+        if run and not (isinstance(run, str) and RUN_ID.match(run)):    # 1.46: a legacy settings.json may hold a path - never given to the worker
+            c.sdf = {**st, "state": "ERROR", "reason": "nieprawidłowa aktywna wersja SDformerFlow w ustawieniach (dozwolona tylko nazwa wersji)"}
+            return
         if run and (self._sdf_dir() / run / "last.pt").exists():
             self._sdf_infer(c, h1, py, run)
             return
@@ -378,44 +456,62 @@ class ResearchModulesService:
         if len(h1) < 600:
             c.sdf = {**st, "state": "NO_DATA", "reason": f"za mało zamkniętych świec H1 ({len(h1)} < 600) do bootstrap treningu"}
             return
-        self.start_training(c, h1, op="from_scratch", reason="BOOTSTRAP (brak checkpointu – DIRECT_USER_REQUEST)")
+        r = self.start_training(c, h1, op="from_scratch", reason="BOOTSTRAP (brak checkpointu – DIRECT_USER_REQUEST)")
+        if not r.get("ok"):                               # 1.46: refused (Memory Governor, AUTO trading, ...) was shown as TRAINING without a job
+            c.sdf = {**st, "state": "MISSING", "reason": f"bootstrap treningu odłożony: {r.get('reason')}"[:300]}
+            return
         c.sdf = {**st, "state": "TRAINING", "job": self.jobs.get("sdformer_bootstrap")}
 
-    def start_training(self, c: Context, h1: list[dict], *, op: str = "from_scratch", checkpoint: str | None = None, reason: str = "panel") -> dict:
+    def start_training(self, c: Context, h1: list[dict], *, op: str = "from_scratch", checkpoint: str | None = None, reason: str = "panel",
+                       force: bool = False) -> dict:
         py = torch_python()
         if not py:
             return {"ok": False, "reason": "WAITING_DEPENDENCY: brak środowiska z torch"}
         if self._sdf_proc and self._sdf_proc.poll() is None:
             return {"ok": False, "reason": "trening SDformerFlow już trwa (jedno ciężkie zadanie naraz)"}
-        if self.governor is not None:
-            ok, why = self.governor.admit_training("sdformerflow", "heavy", trading_active=False)
+        s = self.settings()["sdformer"]
+        try:                                              # 1.46: numbers checked BEFORE the governor slot is taken (it was kept until restart)
+            nums = [str(int(s["epochs"])), str(float(s["minutes"])), str(int(s["batch"])), str(int(s["threads"]))]
+        except (KeyError, TypeError, ValueError) as exc:
+            return {"ok": False, "reason": f"SETTINGS_INVALID: ustawienia sdformer ({type(exc).__name__}: {exc})"[:300]}
+        gov = self.governor
+        if gov is not None:
+            # 1.46: the REAL trading state (trading_active was hard-coded False - "no background training during AUTO trading" never applied)
+            # and the profile's heavy_allowed (LOW_MEMORY_8GB: SDformerFlow training off); force = explicit confirmation from the panel
+            mode = getattr(getattr(getattr(self, "rt", None), "modes", None), "mode", "SIGNALS")
+            allowed = (gov.profile() or {}).get("heavy_allowed") if hasattr(gov, "profile") else None
+            if allowed is not None and "sdformerflow" not in allowed:
+                return {"ok": False, "reason": f"RESOURCE: profil pamięci – trening sdformerflow wyłączony (dozwolone ciężkie: {', '.join(allowed) or 'brak'})"}
+            ok, why = gov.admit_training("sdformerflow", "heavy", trading_active=mode in ("AUTO_DEMO", "AUTO_LIVE"), force=bool(force))
             if not ok:
                 return {"ok": False, "reason": f"RESOURCE: {why}"}
-        s = self.settings()["sdformer"]
-        data = self._sdf_dir() / "bootstrap_h1.json"
-        _atomic(data, h1)
-        run_id = "SDF-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        status = self._sdf_dir() / f"{run_id}.status.json"
-        cancel = self._sdf_dir() / "cancel.flag"
-        cancel.unlink(missing_ok=True)
-        argv = [py, "-m", "sdformer_runtime.train", "--data", str(data), "--out", str(self._sdf_dir()), "--op", op, "--epochs", str(int(s["epochs"])),
-                "--minutes", str(float(s["minutes"])), "--batch", str(int(s["batch"])), "--threads", str(int(s["threads"])), "--context", c.key,
-                "--cancel-file", str(cancel), "--status-file", str(status), "--run-id", run_id] + (["--checkpoint", checkpoint] if checkpoint else [])
-        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHONNOUSERSITE="1")
-        env.pop("PYTHONHOME", None)
-        job = {"job_id": run_id, "kind": "TRAIN", "op": op, "state": "RUNNING", "started_at": time.time(), "reason": reason, "context": c.key,
-               "status_file": str(status), "component": "TH_SDFORMERFLOW", "profile": "direct_train",
-               "base_active": s.get("active_run")}
-        self.jobs["sdformer_bootstrap" if op == "from_scratch" and reason.startswith("BOOTSTRAP") else f"sdformer_{run_id}"] = job
-        self.jobs["sdformer_last"] = job
-        try:
+        job = None
+        try:                                              # 1.46: any error before the process runs releases the governor slot
+            data = self._sdf_dir() / "bootstrap_h1.json"
+            _atomic(data, h1)
+            run_id = "SDF-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            status = self._sdf_dir() / f"{run_id}.status.json"
+            cancel = self._sdf_dir() / "cancel.flag"
+            cancel.unlink(missing_ok=True)
+            argv = [py, "-m", "sdformer_runtime.train", "--data", str(data), "--out", str(self._sdf_dir()), "--op", op, "--epochs", nums[0],
+                    "--minutes", nums[1], "--batch", nums[2], "--threads", nums[3], "--context", c.key,
+                    "--cancel-file", str(cancel), "--status-file", str(status), "--run-id", run_id] + (["--checkpoint", checkpoint] if checkpoint else [])
+            env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHONNOUSERSITE="1")
+            env.pop("PYTHONHOME", None)
+            job = {"job_id": run_id, "kind": "TRAIN", "op": op, "state": "RUNNING", "started_at": time.time(), "reason": reason, "context": c.key,
+                   "status_file": str(status), "component": "TH_SDFORMERFLOW", "profile": "direct_train",
+                   "base_active": s.get("active_run")}
+            self.jobs["sdformer_bootstrap" if op == "from_scratch" and reason.startswith("BOOTSTRAP") else f"sdformer_{run_id}"] = job
+            self.jobs["sdformer_last"] = job
             self._sdf_proc = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                               text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError as exc:
-            if self.governor is not None:
-                self.governor.training_done("sdformerflow")
-            job.update(state="FAILED", finished_at=time.time(), error=f"nie można uruchomić procesu treningu: {exc}"[:300])
-            return {"ok": False, "reason": job["error"]}
+        except Exception as exc:  # noqa: BLE001
+            if gov is not None:
+                gov.training_done("sdformerflow")
+            err = f"nie można uruchomić procesu treningu: {type(exc).__name__}: {exc}"[:300]
+            if job is not None:
+                job.update(state="FAILED", finished_at=time.time(), error=err)
+            return {"ok": False, "reason": err}
         if self.governor is not None:
             p = self._sdf_proc
             self.governor.register("sdformerflow", "heavy", lambda: p.pid if p.poll() is None else None)
@@ -439,7 +535,11 @@ class ResearchModulesService:
                        result={k: res.get(k) for k in ("run_id", "samples", "params", "epochs_done", "steps", "weights_changed", "history", "seconds", "metrics", "code")},
                        error=res.get("error"))
             if res.get("ok"):
-                self._activate_sdformer(res["run_id"], job)
+                try:
+                    self._activate_sdformer(res["run_id"], job)
+                except Exception as exc:                  # 1.46: an activation error killed this thread silently (DONE, no 'activation')
+                    log.exception("SDformerFlow activation of %s failed", res.get("run_id"))
+                    job["activation"] = {"state": "FAILED", "reason": f"{type(exc).__name__}: {exc}"[:300]}
         threading.Thread(target=wait, name="sdformer-train", daemon=True).start()
         return {"ok": True, "job": job}
 
@@ -464,20 +564,34 @@ class ResearchModulesService:
             data = self._sdf_dir() / "bootstrap_h1.json"
         else:
             _atomic(data, h1)
-        r = subprocess.run([py, "-m", "sdformer_runtime.infer", "--checkpoint", str(self._sdf_dir() / run_id), "--bars", str(data)],
-                           cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend")), capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=300)
-        line = (r.stdout.strip().splitlines() or [""])[-1]
-        ok = line.startswith("RESULT ") and json.loads(line[7:]).get("ok")
+        # 1.46: TimeoutExpired / an unreadable RESULT line raised (manual activation -> 500, after training the thread died); same
+        # environment flags as the live inference (_sdf_infer) and no console window on Windows
+        try:
+            r = subprocess.run([py, "-m", "sdformer_runtime.infer", "--checkpoint", str(self._sdf_dir() / run_id), "--bars", str(data)],
+                               cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONNOUSERSITE="1"),
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300, check=False,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            line = (r.stdout.strip().splitlines() or [""])[-1]
+            res = json.loads(line[7:]) if line.startswith("RESULT ") else {}
+            ok = isinstance(res, dict) and bool(res.get("ok"))
+        except subprocess.TimeoutExpired:
+            ok, line = False, "TIMEOUT 300 s – proces przerwany"
+        except (OSError, ValueError) as exc:
+            ok, line = False, f"{type(exc).__name__}: {exc}"
         if not ok:
             job["activation"] = {"state": "FAILED", "reason": "test techniczny checkpointu nieudany – poprzednia wersja zostaje", "detail": line[:300]}
             return
         prev = s["sdformer"].get("active_run")
-        self.update_settings({"sdformer": {"active_run": run_id, "previous_run": prev}}, who=f"job:{job['job_id']}")
+        try:
+            self.update_settings({"sdformer": {"active_run": run_id, "previous_run": prev}}, who=f"job:{job['job_id']}")
+        except ValueError as exc:                         # 1.46: e.g. a legacy invalid sdformer value - reported, never a 500 / dead thread
+            job["activation"] = {"state": "FAILED", "reason": f"zapis ustawień odrzucony: {exc}"[:300]}
+            return
         job["activation"] = {"state": "ACTIVE", "run_id": run_id, "previous": prev, "policy": "DIRECT_USER_REQUEST"}
 
     def _sdf_infer(self, c: Context, h1: list[dict], py: str, run: str) -> None:
-        f = self._sdf_dir() / f"infer_{abs(hash(c.key)) % 10**8}.json"
+        # 1.46: stable name per context (hash() of a str is salted per process - a new 400-bar file after every restart)
+        f = self._sdf_dir() / f"infer_{hashlib.sha256(c.key.encode()).hexdigest()[:12]}.json"
         _atomic(f, h1[-400:])
         try:
             r = subprocess.run([py, "-m", "sdformer_runtime.infer", "--checkpoint", str(self._sdf_dir() / run), "--bars", str(f)],
@@ -558,18 +672,20 @@ class ResearchModulesService:
             job["publication"] = f"APPLIED {nv} (następna generacja snapshotu)"
         else:
             job["publication"] = "KEEP_INCUMBENT: " + ",".join(prop["reasons"])
-        hist = self._read(self.base / "optimizer_jobs.json", [])
-        hist.append({k: job[k] for k in ("job_id", "kind", "state", "finished_at", "publication")} | {"proposal": {k: prop[k] for k in (
-            "objective_hash", "base_version", "incumbent", "incumbent_fitness", "candidate", "candidate_fitness", "winner_algorithm", "change_set",
-            "decision", "reasons", "seconds")} | {"evaluations": [r["evaluations"] for r in prop["runs"]], "data_count": prop["objective"]["data_count"]}})
-        _atomic(self.base / "optimizer_jobs.json", hist[-200:])
+        with self._settings_lock:
+            hist = self._read(self.base / "optimizer_jobs.json", [])
+            hist.append({k: job[k] for k in ("job_id", "kind", "state", "finished_at", "publication")} | {"proposal": {k: prop[k] for k in (
+                "objective_hash", "base_version", "incumbent", "incumbent_fitness", "candidate", "candidate_fitness", "winner_algorithm", "change_set",
+                "decision", "reasons", "seconds")} | {"evaluations": [r["evaluations"] for r in prop["runs"]], "data_count": prop["objective"]["data_count"]}})
+            _atomic(self.base / "optimizer_jobs.json", hist[-200:])
         return job
 
     def _set_composite(self, comp: dict, who: str) -> None:
-        cur = self._read(self.base / "settings.json", {})
-        cur["composite"] = comp
-        _atomic(self.base / "settings.json", cur)
-        self._history("PARAMETERS", who, {"composite": {k: comp.get(k) for k in ("version", "weights", "status")}})
+        with self._settings_lock:                        # 1.46: read-modify-write under the settings lock (see __init__)
+            cur = self._raw_settings()
+            cur["composite"] = comp
+            _atomic(self.base / "settings.json", cur)
+            self._history("PARAMETERS", who, {"composite": {k: comp.get(k) for k in ("version", "weights", "status")}})
 
     def rollback_parameters(self) -> dict:
         cur = self.settings()["composite"]
@@ -582,6 +698,8 @@ class ResearchModulesService:
     # ------------------------------------------------------------------ publication
     def latest(self, inst: str | None = None) -> dict | None:
         c = self.ensure_main_context()
+        if inst and c is not None and c.inst != inst:   # 1.46: inst was ignored - the main context's snapshot answered for any instrument
+            return None
         return c.snaps[-1] if c and c.snaps else None
 
     def features_for(self, inst: str, t: float | None) -> dict:
@@ -618,6 +736,13 @@ class ResearchModulesService:
 
     def predictions(self, inst: str) -> list[dict]:
         from ..modelhub import contract as C
+        c = self.ensure_main_context()
+        if c is not None and inst and c.inst != inst:
+            # 1.46: research results of the main context (its own symbol's candles) were published READY under ANY requested instrument
+            # (BTC got XAUUSD scores in /models/predictions and /models/evidence); like features_for / forecast_predictions: DISABLED
+            return [C.make(instrument=inst, symbol=None, timeframe="M5", model_name="research", model_version=VERSION, task_type="SCORE",
+                           task="RESEARCH_MODULES", horizon_bars=None, unit="ratio", state="DISABLED",
+                           unavailable_reason=f"moduły badawcze liczone dla aktywnego instrumentu ({c.inst})")]
         sn = self.latest(inst)
         out = []
         common = dict(instrument=inst, symbol=None, model_version=VERSION, data_kind="SYNTHETIC" if getattr(self.rt, "demo", False) else "REAL",

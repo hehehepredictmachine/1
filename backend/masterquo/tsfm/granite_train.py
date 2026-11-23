@@ -103,22 +103,29 @@ def start(svc, inst: str, tf: str, *, epochs: int = 6, confirm_during_trading: b
         ok, why = gov.admit_training("granite_train", "heavy", trading_active=trading_active, force=confirm_during_trading)
         if not ok:
             return {"ok": False, "reason": why}
-    ex = export(inst, tf)
-    if not ex["ok"]:
-        if gov is not None:
-            gov.training_done("granite_train")
-        return {"ok": False, "reason": f"zbiór danych odrzucony: {ex['reason']}", "validation": ex.get("validation")}
-    threads = gov.threads_for("chronos2") if gov is not None else max(1, (os.cpu_count() or 2) // 2)
-    argv = [py, "-m", "tsfm_runtime.granite_finetune", "--data", ex["file"], "--weights-root", str(svc.weights_root()), "--out",
-            str(finetune_dir()), "--horizon", str(H), "--epochs", str(int(epochs)), "--threads", str(threads)]
-    env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
-               OMP_NUM_THREADS=str(threads), MKL_NUM_THREADS=str(threads))
+    try:
+        ex = export(inst, tf)
+        if not ex["ok"]:
+            if gov is not None:
+                gov.training_done("granite_train")
+            return {"ok": False, "reason": f"zbiór danych odrzucony: {ex['reason']}", "validation": ex.get("validation")}
+        threads = gov.threads_for("chronos2") if gov is not None else max(1, (os.cpu_count() or 2) // 2)
+        argv = [py, "-m", "tsfm_runtime.granite_finetune", "--data", ex["file"], "--weights-root", str(svc.weights_root()), "--out",
+                str(finetune_dir()), "--horizon", str(H), "--epochs", str(int(epochs)), "--threads", str(threads)]
+        env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
+                   OMP_NUM_THREADS=str(threads), MKL_NUM_THREADS=str(threads))
 
-    def done(ok, job):
+        def done(ok, job):
+            if gov is not None:
+                gov.training_done("granite_train")
+            svc.applog.info("TSFM", "GRANITE_TRAIN", f"Trening Granite TTM {inst} {tf}: {'OK ' + str((job.get('result') or {}).get('run_id')) if ok else 'BŁĄD ' + str(job.get('code'))}.")
+        r = svc._run_job_proc("granite_train", argv, env=env, on_done=done)
+    except Exception as exc:  # noqa: BLE001
+        # 1.46: an exception after the admission (unreadable candle store, full disk, process start) left the governor's training slot
+        # taken until restart - every later heavy training was refused - and the endpoint answered 500
         if gov is not None:
             gov.training_done("granite_train")
-        svc.applog.info("TSFM", "GRANITE_TRAIN", f"Trening Granite TTM {inst} {tf}: {'OK ' + str((job.get('result') or {}).get('run_id')) if ok else 'BŁĄD ' + str(job.get('code'))}.")
-    r = svc._run_job_proc("granite_train", argv, env=env, on_done=done)
+        return {"ok": False, "reason": f"trening nie wystartował: {type(exc).__name__}: {exc}"[:300]}
     if not r.get("ok") and gov is not None:
         gov.training_done("granite_train")
     return {**r, "dataset": {k: ex[k] for k in ("bars", "first", "last", "sha256", "data_kind")}, "horizon": H, "threads": threads}

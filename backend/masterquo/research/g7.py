@@ -19,6 +19,7 @@ import math
 
 VERSION = "PMW_G7_SRC_PORT_V1"
 DEFAULT = {"ob_lookback": 50, "impulse_factor": 1.5, "corr_periods": 24}
+TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 
 
 def check_fvg(bars: list[dict]) -> int:
@@ -112,10 +113,12 @@ class ZoneBook:
         self.zones: dict[str, dict] = {}
 
     def observe(self, tf: str, bars: list[dict], p: dict | None = None) -> None:
-        p = {**DEFAULT, **(p or {})}
         if len(bars) < 4:
             return
-        t_close = float(bars[-1]["t"]) + float(bars[-1].get("tf_s") or 0)
+        # 1.46: bars from the bridge carry no tf_s - available_at / valid_from (and the TOUCHED / MITIGATED events) were the OPEN of the
+        # bar, i.e. before the bar that formed / touched the zone had closed; now its close = open + the timeframe's duration
+        tf_s = float(bars[-1].get("tf_s") or TF_SECONDS.get(tf, 0))
+        t_close = float(bars[-1]["t"]) + tf_s
         f = check_fvg(bars)
         if f:
             r1, r3 = bars[-1], bars[-3]
@@ -132,10 +135,10 @@ class ZoneBook:
             touched = l_ <= z["hi"] and h_ >= z["lo"]
             if z["direction"] == "BULL" and c < z["lo"] or z["direction"] == "BEAR" and c > z["hi"]:
                 z["state"] = "MITIGATED"
-                z["events"].append({"t": float(last["t"]), "event": "MITIGATED"})
+                z["events"].append({"t": t_close, "event": "MITIGATED"})
             elif touched and z["state"] == "ACTIVE":
                 z["state"] = "TOUCHED"
-                z["events"].append({"t": float(last["t"]), "event": "TOUCHED"})
+                z["events"].append({"t": t_close, "event": "TOUCHED"})
 
     def asof(self, t: float) -> list[dict]:
         """Zones as they were known at time t (state replayed from the events <= t) - mitigation later never erases earlier existence."""

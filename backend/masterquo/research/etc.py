@@ -135,10 +135,5 @@ def series_asof(bars: list[dict], p: dict | None = None, start: int = 0) -> list
     return out
 
 
-def live_position(snap: dict, live_price: float | None) -> float | None:
-    """etc_position_z_live: the tick price against the channel fitted on the last CLOSED bar - a separate field, never a training
-    feature (the fit does not move within a bar; only the price does)."""
-    ch = (snap or {}).get("channel")
-    if not ch or not live_price or live_price <= 0 or ch["spread"] <= 0:
-        return None
-    return (math.log(live_price) - ch["level"] - ch["slope"]) / ch["spread"]          # one bar ahead of the newest closed bar
+
+# 1.46: live_position() (etc_position_z_live) removed - dead code, never called anywhere (backend, tools, tests, frontend)

@@ -15,8 +15,11 @@ import hashlib
 import io
 import json
 import math
+import os
+import re
 import threading
 import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +44,11 @@ COMPONENTS = {
 PRICE_IDX = list(ETC.PRICES)
 WS_IDX = ["SHORT", "LONG"]
 ETC_TARGET_COVERAGE = 0.90
+# 1.46: import limits AFTER decompression (the endpoint only limits the compressed upload to 200 MB - a ZIP bomb unpacked to many GB
+# in the bot's process); declared sizes are checked before anything is read and every read is capped while streaming
+MAX_IMPORT_UNPACKED = 1024 * 1024 * 1024
+MAX_IMPORT_JSON = 8 * 1024 * 1024
+RUN_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def _now():
@@ -58,7 +66,7 @@ class Components:
         self.svc = svc
         self.jobs: dict[str, dict] = {}
         self._cancel = threading.Event()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()        # 1.46: ETC job start (check + registration) and etc_versions.json read-modify-write
 
     # ------------------------------------------------------------------ ETC versions
     def _etc_file(self) -> Path:
@@ -76,13 +84,22 @@ class Components:
         from .service import _atomic
         _atomic(self._etc_file(), v[-100:])
 
+    def _add_etc_version(self, entry: dict, replace: str | None = None) -> None:
+        with self._lock:                                  # 1.46: one writer at a time (optimisation thread vs import from the API)
+            vs = [x for x in self.etc_versions() if replace is None or x["version"] != replace]
+            vs.append(entry)
+            self._save_etc(vs)
+
     def etc_activate(self, version: str, who: str = "panel") -> dict:
         vs = {x["version"]: x for x in self.etc_versions()}
         if version not in vs:
             return {"ok": False, "reason": "nieznana wersja"}
         p = vs[version]["params"]
         cur = self.svc.settings()["etc"]
-        self.svc.update_settings({"etc": {**p, "param_version": version, "previous_version": cur.get("param_version")}}, who=who)
+        try:
+            self.svc.update_settings({"etc": {**p, "param_version": version, "previous_version": cur.get("param_version")}}, who=who)
+        except ValueError as exc:                         # 1.46: e.g. a version imported by 1.45 with a non-numeric width - 409, not 500
+            return {"ok": False, "reason": f"parametry wersji odrzucone: {exc}"}
         return {"ok": True, "active": version, "previous": cur.get("param_version"), "note": "nowe parametry obowiązują od następnej generacji snapshotu"}
 
     def etc_rollback(self) -> dict:
@@ -98,6 +115,8 @@ class Components:
         runs = []
         for d in sorted(p for p in sd.iterdir() if p.is_dir()):
             meta = self.svc._read(d / "sdformer_run.json", {})
+            if not isinstance(meta, dict):                # 1.46: a 1.45 import could store any JSON ("[]" -> AttributeError -> 500 for good)
+                meta = {}
             runs.append({"version": d.name, "has_checkpoint": (d / "last.pt").exists(), "epochs_done": meta.get("epochs_done"), "steps": meta.get("steps"),
                          "dataset_hash": meta.get("dataset_hash"), "samples": meta.get("samples"), "history": meta.get("history"), "ok": meta.get("ok"),
                          "code": meta.get("code")})
@@ -128,8 +147,7 @@ class Components:
                 from .service import _atomic
                 f = self.svc._sdf_dir() / "dataset_h1.json"
                 _atomic(f, h1)
-                import hashlib as _h
-                dh = _h.sha256(f.read_bytes()).hexdigest()[:20]
+                dh = hashlib.sha256(f.read_bytes()).hexdigest()[:20]
                 return {"ok": True, "kind": "DATASET", "bars": len(h1), "file_hash": dh, "context": c.key if c else None,
                         "state": "READY" if len(h1) >= 600 else "NO_DATA"}
             if kind != "TRAIN":
@@ -140,10 +158,15 @@ class Components:
             ck = body.get("checkpoint") or (self.svc.settings()["sdformer"].get("active_run") if op != "from_scratch" else None)
             if op != "from_scratch" and not ck:
                 raise ValueError("fine_tune / resume wymaga checkpointu")
+            # 1.46: the checkpoint (body or a legacy settings.json) is a version folder directly in research/sdformer with last.pt -
+            # an absolute / '..' path made the worker load and write checkpoints anywhere on the disk
+            if ck and (not isinstance(ck, str) or not RUN_ID.match(ck) or not (self.svc._sdf_dir() / ck / "last.pt").is_file()):
+                raise ValueError("CHECKPOINT_INVALID: dozwolona tylko istniejąca wersja SDformerFlow (nazwa katalogu z last.pt)")
             h1 = c.bars_fn("H1", 6000) if c else []
             if len(h1) < 600:
                 return {"ok": False, "state": "NO_DATA", "reason": f"za mało zamkniętych świec H1 ({len(h1)} < 600)"}
-            return self.svc.start_training(c, h1, op=op, checkpoint=str(self.svc._sdf_dir() / ck) if ck else None, reason="panel (DIRECT_USER_REQUEST)")
+            return self.svc.start_training(c, h1, op=op, checkpoint=str(self.svc._sdf_dir() / ck) if ck else None, reason="panel (DIRECT_USER_REQUEST)",
+                                           force=bool(body.get("confirm_during_trading")))
         # ETC
         if kind == "DATASET":
             m5 = c.bars_fn("M5", 3000) if c else []
@@ -153,16 +176,17 @@ class Components:
                     "masked_rows": sum(1 for r in ser if any((r.get("masks") or {}).values())), "state": "READY" if ser else "NO_DATA"}
         if kind != "OPTIMIZE":
             raise ValueError("ETC_LOG_CHANNEL: kind OPTIMIZE | DATASET")
-        if self.jobs.get("etc_last", {}).get("state") == "RUNNING":
-            return {"ok": False, "reason": "optymalizacja ETC już trwa"}
-        m5 = c.bars_fn("M5", 3000) if c else []
-        if len(m5) < 700:
-            return {"ok": False, "state": "NO_OPTIMIZATION_TARGET", "reason": f"za mało zamkniętych świec M5 z dojrzałą etykietą (+10) – {len(m5)} < 700; analiza bazowa działa"}
-        job = {"job_id": "ETC-OPT-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S"), "kind": "OPTIMIZE", "component_id": "ETC_LOG_CHANNEL",
-               "state": "RUNNING", "started_at": time.time(), "context": c.key, "base_version": self.svc.settings()["etc"].get("param_version")}
-        self.jobs["etc_last"] = job
-        self._cancel.clear()
-        threading.Thread(target=self._etc_optimize, args=(job, m5, body), name="etc-optimize", daemon=True).start()
+        with self._lock:          # 1.46: check-then-act was split by the candle read - a double click started two optimisations
+            if self.jobs.get("etc_last", {}).get("state") == "RUNNING":
+                return {"ok": False, "reason": "optymalizacja ETC już trwa"}
+            m5 = c.bars_fn("M5", 3000) if c else []
+            if len(m5) < 700:
+                return {"ok": False, "state": "NO_OPTIMIZATION_TARGET", "reason": f"za mało zamkniętych świec M5 z dojrzałą etykietą (+10) – {len(m5)} < 700; analiza bazowa działa"}
+            job = {"job_id": "ETC-OPT-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S"), "kind": "OPTIMIZE", "component_id": "ETC_LOG_CHANNEL",
+                   "state": "RUNNING", "started_at": time.time(), "context": c.key, "base_version": self.svc.settings()["etc"].get("param_version")}
+            self.jobs["etc_last"] = job
+            self._cancel.clear()
+            threading.Thread(target=self._etc_optimize, args=(job, m5, body), name="etc-optimize", daemon=True).start()
         return {"ok": True, "job": job}
 
     def cancel(self, component_id: str) -> dict:
@@ -228,10 +252,8 @@ class Components:
                 job.update(state="DONE", artifact={"state": "NOT_CREATED", "reason": "KEEP_INCUMBENT"}, activation={"state": "SKIPPED"})
                 return
             ver = "ETC-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-            vs = self.etc_versions()
-            vs.append({"version": ver, "params": cand, "schema_hash": ETC.schema_hash(cand), "params_hash": ETC.params_hash(cand), "created_at": _now(),
-                       "source": job["job_id"], "objective": job["computation"]})
-            self._save_etc(vs)
+            self._add_etc_version({"version": ver, "params": cand, "schema_hash": ETC.schema_hash(cand), "params_hash": ETC.params_hash(cand),
+                                   "created_at": _now(), "source": job["job_id"], "objective": job["computation"]})
             job["artifact"] = {"state": "SAVED", "version": ver, "params": cand}
             # technical check: the transform runs, finite features
             test = ETC.snapshot(m5, len(m5) - 1, cand)
@@ -274,31 +296,76 @@ class Components:
         return buf.getvalue()
 
     def import_zip(self, component_id: str, data: bytes) -> dict:
-        """Validated import: only the declared files, no paths, no scripts; the checkpoint must load strictly in the worker env."""
+        """Validated import: only the declared files, no paths, no scripts; the checkpoint must load strictly in the worker env.
+        1.46: unpacked sizes limited (checked before reading, enforced while streaming), last.pt streamed to disk with the hash computed on
+        the fly (it was unpacked into memory twice), every JSON must be an object of the expected shape - a malformed archive is a
+        ValueError (400), never AttributeError / TypeError (500) or a stored file that breaks the component status for good."""
+        if component_id not in COMPONENTS:
+            raise ValueError("UNKNOWN_COMPONENT")
         z = zipfile.ZipFile(io.BytesIO(data))
-        names = set(z.namelist())
+        infos = z.infolist()
+        names = {i.filename for i in infos}
         allowed = {"manifest.json", "last.pt", "sdformer_run.json"} if component_id == "TH_SDFORMERFLOW" else {"manifest.json", "etc_transform.json"}
         if not names <= allowed or any("/" in n or "\\" in n for n in names):
             raise ValueError(f"niedozwolone pliki w archiwum: {sorted(names - allowed)}")
-        man = json.loads(z.read("manifest.json"))
+        if len(infos) != len(names):
+            raise ValueError("powtórzone nazwy plików w archiwum")
+        if sum(i.file_size for i in infos) > MAX_IMPORT_UNPACKED or any(i.file_size > MAX_IMPORT_JSON for i in infos if i.filename != "last.pt"):
+            raise ValueError(f"archiwum po rozpakowaniu przekracza limit ({MAX_IMPORT_UNPACKED // 2**20} MB, pliki JSON {MAX_IMPORT_JSON // 2**20} MB)")
+        man = self._zip_json(z, "manifest.json")
         if man.get("component_id") != component_id or man.get("implementation_id") != COMPONENTS[component_id]["implementation_id"]:
             raise ValueError("INCOMPATIBLE: inny komponent / implementacja")
         if component_id == "ETC_LOG_CHANNEL":
-            v = json.loads(z.read("etc_transform.json"))
-            p = v["params"]
-            if p["price"] not in ETC.PRICES or p["window_set"] not in WS_IDX or not 0.1 <= float(p["width"]) <= 10:
+            v = self._zip_json(z, "etc_transform.json")
+            p = v.get("params")
+            w = p.get("width") if isinstance(p, dict) else None
+            ok = (isinstance(p, dict) and isinstance(p.get("price"), str) and p["price"] in ETC.PRICES and isinstance(p.get("window_set"), str)
+                  and p["window_set"] in WS_IDX and isinstance(w, (int, float)) and not isinstance(w, bool) and 0.1 <= float(w) <= 10)
+            if not ok:
                 raise ValueError("parametry poza zakresem")
             ver = "ETC-IMP-" + _hash(p)[:8]
-            vs = [x for x in self.etc_versions() if x["version"] != ver]
-            vs.append({**v, "version": ver, "source": "IMPORT", "created_at": _now()})
-            self._save_etc(vs)
+            self._add_etc_version({**v, "version": ver, "source": "IMPORT", "created_at": _now()}, replace=ver)
             return {"ok": True, "version": ver, "activation": "ręczna (Aktywuj wersję)"}
-        ver = "SDF-IMP-" + hashlib.sha256(z.read("last.pt")).hexdigest()[:10]
-        d = self.svc._sdf_dir() / ver
-        d.mkdir(parents=True, exist_ok=True)
-        for n in names - {"manifest.json"}:
-            (d / n).write_bytes(z.read(n))
+        if "last.pt" not in names:
+            raise ValueError("brak last.pt w archiwum")
+        meta = self._zip_json(z, "sdformer_run.json") if "sdformer_run.json" in names else None
+        sd = self.svc._sdf_dir()
+        tmp = sd / f".import-{uuid.uuid4().hex}.part"
+        try:
+            h, n = hashlib.sha256(), 0
+            with z.open("last.pt") as src, open(tmp, "wb") as dst:
+                while chunk := src.read(1 << 20):
+                    n += len(chunk)
+                    if n > MAX_IMPORT_UNPACKED:
+                        raise ValueError("last.pt po rozpakowaniu przekracza limit")
+                    h.update(chunk)
+                    dst.write(chunk)
+            ver = "SDF-IMP-" + h.hexdigest()[:10]
+            d = sd / ver
+            d.mkdir(parents=True, exist_ok=True)
+            os.replace(tmp, d / "last.pt")
+        finally:
+            tmp.unlink(missing_ok=True)                   # our own partial file only (after os.replace it no longer exists)
+        if meta is not None:
+            (d / "sdformer_run.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         return {"ok": True, "version": ver, "activation": "ręczna – przy aktywacji test ładowania i skończoności wyjścia"}
+
+    @staticmethod
+    def _zip_json(z: zipfile.ZipFile, name: str) -> dict:
+        try:
+            with z.open(name) as f:
+                raw = f.read(MAX_IMPORT_JSON + 1)
+        except KeyError:
+            raise ValueError(f"brak {name} w archiwum") from None
+        if len(raw) > MAX_IMPORT_JSON:
+            raise ValueError(f"{name}: plik za duży")
+        try:
+            v = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ValueError(f"{name}: nieprawidłowy JSON ({exc})"[:200]) from None
+        if isinstance(v, dict):
+            return v
+        raise ValueError(f"{name}: oczekiwany obiekt JSON")         # 400 at the API (TypeError would be a 500)
 
     def activate_sdf(self, version: str) -> dict:
         d = self.svc._sdf_dir() / version
