@@ -15,6 +15,7 @@ follows its own zone's DST. FIXED_GMT mode uses the entered GMT hours literally.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, time as dtime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -85,20 +86,34 @@ def sessions(as_of: datetime, mode: str = "AUTO_DST") -> list[dict]:
 
 
 # ---------------------------------------------------------------- candle countdown
-def candle(tf: str, as_of: datetime, last_bar_open_utc: datetime | None = None) -> dict:
+def candle(tf: str, as_of: datetime, last_bar_open_utc: datetime | None = None, server_offset_seconds: int | None = None) -> dict:
     sec = TF_SECONDS.get(tf)
     if not sec:
         return {"timeframe": tf, "quality": "UNKNOWN", "reason": "UNKNOWN_TIMEFRAME"}
     as_of = as_of.astimezone(UTC)
     ep = as_of.timestamp()
-    o = datetime.fromtimestamp(ep - ep % sec, UTC)          # continuous UTC-anchored bar schedule
+    # 1.46: the schedule was always the UTC grid, but MT5 bars are anchored on the broker SERVER clock (D1 / H4 / H8 open at server
+    # midnight = 22:00 UTC at UTC+2), so open/close/countdown of H4/H8/D1 were off by the server offset. Anchor, best evidence
+    # first: VERIFIED server offset > open of the last MT5 bar of this TF > UTC grid (for H4/H8/D1 flagged TIME_MAPPING_UNVERIFIED).
+    if server_offset_seconds is not None:
+        anchor, basis = -float(server_offset_seconds), "BROKER_SERVER_CLOCK_VERIFIED"
+    elif last_bar_open_utc is not None:
+        anchor, basis = last_bar_open_utc.astimezone(UTC).timestamp(), "LAST_MT5_BAR_OPEN"
+    else:
+        anchor, basis = 0.0, "UTC_GRID"
+    o = datetime.fromtimestamp(anchor + math.floor((ep - anchor) / sec) * sec, UTC)
     c = o + timedelta(seconds=sec)
     q = "CONFIGURED_UNVERIFIED"
-    reason = "ciągły harmonogram UTC; przerwy rynku nie są znane bez kalendarza venue"
+    reason = {"BROKER_SERVER_CLOCK_VERIFIED": "ciągły harmonogram czasu serwera (offset VERIFIED)",
+              "LAST_MT5_BAR_OPEN": "ciągły harmonogram od otwarcia ostatniej świecy MT5",
+              "UTC_GRID": "ciągły harmonogram UTC"}[basis] + "; przerwy rynku nie są znane bez kalendarza venue"
+    if basis == "UTC_GRID" and sec > 3600:
+        q, reason = "TIME_MAPPING_UNVERIFIED", "H4/H8/D1 liczone od siatki UTC – świece MT5 zaczynają się o północy czasu serwera, offset niezweryfikowany"
     if last_bar_open_utc is not None and (as_of - last_bar_open_utc.astimezone(UTC)).total_seconds() > 2 * sec:
         q, reason = "STALE", "ostatnia świeca jest starsza niż 2 interwały – rynek zamknięty albo brak danych"
     return {"timeframe": tf, "open_utc": _iso(o), "close_utc": _iso(c), "seconds_remaining": None if q == "STALE" else int((c - as_of).total_seconds()),
-            "progress": None if q == "STALE" else round((as_of - o).total_seconds() / sec, 4), "is_final": False, "quality": q, "reason": reason}
+            "progress": None if q == "STALE" else round((as_of - o).total_seconds() / sec, 4), "is_final": False, "quality": q, "reason": reason,
+            "time_basis": basis}
 
 
 # ---------------------------------------------------------------- spread / ADR14
@@ -141,6 +156,12 @@ def server_clock(evidence: dict | None) -> dict:
                       "INCONSISTENT": "niespójny", "UNKNOWN": "nieznany"}.get(st, st)}
 
 
+def _verified_offset(evidence: dict | None) -> int | None:
+    """Server offset (s) only when the MT5 ServerClock evidence is VERIFIED - a stored / measuring value is not used (1.46)."""
+    ev = evidence or {}
+    return ev.get("offset_seconds") if ev.get("status") == "VERIFIED" else None
+
+
 def snapshot(*, instrument: str, timeframe: str, as_of: datetime, mode: str = "AUTO_DST", quote: dict | None = None,
              clock_evidence: dict | None = None, last_bar_open_utc: datetime | None = None, d1_bars: list[dict] | None = None,
              market_type: str = "FX_CFD", venue: str = "MT5") -> dict:
@@ -148,7 +169,8 @@ def snapshot(*, instrument: str, timeframe: str, as_of: datetime, mode: str = "A
             "instrument_id": instrument, "venue": venue, "market_type": market_type, "timeframe": timeframe, "gmt_now": _iso(as_of),
             "server_clock": server_clock(clock_evidence), "sessions": sessions(as_of, mode),
             "venue_state": {"state": "UNKNOWN", "reason": "brak autorytatywnego kalendarza venue – sesje miast nie oznaczają otwarcia rynku"},
-            "underlying_state": {"state": "NOT_APPLICABLE"}, "candle": candle(timeframe, as_of, last_bar_open_utc),
+            "underlying_state": {"state": "NOT_APPLICABLE"},
+            "candle": candle(timeframe, as_of, last_bar_open_utc, _verified_offset(clock_evidence)),   # 1.46: server-clock anchored
             "spread": spread(quote), "daily_range": daily_range(d1_bars or []), "calendar_id": None, "calendar_version": None,
             "warnings": ["Sesje Sydney/Tokio/Londyn/Nowy Jork to okna czasu, nie stan otwarcia rynku symbolu."],
             "mode": "READ_ONLY"}
