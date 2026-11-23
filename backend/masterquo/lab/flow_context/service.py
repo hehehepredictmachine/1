@@ -5,6 +5,7 @@ artefact (`flow-context train-markov`); without it MODEL_MISSING - the determini
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from pathlib import Path
@@ -122,10 +123,15 @@ class FlowSections:
                 "raw": k.bars[-limit:], "heikin": k.ha[-limit:], "stopdistance": k.sdr[-limit:], "source_parity": "UNVERIFIED_ORIGINAL"}
 
     def channels(self, k: _Key, as_of=None, mode: str = "CURRENT_MAP_FULL_WIDTH") -> dict:
+        try:
+            t = None if as_of is None else SR.as_of_ts(as_of)    # 1.46: numeric as-of (text comparison picked later snapshots)
+        except ValueError:
+            return {"mode": mode, "status": "AS_OF_INVALID", "reason": "as_of: ISO 8601 (Z / offset) albo epoch UTC",
+                    "snapshot": None, "snapshots": [], "events": []}
         if mode == "HISTORY_AS_KNOWN":
-            snaps = [s for s in k.srh.snaps if as_of is None or str(s["as_of"]) <= str(as_of)]
+            snaps = [s for s in k.srh.snaps if t is None or SR.as_of_ts(s["as_of"]) <= t]
             return {"mode": mode, "snapshots": [{"as_of": s["as_of"], "channels": s["channels"]} for s in snaps[-120:]], "events": k.srh.events[-200:]}
-        snap = k.srh.as_of(as_of) if as_of is not None else (k.srh.snaps[-1] if k.srh.snaps else None)
+        snap = k.srh.as_of(t) if t is not None else (k.srh.snaps[-1] if k.srh.snaps else None)
         return {"mode": mode, "snapshot": snap, "events": k.srh.events[-100:],
                 "label": f"bieżąca mapa, znana od {snap['as_of']}" if snap else None}
 
@@ -139,9 +145,17 @@ class FlowSections:
         row = k.sdr[-1] if k.sdr else None
         if row is None:
             return {"status": "WARMUP"}
-        out = {"row": row, "diagnostics": SD.risk_diagnostics(row, strategy_sl_points)}
+        if strategy_sl_points is not None and not math.isfinite(strategy_sl_points):     # 1.46: inf/nan reached the JSON response (500)
+            diag = {"status": "INVALID_INPUT", "reason": "STRATEGY_SL_POINTS_NOT_FINITE", "advisory": True}
+        else:
+            diag = SD.risk_diagnostics(row, strategy_sl_points)
+        out = {"row": row, "diagnostics": diag}
         if entry is not None and side in ("BUY", "SELL") and row.get("suggested_price_distance") is not None:
-            out["sl_price_proposal"] = SD.sl_price(entry, side, row["suggested_price_distance"], k.tick)
+            try:
+                out["sl_price_proposal"] = SD.sl_price(entry, side, row["suggested_price_distance"], k.tick)
+            except ValueError as exc:                              # 1.46: entry nan/inf/<=0 was a 500 (ValueError/OverflowError in floor/ceil)
+                out.update(sl_price_proposal=None, sl_status="INVALID_ENTRY", reason=str(exc))
+                return out
             out["note"] = "propozycja ADVISORY – nie zmienia SL strategii ani TP1=MID M5; cena SL po zaokrągleniu na zewnątrz do tick size"
         return out
 

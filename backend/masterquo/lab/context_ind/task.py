@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -123,8 +124,28 @@ def features(bars: list[dict], tick: float, prof: dict | None = None) -> dict:
 
 
 # ------------------------------------------------------------------ calibration (deterministic, dev only)
+def dev_bars(bars: list[dict]) -> list[dict]:
+    """1.46: DEV part by the SAME rule as structure_task.split on this task's dataset (rows >= 80 with a valid ATR, as build_dataset):
+    cut = first + 80 % of the signal-time span, minus the embargo. The count-based 80 % reached into the time-based holdout across
+    weekends / history gaps while the report said holdout_read=False. Only bars with t + 60 < cut - embargo are returned."""
+    if not bars:
+        return []
+    from ...analysis import structure_v2 as S
+    t = np.array([_ts(b["open_utc"]) for b in bars], float)
+    atr = S.atr_series([b["h"] for b in bars], [b["l"] for b in bars], [b["c"] for b in bars])
+    rows = np.array([i for i in range(80, len(bars)) if atr[i] and atr[i] > 0], dtype=int)
+    if not len(rows):
+        return []
+    ts = t[rows] + 60
+    end = ts.min() + 0.8 * (ts.max() - ts.min()) - 60.0 * max(T.HORIZONS)
+    n = 0
+    while n < len(bars) and t[n] + 60 < end:
+        n += 1
+    return bars[:n]
+
+
 def calibrate(inst: str, bars: list[dict], tick: float, meta: dict) -> dict:
-    dev = bars[: int(0.8 * len(bars))]
+    dev = dev_bars(bars)
     k = int(len(dev) * 0.6)
     ev = dev[k:]
     t = np.array([_ts(b["open_utc"]) for b in ev])
@@ -173,11 +194,14 @@ def calibrate(inst: str, bars: list[dict], tick: float, meta: dict) -> dict:
     p = root(inst) / "profile.json"
     if p.exists():
         (root(inst) / f"profile_{int(time.time())}.json").write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
-    p.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    tmp = p.with_name(f".profile.{os.getpid()}.tmp")         # 1.46: atomic - the runtime reads profile.json on every section update
+    tmp.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
     led = root(inst) / "calibration_trials.jsonl"
     with led.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"at": prof["created_at"], "trials": trials, "chosen": chosen}, default=float) + "\n")
-    return {"trials": trials, "chosen": chosen, "grid_size": len(CALIB_GRID), "holdout_read": False, "profile": profile(inst)}
+    return {"trials": trials, "chosen": chosen, "grid_size": len(CALIB_GRID), "holdout_read": False, "profile": profile(inst),
+            "dev_bars": len(dev), "dev_until": dev[-1]["open_utc"] if dev else None}
 
 
 # ------------------------------------------------------------------ dataset / training

@@ -98,9 +98,13 @@ def edge_drift(values: list[float], baseline_mean: float | None, label_delay: in
 
 # ----------------------------------------------------------------------------- M42
 def trade_pad_plan(*, side: str, entry: float, sl: float, tp: float, lots: float, meta: dict, quote: dict | None,
-                   commission_per_lot_side: float, account_ccy_per_profit_ccy: float = 1.0) -> dict:
-    """Plan + simulation only. P&L from the terminal contract (contract size, tick size/value), bid/ask side and commission.
+                   commission_per_lot_side: float, account_ccy_per_profit_ccy: float | None = None, account_currency: str | None = None) -> dict:
+    """Plan + simulation only. P&L = price move x contract size x lots in the PROFIT currency, converted to the account currency (the
+    commission's currency) only when the conversion is known: an explicit rate, or account currency == profit currency.
     Never sends anything; a real order goes through the Manual Pad (plan -> intent -> execute) and its gateway checks."""
+    # 1.46: NaN passed every comparison and inf the side check - rr / pnl came out NaN/inf and the JSON response failed (500)
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (entry, sl, tp, lots, commission_per_lot_side)):
+        raise ValueError("NON_FINITE_INPUT")
     if side not in ("BUY", "SELL") or lots <= 0:
         raise ValueError("INVALID_PLAN")
     cs = float(meta.get("trade_contract_size") or 0)
@@ -111,11 +115,23 @@ def trade_pad_plan(*, side: str, entry: float, sl: float, tp: float, lots: float
         raise ValueError("SL_TP_WRONG_SIDE")
     spread = (quote["ask"] - quote["bid"]) if quote else None
     comm = 2 * commission_per_lot_side * lots
-    win = sgn * (tp - entry) * cs * lots * account_ccy_per_profit_ccy - comm
-    loss = sgn * (sl - entry) * cs * lots * account_ccy_per_profit_ccy - comm
+    # 1.46: the P&L (profit currency) was netted with the commission (account currency) at a silent rate of 1.0 - e.g. a PLN account on
+    # XAUUSD showed 1000 USD - 40 PLN = 960. Known currencies that differ without a rate -> P&L in the account currency UNAVAILABLE.
+    prof_ccy = meta.get("currency_profit") or None
+    rate, ccy_status = account_ccy_per_profit_ccy, "CONVERTED"
+    if rate is None or not math.isfinite(rate) or rate <= 0:
+        if account_currency and prof_ccy and str(account_currency).upper() != str(prof_ccy).upper():
+            rate, ccy_status = None, "CONVERSION_UNKNOWN"
+        else:
+            rate, ccy_status = 1.0, ("SAME_CURRENCY" if account_currency and prof_ccy else "NOT_VERIFIED")
+    gross_tp, gross_sl = sgn * (tp - entry) * cs * lots, sgn * (sl - entry) * cs * lots
+    win = None if rate is None else round(gross_tp * rate - comm, 2)
+    loss = None if rate is None else round(gross_sl * rate - comm, 2)
     vmin, vstep = float(meta.get("volume_min") or 0.01), float(meta.get("volume_step") or 0.01)
     ok_lot = lots >= vmin and abs(round(lots / vstep) * vstep - lots) < 1e-9
     return {"mode": "SIMULATION_ONLY", "execution": "VIA_MANUAL_PAD", "side": side, "entry": entry, "sl": sl, "tp": tp,
             "lots": lots, "lot_valid": ok_lot, "rr": round(abs(tp - entry) / abs(entry - sl), 3), "spread_now": spread,
-            "pnl_at_tp": round(win, 2), "pnl_at_sl": round(loss, 2), "commission_round_turn": round(comm, 2),
+            "pnl_at_tp": win, "pnl_at_sl": loss, "commission_round_turn": round(comm, 2),
+            "gross_at_tp_profit_ccy": round(gross_tp, 2), "gross_at_sl_profit_ccy": round(gross_sl, 2), "profit_currency": prof_ccy,
+            "pnl_currency": account_currency if rate is not None and account_currency else None, "currency_status": ccy_status,
             "contract_size": cs, "note": "symulacja z parametrów kontraktu; rzeczywiste warunki brokera są nadrzędne"}

@@ -20,10 +20,17 @@ from . import vamd as VM
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 WINDOW = 800
 SERIES_KEEP = 600
+_EVENT_ABS = ("side", "price", "level", "wick", "ref", "ref_kind", "reason")   # window-independent event fields (no bar index / point id)
 
 
 def _ts(x) -> float:
     return x if isinstance(x, (int, float)) else datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+
+
+def _event_base(e: dict) -> str:
+    """1.46: content identity of a structure event. event_id / bar / point_id restart with every window, so after a restart or a new
+    epoch the same event came back under a colliding id (E1|EV-1 with other content) and the whole window was appended again."""
+    return json.dumps([e.get("kind"), e.get("available_at")] + [e.get(f) for f in _EVENT_ABS], default=str)
 
 
 class _Key:
@@ -38,6 +45,8 @@ class _Key:
         self.vrows: list[dict] = []
         self.frows: list[dict] = []
         self.ledgered = 0
+        self.ledger_keys: set | None = None       # 1.46: event keys already in the ledger file (loaded once per epoch)
+        self.key_counts: dict = {}
 
 
 class ContextSections:
@@ -47,15 +56,86 @@ class ContextSections:
         self.bridge: BF.BridgeImporter | None = None
         self.epochs: dict = {}
 
+    def _next_epoch(self, inst: str, tf: str) -> int:
+        """1.46: the epoch counter lived only in memory - after every restart epochs began at E1 again and ledger ids collided.
+        Persisted per (instrument, TF) in ledger/epochs.json; without it (ledgers from before 1.46) the highest epoch found in this TF's
+        ledgers is the base."""
+        d = CT.root(inst) / "ledger"
+        p = d / "epochs.json"
+        try:
+            st = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+        except (OSError, ValueError):
+            st = None
+        if not isinstance(st, dict):
+            st = {}
+        if tf not in st and d.is_dir():
+            st[tf] = 0
+            for f in d.glob(f"{tf}_*.jsonl"):
+                try:
+                    lines = f.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    continue
+                for ln in lines:
+                    try:
+                        ep = json.loads(ln).get("epoch")
+                    except (ValueError, AttributeError):
+                        continue
+                    if isinstance(ep, int):
+                        st[tf] = max(st[tf], ep)
+        try:
+            base = int(st.get(tf) or 0)
+        except (TypeError, ValueError):
+            base = 0
+        ep = max(self.epochs.get((inst, tf), 0), base) + 1
+        st[tf] = ep
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = d / f".epochs.{os.getpid()}.{threading.get_ident()}.tmp"
+            tmp.write_text(json.dumps(st), encoding="utf-8")
+            os.replace(tmp, p)
+        except OSError:
+            pass
+        return ep
+
+    @staticmethod
+    def _known_keys(p) -> set:
+        """Event keys already in the ledger file; rows written before 1.46 get theirs from content + ordinal within the epoch."""
+        keys, cnt = set(), {}
+        if not p.exists():
+            return keys
+        for ln in p.read_text(encoding="utf-8").splitlines():
+            try:
+                r = json.loads(ln)
+            except ValueError:
+                continue
+            if not isinstance(r, dict):
+                continue
+            if r.get("event_key"):
+                keys.add(r["event_key"])
+                continue
+            b = _event_base(r)
+            n = cnt[(r.get("epoch"), b)] = cnt.get((r.get("epoch"), b), 0) + 1
+            keys.add(f"{b}#{n}")
+        return keys
+
     def _ledger(self, k: _Key) -> None:
         new = k.smc.events[k.ledgered:]
         if not new:
             return
         p = CT.root(k.inst) / "ledger" / f"{k.tf}_{k.profile_hash}.jsonl"
         p.parent.mkdir(parents=True, exist_ok=True)
+        if k.ledger_keys is None:
+            k.ledger_keys = self._known_keys(p)
         with p.open("a", encoding="utf-8") as fh:
             for e in new:
-                fh.write(json.dumps(dict(e, ledger_id=f"{k.inst}|{k.tf}|{k.profile_hash}|E{k.epoch}|{e['event_id']}", epoch=k.epoch)) + "\n")
+                b = _event_base(e)
+                n = k.key_counts[b] = k.key_counts.get(b, 0) + 1
+                ek = f"{b}#{n}"
+                if ek in k.ledger_keys:                 # 1.46: already recorded (restart / new epoch over the same window) - append-only, no copy
+                    continue
+                k.ledger_keys.add(ek)
+                fh.write(json.dumps(dict(e, ledger_id=f"{k.inst}|{k.tf}|{k.profile_hash}|E{k.epoch}|{e['event_id']}", epoch=k.epoch,
+                                         event_key=ek)) + "\n")
         k.ledgered = len(k.smc.events)
 
     def update(self, inst: str, tf: str, bars: list[dict], tick: float, ledger: bool = True) -> _Key | None:
@@ -75,7 +155,7 @@ class ContextSections:
                 else:
                     new = bars[pos + 1:]
             if k is None:
-                ep = self.epochs.get((inst, tf), 0) + 1
+                ep = self._next_epoch(inst, tf) if ledger else self.epochs.get((inst, tf), 0) + 1
                 self.epochs[(inst, tf)] = ep
                 k = _Key(inst, tf, tick, ep)
                 self.keys[(inst, tf)] = k
@@ -94,8 +174,10 @@ class ContextSections:
             return k
 
     # ------------------------------------------------------------------ facts adapter (scenarios / agent / cells)
-    def summary(self, k: _Key | None) -> dict:
+    def summary(self, k: _Key | None, tf: str | None = None) -> dict:
         if k is None:
+            if tf is not None and tf not in TF_S:   # 1.46: an unsupported TF (M30 in the SI snapshot) is never computed - not a warm-up
+                return {"status": "NOT_SUPPORTED_TF", "tf": tf, "supported": list(TF_S)}
             return {"status": "WARMING_UP"}
         v = k.vrows[-1] if k.vrows else {}
         f = k.frows[-1] if k.frows else {}

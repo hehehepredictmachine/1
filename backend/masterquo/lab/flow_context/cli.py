@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -114,7 +115,7 @@ def main(argv: list[str]) -> int:
             tick = float(meta["tick_size"])
             point = float((meta.get("spec") or {}).get("point") or tick)
             m1 = _bars(ds, meta.get("file_prefix") or "XAUUSD", "M1")
-            dev = m1[: int(0.8 * len(m1))]                                     # calibration and Markov fits see the DEV part only
+            dev = FT.dev_bars(m1)        # calibration and Markov fits see the DEV part only (1.46: time-based cut as T.split, was count-based)
         if a.c in ("calibrate", "pipeline"):
             out = calibrate(a.asset, dev, point, tick, (getattr(a, "modules", None) or "heikin,sr-channels,stopdistance").split(","), meta)
             if a.c == "calibrate":
@@ -234,9 +235,11 @@ def calibrate(inst: str, dev: list[dict], point: float, tick: float, modules: li
             prof["heikin"] = {"ma1": m1, "p1": p1, "ma2": m2, "p2": p2}
         out["modules"]["heikin"] = {"trials": trials, "chosen": best, "criterion": "zmiany koloru × (1+opóźnienie) – stabilność, nie edge"}
     if "stopdistance" in modules:
-        c = SD.calibrate_factor(fit, point)
+        # 1.46: the factor was fitted for the default period/method (20 SMA) and stored next to the profile's own period/method
+        sd_cfg = prof.get("stopdistance")
+        c = SD.calibrate_factor(fit, point, sd_cfg)
         if c.get("status") == "OK":
-            chk = SD.calibrate_factor(ev, point)
+            chk = SD.calibrate_factor(ev, point, sd_cfg)
             prof["stopdistance"] = dict(prof.get("stopdistance") or {}, factor=round(c["factor"], 4))
             c["dev_eval_quantile_factor"] = chk.get("factor")
         out["modules"]["stopdistance"] = c
@@ -257,7 +260,9 @@ def calibrate(inst: str, dev: list[dict], point: float, tick: float, modules: li
     p = FT.root(inst) / "profile.json"
     if p.exists():
         (FT.root(inst) / f"profile_{int(time.time())}.json").write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
-    p.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    tmp = p.with_name(f".profile.{os.getpid()}.tmp")         # 1.46: atomic - FlowSections reads profile.json on every update
+    tmp.write_text(json.dumps(prof, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
     out["profile"] = FT.profile(inst)
     return out
 
