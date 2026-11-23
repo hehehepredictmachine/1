@@ -206,8 +206,15 @@ def create_app(rt, port: int) -> FastAPI:
                     return JSONResponse({"error": "CSRF_OR_SESSION_INVALID"}, status_code=403)
             elif path.startswith("/api/v1/") and path not in ("/api/v1/health",) and not sec.csrf_for(request.cookies.get(SESSION_COOKIE)):
                 return JSONResponse({"error": "SESSION_REQUIRED_OPEN_MONITOR_PAGE"}, status_code=401)
+            elif path.startswith("/api/") and path not in ("/api/v1/health",) \
+                    and (request.headers.get("sec-fetch-site") or "").lower() in ("cross-site", "same-site"):
+                # 1.46: SameSite=Strict does not separate ports - a page of ANOTHER local app (http://127.0.0.1:<other port>) is same-site and
+                # its <img src> / no-cors fetch carried the session cookie into GETs with side effects (exports, ZIP files, SVP snapshot,
+                # license refresh). A browser marks such a request; the panel (same-origin), a typed URL (none) and non-browser
+                # clients (no header) are unaffected.
+                return JSONResponse({"error": "CROSS_SITE_REQUEST_REFUSED"}, status_code=403)
             # 1.44.0 wersja klienta bez ważnej licencji: działa tylko ekran aktywacji (status / aktywacja), sesja, zdrowie i zamknięcie –
-            # API ekranów FOREX / CRYPTO / OTC, trybów i handlu odpowiada 402 (frontend wraca do ekranu licencji).
+            # API ekranów FOREX / CRYPTO (OTC wycofane), trybów i handlu odpowiada 402 (frontend wraca do ekranu licencji).
             if rt.license.locked and path.startswith("/api/") and not path.startswith("/api/v1/license/") \
                     and path not in ("/api/v1/health", "/api/v1/session", "/api/v1/admin/shutdown"):
                 st = rt.license.state()
@@ -225,10 +232,11 @@ def create_app(rt, port: int) -> FastAPI:
     def _index(request: Request | None = None) -> Response:
         idx = paths.FRONTEND_DIST / "index.html"
         if not idx.exists():
-            resp: Response = HTMLResponse("<h1>MasterQUO AI</h1><p>Brak zbudowanego frontendu (frontend/dist). "
+            # 1.46: display name of the rebrand (was 'MasterQUO AI'); internal identifiers unchanged
+            resp: Response = HTMLResponse(f"<h1>{DISPLAY_NAME}</h1><p>Brak zbudowanego frontendu (frontend/dist). "
                                           "Paczka zawiera gotowy build – sprawdź, czy rozpakowano cały ZIP.</p>", status_code=503)
         else:
-            resp = FileResponse(idx, headers={"Cache-Control": "no-cache"})
+            resp = FileResponse(idx, media_type="text/html", headers={"Cache-Control": "no-cache"})
         cur = request.cookies.get(SESSION_COOKIE) if request is not None else None
         site = (request.headers.get("sec-fetch-site") or "").lower() if request is not None else ""
         if cur and sec.csrf_for(cur):
@@ -247,13 +255,20 @@ def create_app(rt, port: int) -> FastAPI:
     def index(request: Request):
         return _index(request)
 
+    # 1.46: explicit MIME of the panel files - without media_type Starlette asks mimetypes, which on Windows reads the registry
+    # (HKCR\.js "Content Type"); software that set .js to text/plain made WebView2 refuse the module script (nosniff) -> empty panel
+    _MIME = {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json",
+             ".map": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg",
+             ".jpeg": "image/jpeg", ".gif": "image/gif", ".ico": "image/x-icon", ".wasm": "application/wasm", ".woff2": "font/woff2",
+             ".woff": "font/woff", ".ttf": "font/ttf", ".txt": "text/plain", ".mp4": "video/mp4", ".webm": "video/webm"}
+
     @app.get("/assets/{name:path}")
     def assets(name: str):
         base = (paths.FRONTEND_DIST / "assets").resolve()
         f = (base / name).resolve()
         if base not in f.parents or not f.is_file():
             raise HTTPException(404)
-        return FileResponse(f, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        return FileResponse(f, media_type=_MIME.get(f.suffix.lower()), headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     @app.get("/static/{name:path}")
     def static(name: str):
@@ -261,7 +276,7 @@ def create_app(rt, port: int) -> FastAPI:
         f = (base / name).resolve()
         if base not in f.parents or not f.is_file() or f.suffix not in (".png", ".webp", ".svg", ".ico", ".jpg", ".gif"):
             raise HTTPException(404)
-        return FileResponse(f)
+        return FileResponse(f, media_type=_MIME.get(f.suffix.lower()))
 
     @app.get("/api/v1/health")
     def health():
@@ -352,6 +367,14 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(403, f"ASSET_NOT_ALLOWED:{a}")
         return a
 
+    def _check_asset(a, path: str) -> str:
+        # 1.46: SymbolNotAllowed (a PermissionError) from the asset registry was not caught - an asset outside the list (403) or one without
+        # a broker symbol (409, e.g. BTC unmapped) answered 500 in Structure Intelligence / flow / lab / trade pad routes
+        try:
+            return rt.assets.check_asset(a, path)
+        except PermissionError as exc:
+            raise HTTPException(403 if str(exc).startswith("ASSET_NOT_ALLOWED") else 409, str(exc)) from None
+
     @app.get("/api/v1/lab")
     def lab_state(asset: str | None = None):
         return rt.lab.public(_asset(asset))
@@ -382,7 +405,7 @@ def create_app(rt, port: int) -> FastAPI:
             return _nss_job(["train", "--asset", a, "--activate", "none"])
         if a != rt.cfg.get().assets.active:
             raise HTTPException(409, "TRAIN_ONLY_ACTIVE_ASSET")
-        sym = rt.assets.check_asset(a, "TRAINING")
+        sym = _check_asset(a, "TRAINING")
         if rt.bridge.state != "CONNECTED":
             raise HTTPException(409, "MT5_NOT_CONNECTED")
         fams = [f for f in (body.get("families") or FAMILIES) if f in FAMILIES]
@@ -392,8 +415,10 @@ def create_app(rt, port: int) -> FastAPI:
         bars = [b for b in rt.bridge.symbol_bars(sym, "M5", nbars) if b.get("closed") and b.get("open_utc")]
         prot = default_protocol(a, families=fams, experiments=exps, min_events=min_events)
         meta = rt.bridge.symbol_meta(sym) or {}
+        if not meta.get("point"):
+            raise HTTPException(409, "NO_SYMBOL_METADATA")       # 1.46: was trained with an assumed point 0.01 (missing data guessed)
         src = "SYNTHETIC" if (rt.demo or rt.bridge.synthetic or rt.cfg.get().synthetic_demo) else "MT5"
-        return rt.lab.trainer.start(a, bars, point=float(meta.get("point") or 0.01), data_source=src,
+        return rt.lab.trainer.start(a, bars, point=float(meta["point"]), data_source=src,
                                     instrument_id=rt.assets.instrument(a)["instrument_id"], protocol=prot,
                                     artifact_family=body.get("artifact_family") if (body.get("artifact_family") in fams or body.get("artifact_family") == "ALL") else "auto")
 
@@ -422,6 +447,8 @@ def create_app(rt, port: int) -> FastAPI:
     def indicator_context_chart(tf: str = Query("M5")):
         from ..scalp.indicators import SAR_PROFILE, sar_points
         from ..timeutil import utcnow as _now
+        if tf not in TIMEFRAMES:
+            raise HTTPException(400, "INVALID_TIMEFRAME")        # 1.46: unknown TF was a KeyError in the bar buffer -> 500
         b = [x for x in rt.bridge.bars(tf, 600, include_forming=False) if x.get("open_utc")]
         sar = None
         if len(b) >= 2:
@@ -456,6 +483,18 @@ def create_app(rt, port: int) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    # 1.46: one heavy training process per kind - every POST started another one (4 CPU) and parallel runs raced on registry.json
+    train_procs: dict = {}
+    train_procs_lock = __import__("threading").Lock()
+
+    def _train_start(kind: str, start):
+        with train_procs_lock:                                         # check + start atomically (a double click runs in 2 pool threads)
+            pr = train_procs.get(kind)
+            if pr is not None and pr.poll() is None:
+                raise HTTPException(409, "JOB_RUNNING – jedno zadanie treningu naraz (poprzedni proces jeszcze działa)")
+            train_procs[kind] = start()
+            return train_procs[kind]
+
     @app.post("/api/v1/indicator-context/train")
     def indicator_context_train(body: dict):
         """Separate process (never in the bot); POST returns at once, the result is in the registry/report."""
@@ -463,28 +502,35 @@ def create_app(rt, port: int) -> FastAPI:
         inst = body.get("asset") or rt.cfg.get().assets.active
         if inst not in ("XAUUSD", "BTC"):
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
+        comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI
         from ..training import core as tc
-        log = open(tc.training_dir() / "indicator_context_train.log", "a", encoding="utf-8")
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
         cmd = [sys.executable, "-m", "masterquo", "indicator-context", "train", "--asset", inst]
-        if body.get("commission") is not None:
-            cmd += ["--commission", str(float(body["commission"]))]
-        subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), stdout=log, stderr=subprocess.STDOUT, **kw)
+        if comm is not None:
+            cmd += ["--commission", str(comm)]
+
+        def start():
+            with open(tc.training_dir() / "indicator_context_train.log", "a", encoding="utf-8") as log:      # the child keeps its own handle
+                return subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), stdout=log, stderr=subprocess.STDOUT, **kw)
+        _train_start("indicator_context", start)
         return {"started": True, "instrument": inst}
 
+    # 1.46: asset from the body is checked (XAUUSD / BTC) - '../..' created folders and files outside the data folder, a list was a 500
     @app.post("/api/v1/indicator-context/activate")
     def indicator_context_activate(body: dict):
         from ..extind import trainer as ict
+        inst = _asset(body.get("asset") or rt.cfg.get().assets.active)
         try:
-            return {"ok": True, "active": ict.activate(body.get("asset") or rt.cfg.get().assets.active, str(body.get("run_id")), str(body.get("variant")))}
+            return {"ok": True, "active": ict.activate(inst, str(body.get("run_id")), str(body.get("variant")))}
         except (ValueError, OSError, KeyError) as exc:
             return {"ok": False, "reason": str(exc)}
 
     @app.post("/api/v1/indicator-context/rollback")
     def indicator_context_rollback(body: dict):
         from ..extind import trainer as ict
+        inst = _asset(body.get("asset") or rt.cfg.get().assets.active)
         try:
-            return {"ok": True, "active": ict.rollback(body.get("asset") or rt.cfg.get().assets.active)}
+            return {"ok": True, "active": ict.rollback(inst)}
         except (ValueError, OSError) as exc:
             return {"ok": False, "reason": str(exc)}
 
@@ -512,16 +558,21 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/lab/zones")
     def lab_zone_add(body: dict = Body(...)):
         a = body.get("asset") or rt.cfg.get().assets.active
-        rt.assets.check_asset(a, "ZONES")
+        _check_asset(a, "ZONES")
         try:
             return rt.lab.zones.add_manual(a, str(body["tf"]), str(body["kind"]), float(body["top"]), float(body["bottom"]), str(body["origin_time"]))
-        except (KeyError, ValueError) as exc:
+        except (KeyError, ValueError, TypeError) as exc:                  # 1.46: TypeError (top: null) was a 500
             raise HTTPException(400, f"INVALID_ZONE: {exc}") from exc
 
     @app.patch("/api/v1/lab/zones/{zone_id}")
     def lab_zone_patch(zone_id: str, body: dict = Body(...)):
+        # 1.46: expected_revision null / text and a non-numeric top / bottom were TypeErrors -> 500 (now 400 with the field name)
+        rev = body_num(body, "expected_revision", None, int)
+        if rev is None:
+            raise HTTPException(400, "EXPECTED_REVISION_REQUIRED")
+        top, bottom = body_num(body, "top", None, float), body_num(body, "bottom", None, float)
         try:
-            return rt.lab.zones.patch(zone_id, int(body["expected_revision"]), top=body.get("top"), bottom=body.get("bottom"), state=body.get("state"),
+            return rt.lab.zones.patch(zone_id, rev, top=top, bottom=bottom, state=body.get("state"),
                                       blacklist=body.get("blacklist"), reason=str(body.get("reason") or ""))
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
@@ -556,17 +607,21 @@ def create_app(rt, port: int) -> FastAPI:
     def lab_tradepad(body: dict = Body(...)):
         from ..lab.edge import trade_pad_plan
         a = rt.cfg.get().assets.active
-        sym = rt.assets.check_asset(a, "TRADEPAD")
+        sym = _check_asset(a, "TRADEPAD")
         meta = rt.bridge.symbol_meta(sym)
         if not meta:
             raise HTTPException(409, "NO_SYMBOL_METADATA")
         meta = {**meta, **{k: (rt.bridge.symbol_info or {}).get(k) for k in ("volume_min", "volume_step")}}
+        comm_side = rt.cfg.get().scalp.commission_per_lot_side             # None = UNKNOWN (config.py)
         try:
             plan = trade_pad_plan(side=str(body.get("side")), entry=float(body["entry"]), sl=float(body["sl"]), tp=float(body["tp"]),
                                   lots=float(body.get("lots") or 0.01), meta=meta, quote=rt.bridge.quote_status(),
-                                  commission_per_lot_side=float(rt.cfg.get().scalp.commission_per_lot_side or 0))
-        except (KeyError, ValueError) as exc:
+                                  commission_per_lot_side=float(comm_side or 0))
+        except (KeyError, ValueError, TypeError) as exc:                  # 1.46: TypeError (entry: null) was a 500
             raise HTTPException(400, f"INVALID_PLAN: {exc}") from exc
+        if comm_side is None:
+            # 1.46: an UNKNOWN commission was simulated as 0 - P/L at TP / SL and the round-turn cost looked known. Missing = null, never 0.
+            plan.update(pnl_at_tp=None, pnl_at_sl=None, commission_round_turn=None, cost_status="UNAVAILABLE", cost_reason="COMMISSION_UNKNOWN")
         return {"asset": a, "broker_symbol": sym, **plan}
 
     @app.post("/api/v1/lab/tradepad/execute")
@@ -629,7 +684,7 @@ def create_app(rt, port: int) -> FastAPI:
     # ------------------------------------------------------------ PMW-UPD-07 structure intelligence (GET never trains)
     def _si_inst(asset):
         a = asset or rt.cfg.get().assets.active
-        rt.assets.check_asset(a, "STRUCTURE_INTELLIGENCE")
+        _check_asset(a, "STRUCTURE_INTELLIGENCE")
         return a
 
     @app.get("/api/v1/structure-intelligence")
@@ -1181,17 +1236,19 @@ def create_app(rt, port: int) -> FastAPI:
             res = json.loads(r["result"]) if r.get("result") else {}
             k = f"{r['strategy_id']}|{r['signal_tf']}|{r['exec_mode']}"
             g = out.setdefault(k, {"strategy_id": r["strategy_id"], "signal_tf": r["signal_tf"], "exec_mode": r["exec_mode"], "n": 0, "wins": 0,
-                                   "sum_r": 0.0, "n_r": 0, "net_money": 0.0, "hedge_activations": 0})
+                                   "sum_r": 0.0, "n_r": 0, "net_money": 0.0, "n_money": 0, "hedge_activations": 0})
             g["n"] += 1
             if res.get("r_multiple") is not None:
                 g["n_r"] += 1
                 g["sum_r"] += float(res["r_multiple"])
                 g["wins"] += 1 if float(res["r_multiple"]) > 0 else 0
-            g["net_money"] += float(res.get("net_money") or 0.0)
+            if res.get("net_money") is not None:   # 1.46: a plan without a money result was summed as 0 (a group of such plans showed 0.00)
+                g["n_money"] += 1
+                g["net_money"] += float(res["net_money"])
             g["hedge_activations"] += int(res.get("hedge_activations") or 0)
         for g in out.values():
             g["expectancy_r"] = round(g["sum_r"] / g["n_r"], 4) if g["n_r"] else None
-            g["net_money"] = round(g["net_money"], 2)
+            g["net_money"] = round(g["net_money"], 2) if g["n_money"] else None      # missing = null, never 0 (n_money = coverage)
         return {"items": sorted(out.values(), key=lambda x: (x["strategy_id"], x["signal_tf"] or "", x["exec_mode"])),
                 "note": "wynik całego cyklu planu; PAPER oddzielnie od rachunku – nie jest walidacją OOS (patrz replay pakietu)"}
 
@@ -1226,7 +1283,8 @@ def create_app(rt, port: int) -> FastAPI:
         from ..plans import service as _PS
         if layer.upper() == "PACK" or strategy_id or tf or plan_id:
             fam = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get((family or layer).upper())
-            if plan_id is not None and not re.match(r"^PL-[0-9a-f]{14}$", plan_id):
+            # 1.46: basket plans are 'PL-BK' + 20 hex (sh/service.py) - the filter refused existing basket plans with PLAN_ID_INVALID
+            if plan_id is not None and not re.match(r"^PL-(BK[0-9a-f]{20}|[0-9a-f]{14})$", plan_id):
                 raise HTTPException(400, "PLAN_ID_INVALID")
             return _PS.collect_pack(rt.sh, strategy_id=_sh_vid(strategy_id), family=fam, tf=_sh_tf(tf), plan_id=plan_id, history=history, symbol=symbol)
         strat = {"SCALP": "SCALPING", "HEDGE": "HEDGING", "SCALPING": "SCALPING", "HEDGING": "HEDGING"}.get(layer.upper())
@@ -1492,6 +1550,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/signals")
     def signals(limit: int = 30):
         from ..engine.lifecycle import public_setup
+        limit = max(1, limit)                       # 1.46: a negative limit reached SQLite as LIMIT -1 = the WHOLE setups table
         legacy = [public_setup(r) for r in rt.engine.lifecycle.recent(min(limit, 100))]
         active = [{"setup_id": r["setup_id"], "created_at": r["first_seen_at"], "strategy_id": r["record"]["strategy_id"],
                    "profile": f"ACTIVE {r['record']['timeframe']}", "direction": r["record"]["direction"],
@@ -1543,9 +1602,18 @@ def create_app(rt, port: int) -> FastAPI:
         # 1.14: asset mapping / active asset / Execution Lock change only through their dedicated, checked endpoints
         patch.pop("assets", None)
         m5 = patch.get("mt5") or {}
+        if not isinstance(m5, dict):
+            raise HTTPException(400, "INVALID_CONFIG: mt5")      # 1.46: a non-object mt5 section was an AttributeError (.pop) -> 500
         m5.pop("analytical_alias", None)
-        if m5.get("symbol"):                       # symbol typed in Ustawienia -> becomes the active asset's broker symbol
-            patch.setdefault("assets", {})["mappings"] = {rt.cfg.get().assets.active: {"broker_symbol": m5["symbol"], "status": "USER_SPECIFIED"}}
+        active = rt.cfg.get().assets.active
+        cur_map = rt.cfg.get().assets.mappings.get(active)
+        # 1.46: the settings dialog always sends the whole mt5 section back - an UNCHANGED symbol downgraded a CONFIRMED mapping to
+        # USER_SPECIFIED on every save (risk limits, Telegram...), which silently switched off the CONTRACT_SPEC_CHANGED check. Only a
+        # new symbol (or one typed over an unmapped / proposed entry) becomes the user's mapping now.
+        unchanged = cur_map is not None and cur_map.broker_symbol == m5.get("symbol") and cur_map.status in ("CONFIRMED", "USER_SPECIFIED",
+                                                                                                             "AUTO_DETECTED")
+        if m5.get("symbol") and not unchanged:     # symbol typed in Ustawienia -> becomes the active asset's broker symbol
+            patch.setdefault("assets", {})["mappings"] = {active: {"broker_symbol": m5["symbol"], "status": "USER_SPECIFIED"}}
         ex_patch = patch.get("execution")
         if isinstance(ex_patch, dict):
             # the execution mode and its account binding change only through POST /api/v1/mode (account confirmation) -
@@ -1883,7 +1951,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ---------------------------------------------------------------- 1.28 Centrum treningu + rejestr modeli (wspólny kontrakt)
     def _th_inst(x: str) -> str:
-        x = (x or "").upper()
+        x = x.upper() if isinstance(x, str) else ""          # 1.46: a number / object was an AttributeError (.upper) -> 500
         if x not in ("XAUUSD", "BTC"):
             raise HTTPException(400, "INSTRUMENT_NOT_ALLOWED")
         return x
@@ -1894,12 +1962,32 @@ def create_app(rt, port: int) -> FastAPI:
     def _comp():
         return _research().components
 
+    def _cid(cid: str) -> str:
+        # 1.46: an unknown component id was a KeyError (export.zip -> 500) or silently acted on ETC_LOG_CHANNEL (activate / rollback / cancel)
+        from ..research.components import COMPONENTS
+        if cid not in COMPONENTS:
+            raise HTTPException(404, "UNKNOWN_COMPONENT")
+        return cid
+
+    def _sdf_checkpoint(r, ck) -> str:
+        """1.46: a checkpoint from the request is a version id directly in the SDformerFlow folder with last.pt (as activate_sdf checks).
+        An absolute / '..' path made the worker unpickle any file (torch.load weights_only=False) and write a resume anywhere; a number
+        was a TypeError -> 500."""
+        if not isinstance(ck, str) or not _SAFE.match(ck):
+            raise HTTPException(400, "CHECKPOINT_INVALID")
+        d = r._sdf_dir() / ck
+        if d.parent != r._sdf_dir() or not (d / "last.pt").is_file():
+            raise HTTPException(400, "CHECKPOINT_NOT_FOUND")
+        return ck
+
     @app.get("/api/v1/trainhub/components")
     def th_components():
         return _comp().status()
 
     @app.post("/api/v1/trainhub/components/{cid}/jobs")
     def th_component_job(cid: str, body: dict = Body(default={})):
+        if _cid(cid) == "TH_SDFORMERFLOW" and body.get("checkpoint"):
+            _sdf_checkpoint(_research(), body.get("checkpoint"))
         try:
             r = _comp().start_job(cid, str(body.get("kind") or "").upper(), body)
         except ValueError as exc:
@@ -1910,12 +1998,12 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/trainhub/components/{cid}/cancel")
     def th_component_cancel(cid: str):
-        return _comp().cancel(cid)
+        return _comp().cancel(_cid(cid))
 
     @app.post("/api/v1/trainhub/components/{cid}/activate")
     def th_component_activate(cid: str, body: dict = Body(...)):
         c = _comp()
-        r = c.activate_sdf(str(body.get("version"))) if cid == "TH_SDFORMERFLOW" else c.etc_activate(str(body.get("version")))
+        r = c.activate_sdf(str(body.get("version"))) if _cid(cid) == "TH_SDFORMERFLOW" else c.etc_activate(str(body.get("version")))
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason") or "aktywacja nieudana")
         return r
@@ -1923,7 +2011,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/trainhub/components/{cid}/rollback")
     def th_component_rollback(cid: str):
         c = _comp()
-        r = c.rollback_sdf() if cid == "TH_SDFORMERFLOW" else c.etc_rollback()
+        r = c.rollback_sdf() if _cid(cid) == "TH_SDFORMERFLOW" else c.etc_rollback()
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
@@ -1931,18 +2019,22 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/trainhub/components/{cid}/export.zip")
     def th_component_export(cid: str, version: str):
         try:
-            data = _comp().export_zip(cid, version)
+            data = _comp().export_zip(_cid(cid), version)
         except FileNotFoundError:
             raise HTTPException(404, "brak wersji")
         return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{cid}_{version}.zip"'})
 
     @app.post("/api/v1/trainhub/components/{cid}/import")
     async def th_component_import(cid: str, request: Request):
+        from starlette.concurrency import run_in_threadpool
+        _cid(cid)
         data = await request.body()
         if not data or len(data) > 200 * 1024 * 1024:
             raise HTTPException(400, "puste lub zbyt duże archiwum")
         try:
-            return _comp().import_zip(cid, data)
+            # 1.46: unzip + sha256 + disk writes of up to 200 MB ran IN the event loop - every request (STOP, close) and the WebSocket
+            # quotes waited for the import; now in the worker pool
+            return await run_in_threadpool(_comp().import_zip, cid, data)
         except (ValueError, KeyError, __import__("zipfile").BadZipFile) as exc:
             raise HTTPException(400, f"import odrzucony: {exc}")
 
@@ -2090,7 +2182,7 @@ def create_app(rt, port: int) -> FastAPI:
     _KR_TF = ("M1", "M5", "M15", "M30", "H1")
 
     def _kr_tf(tf: str) -> str:
-        tf = (tf or "").upper()
+        tf = tf.upper() if isinstance(tf, str) else ""        # 1.46: a number was an AttributeError (.upper) -> 500
         if tf not in _KR_TF:
             raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
         return tf
@@ -2192,13 +2284,13 @@ def create_app(rt, port: int) -> FastAPI:
     _TS_TF = ("M1", "M3", "M5", "M15", "M30", "H1")
 
     def _ts_tf(tf: str) -> str:
-        tf = (tf or "").upper()
+        tf = tf.upper() if isinstance(tf, str) else ""        # 1.46: a number was an AttributeError (.upper) -> 500
         if tf not in _TS_TF:
             raise HTTPException(400, "TIMEFRAME_NOT_ALLOWED")
         return tf
 
     def _ts_mid(m: str, history: bool = False) -> str:
-        m = (m or "").lower()
+        m = m.lower() if isinstance(m, str) else ""           # 1.46: a number was an AttributeError (.lower) -> 500
         if m not in ("chronos2", "granite_ttm", "tirex2") and not (history and m == "fincast"):   # fincast: RETIRED in 1.40 - history only
             raise HTTPException(400, "MODEL_RETIRED" if m == "fincast" else "MODEL_NOT_ALLOWED")
         return m
@@ -2486,7 +2578,10 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/studio/import")
     def studio_import(body: dict = Body(...)):
         from ..studio import importer as _IM
-        r = _IM.import_package(str(body.get("package") or ""))
+        try:
+            r = _IM.import_package(str(body.get("package") or ""))
+        except (KeyError, TypeError, ValueError, OSError) as exc:      # 1.46: a package with a bad manifest / result file was a 500
+            raise HTTPException(400, f"STUDIO_PACKAGE_INVALID: {type(exc).__name__}: {exc}"[:300]) from None
         if not r.get("ok"):
             raise HTTPException(409, r.get("reason"))
         return r
@@ -2602,8 +2697,11 @@ def create_app(rt, port: int) -> FastAPI:
     def quant_assess(body: dict = Body(...)):
         """Assessment of a given SetupCandidate (evaluation contract) - read-only, not logged, never an order."""
         from ..evaluation import contract as EK
+        cand = body.get("candidate") or body
+        if not isinstance(cand, dict):
+            raise HTTPException(400, "CANDIDATE_INVALID: obiekt wymagany")      # 1.46: a list / text was an AttributeError (.items) -> 500
         try:
-            c = EK.SetupCandidate(**{k: v for k, v in (body.get("candidate") or body).items() if k in EK.SetupCandidate.__dataclass_fields__}).validate()
+            c = EK.SetupCandidate(**{k: v for k, v in cand.items() if k in EK.SetupCandidate.__dataclass_fields__}).validate()
         except (TypeError, EK.ContractError) as exc:
             raise HTTPException(400, f"CANDIDATE_INVALID: {exc}") from None
         return _quant().assess(c.to_dict(), log_row=False)
@@ -2621,7 +2719,8 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, "JOB_KIND_UNKNOWN")
         if any(j["state"] == "RUNNING" for j in q.jobs.values()):
             raise HTTPException(409, "QUANT_JOB_ALREADY_RUNNING")
-        return q.train(body.get("instrument") or None, body.get("task_hash") or None)
+        inst = _th_inst(body["instrument"]) if body.get("instrument") else None     # 1.46: checked (it becomes a folder name)
+        return q.train(inst, body.get("task_hash") or None)
 
     @app.post("/api/v1/quant/mode")
     def quant_mode(body: dict = Body(...)):
@@ -2718,7 +2817,8 @@ def create_app(rt, port: int) -> FastAPI:
         if op not in ("from_scratch", "fine_tune", "resume"):
             raise HTTPException(400, "op: from_scratch | fine_tune | resume")
         h1 = c.bars_fn("H1", 6000) if c else []
-        ck = body.get("checkpoint") or (r.settings()["sdformer"].get("active_run") if op != "from_scratch" else None)
+        ck = _sdf_checkpoint(r, body["checkpoint"]) if body.get("checkpoint") else None      # 1.46: no paths outside the SDF folder
+        ck = ck or (r.settings()["sdformer"].get("active_run") if op != "from_scratch" else None)
         ckp = str(r._sdf_dir() / ck) if ck else None
         res = r.start_training(c, h1, op=op, checkpoint=ckp, reason="panel (DIRECT_USER_REQUEST)")
         if not res.get("ok"):
@@ -2729,7 +2829,8 @@ def create_app(rt, port: int) -> FastAPI:
     def research_sdf_cancel():
         return _research().cancel_training()
 
-    # ---- 1.41 market profiles + 9 baskets / 90 strategies (signals, plans, manual tickets - no orders)
+    # ---- 1.41 market profiles + baskets (active catalog since TASK 020: 6 baskets / 60 strategies / 2 profiles; OTC retired) - signals,
+    # plans, manual tickets - no orders
     def _baskets():
         b = getattr(rt, "baskets", None)
         if b is None:
@@ -2771,11 +2872,11 @@ def create_app(rt, port: int) -> FastAPI:
             return JSONResponse(_OTC_RETIRED, status_code=410)
         if profile != "CRYPTO_FOMO_PERPS":
             raise HTTPException(400, "deklaracja ekspozycji tylko dla FOMO (FOREX: pozycje z terminala; OTC wycofane)")
-        need = ("instrument", "side", "size") if profile == "CRYPTO_FOMO_PERPS" else ("dir", "stake", "r", "strike", "expiry", "opened_at")
+        need = ("instrument", "side", "size")       # 1.46: the OTC field branch was unreachable since OTC was retired (410 above)
         miss = [k for k in need if body.get(k) in (None, "")]
         if miss:
             raise HTTPException(400, f"brak pól: {miss}")
-        return {"id": _baskets().ledger.declare(profile, str(body.get("kind") or ("PERP" if profile.startswith("CRYPTO") else "OTC_CONTRACT")), body)}
+        return {"id": _baskets().ledger.declare(profile, str(body.get("kind") or "PERP"), body)}
 
     @app.delete("/api/v1/baskets/declared/{item_id}")
     def baskets_undeclare(item_id: str):
@@ -2806,8 +2907,10 @@ def create_app(rt, port: int) -> FastAPI:
     def quant_activate(body: dict = Body(...)):
         from ..quant import metamodel as QM
         q = _quant()
+        # 1.46: instrument from the body is checked - '../..' made metamodel.root() create folders / ACTIVE.json outside the data folder
+        inst = _th_inst(body.get("instrument") or q.instrument())
         try:
-            p = QM.activate(body.get("instrument") or q.instrument(), str(body.get("task_hash") or ""), str(body.get("version") or ""))
+            p = QM.activate(inst, str(body.get("task_hash") or ""), str(body.get("version") or ""))
         except (QM.MetaError, OSError, KeyError, ValueError) as exc:
             raise HTTPException(409, f"ACTIVATION_REFUSED: {exc}") from None
         return {"ok": True, "pointer": p}
@@ -2816,7 +2919,7 @@ def create_app(rt, port: int) -> FastAPI:
     def quant_rollback(body: dict = Body(...)):
         from ..quant import metamodel as QM
         q = _quant()
-        return {"ok": True, "pointer": QM.rollback(body.get("instrument") or q.instrument(), str(body.get("task_hash") or ""))}
+        return {"ok": True, "pointer": QM.rollback(_th_inst(body.get("instrument") or q.instrument()), str(body.get("task_hash") or ""))}
 
     @app.get("/api/v1/quant/inventory")
     def quant_inventory():
@@ -2831,7 +2934,7 @@ def create_app(rt, port: int) -> FastAPI:
             return fn(*a, **k)
         except KeyError as exc:
             raise HTTPException(404, str(exc).strip("'")) from None
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:                         # 1.46: TypeError (lower: null) was a 500
             raise HTTPException(400, str(exc)) from None
 
     @app.get("/api/v1/svp/status")
@@ -2898,7 +3001,11 @@ def create_app(rt, port: int) -> FastAPI:
         if source and source not in ("MANUAL", "ALGORITHM", "AI"):
             raise HTTPException(400, "SOURCE_INVALID")
         from ..svp import engine as _SE
-        return {"items": rt.svp.zones(source=source, profile_id=profile_id, as_of=_SE._ts(as_of) if as_of else None)}
+        try:
+            t = _SE._ts(as_of) if as_of else None
+        except ValueError:
+            raise HTTPException(400, "INVALID_AS_OF: ISO-8601 albo sekundy epoki") from None     # 1.46: was an unhandled 500
+        return {"items": rt.svp.zones(source=source, profile_id=profile_id, as_of=t)}
 
     @app.post("/api/v1/svp/zones")
     def svp_zone_create(body: dict = Body(...)):
@@ -2988,8 +3095,16 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/mm/ledger")
     def mm_ledger(instrument: str = Query("XAUUSD"), model: str = Query("gpr_logret:LIVE"), limit: int = 200):
         led = rt.mm._ledger(_mm_inst(instrument))
-        rows = led.rows(model, limit=min(max(limit, 1), 2000))
-        return {"summary": led.summary(), "rows": rows[-min(max(limit, 1), 2000):]}
+        lim = min(max(limit, 1), 2000)
+        # 1.46: Ledger.rows() orders by source_ts ASC with LIMIT -> the OLDEST `limit` predictions came back ([-limit:] did not help) and the
+        # fresh SHADOW predictions never appeared. The newest window here (read-only), returned in time order like before.
+        with led._lock:
+            rows = [dict(r) for r in led.c.execute("SELECT * FROM (SELECT * FROM predictions WHERE model_id=? ORDER BY source_ts DESC LIMIT ?) "
+                                                   "ORDER BY source_ts", (model, lim)).fetchall()]
+        for r in rows:
+            r["payload"] = json.loads(r["payload"]) if r["payload"] else None
+            r["outcome"] = json.loads(r["outcome"]) if r["outcome"] else None
+        return {"summary": led.summary(), "rows": rows}
 
     @app.post("/api/v1/mm/rollback")
     def mm_rollback(body: dict = Body(...)):
@@ -3013,7 +3128,8 @@ def create_app(rt, port: int) -> FastAPI:
 
     def _rid_ok(rid: str) -> str:
         from ..training import core as tc
-        if not re.fullmatch(r"[A-Za-z0-9_\-]{6,80}", rid) or not (tc.runs_dir() / rid / "state.json").exists():
+        # 1.46: a non-text run_id (body of /training/resume) was a TypeError in re.fullmatch -> 500
+        if not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_\-]{6,80}", rid) or not (tc.runs_dir() / rid / "state.json").exists():
             raise HTTPException(404)
         return rid
 
@@ -3087,12 +3203,14 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/training/import")
     async def training_import(request: Request):
+        from starlette.concurrency import run_in_threadpool
+
         from ..training import panel as tp
         data = await request.body()
         if not data or len(data) > 512 * 2**20:
             raise HTTPException(400, "EMPTY_OR_TOO_LARGE")
         try:
-            return tp.import_package(data)
+            return await run_in_threadpool(tp.import_package, data)      # 1.46: up to 512 MB unpacked + hashed outside the event loop
         except ValueError as exc:
             raise HTTPException(400, str(exc))
 
@@ -3177,7 +3295,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/license/require")
     def license_require(body: dict = Body(default={})):
-        """Przed uruchomieniem trybu (FOREX / CRYPTO / OTC): 200 albo 402 z powodem."""
+        """Przed uruchomieniem trybu (FOREX / CRYPTO; OTC wycofane): 200 albo 402 z powodem."""
         try:
             return _lic_payload(rt.license.require(str(body.get("action") or "")))
         except LicenseRequired as exc:
@@ -3306,7 +3424,7 @@ def create_app(rt, port: int) -> FastAPI:
             horizon = int(body.get("horizon") or 60)
             n_paths = int(body.get("n_paths") or 2000)
             entry = float(body["entry"]) if body.get("entry") not in (None, "") else None
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):      # 1.46: OverflowError (horizon: Infinity) was a 500
             raise HTTPException(400, "BAD_PLAN")
         if not (0 < sl <= 1e6 and tps and len(tps) <= 8 and all(0 < x <= 1e6 for x in tps) and 5 <= horizon <= 240 and 200 <= n_paths <= 20000):
             raise HTTPException(400, "BAD_PLAN")
@@ -3372,8 +3490,12 @@ def create_app(rt, port: int) -> FastAPI:
                 return {"ok": True, "result": rt.ml.rollback()}
             except ValueError as exc:
                 return {"ok": False, "reason": str(exc)}
-        r = subprocess.run([sys.executable, "-m", "masterquo", "training", "rollback", "--instrument", inst, "--family", fam],
-                           cwd=str(paths.ROOT_DIR / "backend"), capture_output=True, text=True, timeout=300)
+        try:
+            r = subprocess.run([sys.executable, "-m", "masterquo", "training", "rollback", "--instrument", inst, "--family", fam],
+                               cwd=str(paths.ROOT_DIR / "backend"), capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:          # 1.46: was an unhandled 500 and the forecast models were not re-read
+            rt.forecast.reload()
+            return {"ok": False, "reason": "TIMEOUT", "output": "rollback nie zakończył się w 300 s"}
         rt.forecast.reload()
         return {"ok": r.returncode == 0, "output": (r.stdout + r.stderr)[-800:]}
 
@@ -3427,13 +3549,21 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.put("/api/v1/liquidity/key")
     def liq_key(body: dict = Body(default={})):
-        rt.secrets.set("COINGLASS_API_KEY", (body.get("key") or "").strip() or None)
+        key = body.get("key")
+        if key is not None and not isinstance(key, str):
+            raise HTTPException(400, "INVALID_KEY")          # 1.46: a non-text key was an AttributeError (.strip) -> 500
+        rt.secrets.set("COINGLASS_API_KEY", (key or "").strip() or None)
         return {"ok": True, "key_status": rt.secrets.source("COINGLASS_API_KEY")}          # the key itself is never returned
 
     @app.post("/api/v1/liquidity/poll")
     def liq_poll():
-        import time as _t
-        return {"polled": rt.liquidity.poll_once(_t.monotonic() + 10**9), "imported": rt.liquidity.scan_inbox()}
+        # 1.46: the forced poll passed a clock 1e9 s ahead, which poll_once also stored as the base of the NEXT due time - the background
+        # loop never polled that source again until a restart (the heatmap silently stopped). Now: every source is due now (manual =
+        # forced, as before) and the next time is counted from the real clock.
+        nxt = getattr(rt.liquidity, "_next", None)
+        if isinstance(nxt, dict):
+            nxt.clear()
+        return {"polled": rt.liquidity.poll_once(), "imported": rt.liquidity.scan_inbox()}
 
     # ------------------------------------------------------------ PMW-UPD-05 Multi TimeFrame Scalping Dashboard
     @app.get("/api/v1/scalp/dashboard")
@@ -3518,8 +3648,11 @@ def create_app(rt, port: int) -> FastAPI:
     def nss_doctor(body: dict = Body(default={})):
         import subprocess
         a = _asset(body.get("asset") or rt.cfg.get().assets.active)
-        r = subprocess.run([sys.executable, "-m", "masterquo", "neural-scalp", "doctor", "--asset", a], cwd=str(paths.ROOT_DIR / "backend"),
-                           capture_output=True, text=True, timeout=120)
+        try:
+            r = subprocess.run([sys.executable, "-m", "masterquo", "neural-scalp", "doctor", "--asset", a], cwd=str(paths.ROOT_DIR / "backend"),
+                               capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:          # 1.46: was an unhandled 500
+            return {"status": "ERROR", "reason": "TIMEOUT", "output": "diagnostyka nie zakończyła się w 120 s"}
         try:
             return json.loads(r.stdout)
         except ValueError:
@@ -3558,20 +3691,34 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/ml/scalp")
     def ml_scalp_status(asset: str | None = Query(None)):
         inst = asset or rt.cfg.get().assets.active
+        if inst not in ("XAUUSD", "BTC"):
+            raise HTTPException(400, "UNKNOWN_INSTRUMENT")              # 1.46: was ValueError UNKNOWN_INSTRUMENT -> 500
         if inst != rt.ml.inst:
+            from types import SimpleNamespace
+
             from ..ml.router import ml_store
             from ..ml.service import MLService
-            db, root = ml_store(inst, rt.db)
-            return MLService(rt.cfg, db, rt.bridge, rt.bus, rt.log, root=root, instrument=inst).scalp_status(inst)
+            # 1.46: read-only - constructing an MLService for this GET ran _recover_jobs(): every RUNNING / QUEUED ml_jobs row of the
+            # other instrument (e.g. the offline training of the installer, a separate process) was marked INTERRUPTED with an
+            # APP_RESTART event on each refresh. scalp_status() only reads self.db.
+            db, _root = ml_store(inst, rt.db)
+            try:
+                return MLService.scalp_status(SimpleNamespace(db=db), inst)
+            finally:
+                if db is not rt.db:
+                    db.close()
         return rt.ml.scalp_status(inst)
 
     def _ml_scalp_job(args: list[str]):
         import subprocess
         from ..training import core as tc
-        log = open(tc.training_dir() / "ml_scalp_jobs.log", "a", encoding="utf-8")
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
-        pr = subprocess.Popen([sys.executable, "-m", "masterquo", "ml-scalp", *args], cwd=str(paths.ROOT_DIR / "backend"), stdout=log,
-                              stderr=subprocess.STDOUT, **kw)
+
+        def start():
+            with open(tc.training_dir() / "ml_scalp_jobs.log", "a", encoding="utf-8") as log:               # the child keeps its own handle
+                return subprocess.Popen([sys.executable, "-m", "masterquo", "ml-scalp", *args], cwd=str(paths.ROOT_DIR / "backend"), stdout=log,
+                                        stderr=subprocess.STDOUT, **kw)
+        pr = _train_start("ml_scalp", start)          # 1.46: one ml-scalp job (prepare / train) at a time
         return {"started": True, "job_pid": pr.pid, "args": args}
 
     @app.post("/api/v1/ml/scalp/prepare")
@@ -3587,8 +3734,9 @@ def create_app(rt, port: int) -> FastAPI:
         if inst not in ("XAUUSD", "BTC"):
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         args = ["train", "--asset", inst, "--activate", "none"]
-        if body.get("commission") is not None:
-            args += ["--commission", str(float(body["commission"]))]
+        comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI
+        if comm is not None:
+            args += ["--commission", str(comm)]
         return _ml_scalp_job(args)
 
     @app.get("/api/v1/ml/scalp/predictions")
@@ -3614,16 +3762,18 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/ml/scalp/select")
     def ml_scalp_select(body: dict):
         from ..ml import scalp_task as stk
+        inst = _th_inst(body.get("asset") or rt.ml.inst)          # 1.46: checked - '../..' created folders outside the data folder
         try:
-            return {"ok": True, "selected": stk.select(body.get("asset") or rt.ml.inst, str(body.get("run_id")), str(body.get("side")), str(body.get("role")))}
+            return {"ok": True, "selected": stk.select(inst, str(body.get("run_id")), str(body.get("side")), str(body.get("role")))}
         except (ValueError, OSError, KeyError) as exc:
             return {"ok": False, "reason": str(exc)}
 
     @app.post("/api/v1/ml/scalp/rollback")
     def ml_scalp_rollback(body: dict):
         from ..ml import scalp_task as stk
+        inst = _th_inst(body.get("asset") or rt.ml.inst)          # 1.46: checked (folder name)
         try:
-            return {"ok": True, "selected": stk.rollback(body.get("asset") or rt.ml.inst, str(body.get("side")))}
+            return {"ok": True, "selected": stk.rollback(inst, str(body.get("side")))}
         except (ValueError, OSError) as exc:
             return {"ok": False, "reason": str(exc)}
 
@@ -3943,6 +4093,9 @@ def create_app(rt, port: int) -> FastAPI:
         try:
             hello = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
         except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+            await websocket.close(code=4400)
+            return
+        if not isinstance(hello, dict):            # 1.46: valid JSON that is not an object was an AttributeError (1011 instead of 4400)
             await websocket.close(code=4400)
             return
         if not sec.csrf_ok(sid, hello.get("csrf")):

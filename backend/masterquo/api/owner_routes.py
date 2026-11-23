@@ -44,7 +44,9 @@ def register(app: FastAPI) -> None:
     @app.post("/api/v1/owner/license/generate")
     def owner_license_generate(body: dict = Body(default={})):
         v = body.get("validity")
-        return _lic(lic.generate, str(body.get("user") or ""), body.get("hwid"), bool(body.get("no_hwid")),
+        hw = body.get("hwid")
+        # 1.46: a non-text HWID (e.g. a number) reached generate() and its error message ((hwid or "").strip()) -> AttributeError -> 500
+        return _lic(lic.generate, str(body.get("user") or ""), None if hw is None else str(hw), bool(body.get("no_hwid")),
                     v if isinstance(v, dict) else None, str(body.get("note") or ""))
 
     @app.post("/api/v1/owner/license/check")
