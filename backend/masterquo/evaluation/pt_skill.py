@@ -100,18 +100,4 @@ def matured_pairs(forecasts: list[dict], closes: list[dict]) -> list[tuple[float
     return out
 
 
-def circular_shift_pvalue(forecasts, outcomes, shifts: int = 200, profile: str = "ARTICLE_25105_V1") -> dict:
-    """Diagnostic: PT of the real alignment vs PT under circular shifts of the outcome series (keeps autocorrelation)."""
-    pairs = [(f, y) for f, y in zip(forecasts, outcomes) if f and y]
-    n = len(pairs)
-    if n < MIN_N:
-        return {"status": "INSUFFICIENT_N"}
-    f = [p[0] for p in pairs]
-    y = [p[1] for p in pairs]
-    real = evaluate(f, y, profile).get("pt")
-    if real is None:
-        return {"status": "UNDEFINED"}
-    step = max(1, n // (shifts + 1))
-    vals = [evaluate(f, y[k:] + y[:k], profile).get("pt") for k in range(step, n, step)][:shifts]
-    vals = [v for v in vals if v is not None]
-    return {"status": "OK", "pt": real, "shifts": len(vals), "p_shift": (1 + sum(v >= real for v in vals)) / (1 + len(vals))}
+# 1.46: circular_shift_pvalue() removed - never called (no endpoint, job or test used it); evaluate() is the only PT entry point

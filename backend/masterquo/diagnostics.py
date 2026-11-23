@@ -320,9 +320,13 @@ def export_history(from_utc: str, to_utc: str, out_dir: str, dst_model: str = "U
         margin = timedelta(hours=4)                       # covers any offset in the model (+2/+3 h) when querying in server time
         for tf in EXPORT_TFS:
             src_tf, source = tf, "native"
-            rows = _fetch_range(mt5, sym, tf, start - margin, end + margin, offset)
+            # 1.46: a bar is exported only when the NEXT bar is observed; the fetch ended at end + 4 h, so the last closed D1 / H8 bar
+            # of the range (next bar 8-24 h later) and the last bar before a weekend / holiday were dropped. Fetch one bar + 4 days
+            # further (never past now) - rows after `end` only confirm the closure, they are not exported.
+            fetch_end = min(end + margin + timedelta(seconds=TF_SECONDS[tf], days=4), max(end, now) + margin)
+            rows = _fetch_range(mt5, sym, tf, start - margin, fetch_end, offset)
             if not rows and tf == "H8":
-                h1 = _fetch_range(mt5, sym, "H1", start - margin - timedelta(hours=8), end + margin, offset)
+                h1 = _fetch_range(mt5, sym, "H1", start - margin - timedelta(hours=8), fetch_end, offset)
                 rows, source, src_tf = _resample_rows(h1, 28800), "resampled", "H1"
             uniq = {int(x["time"]): x for x in rows}
             ts = sorted(uniq)

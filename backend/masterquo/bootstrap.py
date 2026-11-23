@@ -17,7 +17,8 @@ from pathlib import Path
 
 from . import paths
 
-STATES = ("PENDING", "VERIFIED", "QUEUED", "INSTALLING", "INSTALLED", "FAILED", "SKIPPED", "NOT_INSTALLED", "BLOCKED")
+# 1.46: the unused STATES tuple was removed (it listed states nothing set); states written here: PENDING (no record), VERIFIED,
+# NOT_INSTALLED, QUEUED (waiting for another heavy install), INSTALLING, INSTALLED, FAILED, SKIPPED, BLOCKED
 COMPONENTS = [
     # id, kind, deps, required_for_core, heavy
     ("pmw_release", "RELEASE_FILE", [], True, False),
@@ -110,8 +111,9 @@ class Bootstrap:
     def set_profile(self, profile: str) -> dict:
         if profile not in ("FULL", "CORE"):
             raise ValueError("profile: FULL | CORE")
-        self.state["profile"] = profile
-        self._save()
+        with self._lock:                         # 1.46: the API thread wrote the state without the lock -> json.dumps raced with _set
+            self.state["profile"] = profile
+            self._save()
         return self.status()
 
     # ------------------------------------------------------------ probes
@@ -173,6 +175,24 @@ class Bootstrap:
             return (lambda: k.start_install()), (lambda: (k.jobs.get("install") or {}).get("state"))
         return None
 
+    def _other_install_running(self, cid: str) -> str | None:
+        """1.46: a heavy install job of ANOTHER component that already runs (started in the panel or by upgrade.migrate.auto_install
+        ~90 s after the start) - run_heavy waits for it instead of starting a second heavy install in parallel. The component's own job
+        is not counted: its installer answers 'już trwa' and run_heavy follows that same job."""
+        own = {"tsfm_tabicl": ("tsfm", "install_tabicl"), "kronos_model": ("kronos", "install")}.get(cid)
+        if own is None and cid.startswith("tsfm_"):
+            own = ("tsfm", f"install_{cid[5:]}")
+        for svc_name, names in (("tsfm", None), ("kronos", ("install", "migrate"))):
+            jobs = getattr(getattr(self.rt, svc_name, None), "jobs", None)
+            if not isinstance(jobs, dict):
+                continue
+            for name, job in list(jobs.items()):
+                if (names is None and not str(name).startswith("install_")) or (names is not None and name not in names):
+                    continue
+                if (svc_name, name) != own and isinstance(job, dict) and job.get("state") == "RUNNING":
+                    return f"{svc_name}:{name}"
+        return None
+
     # ------------------------------------------------------------ run
     def verify_all(self) -> dict:
         comps = {c[0]: c for c in COMPONENTS}
@@ -192,7 +212,8 @@ class Bootstrap:
     def queue(self) -> list[str]:
         if self.state["profile"] != "FULL":
             return []
-        return [c[0] for c in COMPONENTS if c[4] and self.state["components"].get(c[0], {}).get("state") in ("NOT_INSTALLED", "FAILED_RETRY")]
+        # 1.46: 'FAILED_RETRY' dropped from the filter - nothing ever wrote that state (dead branch)
+        return [c[0] for c in COMPONENTS if c[4] and self.state["components"].get(c[0], {}).get("state") == "NOT_INSTALLED"]
 
     def run_heavy(self, timeout_s: float = 6 * 3600) -> list[dict]:
         """Strictly sequential: each install must finish (DONE / FAILED) before the next one starts."""
@@ -205,6 +226,25 @@ class Bootstrap:
                 self._set(cid, "SKIPPED", "brak instalatora w tym środowisku")
                 continue
             start, poll = inst
+            busy, t0 = self._other_install_running(cid), time.time()
+            if busy:
+                # 1.46: another heavy install (panel / upgrade auto_install) is running - wait for it, never a 2nd heavy install at once
+                self._set(cid, "QUEUED", f"czeka na zakończenie innej instalacji ({busy})")
+                while busy and time.time() - t0 < timeout_s and not self._stop.is_set():
+                    self._stop.wait(self.poll_s)
+                    busy = self._other_install_running(cid)
+                if busy:
+                    self._set(cid, "NOT_INSTALLED", f"inna instalacja nadal trwa ({busy}) – kolejka wstrzymana")
+                    done.append({"id": cid, "state": "QUEUED"})
+                    break
+                try:
+                    installed_meanwhile = bool(self._probe(cid)[0])
+                except Exception:  # noqa: BLE001 - a failing probe means "not installed", the installer decides
+                    installed_meanwhile = False
+                if installed_meanwhile:                # the job we waited for installed this component too - no second install
+                    self._set(cid, "VERIFIED", "zainstalowany w międzyczasie (inna instalacja)")
+                    done.append({"id": cid, "state": "VERIFIED"})
+                    continue
             r = start() or {}
             if not r.get("ok", True) and "już trwa" in str(r.get("reason")):
                 r = {"ok": True}                       # 1.46: the same installer already runs (e.g. upgrade auto_install) - wait for it, never a 2nd one

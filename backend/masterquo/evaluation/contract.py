@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 
 VERSION = "PMW-EVAL-CONTRACT-1"
 ENGINES = ("ACTIVE_S01_S12", "SH_SCALPING", "SH_HEDGING", "SCALP_SHADOW")     # SCALP_SHADOW: Range->Sweep->Retest (never trades)
-DECISIONS = ("ACCEPT", "REDUCE", "DEFER", "REJECT")
+# 1.46: the unused DECISIONS tuple was removed (engine.assess writes ACCEPT / REDUCE / DEFER / REJECT itself, nothing read it)
 TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "H8": 28800, "D1": 86400}
 
 
@@ -26,7 +26,8 @@ class ContractError(ValueError):
 
 
 def _finite(x) -> bool:
-    return isinstance(x, (int, float)) and math.isfinite(float(x))
+    # 1.46: bool is an int in Python - weight=True passed as a number
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
 
 
 @dataclass
@@ -71,6 +72,13 @@ class SetupCandidate:
                 raise ContractError(f"NOT_FINITE:{k}")
         if self.horizon_s <= 0:
             raise ContractError("HORIZON_NOT_POSITIVE")
+        # 1.46: malformed containers (targets as a dict / list of strings, data_quality as a list, ...) raised AttributeError -> HTTP 500
+        # in POST /api/v1/quant/assessment; they are contract violations
+        for k in ("market_regime", "features", "data_quality", "execution_context", "source_ref", "engine_probability"):
+            if getattr(self, k) is not None and not isinstance(getattr(self, k), dict):
+                raise ContractError(f"NOT_AN_OBJECT:{k}")
+        if not isinstance(self.targets, (list, tuple)):
+            raise ContractError("TARGETS_NOT_A_LIST")
         if not self.targets:
             raise ContractError("NO_TARGETS")
         sgn = 1 if self.direction == "LONG" else -1
@@ -78,7 +86,7 @@ class SetupCandidate:
             raise ContractError("STOP_ON_WRONG_SIDE")
         wsum = 0.0
         for t in self.targets:
-            if not _finite(t.get("price")) or not _finite(t.get("weight")) or t["weight"] < 0:
+            if not isinstance(t, dict) or not _finite(t.get("price")) or not _finite(t.get("weight")) or t["weight"] < 0:
                 raise ContractError("TARGET_INVALID")
             if sgn * (t["price"] - self.entry_price) <= 0:
                 raise ContractError("TARGET_ON_WRONG_SIDE")
@@ -87,9 +95,13 @@ class SetupCandidate:
             raise ContractError(f"TARGET_WEIGHTS_SUM:{wsum:.4f}")
         for k in ("features_as_of",):
             v = getattr(self, k)
+            if v is not None and not _finite(v):
+                raise ContractError(f"NOT_FINITE:{k}")                      # 1.46: a text was a TypeError in the comparison below
             if v is not None and v > self.decision_ts + 1e-6:
                 raise ContractError(f"LOOKAHEAD:{k}")                       # an input from after the decision
         da = (self.data_quality or {}).get("data_as_of")
+        if da is not None and not _finite(da):
+            raise ContractError("NOT_FINITE:data_as_of")
         if da is not None and da > self.decision_ts + 1e-6:
             raise ContractError("LOOKAHEAD:data_as_of")
         return self

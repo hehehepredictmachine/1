@@ -187,8 +187,8 @@ class KronosService:
         except OSError as exc:
             errlog.close()
             return self._fail("WORKER_START", f"nie można uruchomić {py}: {exc}")
-        finally:
-            pass
+        # 1.46: the dead `finally: pass` removed; the child holds its own copy of the log handle - the parent's copy leaked per start
+        errlog.close()
         self.counters["worker_starts"] += 1
         try:
             hello = self._ask({"cmd": "hello"}, 120)
@@ -213,7 +213,10 @@ class KronosService:
         self.retry_at = time.monotonic() + self.backoff
         self.backoff = min(900.0, self.backoff * 2)
         self._set_state("ERROR", f"{code}: {detail}"[:400] if detail else code, code)
-        self.applog.warning("KRONOS", code, f"Kronos niedostępny: {detail}"[:300]) if hasattr(self.applog, "warning") else None
+        # 1.46: AppLog has warn(), not warning() - the hasattr() check was always false and no Kronos failure reached the event log
+        fn = getattr(self.applog, "warn", None) or getattr(self.applog, "warning", None)
+        if fn is not None:
+            fn("KRONOS", code, f"Kronos niedostępny: {detail}"[:300])
         return False
 
     # ================================================================== symbols / data
@@ -634,12 +637,15 @@ class KronosService:
 
     def public(self) -> dict:
         s = self.settings.get()
+        with self._qlock:                       # 1.46: the queue was iterated without the lock (RuntimeError: OrderedDict mutated -> 500)
+            queue = [list(k) for k in self.queue]
+        jobs = dict(self.jobs)                  # a snapshot: a job added meanwhile (e.g. 'migrate') must not break the iteration
         return {"status": self.state["status"], "status_pl": STATUS_PL.get(self.state["status"], self.state["status"]), "code": self.state.get("code"),
                 "reason": self.state.get("reason"), "updated_at": self.state.get("updated_at"), "mode": "SHADOW", "execution_permission": False,
                 "decision_use": {k: v.use for k, v in s.strategy_use.items()}, "worker": self.worker_info, "load": self.load_info,
-                "targets": [self.target_view(k) for k in sorted(self.targets)], "queue": [list(k) for k in self.queue], "running": list(self.running) if self.running else None,
+                "targets": [self.target_view(k) for k in sorted(self.targets)], "queue": queue, "running": list(self.running) if self.running else None,
                 "counters": dict(self.counters), "jobs": {k: (v and {x: v.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})
-                                                          for k, v in self.jobs.items()},
+                                                          for k, v in jobs.items()},
                 "settings_error": self.settings.load_error}
 
     def _publish(self) -> None:

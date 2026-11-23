@@ -85,14 +85,18 @@ def report(outcomes: list[dict], capital_by_scope: dict | None = None) -> dict:
         (retired if CAT.retired_reason(r["strategy_id"]) else groups).setdefault(scope_key(r), []).append(r)
     caps = capital_by_scope or {}
     items = [{"scope": dict(zip(SCOPE_KEYS, k)), **metrics(v, caps.get("|".join(k)))} for k, v in groups.items()]
-    items.sort(key=lambda x: (x["scope"]["environment"], -(x.get("expectancy_r") or -1e9), x["scope"]["strategy_id"]))
+    # 1.46: `or -1e9` turned an expectancy of exactly 0.0 into "no data" (ranked behind losing strategies); None sorts last explicitly
+    items.sort(key=lambda x: (x["scope"]["environment"], x.get("expectancy_r") is None, -(x.get("expectancy_r") or 0.0), x["scope"]["strategy_id"]))
     return {"items": items, "excluded": side,
             "retired_scope": [{"scope": dict(zip(SCOPE_KEYS, k)), "label": "RETIRED_OTC (historia, tylko odczyt)", **metrics(v)} for k, v in retired.items()],
             "policy": {"environments_merged": False, "influence": "HARD_OFF", "be_band_r": ST.BE_BAND_R}}
 
 
 def outcomes_from_db(db, mode: str, account_key: str | None = None) -> list[dict]:
-    """Adapter over the existing canonical tables (trades + closed sh_plans) - read-only, no second ledger."""
+    """Adapter over the existing canonical tables (trades + closed sh_plans) - read-only, no second ledger.
+    1.46: only `trades` (S01-S12) was read although the docstring promised closed sh_plans - SCALPING / HEDGING pack variants and the
+    FX basket plans routed through AUTO_SH were silently missing from the report. They are now a separate source SH_PLANS (one plan =
+    one whole-cycle result, the same settlement rule as stats.engine_stats); ERROR_CLOSED / unsettled plans go to `excluded`."""
     env = {"PAPER": "PAPER", "AUTO_DEMO": "AUTO_DEMO", "AUTO_LIVE": "AUTO_LIVE"}.get(mode)
     out = []
     q = "SELECT * FROM trades WHERE mode=? AND source IN ('BOT','ADOPTED')"
@@ -107,4 +111,37 @@ def outcomes_from_db(db, mode: str, account_key: str | None = None) -> list[dict
                      "net_pnl": float(r.get("net_pnl") or 0.0), "r_multiple": r.get("r_multiple"), "commission": float(r.get("commission") or 0.0),
                      "swap": float(r.get("swap") or 0.0), "closed_at": r.get("closed_at"), "initial_risk": r.get("planned_risk_money"), "gross_pnl": r.get("gross_pnl"),
                      "cost_complete": '"commission_unknown":true' not in (r.get("deals_json") or "").replace(" ", "")})
+    out += _sh_plan_outcomes(db, mode, env, account_key)
+    return out
+
+
+def _sh_plan_outcomes(db, mode: str, env: str | None, account_key: str | None) -> list[dict]:
+    import json
+    from datetime import UTC, datetime
+    q = "SELECT * FROM sh_plans WHERE exec_mode=? AND state IN ('CLOSED','ERROR_CLOSED')"
+    args: list = [mode]
+    if mode != "PAPER" and account_key:
+        q += " AND account_key=?"
+        args.append(account_key)
+    try:
+        rows = db.query(q + " ORDER BY closed_at", args)
+    except Exception:  # noqa: BLE001 - a database without the SH tables (older file) has no SH outcomes
+        return []
+    out = []
+    for r in rows:
+        try:
+            res = json.loads(r.get("result") or "null") or {}
+        except ValueError:
+            res = {}
+        settled = r.get("state") == "CLOSED" and isinstance(res, dict) and res.get("net_money") is not None
+        res = res if isinstance(res, dict) else {}
+        ca = r.get("closed_at")
+        out.append({"strategy_id": r.get("strategy_id") or (f"LEGACY_{r['strategy']}" if r.get("strategy") else None),   # 0027: NULL = legacy
+                    "version": None, "config_hash": r.get("config_hash"), "market": None, "instrument": r.get("symbol"), "venue": "MT5",
+                    "timeframe": r.get("signal_tf"), "environment": env, "account": r.get("account_key"), "currency": None,
+                    "source": "SH_PLANS", "status": "CLOSED" if settled else "UNSETTLED",
+                    "net_pnl": float(res["net_money"]) if settled else None, "r_multiple": res.get("r_multiple"),
+                    "commission": float(res.get("commission_money") or 0.0), "swap": 0.0,           # SH does not track swap (stats.engine_stats)
+                    "closed_at": datetime.fromtimestamp(float(ca), UTC).isoformat().replace("+00:00", "Z") if ca is not None else None,
+                    "initial_risk": None, "gross_pnl": res.get("gross_money"), "cost_complete": bool(res.get("commission_known"))})
     return out
