@@ -97,7 +97,7 @@ class Hyperliquid:
         return out[-n:]
 
     def flow(self, coin: str) -> dict:
-        """L2 top-5 imbalance and the aggressive-buy share of the last 30 s of public trades (side 'B' = buyer was the taker)."""
+        """L2 top-5 imbalance and the aggressive-buy share of the last 30 s of public trades (side 'B' assumed buyer-taker - TASK 004: NOT_VERIFIED, consumers gated)."""
         book = self.post({"type": "l2Book", "coin": coin}) or {}
         lv = book.get("levels") or [[], []]
         bid = sum(float(x["sz"]) for x in lv[0][:5])
@@ -108,5 +108,7 @@ class Hyperliquid:
         recent = [x for x in tr if float(x["time"]) / 1000.0 >= t_book - 30]
         buy = sum(float(x["sz"]) for x in recent if x["side"] == "B")
         tot = sum(float(x["sz"]) for x in recent)
+        from ..orderflow.trades import SIDE_SEMANTICS
         return {"t": t_book, "imbalance5": imb, "aggr_buy_share_30s": (buy / tot) if tot > 0 else None, "trades_30s": len(recent), "connected": True,
+                "aggressor_semantics": SIDE_SEMANTICS["HYPERLIQUID"]["status"],          # TASK 004: 'B' = buyer taker is NOT_VERIFIED
                 "best_bid": float(lv[0][0]["px"]) if lv[0] else None, "best_ask": float(lv[1][0]["px"]) if lv[1] else None}

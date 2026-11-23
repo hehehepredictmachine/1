@@ -702,6 +702,8 @@ def l2_aggressor(F, s, p, x):
     flow = x.get("flow") or []
     if not flow:
         raise Unavailable("brak aktualnego L2 i strumienia transakcji z agresorem")
+    if flow[-1].get("aggressor_semantics", "NOT_VERIFIED") != "VERIFIED":          # TASK 004: no unverified `trades_aggressor` capability
+        raise Unavailable("trades_aggressor NOT_VERIFIED – znaczenie strony transakcji Hyperliquid nie jest potwierdzone (TASK 004)")
     if b is None:
         return None
     lvl = F.HH(10) if s > 0 else F.LL(10)

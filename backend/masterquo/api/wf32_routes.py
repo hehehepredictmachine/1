@@ -231,3 +231,81 @@ def register(app, rt) -> None:
         return {"instrument": sym, "timeframe": timeframe, "boxes": SC.range_boxes(bars, history_days=max(1, min(days, 30)),
                 tf_seconds=SC.TF_SECONDS.get(timeframe, 300)), "definition": SC.SERVER_BOXES, "hud": SC.hud(q, meta, bars, ev),
                 "mode": "OBSERVABILITY_ONLY", "time_basis": "BROKER_SERVER_TIME (godziny serwera, nie strefy IANA)"}
+
+    # ------------------------------------------------------------------ TASK 001-004: multi-market plane + order flow (read-only)
+    from ..markets import universe as MU
+    from ..orderflow import analytics as OA
+    from ..orderflow.trades import SIDE_SEMANTICS, TradeLedger
+
+    def _hl():
+        b = getattr(rt, "baskets", None)
+        if b is not None and getattr(b, "hl", None) is not None:
+            return b.hl
+        from ..baskets.hyperliquid import Hyperliquid
+        return lazy("hl", Hyperliquid)
+
+    def universe():
+        return lazy("universe", lambda: MU.Universe(_hl()))
+
+    _BR = {"CRYPTO": MU.CryptoMarketBridge, "INDICES": MU.IndicesMarketBridge, "FOMO_STOCK_PERPS": MU.FomoStockPerpsBridge}
+    _ledger = TradeLedger()
+
+    def bridge(market: str):
+        if market not in _BR:
+            raise HTTPException(404, f"UNKNOWN_MARKET: {market} ({', '.join(_BR)})")
+        return _BR[market](_hl(), universe())
+
+    def mu(fn, *a):
+        try:
+            return fn(*a)
+        except MU.UniverseError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 - provider / network
+            raise HTTPException(503, f"PROVIDER_UNAVAILABLE: {type(exc).__name__}: {exc}"[:300]) from None
+
+    @app.get("/api/v1/markets/v2")
+    def markets_v2():
+        return {"markets": MU.MARKETS, "timeframes": MU.TIMEFRAMES, "resample": MU.RESAMPLE_FROM, "templates": MU.basket_templates(),
+                "side_semantics": SIDE_SEMANTICS, "seed": MU.validate_seed(MU.load_seed())}
+
+    @app.get("/api/v1/markets/v2/fomo-universe")
+    def fomo_universe():
+        u = universe()
+        ins = u.instruments()
+        res = MU.resolve_seed(MU.load_seed(), ins)
+        counts = {}
+        for r in res:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        return {"seed": MU.validate_seed(MU.load_seed()), "seed_date": MU.SEED_DATE, "resolution": res, "counts": counts, "metadata": u.raw_versions,
+                "error": u.error, "warnings": MU.STOCK_PERP_WARNINGS, "execution": "DISABLED (RESEARCH_ONLY)"}
+
+    @app.get("/api/v1/markets/v2/{market}/instruments")
+    def market_instruments(market: str):
+        return {"market": market, "items": mu(bridge(market).instruments), "health": bridge(market).health(), "error": universe().error}
+
+    @app.get("/api/v1/markets/v2/{market}/candles")
+    def market_candles(market: str, instrument: str, timeframe: str = "1h", n: int = 300):
+        return mu(bridge(market).candles, instrument, timeframe, max(10, min(n, 2000)))
+
+    @app.get("/api/v1/markets/v2/{market}/context")
+    def market_context(market: str, instrument: str):
+        return mu(bridge(market).context, instrument)
+
+    @app.get("/api/v1/orderflow/{market}/workspace")
+    def orderflow_workspace(market: str, instrument: str, row: float = 0.0, tf_seconds: int = 60):
+        """Bookmap-style workspace data: DOM + depth column + trade bubbles + trade-based VP + footprint (one ledger)."""
+        br = bridge(market)
+        book = mu(br.book, instrument)
+        evs = mu(br.trades, instrument)
+        stats = _ledger.extend(evs)
+        ins_id = evs[0].instrument_id if evs else book["instrument_id"]
+        ev = _ledger.events(ins_id)
+        if row <= 0:
+            px = (book["bids"][0][0] if book["bids"] else (ev[-1].price if ev else 1.0))
+            row = float(f"{px * 0.0005:.2g}") or 0.01
+        ob = OA.OrderBook()
+        ob.snapshot(book["bids"], book["asks"])
+        return {"instrument_id": ins_id, "dom": ob.dom(), "heatmap": OA.heatmap([{"t": book["t"], "bids": book["bids"], "asks": book["asks"]}], row),
+                "bubbles": OA.bubbles(ev), "volume_profile": OA.volume_profile(ev, row) if ev else {"status": "NO_DATA"},
+                "footprint": OA.footprint(ev, tf_seconds, row) if ev else {"status": "NO_DATA"}, "cvd": OA.cvd(ev), "ledger": stats,
+                "side_semantics": SIDE_SEMANTICS.get("HYPERLIQUID"), "mode": "READ_ONLY"}
