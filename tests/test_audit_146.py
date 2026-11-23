@@ -464,3 +464,37 @@ class TestExportIntegrity(unittest.TestCase):
             EX.run(src, store, "XAUUSD", "XAUUSD-", timeframes=("M5",), lookback_days=1, sleep=lambda s: None)
         self.assertIn("DATA_KIND_MISMATCH", str(cm.exception))
         self.assertEqual(json.loads((d / "manifest.json").read_text())["data_kind"], "REAL_USER_DATA")
+
+
+class TestWf32LazyNoDeadlock(unittest.TestCase):
+    """1.45.0: lazy() ran factories under a non-reentrant Lock; with rt.baskets = None the 'universe' factory called lazy('hl') -> the thread
+    blocked forever holding the lock and every lazy() route (TLG, bootstrap view, Telegram account, BAT) hung."""
+
+    def test_universe_without_baskets_returns(self):
+        import threading
+        import types
+
+        from fastapi import FastAPI
+
+        from masterquo.api import wf32_routes
+        app = FastAPI()
+        wf32_routes.register(app, types.SimpleNamespace(bridge=None, baskets=None, cfg=None))
+        out = {}
+        t = threading.Thread(target=lambda: out.setdefault("u", app.state.wf32["universe"]()), daemon=True)
+        t.start()
+        t.join(5)
+        self.assertFalse(t.is_alive(), "lazy('universe') deadlocked")
+        self.assertIn("u", out)
+
+
+class TestForexEngineStub(unittest.TestCase):
+    """1.45.0: without WebGL the FOREX engine stub lacked setScreenData / nodeAt / setReduced ... -> TypeError in SIGNALS / MODELS / ROI."""
+
+    def test_stub_has_full_api(self):
+        import shutil
+        import subprocess
+        if not shutil.which("node"):
+            self.skipTest("node not installed")
+        r = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", str(_env.ROOT / "tests" / "js" / "forex_engine_stub.test.mjs")],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)

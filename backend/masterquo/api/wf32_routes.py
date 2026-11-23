@@ -15,7 +15,7 @@ from .app import body_num
 
 
 def register(app, rt) -> None:
-    _lock = threading.Lock()
+    _lock = threading.RLock()            # 1.46: re-entrant - the "universe" factory calls lazy("hl") (a plain Lock deadlocked every lazy() route)
     _svc: dict = {}
 
     def lazy(name, factory):

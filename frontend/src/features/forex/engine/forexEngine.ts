@@ -16,7 +16,7 @@ const CFG=Object.freeze({orbCount:110000,streakCount:24000,starCount:1500,dustCo
  diveMs:3200,surfaceMs:1600,reducedMs:300,bgCycle:66,filaments:56,filSegs:96,sparks:2500,vortexCount:22000});
 const canvas=$('#c');const FIXED_DT=0;
 const gl=opts.forceStatic?null:canvas.getContext('webgl',{alpha:false,antialias:false,depth:false,premultipliedAlpha:false,powerPreference:'high-performance'});
-if(!gl){opts.onNoWebGL&&opts.onNoWebGL();return {dispose(){},setPanel(){},result(){},openSub(){},closeSub(){},surface(){},state:()=>({phase:'static'})};}
+if(!gl){opts.onNoWebGL&&opts.onNoWebGL();/* 1.46: the static stub has the WHOLE engine API (screens call setScreenData / nodeAt / setReduced) */return {dispose(){},setPanel(){},result(){},stale(){},openSub(){},closeSub(){},surface(){},testSeek(){},testSub(){},setScreenData(){},nodeAt(){return undefined;},setReduced(){},state:()=>({phase:'static'})};}
 
 /* ---------- shadery ---------- */
 const SHAPE=`
