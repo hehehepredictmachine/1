@@ -359,3 +359,39 @@ def register(app, rt) -> None:
     def bat_shadow(timeframe: str = "H1"):
         bars = [{**b, "v": b.get("tv", 0)} for b in _bars(timeframe, 600)]
         return {**lazy("bat", BATEncoder).run(bars), "timeframe": timeframe} if bars else {"status": "NOT_CONFIGURED", "reason": "brak świec"}
+
+    # ------------------------------------------------------------------ TASK 012 / 014 / 015: long horizon, strategy ROI, change points (read-only)
+    from ..evaluation import strategy_roi as SR
+    from ..forecast import long_horizon as LH
+    from ..lab.change_points import pelt as CPT
+
+    @app.get("/api/v1/strategy-roi")
+    def strategy_roi(mode: str = "PAPER"):
+        if mode not in ("PAPER", "AUTO_DEMO", "AUTO_LIVE"):
+            raise HTTPException(400, "INVALID_MODE")
+        b = getattr(rt, "bridge", None)
+        return SR.report(SR.outcomes_from_db(rt.db, mode, getattr(b, "account_key", None)))
+
+    @app.get("/api/v1/forecast/long-horizon")
+    def long_horizon(horizon: str = "24h", timeframe: str = "H1"):
+        if horizon not in LH.HORIZONS_S:
+            raise HTTPException(400, f"horizon: {list(LH.HORIZONS_S)}")
+        bars = [b for b in _bars(timeframe, 5000) if b.get("t_raw")]
+        if not bars:
+            return {"status": "UNAVAILABLE", "reason": "brak świec"}
+        clk = getattr(getattr(rt, "bridge", None), "clock", None)
+        off = getattr(clk, "offset", None) or 0
+        return LH.forecast([b["t_raw"] - off for b in bars], [float(b["c"]) for b in bars], horizon)
+
+    @app.get("/api/v1/change-points")
+    def change_points(timeframe: str = "H1", lookback: int = 500, min_segment: int = 10, sensitivity: bool = False):
+        bars = _bars(timeframe, max(lookback * 2, 800))
+        if len(bars) < 2 * min_segment + 1:
+            return {"status": "INSUFFICIENT_DATA", "bars": len(bars)}
+        res = CPT.detect([float(b["c"]) for b in bars], lookback_returns=max(20, min(lookback, 5000)), m=max(2, min(min_segment, 200)),
+                         sensitivity=sensitivity)
+        times = [b.get("open_utc") for b in bars][-(len(res.get("segments", [])) and res["n"]) - 1:] if res.get("status") == "OK" else []
+        if times:
+            for s in res["segments"]:
+                s["start_utc"], s["end_utc"] = times[s["start"] + 1] if s["start"] + 1 < len(times) else None, times[min(s["end"], len(times) - 1)]
+        return {**res, "timeframe": timeframe, "computed_on": "closed bars only"}
