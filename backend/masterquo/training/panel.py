@@ -7,6 +7,7 @@ Statuses are read from files written by the trainers and registries - nothing he
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -47,7 +48,7 @@ def lock_holder() -> dict | None:
     cur = _json(core.lock_path())
     if not cur:
         return None
-    return {**cur, "alive": core._pid_alive(int(cur.get("pid", 0)))}
+    return {**cur, "alive": core.lock_owner_alive(cur)}        # 1.46: pid + start time (a reused pid is not a live training)
 
 
 def run_status(state: dict) -> str:
@@ -290,6 +291,18 @@ MODEL_DIRS = {
     "context_move": lambda inst: [paths.data_dir() / "context_ind" / inst],
 }
 SKIP_NAMES = re.compile(r"(secrets|\.env$|config\.json$|\.lock$|\.tmp$)", re.I)
+_CHUNK = 1 << 20
+
+
+@contextlib.contextmanager
+def _drop_on_error(tmp: Path):
+    """1.46: an exception while building a package left an orphan .tmp in exports/ (our own unfinished file - never user data)."""
+    try:
+        yield
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
 
 
 def export_package(inst: str, scope: str = "all", run_id: str | None = None, max_model_mb: float = 400.0) -> dict:
@@ -303,13 +316,21 @@ def export_package(inst: str, scope: str = "all", run_id: str | None = None, max
     missing: list[str] = []
     tmp = path.with_suffix(".tmp")
     ds, run_state = _latest_dataset(inst, run_id)
-    with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as z:
+    with _drop_on_error(tmp), zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as z:
         def add_file(src: Path, arc: str):
             if SKIP_NAMES.search(src.name):
                 return
-            data = src.read_bytes()
-            z.writestr(arc, data)
-            files.append({"path": arc, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+            # 1.46: streamed in 1 MB blocks (src.read_bytes() put whole M1 CSVs / up to 400 MB of models per family into the bot's RAM);
+            # the hash is taken from the same bytes that go into the archive
+            zi = zipfile.ZipInfo(arc, date_time=time.localtime(time.time())[:6])
+            zi.compress_type, zi.external_attr, zi.file_size = z.compression, 0o600 << 16, src.stat().st_size
+            h, n = hashlib.sha256(), 0
+            with open(src, "rb") as fh, z.open(zi, "w") as dst:
+                for chunk in iter(lambda: fh.read(_CHUNK), b""):
+                    h.update(chunk)
+                    n += len(chunk)
+                    dst.write(chunk)
+            files.append({"path": arc, "bytes": n, "sha256": h.hexdigest()})
 
         def add_json(arc: str, obj):
             data = json.dumps(scrub(obj), indent=1, ensure_ascii=False, default=str).encode("utf-8")
@@ -383,8 +404,9 @@ def export_package(inst: str, scope: str = "all", run_id: str | None = None, max
             "Odtworzenie:", "```", manifest["reproduce"]["full_run"], manifest["reproduce"]["sh_models_from_this_package"], "```", "",
             "Brakujące elementy:" if missing else "Brak braków.", *[f"- {m}" for m in missing]]))
     os.replace(tmp, path)
-    return {"file": name, "path": str(path), "bytes": path.stat().st_size, "files": len(files), "missing": missing,
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    with open(path, "rb") as fh:                                 # 1.46: the whole ZIP (many GB with scope=all) is hashed in blocks
+        digest = hashlib.file_digest(fh, "sha256").hexdigest()
+    return {"file": name, "path": str(path), "bytes": path.stat().st_size, "files": len(files), "missing": missing, "sha256": digest}
 
 
 def import_package(data: bytes) -> dict:
@@ -397,13 +419,20 @@ def import_package(data: bytes) -> dict:
     if "MANIFEST.json" not in z.namelist():
         raise ValueError("BRAK_MANIFESTU")
     man = json.loads(z.read("MANIFEST.json"))
+    # 1.46: a malformed manifest (a list, files without path / sha256) raised AttributeError / KeyError / TypeError -> HTTP 500
+    files = man.get("files") if isinstance(man, dict) else None
+    if not isinstance(man, dict) or not isinstance(files or [], list) or \
+            any(not isinstance(f, dict) or not isinstance(f.get("path"), str) or not isinstance(f.get("sha256"), str) for f in files or []):
+        raise ValueError("ZLY_MANIFEST")
     bad = []
-    for f in man.get("files") or []:
+    for f in files or []:
         try:
             if hashlib.sha256(z.read(f["path"])).hexdigest() != f["sha256"]:
                 bad.append(f["path"])
         except KeyError:
             bad.append(f["path"] + " (brak)")
+        except (zipfile.BadZipFile, RuntimeError, NotImplementedError):      # 1.46: damaged / encrypted entry
+            bad.append(f["path"] + " (nieczytelny)")
     if bad:
         return {"imported": [], "rejected": bad, "reason": "SUMY_KONTROLNE_NIEZGODNE"}
     from ..sh import tpmodel as TM
@@ -416,7 +445,13 @@ def import_package(data: bytes) -> dict:
         if arc not in z.namelist():
             continue
         reg = json.loads(z.read(arc))
-        for run in reg.get("runs") or []:
+        runs = (reg.get("runs") or []) if isinstance(reg, dict) else None
+        if not isinstance(runs, list):                       # 1.46: a malformed registry gave AttributeError -> HTTP 500
+            raise ValueError(f"ZLY_REJESTR: {strat}")      # noqa: TRY004 - ValueError = HTTP 400 in the route
+        for run in runs:
+            if not isinstance(run, dict) or not isinstance(run.get("run_id"), str):     # 1.46: KeyError 'run_id' -> HTTP 500
+                skipped.append(f"{strat}: wpis rejestru bez run_id – pominięty")
+                continue
             npz = f"models/sh_tp_model/{inst}/{strat}/{run['run_id']}.npz"
             if npz not in z.namelist():
                 continue

@@ -120,6 +120,23 @@ def choose_symbol(inst: str, info: dict, interactive: bool, given: str | None) -
 
 
 # ------------------------------------------------------------------ run
+def _ask_commission(inst: str) -> float | None:
+    """1.46: the wizard did float(raw) once - '7$', '0.5 USD' or 'brak' ended the whole menu (00_TRENING_START.bat) with a traceback and
+    the earlier answers were lost. Asks again until a number 0–1000 (as PepeTrainingCenter.set_settings); Enter = unknown (deal history)."""
+    while True:
+        raw = input(f"Prowizja {inst} za 1 lot na stronę w walucie konta (Enter = z historii transakcji / nieznana): ").strip().replace(",", ".")
+        if not raw:
+            return None
+        try:
+            v = float(raw)
+        except ValueError:
+            print("  [UWAGA] wpisz samą liczbę, np. 7 albo 3.5 (bez waluty) – albo Enter, gdy nieznana")
+            continue
+        if 0 <= v <= 1000:
+            return v
+        print("  [UWAGA] prowizja poza zakresem 0–1000 (waluta konta za 1 lot na stronę)")
+
+
 def cmd_run(a) -> int:
     from . import runner
     if a.profile is None:
@@ -160,8 +177,7 @@ def cmd_run(a) -> int:
     for inst in insts:
         v = getattr(a, f"commission_{inst.lower()}")
         if v is None and a.interactive:
-            raw = input(f"Prowizja {inst} za 1 lot na stronę w walucie konta (Enter = z historii transakcji / nieznana): ").strip().replace(",", ".")
-            v = float(raw) if raw else None
+            v = _ask_commission(inst)
         if v is not None:
             comm[inst] = v
     plan, tasks = runner.build_plan(instruments=insts, profile=a.profile, symbols=symbols, commissions=comm, months=a.months,
@@ -192,8 +208,16 @@ def cmd_resume(a) -> int:
     if holder:
         print(f"[BLAD] Trwa trening ({holder}) w innym procesie – wznowienie odrzucone.")
         return 2
+    rerun = set()
     for t in run.state["tasks"]:
         if t["execution"] in ("ANULOWANE", "BLAD_TECHNICZNY", "W_TOKU"):
+            t["execution"] = "NIE_URUCHOMIONE"
+            if t["kind"] not in ("export", "quality", "activate", "bot"):
+                rerun.add(t["instrument"])
+    # 1.46: a model task trained again on resume must pass the activation step again - "activate" finished in the first pass ("nic nie
+    # aktywowano") was never repeated, so a model validated after resume stayed "zapisany do badań" while the run reported success
+    for t in run.state["tasks"]:
+        if t["kind"] == "activate" and t["instrument"] in rerun and t["execution"] == "UKONCZONE":
             t["execution"] = "NIE_URUCHOMIONE"
     run.save()
     return runner.execute(run)

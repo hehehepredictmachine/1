@@ -33,16 +33,27 @@ TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości da
          ("bot", "Przekazanie do działającego bota (przeładowanie)"))
 
 
+SCALP_UNITS = ("scalp_A", "scalp_B", "scalp_C")
+# 1.46: explicit map of scalp_train task B statuses (the old 'VALID' substring test matched none of them: FILTER_HELPS_IN_HOLDOUT was shown
+# as "niezwalidowany", FILTER_NOT_HELPING_IN_HOLDOUT / NO_USEFUL_THRESHOLD as "niezwalidowany" instead of "odrzucony"). Display only -
+# scalp activation reads scalp_A; the setup filter stays SHADOW.
+SCALP_B_QUALITY = {"FILTER_HELPS_IN_HOLDOUT": "ZWALIDOWANY_SHADOW", "FILTER_NOT_HELPING_IN_HOLDOUT": "ODRZUCONY", "NO_USEFUL_THRESHOLD": "ODRZUCONY",
+                   "REJECTED": "ODRZUCONY", "INSUFFICIENT_DATA": "BRAK_PRZESLANEK"}
+
+
 def build_plan(*, instruments: list[str], profile: str, symbols: dict, commissions: dict, months: int | None, synthetic: bool,
                tasks: list[str] | None = None, include_approx: bool = True, lab_bars: int | None = None, threads: int | None = None,
                ml_days: int | None = None, min_events: int | None = None, origin: str = "menu", datasets: dict | None = None) -> tuple[dict, list[dict]]:
     prof = dict(core.profiles()[profile])
+    req = list(tasks or [k for k, _ in TASKS])
+    if any(k in req for k in SCALP_UNITS):            # 1.46: A/B/C come from ONE scalp_train process (run under scalp_A): "Trenuj" at Scalp B or C
+        req += [k for k in SCALP_UNITS if k not in req]   # marked scalp_A "nie wybrano w planie" - nothing trained, run reported success
     plan = {"run_id": core.new_run_id(), "profile": profile, "profile_params": prof, "instruments": instruments, "symbols": symbols,
             "datasets": dict(datasets or {}),
             "commissions": commissions, "months": int(months or prof["months"]), "synthetic": synthetic, "include_approx": include_approx,
             "lab_bars": int(lab_bars or prof["lab_bars"]), "threads": int(threads or prof["threads"]), "ml_days": int(ml_days or prof["ml_days"]),
             "lab_min_events": int(min_events or prof["lab_min_events"]), "activate": bool(prof["activate"]) and not synthetic,
-            "requested_tasks": tasks or [k for k, _ in TASKS], "origin": origin, "frozen_at": now(),
+            "requested_tasks": req, "origin": origin, "frozen_at": now(),
             "rules": {"split": "chronologiczny: rozwój → kalibracja → holdout (holdout zarezerwowany przed wyborem modelu)",
                       "walk_forward": "foldy chronologiczne z purge/embargo (każdy trener)", "refit": "brak refitu dziedziczącego status – zapisywany jest oceniany model",
                       "approx": "próbki APPROX tylko w tym zadaniu ML (config bota bez zmian); model APPROX nie zostaje championem",
@@ -72,6 +83,11 @@ def _dataset(run: Run, inst: str) -> Path:
 def _skip(run: Run, tid: str, why: str, quality: str = "NIE_DOTYCZY") -> None:
     run.set(tid, execution="POMINIETE", quality=quality, detail=why, reasons=[why])
     run.event(f"{tid}: pominięte – {why}")
+
+
+def _num(x) -> str:
+    """1.46: a number in a detail line. '!s:.6' cut the text: 1.2345678e-05 -> '1.2345', 12345678.9 -> '123456'. Missing = 'brak'."""
+    return f"{x:.4g}" if isinstance(x, (int, float)) and not isinstance(x, bool) else "brak"
 
 
 def _fail(run: Run, tid: str, why: str) -> None:
@@ -208,7 +224,7 @@ def t_scalp(run: Run, inst: str) -> None:
     com = plan["commissions"].get(inst)
     if com is None and (meta.get("costs") or {}).get("commission_per_lot_side") is None and inst != "XAUUSD":
         for i in ids:
-            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
+            _skip(run, i, f"nieznana prowizja {inst} (brak transakcji w historii) – podaj ją w Centrum Treningowym (PROWIZJA) albo w kreatorze; bez niej etykiety po kosztach byłyby fikcją")
         return
     cmd = [core.candles_python(), "-m", "gold_candles_runtime.scalp_train", "--instrument", inst, "--history", str(ds), "--data-kind", _kind(run),
            "--no-activate"] + (["--commission-per-lot-side", str(com)] if com is not None else []) + (["--small-test"] if plan["synthetic"] else [])
@@ -236,9 +252,7 @@ def t_scalp(run: Run, inst: str) -> None:
                    f"({entry['costs']['commission_source']}); loader {json.dumps((rep.get('runtime_check') or {}).get('horizons'))}",
             parity=rep.get("runtime_check"), artifacts=[str(Path(entry["run_dir"]) / "report.json")], **common,
             unit={"task": "kierunek M1 po kosztach", "tf": "M1", "horizons": "1/3/5 min", "side": "oba (klasy DOWN/FLAT/UP)"})
-    run.set(ids[1], execution="UKONCZONE", quality="TEST_TECHNICZNY" if syn else ("BRAK_PRZESLANEK" if tb == "INSUFFICIENT_DATA" else
-                                                                                 "ZWALIDOWANY_SHADOW" if tb and "VALID" in tb and "UN" not in tb else
-                                                                                 "ODRZUCONY" if tb and "REJECT" in tb else "NIEZWALIDOWANY"),
+    run.set(ids[1], execution="UKONCZONE", quality="TEST_TECHNICZNY" if syn else SCALP_B_QUALITY.get(tb, "NIEZWALIDOWANY"),
             detail=f"{tb}: {(rep.get('task_B') or {}).get('reason') or ''}", **common,
             unit={"task": "P(TP1 przed SL) setupu Range→Sweep→Retest", "tf": "M1/M5", "horizons": "do 30 min", "side": "BUY i SELL w jednym modelu (cecha kierunku)"})
     run.set(ids[2], execution="UKONCZONE", quality="TEST_TECHNICZNY" if syn else ("BRAK_PRZESLANEK" if tc == "INSUFFICIENT_DATA" else
@@ -336,7 +350,7 @@ def t_indicator_context(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COMMISSION_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"indicator-context kod {rc}: {tail}")
     vs = {k: v.get("status") for k, v in (rep.get("variants") or {}).items()}
@@ -363,7 +377,7 @@ def t_ml_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"ml-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep["sides"].items()}
@@ -389,7 +403,7 @@ def t_neural_scalp(run: Run, inst: str) -> None:
         return run.set(tid, execution="ANULOWANE")
     rep = _json(out)
     if rc == 2 and "COSTS_UNKNOWN" in tail:
-        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym Pepe (PROWIZJA) albo w kreatorze")
+        return _skip(run, tid, f"nieznana prowizja {inst} – podaj ją w Centrum Treningowym (PROWIZJA) albo w kreatorze")
     if not rep:
         return _fail(run, tid, f"neural-scalp kod {rc}: {tail}")
     sides = {k: v.get("status") for k, v in rep.get("sides", {}).items()}
@@ -569,8 +583,8 @@ def t_sh_models(run: Run, inst: str) -> None:
                                                     "BRAK_PRZESLANEK" if all(v == "INSUFFICIENT_DATA" for v in verdicts.values()) else "ODRZUCONY")
     run.set(tid, execution="UKONCZONE", quality=q, integration="AKTYWNY_W_REJESTRZE" if promoted else "ZAPISANY_DO_BADAN",
             model_id=",".join(f"{k}:{(v.get('model') or {}).get('run_id')}" for k, v in st.items()),
-            detail="; ".join(f"{k}: setupów {v.get('setups_ready')}, model {verdicts[k]}, E[R] {((v.get('metrics') or {}).get('expectancy'))!s:.6} "
-                             f"(baseline {((v.get('baseline') or {}).get('expectancy'))!s:.6})" for k, v in st.items())
+            detail="; ".join(f"{k}: setupów {v.get('setups_ready')}, model {verdicts[k]}, E[R] {_num((v.get('metrics') or {}).get('expectancy'))} "
+                             f"(baseline {_num((v.get('baseline') or {}).get('expectancy'))})" for k, v in st.items())
             + ("; replay ograniczony do 6000 M1 (test)" if quick else ""),
             artifacts=[str(out)] + [v.get("report") for v in st.values() if v.get("report")],
             unit={"task": "P(TP2 przed SL w horyzoncie strategii) – zdarzenie dokładnie tej strategii", "tf": "M1 (+M5/M15/H1 zamknięte)",

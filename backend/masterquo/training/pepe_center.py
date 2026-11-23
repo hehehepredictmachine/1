@@ -58,7 +58,8 @@ STATE_PL = {"NOT_TRAINED": "nie trenowany", "QUEUED": "w kolejce", "RUNNING": "t
             "FAILED": "błąd", "CANCELLED": "anulowany", "UNAVAILABLE": "niedostępny"}
 QUALITY_PL = {"ZWALIDOWANY_SHADOW": "zwalidowany", "CZESCIOWO_ZWALIDOWANY": "częściowo zwalidowany", "NIEZWALIDOWANY": "bez pełnej walidacji",
               "ODRZUCONY": "odrzucony – nie lepszy od bazy", "BRAK_PRZESLANEK": "za mało danych / zdarzeń",
-              "TEST_TECHNICZNY": "test techniczny (dane syntetyczne)", "NIE_DOTYCZY": ""}
+              "TEST_TECHNICZNY": "test techniczny (dane syntetyczne)", "NIE_DOTYCZY": "",
+              "DO_OCENY_NA_DEV": "wytrenowany – do oceny (holdout jeszcze nie otwarty)"}      # 1.46: was shown as raw "do_oceny_na_dev"
 EXEC_STATE = {"W_TOKU": "RUNNING", "UKONCZONE": "DONE", "POMINIETE": "SKIPPED", "BLAD_TECHNICZNY": "FAILED", "ANULOWANE": "CANCELLED"}
 TERMINAL = ("DONE", "FAILED", "CANCELLED", "SKIPPED")
 
@@ -127,8 +128,8 @@ def _short(detail: str | None, n: int = 220) -> str:
 def _lock_alive() -> str | None:
     try:
         cur = json.loads(tc.lock_path().read_text(encoding="utf-8"))
-        return cur.get("run_id") if tc._pid_alive(int(cur.get("pid", 0))) else None
-    except (OSError, ValueError):
+        return cur.get("run_id") if tc.lock_owner_alive(cur) else None      # 1.46: pid + start time (a reused pid is not a live training)
+    except (OSError, ValueError, AttributeError):
         return None
 
 
@@ -230,7 +231,7 @@ class PepeTrainingCenter:
                 if (u["id"], inst) in running and s["state"] not in ("RUNNING",):
                     s = _st("RUNNING", (cur.get("detail") or "start…") if u["via"] != "pipeline" or s["state"] != "QUEUED" else s.get("detail"), s.get("at"))
                 elif (u["id"], inst) in queued and s["state"] not in ("RUNNING",):
-                    s = _st("QUEUED", "czeka w kolejce Centrum Treningowego Pepe", s.get("at"))
+                    s = _st("QUEUED", "czeka w kolejce Centrum Treningowego", s.get("at"))
                 st[inst] = s
             rows.append({**u, "status": st})
         return {"schema": "PMW-TCP-1", "settings": self.settings(), "units": rows, "queue": [self._pub(q) for q in self.queue], "current": self._pub(cur) if cur else None,
@@ -398,9 +399,18 @@ class PepeTrainingCenter:
         try:
             u = q["unit"]
             if u == "pipeline":
-                subprocess.run([sys.executable, "-m", "masterquo", "training", "cancel"], cwd=str(paths.ROOT_DIR / "backend"), timeout=60,
-                               capture_output=True, env=dict(os.environ, PYTHONPATH=paths.child_pythonpath()))
-                return "główny trening – anulowanie zgłoszone (wznowienie: menu treningu → Wznów)"
+                # 1.46: `training cancel` without a run id cancelled Run.latest() - a console training (00_TRENING_START.bat) this item was
+                # only WAITING for. Only this item's own run / process is stopped.
+                p = q.get("_proc")
+                if p is None:                                    # own process not started yet: ending the wait (_cancel) is enough
+                    return "główny trening – anulowany przed startem (inny trening w toku nie został zatrzymany)"
+                rid = self._own_run_id(q)
+                if rid:
+                    (tc.runs_dir() / rid / "CANCEL").write_text(tc.now(), encoding="utf-8")     # = `training cancel <rid>`
+                    return "główny trening – anulowanie zgłoszone (wznowienie: menu treningu → Wznów)"
+                if p.poll() is None:                             # its run is not created yet - no training child exists: stop the process
+                    p.terminate()
+                return "główny trening – zatrzymany przed rozpoczęciem zadań"
             if u == "trainhub" and q.get("job_id"):
                 self.rt.trainhub.cancel(q["job_id"])
                 return "Centrum TH – anulowane"
@@ -428,7 +438,9 @@ class PepeTrainingCenter:
         return None
 
     def _ensure_thread(self) -> None:
-        if self._thread and self._thread.is_alive():
+        # 1.46: _loop clears self._thread under the lock before it exits - is_alive() alone was still True in that window and an item
+        # enqueued then stayed "w kolejce" with no consumer
+        if self._thread is not None and self._thread.is_alive():
             return
         self._cancel.clear()
         self._thread = threading.Thread(target=self._loop, name="pepe-training", daemon=True)
@@ -439,6 +451,8 @@ class PepeTrainingCenter:
             with self._lock:
                 if not self.queue:
                     self.current = None
+                    if self._thread is threading.current_thread():
+                        self._thread = None                      # 1.46: see _ensure_thread
                     return
                 q = self.queue.pop(0)
                 q.update(state="RUNNING", started_at=self.clock())
@@ -521,7 +535,7 @@ class PepeTrainingCenter:
                 return {"state": "CANCELLED", "detail": "anulowane"}
             if mem:
                 return {"state": "SKIPPED", "detail": mem}
-            res = r.start_training(c, h1, op="from_scratch", reason="Centrum Treningowe Pepe (DIRECT_USER_REQUEST)")
+            res = r.start_training(c, h1, op="from_scratch", reason="Centrum Treningowe (DIRECT_USER_REQUEST)")
             if not res.get("ok"):
                 return {"state": "SKIPPED", "detail": res.get("reason") or ""}
             job = res["job"]
@@ -562,7 +576,7 @@ class PepeTrainingCenter:
         if not bad():
             return ""
         try:
-            gov._release_idle_heavy(except_model="", min_idle_s=10.0, why="Centrum Treningowe Pepe – pamięć dla treningu")
+            gov._release_idle_heavy(except_model="", min_idle_s=10.0, why="Centrum Treningowe – pamięć dla treningu")
         except Exception:  # noqa: BLE001
             pass
         if not bad():
@@ -612,6 +626,8 @@ class PepeTrainingCenter:
             self._wait(lambda: not _lock_alive(), timeout=12 * 3600, step=5.0)
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
+        if self._cancel.is_set():                               # 1.46: cancelled before our own process started
+            return {"state": "CANCELLED", "detail": "anulowane"}
         cmd = [sys.executable, "-m", "masterquo", "training", "run", "--instruments", ",".join(q["instruments"]), "--profile", "PELNY_TRENING",
                "--origin", "pepe-center"]
         if q.get("tasks"):
@@ -626,25 +642,30 @@ class PepeTrainingCenter:
         log = open(tc.training_dir() / "pepe_center.log", "a", encoding="utf-8")
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
         before = {p.name for p in tc.runs_dir().iterdir()} if tc.runs_dir().exists() else set()
+        q["_before"] = before                                   # 1.46: identifies the run created by THIS process (_own_run_id)
         try:
             self._proc = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, MQ_NO_BROWSER="1", PYTHONUTF8="1"),
                                           stdout=log, stderr=subprocess.STDOUT, **kw)
         except OSError as exc:
             log.close()
             return {"state": "FAILED", "detail": f"nie można uruchomić treningu: {exc}"[:300]}
-        p = self._proc
+        p = q["_proc"] = self._proc
         while p.poll() is None:
             if self._cancel.wait(3.0):
-                self._stop(q)
-                try:
-                    p.wait(120)
-                except subprocess.TimeoutExpired:
+                for _ in range(12):                             # 1.46: repeated - a CANCEL written before execute() started is removed by it
+                    self._stop(q)
+                    try:
+                        p.wait(10)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pass
+                else:
                     p.kill()
                 break
         log.close()
         rc = p.returncode
         new = sorted(({x.name for x in tc.runs_dir().iterdir()} - before) if tc.runs_dir().exists() else [])
-        q["run_id"] = new[-1] if new else None
+        q["run_id"] = self._own_run_id(q) or (new[-1] if new else None)
         summ = self._run_summary(q["run_id"], q.get("covers") or [])
         if rc == 0:
             return {"state": "DONE", "detail": summ or "zakończony"}
@@ -655,6 +676,28 @@ class PepeTrainingCenter:
         if rc == 2:
             return {"state": "FAILED", "detail": "zablokowany przed treningiem (MT5 / symbol / dane / inny trening) – " + (summ or self._log_tail())}
         return {"state": "FAILED", "detail": summ or self._log_tail()}
+
+    @staticmethod
+    def _own_run_id(q: dict) -> str | None:
+        """1.46: the run created by THIS item's `training run` (a new folder in runs/ since its start with origin pepe-center) - never
+        "the latest run", which may be a console training the item was waiting for."""
+        if q.get("run_id"):
+            return q["run_id"]
+        before = q.get("_before")
+        if before is None:
+            return None
+        try:
+            new = sorted({x.name for x in tc.runs_dir().iterdir()} - before, reverse=True)
+        except OSError:
+            return None
+        for rid in new:
+            try:
+                st = json.loads((tc.runs_dir() / rid / "state.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(st, dict) and (st.get("plan") or {}).get("origin") == "pepe-center":
+                return rid
+        return None
 
     @staticmethod
     def _run_summary(run_id: str | None, covers: list[str]) -> str:
