@@ -506,3 +506,64 @@ def register(app, rt) -> None:
             return b.set_sfb(body)
         except ConfigError as exc:
             raise HTTPException(400, str(exc)) from None
+
+    # ------------------------------------------------------------------ TASK 021-025 (OFF / SHADOW / read-only)
+    from ..apollo import asge as ASG
+    from ..apollo import relationships as REL
+    from ..apollo import risk_loot as RLC
+    from ..apollo import smma_cci as SCC
+    from ..apollo import traps as MTD
+
+    def _hl_closes(market: str, instrument: str, tf: str, n: int):
+        c = mu(bridge(market).candles, instrument, tf, n)
+        return [(b["t"], b["c"]) for b in c["bars"]]
+
+    @app.get("/api/v1/relationships/candidates")
+    def rel_candidates():
+        return {"items": REL.candidates(), "version": REL.VERSION}
+
+    @app.get("/api/v1/relationships/pair")
+    def rel_pair(a: str, b: str, market: str = "CRYPTO", timeframe: str = "1h", n: int = 500):
+        return REL.analyse(_hl_closes(market, a, timeframe, n), _hl_closes(market, b, timeframe, n))
+
+    @app.get("/api/v1/market-trap")
+    def market_trap(timeframe: str = "M5"):
+        bars = [{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(timeframe, 300)]
+        q = getattr(rt, "bridge", None).quote_status() if getattr(rt, "bridge", None) else None
+        return MTD.detect(bars, spread_points=(q or {}).get("spread_points"), spread_baseline=None)
+
+    @app.get("/api/v1/smma-cci")
+    def smma_cci(timeframe: str = "M5"):
+        if timeframe not in ("M5", "M15"):
+            raise HTTPException(400, "timeframe: M5 | M15")
+        return SCC.evaluate([{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(timeframe, 400)])
+
+    _trials = ASG.TrialLedger()
+
+    @app.post("/api/v1/asge/run")
+    def asge_run(body: dict = Body(...)):
+        bars = [{"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(str(body.get("timeframe") or "H1"), 5000)]
+        if len(bars) < 600:
+            return {"status": "INSUFFICIENT_DATA", "bars": len(bars)}
+        try:
+            return ASG.run(bars, body.get("seeds") or [], int(body.get("children") or 10), ledger=_trials)
+        except ASG.IRError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.get("/api/v1/asge/ledger")
+    def asge_ledger():
+        return {"items": _trials.rows[-500:], "execution_allowed": ASG.EXECUTION_ALLOWED}
+
+    @app.get("/api/v1/tlg/loot/catalog")
+    def loot_catalog():
+        return {"items": RLC.catalog(), "policy_version": RLC.POLICY_VERSION, "weights": RLC.WEIGHTS}
+
+    @app.post("/api/v1/tlg/loot/evaluate")
+    def loot_evaluate(body: dict = Body(...)):
+        return RLC.evaluate(body)
+
+    @app.post("/api/v1/tlg/loot/grant")
+    def loot_grant(body: dict = Body(...)):
+        if body.get("source_mode") != "SIMULATOR":
+            raise HTTPException(409, "GRANT_SOURCE_NOT_ENABLED: w tej wersji nagrody tylko z symulatora (MT5 / dziennik: tylko ocena)")
+        return g(RLC.grant, tlg(), body)
