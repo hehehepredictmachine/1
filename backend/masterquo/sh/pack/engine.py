@@ -107,7 +107,8 @@ class PackEngine:
                 "pack": {"contract": PLAN_CONTRACT, "strategy_id": v["strategy_id"], "name": v["name"], "family": v["family"], "cluster": v["cluster"],
                          "setup_group_id": v["setup_group_id"], "signal_tf": tf, "context_tfs": v["context_tfs"],
                          "management_policy_id": v["management_policy_id"], "strategy_version": v["strategy_version"], "config_hash": v["config_hash"],
-                         "validation": CAT.validation_status(v["strategy_id"]), "reason_code": code, "analytical_state": status, **kw}}
+                         "validation": CAT.validation_status(v["strategy_id"], config_hash=v["config_hash"]), "reason_code": code,
+                         "analytical_state": status, **kw}}
 
     def _one(self, X, v, tf, inst, spec, ic, quote, now, pipdef, cfg, mpp, ccy) -> dict:
         vid = v["strategy_id"]

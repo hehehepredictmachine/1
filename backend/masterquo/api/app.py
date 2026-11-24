@@ -1249,7 +1249,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh.pack import catalog as _CAT
         try:
             cfg = _CAT.save_override(body, who="panel")
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:      # w2 (I0818): a bad type is a 400, never a 500
             raise HTTPException(400, str(exc)[:400])
         rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
         return _CAT.public(cfg)
