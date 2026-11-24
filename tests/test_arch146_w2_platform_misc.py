@@ -3,11 +3,24 @@
 I0866  agent: an answer to a USER_QUESTION can only make the AI gate stricter (never replaces the setup assessment)
 I0867  agent: model without a price -> warning BUDGET_NOT_ENFORCEABLE_UNKNOWN_PRICE (budget / preflight unchanged)
 I0152  agent: claude-fable-5-2 in FALLBACK_MODELS, no server-side fallback under REQUIRED, cost shown as an estimate only
+I0094  _port() never writes config.json; `profile` refuses while the bot runs
+I0125  one DEFAULT_PORT; Studio follows the bot's server.port
+I0097  settings stores: inventory reads the Runtime's stores, Quant read-modify-write under one RLock
+I0338  dt-ranker status: training_path NOT_IMPLEMENTED
+I0079  analysis/ imports neither lab/ nor agent/ (structure_knowledge moved, shim kept)
+I0135  export stubs of flow-context / structure-intelligence say they are informational
+I0104  CpuSampler per consumer (API / Governor), process-cache reset hooks
+I0118  one source of secret / .env names
+I0120  copy-only settings snapshot per app version (no rollback command)
+I0777  order_attempts.decision_json audit copy
+I0744  Monday: last traded day's high as an extra TP obstacle only (stricter), reason text
+I0119  (not migrated - see the ratchet test) no NEW literal XAUUSD spec fallbacks
 """
 import asyncio
 import json
 import os
 import unittest
+from typing import ClassVar
 
 import _env
 
@@ -752,6 +765,32 @@ class TestI0744MondayPreviousDay(unittest.TestCase):
         from masterquo.sh.pack import detectors as D
         src = __import__("inspect").getsource(D)
         self.assertIn('_done("NO_DATA", "NO_PROFILE"', src)                          # same status / reason code, only the text grows
+
+
+# ------------------------------------------------------------------ I0119 (NOT migrated in wave 2 - ratchet only)
+class TestI0119NoNewSpecFallbacks(unittest.TestCase):
+    """The XAUUSD spec fallbacks (point / tick 0.01, contract 100) are a known debt of 26 call sites in 19 files that other wave-2 groups
+    edit at the same time; the move to one symbol_spec (bit-identical, golden-checked) belongs to the consolidation on the merged tree.
+    Until then no file may get MORE such literal fallbacks than it has today."""
+
+    KNOWN: ClassVar[dict[str, int]] = {"baskets/hedge.py": 1, "baskets/service.py": 1, "execution/manager.py": 1, "execution/manual.py": 1, "indicators/service.py": 1,
+             "ml/features.py": 1, "ml/service.py": 2, "mm/data.py": 1, "mm/service.py": 1, "modelhub/smoke/lab.py": 1, "montecarlo/service.py": 1,
+             "montecarlo/validate.py": 2, "quant/adapters.py": 1, "scalp/dashboard.py": 1, "scalp/service.py": 4, "sh/pack/replay.py": 2,
+             "sh/replay.py": 1, "zones/market_service.py": 2, "zones/service.py": 1}
+
+    def test_no_new_literal_fallbacks(self):
+        import collections
+        import re
+        from pathlib import Path
+        pkg = Path(_env.ROOT) / "backend" / "masterquo"
+        rx = re.compile(r"(point|tick_size|trade_contract_size)\"?\)? or (0\.01|100)")
+        found = collections.Counter()
+        for p in pkg.rglob("*.py"):
+            if "vendor" in p.parts:
+                continue
+            found[p.relative_to(pkg).as_posix()] += sum(1 for line in p.read_text(encoding="utf-8").splitlines() if rx.search(line))
+        grown = {f: n for f, n in found.items() if n > self.KNOWN.get(f, 0)}
+        self.assertEqual(grown, {}, "new literal XAUUSD spec fallback(s) - use the symbol's MT5 specification or extend the known debt list")
 
 
 if __name__ == "__main__":
