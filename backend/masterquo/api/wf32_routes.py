@@ -373,11 +373,14 @@ def register(app, rt) -> None:
             return {"status": "UNAVAILABLE", "reason": "TIME_OFFSET_UNVERIFIED: brak czasu UTC świec", "mode": "OBSERVE"}
         rows = [{**b, "hour": _d.fromisoformat(b["open_utc"].replace("Z", "+00:00")).hour} for b in bars]
         masks = AR.event_bits(rows)
-        m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], max(1, min(horizon, 200)), 0.0), scope={"timeframe": timeframe, "horizon": horizon})
+        h = max(1, min(horizon, 200))
+        # 1.46 (I0342): rules validated on a purged chronological holdout (Bonferroni, n_eff = n / horizon) - SUPPORTED only from those
+        m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], h, 0.0), scope={"timeframe": timeframe, "horizon": horizon}, horizon=h)
         cur = masks[-1] if masks else None
         return {"status": m["status"], "mode": "OBSERVE", "n_labeled": m.get("n_labeled"), "rules": len(m.get("rules", [])), "current_mask": cur,
                 "current_events": [AR.CATALOG[k] for k in range(len(AR.CATALOG)) if cur is not None and cur >> k & 1],
-                "assess_long": AR.assess(m, cur, "LONG"), "assess_short": AR.assess(m, cur, "SHORT"), "schema": AR.SCHEMA}
+                "assess_long": AR.assess(m, cur, "LONG"), "assess_short": AR.assess(m, cur, "SHORT"), "schema": AR.SCHEMA,
+                "validation": m.get("validation"), "validated_rules": m.get("validated_rules"), "validation_params": m.get("validation_params")}
 
     @app.get("/api/v1/models/dt-ranker/status")
     def dtr_status():
