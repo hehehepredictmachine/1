@@ -194,7 +194,7 @@ def _kalman_cross(ctx) -> dict:
     from ...quant.features import prediction_features
     rec = _rec(_live(ctx)[2], "mm:kalman_cross")
     feat = prediction_features([rec], "LONG").get("st:mm:kalman_cross:aligned") if rec else None
-    steps["contract"] = _contract(ctx, "mm:kalman_cross", f"obserwacja D8: result.state={(rec or {}).get('result', {}).get('state')} -> cecha aligned(LONG)="
+    steps["contract"] = _contract(ctx, "mm:kalman_cross", f"obserwacja D8: result.state={((rec or {}).get('result') or {}).get('state')} -> cecha aligned(LONG)="
                                                           f"{feat}, kierunek tablicy {o['board']} (naprawa zmienia wejścia MetaModelu – decyzja D8)")
     return steps
 

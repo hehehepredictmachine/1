@@ -633,7 +633,7 @@ def _indicators(ctx) -> dict:
         el = [p["canonical_id"] for p in scr["eligible"]]
         res = check(len(r) == 1 and r[0]["state"] == "READY" and "analysis:indicators" in el,
                     f"{res['detail']}; analysis:indicators READY i dopuszczony w quant.checks.screen; cech MetaModel z rekordu: {len(feats)} "
-                    "(rola CONTEXT_FEATURE bez cech - quant/features.py:86-111)",
+                    "(rola CONTEXT_STATE – rekord bez cech MetaModelu, I0189)",
                     f"analysis:indicators: {[(x['state'], x.get('unavailable_reason')) for x in r]}, dopuszczone {el}")
     steps["contract"] = res
     return steps
@@ -689,17 +689,21 @@ def _dxy(ctx) -> dict:
         return steps
     ff = {k[8:]: round(v, 3) for k, v in F.prediction_features(scr_f["eligible"], "LONG").items() if k.startswith("ctx:dxy_")}
     fst = {k[8:]: round(v, 3) for k, v in F.prediction_features(scr_s["eligible"], "LONG").items() if k.startswith("ctx:dxy_")}
+    # 1.46 arch (I0183 / I0612): a relation that is not READY is no longer a READY record - the STALE relation is a STALE record with the
+    # relation's reason (unavailable_reason), excluded by quant.checks; its old values never reach ctx:dxy_* (D9 for every artifact)
     inner = (rs[0].get("result") or {}).get("status") if rs else None
+    if rs and rs[0]["state"] != "READY":
+        inner = "STALE" if "STALE" in str(rs[0].get("unavailable_reason") or "") else rs[0]["state"]
     errs = []
     if len(rf) != 1 or rf[0]["state"] != "READY" or not ff:
-        errs.append(f"świeży DXY: rekord {[x['state'] for x in rf]}, cechy {ff} (quant/adapters.py:123-127)")
+        errs.append(f"świeży DXY: rekord {[x['state'] for x in rf]}, cechy {ff} (quant/adapters.py _dxy_record)")
     if len(rs) != 1 or inner != "STALE":
         errs.append(f"nieaktualny DXY: rekord {[x['state'] for x in rs]}, status wewnętrzny {inner}")
     elig = "analysis:dxy_correlation" in [p["canonical_id"] for p in scr_s["eligible"]]
-    # D9 (owner decision): a STALE relation still feeding MetaModel features is reported, not failed - the fix changes model inputs
-    note = (f"OBSERWACJA D9 (nie FAIL - poprawka zmienia wejścia MetaModel): DXY {inner} → rekord {rs[0]['state'] if rs else None}, screen "
-            f"eligible={elig}, cechy ctx:dxy_ {fst} (quant/adapters.py:123-126 READY gdy compact['dxy'] niepusty; quant/features.py:108-111 "
-            "bez statusu)") if fst else "nieaktualna relacja DXY nie daje cech ctx:dxy_* (D9 rozwiązane)"
+    if elig or fst:
+        errs.append(f"nieaktualny DXY dopuszczony do migawki Quant (eligible={elig}) albo z cechami ctx:dxy_ {fst} (I0183)")
+    note = (f"nieaktualna relacja DXY: rekord {rs[0]['state'] if rs else None} ({inner}), bez cech ctx:dxy_* (I0183/I0612, D9 rozwiązane "
+            "dla każdego artefaktu)")
     steps["contract"] = _judge(errs, f"{note}; świeży READY → cechy ctx:dxy_ {sorted(ff)}; {res['detail']}")
     return steps
 

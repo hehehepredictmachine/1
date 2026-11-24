@@ -77,6 +77,13 @@ def rules(rt, inst: str) -> list[dict]:
         for cid in ("rule:regime_v2", "rule:structure_v2", "rule:atr_vol", "rule:data_quality"):
             out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type="STATE", task=cid.split(":")[1].upper(),
                           horizon_bars=None, unit="state", state="BLOCKED_DATA", unavailable_reason="brak migawki kontekstu SH (pierwszy cykl po starcie / brak danych)"))
+        if getattr(rt, "news", None) is not None:
+            # 1.46 arch (I0559, neutral variant only): the record was simply missing here; it is now an explicit BLOCKED_DATA with the
+            # reason. Never READY without the SH snapshot: a READY rule:news would lift MODEL_REQUIRED_UNAVAILABLE:rule:news of a user's
+            # decision.required_models (a new entry) - excluded by quant.checks exactly as the missing record was (S0 rest: report only).
+            out.append(_p(canonical_id="rule:news", instrument=inst, timeframe=None, model_name="rule:news", task_type="STATE", task="NEWS_BLACKOUT",
+                          horizon_bars=None, unit="state", state="BLOCKED_DATA", source="news", extra={"analytic_role": "GATE_EXISTING"},
+                          unavailable_reason="rekord wiadomości wstrzymany bez migawki kontekstu SH (jak dotąd: brak rekordu READY)"))
         return out
     dt = iso_ts(snap.get("computed_at")) if isinstance(snap.get("computed_at"), (int, float)) else snap.get("computed_at")
     for cid, key, tf, unit in (("rule:regime_v2", "regime", "M5", "state"), ("rule:data_quality", "data", None, "state"), ("rule:atr_vol", "vol", "M5", "price")):
@@ -142,6 +149,42 @@ def news_record(news, inst: str, now: float | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------- indicators / DXY / zones / MC
+def _component_statuses(cp: dict) -> dict:
+    """Status of every component of IndicatorService.compact(): semivar / spread / profile / microstructure and avwap.<TF>_<MODE>."""
+    out = {}
+    for k in ("semivar", "spread", "profile", "microstructure"):
+        v = cp.get(k)
+        if isinstance(v, dict):
+            out[k] = str(v.get("status") or "?")
+    for k, v in (cp.get("avwap") or {}).items() if isinstance(cp.get("avwap"), dict) else ():
+        if isinstance(v, dict):
+            out[f"avwap.{k}"] = str(v.get("status") or "?")
+    return out
+
+
+DXY_NUMBERS = ("corr_24", "corr_72", "corr_240", "beta_72", "resid_z_72")
+
+
+def _dxy_record(inst: str, d, as_of) -> dict:
+    """1.46 arch (I0183 / I0612, with I0184 / I0185): analysis:dxy_correlation READY only when the relation's OWN status is READY and it
+    carries at least one finite number. compact() always adds 'status', so `READY if dx` was READY for a STALE (old values kept, also an
+    old PMW-IND-1 snapshot - compact marks it STALE), WARMUP, ERROR or DISABLED (mt5.dxy_symbol = None, the default) relation, and the old
+    corr / beta / resid entered the MetaModel features (indicators/contract.py: only READY results enter features). Now STALE / DISABLED /
+    BLOCKED_DATA with the relation's reason - excluded by quant.checks (features masked, REQUIRED stricter). FEAT-3 already ignored a
+    non-READY relation (quant/features.py, D9); QFENCE covers the FEAT-1 artifacts."""
+    base = {"canonical_id": "analysis:dxy_correlation", "instrument": inst, "timeframe": "H1", "model_name": "analysis:dxy_correlation",
+            "task_type": "STATE", "task": "XAU_DXY_RELATION_H1", "horizon_bars": None, "unit": "mixed", "source": "indicators.dxy",
+            "extra": {"analytic_role": "CONTEXT_FEATURE"}}
+    dx = clean(d) if isinstance(d, dict) else None
+    st = str(d.get("status") or "") if isinstance(d, dict) else ""
+    if dx and st == "READY" and any(C.is_num(dx.get(k)) for k in DXY_NUMBERS):
+        return _p(**base, state="READY", result=dx, data_time=as_of)
+    if not dx:
+        return _p(**base, state="BLOCKED_DATA", unavailable_reason="brak źródła DXY (stan danych, nie zero)")
+    why = f"relacja DXY {st or 'bez statusu'}: {d.get('reason') or 'brak wartości relacji'} – wartości nie wchodzą do cech"
+    return _p(**base, state={"STALE": "STALE", "DISABLED": "DISABLED"}.get(st, "BLOCKED_DATA"), unavailable_reason=why[:200])
+
+
 def analysis(rt, inst: str) -> list[dict]:
     out = []
     ind = getattr(rt, "indicators", None)
@@ -152,15 +195,21 @@ def analysis(rt, inst: str) -> list[dict]:
                 raise LookupError("brak migawki PMW-IND-1")
             cp = ind.compact(s)
             as_of = cp.get("as_of")
+            snap_st = cp.get("snapshot_status")
             body = clean({k: cp.get(k) for k in ("avwap", "semivar", "spread", "profile", "microstructure")}) or None
+            # 1.46 arch (I0188): clean() keeps the status strings, so the body was never empty and the record was READY with every component
+            # STALE / WARMUP / NO_DATA / DISABLED. READY now needs a READY snapshot and at least one READY component (compact() already marks
+            # the READY components of an old snapshot STALE); otherwise STALE / BLOCKED_DATA with the component statuses as the reason.
+            # Role (I0189): no feature is built from this record (quant/features.py) - CONTEXT_STATE, not CONTEXT_FEATURE.
+            comp = _component_statuses(cp)
+            ind_ok = bool(body) and snap_st in (None, "READY") and "READY" in comp.values()
+            why = None if ind_ok else ("migawka bez wartości" if not body else
+                                       f"migawka {snap_st or '?'}; brak składowej READY: " + ", ".join(f"{k}={v}" for k, v in sorted(comp.items()))[:180])
             out.append(_p(canonical_id="analysis:indicators", instrument=inst, timeframe="M1", model_name="analysis:indicators", task_type="STATE",
-                          task="INDICATORS_PMW_IND_1", horizon_bars=None, unit="mixed", state="READY" if body else "BLOCKED_DATA", result=body, data_time=as_of,
-                          unavailable_reason=None if body else "migawka bez wartości", source="indicators", extra={"analytic_role": "CONTEXT_FEATURE"}))
-            dx = clean(cp.get("dxy"))
-            out.append(_p(canonical_id="analysis:dxy_correlation", instrument=inst, timeframe="H1", model_name="analysis:dxy_correlation", task_type="STATE",
-                          task="XAU_DXY_RELATION_H1", horizon_bars=None, unit="mixed", state="READY" if dx else "BLOCKED_DATA", result=dx or None, data_time=as_of,
-                          unavailable_reason=None if dx else "brak źródła DXY (stan danych, nie zero)", source="indicators.dxy",
-                          extra={"analytic_role": "CONTEXT_FEATURE"}))
+                          task="INDICATORS_PMW_IND_1", horizon_bars=None, unit="mixed",
+                          state="READY" if ind_ok else ("STALE" if snap_st == "STALE" else "BLOCKED_DATA"), result=body if ind_ok else None,
+                          data_time=as_of, unavailable_reason=why, source="indicators", extra={"analytic_role": "CONTEXT_STATE"}))
+            out.append(_dxy_record(inst, cp.get("dxy"), as_of))
         except LookupError as exc:
             for cid, tf in (("analysis:indicators", "M1"), ("analysis:dxy_correlation", "H1")):
                 out.append(_p(canonical_id=cid, instrument=inst, timeframe=tf, model_name=cid, task_type="STATE", task=cid.split(":")[1].upper(), horizon_bars=None,
@@ -172,11 +221,23 @@ def analysis(rt, inst: str) -> list[dict]:
         try:
             zm = zs.current()
             summ = clean((zm or {}).get("summary") or {})
-            ok = bool(zm) and bool(summ) and not zm.get("restored")
+            # 1.46 arch (I0595): the map's own data state (zones/service.py: consumers must not treat a non-OK map as confirmed) - READY only
+            # for OK / DEGRADED (DEGRADED marked in data_quality); INSUFFICIENT_HISTORY / unknown -> BLOCKED_DATA, STALE -> STALE
+            ds = ((zm or {}).get("data") or {}).get("state") if isinstance((zm or {}).get("data"), dict) else None
+            ok = bool(zm) and bool(summ) and not zm.get("restored") and ds in ("OK", "DEGRADED")
+            if ok:
+                why = None
+            elif not zm or not summ:
+                why = "brak bieżącej mapy stref"
+            elif zm.get("restored"):
+                why = "mapa odtworzona po restarcie – STALE"
+            else:
+                why = f"mapa stref: stan danych {ds or 'nieznany'} " + "; ".join(str(x) for x in ((zm.get("data") or {}).get("reasons") or [])[:2])
             out.append(_p(canonical_id="analysis:zones", instrument=inst, timeframe="M5", model_name="analysis:zones", task_type="STATE", task="ZONE_MAP_SUMMARY",
-                          horizon_bars=None, unit="state", state="READY" if ok else "BLOCKED_DATA", result=summ if ok else None,
+                          horizon_bars=None, unit="state", state="READY" if ok else ("STALE" if zm and summ and ds == "STALE" else "BLOCKED_DATA"),
+                          result=summ if ok else None, data_quality="DEGRADED" if ok and ds == "DEGRADED" else "OK",
                           data_time=(zm or {}).get("as_of") or (zm or {}).get("map_as_of"), source="zones",
-                          unavailable_reason=None if ok else "brak bieżącej mapy stref (lub mapa odtworzona – STALE)", extra={"analytic_role": "CONTEXT_FEATURE"}))
+                          unavailable_reason=None if ok else why[:200], extra={"analytic_role": "CONTEXT_FEATURE"}))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("analysis:zones", inst, "M5", "STATE", "ZONE_MAP_SUMMARY", "state", exc))
     mc = getattr(rt, "montecarlo", None)
@@ -200,6 +261,9 @@ def analysis(rt, inst: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------------------------------------------- MM (read the MM loop cache)
+KALMAN_NO_DATA = ("INITIALIZING", "INSUFFICIENT_HISTORY", "INVALID_INPUT")     # mm/kalman.py STATES without a filter estimate
+
+
 def mm(rt, inst: str) -> list[dict]:
     svc = getattr(rt, "mm", None)
     if svc is None:
@@ -226,8 +290,14 @@ def mm(rt, inst: str) -> list[dict]:
                       unavailable_reason=None if ok else why_missing, extra={"analytic_role": "CONTEXT_FEATURE"}))
     try:
         k = v.get("kalman") or {}
-        st("mm:kalman_cross", "KALMAN_CROSS_STATE", "FILTER_STATE", clean({k2: k.get(k2) for k2 in ("state", "fast", "slow", "K_fast", "K_slow", "events_in_window")}),
-           "brak stanu Kalmana")
+        # 1.46 arch (I0795): a Kalman filter without data (INITIALIZING / INSUFFICIENT_HISTORY / INVALID_INPUT - warm-up after every restart,
+        # broken input) was a READY FILTER_STATE and st:mm:kalman_cross:aligned got 0 with mask 0 (a value) instead of a missing input
+        kst = str(k.get("state") or "")
+        if kst in KALMAN_NO_DATA:
+            st("mm:kalman_cross", "KALMAN_CROSS_STATE", "FILTER_STATE", None, f"Kalman: {kst} – filtr bez danych (rozgrzewanie / złe wejście)")
+        else:
+            st("mm:kalman_cross", "KALMAN_CROSS_STATE", "FILTER_STATE",
+               clean({k2: k.get(k2) for k2 in ("state", "fast", "slow", "K_fast", "K_slow", "events_in_window")}), "brak stanu Kalmana")
         bz = (v.get("breakout") or {}).get("panel") or {}
         st("mm:breakout_zones", "BREAKOUT_ZONES_STATE", "FILTER_STATE", clean({"state": bz.get("direction"), **{x: bz.get(x) for x in bz if x != "direction"}}),
            "brak panelu wybicia")
@@ -266,6 +336,18 @@ def mm(rt, inst: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------------------------------------------- Event GRU (owner: Quant)
+# 1.46 arch (I0796): a record with this key would have failed the whole extended branch before (an exception out of the Event GRU); the
+# generation keeps the other records for the features / ledger but is published incomplete, so the coordinator reads exactly what it read
+# then - no records (quant/service.cycle, coordinator_predictions): the fix lifts no REQUIRED block.
+INCOMPLETE_KEY = "incomplete_generation"
+
+
+def event_feature_schema() -> str:
+    """The feature schema mm/jobs.py writes into an event_engine_dir3 artifact (PMW-MM-EVENT-1:<mm.events.FEATURES>)."""
+    from ..mm import events as EV
+    return "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES)
+
+
 class EventGRU:
     """Live inference of the ACTIVE event_engine_dir3 artifact (MM pointer). The event source is the one the artifact was trained on
     (manifest event_source: REAL_TICKS -> bridge.ticks, BAR_CLOSE_EVENTS -> closed M1 bars); a different source is INCOMPATIBLE.
@@ -277,10 +359,12 @@ class EventGRU:
         self._loaded: dict = {}
         self.latest: dict[str, dict] = {}
 
-    def _none(self, inst, state, why, ver=None) -> dict:
+    def _none(self, inst, state, why, ver=None, *, incomplete: str | None = None) -> dict:
+        extra = {"family": "SEQ_GRU_EVENT", "use": "SHADOW"}
+        if incomplete:
+            extra[INCOMPLETE_KEY] = incomplete
         return _p(canonical_id=self.CID, instrument=inst, timeframe="EVENT", model_name=self.CID, model_version=ver, task_type="CLASS_PROBABILITIES",
-                  task="EVENT_UNITS_DIR3", horizon_bars=2, unit="probability", state=state, unavailable_reason=why[:200],
-                  extra={"family": "SEQ_GRU_EVENT", "use": "SHADOW"})
+                  task="EVENT_UNITS_DIR3", horizon_bars=2, unit="probability", state=state, unavailable_reason=why[:200], extra=extra)
 
     def predict(self, rt, inst: str) -> dict:
         import numpy as np
@@ -300,7 +384,9 @@ class EventGRU:
         try:
             with self._lock:
                 if (inst, aid) not in self._loaded:
-                    st, man = MA.load(inst, "event_engine_dir3", aid)
+                    # 1.46 arch (I0542): the artifact's feature list is checked at load (mm/jobs.py writes this schema) - another list was a
+                    # generic ERROR in predict, or even READY when only the number of columns matched; now INCOMPATIBLE below
+                    st, man = MA.load(inst, "event_engine_dir3", aid, feature_schema=event_feature_schema())
                     m = EE.EventModel.from_state(st)
                     sc = EV.Scaler()
                     sc.med, sc.iqr = np.asarray(st["scaler_med"], float), np.asarray(st["scaler_iqr"], float)
@@ -325,8 +411,12 @@ class EventGRU:
                 b1 = _to_bars(br.bars("M1", include_forming=False), "M1")
                 if b1 is None or len(b1) < 16 * 3 + 2:
                     raise LookupError("za mało zamkniętych świec M1")
-                pt = float((getattr(br, "symbol_info", None) or {}).get("point") or 0.01)
-                ev = D.events_from_bars(b1, pt)
+                # 1.46 arch (I0476): the spread of the bar events is spread_points x point - an unknown point was assumed 0.01 (removed
+                # from the families in 1.46); no symbol specification -> BLOCKED_DATA, never an input on an assumed point
+                pt = (getattr(br, "symbol_info", None) or {}).get("point")
+                if not (C.is_num(pt) and pt > 0):
+                    raise LookupError("brak specyfikacji symbolu (point) – zdarzenia z barów nie są liczone na założonym punkcie")
+                ev = D.events_from_bars(b1, float(pt))
             acc = EV.from_arrays(ev, inst, 900)
             u = EV.units(acc, EV.featurize(acc), 16)
             if not len(u["X"]):
@@ -342,8 +432,14 @@ class EventGRU:
             return p
         res = {"DOWN": float(P[0]), "FLAT": float(P[1]), "UP": float(P[2])}
         tot = sum(res.values())
-        if abs(tot - 1.0) > 1e-6:                                 # never renormalised silently: a broken softmax is an error
-            p = self._none(inst, "ERROR", f"rozkład nie sumuje się do 1 ({tot:.8f})", aid)
+        # 1.46 arch (I0796): NaN passed `abs(tot - 1) > 1e-6` (False for NaN) and the READY record raised ContractError in _p - the whole
+        # extended branch (rules, analysis, MM, lab, scalp A) was lost. Every class must be a finite probability and the sum 1 (never
+        # renormalised silently); otherwise an ERROR record - for NaN / Inf one that marks the generation incomplete, as the lost branch did
+        # (quant/service.cycle: the coordinator then reads no records, exactly as before).
+        if not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in res.values()) or not math.isfinite(tot) or abs(tot - 1.0) > 1e-6:
+            bad = not all(math.isfinite(x) for x in res.values())
+            p = self._none(inst, "ERROR", f"rozkład poza kontraktem ({'NaN/Inf' if bad else f'suma {tot:.8f}'})", aid,
+                           incomplete="EVENT_GRU_NOT_FINITE" if bad else None)
         else:
             t_end = float(u["t_end"][-1])
             p = _p(canonical_id=self.CID, instrument=inst, timeframe="EVENT", model_name=self.CID, model_version=aid, task_type="CLASS_PROBABILITIES",
@@ -363,6 +459,12 @@ def scalp_a(rt, inst: str) -> list[dict]:
     cid = "scalp:A_direction"
     if sc is None:
         return []
+    si = getattr(sc, "inst", None)
+    if isinstance(si, str) and si != inst:
+        # 1.46 arch (I0620): ScalpService computes the ACTIVE instrument (switched in its own thread) - its forecast was published READY
+        # under the instrument of the Quant cycle in the switch window (modelhub.adapters.forecast_predictions refuses that for gold_candles)
+        return [_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, task_type="CLASS_PROBABILITIES", task="SCALP_DIRECTION_H1M_M1",
+                   horizon_bars=1, unit="probability", state="DISABLED", unavailable_reason=f"scalp liczony dla aktywnego instrumentu ({si})")]
     try:
         reg = sc.registry()
     except Exception as exc:  # noqa: BLE001
@@ -438,11 +540,17 @@ def lab(rt, inst: str) -> list[dict]:
         except (IndexError, ValueError):
             hb = None
         if m.get("status") == "ready" and C.is_num(m.get("raw_score")):
+            # 1.46 arch (I0227): the data kind followed the lab loop's data_mode only - a model TRAINED on synthetic / non-MT5 data (role
+            # fixture_only, lab/protocol.py; LabService itself warns "nie do decyzji") was REAL on live bars and entered the REAL snapshot.
+            # Now SYNTHETIC when the loop runs on fixtures OR the artifact is fixture_only / trained on a source other than MT5 (quant.checks:
+            # SYNTHETIC_IN_REAL_SNAPSHOT - features masked, REQUIRED stricter); an artifact without these fields stays as before.
+            syn = st.get("data_mode") == "fixture" or m.get("role") == "fixture_only" or m.get("data_source") not in (None, "MT5")
             out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, model_version=m.get("model_id"), task_type="SCORE",
                           task=f"TRIPLE_BARRIER_{m.get('side', 'LONG')}_SCORE_H{hb}", horizon_bars=hb, unit="ratio", state="READY",
                           result={"raw_score": float(m["raw_score"])}, data_time=st.get("as_of"), source="lab.service",
-                          data_kind="SYNTHETIC" if st.get("data_mode") == "fixture" else "REAL",
-                          extra={"analytic_role": "BASE_FORECAST", "event": m.get("event"), "note": "score nieskalibrowany innego zdarzenia – nie p(win)"}))
+                          data_kind="SYNTHETIC" if syn else "REAL",
+                          extra={"analytic_role": "BASE_FORECAST", "event": m.get("event"), "note": "score nieskalibrowany innego zdarzenia – nie p(win)",
+                                 "model_role": m.get("role"), "train_data_source": m.get("data_source")}))
         else:
             out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, model_version=m.get("model_id"), task_type="SCORE",
                           task="TRIPLE_BARRIER_SCORE", horizon_bars=hb, unit="ratio", state="ERROR" if m.get("status") == "error" else "BLOCKED_DATA",
@@ -476,7 +584,12 @@ def extended(rt, inst: str, event_gru: EventGRU | None = None, *, with_scalp: bo
         except Exception as exc:  # noqa: BLE001
             out.append(_err(f"adapter:{fn.__name__}", inst, None, "STATE", fn.__name__.upper(), "state", exc))
     if event_gru is not None:
-        out.append(event_gru.predict(rt, inst))
+        try:
+            out.append(event_gru.predict(rt, inst))
+        except Exception as exc:  # noqa: BLE001 - 1.46 arch (I0796): one producer no longer takes the whole branch with it
+            e = event_gru._none(inst, "ERROR", f"adapter: {type(exc).__name__}: {exc}", incomplete="EVENT_GRU_EXCEPTION")
+            event_gru.latest[inst] = e
+            out.append(e)
     if with_scalp:
         try:
             out += scalp_a(rt, inst)

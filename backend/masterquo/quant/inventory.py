@@ -26,6 +26,8 @@ OPERATIONAL = ("READY", "SHADOW_ONLY", "DETERMINISTIC_OK")
 
 # quant roles (how Quant Core uses the output)
 ROLE_PL = {"GATE_EXISTING": "istniejąca bramka (bez zmian)", "CONTEXT_FEATURE": "cecha kontekstu meta-modelu (z maską braku)",
+           # 1.46 arch (I0189): a context record no feature is built from (quant/features.py) - panel / agent / REQUIRED only
+           "CONTEXT_STATE": "stan kontekstu (panel / agent) – bez cech meta-modelu",
            "BASE_FORECAST": "prognoza bazowa – cecha meta-modelu pod własną nazwą", "SETUP_EVENT": "prawdopodobieństwo zdarzenia setupu (ewaluacja)",
            "TOOL": "narzędzie / proces uczenia / optymalizacja – nie głos", "NOT_A_VOTE": "opis / opinia – bez p(win)",
            "META_MODEL": "Quant MetaModel", "SIMULATION": "symulacja (MODEL_SIMULATED) – nie skalibrowane p", "NONE": "brak (nie istnieje)"}
@@ -245,7 +247,7 @@ def _analysis_rows() -> list[dict]:
         ("analysis:market_zones", "Strefy rynkowe M1/M5/M15/M30 (1.28)", "ANALYSIS", ["backend/masterquo/zones/market_service.py"], "CONTEXT_FEATURE",
          "liczone na żądanie panelu (job) – brak cyklu niezależnego od panelu"),
         ("analysis:indicators", "Wskaźniki PMW-IND-1 (EMA/VWAP/RSI/MACD/BB, mikrostruktura, DXY)", "ANALYSIS", ["backend/masterquo/indicators/"],
-         "CONTEXT_FEATURE", None),
+         "CONTEXT_STATE", None),
         ("analysis:svp", "Session Volume Profile (PMW-SVP-1)", "ANALYSIS", ["backend/masterquo/svp/"], "CONTEXT_FEATURE",
          "profile użytkownika (tick volume = aktywność feedu, nie wolumen obrotu) – kontekst panelu"),
         ("analysis:dxy_correlation", "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)", "ANALYSIS", ["backend/masterquo/indicators/"], "CONTEXT_FEATURE", None),
