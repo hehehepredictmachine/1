@@ -123,13 +123,24 @@ def _json(p: Path) -> dict | None:
         return None
 
 
-def _probe_registry_file(path: Path, key: str) -> tuple[str, str, dict]:
+def _probe_registry_file(path: Path, key: str, task: str | None = None) -> tuple[str, str, dict]:
+    """`task`: the selection pointer is a dict per task and only this task has a live path (si_move: STRUCTURE_MOVE_M1_V1)."""
     reg = _json(path)
     if reg is None:
         return "NOT_TRAINED", f"brak rejestru {path.name} (zadanie treningu nie zostało uruchomione na danych)", {}
+    n = len(reg.get("runs") or {})
     sel = reg.get(key)
+    if task is not None:
+        other = sorted(sel) if isinstance(sel, dict) else []
+        sel = sel.get(task) if isinstance(sel, dict) else None
+        if not sel and other:     # 1.46: a candidate of another task (e.g. the setup task) is no live forecast of this one
+            return "NOT_CONNECTED", (f"wybrany tylko kandydat innego zadania ({', '.join(other)}) – brak modelu {task} w obserwacji "
+                                     "SHADOW (brak prognozy na żywo)"), {"runs": n, "selected_tasks": other}
     if not sel:
-        return "NOT_TRAINED" if not reg.get("runs") else "SHADOW_ONLY", f"brak wybranego modelu ({key} puste)", {"runs": len(reg.get("runs") or {})}
+        # 1.46: runs without a selected model were SHADOW_ONLY ('ready for observation') although nothing is observed
+        if not n:
+            return "NOT_TRAINED", f"brak wybranego modelu ({key} puste)", {"runs": 0}
+        return "NOT_CONNECTED", f"{n} runów, żaden nie wybrany ({key} puste) – brak modelu w obserwacji; wybór ręczny", {"runs": n}
     return "SHADOW_ONLY", "wybrany do obserwacji SHADOW – brak walidacji holdout dla zdarzenia strategii SH", {"selected": sel}
 
 
@@ -156,7 +167,20 @@ def probe(item: dict, rt, inst: str) -> dict:
         if mid == "gold_forecast":
             return dict(zip(("status", "reason", "detail"), _probe_registry_file(mi.root("forecast", inst) / "registry.json", "active")))
         if mid in ("scalp_A", "scalp_B"):
-            return dict(zip(("status", "reason", "detail"), _probe_registry_file(mi.root("scalp", inst) / "registry.json", "active")))
+            out = dict(zip(("status", "reason", "detail"), _probe_registry_file(mi.root("scalp", inst) / "registry.json", "active")))
+            if mid == "scalp_B" and out["status"] == "SHADOW_ONLY":
+                # 1.46: 'active' is the run of model A; model B (setup quality) exists only when that run stored a setup_model
+                reg = _json(mi.root("scalp", inst) / "registry.json") or {}
+                rid = reg.get("active")
+                run = ((reg.get("runs") or {}).get(rid) or {}) if isinstance(rid, str) else {}
+                sm = run.get("setup_model")
+                if not sm:
+                    return {"status": "NOT_TRAINED", "reason": f"aktywny run {rid} bez modelu B ({run.get('task_b_status') or 'brak statusu zadania B'}) – "
+                                                               "jakość setupu niedostępna (NO_SETUP_MODEL)", "detail": {"run_id": rid,
+                                                                                                                         "task_b_status": run.get("task_b_status")}}
+                out["detail"] = {"run_id": rid, "task_b_status": run.get("task_b_status"),
+                                 "threshold": sm.get("threshold") if isinstance(sm, dict) else None}
+            return out
         if mid == "legacy_ml":
             if rt and getattr(rt.ml, "inst", None) == inst:
                 cid = rt.ml.registry.champion_id
@@ -171,19 +195,42 @@ def probe(item: dict, rt, inst: str) -> dict:
         files = {"indicator_context": (base / "indicator_context" / inst / "registry.json", "active"),
                  "ml_scalp": (base / "ml_scalp" / inst / "registry.json", "selected"),
                  "nss": (base / "nss" / inst / "registry.json", "selected"),
-                 "si_move": (base / "structure_intelligence" / inst / "registry.json", "shadow"),
-                 "flow_reaction": (base / "flow_context" / inst / "registry.json", "shadow")}
+                 "si_move": (base / "structure_intelligence" / inst / "registry.json", "shadow", "STRUCTURE_MOVE_M1_V1")}
         if mid in files:
             return dict(zip(("status", "reason", "detail"), _probe_registry_file(*files[mid])))
+        if mid == "flow_reaction":
+            # 1.46: the SHADOW pointer of the reaction model has no consumer - FlowSections computes only Heikin / S-R / StopDistance and
+            # Markov3; the candidate is loaded only by the CLI replay / holdout (F-17), like context_move
+            reg = _json(base / "flow_context" / inst / "registry.json") or {}
+            cur = (reg.get("shadow") or {}).get("FLOW_CONTEXT_MOVE_M1_V1") if isinstance(reg.get("shadow"), dict) else None
+            cid = (cur or {}).get("candidate_id") if isinstance(cur, dict) else cur
+            n = len(reg.get("runs") or {})
+            if not n and not cid:
+                return {"status": "NOT_TRAINED", "reason": "brak runów modelu reakcji (zadanie flow_context nie było uruchomione na danych)"}
+            return {"status": "NOT_CONNECTED", "reason": f"{n} runów; wybrany SHADOW: {cid or 'brak'} – model reakcji bez ścieżki inferencji na żywo "
+                                                         "(F-17), tylko replay z CLI", "detail": {"runs": n, "selected": cid}}
         if mid.startswith("mm_") and item["kind"] == "TRAINED":
             from ..mm import artifacts as MA
             mm_ids = {"mm_gpr": "gpr_logret", "mm_hdc": "hdc_dir3", "mm_event_engine": "event_engine_dir3", "mm_ste_flownet": "ste_flownet_ret"}
             aid = (MA.read_pointer(inst).get("active") or {}).get(mm_ids[mid])
             arts = MA.list_artifacts(inst, mm_ids[mid])
-            if aid:
-                return {"status": "SHADOW_ONLY", "reason": f"zwalidowany na danych rzeczywistych (SHADOW): {aid}; obserwacja, nie głos SH"}
             if mid == "mm_gpr":
-                return {"status": "SHADOW_ONLY", "reason": f"dopasowanie na żywo co świecę M5 (SHADOW, ledger kalibracji); kandydaci: {len(arts)}"}
+                # 1.46: the live GP is refitted on the current window every M5 bar; a promoted artifact is never loaded (validation reference)
+                ref = f"; artefakt {aid} (walidacja walk-forward) nie jest wczytywany – tylko referencja walidacji" if aid else ""
+                return {"status": "SHADOW_ONLY", "reason": "prognoza na żywo = dopasowanie GP na bieżącym oknie co świecę M5 (SHADOW, ledger kalibracji); "
+                                                           f"kandydaci: {len(arts)}{ref}"}
+            if aid and mid == "mm_event_engine":
+                # live path: Quant EventGRU loads the active artifact (quant/adapters.EventGRU); its last state when the bot runs
+                lat = (getattr(getattr(getattr(rt, "quant", None), "event_gru", None), "latest", None) or {}).get(inst) if rt else None
+                s = (lat or {}).get("state")
+                if s in (None, "READY"):
+                    return {"status": "SHADOW_ONLY", "reason": f"aktywny artefakt {aid}; inferencja SHADOW w Quant (EventGRU) – obserwacja, nie głos SH"}
+                why = f"inferencja SHADOW w Quant (EventGRU) {aid}: {s} – {(lat or {}).get('unavailable_reason') or ''}"[:200]
+                return {"status": {"NOT_TRAINED": "DATA_MISSING", "BLOCKED_DATA": "DATA_MISSING", "INCOMPATIBLE": "INCOMPATIBLE"}.get(s, "ERROR"),
+                        "reason": why}
+            if aid:
+                # 1.46: HDC / STE-FlowNet have no live inference - a validated pointer is not an observation
+                return {"status": "NOT_CONNECTED", "reason": f"zwalidowany artefakt {aid} – brak ścieżki inferencji na żywo (nic nie liczy predykcji)"}
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
