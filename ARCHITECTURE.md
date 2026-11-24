@@ -1,5 +1,10 @@
 # ARCHITECTURE – PepeMarketWizard 1.18 · audyt architektury (Faza A), 26.10.2026
 
+> **Stan 1.46 (przebudowa w toku):** ten dokument opisuje audyt 1.18. Aktualny stan, diagnoza i projekt docelowy: `docs/arch146/`
+> (`ETAP1_DIAGNOZA.md`, `ETAP2_PROJEKT.md` – drzewo docelowe, przepływ danych, mapa „stary moduł → nowe miejsce”, decyzje D1–D23;
+> `ETAP3_MODELE.md` – każdy model). Jedno źródło prawdy o modelach: `backend/masterquo/quant/ids.py` (rejestr kanoniczny) →
+> `docs/quant/INVENTORY.*` (generowane) → `python -m masterquo models check`. Rejestry aktywacji: `backend/masterquo/registry_io.py`.
+
 Ten dokument zastępuje wcześniejszy opis 1.14 i pełni rolę **ARCHITECTURE_AUDIT**. Pozostałe raporty tego audytu:
 
 | Raport z promptu | Plik w repozytorium | Uwagi |

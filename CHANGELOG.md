@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## W toku (gałąź `claude/architektura-modele-146`, wersja dalej 1.46.0) – jedna architektura + weryfikacja wszystkich modeli
+
+Opis etapów: `docs/arch146/` (ETAP0 stan wyjściowy, ETAP1 diagnoza 140 pozycji, ETAP2 projekt i decyzje D1–D23, ETAP3 tabela modeli).
+Zasady bez zmian: LIVE / Execution Lock / `start_mode` nietknięte, decyzje handlowe bez zmian (golden replay ścieżki A i 20 wariantów SH
+identyczny z Etapem 0), `backend/vendor/` bez zmian, kontrakty publiczne bez zmian (tylko dodatki).
+
+* **`python -m masterquo models check [--smoke] [--live S]`** + `43_MODELE_KONTROLA.bat` – jedna kontrola zdrowia wszystkich modeli z rejestru
+  kanonicznego: rejestr i jego deklaracja stanu, środowisko modelu, import, smoke (trening → artefakt → predykcja → kontrakt na danych
+  SYNTHETIC_TEST, w folderze tymczasowym), ścieżka na żywo (Runtime demo na symulatorze, tryb PAPER/SIGNALS sprawdzany). Brak środowiska /
+  wag / terminala = NIEZWERYFIKOWANY, nigdy „działa”.
+* **Rejestr kanoniczny modeli** (`quant/ids.py`): +35 producentów obecnych w kodzie, a nieobecnych w żadnym rejestrze (TiRex-2, TabICL,
+  Markov3, moduły research, reguły ścieżki A, WF3.2 …); inwentarz 91 → 126 pozycji (`docs/quant/INVENTORY.*`, generowany z kodu).
+  Rozwiązywanie id i nazwy kolumn cech Quant bez zmian (test).
+* **Jeden moduł rejestrów aktywacji `registry_io`**: lab, mm, Monte Carlo, wskaźnik MetaModelu Quant i trainhub czytały nieczytelny plik jako
+  pusty i zapisywały go z powrotem (ginął aktywny model, historia rollbacku, lista użytych bloków TEST); równoległe zapisy gubiły zmiany.
+  Teraz odczyt ścisły, blokada pliku, atomowy zapis.
+* Naprawy modeli i ścieżek (każda z testem, który na 1.46.0 nie przechodzi): Studio – wszystkie 28 zadań grupy runnera padały
+  (`KeyError 'quick'`); import paczki Studio bez blokady rejestru trainhub; SDformerFlow – żaden wytrenowany checkpoint nie dawał się wczytać
+  (`weights_only` + `TorchVersion`); STE-FlowNet – artefakt nie odtwarzał wybranego wariantu; NLP_SENTIMENT – ERROR przy nagłówkach starszych
+  niż ~7 dni; Kronos – id ponownej prognozy wskazywało nieistniejący wiersz; TSFM – awaria modelu nie trafiała do dziennika; natywny MiniRocket
+  V2 – wynik wskaźnika nie docierał do bota; katalog modeli – podwójny wiersz breakout; Markov3 – komórka SI pokazuje pochodzenie modelu;
+  testy: `test_train_all` (/20), `test_families_u4` (ścieżka .venv_deep).
+* Testy architektury (`tests/test_arch146_architecture.py`): jeden wiersz na producenta, stare rejestry są widokami rejestru kanonicznego,
+  adapter albo uzasadnienie dla każdego producenta, dokładnie jeden wpis smoke, brak cykli importów, `backend/vendor` bez zmian.
+* Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23.
+
 ## 1.46.0 – Apollo23: audyt całego kodu, naprawy z testami regresji, eksportery danych
 
 Pełny opis jest w **`docs/AUDYT_1_45.md`**. Każde zgłoszenie ma tam plik:linia, wagę, dowód, poprawkę, status i test.
