@@ -414,5 +414,44 @@ class TestKnowledgeRules(unittest.TestCase):
         self.assertIn("NO_MODEL", K.explain_pl({}))
 
 
+# ------------------------------------------------------------------------------------------------------------ holdout ledger
+class TestReserveHoldoutAtomic(unittest.TestCase):
+    """I0038: two parallel reservations of the same period - exactly one FRESH (SELECT + INSERT in one transaction)."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_parallel_reservations(self):
+        import threading
+
+        from masterquo.db.database import Database
+        from masterquo.ml import scalp_task as stk
+        db = Database()
+        orig = db.query
+        gate = threading.Barrier(2)
+
+        def query(sql, args=()):
+            out = orig(sql, args)
+            if "eval_ledger" in sql:                                           # both trainings have read the ledger before either writes
+                try:
+                    gate.wait(timeout=3)
+                except threading.BrokenBarrierError:
+                    pass
+            return out
+        db.query = query
+        got: list = []
+        th = [threading.Thread(target=lambda h=h: got.append(stk.reserve_holdout(db, "XAUUSD", "2026-05-01T00:00:00+00:00",
+                                                                                   "2026-06-01T00:00:00+00:00", h)["status"])) for h in ("a", "b")]
+        for t in th:
+            t.start()
+        for t in th:
+            t.join(30)
+        self.assertEqual(sorted(got), ["FRESH", "REUSED_PERIOD_EXPLORATORY"])
+        self.assertEqual(orig("SELECT COUNT(*) AS n FROM eval_ledger")[0]["n"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
