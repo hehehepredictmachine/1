@@ -287,5 +287,14 @@ def _mean(it) -> float | None:
 def _save(rep: dict) -> dict:
     rid = f"{rep['instrument']}_{rep['timeframe']}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     rep["report_id"] = rid
-    (reports_dir() / f"{rid}.json").write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
+    # arch 1.46 I0785: atomic write (temporary file + os.replace) - an interrupted write never leaves a truncated report under the final
+    # name (a REQUIRED approval reads it; an unreadable report now holds REQUIRED, see predictions.context)
+    final = reports_dir() / f"{rid}.json"
+    tmp = final.with_name(final.name + ".tmp")
+    tmp.write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
+    try:
+        os.replace(tmp, final)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
     return rep

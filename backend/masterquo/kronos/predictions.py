@@ -117,13 +117,18 @@ def context(svc, inst: str, strategy: str, *, side: str | None = None, other_pre
             from . import validation as V
             cur = V.binding(svc, inst, tf)
             bad = []
+            found = 0
             for rid in str(use.validation_report or "").split(","):
                 r = V.report_by_id(rid) if rid else None
                 if r is None or r.get("instrument") != inst:
                     continue
+                found += 1
                 bad += V.binding_diff(r.get("binding"), cur)
             if not use.validation_report:
                 bad.append("brak raportu dopuszczenia")
+            elif found != 1:                                # arch 1.46 I0785: a missing / unreadable report no longer passes (fail-closed)
+                bad.append(f"raport dopuszczenia {inst} niedostępny lub nieczytelny" if not found else
+                           f"{found} raporty dopuszczenia {inst} – oczekiwano jednego")
             if bad:
                 state, why = "STALE_APPROVAL", "dopuszczenie REQUIRED nieaktualne (" + "; ".join(bad)[:220] + ") – powtórz walidację albo przełącz na OBSERVE"
         except Exception as exc:  # noqa: BLE001 - an approval that cannot be checked is not valid (fail-closed: REQUIRED may only hold)

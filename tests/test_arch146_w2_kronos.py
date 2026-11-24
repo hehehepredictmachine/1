@@ -259,5 +259,69 @@ class TestI0193DecisionLimitedAfterGpuFallback(_SvcCase):
         self.assertIsNone(ctx.get("decision_limited"))
 
 
+# ===================================================================================================== I0785 dopuszczenie REQUIRED
+class TestI0785RequiredMissingReport(_SvcCase):
+    """Dziś raport z validation_report, którego nie da się odczytać (usunięty / uszkodzony), był pomijany (continue) i REQUIRED
+    przechodził (fail-open). Teraz brak dokładnie jednego czytelnego raportu instrumentu = STALE_APPROVAL -> WAIT."""
+
+    def _required(self, rid):
+        return self.make(strategy_use={"SCALPING": {"use": "REQUIRED", "timeframe": "M5", "validation_report": rid, "confirmed_at": None}})
+
+    def test_deleted_report_holds(self):
+        from masterquo.kronos import predictions as KP
+        svc = self._required("XAUUSD_M5_deleted")
+        self.forecast(delta=+2.0)                                                   # UP, zgodna z BUY, zwykła prognoza
+        ctx = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual(ctx["state"], "STALE_APPROVAL", ctx["reason"])
+        self.assertIn("niedostępny lub nieczytelny", ctx["reason"])
+        self.assertEqual(KP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "WAIT")
+
+    def test_corrupted_report_holds(self):
+        from masterquo.kronos import predictions as KP
+        from masterquo.kronos import validation as V
+        svc = self._required("XAUUSD_M5_20260101T000000Z")
+        (V.reports_dir() / "XAUUSD_M5_20260101T000000Z.json").write_text('{"report_id": "XAUUSD_M5_2026', encoding="utf-8")
+        self.forecast(delta=+2.0)
+        ctx = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual(ctx["state"], "STALE_APPROVAL")
+
+    def test_valid_report_still_confirms(self):
+        from masterquo.kronos import predictions as KP
+        from masterquo.kronos import validation as V
+        svc = self._required("XAUUSD_M5_ok")
+        rep = {"report_id": "XAUUSD_M5_ok", "instrument": "XAUUSD", "timeframe": "M5", "binding": V.binding(svc, "XAUUSD", "M5")}
+        (V.reports_dir() / "XAUUSD_M5_20260102T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        self.forecast(delta=+2.0)
+        ctx = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual(ctx["state"], "READY", ctx["reason"])
+        self.assertEqual(KP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "READY")
+
+    def test_other_instrument_report_does_not_count(self):
+        from masterquo.kronos import predictions as KP
+        from masterquo.kronos import validation as V
+        svc = self._required("BTC_M5_ok")
+        rep = {"report_id": "BTC_M5_ok", "instrument": "BTC", "timeframe": "M5", "binding": V.binding(svc, "BTC", "M5")}
+        (V.reports_dir() / "BTC_M5_20260102T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        self.forecast(delta=+2.0)
+        self.assertEqual(KP.context(svc, "XAUUSD", "SCALPING", side="BUY")["state"], "STALE_APPROVAL")
+
+
+class TestI0785ValidationSaveAtomic(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_report_written_through_a_temporary_file(self):
+        from masterquo.kronos import validation as V
+        with mock.patch.object(V.os, "replace", side_effect=OSError("dysk pełny")), self.assertRaises(OSError):
+            V._save({"instrument": "XAUUSD", "timeframe": "M5", "status": "DONE"})
+        self.assertEqual(list(V.reports_dir().glob("*.json")), [])                  # nigdy niepełny raport pod nazwą końcową
+        rep = V._save({"instrument": "XAUUSD", "timeframe": "M5", "status": "DONE"})
+        self.assertEqual(V.report_by_id(rep["report_id"])["status"], "DONE")
+        self.assertEqual([f.name for f in V.reports_dir().iterdir() if not f.name.endswith(".json")], [])
+
+
 if __name__ == "__main__":
     unittest.main()
