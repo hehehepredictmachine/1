@@ -590,15 +590,17 @@ class MLService:
         if key in self._pred_cache:
             return self._pred_cache[key]
         rec = setup_row["record"]
-        samp = self.db.one("SELECT features_json, asof_utc FROM ml_samples WHERE sample_id=?", (f"{setup_row['setup_id']}:{setup_row['version']}",))
+        samp = self.db.one("SELECT features_json, asof_utc, feature_schema_version FROM ml_samples WHERE sample_id=?",
+                           (f"{setup_row['setup_id']}:{setup_row['version']}",))
         if samp and samp["features_json"] not in (None, "{}"):
-            feats, asof = fe.from_json(json.loads(samp["features_json"])), samp["asof_utc"]
+            feats, asof = fe.from_json(json.loads(samp["features_json"]), samp["feature_schema_version"]), samp["asof_utc"]
         else:
             if view is None:
                 return dict(base, model_id=mid, uncertainty_reason="NO_MARKET_VIEW")
             now = utcnow()
             feats, asof = fe.compute(view, dict(rec, symbol=setup_row.get("symbol")), now), iso(now)
-        missing = [k for k in bundle.prep.numeric if feats.get(k) is None or (isinstance(feats.get(k), float) and feats[k] != feats[k])]
+        seen = bundle.adapt([feats])[0]          # 1.46: what THIS model sees (an old model: its own zone block) - also for the missing count
+        missing = [k for k in bundle.prep.numeric if seen.get(k) is None or (isinstance(seen.get(k), float) and seen[k] != seen[k])]
         raw = float(bundle.raw([feats])[0])
         cal = bundle.calib.apply(__import__("numpy").array([raw]))
         p = None if cal is None else float(cal[0])
@@ -680,10 +682,10 @@ class MLService:
         b = self.registry.champion
         if b is None:
             return {"available": False, "reason": "NO_CHAMPION_MODEL_YET"}
-        s = self.db.one("SELECT features_json FROM ml_samples WHERE sample_id=?", (f"{setup_id}:{version}",))
+        s = self.db.one("SELECT features_json, feature_schema_version FROM ml_samples WHERE sample_id=?", (f"{setup_id}:{version}",))
         if not s or s["features_json"] in (None, "{}"):
             return {"available": False, "reason": "NO_FEATURE_SNAPSHOT_FOR_SETUP_VERSION"}
-        row = fe.from_json(json.loads(s["features_json"]))
+        row = fe.from_json(json.loads(s["features_json"]), s["feature_schema_version"])
         out = {"available": True, "model_id": self.registry.champion_id, "family": b.family}
         out["explanation"] = explain_dt(b, row) if b.family == "DECISION_TREE" else explain_xgb(b, row)
         # the other family (challenger) for comparison, if loaded
@@ -700,9 +702,11 @@ class MLService:
         if b is None:
             self.drift = {"status": "NOT_EVALUATED", "reason": "NO_CHAMPION"}
             return
-        rows = self.db.query("SELECT features_json FROM ml_samples WHERE created_at >= ? AND features_json != '{}' ORDER BY created_at DESC LIMIT 300",
+        rows = self.db.query("SELECT features_json, feature_schema_version FROM ml_samples WHERE created_at >= ? AND features_json != '{}' "
+                             "ORDER BY created_at DESC LIMIT 300",
                              ((self.db.one("SELECT promoted_at FROM ml_models WHERE model_id=?", (self.registry.champion_id,)) or {}).get("promoted_at") or "",))
-        psi = b.prep.psi([fe.from_json(json.loads(r["features_json"])) for r in rows])
+        # 1.46: drift of what the champion SEES (an old model: its own zone block), not of a block it was never trained on
+        psi = b.prep.psi(b.adapt([fe.from_json(json.loads(r["features_json"]), r["feature_schema_version"]) for r in rows]))
         top = sorted(psi.items(), key=lambda x: -x[1])[:8]
         reasons = []
         mx = top[0][1] if top else 0.0

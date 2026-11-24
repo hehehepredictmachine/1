@@ -1,6 +1,12 @@
 """Zone map compiler (PMW-ZONES-MAP-1): bars as known at `as_of` -> HLZE -> DSVIE -> UZICE -> one versioned zone map.
 The same function serves the live ZoneService, the historical "as of" view of the chart and the ML feature pipeline, so no consumer
-recreates zones with different rules."""
+recreates zones with different rules.
+
+Semantics: SEMANTICS (PMW-ZONES-SEM-2, 1.46 audit: no look-ahead in day / session context, demand / supply and equal highs / lows
+lifecycles, unknown POC migration / age as unknown, per-TF freshness, global profile choice for volume points) is the live map. The
+previous semantics LEGACY_SEMANTICS (PMW-ZONES-SEM-1) stays reproducible bit for bit: ML models trained on MQ-FEAT <= 1.2.0 keep
+exactly the zone inputs they were trained on (ml.features.zone_block computes both) - an old artifact is never fed a new meaning
+and never invalidated (an invalidated ASSIST gate would fall back to PASS)."""
 from __future__ import annotations
 
 import hashlib
@@ -14,11 +20,17 @@ from .series import Series, iso
 
 VERSION = "PMW-ZONES-MAP-1"
 VERSIONS = {"map": VERSION, "hlze": HZ.VERSION, "dsvie": DV.VERSION, "uzice": UZ.VERSION, "schema": UZ.SCHEMA}
+SEMANTICS = "PMW-ZONES-SEM-2"
+LEGACY_SEMANTICS = "PMW-ZONES-SEM-1"
 
 
 def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, list[dict]], cfg, as_of: float,
-                profile_id: str | None = None) -> dict:
-    """bars: {"M5": [...], "M15": [...], "D1": [...], "H1": [...]} (bridge / symbol_bars dicts). Only closed bars with close <= as_of are used."""
+                profile_id: str | None = None, semantics: str = SEMANTICS) -> dict:
+    """bars: {"M5": [...], "M15": [...], "D1": [...], "H1": [...]} (bridge / symbol_bars dicts). Only closed bars with close <= as_of are used.
+    semantics: SEMANTICS (live) or LEGACY_SEMANTICS (the map of 1.45 / MQ-FEAT <= 1.2.0, unchanged - its map_id included)."""
+    if semantics not in (SEMANTICS, LEGACY_SEMANTICS):
+        raise ValueError(f"ZONE_SEMANTICS_UNKNOWN:{semantics}")
+    legacy = semantics == LEGACY_SEMANTICS
     tick = tick or 0.01
     pid = profile_id or cfg.session_profile.get(instrument) or "LAB_XAU_REFERENCE_V1"
     cut = {tf: [b for b in (bars.get(tf) or []) if b.get("open_utc") and b.get("closed") is not False] for tf in bars}
@@ -31,7 +43,8 @@ def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, li
         data_state, reasons = "INSUFFICIENT_HISTORY", [f"M5: {len(m5)} świec"]
     elif as_of - m5.close_time(len(m5) - 1) > 3 * m5.tf_s:
         data_state, reasons = "STALE", [f"ostatnia zamknięta M5 {iso(m5.close_time(len(m5) - 1))}"]
-    out = {"map_id": None, "schema_version": UZ.SCHEMA, "instrument": instrument, "symbol": symbol, "as_of": iso(as_of), "versions": VERSIONS,
+    out = {"map_id": None, "schema_version": UZ.SCHEMA, "instrument": instrument, "symbol": symbol, "as_of": iso(as_of),
+           "versions": VERSIONS if legacy else {**VERSIONS, "semantics": SEMANTICS},
            "data": {"state": data_state, "reasons": reasons, "bars": {tf: len(s) for tf, s in series.items()} | {"D1": len(d1)}},
            "zones": [], "m5": [], "m15": [], "levels": [], "profiles": {"developing": None, "completed": []}, "demand_supply": [],
            "context": {}, "expired": [], "summary": {}, "mode": "ANALYTICAL_ONLY"}
@@ -43,7 +56,7 @@ def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, li
         boxes = SE.build(m5_bars, 300, pid, instrument, as_of, days=2)
     except Exception as exc:  # noqa: BLE001 - session boxes missing = no session levels, other zones stay
         reasons.append(f"sesje: {type(exc).__name__}")
-    hl = HZ.build(series, cfg, tick, m5_bars=m5_bars, d1=d1 if len(d1) else None, boxes=boxes, as_of=as_of)
+    hl = HZ.build(series, cfg, tick, m5_bars=m5_bars, d1=d1 if len(d1) else None, boxes=boxes, as_of=as_of, legacy=legacy)
     refs = [z for z in hl["zones"] if z["zone_type"].startswith(("PREVIOUS_", "INTRADAY_", "CONSOLIDATION_")) or z.get("range_state")]
     prof_series = series.get(cfg.profile_tf) if cfg.profile_tf in series else Series.from_bars(cut.get(cfg.profile_tf) or [], cfg.profile_tf, as_of)
     # 1.46: profile_tf without closed bars (M1 is allowed by the config, the caller may not read it) gave volume_source NONE
@@ -54,7 +67,7 @@ def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, li
         if data_state == "OK":
             data_state = "DEGRADED"
     dv = DV.build(prof_series, profile_id=pid, instrument=instrument, cfg=cfg, as_of=as_of, tick=tick, piv_by_tf=hl["pivots"],
-                  series_by_tf=series, refs=refs)
+                  series_by_tf=series, refs=refs, legacy=legacy)
     if prof_missing:
         dv["volume_source"] = dict(dv["volume_source"], missing_series=cfg.profile_tf,
                                    note=f"brak świec {cfg.profile_tf} – profile wolumenu niedostępne (brak danych, nie własność rynku)")
@@ -73,7 +86,7 @@ def compute_map(*, instrument: str, symbol: str, tick: float, bars: dict[str, li
     if dev and dev["state"] == "STALE" and data_state == "OK":
         data_state = "DEGRADED"
     unified, expired = UZ.unify(hl["zones"], dv["demand_supply"], profiles, cfg=cfg, atr=atr, tick=tick, price=price, htf_sr=htf,
-                                vol_source=dv["volume_source"]["source"], data_state=data_state, as_of=as_of)
+                                vol_source=dv["volume_source"]["source"], data_state=data_state, as_of=as_of, legacy=legacy)
     completed = [p for p in profiles if p["state"] in ("COMPLETED", "INVALID")]
     for p in completed[:-3]:
         p.pop("histogram", None)                                         # keep histograms of the recent profiles only
@@ -102,5 +115,6 @@ def HZ_close(b: dict, tf_s: int) -> float:
 
 
 def _map_id(m: dict) -> str:
-    key = repr((m["instrument"], m["as_of"], VERSIONS, [(z["zone_id"], z["status"], z.get("confluence_score")) for z in m.get("zones") or []]))
+    key = repr((m["instrument"], m["as_of"], m.get("versions") or VERSIONS,
+                [(z["zone_id"], z["status"], z.get("confluence_score")) for z in m.get("zones") or []]))
     return "ZM-" + hashlib.sha256(key.encode()).hexdigest()[:16]

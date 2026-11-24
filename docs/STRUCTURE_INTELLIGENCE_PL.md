@@ -61,7 +61,9 @@ Zadanie zamraża manifest (id + sha próbki, konfiguracja, wersja reguł). Statu
 po restarcie RUNNING → INTERRUPTED, `POST /api/v1/patterns/jobs/{id}/resume` bez duplikatów. Wynik ma `result_id`, `sample_sha`, `usable_at`
 (flaga `DECISIVE_EVENT_PRECEDED_RECOGNITION`). Eksport oddzielny (`/export`, bez walidacji), CSV maszynowy + bezpieczny arkusz `_sheet.csv`.
 SHOW ON CHART czyta zapisany wynik (`GET /api/v1/patterns/samples/{id}/result`, `/patterns/results/{result_id}`); REVALIDATE to jawna akcja.
-Nowa wersja `DB-1.2.0-BUF` (bufory breakout/failure × ATR, wybór pary); stare wersje bez zmian.
+Nowa wersja `DB-1.2.0-BUF` (bufory breakout/failure × ATR, wybór pary); stare wersje bez zmian. Od 1.46 wszystkie tryby mają regułę
+„brak podcięcia między dołkami” (`DB-1.0.1`, `DB-1.1.1-EXT`, `DB-1.2.1-BUF`); zadanie biblioteki ze starszą wersją reguł nie jest wznawiane
+(`RULES_VERSION_CHANGED` – uruchom nowe zadanie).
 
 ## 8. Strefy Supply/Demand (Part V+, `lab/zones.py` MQ-LAB-ZONES-2.0.0)
 SQLite = źródło prawdy; detektor tylko odkrywa strefy (nie nadpisuje cyklu życia). Cykl życia przyrostowo od checkpointu strefy: jedno wejście = jeden test,
