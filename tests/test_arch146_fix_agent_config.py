@@ -102,10 +102,23 @@ class TestAgentFable52Pricing(unittest.TestCase):
         self.assertNotIn("claude-fable-5-2", ag.cfg.price_per_mtok)             # zapisany cennik zastępuje domyślny (bez scalania)
         usage = {"input_tokens": 500_000, "output_tokens": 50_000, "cache_read_input_tokens": 1_000_000,
                  "cache_creation_input_tokens": 100_000}
-        want = (500_000 * 8 + 100_000 * 8 * 1.25 + 1_000_000 * 8 * 0.1 + 50_000 * 40) / 1_000_000
+        want = (500_000 * 8 + 100_000 * 8 * 1.25 + 1_000_000 * 8 * 0.025 + 50_000 * 40) / 1_000_000   # odczyt z cache $0.20/MTok
         self.assertAlmostEqual(ag._cost("claude-fable-5-2", usage), round(want, 6))
         self.assertAlmostEqual(ag._cost("claude-fable-5-1", {"input_tokens": 1_000_000}), 10.0)   # zapisane ceny działają jak dotąd
         self.assertIsNone(ag._cost("claude-unknown-model", {"input_tokens": 1_000_000}))        # nieznany model: nadal brak szacunku
+
+    def test_cache_read_fable_5_2_billed_at_0_025(self):
+        # przegląd D13: odczyt z cache claude-fable-5-2 kosztuje $0.20/MTok (0.025 x $8), nie 0.1 x $8 = $0.80
+        ag = self._agent()
+        self.assertAlmostEqual(ag._cost("claude-fable-5-2", {"cache_read_input_tokens": 1_000_000}), 0.20)
+        self.assertAlmostEqual(ag._cost("claude-fable-5-2", {"cache_creation_input_tokens": 1_000_000}), 10.0)   # zapis 1.25x bez zmian
+
+    def test_cache_read_other_models_unchanged(self):
+        # strażnik: pozostałe modele zostają przy szacunku 0.1 (obniżenie wydłuża budżet - przy REQUIRED luzuje, decyzja właściciela)
+        ag = self._agent()
+        for model, pin in (("claude-fable-5-1", 10.0), ("claude-opus-5-5", 4.0), ("claude-sonnet-5-5", 2.0), ("claude-opus-5", 5.0)):
+            with self.subTest(model=model):
+                self.assertAlmostEqual(ag._cost(model, {"cache_read_input_tokens": 1_000_000}), round(pin * 0.1, 6))
 
     def test_user_price_override_wins(self):
         prices = dict(OLD_SAVED_PRICES, **{"claude-fable-5-2": [9.0, 45.0]})

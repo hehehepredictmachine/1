@@ -39,6 +39,12 @@ PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYS
 FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
+# Cache read price as a fraction of the model's input price (claude-api reference, cache 2026-11-03): claude-fable-5-2 $0.20 / $8 = 0.025.
+# Every other model keeps the 1.46 estimate 0.1 although some are billed lower (claude-fable-5-1 0.025, claude-opus-5-5 and
+# claude-sonnet-5-5 0.05): a lower estimate makes agent.daily_budget_usd last longer, and under gate_policy=REQUIRED that lets
+# AI-approved entries through that today stop at DAILY_BUDGET_EXHAUSTED - an owner decision (arch146 review, S0(b)), not made here.
+CACHE_READ_MULT = {"claude-fable-5-2": 0.025}
+CACHE_READ_MULT_DEFAULT = 0.1
 
 
 def _default_prices() -> dict:
@@ -352,7 +358,8 @@ class ClaudeAgent:
             return None
         pin, pout = price
         cost = (usage.get("input_tokens", 0) * pin + usage.get("cache_creation_input_tokens", 0) * pin * 1.25 +
-                usage.get("cache_read_input_tokens", 0) * pin * 0.1 + usage.get("output_tokens", 0) * pout) / 1_000_000
+                usage.get("cache_read_input_tokens", 0) * pin * CACHE_READ_MULT.get(model, CACHE_READ_MULT_DEFAULT) +
+                usage.get("output_tokens", 0) * pout) / 1_000_000
         return round(cost, 6)
 
     def _user_message(self, req: dict, ctx: dict) -> str:
