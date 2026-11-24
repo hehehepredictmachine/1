@@ -474,5 +474,62 @@ class TestI0540TabiclEngine(unittest.TestCase):
         self.assertNotIn("_selftest", e.contexts)
 
 
+# ======================================================================================================== P001 / P002 manifest verify
+class _Pin(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.root = Path(self.td.dir) / "w"
+        self.src = Path(self.td.dir) / "src"
+        self.src.mkdir()
+        from tsfm_runtime import lock as L
+        from tsfm_runtime import manifest as M
+        self.L, self.M = L, M
+        self._orig = json.loads(json.dumps(L.MODELS["chronos2"]))
+        (self.src / "config.json").write_bytes(b'{"a": 1}')
+        (self.src / "model.safetensors").write_bytes(b"\1" * 1000)
+        L.MODELS["chronos2"]["files"] = [{"name": "config.json", "size": 8, "git_blob_sha1": M.git_blob_sha1(self.src / "config.json")},
+                                         {"name": "model.safetensors", "size": 1000, "sha256": M.sha256_file(self.src / "model.safetensors")}]
+        from tsfm_runtime import install as I
+        self.assertTrue(I.download("chronos2", str(self.root), from_dir=str(self.src))["ok"])
+
+    def tearDown(self):
+        self.L.MODELS["chronos2"] = self._orig
+        self.td.close()
+
+
+class TestP001SizeMessage(_Pin):
+    def test_message_names_the_pinned_size(self):
+        self.L.MODELS["chronos2"]["files"][0]["size"] = 9                      # the pin differs, the manifest matches the file
+        with self.assertRaises(self.M.ManifestError) as cm:
+            self.M.verify(self.root, "chronos2")
+        self.assertEqual(cm.exception.code, "CHECKSUM")
+        self.assertNotIn("8 B ≠ 8 B", cm.exception.detail)                    # before: 'rozmiar 8 B ≠ 8 B z manifestu'
+        self.assertIn("9 B", cm.exception.detail)
+        self.assertIn("przypięt", cm.exception.detail)
+
+    def test_manifest_size_message_unchanged(self):
+        f = self.M.model_dir(self.root, "chronos2") / "config.json"
+        f.write_bytes(b'{"a": 12}')
+        with self.assertRaises(self.M.ManifestError) as cm:
+            self.M.verify(self.root, "chronos2")
+        self.assertIn("9 B ≠ 8 B z manifestu", cm.exception.detail)
+
+
+class TestP002GitBlobPin(_Pin):
+    def test_git_blob_pinned_file_checked_against_the_pin(self):
+        self.assertTrue(self.M.verify(self.root, "chronos2")["ok"])
+        f = self.M.model_dir(self.root, "chronos2") / "config.json"
+        f.write_bytes(b'{"b": 2}')                                              # same size, other content
+        man = self.M.read(self.root, "chronos2")
+        for x in man["files"]:
+            if x["name"] == "config.json":
+                x["sha256"] = self.M.sha256_file(f)                             # manifest rewritten to match (hand edit / other copy)
+        self.M.write(self.root, "chronos2", man)
+        with self.assertRaises(self.M.ManifestError) as cm:                    # before: passed (sha256 compared with the manifest only)
+            self.M.verify(self.root, "chronos2")
+        self.assertEqual(cm.exception.code, "CHECKSUM")
+        self.assertIn("git blob", cm.exception.detail)
+
+
 if __name__ == "__main__":
     unittest.main()

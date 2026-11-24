@@ -84,7 +84,10 @@ def summary(weights_root, mid: str) -> dict:
 
 
 def verify(weights_root, mid: str) -> dict:
-    """Offline integrity check: every file exists with the size and sha256 of the manifest AND of the pin. Raises ManifestError."""
+    """Offline integrity check: every file exists with the size and sha256 of the manifest AND of the pin (lock.py: size + LFS sha256, or
+    the git blob sha1 for small files such as config.json / LICENSE / NOTICE). Raises ManifestError.
+    1.46 (P001 / P002): a size that differed only from the PIN was reported with the manifest size ('rozmiar 2 B ≠ 2 B z manifestu'),
+    and files pinned by git blob sha1 were compared with the manifest only - a changed file with a rewritten manifest passed."""
     s = summary(weights_root, mid)
     if not s["installed"]:
         raise ManifestError("NO_WEIGHTS", s["reason"])
@@ -93,13 +96,20 @@ def verify(weights_root, mid: str) -> dict:
     checked = []
     for f in s["manifest"]["files"]:
         p = d / f["name"]
+        pf = pin.get(f["name"], {})
         size = p.stat().st_size
-        if size != f["size"] or (f["name"] in pin and size != pin[f["name"]]["size"]):
+        if size != f["size"]:
             raise ManifestError("CHECKSUM", f"{f['name']}: rozmiar {size} B ≠ {f['size']} B z manifestu")
+        if pf and size != pf["size"]:
+            raise ManifestError("CHECKSUM", f"{f['name']}: rozmiar {size} B ≠ {pf['size']} B przypiętego (lock.py)")
         got = sha256_file(p)
         if got != f["sha256"]:
             raise ManifestError("CHECKSUM", f"{f['name']}: SHA-256 {got[:16]}… ≠ {f['sha256'][:16]}… z manifestu (plik zmieniony)")
-        if pin.get(f["name"], {}).get("sha256") and got != pin[f["name"]]["sha256"]:
-            raise ManifestError("CHECKSUM", f"{f['name']}: SHA-256 {got[:16]}… ≠ przypiętej {pin[f['name']]['sha256'][:16]}…")
+        if pf.get("sha256") and got != pf["sha256"]:
+            raise ManifestError("CHECKSUM", f"{f['name']}: SHA-256 {got[:16]}… ≠ przypiętej {pf['sha256'][:16]}…")
+        if not pf.get("sha256") and pf.get("git_blob_sha1"):
+            blob = git_blob_sha1(p)
+            if blob != pf["git_blob_sha1"]:
+                raise ManifestError("CHECKSUM", f"{f['name']}: git blob {blob[:12]}… ≠ przypiętego {pf['git_blob_sha1'][:12]}… (lock.py)")
         checked.append({"file": f["name"], "sha256": got, "size": size})
     return {"ok": True, "files": checked}
