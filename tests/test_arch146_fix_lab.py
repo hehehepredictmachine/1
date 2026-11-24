@@ -12,7 +12,9 @@
     trenuje Markov na SYNTHETIC_TEST. Teraz smoke sprawdza bramkę D23 (bez zmiennej: MODEL_TEST_ONLY_NOT_LOADED), a ścieżkę komórki SI
     z modelem uruchamia z PMW_FLOW_ALLOW_TEST_MODEL=1 tylko w procesie obszaru (tymczasowy MASTERQUO_DATA_DIR) -> DZIAŁA;
   - `flow-context train-markov --allow-synthetic-fixture` (TEST_ONLY) przestawiał markov/latest.txt z modelu RESEARCH (REAL_USER_DATA)
-    na model testowy, którego komórka SI nie wczytuje - panel tracił model REAL. Teraz model TEST_ONLY nie zastępuje RESEARCH w latest.txt.
+    na model testowy, którego komórka SI nie wczytuje - panel tracił model REAL. Teraz model TEST_ONLY nie zastępuje RESEARCH w latest.txt;
+  - model był wczytywany tylko przy tworzeniu klucza (inst, tf): po nowym treningu komórka pokazywała MODEL_MISSING /
+    MODEL_TEST_ONLY_NOT_LOADED aż do restartu. Teraz zmiana markov/latest.txt przeładowuje model.
 """
 from __future__ import annotations
 
@@ -229,6 +231,44 @@ class TestFlowContextTestOnlyNotLoaded(unittest.TestCase):
         self.assertEqual(out["role"], "RESEARCH")
         self.assertEqual(Path(self._latest().read_text(encoding="utf-8").strip()), Path(out["dir"]))
         self.assertNotIn("si_cell", out)
+
+    def test_new_fit_is_loaded_without_restart_after_test_only_not_loaded(self):
+        self._age(self.out)
+        fs, k = self._key()
+        self.assertEqual(fs.summary(k)["markov3"]["status"], "MODEL_TEST_ONLY_NOT_LOADED")
+        out = self._fit("REAL_USER_DATA")                                   # the hint of the cell: fit Markov on REAL_USER_DATA
+        k2 = fs.update("XAUUSD", "M1", self.bars[-900:], 0.01, 0.01)       # same bars, no new candle
+        self.assertIs(k2, k)
+        self.assertIsNotNone(k2.m3)                                         # 1.46.0: NOT_LOADED until a restart / profile change
+        self.assertIsNone(k2.model_skipped)
+        m3 = fs.summary(k2)["markov3"]
+        self.assertIn("next", m3)
+        self.assertEqual(m3["model_role"], "RESEARCH")
+        self.assertEqual(fs.markov(k2)["model_dir"], out["dir"])
+
+    def test_new_fit_is_loaded_without_restart_after_model_missing(self):
+        self._latest().unlink()
+        fs, k = self._key()
+        self.assertEqual(fs.summary(k)["markov3"]["status"], "MODEL_MISSING")
+        self._age(self.out)
+        self._fit("REAL_USER_DATA")
+        k2 = fs.update("XAUUSD", "M1", self.bars[-900:], 0.01, 0.01)
+        self.assertIsNotNone(k2.m3)                                         # 1.46.0: MODEL_MISSING until a restart
+        self.assertIn("next", fs.summary(k2)["markov3"])
+        self._latest().unlink()                                             # latest removed -> model unloaded, MODEL_MISSING again
+        k3 = fs.update("XAUUSD", "M1", self.bars[-900:], 0.01, 0.01)
+        self.assertIsNone(k3.m3)
+        self.assertEqual(fs.summary(k3)["markov3"]["status"], "MODEL_MISSING")
+
+    def test_unchanged_latest_does_not_reload(self):
+        self.meta.write_text(json.dumps({"data_kind": "REAL_USER_DATA", "role": "RESEARCH"}), encoding="utf-8")
+        fs, k = self._key()
+        m3, last = k.m3, k.m3_last
+        self.assertIsNotNone(m3)
+        with mock.patch("masterquo.lab.flow_context.service.MK.Markov3.from_dict", side_effect=AssertionError("reloaded")):
+            k2 = fs.update("XAUUSD", "M1", self.bars[-900:], 0.01, 0.01)
+        self.assertIs(k2.m3, m3)
+        self.assertIs(k2.m3_last, last)
 
 
 # ------------------------------------------------------------------------------------------------- D23: models check smoke (lab, flow)

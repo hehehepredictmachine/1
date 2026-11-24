@@ -3,7 +3,8 @@
 per closed bar (repeated polls change nothing; a history revision rebuilds from the bounded window). Markov models come only from a fitted
 artefact (`flow-context train-markov`); without it MODEL_MISSING - the deterministic indicators still work. A model fitted on non-REAL
 data (meta.json role TEST_ONLY) is not loaded (MODEL_TEST_ONLY_NOT_LOADED, decision D23) unless the test variable
-PMW_FLOW_ALLOW_TEST_MODEL=1 is set; a 1.46.0 run without meta.json is loaded and marked UNKNOWN."""
+PMW_FLOW_ALLOW_TEST_MODEL=1 is set; a 1.46.0 run without meta.json is loaded and marked UNKNOWN. A new fit (markov/latest.txt changed)
+is picked up on the next update without a restart."""
 from __future__ import annotations
 
 import json
@@ -41,13 +42,26 @@ class _Key:
         self.model_dir = None
         self.model_meta: dict | None = None
         self.model_skipped: dict | None = None                    # D23: why the latest fitted model is not loaded (TEST_ONLY)
+        self.latest_path = FT.root(inst) / "markov" / "latest.txt"
+        self.model_sig: tuple | None = None                       # markov/latest.txt (mtime, content) the models were loaded from
         self._load_models()
 
+    def latest_sig(self) -> tuple | None:
+        try:
+            return self.latest_path.stat().st_mtime_ns, self.latest_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+
     def _load_models(self):
-        p = FT.root(self.inst) / "markov" / "latest.txt"
-        if not p.exists():
+        # (re)load from markov/latest.txt; also called by FlowSections.update when latest.txt changed (a new fit is picked up without a
+        # restart - it stayed MODEL_MISSING / MODEL_TEST_ONLY_NOT_LOADED until a restart, profile change or history revision)
+        self.m3 = self.md = None
+        self.m3_last = self.md_last = None
+        self.model_dir, self.model_meta, self.model_skipped = None, None, None
+        self.model_sig = self.latest_sig()
+        if self.model_sig is None:
             return
-        d = Path(p.read_text(encoding="utf-8").strip())
+        d = Path(self.model_sig[1])
         try:
             # 1.46 arch: provenance of the loaded model (meta.json; a 1.46.0 run has none -> UNKNOWN) - shown in the SI cell
             meta = json.loads((d / "meta.json").read_text(encoding="utf-8")) if (d / "meta.json").exists() else {"role": "UNKNOWN", "data_kind": None}
@@ -92,10 +106,14 @@ class FlowSections:
                     k = None
                 else:
                     new = bars[pos + 1:]
+            reloaded = False
             if k is None:
                 k = _Key(inst, tf, point, tick)
                 self.keys[(inst, tf)] = k
                 new = bars
+            elif k.latest_sig() != k.model_sig:
+                k._load_models()                                  # a new fit (markov/latest.txt changed): loaded without a restart
+                reloaded = True
             for b in new:
                 k.bars = (k.bars + [b])[-WINDOW:]
                 r = k.hf.update(b)
@@ -109,6 +127,9 @@ class FlowSections:
                 if tf == "M1" and k.m3 is not None and len(k.bars) >= 3 and b is new[-1]:
                     k.m3_last = k.m3.step(k.bars[-3:])
                     k.md_last = k.md.step(k.bars[-2:], 15)
+            if reloaded and not new and tf == "M1" and k.m3 is not None and len(k.bars) >= 3:
+                k.m3_last = k.m3.step(k.bars[-3:])                # same step a new key makes on its newest closed bar
+                k.md_last = k.md.step(k.bars[-2:], 15)
             return k
 
     def summary(self, k: _Key | None) -> dict:
