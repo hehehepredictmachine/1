@@ -555,6 +555,53 @@ class TestI0854UnusableCalendarCache(_FakeWorkerSvcCase):
         self.assertFalse(svc._calendar_limited("XAUUSD-", "M5"))
 
 
+# ===================================================================================================== I0035 scorecard: tylko bieżący horyzont
+class TestI0035ScorecardHorizonFilter(_SvcCase):
+    """Dziś scorecard Kronos / TSFM uśredniał błędy prognoz o różnych horyzontach (H=12 abs_err 1,0 i H=24 abs_err 9,0 -> settled 2,
+    mae_h 5,0). Teraz tylko bieżące H z ustawień; inne H policzone osobno. Tylko wyświetlanie."""
+
+    def _kronos_row(self, svc, fid, H, err, bar):
+        svc.db.execute("""INSERT INTO kronos_forecasts(forecast_id, created_at, instrument, symbol, timeframe, horizon_bars, last_bar_open_utc,
+                          last_close, pred_close_h, delta_price, direction, path_json, data_kind, outcome_status, abs_err_h, naive_abs_err_h,
+                          direction_hit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       (fid, "2026-10-28T10:00:00Z", "XAUUSD", "XAUUSD-", "M5", H, bar, 2000.0, 2001.0, 1.0, "UP", "[]", "MT5_DEMO", "SETTLED",
+                        err, 2.0, 1))
+
+    def test_kronos_scorecard_uses_only_the_current_horizon(self):
+        svc = self.make(horizon_bars={"M1": 15, "M3": 10, "M5": 12, "M15": 8, "M30": 8, "H1": 6})
+        self._kronos_row(svc, "a", 12, 1.0, "2026-10-28T09:00:00Z")
+        self._kronos_row(svc, "b", 24, 9.0, "2026-10-28T09:05:00Z")
+        sc = svc.scorecard("XAUUSD", "M5")["REAL"]
+        self.assertEqual((sc["settled"], sc["mae_h"]), (1, 1.0))
+        self.assertEqual((sc["horizon_bars"], sc["other_horizons"]), (12, {"24": 1}))
+        svc.settings.update({"horizon_bars": {"M1": 15, "M3": 10, "M5": 24, "M15": 8, "M30": 8, "H1": 6}})
+        sc = svc.scorecard("XAUUSD", "M5")["REAL"]
+        self.assertEqual((sc["settled"], sc["mae_h"], sc["other_horizons"]), (1, 9.0, {"12": 1}))
+
+    def test_tsfm_scorecard_uses_only_the_current_horizon(self):
+        from masterquo.db.database import Database
+        from masterquo.tsfm.service import TsfmService, ledger_fingerprint
+        from masterquo.tsfm.settings import SettingsStore
+        from tsfm_runtime import lock as L
+        st = SettingsStore(self.dir / "tsfm" / "settings.json")
+        db = Database(self.dir / "tsfm.sqlite")
+        try:
+            svc = TsfmService(self.cfg, self.bridge, db, K.Bus(), K.Log(), clock=lambda: self.now[0], settings=st)
+            H = int(st.get().horizon_bars["M5"])
+            fp = ledger_fingerprint(L.fingerprint("chronos2"), st.get().models["chronos2"].checkpoint)
+            for fid, h, err, bar in (("a", H, 1.0, "2026-10-28T09:00:00Z"), ("b", 2 * H, 9.0, "2026-10-28T09:05:00Z")):
+                db.execute("""INSERT INTO tsfm_forecasts(forecast_id, model_id, model_name, model_revision, fingerprint, profile, snapshot_id,
+                              created_at, instrument, symbol, timeframe, horizon_bars, context_bars, last_bar_open_utc, last_close, point_kind,
+                              pred_close_h, delta_price, direction, path_json, data_kind, outcome_status, abs_err_h, naive_abs_err_h)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           (fid, "chronos2", "Chronos-2", "r", fp, "p", "s", "2026-10-28T10:00:00Z", "XAUUSD", "XAUUSD-", "M5", h, 512, bar,
+                            2000.0, "median", 2001.0, 1.0, "UP", "[]", "MT5_DEMO", "SETTLED", err, 2.0))
+            sc = svc.scorecard("chronos2", "XAUUSD", "M5")["REAL"]
+            self.assertEqual((sc["settled"], sc["mae_h"], sc["horizon_bars"], sc["other_horizons"]), (1, 1.0, H, {str(2 * H): 1}))
+        finally:
+            db.close()
+
+
 class TestI0785ValidationSaveAtomic(unittest.TestCase):
     def setUp(self):
         self.td = TempData()

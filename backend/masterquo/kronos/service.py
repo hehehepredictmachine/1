@@ -639,22 +639,30 @@ class KronosService:
         return rows
 
     def scorecard(self, inst: str, tf: str) -> dict:
-        """Live SHADOW comparison with the actual move - only settled rows from real (non-synthetic) data count; synthetic separately."""
+        """Live SHADOW comparison with the actual move - only settled rows from real (non-synthetic) data count; synthetic separately.
+        Arch 1.46 I0035: only forecasts of the CURRENT horizon H of this timeframe (settings) - after a change of H the errors of
+        different horizons were averaged; rows of other horizons are only counted (other_horizons). Display only (no gate reads it)."""
         out = {}
+        H = scorecard_horizon(self.settings.get(), tf)
+        hsql, harg = (" AND horizon_bars=?", (H,)) if H else ("", ())
         for label, kinds in (("REAL", ("MT5", "MT5_DEMO", "MT5_REAL")), ("SYNTHETIC", ("SYNTHETIC",))):
             ph = ",".join("?" * len(kinds))
-            rows = self.db.query(f"SELECT * FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' AND data_kind IN ({ph}) "
-                                 "ORDER BY id DESC LIMIT 5000", (inst, tf, *kinds))
+            rows = self.db.query(f"SELECT * FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' AND data_kind IN ({ph})"
+                                 f"{hsql} ORDER BY id DESC LIMIT 5000", (inst, tf, *kinds, *harg))
             pend = self.db.one(f"SELECT COUNT(*) AS n FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='PENDING' "
-                               f"AND data_kind IN ({ph})", (inst, tf, *kinds))["n"]
+                               f"AND data_kind IN ({ph}){hsql}", (inst, tf, *kinds, *harg))["n"]
+            other = {str(r["horizon_bars"]): r["n"] for r in self.db.query(
+                f"SELECT horizon_bars, COUNT(*) AS n FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' "
+                f"AND data_kind IN ({ph}) AND horizon_bars<>? GROUP BY horizon_bars", (inst, tf, *kinds, H or -1))}
             if not rows:
-                out[label] = {"settled": 0, "pending": pend}
+                out[label] = {"settled": 0, "pending": pend, "horizon_bars": H, "other_horizons": other}
                 continue
             rows = rows[::-1]
-            h = rows[0]["horizon_bars"] or 1
+            h = H or rows[0]["horizon_bars"] or 1
             nonover = rows[::h]                                                 # every H-th forecast: horizons do not overlap
             hits = [r["direction_hit"] for r in rows if r["direction_hit"] is not None]
-            out[label] = {"settled": len(rows), "pending": pend, "mae_h": _mean(r["abs_err_h"] for r in rows),
+            out[label] = {"settled": len(rows), "pending": pend, "horizon_bars": H, "other_horizons": other,
+                          "mae_h": _mean(r["abs_err_h"] for r in rows),
                           "naive_mae_h": _mean(r["naive_abs_err_h"] for r in rows), "direction_evaluated": len(hits),
                           "direction_hit_rate": (sum(hits) / len(hits)) if hits else None,
                           "non_overlapping": {"n": len(nonover), "mae_h": _mean(r["abs_err_h"] for r in nonover),
@@ -883,6 +891,15 @@ class KronosService:
 def _mean(it) -> float | None:
     xs = [float(x) for x in it if x is not None]
     return sum(xs) / len(xs) if xs else None
+
+
+def scorecard_horizon(settings, tf: str) -> int | None:
+    """Current horizon H (bars) of `tf` from the Kronos / TSFM settings (both have horizon_bars per TF); None = unknown (no filter)."""
+    try:
+        h = int((settings.horizon_bars or {}).get(tf) or 0)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return h if h > 0 else None
 
 
 LIMITED_PL = {

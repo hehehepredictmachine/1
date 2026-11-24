@@ -34,7 +34,7 @@ from pathlib import Path
 
 from .. import paths
 from ..kronos import quality as Q                   # 1.46: unused `kronos.calendar as CAL` import removed (the borrowed helpers use their own)
-from ..kronos.service import KronosService
+from ..kronos.service import KronosService, scorecard_horizon
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
 from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
 
@@ -697,18 +697,24 @@ class TsfmService:
         except Exception:  # noqa: BLE001 - unknown pin: no filter (as before)
             lfp = None
         fsql, farg = (" AND fingerprint=?", (lfp,)) if lfp else ("", ())
+        # arch 1.46 I0035: only the CURRENT horizon H of this timeframe (other horizons counted in other_horizons, never averaged in)
+        H = scorecard_horizon(self.settings.get(), tf)
+        hsql, harg = (" AND horizon_bars=?", (H,)) if H else ("", ())
         out = {}
         for label, kinds in (("REAL", ("MT5", "MT5_DEMO", "MT5_REAL")), ("SYNTHETIC", ("SYNTHETIC",))):
             ph = ",".join("?" * len(kinds))
             rows = self.db.query(f"SELECT * FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='SETTLED' "
-                                 f"AND data_kind IN ({ph}){fsql} ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds, *farg))
+                                 f"AND data_kind IN ({ph}){fsql}{hsql} ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds, *farg, *harg))
             pend = self.db.one(f"SELECT COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='PENDING' "
-                               f"AND data_kind IN ({ph}){fsql}", (mid, inst, tf, *kinds, *farg))["n"]
+                               f"AND data_kind IN ({ph}){fsql}{hsql}", (mid, inst, tf, *kinds, *farg, *harg))["n"]
+            other = {str(r["horizon_bars"]): r["n"] for r in self.db.query(
+                f"SELECT horizon_bars, COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='SETTLED' "
+                f"AND data_kind IN ({ph}){fsql} AND horizon_bars<>? GROUP BY horizon_bars", (mid, inst, tf, *kinds, *farg, H or -1))}
             if not rows:
-                out[label] = {"settled": 0, "pending": pend, "fingerprint": lfp}
+                out[label] = {"settled": 0, "pending": pend, "fingerprint": lfp, "horizon_bars": H, "other_horizons": other}
                 continue
             rows = rows[::-1]
-            h = rows[0]["horizon_bars"] or 1
+            h = H or rows[0]["horizon_bars"] or 1
             nonover = rows[::h]
             hits = [r["direction_hit"] for r in rows if r["direction_hit"] is not None]
             cov = [r["covered_80"] for r in rows if r["covered_80"] is not None]
@@ -719,7 +725,7 @@ class TsfmService:
                           "non_overlapping": {"n": len(nonover), "mae_h": _mean(r["abs_err_h"] for r in nonover),
                                               "naive_mae_h": _mean(r["naive_abs_err_h"] for r in nonover)},
                           "note": "kolejne prognozy co świecę mają nakładające się horyzonty – wiarygodniejszy jest podzbiór bez nakładania i raport walidacji",
-                          "fingerprint": lfp}
+                          "fingerprint": lfp, "horizon_bars": H, "other_horizons": other}
         return out
 
     # ================================================================== views
