@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from typing import ClassVar
 from unittest import mock
 
 import _env
@@ -489,6 +490,85 @@ class TestTabICLWeightsFolderP004(unittest.TestCase):
         for bad in ("[1, 2]", "{not json", json.dumps({"weights_root": None}), json.dumps({"weights_root": ""})):
             (tsfm_dir() / "settings.json").write_text(bad, encoding="utf-8")
             self.assertEqual(T.weights_root(), tsfm_dir() / "models", bad)
+
+
+# ================================================================================================ I0543 Event GRU READY path
+class _M1Bridge:
+    """Closed M1 bars (BAR_CLOSE_EVENTS source of the Event GRU adapter) + the broker point; no terminal."""
+    synthetic = False
+    symbol_info: ClassVar[dict] = {"point": 0.01}
+
+    def __init__(self, n=140, t0=1_794_000_000.0, seed=11):
+        import numpy as np
+        from test_quant_core import iso
+        rng = np.random.default_rng(seed)
+        c, self.rows = 2000.0, []
+        for i in range(n):
+            o = c
+            c = o + float(rng.normal(0, 0.4))
+            self.rows.append({"open_utc": iso(t0 + 60 * i), "o": o, "h": max(o, c) + 0.1, "l": min(o, c) - 0.1, "c": c, "tv": 10 + i % 7,
+                              "spread": 20 + i % 3, "closed": True})
+
+    def bars(self, tf, include_forming=False):
+        return list(self.rows) if tf == "M1" else []
+
+
+class TestEventGruReadyPath(unittest.TestCase):
+    """The READY path of quant.adapters.EventGRU (artifact -> MM SHADOW pointer -> closed M1 events -> units -> GRU + stack -> softmax) had
+    no test in the repository (only modelhub/smoke/mm.py). Technical artifact with fixed random weights in a temporary data folder."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def _promote(self):
+        import numpy as np
+        from masterquo.mm import artifacts as MA
+        from masterquo.mm import event_engine as EE
+        from masterquo.mm import events as EV
+        m = EE.EventModel(len(EV.FEATURES), H=8, S=4, seed=5)
+        nf = len(EV.FEATURES)
+        st = {**m.state(), "scaler_med": np.zeros(nf), "scaler_iqr": np.ones(nf), "band": np.array([1e-4])}
+        aid = MA.save("XAUUSD", "event_engine_dir3", st, {"status": "VALIDATED_SHADOW", "model_type": "EVENT_GRU_STACK",
+                                                           "feature_schema": "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES),
+                                                           "event_source": "BAR_CLOSE_EVENTS", "note": "TEST: artefakt techniczny"})
+        MA.promote_shadow("XAUUSD", "event_engine_dir3", aid, "test")
+        return aid
+
+    def test_not_trained_then_ready_with_a_promoted_artifact(self):
+        from types import SimpleNamespace
+
+        from masterquo.mm import data as D
+        from masterquo.mm import events as EV
+        from masterquo.mm.service import _to_bars
+        from masterquo.modelhub import contract as C
+        from masterquo.quant import adapters as QA
+        from masterquo.quant import checks as CK
+        br = _M1Bridge()
+        rt = SimpleNamespace(bridge=br)
+        self.assertEqual(QA.EventGRU().predict(rt, "XAUUSD")["state"], "NOT_TRAINED")
+        aid = self._promote()
+        p = QA.EventGRU().predict(rt, "XAUUSD")
+        self.assertEqual(p["state"], "READY", p.get("unavailable_reason"))
+        res = p["result"]
+        self.assertEqual(set(res), {"DOWN", "FLAT", "UP"})
+        self.assertLess(abs(sum(res.values()) - 1.0), 1e-6)
+        self.assertEqual(p["model_version"], aid)
+        self.assertEqual(p["data_kind"], "REAL")
+        self.assertEqual(p["source"], "BAR_CLOSE_EVENTS")
+        acc = EV.from_arrays(D.events_from_bars(_to_bars(br.rows, "M1"), 0.01), "XAUUSD", 900)
+        u = EV.units(acc, EV.featurize(acc), 16)
+        self.assertEqual(CK.ts(p["data_time"]), float(u["t_end"][-1]))   # data_time = end of the last full unit of 16 events
+        self.assertLessEqual(CK.ts(p["data_time"]), CK.ts(br.rows[-1]["open_utc"]) + 60)
+        C.validate(p)                                                   # a valid PMW-PRED record
+
+    def test_too_few_bars_is_blocked_data(self):
+        from types import SimpleNamespace
+
+        from masterquo.quant import adapters as QA
+        self._promote()
+        p = QA.EventGRU().predict(SimpleNamespace(bridge=_M1Bridge(n=30)), "XAUUSD")
+        self.assertEqual(p["state"], "BLOCKED_DATA")
 
 
 if __name__ == "__main__":
