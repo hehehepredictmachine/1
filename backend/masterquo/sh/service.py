@@ -57,8 +57,21 @@ def _regime_kw(record_sh, snap: dict | None) -> dict:
 
 
 class SHService:
-    def __init__(self, cfg_store, bridge, db, bus, log, modes, *, clock=time.time, terminal=None):
+    # w2 (I0095): optional dependencies wired by runtime.py after construction - class defaults (None = absent), read as self.x
+    arc = None
+    baskets = None
+    tsfm = None
+    families = None
+    kronos = None
+    indicators = None
+    predictions_provider = None
+    pack = None
+    news = None                 # w2 (I0557): NewsService - macro calendar for NEW entries (None: tests / replay - no macro codes)
+    models_provider = None      # w2 (I0004): fn(inst) -> model rows of the live runtime (sh.models.MatrixCache); None -> NOT_EVALUATED
+
+    def __init__(self, cfg_store, bridge, db, bus, log, modes, *, clock=time.time, terminal=None, news=None):
         self.cfg_store, self.bridge, self.bus, self.log, self.modes = cfg_store, bridge, bus, log, modes
+        self.news = news
         self.store = SHStore(db)
         self.clock = clock
         self._terminal = terminal                     # tests inject a direct callable; runtime uses the MT5 worker
@@ -216,7 +229,7 @@ class SHService:
             self.manage(ex, spec, q, now, shc)
         self.store.expire_signals(now)
         bars = {tf: [b for b in self.bridge.bars(tf, 400, include_forming=False) if b.get("open_utc")] for tf in ("M1", "M5", "M15", "H1")}
-        if getattr(self, "pack", None) is not None:                     # 1.38 pack: longer closed history + M3 (native or complete triples)
+        if self.pack is not None:                                       # 1.38 pack: longer closed history + M3 (native or complete triples)
             from .pack.engine import NEEDED_BARS
             self.pack_bars = {tf: [b for b in self.bridge.bars(tf, NEEDED_BARS[tf], include_forming=False) if b.get("open_utc")]
                               for tf in NEEDED_BARS}
@@ -250,7 +263,7 @@ class SHService:
                 pr = TM.predict(inst, strat, TM.features(su, snap))
                 su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
             evals[strat] = self._tsfm(self._kronos(su, inst, strat, snap), inst, strat)
-        ind = getattr(self, "indicators", None)
+        ind = self.indicators
         if ind is not None:                                               # PMW-IND-1 context (role OBSERVE: shown + logged, never a gate)
             try:
                 ictx = ind.context(None, bars)
@@ -258,7 +271,7 @@ class SHService:
                 ictx = {"indicators": {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:160]}, "dxy": {"status": "ERROR"}}
             for su in evals.values():
                 su["indicator_context"] = dict(ictx, role="OBSERVE", horizon_note="DXY = kontekst H1, nie trigger M1")
-        fam = getattr(self, "families", None)
+        fam = self.families
         if fam is not None:                                               # 1.33 families: context; ASSIST may only hold READY -> WAIT
             from ..modelhub.families.service import apply_to_setup
             for k, su in list(evals.items()):
@@ -298,7 +311,7 @@ class SHService:
                 su["entry_block"] = list(entry_block)
                 su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
             model_block = None
-            arc = getattr(self, "arc", None)
+            arc = self.arc
             was_ready = (self.last_saved.get(strat, (None,))[0] == "READY")
             record = (su.get("status") == "READY" or was_ready) if is_pack else \
                 (su.get("status") == "READY" or self.last_saved.get(strat, (None,))[0] != su.get("status"))
@@ -337,7 +350,7 @@ class SHService:
     def pack_cycle(self, inst, spec, q, acc, now, shc, snap) -> list[dict]:
         """20 variants on the shared closed bars of this cycle (no second model process, no separate robot). Model receivers (Kronos,
         Chronos-2 / Granite TTM, families) run on READY candidates only, with the family roles; they can only hold READY -> WAIT."""
-        pk = getattr(self, "pack", None)
+        pk = self.pack
         if pk is None:
             return []
         ic = {k: v for k, v in shc["instruments"][inst].items() if k not in ("SCALPING", "HEDGING")}
@@ -350,7 +363,7 @@ class SHService:
             self.log.error("SH", "PACK", f"{type(exc).__name__}: {exc}"[:300])
             return []
         out = list(out) + self.basket_setups(inst, spec, q, now)          # 1.42: FX basket plans enter the SAME pipeline
-        fam = getattr(self, "families", None)
+        fam = self.families
         res = []
         for su in out:
             if su["status"] == "READY":
@@ -365,8 +378,11 @@ class SHService:
         return res
 
     def garch_artifact(self, inst: str) -> dict:
-        """1.39: the ACTIVE, APPROVED VOL_GARCH family artifact (GARCH(1,1) fitted by arch) for HG09 with volatility_method VOL_GARCH."""
-        fam = getattr(self, "families", None)
+        """1.39: the ACTIVE, APPROVED VOL_GARCH family artifact (GARCH(1,1) fitted by arch) for HG09 with volatility_method VOL_GARCH.
+        w2 (I0408): READY only when the family role is not OFF AND the artifact passes the ASSIST gate (Store.assist_ok: APPROVED, trained on
+        REAL data) - fail-closed (no store / a failing check = not READY). Only ever takes READY away (the HG09 detector then has no GARCH:
+        NO_DATA, no fallback to another volatility); nothing is written; open HG09 plans keep the parameters frozen in the plan."""
+        fam = self.families
         if fam is None:
             return {"status": "NO_FAMILY_SERVICE"}
         st = fam.status("VOL_GARCH", inst)
@@ -390,7 +406,7 @@ class SHService:
                 "strategy_version": (su.get("pack") or {}).get("strategy_version"), "config_hash": None, "_instrument": fam_prof.get("_instrument") or {}}
 
     def basket_setups(self, inst: str, spec, q, now: float) -> list[dict]:
-        bs = getattr(self, "baskets", None)
+        bs = self.baskets
         if bs is None:
             return []
         try:
@@ -457,7 +473,7 @@ class SHService:
                          "economics": {"cost_status": "SPREAD_ONLY", "c_round_trip": spread, "hedge_loss_bound_price": 0.0}}}
 
     def basket_consumed(self, su: dict, res: dict | None) -> None:
-        bs = getattr(self, "baskets", None)
+        bs = self.baskets
         if bs is not None:
             bs.ledger.mark_exec(su["basket"]["signal_id"], "PL-" + su["signal_id"][3:], str((res or {}).get("status")), (res or {}).get("reason"))
 
@@ -493,12 +509,12 @@ class SHService:
     def _kronos(self, su: dict, inst: str, strat: str, snap: dict) -> dict:
         """Kronos context (separate, described). OBSERVE = information only; REQUIRED (after validation + confirmation) can only turn
         READY into WAIT. Any failure here keeps the evaluation as it was in OBSERVE and as WAIT in REQUIRED - never a permission."""
-        kr = getattr(self, "kronos", None)
+        kr = self.kronos
         if kr is None:
             return su
         from ..kronos import predictions as KP
         try:
-            preds = self.predictions_provider(inst) if getattr(self, "predictions_provider", None) else []
+            preds = self.predictions_provider(inst) if self.predictions_provider else []
             ctx = KP.context(kr, inst, strat, side=su.get("side"), other_preds=preds, snap=snap)
         except Exception as exc:  # noqa: BLE001
             use = kr.settings.get().strategy_use[strat].use
@@ -511,7 +527,7 @@ class SHService:
     def _tsfm(self, su: dict, inst: str, strat: str) -> dict:
         """1.37 Chronos-2 / 1.40 Granite TTM receivers (separate, described). OBSERVE = information; ASSIST / REQUIRED (approved) may only turn
         READY into WAIT. A failure here never grants anything: OBSERVE keeps the evaluation, REQUIRED holds it."""
-        ts = getattr(self, "tsfm", None)
+        ts = self.tsfm
         if ts is None:
             return su
         from ..tsfm import predictions as TP
@@ -588,7 +604,7 @@ class SHService:
                                                   "basket_loss_limit_money", "loss_per_lot")},
                 "profile": {k: v for k, v in prof.items() if k != "_instrument"}, "instrument_profile": prof["_instrument"],
                 "atr_m5": (snap.get("vol") or {}).get("atr_m5"), "created_at": now}
-        arc = getattr(self, "arc", None)
+        arc = self.arc
         intent = None
         if arc is not None and mode != "SIGNALS":     # PMW-ARC-1: intent (dedup) + shared atomic risk reservation of BOTH paths
             rec = (getattr(arc, "by_source", {}) or {}).get(su["signal_id"]) or \
@@ -798,7 +814,7 @@ class SHService:
         gate = self.gate()
         if ok and gate["entry_block"]:
             ok, why = False, "nowe ekspozycje zablokowane: " + ",".join(gate["entry_block"])   # STOP blocks new hedges, never exits
-        arc = getattr(self, "arc", None)
+        arc = self.arc
         if ok and arc is not None and row["exec_mode"] != "SIGNALS":
             op = arc.intents.open(path="SH", mode=row["exec_mode"], account_key=self.bridge.account_key, subject=f"{row['plan_id']}:HEDGE1",
                                   symbol=spec.symbol, side="SELL" if p.side == "BUY" else "BUY", volume=hv,
@@ -1079,7 +1095,7 @@ class SHService:
                 if res["status"] in ("UNKNOWN", "BLOCKED") and not ok:
                     self.store.event(pid, "HEDGE_" + res["status"], res, now)
                 hi = (b.policy or {}).pop("hedge_intent", None) if b else None
-                arc = getattr(self, "arc", None)
+                arc = self.arc
                 if hi and arc is not None:
                     try:
                         arc.intents.outcome(hi, res)
