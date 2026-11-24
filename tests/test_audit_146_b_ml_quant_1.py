@@ -277,9 +277,10 @@ class TestRegistry(unittest.TestCase):
         self.db.close()
         self.td.close()
 
-    def test_unavailable_champion_comparison_is_reported_promotion_as_in_145(self):
-        """Rule 1: the promotion rule stays the 1.45.0 one (chunk_19#3 is on the owner's decision list) - an impossible comparison
-        (here: result without test ids) still promotes the passing challenger; the cause is only reported (event + compare_error)."""
+    def test_unavailable_champion_comparison_is_reported_and_blocks_promotion(self):
+        """chunk_19#3 / arch146 w2 I0789 (owner's decision: fix everything): an impossible comparison (here: result without test ids) no
+        longer promotes the passing challenger (was the 1.45.0 rule) - the champion stays, the cause is reported (reason, event,
+        compare_error)."""
         from masterquo.ml.registry import Registry
         reg = Registry(self.db, self.root / "models")
         reg.champion = object()                                           # a loaded champion exists
@@ -288,8 +289,9 @@ class TestRegistry(unittest.TestCase):
         with mock.patch.object(Registry, "promote") as promote:
             dec = reg.register(res, "SNAP", prom)
         best = min((m["test"]["brier"], m["model_id"]) for m in res["models"].values())[1]
-        promote.assert_called_once_with(best, "PASSED_RULES_AND_BEAT_CHAMPION")
-        self.assertTrue(dec[best]["passed"], dec)
+        promote.assert_not_called()
+        self.assertFalse(dec[best]["passed"], dec)
+        self.assertIn("CHAMPION_COMPARISON_UNAVAILABLE:NO_TEST_SAMPLE_IDS", dec[best]["reasons"])
         ev = [e for e in reg.events() if e["kind"] == "CHAMPION_COMPARISON_UNAVAILABLE"]
         self.assertEqual([(e["model_id"], json.loads(e["detail_json"])["error"]) for e in ev], [(best, "NO_TEST_SAMPLE_IDS")])
 

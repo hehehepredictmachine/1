@@ -359,6 +359,9 @@ def train(rows: list[dict], *, task: dict, crit: dict | None = None, seen_tests:
     status = "VALIDATED_SHADOW" if all(gates.values()) else "VALIDATION_FAILED"
     rep["status"] = status
     rep["failed_gates"] = [k for k, v in gates.items() if not v]
+    # Label of the feature schema (1.46 arch I0027): FEAT-1 artifacts keep "PMW-QUANT-FEAT-1:<hash of the names>" (load() requires the
+    # prefix - renaming it would make every existing artifact INCOMPATIBLE = no HOLD in ASSIST = a looser filter); artifacts trained on
+    # the versioned semantics carry their own prefix (F.schema_for: PMW-QUANT-FEAT-3, arch146 D8/D9).
     model = {"version": VERSION, "feature_names": names, "feature_schema": F.schema_for(fv, names), "scaler": {"mean": mod["scaler"].mean.tolist(),
              "scale": mod["scaler"].scale.tolist()}, "logit": {"coef": mod["coef"].tolist(), "intercept": mod["intercept"], "C": mod["C"]},
              "calibrator": calib, "prior": prior, "event_id": task.get("event_id"), "task_hash": task.get("task_hash"),

@@ -298,7 +298,10 @@ def t_ml(run: Run, inst: str) -> None:
     q = "TEST_TECHNICZNY" if plan["synthetic"] else ("NIEZWALIDOWANY" if res["role"] == "RESEARCH_APPROX" and passed else
                                                    "ZWALIDOWANY_SHADOW" if passed else "ODRZUCONY")
     integ = "AKTYWNY_W_REJESTRZE" if res.get("champion") in passed and res["role"] == "ELIGIBLE_FOR_CHAMPION" else "ZAPISANY_DO_BADAN"
-    run.set(tid, execution="UKONCZONE", quality=q, integration=integ, model_id=",".join(res["models"]), result={k: res[k] for k in ("counts", "role", "champion", "models", "costs")},
+    # 1.46 w2 (I0061): the training set of this run (own dataset feed + window) and its composition are kept in state.json
+    result = {k: res[k] for k in ("counts", "role", "champion", "models", "costs")}
+    result.update(scope=res.get("scope"), snapshot_composition=(res.get("snapshot") or {}).get("composition"))
+    run.set(tid, execution="UKONCZONE", quality=q, integration=integ, model_id=",".join(res["models"]), result=result,
             detail=f"{res['role']}: " + ", ".join(f"{d['family']} {'spełnia reguły' if d['passed_rules'] else 'odrzucony'}" for d in res["models"].values())
                    + f"; etykiet {res['counts']['labeled']}",
             unit={"task": "P(setup S01–S12 osiąga cel netto przed SL)", "tf": "TF setupu (M5–H1)", "side": "oba (cecha kierunku setupu)"})

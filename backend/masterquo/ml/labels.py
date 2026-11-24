@@ -1,4 +1,4 @@
-"""Versioned, incremental labelling of setup samples (MQ-LABEL-1.1.0, cost model MQ-COST-1.1.0, exit policy MQ-EXIT-POLICY-1.0.0).
+"""Versioned, incremental labelling of setup samples (MQ-LABEL-1.1.0, cost model MQ-COST-1.2.0, exit policy MQ-EXIT-POLICY-1.0.0).
 
 Target (both models): does THIS setup, executed with the policy fixed when the sample was created,
 end with a positive NET result?  label = 1 if net R > 0, 0 if net R <= 0.  Also stored: R, MFE, MAE, exit reason.
@@ -29,10 +29,41 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 LABEL_POLICY_VERSION = "MQ-LABEL-1.1.0"
-COST_MODEL_VERSION = "MQ-COST-1.1.0"
+COST_MODEL_VERSION = "MQ-COST-1.2.0"
+# 1.2.0 (1.46 w2, I0048): ONE label-cost function (label_cost below) for the bot's collector (ml/service.MLService._cost) and the
+# offline backfill of the training installer (ml/offline.cost_of) - slippage = costs.slippage_stress_points x point on fill and stop
+# exits in both, commission (account money per lot side) converted with the value of a 1.0 price move per lot (broker calculator /
+# trade_tick_value / trade_tick_size; contract size only as a flagged fallback). Up to 1.1.0 the offline backfill labelled with slippage
+# 0 and commission / contract size, so the same setups had a higher net_R than the bot's samples in the SAME database: samples of that
+# basis (source BACKFILL_OFFLINE_*, cost model below) are never put into a snapshot (dataset.SampleStore.eligible). The live collector's
+# costs did not change (its 1.1.0 samples are the 1.2.0 basis).
+LEGACY_OFFLINE_COST_MODELS = ("MQ-COST-1.0.0", "MQ-COST-1.1.0")
+LEGACY_OFFLINE_SOURCE_PREFIX = "BACKFILL_OFFLINE_"
+PRICE_VALUE_FLAG_CONTRACT = "PRICE_VALUE_FROM_CONTRACT_SIZE_ASSUMES_ACCOUNT_CCY_EQ_QUOTE_CCY"
 MAX_HOLD_MINUTES_NO_TIME_EXIT = 14400      # 10 days: plans without a time exit become UNRESOLVED after this (explicit, not a label)
 UTC = timezone.utc
 GAP_MISSING_MIN, GAP_SESSION_MIN = 15, 50
+
+
+def label_cost(*, spread: float, point: float | None, slippage_points: float | None, per_lot: float | None, value_1: float | None,
+               flags: list[str], commission_source) -> dict:
+    """Costs of one sample's label (price units per unit volume). value_1 = account money of a 1.0 price move for 1 lot (broker profit
+    calculator, or trade_tick_value / trade_tick_size); unknown commission or value -> flag COMMISSION_UNKNOWN (the sample becomes
+    COST_UNKNOWN, never trained on), never 0. Unknown point -> no slippage can be expressed in price: flag SLIPPAGE_POINT_UNKNOWN."""
+    flags = list(flags)
+    if point:
+        slip = float(slippage_points or 0) * float(point)
+    else:
+        slip = 0.0
+        if slippage_points:
+            flags.append("SLIPPAGE_POINT_UNKNOWN")
+    if per_lot is None or not value_1:
+        flags.append("COMMISSION_UNKNOWN")
+        comm = 0.0
+    else:
+        comm = float(per_lot) / float(value_1)
+    return {"spread": float(spread), "slippage": float(slip), "commission": comm, "flags": flags, "commission_source": commission_source,
+            "commission_per_lot_per_side": per_lot, "cost_model_version": COST_MODEL_VERSION}
 
 
 def _p(s: str) -> datetime:

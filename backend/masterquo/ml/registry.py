@@ -108,8 +108,14 @@ class Registry:
         best = min(cand) if cand else None
         if best and self.champion is not None and promotion_cfg.get("must_beat_champion_brier", True):
             champ_brier = self._champion_brier_on(result)
-            if champ_brier is None:                         # 1.46: diagnostics only (the promotion rule is the 1.45.0 one)
+            if champ_brier is None:
+                # 1.46 w2 (I0789, patch f43379b): an impossible comparison (exception, a result without test ids, an empty test set)
+                # promoted the candidate WITHOUT beating the champion - "a weaker challenger never replaces a better champion" needs
+                # the comparison. Not compared = not promoted; the champion (and its ML gate in ASSIST) stays.
                 self.event("CHAMPION_COMPARISON_UNAVAILABLE", best[1], {"error": self.compare_error})
+                decisions[best[1]]["passed"] = False
+                decisions[best[1]]["reasons"].append("CHAMPION_COMPARISON_UNAVAILABLE" + (f":{self.compare_error}" if self.compare_error else ""))
+                best = None
             elif best[0] >= champ_brier:
                 decisions[best[1]]["passed"] = False
                 decisions[best[1]]["reasons"].append(f"NOT_BETTER_THAN_CHAMPION_BRIER_{champ_brier:.4f}")

@@ -36,6 +36,17 @@ brak danych) **nie jest stratą** – dostaje status NO_EXECUTABLE_ENTRY / DATA_
 Wybór jest **ręczny** i zakresowy (instrument × profil × strona): OBSERVE (tylko podgląd) albo SHADOW_GATE (hipotetyczny filtr –
 wymaga HOLDOUT_PASSED). Żadna rola nie wysyła zleceń ani nie zmienia Execution Lock. Rollback przywraca poprzedni wybór całego bundla.
 
+**Włącznik inferencji = ten wybór** (brak wybranego bundla strony → NO_MODEL). Ustawienie `ml.mode` (OFF / SHADOW / ASSIST) dotyczy
+legacy ML (Decision Tree + XGBoost setupów S01–S12) i **nie** wyłącza Scalp ML (do 1.46 jego OFF zwracał tu ML_OFF). Próbki kandydatów
+są zapisywane zawsze. Jedna predykcja na (próbka, hash modelu): ponowna ocena tego samego kandydata (np. po ponownym połączeniu MT5)
+zwraca zapisaną predykcję (`duplicate_of_stored_prediction`), bez nowego wiersza i bez ponownej publikacji.
+
+## Monitoring na żywo
+`GET /api/v1/ml/scalp` → `live_metrics[strona][model_hash]`: pierwsza predykcja każdej próbki złączona z etykietą LABELED – n, Brier,
+log loss, średnie p, częstość bazowa, ECE (10 przedziałów, dopiero od n ≥ 100) oraz ocena proponowanego filtra w cieniu
+(`shadow_filter.take/skip`: liczba cykli i średni net_R). To tylko monitoring – nie bramka i nie dane treningowe (trening = replay
+eksportu).
+
 ## Wyjaśnienia
 „Dlaczego?” w panelu = TreeSHAP (`pred_contribs`) klasyfikatora w jednostkach **marginesu log-odds** (nie procent); sprawdzana suma
 bias + wkłady = margines. Wyjaśnienie dla predykcji modelu, który już nie jest wybrany → MODEL_CHANGED (bez mieszania modeli).
