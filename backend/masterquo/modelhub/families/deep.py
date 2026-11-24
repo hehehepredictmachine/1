@@ -14,12 +14,9 @@ _HEALTH: dict = {}
 
 
 def python() -> str | None:
-    from ... import paths
-    root = paths.ROOT_DIR
-    for c in (os.environ.get("MQ_DEEP_PYTHON"), str(root / ".venv_deep" / "Scripts" / "python.exe"), str(root / ".venv_deep" / "bin" / "python")):
-        if c and Path(c).is_file():
-            return c
-    return None
+    # 1.46 arch (I0117): MQ_DEEP_PYTHON -> .venv_deep (is_file), as before
+    from ... import runtimes
+    return runtimes.find_python("deep")
 
 
 def call(op: str, payload: dict, timeout: float = 600.0) -> dict:

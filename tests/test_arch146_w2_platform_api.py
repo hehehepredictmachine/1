@@ -686,5 +686,95 @@ class TestDbLifecycle(_Base):
         db.close()
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0117
+def _env_names_read_by_backend() -> set[str]:
+    """MQ_* / PMW_* names on lines that touch os.environ / getenv in the backend (bot, runtimes of the model environments)."""
+    import re
+    names = set()
+    for d in (PKG, PKG.parent / "kronos_runtime", PKG.parent / "tsfm_runtime"):
+        for f in d.rglob("*.py"):
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if "environ" in line or "getenv" in line:
+                    names |= set(re.findall(r"\b((?:MQ|PMW)_[A-Z0-9_]+)\b", line))
+    for f in (PKG.parent / "mq_instruments.py",):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if "environ" in line:
+                names |= set(re.findall(r"\b((?:MQ|PMW)_[A-Z0-9_]+)\b", line))
+    return names
+
+
+class TestRuntimesRegistry(_Base):
+    """I0117: jedno wyszukiwanie interpretera modeli (runtimes.py, kolejność kandydatów jak dziś), jeden domyślny budżet RAM, każda
+    zmienna MQ_*/PMW_* czytana przez backend opisana w .env.example (blok generowany z rejestru)."""
+
+    def _fake_root(self):
+        root = Path(self.td.dir) / "root"
+        root.mkdir()
+        return root
+
+    def test_candidates_order_unchanged_per_module(self):
+        from masterquo import paths, runtimes
+        from masterquo.kronos import settings as KS
+        from masterquo.tsfm import settings as TS
+        root = self._fake_root()
+        def win(v):
+            return str(root / v / "Scripts" / "python.exe")
+
+        def nix(v):
+            return str(root / v / "bin" / "python")
+        with mock.patch.object(paths, "ROOT_DIR", root), mock.patch.dict("os.environ", {"MQ_KRONOS_PYTHON": "/k", "MQ_CHRONOS2_PYTHON": "/c"}):
+            s = types.SimpleNamespace(python_path="/typed")
+            self.assertEqual(KS.python_candidates(s), ["/k", "/typed", win(".venv_kronos"), nix(".venv_kronos")])
+            self.assertEqual(TS.python_candidates("chronos2", types.SimpleNamespace(python_path=None)), ["/c", win(".venv_chronos2"), nix(".venv_chronos2")])
+            self.assertEqual(TS.python_candidates("granite_ttm", types.SimpleNamespace(python_path="/g")), ["/g", win(".venv_granite"), nix(".venv_granite")])
+            self.assertEqual(runtimes.python_candidates("tabicl"), [win(".venv_tabicl"), nix(".venv_tabicl")])
+
+    def test_find_python_per_module(self):
+        from masterquo import paths
+        from masterquo.forecast import service as FS
+        from masterquo.modelhub.families import deep
+        from masterquo.quant import tabicl
+        from masterquo.training import core
+        root = self._fake_root()
+        for v in (".venv_tabicl", ".venv_deep", ".venv_candles"):
+            (root / v / "bin").mkdir(parents=True)
+            (root / v / "bin" / "python").write_text("", encoding="utf-8")
+        cfg = types.SimpleNamespace(forecast=types.SimpleNamespace(python_path=None))
+        with mock.patch.object(paths, "ROOT_DIR", root), mock.patch.dict("os.environ", {}, clear=False) as env:
+            for k in ("MQ_TABICL_PYTHON", "MQ_DEEP_PYTHON", "MQ_CANDLES_PYTHON"):
+                env.pop(k, None)
+            self.assertEqual(tabicl.find_python(), str(root / ".venv_tabicl" / "bin" / "python"))
+            self.assertEqual(deep.python(), str(root / ".venv_deep" / "bin" / "python"))
+            self.assertEqual(FS.candle_python(cfg), str(root / ".venv_candles" / "bin" / "python"))
+            self.assertEqual(core.candles_python(), str(root / ".venv_candles" / "bin" / "python"))
+            env["MQ_CANDLES_PYTHON"] = str(root)                     # katalog: candles sprawdzały exists() (jak dziś), tabicl/deep is_file()
+            self.assertEqual(core.candles_python(), str(root))
+            self.assertEqual(FS.candle_python(cfg), str(root))
+            env["MQ_TABICL_PYTHON"] = str(root)
+            self.assertEqual(tabicl.find_python(), str(root / ".venv_tabicl" / "bin" / "python"))
+
+    def test_one_ram_budget_default(self):
+        from masterquo import runtimes
+        from masterquo.training import core
+        src = (PKG / "trainhub" / "jobs.py").read_text(encoding="utf-8")
+        self.assertFalse("or 6144" in src)
+        self.assertIn("DEFAULT_RAM_BUDGET_MB", src)
+        with mock.patch.dict("os.environ", {}, clear=False) as env:
+            env.pop("MQ_RAM_BUDGET_MB", None)
+            self.assertEqual(core.ram_budget_mb({"profile_params": {}}), runtimes.DEFAULT_RAM_BUDGET_MB)
+        self.assertEqual(runtimes.DEFAULT_RAM_BUDGET_MB, 8192)
+        self.assertFalse("8192" in (PKG / "training" / "core.py").read_text(encoding="utf-8"))
+
+    def test_every_backend_variable_is_documented(self):
+        from masterquo import runtimes
+        names = _env_names_read_by_backend()
+        self.assertTrue({"MQ_KRONOS_PYTHON", "MQ_RAM_BUDGET_MB", "PMW_BOOTSTRAP"} <= names)
+        self.assertEqual(sorted(names - set(runtimes.ENV_VARS)), [])
+        example = (ROOT / ".env.example").read_text(encoding="utf-8")
+        self.assertIn(runtimes.env_example_section(), example)
+        dotenv_keys = [ln.split("=", 1)[0] for ln in example.splitlines() if ln and not ln.startswith("#") and "=" in ln]
+        self.assertFalse([k for k in dotenv_keys if k.startswith(("MQ_", "PMW_"))])    # procesowe zmienne tylko jako komentarz
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -76,11 +76,9 @@ def weights_root() -> Path:
 
 
 def find_python() -> str | None:
-    root = paths.ROOT_DIR
-    for x in (os.environ.get("MQ_TABICL_PYTHON"), str(root / ".venv_tabicl" / "Scripts" / "python.exe"), str(root / ".venv_tabicl" / "bin" / "python")):
-        if x and Path(x).is_file():
-            return x
-    return None
+    # 1.46 arch (I0117): MQ_TABICL_PYTHON -> .venv_tabicl (is_file), as before
+    from .. import runtimes
+    return runtimes.find_python("tabicl")
 
 
 _INST_CACHE: dict = {}

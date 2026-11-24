@@ -242,11 +242,13 @@ def free_ram_mb() -> float | None:
 
 
 def ram_budget_mb(plan: dict) -> int:
-    """Memory one training child may use (user setting; default 8 GB). MQ_RAM_BUDGET_MB overrides the profile."""
+    """Memory one training child may use (user setting; default runtimes.DEFAULT_RAM_BUDGET_MB = 8 GB). MQ_RAM_BUDGET_MB overrides the
+    profile."""
+    from ..runtimes import DEFAULT_RAM_BUDGET_MB
     try:
-        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or 8192))
+        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or DEFAULT_RAM_BUDGET_MB))
     except ValueError:
-        return 8192
+        return DEFAULT_RAM_BUDGET_MB
 
 
 def ram_gate(plan: dict, wait_s: float = 180.0, step_s: float = 10.0, sleep=time.sleep) -> tuple[float, str | None]:
@@ -364,7 +366,8 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
         lf.flush()
         env = dict(env, PYTHONPATH=paths.child_pythonpath(cmd[0]))   # 1.42.11: Python bota dostaje biblioteki aplikacji (DESKTOP)
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
-        _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
+        from ..runtimes import DEFAULT_RAM_BUDGET_MB
+        _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or DEFAULT_RAM_BUDGET_MB))
         try:
             beat = time.monotonic()
             while p.poll() is None:
@@ -465,10 +468,6 @@ def ensure_candles(run: "Run") -> tuple[str | None, str | None]:
 
 
 def candles_python() -> str | None:
-    env = os.environ.get("MQ_CANDLES_PYTHON")
-    if env and Path(env).exists():
-        return env
-    for p in (paths.ROOT_DIR / ".venv_candles" / "Scripts" / "python.exe", paths.ROOT_DIR / ".venv_candles" / "bin" / "python"):
-        if p.exists():
-            return str(p)
-    return None
+    # 1.46 arch (I0117): MQ_CANDLES_PYTHON -> .venv_candles (exists), as before
+    from .. import runtimes
+    return runtimes.find_python("candles", check=Path.exists)
