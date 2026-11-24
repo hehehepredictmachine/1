@@ -676,5 +676,132 @@ class TestManualIntentSingleEntry(_PadBase):
         self.assertIsNone(self.db.one("SELECT * FROM managed_positions WHERE decision_id=?", (it["intent_id"],)))
 
 
+# ------------------------------------------------------------------------------------------------ I0778 (synchronizacja TP RR_FROM_FILL)
+RR_POL = {"tp_rule": "RR_FROM_FILL", "targets": [{"price": 2016.8295, "weight": 1.0}]}      # fill 2001.237, SL 1995.0, rr 2.5
+
+
+class TestTpSyncTickAligned(_MgrBase):
+
+    def setUp(self):
+        super().setUp()
+        self.mp = self.mt5_row(1001, entry_price=2001.237, sl=1995.0, tp2=2010.0, exit_policy_json=json.dumps(RR_POL))
+
+    def test_rr_from_fill_tp_is_on_tick_grid(self):
+        self.b.positions = [{"ticket": 1001, "volume": 0.1, "sl": 1995.0, "tp": 2010.0}]
+        self.b.raw_results = [SimpleNamespace(retcode=10009)]
+        self.mgr._sync_broker_tp(self.mp, dict(self.b.positions[0]), dict(RR_POL))
+        self.assertEqual(len(self.b.requests), 1)
+        self.assertEqual(self.b.requests[0]["tp"], 2016.83)                           # przed: 2016.8295 (poza siatką, INVALID_STOPS)
+        self.assertEqual(self.row()["tp2"], 2016.83)
+
+    def test_current_terminal_sl_is_kept(self):
+        listed = {"ticket": 1001, "volume": 0.1, "sl": 1995.0, "tp": 2010.0}           # lista mostu sprzed 2 s
+        self.b.positions = [dict(listed, sl=1999.5)]                                   # SL przesunięty w terminalu w międzyczasie
+        self.b.raw_results = [SimpleNamespace(retcode=10009)]
+        self.mgr._sync_broker_tp(self.mp, listed, dict(RR_POL))
+        self.assertEqual(self.b.requests[0]["sl"], 1999.5)                            # przed: 1995.0 (nadpisanie świeżego SL)
+
+    def test_missing_terminal_sl_is_never_sent_as_zero(self):
+        self.b.positions = [{"ticket": 1001, "volume": 0.1, "sl": None, "tp": 2010.0}]
+        self.mgr._sync_broker_tp(self.mp, dict(self.b.positions[0]), dict(RR_POL))
+        self.assertEqual(self.b.requests, [])                                         # przed: SLTP z sl=0 (usunięcie stopu)
+        self.assertEqual(json.loads(self.row()["exit_note"])["tp_sync"], "NOT_SENT_SL_MISSING_IN_TERMINAL")
+        self.assertEqual(self.row()["tp2"], 2010.0)
+
+
+# ------------------------------------------------------------------------------------------------ I0779 (wyjście czasowe po odrzuceniu)
+class TestTimeExitRetry(_MgrBase):
+    def setUp(self):
+        super().setUp()
+        pol = {"targets": [{"price": 2010.0, "weight": 1.0}], "time_exit_minutes": 1, "be_after_tp1": False, "tp_rule": "STRUCTURAL"}
+        self.mt5_row(1001, opened_min_ago=2, exit_policy_json=json.dumps(pol))
+        self.b.positions = [{"ticket": 1001, "volume": 0.1, "sl": 1990.0, "tp": 2010.0}]
+        self.b.load_deals([d_in()])
+
+    def note(self):
+        return json.loads(self.row()["exit_note"])["time_exit"]
+
+    def test_rejected_time_exit_is_retried_with_backoff(self):
+        self.b.raw_results = [SimpleNamespace(retcode=10018)]                          # MARKET_CLOSED
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 1)
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 1)                                     # przed upływem 300 s nic
+        self.b.advance(301)
+        self.b.raw_results = [SimpleNamespace(retcode=10009)]
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 2)                                     # przed: nigdy więcej (pozycja bez wyjścia czasowego)
+        r = self.b.requests[1]
+        self.assertEqual((r["position"], r["volume"], r["type"]), (1001, 0.1, 1))     # tylko zamknięcie tego ticketu, bieżący wolumen
+        self.assertEqual(self.note()["state"], "DONE")
+        self.b.advance(400)
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 2)
+
+    def test_rejections_are_bounded(self):
+        for _ in range(10):
+            self.b.raw_results = [SimpleNamespace(retcode=10004)]                      # REQUOTE
+            self.mgr._manage_mt5_positions()
+            self.b.advance(301)
+        self.assertEqual(len(self.b.requests), 6)
+        self.assertEqual(self.note()["state"], "GAVE_UP")
+
+    def test_unknown_is_not_retried_before_deals_reload(self):
+        self.b.raw_results = [None]                                                    # brak odpowiedzi
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(self.note()["state"], "UNKNOWN")
+        self.b.load_deals()
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 1)                                     # historia < 90 s po żądaniu
+        self.b.advance(100)
+        self.b.positions = [{"ticket": 1001, "volume": 0.05, "sl": 1990.0, "tp": 2010.0}]
+        self.b.load_deals()
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 1)                                     # wolumen się zmienił - coś wykonano, bez ponowienia
+        self.b.positions = [{"ticket": 1001, "volume": 0.1, "sl": 1990.0, "tp": 2010.0}]
+        self.b.raw_results = [None]
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 2)                                     # jedna dodatkowa próba
+        self.b.advance(100)
+        self.b.load_deals()
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(len(self.b.requests), 2)
+        self.assertEqual(self.note()["state"], "GAVE_UP")
+
+    def test_pre_w2_unknown_note_is_never_repeated(self):
+        self.db.execute("UPDATE managed_positions SET exit_note=? WHERE position_ticket=1001", (json.dumps({"time_exit": "UNKNOWN"}),))
+        self.b.advance(1000)
+        self.b.load_deals()
+        self.mgr._manage_mt5_positions()
+        self.assertEqual(self.b.requests, [])
+
+
+# ------------------------------------------------------------------------------------------------ I0781 (adopcja pozycji bota)
+class TestAdoptManagedPosition(_MgrBase):
+    def test_bot_position_is_not_adopted(self):
+        self.mt5_row(1001)
+        self.b.positions = [{"ticket": 1001, "magic": 0, "symbol": "XAUUSD-", "side": "BUY", "volume": 0.1, "price_open": 2000.0, "sl": 1990.0, "tp": 2010.0}]
+        r = self.mgr.adopt(1001)
+        self.assertEqual(r, {"ok": False, "error": "POSITION_ALREADY_MANAGED"})       # przed: ok=True i drugi wiersz OPEN
+        self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE position_ticket=1001")), 1)
+
+    def test_manual_position_adoption_stays_idempotent(self):
+        self.b.positions = [{"ticket": 2002, "magic": 0, "symbol": "XAUUSD-", "side": "SELL", "volume": 0.02, "price_open": 2000.0, "sl": None, "tp": None}]
+        self.assertTrue(self.mgr.adopt(2002)["ok"])
+        self.assertTrue(self.mgr.adopt(2002)["ok"])
+        self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE position_ticket=2002")), 1)
+
+    def test_bot_order_pending_reconciliation_is_not_adopted(self):
+        magic = self.cfg.get().mt5.magic_number
+        self.db.execute("""INSERT INTO order_attempts(attempt_id, entry_key, decision_id, setup_id, created_at, updated_at, mode, account_key, symbol,
+                           side, volume, price_requested, sl, tp, client_tag, state, initiated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        ("MQO-1", "K1", "D1", "MQS-X1", "x", "x", "AUTO_DEMO", "srv:1", "XAUUSD-", "BUY", 0.1, 2000.0, 1990.0, 2010.0, "MQ:X1",
+                         "UNKNOWN", "BOT"))
+        self.b.positions = [{"ticket": 3003, "magic": magic, "comment": "MQ:X1", "symbol": "XAUUSD-", "side": "BUY", "volume": 0.1,
+                             "price_open": 2000.0, "sl": 1990.0, "tp": 2010.0}]
+        self.assertEqual(self.mgr.adopt(3003)["error"], "POSITION_PENDING_RECONCILIATION")
+        self.assertIsNone(self.db.one("SELECT * FROM managed_positions WHERE position_ticket=3003"))
+
+
 if __name__ == "__main__":
     unittest.main()
