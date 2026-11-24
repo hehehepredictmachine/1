@@ -24,6 +24,14 @@ Demand / supply candidates (evidence-based): a confirmed swing low (high) with (
 >= displacement_atr x ATR within displacement_bars, and (3) at least one context element: a completed profile level (VAL / VAH / POC /
 LVN edge / HVN) within tolerance, a previous day / session extreme, or tick activity of the pivot candle >= 1.5 x the median of the 20
 bars before it. Evidence is typed: PRICE_ACTION_INFERENCE, VOLUME_OBSERVATION (with the volume source) - never ORDER_FLOW.
+
+Semantics (engine.SEMANTICS): `legacy=True` reproduces PMW-ZONES-SEM-1 exactly (inputs of ML models trained on MQ-FEAT <= 1.2.0).
+The current semantics (SEM-2, 1.46 audit) differ in:
+  * poc_migration_bins is None (unknown) while the developing POC path has < 4 points - SEM-1 reported 0 ("no migration");
+  * a demand / supply context from a PREVIOUS_DAY / PREVIOUS_SESSION level counts only when that level was known (confirmed_at)
+    at the moment the pivot was confirmed - SEM-1 used the levels known at as_of (a later day / session as context = look-ahead);
+  * the lifecycle of a demand / supply zone starts at max(displacement, pivot confirmation) - the zone is not known before both;
+  * context() carries `session_window` (session window open at as_of, or None = outside every window of the profile).
 """
 from __future__ import annotations
 
@@ -33,7 +41,7 @@ from datetime import datetime
 
 from ..analytics import session_engine as SE
 from . import hlze as HZ
-from .series import Series, iso
+from .series import Series, iso, ts
 
 VERSION = "PMW-ZONES-DSVIE-1"
 METHOD = "UNIFORM_RANGE_ALLOCATION_FROM_CANDLES"
@@ -119,7 +127,7 @@ def _slots(start: float, end: float, tf_s: int) -> int:
     return max(0, int((end - start) // tf_s))
 
 
-def session_profiles(s: Series, profile_id: str, instrument: str, cfg, as_of: float, src: str) -> list[dict]:
+def session_profiles(s: Series, profile_id: str, instrument: str, cfg, as_of: float, src: str, *, legacy: bool = False) -> list[dict]:
     """Every session window of the profile covered by the series, as known at as_of (oldest first)."""
     if len(s) == 0:
         return []
@@ -164,7 +172,8 @@ def session_profiles(s: Series, profile_id: str, instrument: str, cfg, as_of: fl
                     val=round(val_b * bin_size, 10), hvn=[round((b + 0.5) * bin_size, 10) for b in hvn], lvn=[round((b + 0.5) * bin_size, 10) for b in lvn],
                     high=hi, low=lo, range=round(hi - lo, 10), poc_share=round(hist[poc] / total, 4),
                     poc_path=[{"at": iso(t), "poc": round((b + 0.5) * bin_size, 10)} for t, b in path[-24:]],
-                    poc_migration_bins=(path[-1][1] - path[len(path) // 2][1]) if len(path) >= 4 else 0,
+                    # 1.46 (SEM-2): fewer than 4 points of the developing POC path = migration UNKNOWN (None), not "no migration" (0)
+                    poc_migration_bins=(path[-1][1] - path[len(path) // 2][1]) if len(path) >= 4 else (0 if legacy else None),
                     histogram=[{"price": round((b + 0.5) * bin_size, 10), "volume": round(v, 3)} for b, v in sorted(hist.items())])
         out.append(prof)
     _relative_volume(out, s, src, cfg)
@@ -213,8 +222,17 @@ def _relative_volume(profiles: list[dict], s: Series, src: str, cfg=None) -> Non
                                          if (last_v is not None and len(slot_base) >= min_n and statistics.mean(slot_base) > 0) else None)
 
 
-def context(profiles: list[dict], price: float, s: Series) -> dict:
-    """Where the current price stands relative to the developing and the last completed profiles."""
+def session_window(profile_id: str, as_of: float) -> str | None:
+    """Name of a session window of the profile open at as_of, None when as_of lies outside every window (explicitly out of session)."""
+    for w in SE.windows(profile_id, as_of, 1, 0):
+        if w["start"].timestamp() <= as_of < w["end"].timestamp():
+            return w["session"]
+    return None
+
+
+def context(profiles: list[dict], price: float, s: Series, *, window: str | None = None, with_window: bool = False) -> dict:
+    """Where the current price stands relative to the developing and the last completed profiles. with_window (SEM-2): also the
+    session window open at as_of (`session_window`), so a missing developing profile (no data) differs from "outside every session"."""
     dev = next((p for p in reversed(profiles) if p["state"] in ("DEVELOPING", "STALE") and "poc" in p), None)
     done = [p for p in profiles if p["state"] == "COMPLETED" and "poc" in p]
     prev = done[-1] if done else None
@@ -226,6 +244,8 @@ def context(profiles: list[dict], price: float, s: Series) -> dict:
     out = {"current_session": dev["session"] if dev else None, "position_developing": pos(dev), "position_previous": pos(prev),
            "previous_profile_id": prev["profile_id"] if prev else None, "developing_profile_id": dev["profile_id"] if dev else None,
            "relative_volume": dev.get("relative_volume") if dev else None, "poc_migration_bins": dev.get("poc_migration_bins") if dev else None}
+    if with_window:
+        out["session_window"] = window
     if prev is not None and len(s):
         closes = s.c[-6:]
         out["acceptance_outside_previous_va"] = ("ABOVE" if all(c > prev["vah"] for c in closes) else
@@ -240,7 +260,8 @@ def context(profiles: list[dict], price: float, s: Series) -> dict:
 
 
 # --------------------------------------------------------------------------------------------- demand / supply
-def demand_supply(s: Series, piv: list[dict], profiles: list[dict], refs: list[dict], cfg, tick: float, src: str) -> list[dict]:
+def demand_supply(s: Series, piv: list[dict], profiles: list[dict], refs: list[dict], cfg, tick: float, src: str, *,
+                  legacy: bool = False) -> list[dict]:
     a = HZ.atr_series(s)
     n = len(s)
     out = []
@@ -276,6 +297,12 @@ def demand_supply(s: Series, piv: list[dict], profiles: list[dict], refs: list[d
                     ctx.append({"group": "volume", "kind": f"PROFILE_{name}", "root": f"{p['profile_id']}:{name}",
                                 "detail": f"{name} {p['session']} {p['local_date']} ({src})", "evidence_type": "VOLUME_OBSERVATION"})
         for r in refs:
+            if not legacy:
+                # 1.46 (SEM-2): only a day / session level KNOWN when the pivot was confirmed (no later level as context = no look-ahead);
+                # a level without a known time cannot be proven to be known then
+                rk = r.get("confirmed_at")
+                if rk is None or ts(rk) > pv["confirmed_at"]:
+                    continue
             if r["zone_type"].startswith(("PREVIOUS_DAY", "PREVIOUS_SESSION")) and r["lower"] - tol <= pv["price"] <= r["upper"] + tol \
                     and ((pv["kind"] == "L") == r["zone_type"].endswith("LOW")):
                 ctx.append({"group": "structure", "kind": r["zone_type"], "root": r["evidence"][0]["root"] if r["evidence"] else r["zone_id"],
@@ -297,22 +324,26 @@ def demand_supply(s: Series, piv: list[dict], profiles: list[dict], refs: list[d
         z = HZ._zone(HZ._id("DZ", s.tf, ztype, s.t[i]), ztype, s, lo, up, pv["created_at"], known, at, evidence=ev,
                      sources=[pv["pivot_id"]], extra={"pivot_id": pv["pivot_id"], "attribution": "INFERRED_FROM_PRICE_ACTION_AND_VOLUME_CONTEXT",
                                                       "order_flow_verified": False, "volume_source": src})
-        lc = HZ.lifecycle(s, a, side="LOW" if pv["kind"] == "L" else "HIGH", lower=lo, upper=up, start=disp_j, cfg=cfg,
+        # 1.46 (SEM-2): the zone is known only after the displacement AND the pivot confirmation - no retest / age before that
+        start = disp_j if legacy or pv.get("confirm_index") is None else max(disp_j, pv["confirm_index"])
+        lc = HZ.lifecycle(s, a, side="LOW" if pv["kind"] == "L" else "HIGH", lower=lo, upper=up, start=start, cfg=cfg,
                           max_age=cfg.max_age_bars.get(s.tf, 500), birth_index=i)
         out.append(HZ._apply(z, lc, n, i))
     return out
 
 
 def build(s: Series, *, profile_id: str, instrument: str, cfg, as_of: float, tick: float, piv_by_tf: dict, series_by_tf: dict,
-          refs: list[dict]) -> dict:
+          refs: list[dict], legacy: bool = False) -> dict:
     src = volume_source(s)
-    profiles = session_profiles(s, profile_id, instrument, cfg, as_of, src["source"]) if src["source"] != "NONE" else []
+    profiles = session_profiles(s, profile_id, instrument, cfg, as_of, src["source"], legacy=legacy) if src["source"] != "NONE" else []
     ds = []
     for tf, piv in piv_by_tf.items():
         st = series_by_tf.get(tf)
         if st is not None and len(st):
-            ds.extend(demand_supply(st, piv, profiles, refs, cfg, tick, volume_source(st)["source"]))
+            ds.extend(demand_supply(st, piv, profiles, refs, cfg, tick, volume_source(st)["source"], legacy=legacy))
     price = s.c[-1] if len(s) else None
-    return {"version": VERSION, "volume_source": src, "profile_id": profile_id, "profiles": profiles, "demand_supply": ds,
-            "context": context(profiles, price, s) if price is not None else {}}
+    ctx = {}
+    if price is not None:
+        ctx = context(profiles, price, s) if legacy else context(profiles, price, s, window=session_window(profile_id, as_of), with_window=True)
+    return {"version": VERSION, "volume_source": src, "profile_id": profile_id, "profiles": profiles, "demand_supply": ds, "context": ctx}
 # 1.46: unused now_utc() removed (no caller in backend/, tools/, tests/)

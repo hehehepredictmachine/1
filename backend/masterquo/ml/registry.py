@@ -139,7 +139,7 @@ class Registry:
             if not test:
                 self.compare_error = "EMPTY_TEST_SET"
                 return None
-            f = [fe.from_json(json.loads(r["features_json"])) for r in test]
+            f = [fe.from_json(json.loads(r["features_json"]), r.get("feature_schema_version")) for r in test]
             raw = self.champion.raw(f)
             p = self.champion.calib.apply(raw)
             p = raw if p is None else p

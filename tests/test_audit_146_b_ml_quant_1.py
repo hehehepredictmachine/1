@@ -242,7 +242,7 @@ class TestModelsValidation(unittest.TestCase):
         known = [r for r in rows if isinstance(r.get("dxy_missing"), float) and not math.isnan(r["dxy_missing"])]
         self.assertTrue(legacy, "legacy rows must carry dxy_missing = NaN")
         self.assertTrue(known)
-        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.2.0")
+        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.3.0")      # 1.46: zone semantics SEM-2; dxy as in 1.2.0
         # every 1.2.0 row keeps its real 0/1 flag
         self.assertTrue(all(r["dxy_missing"] in (0.0, 1.0) for r in known))
         self.assertTrue(any(r["dxy_missing"] == 0.0 for r in known))

@@ -1,4 +1,4 @@
-"""FeatureEngine (MQ-FEAT-1.1.0 = 1.0.0 + zone block) - one deterministic feature code for training AND prediction.
+"""FeatureEngine (MQ-FEAT-1.3.0 = 1.0.0 + zone block, see FEATURE_SCHEMA_VERSION) - one deterministic feature code for training AND prediction.
 
 Input: a MarketView (closed bars per TF, Bid/Ask) + a setup candidate + the decision time `asof`.
 Every TF is cut AS-OF: only bars whose close time (open + TF) <= asof are used, so a view that
@@ -17,15 +17,24 @@ from ..strategies import indicators as ind
 from ..strategies import regime as regime_mod
 from ..strategies.base import TF_SECONDS, MarketView, TFView
 
-FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.2.0"
+FEATURE_SCHEMA_VERSION = "MQ-FEAT-1.3.0"
 # 1.2.0 (1.33): `dxy_missing` carries the REAL availability of the DXY context at decision time (view.context["dxy"]: last closed
 # DXY H1 bar known at or before `asof`, not older than DXY_MAX_AGE_S); up to 1.1.0 it was the constant 1.0. Models trained on 1.0.0 /
 # 1.1.0 keep their training semantics through Bundle.raw (ml/models.py: dxy_missing forced to 1.0 for those schemas).
 DXY_MAX_AGE_S = 3 * 3600
 # 1.1.0 = 1.0.0 + the zone block (PMW-ZONE-FEAT-1). Strict superset: 1.0.0 samples are read with the zone features missing (NaN) and
 # the preprocessor keeps a feature only where enough values exist; models trained on 1.0.0 ignore the extra keys at inference.
-COMPATIBLE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0", "MQ-FEAT-1.2.0")
+COMPATIBLE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0", "MQ-FEAT-1.2.0", "MQ-FEAT-1.3.0")
 LEGACY_CONSTANT_DXY = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0")
+# 1.3.0 (1.46 audit, I0837-I0843 / I0865): the zone block follows zone semantics PMW-ZONES-SEM-2 (zones.engine.SEMANTICS: no look-ahead
+# in demand / supply and equal highs / lows, unknown age / retests / POC migration / session = NaN, per-TF freshness, global profile
+# choice). Models trained on <= 1.2.0 keep EXACTLY their zone inputs (an old artifact is never fed a new meaning and never invalidated:
+# an INCOMPATIBLE champion in ML ASSIST would fall back to PASS = a looser gate): every 1.3.0 row also carries the SEM-1 zone block
+# under LEGACY_ZONE_KEY (zone_block computes both maps) and Bundle.adapt feeds it to those models. Rows stored by <= 1.2.0 (zone block
+# = SEM-1) are normalised by from_json(..., schema): their zone values move under LEGACY_ZONE_KEY and the SEM-2 block is unknown (NaN),
+# so a 1.3.0 model never trains on or sees SEM-1 values.
+LEGACY_ZONE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0", "MQ-FEAT-1.2.0")
+LEGACY_ZONE_KEY = "_zone_block_sem1"
 NAN = float("nan")
 
 # documented categories (the encoder uses the categories SEEN IN TRAINING - prep.py - so new strategies / TFs are encoded
@@ -232,16 +241,29 @@ def compute(view: MarketView, cand: dict, asof: datetime) -> dict:
     missing = [n for n in FEATURE_NAMES if n not in f]
     if missing:
         raise RuntimeError("FEATURE_SCHEMA_INCOMPLETE:" + ",".join(missing[:5]))
-    return {n: f[n] for n in FEATURE_NAMES}
+    out = {n: f[n] for n in FEATURE_NAMES}
+    out[LEGACY_ZONE_KEY] = f[LEGACY_ZONE_KEY]                           # not a feature: the SEM-1 zone block for models <= 1.2.0
+    return out
 
 
 def to_json_safe(feats: dict) -> dict:
     """NaN -> None for storage (JSON has no NaN); `from_json` restores NaN."""
-    return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in feats.items()}
+    def one(v):
+        return None if isinstance(v, float) and math.isnan(v) else v
+    return {k: ({kk: one(vv) for kk, vv in v.items()} if k == LEGACY_ZONE_KEY and isinstance(v, dict) else one(v)) for k, v in feats.items()}
 
 
-def from_json(d: dict) -> dict:
-    return {k: (NAN if v is None and k not in CATEGORICAL else v) for k, v in d.items()}
+def from_json(d: dict, schema: str | None = None) -> dict:
+    """Stored features -> feature row. schema = feature_schema_version of the stored row: a row of <= 1.2.0 carries the SEM-1 zone
+    block in the zone_* names - it is moved under LEGACY_ZONE_KEY (for the models trained on it) and the SEM-2 zone block is NaN."""
+    out = {k: (NAN if v is None and k not in CATEGORICAL else v) for k, v in d.items() if k != LEGACY_ZONE_KEY}
+    lz = d.get(LEGACY_ZONE_KEY)
+    if isinstance(lz, dict):
+        out[LEGACY_ZONE_KEY] = {k: (NAN if v is None else v) for k, v in lz.items()}
+    elif schema in LEGACY_ZONE_SCHEMAS and any(n in out for n in _ZF.NAMES):
+        out[LEGACY_ZONE_KEY] = {n: out.get(n, NAN) for n in _ZF.NAMES}
+        out.update({n: NAN for n in _ZF.NAMES})
+    return out
 
 
 def dxy_missing(view: MarketView, asof: datetime) -> float:
@@ -260,8 +282,10 @@ def dxy_missing(view: MarketView, asof: datetime) -> float:
 
 
 def zone_block(view: MarketView, tfs: dict, cand: dict, entry, stop, asof: datetime) -> dict:
-    """Zone features from the SAME zone engine as the live map (zones.engine), on the as-of cut of the view (closed bars only)."""
-    nan = {n: NAN for n in _ZF.NAMES}
+    """Zone features from the SAME zone engine as the live map (zones.engine), on the as-of cut of the view (closed bars only).
+    -> the zone_* block of zone semantics SEM-2 + {LEGACY_ZONE_KEY: the zone_* block of SEM-1} (identical to MQ-FEAT-1.2.0; each
+    semantics fails to NaN on its own, so an error of the new path never changes the inputs of an old model)."""
+    new, old = {n: NAN for n in _ZF.NAMES}, {n: NAN for n in _ZF.NAMES}
     try:
         from ..config import ZonesConfig
         from ..zones import engine as ZE
@@ -272,16 +296,24 @@ def zone_block(view: MarketView, tfs: dict, cand: dict, entry, stop, asof: datet
                 bars[tf] = [{"open_utc": t, "o": o, "h": h, "l": lo, "c": c, "tv": tv, "closed": True}
                             for t, o, h, lo, c, tv in zip(v.t[-600:], v.o[-600:], v.h[-600:], v.l[-600:], v.c[-600:], v.tv[-600:])]
         if not bars.get("M5"):
-            return nan
+            return {**new, LEGACY_ZONE_KEY: old}
         inst = "BTC" if str(view.symbol or "").upper().startswith("BTC") else "XAUUSD"
-        zm = ZE.compute_map(instrument=inst, symbol=view.symbol, tick=view.point or 0.01, bars=bars, cfg=ZonesConfig(), as_of=asof.timestamp())
         e = entry if entry is not None else (view.ask if cand["direction"] == "LONG" else view.bid)
         if e is None:
-            return nan
+            return {**new, LEGACY_ZONE_KEY: old}
         quoted = view.bid is not None and view.ask is not None            # cost known at the decision time = the quoted spread
-        f = _ZF.compute(zm, direction=cand["direction"], entry=float(e), stop=stop, cost_price=view.spread if quoted else 0.0)
-        if not quoted:
-            f["zone_opp_room_after_costs_r"] = NAN                         # cost unknown: no "after costs" value is invented
-        return f
+        cfg = ZonesConfig()
     except Exception:  # noqa: BLE001 - a zone failure is a missing feature, never a crash of the feature pipeline
-        return nan
+        return {**new, LEGACY_ZONE_KEY: old}
+    for sem, target in ((ZE.SEMANTICS, new), (ZE.LEGACY_SEMANTICS, old)):
+        try:
+            zm = ZE.compute_map(instrument=inst, symbol=view.symbol, tick=view.point or 0.01, bars=bars, cfg=cfg, as_of=asof.timestamp(),
+                                semantics=sem)
+            f = _ZF.compute(zm, direction=cand["direction"], entry=float(e), stop=stop, cost_price=view.spread if quoted else 0.0,
+                            legacy=sem == ZE.LEGACY_SEMANTICS)
+            if not quoted:
+                f["zone_opp_room_after_costs_r"] = NAN                     # cost unknown: no "after costs" value is invented
+            target.update(f)
+        except Exception:  # noqa: BLE001, S110 - a zone failure is a missing feature (NaN), never a crash of the feature pipeline
+            pass
+    return {**new, LEGACY_ZONE_KEY: old}

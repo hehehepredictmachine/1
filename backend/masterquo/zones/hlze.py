@@ -20,6 +20,11 @@ Lifecycle (bars after confirmed_at only):
   -> EXPIRED (older than max_age_bars).
 A broken swing high / low continues as BREAKOUT_LEVEL / BREAKDOWN_LEVEL (role flip) from the breaking candle's close.
 Liquidity: equal highs / lows and obvious extremes are INFERRED liquidity areas - the engine never claims a quantity of stop orders.
+
+Semantics (engine.SEMANTICS): `legacy=True` reproduces PMW-ZONES-SEM-1 exactly. In SEM-2 (1.46 audit) equal highs / lows are causal:
+two pivots are "equal" within cluster_tol_atr x ATR known when the later of them was confirmed (SEM-1: ATR of the last bar), the zone
+is known from the first confirmation at which its members satisfy the rules, and its lifecycle runs piecewise (`segments`): the
+bounds grow only from the confirmation of the next member (SEM-1: the final bounds of ALL members from the second confirmation on).
 """
 from __future__ import annotations
 
@@ -103,14 +108,21 @@ def pivot_zone(s: Series, pv: dict, cfg, tick: float) -> tuple[float, float]:
 
 
 # --------------------------------------------------------------------------------------------- lifecycle
-def lifecycle(s: Series, a: list, *, side: str, lower: float, upper: float, start: int, cfg, max_age: int, birth_index: int) -> dict:
+def lifecycle(s: Series, a: list, *, side: str, lower: float, upper: float, start: int, cfg, max_age: int, birth_index: int,
+              segments: list | None = None) -> dict:
     """side HIGH = resistance tested from below (outer boundary = upper); LOW = support tested from above (outer = lower).
-    Only bars with index > start (known after the zone became known) are evaluated."""
+    Only bars with index > start (known after the zone became known) are evaluated. segments: [(from_index, lower, upper), ...] -
+    the bounds known after the close of bar from_index (a bar j uses the last segment with from_index < j); None = one fixed range."""
     n = len(s)
+    segs = list(segments or [])
+    si = 0
     st = {"status": "ACTIVE", "retests": 0, "first_touch_at": None, "last_touch_at": None, "penetration_max": 0.0, "rejection_max_atr": 0.0,
           "swept_at": None, "broken_at": None, "broken_index": None, "events": []}
     left_for, pending = cfg.retest_gap_bars, None   # pending = (index of wick beyond, extreme)
     for j in range(start + 1, n):
+        while si < len(segs) and segs[si][0] < j:                        # bounds known before candle j (no later member)
+            lower, upper = segs[si][1], segs[si][2]
+            si += 1
         at = _atr_at(a, j) or 0.0
         tol, brk = cfg.touch_tol_atr * at, cfg.break_close_atr * at
         hi, lo, c = s.h[j], s.l[j], s.c[j]
@@ -221,17 +233,30 @@ def swing_zones(s: Series, cfg, tick: float, a: list | None = None, piv: list | 
     return out
 
 
-def equal_zones(s: Series, piv: list[dict], cfg, tick: float, a: list) -> list[dict]:
+def _eq_bounds(g: list[dict], kind: str, minw: float) -> tuple[float, float]:
+    lo, up = min(p["price"] for p in g), max(p["price"] for p in g)
+    if up - lo < minw:
+        lo, up = (lo, lo + minw) if kind == "L" else (up - minw, up)
+    return lo, up
+
+
+def equal_zones(s: Series, piv: list[dict], cfg, tick: float, a: list, *, legacy: bool = False) -> list[dict]:
     """Equal highs / lows: >= 2 CONFIRMED pivots of one kind within tolerance, at least min_cluster_gap_bars apart. Known when the
-    second member was confirmed. Marked as an INFERRED liquidity area (stops above highs / below lows), never a measured quantity."""
+    members confirmed so far satisfy that (SEM-1: always the second confirmation). Marked as an INFERRED liquidity area (stops above
+    highs / below lows), never a measured quantity."""
     n = len(s)
     at_last = _atr_at(a, n - 1) or 0.0
-    tol = max(cfg.cluster_tol_atr * at_last, cfg.min_width_ticks * tick)
+    minw = cfg.min_width_ticks * tick
+    tol = max(cfg.cluster_tol_atr * at_last, minw)
     out = []
     for kind in ("H", "L"):
         ps = sorted([p for p in piv if p["kind"] == kind and not p["provisional"]], key=lambda p: p["price"])
         groups: list[list[dict]] = []
         for p in ps:
+            if groups and not legacy:
+                # 1.46 (SEM-2): "equal" with the ATR known when the later of the two pivots was confirmed (not the last bar's ATR)
+                g0 = groups[-1][0]
+                tol = max(cfg.cluster_tol_atr * (_atr_at(a, max(p["confirm_index"], g0["confirm_index"])) or 0.0), minw)
             if groups and p["price"] - groups[-1][0]["price"] <= tol:
                 groups[-1].append(p)
             else:
@@ -241,10 +266,12 @@ def equal_zones(s: Series, piv: list[dict], cfg, tick: float, a: list) -> list[d
             if len(g) < 2 or idx[-1] - idx[0] < cfg.min_cluster_gap_bars:
                 continue
             g = sorted(g, key=lambda p: p["confirm_index"])
-            known_i = g[1]["confirm_index"]
-            lo, up = min(p["price"] for p in g), max(p["price"] for p in g)
-            if up - lo < cfg.min_width_ticks * tick:
-                lo, up = (lo, lo + cfg.min_width_ticks * tick) if kind == "L" else (up - cfg.min_width_ticks * tick, up)
+            k0 = 1
+            if not legacy:                                               # first confirmation at which the members known so far qualify
+                k0 = next(k for k in range(1, len(g)) if max(p["index"] for p in g[:k + 1]) - min(p["index"] for p in g[:k + 1])
+                          >= cfg.min_cluster_gap_bars)
+            known_i = g[k0]["confirm_index"]
+            lo, up = _eq_bounds(g, kind, minw)
             ztype = "EQUAL_HIGHS" if kind == "H" else "EQUAL_LOWS"
             ev = [{"group": "structure", "kind": f"{s.tf}_{ztype}", "root": p["pivot_id"], "detail": f"{len(g)} szczytów/dołków w tolerancji"}
                   for p in g]
@@ -253,14 +280,23 @@ def equal_zones(s: Series, piv: list[dict], cfg, tick: float, a: list) -> list[d
                       extra={"liquidity": {"inference": "INFERRED", "side": "ABOVE" if kind == "H" else "BELOW",
                                            "note": "obszar prawdopodobnej płynności (zlecenia stop) – bez danych o zleceniach, ilość nieznana"},
                              "members": len(g)})
-            lc = lifecycle(s, a, side="HIGH" if kind == "H" else "LOW", lower=z["lower"], upper=z["upper"], start=known_i, cfg=cfg,
-                           max_age=cfg.max_age_bars.get(s.tf, 500), birth_index=idx[-1])
+            segs = None
+            if not legacy:                                               # bounds known at each confirmation (no later member)
+                segs = []
+                for k in range(k0, len(g)):
+                    lk, uk = _eq_bounds(g[:k + 1], kind, minw)
+                    segs.append((g[k]["confirm_index"], _rnd(lk, tick), _rnd(uk, tick)))
+            lc = lifecycle(s, a, side="HIGH" if kind == "H" else "LOW", lower=segs[0][1] if segs else z["lower"],
+                           upper=segs[0][2] if segs else z["upper"], start=known_i, cfg=cfg,
+                           max_age=cfg.max_age_bars.get(s.tf, 500), birth_index=idx[-1], segments=segs)
             out.append(_apply(z, lc, n, idx[-1]))
+            if segs and len(segs) > 1:
+                z["segments"] = [{"from": iso(s.close_time(k)), "lower": lk, "upper": uk} for k, lk, uk in segs]
     return out
 
 
 # --------------------------------------------------------------------------------------------- reference levels
-def day_levels(m5: Series, d1: Series, cfg, tick: float, a5: list, as_of: float) -> list[dict]:
+def day_levels(m5: Series, d1: Series, cfg, tick: float, a5: list, as_of: float, *, legacy: bool = False) -> list[dict]:
     """PREVIOUS_DAY_HIGH / LOW from the last CLOSED broker D1 bar (MT5 D1 = broker server day), lifecycle on M5 after its close;
     INTRADAY_HIGH / LOW = developing extremes of the current broker day (PROVISIONAL, change until the day closes)."""
     out = []
@@ -280,6 +316,8 @@ def day_levels(m5: Series, d1: Series, cfg, tick: float, a5: list, as_of: float)
             lc = lifecycle(m5, a5, side="HIGH" if kind.endswith("HIGH") else "LOW", lower=z["lower"], upper=z["upper"], start=start - 1,
                            cfg=cfg, max_age=10 ** 9, birth_index=start)
             _apply(z, lc, len(m5), start)
+            if not legacy:
+                z["age_tf"] = m5.tf                                      # SEM-2: age_bars counted in M5 bars (the zone's tf is D1)
         out.append(z)
     if start is not None and start < len(m5):
         hi = max(m5.h[start:])
@@ -353,7 +391,7 @@ def consolidation_levels(m5_bars: list[dict], m5: Series, cfg, tick: float, a5: 
 
 
 def build(series: dict[str, Series], cfg, tick: float, *, m5_bars: list[dict] | None = None, d1: Series | None = None,
-          boxes: list[dict] | None = None, as_of: float) -> dict:
+          boxes: list[dict] | None = None, as_of: float, legacy: bool = False) -> dict:
     """All HLZE zones known at as_of. series: {"M5": Series, "M15": Series} (cut at as_of by the caller)."""
     zones, pivots = [], {}
     for tf in cfg.tfs:
@@ -364,12 +402,12 @@ def build(series: dict[str, Series], cfg, tick: float, *, m5_bars: list[dict] | 
         piv = swings(s, cfg, tick, a)
         pivots[tf] = piv
         zones.extend(swing_zones(s, cfg, tick, a, piv))
-        zones.extend(equal_zones(s, piv, cfg, tick, a))
+        zones.extend(equal_zones(s, piv, cfg, tick, a, legacy=legacy))
     m5 = series.get("M5")
     if m5 is not None and len(m5) >= 40:
         a5 = atr_series(m5)
         if d1 is not None:
-            zones.extend(day_levels(m5, d1, cfg, tick, a5, as_of))
+            zones.extend(day_levels(m5, d1, cfg, tick, a5, as_of, legacy=legacy))
         if boxes:
             zones.extend(session_levels(boxes, m5, cfg, tick, a5))
         if m5_bars:

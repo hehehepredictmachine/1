@@ -1,6 +1,11 @@
 """Zone features for one setup (PMW-ZONE-FEAT-1). Computed from a zone map (UZICE) for a given direction / entry / stop / cost.
 Distances are in ATR (M5) or in R (R = |entry - stop|) and signed by the trade direction where stated. A feature whose data does not
-exist is NaN - never a substituted value. Used by the evaluation ledger (every setup) and the legacy ML FeatureEngine (MQ-FEAT-1.1.0)."""
+exist is NaN - never a substituted value. Used by the evaluation ledger (every setup) and the legacy ML FeatureEngine (MQ-FEAT-1.1.0+).
+
+legacy=True reproduces the encoding of zone semantics SEM-1 exactly (inputs of ML models trained on MQ-FEAT <= 1.2.0): an unknown age /
+retest count of the opposing zone was 0 ("fresh, untested") and a missing session context was -1 ("outside every session").
+SEM-2 (MQ-FEAT-1.3.0): unknown age / retests = NaN; zone_session = NaN when the session is unknown (no developing profile inside an
+open session window, or no context at all) and -1 only when as_of is outside every session window of the profile."""
 from __future__ import annotations
 
 import math
@@ -26,7 +31,22 @@ def _nearest(zs: list[dict], price: float, above: bool) -> dict | None:
     return min(c, key=lambda z: max(0.0, price - z["upper"]), default=None)
 
 
-def compute(zmap: dict, *, direction: str, entry: float, stop: float | None, cost_price: float = 0.0) -> dict:
+def _session_code(ctx: dict, legacy: bool) -> float:
+    cur = ctx.get("current_session")
+    if legacy:
+        return SESSION_CODE.get(cur, -1.0)
+    if cur is not None:
+        return SESSION_CODE.get(cur, NAN)
+    if "session_window" in ctx and ctx["session_window"] is None:
+        return -1.0                                                      # explicitly outside every session window
+    return NAN                                                           # session unknown (no data / no context)
+
+
+def _num_or_nan(x) -> float:
+    return NAN if x is None else float(x)
+
+
+def compute(zmap: dict, *, direction: str, entry: float, stop: float | None, cost_price: float = 0.0, legacy: bool = False) -> dict:
     f = {k: NAN for k in NAMES}
     if not zmap or not zmap.get("zones") and not zmap.get("m5"):
         return f
@@ -67,15 +87,20 @@ def compute(zmap: dict, *, direction: str, entry: float, stop: float | None, cos
         f["zone_opp_room_after_costs_r"] = (dist - (cost_price or 0.0)) / R if R == R and R > 0 else NAN
         f["zone_opp_score"] = opp["confluence_score"]
         f["zone_opp_width_atr"] = opp.get("width_atr") if opp.get("width_atr") is not None else NAN
-        f["zone_opp_age_bars"] = float((opp.get("reaction_metrics") or {}).get("age_bars") or 0)
-        f["zone_opp_retests"] = float((opp.get("reaction_metrics") or {}).get("retests") or 0)
+        rm = opp.get("reaction_metrics") or {}
+        if legacy:
+            f["zone_opp_age_bars"] = float(rm.get("age_bars") or 0)
+            f["zone_opp_retests"] = float(rm.get("retests") or 0)
+        else:                                                            # 1.46 (SEM-2): unknown = NaN, 0 only for a real 0
+            f["zone_opp_age_bars"] = _num_or_nan(rm.get("age_bars"))
+            f["zone_opp_retests"] = _num_or_nan(rm.get("retests"))
     if own is not None:
         dist = max(0.0, (price - own["upper_price"]) if sgn > 0 else (own["lower_price"] - price))
         f["zone_own_dist_r"] = dist / R if R == R and R > 0 else NAN
         f["zone_own_score"] = own["confluence_score"]
         f["zone_own_swept"] = 1.0 if (own.get("reaction_metrics") or {}).get("swept") else 0.0
     ctx = zmap.get("context") or {}
-    f["zone_session"] = SESSION_CODE.get(ctx.get("current_session"), -1.0)
+    f["zone_session"] = _session_code(ctx, legacy)
     f["zone_relvol"] = ctx.get("relative_volume") if ctx.get("relative_volume") is not None else NAN
     pm = ctx.get("poc_migration_bins")
     f["zone_poc_migration"] = sgn * pm if pm is not None else NAN
