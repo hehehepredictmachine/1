@@ -179,7 +179,11 @@ def kronos_rows(kr, inst: str) -> list[dict]:
         assist = any(u.use == "ASSIST" for u in kr.settings.get().strategy_use.values())
     except Exception:  # noqa: BLE001
         assist = False
-    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "use": "ASSIST" if assist else "SHADOW", "no_required": True} for p in rows]
+    # 1.46 arch (I0195): canonical_id = the producer ('kronos:<model>', as in the Quant snapshot) - the coordinator drops the Quant
+    # snapshot's record of the same producer (one record per producer). `family` (the identifier at the coordinator boundary, _mid) stays
+    # 'kronos:<model>@<TF>', so a REQUIRED 'kronos:<model>' is still never satisfied by this no_required row.
+    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "canonical_id": f"kronos:{KP.model_name()}",
+             "use": "ASSIST" if assist else "SHADOW", "no_required": True} for p in rows]
 
 
 def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None) -> dict:
