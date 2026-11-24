@@ -1,17 +1,17 @@
-# Inwentaryzacja komponentów obliczeniowych – PMW Quant Core
+# Inwentaryzacja komponentów obliczeniowych – Apollo23 Quant Core
 
-Wygenerowano: 2026-11-08T16:56:13+00:00 · instrument: XAUUSD · tryb: OFFLINE (bez działającego bota – stany reguł i usług NOT_EVALUATED) · generator: `python -m masterquo quant inventory` (PMW-QUANT-INV-1)
+Wygenerowano: 2026-11-24T10:29:06+00:00 · instrument: XAUUSD · tryb: OFFLINE (bez działającego bota – stany reguł i usług NOT_EVALUATED) · generator: `python -m masterquo quant inventory` (PMW-QUANT-INV-1)
 
 Plik maszynowy: `docs/quant/INVENTORY.json`. Kanoniczne identyfikatory i aliasy: `backend/masterquo/quant/ids.py`.
 
 ## Pokrycie (cztery osobne miary)
 
-* **Inwentaryzacja:** rozpoznano 89 komponentów, sklasyfikowano 89; rozwinięto 3 wierszy grupowych; złożono 78 aliasów.
-* **Adaptery:** zaimplementowanych 82; z adapterem/odbiorcą 49; uzasadnione NOT_APPLICABLE 33; brakujące: brak.
+* **Inwentaryzacja:** rozpoznano 126 komponentów, sklasyfikowano 126; rozwinięto 3 wierszy grupowych; złożono 87 aliasów.
+* **Adaptery:** zaimplementowanych 118; z adapterem/odbiorcą 55; uzasadnione NOT_APPLICABLE 63; brakujące: brak.
 * **Gotowość operacyjna:** ocenionych 0; z działającym wyjściem na żywo 0 (brak); sondy OK z adapterem: 0. liczone z opublikowanej generacji Quant Core (ważny, świeży wynik READY); offline – nieoceniane.
-* **Gotowość analityczna:** wymagających walidacji 36; zwalidowanych dla roli 0. pełne pokrycie katalogu nie oznacza gotowości modeli.
+* **Gotowość analityczna:** wymagających walidacji 43; zwalidowanych dla roli 0. pełne pokrycie katalogu nie oznacza gotowości modeli.
 
-Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREMENT=1, META_MODEL=1, MODEL_ESTIMATED=2, MODEL_PRETRAINED=1, MODEL_TRAINED=40, NOT_IMPLEMENTED=1, NO_SPEC=6, OPTIMIZER=1, RESEARCH=3, RULE_OR_MEASUREMENT=18, SIMULATION=1, TRAINABLE=1, VISUALIZATION=1
+Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREMENT=1, META_MODEL=1, MODEL_ESTIMATED=2, MODEL_PRETRAINED=5, MODEL_TRAINED=44, NATIVE_MQL5=2, NOT_IMPLEMENTED=1, NO_SPEC=7, OPTIMIZER=1, RESEARCH=7, RULE_OR_MEASUREMENT=35, SIMULATION=1, TOOL=4, TRAINABLE=2, VISUALIZATION=1
 
 ## Komponenty
 
@@ -54,6 +54,8 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 | `group:th_direction` | – | GROUP | – | – | GROUP | NOT_EVALUATED | NOT_APPLICABLE | brak (nie istnieje) | NOT_APPLICABLE: wiersz grupowy – rozwinięty na rzeczywiste rodziny: trainhub:TH_BASELINE, trainhub:TH_LOGREG, trainhub:TH_HGB, trainhub:TH_XGB, trainhub:TH_RF, trainhub:TH_SVM |
 | `kronos:Kronos-small` | KRONOS_SMALL, Kronos-small, kronos | MODEL_PRETRAINED | REGRESSION / KRONOS_CLOSE_PATH_H* / price | M1, M5, M15, H1 | IMPLEMENTED | UNAVAILABLE (stan Kronos: osobny kontekst w ocenie setupu (su.kronos) i panel Kronos AI Forecast) | NOT_APPLICABLE | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
 | `agent:claude` | agent | AGENT | STATE / state | – | IMPLEMENTED | SHADOW_ONLY (agent: ?; weto/opis, nie głos) | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: opis / weto tekstowe agenta – bez p(win); poza meta-modelem |
+| `tsfm:chronos2` | CHRONOS2, Chronos-2, chronos2 | MODEL_PRETRAINED | REGRESSION / TSFM_CLOSE_H* / price | M5, M15 | IMPLEMENTED | UNAVAILABLE (serwis Chronos-2/Granite TTM niedostępny) | NOT_APPLICABLE | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
+| `tsfm:granite_ttm` | GRANITE_TTM, Granite TTM, granite_ttm | MODEL_PRETRAINED | REGRESSION / TSFM_CLOSE_H* / price | M5, M15 | IMPLEMENTED | UNAVAILABLE (serwis Chronos-2/Granite TTM niedostępny) | NOT_APPLICABLE | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
 | `trainhub:TH_BASELINE` | TH_BASELINE | MODEL_TRAINED | CLASS_PROBABILITIES / DIRECTION_H<h>_<TF> po kosztach / probability | M1, M5, M15, M30; h świec (per paczka) | IMPLEMENTED | NOT_TRAINED (wersji: 0, brak aktywnej paczki) | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | modelhub.adapters.all_predictions |
 | `trainhub:TH_LOGREG` | TH_LOGREG | MODEL_TRAINED | CLASS_PROBABILITIES / DIRECTION_H<h>_<TF> po kosztach / probability | M1, M5, M15, M30; h świec (per paczka) | IMPLEMENTED | NOT_TRAINED (wersji: 0, brak aktywnej paczki) | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
 | `trainhub:TH_HGB` | TH_HGB | MODEL_TRAINED | CLASS_PROBABILITIES / DIRECTION_H<h>_<TF> po kosztach / probability | M1, M5, M15, M30; h świec (per paczka) | IMPLEMENTED | NOT_TRAINED (wersji: 0, brak aktywnej paczki) | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
@@ -72,14 +74,14 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 | `family:SEQ_GRU` | SEQ_GRU | MODEL_TRAINED | CLASS_PROBABILITIES / DIRECTION_H6_AFTER_COST / probability | M5; [6] świec M5 | IMPLEMENTED | MISSING_DEPENDENCY (brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)) | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.families.service.predictions |
 | `family:RL_PPO` | RL_PPO | MODEL_TRAINED | RL_ACTION / TARGET_EXPOSURE / action | M5; brak (pomiar stanu) | IMPLEMENTED | MISSING_DEPENDENCY (brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)) | NOT_VALIDATED | opis / opinia – bez p(win) | modelhub.families.service.predictions |
 | `family:NLP_SENTIMENT` | NLP_SENTIMENT | MODEL_TRAINED | NLP_SENTIMENT / TEXT_SENTIMENT_3 / sentiment | –; brak (pomiar stanu) | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | cecha kontekstu meta-modelu (z maską braku) | modelhub.families.service.predictions |
-| `lab:DUMMY` | – | BASELINE | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | quant.adapters.extended |
-| `lab:RULE` | – | BASELINE | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | quant.adapters.extended |
-| `lab:LOGREG` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
-| `lab:TREE` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
-| `lab:MINIROCKET` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
-| `lab:XGB` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
-| `lab:RESNET1D` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
-| `lab:SEW_SNN` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / score_0_100 | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:DUMMY` | – | BASELINE | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | quant.adapters.extended |
+| `lab:RULE` | – | BASELINE | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | quant.adapters.extended |
+| `lab:LOGREG` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:TREE` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:MINIROCKET` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:XGB` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:RESNET1D` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
+| `lab:SEW_SNN` | – | MODEL_TRAINED | SCORE / TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany) / ratio | M5 | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | quant.adapters.extended |
 | `lab:LOGREG_PCA` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo |
 | `lab:LOGREG_GMM_AUG` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo |
 | `lab:LOGREG_NEUTRALIZED` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo |
@@ -109,6 +111,41 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 | `analysis:evaluation` | – | ANALYSIS | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | prawdopodobieństwo zdarzenia setupu (ewaluacja) | evaluation.service (ledger) |
 | `quant:metamodel` | – | META_MODEL | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | Quant MetaModel | quant.service (assessment) |
 | `ext:catboost` | – | NOT_IMPLEMENTED | – | – | NOT_IMPLEMENTED | UNAVAILABLE (wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie) | NOT_APPLICABLE | brak (nie istnieje) | NOT_APPLICABLE: nie istnieje w kodzie – nie dodano fikcyjnego adaptera |
+| `tsfm:tirex2` | TIREX2, TiRex-2, tirex2 | MODEL_PRETRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
+| `quant:tabicl_v2` | – | MODEL_PRETRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prawdopodobieństwo zdarzenia setupu (ewaluacja) | NOT_APPLICABLE: wynik per kandydat w pamięci QuantService (nieutrwalany) – brak samodzielnej predykcji |
+| `flow:markov3` | – | MODEL_TRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: liczony w komórkach Structure Intelligence (panel) – bez adaptera Quant |
+| `si:LOGREG` | – | MODEL_TRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | NOT_APPLICABLE: rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji |
+| `si:XGB` | – | MODEL_TRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | prognoza bazowa – cecha meta-modelu pod własną nazwą | NOT_APPLICABLE: rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji |
+| `quotes:MQ_NEWTONIAN_QUOTES_V2` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: wątek si-quotes – stan panelu SI, bez adaptera Quant |
+| `lab:M29_fourier` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: archiwum lab_forecasts i ocena – obserwacja, nie głos |
+| `lab:M31_tick_kinematics` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: stan panelu lab – obserwacja |
+| `lab:M42_trade_pad` | – | TOOL | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: kalkulator API na żądanie – nie model |
+| `lab:M39_M41_edge` | – | TOOL | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: narzędzia diagnostyczne – nie głos |
+| `research:graph50` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
+| `research:g7_smc_radar` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | modelhub.adapters.all_predictions |
+| `research:sdformerflow` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | prognoza bazowa – cecha meta-modelu pod własną nazwą | modelhub.adapters.all_predictions |
+| `mm:kalman_params` | – | TRAINABLE | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: kandydat parametrów – serwis używa domyślnej konfiguracji (brak ścieżki na żywo) |
+| `mm:robust_vol` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: pole rekordu MM live – cechą Quant nie jest |
+| `mm:drift` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: pole rekordu MM live |
+| `mm:bat_encoder` | – | RESEARCH | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko API /api/v1/models/bat/shadow; wagi niewytrenowane |
+| `extind:sar_context` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: kontekst snapshotu ACTIVE / agenta – bez adaptera Quant |
+| `extind:knowledge` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: opis dla agenta – nie głos |
+| `extind:IQ_GOLD_GANN` | – | NATIVE_MQL5 | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: natywny wskaźnik licencjonowany – działa tylko w terminalu MT5 |
+| `extind:IQ_STAR_LINES` | – | NATIVE_MQL5 | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: natywny wskaźnik licencjonowany – działa tylko w terminalu MT5 |
+| `extind:PAL02M` | – | NO_SPEC | – | – | NO_SPEC | UNAVAILABLE (NO_SPEC) | NOT_APPLICABLE | brak (nie istnieje) | NOT_APPLICABLE: NO_SPEC: tożsamość narzędzia niepotwierdzona – algorytm nie jest odtwarzany z nazwy |
+| `strategies:regime` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | istniejąca bramka (bez zmian) | NOT_APPLICABLE: bramka ścieżki A – Quant jej nie dubluje |
+| `analysis:signals` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | istniejąca bramka (bez zmian) | NOT_APPLICABLE: warunki setupów ścieżki A (S12) – Quant ich nie dubluje |
+| `analytics:session_engine` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: wejście rule:liquidity (OBSERVE) |
+| `engine:volzones` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko API / kontekst agenta |
+| `apollo:market_trap` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko GET /api/v1/market-trap |
+| `baskets:sfb` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | istniejąca bramka (bez zmian) | NOT_APPLICABLE: filtr koszyków (domyślnie OFF) – Quant go nie dubluje |
+| `ml:decision_tree_ranker` | – | MODEL_TRAINED | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_VALIDATED | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: nigdy nie trenowany w aplikacji – API zwraca FALLBACK_BASELINE |
+| `ml:association_rules` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko API (OBSERVE) |
+| `ml:pt_directional_skill` | – | TOOL | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: miara trafności na danych wywołującego – nie model |
+| `ml:change_point_engine` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko API |
+| `forecast:long_horizon` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | opis / opinia – bez p(win) | NOT_APPLICABLE: tylko API i eksport |
+| `forecast:double_retest_v2` | – | RULE_OR_MEASUREMENT | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | cecha kontekstu meta-modelu (z maską braku) | NOT_APPLICABLE: flagi w rekordzie prognozy – bez adaptera Quant |
+| `scalp:C_policy` | – | TOOL | – | – | IMPLEMENTED | NOT_EVALUATED | NOT_APPLICABLE | narzędzie / proces uczenia / optymalizacja – nie głos | NOT_APPLICABLE: wynik replayu w rejestrze scalp – nie predykcja |
 
 ## Szczegóły (pliki, właściciele, środowiska, odbiorcy)
 
@@ -408,7 +445,7 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 * Warianty / członkowie: trainhub:TH_BASELINE, trainhub:TH_LOGREG, trainhub:TH_HGB, trainhub:TH_XGB, trainhub:TH_RF, trainhub:TH_SVM
 * Rejestry źródłowe: sh.models.REGISTRY
 
-### `kronos:Kronos-small` – Kronos-small (NeoQuasar, przetrenowany) – prognoza świec OHLC
+### `kronos:Kronos-small` – Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC
 * Pliki: `backend/masterquo/kronos/`, `backend/kronos_runtime/`
 * Wyjście: ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)
 * Środowisko: .venv_kronos
@@ -423,6 +460,25 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 * Zależności: grupa korelacji AGENT
 * Odbiorcy: SH:SUPERVISION/SUPERVISION
 * Rejestry źródłowe: sh.models.REGISTRY
+
+### `tsfm:chronos2` – Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close
+* Pliki: `backend/masterquo/tsfm/`, `backend/tsfm_runtime/`
+* Wyjście: kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)
+* Środowisko: .venv_chronos2
+* Zależności: grupa korelacji TSFM_PRICE
+* Odbiorcy: SH:OBSERVATION/OBSERVATION
+* Rejestry źródłowe: sh.models.REGISTRY
+* Uwagi: amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera
+
+### `tsfm:granite_ttm` – Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close
+* Pliki: `backend/masterquo/tsfm/`, `backend/tsfm_runtime/`
+* Wyjście: prognoza punktowa ceny close na H świec (bez kwantyli; nieskalibrowana)
+* Właściciel treningu: tsfm.granite_train
+* Środowisko: .venv_granite
+* Zależności: grupa korelacji TSFM_PRICE
+* Odbiorcy: SH:OBSERVATION/OBSERVATION
+* Rejestry źródłowe: sh.models.REGISTRY
+* Uwagi: ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; 1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)
 
 ### `trainhub:TH_BASELINE` – Bazowy – częstości klas
 * Pliki: `backend/masterquo/trainhub/learn.py`, `backend/masterquo/trainhub/inference.py`
@@ -843,4 +899,182 @@ Kategorie: AGENT=1, ANALYSIS=7, BASELINE=2, BENCHMARK=1, DATA_INFRA=1, MEASUREME
 ### `ext:catboost` – CatBoost
 * Środowisko: .venv
 * Rejestry źródłowe: lab/traceability.py (wzmianka)
+
+### `tsfm:tirex2` – TiRex-2 (TSFM, prognoza ceny M5/M15)
+* Pliki: `backend/masterquo/tsfm/`, `backend/tsfm_runtime/`
+* Środowisko: .venv_tirex2
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+* Uwagi: rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM)
+
+### `quant:tabicl_v2` – TabICLv2 (estymator confidence kandydata, in-context)
+* Pliki: `backend/masterquo/quant/tabicl.py`, `backend/tabicl_runtime/`
+* Środowisko: .venv_tabicl
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `flow:markov3` – Markov3 / Markov-diff flow (MQ_MARKOV3_FLOW_V1)
+* Pliki: `backend/masterquo/lab/flow_context/markov.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `si:LOGREG` – Structure Intelligence LOGREG (FAMILIES_ALL)
+* Pliki: `backend/masterquo/lab/structure_task.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `si:XGB` – Structure Intelligence XGB (FAMILIES_ALL)
+* Pliki: `backend/masterquo/lab/structure_task.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `quotes:MQ_NEWTONIAN_QUOTES_V2` – QuoteEngine (kinematyka notowań)
+* Pliki: `backend/masterquo/lab/quotes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `lab:M29_fourier` – Lab M29 Fourier (prognoza archiwizowana)
+* Pliki: `backend/masterquo/lab/service.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `lab:M31_tick_kinematics` – Lab M31 kinematyka ticków (legacy obok QuoteEngine)
+* Pliki: `backend/masterquo/lab/service.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `lab:M42_trade_pad` – Lab M42 trade pad (kalkulator)
+* Pliki: `backend/masterquo/api/app.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `lab:M39_M41_edge` – Lab M39–M41 RepaintInspector / edge drift / bootstrap
+* Pliki: `backend/masterquo/lab/service.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `research:graph50` – Research Graph50 (SCORE per cel)
+* Pliki: `backend/masterquo/research/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+* Uwagi: rekordy z jawnym canonical_id research:graph50:<cel>
+
+### `research:g7_smc_radar` – Research G7 SMC radar
+* Pliki: `backend/masterquo/research/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `research:sdformerflow` – Research SDformerFlow (TH_SDFORMERFLOW)
+* Pliki: `backend/masterquo/research/`
+* Środowisko: .venv_tirex2 (torch)
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+* Uwagi: wymaga środowiska z torch 2.14.1
+
+### `mm:kalman_params` – Parametry Kalmana (kalibracja BUZOA)
+* Pliki: `backend/masterquo/mm/orchestrator.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `mm:robust_vol` – Robust volatility (część breakout_zones)
+* Pliki: `backend/masterquo/mm/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `mm:drift` – Drift (PMW-MM)
+* Pliki: `backend/masterquo/mm/drift.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `mm:bat_encoder` – BAT encoder (losowe wagi, SHADOW_UNTRAINED)
+* Pliki: `backend/masterquo/mm/`, `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `extind:sar_context` – Kontekst SAR (kalibracja siatki)
+* Pliki: `backend/masterquo/extind/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `extind:knowledge` – Reguły wiedzy IND-K01..K12
+* Pliki: `backend/masterquo/extind/knowledge.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `extind:IQ_GOLD_GANN` – IQ Gold Gann (wskaźnik MT5, eksport kopert)
+* Pliki: `mql5/PMW_ExtIndicatorExporter.mq5`
+* Środowisko: MQL5 (MT5)
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `extind:IQ_STAR_LINES` – IQ Star Lines (wskaźnik MT5, eksport kopert)
+* Pliki: `mql5/PMW_ExtIndicatorExporter.mq5`
+* Środowisko: MQL5 (MT5)
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `extind:PAL02M` – PAL02M (tożsamość nieustalona)
+* Pliki: `config/extind_manifests_v1.json`
+* Środowisko: -
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `strategies:regime` – MarketRegimeEngine MQ-REGIME-1.0.0 (wybór strategii ACTIVE)
+* Pliki: `backend/masterquo/strategies/regime.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `analysis:signals` – Poziomy / range M5 / MITP / neutralizacja
+* Pliki: `backend/masterquo/analysis/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `analytics:session_engine` – Silnik sesji (boxy sesyjne)
+* Pliki: `backend/masterquo/analytics/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `engine:volzones` – Strefy zmienności (panel)
+* Pliki: `backend/masterquo/engine/service.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `apollo:market_trap` – Market trap (SHADOW, ostrzeżenia)
+* Pliki: `backend/masterquo/apollo/`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `baskets:sfb` – Strategy Filter Bucket koszyków FX
+* Pliki: `backend/masterquo/baskets/sfb.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `ml:decision_tree_ranker` – Decision tree ranker (WF3.2)
+* Pliki: `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `ml:association_rules` – Reguły asocjacyjne (WF3.2)
+* Pliki: `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `ml:pt_directional_skill` – Test Pesarana–Timmermanna (WF3.2)
+* Pliki: `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `ml:change_point_engine` – Change points PELT (WF3.2)
+* Pliki: `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `forecast:long_horizon` – Rozkład 24–72 h (WF3.2)
+* Pliki: `backend/masterquo/api/wf32_routes.py`
+* Środowisko: .venv
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `forecast:double_retest_v2` – Double Retest v2 (flagi świec prognozy)
+* Pliki: `backend/masterquo/forecast/`
+* Środowisko: .venv_candles
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
+
+### `scalp:C_policy` – Scalp C – ocena polityki hedge vs REDUCE w replay
+* Pliki: `backend/masterquo/training/runner.py`
+* Środowisko: .venv_candles
+* Rejestry źródłowe: quant.ids.EXTRA_PRODUCERS (1.46)
 
