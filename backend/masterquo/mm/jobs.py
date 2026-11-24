@@ -384,17 +384,7 @@ def job_gpr(ctx) -> dict:
                           cancel=ctx.cancel)
     c = np.asarray(b.c, float)
     tidx = {float(t): i for i, t in enumerate(b.t)}
-
-    def resolver(row):
-        i = tidx.get(float(row["source_ts"]))
-        h = int(row["horizon"].replace("bars", ""))
-        if i is None or i + h >= len(c):
-            return None
-        p = __import__("json").loads(row["payload"])
-        real = math.log(c[i + h] / c[i])
-        z = (real - p["pred"]) / p["sd"]
-        return {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2, "matured_bar_ts": float(b.t[i + h])}
-    matured = led.mature(float(b.t[-1]) + 300, resolver, ledger_mid)
+    matured = led.mature(float(b.t[-1]) + 300, G.logret_resolver(c, tidx, b.t), ledger_mid)    # 1.46 arch I0036: shared resolver
     cal_test = G.calibration(test["rows"])
     g = GATES["gpr"]
     gates = {"min_scored": cal_test.get("n_scored", 0) >= g["min_scored"],

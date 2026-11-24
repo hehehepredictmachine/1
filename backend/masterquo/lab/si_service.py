@@ -376,10 +376,18 @@ class StructureIntelligenceService:
         rows = self.db.query("SELECT f.id, f.as_of, f.horizon, f.payload FROM si_forecasts f LEFT JOIN si_outcomes o ON o.forecast_id=f.id "
                              "WHERE f.instrument=? AND o.forecast_id IS NULL ORDER BY f.id DESC LIMIT 500", (instrument,))
         n = 0
+        first = _ts(m1[0]["open_utc"]) if m1 else None
         for r in rows:
             p = json.loads(r["payload"])
             start = iso(datetime.fromtimestamp(_ts(r["as_of"]) - 60, timezone.utc))
             k = idx.get(start)
+            if k is None and first is not None and _ts(start) < first:
+                # 1.46 arch I0036: the start bar left the M1 buffer - the row stayed without an outcome for ever (continue); it gets
+                # OUT_OF_BUFFER (no r_h / label; quality() counts MATURED only)
+                self.db.execute("INSERT OR IGNORE INTO si_outcomes(forecast_id, data_revision, matured_at, r_h, label, status) VALUES (?,?,?,?,?,?)",
+                                (r["id"], "OUT_OF_BUFFER", iso(utcnow()), None, None, "OUT_OF_BUFFER"))
+                n += 1
+                continue
             if k is None or k + r["horizon"] >= len(m1):
                 continue
             end = m1[k + r["horizon"]]

@@ -104,7 +104,8 @@ def load_minirocket(d: Path, meta: dict):
 
 # ===================================================================== SpikingBrain - bar profile
 def bar_channels(data: dict) -> np.ndarray:
-    from .structure_task import TAB
+    # 1.46 arch I0085: TAB from the leaf module (no structure_task <-> si_families cycle)
+    from .structure_tab import TAB
     F, c = data["fe"]["F"], data["fe"]["c"]
     n = len(c)
     X = np.full((n, 4), np.nan)

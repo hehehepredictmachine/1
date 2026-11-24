@@ -69,7 +69,8 @@ def _file_info(p: Path) -> dict:
 
 def check_dataset(ds: Path, kinds: list[str] | None = None) -> dict:
     """Readiness of every (or the given) training task for this export folder."""
-    from ..forecast.export import dataset_state
+    # 1.46 arch I0085: leaf module (was forecast.export = the export <-> requirements cycle)
+    from ..forecast.dataset_state import dataset_state
     ds = Path(ds)
     state = dataset_state(ds)
     meta = None

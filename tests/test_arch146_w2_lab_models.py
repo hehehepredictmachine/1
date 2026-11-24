@@ -70,6 +70,7 @@ class TestLegacyMLVersionsInDocs(unittest.TestCase):
 
     def test_model_map_generator_uses_current_feature_schema(self):
         import importlib.util
+
         from masterquo.ml import features as FE
         spec = importlib.util.spec_from_file_location("model_map_t", ROOT / "tools" / "model_map.py")
         mm = importlib.util.module_from_spec(spec)
@@ -197,6 +198,7 @@ class TestMiniRocketExportDir(unittest.TestCase):
 
     def _cli_output_default(self, cwd):
         import argparse
+
         from masterquo.lab import structure_cli as SC
         got, orig = [], argparse.ArgumentParser.parse_args
 
@@ -376,7 +378,7 @@ class TestKronosOneProducerInCoordinator(unittest.TestCase):
         self.assertEqual(len(kron), 1)                                                    # one record per producer (was 2)
         self.assertTrue(kron[0]["no_required"])
         self.assertIn("tsfm:chronos2", {_mid(p) for p in preds})                          # other Quant records untouched
-        ev = lambda req: evaluate_models(preds, "BUY", required=set(req), assist_threshold=0.6, max_age_s=900, now=self.NOW)  # noqa: E731
+        ev = lambda req: evaluate_models(preds, "BUY", required=set(req), assist_threshold=0.6, max_age_s=900, now=self.NOW)
         _, reasons = ev({"kronos:Kronos-small"})
         self.assertIn("MODEL_REQUIRED_UNAVAILABLE:kronos:Kronos-small", reasons)          # was PASS through the Quant record
         self.assertEqual(ev(())[1], [])
@@ -521,8 +523,8 @@ class TestLabSkipsFixtureOnRealData(unittest.TestCase):
         with mock.patch("masterquo.lab.service.load_artifact", side_effect=lambda p, **kw: (SimpleNamespace(family="LOGREG"), {"model_id": Path(p).name})):
             return [got[2]["model_id"] for got in svc._active_models("XAUUSD")]
 
-    MODELS = [{"model_id": "fx", "family": "LOGREG", "role": "fixture_only", "path": "fx", "trained_at": "2026-11-24"},
-              {"model_id": "re", "family": "LOGREG", "role": "research", "path": "re", "trained_at": "2026-11-20"}]
+    MODELS = ({"model_id": "fx", "family": "LOGREG", "role": "fixture_only", "path": "fx", "trained_at": "2026-11-24"},
+              {"model_id": "re", "family": "LOGREG", "role": "research", "path": "re", "trained_at": "2026-11-20"})
 
     def test_fixture_model_skipped_on_real_data(self):
         svc = self._svc(self.MODELS)
@@ -541,8 +543,7 @@ class TestLabSkipsFixtureOnRealData(unittest.TestCase):
 def _csv(path, rows):
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("time_open_utc,open,high,low,close,tick_volume,spread_points\n")
-        for r in rows:
-            fh.write(f"{r['open_utc']},{r['o']},{r['h']},{r['l']},{r['c']},10,20\n")
+        fh.writelines(f"{r['open_utc']},{r['o']},{r['h']},{r['l']},{r['c']},10,20\n" for r in rows)
 
 
 class TestIndicatorContextTrainServeParity(unittest.TestCase):
@@ -570,6 +571,7 @@ class TestIndicatorContextTrainServeParity(unittest.TestCase):
 
     def test_dataset_uses_decision_inputs(self):
         from datetime import UTC, datetime, timedelta
+
         from masterquo.extind import trainer as T
         ds = Path(self.td.dir) / "ds"
         ds.mkdir()
@@ -600,8 +602,9 @@ class TestIndicatorContextTrainServeParity(unittest.TestCase):
                 "task_id": F.TASK_ID, "threshold": 0.5, "groups": ["BASE"], "role": "shadow_candidate", "parity": {"status": "OK"}}
 
     def test_old_schema_abstains(self):
-        import numpy as np
         from datetime import UTC, datetime
+
+        import numpy as np
         from masterquo.extind import features as F
         from masterquo.extind import trainer as T
         obj = {"prep": SimpleNamespace(transform=lambda X: X), "model": SimpleNamespace(predict_proba=lambda Z: np.tile([0.4, 0.6], (len(Z), 1)))}
@@ -647,8 +650,9 @@ class TestIQLevelsWithoutVerifiedOffset(unittest.TestCase):
 
     def test_levels_usable_without_verified_offset(self):
         from datetime import UTC, datetime, timedelta
-        from test_ind_context import _env_body
+
         from masterquo.extind import contract as C
+        from test_ind_context import _env_body
         t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
         self.m.save_mapping("IQ_GOLD_GANN", {"product_version": "1.0", "approved": True, "verified_examples": [{"name": "IQG_major_1", "chart": 2650.0}],
                                              "rules": [{"prefix": "IQG_major", "type": "HLINE", "kind": "LEVEL", "role": "MAJOR"}]})
@@ -663,6 +667,7 @@ class TestIQLevelsWithoutVerifiedOffset(unittest.TestCase):
     def test_star_windows_unknown_without_verified_time(self):
         import math
         from datetime import UTC, datetime
+
         from masterquo.extind import features as F
         t = datetime(2026, 10, 19, 12, tzinfo=UTC)
         star = {"levels": [{"kind": "LEVEL", "price": 101.0}, {"kind": "LEVEL", "price": 99.0}],
@@ -858,8 +863,9 @@ class TestSetupFeaturesFingerprint(unittest.TestCase):
         self.assertFalse(ans["pass"])
 
     def test_extind_model_abstains_on_other_fingerprint(self):
-        import numpy as np
         from datetime import UTC, datetime
+
+        import numpy as np
         from masterquo.extind import features as F
         from masterquo.extind import trainer as T
         spec = F.default_spec(("BASE",))
@@ -891,6 +897,191 @@ class TestSetupFeaturesFingerprint(unittest.TestCase):
         for rel in ("backend/gold_candles_runtime/scalp_train.py", "backend/masterquo/extind/trainer.py", "backend/masterquo/lab/nss.py",
                     "backend/masterquo/ml/scalp_task.py"):
             self.assertIn("setup_features_tag()", (ROOT / rel).read_text(encoding="utf-8"), rel)
+
+
+# ------------------------------------------------------------------------------------------------------------------------ I0085
+def _full_import_graph() -> dict[str, set[str]]:
+    """Import graph of backend/masterquo INCLUDING imports inside functions (the architecture test sees module level only)."""
+    import ast
+    pkg_root = ROOT / "backend"
+    mods = {}
+    for p in (pkg_root / "masterquo").rglob("*.py"):
+        if "__pycache__" in p.parts:
+            continue
+        parts = list(p.relative_to(pkg_root).with_suffix("").parts)
+        mods[".".join(parts[:-1] if parts[-1] == "__init__" else parts)] = p
+    g = {m: set() for m in mods}
+    for m, p in mods.items():
+        pkg = m if p.name == "__init__.py" else m.rsplit(".", 1)[0]
+        for st in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(st, ast.Import):
+                names = [a.name for a in st.names]
+            elif isinstance(st, ast.ImportFrom):
+                base = pkg.split(".")
+                if st.level:
+                    base = base[:len(base) - (st.level - 1)] if st.level > 1 else base
+                    mod = ".".join(base + ([st.module] if st.module else []))
+                else:
+                    mod = st.module or ""
+                names = [f"{mod}.{a.name}" if f"{mod}.{a.name}" in mods else mod for a in st.names]
+            else:
+                continue
+            g[m].update(n for n in names if n in mods and n != m)
+    return g
+
+
+def _reaches(g: dict[str, set[str]], a: str, b: str) -> bool:
+    seen, todo = {a}, [a]
+    while todo:
+        for w in g[todo.pop()]:
+            if w == b:
+                return True
+            if w not in seen:
+                seen.add(w)
+                todo.append(w)
+    return False
+
+
+class TestNoLazyImportCycles(unittest.TestCase):
+    """I0085: cykle importów ukryte w importach wewnątrz funkcji (test architektury widzi tylko poziom modułu): structure_task<->si_families,
+    tsfm validation<->service, montecarlo validate<->engine, research components<->service, forecast.export<->training.requirements."""
+
+    PAIRS = (("masterquo.lab.structure_task", "masterquo.lab.si_families"), ("masterquo.tsfm.validation", "masterquo.tsfm.service"),
+             ("masterquo.montecarlo.validate", "masterquo.montecarlo.engine"), ("masterquo.research.components", "masterquo.research.service"),
+             ("masterquo.forecast.export", "masterquo.training.requirements"))
+
+    def test_pairs_not_in_one_cycle(self):
+        g = _full_import_graph()
+        cyc = [(a, b) for a, b in self.PAIRS if _reaches(g, a, b) and _reaches(g, b, a)]
+        self.assertEqual(cyc, [])
+
+    def test_old_names_still_importable(self):
+        from masterquo.forecast import dataset_state as DS
+        from masterquo.forecast import export as EX
+        from masterquo.lab import structure_tab, structure_task
+        from masterquo.montecarlo import calibration, validate
+        from masterquo.research import atomic_io
+        from masterquo.research import service as RS
+        from masterquo.tsfm import core
+        from masterquo.tsfm import service as TS
+        self.assertIs(structure_task.TAB, structure_tab.TAB)
+        self.assertIs(TS.neutral_band, core.neutral_band)
+        self.assertIs(TS.predict_request, core.predict_request)
+        self.assertIs(validate.apply_calibrator, calibration.apply_calibrator)
+        self.assertIs(RS._atomic, atomic_io._atomic)
+        self.assertIs(EX.dataset_state, DS.dataset_state)
+        self.assertIs(EX.read_status, DS.read_status)
+        self.assertEqual((EX.META_FILE, EX.STATUS_FILE), ("source_metadata.json", "EXPORT_STATUS.json"))
+
+
+# ------------------------------------------------------------------------------------------------------------------------ I0036
+def _old_settle(r, closes, first_open, last_open, quantiles):
+    """Reference: the per-row body of Kronos.settle / TSFM.settle before 1.46 arch I0036 (copied verbatim)."""
+    path = json.loads(r["path_json"])
+    if path[-1]["t_utc"] > last_open:
+        return None
+    if r["last_bar_open_utc"] < first_open:
+        return "OUT_OF_BUFFER", {}
+    act = [closes.get(x["t_utc"]) for x in path]
+    if act[-1] is None:
+        return "NO_DATA", {"missing_steps": sum(1 for a in act if a is None)}
+    band = r["neutral_band"] or 0.0
+    d = act[-1] - r["last_close"]
+    dir_act = "UP" if d > band else "DOWN" if d < -band else "FLAT"
+    errs = [abs(x["c"] - a) for x, a in zip(path, act) if a is not None]
+    if not quantiles:
+        return "SETTLED", {"actual_close_h": act[-1], "abs_err_h": abs(r["pred_close_h"] - act[-1]), "naive_abs_err_h": abs(r["last_close"] - act[-1]),
+                           "path_mae": sum(errs) / len(errs), "steps_with_data": len(errs), "direction_actual": dir_act,
+                           "direction_hit": None if (r["direction"] == "FLAT" or dir_act == "FLAT") else int(r["direction"] == dir_act)}
+    qj = json.loads(r["quantiles_json"] or "null") or {}
+    qh = (qj.get("path") or [{}])[-1]
+    pin = None
+    if qh:
+        y = act[-1]
+        pin = sum(max(float(lv) * (y - v), (float(lv) - 1) * (y - v)) for lv, v in ((k[1:], v) for k, v in qh.items())) / len(qh)
+    cov = None
+    if "q0.1" in qh and "q0.9" in qh:
+        cov = int(qh["q0.1"] <= act[-1] <= qh["q0.9"])
+    return "SETTLED", {"actual_close_h": act[-1], "abs_err_h": abs(r["pred_close_h"] - act[-1]), "naive_abs_err_h": abs(r["last_close"] - act[-1]),
+                       "path_mae": sum(errs) / len(errs), "steps_with_data": len(errs), "direction_actual": dir_act, "pinball_h": pin,
+                       "covered_80": cov, "direction_hit": None if (r["direction"] == "FLAT" or dir_act == "FLAT") else int(r["direction"] == dir_act)}
+
+
+class TestSettleHelperParity(unittest.TestCase):
+    """I0036: Kronos.settle i TSFM.settle były kopiami algorytmu 'prognoza vs zamknięcie' - wspólna funkcja daje bajt w bajt te same
+    outcome_json (kolejność kluczy, pinball / pokrycie tylko dla TSFM)."""
+
+    def _rows(self, n=400, seed=5):
+        import random
+        rnd = random.Random(seed)
+        ts = [f"2026-11-24T{h:02d}:{m:02d}:00Z" for h in range(10, 14) for m in range(0, 60, 5)]
+        closes = {t: 100 + rnd.uniform(-2, 2) for t in ts if rnd.random() > 0.1}
+        rows = []
+        for _ in range(n):
+            k = rnd.randrange(0, len(ts) - 3)
+            hz = rnd.randint(1, 3)
+            path = [{"t_utc": ts[min(len(ts) - 1, k + j + 1)], "c": 100 + rnd.uniform(-2, 2)} for j in range(hz)]
+            q = {"path": [{"q0.1": 99.0, "q0.5": 100.0, "q0.9": 101.0}]} if rnd.random() > 0.3 else None
+            rows.append({"path_json": json.dumps(path), "last_bar_open_utc": ts[k], "neutral_band": rnd.choice([None, 0.0, 0.3]),
+                         "last_close": 100 + rnd.uniform(-1, 1), "pred_close_h": 100 + rnd.uniform(-2, 2), "direction": rnd.choice(["UP", "DOWN", "FLAT"]),
+                         "quantiles_json": json.dumps(q) if q else None})
+        return rows, closes, ts[3], ts[-4]
+
+    def test_byte_identical_outcomes(self):
+        from masterquo.ledgers.settle import settle_close_path
+        rows, closes, first_open, last_open = self._rows()
+        seen = set()
+        for r in rows:
+            for q in (False, True):
+                old, new = _old_settle(r, closes, first_open, last_open, q), settle_close_path(r, closes, first_open, last_open, quantiles=q)
+                self.assertEqual(json.dumps(old), json.dumps(new))
+                seen.add(old[0] if old else None)
+        self.assertEqual(seen, {None, "OUT_OF_BUFFER", "NO_DATA", "SETTLED"})
+
+    def test_services_use_the_helper(self):
+        for rel in ("backend/masterquo/kronos/service.py", "backend/masterquo/tsfm/service.py"):
+            self.assertIn("settle_close_path(", (ROOT / rel).read_text(encoding="utf-8"), rel)
+
+
+class TestGprResolverShared(unittest.TestCase):
+    """I0036 (b): resolver GPR był skopiowany w mm/service.py i mm/jobs.py."""
+
+    def test_one_resolver_same_values(self):
+        import math
+
+        from masterquo.mm import gpr as G
+        c = [100.0, 100.5, 101.0, 100.2, 99.8, 100.9]
+        t = [1000.0 + 300 * i for i in range(len(c))]
+        tidx = {float(x): i for i, x in enumerate(t)}
+        row = {"source_ts": 1300.0, "horizon": "3bars", "payload": json.dumps({"pred": 0.001, "sd": 0.004})}
+        real = math.log(c[4] / c[1])
+        z = (real - 0.001) / 0.004
+        self.assertEqual(G.logret_resolver(c, tidx)(row), {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2})
+        self.assertEqual(G.logret_resolver(c, tidx, t)(row)["matured_bar_ts"], t[4])
+        self.assertIsNone(G.logret_resolver(c, tidx)(dict(row, source_ts=2500.0)))
+        for rel in ("backend/masterquo/mm/service.py", "backend/masterquo/mm/jobs.py"):
+            self.assertIn("logret_resolver(", (ROOT / rel).read_text(encoding="utf-8"), rel)
+
+
+class TestSIMatureOutOfBuffer(unittest.TestCase):
+    """I0036 (c): SI mature() pomijał wiersz, którego świeca startowa wypadła z bufora M1 - wisiał bez wyniku na zawsze."""
+
+    def test_forecast_older_than_buffer_gets_status(self):
+        td = TempData()
+        self.addCleanup(td.close)
+        from masterquo.db.database import Database
+        from masterquo.lab.si_service import StructureIntelligenceService
+        db = Database(Path(td.dir) / "t.sqlite")
+        payload = json.dumps({"anchor_close": 100.0, "anchor_atr": 1.0})
+        for i, as_of in enumerate(("2026-11-24T09:00:00Z", "2026-11-24T10:01:00Z")):
+            db.execute("INSERT INTO si_forecasts(instrument, task_id, model_id, as_of, horizon, snapshot_id, emitted_at, payload) VALUES (?,?,?,?,?,?,?,?)",
+                       ("XAUUSD", "T", "M", as_of, 3, None, as_of, payload))
+        m1 = [{"open_utc": f"2026-11-24T10:{k:02d}:00Z", "c": 100.0 + k} for k in range(10)]
+        svc = SimpleNamespace(db=db)
+        n = StructureIntelligenceService.mature(svc, "XAUUSD", m1)
+        rows = {r["as_of"]: r["status"] for r in db.query("SELECT f.as_of, o.status FROM si_forecasts f JOIN si_outcomes o ON o.forecast_id=f.id")}
+        self.assertEqual(rows, {"2026-11-24T09:00:00Z": "OUT_OF_BUFFER", "2026-11-24T10:01:00Z": "MATURED"})
+        self.assertEqual(n, 2)
 
 
 if __name__ == "__main__":

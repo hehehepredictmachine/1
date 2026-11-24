@@ -10,7 +10,6 @@ the gpr_logret artifact (validation reference only). Nothing here can place, mod
 """
 from __future__ import annotations
 
-import json
 import math
 import threading
 import time
@@ -223,17 +222,7 @@ class MMService:
                     horizon=f"{cfg.horizon}bars", kind="GAUSSIAN_PREDICTIVE", payload={"pred": p["mean_logret"], "sd": p["sd"], "base": c[T]},
                     quality=quality)
         idx = {float(t): i for i, t in enumerate(b5.t)}
-
-        def resolve(row):
-            i = idx.get(float(row["source_ts"]))
-            h = int(row["horizon"].replace("bars", ""))
-            if i is None or i + h >= len(c):
-                return None
-            pl = json.loads(row["payload"])
-            real = math.log(c[i + h] / c[i])
-            z = (real - pl["pred"]) / pl["sd"]
-            return {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2}
-        led.mature(float(b5.t[-1]) + 300, resolve, mid)
+        led.mature(float(b5.t[-1]) + 300, G.logret_resolver(c, idx), mid)      # 1.46 arch I0036: one resolver with mm/jobs.py
         from . import drift as D                     # AR-08: calibration drift of the live forecast vs the nominal 1-sigma coverage
         # 1.46: the drift input was the coverage of the WHOLE history (and rows() returned the OLDEST 100k): a fresh mis-calibration was
         # diluted and never alerted, and every M5 bar loaded + decoded the full ledger. Cumulative coverage = SQL aggregate (information);

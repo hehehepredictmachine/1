@@ -36,6 +36,7 @@ from .. import paths
 from ..kronos import quality as Q                   # 1.46: unused `kronos.calendar as CAL` import removed (the borrowed helpers use their own)
 from ..kronos.service import KronosService
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
+from .core import neutral_band, predict_request
 from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
 
 log = logging.getLogger("masterquo.tsfm")
@@ -646,34 +647,13 @@ class TsfmService:
         last_open, first_open = max(closes), min(closes)
         rows = self.db.query("SELECT * FROM tsfm_forecasts WHERE outcome_status='PENDING' AND instrument=? AND timeframe=? LIMIT 400", (inst, tf))
         n = 0
+        # 1.46 arch I0036: one algorithm with Kronos.settle (+ pinball / coverage)
+        from ..ledgers.settle import settle_close_path
         for r in rows:
-            path = json.loads(r["path_json"])
-            if path[-1]["t_utc"] > last_open:
+            res = settle_close_path(r, closes, first_open, last_open, quantiles=True)
+            if res is None:
                 continue
-            if r["last_bar_open_utc"] < first_open:
-                st, out = "OUT_OF_BUFFER", {}
-            else:
-                act = [closes.get(x["t_utc"]) for x in path]
-                if act[-1] is None:
-                    st, out = "NO_DATA", {"missing_steps": sum(1 for a in act if a is None)}
-                else:
-                    band = r["neutral_band"] or 0.0
-                    d = act[-1] - r["last_close"]
-                    dir_act = "UP" if d > band else "DOWN" if d < -band else "FLAT"
-                    errs = [abs(x["c"] - a) for x, a in zip(path, act) if a is not None]
-                    qj = json.loads(r["quantiles_json"] or "null") or {}
-                    qh = (qj.get("path") or [{}])[-1]
-                    pin = None
-                    if qh:
-                        y = act[-1]
-                        pin = sum(max(float(lv) * (y - v), (float(lv) - 1) * (y - v)) for lv, v in ((k[1:], v) for k, v in qh.items())) / len(qh)
-                    cov = None
-                    if "q0.1" in qh and "q0.9" in qh:
-                        cov = int(qh["q0.1"] <= act[-1] <= qh["q0.9"])
-                    st = "SETTLED"
-                    out = {"actual_close_h": act[-1], "abs_err_h": abs(r["pred_close_h"] - act[-1]), "naive_abs_err_h": abs(r["last_close"] - act[-1]),
-                           "path_mae": sum(errs) / len(errs), "steps_with_data": len(errs), "direction_actual": dir_act, "pinball_h": pin,
-                           "covered_80": cov, "direction_hit": None if (r["direction"] == "FLAT" or dir_act == "FLAT") else int(r["direction"] == dir_act)}
+            st, out = res
             self.db.execute("""UPDATE tsfm_forecasts SET outcome_status=?, actual_close_h=?, abs_err_h=?, naive_abs_err_h=?, path_mae=?, pinball_h=?,
                                covered_80=?, direction_actual=?, direction_hit=?, outcome_json=?, settled_at=? WHERE id=?""",
                             (st, out.get("actual_close_h"), out.get("abs_err_h"), out.get("naive_abs_err_h"), out.get("path_mae"), out.get("pinball_h"),
@@ -1002,27 +982,6 @@ def ledger_fingerprint(fingerprint: str, checkpoint: str | None) -> str:
     """1.46: ledger fingerprint of a forecast - the pinned model fingerprint, + "+<checkpoint>" for a Granite TTM fine-tune (GTR-...), so a
     fine-tune never shares the ledger key / scorecard of the pinned base model. BASE (every 1.37-1.45 row) keeps the plain fingerprint."""
     return fingerprint if (checkpoint or "BASE") == "BASE" else f"{fingerprint}+{checkpoint}"
-
-
-def predict_request(c, s, bars: list[dict], tf: str, H: int, volume_source: str | None) -> tuple[dict, int]:
-    """(request, context bars) of ONE forecast from `bars` = the closed bars of the quality window (<= settings.lookback).
-    1.46: shared by the live forecast and the walk-forward validation - the validation used to send CLOSE_V1 without covariates and the
-    full context_len although its report binds the configured profile / context (the live input is cut to the lookback window)."""
-    ctx = min(c.context_len, len(bars))
-    win = bars[-ctx:]
-    req = {"cmd": "predict", "close": [float(b["c"]) for b in win], "pred_len": H, "context_len": ctx, "profile": c.profile,
-           "quantiles": s.quantiles, "freq_tf": tf}
-    if c.profile == "CLOSE_OHLCV_PAST_V1":
-        vol = [float(b.get("rv") or 0) for b in win] if volume_source == "REAL_VOLUME" else \
-            [float(b.get("tv") or 0) for b in win] if volume_source == "TICK_VOLUME" else None
-        req["covariates"] = {"open": [b["o"] for b in win], "high": [b["h"] for b in win], "low": [b["l"] for b in win], "volume": vol}
-    return req, ctx
-
-
-def neutral_band(s, atr14: float | None, point: float | None) -> float:
-    """The neutral band of the direction rule: max(k x ATR14, min_points x point) - 1.46: one definition for the live forecast and the
-    walk-forward validation (the validation used k x ATR only). Unchanged rule (a missing ATR / point still counts as 0 here)."""
-    return max(s.direction_band_atr * (atr14 or 0.0), s.direction_band_min_points * (point or 0.0))
 
 
 class _nullslot:

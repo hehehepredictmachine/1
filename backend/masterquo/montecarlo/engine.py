@@ -266,7 +266,8 @@ def run(bars: list[dict], as_of: float, plans: list[Plan] | None = None, *, tf: 
     for p in plans or []:
         ev = evaluate(paths, last, p)
         if calibrator and calibrator.get("status") == "ACTIVE" and calibrator.get("variant") == variant and not synthetic:
-            from .validate import apply_calibrator
+            # 1.46 arch I0085: leaf module (no engine <-> validate cycle)
+            from .calibration import apply_calibrator
             for lv in ev["levels"]:
                 # 1.46: only levels that ARE a validation event of the calibrator (was: every level of every plan -> "SKALIBROWANE")
                 if lv["p_tp_before_sl_conservative"] is None:

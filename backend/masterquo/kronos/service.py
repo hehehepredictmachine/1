@@ -570,26 +570,13 @@ class KronosService:
         first_open = min(closes)
         rows = self.db.query("SELECT * FROM kronos_forecasts WHERE outcome_status='PENDING' AND instrument=? AND timeframe=? LIMIT 200", (inst, tf))
         n = 0
+        # 1.46 arch I0036: one algorithm with TSFM.settle (identical outcome_json)
+        from ..ledgers.settle import settle_close_path
         for r in rows:
-            path = json.loads(r["path_json"])
-            final_t = path[-1]["t_utc"]
-            if final_t > last_open:
+            res = settle_close_path(r, closes, first_open, last_open)
+            if res is None:
                 continue
-            if r["last_bar_open_utc"] < first_open:
-                st, out = "OUT_OF_BUFFER", {}
-            else:
-                act = [closes.get(x["t_utc"]) for x in path]
-                if act[-1] is None:
-                    st, out = "NO_DATA", {"missing_steps": sum(1 for a in act if a is None)}
-                else:
-                    band = r["neutral_band"] or 0.0
-                    d = act[-1] - r["last_close"]
-                    dir_act = "UP" if d > band else "DOWN" if d < -band else "FLAT"
-                    errs = [abs(x["c"] - a) for x, a in zip(path, act) if a is not None]
-                    st = "SETTLED"
-                    out = {"actual_close_h": act[-1], "abs_err_h": abs(r["pred_close_h"] - act[-1]), "naive_abs_err_h": abs(r["last_close"] - act[-1]),
-                           "path_mae": sum(errs) / len(errs), "steps_with_data": len(errs), "direction_actual": dir_act,
-                           "direction_hit": None if (r["direction"] == "FLAT" or dir_act == "FLAT") else int(r["direction"] == dir_act)}
+            st, out = res
             self.db.execute("""UPDATE kronos_forecasts SET outcome_status=?, actual_close_h=?, abs_err_h=?, naive_abs_err_h=?, path_mae=?,
                                direction_actual=?, direction_hit=?, outcome_json=?, settled_at=? WHERE id=?""",
                             (st, out.get("actual_close_h"), out.get("abs_err_h"), out.get("naive_abs_err_h"), out.get("path_mae"),

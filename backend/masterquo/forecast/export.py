@@ -23,7 +23,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..timeutil import iso
+from . import dataset_state as _dataset_state_mod
+from .dataset_state import META_FILE, STATUS_FILE, read_status
 
+# 1.46 arch I0085: STATUS_FILE / META_FILE / read_status / dataset_state live in the leaf forecast/dataset_state.py (no export <->
+# training.requirements cycle); the old names stay importable from here
+dataset_state = _dataset_state_mod.dataset_state
 ALL_TFS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}   # 1.46: unused TFS / TRAINING_TFS removed
 SCALP_TFS = ("M1", "M5", "M15", "M30", "H1")
 CHUNK_DAYS = 31
@@ -95,8 +100,6 @@ def _commission(mt5, sym: str, days: int = 180) -> dict:
 
 
 # ===================================================================================== dataset files (1.25)
-STATUS_FILE = "EXPORT_STATUS.json"
-META_FILE = "source_metadata.json"
 CSV_HEADER = ["time_open_utc", "open", "high", "low", "close", "tick_volume", "symbol", "spread_points", "time_server_raw", "dst_ambiguous",
               "real_volume"]
 TICK_CHUNK_S = 3600
@@ -123,30 +126,6 @@ def atomic_write_text(p: Path, text: str) -> None:
 
 def _write_json(p: Path, obj) -> None:
     atomic_write_text(p, json.dumps(obj, indent=2, ensure_ascii=False, default=str))
-
-
-def read_status(ds: Path) -> dict | None:
-    try:
-        return json.loads((Path(ds) / STATUS_FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def dataset_state(ds: Path) -> dict:
-    """COMPLETE | LEGACY_COMPLETE (export older than 1.25: metadata, no status file) | IN_PROGRESS | INTERRUPTED (process gone) |
-    FAILED | CANCELLED | MISSING. Only COMPLETE / LEGACY_COMPLETE may be used for training."""
-    ds = Path(ds)
-    st = read_status(ds)
-    has_meta = (ds / META_FILE).exists()
-    if st is None:
-        return {"state": "LEGACY_COMPLETE" if has_meta else "MISSING", "usable": has_meta}
-    s = st.get("status")
-    if s == "IN_PROGRESS":
-        from ..training.core import _pid_alive
-        if not _pid_alive(int(st.get("pid") or 0)):
-            s = "INTERRUPTED"
-    return {"state": s, "usable": s == "COMPLETE" and has_meta, "reason": st.get("reason"), "progress": st.get("progress"),
-            "updated_at": st.get("updated_at")}
 
 
 class _Status:
