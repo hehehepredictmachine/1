@@ -1,0 +1,661 @@
+{
+ "schema": "pmw-layer-baseline-1",
+ "generated_by": "python tools/cycles.py --write-baseline",
+ "note": "krawędzie w górę istniejące w kodzie (warstwa niższa importuje wyższą); nowa para = błąd testu, linie tylko informacyjnie",
+ "layers": {
+  "__main__": "L5 kompozycja",
+  "agent": "L5 kompozycja",
+  "analysis": "L2 analizy",
+  "analytics": "L2 analizy",
+  "api": "L5 kompozycja",
+  "apollo": "L4 SHADOW/badania",
+  "assets": "L0 liście",
+  "baskets": "L3 rdzeń handlowy",
+  "bootstrap": "L5 kompozycja",
+  "config": "L0 liście",
+  "data": "L1 dane",
+  "db": "L1 dane",
+  "decision": "L3 rdzeń handlowy",
+  "desktop": "L5 kompozycja",
+  "diagnostics": "L5 kompozycja",
+  "engine": "L3 rdzeń handlowy",
+  "evaluation": "L4 SHADOW/badania",
+  "events": "L0 liście",
+  "execution": "L3 rdzeń handlowy",
+  "exports": "L5 kompozycja",
+  "extind": "L4 SHADOW/badania",
+  "forecast": "L4 SHADOW/badania",
+  "indicators": "L2 analizy",
+  "kronos": "L4 SHADOW/badania",
+  "lab": "L4 SHADOW/badania",
+  "licensing": "L1 dane",
+  "marketdata": "L1 dane",
+  "markets": "L1 dane",
+  "masterquo": "L0 liście",
+  "media": "L0 liście",
+  "ml": "L4 SHADOW/badania",
+  "mm": "L4 SHADOW/badania",
+  "modelhub": "L4 SHADOW/badania",
+  "montecarlo": "L4 SHADOW/badania",
+  "mt5": "L1 dane",
+  "news": "L1 dane",
+  "notify": "L1 dane",
+  "orderflow": "L2 analizy",
+  "paths": "L0 liście",
+  "plans": "L2 analizy",
+  "prefs": "L0 liście",
+  "presets": "L0 liście",
+  "quant": "L4 SHADOW/badania",
+  "registry_io": "L0 liście",
+  "research": "L4 SHADOW/badania",
+  "resources": "L0 liście",
+  "risk": "L3 rdzeń handlowy",
+  "runtime": "L5 kompozycja",
+  "scalp": "L4 SHADOW/badania",
+  "secrets_store": "L0 liście",
+  "sh": "L3 rdzeń handlowy",
+  "stats": "L1 dane",
+  "strategies": "L3 rdzeń handlowy",
+  "studio": "L5 kompozycja",
+  "svp": "L2 analizy",
+  "sysres": "L0 liście",
+  "timeutil": "L0 liście",
+  "trader_life_game": "L4 SHADOW/badania",
+  "train_all": "L5 kompozycja",
+  "trainhub": "L4 SHADOW/badania",
+  "training": "L5 kompozycja",
+  "tsfm": "L4 SHADOW/badania",
+  "upgrade": "L5 kompozycja",
+  "version": "L0 liście",
+  "zones": "L2 analizy"
+ },
+ "count": 57,
+ "edges": {
+  "masterquo.analysis.chart_patterns -> masterquo.strategies.indicators": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    39
+   ]
+  },
+  "masterquo.analysis.levels -> masterquo.strategies.indicators": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    22
+   ]
+  },
+  "masterquo.analysis.mitp -> masterquo.strategies.indicators": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    24
+   ]
+  },
+  "masterquo.analysis.structure_knowledge -> masterquo.lab.context_ind.knowledge": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    122
+   ]
+  },
+  "masterquo.analysis.structure_knowledge -> masterquo.lab.flow_context.knowledge": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    123
+   ]
+  },
+  "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    51
+   ]
+  },
+  "masterquo.analytics.liquidity_cli -> masterquo.extind.trainer": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    57
+   ]
+  },
+  "masterquo.analytics.liquidity_eval -> masterquo.ml.scalp_task": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    92
+   ]
+  },
+  "masterquo.analytics.liquidity_eval -> masterquo.scalp.replay": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    93
+   ]
+  },
+  "masterquo.baskets.service -> masterquo.evaluation.exposure": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    581
+   ]
+  },
+  "masterquo.config -> masterquo.strategies.registry": {
+   "from": "L0 liście",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    300,
+    327
+   ]
+  },
+  "masterquo.decision.coordinator -> masterquo.evaluation.contract": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    340
+   ]
+  },
+  "masterquo.decision.coordinator -> masterquo.quant.ids": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    61
+   ]
+  },
+  "masterquo.decision.coordinator -> masterquo.tsfm.predictions": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    335
+   ]
+  },
+  "masterquo.engine.service -> masterquo.extind.knowledge": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    618
+   ]
+  },
+  "masterquo.engine.service -> masterquo.scalp.indicators": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    619
+   ]
+  },
+  "masterquo.events -> masterquo.db.database": {
+   "from": "L0 liście",
+   "to": "L1 dane",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    101
+   ]
+  },
+  "masterquo.forecast.export -> masterquo.diagnostics": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    203,
+    212,
+    310,
+    370,
+    370,
+    370
+   ]
+  },
+  "masterquo.forecast.export -> masterquo.training.core": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    145
+   ]
+  },
+  "masterquo.forecast.export -> masterquo.training.requirements": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    649
+   ]
+  },
+  "masterquo.indicators.avwap -> masterquo.lab.context_ind.smc": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    148
+   ]
+  },
+  "masterquo.indicators.smoothing -> masterquo.lab.flow_context.ma": {
+   "from": "L2 analizy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    113
+   ]
+  },
+  "masterquo.marketdata.export -> masterquo.diagnostics": {
+   "from": "L1 dane",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    56,
+    88
+   ]
+  },
+  "masterquo.marketdata.export -> masterquo.forecast.export": {
+   "from": "L1 dane",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    57,
+    251
+   ]
+  },
+  "masterquo.marketdata.export -> masterquo.studio.lock": {
+   "from": "L1 dane",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    122
+   ]
+  },
+  "masterquo.marketdata.sources -> masterquo.diagnostics": {
+   "from": "L1 dane",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    97
+   ]
+  },
+  "masterquo.marketdata.sources -> masterquo.forecast.export": {
+   "from": "L1 dane",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    67,
+    77
+   ]
+  },
+  "masterquo.markets.analysis -> masterquo.engine.volzones": {
+   "from": "L1 dane",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    13
+   ]
+  },
+  "masterquo.markets.analysis -> masterquo.strategies.indicators": {
+   "from": "L1 dane",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    14
+   ]
+  },
+  "masterquo.markets.signals -> masterquo.strategies.adapter": {
+   "from": "L1 dane",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    28
+   ]
+  },
+  "masterquo.markets.signals -> masterquo.strategies.registry": {
+   "from": "L1 dane",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    28
+   ]
+  },
+  "masterquo.markets.universe -> masterquo.orderflow.trades": {
+   "from": "L1 dane",
+   "to": "L2 analizy",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    140,
+    232
+   ]
+  },
+  "masterquo.modelhub.check -> masterquo.runtime": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    135,
+    141
+   ]
+  },
+  "masterquo.modelhub.families.base -> masterquo.training.core": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    202
+   ]
+  },
+  "masterquo.modelhub.families.service -> masterquo.training.core": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    508
+   ]
+  },
+  "masterquo.modelhub.smoke.lab -> masterquo.training.cli": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    200
+   ]
+  },
+  "masterquo.modelhub.smoke.ml -> masterquo.agent.schema": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    509
+   ]
+  },
+  "masterquo.modelhub.smoke.ml -> masterquo.agent.service": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    508
+   ]
+  },
+  "masterquo.modelhub.smoke.ml -> masterquo.agent.tools": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    510
+   ]
+  },
+  "masterquo.modelhub.smoke.ml -> masterquo.api.wf32_routes": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    81
+   ]
+  },
+  "masterquo.plans.service -> masterquo.sh.hedge_fsm": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    69,
+    114
+   ]
+  },
+  "masterquo.prefs -> masterquo.db.database": {
+   "from": "L0 liście",
+   "to": "L1 dane",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    20
+   ]
+  },
+  "masterquo.prefs -> masterquo.strategies.registry": {
+   "from": "L0 liście",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    21
+   ]
+  },
+  "masterquo.sh.context -> masterquo.lab.context_ind.fractal": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    159
+   ]
+  },
+  "masterquo.sh.context -> masterquo.lab.context_ind.smc": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    160,
+    179
+   ]
+  },
+  "masterquo.sh.context -> masterquo.lab.context_ind.vamd": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    161,
+    180
+   ]
+  },
+  "masterquo.sh.context -> masterquo.lab.market_v2": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    96
+   ]
+  },
+  "masterquo.sh.models -> masterquo.mm.artifacts": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    235
+   ]
+  },
+  "masterquo.sh.models -> masterquo.trainhub.registry": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    291
+   ]
+  },
+  "masterquo.sh.scenario -> masterquo.montecarlo.engine": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    72
+   ]
+  },
+  "masterquo.sh.service -> masterquo.kronos.predictions": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    478
+   ]
+  },
+  "masterquo.sh.service -> masterquo.modelhub.families.service": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    243,
+    339
+   ]
+  },
+  "masterquo.sh.service -> masterquo.tsfm.predictions": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    496
+   ]
+  },
+  "masterquo.trainhub.jobs -> masterquo.training.core": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    290,
+    307
+   ]
+  },
+  "masterquo.zones.hlze -> masterquo.strategies.base": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    363
+   ]
+  },
+  "masterquo.zones.hlze -> masterquo.strategies.indicators": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    33
+   ]
+  },
+  "masterquo.zones.market -> masterquo.strategies.indicators": {
+   "from": "L2 analizy",
+   "to": "L3 rdzeń handlowy",
+   "kinds": [
+    "MODULE"
+   ],
+   "lines": [
+    48
+   ]
+  }
+ }
+}

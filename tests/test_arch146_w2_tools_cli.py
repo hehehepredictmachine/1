@@ -257,5 +257,52 @@ class TestModelMapFromRegistry(unittest.TestCase):
         self.assertEqual(MD._tf_h(cat["MICROSTRUCTURE"], reg), "– / brak (pomiar stanu)")
 
 
+# ============================================================================================== I0084 layer guard (lazy imports)
+class TestLayerGuard(unittest.TestCase):
+    """I0084: no layer map and no guard against lazy (function-level / dynamic) imports from a lower layer into a higher one - the cycle
+    test only sees module-level imports. tools/cycles.py: layer map L0-L5 + every internal import with its line; today's upward pairs are
+    the baseline (tests/data/layer_baseline.json); a NEW upward pair fails."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib
+
+        import cycles
+        cls.C = importlib.reload(cycles)
+
+    def test_every_component_has_a_layer(self):
+        self.assertEqual(self.C.unclassified(), [])
+
+    def test_no_new_upward_edges(self):
+        up = self.C.upward(self.C.edges())
+        new, _gone = self.C.compare(up, self.C.load_baseline())
+        self.assertEqual(new, [], "\n".join(f"{k}: {up[k]}" for k in new))
+
+    def test_lazy_and_dynamic_upward_edges_are_detected(self):
+        tmp = Path(tempfile.mkdtemp(prefix="mq_t_layers_"))
+        try:
+            pkg = tmp / "masterquo"
+            for d in ("", "engine", "lab"):
+                (pkg / d).mkdir(parents=True, exist_ok=True)
+                (pkg / d / "__init__.py").write_text("", encoding="utf-8")
+            (pkg / "paths.py").write_text("X = 1\n", encoding="utf-8")
+            (pkg / "lab" / "y.py").write_text("from .. import paths\n", encoding="utf-8")
+            (pkg / "engine" / "x.py").write_text(
+                "from .. import paths\n\n\ndef f():\n    from ..lab import y\n    return y\n\n\ndef g():\n"
+                "    return __import__('masterquo.lab.y')\n", encoding="utf-8")
+            (pkg / "engine" / "z.py").write_text("import masterquo.lab.y\n", encoding="utf-8")
+            up = self.C.upward(self.C.edges(pkg))
+            self.assertEqual(up["masterquo.engine.x -> masterquo.lab.y"]["kinds"], ["DYNAMIC", "FUNCTION"])
+            self.assertEqual(up["masterquo.engine.x -> masterquo.lab.y"]["lines"], [5, 10])
+            self.assertEqual(up["masterquo.engine.z -> masterquo.lab.y"]["kinds"], ["MODULE"])
+            self.assertNotIn("masterquo.engine.x -> masterquo.paths", up)                  # downward: allowed
+            self.assertNotIn("masterquo.lab.y -> masterquo.paths", up)
+            new, gone = self.C.compare(up, {"masterquo.engine.z -> masterquo.lab.y": {}, "masterquo.old -> masterquo.lab": {}})
+            self.assertEqual(new, ["masterquo.engine.x -> masterquo.lab.y"])
+            self.assertEqual(gone, ["masterquo.old -> masterquo.lab"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
