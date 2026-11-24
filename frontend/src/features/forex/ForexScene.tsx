@@ -14,6 +14,7 @@ import { ExecStatus, SystemIcons } from "../system/SystemBar";
 import type { SysPanel } from "../system/SystemDrawer";
 import { mountForex } from "./engine/forexEngine";
 import { usePoll } from "./data";
+import { barCloseStep, tfSeconds, type BarCloses } from "./screens/charts/chartsAdapters";
 import ChartsScreen, { type ChartsApi } from "./screens/charts/ChartsScreen";
 import SignalsScreen from "./screens/SignalsScreen";
 import ModelsScreen from "./screens/ModelsScreen";
@@ -32,8 +33,6 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
   const [noGl, setNoGl] = useState(false);
   const [sub, setSub] = useState<{ state: string; i: number }>({ state: "none", i: -1 });
   const [phase, setPhase] = useState("dive");
-  const screenRef = useRef(screen);
-  screenRef.current = screen;
   const prof = usePoll<any>(testMode ? null : "/api/v1/baskets/settings", 30000);
   const charts = useRef<ChartsApi | null>(null);
 
@@ -44,6 +43,7 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
     const e: any = mountForex(root.current!, {
       fromMenu, startPose: pose, reduced: prefersReducedMotion(),
       onNoWebGL: () => setNoGl(true),
+      onContextLost: () => setNoGl(true),     // 1.46: a lost WebGL context froze the scene (black, no restore) - continue in the simplified mode
       onPhase: (ph: string) => setPhase(ph),
       onChoose: (i: number) => navigate("forex", { params: { s: FOREX_SCREENS[i] } }),
       onBackFromSub: () => navigate("forex"),
@@ -71,7 +71,7 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
   // ---- trasa ?s=… -> ekran planety (bez remontu sceny)
   useEffect(() => {
     const e = eng.current;
-    if (!e) return;
+    if (!e || noGl) return;                  // 1.46: without a renderer (stub / lost context) the screen is driven by the static-mode effect below
     const i = screen ? FOREX_SCREENS.indexOf(screen) : -1;
     if (i >= 0) e.openSub(i); else e.closeSub();
   }, [screen, noGl]);
@@ -102,16 +102,28 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
   }, []);
 
   // ---- MODEL B: silnik sygnałów
-  const lastBarAt = useRef<number>(0);
+  // 1.46: closes per TF from barTick (barCloseStep) - the transient closed flag was lost when bar_closed and the next bar event were batched
+  // into one render (MODEL B stayed OCZEKUJE); the ANALIZA window is 2 x TF of the closed bar (was a fixed 2 x 300 s)
+  const closeTr = useRef<Record<string, BarCloses>>({});
+  for (const [tf, tk] of Object.entries(s.barTick || {})) closeTr.current[tf] = barCloseStep(closeTr.current[tf], tk);
+  const closeKey = Object.entries(closeTr.current).map(([tf, c]) => tf + ":" + c.n).join(",");
+  const lastClose = useRef<Record<string, { n: number; at: number }>>({});
+  useEffect(() => {
+    for (const [tf, c] of Object.entries(closeTr.current)) {
+      const prev = lastClose.current[tf];
+      if (!prev) lastClose.current[tf] = { n: c.n, at: 0 };
+      else if (c.n > prev.n) lastClose.current[tf] = { n: c.n, at: Date.now() };
+    }
+  }, [closeKey]);
   const lastSig = useRef<string | null>(null);
-  const closedSeq = Object.values(s.barTick || {}).filter((b: any) => b?.closed).map((b: any) => b.seq).join(",");
-  useEffect(() => { if (closedSeq) lastBarAt.current = Date.now(); }, [closedSeq]);
   useEffect(() => {
     if (testMode) return;
     let alive = true;
     const tick = () => {
       if (s.ws !== "OPEN") { eng.current?.setPanel(1, "error", "brak połączenia z silnikiem (WebSocket)"); return; }
-      eng.current?.setPanel(1, Date.now() - lastBarAt.current < 2 * 300 * 1000 ? "working" : "idle");
+      const now = Date.now();
+      const fresh = Object.entries(lastClose.current).some(([tf, c]) => { const sec = tfSeconds(tf); return c.at > 0 && sec != null && now - c.at < 2 * sec * 1000; });
+      eng.current?.setPanel(1, fresh ? "working" : "idle");
       apiGet<any>("/api/v1/bot-signals?limit=1").then((r) => {
         if (!alive) return;
         const id = r?.items?.[0]?.signal_id ?? null;
@@ -146,13 +158,29 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
     raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); a.screen.close(); if (el) { el.inert = true; el.style.opacity = "0"; } if (root.current) root.current.dataset.sub = "none"; };
   }, [noGl, subI]);
+  // 1.46: static mode (no WebGL / lost context): #forex-screen and #sub-screen stayed inert (only the engine lifts it), so planets, the return
+  // button and the opened screen did not react; the open screen needs data-sub=on (CSS of .ci) and Escape is handled here (the engine's
+  // keyboard handler exists only with a renderer). Inline styles left by a renderer that lost its context are cleared for the static CSS.
+  useEffect(() => {
+    const r = root.current;
+    if (!noGl || !r) return;
+    r.dataset.sub = subI >= 0 ? "on" : "none";
+    r.querySelectorAll<HTMLElement>(".planet").forEach((el) => { el.style.pointerEvents = ""; el.style.opacity = ""; el.style.visibility = ""; });
+    for (const sel of ["#fx-return", "#sub-screen", "#panelA", "#panelB"]) { const el = r.querySelector<HTMLElement>(sel); if (el) el.style.opacity = ""; }
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || document.querySelector(".sys-layer")) return;
+      if (subI >= 0) navigate("forex"); else navigate("menu");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [noGl, subI]);
   const ShownScreen = [null, SignalsScreen, ModelsScreen, RoiScreen][shown] || Screen;
   return (
     <div className="app-forex" data-state="dive" data-sub="none" ref={root} data-testid="page-forex" data-static={noGl ? "1" : undefined}>
       <canvas id="c" aria-hidden="true" />
       <div id="fx-vignette" aria-hidden="true" />
       <main id="fx-menu" aria-hidden="true" inert><button id="forex" type="button" tabIndex={-1} aria-label="Kula FOREX" /></main>
-      <section id="forex-screen" aria-label="Tryb FOREX" inert>
+      <section id="forex-screen" aria-label="Tryb FOREX" inert={!noGl}>
         <div className="panel left interactive" id="panelA" tabIndex={0} role="group" data-testid="panel-model-a">
           <div className="view"><i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" /></div></div>
         <div className="panel right interactive" id="panelB" tabIndex={0} role="group" data-testid="panel-model-b">
@@ -167,7 +195,7 @@ export default function ForexScene({ screen, fromMenu, onSystem, testMode }: { s
       </section>
       <ChartsScreen register={(a) => { charts.current = a; }} active={subI === 0 || (sub.state !== "none" && sub.i === 0)} testMode={testMode} />
       <canvas id="sub-canvas" aria-hidden="true" />
-      <div id="sub-screen" inert data-testid="sub-screen">
+      <div id="sub-screen" inert={!noGl} data-testid="sub-screen">
         {ShownScreen && <ShownScreen engine={eng.current} active={sub.state === "on" || noGl} onSystem={onSystem} />}
       </div>
       {active && active !== "FOREX_MT5" && phase !== "menu" && (

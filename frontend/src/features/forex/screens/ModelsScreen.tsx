@@ -11,6 +11,13 @@ import type { ScreenProps } from "../ForexScene";
 
 const ST_PL: Record<string, string> = { READY: "GOTOWY", RULE: "REGUŁA", NOT_TRAINED: "NIEWYTRENOWANY", TRAINING: "TRENING", DISABLED: "WYŁĄCZONY", STALE: "NIEAKTUALNY",
   ERROR: "BŁĄD", INCOMPATIBLE: "NIEZGODNY", BLOCKED_DATA: "BRAK DANYCH", EXTERNAL: "ZEWNĘTRZNY" };
+// 1.46: registry model_key = "<MODEL_ID>_<BASE_TF>_H<h>" (TH_LOGREG_M5_H6) while the catalog id is lower case (th_logreg) - the case-sensitive
+// startsWith never matched (no SKILL on the list, no HOLDOUT / BRIER / ECE and "NOT_RUN" in the detail although the report exists); the whole key
+// form is matched so mm_breakout does not take MM_BREAKOUT_ZONES_* versions
+const versionsOf = (id: unknown, versions: any[]) => {
+  const re = new RegExp("^" + String(id ?? "").toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "_[A-Z0-9]+_H\\d+$");
+  return versions.filter((v) => re.test(String(v?.model_key ?? "").toUpperCase()));
+};
 const TRAIN_DEFAULT = { models: ["TH_BASELINE", "TH_LOGREG", "TH_HGB"], base_tf: "M5", horizon: 6, k_atr: 0.25, mode: "incremental", timeframes: ["M1", "M5", "M15", "M30"], lookback_days: 90 };
 
 export default function ModelsScreen({ engine, onSystem }: ScreenProps) {
@@ -60,7 +67,7 @@ export default function ModelsScreen({ engine, onSystem }: ScreenProps) {
             {!cat.err && !items.length && <p className="empty">BRAK DANYCH</p>}
             {(() => { let ri = 0; return groups.map((g) => (<div key={g} style={{ display: "contents" }}>
               <div className="mbg" style={{ ["--i" as any]: ri++ }}><span>{g}</span><i /></div>
-              {items.filter((m) => (m.group || m.category) === g).map((m) => { const vs = versions.filter((v) => v.model_key?.startsWith?.(m.id)); const sk = vs.find((v) => v.active)?.holdout?.skill_vs_baseline;
+              {items.filter((m) => (m.group || m.category) === g).map((m) => { const vs = versionsOf(m.id, versions); const sk = vs.find((v) => v.active)?.holdout?.skill_vs_baseline;
                 return (
                 <button key={m.id} type="button" className="mbr" data-id={m.id} data-st={stOf(m)} aria-pressed={cur?.id === m.id} style={{ ["--i" as any]: ri++, ["--w" as any]: `${sk != null ? Math.max(0, Math.min(100, sk * 20)) : m.state === "TRAINING" ? Math.round((job?.progress || 0) * 100) : 0}%` }}
                   onClick={() => setSel(m.id)} onPointerEnter={() => setHl(m.id)} onPointerLeave={() => setHl(null)} {...(ri === 2 ? { "data-autofocus": "" } : {})}>
@@ -73,7 +80,7 @@ export default function ModelsScreen({ engine, onSystem }: ScreenProps) {
           <div id="mb-alt">{tab === "train" && <Train st={st} inst={inst} versions={versions} reg={reg} notice={notice} />}{tab === "bt" && <Backtest inst={inst} />}{tab === "mc" && <MonteCarlo />}</div>
         </div>
         <div id="mb-right" className="cs-win ci"><i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
-          <div id="mb-detail" data-testid="models-detail">{cur ? <ModelDetail m={cur} st={stOf(cur)} versions={versions.filter((v) => v.model_key?.startsWith?.(cur.id))} /> : <p className="empty">Wybierz model.</p>}</div>
+          <div id="mb-detail" data-testid="models-detail">{cur ? <ModelDetail m={cur} st={stOf(cur)} versions={versionsOf(cur.id, versions)} /> : <p className="empty">Wybierz model.</p>}</div>
         </div>
       </div>
       <div id="mb-toast" role="status" className={toast ? "show" : ""}>{toast}</div>
@@ -149,12 +156,19 @@ function Backtest({ inst }: { inst: string }) {
   const strats = v.data?.strategies || {};
   if (v.err) return <p className="empty">BŁĄD: {v.err}</p>;
   return (
-    <div className="btc" data-testid="models-bt">{Object.entries(strats).map(([k, r]: any) => (
+    <div className="btc" data-testid="models-bt">{Object.entries(strats).map(([k, r]: any) => {
+      // 1.46: /sh/validation = {status: VERIFIED_REPLAY, report: {metrics, variants (HEDGING), baseline, folds}} (sh/replay.report) - the table
+      // waited for r.policies (never sent), so a verified replay showed "NOT_RUN – brak raportu replay"; NOT_RUN only for status NOT_RUN
+      const rep = r?.report;
+      const rows = (rep ? [...(rep.variants ? Object.entries(rep.variants) : [["STRATEGIA", rep.metrics]]), ["BAZOWY", rep.baseline]] : [])
+        .filter(([, m]: any) => m && typeof m === "object") as [string, any][];
+      return (
       <div key={k}><div className="sec"><span>REPLAY {k}</span><span>{r.status}</span></div>
-        {r.status === "VERIFIED_REPLAY" && r.policies ? <table className="jobs"><thead><tr><th>POLITYKA</th><th>PLANY</th><th>WIN %</th><th>PF</th><th>WYNIK R</th><th>MAX DD R</th></tr></thead>
-          <tbody>{Object.entries(r.policies).map(([p, s]: any) => <tr key={p}><td>{p}</td><td>{s.plans ?? s.n ?? "—"}</td><td>{fmt(s.win_rate, 1)}</td><td>{fmt(s.profit_factor)}</td>
-            <td className={s.net_r >= 0 ? "pos" : "neg"}>{fmt(s.net_r)}</td><td>{fmt(s.max_dd_r)}</td></tr>)}</tbody></table>
-          : <p className="note">NOT_RUN – {r.reason ?? "brak raportu replay"}</p>}</div>))}
+        {r.status === "VERIFIED_REPLAY" && rows.length ? <table className="jobs"><thead><tr><th>WARIANT</th><th>N</th><th>WIN %</th><th>PF</th><th>WYNIK R</th><th>ŚR. R</th><th>MAX DD R</th></tr></thead>
+          <tbody>{rows.map(([p, s]) => <tr key={p}><td>{p}</td><td>{s.n ?? "—"}</td><td>{s.win_rate != null ? fmt(s.win_rate * 100, 1) : "—"}</td><td>{fmt(s.profit_factor)}</td>
+            <td className={s.total == null ? "" : s.total >= 0 ? "pos" : "neg"}>{fmt(s.total)}</td><td>{fmt(s.expectancy, 3)}</td><td>{fmt(s.max_drawdown)}</td></tr>)}</tbody></table>
+          : r.status === "VERIFIED_REPLAY" ? <p className="note">VERIFIED_REPLAY – raport bez metryk</p>
+          : <p className="note">{r.status === "ERROR" ? "BŁĄD" : r.status ?? "NOT_RUN"} – {r.reason ?? "brak raportu replay"}</p>}</div>); })}
       {!Object.keys(strats).length && <p className="empty">BRAK DANYCH</p>}
       <p className="note">Replay na zamkniętych świecach (świeca z TP i SL – SL pierwszy). Win % to częstość historyczna.</p></div>);
 }

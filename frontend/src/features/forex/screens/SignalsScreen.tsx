@@ -7,25 +7,69 @@ import { useStore } from "../../../store";
 import { chanceLabel, fmt, fmtTime, ts, usePoll } from "../data";
 import type { ScreenProps } from "../ForexScene";
 
-type Sig = { id: string; kind: "BOT" | "SETUP" | "SH"; strategy: string; name: string; tf: string; dir: string; lc: string; at: number; entry: number | null; sl: number | null;
+type Sig = { id: string; kind: "BOT" | "SETUP" | "SH"; strategy: string; name: string; tf: string; dir: string; lc: string; ph: Phase; at: number; entry: number | null; sl: number | null;
   tps: number[]; rr: number | null; score: number | null; ai: string | null; reasons: string[]; outcome: number | null; raw: any };
+type Phase = "live" | "mid" | "hist";
 const LIVE = new Set(["CANDIDATE", "CONFIRMED", "FILLED", "WAIT", "ACTIVE", "OPEN", "ARMED", "WATCH", "EARLY", "PENDING", "NEW"]);
 const HIST = new Set(["CLOSED", "EXPIRED", "INVALIDATED", "REJECTED", "CANCELLED", "DONE"]);
+// 1.46: lifecycle per source, from the statuses the APIs really return - BOT /bot-signals: OPEN | WIN | LOSS | TIMEOUT | REJECTED;
+// SETUP /setups: EARLY_SETUP … CONFIRMED | INVALIDATED | EXPIRED | MISSED_ENTRY | ENTERED | CANCELLED; SH /sh/signals: READY | WAIT | NO_TRADE |
+// EXPIRED | INVALIDATED. One shared set dropped settled bot signals from HISTORIA and counted SH WAIT (an evaluation) as active, SH READY not.
+const PHASES: Record<Sig["kind"], { live: string[]; mid?: string[]; hist: string[] }> = {
+  BOT: { live: ["OPEN"], hist: ["WIN", "LOSS", "TIMEOUT", "REJECTED"] },
+  SETUP: { live: ["EARLY_SETUP", "QUALIFIED", "ARMED", "TRIGGERED", "CONFIRMED"], hist: ["INVALIDATED", "EXPIRED", "MISSED_ENTRY", "ENTERED", "CANCELLED"] },
+  SH: { live: ["READY"], mid: ["WAIT"], hist: ["NO_TRADE", "EXPIRED", "INVALIDATED"] },
+};
+function phaseOf(kind: Sig["kind"], lc: string, raw: any): Phase {
+  const p = PHASES[kind];
+  if (kind === "SH" && lc === "READY" && ["CLOSED", "REJECTED", "ERROR_CLOSED"].includes(raw?.plan?.state)) return "hist";   // plan of the signal finished
+  if (p.live.includes(lc)) return "live";
+  if (p.hist.includes(lc)) return "hist";
+  if (p.mid?.includes(lc)) return "mid";
+  return LIVE.has(lc) ? "live" : HIST.has(lc) ? "hist" : "mid";                     // other / older statuses as before
+}
 const LC_PL: Record<string, string> = { CANDIDATE: "KANDYDAT", CONFIRMED: "POTWIERDZONY", FILLED: "OTWARTY", CLOSED: "ZAMKNIĘTY", EXPIRED: "WYGASŁY", INVALIDATED: "UNIEWAŻNIONY",
-  REJECTED: "ODRZUCONY", WAIT: "CZEKA", WATCH: "OBSERWACJA", EARLY: "WCZESNY", ACTIVE: "AKTYWNY", OPEN: "OTWARTY" };
+  REJECTED: "ODRZUCONY", WAIT: "CZEKA", WATCH: "OBSERWACJA", EARLY: "WCZESNY", ACTIVE: "AKTYWNY", OPEN: "OTWARTY",
+  WIN: "ZYSK", LOSS: "STRATA", TIMEOUT: "LIMIT CZASU", READY: "GOTOWY", NO_TRADE: "BEZ TRANSAKCJI", EARLY_SETUP: "WCZESNY", QUALIFIED: "KWALIFIKOWANY",
+  ARMED: "UZBROJONY", TRIGGERED: "WYZWOLONY", MISSED_ENTRY: "POMINIĘTE WEJŚCIE", ENTERED: "WEJŚCIE", CANCELLED: "ANULOWANY" };
+const numOrNull = (v: unknown): number | null => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 
 function norm(bot: any, setups: any, sh: any): Sig[] {
   const out: Sig[] = [];
-  for (const x of bot?.items || []) out.push({ id: "BOT:" + x.signal_id, kind: "BOT", strategy: x.strategy_id ?? "—", name: x.strategy_name ?? "", tf: x.timeframe ?? "", dir: (x.action || x.direction || "").toUpperCase(),
+  const push = (x: Omit<Sig, "ph">) => out.push({ ...x, ph: phaseOf(x.kind, x.lc, x.raw) });
+  for (const x of bot?.items || []) push({ id: "BOT:" + x.signal_id, kind: "BOT", strategy: x.strategy_id ?? "—", name: x.strategy_name ?? "", tf: x.timeframe ?? "", dir: (x.action || x.direction || "").toUpperCase(),
     lc: (x.status || "").toUpperCase(), at: ts(x.created_at), entry: x.entry_price ?? null, sl: x.stop_loss ?? null, tps: x.take_profits || [], rr: x.validation?.rr_weighted ?? x.rr1 ?? null,
     score: x.setup_score ?? null, ai: x.ai_verdict ?? null, reasons: x.validation?.reasons || [], outcome: x.outcome_r ?? null, raw: x });
-  for (const x of setups?.items || []) out.push({ id: "SETUP:" + x.setup_id, kind: "SETUP", strategy: x.strategy_id ?? "—", name: x.strategy_name ?? "", tf: x.timeframe ?? "", dir: (x.direction || "").toUpperCase(),
+  for (const x of setups?.items || []) push({ id: "SETUP:" + x.setup_id, kind: "SETUP", strategy: x.strategy_id ?? "—", name: x.strategy_name ?? "", tf: x.timeframe ?? "", dir: (x.direction || "").toUpperCase(),
     lc: (x.status || x.stage || "").toUpperCase(), at: ts(x.created_at), entry: null, sl: null, tps: [], rr: null, score: x.setup_score ?? null, ai: null,
     reasons: x.terminal_reason_pl ? [x.terminal_reason_pl] : [], outcome: null, raw: x });
-  for (const x of sh?.items || []) out.push({ id: "SH:" + (x.sid ?? x.signal_id ?? x.id), kind: "SH", strategy: x.strategy ?? x.variant ?? "SH", name: x.variant_name ?? x.name ?? "", tf: x.tf ?? x.timeframe ?? "",
-    dir: (x.side ?? x.direction ?? "").toUpperCase(), lc: (x.state ?? x.status ?? "").toUpperCase(), at: ts(x.created_at ?? x.at), entry: x.entry ?? x.plan?.entry ?? null, sl: x.sl ?? x.plan?.sl ?? null,
-    tps: x.tps ?? x.plan?.targets?.map((t: any) => t.price ?? t) ?? [], rr: x.rr ?? null, score: x.score ?? null, ai: null, reasons: x.reasons ?? [], outcome: x.outcome_r ?? null, raw: x });
+  // 1.46: /sh/signals (signals_with_levels) gives signal_tf, levels.{entry, sl, targets[].price, net_rr}, plan.r_multiple and strategy_id (variant) -
+  // TF, levels and the R result were always empty (and the WYNIKI curve silently skipped closed SH cycles); old field names kept as fallback
+  for (const x of sh?.items || []) {
+    const L = x.levels || {};
+    push({ id: "SH:" + (x.signal_id ?? x.sid ?? x.id), kind: "SH", strategy: x.strategy_id ?? x.strategy ?? x.variant ?? "SH",
+      name: x.variant_name ?? x.name ?? (x.strategy_id && x.strategy ? x.strategy : ""), tf: x.signal_tf ?? x.tf ?? x.timeframe ?? "",
+      dir: (x.side ?? L.side ?? x.direction ?? "").toUpperCase(), lc: (x.state ?? x.status ?? "").toUpperCase(), at: ts(x.created_at ?? x.at),
+      entry: numOrNull(L.entry ?? x.entry), sl: numOrNull(L.sl ?? x.sl),
+      tps: Array.isArray(L.targets) ? L.targets.map((t: any) => numOrNull(t?.price)).filter((v: number | null): v is number => v != null) : x.tps ?? [],
+      rr: numOrNull(L.net_rr ?? x.rr), score: x.score ?? null, ai: null, reasons: x.reasons ?? (x.status_reason ? [x.status_reason] : []),
+      outcome: numOrNull(x.plan?.r_multiple ?? x.outcome_r), raw: x });
+  }
   return out.filter((x) => x.at).sort((a, b) => b.at - a.at);
+}
+
+// 1.46: catalog ids are lower case (th_logreg, kronos, chronos2, granite_ttm, gold_forecast) while /models/predictions names the models
+// TH_LOGREG, Kronos-small, Chronos-2, Granite TTM, gold_candles - the case-sensitive match never hit and every model landed in "BEZ WYNIKU".
+// Match without case / separators, a prefix only up to a separator (kronos -> Kronos-small), explicit aliases; a READY prediction first.
+const PRED_ALIAS: Record<string, string[]> = { gold_forecast: ["gold_candles"] };
+const nkey = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function predFor(id: string, preds: any[]): any {
+  const keys = [id, ...(PRED_ALIAS[id] || [])].map((k) => String(k).toLowerCase());
+  const hit = preds.filter((p) => {
+    const n = String(p?.model_name ?? "").toLowerCase();
+    return keys.some((k) => n === k || nkey(n) === nkey(k) || (n.startsWith(k) && /[^a-z0-9]/.test(n.charAt(k.length))));
+  });
+  return hit.find((p) => p.state === "READY") ?? hit[0];
 }
 
 export default function SignalsScreen({ engine }: ScreenProps) {
@@ -39,14 +83,14 @@ export default function SignalsScreen({ engine }: ScreenProps) {
   const [sel, setSel] = useState<string | null>(null);
   const now = Date.now();
   const rng = { "1h": 3600e3, "24h": 86400e3, "7d": 7 * 86400e3 }[f.range] as number;
-  const list = all.filter((x) => (tab === "live" ? LIVE.has(x.lc) : tab === "history" ? HIST.has(x.lc) : true) && (f.src === "ALL" || x.kind === f.src)
+  const list = all.filter((x) => (tab === "live" ? x.ph === "live" : tab === "history" ? x.ph === "hist" : true) && (f.src === "ALL" || x.kind === f.src)
     && (f.dir === "ALL" || (f.dir === "WAIT" ? !["BUY", "SELL"].includes(x.dir) : x.dir === f.dir)) && now - x.at <= rng);
   const cur = all.find((x) => x.id === sel) || list[0] || null;
   const mode = s.mode || {};
   // konstelacja: kąt = czas (teraz u góry), pierścień = stan
   useEffect(() => {
-    engine?.setScreenData(1, { center: s.quote?.bid != null ? String(s.quote.bid) : "", stars: list.slice(0, 120).map((x) => ({ id: x.id, dir: x.dir, live: LIVE.has(x.lc),
-      sel: cur?.id === x.id, ring: LIVE.has(x.lc) ? 0 : HIST.has(x.lc) ? 2 : 1, angle: ((now - x.at) / rng) * 6.283 })) });
+    engine?.setScreenData(1, { center: s.quote?.bid != null ? String(s.quote.bid) : "", stars: list.slice(0, 120).map((x) => ({ id: x.id, dir: x.dir, live: x.ph === "live",
+      sel: cur?.id === x.id, ring: x.ph === "live" ? 0 : x.ph === "hist" ? 2 : 1, angle: ((now - x.at) / rng) * 6.283 })) });
   }); // eslint-disable-line react-hooks/exhaustive-deps
   const err = bot.err || setups.err;
   return (
@@ -66,7 +110,7 @@ export default function SignalsScreen({ engine }: ScreenProps) {
               ["range", "ZAKRES", [["1h", "1 H"], ["24h", "24 H"], ["7d", "7 D"]]]] as [string, string, string[][]][]).map(([k, lab, opts]) => (
               <div className="fr" key={k}><label>{lab}</label>{opts.map(([v, l]) => <button key={v} type="button" aria-pressed={(f as any)[k] === v} onClick={() => setF({ ...f, [k]: v })}>{l}</button>)}</div>))}
           </div>
-          <div id="sg-count">{list.length} SYGNAŁÓW · {all.filter((x) => LIVE.has(x.lc)).length} AKTYWNYCH</div>
+          <div id="sg-count">{list.length} SYGNAŁÓW · {all.filter((x) => x.ph === "live").length} AKTYWNYCH</div>
           <div id="sg-stream" role="list" aria-label="Strumień sygnałów" data-testid="signals-list">
             {err && <p className="empty">BŁĄD: {err}</p>}
             {!err && !list.length && <p className="empty">BRAK DANYCH – brak sygnałów dla tych filtrów.</p>}
@@ -94,14 +138,23 @@ export default function SignalsScreen({ engine }: ScreenProps) {
 function Gates() {
   const d = usePoll<any>("/api/v1/decision", 10000).data;
   if (!d) return <div id="sg-gates"><span className="gl">BRAMKI</span><span className="empty">BRAK DANYCH</span></div>;
-  const st = (v: any) => (v == null ? "—" : String(v));
-  const steps: [string, string, string][] = [["DANE", "data quality", st(d.data_quality)], ["KONTEKST", "market state", st(d.market_state)],
-    ["SETUP", d.setup?.strategy_id ?? "—", st(d.setup?.state)], ["RYZYKO", "risk gate", st(d.risk?.risk_gate)], ["AGENT AI", "VETO", st(d.agent_gate?.status ?? d.agent_gate)],
-    ["TRYB", "mode gate", st(d.mode_gate?.status ?? d.mode_gate)], ["WYKONANIE", "permission", st(d.execution_permission)]];
+  const st = (v: any) => (v == null ? "—" : typeof v === "object" ? "—" : String(v));
+  // 1.46: mode_gate = ExecutionModes.gate() {mode, allowed, reason_codes, …} has no status field (the step showed "[object Object]" and never
+  // said whether the mode blocks orders); agent_gate without a status likewise - the value comes from allowed / reason_codes, the tone from allowed
+  const gate = (g: any): [string, string | null] => {
+    if (g == null || typeof g !== "object") return [st(g), null];
+    if (g.status != null) return [String(g.status), null];
+    if (typeof g.allowed === "boolean") return [g.allowed ? "ALLOWED" : "BLOCKED" + (g.reason_codes?.[0] ? " · " + g.reason_codes[0] : ""), g.allowed ? "OK" : "BLOK"];
+    return [g.reason_codes?.[0] != null ? String(g.reason_codes[0]) : "—", null];
+  };
+  const [agV, agT] = gate(d.agent_gate), [mgV, mgT] = gate(d.mode_gate);
+  const steps: [string, string, string, string | null][] = [["DANE", "data quality", st(d.data_quality), null], ["KONTEKST", "market state", st(d.market_state), null],
+    ["SETUP", d.setup?.strategy_id ?? "—", st(d.setup?.state), null], ["RYZYKO", "risk gate", st(d.risk?.risk_gate), null], ["AGENT AI", "VETO", agV, agT],
+    ["TRYB", "mode gate", mgV, mgT], ["WYKONANIE", "permission", st(d.execution_permission), null]];
   return (
     <div id="sg-gates" aria-label="Bramki wykonania" data-testid="signals-gates"><span className="gl">BRAMKI ŚCIEŻKI A · {d.decision ?? ""}</span>
-      {steps.map(([n, sub, v], i) => <span key={n} style={{ display: "contents" }}><div className="gt" data-st={/OK|PASS|ALLOW|TRUE|READY/i.test(v) ? "OK" : /BLOCK|DENY|FALSE|ERROR/i.test(v) ? "BLOK" : "—"}>
-        <i /><b>{n}</b><small>{sub}</small><em>{typeof v === "string" ? v.slice(0, 22) : v}</em></div>{i < steps.length - 1 && <span className="ga" />}</span>)}</div>);
+      {steps.map(([n, sub, v, tone], i) => <span key={n} style={{ display: "contents" }}><div className="gt" data-st={tone ?? (/OK|PASS|ALLOW|TRUE|READY/i.test(v) ? "OK" : /BLOCK|DENY|FALSE|ERROR/i.test(v) ? "BLOK" : "—")}>
+        <i /><b>{n}</b><small>{sub}</small><em title={v}>{typeof v === "string" ? v.slice(0, 22) : v}</em></div>{i < steps.length - 1 && <span className="ga" />}</span>)}</div>);
 }
 
 function Detail({ s }: { s: Sig }) {
@@ -111,10 +164,11 @@ function Detail({ s }: { s: Sig }) {
   const preds: any[] = pred?.items || [];
   const up = s.dir === "BUY";
   const rows = models.map((m) => {
-    const p = preds.find((x) => x.model_name === m.id || String(x.model_name || "").startsWith(m.id + ":") || String(x.model_name || "").startsWith(m.id));
+    const p = predFor(String(m.id ?? ""), preds);
     const ready = p?.state === "READY" || (!p && m.state === "READY");
     const d = p?.result?.direction;
-    const agree = !p || p.state !== "READY" ? null : !d || !["BUY", "SELL"].includes(s.dir) ? 0 : (d === "UP") === up ? 1 : d === "DOWN" || d === "UP" ? -1 : 0;
+    // 1.46: FLAT / NEUTRAL / any non UP-DOWN direction is neutral for BOTH sides ((d === "UP") === up was true for SELL + FLAT -> "agrees")
+    const agree = !p || p.state !== "READY" ? null : !["BUY", "SELL"].includes(s.dir) || (d !== "UP" && d !== "DOWN") ? 0 : (d === "UP") === up ? 1 : -1;
     const c = p ? chanceLabel(p) : null;
     return { m, p, ready, agree, val: p?.state === "READY" ? (c?.pct != null ? Math.round(c.pct * 100) + "%" : d ?? p.unit ?? "OK") : m.state_pl ?? m.state, note: p ? c?.label : m.reason };
   });
@@ -157,7 +211,7 @@ function MiniLevels({ s }: { s: Sig }) {
 function Strategies({ all }: { all: Sig[] }) {
   const ids = [...new Set(all.map((x) => x.strategy))];
   if (!ids.length) return <p className="empty">BRAK DANYCH</p>;
-  return <div className="sgrid">{ids.map((id) => { const ss = all.filter((x) => x.strategy === id), live = ss.filter((x) => LIVE.has(x.lc)).length; return (
+  return <div className="sgrid">{ids.map((id) => { const ss = all.filter((x) => x.strategy === id), live = ss.filter((x) => x.ph === "live").length; return (
     <div key={id} className="scard" data-live={live > 0}><b>{id.replace("PMW_", "")}</b><small>{ss[0]?.name}</small><em>{live ? live + " AKTYWNE" : ss.length + " SYGNAŁÓW"}</em></div>); })}</div>;
 }
 

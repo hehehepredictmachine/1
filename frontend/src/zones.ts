@@ -4,6 +4,7 @@ import type {
   ISeriesPrimitive,
   IPrimitivePaneRenderer,
   IPrimitivePaneView,
+  Logical,
   SeriesAttachedParameter,
   SeriesType,
   Time,
@@ -16,6 +17,27 @@ export interface Zone {
   color: string;
   border: string;
   label: string;
+}
+
+// 1.46: x of a chart time that is not exactly a candle open. timeToCoordinate() hits only exact time points (LWC 5.2.1 timeToIndex(t, false)),
+// so live FVG / OB zones (start = observed close time, e.g. 10:05:01.73), M5 session boxes / markers on M15 / H1 and live known_at edges were
+// dropped although they lay in the visible range. x is interpolated between the neighbouring candles by time (after the last candle: that
+// candle; before the first one: the first candle, or null with beforeFirst = false - a marker has no candle there); null without time points.
+function timeX(chart: IChartApi, t: number, beforeFirst = true): number | null {
+  const ts = chart.timeScale();
+  const x = ts.timeToCoordinate(t as Time);
+  if (x !== null) return x as number;
+  const i = ts.timeToIndex(t as Time, true);                     // first candle at / after t (the last one when t is after the end)
+  if (i === null) return null;
+  const xb = ts.logicalToCoordinate(i as unknown as Logical);
+  if (xb === null) return null;
+  const tb = Number(ts.coordinateToTime(xb));
+  if (!(tb > t)) return xb as number;
+  if ((i as unknown as number) <= 0) return beforeFirst ? (xb as number) : null;
+  const xa = ts.logicalToCoordinate(((i as unknown as number) - 1) as Logical);
+  const ta = xa === null ? NaN : Number(ts.coordinateToTime(xa));
+  if (xa === null || !Number.isFinite(ta) || !(tb > ta)) return xb as number;
+  return (xa as number) + ((xb as number) - (xa as number)) * (t - ta) / (tb - ta);
 }
 
 // Draws rectangular zones (FVG / OB candidates) from their confirmation time to the right edge.
@@ -38,13 +60,9 @@ export class ZonesPrimitive implements ISeriesPrimitive<Time> {
             const y1 = series.priceToCoordinate(z.high);
             const y2 = series.priceToCoordinate(z.low);
             if (y1 === null || y2 === null) continue;
-            let x1 = chart.timeScale().timeToCoordinate(z.from as Time);
-            if (x1 === null) {
-              const vr = chart.timeScale().getVisibleRange();
-              if (vr && (vr.from as number) > z.from) x1 = 0 as any;
-              else continue;
-            }
-            const x = Math.max(0, x1 as number);
+            const x1 = timeX(chart, z.from);                       // 1.46: also between candles (was: dropped unless left of the view)
+            if (x1 === null) continue;
+            const x = Math.max(0, x1);
             const w = mediaSize.width - x;
             const top = Math.min(y1, y2);
             const h = Math.max(1, Math.abs(y2 - y1));
@@ -118,8 +136,7 @@ export class BoundedBoxesPrimitive implements ISeriesPrimitive<Time> {
       if (!vr) return null;
       if (t < (vr.from as number)) return 0;
       if (t > (vr.to as number)) return width;
-      const lr = chart.timeScale().getVisibleLogicalRange();     // inside the range but between candles (gap): interpolate
-      return lr ? null : null;
+      return timeX(chart, t);       // 1.46: inside the range but between candles - interpolated (a dead stub returned null and dropped the box)
     };
     const renderer: IPrimitivePaneRenderer = {
       draw(target) {
@@ -156,7 +173,7 @@ export class BoundedBoxesPrimitive implements ISeriesPrimitive<Time> {
           }
           context.setLineDash([]);
           for (const m of self.markers) {
-            const x = chart.timeScale().timeToCoordinate(m.time as Time);
+            const x = timeX(chart, m.time, false);                   // 1.46: event bar of another TF (M5 on H1) - interpolated, not dropped
             const y = series.priceToCoordinate(m.price);
             if (x === null || y === null) continue;
             context.fillStyle = m.color;

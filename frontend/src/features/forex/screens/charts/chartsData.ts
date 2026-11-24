@@ -3,18 +3,17 @@
 // Ten plik nie importuje Reacta w adapterach – testy w Node: tests/js/charts_adapters.test.mjs.
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { apiGet } from "../../../../api";
-import { basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM, statesVM, zonesMsgVM, zonesVM,
-  type Meta, type Sig } from "./chartsAdapters";
+import { barCloseStep, basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM,
+  statesVM, zonesMsgVM, zonesVM, type BarCloses, type Meta, type Sig } from "./chartsAdapters";
 export * from "./chartsAdapters";
 
 /** Hook danych ekranu CHARTS (K2): świece + profil wskaźników silnika, tiki na żywo ze store, Kronos. Tylko GET; ponowne pobranie po
  *  bar_closed wybranego TF, w tle najwyżej co 30 s (D1 §2). Wyniki trafiają do renderera przez api.setVM / liveBar / setKronos. */
 const g = (u: string) => apiGet<any>(u).catch(() => null);
 let metaCache: Meta | null = null;
-const legacyDetail = new Map<string, any>();
 
 /** Warstwy bota dla instrumentu (K3, tylko GET): meta strategii (raz), stany koszyków, sygnały koszyków / S01–S12 / SH, szanse w karcie.
- *  Szczegóły sygnału S01–S12 (cele, powody, czas świecy) – GET /bot-signals/{id} raz na sygnał; stan / wynik zawsze z listy. */
+ *  Szczegóły sygnału S01–S12 (cele, powody, czas świecy) są w rekordzie listy /bot-signals (detail, take_profits – SignalStore._public). */
 async function botLayers(asset: string, engineSymbol?: string, assetSymbol?: string | null) {
   const [cat, auto, shc, bk, bs, ls, ss, pred] = await Promise.all([
     metaCache ? null : g("/api/v1/baskets/catalog"), metaCache ? null : g("/api/v1/strategy/auto"), metaCache ? null : g("/api/v1/sh/config"),
@@ -22,16 +21,28 @@ async function botLayers(asset: string, engineSymbol?: string, assetSymbol?: str
     asset === "XAUUSD" ? g(`/api/v1/bot-signals?limit=100&rejected=false${engineSymbol ? "&symbol=" + encodeURIComponent(engineSymbol) : ""}`) : null,
     asset === "XAUUSD" ? g("/api/v1/sh/signals?limit=200") : null, g(`/api/v1/models/predictions?instrument=${asset}`)]);
   if (!metaCache && cat && auto && shc) metaCache = { ...basketMetaVM(cat), LEGACY: legacyMetaVM(auto), SH: shMetaVM(shc) };
+  // 1.46: the list record already carries detail + take_profits (the same _public as GET /bot-signals/{id}) - the per-signal GET (up to 40 per
+  // refresh) and the module-level cache that grew for the whole life of the window are gone; signals without a fetched detail are no longer hidden
   const rows: any[] = (ls?.items || []).filter((x: any) => /^S\d{2}$/.test(String(x.strategy_id || "")));
-  await Promise.all(rows.filter((x) => !legacyDetail.has(x.signal_id)).slice(0, 40).map((x) =>
-    g(`/api/v1/bot-signals/${encodeURIComponent(x.signal_id)}`).then((d) => { if (d) legacyDetail.set(x.signal_id, d); })));
   const signals: Sig[] = [
     ...(bs?.signals || []).filter((x: any) => sameInstrument(x.instrument, asset, assetSymbol)).map(basketSignalVM),
-    ...rows.filter((x) => legacyDetail.has(x.signal_id)).map((x) => legacySignalVM({ ...legacyDetail.get(x.signal_id), ...x })),
+    ...rows.map((x) => legacySignalVM(x)),
     ...(ss?.items || []).filter((x: any) => sameInstrument(x.instrument, asset, assetSymbol)).map(shSignalVM),
   ].filter((x): x is Sig => !!x && Number.isFinite(x.t)).sort((a, b) => a.t - b.t);
   return { meta: metaCache || undefined, signals, states: statesVM(bk, asset, assetSymbol), probs: cardProbsVM(pred) };
 }
+
+/** 1.46: licznik zamknięć świec TF z barTick (barCloseStep) – zależność efektów zamiast chwilowego closed/seq (gubionego przy batchowaniu). */
+function useBarCloses(barTick: any, tf: string): number {
+  const r = useRef<{ tf: string; st: BarCloses | null }>({ tf, st: null });
+  if (r.current.tf !== tf) r.current = { tf, st: null };
+  const tick = barTick?.[tf];
+  if (tick) r.current.st = barCloseStep(r.current.st, tick);
+  return r.current.st?.n ?? 0;
+}
+
+/** 1.46: /market-zones/bars (świece BTC) przyjmuje tylko TF stref (400 INVALID_TF dla H1 i wyżej) – to nie jest rozłączenie terminala. */
+const tfUnsupported = (e: any) => e?.status === 400 && /INVALID_TF/.test(String(e?.message || ""));
 
 export function useChartsData(api: MutableRefObject<any>, active: boolean, s: any) {
   const tfDone = useRef(false);
@@ -44,7 +55,8 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     if (!a) return;
     const cur = a.sel();
     setSel((x) => ({ ...x, ...cur }));
-    a.onSelect((e: any) => { if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); } else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, n: x.n + 1 })); });
+    const off = a.onSelect((e: any) => { if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); } else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, n: x.n + 1 })); });
+    return () => { if (typeof off === "function") off(); };     // 1.46: one listener per entry into CHARTS (they accumulated before)
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!active || tfDone.current) return;
@@ -58,25 +70,29 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     api.current?.setStatus(chartStatus(s));
   }, [active, sel.asset, s?.quote, s?.connection?.state, s?.dq?.status, s?.symbol?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
   // świece: wybrany instrument / TF; po bar_closed tego TF; fallback co 30 s
-  const closedSeq = s?.barTick?.[sel.tf]?.closed ? s.barTick[sel.tf].seq : null;
+  const closedN = useBarCloses(s?.barTick, sel.tf);
   const [poll, setPoll] = useState(0);
   useEffect(() => { if (!active) return; const t = setInterval(() => setPoll((x) => x + 1), 30000); return () => clearInterval(t); }, [active]);
   useEffect(() => {
     if (!active) return;
     let alive = true;
     const xau = apiGet<any>(`/api/v1/candles?tf=${sel.tf}`);
-    const src = sel.asset === "BTC" ? apiGet<any>(`/api/v1/market-zones/bars?instrument=BTC&tf=${sel.tf}&count=600`) : xau;
+    const src = sel.asset === "BTC" ? apiGet<any>(`/api/v1/market-zones/bars?instrument=BTC&tf=${sel.tf}&count=600`)
+      .catch((e) => { if (tfUnsupported(e)) return { status: "TIMEFRAME_NOT_SUPPORTED", bars: [] }; throw e; }) : xau;
     const mz = apiGet<any>(`/api/v1/market-zones?instrument=${sel.asset}&all=true`).catch(() => null);
     Promise.all([xau.catch(() => null), src, mz, botLayers(sel.asset, s?.symbol?.symbol, sel.asset === "BTC" ? btcSym.current : s?.symbol?.symbol)]).then(([cx, r, z, B]) => {
       if (!alive) return;
       const candles = candlesVM(r);
       if (r?.symbol && sel.asset === "BTC") { api.current?.setSymbol("BTC", r.symbol); btcSym.current = r.symbol; }
       const zt = zonesVM(z, sel.tf);                                   // K4: wyłącznie wybrany TF – nic z innego interwału
-      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, iprof: iprofVM(cx), ...B, zones: zt ? { [sel.tf]: zt } : {}, zoneMsg: zonesMsgVM(z, sel.tf),
-        status: candles.length ? chartStatus(s) : (r?.status === "NO_SYMBOL" ? "offline" : "loading") });
+      const noTf = r?.status === "TIMEFRAME_NOT_SUPPORTED";
+      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, iprof: iprofVM(cx), ...B, zones: zt ? { [sel.tf]: zt } : {},
+        zoneMsg: noTf ? `Świece ${sel.asset} ${sel.tf}: TIMEFRAME_NOT_SUPPORTED – API świec ${sel.asset} (market-zones/bars) obsługuje tylko interwały stref M1–M30. Wybierz M1, M5, M15 albo M30.`
+          : zonesMsgVM(z, sel.tf),
+        status: candles.length || noTf ? chartStatus(s) : (r?.status === "NO_SYMBOL" ? "offline" : "loading") });
     }).catch(() => alive && api.current?.setStatus("offline"));
     return () => { alive = false; };
-  }, [active, sel.asset, sel.tf, sel.n, closedSeq, poll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, sel.asset, sel.tf, sel.n, closedN, poll]); // eslint-disable-line react-hooks/exhaustive-deps
   // świeca w budowie na żywo (store, tylko instrument silnika)
   const tick = s?.barTick?.[sel.tf];
   useEffect(() => {
@@ -85,7 +101,7 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     if (b) api.current?.liveBar(b);
   }, [active, tick?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
   // Kronos: stan + prognoza wybranego TF Kronos (PRZELICZ = ponowny GET)
-  const krClosed = s?.barTick?.[sel.kr]?.closed ? s.barTick[sel.kr].seq : null;
+  const krClosed = useBarCloses(s?.barTick, sel.kr);
   useEffect(() => {
     if (!active) return;
     let alive = true;

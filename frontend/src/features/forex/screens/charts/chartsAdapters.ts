@@ -117,6 +117,34 @@ export function iprofVM(resp: any): { ema: (number | null)[]; rsi: number; sig: 
   return { ema: [ema[0] ?? 20, ema[1] ?? null], rsi: +(I.panels?.rsi?.period || 14), sig: I.panels?.macd?.signal_ma === "EMA" ? "EMA" : "SMA" };
 }
 
+/** 1.46: zamknięcia świec jednego TF z barTick store'u. „bar” i „bar_closed” zapisują ten sam slot, a bridge publikuje bar nowej świecy zaraz po
+ *  bar_closed – React może je zbatchować i stan closed=true nigdy nie trafia do renderu (odświeżenie gubione), a bez batchowania efekt ruszał
+ *  dwa razy (seq, potem null). Zamknięcie = tick zamkniętej świecy ALBO bar nowszej świecy niż ta w budowie; n = liczba zamknięć (to samo
+ *  zamknięcie liczone raz, ten sam tick można podać wielokrotnie). Pierwsza obserwacja (st = null) tylko ustawia stan, n = 0. */
+export type BarCloses = { open: number | null; closed: number | null; n: number };
+export function barCloseStep(st: BarCloses | null | undefined, tick: any): BarCloses {
+  const b = tick?.bar;
+  const o = ms(b?.open_utc);
+  const t = num(b?.t_raw) ?? (o == null ? null : o / 1000);
+  const prev: BarCloses = st || { open: null, closed: null, n: 0 };
+  if (t == null) return prev;
+  if (!st) return { open: t, closed: tick.closed ? t : null, n: 0 };
+  if (tick.closed) {
+    if (prev.closed != null && t <= prev.closed) return prev;                          // already counted (or older)
+    return { open: Math.max(prev.open ?? t, t), closed: t, n: prev.n + 1 };
+  }
+  if (prev.open != null && t > prev.open) {                                           // a newer candle: the one in progress closed
+    return prev.closed === prev.open ? { ...prev, open: t } : { open: t, closed: prev.open, n: prev.n + 1 };
+  }
+  return prev.open == null ? { ...prev, open: t } : prev;
+}
+
+/** Długość interwału w sekundach z nazwy TF (M1, M15, H1, H4, D1, W1); nieznany → null. */
+export function tfSeconds(tf: unknown): number | null {
+  const m = /^([MHDW])(\d+)$/.exec(String(tf ?? ""));
+  return m ? +m[2] * { M: 60, H: 3600, D: 86400, W: 604800 }[m[1] as "M" | "H" | "D" | "W"] : null;
+}
+
 /** Status MT5 w nagłówku wzorca: live / loading / offline / stale. */
 export function chartStatus(s: any): "live" | "loading" | "offline" | "stale" {
   const st = s?.connection?.state;

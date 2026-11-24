@@ -14,7 +14,7 @@ const easeIO3=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2}, easeOu
 const seg=(ms,a,d)=>clamp((ms-a)/d);
 const CFG=Object.freeze({orbCount:110000,streakCount:24000,starCount:1500,dustCount:9000,dprCap:1.65,
  diveMs:3200,surfaceMs:1600,reducedMs:300,bgCycle:66,filaments:56,filSegs:96,sparks:2500,vortexCount:22000});
-const canvas=$('#c');const FIXED_DT=0;
+const canvas=$('#c');   /* 1.46: usunięty martwy kod wzorca (stały krok 0, rysowanie piorunów z pustej listy i ich generator, podgląd niezaprojektowanej sekcji, nieczytana flaga fokusu) */
 const gl=opts.forceStatic?null:canvas.getContext('webgl',{alpha:false,antialias:false,depth:false,premultipliedAlpha:false,powerPreference:'high-performance'});
 if(!gl){opts.onNoWebGL&&opts.onNoWebGL();/* 1.46: the static stub has the WHOLE engine API (screens call setScreenData / nodeAt / setReduced) */return {dispose(){},setPanel(){},result(){},stale(){},openSub(){},closeSub(){},surface(){},testSeek(){},testSub(){},setScreenData(){},nodeAt(){return undefined;},setReduced(){},state:()=>({phase:'static'})};}
 
@@ -226,7 +226,7 @@ function setup(){
 
 /* ---------- stan ---------- */
 const S={phase:'menu',prog:0,rate:1,reduced:!!opts.reduced,orbT:0,rot:[.11,-.22],vel:[0,0],bgT:0,
- drag:null,last:0,raf:0,hidden:false,view:{w:1,h:1,dpr:1},menuPose:{x:0,y:0,r:1},pointer:[0,0],pointerT:[0,0],token:0,frameAvg:16,focusDone:false,lost:false};
+ drag:null,last:0,raf:0,hidden:false,view:{w:1,h:1,dpr:1},menuPose:{x:0,y:0,r:1},pointer:[0,0],pointerT:[0,0],token:0,frameAvg:16,lost:false};
 const panels=[{el:$('#panelA'),kind:'filament',name:'MODEL A',desc:'modele predykcji'},{el:$('#panelB'),kind:'vortex',name:'MODEL B',desc:'silnik sygnałów'}];
 panels.forEach(p=>Object.assign(p,{status:'nodata',stale:false,t:0,speed:0,bright:.25,sat:1,lastAt:null,err:'',fx:{pulse:2,pi:0,bolts:[],queue:[],flare:0,flareY:0,next:2,chains:[],nextChain:1.5,coreFlash:0},nextResult:0,announced:0,shownStatus:null}));
 const STATUS={working:{t:'ANALIZA',speed:1,bright:1,sat:1},idle:{t:'OCZEKUJE',speed:.35,bright:.55,sat:1},error:{t:'BŁĄD',speed:.15,bright:.5,sat:.2},
@@ -266,9 +266,7 @@ function drawPlanets(T,dt){const {w,h,dpr}=S.view;let any=false;
   attr(o,'aPos',q.buffer,3,6,0);attr(o,'aInfo',q.buffer,3,6,3);gl.blendFunc(gl.ONE,gl.ONE);gl.drawArrays(gl.POINTS,0,q.count);});
  planets.forEach((q,i)=>{let op=T.planets?T.planets[i]:0;if(i===SUB.pi&&T.c0)op*=1-smooth(seg(SUB.p*SCREENS[SUB.pi].inMs,0,400));q.el.style.visibility=op>.02?'visible':'hidden';q.el.style.opacity=op;q.el.style.pointerEvents=op>.5&&SUB.state==='none'?'':'none';});}
 function pose(q,i,T){const L=q.layout;if(i!==SUB.pi||!T.c0)return L;const c=T.c0;return {x:lerp(L.x,S.view.w*.5,c.move),y:lerp(L.y,S.view.h*.48,c.move),r:L.r*c.rMul};}
-function choosePlanet(i){if(S.phase!=='forex'||SUB.state!=='none')return;if(SCREENS[i]){selectedPlanet=-1;opts.onChoose&&opts.onChoose(i);return;}selectedPlanet=i;planets.forEach((q,j)=>q.el.setAttribute('aria-pressed',String(j===i)));planets[i].pulse=1;
- announce('Wybrano '+planets[i].name+'. Ekran tej sekcji nie jest jeszcze zaprojektowany.');
- window.dispatchEvent(new CustomEvent('pmw:forex-section-selected',{detail:Object.freeze({section:planets[i].name,preview:true})}));}
+function choosePlanet(i){if(S.phase!=='forex'||SUB.state!=='none'||!SCREENS[i])return;selectedPlanet=-1;opts.onChoose&&opts.onChoose(i);}
 function resize(){
  const w=innerWidth,h=innerHeight,dpr=Math.min(devicePixelRatio||1,S.q==='low'?1:CFG.dprCap);S.view={w,h,dpr};
  canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
@@ -312,7 +310,7 @@ function timeline(){
 /* ---------- fazy ---------- */
 function setPhase(ph){S.phase=ph;root.dataset.state=ph;$('#forex-screen').inert=ph!=='forex';$('#fx-menu').inert=ph!=='menu';opts.onPhase&&opts.onPhase(ph);}
 function announce(t){$('#fx-announcer').textContent=t;}
-function startDive(){if(S.phase!=='menu')return;if(!S.bgStarted){S.bgStarted=true;S.bgT=8;}setPhase('dive');S.focusDone=false;connectModels();wake();}
+function startDive(){if(S.phase!=='menu')return;if(!S.bgStarted){S.bgStarted=true;S.bgT=8;}setPhase('dive');connectModels();wake();}
 function surface(){if(SUB.state!=='none')return;if(S.phase==='dive'||S.phase==='forex'){pdrag=null;planets.forEach(q=>{q.hot=false;q.focus=false;});setPhase('surface');disconnectModels();wake();}}
 
 /* ---------- stan paneli z danych bota (S3 §1) – ustawiany z Reacta przez setPanel / result ---------- */
@@ -330,12 +328,11 @@ function triggerResult(p){p.lastAt=new Date();p.stale=false;updatePanelText(p);
 
 /* ---------- efekty paneli ---------- */
 const CORE=[.12,.06];
-function makeBolt(){const pts=[];let x=(Math.random()-.5)*.12;for(let i=0;i<=40;i++){const y=1.15-i/40*2.3;x+=(Math.random()-.5)*.07;x*=.93;pts.push([x+.04*Math.sin(y*5+Math.random()),y]);}return {pts,life:.26,age:0,jit:0};}
 function spawnChain(p,forceCore){const r=Math.random(),type=forceCore?1:(r<.4?0:r<.7?1:2);let P;
  if(type===0)P=[[.82,.95],[-.75,.9],CORE];else if(type===1)P=[[CORE[0]-.05,-1.15],[CORE[0]-.18,-.35],CORE];else P=[[-.85,.2],[0,.78],[.85,.5]];
  p.fx.chains.push({P,age:0,dur:2.4,n:22,into:type!==2});}
 function bez(P,t){const a=1-t;return [a*a*P[0][0]+2*a*t*P[1][0]+t*t*P[2][0],a*a*P[0][1]+2*a*t*P[1][1]+t*t*P[2][1]];}
-function updatePanel(p,dt,nowS){
+function updatePanel(p,dt){
  const tgt=STATUS[p.status],k=1-Math.exp(-dt*5);p.speed=lerp(p.speed,tgt.speed,k);p.bright=lerp(p.bright,tgt.bright*(p.stale?.6:1),k);p.sat=lerp(p.sat,tgt.sat,k);
  const frozen=S.reduced;const sdt=frozen?0:dt*p.speed;p.t+=sdt;
  const fx=p.fx;
@@ -364,11 +361,6 @@ function drawPanel(p,op){
   let o=use(programs.ring);u1(o,'uT',p.t);u1(o,'uB',B);u1(o,'uDpr',d);u1(o,'uSat',p.sat);u1(o,'uAsp',PA);u1(o,'uPulse',pu);u1(o,'uPI',pin);attr(o,'aS',bufs.ring,3,3,0);gl.drawArrays(gl.POINTS,0,16000);
   if(pin>0)fx([0,1-pu*2.1],pin*op*.8,.7,.35,.5,[.88,.86,1]);
   fx([0,-.98],B*.25,.5,0,.1,[.85,.82,1]);
-  for(const b of []){const life=1-b.age/b.life,a=life*op,L=[],P=[];
-   for(let off=-1;off<=1;off++)for(let i=0;i<b.pts.length-1;i++){const q0=b.pts[i],q1=b.pts[i+1],ox=off*2/w,c=(off?.35:1)*a;L.push(q0[0]*1.55/PA+ox,q0[1],1,c,c,c,q1[0]*1.55/PA+ox,q1[1],1,c,c,c);}
-   for(let i=0;i<b.pts.length;i+=2){const q=b.pts[i],c=.16*a;P.push(q[0]*1.55/PA,q[1],16,c*.8,c*.9,c);}
-   dynDraw(use(programs.dynL),new Float32Array(L),gl.LINES,L.length/6);const o2=use(programs.dynP);u1(o2,'uDpr',d);dynDraw(o2,new Float32Array(P),gl.POINTS,P.length/6);
-   fx([b.pts[20][0]*1.55/PA,b.pts[20][1]],a*.7,.6,.8,.9,[1,1,1]);}
  }else{
   let o=use(programs.vor);u1(o,'uT',p.t);u1(o,'uB',B);u1(o,'uDpr',d);u2(o,'uCore',CORE[0]*PA/.75,CORE[1]);u1(o,'uAsp',PA);attr(o,'aS',bufs.vor,3,4,0);attr(o,'aE',bufs.vor,1,4,3);
   u1(o,'uPts',0);gl.drawArrays(gl.LINES,0,CFG.vortexCount*2);u1(o,'uPts',1);gl.drawArrays(gl.POINTS,0,CFG.vortexCount*2);
@@ -382,7 +374,7 @@ function drawPanel(p,op){
 /* ---------- pętla ---------- */
 function wake(){if(!S.raf&&!S.hidden&&!S.lost){S.last=performance.now();S.raf=requestAnimationFrame(tick);}}
 function tick(now){
- S.raf=0;if(S.hidden||S.lost||S.disposed)return;const dt=FIXED_DT||Math.min((now-(S.last||now))/1000,.1);S.last=now;S.frameAvg=lerp(S.frameAvg,dt*1000,.05);
+ S.raf=0;if(S.hidden||S.lost||S.disposed)return;const dt=Math.min((now-(S.last||now))/1000,.1);S.last=now;S.frameAvg=lerp(S.frameAvg,dt*1000,.05);
  const {w,h,dpr}=S.view;
  if(S.phase==='dive'){S.prog+=dt*S.rate/((S.reduced?CFG.reducedMs:CFG.diveMs)/1000);if(S.prog>=1){S.prog=1;setPhase('forex');panels.forEach(p=>updatePanelText(p,true));
   if(SUB.state==='none')planets[0].el.focus({preventScroll:true});announce('Tryb FOREX. Sekcje: CHARTS, SIGNALS, MODELS & BACKTEST, ROI.');opts.onForexReady&&opts.onForexReady();}}
@@ -401,7 +393,7 @@ function tick(now){
  if(!S.drag){if(!S.reduced){S.rot[0]+=S.vel[0]*dt;S.rot[1]+=S.vel[1]*dt+dt*.065*(T.rotMul??1);}const dc=Math.exp(-dt*2.2);S.vel=S.reduced?[0,0]:S.vel.map(v=>v*dc);}
  S.rot[0]=clamp(S.rot[0],-1.8,1.8);
  if(T.morph>0&&!S.reduced)S.bgT+=dt;
- const nowS=now/1000;panels.forEach(p=>updatePanel(p,dt,nowS));
+ panels.forEach(p=>updatePanel(p,dt));
  /* DOM */
  const mf=T.menuFade;
  panels[0].el.style.opacity=T.pA;panels[1].el.style.opacity=T.pB;panels.forEach(p=>p.el.style.setProperty('--k',T.corners));
@@ -438,7 +430,6 @@ function tick(now){
  drawPanel(panels[0],T.pA);drawPanel(panels[1],T.pB);
  {const on=SUB.p>0,own=!!SCR.own;$('#sub-screen').style.opacity=on&&!own?(S.reduced?smooth(SUB.p):smooth(seg(cms,SCR.inMs*.72,500))):0;subDraw(on&&!own?SUB.pi:-1,cms,dt);
  for(const k in SCREENS){if(!SCREENS[k].own)continue;const o=SUB.p>0&&+k===SUB.pi;$(SCREENS[k].el).style.opacity=o?1:0;if(o)SCREENS[k].draw(cms,dt);}}
- if(S.phase!=='dive'&&S.phase!=='surface'&&S.prog>=1&&!S.focusDone){S.focusDone=true;}
  quality(dt);
  S.raf=requestAnimationFrame(tick);
 }
