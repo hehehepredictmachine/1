@@ -50,6 +50,13 @@ def health(force: bool = False) -> dict:
     return v
 
 
+def health_age() -> float | None:
+    """Seconds since the cached health check (None = never checked). 1.46 arch (I0790): FamilyService refreshes it in its background
+    thread before the 600 s cache expires, so the SH cycle does not run the health process synchronously."""
+    at = _HEALTH.get("at")
+    return None if not at else time.time() - at
+
+
 def available(deps: tuple[str, ...]) -> tuple[bool, str | None]:
     if python() is None:
         return False, "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)"

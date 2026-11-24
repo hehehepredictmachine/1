@@ -360,7 +360,8 @@ class Runtime:
             _UM.apply_142(self)
         except Exception:  # noqa: BLE001 - never blocks the start
             log.exception("upgrade 1.42 step failed")
-        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets"):
+        # families: 1.46 arch (I0790) background inference of the .venv_deep families after a bar close (the SH cycle reads the cache)
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets", "families"):
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
@@ -417,7 +418,7 @@ class Runtime:
     # 1.46: stop order (unchanged); every part stops on its own - an exception in one .stop() skipped all later parts (bridge, MT5
     # worker) and the cleanup of shutdown.token / server.pid in __main__
     _STOP_ORDER = ("ml", "forecast", "scalp", "sh", "mm", "zones", "indicators", "svp", "market_zones", "trainhub", "trainhub_inference",
-                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "analytics", "lab", "extind", "nss", "mtf", "si",
+                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "families", "analytics", "lab", "extind", "nss", "mtf", "si",
                    "liquidity", "scanner", "engine", "manager", "news", "bridge", "worker")
 
     def _stop_part(self, name: str, method: str = "stop") -> None:

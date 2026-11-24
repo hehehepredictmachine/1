@@ -54,6 +54,11 @@ class FamilyService:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.procs: dict[str, subprocess.Popen] = {}
         self._starting: set[str] = set()                 # 1.46: family+instrument reserved by submit() while its data are prepared
+        self._inflight: dict = {}                        # 1.46 arch (I0450): cache key -> Event of the computation in progress
+        self._verified: dict = {}                        # 1.46 arch (I0216): (fid, inst, rid) -> (stat signature, verify result)
+        self._bg: threading.Thread | None = None         # 1.46 arch (I0790): deep precompute thread (start())
+        self._bg_stop = threading.Event()
+        self._bg_done: dict = {}                         # (fid, inst) -> cache key of the last background attempt
         self._recover_orphans()
 
     def _cfg(self):
@@ -426,6 +431,10 @@ class FamilyService:
             for k in list(self._loaded):
                 if (fid is None or k[0] == fid) and (inst is None or k[1] == inst):
                     self._loaded.pop(k, None)
+            for d in (self._verified, self._bg_done):
+                for k in list(d):
+                    if (fid is None or k[0] == fid) and (inst is None or k[1] == inst):
+                        d.pop(k, None)
 
     # ------------------------------------------------------------------ live predictions
     def _live(self, f, inst) -> dict:
@@ -502,7 +511,51 @@ class FamilyService:
                 self._loaded[key] = self.fams[fid].load(self.store.run_dir(fid, inst, rid))
             return self._loaded[key]
 
-    def predict(self, fid: str, inst: str) -> dict | None:
+    def _integrity(self, fid, inst, rid) -> tuple[bool, str | None]:
+        """1.46 arch (I0216): sha256 of the manifest files was checked only at activation - after a restart the pickle / joblib /
+        statsmodels payload was loaded unchecked, and the .venv_deep worker reads model.pt / the PPO pickles on EVERY call. Verified
+        before every computation; the hash is recomputed only when a file's (mtime_ns, size) changed (not on every bar)."""
+        d = self.store.run_dir(fid, inst, rid)
+        man = B._read(d / "manifest.json", {}) or {}
+        sig = []
+        for name in ["manifest.json"] + sorted(man.get("files") or {}):
+            try:
+                s = (d / name).stat()
+                sig.append((name, s.st_mtime_ns, s.st_size))
+            except OSError:
+                sig.append((name, None, None))
+        sig, key = tuple(sig), (fid, inst, rid)
+        with self._lock:
+            hit = self._verified.get(key)
+        if hit is not None and hit[0] == sig:
+            return hit[1]
+        res = self.store.verify(fid, inst, rid)
+        with self._lock:
+            self._verified[key] = (sig, res)
+        return res
+
+    @staticmethod
+    def _explicit_off(st: dict) -> bool:
+        """1.46 arch (I0417 / I0856): OFF chosen by the user (the last USE entry of the history), not the default of a missing state."""
+        if st.get("use") != "OFF":
+            return False
+        last = next((h for h in reversed(st.get("history") or []) if isinstance(h, dict) and h.get("action") == "USE"), None)
+        return bool(last) and last.get("use") == "OFF"
+
+    def _hit(self, ck, bar_t):
+        c = self._cache.get(ck)
+        if c is not None and (bar_t is not None or self.clock() - c["at"] < 5):
+            return c["pred"]
+        return None
+
+    def last_prediction(self, fid: str, inst: str) -> dict | None:
+        """The newest cached record of a family+instrument (no computation) - for the catalog view."""
+        with self._lock:
+            return next((v["pred"] for k, v in self._cache.items() if k[:2] == (fid, inst)), None)
+
+    INFLIGHT_WAIT_S = 130.0                              # > the 120 s timeout of a .venv_deep call
+
+    def predict(self, fid: str, inst: str, *, background: bool = False) -> dict | None:
         f = self.fams[fid]
         if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
             return None                                          # aliases of trainhub TH_*: the trainhub inference publishes them (one vote)
@@ -516,9 +569,9 @@ class FamilyService:
         rid, use = st.get("active"), st.get("use", "OFF")
         cfg = self.cfg_store.get()
         symbol = getattr(getattr(cfg, "mt5", None), "symbol", None)
-        if fid == "MICROSTRUCTURE" and rid is None:
-            use = "SHADOW"                                       # measurements need no artifact
-        if use == "OFF" and fid != "MICROSTRUCTURE":
+        if fid == "MICROSTRUCTURE" and rid is None and not self._explicit_off(st):
+            use = "SHADOW"                                       # measurements need no artifact (unless the user switched them OFF)
+        if use == "OFF":
             return None
         if fid in NO_LIVE_PATH:
             # 1.46: _live() never provides pair_bars / basket_bars - an active pair / basket artifact was always BLOCKED_DATA "brak danych
@@ -540,9 +593,38 @@ class FamilyService:
         elif fid == "NLP_SENTIMENT":
             data_t = max((n.get("first_seen_at") or n.get("published_at") or "" for n in live.get("news") or []), default=None) or None
         ck = (fid, inst, rid, bar_t, use)
+        # 1.46 arch (I0450): single-flight per cache key - the cache was checked under the lock but computed without it and without an
+        # 'in progress' mark, so the SH cycle, the engine (coordinator), Quant and the API started one .venv_deep worker each for the same
+        # bar. A second caller waits for the first computation and gets ITS record (the same model, bar and inputs - the same result);
+        # when the first one stored nothing (a background result that is not READY, I0790) the waiter computes itself, exactly as before.
         with self._lock:
-            if ck in self._cache and (bar_t is not None or self.clock() - self._cache[ck]["at"] < 5):
-                return self._cache[ck]["pred"]
+            hit = self._hit(ck, bar_t)
+            if hit is not None:
+                return hit
+            if background:                               # I0790: one background attempt per bar (no retry loop of worker processes)
+                if bar_t is None or self._bg_done.get(ck[:2]) == ck:
+                    return None
+                self._bg_done[ck[:2]] = ck
+            ev = self._inflight.get(ck)
+            owner = ev is None
+            if owner:
+                ev = self._inflight[ck] = threading.Event()
+        if not owner:
+            ev.wait(self.INFLIGHT_WAIT_S)
+            with self._lock:
+                hit = self._hit(ck, bar_t)
+            if hit is not None:
+                return hit
+            return self._compute(f, fid, inst, rid, use, symbol, live, bar_t, data_t, ttl, extra_t, ck, background=False)
+        try:
+            return self._compute(f, fid, inst, rid, use, symbol, live, bar_t, data_t, ttl, extra_t, ck, background=background)
+        finally:
+            with self._lock:
+                if self._inflight.get(ck) is ev:
+                    self._inflight.pop(ck, None)
+            ev.set()
+
+    def _compute(self, f, fid, inst, rid, use, symbol, live, bar_t, data_t, ttl, extra_t, ck, *, background: bool) -> dict:
         man = B._read(self.store.run_dir(fid, inst, rid) / "manifest.json", {}) if rid else {}
         # 1.46 D18: the marketdata Store / live bridge write REAL_USER_DATA / SYNTHETIC_TEST / MT5_LIVE_BRIDGE - only the literal 'REAL' /
         # 'SYNTHETIC' were kept, so every record had data_kind None and Quant let a family fitted on synthetic data into a REAL snapshot
@@ -554,30 +636,100 @@ class FamilyService:
             kind = None
         impl, why = f.implementation()
         t0 = time.perf_counter()
+        integrity = {}
         try:
             if impl != "AVAILABLE":
-                raise B.Unavailable("BLOCKED_DATA", why)
+                # 1.46 arch (I0452): a missing dependency / environment is DISABLED (as modelhub/catalog shows it), a broken one ERROR -
+                # 'BLOCKED_DATA' said the data were missing. Both are not READY: REQUIRED blocks and Quant excludes exactly as before.
+                raise B.Unavailable("ERROR" if impl == "ERROR" else "DISABLED", why or impl)
             if fid == "MICROSTRUCTURE":
                 guard = self._micro_snapshot_guard(live)
                 if guard:
                     raise B.Unavailable(*guard)
+            if rid:
+                ok, bad = self._integrity(fid, inst, rid)
+                if not ok and use == "ASSIST":
+                    # S0 guard (fail-open): an INCOMPATIBLE record would lift the holds of the role ASSIST (SH READY -> WAIT, ACTIVE
+                    # MODEL_ASSIST_HOLD) - the record is computed exactly as in 1.45 and only reports the violation; set SHADOW / OFF or
+                    # re-activate an intact artifact.
+                    integrity = {"integrity_violation": f"{bad} – plik artefaktu zmieniony po aktywacji (rola ASSIST: wynik liczony jak dotąd)"}
+                elif not ok:
+                    raise B.Unavailable("INCOMPATIBLE", f"integralność artefaktu: {bad} – plik zmieniony po aktywacji; nie jest wczytywany")
             art = self._artifact(fid, inst, rid) if rid else None
             res = f.predict(art, live)
             calib = {"method": "temperature (walidacja)", "status": "CALIBRATED_DEV"} if f.TASK_TYPE == "CLASS_PROBABILITIES" else None
             pred = f.pred(inst=inst, symbol=symbol, state="READY", result=res, run_id=rid, data_time=data_t, data_kind=kind, calibration=calib,
-                          extra={"use": use, "compute_ms": None, **extra_t}, ttl_s=ttl)
+                          extra={"use": use, "compute_ms": None, **extra_t, **integrity}, ttl_s=ttl)
         except B.Unavailable as u:
-            state = u.state if u.state in ("BLOCKED_DATA", "ERROR", "NOT_TRAINED", "STALE", "INCOMPATIBLE") else "BLOCKED_DATA"
-            pred = f.pred(inst=inst, symbol=symbol, state=state, reason=u.reason, run_id=rid, data_time=bar_t, extra={"use": use})
+            state = u.state if u.state in ("BLOCKED_DATA", "ERROR", "NOT_TRAINED", "STALE", "INCOMPATIBLE", "DISABLED") else "BLOCKED_DATA"
+            pred = f.pred(inst=inst, symbol=symbol, state=state, reason=u.reason, run_id=rid, data_time=bar_t, extra={"use": use, **integrity})
         except Exception as exc:  # noqa: BLE001
-            pred = f.pred(inst=inst, symbol=symbol, state="ERROR", reason=f"{type(exc).__name__}: {exc}"[:200], run_id=rid, extra={"use": use})
+            pred = f.pred(inst=inst, symbol=symbol, state="ERROR", reason=f"{type(exc).__name__}: {exc}"[:200], run_id=rid,
+                          extra={"use": use, **integrity})
         pred["compute_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+        if background and pred["state"] != "READY":
+            # 1.46 arch (I0790): only a READY background result becomes the bar's result - an error / timeout / transient state is not
+            # stored, the decision path computes it itself exactly as before
+            return pred
         with self._lock:
             # 1.46: one entry per family+instrument - the key holds the bar time, 1.45.0 kept every bar for weeks
             for k in [k for k in self._cache if k[:2] == ck[:2] and k != ck]:
                 self._cache.pop(k, None)
             self._cache[ck] = {"pred": pred, "at": self.clock()}
         return pred
+
+    # ------------------------------------------------------------------ background inference of the .venv_deep families
+    PRECOMPUTE_PERIOD_S = 2.0
+    HEALTH_REFRESH_S = 540.0                             # deep.health is cached 600 s - refreshed here before it expires
+
+    def precompute_once(self, inst: str) -> int:
+        """1.46 arch (I0790): the .venv_deep families (SEQ_LSTM / SEQ_GRU) ran their worker process synchronously in the SH cycle (torch
+        import ~2.5 s, up to the 120 s timeout) on the first evaluation after a bar close. The same predict() is computed here right after
+        the close and stored under the SAME cache key (family, instrument, run, bar, use) - the SH cycle then reads it; when it is not
+        there yet the SH cycle waits for it (single-flight) or computes synchronously exactly as before (same model, bar, result - never
+        fail-open). A background error / timeout is not stored as the bar's result. Returns the number of families computed."""
+        if not self._cfg().enabled:
+            return 0
+        n, active = 0, False
+        for fid, f in self.fams.items():
+            if f.RUNTIME != "DEEP" or fid in NO_LIVE_PATH or fid in DELEGATED:
+                continue
+            st = self.store.state(fid, inst)
+            if not st.get("active") or st.get("use", "OFF") == "OFF":
+                continue
+            active = True
+            try:
+                n += self.predict(fid, inst, background=True) is not None
+            except Exception:                    # the SH path computes as before
+                log.debug("families precompute %s failed", fid, exc_info=True)
+        if active:                               # the health check of .venv_deep (implementation()) refreshed before its cache expires
+            try:
+                from . import deep as D
+                age = D.health_age()
+                if age is not None and age >= self.HEALTH_REFRESH_S and D.python() is not None:
+                    D.health(force=True)
+            except Exception:
+                log.debug("families precompute: deep health refresh failed", exc_info=True)
+        return n
+
+    def _bg_loop(self) -> None:
+        while not self._bg_stop.wait(self.PRECOMPUTE_PERIOD_S):
+            try:
+                inst = getattr(getattr(self.cfg_store.get(), "assets", None), "active", None)
+                if inst and self.bridge is not None:
+                    self.precompute_once(inst)
+            except Exception:                    # the background never stops the bot; the SH path computes as before
+                log.debug("families precompute loop failed", exc_info=True)
+
+    def start(self) -> None:
+        if self._bg is not None and self._bg.is_alive():
+            return
+        self._bg_stop.clear()
+        self._bg = threading.Thread(target=self._bg_loop, name="families-precompute", daemon=True)
+        self._bg.start()
+
+    def stop(self) -> None:
+        self._bg_stop.set()
 
     def predictions(self, inst: str) -> list[dict]:
         if not self._cfg().enabled:
