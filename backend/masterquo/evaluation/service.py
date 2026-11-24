@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sqlite3
 import time
 from pathlib import Path
 
@@ -40,6 +41,17 @@ log = logging.getLogger("masterquo.evaluation")
 def _ts(x) -> float:
     from datetime import datetime
     return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+
+
+# 1.46 (I0039): report() read and JSON-decoded the WHOLE payload of every SETUP_ASSESSMENT row (the candidate with all its decision-time
+# features) on every call. SQLite extracts only the two sub-objects the report aggregates (assessment, both regime definitions) as JSON
+# text; Python decodes them exactly as before (number literals are copied, not re-rendered). A payload with NaN / Infinity (json.dumps
+# writes them, standard JSON has no such literal) is decoded whole in Python, as is everything when JSON1 is missing.
+_NONSTD = "(instr(payload, 'NaN') > 0 OR instr(payload, 'Infinity') > 0)"
+_REPORT_SQL: str | None = (f"SELECT CASE WHEN {_NONSTD} THEN payload END AS raw, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.assessment') END AS a, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.candidate.market_regime.both') END AS both, "
+                           "outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'")
 
 
 def _default_dir() -> Path:
@@ -259,8 +271,9 @@ class EvaluationService:
 
     # ------------------------------------------------------------------ outputs
     def status(self) -> dict:
+        # 1.46 (I0039): COUNT(*) in SQLite - was len(pending()), i.e. SELECT * of every open row of the whole history on each status call
         return {"version": VERSION, "mode": "SHADOW", "contract": K.VERSION, "engine": E.VERSION, "counters": dict(self.counters),
-                "pending": len(self.ledger.pending()), "last_error": self.last_error, "ledger": str(self.ledger.path),
+                "pending": self.ledger.count_pending(), "last_error": self.last_error, "ledger": str(self.ledger.path),
                 "note": "ocena każdego setupu obu ścieżek; nie blokuje ani nie wysyła zleceń"}
 
     def assessments(self, engine: str | None = None, limit: int = 50) -> list[dict]:
@@ -283,20 +296,35 @@ class EvaluationService:
                         "zone_context": a.get("zone_context"), "outcome": json.loads(r["outcome"]) if r["outcome"] else None})
         return out
 
+    def _report_rows(self) -> list[tuple[dict, dict, dict]]:
+        """(assessment, regimes of both definitions, outcome) of every SETUP_ASSESSMENT row, in the ledger order (as before)."""
+        rows = None
+        with self.ledger._lock:
+            if _REPORT_SQL:
+                try:
+                    rows = [tuple(r) for r in self.ledger.c.execute(_REPORT_SQL).fetchall()]
+                except sqlite3.OperationalError:              # SQLite without JSON1 / a payload its parser rejects: full decode below
+                    rows = None
+            if rows is None:
+                rows = [(r["payload"], None, None, r["outcome"]) for r in self.ledger.c.execute(
+                    "SELECT payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
+        out = []
+        for raw, a, both, outcome in rows:
+            if raw is not None:
+                pl = json.loads(raw)
+                a, both = pl["assessment"], (pl["candidate"].get("market_regime") or {}).get("both") or {}
+            else:
+                a, both = json.loads(a), (json.loads(both) if both is not None else None) or {}
+            out.append((a, both, json.loads(outcome) if outcome else {}))
+        return out
+
     def report(self) -> dict:
         """Matured rows per engine x SHADOW decision: event rate, mean plan R (net), Brier where a probability existed."""
-        with self.ledger._lock:
-            rows = [dict(r) for r in self.ledger.c.execute(
-                "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
         groups: dict = {}
         ready: dict = {}
         regimes: dict = {}
         dist: dict = {}
-        for r in rows:
-            pl = json.loads(r["payload"])
-            out = json.loads(r["outcome"]) if r["outcome"] else {}
-            a = pl["assessment"]
-            both = (pl["candidate"].get("market_regime") or {}).get("both") or {}
+        for a, both, out in self._report_rows():
             rg = regimes.setdefault((both.get("ACTIVE"), both.get("SH")), {"n": 0, "matured": 0, "r": []})
             rg["n"] += 1
             if out.get("status") != "MATURED":

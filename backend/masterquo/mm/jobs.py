@@ -367,7 +367,7 @@ def job_hdc(ctx) -> dict:
 
 def job_gpr(ctx) -> dict:
     from . import gpr as G
-    from .ledger import Ledger
+    from .ledger import WALK_FORWARD, WALK_FORWARD_SYNTHETIC, Ledger
     b = ctx.bars("M5")
     n = len(b.t)
     cfg = G.GPRConfig()
@@ -380,8 +380,11 @@ def job_gpr(ctx) -> dict:
     led = Ledger(artifacts.root(ctx.inst) / "ledger.sqlite")
     model = val["model"]
     ledger_mid = f"gpr_logret:{ctx.snap.snapshot_id}"
+    # 1.46 (I0034): these rows are the training walk-forward, not live SHADOW forecasts (same ledger file as mm/service) - marked so,
+    # with the data quality of the snapshot like the live rows (the GP health stays in payload['health'])
     test = G.walk_forward(b.t, b.c, cfg, i2, n, step, ledger=led, symbol=ctx.inst, tf="M5", tf_s=300, model_id=ledger_mid, artifact_id=None,
-                          cancel=ctx.cancel)
+                          cancel=ctx.cancel, run_mode=WALK_FORWARD_SYNTHETIC if ctx.synthetic else WALK_FORWARD,
+                          quality="SYNTHETIC_TEST" if ctx.synthetic else "OK", payload_extra={"data_kind": ctx.snap.data_kind})
     c = np.asarray(b.c, float)
     tidx = {float(t): i for i, t in enumerate(b.t)}
 
