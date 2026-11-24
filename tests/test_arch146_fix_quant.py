@@ -44,6 +44,50 @@ class TestMonteCarloAdapterD11(unittest.TestCase):
         self.assertIn("R1", rec["unavailable_reason"])
 
 
+# ================================================================================================ D17
+def news_service(enabled=True):
+    from masterquo.news.service import NewsService
+    cfg = SimpleNamespace(news=SimpleNamespace(enabled=enabled, poll_seconds=300))
+    return NewsService(SimpleNamespace(get=lambda: cfg), None, SimpleNamespace(publish=lambda *a: None), None)
+
+
+class TestNewsRecordD17(unittest.TestCase):
+    """rule:news was READY always (also with the calendar NOT_LOADED) and read 'blackout' / 'next_event_in_s', which NewsService.summary()
+    never returns - both always empty."""
+
+    def rec(self, n):
+        from masterquo.quant import adapters as A
+        rt = SimpleNamespace(sh=SimpleNamespace(snapshot={"computed_at": time.time()}), news=n)
+        return next(r for r in A.rules(rt, "XAUUSD") if r["canonical_id"] == "rule:news")
+
+    def test_not_loaded_calendar_is_not_ready(self):
+        r = self.rec(news_service())
+        self.assertNotEqual(r["state"], "READY")
+        self.assertEqual(r["state"], "BLOCKED_DATA")
+        self.assertIn("NOT_LOADED", r["unavailable_reason"])
+        self.assertEqual(self.rec(news_service(enabled=False))["state"], "DISABLED")
+
+    def test_loaded_calendar_carries_blackout_and_next_event(self):
+        n = news_service()
+        now = time.time()
+        n.report = {"as_of": iso(now), "status": "PARTIAL",
+                    "calendar": {"status": "PARTIAL", "risk": {"level": "HIGH", "events": [{"name": "NFP"}]},
+                                 "events": [{"event_id": "a", "name": "NFP", "impact": "HIGH", "scheduled_at": iso(now + 600)},
+                                            {"event_id": "b", "name": "Claims", "impact": "LOW", "scheduled_at": iso(now + 120)},
+                                            {"event_id": "c", "name": "CPI", "impact": "HIGH", "scheduled_at": iso(now - 1800)}]}}
+        r = self.rec(n)
+        self.assertEqual(r["state"], "READY")
+        self.assertEqual(r["result"]["blackout"], "TAK")
+        self.assertAlmostEqual(r["result"]["next_event_in_s"], 600, delta=30)          # the next HIGH event, not the LOW one
+        self.assertEqual(r["result"]["risk_level"], "HIGH")
+        n.report = dict(n.report, calendar={"status": "PARTIAL", "risk": {"level": "NONE_DETECTED_IN_PARTIAL_CALENDAR", "events": []}, "events": []})
+        r = self.rec(n)
+        self.assertEqual((r["state"], r["result"]["blackout"]), ("READY", "NIE"))
+        self.assertNotIn("next_event_in_s", r["result"])                              # none listed: absent (None), never 0
+        n.report = dict(n.report, as_of=iso(now - 7200))                               # older than 2 x poll: STALE calendar
+        self.assertEqual(self.rec(n)["state"], "BLOCKED_DATA")
+
+
 # ================================================================================================ D21 (quant/adapters.py:352 only)
 class TestScalpACalibrationD21(unittest.TestCase):
     """scalp A records were UNCALIBRATED for every run, although the trainer stores a calibrator per horizon and the worker applies it."""

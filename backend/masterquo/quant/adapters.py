@@ -16,7 +16,7 @@ import threading
 import time
 
 from ..modelhub import contract as C
-from ..timeutil import from_epoch, iso
+from ..timeutil import from_epoch, iso, parse_iso
 
 
 VERSION = "PMW-QUANT-ADAPT-1"
@@ -96,13 +96,49 @@ def rules(rt, inst: str) -> list[dict]:
     news = getattr(rt, "news", None)
     if news is not None:
         try:
-            s = news.summary() or {}
-            out.append(_p(canonical_id="rule:news", instrument=inst, timeframe=None, model_name="rule:news", task_type="STATE", task="NEWS_BLACKOUT",
-                          horizon_bars=None, unit="state", state="READY", result=clean({k: s.get(k) for k in ("status", "blackout", "next_event_in_s")}) or {"status": "?"},
-                          data_time=iso_ts(time.time()), source="news", extra={"analytic_role": "GATE_EXISTING"}))
+            out.append(news_record(news, inst))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("rule:news", inst, None, "STATE", "NEWS_BLACKOUT", "state", exc))
     return out
+
+
+NEWS_NOT_READY = ("DISABLED", "NOT_LOADED", "UNAVAILABLE", "STALE", "ERROR")
+
+
+def news_record(news, inst: str, now: float | None = None) -> dict:
+    """1.46 (D17): rule:news READY only with a loaded, current calendar; blackout / next event from what NewsService really returns.
+    The record was READY always (also with the calendar NOT_LOADED / UNAVAILABLE / DISABLED) and read 'blackout' / 'next_event_in_s',
+    which summary() never had - both always empty. Now: blackout = an active HIGH / EXTREME event window of macro() (M04N risk events),
+    next_event_in_s = seconds to the nearest upcoming HIGH / EXTREME event of the calendar (None when none is listed - the calendar is
+    partial, None is not 'no event'). Not a meta-model feature (only the DXY STATE record is); a decision changes only when the user put
+    rule:news into decision.required_models - then a missing calendar blocks new entries (stricter, never looser)."""
+    now = time.time() if now is None else now
+    s = news.summary() or {}
+    m = s.get("macro") if isinstance(s.get("macro"), dict) else (news.macro() or {})
+    base = {"canonical_id": "rule:news", "instrument": inst, "timeframe": None, "model_name": "rule:news", "task_type": "STATE",
+            "task": "NEWS_BLACKOUT", "horizon_bars": None, "unit": "state", "source": "news", "extra": {"analytic_role": "GATE_EXISTING"}}
+    st, mst = str(s.get("status") or "NOT_LOADED"), str(m.get("status") or "NOT_LOADED")
+    if s.get("enabled") is False or mst == "DISABLED":
+        return _p(**base, state="DISABLED", unavailable_reason="moduł wiadomości wyłączony (news.enabled = false)")
+    if st in NEWS_NOT_READY or mst in NEWS_NOT_READY:
+        why = s.get("error") or m.get("error")
+        return _p(**base, state="BLOCKED_DATA", unavailable_reason=f"kalendarz {mst} (raport {st})" + (f": {why}" if why else "")
+                  + " – brak wczytanego / aktualnego kalendarza ≠ brak wydarzeń")
+    nxt, imp = None, None
+    for e in s.get("calendar") or []:
+        if str(e.get("impact") or "").upper() not in ("HIGH", "EXTREME") or not e.get("scheduled_at"):
+            continue
+        try:
+            dt = parse_iso(str(e["scheduled_at"])).timestamp() - now
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if dt > 0 and (nxt is None or dt < nxt):
+            nxt, imp = dt, str(e.get("impact")).upper()
+    act = m.get("active_events") if isinstance(m.get("active_events"), list) else []
+    res = clean({"status": st, "calendar_status": m.get("calendar_status"), "macro_status": mst, "risk_level": m.get("risk_level"),
+                 "blackout": bool(act), "active_events": len(act), "next_event_in_s": None if nxt is None else round(nxt, 1),
+                 "next_event_impact": imp, "as_of": m.get("as_of") or s.get("as_of")}) or {"status": st}
+    return _p(**base, state="READY", result=res, data_time=iso_ts(now))
 
 
 # ---------------------------------------------------------------------------------------------------------------- indicators / DXY / zones / MC
