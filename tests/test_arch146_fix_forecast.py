@@ -268,5 +268,76 @@ class TestGoldForecastAdapterStates(unittest.TestCase):
         self.assertEqual([p["state"] for p in ps], ["READY", "READY"])
 
 
+# ===================================================================================================== review of D20 / D21 (round 2)
+class TestScalpGoldSmokeExpectsPerHorizonStates(unittest.TestCase):
+    """models check --smoke --area scalp_gold, step predict of forecast:gold_candles: the synthetic run is REJECTED by construction, so
+    after D21 the adapter publishes its rejected horizons as DISABLED (and a horizon over the market break as BLOCKED_DATA). The smoke
+    required 3x READY - a false FAIL of the whole area - and it would not notice the adapter going back to READY for a REJECTED horizon."""
+
+    def setUp(self):
+        self.td = _env.TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def run_gold(self, horizon_status: dict, sessions=("NOT_VERIFIED_BROKER_SESSIONS",) * 3, adapter=None) -> dict:
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from masterquo.modelhub.smoke import ok as smoke_ok
+        from masterquo.modelhub.smoke import scalp_gold as SG
+        mp = Path(self.td.dir) / "forecast_model.json"
+        mp.write_text("{}", encoding="utf-8")
+        import hashlib
+        gold = {"run_id": "R_SYN", "horizons_trained": ["1", "3", "6"], "overall_status": "REJECTED", "horizon_status": horizon_status,
+                "training_seconds": 1.0, "model_path": str(mp), "artifact_sha256": hashlib.sha256(mp.read_bytes()).hexdigest(),
+                "runtime_check": {"status": "OK", "checked": 5, "parity": {"max_abs_prob_diff": 0.0}}}
+        tr = {"py": "/x/python", "gold": gold, "gold_gate": (1, "[BLAD] ... NOT_REAL_USER_DATA"), "gold_activate": (0, "Aktywny model: R_SYN")}
+        probs = {str(m): _probs(m, s, **({"blocked_reason": "horyzont obejmuje przerwę rynku – prognoza niedopuszczalna"}
+                                          if s == "BLOCKED_SESSION_BREAK" else {})) for m, s in zip((5, 15, 30), sessions)}
+        state = {"status": "SHADOW", "execution_permission": False, "instrument": "XAUUSD",
+                 "report": {"symbol": "XAUUSD-", "forecast": {"feature_time_utc": "2026-11-20T20:45:00Z", "probabilities": probs}},
+                 "model": {"run_id": "R_SYN", "horizon_status": horizon_status}}
+        lv = {"state": state, "rt": _rt(state), "shadow_rows": [{"outcome_status": "PENDING"}] * 3}
+        ctx = SimpleNamespace(step="import", contract_step=lambda recs: smoke_ok(f"{len(recs)} rekordy"))
+        with mock.patch.object(SG, "_common", return_value=(None, tr)), mock.patch.object(SG, "_live", return_value=lv):
+            if adapter is None:
+                return SG._gold(ctx)
+            with mock.patch("masterquo.modelhub.adapters.forecast_predictions", adapter):
+                return SG._gold(ctx)
+
+    def test_rejected_synthetic_run_is_not_a_false_fail(self):
+        out = self.run_gold({"1": "REJECTED", "3": "REJECTED", "6": "SHADOW_UNVALIDATED"})
+        self.assertEqual(out["predict"]["status"], "OK", out["predict"])                  # was FAIL: [DISABLED, DISABLED, READY] != 3x READY
+        self.assertNotIn("ZNANY PROBLEM", out["predict"]["detail"])
+        self.assertIn("DISABLED", out["predict"]["detail"])
+        self.assertEqual(out["artifact"]["status"], "OK", out["artifact"])
+        self.assertNotIn("nie sprawdza jakości", out["artifact"]["detail"])                # stale since D20 (activate checks the verdict)
+
+    def test_session_break_horizon_is_expected_blocked_data(self):
+        out = self.run_gold({"1": "SHADOW_UNVALIDATED", "3": "SHADOW_UNVALIDATED", "6": "SHADOW_UNVALIDATED"},
+                            sessions=("NOT_VERIFIED_BROKER_SESSIONS", "NOT_VERIFIED_BROKER_SESSIONS", "BLOCKED_SESSION_BREAK"))
+        self.assertEqual(out["predict"]["status"], "OK", out["predict"])
+
+    def test_adapter_back_to_ready_for_a_rejected_horizon_is_a_fail(self):
+        from masterquo.modelhub import adapters as AD
+        real = AD.forecast_predictions
+
+        def all_ready(rt, inst):                                                          # the pre-D21 behaviour of the adapter
+            from masterquo.modelhub import contract as C
+            out = []
+            for p in real(rt, inst):
+                if p["state"] != "READY":
+                    p = C.make(instrument=inst, symbol=p.get("symbol"), timeframe="M5", model_name="gold_candles", model_version=p.get("model_version"),
+                               task_type="CLASS_PROBABILITIES", task=p["task"], horizon_bars=p["horizon"]["bars"], unit="probability", state="READY",
+                               result={"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5}, data_time=p.get("data_time"),
+                               calibration=p.get("calibration"), extra={"model_key": p.get("model_key")})
+                out.append(p)
+            return out
+        out = self.run_gold({"1": "REJECTED", "3": "REJECTED", "6": "SHADOW_UNVALIDATED"}, adapter=all_ready)
+        self.assertEqual(out["predict"]["status"], "FAIL", out["predict"])               # the old 3x READY check passed it
+
+
 if __name__ == "__main__":
     unittest.main()
