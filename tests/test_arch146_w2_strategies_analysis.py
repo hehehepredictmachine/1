@@ -118,5 +118,53 @@ class TestTrackerEnteredNotResurrected(_TrackerCase):
         self.assertEqual({r["setup_id"] for r in self.tr.active("XAUUSD-", "acc")}, sids)
 
 
+class TestTrackerReactivationTtl(_TrackerCase):
+    """I0750: reaktywacja setupu CANCELLED (CONDITIONS_NO_LONGER_MET / RESTART_REVALIDATION) liczyła nowe okno z expires_bars od teraz - bez
+    gałęzi CONFIRMED i bez starego expires_at: restart lub powrót warunków dawał pełny nowy TTL, także po upływie starego okna."""
+
+    def _created(self, stage=None):
+        from masterquo.timeutil import parse_iso
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = dict(cands[0], stage=stage) if stage else cands[0]
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        row = self.tr.get(c["setup_id"])
+        self.tr.cancel_all("XAUUSD-", "acc", "RESTART_REVALIDATION", iso_(now))
+        return sid, v, c, now, parse_iso(row["expires_at"])
+
+    def test_no_reactivation_after_the_old_window(self):
+        from datetime import timedelta
+        for stage, final in (("CONFIRMED", "MISSED_ENTRY"), ("EARLY", "EXPIRED")):
+            with self.subTest(stage=stage):
+                self.tr.db.execute("DELETE FROM strategy_setups")
+                sid, v, c, now, old_exp = self._created(stage)
+                ev = self.upd([c], v, old_exp + timedelta(seconds=1), sid)
+                self.assertFalse([k for k, _ in ev if k.startswith("NEW_")])
+                self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
+                r = self.tr.get(c["setup_id"])
+                self.assertEqual((r["status"], r["terminal_reason"]), (final, "TTL_ELAPSED_BEFORE_REACTIVATION"))
+
+    def test_reactivated_window_is_never_longer(self):
+        from datetime import timedelta
+
+        from masterquo.strategies.base import TF_SECONDS
+        from masterquo.timeutil import parse_iso
+        for stage, again in (("CONFIRMED", "CONFIRMED"), ("EARLY", "EARLY"), ("EARLY", "CONFIRMED")):
+            with self.subTest(stage=stage, again=again):
+                self.tr.db.execute("DELETE FROM strategy_setups")
+                sid, v, c, now, old_exp = self._created(stage)
+                t2 = now + timedelta(minutes=10)
+                ev = self.upd([dict(c, stage=again)], v, t2, sid)
+                self.assertIn("NEW_" + again, [k for k, _ in ev])
+                r = self.tr.get(c["setup_id"])
+                self.assertEqual(r["status"], "ACTIVE")
+                exp = parse_iso(r["expires_at"])
+                self.assertLessEqual(exp, old_exp)
+                if again == "CONFIRMED":
+                    self.assertLessEqual(exp, t2 + timedelta(seconds=TF_SECONDS[c["timeframe"]] * self.cfg.confirmed_window_bars))
+
+
 if __name__ == "__main__":
     unittest.main()

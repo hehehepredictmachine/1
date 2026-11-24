@@ -9,7 +9,8 @@
   for TOUCH rules), expiry (time/bars), MISSED_ENTRY after the confirmed window, data STALE (flag,
   no new setups while stale), strategy disabled.
 * a setup no longer reported by its strategy for `cancel_after_misses` new-data updates is CANCELLED
-  (kept in history - publications are never deleted).
+  (kept in history - publications are never deleted). A soft-cancelled setup (also RESTART_REVALIDATION) may come back as a new
+  version only inside the window it had: its expires_at never moves later; after that window it ends EXPIRED / MISSED_ENTRY.
 """
 from __future__ import annotations
 
@@ -112,9 +113,24 @@ class SetupTracker:
                     # a structure that only faded (soft cancel) may come back as a new version;
                     # invalidated/expired/entered structures are never republished
                     if old["status"] == "CANCELLED" and old.get("terminal_reason") in ("CONDITIONS_NO_LONGER_MET", "RESTART_REVALIDATION"):
+                        # 1.46 arch (I0750): the window of a reactivated setup never exceeds the one it had - a restart
+                        # (RESTART_REVALIDATION) or returning conditions gave a FULL new TTL from expires_bars (also for CONFIRMED,
+                        # created with confirmed_window_bars) and revived setups whose window had already elapsed
+                        old_exp = self._expiry(old)
+                        if old_exp is not None and old_exp <= now:
+                            st = "MISSED_ENTRY" if old["stage"] == "CONFIRMED" else "EXPIRED"
+                            old.update(status=st, terminal_reason="TTL_ELAPSED_BEFORE_REACTIVATION", terminal_at=now_s, updated_at=now_s)
+                            old["history"].append({"at": now_s, "event": st, "reason": "TTL_ELAPSED_BEFORE_REACTIVATION"})
+                            self._save(old)
+                            continue
+                        n_bars = max(1, c["expires_bars"])
+                        if c["stage"] == "CONFIRMED":
+                            n_bars = min(n_bars, cfg.confirmed_window_bars)
+                        exp = now + timedelta(seconds=TF_SECONDS[c["timeframe"]] * n_bars)
+                        if old_exp is not None:
+                            exp = min(exp, old_exp)
                         old.update(status="ACTIVE", terminal_reason=None, terminal_at=None, version=old["version"] + 1, updated_at=now_s,
-                                   stage=c["stage"], stage_changed_at=now_s, stale=0,
-                                   expires_at=iso(now + timedelta(seconds=TF_SECONDS[c["timeframe"]] * max(1, c["expires_bars"]))))
+                                   stage=c["stage"], stage_changed_at=now_s, stale=0, expires_at=iso(exp))
                         old["record"] = {**c, "pending_downgrade": 0, "misses": 0}
                         old["history"].append({"at": now_s, "event": "REACTIVATED", "stage": c["stage"], "score": c["setup_score"]})
                         self._save(old)
@@ -191,6 +207,13 @@ class SetupTracker:
                 st, why = k
                 events.append((st, self.terminate(r["setup_id"], st, why, now_s)))
         return events
+
+    @staticmethod
+    def _expiry(r: dict) -> datetime | None:
+        try:
+            return parse_iso(r["expires_at"]) if r.get("expires_at") else None
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _plan_moved(old: dict, new: dict) -> bool:
