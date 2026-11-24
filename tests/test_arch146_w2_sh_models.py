@@ -313,5 +313,144 @@ def _spec():
     from masterquo.sh.units import SymbolSpec
     return SymbolSpec("XAUUSD-", 0.01, 1.0, 100, 0.01, 0.01, 50, 2, "USD", point=0.01)
 
+
+def _plan_found(vid: str, cfg: dict | None = None):
+    """(engine, candidate, X, v, tf, quote, t, cfg2, det) for the first BUY setup of `vid` on the deterministic series of test_sh_pack."""
+    from masterquo.sh.pack.engine import PackEngine
+    from test_sh_pack import _Found, ctx
+    bars, found, cfg0 = _Found.get()
+    cfg = cfg or cfg0
+    t, tf, d = found[vid]
+    X = ctx(bars, t)
+    v = cfg["variants"][vid]
+    last = X.tf(tf, False)
+    c = last.c[last.n - 1]
+    q = {"bid": c, "ask": c + 0.2, "spread": 0.2, "age_s": 0.3}
+    cfg2 = dict(cfg, common=dict(cfg["common"], warmup={"ema_mult": 1}))
+    e = PackEngine()
+    su = e._plan(X, v, tf, "BUY", d, INST, _spec(), {"slippage_usd": 0.05}, q, t, cfg["instruments"][INST], cfg2, 100.0, "USD")
+    return e, su, X, v, tf, q, t, cfg2, d
+
+
+def _m5(closes, t0, base=3000.0):
+    from test_sh_pack import m5bars
+    return m5bars(closes, t0, base)
+
+
+class TestI0743LiveHedgeParamsFromConfig(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def _cfg(self, adverse: float):
+        from masterquo.sh.pack import catalog as CAT
+        return CAT.load({"variants": {"PMW_HG01": {"hedge": {"adverse_min_r": adverse, "confirm_closes": 3}}}})
+
+    def test_plan_freezes_the_variant_activation_params_tightening_only(self):
+        _e, su, *_ = _plan_found("PMW_HG01", self._cfg(1.0))
+        h = su["pack"]["hedge"]
+        self.assertEqual(h["adverse_min_r"], 1.0)                              # stricter than the built-in 0.5 -> the configured value
+        self.assertEqual(h["confirm_closes"], 3)
+        _e, su, *_ = _plan_found("PMW_HG01", self._cfg(0.3))
+        self.assertEqual(su["pack"]["hedge"]["adverse_min_r"], 0.5)            # looser -> never an earlier hedge than 1.46 live (S0)
+
+    def test_live_policy_reads_the_frozen_threshold(self):
+        from masterquo.sh.pack import catalog as CAT
+        from masterquo.sh.pack import policies as POL
+        from test_sh_pack import T0
+        _e, su, *_ = _plan_found("PMW_HG01", self._cfg(1.0))
+        plan = {"pack": {"hedge": su["pack"]["hedge"], "params": su["pack"].get("params"), "economics": {"c_round_trip": 0.2}}}
+        bars = _m5([3000.0] * 30 + [2996.0, 2995.5, 2995.0], T0)
+        prim = {"side": "BUY", "entry": 3000.0, "sl": 2990.0, "remaining": 1.0, "volume": 1.0, "opened_at": T0 + 300 * 30}
+        dec = POL.decision("PMW_HG01", plan=plan, st={}, pstate={}, m5_bars=bars, h1_bars=[], quote={"bid": 2993.0, "ask": 2993.2},
+                           now=T0 + 300 * 33, primary=prim, hedged=False, hedge_opened_at=None, activations=0, tick=0.01, common=CAT.load()["common"])
+        self.assertEqual(dec["decision"], "HOLD")                              # MAE 0.7r < frozen 1.0r (1.46 live: HEDGE at 0.5r)
+        plan["pack"]["hedge"] = {k: v for k, v in plan["pack"]["hedge"].items() if k not in ("adverse_min_r", "confirm_closes")}
+        dec = POL.decision("PMW_HG01", plan=plan, st={}, pstate={}, m5_bars=bars, h1_bars=[], quote={"bid": 2993.0, "ask": 2993.2},
+                           now=T0 + 300 * 33, primary=prim, hedged=False, hedge_opened_at=None, activations=0, tick=0.01, common=CAT.load()["common"])
+        self.assertEqual(dec["decision"], "HEDGE")                             # plans frozen before the fix keep the 1.46 behaviour
+
+    def test_strict_values(self):
+        from masterquo.sh.pack import policies as POL
+        f = POL.frozen_activation({"adverse_min_r": 0.2, "confirm_closes": 1, "body_atr": 1.2, "sigma_ratio_on": 2.0, "move_atr": 0.1,
+                                   "ratio_min": 0.4, "ratio_max": 0.3, "mfe_min_r": 2.0, "giveback_r": 0.25, "sigma_ratio_off": 1.0, "off_bars": 9})
+        self.assertEqual(f, {"adverse_min_r": 0.5, "confirm_closes": 2, "body_atr": 1.2, "sigma_ratio_on": 2.0, "move_atr": 0.5,
+                             "ratio_min": 0.25, "ratio_max": 0.3, "mfe_min_r": 2.0, "giveback_r": 0.5})   # unwind params are not frozen
+        self.assertEqual(POL.frozen_activation({}), {})
+
+
+class TestI0819PackLastCleared(unittest.TestCase):
+    def test_removed_tf_and_disabled_variant_are_dropped(self):
+        from masterquo.sh.pack import catalog as CAT
+        from masterquo.sh.pack.engine import PackEngine
+        td = TempData()
+        self.addCleanup(td.close)
+        now = 1_762_200_000.0
+        e = PackEngine()
+        e.last[("PMW_HG01", "M15")] = {"status": "READY", "pack": {}}
+        e.last[("PMW_SC02", "M1")] = {"status": "READY", "pack": {}}
+        e.active[("PMW_HG01", "M15", "BUY")] = {"status": "READY", "valid_until": now + 600, "pack": {"signal_tf": "M15"}}
+        e.active[("PMW_SC02", "M1", "BUY")] = {"status": "READY", "valid_until": now + 600, "pack": {"signal_tf": "M1"}}
+        cfg = CAT.load({"variants": {"PMW_HG01": {"signal_tfs": ["M5"]}, "PMW_SC02": {"enabled": False}}})
+        e.evaluate(bars={}, quote=None, spec=_spec(), inst=INST, ic={}, now=now, cfg=cfg)
+        self.assertNotIn(("PMW_HG01", "M15"), e.last)                          # TF removed from the configuration
+        self.assertIn(("PMW_HG01", "M5"), e.last)
+        self.assertNotIn(("PMW_HG01", "M15", "BUY"), e.active)
+        self.assertNotIn(("PMW_SC02", "M1", "BUY"), e.active)                  # disabled: its READY never comes back after re-enabling
+        self.assertEqual(e.last[("PMW_SC02", "M1")]["pack"]["reason_code"], "DISABLED")
+        self.assertNotIn(("PMW_HG01", "M15"), {(x["strategy_id"], x["signal_tf"]) for x in e.public()["items"]})
+
+
+class TestI0820HedgeBufferUnavailable(unittest.TestCase):
+    def test_hg_without_m5_buffer_is_no_trade(self):
+        from masterquo.sh.pack import features as F
+        td = TempData()
+        self.addCleanup(td.close)
+        with mock.patch.object(F.TF, "b", lambda self, i, tick, cm: None):
+            _e, su, *_ = _plan_found("PMW_HG01")
+        self.assertEqual(su["status"], "NO_TRADE", su.get("status_reason"))
+        self.assertEqual(su["pack"]["reason_code"], "HEDGE_BUFFER_UNAVAILABLE")
+
+
+class TestI0821ReadyInvalidatedOnConfigChange(unittest.TestCase):
+    def test_ready_of_an_older_config_is_invalidated(self):
+        from masterquo.sh.pack import catalog as CAT
+        from test_sh_pack import _Found
+        td = TempData()
+        self.addCleanup(td.close)
+        _bars, found, _cfg = _Found.get()
+        for vid in sorted(found):
+            e, su, X, v, tf, q, t, cfg2, _d = _plan_found(vid)
+            if su["status"] != "READY":
+                continue
+            ready = dict(su, config_hash="OLD", pack=dict(su["pack"], config_hash="OLD"))
+            e.active[(vid, tf, "BUY")] = ready
+            cfg = CAT.load()
+            out = e._one(X, v, tf, INST, _spec(), {"slippage_usd": 0.05}, q, t, cfg["instruments"][INST], cfg2, 100.0, "USD")
+            self.assertEqual(out["status"], "INVALIDATED", (vid, out.get("status_reason")))
+            self.assertEqual(out["pack"]["reason_code"], "CONFIG_CHANGED")
+            self.assertNotIn((vid, tf, "BUY"), e.active)
+            e.active[(vid, tf, "BUY")] = su                                        # same config: the frozen READY is kept (unchanged)
+            out = e._one(X, v, tf, INST, _spec(), {"slippage_usd": 0.05}, q, t, cfg["instruments"][INST], cfg2, 100.0, "USD")
+            self.assertEqual(out["status"], "READY")
+            return
+        self.fail("brak kandydata READY w danych testowych")
+
+
+class TestI0822HG01EmaWarmup(unittest.TestCase):
+    def test_sell_base_without_ema20_never_activates(self):
+        from masterquo.sh.pack import catalog as CAT
+        from masterquo.sh.pack import policies as POL
+        from test_sh_pack import T0
+        cfg = CAT.load()
+        v = cfg["variants"]["PMW_HG01"]
+        plan = {"pack": {"hedge": v["hedge"], "params": v["params"], "economics": {"c_round_trip": 0.2}}}
+        bars = _m5([3000.0] * 19, T0)                                           # < 20 closed M5: EMA20 is None everywhere
+        prim = {"side": "SELL", "entry": 3000.0, "sl": 3010.0, "remaining": 1.0, "volume": 1.0, "opened_at": T0 + 300 * 15}
+        dec = POL.decision("PMW_HG01", plan=plan, st={}, pstate={}, m5_bars=bars, h1_bars=[], quote={"bid": 3005.8, "ask": 3006.0},
+                           now=T0 + 300 * 19, primary=prim, hedged=False, hedge_opened_at=None, activations=0, tick=0.01, common=cfg["common"])
+        self.assertEqual(dec["decision"], "HOLD", dec)                         # 1.46: HEDGE (None -> 0, mirrored closes always 'below')
+
+
 if __name__ == "__main__":
     unittest.main()
