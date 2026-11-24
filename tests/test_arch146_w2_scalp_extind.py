@@ -156,6 +156,30 @@ class TestTrainServeParity(unittest.TestCase):
         self.assertIsNone(json.loads(reg_p.read_text(encoding="utf-8"))["active"])
 
 
+class TestSchemaTexts(unittest.TestCase):
+    """I0164 (review): after the bump to V2 the API status and the extind smoke still named V1 and a train/live ATR skew this fix removed."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_api_status_names_the_current_schema(self):
+        from masterquo.extind import features as F
+        from test_audit_146_b_mq_api import call, make_app, make_rt
+        rt = make_rt()
+        rt.extind.status.return_value = {}
+        st_, body, _ = call(make_app(rt), rt, "GET", "/api/v1/indicator-context")
+        self.assertEqual(st_, 200, body[:200])
+        self.assertEqual(json.loads(body)["model"]["schema"], F.FEATURE_SCHEMA)
+
+    def test_smoke_text_has_no_stale_schema_or_skew(self):
+        txt = (ROOT / "backend" / "masterquo" / "modelhub" / "smoke" / "extind.py").read_text(encoding="utf-8")
+        self.assertFalse("ZNANY PROBLEM" in txt, "smoke extind: stale 'ZNANY PROBLEM' (ATR skew removed by V2)")
+        self.assertFalse("model (SCALP_INDICATOR_CONTEXT_V1)" in txt, "smoke extind: docstring names V1")
+
+
 class TestSarWindowLive(unittest.TestCase):
     """I0165 (+ I0077): live SAR gets SAR_WINDOW closed bars as in training, even when an M5 closed after the decision."""
 
