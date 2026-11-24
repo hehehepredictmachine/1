@@ -104,7 +104,11 @@ class TestTrainingRun(_Base):
         self.assertNotIn((cfg.get("execution") or {}).get("mode"), ("AUTO_DEMO", "AUTO_LIVE"))          # execution mode never touched
         rep = json.loads((self.data / "training" / "runs" / st["run_id"] / "report.json").read_text(encoding="utf-8"))
         line = rep["summary"]["line"]
-        self.assertRegex(line, r"XAUUSD: \d+/19 zadań ukończonych; BTC: \d+/19")                  # 1.25: + monte_carlo
+        # 1.46 arch: the denominator is the runner's task list (20 since 1.42.11 - sh_pack; the hard-coded 19 was never updated because
+        # this test runs only with MQ_CANDLES_PYTHON); BTC completes fewer on purpose (bot, sh_pack, sh_models, monte_carlo are XAUUSD-only)
+        from masterquo.training import runner as RN
+        n = len(RN.TASKS)
+        self.assertRegex(line, rf"XAUUSD: \d+/{n} zadań ukończonych; BTC: \d+/{n}")
         self.assertTrue((self.data / "training" / "runs" / st["run_id"] / "report.html").exists())
         # rollback of a lab family uses the per-family pointer
         r = self.cli("training", "rollback", "--instrument", "BTC", "--family", "lab:LOGREG")
