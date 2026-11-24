@@ -11,6 +11,9 @@ Rules (in this order; anything unresolved becomes WAIT with the reason, never a 
 ranker the order is the documented deterministic priority: family priority, then the variant cluster priority (catalog.CLUSTER_PRIORITY),
 then the higher net RR after costs, then the variant id as the final tie-breaker. At most ONE new entry per cycle on the exposure; READY
 peers of the same logic group are not independent votes. Opposite directions in one cycle -> all WAIT (never an unmanaged hedge).
+w2: foreign_positions "UNAVAILABLE" (MT5 gave no position list) -> WAIT, one owner unverifiable (I0747); a candidate may carry rank_rr -
+the RR of the order key when its net_rr changed meaning (baskets: net_rr is the true net RR since w2, the order keeps the former value,
+I0862).
 """
 from __future__ import annotations
 
@@ -23,6 +26,10 @@ def arbitrate(ready: list[dict], *, open_plans: list[dict], foreign_positions: i
     cands = []
     for s in ready:
         sid, strat, side = s["signal_id"], s["strategy"], s.get("side")
+        if foreign_positions == "UNAVAILABLE":
+            out.append({"signal_id": sid, "strategy": strat, "decision": "WAIT",
+                        "reason": f"brak danych o pozycjach na {symbol} z MT5 – reguła jednego właściciela niesprawdzalna"})
+            continue
         if foreign_positions:
             out.append({"signal_id": sid, "strategy": strat, "decision": "WAIT",
                         "reason": f"{foreign_positions} pozycji innego menedżera na {symbol} – jeden właściciel pozycji"})

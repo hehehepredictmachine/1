@@ -37,6 +37,10 @@ RECON_WAIT_MIN_TICKS = 3       # settled as before with verified=False (the loss
 RECON_WAIT_GAP_SECONDS = 30.0  # observations further apart are not consecutive (the wait starts again)
 CAP_RETRY_SECONDS = 5.0        # pack ratio-cap reduction of the hedge after a rejection: spacing and attempt limit
 CAP_RETRY_MAX = 5
+FOREIGN_UNAVAILABLE = "UNAVAILABLE"   # w2 (I0747): MT5 gave no position list - one owner unverifiable (WAIT / FAIL, never 0)
+ADOPT_EVERY_SECONDS = 15.0     # w2 (I0745): unknown entry outcomes looked up in the terminal between reconnects
+ADOPT_MAX_FAILS = 5            # w2 (I0745): failed adoptions (exception) of one plan before it waits for the reconnect
+WATCH_EVERY_SECONDS = 60.0     # w2 (I0111 / I0748): read-only status of unknown actions / plans of another symbol
 
 
 def day_start(now: float) -> float:
@@ -285,6 +289,8 @@ class SHService:
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
+        if foreign is None:
+            foreign = FOREIGN_UNAVAILABLE                                 # w2 (I0747): no data = one owner unverifiable, never 0
         coord = {(d.get("signal_id") or d["strategy"]): d for d in arbitrate(ready, open_plans=[{"strategy": p["strategy"], "symbol": p["symbol"],
                                                                                                   "side": p["side"], "state": p["state"]} for p in opens],
                                                                            foreign_positions=foreign, cfg=shc, symbol=spec.symbol)}
@@ -296,7 +302,7 @@ class SHService:
             if cd:
                 su["coordination"] = cd
                 if cd["decision"] == "PROCEED":
-                    rstate = self.risk_state(spec.symbol, fam, now, foreign)
+                    rstate = self.risk_state(spec.symbol, fam, now, foreign, mode=mode)
                     if mode == "AUTO_LIVE":
                         rstate["live_validation"] = self.pack_live_validation(su) if is_pack else self.live_validation(inst, fam)
                     prof = self.vprofile(su, C.profile(shc, inst, fam)) if is_pack else C.profile(shc, inst, fam)
@@ -574,7 +580,7 @@ class SHService:
             self.store.save_signal(su, risk=risk, coordination=coord, now=now)
             self.last_saved[k] = sig
 
-    def risk_state(self, symbol: str, strat: str, now: float, foreign: int) -> dict:
+    def risk_state(self, symbol: str, strat: str, now: float, foreign, mode: str | None = None) -> dict:
         opens = self.store.open_plans(symbol)
         plans = []
         for p in opens:
@@ -586,17 +592,44 @@ class SHService:
                 plans.append({"plan_id": p["plan_id"], "strategy": p["strategy"], "symbol": symbol, "side": p["side"], "state": p["state"],
                               "volume": o.remaining if o else (p["plan"].get("risk") or {}).get("volume", 0.0), "hedge_volume": 0.0})
         r = C.load()["risk"]
-        recent = [s for s in self.store.recent_signals(since=now - 60 * r["duplicate_window_minutes"])
-                  if s["status"] == "READY" and self.store.db.one("SELECT 1 FROM sh_plans WHERE signal_id=?", (s["signal_id"],))]
-        return {"open_plans": plans, "daily_realized_money": self.store.realized_since(day_start(now)),
+        # w2 (I0825): every signal of the window that produced a plan counts, in ANY status - expire_signals turns READY into EXPIRED after
+        # the TTL (10 / 20 min), which cut the configured 30-minute window short
+        recent = self.store.recent_signals_with_plan(since=now - 60 * r["duplicate_window_minutes"])
+        daily, detail = self.daily_realized(now, mode)
+        return {"open_plans": plans, "daily_realized_money": daily, "daily_realized_detail": detail,
                 "last_close_at": self.store.last_close_at(symbol), "recent_signals": recent, "foreign_positions": foreign,
                 "netting_reduce_validation": self.netting_reduce_validation(self.instrument()) if strat == "HEDGING" else None}
 
-    def foreign_positions(self, symbol: str, magic: int) -> int:
+    def daily_realized(self, now: float, mode: str | None) -> tuple[float, dict]:
+        """w2 (I0746): the SH daily loss measure = min(m1, m2). m1 exactly as before (all modes and accounts since UTC midnight); m2 = this
+        execution mode (and this account outside PAPER) since the start of the broker-server day (bridge.server_day_start_utc). The limit can
+        only trigger earlier, never later than before; no broker day (offset unknown) / an error -> m1 alone (with the reason)."""
+        m1 = self.store.realized_since(day_start(now))
+        detail: dict = {"utc_day_all_modes": round(m1, 2)}
+        if not mode:
+            return m1, detail
         try:
-            ps = self.terminal()(lambda m: m.positions_get(symbol=symbol)) or ()
+            fn = getattr(self.bridge, "server_day_start_utc", None)
+            ds = fn() if fn is not None else None
+            if ds is None:
+                detail["broker_day"] = "UNAVAILABLE (offset zegara serwera nieznany)"
+                return m1, detail
+            since = ds.timestamp() if hasattr(ds, "timestamp") else float(ds)
+            m2 = self.store.realized_since(since, exec_mode=mode, account_key=None if mode == "PAPER" else self.bridge.account_key)
+            detail.update(broker_day_mode=round(m2, 2), broker_day_start_utc=since, mode=mode)
+            return min(m1, m2), detail
+        except Exception as exc:  # noqa: BLE001 - m1 is never skipped
+            detail["broker_day"] = f"ERROR {type(exc).__name__}"
+            return m1, detail
+
+    def foreign_positions(self, symbol: str, magic: int) -> int | None:
+        """Positions on the symbol owned by another manager. w2 (I0747): None when MT5 gave no list (an error / None without success, as
+        SHExecutor.terminal_positions reads it) - the cycle then waits (one owner unverifiable); before, an error counted as 0."""
+        from .executor import _listed, _rows
+        try:
+            ps = _rows(self.terminal()(lambda m: _listed(m, m.positions_get(symbol=symbol), getattr(m, "positions_total", None))))
         except Exception:  # noqa: BLE001
-            return 0
+            return None
         return sum(1 for p in ps if int(p.magic) != int(magic))
 
     # ------------------------------------------------------------------ plan opening
