@@ -19,7 +19,7 @@ from . import features as FE
 from . import fourier, market, scenarios, sessions, ticks as TK
 from .common import closed, iso, ts
 from .edge import RepaintInspector
-from .protocol import LabTrainer, load_artifact
+from .protocol import SEQ_FAMILIES, SEQ_WINDOW_POLICY, LabTrainer, load_artifact
 from .zones import ZoneStore, detect as detect_zones
 
 log = logging.getLogger("masterquo.lab")
@@ -257,7 +257,11 @@ class LabService:
         if fm["warmup"][i] or i < man["seq_len"]:
             return {"status": "warming_up", "model_id": man["model_id"], "nn_status": "WARMING_UP"}
         X = fm["X"][i:i + 1]
-        Xs = FE.sequences(fm["X"], np.array([i]), man["seq_len"])
+        Xs = FE.sequences(fm["X"], np.array([i]), man["seq_len"])      # inputs unchanged for every artefact (zeros for NaN as trained)
+        # 1.46: an artefact trained under NO_WARMUP_IN_WINDOW_V1 never saw a zero-filled window - such a window is flagged (never refused:
+        # the score keeps flowing exactly as before, no change of what Quant receives)
+        seq_warm = (man.get("seq_window_policy") == SEQ_WINDOW_POLICY and fitted.family in SEQ_FAMILIES
+                    and not bool(FE.window_clean(fm["warmup"], np.array([i]), man["seq_len"])[0]))
         regime = (X[:, FE.FEATURES.index("vol_pct")] > 0.5).astype(float)
         p = float(fitted.predict(X, Xs, regime)[0])
         lat = (time.perf_counter() - t0) * 1000
@@ -282,7 +286,8 @@ class LabService:
                "warnings": (["MODEL_TECHNICZNY_NA_DANYCH_SYNTETYCZNYCH – nie do decyzji"] if man.get("role") == "fixture_only" else []) +
                            ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]) +
                            # 1.46: library versions differ from training (manifest / unpickling) - shown, never a refusal
-                           (["ZALEZNOSCI_INNE_NIZ_PRZY_TRENINGU: " + "; ".join(man["dependency_drift"])[:300]] if man.get("dependency_drift") else []),
+                           (["ZALEZNOSCI_INNE_NIZ_PRZY_TRENINGU: " + "; ".join(man["dependency_drift"])[:300]] if man.get("dependency_drift") else []) +
+                           (["OKNO_SEKWENCJI_Z_ROZGRZEWKA: braki w oknie zastąpione zerami – poza rozkładem treningu"] if seq_warm else []),
                "expires_at": iso(ts(as_of) + TF_SEC["M5"])}
         return {"status": "ready", "model_id": man["model_id"], "family": fitted.family, "role": man.get("role"), "horizon": man["horizon"],
                 "side": side, "raw_score": round(p, 4), "probability": None, "calibration_ece": (man.get("metrics") or {}).get("ece_mean"),

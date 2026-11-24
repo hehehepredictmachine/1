@@ -32,6 +32,11 @@ VERSION = "MQ-LAB-VAL-1.0.0"
 FAMILIES = ("DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", "SEW_SNN")
 EXPERIMENTS = ("LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED")
 SEEDS = (11, 23, 37)
+# 1.46: sample policy of the sequence windows. NO_WARMUP_IN_WINDOW_V1 = a sample is used only when its whole seq_len window is outside
+# the warm-up (the networks no longer learn on zero-filled tv_pct / vol_pct). It is part of the frozen protocol (protocol_id changes);
+# a protocol without the key (older jobs / artefacts) keeps exactly its previous samples. Inference inputs are unchanged for every artefact.
+SEQ_WINDOW_POLICY = "NO_WARMUP_IN_WINDOW_V1"
+SEQ_FAMILIES = ("MINIROCKET", "RESNET1D", "SEW_SNN")
 
 
 def now() -> str:
@@ -40,7 +45,7 @@ def now() -> str:
 
 def default_protocol(asset: str, *, tf: str = "M5", horizon: int = 12, side: str = "LONG", k_tp: float = 1.5, k_sl: float = 1.0,
                      holdout_frac: float = 0.2, folds: int = 4, seq_len: int = 32, families=FAMILIES, experiments=EXPERIMENTS,
-                     budget: int = 3, min_events: int = 600, p_trade: float = 0.55) -> dict:
+                     budget: int = 3, min_events: int = 600, p_trade: float = 0.55, seq_window: str | None = SEQ_WINDOW_POLICY) -> dict:
     p = {"version": VERSION, "asset": asset, "tf": tf, "horizon_bars": horizon, "side": side, "k_tp_atr": k_tp, "k_sl_atr": k_sl,
          "feature_set": FE.FEATURE_SET, "labels": FE.LABELS, "holdout_frac": holdout_frac, "folds": folds, "embargo_bars": horizon,
          "seq_len": seq_len, "families": list(families), "experiments": list(experiments), "tuning_budget_per_family": budget,
@@ -48,6 +53,8 @@ def default_protocol(asset: str, *, tf: str = "M5", horizon: int = 12, side: str
          "promotion": {"min_fold_share_beating_dummy": 0.75, "min_logloss_gain_vs_dummy": 0.002, "max_ece": 0.10,
                        "min_trades_dev": max(60, min_events // 10), "expectancy_ci_lower_gt": 0.0, "cost_stress_r": 0.10,
                        "note": "progi ustalone przed badaniem; minimalna liczba transakcji wynika z liczby zdarzeń, nie jest uniwersalna"}}
+    if seq_window:
+        p["seq_window"] = seq_window
     p["protocol_id"] = "VP-" + hashlib.sha256(json.dumps(p, sort_keys=True).encode()).hexdigest()[:12]
     return p
 
@@ -427,6 +434,8 @@ class Study:
         fm = FE.feature_matrix(self.bars, p["tf"])
         lb = FE.triple_barrier(self.bars, p["tf"], side=p["side"], horizon=p["horizon_bars"], k_tp=p["k_tp_atr"], k_sl=p["k_sl_atr"], point=self.point)
         ok = (~fm["warmup"]) & (lb["y"] >= 0) & (np.arange(len(self.bars)) >= p["seq_len"])
+        if p.get("seq_window") == SEQ_WINDOW_POLICY:
+            ok &= FE.window_clean(fm["warmup"], np.arange(len(self.bars)), p["seq_len"])
         idx = np.where(ok)[0]
         return {"fm": fm, "lb": lb, "idx": idx}
 
@@ -673,6 +682,7 @@ class LabTrainer:
                     man = {"model_id": mid, "model_version": VERSION, "asset": protocol["asset"], "instrument_id": instrument_id, "data_source": source,
                            "horizon": f"{protocol['tf']}x{protocol['horizon_bars']}", "family": fam, "feature_set": FE.FEATURE_SET, "features": FE.FEATURES,
                            "seq_channels": FE.SEQ_CHANNELS, "seq_len": protocol["seq_len"], "label_spec": res.get("label_spec"),
+                           "seq_window_policy": protocol.get("seq_window") or "ZERO_FILLED_LEGACY",
                            "side": protocol.get("side", "LONG"), "direction_scope": f"{protocol.get('side', 'LONG')}_ONLY",
                            "fit_scope": "DEVELOPMENT_ONLY (przed holdoutem; bez refitu na train+holdout)",
                            "holdout_evaluated": fam in evaluated, "holdout": res.get("holdout") if fam in evaluated else None,
