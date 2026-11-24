@@ -291,13 +291,18 @@ class StructureIntelligenceService:
         now_ms = int(time.time() * 1000)
         snap = eng.snapshot(now_ms)
         org = eng.origin_ms / 1000.0
-        for fc in eng.emit(snap, now_ms):
-            self.db.execute("INSERT OR IGNORE INTO quote_forecasts(forecast_id, context, side, scale, issued_at, target_at, payload) VALUES (?,?,?,?,?,?,?)",
-                            (fc["forecast_id"], fc["context"], fc["side"], fc["scale"], iso(datetime.fromtimestamp(org + fc["issued_s"], timezone.utc)),
-                             iso(datetime.fromtimestamp(org + fc["target_s"], timezone.utc)), json.dumps(fc, default=str)))
-        for m in eng.score(now_ms):
-            self.db.execute("INSERT OR IGNORE INTO quote_outcomes(forecast_id, status, scored_at, outcome, error, payload) VALUES (?,?,?,?,?,?)",
-                            (m["forecast_id"], m["status"], iso(utcnow()), m.get("outcome"), m.get("error"), json.dumps(m, default=str)))
+        rows_f = [(fc["forecast_id"], fc["context"], fc["side"], fc["scale"], iso(datetime.fromtimestamp(org + fc["issued_s"], timezone.utc)),
+                   iso(datetime.fromtimestamp(org + fc["target_s"], timezone.utc)), json.dumps(fc, default=str)) for fc in eng.emit(snap, now_ms)]
+        rows_o = [(m["forecast_id"], m["status"], iso(utcnow()), m.get("outcome"), m.get("error"), json.dumps(m, default=str))
+                  for m in eng.score(now_ms)]
+        if rows_f or rows_o:
+            # 1.46 arch D14: one write transaction per snapshot (was one BEGIN IMMEDIATE / COMMIT per row in the bot's main database),
+            # same rows; no retention here (deleting history is the owner's decision)
+            with self.db.tx() as con:
+                con.executemany("INSERT OR IGNORE INTO quote_forecasts(forecast_id, context, side, scale, issued_at, target_at, payload) "
+                                "VALUES (?,?,?,?,?,?,?)", rows_f)
+                con.executemany("INSERT OR IGNORE INTO quote_outcomes(forecast_id, status, scored_at, outcome, error, payload) VALUES (?,?,?,?,?,?)",
+                                rows_o)
         pub = {k: v for k, v in snap.items() if k != "_fits"}
         pub.update(instrument=inst, symbol=sym, source=r.get("source"), clock_transform=r.get("clock_transform"),
                    last_tick_at=iso(datetime.fromtimestamp(eng.last_tick_ms / 1000.0, timezone.utc)), computed_at=iso(utcnow()))
