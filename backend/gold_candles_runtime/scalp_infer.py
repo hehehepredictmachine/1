@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import sha256_file, relocated
+from .common import sha256_file, relocated, verdict_admissible
 
 
 def scalp_dir() -> Path:
@@ -46,6 +46,13 @@ def activatable(entry: dict, contract: str | None) -> tuple[bool, str | None]:
     if contract and entry.get("contract_hash") != contract:
         return False, "CONTRACT_MISMATCH"
     return True, None
+
+
+def admissible(entry: dict) -> tuple[bool, str | None]:
+    """D20 (1.46): validation verdict of task A (task_a_status) - a REJECTED run is refused by scalp_registry activate and skipped by
+    rollback. Like the forecast registry it is NOT part of activatable(): the worker (scalp_forecast / setup_quality) calls activatable()
+    on every request and an already active run must not disappear silently (scalp_registry list warns about it)."""
+    return verdict_admissible(entry.get("task_a_status"), entry)
 
 
 # ------------------------------------------------------------------ portable models

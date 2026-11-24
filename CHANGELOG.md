@@ -27,6 +27,17 @@ identyczny z Etapem 0), `backend/vendor/` bez zmian, kontrakty publiczne bez zmi
 * Koszyki: w `scores` sygnału koszyka FOREX (pola z Quant) identyfikator zdarzenia Quant ma nazwę `quant_event_id`. Pole `p_event`
   (ta sama wartość – tekst, nie prawdopodobieństwo) zostaje jako przestarzały alias na tę jedną wersję; zapisane wiersze ledgera
   koszyków bez zmian.
+* **D20/D21 – prognozy złota (gold_candles) i scalp**: ręczny `activate` i `rollback` odrzucają run z oceną walidacji REJECTED /
+  INSUFFICIENT_DATA / bez oceny (`registry_cli` – kod 1 z komunikatem na stderr, `scalp_registry` – kod 2); `list` pokazuje ocenę i znacznik
+  `[niezwalidowany – tylko ręcznie]` (SHADOW_UNVALIDATED – auto-aktywacja go nie wybiera), `validate` zapisuje w `revalidation.json` także
+  `admissible`. Adapter prognoz złota publikuje horyzont odrzucony w walidacji jako DISABLED, a horyzont obejmujący przerwę rynku jako
+  BLOCKED_DATA (wcześniej READY); horyzonty READY mają kalibrację CALIBRATED_DEV.
+  **Wymagany krok operacyjny – retrening MetaModelu Quant (D21):** cechy `fc:forecast:gold_candles:*` takich horyzontów są teraz maskowane,
+  a MetaModel wytrenowany wcześniej widział w nich wartości. Schemat cech celowo NIE jest podbijany (model INCOMPATIBLE wyłączyłby ASSIST
+  i wszystkie HOLD-y Quant) – aktywny model działa dalej, a `quant status` / `quant list` / `/api/v1/quant/status` (`metamodel.retrain_required`)
+  pokazują „wymaga retreningu/rewalidacji (D21)”. Retrening: `python -m masterquo quant train --instrument XAUUSD` (najlepiej po zebraniu
+  w ledgerze Quant wierszy zapisanych po tej zmianie), potem `quant list` i `quant activate --instrument XAUUSD --task <H> --version <V>`
+  dla wersji VALIDATED_SHADOW; ostrzeżenie znika dla modelu wytrenowanego po zmianie.
 * Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23.
 * **Quant – wersjonowana semantyka cech `PMW-QUANT-FEAT-3`** (D4, D8, D9): nowe wiersze ledgera i nowe MetaModele mają poprawione
   znaczenie cech (Kalman `*_CANDIDATE` = 0, DXY STALE = maska, kandydat SH koordynatora z reżimem migawki SH). Istniejące artefakty

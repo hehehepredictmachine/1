@@ -96,7 +96,8 @@ def main(argv=None) -> int:
         insts = [inst] if inst else ["XAUUSD", "BTC"]
         cnt = led.counts(inst)
         _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": cnt, "training_evidence": SV.training_evidence(cnt),
-            "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
+            "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts},
+            "retrain_required": {i: M.retrain_notices(i) for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0
     if a.cmd == "train":
@@ -104,7 +105,7 @@ def main(argv=None) -> int:
         _p(res)
         return 2 if all(r["status"] == "INSUFFICIENT_EVIDENCE" for r in res) else 0
     if a.cmd == "list":
-        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst)})
+        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst), "retrain_required": M.retrain_notices(inst)})
         return 0
     if a.cmd == "activate":
         if not (a.task and a.version):
