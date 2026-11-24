@@ -146,10 +146,11 @@ Pierwsze rozstrzygnięcie jest ostateczne: późniejsze fałszywe wybicie nie zm
 | pivot | 3/3 świece – znany dopiero po zamknięciu prawych świec |
 | odstęp dołków | 5–60 świec |
 | neckline | najwyższy high między dołkami |
-| głębokość | ≥ 0,05 % ceny; w trybie EXTENDED (wersja DB-1.1.0-EXT) dodatkowo ≥ 1 ATR |
+| głębokość | ≥ 0,05 % ceny; w trybie EXTENDED (wersja DB-1.1.1-EXT) dodatkowo ≥ 1 ATR |
 | podobieństwo dołków | różnica ≤ 0,25 × głębokość |
 | symetria | ≤ 3 |
 | wcześniejszy spadek | ≥ 0,5 × głębokość |
+| brak podcięcia | żaden dołek świecy między dołkami nie jest niżej niż niższy z dwóch dołków (odrzucenie `UNDERCUT_BETWEEN_BOTTOMS`; od 1.46: DB-1.0.1 / DB-1.1.1-EXT / DB-1.2.1-BUF, wcześniej reguła była tylko komentarzem) |
 | wybór pary | najnowszy drugi dołek → najgłębsza struktura → najwcześniejszy pierwszy dołek |
 
 - `pattern_id` = hash(symbol, TF, czasy dołków, wersja reguł).
