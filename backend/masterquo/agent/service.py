@@ -56,12 +56,12 @@ def load_prompt() -> tuple[str, str]:
     m = re.search(r"PROMPT_VERSION:\s*([A-Za-z0-9_.\-]+)", text)
     version = m.group(1) if m else "UNVERSIONED"
     body = re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
-    from ..analysis import structure_knowledge as sk
     from ..analytics import liquidity_context as lq
     from ..extind.knowledge import KNOWLEDGE_VERSION, prompt_section
     from ..lab.context_ind import knowledge as ck
     from ..lab.flow_context import knowledge as fk
     from ..mm import knowledge as mk
+    from . import structure_knowledge as sk
     return (body + "\n\n" + prompt_section() + "\n\n" + lq.prompt_section() + "\n\n" + sk.prompt_section() + "\n\n" + fk.prompt_section()
             + "\n\n" + ck.prompt_section() + "\n\n" + mk.prompt_section(),
             f"{version}+{KNOWLEDGE_VERSION}+{lq.KNOWLEDGE_VERSION}+{sk.KNOWLEDGE_VERSION}+{fk.KNOWLEDGE_VERSION}+{ck.KNOWLEDGE_VERSION}"
