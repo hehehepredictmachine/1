@@ -410,7 +410,7 @@ def _tabicl(ctx) -> dict:
                          calibration={"method": None, "status": r2.get("calibration_status")}, compute_ms=r2.get("latency_ms"),
                          data_kind="SYNTHETIC", source="TabICLService -> .venv_tabicl worker")
             errs = ctx.contract_errors(rec)
-            if conf.get("state") != "READY" or conf.get("p_event_raw") != p2 or conf.get("influence") != "RANKING_AND_PRESENTATION":
+            if conf.get("state") != "READY" or conf.get("p_event_raw") != p2 or conf.get("influence") != "PRESENTATION":
                 errs.append(f"assess.confidence {conf}")
             if abs((conf.get("confidence_score") or -1) - round(100.0 * p2, 1)) > 1e-9 or conf.get("calibration_status") != "UNCALIBRATED":
                 errs.append(f"confidence_score {conf.get('confidence_score')} ≠ 100×p / kalibracja {conf.get('calibration_status')}")
@@ -421,7 +421,7 @@ def _tabicl(ctx) -> dict:
             if (ce.get("confidence") or {}).get("p_event_raw") != p2 or a2.get("execution_allowed") is not False:
                 errs.append(f"coordinator_entry.confidence {(ce.get('confidence') or {}).get('state')}, execution_allowed {a2.get('execution_allowed')}")
             steps["contract"] = check(not errs, f"confidence READY u konsumentów (assess / confidence_for / coordinator_entry, wpływ "
-                                                f"RANKING_AND_PRESENTATION, execution_allowed False; inny SL -> brak wartości); widok PMW-PRED-2 "
+                                                f"PRESENTATION, execution_allowed False; inny SL -> brak wartości); widok PMW-PRED-2 "
                                                 f"wyniku READY (EVENT_PROBABILITY p={p2:.4f}, UNCALIBRATED) poprawny",
                                       "; ".join(errs)[:400])
             return steps

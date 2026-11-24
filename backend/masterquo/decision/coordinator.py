@@ -128,6 +128,12 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
             elif rdir == "FLAT" or (rdir is not None and side not in ("BUY", "SELL")):
                 influence, why = "BLOCK", "prognoza bocznie – nie potwierdza strony" if rdir == "FLAT" else "brak strony setupu"
                 reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
+            elif p.get("task_type") == "STATE" and isinstance(res, dict) and res.get("blackout") in (True, "TAK"):
+                # 1.46 arch (I0558): a REQUIRED state record in an active event window (rule:news: HIGH / EXTREME event of macro()) blocks
+                # a new entry - the record carried blackout since D17, but REQUIRED only checked READY / age (always PASS). Tightening only;
+                # clean() turns the bool into 'TAK' / 'NIE'
+                influence, why = "BLOCK", "aktywne okno wydarzenia (blackout)"
+                reasons.append(f"MODEL_REQUIRED_BLACKOUT:{mid}")
             else:
                 influence = "PASS"
         out.append(K.make("ModelForecast", model_id=mid, role=role, state=str(p.get("state")), task_type=str(p.get("task_type")),

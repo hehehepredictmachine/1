@@ -37,6 +37,7 @@ from .ledger import QuantLedger
 from .scheduler import Dag, Publisher, write_json_atomic
 
 VERSION = "PMW-QUANT-SERVICE-1"
+CONFIDENCE_INFLUENCE = "PRESENTATION"           # 1.46 arch (I0537): TabICL confidence is shown, never ranked / gated (was RANKING_AND_PRESENTATION)
 
 
 def iso_ts(t: float) -> str:
@@ -220,7 +221,11 @@ class QuantService:
         d.add("snapshot", lambda c, _: S.build(c["rt"].bridge, instrument=c["inst"], now=c["now"]), owner="quant.snapshot", deadline_s=5.0)
         d.add("base_predictions", lambda c, _: MA.all_predictions(c["rt"], c["inst"]), deps=("snapshot",), owner="modelhub.adapters", deadline_s=20.0)
         d.add("extended_predictions", self._extended, deps=("snapshot",), owner="quant.adapters", deadline_s=25.0)
-        d.add("contract_checks", self._checks, deps=("snapshot", "base_predictions", "extended_predictions"), owner="quant.checks", deadline_s=5.0)
+        # 1.46 arch (I0799, part): the prediction branches are SOFT dependencies - a failed / timed-out branch no longer throws away the
+        # records of the other one for the features / ledger / status. Such a generation stays complete=False and the coordinator reads no
+        # records from it (coordinator_predictions), exactly as when contract_checks was BLOCKED_DEPENDENCY: no REQUIRED block is lifted.
+        d.add("contract_checks", self._checks, deps=("snapshot",), soft_deps=("base_predictions", "extended_predictions"), owner="quant.checks",
+              deadline_s=5.0)
         return d
 
     def _extended(self, c, deps) -> list[dict]:
@@ -232,14 +237,22 @@ class QuantService:
             self._last_m1 = m1["t"]
             self._last_scalp = [p for p in out if p.get("canonical_id") == "scalp:A_direction"]
         else:
-            out += self._last_scalp                       # scalp A: one inference per closed M1 bar (cached between bars)
+            # scalp A: one inference per closed M1 bar (cached between bars). 1.46 arch (I0800): only records of THIS instrument - after a
+            # switch in the same minute the previous instrument's forecast went into the new generation; the new instrument gets its own
+            # at the next closed M1 bar (until then no record: REQUIRED stricter, never a forecast of another instrument)
+            out += [p for p in self._last_scalp if p.get("instrument") == c["inst"]]
         return out
 
     def _checks(self, c, deps) -> dict:
         snap = deps["snapshot"]
         floor = {tf: (bs[-1]["t"] if bs else None) for tf, bs in (snap.get("bars") or {}).items()}
-        return CK.screen(deps["base_predictions"] + deps["extended_predictions"], now=c["now"], snapshot_kind=snap.get("data_kind"),
-                         generation_floor=floor)
+        base, ext = list(deps.get("base_predictions") or []), list(deps.get("extended_predictions") or [])
+        out = CK.screen(base + ext, now=c["now"], snapshot_kind=snap.get("data_kind"), generation_floor=floor)
+        # 1.46 arch (I0366 / I0801): ids.dedup keeps the FIRST record of one identity - base (families SEQ_GRU_EVENT = event_gru.latest of
+        # the previous cycle) before extended (this cycle's Event GRU), so the fresh answer was dropped as an alias. The eligible list (what
+        # the coordinator reads) stays exactly the same; the fresher alias is published separately and used for the features only
+        out["fresh_for_features"] = _fresher_aliases(base, ext, now=c["now"], snapshot_kind=snap.get("data_kind"), floor=floor)
+        return out
 
     def cycle(self) -> dict:
         inst = self.instrument()
@@ -255,10 +268,16 @@ class QuantService:
         self.timings["_cycle"] = self.timings["_cycle"][-500:]
         snap = (r["tasks"].get("snapshot") or {}).get("value")
         chk = (r["tasks"].get("contract_checks") or {}).get("value") or {"eligible": [], "excluded": [], "aliases_dropped": []}
-        payload = {"version": VERSION, "generation": gen, "instrument": inst, "computed_at": now, "complete": r["complete"], "cycle_ms": r["cycle_ms"],
+        # 1.46 arch (I0796): an Event GRU failure that used to abort the whole extended branch now yields an ERROR record - the generation
+        # stays incomplete as it was then (the coordinator reads no records from it), the other records serve the features / ledger
+        ext = (r["tasks"].get("extended_predictions") or {}).get("value") or []
+        inc = sorted({str(p.get(A.INCOMPLETE_KEY)) for p in ext if isinstance(p, dict) and p.get(A.INCOMPLETE_KEY)})
+        complete = bool(r["complete"]) and not inc
+        payload = {"version": VERSION, "generation": gen, "instrument": inst, "computed_at": now, "complete": complete, "cycle_ms": r["cycle_ms"],
                    "tasks": {k: {x: v.get(x) for x in ("status", "reason", "ms", "owner")} for k, v in r["tasks"].items()},
                    "snapshot": S.summary(snap) if snap else None, "eligible": chk["eligible"], "excluded": chk["excluded"],
-                   "aliases_dropped": chk["aliases_dropped"], "mode": self.mode(), "execution_allowed": False}
+                   "aliases_dropped": chk["aliases_dropped"], "fresh_for_features": chk.get("fresh_for_features") or [],
+                   "incomplete_reasons": inc, "mode": self.mode(), "execution_allowed": False}
         self.pub.publish(payload)
         self.loop["cycles"] += 1
         self.loop["last_cycle_at"] = now
@@ -311,7 +330,7 @@ class QuantService:
         if not pub:
             return [], None
         out = []
-        for p in pub["eligible"]:
+        for p in _with_fresh(pub["eligible"], pub.get("fresh_for_features")):
             av = CK.ts(p.get("available_at")) or CK.ts(p.get("data_time"))
             if av is not None and av <= t + CK.CLOCK_TOLERANCE_S:            # only what was available at the decision
                 out.append(p)
@@ -375,11 +394,16 @@ class QuantService:
         # 1.41 TabICLv2: asynchronous, keyed by THIS plan_hash; the legacy meta-model path below is unchanged
         tb = self.tabicl.submit(cd, spec, feats, (pub or {}).get("generation"))
         a["tabicl"] = tb
+        # 1.46 arch (I0532): the estimator that really answers - tabicl_v2 only while TabICL is active; estimator = legacy_logistic -> that
+        # name, TabICL switched off by tabicl.enabled = false -> tabicl_v2_disabled (the label said tabicl_v2 in every case). Label only:
+        # the MetaModel path below is the same for every estimator setting (switching it off would lift a possible ASSIST HOLD).
+        # 1.46 arch (I0537): influence PRESENTATION - no consumer ranks by the confidence (baskets sort by setup_score; DecisionRecord keeps
+        # it outside the verdict and the hash), RANKING_AND_PRESENTATION overstated its role
         a["confidence"] = {"heuristic_score": cd.get("score"), "confidence_score": tb.get("confidence_score") if tb.get("state") == "READY" else None,
                            "p_event_raw": tb.get("p_event_raw") if tb.get("state") == "READY" else None, "event_id": spec.event_id,
-                           "task_hash": th, "plan_hash": a["plan_hash"], "estimator_kind": "tabicl_v2", "state": tb.get("state"),
+                           "task_hash": th, "plan_hash": a["plan_hash"], "estimator_kind": self._estimator_kind(), "state": tb.get("state"),
                            "reason": tb.get("reason"), "context_id": tb.get("context_id"), "calibration_status": "UNCALIBRATED",
-                           "computed_at": tb.get("computed_at"), "influence": "RANKING_AND_PRESENTATION" if tb.get("state") == "READY" else "NONE",
+                           "computed_at": tb.get("computed_at"), "influence": CONFIDENCE_INFLUENCE if tb.get("state") == "READY" else "NONE",
                            "note": "surowy wynik modelu (nie zmierzony win rate); bez stałych premii; brak wyniku ≠ 50 %"}
         ver, model, man = self._model(inst, th)
         if model is None:
@@ -466,6 +490,13 @@ class QuantService:
                 self.recent = ([a] + self.recent)[:200]
         return a
 
+    def _estimator_kind(self) -> str:
+        """I0532: the confidence estimator in effect (label of assess()['confidence'])."""
+        if self.tabicl.active():
+            return "tabicl_v2"
+        est = self.settings.get().get("estimator")
+        return "tabicl_v2_disabled" if est in (None, "tabicl_v2") else str(est)
+
     def _bridge_kind(self) -> str:
         """1.46: data kind of a row logged before the first published generation (bot start, failed snapshot) - from the bridge itself
         (an explicit synthetic flag only), else UNKNOWN. Such rows were always UNKNOWN and blocked the data_real gate of the task."""
@@ -490,6 +521,11 @@ class QuantService:
     def coordinator_predictions(self, inst: str) -> list[dict]:
         pub = self.pub.current() or {}
         if pub.get("instrument") != inst:
+            return []
+        if pub.get("complete") is False:
+            # 1.46 arch (I0796 / I0799): an incomplete generation published no eligible record before (contract_checks blocked by the
+            # failed branch); it now keeps the other branch for the features, but the coordinator reads what it read then - nothing
+            # (REQUIRED -> MISSING as before, never lifted by the fix)
             return []
         return [dict(p, model_id=p.get("family") or p.get("canonical_id")) for p in pub.get("eligible") or []]
 
@@ -516,7 +552,7 @@ class QuantService:
             cur = self.tabicl.lookup(conf["plan_hash"])          # the result may have arrived after the assessment - same plan only
             if cur and cur.get("state") == "READY":
                 conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
-                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": CONFIDENCE_INFLUENCE}
         base["confidence"] = conf
         if a.get("status") != "READY":
             return {**base, "state": "NOT_TRAINED" if a.get("status") == "NOT_TRAINED" else "BLOCKED_DATA", "result": None,
@@ -551,7 +587,7 @@ class QuantService:
             cur = self.tabicl.lookup(conf.get("plan_hash") or "")
             if cur and cur.get("state") == "READY":
                 conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
-                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": CONFIDENCE_INFLUENCE}
             elif cur:
                 conf = {**conf, "state": cur.get("state"), "reason": cur.get("reason")}
             return {k: conf.get(k) for k in ("estimator_kind", "state", "confidence_score", "p_event_raw", "event_id", "plan_hash", "task_hash",
@@ -672,7 +708,8 @@ class QuantService:
 
     def predictions(self) -> dict:
         pub = self.pub.current() or {}
-        return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "eligible", "excluded", "aliases_dropped")}
+        return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "complete", "eligible", "excluded", "aliases_dropped",
+                                        "fresh_for_features", "incomplete_reasons")}
 
 
 def training_evidence(counts: dict) -> dict:
@@ -692,6 +729,49 @@ def training_evidence(counts: dict) -> dict:
                               "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
             "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze sprzed 1.46 (FEAT-1) zostają w ledgerze, ale nie trenują. "
                     "Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt FEAT-1."}
+
+
+def _fresher(a: dict, b: dict) -> bool:
+    """a was computed later than b (computed_at, then data_time); an unknown time never wins."""
+    for k in ("computed_at", "data_time"):
+        ta, tb = CK.ts(a.get(k)), CK.ts(b.get(k))
+        if ta is not None and tb is not None and ta != tb:
+            return ta > tb
+    return False
+
+
+def _fresher_aliases(base: list[dict], ext: list[dict], *, now: float, snapshot_kind, floor) -> list[dict]:
+    """1.46 arch (I0366 / I0801): extended records that ids.dedup drops as an alias of an OLDER base record of the same identity (Event GRU:
+    the family SEQ_GRU_EVENT reads event_gru.latest of the previous cycle) - screened alone; the eligible ones replace the older alias in the
+    features (_with_fresh), never in the coordinator list."""
+    from . import ids as I
+    first: dict = {}
+    for p in base:
+        first.setdefault(I.identity({**p, "canonical_id": I.canonical(p)}), p)
+    out = []
+    for q in ext:
+        q = {**q, "canonical_id": I.canonical(q)}
+        p = first.get(I.identity(q))
+        if p is None or not _fresher(q, p):
+            continue
+        r = CK.check(q, now=now, snapshot_kind=snapshot_kind, generation_floor=floor)
+        if r["eligible"]:
+            out.append({**q, "eligibility": {"eligible": True, "reason": None, "replaces_alias_of": p.get("family") or p.get("model_key")},
+                        "age_s": None if r["age_s"] is None else round(r["age_s"], 2)})
+    return out
+
+
+def _with_fresh(eligible: list[dict], fresh: list[dict] | None) -> list[dict]:
+    """The eligible list with the fresher alias (fresh_for_features) in place of the older record of the same identity (features only)."""
+    if not fresh:
+        return list(eligible or [])
+    from . import ids as I
+    fr = {I.identity(q): q for q in fresh}
+    out = []
+    for p in eligible or []:
+        q = fr.pop(I.identity(p), None)
+        out.append(q if q is not None else p)
+    return out + list(fr.values())                  # the older alias was excluded (e.g. STALE): the fresh one is a feature input
 
 
 def percentiles(tim: dict) -> dict:
