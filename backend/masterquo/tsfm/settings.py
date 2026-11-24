@@ -143,6 +143,34 @@ class TsfmSettings(BaseModel):
         return v
 
 
+def model_config_problems(s: TsfmSettings, mid: str) -> list[str]:
+    """1.46 (I0205): settings an ENABLED model can never answer - empty when it can. Granite TTM (TTM R2 512-96) needs EXACTLY 512
+    closed bars (context_len, and a quality window - lookback - of at least 512), the close-only profile CLOSE_V1 and a horizon of at most
+    96 bars on every timeframe it computes. Before, context_len 64..2048 / any profile / lookback >= 96 were accepted and the model
+    answered WARMUP / PROFILE_UNSUPPORTED / CONFIG at every closed bar (a 'warm-up' that never ended instead of a configuration error)."""
+    c = s.models.get(mid)
+    if mid != "granite_ttm" or c is None or not c.enabled:
+        return []
+    from tsfm_runtime import lock as L
+    pin = L.model("granite_ttm")
+    ctx, hz = int(pin["max_context"]), int(pin["native_horizon"])
+    out = []
+    if c.context_len != ctx:
+        out.append(f"granite_ttm: context_len {c.context_len} ≠ {ctx} (Granite TTM liczy dokładnie {ctx} zamkniętych świec)")
+    if c.profile != "CLOSE_V1":
+        out.append(f"granite_ttm: profil {c.profile} nieobsługiwany (Granite TTM: tylko CLOSE_V1 – jeden szereg close)")
+    if s.lookback < ctx:
+        out.append(f"lookback {s.lookback} < {ctx} (okno jakości krótsze niż kontekst Granite TTM)")
+    for tf in c.timeframes:
+        if int(s.horizon_bars.get(tf, 0)) > hz:
+            out.append(f"granite_ttm: horyzont {tf} {s.horizon_bars[tf]} > {hz} świec modelu")
+    return out
+
+
+def config_problems(s: TsfmSettings) -> list[str]:
+    return [p for mid in MODEL_IDS for p in model_config_problems(s, mid)]
+
+
 def tsfm_dir() -> Path:
     p = paths.data_dir() / "tsfm"
     p.mkdir(parents=True, exist_ok=True)
@@ -251,6 +279,12 @@ class SettingsStore:
         with self._lock:
             merged = _merge(self._s.model_dump(mode="json"), patch)
             s = TsfmSettings.model_validate(merged)
+            # 1.46 (I0205): a change that makes an enabled model unanswerable is refused (PUT /api/v1/models/foundation/settings -> 400);
+            # a file that already holds such a value still loads (file contract) and only a NEW problem blocks a write - an unrelated
+            # change or the repair of the old value passes; the service reports the old value as state CONFIG (no model call)
+            new = [p for p in config_problems(s) if p not in config_problems(self._s)]
+            if new:
+                raise ValueError("GRANITE_CONFIG: " + "; ".join(new))
             self.path.parent.mkdir(parents=True, exist_ok=True)
             backup = self._backup_original()
             tmp = self.path.with_suffix(".json.tmp")

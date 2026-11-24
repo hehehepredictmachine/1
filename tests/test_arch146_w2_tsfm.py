@@ -115,6 +115,74 @@ class TestI0201Docstrings(unittest.TestCase):
                 self.assertRegex(doc, r"FinCast[^.]{0,60}(wycofany|RETIRED|retired)", name)
 
 
+# ======================================================================================================== I0205 Granite configuration
+class TestI0205GraniteConfigOnSave(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.tsfm.settings import SettingsStore
+        self.p = Path(self.td.dir) / "tsfm" / "settings.json"
+        self.SS = SettingsStore
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_bad_granite_config_is_refused(self):
+        st = self.SS(self.p)
+        for patch, why in (({"models": {"granite_ttm": {"context_len": 256}}}, "512"),
+                           ({"models": {"granite_ttm": {"profile": "CLOSE_OHLCV_PAST_V1"}}}, "CLOSE_V1"),
+                           ({"lookback": 300}, "lookback"),
+                           ({"horizon_bars": {"M5": 120}}, "96")):
+            with self.assertRaises(ValueError) as cm:                       # before: accepted -> WARMUP / PROFILE_UNSUPPORTED at every bar
+                st.update(patch)
+            self.assertIn(why, str(cm.exception), patch)
+            self.assertIn("GRANITE_CONFIG", str(cm.exception))
+        s = st.get()
+        self.assertEqual((s.models["granite_ttm"].context_len, s.lookback), (512, 560))           # nothing written
+        st.update({"models": {"chronos2": {"context_len": 1024, "profile": "CLOSE_OHLCV_PAST_V1"}}})   # other models: no such limit
+        st.update({"horizon_bars": {"H1": 120}})                                                     # TF Granite does not compute
+
+    def test_disabled_granite_is_not_checked_until_enabled(self):
+        st = self.SS(self.p)
+        st.update({"models": {"granite_ttm": {"enabled": False}}})
+        st.update({"models": {"granite_ttm": {"context_len": 256}}})
+        with self.assertRaises(ValueError):
+            st.update({"models": {"granite_ttm": {"enabled": True}}})
+
+    def test_existing_bad_file_loads_and_unrelated_changes_pass(self):
+        self.p.parent.mkdir(parents=True, exist_ok=True)
+        self.p.write_text(json.dumps({"models": {"granite_ttm": {"context_len": 256}}}), encoding="utf-8")
+        st = self.SS(self.p)
+        self.assertIsNone(st.load_error)                                   # the file contract is unchanged on read
+        self.assertEqual(st.get().models["granite_ttm"].context_len, 256)
+        st.update({"models": {"chronos2": {"enabled": False}}})              # an unrelated change is not blocked by the old value
+        with self.assertRaises(ValueError):
+            st.update({"models": {"granite_ttm": {"context_len": 300}}})   # another wrong value: refused
+        st.update({"models": {"granite_ttm": {"context_len": 512}}})       # repair: accepted
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0205GraniteConfigState(_Svc):
+    def test_config_state_and_no_worker_call(self):
+        from masterquo.tsfm import predictions as TP
+        svc = self.make(pre={"models": {"granite_ttm": {"context_len": 256}}})
+        svc.tick()
+        self.assertEqual(set(svc.queue), {("chronos2", "XAUUSD", "M5")})    # before: granite queued -> WARMUP from the model at every bar
+        ms = svc.mstate[("granite_ttm", "XAUUSD", "M5")]
+        self.assertEqual(ms["state"], "CONFIG")
+        self.assertIn("512", ms["reason"])
+        w = svc.workers["granite_ttm"]
+        self.assertIsNone(w.proc)                                          # the model process is never asked
+        self.assertEqual((w.state["status"], w.state["code"]), ("CONFIG", "CONFIG"))
+        self.run_queue()
+        row = next(r for r in TP.contract_predictions(svc, "XAUUSD") if r["model_id"] == "tsfm:granite_ttm")
+        self.assertEqual((row["state"], row["result"]), ("ERROR", None))   # the same class as today's model error: decisions unchanged
+        self.assertIn("512", row["unavailable_reason"])
+        svc.settings.update({"models": {"granite_ttm": {"context_len": 512}}})
+        self.assertTrue(svc.refresh("granite_ttm", "XAUUSD", "M5")["ok"])     # repaired: queued again (state back to IDLE)
+        self.assertIn(("granite_ttm", "XAUUSD", "M5"), svc.queue)
+        self.assertEqual(w.state["status"], "IDLE")
+
+
 # ======================================================================================================== I0207 TiRex2Engine
 class _FT:
     """Fake torch tensor (numpy inside)."""

@@ -27,7 +27,8 @@ USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – bez wpływu na decyzje i zle
           "ASSIST": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
           "REQUIRED": "warunek wymagany (po walidacji) – brak / nieaktualna / bocznie / przeciwna prognoza wstrzymuje wejście"}
 SERVICE_STATE = {"NOT_INSTALLED": "DISABLED", "NO_WEIGHTS": "DISABLED", "DISABLED": "DISABLED", "INSTALLING": "DISABLED", "IDLE": "ERROR",
-                 "STARTING": "ERROR", "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR"}
+                 "STARTING": "ERROR", "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR",
+                 "CONFIG": "ERROR"}       # 1.46 (I0205): wrong settings - the same unavailable state as the model error it replaced
 INCOMPATIBLE_CODES = ("INCOMPATIBLE", "CHECKSUM", "MISSING_DEPENDENCY")
 KNOWS_ONLY = "Chronos-2 i Granite TTM widzą wyłącznie ceny close zamkniętych świec (Chronos-2 w profilu OHLCV także open/high/low/wolumen) – " \
              "nie znają poziomów płynności, newsów, spreadu, kosztów ani pozycji"

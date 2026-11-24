@@ -37,18 +37,29 @@ from .. import paths
 from ..kronos import quality as Q                   # 1.46: unused `kronos.calendar as CAL` import removed (the borrowed helpers use their own)
 from ..kronos.service import KronosService
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
-from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
+from .settings import (
+    MODEL_IDS,
+    PATHS,
+    RETIRED_IDS as RETIRED,
+    SettingsStore,
+    default_weights_root,
+    find_python,
+    model_config_problems,
+    tsfm_dir,
+)
 
 log = logging.getLogger("masterquo.tsfm")
 
 STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
              "NO_WEIGHTS": "brak zweryfikowanych wag modelu", "DISABLED": "model wyłączony w ustawieniach", "INSTALLING": "instalacja w toku",
              "STARTING": "uruchamianie procesu modelu", "LOADING": "ładowanie wag (raz na proces)", "READY": "model załadowany",
-             "ERROR": "błąd modelu", "IDLE": "zainstalowany – proces uruchomi się przy pierwszej prognozie"}
+             "ERROR": "błąd modelu", "IDLE": "zainstalowany – proces uruchomi się przy pierwszej prognozie",
+             "CONFIG": "ustawienia niezgodne z modelem – popraw je (model nie jest wywoływany)"}
 TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pamięci)", "READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
              "MODEL_UNAVAILABLE": "model niedostępny", "NO_SYMBOL": "brak symbolu brokera", "MT5_DISCONNECTED": "MT5 rozłączony",
              "STALE": "dane nieaktualne", "BLOCK": "dane odrzucone (jakość)", "WARMUP": "za mało świec", "ERROR": "błąd", "DISABLED": "wyłączony",
-             "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach"}
+             "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach",
+             "CONFIG": "ustawienia niezgodne z modelem"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
 NAMES = {"chronos2": "Chronos-2", "granite_ttm": "Granite TTM", "tirex2": "TiRex-2", "fincast": "FinCast (wycofany)"}
 RETIRED_PL = "wycofany w 1.40 – zastąpiony przez Granite TTM; historia prognoz zachowana, model nie jest uruchamiany"
@@ -75,6 +86,18 @@ class ModelWorker:
 
     def set_state(self, status: str, reason: str | None = None, code: str | None = None) -> None:
         self.state = {"status": status, "code": code, "reason": reason, "updated_at": iso(utcnow())}
+
+    def config_state(self, s) -> bool:
+        """1.46 (I0205): settings this model can never answer (Granite TTM: context != 512, profile, lookback, horizon > 96) -> state
+        CONFIG with the exact reason; the process is not started / asked (it could only answer WARMUP / PROFILE_UNSUPPORTED at every bar).
+        Decisions as before: no forecast -> the same unavailable state (ERROR) in the contract, SH and the coordinator."""
+        probs = model_config_problems(s, self.mid)
+        if not probs:
+            return False
+        if self.proc:
+            self.kill()
+        self.set_state("CONFIG", "; ".join(probs)[:400], "CONFIG")
+        return True
 
     def kill(self) -> None:
         p, self.proc = self.proc, None
@@ -133,6 +156,8 @@ class ModelWorker:
     def ensure(self) -> bool:
         s = self.svc.settings.get()
         c = s.models[self.mid]
+        if self.config_state(s):
+            return False
         threads = self.svc.threads_for(self.mid, c)
         key = (str(self.svc.weights_root()), c.device, threads, c.checkpoint)
         if self.proc and self.proc.poll() is None and self.load_info and self.load_key == key:
@@ -333,8 +358,10 @@ class TsfmService:
                 w.set_state("NOT_INSTALLED", STATUS_PL["NOT_INSTALLED"], "NOT_INSTALLED")
             elif not env["weights_installed"]:
                 w.set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
+            elif w.config_state(s):
+                continue                                                 # 1.46 (I0205): CONFIG - never queued, the process is not asked
             else:
-                if w.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
+                if w.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING", "CONFIG"):
                     w.set_state("IDLE", STATUS_PL["IDLE"])
                 elif w.state["status"] == "ERROR" and w.state.get("code") == "TICK":
                     # 1.46: a one-off scheduler exception (sqlite lock, manifest read, ...) is not a model failure - it no longer leaves
@@ -352,7 +379,8 @@ class TsfmService:
             mids = [m for m in mids if m in ready_models]
             for m in wanted[(inst, tf)]:
                 if m not in mids:
-                    self._ms((m, inst, tf)).update(state="MODEL_UNAVAILABLE", reason=self.workers[m].state.get("reason"))
+                    ws = self.workers[m].state
+                    self._ms((m, inst, tf)).update(state="CONFIG" if ws.get("status") == "CONFIG" else "MODEL_UNAVAILABLE", reason=ws.get("reason"))
             if mids:
                 self._check_target(inst, tf, mids, s, conn, now, force=(force == (inst, tf)), force_model=force_model)
 
