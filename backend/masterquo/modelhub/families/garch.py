@@ -129,6 +129,12 @@ class GARCH(B.Family):
         f = self._forecast(art, c)
         H = str(self.HORIZONS[1])                                      # the record's horizon is the same (pred above)
         s = f["horizons"][H]["sigma"]
+        # 1.46 (I0409): art['window'] (2000) is the MAXIMUM history the filter starts from; live the bridge buffer gives ~760 closed M5 bars
+        # (sample / validation: 2000), so the filter starts from a different history. Reported, not hidden: the returns actually used and
+        # the weight (alpha + beta) ** n the start value still has in the conditional variance (near-unit persistence: 0.998 ** 759 = 0.22)
+        used = int(min(len(c), int(art["window"]) + 1) - 1)
         return {"sigma": s, "variance": f["horizons"][H]["variance"], "scale": "decimal", "sigma_bar": f["sigma_bar"], "horizon_bars": int(H),
                 "price_move_1sigma": float(c[-1] * s), "horizons": f["horizons"],
-                "note": "sigma log-zwrotu (ułamek dziesiętny) na horyzont; ruch ceny = sigma × cena"}
+                "bars_used": used, "window_declared": int(art["window"]), "burn_in_residual": float((art["alpha"] + art["beta"]) ** used),
+                "note": "sigma log-zwrotu (ułamek dziesiętny) na horyzont; ruch ceny = sigma × cena; filtr startuje z bars_used zwrotów "
+                        "(okno artefaktu to maksimum), burn_in_residual = waga wartości startowej w wariancji"}
