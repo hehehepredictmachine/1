@@ -7,17 +7,23 @@
   TEST_ONLY) był wczytywany do komórki SI M1. Teraz nie jest wczytywany (komórka pokazuje MODEL_TEST_ONLY_NOT_LOADED z data_kind), chyba
   że ustawiono zmienną testów PMW_FLOW_ALLOW_TEST_MODEL=1. RESEARCH (REAL_USER_DATA) i model 1.46.0 bez meta.json (UNKNOWN) - wczytywane
   jak dotąd. Tylko panel: Markov3 nie ma konsumenta w decyzjach.
+* D23 - uwagi przeglądu:
+  - `models check --smoke --area lab --only 'flow:markov3'` dawał BŁĄD (predykcja i kontrakt FAIL, MODEL_TEST_ONLY_NOT_LOADED), bo smoke
+    trenuje Markov na SYNTHETIC_TEST. Teraz smoke sprawdza bramkę D23 (bez zmiennej: MODEL_TEST_ONLY_NOT_LOADED), a ścieżkę komórki SI
+    z modelem uruchamia z PMW_FLOW_ALLOW_TEST_MODEL=1 tylko w procesie obszaru (tymczasowy MASTERQUO_DATA_DIR) -> DZIAŁA.
 """
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import _env  # noqa: F401
+import _env
 from _env import TempData
 
 
@@ -175,6 +181,37 @@ class TestFlowContextTestOnlyNotLoaded(unittest.TestCase):
         self.assertIsNotNone(k.m3)
         self.assertEqual(k.model_meta["role"], "UNKNOWN")
         self.assertEqual(fs.summary(k)["markov3"]["model_role"], "UNKNOWN")
+
+
+# ------------------------------------------------------------------------------------------------- D23: models check smoke (lab, flow)
+class TestModelsCheckFlowSmoke(unittest.TestCase):
+    """`models check --smoke --area lab --only 'flow:*'` (43_MODELE_KONTROLA.bat options 2 and 3) on a temporary folder."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_flow_smoke_works_and_reports_the_d23_gate(self):
+        out = Path(self.td.dir) / "mc.json"
+        backend = _env.ROOT / "backend"
+        env = {k: v for k, v in os.environ.items() if k != ALLOW}          # the caller never sets the test opt-in
+        env.update(PYTHONPATH=str(backend), PMW_BOOTSTRAP="0", MASTERQUO_DATA_DIR=self.td.dir)
+        r = subprocess.run([sys.executable, "-m", "masterquo", "models", "check", "--smoke", "--area", "lab", "--only", "flow:*",
+                            "--json", str(out)], cwd=str(backend), env=env, capture_output=True, text=True, timeout=900, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout[-2500:] + r.stderr[-1500:])     # after D23 (b): 1 (flow:markov3 BŁĄD)
+        rows = {x["id"]: x for x in json.loads(out.read_text(encoding="utf-8"))["rows"]}
+        self.assertEqual(sorted(rows), ["flow:markov3", "flow:reaction_m1"])
+        for cid, row in rows.items():
+            self.assertEqual(row["status"], "DZIAŁA", (cid, row))
+            self.assertEqual({k: v["status"] for k, v in row["steps"].items() if k in ("train", "artifact", "predict", "contract")},
+                             {"train": "OK", "artifact": "OK", "predict": "OK", "contract": "OK"}, cid)
+        st = rows["flow:markov3"]["steps"]
+        self.assertIn("MODEL_TEST_ONLY_NOT_LOADED", st["predict"]["detail"])   # the D23 gate itself is checked, not bypassed
+        self.assertIn("D23 (b)", st["contract"]["detail"])
+        self.assertNotIn("bez zmian", st["contract"]["detail"])
+        self.assertEqual(sorted(p.name for p in Path(self.td.dir).iterdir()), ["mc.json"])   # the caller's data folder stays untouched
 
 
 if __name__ == "__main__":
