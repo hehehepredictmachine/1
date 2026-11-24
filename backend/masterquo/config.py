@@ -132,7 +132,8 @@ class RiskLimits(_Strict):
 
 class CostConfig(_Strict):
     # "Zero" is the declared account profile, not a proof of zero costs.
-    # 1.46 arch (I0124): a label only - reported as costs_account_profile in the legacy plan (the vendor contract keeps its own constant)
+    # 1.46 arch (I0124): a label only - passed as costs_account_profile into the INPUT snapshot of legacy.run() (engine/legacy.py
+    # build_snapshot); not in the m02 / m03 / m07 plan output, not read by the vendor (it keeps its own constant), not shown in the UI
     account_profile: str = Field("ZERO_DECLARED_COSTS_UNVERIFIED", description="INFORMATIONAL label of the declared cost profile")
     commission_mode: Literal["UNKNOWN", "CONFIGURED", "FROM_DEAL_HISTORY"] = "FROM_DEAL_HISTORY"
     commission_per_lot_per_side: float | None = Field(None, ge=0)
