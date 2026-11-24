@@ -63,7 +63,8 @@ string TypeName(const ENUM_OBJECT t)
 string Sha256Hex(const string text)
   {
    uchar data[], key[], res[];
-   StringToCharArray(text, data, 0, StringLen(text), CP_UTF8);
+   // 1.46 arch (I0521): the whole UTF-8 encoding (StringLen counts UTF-16 chars, not bytes); the terminating 0 is dropped
+   int nb = StringToCharArray(text, data, 0, WHOLE_ARRAY, CP_UTF8); if(nb > 0 && data[nb - 1] == 0) ArrayResize(data, nb - 1);
    if(CryptEncode(CRYPT_HASH_SHA256, data, key, res) <= 0) return "";
    string hex = "";
    for(int i = 0; i < ArraySize(res); i++) hex += StringFormat("%02x", res[i]);

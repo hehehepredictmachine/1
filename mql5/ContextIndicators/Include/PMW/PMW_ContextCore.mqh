@@ -368,7 +368,8 @@ string PmwNum(const double v, const bool has) { return has && v != EMPTY_VALUE &
 bool PmwSha256Hex(const string text, string &hex, uchar &data[])
   {
    uchar key[], dg[];
-   StringToCharArray(text, data, 0, StringLen(text), CP_UTF8);
+   // 1.46 arch (I0521): the whole UTF-8 encoding (StringLen counts UTF-16 chars, not bytes); the terminating 0 is dropped
+   int nb = StringToCharArray(text, data, 0, WHOLE_ARRAY, CP_UTF8); if(nb > 0 && data[nb - 1] == 0) ArrayResize(data, nb - 1);
    if(CryptEncode(CRYPT_HASH_SHA256, data, key, dg) != 32) return false;
    hex = "";
    for(int k = 0; k < 32; k++) hex += StringFormat("%02x", dg[k]);
@@ -400,7 +401,7 @@ bool PmwWriteEnvelope(const string schema, const string body, const string tmp, 
    if(!PmwSha256Hex(body, hex, data)) return false;
    string outer = "{\"envelope\":\"" + schema + "\",\"checksum\":\"" + hex + "\",\"body\":\"" + PmwJsonEsc(body) + "\"}";
    uchar o[], none[];
-   StringToCharArray(outer, o, 0, StringLen(outer), CP_UTF8);
+   int no = StringToCharArray(outer, o, 0, WHOLE_ARRAY, CP_UTF8); if(no > 0 && o[no - 1] == 0) ArrayResize(o, no - 1);   // 1.46 arch (I0521)
    return PmwAtomicWrite(tmp, dst, o, none);
   }
 #endif
