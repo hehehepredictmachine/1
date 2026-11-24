@@ -453,5 +453,21 @@ class TestReserveHoldoutAtomic(unittest.TestCase):
         self.assertEqual(orig("SELECT COUNT(*) AS n FROM eval_ledger")[0]["n"], 2)
 
 
+# ------------------------------------------------------------------------------------------------------------ 17_TRENING_SCALP_ML.bat
+class TestScalpBatCommission(unittest.TestCase):
+    """I0110: without an argument scalp_train keeps its own source order (trade history of the export, then 0.50)."""
+
+    def test_commission_only_when_given(self):
+        raw = (ROOT / "17_TRENING_SCALP_ML.bat").read_bytes()
+        raw.decode("ascii")                                                    # ASCII
+        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""))                     # CRLF only
+        txt = raw.decode("ascii")
+        self.assertNotIn('set "COMM=0.50"', txt)                               # no forced default
+        call = next(ln for ln in txt.splitlines() if "gold_candles_runtime.scalp_train" in ln)
+        self.assertNotIn("--commission-per-lot-side", call)                    # the argument only through a conditional variable
+        self.assertIn('if not "%~1"=="" set "COMMARG=--commission-per-lot-side %~1"', txt)
+        self.assertIn("%COMMARG%", call)
+
+
 if __name__ == "__main__":
     unittest.main()
