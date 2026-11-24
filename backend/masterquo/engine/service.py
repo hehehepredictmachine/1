@@ -317,6 +317,8 @@ class EngineService:
             d["context_tf"] = ctx
             row = self.active.tracker.get(setup["setup_id"]) if (setup and active_ctx is not None) else None
             sig = signal_contract.build(d, quote=quote, row=row, agent_result=(self.agent.by_setup.get(setup["setup_id"]) if (self.agent and setup) else None),
+                                        agent_question=((getattr(self.agent, "by_question", None) or {}).get(setup["setup_id"])
+                                                        if (self.agent and setup) else None),    # I0866: answer that tightened the gate
                                         agent_status=self.agent.status() if self.agent else None, context=ctx,
                                         costs={**((risk or {}).get("commission") or {}), "slippage_stress_points": cfg.costs.slippage_stress_points},
                                         attempts=self.gateway.recent_attempts(10) if self.gateway is not None else [], ml=d.get("ml"),

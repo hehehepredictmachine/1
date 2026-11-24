@@ -131,6 +131,49 @@ class TestI0866UserQuestionOnlyBlocks(_AgentBase):
         self.assertEqual(self.gate()["status"], "DISAGREE")                         # the question's SELL does not lift the WAIT veto
 
 
+    def _signal(self, **kw):
+        from masterquo.config import AppConfig
+        from masterquo.engine import decision as D
+        from masterquo.engine import signal_contract
+        setup = {**self.TA.CTX["setup"], "signal_stage": "CONFIRMED", "version": 1, "entry_plan": {"reference_price": 2000.0}}
+        cfg = AppConfig()
+        d = D.build(snapshot_id="SNP-1", as_of=SETUP_NOW, symbol="XAUUSD-", account_key="srv:1", session_epoch=1,
+                    dq={"analysis_allowed": True, "entries_allowed": True, "market_state": "OPEN", "reason_codes": [], "data_quality": "GOOD"},
+                    legacy={"m02": {"structural_direction": "BEARISH", "timeframes": {}}}, setup=setup,
+                    levels={"status": "AVAILABLE", "stop_loss": 2010.0, "targets": [{"price": 1980.0, "weight": 1.0}]},
+                    risk={"risk_gate": "PASS", "reason_codes": []}, agent_gate=self.gate(),
+                    mode_gate={"allowed": True, "mode": "PAPER", "reason_codes": []}, macro={"status": "OK"}, strategy_cfg=cfg.strategy,
+                    risk_cfg=cfg.risk, dxy_status="OK", synthetic=True, active=None)
+        return d, signal_contract.build(d, quote={"bid": 2000.0, "ask": 2000.2}, row=None, agent_result=self.agent.by_setup.get("MQS-1"),
+                                        agent_status=None, context={}, costs={}, attempts=[], ml=None, data_source="SYNTHETIC", **kw)
+
+    def test_signal_ai_block_names_the_blocking_answer(self):
+        """Review (presentation): with the gate tightened by the answer the AI block showed only the assessment's ZGODA."""
+        TA = self.TA
+        from masterquo.engine import signal_view
+        self.handle("SETUP_CONFIRMED", TA.answer())                                   # assessment agrees (SELL for SHORT)
+        self.handle("USER_QUESTION", TA.answer(proposed_action="WAIT", answer_pl="Lepiej poczekać."), question="Czekać?")
+        d, sig = self._signal(agent_question=self.agent.by_question["MQS-1"])
+        self.assertEqual(sig["status"], "ZABLOKOWANY")                                # decisions unchanged by this (presentation only)
+        self.assertIn("AI:AI_USER_QUESTION_ANSWER", sig["block_reasons"])
+        self.assertEqual(sig["ai"]["verdict"], "ZGODA")                               # the assessment itself is still shown as it is
+        uq = sig["ai"]["user_question"]                                               # before: no such block (KeyError)
+        self.assertTrue(uq["blocks_gate"])
+        self.assertEqual((uq["proposed_action"], uq["verdict"], uq["answer"], uq["question"]), ("WAIT", "BRAK_ZGODY", "Lepiej poczekać.", "Czekać?"))
+        self.assertIn("pytanie", signal_view.present(d, sig, symbol="XAUUSD-", digits=2, execution_mode="PAPER")["ai"]["note"])
+        _d, sig2 = self._signal()                                                     # caller without the answer: still named from the gate
+        self.assertTrue(sig2["ai"]["user_question"]["blocks_gate"])
+        self.assertIsNone(sig2["ai"]["user_question"]["proposed_action"])
+
+    def test_signal_without_blocking_answer_has_no_question_block(self):
+        TA = self.TA
+        self.handle("SETUP_CONFIRMED", TA.answer())
+        self.handle("USER_QUESTION", TA.answer(answer_pl="ok"), question="?")        # the answer agrees: gate PASS, nothing to name
+        d, sig = self._signal(agent_question=self.agent.by_question["MQS-1"])
+        self.assertNotIn("user_question", sig["ai"])
+        self.assertEqual(d["agent_gate"]["status"], "PASS")
+
+
 # ------------------------------------------------------------------ I0867
 class TestI0867UnknownPriceWarning(_AgentBase):
     def test_unpriced_model_warns_and_budget_unchanged(self):
