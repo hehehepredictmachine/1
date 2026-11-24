@@ -369,16 +369,21 @@ def long_horizon(ctx: SourceContext, timeframe: str = "H1", horizons: list[str] 
     if not pts:
         return Collected([Dataset("forecasts", [], "DERIVED")], {**prov, "bars": len(bars)}, status="UNAVAILABLE",
                          notes=["TIME_OFFSET_UNVERIFIED: brak open_utc (offset serwera MT5 nieustalony) – prognoza nie jest liczona na zgadywanym czasie"])
-    from ..timeutil import parse_iso
+    import time as _time
+
+    from ..timeutil import TF_SECONDS, parse_iso
     ts = [parse_iso(t).timestamp() for t, _ in pts]
     px = [c for _, c in pts]
     rows = []
+    now = _time.time()
     for h in hz:
-        f = LH.forecast(ts, px, h)
+        # 1.46: bar OPEN times -> close times (as_of / target_utc were one TF early) and the wall clock for the data age (STALE unreachable)
+        f = LH.forecast(ts, px, h, now=now, bar_seconds=TF_SECONDS.get(timeframe, 0))
         q = f.get("log_return_quantiles") or {}
         pq = f.get("price_quantiles") or {}
         rows.append({"horizon": h, "as_of_utc": utc_iso(f.get("as_of")), "target_utc": utc_iso(f["as_of"] + f["horizon_seconds"]) if f.get("as_of") else None,
-                     "status": f.get("status"), "reason": f.get("reason"), "calibration": f.get("calibration"), "samples": f.get("samples"),
+                     "status": f.get("status"), "reason": f.get("reason"), "data_age_seconds": f.get("data_age_seconds"),
+                     "calibration": f.get("calibration"), "samples": f.get("samples"),
                      "calib_coverage_q05_q95": f.get("calib_coverage_q05_q95"), "p_down": f.get("p_down"), "p_flat": f.get("p_flat"), "p_up": f.get("p_up"),
                      "median_log_return": f.get("median_log_return"), "volatility_h": f.get("volatility_h"), "vol_scale": f.get("vol_scale"),
                      **{f"logret_{k}": v for k, v in q.items()}, **{f"price_{k}": v for k, v in pq.items()}, "engine": f.get("engine")})

@@ -12,7 +12,8 @@ import time
 from fastapi import Body, HTTPException
 
 from .. import paths
-from .app import body_num
+from ..timeutil import TF_SECONDS
+from .app import body_num, deals_coverage_from_utc
 
 
 def register(app, rt) -> None:
@@ -425,7 +426,8 @@ def register(app, rt) -> None:
         pts = [(_pi(b["open_utc"]).timestamp(), float(b["c"])) for b in bars if b.get("open_utc")]
         if not pts:
             return {"status": "UNAVAILABLE", "reason": "TIME_OFFSET_UNVERIFIED: offset czasu serwera MT5 nieustalony"}
-        return LH.forecast([t for t, _ in pts], [c for _, c in pts], horizon)
+        # 1.46: bar OPEN times -> close times (as_of / target were one TF early) and the wall clock for the data age (STALE was unreachable)
+        return LH.forecast([t for t, _ in pts], [c for _, c in pts], horizon, now=time.time(), bar_seconds=TF_SECONDS.get(timeframe, 0))
 
     @app.get("/api/v1/change-points")
     def change_points(timeframe: str = "H1", lookback: int = 500, min_segment: int = 10, sensitivity: bool = False):
@@ -475,9 +477,10 @@ def register(app, rt) -> None:
         b = rt.bridge
         with b._lock:
             deals = list(b.deals)
+            cover = deals_coverage_from_utc(b)        # 1.46: deposits older than the deal history (deals_history_days) counted as profit
         from .. import stats as _ST
         off = b.clock.offset
-        r = _ST.account_roi(rt.db, b.account_key, deals, off, days=days) or {}
+        r = _ST.account_roi(rt.db, b.account_key, deals, off, days=days, deals_from_utc=cover) or {}
         # 1.46: account_roi has no deals / net / currency keys - the report always showed "—". Net = equity change minus external flows
         # (same Modified-Dietz window), deals = trade deals in that window; unknown stays None ("—").
         net = deals_n = None

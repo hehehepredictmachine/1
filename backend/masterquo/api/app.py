@@ -12,6 +12,7 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -108,6 +109,18 @@ def body_num(body: dict, key: str, default, cast=int, lo=None, hi=None):
     if v != v or v in (float("inf"), float("-inf")) or (lo is not None and v < lo) or (hi is not None and v > hi):
         raise HTTPException(400, f"{key.upper()}_OUT_OF_RANGE" + (f" ({lo}..{hi})" if lo is not None or hi is not None else ""))
     return v
+
+
+def deals_coverage_from_utc(bridge) -> float | None:
+    """1.46: start (UTC epoch) of the period `bridge.deals` covers - each history poll re-reads mt5.deals_history_days back from the poll
+    time (deals_loaded_at, UTC). stats.account_roi clips its equity window to it (a deposit older than the deal history but newer than the
+    first snapshot counted as profit). None = history not loaded / unknown -> account_roi reports deals_coverage NOT_VERIFIED.
+    Read it under bridge._lock together with bridge.deals."""
+    loaded = getattr(bridge, "deals_loaded_at", None)
+    days = getattr(getattr(bridge, "cfg", None), "deals_history_days", None)
+    if not isinstance(loaded, datetime) or loaded.tzinfo is None or isinstance(days, bool) or not isinstance(days, (int, float)) or not days > 0:
+        return None
+    return loaded.timestamp() - float(days) * 86400
 
 
 class AskReq(BaseModel):
@@ -613,10 +626,15 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(409, "NO_SYMBOL_METADATA")
         meta = {**meta, **{k: (rt.bridge.symbol_info or {}).get(k) for k in ("volume_min", "volume_step")}}
         comm_side = rt.cfg.get().scalp.commission_per_lot_side             # None = UNKNOWN (config.py)
+        # 1.46: P&L currency vs account currency - the P&L (profit currency, e.g. USD on XAUUSD) was netted with the commission (account
+        # currency) at a silent rate 1.0 because the account currency was never passed (PLN account: 1000 USD - 40 PLN = 960). Unknown
+        # account currency -> trade_pad_plan labels the legacy numbers NOT_VERIFIED.
+        acct_ccy = (rt.bridge.account_status() or {}).get("currency")
+        acct_ccy = acct_ccy if isinstance(acct_ccy, str) and acct_ccy.strip() else None
         try:
             plan = trade_pad_plan(side=str(body.get("side")), entry=float(body["entry"]), sl=float(body["sl"]), tp=float(body["tp"]),
                                   lots=float(body.get("lots") or 0.01), meta=meta, quote=rt.bridge.quote_status(),
-                                  commission_per_lot_side=float(comm_side or 0))
+                                  commission_per_lot_side=float(comm_side or 0), account_currency=acct_ccy)
         except (KeyError, ValueError, TypeError) as exc:                  # 1.46: TypeError (entry: null) was a 500
             raise HTTPException(400, f"INVALID_PLAN: {exc}") from exc
         if comm_side is None:
@@ -1573,12 +1591,13 @@ def create_app(rt, port: int) -> FastAPI:
         b = rt.bridge
         with b._lock:
             deals = list(b.deals)
+            cover = deals_coverage_from_utc(b)        # 1.46: ROI counted deposits older than the deal history (deals_history_days) as profit
         ds = b.server_day_start_utc()
         ds_raw = ds.timestamp() + b.clock.offset if ds and b.clock.offset is not None else None
         return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "engines": stats.engine_stats(rt.db, mode, b.account_key),
                 "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
                 "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None,
-                "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset)}
+                "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset, deals_from_utc=cover)}
 
     @app.get("/api/v1/news")
     def news():
@@ -2557,20 +2576,33 @@ def create_app(rt, port: int) -> FastAPI:
             return {**st, "started": False, "note": "Studio już działa"}
         bot, sdir = _studio_dirs()
         sdir.mkdir(parents=True, exist_ok=True)
-        flags = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+        flags = (getattr(subprocess, "DETACHED_PROCESS", 0x00000008) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)) if os.name == "nt" else 0
+        # 1.46: Studio stayed in the engine's Job Object (KILL_ON_JOB_CLOSE) and was killed with every engine restart / app exit.
+        # CREATE_BREAKAWAY_FROM_JOB takes it out (the desktop shell's job allows breakaway); a job without BREAKAWAY_OK refuses the flag,
+        # then it starts as before (inside the job). Only Studio - the MT5 terminal start is not changed here.
+        breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000) if os.name == "nt" else 0
         if st["launcher"] == "EXE":
             cmd, env = [str(Path(os.environ["PMW_DESKTOP_EXE"]).with_name("PepeTrainingStudio.exe"))], dict(os.environ)
         else:
             env = {k: v for k, v in os.environ.items() if k not in ("MASTERQUO_DATA_DIR",)}
             env.update(MQ_BOT_DATA_DIR=str(bot), MQ_STUDIO_DATA_DIR=str(sdir), MASTERQUO_DATA_DIR=str(sdir))
             cmd = [sys.executable, "-m", "masterquo", "studio", "--port", str(st["port"])]
+
+        def start(fl: int):
+            return subprocess.Popen(cmd, cwd=str(paths.BACKEND_DIR), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, creationflags=fl, start_new_session=os.name != "nt")
         try:
-            p = subprocess.Popen(cmd, cwd=str(paths.BACKEND_DIR), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, creationflags=flags, start_new_session=os.name != "nt")
+            try:
+                p, broke_away = start(flags | breakaway), (True if breakaway else None)
+            except OSError:
+                if not breakaway:
+                    raise
+                p, broke_away = start(flags), False       # ERROR_ACCESS_DENIED: this job does not allow breakaway (any other error repeats)
         except OSError as exc:
             raise HTTPException(500, f"STUDIO_START_FAILED:{type(exc).__name__}") from None
-        rt.log.info("STUDIO", "LAUNCH", f"Uruchomiono Pepe Training Studio ({st['launcher']}, pid {p.pid}, port {st['port']})")
-        return {**st, "started": True, "pid": p.pid}
+        rt.log.info("STUDIO", "LAUNCH", f"Uruchomiono Pepe Training Studio ({st['launcher']}, pid {p.pid}, port {st['port']}"
+                    + (", w zadaniu silnika – zamknie się razem z nim" if broke_away is False else "") + ")")
+        return {**st, "started": True, "pid": p.pid, "job_breakaway": broke_away}
 
     # ---------------------------------------------------------------- Pepe Data & Training Studio import (1.33) - candidates only
     @app.post("/api/v1/studio/import")
