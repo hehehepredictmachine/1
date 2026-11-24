@@ -1,7 +1,7 @@
 """Application configuration (no secrets).
 
-`config/masterquo.defaults.json` ships with the package; the user's editable copy lives in
-`data/config.json`. Secrets (Anthropic key, Telegram token) are stored separately (secrets.py).
+The defaults are the pydantic models below (``AppConfig()`` is the only source - no defaults file is shipped or read); the user's
+editable copy lives in ``data/config.json`` (written from ``AppConfig()`` on the first start). Secrets (Anthropic key, Telegram token) are stored separately (secrets.py).
 
 Rules enforced here:
 * the exact broker symbol is kept verbatim (e.g. ``XAUUSD-``); it is never normalised;
@@ -646,7 +646,8 @@ class IndicatorsConfig(_Strict):
     book_period_s: float = Field(1.0, ge=0.2, le=60)
     book_levels: int = Field(5, ge=1, le=50)
     book_max_gap_s: float = Field(5.0, ge=0.5, le=600)
-    book_record: bool = Field(True, description="archive book snapshots for replay (data/indicators/book.sqlite)")
+    book_record: bool = Field(True, description="archive book snapshots for replay "
+                                                   "(data/indicators/indicators.sqlite, table book_snapshots)")
     book_keep_days: int = Field(14, ge=1, le=365)
 
 
@@ -748,10 +749,7 @@ class ConfigStore:
             if migrated:
                 self._write(cfg)
             return cfg
-        if paths.DEFAULTS_FILE.exists():
-            cfg = AppConfig.model_validate(json.loads(paths.DEFAULTS_FILE.read_text(encoding="utf-8")))
-        else:
-            cfg = AppConfig()
+        cfg = AppConfig()                       # first start: the pydantic defaults are the only source (1.46 arch I0122)
         self._write(cfg)
         return cfg
 

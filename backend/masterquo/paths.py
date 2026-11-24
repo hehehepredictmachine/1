@@ -17,7 +17,6 @@ VENDOR_DIR = BACKEND_DIR / "vendor"
 LEGACY_CORE_DIR = VENDOR_DIR / "legacy_core"
 M04N_DIR = VENDOR_DIR / "m04n"
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
-DEFAULTS_FILE = ROOT_DIR / "config" / "masterquo.defaults.json"
 
 
 def _same_file(a: str, b: str) -> bool:
