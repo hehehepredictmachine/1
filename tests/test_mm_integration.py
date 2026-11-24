@@ -191,8 +191,10 @@ class TestNativeContracts(unittest.TestCase):
         g = [ln.split(",") for ln in (ref / "mm_ref_gpr.csv").read_text().splitlines()[1:] if ln]
         b = [ln.split(",") for ln in (ref / "mm_ref_breakout.csv").read_text().splitlines()[1:] if ln]
         f = lambda x: None if x == "nan" else float(x)                                  # noqa: E731
+        al = FX._align_ref(ref / "mm_ref_align.csv")                    # 1.46 arch I0501: a complete native output also has the align gate
         return {"kalman": [[int(r[0])] + [f(x) for x in r[1:7]] + [r[7]] for r in k], "gpr": [[int(r[0])] + [f(x) for x in r[1:]] for r in g],
-                "hdc": {"all_pass": True}, "breakout": [[int(r[0]), r[1], float(r[2]), float(r[3])] for r in b]}
+                "hdc": {"all_pass": True}, "breakout": [[int(r[0]), r[1], float(r[2]), float(r[3])] for r in b],
+                "align": [{"k": i, "atr": f(v["atr"]), "mean": [f(x) for x in v["mean"]]} for i, v in al.items()]}
 
     def test_parity_statuses(self):
         nat = Path(self.td.dir) / "PMW_MM_NATIVE.txt"

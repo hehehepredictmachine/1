@@ -6,8 +6,13 @@
 //| 3) run this script on any chart                                   |
 //| 4) copy PMW_MM\PMW_MM_NATIVE.txt back and run                     |
 //|    python -m masterquo mm export-fixtures --parity <file>         |
+//| 44_MASTERMODELS_NATIVE.bat does 1), 2) and the compilation, and   |
+//| writes Files\PMW\mm_native_status.json (1.46 arch I0488).         |
 //| Uses SYNTHETIC fixture bars only (code parity, not market data).  |
 //| No trading functions are used.                                    |
+//| 1.46 arch (I0501): + Align Mean - the core of PMW_AlignMean.mq5   |
+//| (PMW_AlignMeanCore.mqh) for every configuration of                |
+//| mm_ref_align.csv, written as "align" (parity gate "align").       |
 //+------------------------------------------------------------------+
 #property strict
 #property script_show_inputs
@@ -15,6 +20,7 @@
 #include <PMW\PMW_GPR.mqh>
 #include <PMW\PMW_HDC.mqh>
 #include <PMW\PMW_BreakoutCore.mqh>
+#include <PMW\PMW_AlignMeanCore.mqh>
 
 input string InpDir = "PMW_MM";
 
@@ -125,11 +131,33 @@ void OnStart()
       m++;
      }
    js += "]";
+   //--- Align Mean (1.46 arch I0501): the chart indicator's core on the fixture bars, one entry per C row of mm_ref_align.csv
+   //--- C,k,mode,source,lookback,bars,seconds,session_start_min,session_tz_offset_min,atr_period,tf_s
+   string ra[];
+   int nal = 0;
+   js += ",\"align\":[";
+   if(ReadLines("mm_ref_align.csv", ra))
+      for(int ri = 0; ri < ArraySize(ra); ri++)
+        {
+         string fl[];
+         if(StringSplit(ra[ri], ',', fl) < 11 || fl[0] != "C") continue;
+         int ak = (int)StringToInteger(fl[1]), amode = (int)StringToInteger(fl[2]), asrc = (int)StringToInteger(fl[3]), alb = (int)StringToInteger(fl[4]);
+         int abars = (int)StringToInteger(fl[5]), asec = (int)StringToInteger(fl[6]), astart = (int)StringToInteger(fl[7]), atz = (int)StringToInteger(fl[8]);
+         int aatr = (int)StringToInteger(fl[9]), atfs = (int)StringToInteger(fl[10]);
+         double am[];
+         PmwAmCompute(t, h, l, c, n, atfs, amode, asrc, alb, abars, asec, astart, atz, am);
+         string row = StringFormat("{\"k\":%d,\"atr\":%s,\"mean\":[", ak, Num(PmwAmAtr(h, l, c, n, aatr)));
+         for(int i = 0; i < n; i++) row += (i ? "," : "") + Num(am[i]);
+         js += (nal ? "," : "") + row + "]}";
+         nal++;
+        }
+   js += "]";
    js += StringFormat(",\"terminal\":{\"build\":%d,\"opencl\":%s}}", (int)TerminalInfoInteger(TERMINAL_BUILD),
                       TerminalInfoInteger(TERMINAL_OPENCL_SUPPORT) > 0 ? "true" : "false");
    int fh = FileOpen(InpDir + "\\PMW_MM_NATIVE.txt", FILE_WRITE | FILE_TXT | FILE_ANSI);
    if(fh == INVALID_HANDLE) { PrintFormat("PMW_MM_SelfTest: cannot write output (err %d)", GetLastError()); return; }
    FileWriteString(fh, js);
    FileClose(fh);
-   PrintFormat("PMW_MM_SelfTest: wrote %s\\PMW_MM_NATIVE.txt (bars %d, breakout events %d, hdc %s)", InpDir, n, m, (parsed && ham && bind && perm && b3 && b2) ? "PASS" : "FAIL");
+   PrintFormat("PMW_MM_SelfTest: wrote %s\\PMW_MM_NATIVE.txt (bars %d, breakout events %d, hdc %s, align configs %d)", InpDir, n, m,
+               (parsed && ham && bind && perm && b3 && b2) ? "PASS" : "FAIL", nal);
   }
