@@ -36,6 +36,10 @@ class TestCatalog(unittest.TestCase):
         self.assertEqual(set(v["per_basket"].values()), {10})
         self.assertEqual(set(v["distinct_families_per_basket"].values()), {10})      # no basket = 10 aliases of one rule
         for s in [*C.CATALOG, *C.HISTORICAL_STRATEGIES.values()]:
+            if s["kind"] == "HEDGING" and s["profile_id"] == "OTC_GOLD_POCKETOPTION":
+                # 1.46 (I0112): the retired OTC_HEDGE planners were removed - their family ids are historical labels only
+                self.assertNotIn(s["family_id"], H.PLANNERS, s["strategy_id"])
+                continue
             self.assertIn(s["family_id"], R.FAMILIES if s["kind"] != "HEDGING" else H.PLANNERS, s["strategy_id"])
             if s["profile_id"] == "OTC_GOLD_POCKETOPTION" and s["kind"] != "HEDGING":
                 self.assertEqual(s["plan_type"], "FixedExpiryPlan")
@@ -51,31 +55,10 @@ class TestCatalog(unittest.TestCase):
         self.assertEqual(rep["missing_strategy_ids"], [])
 
 
-class TestPayoff(unittest.TestCase):
-    def test_call_put_100_at_80_percent_is_minus_20_ties_zero(self):
-        from masterquo.baskets import payoff as PO
-        legs = [{"dir": "CALL", "stake": 100, "r": 0.8, "strike": 2000, "expiry": 1}, {"dir": "PUT", "stake": 100, "r": 0.8, "strike": 2000, "expiry": 1}]
-        t = PO.table(legs)
-        self.assertEqual({r["kind"]: r["pnl"] for r in t["rows"]}, {"below": -20.0, "tie": 0.0, "above": -20.0})
-
-    def test_kc_above_kp_both_lose_between(self):
-        from masterquo.baskets import payoff as PO
-        t = PO.table([{"dir": "CALL", "stake": 100, "r": 0.8, "strike": 2001, "expiry": 1}, {"dir": "PUT", "stake": 100, "r": 0.8, "strike": 2000, "expiry": 1}])
-        self.assertEqual(t["worst"], -200.0)
-
-    def test_different_expiries_refused_and_gate_needs_improvement(self):
-        from masterquo.baskets import payoff as PO
-        self.assertEqual(PO.table([{"dir": "CALL", "stake": 1, "r": .8, "strike": 1, "expiry": 1}, {"dir": "PUT", "stake": 1, "r": .8, "strike": 1, "expiry": 2}])["code"],
-                         "EXPIRY_MISMATCH")
-        parent = [{"dir": "CALL", "stake": 100, "r": 0.8, "strike": 2000, "expiry": 9}]
-        g = PO.gate(parent, dir_new="PUT", strike_est=2001, strike_band=0.1, r_new=0.85, expiry=9, stake_min=1, stake_step=1, stake_max=200, cash_free=150,
-                    min_improvement=10)
-        self.assertEqual(g["state"], "HEDGE_PLAN")
-        self.assertGreaterEqual(g["improvement"], 10)
-        self.assertEqual(g["label"], "ESTIMATED_PAYOFF")
-        self.assertEqual(PO.gate(parent, dir_new="PUT", strike_est=2001, strike_band=0, r_new=None, expiry=9, stake_min=1, stake_step=1, stake_max=10,
-                                 cash_free=10, min_improvement=1)["state"], "NO_HEDGE")
-        self.assertIsNone(PO.ev_money(10, 0.8, 0.6, None))                              # never 1 - p_win silently
+class TestRetiredOtcPayoffRemoved(unittest.TestCase):
+    def test_payoff_module_removed_with_the_otc_planners(self):                       # 1.46 (I0112): OTC retired (TASK 020)
+        import importlib.util
+        self.assertIsNone(importlib.util.find_spec("masterquo.baskets.payoff"))
 
 
 class TestDetectorsAndRules(unittest.TestCase):
@@ -113,18 +96,10 @@ class TestDetectorsAndRules(unittest.TestCase):
         self.assertEqual(r["event"]["type"], "FAILED_BREAKDOWN")
 
 
-class TestOtcFeed(unittest.TestCase):
-    def test_waiting_without_feed_and_no_fake_short_candles(self):
-        from masterquo.baskets import otc as O
-        with tempfile.TemporaryDirectory() as d:
-            f = O.OTCFeed(Path(d))
-            self.assertEqual(f.state()["state"], "WAITING_FOR_OTC_FEED")
-            (Path(d) / "import" / "gold_M1.csv").write_text("t,o,h,l,c\n0,1,2,0.5,1.5\n60,1.5,2,1,1.2\n", encoding="utf-8")
-            self.assertEqual(f.import_dir()["candles"], 2)
-            self.assertEqual(f.bars("S15", now=1e9), [])                                 # M1 is never cut into S15
-            self.assertEqual(len(f.bars("M1", now=1e9)), 2)
-            self.assertEqual(O.choose_expiry(60, [30, 65, 120]), 65)
-            self.assertIsNone(O.choose_expiry(60, [30, 120]))
+class TestRetiredOtcFeedRemoved(unittest.TestCase):
+    def test_otc_feed_module_removed(self):                                             # 1.46 (I0112): OTC retired (TASK 020)
+        import importlib.util
+        self.assertIsNone(importlib.util.find_spec("masterquo.baskets.otc"))
 
 
 class TestResearchModules(unittest.TestCase):

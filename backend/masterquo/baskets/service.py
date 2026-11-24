@@ -30,7 +30,6 @@ from .. import paths
 from . import catalog as CAT
 from . import detectors as D
 from . import hedge as HG
-from . import otc as OTC
 from . import rules as RL
 from .hyperliquid import Hyperliquid, HLError, TF_S as HL_TF_S
 
@@ -326,10 +325,8 @@ class BasketService:
         self.base.mkdir(parents=True, exist_ok=True)
         self.ledger = Ledger(self.base / "ledger.sqlite")
         self.hl = hl or Hyperliquid()
-        # TASK 020: OTC retired - the feed object stays only as a lazy, read-only legacy history reader (never polled by cycle())
-        # 1.46: really lazy now (property `otc`) - it used to mkdir <data>/otc/import and read the whole ticks.jsonl at every start
-        self._otc_base = (self.base / "otc") if data_dir else None
-        self._otc_feed: OTC.OTCFeed | None = None
+        # TASK 020: OTC retired. 1.46 (I0112): the unreachable OTC feed reader (baskets/otc.py) was removed - nothing read it but tests;
+        # the stored history in <data>/otc is left on disk untouched (never read, written or created here)
         self.ctx: dict[str, Ctx] = {}
         self.hedge_state: dict[str, dict] = {}
         self._stop = threading.Event()
@@ -350,17 +347,6 @@ class BasketService:
             self.sfb_blocked = requested
         self.sfb = StrategyFilterBucket(cfg)
         self.sfb.mode_requested = requested
-
-    @property
-    def otc(self) -> OTC.OTCFeed:
-        """Retired Gold OTC legacy history reader (read-only), created on first use."""
-        if self._otc_feed is None:
-            self._otc_feed = OTC.OTCFeed(self._otc_base) if self._otc_base else OTC.OTCFeed()
-        return self._otc_feed
-
-    @otc.setter
-    def otc(self, feed) -> None:
-        self._otc_feed = feed
 
     # ------------------------------------------------------------------ settings
     def _read(self):
@@ -692,7 +678,7 @@ class BasketService:
             out[coin] = self._run_ctx(c, st, lambda tf, n=500, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 500)), q, extra)
         return out
 
-    # 1.46: the dead `_otc` scanner (retired in TASK 020, never called by cycle()) was removed - the legacy history reader stays (`otc`)
+    # 1.46: the dead `_otc` scanner and the OTC feed reader (retired in TASK 020, never called by cycle()) were removed
 
     # ------------------------------------------------------------------ evaluation
     def _regime(self, F: D.Feat) -> dict:
