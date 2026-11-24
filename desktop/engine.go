@@ -56,6 +56,9 @@ type Engine struct {
 	extra    []string  // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
 	stopReq  *exec.Cmd // 1.46: the process Stop() asked to end - its exit during start is not a start failure
 	warning  string    // 1.46: attached to an engine of ANOTHER version - shown on the start screen, no automatic entry
+	// 1.46 arch (I0715): set ONLY by the clean-exit branch of afterExit (the user's stop); cleared when an engine is started again.
+	// The window shows „Bot zatrzymany na żądanie” only for this flag - never for EngineStopped caused by the shell's own Stop().
+	cleanStop bool
 
 	restartMu sync.Mutex // 1.46: one Restart at a time (two quick tray clicks started two engines and the shell lost the running one)
 }
@@ -83,6 +86,13 @@ func (e *Engine) set(s EngineState, detail string) {
 	if e.onState != nil {
 		e.onState(s, detail)
 	}
+}
+
+// CleanStopped (1.46 arch, I0715): the engine ended with a CLEAN exit that was not a restart request - the user stopped the bot.
+func (e *Engine) CleanStopped() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cleanStop
 }
 
 func (e *Engine) State() (EngineState, string) {
@@ -259,6 +269,7 @@ func (e *Engine) consoleLog() (*os.File, error) {
 func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	e.warning = ""
+	e.cleanStop = false // 1.46 arch (I0715): started (or attached) again by the user
 	e.mu.Unlock()
 	if ok, running := e.health(); ok {
 		if e.Owned() { // our own process from an earlier attempt finished starting meanwhile
@@ -294,6 +305,12 @@ func (e *Engine) Start(ctx context.Context) error {
 }
 
 func (e *Engine) spawn(ctx context.Context) error {
+	e.mu.Lock()
+	e.cleanStop = false
+	e.mu.Unlock()
+	// 1.46 arch (I0715): a restart.request left over from an earlier engine (not consumed) would turn the NEXT clean user stop of this
+	// engine into an automatic restart - it is removed before a new engine starts (a request written by the new engine still works)
+	_ = os.Remove(filepath.Join(e.l.RuntimeDir(), "restart.request"))
 	e.set(EngineStarting, "uruchamianie silnika…")
 	logFile, err := e.consoleLog()
 	if err != nil {
@@ -495,6 +512,17 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 		if err := e.spawn(ctx); err != nil && !errors.Is(err, errStopRequested) { // 1.46: spawn reports the state; the reason goes to desktop.log
 			e.logf("silnik: ponowne uruchomienie nieudane: " + err.Error())
 		}
+		return
+	}
+	if werr == nil {
+		// 1.46 arch (I0715; the fix of 12207a5 withdrawn in 00f269b): a CLEAN exit (code 0: „Zatrzymaj Apollo23” in the panel,
+		// 04_STOP_MASTERQUO.bat, python -m masterquo stop) is the user's stop, not a crash - before, the shell restarted the engine after
+		// 2 s and the stopped bot came back by itself in its stored execution mode. No spawn / Start here: the user starts it again.
+		e.mu.Lock()
+		e.cleanStop = true // before set(): the window (onState) already sees it
+		e.mu.Unlock()
+		e.logf("silnik zakończył pracę (czyste wyjście) – bez ponownego uruchomienia")
+		e.set(EngineStopped, "silnik zatrzymany na żądanie (czyste wyjście) – uruchom ponownie przyciskiem albo z menu w zasobniku, gdy zechcesz")
 		return
 	}
 	now := time.Now()
