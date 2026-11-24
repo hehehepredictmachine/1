@@ -321,9 +321,16 @@ class StructureIntelligenceService:
                       for N, f in fs.items()} for nm, fs in q["sides"].items()}
         return {"phase": q["phase"], "seq": q["seq"], "computed_at": q["computed_at"], "clock": q["clock"]["mode"], "spread": q["spread"].get("level"), "sides": sides}
 
-    def quote_forecasts(self, limit: int = 100) -> list[dict]:
+    def quote_forecasts(self, limit: int = 100, context: str | None = None, instrument: str | None = None) -> list[dict]:
+        """context = '<instrument>|<symbol>' (exact), instrument = every symbol of that instrument; neither = all rows (as before).
+        1.46 arch (I0030 / I0040): the API list showed other assets' forecasts after an asset change."""
+        where, args = "", ()
+        if context:
+            where, args = "WHERE f.context=? ", (context,)
+        elif instrument:
+            where, args = "WHERE substr(f.context, 1, ?)=? ", (len(instrument) + 1, f"{instrument}|")
         rows = self.db.query("SELECT f.forecast_id, f.side, f.scale, f.issued_at, f.target_at, f.payload, o.status, o.outcome, o.error FROM quote_forecasts f "
-                             "LEFT JOIN quote_outcomes o ON o.forecast_id=f.forecast_id ORDER BY f.issued_at DESC LIMIT ?", (limit,))
+                             "LEFT JOIN quote_outcomes o ON o.forecast_id=f.forecast_id " + where + "ORDER BY f.issued_at DESC LIMIT ?", (*args, limit))
         for r in rows:
             p = json.loads(r.pop("payload"))
             r.update(price=p["price"], se_model=p["se_model"], h_s=p["h_s"], band=p["band"])

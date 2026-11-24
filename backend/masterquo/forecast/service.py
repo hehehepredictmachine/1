@@ -274,7 +274,10 @@ class ForecastService:
                            "note": "ocena SHADOW na żywo – nakładające się prognozy nie są niezależnymi transakcjami"}
         return out
 
-    def recent(self, limit: int = 100) -> list[dict]:
+    def recent(self, limit: int = 100, instrument: str | None = None) -> list[dict]:
+        # 1.46 arch (I0040): optional instrument filter (the API passes the active / requested asset); None = every instrument as before
+        if instrument:
+            return self.db.query("SELECT * FROM forecast_shadow WHERE instrument=? ORDER BY id DESC LIMIT ?", (instrument, limit))
         return self.db.query("SELECT * FROM forecast_shadow ORDER BY id DESC LIMIT ?", (limit,))
 
     def _root(self) -> Path:

@@ -428,8 +428,12 @@ class ScalpService:
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200], "pass": False}
 
-    def recent(self, limit: int = 50) -> list[dict]:
-        rows = self.db.query("SELECT * FROM scalp_shadow ORDER BY id DESC LIMIT ?", (limit,))
+    def recent(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
+        # 1.46 arch (I0040): optional instrument filter for the API list; None = every instrument (status / dashboard callers unchanged)
+        if instrument:
+            rows = self.db.query("SELECT * FROM scalp_shadow WHERE instrument=? ORDER BY id DESC LIMIT ?", (instrument, limit))
+        else:
+            rows = self.db.query("SELECT * FROM scalp_shadow ORDER BY id DESC LIMIT ?", (limit,))
         for r in rows:
             for k in ("reasons", "plan", "gates", "hedge", "outcome"):
                 if r.get(k):
