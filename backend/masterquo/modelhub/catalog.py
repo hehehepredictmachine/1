@@ -16,19 +16,28 @@ STATE_FROM_PROBE = {"READY": "READY", "SHADOW_ONLY": "READY", "DETERMINISTIC_OK"
 CAT_FROM_KIND = {"DETERMINISTIC": "INDICATOR", "TRAINED": "TRAINABLE", "EXTERNAL": "EXTERNAL"}
 CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_FILTER": "ONLINE", "DETERMINISTIC_INDICATOR": "INDICATOR",
                "RULE_STRATEGY": "RULE", "OPTIMIZER": "INFRA", "DATA_INFRA": "INFRA", "VISUALIZATION": "INDICATOR", "BENCHMARK": "INFRA"}
+# 1.46 arch (I0384): the 1.41 panel "12 Master Models" is not in the current frontend - the API stays (public contract)
+MM_NO_PATH = "moduł PMW-MM bez ścieżki w strategiach (obserwacja / badania – API /api/v1/mm/*; brak panelu w bieżącym interfejsie)"
 # where the code lives + what it needs (sh/models.REGISTRY ids)
 LOCATION = {
     "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
-    "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
-    "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("extind/vamd.py", "świece M1/M5"), "fractal": ("extind/fractal.py", "świece M1/M5"),
-    "atr_vol": ("strategies/indicators.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
+    "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"),
+    # 1.46 arch (I0276 / I0314 / I0316 / I0568 / I0573 / I0576 / I0579): every path below exists (tests/test_arch146_w2_catalog.py)
+    "structure_v2": ("analysis/structure_v2.py (SH: sh/context._structure)", "świece M5/M15/H1"),
+    "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("lab/context_ind/vamd.py (SH: sh/context._ctx_m5/_ctx_m1)", "świece M1/M5"),
+    "fractal": ("lab/context_ind/fractal.py (SH: sh/context._ctx_m5)", "świece M5"),
+    "atr_vol": ("sh/context.py (_atr, Wilder 14)", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
     "liquidity": ("analytics/liquidity_context.py, analytics/session_engine.py", "świece M5, sesje"),
     "flow_sr": ("lab/flow_context/", "świece M1/M5"), "decomposition": ("analytics/ (FFT/EMD/VMD)", "świece"),
     "sh_tp_model": ("sh/tpmodel.py", "historia klienta (cykle SH) + świece"), "scalp_A": ("scalp/ (runner scalp)", "eksport M1–H1"),
     "scalp_B": ("scalp/", "eksport M1–H1 + cykle R→S→R"), "gold_forecast": ("forecast/ (gold_candles)", "eksport M5/M30"),
-    "legacy_ml": ("ml/ (DT + XGBoost)", "historia setupów S01–S12"), "lab": ("lab/models (LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN)", "eksport + etykiety triple-barrier"),
-    "indicator_context": ("extind/ (SAR+IQ)", "eksport M1/M5"), "ml_scalp": ("ml/scalp_task.py", "eksport M1–M15"), "nss": ("scalp/nss (TCN)", "eksport M1"),
-    "si_move": ("lab/structure_intelligence/", "ticki/świece M1"), "flow_reaction": ("lab/flow_context/markov.py", "świece M1"),
+    "legacy_ml": ("ml/ (DT + XGBoost)", "historia setupów S01–S12"),
+    "lab": ("lab/protocol.py, lab/nets.py, lab/minirocket.py, lab/service.py (LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN)", "eksport + etykiety triple-barrier"),
+    "indicator_context": ("extind/ (SAR+IQ)", "eksport M1/M5"), "ml_scalp": ("ml/scalp_task.py", "eksport M1–M15"),
+    "nss": ("lab/nss.py, lab/scalp_net.py (TCN), lab/nss_service.py", "eksport M1"),
+    "si_move": ("lab/structure_task.py, lab/structure_nets.py, lab/si_families.py, lab/si_service.py", "ticki/świece M1"),
+    # I0304: the reaction model only - Markov3 (lab/flow_context/markov.py) is its own producer flow:markov3 (quant/ids.EXTRA_PRODUCERS)
+    "flow_reaction": ("lab/flow_context/task.py (model reakcji CLASS_FREQ/LOGREG/XGB; bez inferencji na żywo)", "świece M1"),
     "context_move": ("lab/context_ind/", "świece M5"), "mm_align_mean": ("mm/align_mean.py", "świece"), "mm_kalman": ("mm/kalman.py", "świece M5"),
     "mm_breakout": ("mm/breakout_zones.py, mm/robust_vol.py", "świece M5"), "mm_multi_indicator": ("mm/multi_indicator.py", "świece M5"),
     "mm_smc_fvg": ("mm/smc_fvg.py", "świece M5"), "mm_gpr": ("mm/gpr.py", "świece M5"), "mm_hdc": ("mm/hdc.py", "cechy M5"),
@@ -143,7 +152,7 @@ def build(rt, inst: str) -> dict:
                          "purpose": m.get("outputs") or "—", "required_data": m.get("inputs") or "—", "input": m.get("inputs") or "—", "output": m.get("outputs") or "—",
                          "instruments": ["XAUUSD", "BTC"], "training": m.get("training") or "—",
                          "state": "DISABLED", "state_pl": C.STATES["DISABLED"],
-                         "reason": ("BLOKADA: " + blocked) if blocked else "moduł PMW-MM bez ścieżki w strategiach (obserwacja / badania – panel 12 Master Models)",
+                         "reason": ("BLOKADA: " + blocked) if blocked else MM_NO_PATH,
                          "source": "mm/inventory.MODULES"})
     except Exception:  # noqa: BLE001
         pass
