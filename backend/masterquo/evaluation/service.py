@@ -157,7 +157,7 @@ class EvaluationService:
 
     # ------------------------------------------------------------------ SCALPING / HEDGING
     def _sh(self, su: dict, inst: str, snap: dict | None, now: float) -> None:
-        c = K.from_sh_setup(su, regime=(snap or {}).get("regime")).validate()
+        c = K.sh_candidate(su, snap=snap).validate()            # 1.46: one SH candidate factory with the coordinator (D4)
         costs = su.get("costs") or {}
         extra = None
         if costs.get("round_trip_price") is not None:

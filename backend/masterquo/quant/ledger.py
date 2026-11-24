@@ -1,6 +1,8 @@
 """Quant ledger (PMW-QUANT-LEDGER-1): one row per setup candidate at the decision moment (features as available THEN, EventSpec,
 snapshot generation), labelled later by the plan simulator on closed bars. Separate sqlite file under paths.data_dir()/quant - the
-existing evaluation ledger is not modified. Rows of an unfinished horizon stay PENDING (never a loss / timeout)."""
+existing evaluation ledger is not modified. Rows of an unfinished horizon stay PENDING (never a loss / timeout).
+1.46: every row records the feature semantics it was computed with (column feature_version, added in place - rows of older versions
+have NULL = features.LEGACY_ROWS); training reads one version only."""
 from __future__ import annotations
 
 import json
@@ -8,6 +10,8 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+
+from . import features as F
 
 VERSION = "PMW-QUANT-LEDGER-1"
 SCHEMA = """
@@ -33,16 +37,19 @@ class QuantLedger:
         with self._lock:
             self.c.execute("PRAGMA journal_mode=WAL")
             self.c.executescript(SCHEMA)
+            if "feature_version" not in {x[1] for x in self.c.execute("PRAGMA table_info(rows)").fetchall()}:
+                self.c.execute("ALTER TABLE rows ADD COLUMN feature_version TEXT")     # 1.46, additive: old rows keep NULL (legacy)
             self.c.commit()
 
     def add_row(self, r: dict) -> bool:
+        """r['feature_version']: the semantics the features were built with (QuantService.assess: features.CURRENT); absent -> CURRENT."""
         with self._lock:
             cur = self.c.execute("""INSERT OR IGNORE INTO rows(row_id, instrument, engine, strategy, direction, decision_ts, task_hash, event_id, spec_json,
-                                    features_json, snapshot_id, generation, data_kind, matures_at, status, created_at)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?)""",
+                                    features_json, snapshot_id, generation, data_kind, matures_at, status, created_at, feature_version)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)""",
                                  (r["row_id"], r["instrument"], r["engine"], r["strategy"], r["direction"], r["decision_ts"], r["task_hash"], r["event_id"],
                                   json.dumps(r["spec"]), json.dumps(r["features"]), r.get("snapshot_id"), r.get("generation"), r.get("data_kind"),
-                                  r["matures_at"], time.time()))
+                                  r["matures_at"], time.time(), r.get("feature_version") or F.CURRENT))
             self.c.commit()
             return cur.rowcount == 1
 
@@ -60,25 +67,36 @@ class QuantLedger:
                            (status, json.dumps(label) if label else None, resolve_ts, y, (label or {}).get("net_r"), row_id))
             self.c.commit()
 
-    def training_rows(self, instrument: str, task_hash: str | None = None) -> list[dict]:
+    def training_rows(self, instrument: str, task_hash: str | None = None, *, feature_version: str | None = None) -> list[dict]:
+        """Labelled rows; each carries its feature_version (NULL of a pre-1.46 row -> features.LEGACY_ROWS). feature_version=... keeps
+        only that version (MetaModel training); None = every row with its version (TabICL keeps the CURRENT ones - tabicl.live_rows)."""
         q = "SELECT * FROM rows WHERE status='LABELLED' AND instrument=? AND y IS NOT NULL" + (" AND task_hash=?" if task_hash else "")
         with self._lock:
             rs = [dict(x) for x in self.c.execute(q, (instrument, task_hash) if task_hash else (instrument,)).fetchall()]
-        return [{"row_id": r["row_id"], "decision_ts": r["decision_ts"], "resolve_ts": r["resolve_ts"], "features": json.loads(r["features_json"]),
-                 "y": r["y"], "net_r": r["net_r"], "data_kind": r["data_kind"], "task_hash": r["task_hash"], "spec": json.loads(r["spec_json"])} for r in rs]
+        out = [{"row_id": r["row_id"], "decision_ts": r["decision_ts"], "resolve_ts": r["resolve_ts"], "features": json.loads(r["features_json"]),
+                "y": r["y"], "net_r": r["net_r"], "data_kind": r["data_kind"], "task_hash": r["task_hash"], "spec": json.loads(r["spec_json"]),
+                "feature_version": r.get("feature_version") or F.LEGACY_ROWS} for r in rs]
+        return out if feature_version is None else [r for r in out if r["feature_version"] == feature_version]
 
     def counts(self, instrument: str | None = None) -> dict:
         q = "SELECT task_hash, event_id, engine, status, COUNT(*) n, MIN(decision_ts) t0, MAX(decision_ts) t1, SUM(y) pos FROM rows" + \
             (" WHERE instrument=?" if instrument else "") + " GROUP BY task_hash, event_id, engine, status"
         with self._lock:
             rs = [dict(x) for x in self.c.execute(q, (instrument,) if instrument else ()).fetchall()]
+        # 1.46: labelled rows (what training_rows returns) per feature version - training uses features.CURRENT only
+        qv = "SELECT task_hash, COALESCE(feature_version, ?) fv, COUNT(*) n FROM rows WHERE status='LABELLED' AND y IS NOT NULL" +              (" AND instrument=?" if instrument else "") + " GROUP BY task_hash, fv"
+        with self._lock:
+            vs = [dict(x) for x in self.c.execute(qv, (F.LEGACY_ROWS, instrument) if instrument else (F.LEGACY_ROWS,)).fetchall()]
         tasks: dict = {}
         for r in rs:
             t = tasks.setdefault(r["task_hash"], {"task_hash": r["task_hash"], "event_id": r["event_id"], "engine": r["engine"], "by_status": {},
-                                                  "positives": 0, "from": r["t0"], "to": r["t1"]})
+                                                  "positives": 0, "from": r["t0"], "to": r["t1"], "labelled_by_feature_version": {}})
             t["by_status"][r["status"]] = r["n"]
             t["positives"] += int(r["pos"] or 0)
             t["from"], t["to"] = min(t["from"], r["t0"]), max(t["to"], r["t1"])
+        for v in vs:
+            if v["task_hash"] in tasks:
+                tasks[v["task_hash"]]["labelled_by_feature_version"][v["fv"]] = v["n"]
         return {"tasks": list(tasks.values()), "total": sum(r["n"] for r in rs)}
 
     def add_assessment(self, a: dict) -> None:

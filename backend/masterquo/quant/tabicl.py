@@ -117,10 +117,19 @@ def strategy_features(engine: str | None, strategy: str | None) -> dict:
             "ctx:family_hedging": 1.0 if "HG" in s or "HEDG" in s.upper() else 0.0}
 
 
+def _current(r: dict) -> bool:
+    """A ledger row of the CURRENT feature semantics (QuantLedger.training_rows names the version of every row; LEGACY_ROWS = pre-1.46)."""
+    return r.get("feature_version", F.CURRENT) == F.CURRENT
+
+
 def live_rows(ledger, inst: str, key: str, now: float, *, real_only: bool = False) -> list[dict]:
-    """now = the as-of time (the candidate's decision): only rows whose label was resolved by then. real_only: REAL rows only."""
+    """now = the as-of time (the candidate's decision): only rows whose label was resolved by then. real_only: REAL rows only.
+    1.46: rows of the CURRENT feature semantics only (features.CURRENT, as the candidate's features from QuantService.assess) - a
+    pre-1.46 row (LEGACY_ROWS) has the same column names with another meaning (Kalman candidate, stale DXY)."""
     out = []
     for r in ledger.training_rows(inst):
+        if not _current(r):
+            continue
         if real_only and kind_of(r.get("data_kind")) != "REAL":
             continue                                   # 1.46: a REAL candidate never gets SYNTHETIC / UNKNOWN reference rows
         try:
@@ -664,8 +673,8 @@ class TabICLService:
         known = any(k.split("|", 1)[0] == inst for k in self._live_n)
         if known and not short:
             return
-        if not known and len(self.q.ledger.training_rows(inst)) >= target:
-            return                                       # no candidate scored yet: the 1.41 rule (all labelled rows of the instrument)
+        if not known and sum(1 for r in self.q.ledger.training_rows(inst) if _current(r)) >= target:
+            return                                       # no candidate scored yet: the 1.41 rule (labelled rows usable as context, 1.46: CURRENT)
         self.run_reconstruction(inst, days=int(s.get("reconstruct_days", 30)))
 
     def run_reconstruction(self, inst: str, days: int = 30, background: bool = True) -> dict:

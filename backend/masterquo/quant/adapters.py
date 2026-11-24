@@ -16,7 +16,7 @@ import threading
 import time
 
 from ..modelhub import contract as C
-from ..timeutil import from_epoch, iso
+from ..timeutil import from_epoch, iso, parse_iso
 
 
 VERSION = "PMW-QUANT-ADAPT-1"
@@ -96,13 +96,49 @@ def rules(rt, inst: str) -> list[dict]:
     news = getattr(rt, "news", None)
     if news is not None:
         try:
-            s = news.summary() or {}
-            out.append(_p(canonical_id="rule:news", instrument=inst, timeframe=None, model_name="rule:news", task_type="STATE", task="NEWS_BLACKOUT",
-                          horizon_bars=None, unit="state", state="READY", result=clean({k: s.get(k) for k in ("status", "blackout", "next_event_in_s")}) or {"status": "?"},
-                          data_time=iso_ts(time.time()), source="news", extra={"analytic_role": "GATE_EXISTING"}))
+            out.append(news_record(news, inst))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("rule:news", inst, None, "STATE", "NEWS_BLACKOUT", "state", exc))
     return out
+
+
+NEWS_NOT_READY = ("DISABLED", "NOT_LOADED", "UNAVAILABLE", "STALE", "ERROR")
+
+
+def news_record(news, inst: str, now: float | None = None) -> dict:
+    """1.46 (D17): rule:news READY only with a loaded, current calendar; blackout / next event from what NewsService really returns.
+    The record was READY always (also with the calendar NOT_LOADED / UNAVAILABLE / DISABLED) and read 'blackout' / 'next_event_in_s',
+    which summary() never had - both always empty. Now: blackout = an active HIGH / EXTREME event window of macro() (M04N risk events),
+    next_event_in_s = seconds to the nearest upcoming HIGH / EXTREME event of the calendar (None when none is listed - the calendar is
+    partial, None is not 'no event'). Not a meta-model feature (only the DXY STATE record is); a decision changes only when the user put
+    rule:news into decision.required_models - then a missing calendar blocks new entries (stricter, never looser)."""
+    now = time.time() if now is None else now
+    s = news.summary() or {}
+    m = s.get("macro") if isinstance(s.get("macro"), dict) else (news.macro() or {})
+    base = {"canonical_id": "rule:news", "instrument": inst, "timeframe": None, "model_name": "rule:news", "task_type": "STATE",
+            "task": "NEWS_BLACKOUT", "horizon_bars": None, "unit": "state", "source": "news", "extra": {"analytic_role": "GATE_EXISTING"}}
+    st, mst = str(s.get("status") or "NOT_LOADED"), str(m.get("status") or "NOT_LOADED")
+    if s.get("enabled") is False or mst == "DISABLED":
+        return _p(**base, state="DISABLED", unavailable_reason="moduł wiadomości wyłączony (news.enabled = false)")
+    if st in NEWS_NOT_READY or mst in NEWS_NOT_READY:
+        why = s.get("error") or m.get("error")
+        return _p(**base, state="BLOCKED_DATA", unavailable_reason=f"kalendarz {mst} (raport {st})" + (f": {why}" if why else "")
+                  + " – brak wczytanego / aktualnego kalendarza ≠ brak wydarzeń")
+    nxt, imp = None, None
+    for e in s.get("calendar") or []:
+        if str(e.get("impact") or "").upper() not in ("HIGH", "EXTREME") or not e.get("scheduled_at"):
+            continue
+        try:
+            dt = parse_iso(str(e["scheduled_at"])).timestamp() - now
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if dt > 0 and (nxt is None or dt < nxt):
+            nxt, imp = dt, str(e.get("impact")).upper()
+    act = m.get("active_events") if isinstance(m.get("active_events"), list) else []
+    res = clean({"status": st, "calendar_status": m.get("calendar_status"), "macro_status": mst, "risk_level": m.get("risk_level"),
+                 "blackout": bool(act), "active_events": len(act), "next_event_in_s": None if nxt is None else round(nxt, 1),
+                 "next_event_impact": imp, "as_of": m.get("as_of") or s.get("as_of")}) or {"status": st}
+    return _p(**base, state="READY", result=res, data_time=iso_ts(now))
 
 
 # ---------------------------------------------------------------------------------------------------------------- indicators / DXY / zones / MC
@@ -146,16 +182,18 @@ def analysis(rt, inst: str) -> list[dict]:
     mc = getattr(rt, "montecarlo", None)
     if mc is not None:
         try:
+            # 1.46 (D11): MonteCarloService.status() has no 'last' / 'result' (its keys: variant, calibrated, active_calibration, runs,
+            # last_ms, last_error, ...) and compute() keeps no snapshot result - the old read was dead and the reason did not say why. A
+            # simulation exists per plan on request only (one plan's p_tp_first is not a state of the market for every candidate), so the
+            # record stays DISABLED with the real status of the service in `extra`; nothing reaches the meta-model features.
             st = mc.status() or {}
-            last = st.get("last") or st.get("result")
-            ok = isinstance(last, dict) and last.get("status") in ("OK", "READY", "DONE")
+            info = clean({k: st.get(k) for k in ("variant", "calibrated", "active_calibration", "runs", "last_ms", "last_error", "synthetic")}) or {}
+            cal = "kalibracja " + str(st.get("active_calibration")) if st.get("calibrated") else "bez aktywnej kalibracji (wariant BLOCK)"
             out.append(_p(canonical_id="analysis:montecarlo", instrument=inst, timeframe=None, model_name="analysis:montecarlo", task_type="STATE",
-                          task="PATH_SIMULATION_MODEL_SIMULATED", horizon_bars=None, unit="mixed", state="READY" if ok else "DISABLED",
-                          result=clean({k: last.get(k) for k in ("p_tp_first", "p_sl_first", "n_paths", "seed", "horizon_bars", "method")}) if ok else None,
-                          data_time=(last or {}).get("as_of") if ok else None,
-                          unavailable_reason=None if ok else "symulacja uruchamiana na żądanie (brak bieżącego wyniku); wynik MODEL_SIMULATED ≠ skalibrowane p",
-                          source="montecarlo", calibration={"method": None, "status": "UNCALIBRATED"} if ok else None,
-                          extra={"analytic_role": "SIMULATION", "probability_kind": "MODEL_SIMULATED"}))
+                          task="PATH_SIMULATION_MODEL_SIMULATED", horizon_bars=None, unit="mixed", state="DISABLED",
+                          unavailable_reason=f"symulacja liczona na żądanie dla konkretnego planu (panel / API) – brak stanu migawki dla Quant; "
+                                             f"{cal}; wynik MODEL_SIMULATED ≠ skalibrowane p",
+                          source="montecarlo", extra={"analytic_role": "SIMULATION", "probability_kind": "MODEL_SIMULATED", "service_status": info}))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("analysis:montecarlo", inst, None, "STATE", "PATH_SIMULATION_MODEL_SIMULATED", "mixed", exc))
     return out
@@ -338,6 +376,7 @@ def scalp_a(rt, inst: str) -> list[dict]:
                    horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE") else "ERROR",
                    unavailable_reason=str(ans.get("reason") or ans.get("status"))[:200])]
     out = []
+    run = _scalp_run(reg, ans.get("run_id"))
     for hz, r in (ans.get("horizons") or {}).items():
         mins = int("".join(ch for ch in str(hz) if ch.isdigit()) or 1)
         res = {"DOWN": r.get("p_down"), "FLAT": r.get("p_flat"), "UP": r.get("p_up")}
@@ -349,9 +388,31 @@ def scalp_a(rt, inst: str) -> list[dict]:
         res = {k: float(v) / tot for k, v in res.items()}
         out.append(_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, model_version=ans.get("run_id"), task_type="CLASS_PROBABILITIES",
                       task=f"SCALP_DIRECTION_H{mins}_M1", horizon_bars=mins, unit="probability", state="READY", result=res, data_time=ans.get("feature_time_utc"),
-                      source="forecast worker (.venv_candles)", calibration={"method": None, "status": "UNCALIBRATED"},
+                      source="forecast worker (.venv_candles)", calibration=_scalp_calibration(run, hz, mins),
                       extra={"analytic_role": "BASE_FORECAST", "normalisation": "zaokrąglenie 4 miejsc – jawna renormalizacja w tolerancji 2e-4"}))
     return out
+
+
+def _scalp_run(reg: dict, run_id) -> dict:
+    """Registry entry of the run that answered (forecast run_id), else of the active run; {} when unknown."""
+    runs = reg.get("runs") if isinstance(reg.get("runs"), dict) else {}
+    e = runs.get(run_id) if run_id else None
+    if not isinstance(e, dict):
+        e = runs.get(reg.get("active"))
+    return e if isinstance(e, dict) else {}
+
+
+def _scalp_calibration(run: dict, hz, mins: int) -> dict:
+    """1.46 (D21): the calibration of task A as the scalp registry records it. The trainer fits a multinomial calibrator on the calibration
+    period for the selected model of each horizon (gold_candles_runtime/scalp_train.py: spec['calibrator']) and the worker applies it
+    (scalp_infer.ScalpModel.predict) - the record said UNCALIBRATED for every run. A horizon without a stored calibrator (prior / none)
+    stays UNCALIBRATED. Metadata only: the Quant features do not read the calibration."""
+    models = run.get("models") if isinstance(run.get("models"), dict) else {}
+    spec = models.get(str(hz)) or models.get(str(mins))
+    if isinstance(spec, dict) and spec.get("calibrator"):
+        return {"method": "regresja logistyczna (multinomialna) na log-prawdopodobieństwach, okres kalibracji – rejestr scalp",
+                "status": "CALIBRATED_DEV"}
+    return {"method": None, "status": "UNCALIBRATED"}
 
 
 # ---------------------------------------------------------------------------------------------------------------- lab (read the lab loop state)

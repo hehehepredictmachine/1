@@ -223,6 +223,15 @@ def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
         source_ref={"sh_signal_id": su.get("signal_id")})
 
 
+def sh_candidate(su: dict, *, regime: dict | None = None, snap: dict | None = None) -> SetupCandidate:
+    """1.46 (D4): THE factory of the SH candidate - the evaluation ledger (the rows Quant learns from) and the DecisionCoordinator (Quant
+    ASSIST inference) build it here, both with the regime of the same SH cycle snapshot (`regime`, else snap['regime']). The coordinator
+    used from_sh_setup(su) without a regime: the MetaModel saw ctx:regime=* in every training row and masks at the SH decision."""
+    if regime is None and isinstance(snap, dict):
+        regime = snap.get("regime")
+    return from_sh_setup(su, regime=regime if isinstance(regime, dict) else None)
+
+
 def from_scalp_plan(plan: dict, *, status: str, reasons: list, instrument: str, symbol: str, f1: float, horizon_s: float,
                     commission_known: bool | None = None, extra_cost: float | None = None, regime: dict | None = None) -> SetupCandidate:
     """Scalp Range->Sweep->Retest candidate (SHADOW machine, decision O6). Entry = the shadow fill (Ask/Bid or the limit price),

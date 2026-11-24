@@ -324,8 +324,11 @@ class DecisionCoordinator:
                       sl=_f(su.get("sl")), tp=_f(tps[-1].get("price")) if tps else None, risk_money=_f((risk or {}).get("risk_money")),
                       volume=_f((risk or {}).get("volume")), reasons=[] if base == "ENTER" else [str(su.get("status_reason") or "")][:1])
 
-    def record_sh(self, su: dict, risk: dict | None, mode: str, account_key: str | None, coord: dict | None = None) -> dict | None:
-        """SH path: the SH receivers (families ASSIST hold, Kronos, arbitration) already ran on `su`; record the final decision."""
+    def record_sh(self, su: dict, risk: dict | None, mode: str, account_key: str | None, coord: dict | None = None, *,
+                  regime: dict | None = None) -> dict | None:
+        """SH path: the SH receivers (families ASSIST hold, Kronos, arbitration) already ran on `su`; record the final decision.
+        regime (1.46, D4): the regime of the SH cycle snapshot - the Quant ASSIST candidate is built with it by the same factory as the
+        evaluation ledger rows (evaluation.contract.sh_candidate)."""
         if not self.enabled():
             return None
         try:
@@ -338,7 +341,7 @@ class DecisionCoordinator:
             if self._quant_assist() and su.get("status") == "READY":
                 try:
                     from ..evaluation import contract as EK
-                    preds = preds + self._quant_entry("SH", cand=EK.from_sh_setup(su).to_dict())
+                    preds = preds + self._quant_entry("SH", cand=EK.sh_candidate(su, regime=regime).to_dict())
                 except Exception as exc:  # noqa: BLE001 - not a candidate the evaluation contract accepts -> Quant has no entry
                     preds = preds + [{"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
                                       "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]

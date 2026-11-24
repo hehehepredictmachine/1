@@ -2955,7 +2955,11 @@ def create_app(rt, port: int) -> FastAPI:
             p = QM.activate(inst, str(body.get("task_hash") or ""), str(body.get("version") or ""))
         except (QM.MetaError, OSError, KeyError, ValueError) as exc:
             raise HTTPException(409, f"ACTIVATION_REFUSED: {exc}") from None
-        return {"ok": True, "pointer": p}
+        try:                       # 1.46 (additive): which feature semantics the activated MetaModel gets (FEAT-1 / FEAT-3)
+            sem = QM.feature_semantics(inst, str(body.get("task_hash") or ""), str(body.get("version") or ""))
+        except (QM.MetaError, OSError, KeyError, ValueError) as exc:
+            sem = {"feature_version": None, "note": f"{type(exc).__name__}: {exc}"[:200]}
+        return {"ok": True, "pointer": p, "feature_semantics": sem}
 
     @app.post("/api/v1/quant/models/rollback")
     def quant_rollback(body: dict = Body(...)):

@@ -44,6 +44,18 @@ def day_start(now: float) -> float:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
 
 
+def _regime_kw(record_sh, snap: dict | None) -> dict:
+    """1.46 (D4): {'regime': <regime of this cycle's snapshot>} for a coordinator whose record_sh takes it (DecisionCoordinator), {} for
+    an older / stub receiver without the keyword - the call stays valid for both."""
+    import inspect
+    try:
+        ok = "regime" in inspect.signature(record_sh).parameters
+    except (TypeError, ValueError):
+        ok = False
+    reg = snap.get("regime") if isinstance(snap, dict) else None
+    return {"regime": reg if isinstance(reg, dict) else None} if ok else {}
+
+
 class SHService:
     def __init__(self, cfg_store, bridge, db, bus, log, modes, *, clock=time.time, terminal=None):
         self.cfg_store, self.bridge, self.bus, self.log, self.modes = cfg_store, bridge, bus, log, modes
@@ -294,7 +306,8 @@ class SHService:
                 try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
                     # 1.46: the coordinator result of THIS candidate (coord is keyed by signal_id - coord.get(strat) was always None) with
                     # the "allowed" flag record_sh reads; audit trail only - entries still follow cd["decision"] above
-                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, dict(cd, allowed=cd.get("decision") == "PROCEED") if cd else None)
+                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, dict(cd, allowed=cd.get("decision") == "PROCEED") if cd else None,
+                                        **_regime_kw(arc.record_sh, snap))
                     su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
                     req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith(("MODEL_REQUIRED", "MODEL_QUANT_HOLD"))]
                     if req and su.get("status") == "READY":
