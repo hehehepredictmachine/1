@@ -379,5 +379,54 @@ class TestS12HigherLowNotTautology(unittest.TestCase):
         self.assertEqual({d.phase for d in out.values()}, {"WATCH"})          # the SHORT trigger is NOT released by the stricter LONG
 
 
+class TestSRClusterBounded(unittest.TestCase):
+    """I0757: klasteryzacja pivotów S/R była łańcuchowa (single-linkage: p - ostatni <= tol) - łańcuch równo rozłożonych pivotów sklejał się
+    w strefę wielokrotnie szerszą od tolerancji. multi_tf (wykres, narzędzie agenta) używa teraz klastra ograniczonego (p - pierwszy <= tol,
+    MQ-SR-1.1.0); zones_for_tf domyślnie zostaje przy regule MQ-SR-1.0.0 - z niej liczona jest mapa stref (zones/engine), a z niej cechy
+    wytrenowanych modeli (ML legacy zone_*, Quant analysis:zones): stare artefakty dostają dokładnie dzisiejsze wejścia."""
+
+    @staticmethod
+    def _view():
+        from datetime import UTC, datetime, timedelta
+
+        from masterquo.strategies.base import MarketView, TFView
+        t0 = datetime(2026, 10, 1, tzinfo=UTC)
+        closes = []
+        for cyc in range(12):                                   # zig-zag whose lows / highs rise by 0.4 per swing (< tolerance ~0.67)
+            lo = 2000.0 + 0.4 * cyc
+            closes += [lo + 2.5 * k for k in range(4)] + [lo + 10 - 2.5 * k for k in range(4)]
+        bars, prev = [], closes[0]
+        for i, c in enumerate(closes):
+            bars.append({"open_utc": iso_(t0 + timedelta(hours=i)), "o": prev, "h": max(prev, c) + 0.1, "l": min(prev, c) - 0.1, "c": c, "closed": True})
+            prev = c
+        return MarketView(symbol="X", as_of="", tfs={"H1": TFView("H1", bars)}, bid=None, ask=None, point=0.01)
+
+    def test_multi_tf_zones_are_not_wider_than_the_tolerance(self):
+        from masterquo.analysis import levels as L
+        r = L.multi_tf(self._view(), tfs=("H1",))
+        h1 = r["by_tf"]["H1"]
+        self.assertEqual(h1["status"], "OK")
+        self.assertGreaterEqual(len(h1["zones"]), 4)
+        for z in h1["zones"]:
+            self.assertLessEqual(z["high"] - z["low"], h1["tolerance"] + 1e-6, z)
+            self.assertEqual(z["version"], "MQ-SR-1.1.0")
+        self.assertEqual(r["version"], "MQ-SR-1.1.0")
+
+    def test_zone_map_rule_is_unchanged(self):
+        from masterquo.analysis import levels as L
+        v = self._view()
+        r = L.zones_for_tf(v.tfs["H1"], "H1", point=0.01)                  # default = the rule of the zone map / trained zone features
+        self.assertEqual({z["version"] for z in r["zones"]}, {"MQ-SR-1.0.0"})
+        self.assertEqual(sorted(round(z["high"] - z["low"], 2) for z in r["zones"]), [4.0, 4.0])
+
+    def test_cluster_rules(self):
+        from masterquo.analysis import levels as L
+        piv = [{"price": 100.0 + 0.8 * k} for k in range(10)]
+        self.assertEqual([len(c) for c in L.cluster_pivots(piv, 1.0, "CHAIN")], [10])
+        bounded = L.cluster_pivots(piv, 1.0, "BOUNDED")
+        self.assertEqual(len(bounded), 5)
+        self.assertTrue(all(c[-1]["price"] - c[0]["price"] <= 1.0 for c in bounded))
+
+
 if __name__ == "__main__":
     unittest.main()

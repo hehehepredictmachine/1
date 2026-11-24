@@ -13,6 +13,14 @@ Zones: confirmed pivots (left = right = 3 bars; W1/MN1: 2/2) of each TF are clus
 >= `right` bars apart), first/last reaction, age in bars, freshness, state (INTACT / BROKEN_UP / BROKEN_DOWN / RECLAIMED)
 and available_at = when its last reaction became known (pivot + right bars closed). S/R, FVG/OB and volatility walls are
 different level types: their proximity is a confluence FEATURE, it never renames a support into a "wall".
+
+Clustering rule (1.46 arch, I0757), pivots sorted by price:
+  BOUNDED (MQ-SR-1.1.0)  a pivot joins the cluster while price - LOWEST price of the cluster <= tol, so the raw width of a zone never
+                         exceeds the tolerance; used by multi_tf (chart, structure endpoint, agent tool).
+  CHAIN   (MQ-SR-1.0.0)  single linkage (price - LAST pivot <= tol): a chain of pivots spaced < tol glues into a zone many times wider than
+                         the tolerance. Kept as the zones_for_tf default ONLY because the zone map (zones/engine -> UZICE HTF overlap) feeds
+                         the features of trained models (ML legacy zone_*, Quant analysis:zones) - old artifacts must keep exactly today's
+                         inputs; a switch belongs to a new feature-schema version.
 """
 from __future__ import annotations
 
@@ -22,7 +30,8 @@ from datetime import timedelta
 from ..strategies import indicators as ind
 from ..timeutil import TF_SECONDS, iso, parse_iso
 
-VERSION = "MQ-SR-1.0.0"
+VERSION = "MQ-SR-1.1.0"                       # multi_tf (BOUNDED clusters)
+CLUSTER_RULES = {"BOUNDED": "MQ-SR-1.1.0", "CHAIN": "MQ-SR-1.0.0"}
 # 1.46: the unused constant UTC (and its timezone import) removed
 
 
@@ -71,9 +80,24 @@ def aggregate_d1(d1: list[dict], period: str) -> dict:
             "forming_period": f"{fp[0]}-{fp[1]:02d}"}
 
 
+def cluster_pivots(piv: list[dict], tol: float, rule: str = "CHAIN") -> list[list[dict]]:
+    """Pivots sorted by price -> clusters (see the module docstring: BOUNDED = width <= tol, CHAIN = single linkage)."""
+    if rule not in CLUSTER_RULES:
+        raise ValueError(f"unknown S/R cluster rule {rule}")
+    clusters: list[list[dict]] = []
+    for p in piv:
+        ref = clusters[-1][0 if rule == "BOUNDED" else -1]["price"] if clusters else None
+        if ref is not None and p["price"] - ref <= tol:
+            clusters[-1].append(p)
+        else:
+            clusters.append([p])
+    return clusters
+
+
 def zones_for_tf(v, tf: str, *, right: int = 3, tol_atr: float = 0.25, max_zones: int = 8, fresh_bars: int = 60,
-                 point: float | None = None, period_seconds: int | None = None) -> dict:
-    """v: TFView-like (t, o, h, l, c). Returns zones nearest to the last close."""
+                 point: float | None = None, period_seconds: int | None = None, cluster: str = "CHAIN") -> dict:
+    """v: TFView-like (t, o, h, l, c). Returns zones nearest to the last close. `cluster`: BOUNDED / CHAIN (default - the rule of the zone
+    map and of the trained zone features; see the module docstring)."""
     n = len(v)
     if n < 2 * right + 5:
         return {"tf": tf, "status": "INSUFFICIENT_HISTORY", "zones": []}
@@ -83,12 +107,7 @@ def zones_for_tf(v, tf: str, *, right: int = 3, tol_atr: float = 0.25, max_zones
     piv = [p for p in ind.pivots(v.h, v.l, right, right) if p["confirmed_index"] <= n - 1]
     sec = period_seconds or TF_SECONDS.get(tf, 86400)
     piv.sort(key=lambda p: p["price"])
-    clusters: list[list[dict]] = []
-    for p in piv:
-        if clusters and p["price"] - clusters[-1][-1]["price"] <= tol:
-            clusters[-1].append(p)
-        else:
-            clusters.append([p])
+    clusters = cluster_pivots(piv, tol, cluster)
     last_c = v.c[n - 1]
     zones = []
     for cl in clusters:
@@ -117,7 +136,7 @@ def zones_for_tf(v, tf: str, *, right: int = 3, tol_atr: float = 0.25, max_zones
         open_last = v.t[known] if known < n else v.t[-1]
         avail = iso(parse_iso(open_last) + timedelta(seconds=sec))
         zid = "SR-" + hashlib.sha256(f"{tf}|{round(lo_, 2)}|{round(hi_, 2)}|{v.t[idx[0]]}".encode()).hexdigest()[:10]
-        zones.append({"zone_id": zid, "kind": "SR", "version": VERSION, "tf": tf, "low": round(lo_, 5), "high": round(hi_, 5),
+        zones.append({"zone_id": zid, "kind": "SR", "version": CLUSTER_RULES[cluster], "tf": tf, "low": round(lo_, 5), "high": round(hi_, 5),
                       "reactions": indep, "touches": len(cl), "first_utc": v.t[idx[0]], "last_utc": v.t[last_rx["index"]], "age_bars": age,
                       "freshness": "FRESH" if age <= fresh_bars else "OLD", "state": state, "available_at": avail, "known_index": known,
                       "role": "SUPPORT" if hi_ < last_c else ("RESISTANCE" if lo_ > last_c else "AT_PRICE"),
@@ -146,7 +165,7 @@ def multi_tf(view, d1_raw: list[dict] | None = None, tfs=("H1", "H4", "H8", "D1"
         if v is None or len(v) == 0:
             out["by_tf"][tf] = {"tf": tf, "status": "BRAK_DANYCH", "zones": []}
             continue
-        r = zones_for_tf(v, tf, point=point)
+        r = zones_for_tf(v, tf, point=point, cluster="BOUNDED")
         out["by_tf"][tf] = r
         out["zones"] += r["zones"]
     d1 = d1_raw
@@ -161,7 +180,8 @@ def multi_tf(view, d1_raw: list[dict] | None = None, tfs=("H1", "H4", "H8", "D1"
             out["by_tf"][per] = {"tf": per, "status": "BRAK_DANYCH", "reason": "INSUFFICIENT_HISTORY", "source": agg["source"],
                                  "bars": len(agg["bars"]), "zones": []}
             continue
-        r = zones_for_tf(_Bars(agg["bars"]), per, right=right, point=point, period_seconds=7 * 86400 if per == "W1" else 31 * 86400)
+        r = zones_for_tf(_Bars(agg["bars"]), per, right=right, point=point, period_seconds=7 * 86400 if per == "W1" else 31 * 86400,
+                         cluster="BOUNDED")
         for z in r["zones"]:
             z["available_at"] = agg["bars"][z["known_index"]]["available_at"]      # the period bar that confirmed the pivot is closed
         r["source"] = agg["source"]
