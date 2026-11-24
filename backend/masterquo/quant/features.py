@@ -11,6 +11,14 @@ Outputs with different meanings are separate NAMED features - nothing is average
 Every feature f has mask m:f = 1 when the input was missing / not READY / excluded - the value is then 0 AND the mask says so; the
 meta-model is trained with exactly this policy (a missing model is never turned into a neutral probability). At inference only the
 artifact's feature list is used: unknown features are ignored, trained features that are missing get mask 1.
+
+Versions of the feature SEMANTICS (1.46) - the prefix of an artifact's feature_schema says which builder computes its input:
+  PMW-QUANT-FEAT-1 / -2  build2 exactly as in 1.41-1.46 (frozen; MetaModel artifacts trained before 1.46 carry FEAT-1)
+  PMW-QUANT-FEAT-3       build3 = the same names with fixed meaning: an unconfirmed *_CANDIDATE filter state is no direction (D8), a DXY
+                         relation whose own status is not READY (STALE / WARMUP / NO_DATA) is missing, not a value (D9); with it the
+                         coordinator's SH candidate carries the regime as the ledger rows do (D4 - quant/service.assess)
+New ledger rows and new MetaModels use CURRENT; an older artifact keeps its own input (never silently the new meaning) and training never
+mixes rows of different versions (quant/ledger.py feature_version, metamodel.train).
 """
 from __future__ import annotations
 
@@ -83,8 +91,10 @@ def context_features(c: dict) -> dict:
     return out
 
 
-def prediction_features(preds: list[dict], side: str) -> dict:
-    """From ELIGIBLE (checked, deduplicated) PMW-PRED records only."""
+def prediction_features(preds: list[dict], side: str, *, semantics: str = VERSION) -> dict:
+    """From ELIGIBLE (checked, deduplicated) PMW-PRED records only. semantics=VERSION3 applies the FEAT-3 fixes (module docstring);
+    the default is the FEAT-1 computation, unchanged."""
+    v3 = semantics == VERSION3
     sgn = 1 if side == "LONG" else -1
     out = {}
     for p in preds or []:
@@ -103,9 +113,11 @@ def prediction_features(preds: list[dict], side: str) -> dict:
             out[base + ":score"] = float(r["raw_score"])
             out[base + ":score_x_side"] = sgn * float(r["raw_score"])
         elif tt == "FILTER_STATE" and isinstance(r, dict) and isinstance(r.get("state"), str):
-            d = _dir_of(r["state"])
+            d = _filter_dir_v3(r["state"]) if v3 else _dir_of(r["state"])
             out[f"st:{cid}:aligned"] = float(sgn * d)
         elif tt == "STATE" and cid == "analysis:dxy_correlation" and isinstance(r, dict):
+            if v3 and r.get("status") not in (None, "READY"):
+                continue                                # FEAT-3 (D9): a STALE / WARMUP relation is missing (masks), not a value
             for k in ("corr_72", "resid_z_72", "beta_72"):
                 if _f(r.get(k)) is not None:
                     out[f"ctx:dxy_{k}"] = float(r[k])
@@ -193,3 +205,48 @@ def build2(c: dict, preds: list[dict]) -> dict:
 
 def schema2(names: list[str]) -> str:
     return VERSION2 + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------------------------------------------- 1.46 FEAT-3 (semantics)
+VERSION3 = "PMW-QUANT-FEAT-3"
+CURRENT = VERSION3                     # new ledger rows and new MetaModels
+LEGACY_ROWS = VERSION                  # ledger rows logged before 1.46 (no feature_version): the semantics of the FEAT-1 artifacts
+ARTIFACT_VERSIONS = (VERSION, VERSION3)   # feature_schema prefixes a MetaModel artifact may carry (metamodel.train never wrote FEAT-2)
+
+
+def _filter_dir_v3(state: str) -> int:
+    """FEAT-3 (D8): an unconfirmed *_CANDIDATE filter state names no direction. Kalman BULLISH_CANDIDATE / BEARISH_CANDIDATE is a raw
+    change AGAINST the accepted crossover that may still revert (mm/kalman.py) - FEAT-1 read it as +1 / -1 (substring BULL / BEAR).
+    *_CONFIRMED and the other named states as in FEAT-1; NEUTRAL / INITIALIZING / INSUFFICIENT_HISTORY stay 0."""
+    s = str(state or "").upper()
+    return 0 if s.endswith("CANDIDATE") else _dir_of(s)
+
+
+def build3(c: dict, preds: list[dict]) -> dict:
+    """FEAT-3: every FEAT-2 column (same names) with the FEAT-3 meaning of the prediction features."""
+    f = {**plan_features(c), **context_features(c), **prediction_features(preds, c.get("direction"), semantics=VERSION3)}
+    f = {k: v for k, v in f.items() if _f(v) is not None}
+    f.update(price_forecast_features(preds, c))
+    for k, v in ((c.get("research_features") or {}).items()):
+        if _f(v) is not None:
+            f[f"rm:{k}"] = float(v)
+    return {k: v for k, v in f.items() if _f(v) is not None}
+
+
+def version_of(feature_schema) -> str | None:
+    """'PMW-QUANT-FEAT-3:<hash>' -> 'PMW-QUANT-FEAT-3'; None for an unknown prefix."""
+    v = str(feature_schema or "").split(":", 1)[0]
+    return v if v in (VERSION, VERSION2, VERSION3) else None
+
+
+def schema_for(version: str, names: list[str]) -> str:
+    return version + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+def build_for(version: str, c: dict, preds: list[dict]) -> dict:
+    """The builder of one feature version: FEAT-1 / FEAT-2 -> build2 (the frozen 1.41 computation), FEAT-3 -> build3."""
+    if version in (VERSION, VERSION2):
+        return build2(c, preds)
+    if version == VERSION3:
+        return build3(c, preds)
+    raise ValueError(f"FEATURE_VERSION_UNKNOWN:{version}")

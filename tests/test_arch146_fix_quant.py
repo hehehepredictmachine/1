@@ -25,6 +25,218 @@ def iso(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).isoformat()
 
 
+# ================================================================================================ frozen input (FEAT-1 bit-for-bit)
+def frozen_cand():
+    return {"setup_id": "SIG-F", "engine": "SH_SCALPING", "strategy_id": "SCALPING", "symbol": "XAUUSD-", "instrument": "XAUUSD",
+            "timeframe": "M1", "decision_ts": 1_794_000_123.0, "direction": "LONG", "entry_type": "MARKET", "entry_price": 2000.0,
+            "stop_loss": 1998.0, "targets": [{"price": 2002.5, "weight": 0.5}, {"price": 2004.0, "weight": 0.5}], "horizon_s": 1800.0,
+            "market_regime": {"state": "TREND", "source": "sh.context (RegimeMachine v2)"}, "features": {"atr_m5": 1.7},
+            "execution_context": {"spread": 0.21, "cost_price": 0.35, "commission_known": True}, "score": 64.0,
+            "research_features": {"etc:score": 0.25, "g7:none": None}}
+
+
+def pred(cid, tt, task, tf, res, unit="probability", state="READY", eligible=True):
+    return {"canonical_id": cid, "task_type": tt, "task": task, "timeframe": tf, "result": res, "unit": unit, "state": state,
+            "eligibility": {"eligible": eligible, "reason": None if eligible else "STALE"}}
+
+
+def frozen_preds():
+    return [pred("trainhub:TH_LOGREG", "CLASS_PROBABILITIES", "DIRECTION_H6_M5", "M5", {"UP": 0.61, "DOWN": 0.27, "FLAT": 0.12}),
+            pred("mm:gpr_logret", "REGRESSION", "LOG_RETURN_H3_M5", "M5", {"mean": 0.0004, "sd": 0.0011}, unit="log_return"),
+            pred("lab:lgbm", "SCORE", "TRIPLE_BARRIER_LONG_SCORE_H6", "M5", {"raw_score": 0.37}, unit="ratio"),
+            pred("mm:kalman_cross", "FILTER_STATE", "KALMAN_CROSS_STATE", "M5", {"state": "BULLISH_CANDIDATE", "fast": 2001.0}, unit="state"),
+            pred("mm:breakout_zones", "FILTER_STATE", "BREAKOUT_ZONES_STATE", "M5", {"state": "BEARISH"}, unit="state"),
+            pred("analysis:dxy_correlation", "STATE", "XAU_DXY_RELATION_H1", "H1", {"status": "STALE", "corr_72": -0.4, "resid_z_72": 1.25,
+                                                                                  "beta_72": -1.1}, unit="mixed"),
+            pred("tsfm:chronos2", "REGRESSION", "PRICE_H12_M5", "M5", {"last_close": 2000.1, "pred_close": 2001.3, "median": 2001.0,
+                                                                     "quantiles_h": {"0.1": 1999.2, "0.9": 2003.4}}, unit="price"),
+            pred("scalp:A_direction", "CLASS_PROBABILITIES", "SCALP_DIRECTION_H1_M1", "M1", {"UP": 0.2, "DOWN": 0.7, "FLAT": 0.1}, state="BLOCKED_DATA"),
+            pred("gold_candles:plan", "CLASS_PROBABILITIES", "DIRECTION_H15_M5", "M5", {"UP": 0.5, "DOWN": 0.4, "FLAT": 0.1}, eligible=False)]
+
+
+# build2(frozen_cand(), frozen_preds()) computed by the code BEFORE this change (HEAD 42d6949) - FEAT-1 artifacts must keep getting it
+FROZEN_FEAT1 = {
+    'plan:side_long': 1.0, 'plan:gain_r': 1.625, 'plan:tp1_r': 1.25, 'plan:n_targets': 2.0, 'plan:horizon_min': 30.0, 'ctx:cost_r': 0.175,
+    'ctx:spread_r': 0.105, 'ctx:risk_atr': 1.1764705882352942, 'ctx:hour_sin': -0.6360782202777646, 'ctx:hour_cos': 0.7716245833877194,
+    'ctx:regime=TREND': 1.0, 'ctx:regime=RANGE': 0.0, 'ctx:regime=TRANSITION': 0.0, 'ctx:regime=HIGH_VOL': 0.0, 'ctx:engine=SH_SCALPING': 1.0,
+    'ctx:engine=SH_HEDGING': 0.0, 'ctx:engine=SCALP_SHADOW': 0.0, 'ctx:engine=ACTIVE_S01_S12': 0.0, 'ctx:heuristic_score': 0.64,
+    'fc:trainhub:TH_LOGREG:DIRECTION_H6_M5:M5:edge': 0.33999999999999997, 'fc:mm:gpr_logret:LOG_RETURN_H3_M5:M5:z': 0.36363636363636365,
+    'fc:lab:lgbm:TRIPLE_BARRIER_LONG_SCORE_H6:M5:score': 0.37, 'fc:lab:lgbm:TRIPLE_BARRIER_LONG_SCORE_H6:M5:score_x_side': 0.37,
+    'st:mm:kalman_cross:aligned': 1.0, 'st:mm:breakout_zones:aligned': -1.0, 'ctx:dxy_corr_72': -0.4, 'ctx:dxy_resid_z_72': 1.25,
+    'ctx:dxy_beta_72': -1.1, 'fcp:tsfm:chronos2:M5:d_atr': 0.7058823529412033, 'fcp:tsfm:chronos2:M5:band_atr': 2.4705882352941444,
+    'fcp:tsfm:chronos2:M5:to_tp1_r': -0.6000000000000227, 'fcp:tsfm:chronos2:M5:to_sl_r': 1.6499999999999773,
+    'fcp:tsfm:chronos2:M5:med_vs_entry_r': 0.5, 'rm:etc:score': 0.25,
+}
+
+
+class TestFeat1FrozenBitForBit(unittest.TestCase):
+    """The FEAT-1 computation (build2 - what every MetaModel artifact trained before 1.46 receives) is unchanged, value for value."""
+
+    def test_legacy_builder_reproduces_the_frozen_output(self):
+        from masterquo.quant import features as F
+        self.assertEqual(F.build2(frozen_cand(), frozen_preds()), FROZEN_FEAT1)
+        self.assertEqual(F.build_for(F.VERSION, frozen_cand(), frozen_preds()), FROZEN_FEAT1)
+        self.assertEqual(F.build_for(F.VERSION2, frozen_cand(), frozen_preds()), FROZEN_FEAT1)
+        self.assertEqual(F.prediction_features(frozen_preds(), "LONG")["st:mm:kalman_cross:aligned"], 1.0)   # legacy meaning kept
+        self.assertEqual(F.schema(["a", "b"]), F.schema_for(F.VERSION, ["a", "b"]))
+
+    def test_feat3_differs_only_by_the_fixed_meaning(self):
+        from masterquo.quant import features as F
+        f3 = F.build3(frozen_cand(), frozen_preds())
+        self.assertEqual(F.CURRENT, F.VERSION3)
+        self.assertEqual(F.build_for(F.CURRENT, frozen_cand(), frozen_preds()), f3)
+        diff = {k for k in set(f3) | set(FROZEN_FEAT1) if f3.get(k) != FROZEN_FEAT1.get(k)}
+        self.assertEqual(diff, {"st:mm:kalman_cross:aligned", "ctx:dxy_corr_72", "ctx:dxy_resid_z_72", "ctx:dxy_beta_72"})
+        self.assertEqual(f3["st:mm:kalman_cross:aligned"], 0.0)
+
+
+# ================================================================================================ D8
+class TestKalmanCandidateNotDirectionD8(unittest.TestCase):
+    """quant/features._dir_of matched the substring BULL / BEAR: Kalman BULLISH_CANDIDATE (an unconfirmed raw change against the accepted
+    crossover) became +1 in st:mm:kalman_cross:aligned."""
+
+    def rec(self, state):
+        return [pred("mm:kalman_cross", "FILTER_STATE", "KALMAN_CROSS_STATE", "M5", {"state": state}, unit="state")]
+
+    def test_candidate_is_zero_confirmed_keeps_the_sign(self):
+        from masterquo.quant import features as F
+        v3 = F.VERSION3
+        for state, side, want in (("BULLISH_CANDIDATE", "LONG", 0.0), ("BEARISH_CANDIDATE", "LONG", 0.0), ("BEARISH_CANDIDATE", "SHORT", 0.0),
+                                  ("BULLISH_CONFIRMED", "LONG", 1.0), ("BEARISH_CONFIRMED", "LONG", -1.0), ("BEARISH_CONFIRMED", "SHORT", 1.0),
+                                  ("NEUTRAL", "LONG", 0.0), ("INSUFFICIENT_HISTORY", "LONG", 0.0), ("INITIALIZING", "SHORT", 0.0)):
+            got = F.prediction_features(self.rec(state), side, semantics=v3)["st:mm:kalman_cross:aligned"]
+            self.assertEqual(got, want, (state, side))
+        c = dict(frozen_cand(), direction="LONG")
+        self.assertEqual(F.build3(c, self.rec("BULLISH_CANDIDATE"))["st:mm:kalman_cross:aligned"], 0.0)
+        self.assertEqual(F.build2(c, self.rec("BULLISH_CANDIDATE"))["st:mm:kalman_cross:aligned"], 1.0)   # FEAT-1: frozen
+
+
+# ================================================================================================ D9
+class TestDxyStaleMaskedD9(unittest.TestCase):
+    """A STALE DXY relation (last DXY bar older than max_age_s) was READY in Quant and its old correlations entered the features."""
+
+    def rec(self, status):
+        res = {"corr_72": -0.4, "resid_z_72": 1.2, "beta_72": -1.1}
+        if status is not None:
+            res["status"] = status
+        return [pred("analysis:dxy_correlation", "STATE", "XAU_DXY_RELATION_H1", "H1", res, unit="mixed")]
+
+    def test_stale_or_warmup_relation_is_missing_in_feat3(self):
+        from masterquo.quant import features as F
+        for status in ("STALE", "WARMUP", "NO_DATA", "DISABLED"):
+            f = F.build3(frozen_cand(), self.rec(status))
+            self.assertFalse([k for k in f if k.startswith("ctx:dxy_")], status)
+            names = ["ctx:dxy_corr_72", "ctx:dxy_beta_72"]
+            self.assertEqual(F.vectorise(f, names), ([0.0, 0.0], [1.0, 1.0]))        # masks, never an old value
+        for status in ("READY", None):
+            f = F.build3(frozen_cand(), self.rec(status))
+            self.assertEqual((f["ctx:dxy_corr_72"], f["ctx:dxy_beta_72"]), (-0.4, -1.1), status)
+        self.assertEqual(F.build2(frozen_cand(), self.rec("STALE"))["ctx:dxy_corr_72"], -0.4)               # FEAT-1: frozen
+
+
+# ================================================================================================ versions: metamodel / ledger / training
+def synth_rows(n=900, seed=1, version=None):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n):
+        x = float(rng.normal())
+        y = int(rng.random() < 1 / (1 + np.exp(-1.5 * x)))
+        f = {"plan:gain_r": 1.5, "fc:trainhub:TH_LOGREG:DIRECTION_H6_M5:M5:edge": x, "ctx:hour_sin": float(rng.normal())}
+        r = {"row_id": f"r{i}", "decision_ts": 1_794_000_000.0 + i * 600, "resolve_ts": 1_794_000_000.0 + i * 600 + 1800, "features": f, "y": y,
+             "net_r": (1.5 if y else -1.0) - 0.05, "data_kind": "REAL"}
+        if version:
+            r["feature_version"] = version
+        rows.append(r)
+    return rows
+
+
+def as_legacy_artifact(res: dict) -> dict:
+    """A MetaModel exactly as metamodel.train wrote it before 1.46: feature_schema PMW-QUANT-FEAT-1:<hash>."""
+    from masterquo.quant import features as F
+    res = json.loads(json.dumps(res))
+    res["model"]["feature_schema"] = F.schema(res["model"]["feature_names"])
+    return res
+
+
+class TestFeatureVersioning(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_new_models_are_feat3_and_old_feat1_artifacts_still_load(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
+        self.assertTrue(res["model"]["feature_schema"].startswith(F.VERSION3 + ":"), res["model"]["feature_schema"])
+        self.assertEqual(res["report"]["feature_version"], F.VERSION3)
+        v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
+        self.assertEqual(M.load("XAUUSD", "t", v3)[0]["feature_schema"], res["model"]["feature_schema"])
+        v1 = M.save("XAUUSD", as_legacy_artifact(res), spec={"task_hash": "t"})
+        model1, _ = M.load("XAUUSD", "t", v1)                              # no invalidation: Quant ASSIST is fail-open
+        self.assertTrue(model1["feature_schema"].startswith(F.VERSION + ":"))
+        M.activate("XAUUSD", "t", v1)
+        bad = json.loads(json.dumps(res))
+        bad["model"]["feature_schema"] = F.schema2(bad["model"]["feature_names"])   # metamodel.train never wrote FEAT-2
+        vb = M.save("XAUUSD", bad, spec={"task_hash": "t"})
+        with self.assertRaises(M.MetaError) as ctx:
+            M.load("XAUUSD", "t", vb)
+        self.assertIn("INCOMPATIBLE_FEATURE_SCHEMA", str(ctx.exception))
+
+    def test_training_never_mixes_versions(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        rows = synth_rows(version=F.CURRENT)
+        rows[5]["feature_version"] = F.LEGACY_ROWS
+        with self.assertRaises(M.MetaError) as ctx:
+            M.train(rows, task={"task_hash": "t", "event_id": "E"})
+        self.assertIn("FEATURE_VERSION_MIXED", str(ctx.exception))
+        with self.assertRaises(M.MetaError):
+            M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"}, feature_version=F.VERSION)   # new models: CURRENT only
+
+    def test_ledger_records_the_version_and_migrates_an_old_file_in_place(self):
+        from masterquo.quant import features as F
+        from masterquo.quant.ledger import SCHEMA, QuantLedger
+        p = Path(self.td.dir) / "old_ledger.sqlite"
+        con = sqlite3.connect(p)                                            # a 1.35-1.46 ledger file: no feature_version column
+        con.executescript(SCHEMA)
+        con.execute("INSERT INTO rows(row_id, instrument, engine, strategy, direction, decision_ts, task_hash, event_id, spec_json, features_json, "
+                    "data_kind, matures_at, status, created_at) VALUES ('old', 'XAUUSD', 'E', 'S', 'LONG', 1.0, 'th', 'E', '{}', '{\"a\": 1.0}', "
+                    "'REAL', 1.0, 'PENDING', 1.0)")
+        con.commit()
+        con.close()
+        led = QuantLedger(p)
+        led.add_row({"row_id": "new", "instrument": "XAUUSD", "engine": "E", "strategy": "S", "direction": "LONG", "decision_ts": 2.0,
+                     "task_hash": "th", "event_id": "E", "spec": {}, "features": {"a": 2.0}, "data_kind": "REAL", "matures_at": 2.0,
+                     "feature_version": F.CURRENT})
+        for rid in ("old", "new"):
+            led.label(rid, "LABELLED", {"y_event": True, "net_r": 1.0}, 10.0)
+        got = {r["row_id"]: r["feature_version"] for r in led.training_rows("XAUUSD")}
+        self.assertEqual(got, {"old": F.LEGACY_ROWS, "new": F.CURRENT})
+        self.assertEqual([r["row_id"] for r in led.training_rows("XAUUSD", feature_version=F.CURRENT)], ["new"])
+        self.assertEqual(QuantLedger(p).training_rows("XAUUSD", "th")[0]["features"], {"a": 1.0})     # reopening: no second ALTER
+
+    def test_train_from_ledger_uses_current_rows_only(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import service as SV
+        from masterquo.quant.ledger import QuantLedger
+        led = QuantLedger(Path(self.td.dir) / "l.sqlite")
+        for i, fv in enumerate((F.CURRENT, F.LEGACY_ROWS, F.CURRENT, F.LEGACY_ROWS, F.LEGACY_ROWS)):
+            led.add_row({"row_id": f"r{i}", "instrument": "XAUUSD", "engine": "E", "strategy": "S", "direction": "LONG", "decision_ts": 1e9 + i,
+                         "task_hash": "th", "event_id": "TP1_BEFORE_STOP", "spec": {"event_id": "TP1_BEFORE_STOP"}, "features": {},
+                         "data_kind": "REAL", "matures_at": 1e9 + i, "feature_version": fv})
+            led.label(f"r{i}", "LABELLED", {"y_event": True, "net_r": 1.0}, 1e9 + i + 60)
+        seen = {}
+
+        def fake_train(rows, **kw):
+            seen["versions"], seen["kw"] = sorted({r["feature_version"] for r in rows}), kw
+            return {"status": "INSUFFICIENT_EVIDENCE", "report": {"reason": "test"}}
+        with mock.patch.object(SV.M, "train", side_effect=fake_train):
+            res = SV.train_from_ledger(led, "XAUUSD", log=lambda *_: None)
+        self.assertEqual(seen["versions"], [F.CURRENT])
+        self.assertEqual(seen["kw"]["feature_version"], F.CURRENT)
+        self.assertEqual((res[0]["n_rows"], res[0]["excluded_older_feature_version"]), (2, 3))
+
+
 # ================================================================================================ D11
 class TestMonteCarloAdapterD11(unittest.TestCase):
     """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did

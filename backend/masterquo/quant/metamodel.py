@@ -238,14 +238,24 @@ def _hash_rows(rows) -> str:
     return h.hexdigest()[:16]
 
 
-def train(rows: list[dict], *, task: dict, crit: dict | None = None, seen_tests: list[list[str]] | None = None, data_kind: str = "REAL") -> dict:
-    """rows: [{row_id, decision_ts, resolve_ts, features, y (0/1), net_r|None, data_kind}] of ONE task. -> {"status", "model"?, "report"}."""
+def train(rows: list[dict], *, task: dict, crit: dict | None = None, seen_tests: list[list[str]] | None = None, data_kind: str = "REAL",
+          feature_version: str | None = None) -> dict:
+    """rows: [{row_id, decision_ts, resolve_ts, features, y (0/1), net_r|None, data_kind, feature_version?}] of ONE task.
+    -> {"status", "model"?, "report"}. 1.46: a new model is trained on rows of the CURRENT feature semantics only (features.CURRENT) and
+    its feature_schema carries that version; a row that names another version is refused (no mixing - the same column name had another
+    meaning there)."""
+    fv = feature_version or F.CURRENT
+    if fv != F.CURRENT:
+        raise MetaError(f"FEATURE_VERSION_NOT_TRAINABLE:{fv} (nowe modele: {F.CURRENT})")
+    other = sorted({str(r["feature_version"]) for r in rows if r.get("feature_version") not in (None, fv)})
+    if other:
+        raise MetaError(f"FEATURE_VERSION_MIXED:{','.join(other)} != {fv}")
     crit = {**CRITERIA, **(crit or {})}
     t0 = time.perf_counter()
     rows = [r for r in rows if r.get("y") in (0, 1, True, False)]
     for r in rows:
         r["y"] = int(r["y"])
-    rep = {"version": VERSION, "criteria": crit, "n_rows": len(rows), "task": task, "seed": SEED}
+    rep = {"version": VERSION, "criteria": crit, "n_rows": len(rows), "task": task, "seed": SEED, "feature_version": fv}
     kinds = sorted({r.get("data_kind") or "UNKNOWN" for r in rows})
     rep["data_kinds"] = kinds
     B = blocks(rows, crit["embargo_s"])
@@ -340,7 +350,7 @@ def train(rows: list[dict], *, task: dict, crit: dict | None = None, seen_tests:
     status = "VALIDATED_SHADOW" if all(gates.values()) else "VALIDATION_FAILED"
     rep["status"] = status
     rep["failed_gates"] = [k for k, v in gates.items() if not v]
-    model = {"version": VERSION, "feature_names": names, "feature_schema": F.schema(names), "scaler": {"mean": mod["scaler"].mean.tolist(),
+    model = {"version": VERSION, "feature_names": names, "feature_schema": F.schema_for(fv, names), "scaler": {"mean": mod["scaler"].mean.tolist(),
              "scale": mod["scaler"].scale.tolist()}, "logit": {"coef": mod["coef"].tolist(), "intercept": mod["intercept"], "C": mod["C"]},
              "calibrator": calib, "prior": prior, "event_id": task.get("event_id"), "task_hash": task.get("task_hash"),
              "ridge": None if ridge is None else {"scaler": {"mean": ridge["scaler"].mean.tolist(), "scale": ridge["scaler"].scale.tolist()},
@@ -442,7 +452,10 @@ def load(inst: str, task_hash: str, ver: str) -> tuple[dict, dict]:
     model = json.loads(blob)
     if model.get("version") != VERSION:
         raise MetaError(f"INCOMPATIBLE_VERSION:{model.get('version')}")
-    if model.get("feature_schema") != F.schema(model["feature_names"]) or not model["feature_schema"].startswith(F.VERSION):
+    # 1.46: the prefix is the feature SEMANTICS version; FEAT-1 (artifacts before 1.46) and FEAT-3 are loaded - each later gets the input
+    # of its own version (quant/service.assess -> features.build_for), never the meaning of the other one
+    fv = F.version_of(model.get("feature_schema"))
+    if fv not in F.ARTIFACT_VERSIONS or model.get("feature_schema") != F.schema_for(fv, model["feature_names"]):
         raise MetaError("INCOMPATIBLE_FEATURE_SCHEMA")
     for s in (man.get("report") or {}).get("reproduction") or []:                 # save/load/predict reproduction
         got = predict(model, s["features"])

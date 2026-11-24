@@ -304,7 +304,9 @@ class QuantService:
         return ver, model, man
 
     def assess(self, cd: dict, *, mode: str | None = None, log_row: bool = False, evidence: dict | None = None) -> dict:
-        """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot."""
+        """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot.
+        1.46: features of the CURRENT semantics (features.CURRENT) go to the ledger row / TabICL; a MetaModel gets the input of ITS feature
+        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input."""
         mode = mode or self.mode()
         now = self.clock()
         inst = str(cd.get("instrument") or self.instrument())
@@ -326,7 +328,7 @@ class QuantService:
                 cd = {**cd, "research_features": rs.features_for(inst, float(cd.get("decision_ts") or now))}
             except Exception:  # noqa: BLE001 - missing research features = missing columns, never invented values
                 pass
-        feats = F.build2(cd, preds)                     # 1.41 FEAT-2 = FEAT-1 (same names / meaning) + price-forecast + research-module columns
+        feats = F.build_for(F.CURRENT, cd, preds)       # 1.46 FEAT-3 = FEAT-2 columns (1.41: + price-forecast + research) with D8 / D9 meaning
         a["sources"] = {"generation": (pub or {}).get("generation"), "eligible": len(preds), "excluded": len((pub or {}).get("excluded") or []),
                         "snapshot_status": ((pub or {}).get("snapshot") or {}).get("status"), "features": len(feats)}
         edges = [v for k, v in feats.items() if k.endswith(":edge")]
@@ -352,14 +354,19 @@ class QuantService:
                      reason=("brak wytrenowanego modelu dla tego zdarzenia" if not ver else (man or {}).get("reason")),
                      probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives")})
         else:
+            fv = F.version_of(model.get("feature_schema")) or F.VERSION
+            if fv == F.CURRENT:
+                mfeats = feats
+            else:                                       # an artifact of an older feature version: its own input, never the new meaning
+                mfeats = F.build_for(fv, cd, preds)
             try:
-                out = M.predict(model, feats)
+                out = M.predict(model, mfeats)
             except M.MetaError as exc:
                 a.update(status="ERROR", reason=str(exc), probability=None, ev=None)
                 out = None
             if out is not None:
                 a["status"] = "READY"
-                a["model"] = {"version": ver, "calibrator": model["calibrator"]["kind"], "feature_schema": model["feature_schema"],
+                a["model"] = {"version": ver, "calibrator": model["calibrator"]["kind"], "feature_schema": model["feature_schema"], "feature_version": fv,
                               "test": {k: ((man.get("report") or {}).get("test_once") or {}).get(k) for k in ("log_loss", "prior_log_loss", "ece", "n")}}
                 a["probability"] = {"p": out["p_event"], "event_id": spec.event_id, "status": "CALIBRATED_VALIDATED", "coverage": out["coverage"],
                                     "missing_features": out["missing_features"][:20], "interval": None,
@@ -389,12 +396,13 @@ class QuantService:
                     hold = f"Quant: P({spec.event_id}) = {out['p_event']:.3f} < próg {ev['binary']['break_even_p']:.3f}"
                 a["would_hold"] = hold
                 a["influence"] = "HOLD" if (mode == "ASSIST" and hold) else "NONE"
-                a["contributions"] = M.contributions(model, feats)
+                a["contributions"] = M.contributions(model, mfeats)
         if log_row:
             matures = float(cd["decision_ts"]) + float(cd["horizon_s"])
             row = {"row_id": str(cd.get("candidate_key") or cd.get("setup_id")) + ":" + th, "instrument": inst, "engine": cd.get("engine"), "strategy": cd.get("strategy_id"),
                    "direction": cd.get("direction"), "decision_ts": float(cd["decision_ts"]), "task_hash": th, "event_id": spec.event_id,
-                   "spec": spec.to_dict(), "features": feats, "snapshot_id": ((pub or {}).get("snapshot") or {}).get("snapshot_id"),
+                   "spec": spec.to_dict(), "features": feats, "feature_version": F.CURRENT,
+                   "snapshot_id": ((pub or {}).get("snapshot") or {}).get("snapshot_id"),
                    "generation": (pub or {}).get("generation"), "data_kind": ((pub or {}).get("snapshot") or {}).get("data_kind") or self._bridge_kind(),
                    "matures_at": matures}
             a["row_id"] = row["row_id"]
@@ -622,6 +630,19 @@ def _safe(fn, default):
 
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:
     rows = ledger.training_rows(inst, task_hash)
+    # 1.46: a new MetaModel learns from rows of the CURRENT feature semantics only (features.CURRENT); rows of an older version (same
+    # column names, another meaning - Kalman candidate, stale DXY) stay in the ledger but are never mixed into the training set
+    older: dict[str, int] = {}
+    cur = []
+    for r in rows:
+        if r.get("feature_version", F.CURRENT) == F.CURRENT:
+            cur.append(r)
+        else:
+            older[r["task_hash"]] = older.get(r["task_hash"], 0) + 1
+    if older:
+        log(f"[QUANT] {inst}: pominięto {sum(older.values())} wierszy starszej wersji cech (≠ {F.CURRENT}) – nowe modele uczą się tylko na "
+            f"wierszach bieżącej wersji")
+    rows = cur
     # 1.46: a row logged before the first published generation had data_kind UNKNOWN - a few such rows from the start window kept the
     # task out of VALIDATED_SHADOW for good (gate data_real needs kinds == [REAL]). A row of unknown data origin proves nothing: it stays in
     # the ledger but is not training evidence (counted in the result).
@@ -640,17 +661,20 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         by.setdefault(r["task_hash"], []).append(r)
     if not by:
         log(f"[QUANT] {inst}: brak oznaczonych wierszy w ledgerze – trening nieuruchomiony (INSUFFICIENT_EVIDENCE)")
-        return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE", "reason": "brak oznaczonych wierszy",
-                 "excluded_unknown_data_kind": sum(unknown.values())}]
+        return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE",
+                 "reason": "brak oznaczonych wierszy" + (f" wersji cech {F.CURRENT} (starsze wersje pominięte: {sum(older.values())})" if older else ""),
+                 "excluded_unknown_data_kind": sum(unknown.values()), "excluded_older_feature_version": sum(older.values()),
+                 "feature_version": F.CURRENT}]
     out = []
     for th, rs in sorted(by.items()):
         spec = rs[0]["spec"]
         seen = (M.pointer(inst).get("seen_tests") or {}).get(th, [])
         log(f"[QUANT] {inst} zadanie {th} ({spec.get('event_id')}): {len(rs)} wierszy")
-        res = M.train(rs, task={"task_hash": th, "event_id": spec.get("event_id")}, crit=crit, seen_tests=seen)
+        res = M.train(rs, task={"task_hash": th, "event_id": spec.get("event_id")}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)
         item = {"task_hash": th, "event_id": spec.get("event_id"), "status": res["status"], "n_rows": len(rs),
                 "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
-                "excluded_unknown_data_kind": unknown.get(th, 0)}
+                "excluded_unknown_data_kind": unknown.get(th, 0), "excluded_older_feature_version": older.get(th, 0),
+                "feature_version": F.CURRENT}
         if "model" in res:
             ver = M.save(inst, res, spec=spec)
             M.record_test(inst, th, res["report"]["test_row_ids"])
