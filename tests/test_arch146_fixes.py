@@ -267,7 +267,11 @@ class TestMiniRocketNativeFeedPath(unittest.TestCase):
             now = int(_time.time())
             MR.write_result(files / "PMW" / MR.NativeResultImporter.NAME, 5, "ab" * 32, "XAUUSD-", "M1", now - 60, now, "UTC", np.zeros(3))
             stub = SimpleNamespace(native_importer=None, cfg=SimpleNamespace(get=lambda: SimpleNamespace(assets=SimpleNamespace(symbols={}))))
-            with mock.patch.dict(os.environ, {"MQ_MT5_FILES_DIR": str(files), "MQ_MINIROCKET_EXPORT_DIR": str(Path(d) / "none")}):
+            # 1.46 arch I0486: the importer needs the exported model's sha (manifest.json) - without it EXPECTED_MODEL_UNKNOWN (REJECTED)
+            exp = Path(d) / "exp"
+            exp.mkdir()
+            (exp / "manifest.json").write_text(json.dumps({"model_bin_sha256": "ab" * 32}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"MQ_MT5_FILES_DIR": str(files), "MQ_MINIROCKET_EXPORT_DIR": str(exp)}):
                 res = StructureIntelligenceService.native_status(stub, "XAUUSD")
             self.assertEqual(res["feed"]["status"], "IMPORTED", res["feed"])         # 1.46.0: NATIVE_FEED_UNAVAILABLE (wrong folder)
             self.assertEqual(res["feed"]["seq"], 5)

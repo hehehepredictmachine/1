@@ -138,5 +138,104 @@ class TestLedgerListingsPerInstrument(unittest.TestCase):
             self.assertIn("asset: str | None = None", line, fn)
 
 
+# ------------------------------------------------------------------------------------------------------- I0479 / I0519 / I0522
+class TestNativeStatusReadsLiveSelftest(unittest.TestCase):
+    """I0479 (MR2) / I0519 (flow): plik statusu powstaje zaraz po kompilacji, a self-test uruchamia się w terminalu później -
+    native_status nie czytał ponownie pliku self-testu (NATIVE_EXECUTED nigdy PASS). Ctx czytał plik bez sprawdzenia świeżości."""
+
+    def _case(self, status_name, selftest_name, text, delta_s):
+        d = Path(tempfile.mkdtemp(prefix="mq_native_"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        sf = d / status_name
+        sf.write_text(json.dumps({"compile_errors": 0, "ex5_sha256": "ab" * 32, "source_sha256": "cd" * 32,
+                                  "selftest_result": "NATIVE_NOT_EXECUTED"}), encoding="utf-8")
+        st = d / selftest_name
+        st.write_text(text, encoding="utf-8")
+        t = sf.stat().st_mtime
+        os.utime(st, (t + delta_s, t + delta_s))
+        return sf
+
+    def test_mr2_selftest_after_status_is_read(self):
+        from masterquo.lab import minirocket_v2 as MR
+        sf = self._case("native_status.json", "mr2_selftest.txt", "PMW_MR2_SELFTEST RESULT=PASS failures=0 build=4620\n", 10)
+        r = MR.native_status(sf)
+        self.assertEqual(r["NATIVE_EXECUTED"], "PASS")
+        self.assertEqual(r["build"], 4620)
+        sf = self._case("native_status.json", "mr2_selftest.txt", "PMW_MR2_SELFTEST RESULT=PASS failures=0 build=4620\n", -10)
+        self.assertEqual(MR.native_status(sf)["NATIVE_EXECUTED"], "NATIVE_NOT_EXECUTED")        # older = previous build, not evidence
+
+    def test_flow_selftest_after_status_is_read(self):
+        from masterquo.lab.flow_context import native as FN
+        sf = self._case("flow_native_status.json", "flow_selftest.txt", "PMW_FLOW_SELFTEST RESULT=FAIL\r\n", 10)
+        self.assertEqual(FN.native_status(sf)["NATIVE_EXECUTED"], "FAIL")
+        sf = self._case("flow_native_status.json", "flow_selftest.txt", "PMW_FLOW_SELFTEST RESULT=PASS\r\n", -10)
+        self.assertEqual(FN.native_status(sf)["NATIVE_EXECUTED"], "NATIVE_NOT_EXECUTED")
+
+    def test_ctx_ignores_selftest_older_than_status(self):
+        from masterquo.lab.context_ind import native as CN
+        sf = self._case("ctx_native_status.json", "ctx_selftest.txt", "PMW_CTX_SELFTEST RESULT=PASS\r\n", -10)
+        self.assertEqual(CN.native_status(sf)["NATIVE_EXECUTED"], "NATIVE_NOT_EXECUTED")
+        sf = self._case("ctx_native_status.json", "ctx_selftest.txt", "PMW_CTX_SELFTEST RESULT=PASS\r\n", 10)
+        self.assertEqual(CN.native_status(sf)["NATIVE_EXECUTED"], "PASS")
+
+
+class TestNativeStatusNamesUnified(unittest.TestCase):
+    """I0522: ten sam stan (brak MetaEditora / pliku statusu) miał dwie nazwy (flow/MR2 vs ctx)."""
+
+    def test_same_name_for_missing_status(self):
+        from masterquo.lab import minirocket_v2 as MR
+        from masterquo.lab.context_ind import native as CN
+        from masterquo.lab.flow_context import native as FN
+        names = {CN.native_status(None)["NATIVE_COMPILED"], FN.native_status(None)["NATIVE_COMPILED"], MR.native_status(None)["NATIVE_COMPILED"]}
+        self.assertEqual(names, {"NOT_COMPILED_NO_METAEDITOR"})
+
+
+# ------------------------------------------------------------------------------------------------------------------------ I0486
+class TestMiniRocketExportDir(unittest.TestCase):
+    """I0486: CLI eksportował do ./exports/minirocket względem cwd (backend/), a si_service czytał <repo>/exports/minirocket - status
+    NOT_EXPORTED, oczekiwany sha None i importer pomijał kontrolę MODEL_MISMATCH."""
+
+    def _cli_output_default(self, cwd):
+        import argparse
+        from masterquo.lab import structure_cli as SC
+        got, orig = [], argparse.ArgumentParser.parse_args
+
+        class _Stop(Exception):
+            pass
+
+        def cap(self, args=None, namespace=None):
+            got.append(orig(self, args, namespace))
+            raise _Stop
+        old = os.getcwd()
+        os.chdir(cwd)
+        try:
+            with mock.patch.object(argparse.ArgumentParser, "parse_args", cap), self.assertRaises(_Stop):
+                SC.main(["minirocket", "native-status"])
+        finally:
+            os.chdir(old)
+        return Path(got[0].output).resolve()
+
+    def test_cli_default_equals_service_dir_regardless_of_cwd(self):
+        from masterquo.lab import minirocket_v2 as MR
+        with mock.patch.dict(os.environ, {"MQ_MINIROCKET_EXPORT_DIR": ""}):
+            want = (ROOT / "exports" / "minirocket").resolve()
+            self.assertEqual(MR.default_export_dir().resolve(), want)
+            self.assertEqual(self._cli_output_default(ROOT / "backend"), want)
+            self.assertEqual(self._cli_output_default(tempfile.gettempdir()), want)
+        with mock.patch.dict(os.environ, {"MQ_MINIROCKET_EXPORT_DIR": str(Path(tempfile.gettempdir()) / "mr_exp")}):
+            self.assertEqual(self._cli_output_default(ROOT / "backend"), (Path(tempfile.gettempdir()) / "mr_exp").resolve())
+
+    def test_importer_without_expected_model_rejects(self):
+        import numpy as np
+        from masterquo.lab import minirocket_v2 as MR
+        with tempfile.TemporaryDirectory() as d:
+            now = int(time.time())
+            MR.write_result(Path(d) / MR.NativeResultImporter.NAME, 3, "ab" * 32, "XAUUSD-", "M1", now - 60, now, "UTC", np.zeros(3))
+            r = MR.NativeResultImporter(d, None, "XAUUSD-", "M1").poll()
+            self.assertEqual(r["status"], "REJECTED")
+            self.assertIn("EXPECTED_MODEL_UNKNOWN", r["reason"])
+            self.assertEqual(MR.NativeResultImporter(d, "ab" * 32, "XAUUSD-", "M1").poll()["status"], "IMPORTED")
+
+
 if __name__ == "__main__":
     unittest.main()

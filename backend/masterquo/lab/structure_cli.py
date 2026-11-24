@@ -59,7 +59,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("action", choices=("export-native", "export-fixture", "parity", "native-status", "export-train"))
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--model-id", help="candidate_id MQ_MINIROCKET_RIDGE_V2 (export-native)")
-    s.add_argument("--output", default="./exports/minirocket")
+    from .minirocket_v2 import default_export_dir                 # 1.46 arch I0486: the folder the bot reads, not ./ of the cwd
+    s.add_argument("--output", default=str(default_export_dir()))
     s.add_argument("--fixtures", default=str(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket"))
     s.add_argument("--reference-version", help="przypięta wersja referencji (np. sktime==1.2.0) – zapisywana w raporcie")
     s.add_argument("--reference-python", help="interpreter z przypiętym sktime (uruchomienie referencji na żywo)")

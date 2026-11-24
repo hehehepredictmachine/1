@@ -216,7 +216,7 @@ class StructureIntelligenceService:
         import os
         from . import minirocket_v2 as MR
         files = os.environ.get("MQ_MT5_FILES_DIR")
-        exp = Path(os.environ.get("MQ_MINIROCKET_EXPORT_DIR") or (Path(__file__).resolve().parents[3] / "exports" / "minirocket"))
+        exp = MR.default_export_dir()                           # 1.46 arch I0486: the same folder as the CLI default --output
         man = None
         try:
             man = json.loads((exp / "manifest.json").read_text(encoding="utf-8")) if (exp / "manifest.json").exists() else None
