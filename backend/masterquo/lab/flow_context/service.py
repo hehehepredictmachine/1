@@ -1,7 +1,9 @@
 """Runtime flow-context sections (FF08): one producer per (instrument, TF) fed with CLOSED bars by the Structure Intelligence snapshot
 (same parent snapshot), consumers: snapshot cells / MTF / agent / REST. Heikin Flow, StopDistance and the S/R channel archive commit once
 per closed bar (repeated polls change nothing; a history revision rebuilds from the bounded window). Markov models come only from a fitted
-artefact (`flow-context train-markov`); without it MODEL_MISSING - the deterministic indicators still work."""
+artefact (`flow-context train-markov`); without it MODEL_MISSING - the deterministic indicators still work. A model fitted on non-REAL
+data (meta.json role TEST_ONLY) is not loaded (MODEL_TEST_ONLY_NOT_LOADED, decision D23) unless the test variable
+PMW_FLOW_ALLOW_TEST_MODEL=1 is set; a 1.46.0 run without meta.json is loaded and marked UNKNOWN."""
 from __future__ import annotations
 
 import json
@@ -19,6 +21,8 @@ from . import task as FT
 
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 WINDOW = 800
+ALLOW_TEST_MODEL_ENV = "PMW_FLOW_ALLOW_TEST_MODEL"           # tests only: load a TEST_ONLY Markov fit into the SI cell
+TEST_ONLY_NOT_LOADED = "MODEL_TEST_ONLY_NOT_LOADED"
 
 
 class _Key:
@@ -36,6 +40,7 @@ class _Key:
         self.m3_last = self.md_last = None
         self.model_dir = None
         self.model_meta: dict | None = None
+        self.model_skipped: dict | None = None                    # D23: why the latest fitted model is not loaded (TEST_ONLY)
         self._load_models()
 
     def _load_models(self):
@@ -46,6 +51,16 @@ class _Key:
         try:
             # 1.46 arch: provenance of the loaded model (meta.json; a 1.46.0 run has none -> UNKNOWN) - shown in the SI cell
             meta = json.loads((d / "meta.json").read_text(encoding="utf-8")) if (d / "meta.json").exists() else {"role": "UNKNOWN", "data_kind": None}
+            if not isinstance(meta, dict):
+                meta = {"role": "UNKNOWN", "data_kind": None}
+            if meta.get("role") == "TEST_ONLY" and os.environ.get(ALLOW_TEST_MODEL_ENV) != "1":
+                # 1.46 arch D23 (b): a fit on synthetic / test data never reaches the live SI cell (SI, NSS and the flow reaction model
+                # already had this TEST_ONLY gate); tests opt in with PMW_FLOW_ALLOW_TEST_MODEL=1
+                self.model_skipped = {"status": TEST_ONLY_NOT_LOADED, "model_role": "TEST_ONLY", "data_kind": meta.get("data_kind"),
+                                      "model_dir": str(d),
+                                      "reason": f"model testowy (TEST_ONLY, dane {meta.get('data_kind')}) nie jest wczytywany do komórki SI – "
+                                                "wytrenuj Markov na danych REAL_USER_DATA (flow-context train-markov)"}
+                return
             m3 = MK.Markov3.from_dict(json.loads((d / "markov3.json").read_text(encoding="utf-8")))
             md = MK.MarkovDiff.load(d / "diff")
             if abs(m3.point - self.point) > 1e-12:
@@ -112,12 +127,16 @@ class FlowSections:
                 out["markov3"] = {"state": k.m3_last.get("state"), "next": k.m3_last.get("next"), "entropy": k.m3_last.get("entropy_next"),
                                   "support": k.m3_last.get("support"), "model_role": (k.model_meta or {}).get("role"),
                                   "data_kind": (k.model_meta or {}).get("data_kind")}
+            elif k.m3 is None and k.model_skipped:
+                out["markov3"] = {x: k.model_skipped[x] for x in ("status", "model_role", "data_kind", "reason")}
             else:
                 out["markov3"] = {"status": "MODEL_MISSING" if k.m3 is None else "WARMUP"}
             if k.md_last and k.md_last.get("projection"):
                 p = k.md_last["projection"]
                 out["buckets"] = {h: {"price_mean": p[h]["price_mean"], "price_q": p[h]["price_q"]} for h in ("5", "15") if h in p}
                 out["buckets"]["K_effective"] = k.md_last["K_effective"]
+            elif k.md is None and k.model_skipped:
+                out["buckets"] = {"status": k.model_skipped["status"]}
             else:
                 out["buckets"] = {"status": "MODEL_MISSING" if k.md is None else ((k.md_last or {}).get("eligibility") or {}).get("reason", "WARMUP")}
         return out
@@ -141,6 +160,8 @@ class FlowSections:
 
     def markov(self, k: _Key) -> dict:
         if k.m3 is None:
+            if k.model_skipped:
+                return dict(k.model_skipped, hint="python -m masterquo flow-context train-markov --latest")
             return {"status": "MODEL_MISSING", "hint": "python -m masterquo flow-context train-markov --latest"}
         return {"status": "OK", "model_dir": k.model_dir, "markov3": k.m3_last, "buckets": k.md_last,
                 "fit": {"markov3": k.m3.fit_info, "buckets": k.md.fit_info}}

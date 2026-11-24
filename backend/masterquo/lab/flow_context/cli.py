@@ -297,10 +297,13 @@ def train_markov(inst: str, dev: list[dict], point: float, tick: float, meta: di
     md.save(d / "diff")
     role = "TEST_ONLY" if meta.get("data_kind") != "REAL_USER_DATA" else "RESEARCH"
     # 1.46 arch: provenance stored next to the model and shown by the live SI cell (a TEST_ONLY fit on synthetic data was loaded without
-    # any marking). Loading TEST_ONLY models at all is unchanged (decision D23 in docs/arch146/ETAP2_PROJEKT.md).
+    # any marking). Decision D23 (b): the SI cell does not load a TEST_ONLY model (flow_context/service._Key._load_models; tests opt in
+    # with PMW_FLOW_ALLOW_TEST_MODEL=1); RESEARCH (REAL_USER_DATA) and a 1.46.0 run without meta.json are loaded.
     (d / "meta.json").write_text(json.dumps({"data_kind": meta.get("data_kind"), "role": role}), encoding="utf-8")
     (FT.root(inst) / "markov" / "latest.txt").write_text(str(d), encoding="utf-8")
     out.update(dir=str(d), data_kind=meta.get("data_kind"), role=role)
+    if role == "TEST_ONLY":
+        out["si_cell"] = "MODEL_TEST_ONLY_NOT_LOADED – model z danych nie-REAL nie jest wczytywany do komórki SI (decyzja D23)"
     return out
 
 
