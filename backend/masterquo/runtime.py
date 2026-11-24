@@ -234,6 +234,18 @@ class Runtime:
         self._engine_lock = threading.Lock()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+        # 1.46 arch (I0088): services of the workflow v3.2 routes (ledgers, journal, game, Hyperliquid / Universe, Telegram account center)
+        # are owned here, not by the HTTP layer; rt.wf32 is the dict the routes publish as app.state.wf32 and the exporters read
+        from .wf32_services import Wf32Services
+        self.wf32_services = Wf32Services(self)
+        self.wf32 = self.wf32_services.public
+        # 1.46 arch (I0092): ONE Bootstrap, built here (reads its state file only - no thread, no installer); started in start()
+        self.bootstrap = None
+        try:
+            from .bootstrap import Bootstrap
+            self.bootstrap = Bootstrap(self)
+        except Exception:                                   # never blocks the construction
+            log.exception("bootstrap construction failed")
 
     def _wire_governor(self) -> None:
         """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
@@ -360,14 +372,28 @@ class Runtime:
         if not self.demo:
             threading.Thread(target=self._upgrade_after, name="upgrade-1.41", daemon=True).start()
         try:                                                # 1.45 (TASK 013): verify-first bootstrap; heavy runtimes sequential, after start
-            from .bootstrap import Bootstrap
-            self.bootstrap = Bootstrap(self)
+            if self.bootstrap is None:                     # 1.46 arch (I0092): normally built in __init__
+                from .bootstrap import Bootstrap
+                self.bootstrap = Bootstrap(self)
             self.bootstrap.start()                         # no-op in demo / PMW_BOOTSTRAP=0
         except Exception:  # noqa: BLE001 - never blocks the start
             log.exception("bootstrap failed to start")
+        self._start_account_loop()
         if self.start_failures:
             self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
                            + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _start_account_loop(self) -> None:
+        """1.46 arch (I0092): the Telegram account loop (read the account / deals, queue and send reports - never an order) starts here,
+        i.e. after the licence unlock, ONCE, only with the real MT5 terminal (never in the synthetic demo / `models check --live`); it ends
+        with self._stop (Runtime.stop). Before 1.46 the route registration started it, before start() and regardless of the licence."""
+        if self.demo:
+            return
+        try:
+            self.wf32_services.start_account_loop(self._stop)
+        except Exception as exc:                            # never blocks the start of the other parts
+            log.exception("start of telegram_account failed")
+            self.start_failures.append({"part": "telegram_account", "error": f"{type(exc).__name__}: {exc}"[:300]})
 
     def _upgrade_after(self) -> None:
         """1.41: after-inventory + preservation report (60 s after start, when every registry is loaded) and the background installation

@@ -776,5 +776,124 @@ class TestRuntimesRegistry(_Base):
         self.assertFalse([k for k in dotenv_keys if k.startswith(("MQ_", "PMW_"))])    # procesowe zmienne tylko jako komentarz
 
 
+# ------------------------------------------------------------------------------------------------------------------- I0088 / I0092
+def _acct_threads():
+    import threading
+    return [t for t in threading.enumerate() if t.name == "telegram-account" and t.is_alive()]
+
+
+class TestWf32ServicesInRuntime(unittest.TestCase):
+    """I0088: usługi wf32 (ledger, trials, journal, TLG, Hyperliquid/Universe, AccountCenter) należą do Runtime – API i eksportery je
+    tylko czytają (app.state.wf32 is rt.wf32); GET /bootstrap nie buduje drugiej instancji Bootstrap.
+    I0092: wątek 'telegram-account' nie startuje przy rejestracji tras (przed rt.start() i niezależnie od licencji) – startuje
+    w Runtime.start (tylko prawdziwe MT5, raz) i kończy się na rt._stop; Bootstrap powstaje w Runtime.__init__ (bez wątku)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        cls.td = TempData()
+        cls._boot = os.environ.get("PMW_BOOTSTRAP")
+        os.environ["PMW_BOOTSTRAP"] = "0"
+        from masterquo.runtime import Runtime
+        cls.rt = Runtime(demo=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        import os
+        cls.rt._stop.set()
+        if cls._boot is None:
+            os.environ.pop("PMW_BOOTSTRAP", None)
+        else:
+            os.environ["PMW_BOOTSTRAP"] = cls._boot
+        cls.td.close()
+
+    def test_runtime_owns_services_and_exporters_read_them_without_http(self):
+        from masterquo.exports import sources as S
+        rt = self.rt
+        self.assertTrue({"ledger", "trials", "shadow_journal", "hl", "universe", "tlg", "acct", "acct_roi"} <= set(rt.wf32))
+        ctx = S.SourceContext(Path(self.td.dir), rt=rt)                       # bez aplikacji HTTP
+        self.assertIs(ctx.wf32["ledger"], rt.wf32["ledger"])
+        col = S.shadow_journal(ctx, "pt")
+        self.assertNotIn("APP_NOT_RUNNING", json.dumps(col.__dict__, default=str))            # HEAD: APP_NOT_RUNNING bez create_app
+
+    def test_app_state_is_the_runtime_dict_and_no_thread_at_registration(self):
+        from masterquo.api import app as A
+        before = len(_acct_threads())
+        app = A.create_app(self.rt, PORT)
+        self.assertIs(app.state.wf32, self.rt.wf32)
+        self.assertIs(app.state.wf32["ledger"], self.rt.wf32["ledger"])
+        self.assertEqual(len(_acct_threads()), before)                                         # HEAD: wątek startował przy rejestracji
+        self.assertIsNone(getattr(self.rt.wf32_services, "acct_thread", None))
+
+    def test_bootstrap_built_in_init_without_thread(self):
+        from masterquo.bootstrap import Bootstrap
+        b = self.rt.bootstrap
+        self.assertIsInstance(b, Bootstrap)                                                    # przed rt.start()
+        self.assertIsNone(b._thread)
+
+    def test_demo_runtime_never_starts_the_account_loop(self):
+        self.rt._start_account_loop()
+        self.assertIsNone(self.rt.wf32_services.acct_thread)
+
+
+class TestAccountLoopLifecycle(unittest.TestCase):
+    """I0092: rejestracja tras nie startuje pętli; Runtime._start_account_loop startuje ją raz (prawdziwe MT5) i kończy na rt._stop."""
+
+    def test_register_starts_no_thread(self):
+        import threading
+
+        from fastapi import FastAPI
+        from masterquo.api import wf32_routes
+        before = len(_acct_threads())
+        rt = types.SimpleNamespace(_stop=threading.Event(), bridge=types.SimpleNamespace(), cfg=None, baskets=None, db=None, telegram=None)
+        wf32_routes.register(FastAPI(), rt)
+        self.assertEqual(len(_acct_threads()), before)
+        self.assertIsNone(getattr(rt, "_acct_thread", None))
+
+    def test_runtime_start_part_starts_once_and_stops(self):
+        import threading
+
+        from masterquo.runtime import Runtime
+        from masterquo.wf32_services import Wf32Services
+        td = TempData()
+        try:
+            rt = Runtime.__new__(Runtime)
+            rt.demo, rt._stop, rt.start_failures = False, threading.Event(), []
+            rt.bridge, rt.cfg, rt.telegram, rt.db, rt.baskets = types.SimpleNamespace(), None, None, None, None
+            rt.wf32_services = Wf32Services(rt)
+            with mock.patch.object(Wf32Services, "acct", return_value=mock.MagicMock()):
+                rt._start_account_loop()
+                th = rt.wf32_services.acct_thread
+                self.assertIsNotNone(th)
+                rt._start_account_loop()                                                       # drugi raz: ten sam wątek
+                self.assertIs(rt.wf32_services.acct_thread, th)
+                rt._stop.set()
+                th.join(15)
+                self.assertFalse(th.is_alive())
+        finally:
+            td.close()
+
+    def test_get_bootstrap_without_runtime_bootstrap_is_not_started(self):
+        from fastapi import FastAPI
+        from masterquo import bootstrap as BS
+        from masterquo.api import wf32_routes
+        app = FastAPI()
+        wf32_routes.register(app, types.SimpleNamespace(bridge=None, baskets=None, cfg=None, bootstrap=None))
+        fn = ep(app, "GET", "/api/v1/bootstrap")
+        with mock.patch.object(BS, "Bootstrap", side_effect=AssertionError("druga instancja Bootstrap")):
+            r = fn()
+        self.assertEqual(r["status"], "NOT_STARTED")
+
+    def test_services_construct_without_network(self):
+        from masterquo.wf32_services import Wf32Services
+        td = TempData()
+        try:
+            with mock.patch("masterquo.baskets.hyperliquid.Hyperliquid", side_effect=AssertionError("sieć przy starcie")):
+                s = Wf32Services(types.SimpleNamespace(bridge=None, baskets=None))
+                self.assertEqual(s._svc, {})
+        finally:
+            td.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,13 @@ class SourceContext:
     wf32: dict = field(default_factory=dict)   # in-memory objects published by api/wf32_routes.register (ledger, trials, journal, ...)
     hl: object | None = None              # Hyperliquid public client override (tests / CLI)
 
+    def __post_init__(self):
+        # 1.46 arch (I0088): the objects belong to the Runtime (rt.wf32) - an exporter given only the runtime reads them too (was:
+        # APP_NOT_RUNNING without the HTTP app's app.state.wf32)
+        own = getattr(self.rt, "wf32", None) if self.rt is not None else None
+        if not self.wf32 and isinstance(own, dict):
+            self.wf32 = own
+
     # ---- helpers shared by sources
     @property
     def bridge(self):
