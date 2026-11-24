@@ -380,10 +380,14 @@ def _gpr_logret(ctx) -> dict:
     if bad:
         steps["predict"] = bad
         return steps
-    good = g.get("status") in ("OK", "DEGRADED") and _num(g.get("mean_logret")) and _num(g.get("sd")) and g["sd"] > 0
+    wf = g.get("walk_forward") or {}
+    good = (g.get("status") in ("OK", "DEGRADED") and _num(g.get("mean_logret")) and _num(g.get("sd")) and g["sd"] > 0
+            and wf.get("status") in ("OK", "DEGRADED") and _num(wf.get("sd")) and wf.get("used_by_quant") is False)
     steps["predict"] = check(good, f"MMService.live: {g.get('status')} mean_logret {_fmt(g.get('mean_logret'), '.3e')} sd {_fmt(g.get('sd'), '.3e')} "
-                                   f"h={g.get('horizon_bars')} "
-                                   "(na żywo GP dopasowywany co świecę M5 – artefakt nieużywany, mm/service.py:190-199)", f"GPR na żywo: {g.get('status')}")
+                                   f"h={g.get('horizon_bars')} (cecha Quant: siatka co świecę M5, artefakt nieużywany); tor SHADOW walk_forward "
+                                   f"(strojenie co {wf.get('retune_every')} świec, ledger {wf.get('ledger_model_id')}): {wf.get('status')} mean_logret "
+                                   f"{_fmt(wf.get('mean_logret'), '.3e')} sd {_fmt(wf.get('sd'), '.3e')}",
+                             f"GPR na żywo: {g.get('status')}, tor walk_forward: {wf.get('status')} {wf.get('reason') or ''}")
     ctx.step = "contract"
     steps["contract"] = _contract(ctx, "mm:gpr_logret")
     return steps
@@ -506,8 +510,9 @@ def _event_engine_dir3(ctx) -> dict:
     res = p.get("result") or {}
     tot = sum(float(x) for x in res.values()) if res else float("nan")
     good = p.get("state") == "READY" and set(res) == {"DOWN", "FLAT", "UP"} and abs(tot - 1) < 1e-6 and p.get("model_version") == aid2
-    steps["predict"] = check(good, f"quant.adapters.EventGRU: bez wskaźnika NOT_TRAINED (poprawnie); po promocji artefaktu technicznego (tylko folder "
-                                   f"tymczasowy) {p.get('state')} " + ", ".join(f"{k} {_fmt(v, '.3f')}" for k, v in res.items()) +
+    steps["predict"] = check(good, "quant.adapters.EventGRU: bez wskaźnika NOT_TRAINED (poprawnie); promote_shadow artefaktu technicznego odrzucone "
+                                   "(NOT_VALIDATED_GATES); po zapisie technicznego wskaźnika SHADOW (tylko folder tymczasowy) "
+                                   f"{p.get('state')} " + ", ".join(f"{k} {_fmt(v, '.3f')}" for k, v in res.items()) +
                                    f", źródło {p.get('source')}, data_time {p.get('data_time')}",
                              f"EventGRU: {p.get('state')} {p.get('unavailable_reason')}, wynik {res}")
     ctx.step = "contract"
