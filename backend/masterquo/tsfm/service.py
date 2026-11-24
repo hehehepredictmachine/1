@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -83,6 +84,7 @@ class ModelWorker:
         self.timings: list[float] = []
         self.errlog = None
         self.last_used = time.monotonic()            # last forecast request (heartbeat pings do not count) - idle release by the governor
+        self.gpu_fallback: dict | None = None        # 1.46 (I0200): the CURRENT process replaced a GPU process with a broken CUDA context
 
     def set_state(self, status: str, reason: str | None = None, code: str | None = None) -> None:
         self.state = {"status": status, "code": code, "reason": reason, "updated_at": iso(utcnow())}
@@ -102,6 +104,9 @@ class ModelWorker:
     def kill(self) -> None:
         p, self.proc = self.proc, None
         self.load_info, self.load_key = None, None
+        # 1.46 (I0200): the CPU fallback lives only as long as the broken GPU process would have - any later end of the process
+        # (timeout, heartbeat, governor release, settings, install, stop) starts the configured device again, as before
+        self.gpu_fallback = None
         if p and p.poll() is None:
             try:
                 p.stdin.write('{"cmd":"quit"}\n')
@@ -159,7 +164,11 @@ class ModelWorker:
         if self.config_state(s):
             return False
         threads = self.svc.threads_for(self.mid, c)
-        key = (str(self.svc.weights_root()), c.device, threads, c.checkpoint)
+        fb = self.gpu_fallback
+        if fb and (fb.get("device_setting") != c.device or fb.get("python_path") != c.python_path):
+            self.gpu_fallback = fb = None                    # the user changed the device / environment: their setting applies again
+        device = "CPU" if fb else c.device                   # 1.46 (I0200): replacement of a process with a broken CUDA context
+        key = (str(self.svc.weights_root()), device, threads, c.checkpoint)
         if self.proc and self.proc.poll() is None and self.load_info and self.load_key == key:
             return True
         if self.proc and self.load_key != key:
@@ -194,7 +203,7 @@ class ModelWorker:
             self.info = {k: hello.get(k) for k in ("runtime", "versions", "cuda", "pid")} | {"python": py}
             self.set_state("LOADING", STATUS_PL["LOADING"])
             t0 = time.monotonic()
-            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": c.device, "threads": threads, "verify_files": True,
+            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": device, "threads": threads, "verify_files": True,
                           "checkpoint": c.checkpoint, "finetune_dir": str(tsfm_dir() / "finetuned" / self.mid)}, c.load_timeout_s)
         except (TimeoutError, RuntimeError, ValueError) as exc:
             return self.fail("WORKER_TIMEOUT" if isinstance(exc, TimeoutError) else "WORKER", str(exc))
@@ -202,6 +211,9 @@ class ModelWorker:
             return self.fail(r.get("code") or "LOAD_ERROR", r.get("error"))
         self.load_info, self.load_key, self.backoff = r["info"], key, 30.0
         self.load_info["cold_start_s"] = round(time.monotonic() - t0, 1)
+        if fb:
+            self.load_info["gpu_fallback"] = True
+            self.load_info["device_note"] = f"GPU_ERROR_FALLBACK_CPU: {fb.get('reason')}"[:300]
         gov = getattr(self.svc, "governor", None)
         if gov is not None:
             gov.record(self.mid, load_ms=r["info"].get("load_ms"))
@@ -221,6 +233,32 @@ class ModelWorker:
         except Exception:  # noqa: BLE001
             pass
         return False
+
+    def gpu_sticky(self, err: str | None) -> bool:
+        """1.46 (I0200): a predict EXCEPTION is a STICKY GPU failure only when the model runs on CUDA, the message is a GPU error AND the
+        process's CUDA context is broken (cuda_check). Then every later forecast of this process fails as well. A transient error (healthy
+        context, e.g. one CUDA OOM), an unknown answer (older worker: UNKNOWN_COMMAND) or a failed check -> False = the previous behaviour
+        (the process stays, the next bar is computed on the same device; a hung check is killed by ask() like a hung forecast)."""
+        if not str((self.load_info or {}).get("device") or "").startswith("cuda") or not gpu_error(err):
+            return False
+        try:
+            r = self.ask({"cmd": "cuda_check"}, 30)
+        except (TimeoutError, RuntimeError, ValueError):
+            return False
+        return bool(r.get("ok")) and r.get("healthy") is False
+
+    def fallback_to_cpu(self, err: str | None) -> None:
+        """1.46 (I0200): the GPU process with a broken CUDA context (before: kept, failing at EVERY bar until a restart / settings change)
+        is ended and replaced by a CPU process of the same weights. Its forecasts carry the use restriction GPU_FALLBACK_CPU (holds only,
+        see use_restriction); the fallback ends with that process (kill) or when the user changes the device / environment setting."""
+        c = self.svc.settings.get().models[self.mid]
+        self.fail("GPU_ERROR", f"{err} – kontekst CUDA procesu uszkodzony; restart procesu na CPU (te same wagi)"[:380])
+        self.gpu_fallback = {"reason": str(err or "")[:240], "device_setting": c.device, "python_path": c.python_path, "at": iso(utcnow())}
+        try:
+            self.svc.applog.info("TSFM", "GPU_FALLBACK", f"{NAMES[self.mid]}: błąd GPU ({str(err)[:120]}) – kolejna prognoza na CPU; prognozy "
+                                                         "awaryjne tylko wstrzymują wejścia (REQUIRED ich nie potwierdza).")
+        except Exception as exc:  # noqa: BLE001 - the event log never breaks the fallback
+            log.warning("tsfm applog: %s", exc)
 
     def heartbeat(self) -> None:
         if self.proc is None or self.proc.poll() is not None or not self.load_info or time.monotonic() - self.last_ok < 120:
@@ -549,6 +587,8 @@ class TsfmService:
             self.counters["errors"] += 1
             if r.get("code") in ("RESOURCE_LIMIT",):
                 w.fail(r["code"], r.get("error"))
+            elif r.get("code") == "EXCEPTION" and w.gpu_sticky(r.get("error")):
+                w.fallback_to_cpu(r.get("error"))                 # 1.46 (I0200): was kept on the broken GPU - the error at every bar
             ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
             return None
         w.timings.append(float(r.get("ms") or 0))
@@ -832,7 +872,8 @@ class TsfmService:
                         "status_pl": STATUS_PL.get(w.state["status"], w.state["status"]), "code": w.state.get("code"), "reason": w.state.get("reason"),
                         "updated_at": w.state.get("updated_at"), "worker": w.info, "load": w.load_info, "timing": w.timing(), "restarts": w.starts,
                         "enabled": c.enabled, "instruments": c.instruments, "timeframes": c.timeframes, "profile": c.profile, "context_len": c.context_len,
-                        "device": c.device, "use": {p: c.use[p].model_dump() for p in PATHS}, "env": self.env_status(mid),
+                        "device": c.device, "gpu_fallback": w.gpu_fallback,
+                        "use": {p: c.use[p].model_dump() for p in PATHS}, "env": self.env_status(mid),
                         "targets": [self.target_view((mid, i, tf)) for i in c.instruments for tf in c.timeframes],
                         "jobs": {n: (j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})
                                  for n, j in self.jobs.items() if n.endswith(mid)}}
@@ -1016,11 +1057,25 @@ class TsfmService:
         return {"ok": True, "use": use, "reports": ids}
 
 
+_GPU_ERROR_RX = re.compile(r"cuda|cudnn|cublas|cufft|cusparse|curand|nvrtc|device-side|illegal memory access|out of memory|"
+                           r"accelerator\s*error", re.IGNORECASE)
+
+
+def gpu_error(text: str | None) -> bool:
+    """1.46 (I0200): does a model error message come from the GPU stack (CUDA / cuDNN / cuBLAS / device-side assert / CUDA OOM)?"""
+    return bool(text) and bool(_GPU_ERROR_RX.search(str(text)))
+
+
 def use_restriction(load: dict, inst: str, tf: str, H: int) -> dict | None:
     """1.46: a forecast that may only HOLD an entry, never CONFIRM one (masterquo/tsfm/predictions.py: a REQUIRED role treats it as
     unavailable; ASSIST / OBSERVE use it as before). None = no restriction.
+      GPU_FALLBACK_CPU (I0200): computed by the CPU process that replaced a GPU process with a broken CUDA context (before: no forecast
+                       at all until a restart) - in the contract rows (Quant inputs, model hub) it stays unavailable as before;
       CHECKPOINT_SCOPE (I0834 / I0844): a fine-tuned Granite TTM checkpoint outside the instrument / timeframe / horizon it was trained
                        for (the checkpoint was used for every pair; the value is kept - Quant inputs and ASSIST holds stay as they were)."""
+    if load.get("gpu_fallback"):
+        return {"code": "GPU_FALLBACK_CPU", "reason": f"prognoza awaryjna na CPU po błędzie GPU ({load.get('device_note') or ''})"[:300]
+                + " – tylko wstrzymania (ASSIST); REQUIRED i wejścia Quant jej nie używają; ustaw urządzenie w ustawieniach, by liczyć normalnie"}
     ck = load.get("checkpoint") or "BASE"
     if ck == "BASE":
         return None

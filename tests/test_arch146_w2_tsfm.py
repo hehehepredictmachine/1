@@ -35,8 +35,8 @@ import _env
 from _env import TempData
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import kronos_testkit as K  # noqa: E402
-from test_tsfm_bot import POSIX, WED_1200, fixture_weights, stub_python  # noqa: E402
+import kronos_testkit as K
+from test_tsfm_bot import POSIX, WED_1200, fixture_weights, stub_python
 
 BACKEND = _env.ROOT / "backend"
 
@@ -98,6 +98,164 @@ class _Svc(unittest.TestCase):
     def ev(rows, side):
         from masterquo.decision.coordinator import evaluate_models
         return evaluate_models(rows, side, required=set(), assist_threshold=0.6, max_age_s=10 ** 9, now=WED_1200 + 60)
+
+
+# ======================================================================================================== I0200 (+I0204) GPU -> CPU
+GPU_ERR = {"ok": False, "code": "EXCEPTION", "error": "AcceleratorError: CUDA error: an illegal memory access was encountered"}
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0200GpuFallback(_Svc):
+    def _gpu_broken(self, w, healthy=False, record=None):
+        orig = w.ask
+
+        def ask(req, timeout):
+            if record is not None:
+                record.append(req["cmd"])
+            if req["cmd"] == "predict":
+                return dict(GPU_ERR)
+            if req["cmd"] == "cuda_check":
+                return {"ok": True, "device": "cuda:0", "healthy": healthy, "error": None if healthy else GPU_ERR["error"]}
+            return orig(req, timeout)
+        w.ask = ask
+        return orig
+
+    def _loaded_on_gpu(self, svc):
+        svc.tick()
+        self.run_queue()
+        w = svc.workers["chronos2"]
+        self.assertEqual(w.state["status"], "READY")
+        w.load_info["device"] = "cuda:0"                         # the stub reports cpu; the real engine reports the torch device
+        return w
+
+    def test_sticky_cuda_error_restarts_the_process_on_cpu(self):
+        from masterquo.tsfm import predictions as TP
+        svc = self.make()
+        w = self._loaded_on_gpu(svc)
+        orig = self._gpu_broken(w)
+        self.assertTrue(svc.refresh("chronos2", "XAUUSD", "M5")["ok"])
+        self.run_queue()
+        # before the fix: EXCEPTION -> only ms ERROR, the broken GPU process stayed (READY) and failed again at every bar
+        self.assertEqual((w.state["status"], w.state["code"]), ("ERROR", "GPU_ERROR"), w.state)
+        self.assertIsNone(w.proc)
+        self.assertIn("CUDA", (w.gpu_fallback or {}).get("reason", ""))
+        loads = []
+
+        def rec(req, timeout):
+            if req["cmd"] == "load":
+                loads.append(dict(req))
+            return orig(req, timeout)
+        w.ask, w.retry_at = rec, 0.0
+        self.assertTrue(svc.refresh("chronos2", "XAUUSD", "M5")["ok"])
+        self.run_queue()
+        self.assertEqual([x["device"] for x in loads], ["CPU"])                  # the replacement process runs on CPU
+        self.assertTrue(w.load_info["gpu_fallback"])
+        self.assertTrue(w.load_info["device_note"].startswith("GPU_ERROR_FALLBACK_CPU"))
+        fc = svc.latest[("chronos2", "XAUUSD", "M5")]
+        self.assertEqual(fc["use_restriction"]["code"], "GPU_FALLBACK_CPU")
+        # contract row (Quant FEAT-2 inputs, presentation): unavailable exactly as during the GPU error - Quant inputs unchanged
+        row = next(r for r in TP.contract_predictions(svc, "XAUUSD") if r["model_id"] == "tsfm:chronos2" and r["timeframe"] == "M5")
+        self.assertEqual((row["state"], row["result"]), ("STALE", None))
+        self.assertIn("GPU", row["unavailable_reason"])
+        # the process lives as long as the broken GPU process would have: any later kill -> the configured device again (as today)
+        w.kill()
+        self.assertIsNone(w.gpu_fallback)
+        loads.clear()
+        w.retry_at = 0.0
+        self.assertTrue(w.ensure())
+        self.assertEqual([x["device"] for x in loads], ["AUTO"])
+
+    def test_fallback_forecast_only_holds(self):
+        """Entry direction: REQUIRED is not satisfied by the CPU fallback (today: ERROR -> WAIT / MODEL_REQUIRED_UNAVAILABLE - unchanged);
+        ASSIST may hold on a contrary fallback forecast (today: no forecast -> no hold) = only fewer entries."""
+        from masterquo.tsfm import predictions as TP
+        svc = self.make(tfs=("M5",), chronos2={"use": {"ACTIVE": {"timeframe": "M5"}}})
+        w = self._loaded_on_gpu(svc)
+        orig = self._gpu_broken(w)
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        w.ask, w.retry_at = orig, 0.0
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertEqual(svc.latest[("chronos2", "XAUUSD", "M5")]["direction"], "UP")
+        self.approve("chronos2", "SCALPING", "M5")
+        ctx = TP.context(svc, "chronos2", "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual((ctx["available"], ctx["state"]), (False, "GPU_FALLBACK_CPU"))
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "WAIT")
+        self.approve("chronos2", "ACTIVE", "M5")
+        rows = [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:chronos2"]
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("REQUIRED", "STALE")])
+        self.assertEqual(self.ev(rows, "BUY")[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:chronos2"])
+        self.assertTrue(svc.set_use("chronos2", "HEDGING", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        ctx = TP.context(svc, "chronos2", "XAUUSD", "HEDGING", side="SELL")
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "SELL"}, ctx)["status"], "WAIT")    # contrary fallback holds
+        self.assertTrue(svc.set_use("chronos2", "ACTIVE", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        rows = [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:chronos2"]
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("ASSIST", "READY")])
+        self.assertEqual(self.ev(rows, "SELL")[1], ["MODEL_ASSIST_HOLD:tsfm:chronos2"])
+
+    def test_transient_error_keeps_todays_behaviour(self):
+        svc = self.make()
+        w = self._loaded_on_gpu(svc)
+        cmds = []
+        self._gpu_broken(w, healthy=True, record=cmds)
+        proc = w.proc
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertEqual(cmds, ["predict", "cuda_check"])
+        self.assertIs(w.proc, proc)                              # CUDA context healthy -> the process stays, the next bar retries on GPU
+        self.assertIsNone(w.gpu_fallback)
+        self.assertEqual(w.state["status"], "READY")
+        self.assertEqual(svc.mstate[("chronos2", "XAUUSD", "M5")]["state"], "ERROR")
+
+    def test_cpu_exception_is_not_a_gpu_error(self):
+        svc = self.make()
+        svc.tick()
+        self.run_queue()
+        w = svc.workers["chronos2"]                              # device cpu (stub)
+        cmds = []
+        self._gpu_broken(w, record=cmds)
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertEqual(cmds, ["predict"])                      # no CUDA check, no restart - exactly as before
+        self.assertIsNone(w.gpu_fallback)
+        self.assertIsNotNone(w.proc)
+
+    def test_device_setting_change_clears_the_fallback(self):
+        svc = self.make()
+        w = self._loaded_on_gpu(svc)
+        orig = self._gpu_broken(w)
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertIsNotNone(w.gpu_fallback)
+        svc.settings.update({"models": {"chronos2": {"device": "CUDA"}}})
+        w.ask, w.retry_at = orig, 0.0
+        self.assertTrue(w.ensure())
+        self.assertIsNone(w.gpu_fallback)
+        self.assertFalse(w.load_info.get("gpu_fallback"))
+
+
+class TestI0200CudaCheck(unittest.TestCase):
+    def test_engine_cuda_check(self):
+        from tsfm_runtime import engines as E
+        self.assertTrue(E.cuda_check("cpu")["healthy"])
+
+        class Boom:
+            @staticmethod
+            def ones(*a, **k):
+                raise RuntimeError("CUDA error: an illegal memory access was encountered")
+        with mock.patch.dict(sys.modules, {"torch": Boom}):
+            r = E.cuda_check("cuda:0")
+        self.assertFalse(r["healthy"])
+        self.assertIn("illegal memory access", r["error"])
+
+    def test_gpu_error_signature(self):
+        from masterquo.tsfm import service as S
+        for txt in (GPU_ERR["error"], "OutOfMemoryError: CUDA out of memory. Tried to allocate", "cuDNN error: CUDNN_STATUS_INTERNAL_ERROR",
+                    "RuntimeError: CUBLAS_STATUS_EXECUTION_FAILED", "device-side assert triggered"):
+            self.assertTrue(S.gpu_error(txt), txt)
+        for txt in ("ValueError: shapes (1,512) and (2,) not aligned", None, ""):
+            self.assertFalse(S.gpu_error(txt), txt)
 
 
 # ======================================================================================================== I0201 docstrings
@@ -252,7 +410,7 @@ def fake_tirex2(nan: bool = False):
                 out.append(a if output_type == "numpy" else _FT(a))
             return out
 
-    def load_model(path, device="cpu", compile=False, cuda_graphs=None):  # noqa: A002 - the official keyword
+    def load_model(path, device="cpu", compile=False, cuda_graphs=None):
         m.calls.append({"path": path, "device": device, "compile": compile, "cuda_graphs": cuda_graphs})
         return Model()
     m.load_model = load_model
@@ -289,7 +447,7 @@ class TestI0207TiRex2Engine(unittest.TestCase):
                 "quantiles": [0.1, 0.5, 0.9], "freq_tf": "M5", **kw}
 
     def test_load_plain_inference_on_cpu(self):
-        e, _E = self.engine()
+        _e, _E = self.engine()
         self.assertEqual(self.tx.calls, [{"path": str(_E.M.model_dir(self.root, "tirex2")), "device": "cpu", "compile": False, "cuda_graphs": None}])
         self.assertEqual(os.environ.get("TORCHDYNAMO_DISABLE"), "1")              # 1.42.1: no TorchInductor without PMW_TIREX_COMPILE
         self.assertTrue(self.torch._dynamo.config.disable)
@@ -355,7 +513,7 @@ def _run_worker(argv: list[str], reqs: list[dict], timeout: float) -> dict:
     env = dict(os.environ, PYTHONPATH=str(BACKEND), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1", OMP_NUM_THREADS="2")
     env.pop("MQ_TSFM_ALLOW_FIXTURE", None)
     data = "".join(json.dumps({**r, "id": str(i)}) + "\n" for i, r in enumerate(reqs)) + json.dumps({"cmd": "quit", "id": "q"}) + "\n"
-    p = subprocess.run(argv, input=data, capture_output=True, text=True, encoding="utf-8", cwd=str(BACKEND), env=env, timeout=timeout)
+    p = subprocess.run(argv, input=data, capture_output=True, text=True, check=False, encoding="utf-8", cwd=str(BACKEND), env=env, timeout=timeout)
     out = {}
     for ln in p.stdout.splitlines():
         try:
@@ -486,7 +644,7 @@ class TestI0540TabiclEngine(unittest.TestCase):
 
     def test_load_and_official_settings(self):
         from tabicl_runtime import lock as TL
-        e, TE, tb, info = self.engine()
+        e, _TE, tb, info = self.engine()
         self.assertEqual((info["fingerprint"], info["threads"], info["device"]), (TL.fingerprint(), 3, "cpu"))
         self.assertTrue(str(e.ckpt).endswith(TL.PIN["checkpoint"]))
         e.fit("C", [[0.0, 1.0], [1.0, 0.0], [2.0, 1.0]], [0, 1, 1])

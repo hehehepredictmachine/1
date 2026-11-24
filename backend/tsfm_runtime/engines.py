@@ -64,6 +64,23 @@ def cuda_info() -> dict:
         return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+def cuda_check(dev: str | None) -> dict:
+    """1.46 (I0200): is the CUDA context of THIS process still usable? A sticky CUDA error (illegal memory access, device-side assert,
+    launch failure) makes every later CUDA call of the process fail until it ends. A tiny op on the device + synchronize; a model that
+    does not run on CUDA is always healthy here."""
+    d = str(dev or "")
+    if not d.startswith("cuda"):
+        return {"device": d or None, "healthy": True, "error": None}
+    try:
+        import torch
+        t = torch.ones(4, device=d)
+        float((t * 2).sum().item())
+        torch.cuda.synchronize()
+        return {"device": d, "healthy": True, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"device": d, "healthy": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
 def rss_mb() -> float | None:
     try:
         import resource

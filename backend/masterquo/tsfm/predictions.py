@@ -68,13 +68,14 @@ def _result(fc: dict) -> dict:
 
 def _restriction(fc: dict | None) -> dict | None:
     """1.46: TsfmService.use_restriction of the forecast - it may only HOLD an entry (ASSIST / REQUIRED contrary), never CONFIRM a REQUIRED
-    role (I0834 / I0844 checkpoint out of its training scope)."""
+    role (I0200 CPU fallback after a broken GPU context, I0834 / I0844 checkpoint out of its training scope)."""
     return (fc or {}).get("use_restriction") or None
 
 
 # restrictions under which the contract row (Quant FEAT-2 inputs, model hub, presentation) stays UNAVAILABLE - exactly as during the
-# failure the restricted forecast replaced; the decision rows (coordinator_rows / context) still use it for holds only
-UNAVAILABLE_IN_CONTRACT: tuple[str, ...] = ()
+# failure the restricted forecast replaced (I0200: the broken GPU process gave no forecast); the decision rows (coordinator_rows /
+# context) still use it for holds only
+UNAVAILABLE_IN_CONTRACT: tuple[str, ...] = ("GPU_FALLBACK_CPU",)
 
 
 def contract_predictions(svc, inst: str, *, decisions: bool = False) -> list[dict]:
@@ -189,7 +190,7 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
                 p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"dopuszczenie REQUIRED nieaktualne ({why})"}
         rx = p.get("use_restriction") if p.get("state") == "READY" else None
         if use == "REQUIRED" and rx:
-            # 1.46 (I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed); ASSIST / OBSERVE rows keep it
+            # 1.46 (I0200 / I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed); ASSIST / OBSERVE keep it
             p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"REQUIRED niepotwierdzony: {rx.get('reason')}"[:300]}
         out.append({**p, "family": f"tsfm:{mid}", "use": use if use != "OBSERVE" else "SHADOW", "max_age_s": TF_AGE(u.timeframe, s),
                     "unavailable_reason": p.get("unavailable_reason") or note})
@@ -252,7 +253,7 @@ def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None)
     fc = svc.latest.get(k) if state == "READY" else None
     rx = _restriction(fc)
     if use == "REQUIRED" and rx:
-        # 1.46 (I0834 / I0844): the restricted forecast may hold (ASSIST) but never CONFIRMS a REQUIRED condition -> READY -> WAIT
+        # 1.46 (I0200 / I0834 / I0844): the restricted forecast may hold (ASSIST) but never CONFIRMS a REQUIRED condition -> READY -> WAIT
         state, why, fc = rx.get("code") or "RESTRICTED", rx.get("reason"), None
     d = fc["direction"] if fc else None
     rel = "BRAK"
