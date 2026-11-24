@@ -469,5 +469,313 @@ class TestScalpBatCommission(unittest.TestCase):
         self.assertIn("%COMMARG%", call)
 
 
+# ------------------------------------------------------------------------------------------------------------ scalp SHADOW
+def _scenario(context=False):
+    import scenario as S
+    from masterquo.scalp import strategy as st
+    p = st.load_profile()
+    p["context_filter"]["enabled"]["value"] = context
+    bars, info = S.build(p)
+    return S, st, p, bars, info
+
+
+class _ScalpService:
+    """The fake bridge / config of tests/test_scalp_core.TestConfigAndService (scenario bars, no orders)."""
+
+    def __init__(self, live, m5, *, account=None, info=None, extra_m5=None):
+        from masterquo.config import AppConfig
+        from masterquo.db.database import Database
+        from masterquo.scalp import service as mod
+        self.mod = mod
+        self.live, self.m5 = live, m5
+        acc = dict(account or {"equity": 10000.0, "margin_mode": "HEDGING"})
+        sym = dict(info or {"trade_tick_size": 0.01, "point": 0.01, "trade_contract_size": 100.0, "volume_min": 0.01, "volume_step": 0.01,
+                            "volume_max": 50, "currency_base": "XAU", "currency_profit": "USD"})
+        outer = self
+
+        class Bridge:
+            session_epoch = 1
+            symbol_info = sym
+
+            def bars(self, tf, limit, include_forming=False):
+                if tf == "M1":
+                    return [dict(b, spread=10) for b in outer.live][-limit:]
+                return [dict(b, spread=10) for b in outer.m5][-limit:] if tf == "M5" else []
+
+            def quote_status(self):
+                return {"bid": outer.live[-1]["c"], "ask": outer.live[-1]["c"] + 0.1, "age_seconds": 0.5}
+
+            def account_status(self):
+                return dict(acc)
+
+        class Bus:
+            def publish(self, *a):
+                pass
+
+        class Log:
+            def info(self, *a):
+                pass
+
+            def error(self, *a):
+                pass
+
+        class Cfg:
+            def get(self):
+                c = AppConfig()
+                c.scalp.commission_per_lot_side = 3.5
+                return c
+        self.svc = mod.ScalpService(Cfg(), Bridge(), Database(), Bus(), Log(), news=None)
+
+    def tick(self, now: datetime):
+        orig = self.mod.time.time
+        self.mod.time.time = lambda: now.timestamp()
+        try:
+            self.svc.tick()
+        finally:
+            self.mod.time.time = orig
+        return self.svc.recent()
+
+
+def _gate(row, name):
+    return next((g for g in row["gates"] if g["name"] == name), None)
+
+
+class TestScalpTfRace(unittest.TestCase):
+    """I0737: a higher TF bar of the decision's close missing in the poll -> the candidate is NOT_VERIFIED (blocked, never a new one);
+    a late higher TF bar is fed at the next poll (key over every TF); a range armed by a late M5 gives no candidates."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def _live(self):
+        S, st, _p, bars, info = _scenario()
+        ret = next(k for k, b in enumerate(bars) if b["open_utc"] == info["retest_time"])
+        live = bars[:ret + 1]
+        return S, st, live, datetime.fromtimestamp(st.ts(live[-1]["open_utc"]) + 61, UTC)
+
+    def test_candidate_with_lagging_m5_is_blocked(self):
+        S, _st, live, now = self._live()
+        m5 = S.m5_of(live)
+        lagging = _ScalpService(live, m5[:-1])                                 # the M5 closing 3 min before the decision is not polled yet
+        rows = lagging.tick(now)
+        self.assertEqual(len(rows), 1)
+        g = _gate(rows[0], "komplet TF w chwili decyzji")
+        self.assertIsNotNone(g)
+        self.assertFalse(g["ok"])
+        self.assertIn("M5", g["detail"])
+        self.assertEqual(rows[0]["status"], "BLOCKED")
+
+    def test_complete_poll_passes_the_tf_gate(self):
+        S, _st, live, now = self._live()
+        complete = _ScalpService(live, S.m5_of(live))
+        self.assertTrue(_gate(complete.tick(now)[0], "komplet TF w chwili decyzji")["ok"])
+
+    def test_late_m5_is_fed_without_a_new_m1(self):
+        S, st, live, now = self._live()
+        m5 = S.m5_of(live)
+        h = _ScalpService(live, m5[:-1])
+        h.tick(now)
+        fed = h.svc.fed["M5"]
+        h.m5 = m5                                                              # the late M5 arrives, the M1 is the same
+        h.tick(now + timedelta(seconds=2))
+        self.assertEqual(h.svc.fed["M5"], st.ts(m5[-1]["open_utc"]))
+        self.assertGreater(h.svc.fed["M5"], fed)
+
+    def test_range_armed_by_late_m5_gives_no_candidates(self):
+        S, st, _p, bars, _info = _scenario()
+        m5_all = S.m5_of(bars)
+        arm = None
+        for b in m5_all:                                                       # first M5 close where the service machine arms a range
+            close = st.ts(b["open_utc"]) + 300
+            live = [x for x in bars if st.ts(x["open_utc"]) + 60 <= close]
+            h = _ScalpService(live, [x for x in m5_all if st.ts(x["open_utc"]) + 300 <= close])
+            h.tick(datetime.fromtimestamp(close + 61, UTC))
+            if h.svc.machine.range is not None and h.svc.machine.range["armed_at"] == close:
+                arm = close
+                break
+        self.assertIsNotNone(arm)
+        live = [x for x in bars if st.ts(x["open_utc"]) + 60 <= arm]
+        m5 = [x for x in m5_all if st.ts(x["open_utc"]) + 300 <= arm]
+        h = _ScalpService(live, m5[:-1])                                       # poll 1: the M1 closing at `arm`, the arming M5 not yet there
+        h.tick(datetime.fromtimestamp(arm + 1, UTC))
+        h.m5 = m5                                                              # poll 2: the M5 arrives late
+        h.tick(datetime.fromtimestamp(arm + 3, UTC))
+        self.assertIsNotNone(h.svc.machine.range)
+        self.assertEqual(h.svc.machine.range["armed_at"], arm)
+        for d in h.svc.machine.dirs.values():
+            self.assertEqual(d["state"], "BLOCKED")
+            self.assertIn("NOT_VERIFIED", d["reason"])
+
+
+class TestScalpSizeAccountCurrency(unittest.TestCase):
+    """I0738: the budget is in the account currency - lots with the larger per-lot risk of contract size / tick value (never more),
+    risk_cash in the account currency; commission in price with the larger conversion; another currency without tick value blocks."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_size_with_money_per_price(self):
+        from masterquo.scalp import strategy as st
+        p = st.load_profile()
+        usd = st.size(2.0, 100.0, 10000.0, p, 0.01, 0.01, 100)
+        eur = st.size(2.0, 100.0, 10000.0, p, 0.01, 0.01, 100, money_per_price=92.0)        # tick value 0.92 EUR / 0.01
+        self.assertEqual(eur["lots"], usd["lots"])                             # never more lots than before
+        self.assertEqual(eur["risk_cash"], round(eur["lots"] * 2.0 * 92.0, 2))  # account-currency risk
+        pln = st.size(2.0, 100.0, 10000.0, p, 0.01, 0.01, 100, money_per_price=400.0)       # 4 PLN per USD: 400 PLN per 1.0 per lot
+        self.assertLess(pln["lots"], usd["lots"])
+        self.assertEqual(pln["lots"], 0.03)                                    # 25 PLN budget / 800 PLN per lot -> 0.031 -> 0.03
+        same = st.size(2.0, 100.0, 10000.0, p, 0.01, 0.01, 100, money_per_price=100.0)
+        self.assertEqual((same["lots"], same["risk_cash"]), (usd["lots"], usd["risk_cash"]))
+
+    def test_commission_price_and_tick_value_gate(self):
+        from masterquo.scalp import service as mod
+        self.assertAlmostEqual(mod.commission_price(7.0, 100.0, 92.0), 7.0 / 92.0)
+        self.assertAlmostEqual(mod.commission_price(28.0, 100.0, 400.0), 0.28)   # never below com / contract size
+        self.assertAlmostEqual(mod.commission_price(3.5, 100.0, None), 0.035)
+        self.assertEqual(mod.money_per_price({"trade_tick_value": 0.92, "trade_tick_size": 0.01}), 92.0)
+        self.assertIsNone(mod.money_per_price({"trade_tick_size": 0.01}))
+        S, st, _p, bars, info = _scenario()
+        ret = next(k for k, b in enumerate(bars) if b["open_utc"] == info["retest_time"])
+        live = bars[:ret + 1]
+        now = datetime.fromtimestamp(st.ts(live[-1]["open_utc"]) + 61, UTC)
+        h = _ScalpService(live, S.m5_of(live), account={"equity": 10000.0, "margin_mode": "HEDGING", "currency": "EUR"})
+        g = _gate(h.tick(now)[0], "wartość ticka (waluta konta)")
+        self.assertIsNotNone(g)
+        self.assertFalse(g["ok"])                                              # EUR account, USD quote, no tick value -> NOT_VERIFIED
+        self.assertIn("NOT_VERIFIED", g["detail"])
+
+
+class TestCandidateSpreadUnknown(unittest.TestCase):
+    """I0809: no spread on the retest bar -> no candidate (the SL / TP2 buffers were built with spread 0)."""
+
+    def test_no_candidate_without_spread(self):
+        S, _st, p, bars, info = _scenario()
+        self.assertEqual(len(S.run(p, bars)[1]), 1)                            # with the spread: one candidate
+        no_sp = [dict(b, spread_price=None) if b["open_utc"] == info["retest_time"] else b for b in bars]
+        m, plans = S.run(p, no_sp)
+        self.assertEqual(plans, [])
+        self.assertTrue(any(j["state"] == "BLOCKED" and "SPREAD_UNKNOWN" in j["reason"] and j.get("direction") == "BUY" for j in m.journal))
+
+
+class TestScalpLossReferenceAtDayStart(unittest.TestCase):
+    """I0810 (+ I0859): the daily reference is the first equity of the UTC day (observed by tick), never looser than the first
+    candidate's; unreadable file / start during the day -> blocked instead of a fresh baseline that passes."""
+
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.scalp import strategy as st
+        from masterquo.scalp.service import ScalpService
+        self.svc = ScalpService.__new__(ScalpService)
+        self.svc.prof = st.load_profile()
+        self.d0 = datetime(2026, 3, 3, tzinfo=UTC)
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_reference_from_day_start(self):
+        self.svc._risk_reference({"equity": 1000.0}, now=self.d0 + timedelta(minutes=1))      # tick at 00:01
+        ok, why = self.svc._loss_limits({"equity": 960.0}, now=self.d0 + timedelta(hours=15))  # first candidate at 15:00
+        self.assertFalse(ok)
+        self.assertIn("dzień 4.00%", why)
+
+    def test_never_looser_than_first_candidate(self):
+        self.svc._risk_reference({"equity": 1000.0}, now=self.d0 + timedelta(minutes=1))
+        self.assertTrue(self.svc._loss_limits({"equity": 1100.0}, now=self.d0 + timedelta(hours=10))[0])
+        ok, why = self.svc._loss_limits({"equity": 1080.0}, now=self.d0 + timedelta(hours=15))   # -1.82% from the first candidate
+        self.assertFalse(ok)
+        self.assertIn("dzień 1.82%", why)
+
+    def test_unreadable_file_blocks(self):
+        p = self.svc._root() / "risk_reference.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("{broken", encoding="utf-8")
+        ok, why = self.svc._loss_limits({"equity": 1000.0}, now=self.d0 + timedelta(minutes=2))
+        self.assertFalse(ok)
+        self.assertIn("UNAVAILABLE", why)
+
+    def test_start_during_the_day_is_not_verified(self):
+        ok, why = self.svc._loss_limits({"equity": 1000.0}, now=self.d0 + timedelta(hours=9))
+        self.assertFalse(ok)
+        self.assertIn("NOT_VERIFIED", why)
+        ok2, _ = self.svc._loss_limits({"equity": 1000.0}, now=self.d0 + timedelta(days=1, minutes=1))   # next day from 00:01: verified
+        self.assertTrue(ok2)
+
+
+def _flat_m5_m1(t0: datetime):
+    """30 M5 bars with identical closes (100.0) whose highs / lows touch 101 / 99 every 3 bars, and M1 bars with narrow edge sections."""
+    m5, m1 = [], []
+    for k in range(30):
+        o = t0 + timedelta(minutes=5 * k)
+        h, lo = {0: (101.0, 99.9), 1: (100.1, 99.0), 2: (100.1, 99.9)}[k % 3]
+        m5.append({"open_utc": _iso(o), "o": 100.0, "h": h, "l": lo, "c": 100.0, "tv": 100, "spread_price": 0.1})
+        for j in range(5):
+            if j == 2 and k % 3 == 0:
+                b = (100.95, 101.0, 100.9, 100.95)
+            elif j == 2 and k % 3 == 1:
+                b = (99.05, 99.1, 99.0, 99.05)
+            else:
+                b = (100.0, 100.05, 99.95, 100.0)
+            m1.append({"open_utc": _iso(o + timedelta(minutes=j)), "o": b[0], "h": b[1], "l": b[2], "c": b[3], "tv": 100, "spread_price": 0.1})
+    return m5, m1
+
+
+class TestDetectRangeFlat(unittest.TestCase):
+    """I0860: 10 identical M5 closes (ER denominator 0) passed the ER filter as 0.0 - the flat range gives no candidates (it stays armed
+    for its TTL as before, so no other range is detected earlier)."""
+
+    def test_flat_range_has_no_candidates(self):
+        from masterquo.scalp import strategy as st
+        p = st.load_profile()
+        m5, m1 = _flat_m5_m1(datetime(2026, 3, 3, 8, 0, tzinfo=UTC))
+        m = st.ScalpMachine(p, 0.01)
+        for k, b in enumerate(m5):
+            for x in m1[5 * k:5 * k + 5]:
+                m.on_m1_close(x)
+            m.on_m5_close(b)
+            if m.range:
+                break
+        self.assertIsNotNone(m.range)                                          # armed as before (TTL unchanged)
+        self.assertTrue(m.range.get("flat"))
+        self.assertEqual({d["state"] for d in m.dirs.values()}, {"BLOCKED"})
+        self.assertTrue(all("płaski rynek" in d["reason"] for d in m.dirs.values()))
+
+
+class TestScalpForecastNoPoint(unittest.TestCase):
+    """I0025: without symbol_info.point the scalp A forecast is UNAVAILABLE (no guessed 0.01 spread scale), the worker is not asked."""
+
+    def test_forecast_without_point(self):
+        from masterquo.scalp.service import ScalpService
+        asked = []
+
+        class Fc:
+            proc = True
+
+            def _ask(self, msg, timeout):
+                asked.append(msg)
+                return {"status": "SHADOW"}
+
+        class Bridge:
+            symbol_info: dict | None = None
+
+            def bars(self, tf, limit, include_forming=False):
+                return [{"open_utc": "2026-03-03T10:00:00Z", "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "tv": 1, "spread": 10}]
+        svc = ScalpService.__new__(ScalpService)
+        svc.forecast, svc.bridge = Fc(), Bridge()
+        svc.registry = lambda: {"active": "R1", "runs": {}}
+        out = svc.forecasts()
+        self.assertEqual(out["status"], "UNAVAILABLE")
+        self.assertIn("point", out["reason"])
+        self.assertEqual(asked, [])
+        Bridge.symbol_info = {"point": 0.01}
+        self.assertEqual(svc.forecasts()["status"], "SHADOW")
+        self.assertEqual(len(asked), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

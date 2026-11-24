@@ -481,11 +481,12 @@ class TestConfigAndService(unittest.TestCase):
         try:
             svc = ScalpService.__new__(ScalpService)
             svc.prof = st.load_profile()
-            ok, _ = svc._loss_limits({"equity": 10000.0})
+            t0 = datetime.fromisoformat("2026-03-03T00:01:00+00:00")         # 1.46 arch (I0810): a reference observed after 10 min is NOT_VERIFIED
+            ok, _ = svc._loss_limits({"equity": 10000.0}, now=t0)
             self.assertTrue(ok)
             svc2 = ScalpService.__new__(ScalpService)                       # "restart": reference equity is read from disk
             svc2.prof = svc.prof
-            ok2, why = svc2._loss_limits({"equity": 9800.0})                 # -2% today > 1.5% daily limit
+            ok2, why = svc2._loss_limits({"equity": 9800.0}, now=t0 + timedelta(hours=9))   # -2% today > 1.5% daily limit
             self.assertFalse(ok2)
             self.assertIn("2.00%", why)
         finally:
