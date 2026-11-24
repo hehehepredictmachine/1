@@ -292,23 +292,24 @@ DRIFT_PACKAGES = ("numpy", "scikit-learn", "xgboost")
 
 
 def dependency_drift(deps: dict | None) -> list[str]:
-    """'package trained->now' for every package of the manifest whose installed major.minor differs (missing now = '-')."""
+    """'package trained->now' for every package of the manifest that differs from the installed one (missing now = '-'): scikit-learn
+    on the full version (the same rule as its InconsistentVersionWarning on unpickling), numpy / xgboost on major.minor."""
     out = []
     for name in DRIFT_PACKAGES:
         was = (deps or {}).get(name)
         if not was:
             continue                                     # artefacts without the key (e.g. xgboost before 1.46) load as before
         now_v = _dist_version(name)
-        if now_v is None or str(was).split(".")[:2] != now_v.split(".")[:2]:
+        n = None if name == "scikit-learn" else 2
+        if now_v is None or str(was).split(".")[:n] != now_v.split(".")[:n]:
             out.append(f"{name} {was}->{now_v or '-'}")
     return out
 
 
 def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, dict]:
-    """1.46: library versions recorded at training are compared with the installed ones (major.minor) and sklearn's
-    InconsistentVersionWarning from unpickling is captured - both go to man['dependency_drift'] (a signal, never a refusal: refusing
-    would change the set of live models)."""
-    import warnings
+    """1.46: library versions recorded at training are compared with the installed ones -> man['dependency_drift'] (a signal, never a
+    refusal: refusing would change the set of live models). Warnings of unpickling are not captured here (warnings.catch_warnings is
+    process-global and not thread-safe in the running bot); the manifest comparison covers the same version change."""
     man = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
     if man.get("asset") != asset:
         raise ArtifactMismatch(f"ASSET_MISMATCH:{man.get('asset')}!={asset}")
@@ -317,16 +318,8 @@ def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, 
     blob = (path / "model.pkl").read_bytes()
     if hashlib.sha256(blob).hexdigest() != man.get("sha256"):
         raise ArtifactMismatch("ARTIFACT_CHECKSUM_MISMATCH")
-    drift = dependency_drift(man.get("dependencies"))
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        d = pickle.loads(blob)
-    for w in caught:
-        if type(w.message).__name__ == "InconsistentVersionWarning":
-            drift.append(f"pickle: {w.message}"[:200])
-        else:                                            # anything else is shown as before
-            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
-    man["dependency_drift"] = drift
+    d = pickle.loads(blob)
+    man["dependency_drift"] = dependency_drift(man.get("dependencies"))
     prep = d["prep"]
     if d["family"] == "LOGREG_NEUTRALIZED":
         prep["neut_fac"] = lambda X: np.column_stack([X[:, FE.FEATURES.index("ema_gap_50")], X[:, FE.FEATURES.index("atr_rel")]])
