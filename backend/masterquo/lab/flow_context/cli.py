@@ -72,7 +72,9 @@ def main(argv: list[str]) -> int:
     s.add_argument("--mode", choices=("shadow",), default="shadow")
     s = sub.add_parser("native-parity")
     s.add_argument("--fixtures", default=str(Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "flow_context"))
-    s.add_argument("--native-status-file")
+    s.add_argument("--native-status-file", help="domyślnie <MQ_MT5_FILES_DIR>/PMW/flow_native_status.json")
+    s.add_argument("--export", help="MQL5/Files/PMW/PMW_FLOW_EXPORT.txt z MQ_FlowCollector (domyślnie <MQ_MT5_FILES_DIR>/PMW/PMW_FLOW_EXPORT.txt, "
+                                    "gdy istnieje; inaczej <fixtures>/native_export.txt)")
     s = sub.add_parser("benchmark")
     s.add_argument("--profile", choices=("cpu",), default="cpu")
     s = sub.add_parser("report")
@@ -163,8 +165,14 @@ def main(argv: list[str]) -> int:
             _print({"mode": "shadow", "scope": "DEV_TAIL (holdout nieotwierany)", "metrics_uncalibrated": T.metrics(P, Q, data["Y"][b][tail], data["R"][b][tail])})
             return 0
         if a.c == "native-parity":
+            import os
+
             from . import native
-            _print(native.parity(Path(a.fixtures), Path(a.native_status_file) if a.native_status_file else None))
+            # 1.46 arch I0518: defaults from MQ_MT5_FILES_DIR (= MQL5\\Files) like context-indicators native-parity
+            files = os.environ.get("MQ_MT5_FILES_DIR")
+            exp = Path(a.export) if a.export else (Path(files) / "PMW" / native.FlowImporter.NAME if files else None)
+            st = Path(a.native_status_file) if a.native_status_file else (Path(files) / "PMW" / "flow_native_status.json" if files else None)
+            _print(native.parity(Path(a.fixtures), st, export=exp))
             return 0
         if a.c == "benchmark":
             import numpy as np

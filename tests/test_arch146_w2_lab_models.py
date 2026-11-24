@@ -237,5 +237,95 @@ class TestMiniRocketExportDir(unittest.TestCase):
             self.assertEqual(MR.NativeResultImporter(d, "ab" * 32, "XAUUSD-", "M1").poll()["status"], "IMPORTED")
 
 
+# ------------------------------------------------------------------------------------------------------------ I0517 / I0518
+SR_HDR = {"depth": 10, "retention": 290, "loopback": 300, "width_pct": 5.0, "max_selected": 10, "source": "WICK"}
+
+
+def _flow_export(path, bars, sr=True, shift_sup_lo=False):
+    from masterquo.lab.flow_context import heikin as HF
+    from masterquo.lab.flow_context import native as NV
+    from masterquo.lab.flow_context import sr_channels as SR
+    from masterquo.lab.flow_context import stop_distance as SD
+    hf = HF.heikin_series(bars, {"ma1": "EMA", "p1": 10, "ma2": "EMA", "p2": 5}, 0.01)["rows"]
+    sd = SD.series(bars, {"period": 20, "method": "SMA", "factor": 1.5}, 0.01, 0.01)
+    piv = SR.pivots(bars, 10, "WICK")
+    rows, shifted = [], False
+    for i, (b, r, s) in enumerate(zip(bars, hf, sd)):
+        nr = SR.nearest(SR.channels_at(bars, i, SR_HDR, piv=piv), b["c"])
+        row = {"bar_time": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"], "ha_o": r["o"], "ha_h": r["h"], "ha_l": r["l"],
+               "ha_c": r["c"], "sd_range": s["range_points"], "sd_avg": s["average_points"], "sd_sugg": s["suggested_points"]}
+        for kind, pre in (("support", "sup"), ("resistance", "res"), ("inside", "in")):
+            band = nr[kind]
+            row[f"{pre}_lo"], row[f"{pre}_hi"] = (band["lo"], band["hi"]) if band else (None, None)
+        if shift_sup_lo and not shifted and i > 150 and row["sup_lo"] is not None:
+            row["sup_lo"] += 1.0
+            shifted = True
+        rows.append(row)
+    hdr = {"seq": 3, "symbol": "XAUUSD-", "tf": "M15", "point": 0.01, "tick": 0.01, "written_at_utc": time.time(), "seed_origin": bars[0]["open_utc"],
+           "heikin": {"ma1": "EMA", "p1": 10, "ma2": "EMA", "p2": 5}, "stopdistance": {"period": 20, "method": "SMA", "factor": 1.5}}
+    if sr:
+        hdr["sr"] = SR_HDR
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    NV.write_export(Path(path), hdr, rows)
+    return shifted
+
+
+class TestFlowSRParity(unittest.TestCase):
+    """I0517: compare() porównywał tylko Heikin i StopDistance - kolumny S/R (MQ_SRChannels) eksportowane, nigdy porównywane."""
+
+    def test_sr_columns_are_compared(self):
+        from masterquo.lab.flow_context import native as NV
+        bars = NV.frozen_inputs(300)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ok.txt"
+            _flow_export(p, bars)
+            r = NV.compare(NV.parse_export(p.read_bytes()))
+            self.assertEqual(r["status"], "OWN_IMPLEMENTATIONS_MATCH", r)
+            self.assertEqual(r["sr_status"], "MATCH")
+            p2 = Path(d) / "bad.txt"
+            self.assertTrue(_flow_export(p2, bars, shift_sup_lo=True))
+            r = NV.compare(NV.parse_export(p2.read_bytes()))
+            self.assertEqual(r["status"], "MISMATCH")
+            self.assertIn("sup_lo", {x["field"] for x in r["first"]})
+            p3 = Path(d) / "nosr.txt"
+            _flow_export(p3, bars, sr=False, shift_sup_lo=True)
+            r = NV.compare(NV.parse_export(p3.read_bytes()))
+            self.assertEqual(r["status"], "OWN_IMPLEMENTATIONS_MATCH")              # no configuration -> S/R not guessed
+            self.assertTrue(r["sr_status"].startswith("NOT_COMPARED"))
+
+    def test_collector_header_declares_sr_config(self):
+        src = (ROOT / "mql5" / "FlowContext" / "Scripts" / "MQ_FlowCollector.mq5").read_text(encoding="utf-8")
+        self.assertIn('\\"sr\\":{', src)
+        self.assertIn('iCustom(_Symbol, _Period, "PMW\\\\MQ_SRChannels", SR_DEPTH, SR_RETENTION, SR_LOOPBACK, SR_WIDTH_PCT, SR_MAX_SELECTED)', src)
+
+
+class TestFlowNativeParityExport(unittest.TestCase):
+    """I0518: native-parity czytało wyłącznie <fixtures>/native_export.txt (kolektor pisze PMW_FLOW_EXPORT.txt)."""
+
+    def test_parity_uses_given_export(self):
+        from masterquo.lab.flow_context import native as NV
+        with tempfile.TemporaryDirectory() as d:
+            exp = Path(d) / "files" / "PMW" / "PMW_FLOW_EXPORT.txt"
+            _flow_export(exp, NV.frozen_inputs(120))
+            fx = Path(d) / "fixtures"
+            fx.mkdir()
+            r = NV.parity(fx, None, export=exp)
+            self.assertEqual(r["OWN_IMPLEMENTATIONS"]["status"], "OWN_IMPLEMENTATIONS_MATCH")
+            self.assertEqual(NV.parity(fx, None)["OWN_IMPLEMENTATIONS"]["status"], "NOT_RUN")
+
+    def test_cli_defaults_from_mt5_files_dir(self):
+        from masterquo.lab.flow_context import cli as FC
+        from masterquo.lab.flow_context import native as NV
+        with tempfile.TemporaryDirectory() as d:
+            files = Path(d) / "Files"
+            _flow_export(files / "PMW" / "PMW_FLOW_EXPORT.txt", NV.frozen_inputs(120))
+            fx = Path(d) / "fixtures"
+            fx.mkdir()
+            out = []
+            with mock.patch.dict(os.environ, {"MQ_MT5_FILES_DIR": str(files)}), mock.patch.object(FC, "_print", out.append):
+                self.assertEqual(FC.main(["native-parity", "--fixtures", str(fx)]), 0)
+            self.assertEqual(out[0]["OWN_IMPLEMENTATIONS"]["status"], "OWN_IMPLEMENTATIONS_MATCH")
+
+
 if __name__ == "__main__":
     unittest.main()
