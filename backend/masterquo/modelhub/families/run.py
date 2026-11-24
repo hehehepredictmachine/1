@@ -92,8 +92,11 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             lim = max(int(max_rows or BUDGETS["smoke"]["max_rows"]), 4 * MIN_SNAPSHOTS)
             out["books"] = books_from_archive(cfg.get("indicators_db"), sym, limit=lim, levels=BOOK_LEVELS)
     elif kind == "TEXT":
-        from .nlp import load_corpus
+        from .nlp import corpus_data_kind, load_corpus
         out["corpus"] = load_corpus()
+        # 1.46 (I0470): the provenance of the CORPUS, not of the instrument's candle export (a model fitted on a synthetic corpus was
+        # labelled REAL whenever the candles were REAL - ASSIST gate and Quant snapshot judged an unrelated source)
+        out["data_kind"] = corpus_data_kind(out["corpus"])
     return out
 
 

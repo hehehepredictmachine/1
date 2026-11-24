@@ -44,8 +44,25 @@ def corpus_path() -> Path:
     return B.root() / "_corpus" / "nlp_corpus.jsonl"
 
 
-def import_file(path: Path) -> dict:
-    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS)."""
+CORPUS_KINDS = ("REAL_USER_DATA", "SYNTHETIC_TEST", "UNKNOWN_SOURCE")
+
+
+def corpus_data_kind(rows: list[dict]) -> str:
+    """1.46 (I0470): the provenance of a corpus - REAL_USER_DATA only when EVERY row was imported as real, SYNTHETIC_TEST when any row is
+    synthetic, otherwise UNKNOWN_SOURCE (rows imported before 1.46 carry no provenance - never treated as real). It decides the data_kind
+    of an NLP artifact (ASSIST gate, Quant snapshot) - 1.45 / 1.46.0 took the data_kind of the instrument's CANDLE export instead."""
+    kinds = [B.kind_class(r.get("data_kind")) for r in rows]
+    if any(k == "SYNTHETIC" for k in kinds):
+        return "SYNTHETIC_TEST"
+    return "REAL_USER_DATA" if kinds and all(k == "REAL" for k in kinds) else "UNKNOWN_SOURCE"
+
+
+def import_file(path: Path, data_kind: str | None = None) -> dict:
+    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS). data_kind = the declared provenance of the file
+    (REAL_USER_DATA / SYNTHETIC_TEST / UNKNOWN_SOURCE, default UNKNOWN_SOURCE), written into every imported row (1.46, I0470)."""
+    kind = str(data_kind or "UNKNOWN_SOURCE").upper()
+    if kind not in CORPUS_KINDS:
+        raise ValueError(f"DATA_KIND_INVALID: {data_kind} (dozwolone: {', '.join(CORPUS_KINDS)})")
     cp = corpus_path()
     cp.parent.mkdir(parents=True, exist_ok=True)
     have = {r["hash"] for r in load_corpus()}
@@ -65,7 +82,8 @@ def import_file(path: Path) -> dict:
             continue
         have.add(h)
         rows.append({"hash": h, "id": r.get("id") or h, "source": r.get("source"), "lang": r.get("lang") or "en", "text": r["text"], "label": lab,
-                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version")})
+                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version"),
+                     "data_kind": kind})
     with cp.open("a", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")

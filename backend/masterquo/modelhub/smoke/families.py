@@ -173,7 +173,7 @@ def _corpus(ctx: Ctx, n: int = 600) -> dict:
             txt = (pos, neu, neg)[k][(i // 3) % 3] + f" item {i} " + " ".join(rng.choice(["today", "again", "now", "on fed"], 2))
             fh.write(json.dumps({"text": txt, "label": ("POSITIVE", "NEUTRAL", "NEGATIVE")[k], "source": "SYNTHETIC_TEST",
                                  "first_seen_at": f"2026-01-{1 + i % 28:02d}T00:{i % 60:02d}:00Z"}) + "\n")
-    return NL.import_file(p)
+    return NL.import_file(p, data_kind="SYNTHETIC_TEST")   # 1.46 (I0470): the corpus provenance decides the NLP artifact data_kind
 
 
 # ---------------------------------------------------------------------------------------------------------------- helpers
