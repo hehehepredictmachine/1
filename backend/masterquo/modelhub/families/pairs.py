@@ -41,6 +41,15 @@ def half_life(s: np.ndarray) -> float | None:
     return float(-math.log(2) / math.log(phi)) if 0 < phi < 1 else None
 
 
+def legs_missing_reason(data: dict) -> str | None:
+    """1.46 (I0424): the legs run.load_data could not read (no candles in the store / unreadable file) named in the BLOCKED reason."""
+    miss = data.get("legs_missing") or []
+    if not miss:
+        return None
+    return "; ".join(f"brak nogi {m['symbol']} w magazynie danych (data/marketdata/{m['symbol']}/{m.get('tf') or 'H1'}): {m.get('reason')}"
+                     for m in miss)
+
+
 def legs_volume(beta: float, price_a: float, price_b: float, contract_a: float, contract_b: float, lots_a: float = 1.0, step: float = 0.01) -> float:
     raw = abs(beta) * lots_a * price_a * contract_a / (price_b * contract_b)
     return round(round(raw / step) * step, 8)
@@ -64,6 +73,9 @@ class PairCoint(B.Family):
     def validate_data(self, data):
         if not data.get("pair"):
             return False, "PAIR_NOT_CONFIGURED: brak skonfigurowanej pary (nie zakładam automatycznie XAUUSD–BTC)"
+        why = legs_missing_reason(data)
+        if why:
+            return False, why
         ts, a, b = align(*data["pair_bars"])
         if len(ts) < self.DATA["min_bars"]:
             return False, f"za mało wspólnych świec: {len(ts)}"
@@ -135,7 +147,8 @@ class StatArb(B.Family):
         uni = data.get("basket") or []
         if len(uni) < 3:
             return False, f"NOT_CONFIGURED: koszyk wymaga >= 3 skonfigurowanych serii (jest {len(uni)}) – lista instrumentów nie jest rozszerzana automatycznie"
-        return True, None
+        why = legs_missing_reason(data)
+        return (False, why) if why else (True, None)
 
     @staticmethod
     def prices(series: list[list[dict]]):
