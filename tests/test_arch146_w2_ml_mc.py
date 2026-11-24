@@ -18,6 +18,7 @@ Offline, synthetic or generated data only; nothing here touches MT5, orders or e
 from __future__ import annotations
 
 import json
+import math
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -101,6 +102,155 @@ class TestRegistryNoPromotionWithoutComparison(unittest.TestCase):
             _reg, dec2, promote2 = self._register_with_champion(res2, prom)
         promote2.assert_called_once()                                  # a candidate that beats the champion is promoted as before
         self.assertTrue(dec2["XG-T-0.2-2"]["passed"])
+
+
+
+# ============================================================================= Scalp ML (ml/service.py on_scalp_candidate / scalp_status)
+class _Bus:
+    def __init__(self):
+        self.ev = []
+
+    def publish(self, k, v):
+        self.ev.append((k, v))
+
+
+class _StubScalpBundle:
+    """Stands for a selected Scalp ML bundle (ml/scalp_task.ScalpBundle.predict contract)."""
+
+    def __init__(self, model_hash="MH1", p=0.7):
+        self.model_hash, self.p, self.calls = model_hash, p, 0
+
+    def predict(self, feats, *, instrument, profile_hash, side):
+        self.calls += 1
+        return {"status": "READY_INFERENCE", "task_id": "T", "model_hash": self.model_hash, "raw_margin": 0.5, "calibrated_probability": self.p,
+                "expected_net_r": 0.2, "calibration_status": "FITTED_ON_CALIBRATION", "policy": {"p_min": 0.6, "ev_min": 0.0},
+                "proposed_filter": True, "role": "OBSERVE"}
+
+
+def _scalp_plan(setup_id="SET-1", side="BUY"):
+    from masterquo.scalp.strategy import NET_FEATURES
+    return {"setup_id": setup_id, "direction": side, "decision_ts": 1767600000, "decision_time": "2026-01-05T08:00:00+00:00", "sl": 99.0,
+            "tp1": 101.0, "tp2": 102.0, "entry_mode": "MARKET", "net_features": {k: 0.0 for k in NET_FEATURES}}
+
+
+class _ScalpBase(unittest.TestCase):
+    def setUp(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.ml.service import MLService
+        self.td = TempData()
+        self.cfg = ConfigStore()
+        self.db = Database()
+        self.bus = _Bus()
+        self.ml = MLService(self.cfg, self.db, None, self.bus, None)
+
+    def tearDown(self):
+        self.db.close()
+        self.td.close()
+
+    def _call(self, plan, bundle, epoch=1):
+        from masterquo.ml import scalp_task as stk
+        with mock.patch.object(stk, "selected_bundle", return_value=(bundle, {"role": "OBSERVE", "model_hash": bundle.model_hash, "run_id": "R1"})):
+            return self.ml.on_scalp_candidate(plan, instrument="XAUUSD", profile_hash="h", session_epoch=epoch, costs={}, entry_mode="MARKET")
+
+
+class TestScalpMLNotCoupledToLegacyMode(_ScalpBase):
+    """I0330: ml.mode is the switch of the legacy DT/XGB pipeline (MLConfig); Scalp ML has its own selection (OBSERVE/SHADOW_GATE)."""
+
+    def test_ml_off_does_not_disable_scalp_inference(self):
+        self.cfg.update({"ml": {"mode": "OFF"}})
+        out = self._call(_scalp_plan(), _StubScalpBundle())
+        self.assertEqual(out["status"], "READY_INFERENCE")              # HEAD: ML_OFF (no inference, no prediction row)
+        self.assertEqual(self.db.one("SELECT COUNT(*) AS n FROM ml_scalp_predictions")["n"], 1)
+        self.assertEqual(self.db.one("SELECT COUNT(*) AS n FROM ml_scalp_samples")["n"], 1)
+
+    def test_no_selected_model_is_still_no_model(self):
+        from masterquo.ml import scalp_task as stk
+        self.cfg.update({"ml": {"mode": "OFF"}})
+        with mock.patch.object(stk, "selected_bundle", return_value=(None, None)):
+            out = self.ml.on_scalp_candidate(_scalp_plan(), instrument="XAUUSD", profile_hash="h", session_epoch=1, costs={}, entry_mode="MARKET")
+        self.assertEqual(out["status"], "NO_MODEL")
+        self.assertEqual(self.db.one("SELECT COUNT(*) AS n FROM ml_scalp_predictions")["n"], 0)
+
+    def test_status_names_the_switch(self):
+        st = self.ml.scalp_status("XAUUSD")
+        self.assertIn("inference_switch", st)
+        self.assertIn("selected", st["inference_switch"])
+
+
+class TestScalpPredictionOncePerSampleAndModel(_ScalpBase):
+    """I0337: a candidate re-evaluated after an MT5 reconnect (new ScalpMachine, deterministic setup_id) kept one sample (INSERT OR IGNORE)
+    but got a new prediction row (new prediction_id) and a new bus message every time."""
+
+    def test_prediction_once_per_sample_and_model(self):
+        b = _StubScalpBundle()
+        outs = [self._call(_scalp_plan(), b, epoch=e) for e in (1, 2, 2)]
+        self.assertEqual(self.db.one("SELECT COUNT(*) AS n FROM ml_scalp_predictions")["n"], 1)     # HEAD: 3
+        self.assertEqual(len([e for e in self.bus.ev if e[0] == "ml_scalp"]), 1)                     # HEAD: 3
+        self.assertEqual({o["prediction_id"] for o in outs}, {outs[0]["prediction_id"]})
+        self.assertTrue(outs[1].get("duplicate_of_stored_prediction"))
+        self.assertEqual(outs[1]["calibrated_probability"], outs[0]["calibrated_probability"])
+        self.assertEqual(outs[1]["status"], "READY_INFERENCE")
+        self.assertEqual(b.calls, 1)
+
+    def test_another_model_or_side_is_a_new_prediction(self):
+        self._call(_scalp_plan(), _StubScalpBundle("MH1"))
+        self._call(_scalp_plan(), _StubScalpBundle("MH2"))
+        self._call(_scalp_plan(side="SELL"), _StubScalpBundle("MH1"))
+        self.assertEqual(self.db.one("SELECT COUNT(*) AS n FROM ml_scalp_predictions")["n"], 3)
+
+
+class TestScalpLiveMetrics(_ScalpBase):
+    """I0331: labelled live samples + predictions -> live quality per (side, model hash) in scalp_status (monitoring only)."""
+
+    def _labelled(self, ys, ps, nets=None, filt=None, model_hash="MH1", side="BUY"):
+        nets = nets or [1.0 if y else -1.0 for y in ys]
+        for k, (y, p) in enumerate(zip(ys, ps)):
+            sid = f"S{k}:{side}"
+            self.db.execute("""INSERT INTO ml_scalp_samples(sample_id, instrument, profile_hash, setup_id, side, signal_time, decision_time, session_epoch,
+                               feature_schema, features, plan, snapshot_hash, costs, status, created_at, net_r, y) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (sid, "XAUUSD", "h", f"S{k}", side, "2026-01-05T08:00:00Z", "2026-01-05T08:00:00Z", "1", "F", "{}", "{}", "x", "{}",
+                             "LABELED", "2026-01-05T08:00:00Z", nets[k], y))
+            self.db.execute("""INSERT INTO ml_scalp_predictions(prediction_id, sample_id, model_hash, role, instrument, side, snapshot_hash, session_epoch,
+                               as_of, computed_at, expires_at, status, raw_margin, p, expected_net_r, proposed_filter, detail)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (f"P{k}{model_hash}", sid, model_hash, "OBSERVE", "XAUUSD", side, "x", "1", "2026-01-05T08:00:00Z", "2026-01-05T08:00:01Z",
+                             "2026-01-05T08:02:00Z", "READY_INFERENCE", 0.0, p, 0.1, None if filt is None else int(filt[k]), "{}"))
+
+    def test_status_reports_live_brier(self):
+        self._labelled([1, 0, 1, 0], [0.8, 0.3, 0.6, 0.4], nets=[1.0, -1.0, 0.5, -0.5], filt=[1, 0, 1, 1])
+        st = self.ml.scalp_status("XAUUSD")
+        m = st["live_metrics"]["BUY"]["MH1"]                              # HEAD: KeyError 'live_metrics'
+        self.assertEqual(m["n"], 4)
+        self.assertAlmostEqual(m["brier"], 0.1125, places=9)
+        self.assertAlmostEqual(m["mean_p"], 0.525, places=9)
+        self.assertAlmostEqual(m["base_rate"], 0.5, places=9)
+        ll = -(math.log(0.8) + math.log(0.7) + math.log(0.6) + math.log(0.6)) / 4
+        self.assertAlmostEqual(m["log_loss"], ll, places=9)
+        self.assertIsNone(m["ece"])                                       # n < 100: no calibration error from 4 samples
+        self.assertEqual(m["shadow_filter"]["take"]["n"], 3)
+        self.assertAlmostEqual(m["shadow_filter"]["take"]["mean_net_r"], (1.0 + 0.5 - 0.5) / 3, places=9)
+        self.assertEqual(m["shadow_filter"]["skip"]["n"], 1)
+
+    def test_status_for_another_instrument_reads_only_the_db(self):
+        """GET /api/v1/ml/scalp for a non-active instrument calls MLService.scalp_status(SimpleNamespace(db=db), inst)."""
+        from types import SimpleNamespace
+
+        from masterquo.ml.service import MLService
+        self._labelled([1, 0], [0.9, 0.2])
+        st = MLService.scalp_status(SimpleNamespace(db=self.db), "XAUUSD")
+        self.assertEqual(st["live_metrics"]["BUY"]["MH1"]["n"], 2)
+
+    def test_duplicates_and_unlabelled_are_not_counted(self):
+        self._labelled([1, 0], [0.9, 0.2])
+        self.db.execute("""INSERT INTO ml_scalp_predictions(prediction_id, sample_id, model_hash, role, instrument, side, snapshot_hash, session_epoch,
+                           as_of, computed_at, expires_at, status, raw_margin, p, expected_net_r, proposed_filter, detail)
+                           VALUES ('DUP','S0:BUY','MH1','OBSERVE','XAUUSD','BUY','x','2','2026-01-05T08:00:00Z','2026-01-05T09:00:00Z',
+                           '2026-01-05T09:02:00Z','READY_INFERENCE',0.0,0.1,0.0,NULL,'{}')""")
+        self.db.execute("UPDATE ml_scalp_samples SET status='PENDING' WHERE sample_id='S1:BUY'")
+        m = self.ml.scalp_status("XAUUSD")["live_metrics"]["BUY"]["MH1"]
+        self.assertEqual(m["n"], 1)
+        self.assertAlmostEqual(m["brier"], (0.9 - 1) ** 2, places=9)       # the FIRST prediction of S0 (0.9), not the re-evaluation (0.1)
 
 
 if __name__ == "__main__":

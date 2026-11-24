@@ -18,6 +18,7 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -37,6 +38,49 @@ log = logging.getLogger("masterquo.ml")
 PRED_CONTRACT = "MQ-ML-PRED-1.0.0"
 STATUSES = ("COLLECTING", "WAITING_FOR_LABELS", "TRAINING", "VALIDATING", "SHADOW", "ACTIVE", "DEGRADED", "ERROR")
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def scalp_live_metrics(db, instrument: str, ece_min_n: int = 100) -> dict:
+    """1.46 w2 (I0331): live quality of the Scalp ML models (monitoring only - no gate, no training input). Per (side, model hash): the
+    FIRST prediction of every (sample, model hash) - the one made at the decision time, matching the stored sample snapshot - joined
+    with the LABELLED live sample (y = net_R > 0 of the settled cycle): n, Brier, log loss, mean p, base rate, ECE (10 bins, only when
+    n >= ece_min_n) and the SHADOW evaluation of the model's proposed filter (n and mean net_R of the cycles it would take / skip).
+    Predictions without a calibrated p are counted only in the filter part."""
+    rows = db.query("""SELECT p.side AS side, p.model_hash AS mh, p.p AS p, p.proposed_filter AS pf, s.y AS y, s.net_r AS net_r
+                       FROM ml_scalp_predictions p JOIN ml_scalp_samples s ON s.sample_id = p.sample_id
+                       WHERE p.instrument=? AND s.instrument=? AND s.status='LABELED' AND s.y IS NOT NULL AND p.status='READY_INFERENCE'
+                         AND p.prediction_id = (SELECT q.prediction_id FROM ml_scalp_predictions q
+                                                WHERE q.sample_id = p.sample_id AND q.model_hash IS p.model_hash
+                                                ORDER BY q.computed_at, q.prediction_id LIMIT 1)""", (instrument, instrument))
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(r["side"], {}).setdefault(r["mh"] or "UNKNOWN", []).append(r)
+    res: dict = {}
+    eps = 1e-6
+    for side, by_model in groups.items():
+        for mh, rs in by_model.items():
+            sc = [(float(r["p"]), int(r["y"])) for r in rs if r["p"] is not None]
+            m = {"n": len(sc), "n_labeled_predictions": len(rs), "brier": None, "log_loss": None, "mean_p": None, "base_rate": None, "ece": None}
+            if sc:
+                m["brier"] = sum((p - y) ** 2 for p, y in sc) / len(sc)
+                m["log_loss"] = -sum(y * math.log(min(max(p, eps), 1 - eps)) + (1 - y) * math.log(min(max(1 - p, eps), 1 - eps)) for p, y in sc) / len(sc)
+                m["mean_p"] = sum(p for p, _ in sc) / len(sc)
+                m["base_rate"] = sum(y for _, y in sc) / len(sc)
+                if len(sc) >= ece_min_n:
+                    ece = 0.0
+                    for k in range(10):
+                        b = [(p, y) for p, y in sc if k / 10 <= p < (k + 1) / 10 or (k == 9 and p >= 1.0)]
+                        if b:
+                            ece += len(b) / len(sc) * abs(sum(p for p, _ in b) / len(b) - sum(y for _, y in b) / len(b))
+                    m["ece"] = ece
+            filt = {}
+            for name, val in (("take", 1), ("skip", 0)):
+                nr = [float(r["net_r"]) for r in rs if r["pf"] == val and r["net_r"] is not None]
+                filt[name] = {"n": len(nr), "mean_net_r": sum(nr) / len(nr) if nr else None}
+            m["shadow_filter"] = filt
+            m["note"] = "jakość na żywo (próbki LABELED, pierwsza predykcja na próbkę i model) – monitoring, nie bramka"
+            res.setdefault(side, {})[mh] = m
+    return res
 
 
 class MLService:
@@ -494,7 +538,14 @@ class MLService:
     # ------------------------------------------------------------ PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1 (scalp candidates)
     def on_scalp_candidate(self, plan: dict, *, instrument: str, profile_hash: str, session_epoch, costs: dict, entry_mode: str) -> dict:
         """Called by ScalpService for EVERY candidate before any model filter: the snapshot is stored once (setup x side), then the
-        selected model of this (instrument, profile, side) is evaluated; the prediction is written BEFORE it is published."""
+        selected model of this (instrument, profile, side) is evaluated; the prediction is written BEFORE it is published.
+
+        The inference is switched by the Scalp ML selection only (ml_scalp registry `selected`: OBSERVE / SHADOW_GATE; nothing selected
+        -> NO_MODEL). 1.46 w2 (I0330): ml.mode (the switch of the legacy DT/XGB pipeline, MLConfig) returned ML_OFF here as well - its
+        OFF silently switched off a separate model. The result is an observation (scalp is SHADOW: EXECUTION_AUTHORIZED=false, the plan
+        field `ml_scalp` feeds the dashboard / NSS snapshot only), never a gate.
+        One prediction per (sample, model hash) (I0337): a candidate evaluated again (MT5 reconnect -> new ScalpMachine, deterministic
+        setup_id) gets the stored prediction back - no second row, no second publication."""
         import hashlib
         from . import scalp_task as stk
         from ..scalp.strategy import NET_FEATURE_SCHEMA
@@ -513,8 +564,6 @@ class MLService:
                         (sid, instrument, profile_hash, plan["setup_id"], plan.get("range_id"), side, plan["decision_time"], iso(now), str(session_epoch),
                          NET_FEATURE_SCHEMA, json.dumps(feats), json.dumps(keep, default=str), shash, json.dumps(costs),
                          "UNSUPPORTED_ENTRY_POLICY" if entry_mode != "MARKET" else "PENDING", iso(now)))
-        if self.cfg.mode == "OFF":
-            return {"status": "ML_OFF", "sample_id": sid}
         if entry_mode != "MARKET":
             return {"status": "UNSUPPORTED_ENTRY_POLICY", "sample_id": sid}
         try:
@@ -523,6 +572,10 @@ class MLService:
             return {"status": "ARTIFACT_ERROR", "reason": str(exc)[:200], "sample_id": sid}
         if b is None:
             return {"status": "NO_MODEL", "sample_id": sid, "task_id": stk.TASK_ID}
+        mh = sel.get("model_hash")
+        prev = self.db.one("SELECT * FROM ml_scalp_predictions WHERE sample_id=? AND model_hash=? ORDER BY computed_at LIMIT 1", (sid, mh)) if mh else None
+        if prev:
+            return self._stored_scalp_prediction(prev)
         t0 = time.perf_counter()
         out = b.predict(feats, instrument=instrument, profile_hash=profile_hash, side=side)
         out.update(role=sel["role"], sample_id=sid, snapshot_hash=shash, latency_ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -530,13 +583,25 @@ class MLService:
         exp = now + timedelta(seconds=120)
         self.db.execute("""INSERT INTO ml_scalp_predictions(prediction_id, sample_id, model_hash, role, instrument, side, snapshot_hash, session_epoch, as_of,
                            computed_at, expires_at, status, raw_margin, p, expected_net_r, proposed_filter, detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (pid, sid, out.get("model_hash"), sel["role"], instrument, side, shash, str(session_epoch), plan["decision_time"], iso(now), iso(exp),
+                        (pid, sid, out.get("model_hash") or mh, sel["role"], instrument, side, shash, str(session_epoch), plan["decision_time"], iso(now), iso(exp),
                          out["status"], out.get("raw_margin"), out.get("calibrated_probability"), out.get("expected_net_r"),
                          None if out.get("proposed_filter") is None else int(out["proposed_filter"]), json.dumps({"policy": out.get("policy")})))
         out.update(prediction_id=pid, expires_at=iso(exp))
         self.bus.publish("ml_scalp", {k: out.get(k) for k in ("prediction_id", "status", "calibrated_probability", "expected_net_r", "proposed_filter",
                                                              "role", "model_hash", "snapshot_hash", "expires_at")} | {"setup_id": plan["setup_id"], "side": side})
         return out
+
+    @staticmethod
+    def _stored_scalp_prediction(r: dict) -> dict:
+        """The prediction already stored for this (sample, model hash) - returned as made, flagged; never re-published (I0337)."""
+        try:
+            pol = (json.loads(r.get("detail") or "{}") or {}).get("policy")
+        except ValueError:
+            pol = None
+        return {"status": r["status"], "model_hash": r["model_hash"], "role": r["role"], "sample_id": r["sample_id"], "snapshot_hash": r["snapshot_hash"],
+                "raw_margin": r["raw_margin"], "calibrated_probability": r["p"], "expected_net_r": r["expected_net_r"],
+                "proposed_filter": None if r["proposed_filter"] is None else bool(r["proposed_filter"]), "policy": pol,
+                "prediction_id": r["prediction_id"], "computed_at": r["computed_at"], "expires_at": r["expires_at"], "duplicate_of_stored_prediction": True}
 
     def scalp_pending(self, instrument: str, limit: int = 50) -> list[dict]:
         return self.db.query("SELECT sample_id, plan FROM ml_scalp_samples WHERE instrument=? AND status='PENDING' ORDER BY signal_time LIMIT ?", (instrument, limit))
@@ -558,7 +623,10 @@ class MLService:
         reg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"selected": {}, "runs": {}}
         last = self.db.query("SELECT * FROM ml_scalp_predictions WHERE instrument=? ORDER BY computed_at DESC LIMIT 10", (instrument,))
         return {"task_id": stk.TASK_ID, "family": stk.FAMILY, "instrument": instrument, "live_samples": cnt, "classes": cls, "selected": reg.get("selected"),
-                "runs": dict(sorted(reg.get("runs", {}).items())[-10:]), "recent_predictions": last, "criteria": stk.CRITERIA}
+                "runs": dict(sorted(reg.get("runs", {}).items())[-10:]), "recent_predictions": last, "criteria": stk.CRITERIA,
+                "live_metrics": scalp_live_metrics(self.db, instrument),
+                "inference_switch": "selected (rejestr ml_scalp: OBSERVE / SHADOW_GATE; brak wyboru = NO_MODEL) – niezależny od ml.mode "
+                                    "(tryb legacy DT/XGB); wynik tylko obserwacyjny (scalp SHADOW, bez bramki)"}
 
     # ------------------------------------------------------------ settings
     def set_mode(self, mode: str) -> dict:
