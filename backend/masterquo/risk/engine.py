@@ -67,17 +67,20 @@ def daily_loss_used(deals: list[dict], day_start_raw: float | None, floating: fl
 
 
 def open_risk(positions: list[dict], profit_fn_any: Callable[[dict], "float | None"]) -> dict:
-    total, unknown = 0.0, []
+    """Risk of the open positions at their SL. A position without SL and a position whose risk the broker calculator could not value
+    both block (unbounded / unknown risk). 1.46 arch (I0709): listed separately - a position WITH SL and an unknown risk was reported as
+    'otwarta pozycja bez SL' (OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED); now OPEN_POSITION_RISK_UNKNOWN, the same block."""
+    total, without_sl, unknown = 0.0, [], []
     for p in positions:
         if not p.get("sl"):
-            unknown.append(p.get("ticket"))
+            without_sl.append(p.get("ticket"))
             continue
         r = profit_fn_any(p)
         if r is None:
             unknown.append(p.get("ticket"))
             continue
         total += max(0.0, -r)
-    return {"open_risk": round(total, 2), "positions_without_sl": unknown}
+    return {"open_risk": round(total, 2), "positions_without_sl": without_sl, "positions_risk_unknown": unknown}
 
 
 def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict | None, account: dict | None,
@@ -167,6 +170,8 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
                positions_count=len(positions), margin_mode=margin_mode)
     if open_risk_info.get("positions_without_sl"):
         reasons.append("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED")
+    if open_risk_info.get("positions_risk_unknown"):            # 1.46 arch (I0709): blocks as before, under its own code
+        reasons.append("OPEN_POSITION_RISK_UNKNOWN")
     # 1.46 arch (I0723): a pending order whose broker calculation failed is UNKNOWN (portfolio_snapshot: pending_unknown + the total
     # = None) - it blocks and is never summed as 0 (a missing key keeps the old meaning: no pending orders computed)
     pend_risk_unknown = _unknown(portfolio, "pending_risk")

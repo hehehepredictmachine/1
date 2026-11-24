@@ -470,6 +470,15 @@ class EngineService:
             portfolio = self.portfolio_snapshot(positions, orders)
         except Exception:                            # terminal call failed -> exposure unknown (blocks when a limit is set)
             portfolio = {"positions_notional": None, "pending_count": 0, "error": "PORTFOLIO_SNAPSHOT_FAILED"}
+            # 1.46 arch (I0723, only tightening): pending orders present while the snapshot failed are UNKNOWN (blocks:
+            # PENDING_ORDER_RISK_UNKNOWN, no usable margin, exposure not computable) and counted - before, they counted as 0 / none.
+            # Without pending orders nothing changes.
+            try:
+                pend = [o.get("ticket") for o in orders if o.get("type") in self.PENDING_BUY or o.get("type") in self.PENDING_SELL]
+            except Exception:  # noqa: BLE001 - orders unreadable -> pending orders unknown (blocks)
+                pend = [None]
+            if pend:
+                portfolio.update(pending_count=len(pend), pending_unknown=pend, pending_margin=None, pending_notional=None, pending_risk=None)
         exposure = self.prefs.exposure_limit() if self.prefs is not None else None
         try:
             orisk = risk_engine.open_risk(positions, pos_risk)

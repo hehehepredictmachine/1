@@ -619,11 +619,31 @@ class TestI0709OpenRiskOwnSymbolTighteningOnly(_RiskCase):
     def test_unknown_own_symbol_blocks_and_same_symbol_unchanged(self):
         r = self.risk(_risk_fake([self._pos("UNKNOWN1", 58000.0)])[0])
         self.assertEqual(r["risk_gate"], "BLOCKED")
-        self.assertIn("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED", r["reason_codes"])  # unknown risk blocks (1.46: XAUUSD contract value)
+        self.assertIn("OPEN_POSITION_RISK_UNKNOWN", r["reason_codes"])               # unknown risk blocks (1.46: XAUUSD contract value)
         fake, cfg = _risk_fake()
         same = self._pos(cfg.mt5.symbol, 1999.0, vol=0.01, px=2000.0)
         r = self.risk(_risk_with(fake, [same]))
         self.assertAlmostEqual(r["open_risk"]["open_risk"], 1.0)                      # 0.01 x 100 x 1 - identical to 1.46
+
+
+    def test_unknown_risk_has_its_own_code_no_sl_unchanged(self):
+        """Review I0709: a position WITH SL and an unknown risk was reported as 'otwarta pozycja bez SL'. Own code (blocking, PL label);
+        the same positions block as before, a position without SL keeps its code."""
+        from masterquo.engine.setup_details import RISK_PL
+        from masterquo.risk import engine as RE
+        r = self.risk(_risk_fake([self._pos("UNKNOWN1", 58000.0)])[0])
+        self.assertEqual(r["risk_gate"], "BLOCKED")
+        self.assertNotIn("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED", r["reason_codes"])  # before: 'otwarta pozycja bez SL' for a position with SL
+        self.assertEqual((r["open_risk"]["positions_risk_unknown"], r["open_risk"]["positions_without_sl"]), ([7], []))
+        r = self.risk(_risk_fake([self._pos("BTCUSD", 0.0)])[0])
+        self.assertEqual(r["risk_gate"], "BLOCKED")
+        self.assertIn("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED", r["reason_codes"])
+        self.assertNotIn("OPEN_POSITION_RISK_UNKNOWN", r["reason_codes"])
+        # the calculator of the configured symbol failing (already 1.46): blocks as before, under the new code
+        info = RE.open_risk([self._pos("XAUUSD", 1990.0), {**self._pos("BTCUSD", None), "ticket": 8}], lambda p: None)
+        self.assertEqual((info["positions_risk_unknown"], info["positions_without_sl"], info["open_risk"]), ([7], [8], 0.0))
+        for code in ("OPEN_POSITION_RISK_UNKNOWN", "PENDING_ORDER_RISK_UNKNOWN"):
+            self.assertIn(code, RISK_PL)                                               # PL label, not the raw code in the UI
 
 
 def _risk_with(fake, positions=(), orders=()):
@@ -654,6 +674,36 @@ class TestI0723PendingCalcUnknown(_RiskCase):
         r = self.risk(_risk_with(fake, orders=[o]))
         self.assertNotIn("PENDING_ORDER_RISK_UNKNOWN", r["reason_codes"])
         self.assertAlmostEqual(r["pending_risk"], 5.0)
+
+
+class TestI0723SnapshotFailurePendingUnknown(_RiskCase):
+    """Review I0723 (optional tightening): portfolio_snapshot raising -> pending orders counted as 0 / none before."""
+
+    @staticmethod
+    def _boom(p, o):
+        raise RuntimeError("terminal")
+
+    def test_failure_with_pending_order_blocks(self):
+        o = {"ticket": 4, "type": 3, "symbol": "XAUUSD", "volume_current": 0.01, "price_open": 2010.0, "sl": 2020.0}
+        fake, _ = _risk_fake()
+        fake.portfolio_snapshot = self._boom
+        r = self.risk(_risk_with(fake, orders=[o]))
+        self.assertEqual(r["risk_gate"], "BLOCKED")                                   # before: pending risk / margin / count = 0
+        self.assertIn("PENDING_ORDER_RISK_UNKNOWN", r["reason_codes"])
+        self.assertIsNone(r["total_open_risk"])
+
+    def test_failure_without_pending_orders_identical(self):
+        def before(p, o):
+            return {"positions_notional": None, "pending_count": 0, "error": "PORTFOLIO_SNAPSHOT_FAILED"}
+        market = {"ticket": 5, "type": 0, "symbol": "XAUUSD", "volume_current": 0.01, "price_open": 2000.0}   # not a pending order
+        out = []
+        for fn in (self._boom, before):
+            fake, _ = _risk_fake()
+            fake.portfolio_snapshot = fn
+            r = self.risk(_risk_with(fake, orders=[market]))
+            out.append((r["risk_gate"], r["reason_codes"], r.get("lots"), r.get("total_open_risk")))
+        self.assertEqual(out[0], out[1])
+        self.assertNotIn("PENDING_ORDER_RISK_UNKNOWN", out[0][1])
 
 
 class TestI0107DailyResetReported(_RiskCase):
