@@ -1,0 +1,3638 @@
+{
+ "meta": {
+  "generated_at": "2026-11-24T11:44:16Z",
+  "inst": "XAUUSD",
+  "smoke": true,
+  "live_s": 0.0,
+  "elapsed_s": 83.6,
+  "smoke_ids_outside_registry": [],
+  "live_error": null
+ },
+ "rows": [
+  {
+   "id": "rule:data_quality",
+   "name": "Jakość i świeżość danych (bridge, zegar, spread)",
+   "aliases": [
+    "data_quality"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mt5/bridge.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mt5.bridge"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:risk_engine",
+   "name": "Wspólny silnik ryzyka SH (limity, margin, spread, ekspozycja)",
+   "aliases": [
+    "risk_engine"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/sh/risk.py",
+    "backend/masterquo/risk/portfolio.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.sh.risk, masterquo.risk.portfolio"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:news",
+   "name": "Kalendarz makro (blokada wysokiego wpływu)",
+   "aliases": [
+    "news"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/news/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.news"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:regime_v2",
+   "name": "Reżim rynku MQ_REGIME_MULTI_V2 (market_v2)",
+   "aliases": [
+    "regime_v2"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:structure_v2",
+   "name": "Struktura rynku structure_v2 (M5/M15/H1, BOS/CHoCH)",
+   "aliases": [
+    "structure_v2"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:smc_pullback",
+   "name": "Pullback + SMC (BoS/CHoCH/IDM) – context_ind",
+   "aliases": [
+    "smc_pullback"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:vamd",
+   "name": "VAMD momentum",
+   "aliases": [
+    "vamd"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:fractal",
+   "name": "Bounded Katz FD (trend/chop bez kierunku)",
+   "aliases": [
+    "fractal"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:atr_vol",
+   "name": "Zmienność ATR(14) M1/M5 + StopDistance",
+   "aliases": [
+    "atr_vol"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:candles_patterns",
+   "name": "Świece i formacje (candles, chart_patterns, sci2)",
+   "aliases": [
+    "candles_patterns"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:liquidity",
+   "name": "Płynność: sesje (sweep boxes) + heatmapa likwidacji",
+   "aliases": [
+    "liquidity"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:flow_sr",
+   "name": "Heikin Flow + kanały S/R (flow_context)",
+   "aliases": [
+    "flow_sr"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "rule:decomposition",
+   "name": "Dekompozycja sygnału FFT/EMD/VMD (analytics)",
+   "aliases": [
+    "decomposition"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "sh:tp_model",
+   "name": "SH: P(TP2 przed SL w horyzoncie) – model zdarzenia strategii",
+   "aliases": [
+    "sh_tp_model"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "SCALPING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner); HEDGING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner)",
+   "adapter": "evaluation.service (prawdopodobieństwo per kandydat setupu)",
+   "files": [
+    "backend/masterquo/sh/tpmodel.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.sh.tpmodel"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "scalp:A_direction",
+   "name": "Scalp A – kierunek 1/3/5 min (LR/HGB/MLP)",
+   "aliases": [
+    "scalp_A"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_candles",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/scalp/service.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_candles: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_candles/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.scalp.service"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "scalp:B_setup_quality",
+   "name": "Scalp B – jakość setupu Range→Sweep→Retest",
+   "aliases": [
+    "scalp_B"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_candles",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_candles: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_candles/bin/python"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "forecast:gold_candles",
+   "name": "gold_candles – prognoza świec 5/15/30 min",
+   "aliases": [
+    "gold_candles",
+    "gold_candles_15m",
+    "gold_candles_30m",
+    "gold_candles_5m",
+    "gold_forecast"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_candles",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/forecast/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_candles: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_candles/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.forecast"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml:legacy_s01_s12",
+   "name": "Legacy ML Decision Tree + XGBoost (setupy S01–S12)",
+   "aliases": [
+    "legacy_ml"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "instrument inny niż aktywny w bocie",
+   "adapter": "evaluation.service (prawdopodobieństwo per kandydat setupu)",
+   "files": [
+    "backend/masterquo/ml/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.ml"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: UNAVAILABLE",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:indicator_context",
+   "name": "Kontekst wskaźników SAR + IQ (reakcja)",
+   "aliases": [
+    "indicator_context"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/extind/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.extind"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml_scalp:xgb_net_r",
+   "name": "Scalp ML XGBoost (net R cyklu)",
+   "aliases": [
+    "ml_scalp"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/scalp/service.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.scalp.service"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "nss:tcn",
+   "name": "Neural Scalp System (TCN)",
+   "aliases": [
+    "nss"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/nss_service.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.nss_service"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "flow:reaction_m1",
+   "name": "Flow context – model reakcji M1 + Markov3",
+   "aliases": [
+    "flow_reaction"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/flow_context/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.flow_context"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "context_ind:context_move_m5",
+   "name": "Context indicators – CONTEXT_MOVE_M5_V1",
+   "aliases": [
+    "CONTEXT_MOVE_M5_V1",
+    "context_move"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_CONNECTED",
+   "registry_reason": "0 runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/context_ind/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.context_ind"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_CONNECTED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:align_mean",
+   "name": "Align Mean (wspólna średnia, odległość w ATR)",
+   "aliases": [
+    "align_mean",
+    "mm_align_mean"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/align_mean.py",
+    "mql5/MasterModels/Indicators/PMW_AlignMean.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.align_mean"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:kalman_cross",
+   "name": "Kalman crossover fast/slow (zamknięte świece)",
+   "aliases": [
+    "kalman",
+    "mm_kalman"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/kalman.py",
+    "mql5/MasterModels/Experts/PMW_KalmanShadowEA.mq5",
+    "mql5/MasterModels/Include/PMW/PMW_Kalman.mqh",
+    "mql5/MasterModels/Indicators/PMW_KalmanCross.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.kalman"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:breakout_zones",
+   "name": "Breakout zones + robust volatility",
+   "aliases": [
+    "breakout_zones",
+    "mm_breakout"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/breakout_zones.py",
+    "backend/masterquo/mm/robust_vol.py",
+    "mql5/MasterModels/Include/PMW/PMW_BreakoutCore.mqh",
+    "mql5/MasterModels/Indicators/PMW_BreakoutZones.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.breakout_zones, masterquo.mm.robust_vol"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:multi_indicator",
+   "name": "Multi-Indicator Strategy (RSI/SAR/HA/Stoch/CCI/W%R/Power)",
+   "aliases": [
+    "mm_multi_indicator",
+    "multi_indicator"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/multi_indicator.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.multi_indicator"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:smc_fvg",
+   "name": "SMC BoS/IDM/FVG continuation (głębokość cofnięcia 73% – parametr, nie skuteczność)",
+   "aliases": [
+    "mm_smc_fvg",
+    "smc_fvg"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/context_ind/smc.py (reused)",
+    "backend/masterquo/mm/smc_fvg.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.smc_fvg"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:gpr_logret",
+   "name": "GPR Matérn 3/2 – prognoza log-zwrotu z niepewnością",
+   "aliases": [
+    "gpr",
+    "gpr_logret",
+    "gpr_logret:LIVE",
+    "mm_gpr"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/gpr.py",
+    "mql5/MasterModels/Experts/PMW_GPR_ShadowEA.mq5",
+    "mql5/MasterModels/Include/PMW/PMW_GPR.mqh",
+    "mql5/MasterModels/Indicators/PMW_GPR_Forecast.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.gpr"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:hdc_dir3",
+   "name": "HDC – hiperwektory binarne (DOWN/FLAT/UP)",
+   "aliases": [
+    "hdc",
+    "hdc_dir3",
+    "mm_hdc"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/hdc.py",
+    "mql5/MasterModels/Include/PMW/PMW_HDC.mqh"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.hdc"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:event_engine_dir3",
+   "name": "Event engine GRU + state stack + korelacja (+STFS)",
+   "aliases": [
+    "SEQ_GRU_EVENT",
+    "event_engine",
+    "event_engine_dir3",
+    "family:SEQ_GRU_EVENT",
+    "mm_event_engine"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/mm/event_engine.py",
+    "backend/masterquo/mm/events.py",
+    "backend/masterquo/mm/kernels/state_stack.cl",
+    "mql5/MasterModels/Include/PMW/PMW_StateStack.mqh"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.event_engine, masterquo.mm.events"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:ste_flownet_ret",
+   "name": "STE-FlowNet (adaptacja finansowa) – log-zwrot h zdarzeń",
+   "aliases": [
+    "mm_ste_flownet",
+    "ste_flownet",
+    "ste_flownet_ret"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/ste_flownet.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.ste_flownet"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "kronos:Kronos-small",
+   "name": "Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC",
+   "aliases": [
+    "KRONOS_SMALL",
+    "Kronos-small",
+    "kronos"
+   ],
+   "category": "MODEL_PRETRAINED",
+   "env": ".venv_kronos",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "stan Kronos: osobny kontekst w ocenie setupu (su.kronos) i panel Kronos AI Forecast",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/kronos/",
+    "backend/kronos_runtime/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_kronos: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/.venv_kronos/bin/python"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "KronosService → kronos_runtime.worker na OFICJALNYCH wagach Kronos-small@901c26c1: READY, cpu, 12 kroków M5, close(H)=2811.271, UP, SHADOW, 2718.3 ms, 24741376 param. = przypięte; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 1 rekord(y) poprawne"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "oficjalne wagi (MQ_KRONOS_WEIGHTS_DIR): NeoQuasar/Kronos-small@901c26c1 + NeoQuasar/Kronos-Tokenizer-base@0e011738, sha256 model.safetensors b082dfcbd8e8… = pin lock.py, pliki = manifest; verify --reference (instalator): prognoza testowa 999.0 ms, parity PASS (max 0.0), dane autorów PASS (max rel 1.3e-06); nowy proces workera → ta sama ścieżka (różnica 0)"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.kronos"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 23578,
+   "probe_live": null
+  },
+  {
+   "id": "agent:claude",
+   "name": "Agent Claude (weto, opis)",
+   "aliases": [
+    "agent"
+   ],
+   "category": "AGENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "SHADOW_ONLY",
+   "registry_reason": "agent: ?; weto/opis, nie głos",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: SHADOW_ONLY",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "tsfm:chronos2",
+   "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close",
+   "aliases": [
+    "CHRONOS2",
+    "Chronos-2",
+    "chronos2"
+   ],
+   "category": "MODEL_PRETRAINED",
+   "env": ".venv_chronos2",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "serwis Chronos-2/Granite TTM niedostępny",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/tsfm/",
+    "backend/tsfm_runtime/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.tsfm.service, masterquo.tsfm.predictions, tsfm_runtime.lock: chronos2|amazon/chronos-2@29ec3766d36d6f73f0696f85560a422f50e8498c|chronos-forecasting@2.3.2"
+    },
+    "env": {
+     "status": "OK",
+     "detail": ".venv_chronos2: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/chronos2/prog/.venv_chronos2/bin/python"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 2 rekord(y) poprawne"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "TsfmService → tsfm_runtime.worker (cpu, 119477664 param. = przypięte, amazon/chronos-2@29ec3766): READY, 12 kroków M5, median(H)=2808.539, q0.1–q0.9(H) 2802.606–2814.090, DOWN, SHADOW, 363.6 ms, ładowanie 4485.5 ms; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość; uszkodzone wagi → ERROR/CHECKSUM + wpis WARNING, rekord INCOMPATIBLE"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "oficjalne wagi amazon/chronos-2@29ec3766 (MQ_TSFM_WEIGHTS_ROOT): 2 plików, model.safetensors sha256 ddcda3c7508b… = przypięta, git blob 1 = przypięte; selftest parity PASS (max |Δ| 0); nowy proces workera → ta sama prognoza (różnica 0)"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 16395,
+   "probe_live": null
+  },
+  {
+   "id": "tsfm:granite_ttm",
+   "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close",
+   "aliases": [
+    "GRANITE_TTM",
+    "Granite TTM",
+    "granite_ttm"
+   ],
+   "category": "MODEL_PRETRAINED",
+   "env": ".venv_granite",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "serwis Chronos-2/Granite TTM niedostępny",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/tsfm/",
+    "backend/tsfm_runtime/"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.tsfm.service, masterquo.tsfm.predictions, tsfm_runtime.lock: granite_ttm|ibm-granite/granite-timeseries-ttm-r2@d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f|granite-tsfm@0.3.11"
+    },
+    "env": {
+     "status": "OK",
+     "detail": ".venv_granite: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/granite_ttm/prog/.venv_granite/bin/python"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 2 rekord(y) poprawne"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "TsfmService → tsfm_runtime.worker (cpu, 805280 param. = przypięte, ibm-granite/granite-timeseries-ttm-r2@d6a79570): READY, 12 kroków M5, point(H)=2810.447, bez kwantyli (model punktowy), UP, SHADOW, 19.86 ms, ładowanie 3393.8 ms; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość; uszkodzone wagi → ERROR/CHECKSUM + wpis WARNING, rekord INCOMPATIBLE"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "oficjalne wagi ibm-granite/granite-timeseries-ttm-r2@d6a79570 (MQ_TSFM_WEIGHTS_ROOT): 3 plików, model.safetensors sha256 a706726a7eb0… = przypięta, git blob 2 = przypięte; selftest parity PASS (max |Δ| 0.000157); nowy proces workera → ta sama prognoza (różnica 0)"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 11217,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_BASELINE",
+   "name": "Bazowy – częstości klas",
+   "aliases": [
+    "TH_BASELINE"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_LOGREG",
+   "name": "Regresja logistyczna (wieloklasowa)",
+   "aliases": [
+    "TH_LOGREG"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_HGB",
+   "name": "Gradient boosting (histogramowy)",
+   "aliases": [
+    "TH_HGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_XGB",
+   "name": "XGBoost (CPU)",
+   "aliases": [
+    "TH_XGB",
+    "family:TH_XGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_RF",
+   "name": "Random Forest",
+   "aliases": [
+    "TH_RF",
+    "family:TH_RF"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "trainhub:TH_SVM",
+   "name": "SVM (skalowanie + kalibracja chronologiczna)",
+   "aliases": [
+    "TH_SVM",
+    "family:TH_SVM"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_TRAINED",
+   "registry_reason": "wersji: 0, brak aktywnej paczki",
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/trainhub/learn.py",
+    "backend/masterquo/trainhub/inference.py"
+   ],
+   "source_registry": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.trainhub.learn, masterquo.trainhub.inference"
+    }
+   },
+   "status": "NOT_TRAINED",
+   "why": "świeża instalacja – poprawny stan",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:TS_ARIMA",
+   "name": "ARIMA (statsmodels) – prognoza log-zwrotu",
+   "aliases": [
+    "TS_ARIMA"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/arima.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.arima"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:TS_SARIMAX",
+   "name": "SARIMAX (statsmodels) – zwroty H1 z kalendarzem sesji jako exog",
+   "aliases": [
+    "TS_SARIMAX"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/arima.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.arima"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:VOL_GARCH",
+   "name": "GARCH(1,1) (arch) – zmienność warunkowa",
+   "aliases": [
+    "VOL_GARCH"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/garch.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.garch"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:MICROSTRUCTURE",
+   "name": "Mikrostruktura – arkusz brokera (imbalance, OFI, microprice) + klasyfikator reakcji",
+   "aliases": [
+    "MICROSTRUCTURE"
+   ],
+   "category": "MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/micro.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.micro"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:PAIR_COINT",
+   "name": "Kointegracja pary + z-score (Engle-Granger)",
+   "aliases": [
+    "PAIR_COINT"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/pairs.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.pairs"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:STATARB",
+   "name": "Arbitraż statystyczny – koszyk PCA + reszty (s-score)",
+   "aliases": [
+    "STATARB"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/pairs.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.pairs"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:KALMAN_LS",
+   "name": "Filtr Kalmana poziom + nachylenie (rozbudowa mm_kalman)",
+   "aliases": [
+    "KALMAN_LS"
+   ],
+   "category": "MODEL_ESTIMATED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/kalman_ls.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.kalman_ls"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:BREAKOUT",
+   "name": "Breakout – wspólny moduł logiki wybicia (kanał, kompresja, potwierdzenie, retest)",
+   "aliases": [
+    "BREAKOUT"
+   ],
+   "category": "MODEL_ESTIMATED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/breakout.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.breakout"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:SEQ_LSTM",
+   "name": "LSTM (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "aliases": [
+    "SEQ_LSTM"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_deep",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/seq.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_deep: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_deep/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.seq"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:SEQ_GRU",
+   "name": "GRU świecowy (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "aliases": [
+    "SEQ_GRU"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_deep",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/seq.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_deep: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_deep/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.seq"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:RL_PPO",
+   "name": "PPO (Stable-Baselines3, Gymnasium replay) – propozycja ekspozycji",
+   "aliases": [
+    "RL_PPO"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv_deep",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/rl.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_deep: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_deep/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.rl"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "family:NLP_SENTIMENT",
+   "name": "Sentyment tekstu – TF-IDF + regresja logistyczna (+ opcjonalny lokalny transformer)",
+   "aliases": [
+    "NLP_SENTIMENT"
+   ],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.families.service.predictions",
+   "files": [
+    "backend/masterquo/modelhub/families/nlp.py"
+   ],
+   "source_registry": [
+    "modelhub.families.registry"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.modelhub.families.nlp"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:DUMMY",
+   "name": "Lab DUMMY",
+   "aliases": [],
+   "category": "BASELINE",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:RULE",
+   "name": "Lab RULE",
+   "aliases": [],
+   "category": "BASELINE",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:LOGREG",
+   "name": "Lab LOGREG",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:TREE",
+   "name": "Lab TREE",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:MINIROCKET",
+   "name": "Lab MINIROCKET",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:XGB",
+   "name": "Lab XGB",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:RESNET1D",
+   "name": "Lab RESNET1D",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:SEW_SNN",
+   "name": "Lab SEW_SNN",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol, masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:LOGREG_PCA",
+   "name": "Eksperyment lab LOGREG_PCA",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:LOGREG_GMM_AUG",
+   "name": "Eksperyment lab LOGREG_GMM_AUG",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:LOGREG_NEUTRALIZED",
+   "name": "Eksperyment lab LOGREG_NEUTRALIZED",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/protocol.py"
+   ],
+   "source_registry": [
+    "lab.protocol.EXPERIMENTS"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.protocol"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:MQ_RESNEXT1D_V2",
+   "name": "Structure Intelligence MQ_RESNEXT1D_V2",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.structure_nets, masterquo.lab.si_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:MQ_SEW_RESNET1D_V2",
+   "name": "Structure Intelligence MQ_SEW_RESNET1D_V2",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.structure_nets, masterquo.lab.si_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:MQ_SEW_RESNEXT_EB_V1",
+   "name": "Structure Intelligence MQ_SEW_RESNEXT_EB_V1",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/structure_nets.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "source_registry": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.structure_nets, masterquo.lab.si_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:MQ_MINIROCKET_RIDGE_V2",
+   "name": "Structure Intelligence MQ_MINIROCKET_RIDGE_V2",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/si_families.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "source_registry": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.si_families, masterquo.lab.si_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:MQ_SPIKE_BRAIN_FINANCE_V1",
+   "name": "Structure Intelligence MQ_SPIKE_BRAIN_FINANCE_V1",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/si_families.py",
+    "backend/masterquo/lab/si_service.py"
+   ],
+   "source_registry": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.si_families, masterquo.lab.si_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:buzoa",
+   "name": "BUZOA Optimization Engine",
+   "aliases": [],
+   "category": "OPTIMIZER",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/buzoa.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.buzoa"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:sdom",
+   "name": "SDOm Optimization Engine",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:stfs",
+   "name": "S3CE-Net / STFS (training-time sampling)",
+   "aliases": [],
+   "category": "TRAINABLE",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/stfs.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.stfs"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:quant_momentum",
+   "name": "Quant Ultimate Momentum Pro / Quant 2nd Model / Momentum AI Fusion",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:renko",
+   "name": "Renko Regression Forecasting",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:head_shoulders",
+   "name": "Head & Shoulders Structure Detector",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/analysis/chart_patterns.py (istniejący detektor formacji, w tym H&S)"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:data_grabber",
+   "name": "Multi-TF Data Grabber Lite",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [
+    "backend/masterquo/forecast/export.py (istniejący eksport historii zamkniętych świec + metadane + sha256)"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:tsvp",
+   "name": "Tick Session Volume Profile",
+   "aliases": [],
+   "category": "VISUALIZATION",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/tsvp.py",
+    "mql5/MasterModels/Include/PMW/PMW_TSVPCore.mqh",
+    "mql5/MasterModels/Indicators/PMW_TickSessionVP.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.tsvp"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:mathbench",
+   "name": "Math Engine Fidelity Benchmark",
+   "aliases": [],
+   "category": "BENCHMARK",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/mathbench.py",
+    "mql5/MathFidelity/train_export_model.py",
+    "mql5/MathFidelity/Experts/MathFidelityBenchmark_EA.mq5",
+    "mql5/MathFidelity/Indicators/FidelityMonitor.mq5",
+    "mql5/MathFidelity/Scripts/MathFidelity_SelfTest.mq5"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.mathbench"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:chart_sync",
+   "name": "MT5 Multi-Timeframe Chart Synchronization",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": ".venv",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [
+    "frontend (istniejąca opcjonalna synchronizacja wykresów w panelu, J1)"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:fusion_board",
+   "name": "Evidence board (cross-model integration layer, discovered need)",
+   "aliases": [],
+   "category": "DATA_INFRA",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/fusion.py"
+   ],
+   "source_registry": [
+    "mm.inventory.MODULES"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.fusion"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:montecarlo",
+   "name": "Monte Carlo (PMW-MC-1) – symulacja ścieżek",
+   "aliases": [],
+   "category": "SIMULATION",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/montecarlo/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.montecarlo"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:zones",
+   "name": "Mapa stref (PMW-ZONES)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/zones/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.zones"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:market_zones",
+   "name": "Strefy rynkowe M1/M5/M15/M30 (1.28)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/zones/market_service.py"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.zones.market_service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:indicators",
+   "name": "Wskaźniki PMW-IND-1 (EMA/VWAP/RSI/MACD/BB, mikrostruktura, DXY)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/indicators/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.indicators"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:svp",
+   "name": "Session Volume Profile (PMW-SVP-1)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/svp/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.svp"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:dxy_correlation",
+   "name": "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.adapters.extended",
+   "files": [
+    "backend/masterquo/indicators/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.indicators"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:walls",
+   "name": "Opcje / walls / IV (opcjonalne źródło)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/analysis/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.analysis"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:evaluation",
+   "name": "AI Setup Probability Engine (PMW-EVAL)",
+   "aliases": [],
+   "category": "ANALYSIS",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "evaluation.service (ledger)",
+   "files": [
+    "backend/masterquo/evaluation/"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.evaluation"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "quant:metamodel",
+   "name": "PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)",
+   "aliases": [],
+   "category": "META_MODEL",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "quant.service (assessment)",
+   "files": [
+    "backend/masterquo/quant/metamodel.py"
+   ],
+   "source_registry": [
+    "runtime.py"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.quant.metamodel"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ext:catboost",
+   "name": "CatBoost",
+   "aliases": [],
+   "category": "NOT_IMPLEMENTED",
+   "env": ".venv",
+   "code_state": "NOT_IMPLEMENTED",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
+   "adapter": null,
+   "files": [],
+   "source_registry": [
+    "lab/traceability.py (wzmianka)"
+   ],
+   "steps": {},
+   "status": "NOT_IMPLEMENTED",
+   "why": "wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "tsfm:tirex2",
+   "name": "TiRex-2 (TSFM, prognoza ceny M5/M15)",
+   "aliases": [
+    "TIREX2",
+    "TiRex-2",
+    "tirex2"
+   ],
+   "category": "MODEL_PRETRAINED",
+   "env": ".venv_tirex2",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/tsfm/",
+    "backend/tsfm_runtime/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.tsfm.service, masterquo.tsfm.predictions, tsfm_runtime.lock: tirex2|NX-AI/TiRex-2@352636173653592b6dceb3fbeee9224ca97952a9|tirex-2@0.5.0"
+    },
+    "env": {
+     "status": "OK",
+     "detail": ".venv_tirex2: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/tirex2/prog/.venv_tirex2/bin/python"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 2 rekord(y) poprawne"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "TsfmService → tsfm_runtime.worker (cpu, 82510960 param. = przypięte, NX-AI/TiRex-2@35263617): READY, 12 kroków M5, median(H)=2809.597, q0.1–q0.9(H) 2803.573–2815.292, FLAT, SHADOW, 262.5 ms, ładowanie 2161.2 ms; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość; uszkodzone wagi → ERROR/CHECKSUM + wpis WARNING, rekord INCOMPATIBLE"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "oficjalne wagi NX-AI/TiRex-2@35263617 (MQ_TSFM_WEIGHTS_ROOT): 4 plików, model.safetensors sha256 17760e4eee4c… = przypięta, git blob 3 = przypięte; selftest parity PASS (max |Δ| 0); nowy proces workera → ta sama prognoza (różnica 0)"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 10620,
+   "probe_live": null
+  },
+  {
+   "id": "quant:tabicl_v2",
+   "name": "TabICLv2 (estymator confidence kandydata, in-context)",
+   "aliases": [],
+   "category": "MODEL_PRETRAINED",
+   "env": ".venv_tabicl",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/quant/tabicl.py",
+    "backend/tabicl_runtime/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_tabicl: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/tabicl/prog/.venv_tabicl/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.quant.tabicl"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "flow:markov3",
+   "name": "Markov3 / Markov-diff flow (MQ_MARKOV3_FLOW_V1)",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/flow_context/markov.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.flow_context.markov"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:LOGREG",
+   "name": "Structure Intelligence LOGREG (FAMILIES_ALL)",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/structure_task.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.structure_task"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "si:XGB",
+   "name": "Structure Intelligence XGB (FAMILIES_ALL)",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/structure_task.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.structure_task"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "quotes:MQ_NEWTONIAN_QUOTES_V2",
+   "name": "QuoteEngine (kinematyka notowań)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/quotes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.quotes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:M29_fourier",
+   "name": "Lab M29 Fourier (prognoza archiwizowana)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:M31_tick_kinematics",
+   "name": "Lab M31 kinematyka ticków (legacy obok QuoteEngine)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:M42_trade_pad",
+   "name": "Lab M42 trade pad (kalkulator)",
+   "aliases": [],
+   "category": "TOOL",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/app.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.app"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "lab:M39_M41_edge",
+   "name": "Lab M39–M41 RepaintInspector / edge drift / bootstrap",
+   "aliases": [],
+   "category": "TOOL",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/lab/service.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.lab.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "research:graph50",
+   "name": "Research Graph50 (SCORE per cel)",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/research/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "train": {
+     "status": "OK",
+     "detail": "uczenie online (Hebb + PnL komórek) po dojrzeniu etykiet, 13 cykli ResearchModulesService: wersje {'NEXT_BAR_DIRECTION': 12, 'BPC10': 3}, |ΔW| L1 NEXT_BAR_DIRECTION=24.7, BPC10=22.1"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "zapis stanu kontekstu (graf 50×50 + 10000 komórek, wersje {'NEXT_BAR_DIRECTION': 12, 'BPC10': 3}) → nowa instancja serwisu: hash stanu zgodny, różnica predykcji 0"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "ResearchModulesService.predictions: READY GRAPH50_NEXT_BAR_DIRECTION=-0.861, GRAPH50_BPC10=-0.853 (DIRECTION_SCORE_RAW, nieskalibrowany, dane SYNTHETIC)"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 2 rekord(y) poprawne"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.research"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 764,
+   "probe_live": null
+  },
+  {
+   "id": "research:g7_smc_radar",
+   "name": "Research G7 SMC radar",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/research/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "predict": {
+     "status": "OK",
+     "detail": "radar G7 (M5/M15/H1) w cyklu serwisu: wynik -40 = reguła źródła z FVG M5 +0, M15 +0, OB H1 -1, konflikt False; DXY brak → składowa nieobecna, coverage 0.75"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 1 rekord(y) poprawne; uwaga: jednostka rekordu score_0_100, a skala radaru '-100..100 (źródło); NIE jest prawdopodobieństwem' (wartości ujemne możliwe)"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.research"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 19,
+   "probe_live": null
+  },
+  {
+   "id": "research:sdformerflow",
+   "name": "Research SDformerFlow (TH_SDFORMERFLOW)",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv_tirex2 (torch)",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": "modelhub.adapters.all_predictions",
+   "files": [
+    "backend/masterquo/research/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": "torch: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_deep/bin/python (research.service.torch_python)"
+    },
+    "train": {
+     "status": "OK",
+     "detail": "bootstrap from_scratch (sdformer_runtime.train, profil direct_train, 1 epoka / 0,5 min): 576 próbek H1, 702917 param., 8 kroków, strata 1.9545, 9.9 s"
+    },
+    "predict": {
+     "status": "OK",
+     "detail": "sdformer_runtime.infer (proces, aktywna wersja SDF-20261124T114358): DIRECTION_SCORE_RAW +0.0753 (tanh, nieskalibrowany), embedding8, 1361.6 ms; rekord READY H1/H6"
+    },
+    "contract": {
+     "status": "OK",
+     "detail": "PMW-PRED-2: 1 rekord(y) poprawne"
+    },
+    "artifact": {
+     "status": "OK",
+     "detail": "checkpoint SDF-20261124T114358/last.pt: test techniczny + aktywacja atomowa (ACTIVE), nowa instancja serwisu → ta sama ocena i embedding (różnica 0)"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.research"
+    }
+   },
+   "status": "DZIAŁA",
+   "why": "ścieżka sprawdzona na danych SYNTHETIC_TEST (technicznie, nie jakość)",
+   "ms": 17682,
+   "probe_live": null
+  },
+  {
+   "id": "mm:kalman_params",
+   "name": "Parametry Kalmana (kalibracja BUZOA)",
+   "aliases": [],
+   "category": "TRAINABLE",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/orchestrator.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.orchestrator"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:robust_vol",
+   "name": "Robust volatility (część breakout_zones)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:drift",
+   "name": "Drift (PMW-MM)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/drift.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm.drift"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "mm:bat_encoder",
+   "name": "BAT encoder (losowe wagi, SHADOW_UNTRAINED)",
+   "aliases": [],
+   "category": "RESEARCH",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/mm/",
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.mm, masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:sar_context",
+   "name": "Kontekst SAR (kalibracja siatki)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/extind/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.extind"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:knowledge",
+   "name": "Reguły wiedzy IND-K01..K12",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/extind/knowledge.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.extind.knowledge"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:IQ_GOLD_GANN",
+   "name": "IQ Gold Gann (wskaźnik MT5, eksport kopert)",
+   "aliases": [],
+   "category": "NATIVE_MQL5",
+   "env": "MQL5 (MT5)",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "mql5/PMW_ExtIndicatorExporter.mq5"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:IQ_STAR_LINES",
+   "name": "IQ Star Lines (wskaźnik MT5, eksport kopert)",
+   "aliases": [],
+   "category": "NATIVE_MQL5",
+   "env": "MQL5 (MT5)",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "mql5/PMW_ExtIndicatorExporter.mq5"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {},
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "extind:PAL02M",
+   "name": "PAL02M (tożsamość nieustalona)",
+   "aliases": [],
+   "category": "NO_SPEC",
+   "env": "-",
+   "code_state": "NO_SPEC",
+   "registry_state": "UNAVAILABLE",
+   "registry_reason": "NO_SPEC",
+   "adapter": null,
+   "files": [
+    "config/extind_manifests_v1.json"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {},
+   "status": "NO_SPEC",
+   "why": "NO_SPEC",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "strategies:regime",
+   "name": "MarketRegimeEngine MQ-REGIME-1.0.0 (wybór strategii ACTIVE)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/strategies/regime.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.strategies.regime"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analysis:signals",
+   "name": "Poziomy / range M5 / MITP / neutralizacja",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/analysis/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.analysis"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "analytics:session_engine",
+   "name": "Silnik sesji (boxy sesyjne)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/analytics/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.analytics"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "engine:volzones",
+   "name": "Strefy zmienności (panel)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/engine/service.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.engine.service"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "apollo:market_trap",
+   "name": "Market trap (SHADOW, ostrzeżenia)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/apollo/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.apollo"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "baskets:sfb",
+   "name": "Strategy Filter Bucket koszyków FX",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/baskets/sfb.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.baskets.sfb"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml:decision_tree_ranker",
+   "name": "Decision tree ranker (WF3.2)",
+   "aliases": [],
+   "category": "MODEL_TRAINED",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml:association_rules",
+   "name": "Reguły asocjacyjne (WF3.2)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml:pt_directional_skill",
+   "name": "Test Pesarana–Timmermanna (WF3.2)",
+   "aliases": [],
+   "category": "TOOL",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "ml:change_point_engine",
+   "name": "Change points PELT (WF3.2)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "forecast:long_horizon",
+   "name": "Rozkład 24–72 h (WF3.2)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/api/wf32_routes.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.api.wf32_routes"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "forecast:double_retest_v2",
+   "name": "Double Retest v2 (flagi świec prognozy)",
+   "aliases": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "env": ".venv_candles",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/forecast/"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_candles: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_candles/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.forecast"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  },
+  {
+   "id": "scalp:C_policy",
+   "name": "Scalp C – ocena polityki hedge vs REDUCE w replay",
+   "aliases": [],
+   "category": "TOOL",
+   "env": ".venv_candles",
+   "code_state": "IMPLEMENTED",
+   "registry_state": "NOT_EVALUATED",
+   "registry_reason": null,
+   "adapter": null,
+   "files": [
+    "backend/masterquo/training/runner.py"
+   ],
+   "source_registry": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ],
+   "steps": {
+    "env": {
+     "status": "OK",
+     "detail": ".venv_candles: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/venvs/venv_candles/bin/python"
+    },
+    "import": {
+     "status": "OK",
+     "detail": "masterquo.training.runner"
+    }
+   },
+   "status": "TYLKO_REJESTR",
+   "why": "stan rejestru: NOT_EVALUATED",
+   "ms": 0,
+   "probe_live": null
+  }
+ ]
+}

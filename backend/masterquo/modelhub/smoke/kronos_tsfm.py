@@ -1,11 +1,19 @@
 """Smoke checks of the pretrained time-series models (Kronos-small, Chronos-2, Granite TTM, TiRex-2) and the 1.41 research modules.
 
-Kronos: the real chain KronosService -> `python -m kronos_runtime.worker` (.venv_kronos) on the FakeMT5 bridge, with the project's TEST
-fixture of RANDOM weights in the pinned layout (tests/kronos_fixture.py) - the official Hugging Face weights cannot be downloaded here, so
-the artifact step stays NIEZWERYFIKOWANY and the numbers are plumbing only. Chronos-2 / Granite TTM / TiRex-2: no environment and no
-weights here -> env NIEZWERYFIKOWANY; the real TsfmService is checked for the NOT_INSTALLED state and for its failure path (a damaged
-installation -> CHECKSUM must reach the event log). Research modules: the real ResearchModulesService cycle on closed FakeMT5 bars
-(graph50 online learning + state roundtrip, G7 radar, SDformerFlow bootstrap training in an environment with torch).
+Official weights are looked up READ ONLY, the way the bot and the installers find them - an explicit variable first (MQ_KRONOS_WEIGHTS_DIR,
+MQ_TSFM_WEIGHTS_ROOT), then the bot's own folder in the PROGRAM's data folder (weights_dir / weights_root of <data>/kronos|tsfm/settings.json,
+else <data>/kronos/models, <data>/tsfm/models); the area process itself runs on a temporary MASTERQUO_DATA_DIR. Nothing is downloaded and
+nothing is written outside ctx.data_dir.
+
+Kronos: the real chain KronosService -> `python -m kronos_runtime.worker` (.venv_kronos) on the FakeMT5 bridge. With the official pinned pair
+installed (bot manifest, sha256 = pins of kronos_runtime/lock.py): the installer's own check (`kronos_runtime.install verify --reference`),
+a READY record on those weights and a new worker process -> the same path. Without them: the project's TEST fixture of RANDOM weights in the
+pinned layout (tests/kronos_fixture.py) - plumbing only, the artifact step stays NIEZWERYFIKOWANY. Chronos-2 / Granite TTM / TiRex-2: with
+the model environment and the official weights the real TsfmService -> tsfm_runtime.worker on those weights (sha256 + git blob of every
+pinned file, READY record, selftest / parity, a new process -> the same forecast); without them the NOT_INSTALLED / NO_WEIGHTS state. Both
+end with the failure path (a damaged installation -> CHECKSUM must reach the event log). Research modules: the real ResearchModulesService
+cycle on closed FakeMT5 bars (graph50 online learning + state roundtrip, G7 radar, SDformerFlow bootstrap training in an environment with
+torch).
 """
 from __future__ import annotations
 
@@ -17,7 +25,9 @@ from typing import ClassVar
 from . import check, fail, ok, unverified
 
 INST = "XAUUSD"
-OFFICIAL_NOTE = "losowe wagi – oficjalne wagi z Hugging Face NIEZWERYFIKOWANE (proxy 403)"
+OFFICIAL_NOTE = "losowe wagi testowe (fixture) – to nie jest oficjalny model"
+KRONOS_WEIGHTS_ENV = "MQ_KRONOS_WEIGHTS_DIR"          # the same variable as tests/test_kronos_runtime.TestOfficialWeights
+TSFM_WEIGHTS_ENV = "MQ_TSFM_WEIGHTS_ROOT"             # --weights-root of tools/tsfm_setup.py (Chronos-2 / Granite TTM / TiRex-2 / TabICLv2)
 
 
 # ------------------------------------------------------------------------------------------------------------------- helpers
@@ -95,27 +105,85 @@ def _adapter_records(cid_prefix: str, **services) -> list[dict]:
     return [p for p in MA.all_predictions(rt, INST) if I.canonical(p) == cid_prefix or I.canonical(p).startswith(cid_prefix + ":")]
 
 
+# ------------------------------------------------------------------------------------------------------------------- official weights (read only)
+def _program_settings(ctx, area: str) -> tuple:
+    """(data folder of the PROGRAM, its <area>/settings.json as a dict). Read only. The area process runs on a temporary MASTERQUO_DATA_DIR,
+    so the folder the bot and the installers use is resolved the way paths.data_dir() does without that override."""
+    import json
+
+    from mq_instruments import default_data_dir
+    data = default_data_dir(ctx.root)
+    try:
+        raw = json.loads((data / area / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = None
+    return data, (raw if isinstance(raw, dict) else {})
+
+
+def tsfm_weights_candidates(ctx) -> list[tuple[str, str]]:
+    """Weights roots of the TSFM / TabICL installer (tools/tsfm_setup.py --weights-root auto) as (root, source), in order: MQ_TSFM_WEIGHTS_ROOT,
+    then the bot's folder in the program's data folder (weights_root of <data>/tsfm/settings.json, else <data>/tsfm/models). Also used by
+    smoke/quant.py for TabICLv2 (<root>/tabicl_v2). Read only."""
+    data, s = _program_settings(ctx, "tsfm")
+    out = [(os.environ[TSFM_WEIGHTS_ENV], TSFM_WEIGHTS_ENV)] if os.environ.get(TSFM_WEIGHTS_ENV) else []
+    if s.get("weights_root"):
+        out.append((str(s["weights_root"]), "weights_root z <dane programu>/tsfm/settings.json"))
+    out.append((str(data / "tsfm" / "models"), "<dane programu>/tsfm/models"))
+    return out
+
+
 # ------------------------------------------------------------------------------------------------------------------- Kronos
-def _kronos(ctx) -> dict:
+def _kronos_official(ctx) -> tuple[str | None, str, str | None]:
+    """(weights folder, source, problem) of the first INSTALLED Kronos pair, or (None, why none, None). Candidates: MQ_KRONOS_WEIGHTS_DIR,
+    then the bot's folder in the program's data folder (weights_dir of <data>/kronos/settings.json, else <data>/kronos/models). Read only.
+    Installed = the bot's kronos_runtime.manifest.summary accepts it (pinned repo + revision of both components, never a test fixture) - the
+    bot would load it. Then it must be exactly the pinned pair: the sha256 recorded in the manifest for every pinned file equals
+    kronos_runtime/lock.py and manifest.verify (sha256 of every file on disk) passes; otherwise `problem` says why (a FAIL, not a skip)."""
+    from kronos_runtime import lock as LK
+    from kronos_runtime import manifest as KM
+    data, s = _program_settings(ctx, "kronos")
+    cands = [(os.environ[KRONOS_WEIGHTS_ENV], KRONOS_WEIGHTS_ENV)] if os.environ.get(KRONOS_WEIGHTS_ENV) else []
+    if s.get("weights_dir"):
+        cands.append((str(s["weights_dir"]), "weights_dir z <dane programu>/kronos/settings.json"))
+    cands.append((str(data / "kronos" / "models"), "<dane programu>/kronos/models"))
+    why = []
+    with _env(MQ_KRONOS_ALLOW_FIXTURE=None):                 # test weights are never accepted as the official model
+        for wd, src in cands:
+            sm = KM.summary(wd)
+            if not sm["installed"]:
+                why.append(f"{src}: {str(sm['reason'])[:140]}")
+                continue
+            comps = {c.get("kind"): c for c in sm["manifest"].get("components") or []}
+            bad = []
+            for c in LK.COMPONENTS:
+                got = {f.get("name"): f.get("sha256") for f in comps[c["kind"]].get("files") or []}
+                bad += [f"{c['repo']}/{n} sha256 {str(got.get(n))[:12]}… ≠ pin lock.py {pin[:12]}…" for n, pin in c["sha256"].items() if got.get(n) != pin]
+            if bad:
+                return wd, src, f"{'; '.join(bad)} – to nie są przypięte wagi, a bot by je załadował"
+            try:
+                KM.verify(wd)
+            except KM.ManifestError as exc:
+                return wd, src, f"{exc.code}: {exc.detail}"
+            return wd, src, None
+    return None, "; ".join(why), None
+
+
+def _kronos_fixture(ctx, kpy: str, steps: dict, why: str) -> dict:
+    """No official installation: the project's fixture of RANDOM weights in the pinned layout -> the same bot path, artifact NIEZWERYFIKOWANY."""
     import json
     import math
     import subprocess
-    steps: dict = {}
-    ctx.step = "env"
-    kpy = ctx.env_python(".venv_kronos")
-    if kpy is None:
-        steps["env"] = unverified("brak .venv_kronos (MQ_KRONOS_PYTHON / <program>/.venv_kronos) – worker Kronos niesprawdzalny")
-        steps["artifact"] = unverified("oficjalne wagi NeoQuasar/Kronos-small + Kronos-Tokenizer-base niepobieralne (HF 403), brak środowiska")
-        return steps
-    steps["env"] = ok(f".venv_kronos: {kpy}")
+
+    from kronos_runtime import lock as LK
+    pair = f"{LK.MODEL['repo']}@{LK.MODEL['revision'][:8]} + {LK.TOKENIZER['repo']}@{LK.TOKENIZER['revision'][:8]}"
+    why = str(why)[:170]
     fx = ctx.root / "tests" / "kronos_fixture.py"
     if not fx.is_file():
-        steps["artifact"] = unverified("brak tests/kronos_fixture.py (wagi testowe) i oficjalnych wag (HF 403) – nie ma czego załadować")
+        steps["artifact"] = unverified(f"oficjalne wagi {pair} niezainstalowane ({why}); brak tests/kronos_fixture.py (wagi testowe) – nie ma czego załadować")
         return steps
 
-    # -- random-weight fixture in the pinned layout (the project's own test fixture; official weights are unreachable here)
+    # -- random-weight fixture in the pinned layout (the project's own test fixture), written only in the temporary data folder
     ctx.step = "artifact"
-    from kronos_runtime import lock as LK
     wd = ctx.data_dir / "kronos_smoke" / "weights"
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", HF_HUB_OFFLINE="1", OMP_NUM_THREADS="1")
     r = subprocess.run([kpy, str(fx), str(wd)], cwd=str(ctx.data_dir), env=env, capture_output=True, text=True, timeout=180, check=False)
@@ -193,14 +261,132 @@ def _kronos(ctx) -> dict:
             steps["artifact"] = fail(f"ta sama świeca i ziarno, nowy proces: różnica ścieżki close {diff:.3g} (oczekiwano 0)")
         else:
             steps["artifact"] = unverified(
-                f"oficjalne wagi {LK.MODEL['repo']}@{LK.MODEL['revision'][:8]} + {LK.TOKENIZER['repo']}@{LK.TOKENIZER['revision'][:8]} "
-                f"NIEZWERYFIKOWANE – Hugging Face niedostępny (proxy 403); technicznie na fixture z losowymi wagami: sha256 przy load OK, "
-                f"nowy proces workera → ta sama ścieżka (różnica {diff:.1g})")
+                f"oficjalne wagi {pair} niezainstalowane – technicznie tylko na fixture z losowymi wagami (sha256 przy load OK, nowy proces "
+                f"workera → ta sama ścieżka, różnica {diff:.1g}); szukano: {why}")
         return steps
     finally:
         svc.stop()
         if svc2 is not None:
             svc2.stop()
+
+
+def _kronos_with_official(ctx, kpy: str, wd: str, src: str, steps: dict) -> dict:
+    """Official pinned pair (read only): the installer's own check (verify --reference: load + test forecast + parity with the official
+    KronosPredictor) -> KronosService -> worker on FakeMT5 bars -> READY record -> a NEW worker process -> the same path."""
+    import json
+    import math
+    import subprocess
+
+    from kronos_runtime import lock as LK
+    ctx.step = "artifact"
+    env = dict(os.environ, PYTHONPATH=str(ctx.root / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1",
+               PYTHONDONTWRITEBYTECODE="1")
+    r = subprocess.run([kpy, "-m", "kronos_runtime.install", "verify", "--weights-dir", wd, "--reference", "--device", "CPU"],
+                       cwd=str(ctx.data_dir), env=env, capture_output=True, text=True, timeout=600, check=False)
+    line = next((x for x in reversed(r.stdout.splitlines()) if x.startswith("RESULT ")), None)
+    res = json.loads(line[7:]) if line else {}
+    st = res.get("selftest") or {}
+    par, ref = st.get("parity") or {}, st.get("reference") or {}
+    rel = max((float(x.get("max_rel_diff") or 0.0) for x in ref.get("rows") or []), default=None)
+    ver_txt = (f"verify --reference (instalator): prognoza testowa {(st.get('smoke') or {}).get('ms')} ms, parity {par.get('status')} "
+               f"(max {par.get('max_abs_diff')}), dane autorów {ref.get('status')} (max rel {'-' if rel is None else f'{rel:.2g}'})")
+    if r.returncode != 0 or not res.get("ok"):
+        steps["artifact"] = fail(f"oficjalne wagi ({src}): kontrola instalatora nieudana: kod {r.returncode}, {res.get('code')}: "
+                                 f"{str(res.get('error') or (r.stderr or r.stdout).strip()[-200:])[:220]}")
+        return steps
+
+    ctx.step = "predict"
+    from ...kronos.service import KronosService
+    from ...kronos.settings import SettingsStore
+    core = _core(ctx)
+    sts = SettingsStore(ctx.data_dir / "kronos_smoke" / "settings.json")
+    sts.update({"weights_dir": wd, "python_path": kpy, "instruments": [INST], "timeframes": ["M5"], "cpu_threads": 1, "device": "CPU"})
+    H = int(sts.get().horizon_bars["M5"])
+
+    def service():
+        s = KronosService(core["cfg"], core["bridge"], core["db"], core["bus"], core["log"], settings=sts)
+        s._auto_migrate = lambda py: False             # never a download into the user's weights folder (read only; installed was verified)
+        return s
+    svc = service()
+    svc2 = None
+    try:
+        with _env(MQ_KRONOS_ALLOW_FIXTURE=None, HF_HUB_OFFLINE="1"):
+            svc.tick()
+            tv = svc.target_view((INST, "M5"))
+            if not svc.queue:
+                steps["predict"] = fail(f"oficjalne wagi zainstalowane, a brak zadania po nowej świecy: cel {tv['state']} ({tv.get('reason')}), "
+                                        f"serwis {svc.state['status']} ({svc.state.get('reason')})")
+                return steps
+            _, job = svc.queue.popitem(last=False)
+            fc = svc.run_job(job)
+            if fc is None:
+                tv = svc.target_view((INST, "M5"))
+                steps["predict"] = fail(f"run_job bez prognozy (oficjalne wagi): cel {tv['state']} ({tv.get('reason')}), serwis "
+                                        f"{svc.state['status']} ({svc.state.get('reason')})")
+                return steps
+            recs = _adapter_records("kronos:Kronos-small", kronos=svc)
+            closes = [float(x["c"]) for x in fc["pred"]]
+            ready = [p for p in recs if p["state"] == "READY"]
+            li = svc.load_info or {}
+            pinned = ((fc.get("model") or {}).get("revision") == LK.MODEL["revision"]
+                      and (fc.get("tokenizer") or {}).get("revision") == LK.TOKENIZER["revision"])
+            good = (len(closes) == H and all(math.isfinite(v) for v in closes) and fc["mode"] == "SHADOW" and not fc["execution_permission"]
+                    and fc["data_kind"] == "SYNTHETIC" and len(ready) == 1 and li.get("params_model") == LK.MODEL["params_measured"] and pinned
+                    and ready[0].get("model_version") == LK.MODEL["revision"])
+            steps["predict"] = check(
+                good,
+                f"KronosService → kronos_runtime.worker na OFICJALNYCH wagach {LK.MODEL_NAME}@{LK.MODEL['revision'][:8]}: READY, {fc['device']}, "
+                f"{len(closes)} kroków M5, close(H)={closes[-1]:.3f}, {fc['direction']}, SHADOW, {fc['compute_ms']} ms, "
+                f"{li.get('params_model')} param. = przypięte; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość",
+                f"prognoza niezgodna: kroki {len(closes)}/{H}, tryb {fc.get('mode')}, dane {fc.get('data_kind')}, rekordy {[p['state'] for p in recs]}, "
+                f"param. {li.get('params_model')} vs pin {LK.MODEL['params_measured']}, rewizje model/tokenizer zgodne z lock.py: {pinned}")
+            ctx.step = "contract"
+            steps["contract"] = ctx.contract_step(recs)
+            if steps["predict"]["status"] != "OK":
+                return steps
+
+            # -- roundtrip: a NEW service instance -> a NEW worker process loads the official weights (sha256 at load) -> same path
+            ctx.step = "artifact"
+            svc2 = service()
+            fc2 = svc2.run_job(job)
+            if fc2 is None:
+                steps["artifact"] = fail(f"oficjalne wagi w nowym procesie bez prognozy: {svc2.state['status']} ({svc2.state.get('reason')})")
+                return steps
+            diff = max(abs(a - float(b["c"])) for a, b in zip(closes, fc2["pred"]))
+        steps["artifact"] = check(
+            diff <= 1e-9,
+            f"oficjalne wagi ({src}): {LK.MODEL['repo']}@{LK.MODEL['revision'][:8]} + {LK.TOKENIZER['repo']}@{LK.TOKENIZER['revision'][:8]}, "
+            f"sha256 model.safetensors {LK.MODEL['sha256']['model.safetensors'][:12]}… = pin lock.py, pliki = manifest; {ver_txt}; "
+            f"nowy proces workera → ta sama ścieżka (różnica {diff:.1g})",
+            f"oficjalne wagi, ta sama świeca i ziarno, nowy proces: różnica ścieżki close {diff:.3g} (oczekiwano 0); {ver_txt}")
+        return steps
+    finally:
+        svc.stop()
+        if svc2 is not None:
+            svc2.stop()
+
+
+def _kronos(ctx) -> dict:
+    """KronosService -> `python -m kronos_runtime.worker` (.venv_kronos) on the FakeMT5 bridge: on the OFFICIAL weights when they are installed
+    (_kronos_official), else on the project's random-weight fixture (artifact NIEZWERYFIKOWANY)."""
+    from kronos_runtime import lock as LK
+    steps: dict = {}
+    ctx.step = "env"
+    kpy = ctx.env_python(".venv_kronos")
+    if kpy is None:
+        steps["env"] = unverified("brak .venv_kronos (MQ_KRONOS_PYTHON / <program>/.venv_kronos) – worker Kronos niesprawdzalny")
+        steps["artifact"] = unverified(f"oficjalne wagi {LK.MODEL['repo']}@{LK.MODEL['revision'][:8]} + {LK.TOKENIZER['repo']}@"
+                                       f"{LK.TOKENIZER['revision'][:8]} niesprawdzalne bez środowiska .venv_kronos (load / prognoza)")
+        return steps
+    steps["env"] = ok(f".venv_kronos: {kpy}")
+    ctx.step = "artifact"
+    wd, src, problem = _kronos_official(ctx)
+    if wd is None:
+        return _kronos_fixture(ctx, kpy, steps, src)
+    if problem:
+        steps["artifact"] = fail(f"instalacja Kronos ({src}: {wd}) odrzucona: {problem}")
+        return steps
+    return _kronos_with_official(ctx, kpy, wd, src, steps)
 
 
 # ------------------------------------------------------------------------------------------------------------------- Chronos-2 / Granite TTM / TiRex-2
@@ -218,6 +404,160 @@ def _broken_install(TL, TM, weights_root, mid: str) -> None:
         files.append({"name": name, "size": p.stat().st_size, "sha256": TM.sha256_file(p)})
     TM.write(weights_root, mid, {"schema": TL.MANIFEST_SCHEMA, "model_id": mid, "repo": pin["repo"], "revision": pin["revision"],
                                  "installed_at": datetime.now(UTC).isoformat(timespec="seconds"), "files": files})
+
+
+def _tsfm_official_root(ctx, TM, mid: str) -> tuple[str | None, str]:
+    """Weights root with INSTALLED official weights of the pinned revision -> (root, source) or (None, why not). Candidates:
+    tsfm_weights_candidates (read only). Taken when the bot's tsfm_runtime.manifest.summary says installed (pinned repo + revision, complete,
+    never a test fixture); the sha256 check itself is the artifact step (manifest.verify)."""
+    why = []
+    with _env(MQ_TSFM_ALLOW_FIXTURE=None):
+        for root, src in tsfm_weights_candidates(ctx):
+            s = TM.summary(root, mid)
+            if s["installed"]:
+                return root, src
+            why.append(f"{src}: {str(s['reason'])[:140]}")
+    return None, "; ".join(why)
+
+
+def _tsfm_official(ctx, mid: str, cid: str, steps: dict, st, base, root: str, src: str) -> dict:
+    """Official weights: size + sha256 of every file (manifest + pin of lock.py, the bot's manifest.verify) and the git blob of the small
+    pinned files -> TsfmService -> tsfm_runtime.worker on FakeMT5 bars -> READY record -> selftest / parity of the loaded worker -> a NEW
+    worker process gives the same forecast -> the failure path (damaged installation in the temporary folder). One model process at a time."""
+    import math
+
+    from tsfm_runtime import lock as TL
+    from tsfm_runtime import manifest as TM
+
+    from ...tsfm import service as TS
+    pin = TL.model(mid)
+    ctx.step = "artifact"
+    try:
+        integ = TM.verify(root, mid)                 # offline: size + sha256 of every file vs the manifest AND the pin of lock.py
+    except TM.ManifestError as exc:
+        steps["artifact"] = fail(f"oficjalne wagi {pin['repo']}@{pin['revision'][:8]} ({src}: {root}) odrzucone: {exc.code} {exc.detail}")
+        return steps
+    # small files are pinned by their git blob sha1 (manifest.verify compares sha256 only) - the id the installer checked at download
+    d = TM.model_dir(root, mid)
+    blobs, bad = 0, []
+    for f in pin["files"]:
+        if f.get("git_blob_sha1") and (d / f["name"]).is_file():
+            blobs += 1
+            got = TM.git_blob_sha1(d / f["name"])
+            if got != f["git_blob_sha1"]:
+                bad.append(f"{f['name']}: git blob {got[:12]}… ≠ przypięty {f['git_blob_sha1'][:12]}…")
+    if bad:
+        steps["artifact"] = fail(f"oficjalne wagi {pin['repo']}@{pin['revision'][:8]} ({src}): {'; '.join(bad)} (plik zmieniony po instalacji)")
+        return steps
+    big = max(integ["files"], key=lambda f: f["size"])
+    sha_txt = f"{len(integ['files'])} plików, {big['file']} sha256 {big['sha256'][:12]}… = przypięta" + (f", git blob {blobs} = przypięte" if blobs else "")
+
+    ctx.step = "predict"
+    st.update({"weights_root": root}, who="smoke")
+    c = st.get().models[mid]
+    core = _core(ctx)
+    H = int(st.get().horizon_bars["M5"])
+    k = (mid, INST, "M5")
+
+    def service():
+        return TS.TsfmService(core["cfg"], core["bridge"], core["db"], core["bus"], core["log"], settings=st)
+    svc, svc2 = service(), None
+    try:
+        with _env(MQ_TSFM_ALLOW_FIXTURE=None, HF_HUB_OFFLINE="1"):
+            svc.tick(force=(INST, "M5"))
+            w = svc.workers[mid]
+            if not svc.queue:
+                tv = svc.target_view(k)
+                steps["predict"] = fail(f"oficjalne wagi zainstalowane, a brak zadania po nowej świecy: model {w.state['status']} "
+                                        f"({str(w.state.get('reason'))[:120]}), cel {tv['state']} ({tv.get('reason')})")
+                return steps
+            _, job = svc.queue.popitem(last=False)
+            fc = svc.run_job(job)
+            recs = _adapter_records(cid, tsfm=svc)
+            ctx.step = "contract"
+            steps["contract"] = ctx.contract_step(recs)
+            ctx.step = "predict"
+            if fc is None:
+                tv = svc.target_view(k)
+                steps["predict"] = fail(f"run_job bez prognozy na oficjalnych wagach: model {w.state['status']}/{w.state.get('code')} "
+                                        f"({str(w.state.get('reason'))[:160]}), cel {tv['state']} ({tv.get('reason')})")
+                return steps
+            li = w.load_info or {}
+            pts = [float(p["point"]) for p in fc["path"]]
+            ready = [p for p in recs if p["state"] == "READY"]
+            last = fc["path"][-1]
+            native = [float(q) for q in pin.get("native_quantiles") or []]
+            levels = [float(q) for q in fc.get("quantile_levels") or []]
+            q_ok = (all(q in native for q in levels) and 0.5 in levels) if native else not levels
+            qtxt = (f", q0.1–q0.9(H) {last['q0.1']:.3f}–{last['q0.9']:.3f}" if last.get("q0.1") is not None and last.get("q0.9") is not None
+                    else ", bez kwantyli (model punktowy)")
+            good = (len(pts) == H and all(math.isfinite(v) for v in pts) and li.get("params") == pin["params_measured"]
+                    and li.get("revision") == fc["model_revision"] == pin["revision"] and fc["point_kind"] == pin["point"] and q_ok
+                    and (li.get("checkpoint") or "BASE") == "BASE" and fc["mode"] == "SHADOW" and not fc["execution_permission"]
+                    and fc["data_kind"] == "SYNTHETIC" and len(ready) == 1)
+            steps["predict"] = check(
+                good,
+                f"TsfmService → tsfm_runtime.worker ({li.get('device')}, {li.get('params')} param. = przypięte, {pin['repo']}@{pin['revision'][:8]}): "
+                f"READY, {len(pts)} kroków M5, {fc['point_kind']}(H)={fc['pred_close_h']:.3f}{qtxt}, {fc['direction']}, SHADOW, {fc['compute_ms']} ms, "
+                f"ładowanie {li.get('load_ms')} ms; dane SYNTHETIC (FakeMT5) – test techniczny, nie jakość",
+                f"prognoza niezgodna: kroki {len(pts)}/{H}, param. {li.get('params')} vs {pin['params_measured']}, rewizja {li.get('revision')}, "
+                f"punkt {fc.get('point_kind')} vs {pin['point']}, kwantyle {levels} vs natywne {native}, tryb {fc.get('mode')}, "
+                f"dane {fc.get('data_kind')}, rekordy {[p['state'] for p in recs]}")
+            if steps["predict"]["status"] != "OK":
+                return steps
+
+            # -- selftest / parity of the LOADED worker (what the installer runs after an installation) + NEW process -> same forecast
+            ctx.step = "artifact"
+            stt = w.ask({"cmd": "selftest"}, c.request_timeout_s)
+            par = (stt.get("parity") or {}) if stt.get("ok") else {}
+            if not (stt.get("ok") and (stt.get("smoke") or {}).get("ok") and par.get("status") == "PASS"):
+                steps["artifact"] = fail(f"{sha_txt}; selftest workera: {stt.get('code') or ''} {stt.get('error') or ''} parity {par.get('status')} "
+                                         f"(max |Δ| {par.get('max_abs_diff')})")
+                return steps
+            p1 = (w.info or {}).get("pid")
+            w.kill()                                     # one model process at a time (TiRex-2 ≈ 1 GB RSS per process)
+            svc2 = service()
+            fc2 = svc2.run_job(job)
+            if fc2 is None:
+                w2 = svc2.workers[mid]
+                steps["artifact"] = fail(f"{sha_txt}; ponowne wczytanie w nowym procesie bez prognozy: {w2.state['status']} ({w2.state.get('reason')})")
+                return steps
+            diff = max(abs(a - float(b["point"])) for a, b in zip(pts, fc2["path"], strict=True))
+            p2 = (svc2.workers[mid].info or {}).get("pid")
+            steps["artifact"] = check(
+                diff <= 1e-9 and p1 != p2,
+                f"oficjalne wagi {pin['repo']}@{pin['revision'][:8]} ({src}): {sha_txt}; selftest parity PASS (max |Δ| {par['max_abs_diff']:.3g}); "
+                f"nowy proces workera → ta sama prognoza (różnica {diff:.1g})",
+                f"{sha_txt}; nowy proces workera (pid {p1} → {p2}): różnica ścieżki {diff:.3g} (model przypięty jako deterministyczny)")
+            svc2.stop()
+            svc2 = None
+
+        # -- failure path: damaged installation (temporary folder) -> ERROR/CHECKSUM + an entry in the event log
+        ctx.step = "predict"
+        _broken_install(TL, TM, base / "models", mid)
+        st.update({"weights_root": str(base / "models")}, who="smoke")
+        n0 = len(core["db"].query("SELECT id FROM app_events WHERE category='TSFM'"))
+        with _env(HF_HUB_OFFLINE="1"):
+            svc.tick(force=(INST, "M5"))
+            if svc.queue:
+                _, job3 = svc.queue.popitem(last=False)
+                svc.run_job(job3)
+            else:
+                w.ensure()
+        ev = [e for e in core["db"].query("SELECT level, code FROM app_events WHERE category='TSFM'")[n0:] if e["code"] == "CHECKSUM"]
+        recs3 = _adapter_records(cid, tsfm=svc)
+        steps["contract"] = ctx.contract_step(recs + recs3)
+        if not (w.state["status"] == "ERROR" and w.state.get("code") == "CHECKSUM" and ev):
+            steps["predict"] = fail(f"{steps['predict']['detail'][:200]} | uszkodzone wagi: stan {w.state['status']}/{w.state.get('code')}, "
+                                    f"wpisy CHECKSUM w dzienniku: {len(ev)}")
+        else:
+            steps["predict"] = ok(f"{steps['predict']['detail'][:300]}; uszkodzone wagi → ERROR/CHECKSUM + wpis {ev[0]['level']}, rekord "
+                                  f"{recs3[0]['state'] if recs3 else '-'}")
+        return steps
+    finally:
+        svc.stop()
+        if svc2 is not None:
+            svc2.stop()
 
 
 def _tsfm(mid: str):
@@ -249,12 +589,17 @@ def _tsfm(mid: str):
         venv = pin.get("venv") or f".venv_{mid}"
         code = pin.get("code") or {}
         if py is None:
-            steps["env"] = unverified(f"brak {venv} (MQ_{mid.upper()}_PYTHON) – pakiet {code.get('package')}=={code.get('version')} niezainstalowany, "
-                                      f"wagi {pin['repo']}@{pin['revision'][:8]} niepobieralne (HF 403) – silnik niesprawdzalny w tym środowisku")
+            steps["env"] = unverified(f"brak {venv} (MQ_{mid.upper()}_PYTHON) – pakiet {code.get('package')}=={code.get('version')} niezainstalowany "
+                                      f"(tools/tsfm_setup.py --model {mid}) – silnik niesprawdzalny w tym środowisku")
+            steps["artifact"] = unverified(f"oficjalne wagi {pin['repo']}@{pin['revision'][:8]} ({pin.get('params_upstream')}) niesprawdzalne bez "
+                                           f"środowiska modelu – load / parity selftest niesprawdzone")
         else:
             steps["env"] = ok(f"{venv}: {py}")
-        steps["artifact"] = unverified(f"wagi {pin['repo']}@{pin['revision'][:8]} ({pin.get('params_upstream')}) niezainstalowane w folderze "
-                                       f"testowym; Hugging Face niedostępny (proxy 403) – load / parity selftest niesprawdzone")
+            official, src = _tsfm_official_root(ctx, TM, mid)
+            if official is not None:
+                return _tsfm_official(ctx, mid, cid, steps, st, base, official, src)
+            steps["artifact"] = unverified(f"oficjalne wagi {pin['repo']}@{pin['revision'][:8]} ({pin.get('params_upstream')}) niezainstalowane "
+                                           f"({src[:220]}) – ustaw MQ_TSFM_WEIGHTS_ROOT na folder wag instalatora (tools/tsfm_setup.py --weights-root)")
 
         # -- real TsfmService on the FakeMT5 bridge: state without an environment / weights + the contract record
         ctx.step = "predict"
@@ -296,8 +641,8 @@ def _tsfm(mid: str):
                 return steps
             logged = [e for e in ev if e["code"] == "CHECKSUM"]
             if not logged:
-                src, first = inspect.getsourcelines(TS.ModelWorker.fail)
-                ln = next((first + i for i, t in enumerate(src) if "applog.warning" in t), first)
+                src_lines, first = inspect.getsourcelines(TS.ModelWorker.fail)
+                ln = next((first + i for i, t in enumerate(src_lines) if "applog.warning" in t), first)
                 wl = inspect.getsourcelines(AppLog.warn)[1]
                 steps["predict"] = fail(
                     f"awaria {code2} (uszkodzone wagi; {via}) NIE trafiła do app_events: tsfm/service.py:{ln} woła applog.warning, a AppLog "

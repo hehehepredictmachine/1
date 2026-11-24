@@ -1,0 +1,86 @@
+[KRONOS-SETUP] [1/5] Python do środowiska: /usr/local/bin/python3.13
+[KRONOS-SETUP] [2/5] /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/.venv_kronos istnieje – używam
+[KRONOS-SETUP] [3/5] Linux: plik z sumami dotyczy Windows – instaluję te same wersje bez sum (tryb deweloperski)
+    Requirement already satisfied: certifi==2026.10.19 in ./.venv_kronos/lib/python3.13/site-packages (2026.10.19)
+    Requirement already satisfied: charset-normalizer==3.5.2 in ./.venv_kronos/lib/python3.13/site-packages (3.5.2)
+    Requirement already satisfied: colorama==0.4.6 in ./.venv_kronos/lib/python3.13/site-packages (0.4.6)
+    Requirement already satisfied: einops==0.8.1 in ./.venv_kronos/lib/python3.13/site-packages (0.8.1)
+    Requirement already satisfied: filelock==4.2.4 in ./.venv_kronos/lib/python3.13/site-packages (4.2.4)
+    Requirement already satisfied: fsspec==2026.9.0 in ./.venv_kronos/lib/python3.13/site-packages (2026.9.0)
+    Requirement already satisfied: huggingface-hub==0.33.1 in ./.venv_kronos/lib/python3.13/site-packages (0.33.1)
+    Requirement already satisfied: idna==3.20 in ./.venv_kronos/lib/python3.13/site-packages (3.20)
+    Requirement already satisfied: jinja2==3.1.6 in ./.venv_kronos/lib/python3.13/site-packages (3.1.6)
+    Requirement already satisfied: markupsafe==3.0.4 in ./.venv_kronos/lib/python3.13/site-packages (3.0.4)
+    Requirement already satisfied: mpmath==1.3.0 in ./.venv_kronos/lib/python3.13/site-packages (1.3.0)
+    Requirement already satisfied: networkx==3.7 in ./.venv_kronos/lib/python3.13/site-packages (3.7)
+    Requirement already satisfied: numpy==2.3.5 in ./.venv_kronos/lib/python3.13/site-packages (2.3.5)
+    Requirement already satisfied: packaging==26.3 in ./.venv_kronos/lib/python3.13/site-packages (26.3)
+    Requirement already satisfied: pandas==2.2.3 in ./.venv_kronos/lib/python3.13/site-packages (2.2.3)
+    Requirement already satisfied: python-dateutil==2.9.0.post0 in ./.venv_kronos/lib/python3.13/site-packages (2.9.0.post0)
+    Requirement already satisfied: pytz==2026.5 in ./.venv_kronos/lib/python3.13/site-packages (2026.5)
+    Requirement already satisfied: pyyaml==6.0.3 in ./.venv_kronos/lib/python3.13/site-packages (6.0.3)
+    Requirement already satisfied: requests==2.34.2 in ./.venv_kronos/lib/python3.13/site-packages (2.34.2)
+    Requirement already satisfied: safetensors==0.6.2 in ./.venv_kronos/lib/python3.13/site-packages (0.6.2)
+    Requirement already satisfied: setuptools==84.2.1 in ./.venv_kronos/lib/python3.13/site-packages (84.2.1)
+    Requirement already satisfied: six==1.17.0 in ./.venv_kronos/lib/python3.13/site-packages (1.17.0)
+    Requirement already satisfied: sympy==1.14.0 in ./.venv_kronos/lib/python3.13/site-packages (1.14.0)
+    Requirement already satisfied: torch==2.14.1 in ./.venv_kronos/lib/python3.13/site-packages (2.14.1)
+    Requirement already satisfied: tqdm==4.67.1 in ./.venv_kronos/lib/python3.13/site-packages (4.67.1)
+    Requirement already satisfied: typing-extensions==4.16.0 in ./.venv_kronos/lib/python3.13/site-packages (4.16.0)
+    Requirement already satisfied: tzdata==2026.5 in ./.venv_kronos/lib/python3.13/site-packages (2026.5)
+    Requirement already satisfied: urllib3==2.8.0 in ./.venv_kronos/lib/python3.13/site-packages (2.8.0)
+    Requirement already satisfied: hf-xet<2.0.0,>=1.1.2 in ./.venv_kronos/lib/python3.13/site-packages (from huggingface-hub==0.33.1) (1.8.0)
+    Requirement already satisfied: cuda-toolkit==13.0.3 in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.0.3.0)
+    Requirement already satisfied: cuda-bindings<14,>=13.0.3 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (13.5.0)
+    Requirement already satisfied: nvidia-cudnn-cu13==9.24.0.43 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (9.24.0.43)
+    Requirement already satisfied: nvidia-cusparselt-cu13==0.8.1 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (0.8.1)
+    Requirement already satisfied: nvidia-nccl-cu13==2.30.7 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (2.30.7)
+    Requirement already satisfied: nvidia-nvshmem-cu13==3.4.5 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (3.4.5)
+    Requirement already satisfied: triton~=3.8.0 in ./.venv_kronos/lib/python3.13/site-packages (from torch==2.14.1) (3.8.0)
+    Requirement already satisfied: nvidia-cublas==13.1.1.3.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.1.1.3)
+    Requirement already satisfied: nvidia-cuda-nvrtc==13.0.88.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.0.88)
+    Requirement already satisfied: nvidia-cuda-runtime==13.0.96.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.0.96)
+    Requirement already satisfied: nvidia-cufft==12.0.0.61.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (12.0.0.61)
+    Requirement already satisfied: nvidia-nvjitlink<14,>=13.0.88 in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.5.37)
+    Requirement already satisfied: nvidia-cufile==1.15.1.6.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (1.15.1.6)
+    Requirement already satisfied: nvidia-cuda-cupti==13.0.85.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.0.85)
+    Requirement already satisfied: nvidia-curand==10.4.0.35.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (10.4.0.35)
+    Requirement already satisfied: nvidia-cusolver==12.0.4.66.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (12.0.4.66)
+    Requirement already satisfied: nvidia-cusparse==12.6.3.3.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (12.6.3.3)
+    Requirement already satisfied: nvidia-nvtx==13.0.85.* in ./.venv_kronos/lib/python3.13/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == "Linux"->torch==2.14.1) (13.0.85)
+    Requirement already satisfied: cuda-pathfinder>=1.4.2 in ./.venv_kronos/lib/python3.13/site-packages (from cuda-bindings<14,>=13.0.3->torch==2.14.1) (1.9.1)
+[KRONOS-SETUP] [4/5] pobieram oficjalne wagi NeoQuasar/Kronos-small (1.42.8: mniej pamięci – ok. 0,5 GB RAM) i NeoQuasar/Kronos-Tokenizer-base (przypięte rewizje) i sprawdzam sumy
+    [KRONOS] [1/6] NeoQuasar/Kronos-small: sprawdzam rewizję 901c26c1332695a2a8f243eb2f37243a37bea320 w źródle https://huggingface.co
+    [KRONOS] [2/6] NeoQuasar/Kronos-small: pobieram config.json (0.0 MB)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/config.json: 0 / 0 MB (0.7 MB/s)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/config.json: zgodny ze źródłem (git_blob_sha1)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small: pobieram model.safetensors (99.0 MB)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/model.safetensors: 1 / 99 MB (6.4 MB/s)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/model.safetensors: zgodny ze źródłem (lfs_sha256)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small: pobieram README.md (0.0 MB)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/README.md: 0 / 0 MB (41.3 MB/s)
+    [KRONOS] [2/6] NeoQuasar/Kronos-small/README.md: zgodny ze źródłem (git_blob_sha1)
+    [KRONOS] [3/6] NeoQuasar/Kronos-Tokenizer-base: sprawdzam rewizję 0e0117387f39004a9016484a186a908917e22426 w źródle https://huggingface.co
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base: pobieram config.json (0.0 MB)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/config.json: 0 / 0 MB (1.5 MB/s)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/config.json: zgodny ze źródłem (git_blob_sha1)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base: pobieram model.safetensors (15.8 MB)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/model.safetensors: 1 / 16 MB (6.8 MB/s)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/model.safetensors: zgodny ze źródłem (lfs_sha256)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base: pobieram README.md (0.0 MB)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/README.md: 0 / 0 MB (28.2 MB/s)
+    [KRONOS] [4/6] NeoQuasar/Kronos-Tokenizer-base/README.md: zgodny ze źródłem (git_blob_sha1)
+    [KRONOS] [5/6] przenoszę pliki na miejsce i zapisuję manifest
+    [KRONOS] [5/6] OK
+CHILD_RESULT {"ok": true, "code": null, "manifest": "/tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/data/kronos/models/kronos_manifest.json", "components": [{"repo": "NeoQuasar/Kronos-small", "revision": "901c26c1332695a2a8f243eb2f37243a37bea320"}, {"repo": "NeoQuasar/Kronos-Tokenizer-base", "revision": "0e0117387f39004a9016484a186a908917e22426"}]}
+[KRONOS-SETUP] [5/5] sprawdzam instalację: sumy, ładowanie, prognoza testowa, porównanie z wynikiem autorów
+    [KRONOS] [1/4] sprawdzam sumy SHA-256 plików z manifestem (offline)
+    [KRONOS] [2/4] ładuję model i tokenizer (raz, tryb eval, bez gradientów)
+    Loading weights from local directory
+    Loading weights from local directory
+    [KRONOS] [3/4] urządzenie: cpu (brak GPU z CUDA – CPU); ładowanie 1780.2 ms
+    [KRONOS] [4/4] prognoza testowa: 8 świec w 871.0 ms; parity z oficjalnym KronosPredictor: PASS; dane referencyjne autorów: PASS
+    [KRONOS] [4/4] OK
+CHILD_RESULT {"ok": true, "code": null, "files": [{"file": "NeoQuasar/Kronos-small/config.json", "sha256": "5e0f6a605d5f81b5c9b559fe5cf716a1acb041c744e6f41bd05b097b7a685396", "size": 228}, {"file": "NeoQuasar/Kronos-small/model.safetensors", "sha256": "b082dfcbd8e8c142a725c8bbb99781802f38fec81210e13479effb32b3c3e020", "size": 98980656}, {"file": "NeoQuasar/Kronos-small/README.md", "sha256": "33ba1550110c020dc30da869c91a65749009af7671dff0dce98fc0a914f3fc04", "size": 8855}, {"file": "NeoQuasar/Kronos-Tokenizer-base/config.json", "sha256": "2366e7ccfec76cbc19cf3c4c1b9c5d901be336ca1e83f2d2292c9bff381b77a2", "size": 301}, {"file": "NeoQuasar/Kronos-Tokenizer-base/model.safetensors", "sha256": "59d85f6af76a2c3b8240ea06cb21db4213b4eeca053f246b23e29cf832fc6bee", "size": 15842368}, {"file": "NeoQuasar/Kronos-Tokenizer-base/README.md", "sha256": "24d59758e911d355a79608b6686610a14f649270d6d852f3d86b2a1e8232ce89", "size": 8863}], "load": {"model_name": "Kronos-small", "variant": "NeoQuasar/Kronos-small", "params_upstream": "24.7M", "fingerprint": "kronos|NeoQuasar/Kronos-small@901c26c1332695a2a8f243eb2f37243a37bea320|NeoQuasar/Kronos-Tokenizer-base@0e0117387f39004a9016484a186a908917e22426|code@67b630e67f6a", "code": {"repo": "https://github.com/shiyu-coder/Kronos", "commit": "67b630e67f6a18c9e9be918d9b4337c960db1e9a"}, "device": "cpu", "device_requested": "AUTO", "device_note": "brak GPU z CUDA – CPU", "load_ms": 1780.2, "params_model": 24741376, "params_tokenizer": 3958042, "compat": {"tokenizer_s1_bits": 10, "tokenizer_s2_bits": 10, "model_s1_bits": 10, "model_s2_bits": 10, "tokenizer_d_in": 6, "max_context": 512}, "threads": 2, "components": [{"kind": "model", "repo": "NeoQuasar/Kronos-small", "revision": "901c26c1332695a2a8f243eb2f37243a37bea320"}, {"kind": "tokenizer", "repo": "NeoQuasar/Kronos-Tokenizer-base", "revision": "0e0117387f39004a9016484a186a908917e22426"}], "installed_at": "2026-11-24T11:41:58Z"}, "selftest": {"model": "Kronos-small", "smoke": {"ok": true, "pred_len": 8, "context": 256, "ms": 871.0, "device": "cpu", "first_close": 10.769899368286133}, "parity": {"status": "PASS", "max_abs_diff": 0.0, "context": 400, "pred_len": 12, "seed": 4242, "device": "cpu", "criterion": "|predict() bota − bezpośrednie KronosPredictor.predict| ≤ 1e-6 (te same dane, ziarno, T=1, top_p=0,9, CPU)"}, "reference": {"status": "PASS", "rows": [{"context": 512, "max_abs_diff": 0.375, "max_rel_diff": 5.986028668303334e-07, "pass_rtol_1e-5": true}, {"context": 256, "max_abs_diff": 0.3125, "max_rel_diff": 1.2942832654516678e-06, "pass_rtol_1e-5": true}], "criterion": "upstream: np.testing.assert_allclose(rtol=1e-5), CPU, top_k=1"}}}
+[KRONOS-SETUP] [5/5] GOTOWE
+RESULT {"ok": true, "code": null, "venv": "/tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/.venv_kronos", "python": "/tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/.venv_kronos/bin/python", "weights_dir": "/tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/arch/pretrained/kronos/root/data/kronos/models", "cuda": null, "reference_comparison": "PASS", "device": "cpu"}
