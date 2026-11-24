@@ -300,7 +300,8 @@ class EventGRU:
         try:
             with self._lock:
                 if (inst, aid) not in self._loaded:
-                    st, man = MA.load(inst, "event_engine_dir3", aid)
+                    # 1.46 (I0023): the schema the training wrote is checked (was never passed: a reordered FEATURES loaded silently)
+                    st, man = MA.load(inst, "event_engine_dir3", aid, feature_schema=EV.FEATURE_SCHEMA)
                     m = EE.EventModel.from_state(st)
                     sc = EV.Scaler()
                     sc.med, sc.iqr = np.asarray(st["scaler_med"], float), np.asarray(st["scaler_iqr"], float)

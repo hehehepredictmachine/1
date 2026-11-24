@@ -508,7 +508,7 @@ def job_event_engine(ctx) -> dict:
              "ece<=max": test["ece_top_label"] <= g["max_ece"]}
     passed = all(gates.values()) and not ctx.synthetic
     st = {**m.state(), "scaler_med": sc.med, "scaler_iqr": sc.iqr, "band": np.array([band])}
-    aid, ast = _save(ctx, "event_engine_dir3", st, {"model_type": "EVENT_GRU_STACK", "feature_schema": "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES),
+    aid, ast = _save(ctx, "event_engine_dir3", st, {"model_type": "EVENT_GRU_STACK", "feature_schema": EV.FEATURE_SCHEMA,
                                                      "target": f"DIR3 unit k=2 band={band:.3e}", "event_source": src, "pick": pick,
                                                      "metrics": {"val": variants[pick]["val"], "test_once": test}, "gates": gates}, passed)
     return {"event_source": src, "event_source_fallback": src_why, "ingest_counts": acc["counts"],
