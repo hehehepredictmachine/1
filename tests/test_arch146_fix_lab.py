@@ -10,7 +10,9 @@
 * D23 - uwagi przeglądu:
   - `models check --smoke --area lab --only 'flow:markov3'` dawał BŁĄD (predykcja i kontrakt FAIL, MODEL_TEST_ONLY_NOT_LOADED), bo smoke
     trenuje Markov na SYNTHETIC_TEST. Teraz smoke sprawdza bramkę D23 (bez zmiennej: MODEL_TEST_ONLY_NOT_LOADED), a ścieżkę komórki SI
-    z modelem uruchamia z PMW_FLOW_ALLOW_TEST_MODEL=1 tylko w procesie obszaru (tymczasowy MASTERQUO_DATA_DIR) -> DZIAŁA.
+    z modelem uruchamia z PMW_FLOW_ALLOW_TEST_MODEL=1 tylko w procesie obszaru (tymczasowy MASTERQUO_DATA_DIR) -> DZIAŁA;
+  - `flow-context train-markov --allow-synthetic-fixture` (TEST_ONLY) przestawiał markov/latest.txt z modelu RESEARCH (REAL_USER_DATA)
+    na model testowy, którego komórka SI nie wczytuje - panel tracił model REAL. Teraz model TEST_ONLY nie zastępuje RESEARCH w latest.txt.
 """
 from __future__ import annotations
 
@@ -181,6 +183,52 @@ class TestFlowContextTestOnlyNotLoaded(unittest.TestCase):
         self.assertIsNotNone(k.m3)
         self.assertEqual(k.model_meta["role"], "UNKNOWN")
         self.assertEqual(fs.summary(k)["markov3"]["model_role"], "UNKNOWN")
+
+    # ------------------------------------------------------------------ review of D23: latest.txt and reload
+    def _latest(self) -> Path:
+        from masterquo.lab.flow_context import task as FT
+        return FT.root("XAUUSD") / "markov" / "latest.txt"
+
+    def _age(self, out: dict, name: str = "20200101T000000Z") -> Path:
+        """Move a fit to an older run folder (train_markov names runs by the second) and repoint latest.txt when it named that fit."""
+        src = Path(out["dir"])
+        dst = src.parent / name
+        src.rename(dst)
+        if self._latest().exists() and Path(self._latest().read_text(encoding="utf-8").strip()) == src:
+            self._latest().write_text(str(dst), encoding="utf-8")
+        return dst
+
+    def _fit(self, data_kind: str) -> dict:
+        from masterquo.lab.flow_context import cli as FC
+        return FC.train_markov("XAUUSD", self.bars, 0.01, 0.01, {"data_kind": data_kind})
+
+    def test_test_only_fit_does_not_replace_research_latest(self):
+        self.meta.write_text(json.dumps({"data_kind": "REAL_USER_DATA", "role": "RESEARCH"}), encoding="utf-8")
+        research = self._age(self.out)
+        out = self._fit("SYNTHETIC_TEST")                                   # manual train-markov --allow-synthetic-fixture on a real folder
+        self.assertEqual(out["role"], "TEST_ONLY")
+        self.assertTrue((Path(out["dir"]) / "markov3.json").exists())       # the test fit is still saved
+        self.assertEqual(Path(self._latest().read_text(encoding="utf-8").strip()), research)   # 1.46.0 arch: latest -> the TEST_ONLY fit
+        self.assertEqual(out["latest_unchanged"]["model_role"], "RESEARCH")
+        self.assertEqual(out["latest_unchanged"]["model_dir"], str(research))
+        self.assertIn("RESEARCH", out["si_cell"])
+        fs, k = self._key()
+        self.assertIsNotNone(k.m3)                                          # the SI cell keeps the REAL model
+        self.assertEqual(fs.summary(k)["markov3"]["model_role"], "RESEARCH")
+
+    def test_test_only_fit_still_replaces_a_test_or_unknown_latest(self):
+        self._age(self.out)                                                 # latest = an older TEST_ONLY fit
+        out = self._fit("SYNTHETIC_TEST")
+        self.assertEqual(Path(self._latest().read_text(encoding="utf-8").strip()), Path(out["dir"]))
+        self.assertNotIn("latest_unchanged", out)
+        self.assertIn("MODEL_TEST_ONLY_NOT_LOADED", out["si_cell"])
+
+    def test_research_fit_always_becomes_latest(self):
+        self._age(self.out)
+        out = self._fit("REAL_USER_DATA")
+        self.assertEqual(out["role"], "RESEARCH")
+        self.assertEqual(Path(self._latest().read_text(encoding="utf-8").strip()), Path(out["dir"]))
+        self.assertNotIn("si_cell", out)
 
 
 # ------------------------------------------------------------------------------------------------- D23: models check smoke (lab, flow)

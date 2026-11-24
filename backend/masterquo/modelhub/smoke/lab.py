@@ -795,7 +795,8 @@ def _flow_markov3(ctx, out: dict) -> dict:
                          f"{(m3.get('dev_eval') or {}).get('n')}, rola TEST_ONLY" if m3.get("fit") else "brak",
                          f"train-markov: odmowa {tr['rc_blocked']} '{tr['blocked']}', wynik {({k: mk.get(k) for k in ('role', 'dir')})}")
     ctx.step = "artifact"
-    d = Path((FT.root(INST) / "markov" / "latest.txt").read_text(encoding="utf-8").strip())
+    # the fit just trained (train-markov "dir"); a TEST_ONLY fit does not replace a RESEARCH model in latest.txt (D23)
+    d = Path(mk.get("dir") or (FT.root(INST) / "markov" / "latest.txt").read_text(encoding="utf-8").strip())
     raw = json.loads((d / "markov3.json").read_text(encoding="utf-8"))
     back = json.loads(json.dumps(MK.Markov3.from_dict(raw).to_dict(), default=float))
     diff = [k for k in raw if raw[k] != back.get(k)]
