@@ -12,6 +12,8 @@ import math
 import time
 from datetime import datetime
 
+from ..data import quality as DQ
+
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 
 
@@ -40,9 +42,10 @@ def data_quality(bars: dict, quote: dict | None, now: float, cfg: dict) -> dict:
             issues.append(f"{tf}: brak świec")
             continue
         ts = [_ts(b["open_utc"]) for b in bs[-60:]]                  # ordering/duplicates of the recent window (the analysed part)
-        if any(b2 <= b1 for b1, b2 in zip(ts, ts[1:])):
+        # 1.46 (I0047): the checks are the shared ones of data/quality.py; the SH policy (windows 60 / 50, loose geometry h >= l) is unchanged
+        if DQ.order_violations(ts):
             issues.append(f"{tf}: świece nieuporządkowane lub zdublowane")
-        if any(not all(math.isfinite(float(b[k])) for k in ("o", "h", "l", "c")) or b["h"] < b["l"] for b in bs[-50:]):
+        if any(not DQ.geometry_ok(b, strict=False) for b in bs[-50:]):
             issues.append(f"{tf}: NaN/inf lub błędna geometria")
         close_t = ts[-1] + TF_S.get(tf, 60)
         ages[tf] = round(now - close_t, 1)
