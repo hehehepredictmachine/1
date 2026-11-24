@@ -216,5 +216,42 @@ class TestSetupScoreInformationalOnly(_Svc):
         self.assertEqual(sig[0]["scores"]["setup_score"], sc[expected]["setup_score"])
 
 
+# ======================================================================================================================== I0769
+class TestBasketPendingLimitSameCycle(_Svc):
+    def test_two_events_in_one_cycle_respect_max_pending_intents(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        self.write("settings.json", {"baskets": {"FX_SMC": {"max_pending_intents": 1}}})
+        s = self.svc()
+        st = s.settings()
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        c.regime = {"regime": "TREND"}
+        F = D.build(_walk(300, end_t=1.79e9, step=300), 0.01)
+        found = []
+        for sid, back in (("FX_SMC_01", 3), ("FX_SMC_02", 5)):                          # two different events -> two groups
+            ev = {"type": "BOS", "level": float(F.c[F.i - back]), "t": float(F.t[F.i - back])}
+            found.append((CAT.BY_ID[sid], F, 1, {"entry": float(F.c[F.i]), "sl": float(F.c[F.i]) - 5.0, "event": ev}, s.params(CAT.BY_ID[sid], st)))
+        n = s._resolve(c, found, st, {})
+        self.assertEqual(n, 1)
+        self.assertEqual(len(s.ledger.open_signals("FOREX_MT5")), 1)
+        states = sorted(c.state[x[0]["strategy_id"]]["state"] for x in found)
+        self.assertEqual(states, ["LIMIT", "SIGNAL"])
+
+    def test_below_the_limit_both_are_published(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        s = self.svc()
+        st = s.settings()
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        c.regime = {"regime": "TREND"}
+        F = D.build(_walk(300, end_t=1.79e9, step=300), 0.01)
+        found = []
+        for sid, back in (("FX_SMC_01", 3), ("FX_SMC_02", 5)):
+            ev = {"type": "BOS", "level": float(F.c[F.i - back]), "t": float(F.t[F.i - back])}
+            found.append((CAT.BY_ID[sid], F, 1, {"entry": float(F.c[F.i]), "sl": float(F.c[F.i]) - 5.0, "event": ev}, s.params(CAT.BY_ID[sid], st)))
+        self.assertEqual(s._resolve(c, found, st, {}), 2)
+        self.assertEqual(s._resolve(c, found, st, {}), 0)                               # same events again: idempotent, nothing new
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -930,6 +930,9 @@ class BasketService:
                       if c.sfb else {})}
             if self.ledger.add_signal(sig):
                 n += 1
+                # 1.46 (I0769): a signal published in THIS cycle counts for the next event groups (max_pending_intents / cooldown) -
+                # open_ was read once before the loop, so several events of one cycle could exceed the basket limit
+                open_.append(sig)
                 self._publish(sig)
             c.state[s["strategy_id"]] = {"state": "SIGNAL", "event_id": eid, "side": sig["side"], "bar_t": F.t[F.i]}
             for x in ranked[1:]:
