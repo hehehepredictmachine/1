@@ -13,7 +13,7 @@ from fastapi import Body, HTTPException
 
 from .. import paths
 from ..timeutil import TF_SECONDS
-from .app import body_num, deals_coverage_from_utc
+from .common import body_num  # 1.46 arch I0081: not from .app (import cycle)
 
 
 def register(app, rt) -> None:
@@ -475,12 +475,13 @@ def register(app, rt) -> None:
 
     def _acct_roi(days: int) -> dict:
         b = rt.bridge
-        with b._lock:
-            deals = list(b.deals)
-            cover = deals_coverage_from_utc(b)        # 1.46: deposits older than the deal history (deals_history_days) counted as profit
         from .. import stats as _ST
+        # 1.46: deposits older than the deal history (deals_history_days) counted as profit -> deals + coverage from one atomic snapshot;
+        # 1.46 arch (I0081): the same ROI function as GET /api/v1/stats
+        snap = _ST.bridge_deals_snapshot(b)
+        deals = snap[0]
         off = b.clock.offset
-        r = _ST.account_roi(rt.db, b.account_key, deals, off, days=days, deals_from_utc=cover) or {}
+        r = _ST.account_roi_for_bridge(rt.db, b, days=days, snapshot=snap) or {}
         # 1.46: account_roi has no deals / net / currency keys - the report always showed "—". Net = equity change minus external flows
         # (same Modified-Dietz window), deals = trade deals in that window; unknown stays None ("—").
         net = deals_n = None

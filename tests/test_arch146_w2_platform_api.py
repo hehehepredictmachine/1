@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import json
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -212,6 +213,149 @@ class TestLocalApiLeaf(unittest.TestCase):
         self.assertIn("DIAGNOSTYKA_TRENINGU.bat", cli.__doc__)
         self.assertIn("indicator_context", train_all.__doc__)
         self.assertNotIn("(22_TRENUJ_WSZYSTKIE_MODELE.bat) - compatibility", train_all.__doc__)
+
+
+# ------------------------------------------------------------------------------------------------------------------------- I0081
+class _TrackLock:
+    """RLock that records whether it is held (to prove the deals copy is taken under it and the ROI is counted outside it)."""
+
+    def __init__(self):
+        import threading
+        self._l = threading.RLock()
+        self.depth = 0
+        self.max_depth = 0
+
+    def __enter__(self):
+        self._l.acquire()
+        self.depth += 1
+        self.max_depth = max(self.max_depth, self.depth)
+        return self
+
+    def __exit__(self, *a):
+        self.depth -= 1
+        self._l.release()
+        return False
+
+
+class _SnapDB:
+    def __init__(self, snaps=()):
+        self.snaps = list(snaps)
+
+    def query(self, sql, args=()):
+        if "FROM equity_snapshots" in sql:
+            return [r for r in self.snaps if r["account_key"] == args[0] and r["ts"] >= args[-1]]
+        return []
+
+
+class TestAccountRoiOneFunction(_Base):
+    """I0081: wf32_routes nie importuje api.app (cykl); body_num w api/common.py, deals_coverage_from_utc w stats.py; ROI konta liczone
+    jedną funkcją stats.account_roi_for_bridge w GET /api/v1/stats i w raporcie Telegram (wynik identyczny z dotychczasowym inline)."""
+
+    def _bridge(self, days=7, loaded=True, deals=None):
+        from datetime import timedelta
+
+        from masterquo.timeutil import utcnow
+        now = utcnow()
+        lock = _TrackLock()
+
+        class B:
+            def __init__(self):
+                self._lock = lock
+                self._deals = list(deals or [])
+                self.deals_loaded_at = now if loaded else None
+                self.account_key = "Broker:1"
+                self.cfg = types.SimpleNamespace(deals_history_days=days, symbol="XAUUSD-")
+                self.clock = types.SimpleNamespace(offset=0.0)
+                self.reads_outside = 0
+
+            @property
+            def deals(self):
+                if lock.depth == 0:
+                    self.reads_outside += 1
+                return self._deals
+
+            def server_day_start_utc(self):
+                return None
+
+            def account_status(self):
+                return {"currency": "USD"}
+        b = B()
+        b._now = now
+        b._td = timedelta
+        return b
+
+    def _db(self, b):
+        from masterquo.timeutil import iso
+        now, td = b._now, b._td
+        return _SnapDB([{"account_key": "Broker:1", "ts": iso(now - td(days=25)), "equity": 1000.0},
+                        {"account_key": "Broker:1", "ts": iso(now - td(days=5)), "equity": 2000.0},
+                        {"account_key": "Broker:1", "ts": iso(now - td(minutes=1)), "equity": 2000.0}])
+
+    def test_wf32_routes_does_not_import_api_app(self):
+        mods = [m for m, _ in _imports(PKG / "api" / "wf32_routes.py")]
+        self.assertNotIn("masterquo.api.app", mods)
+
+    def test_helpers_moved_and_reexported(self):
+        from masterquo import stats
+        from masterquo.api import app as A
+        from masterquo.api import common
+        self.assertIs(A.body_num, common.body_num)
+        self.assertIs(A.deals_coverage_from_utc, stats.deals_coverage_from_utc)
+
+    def test_one_function_matches_previous_inline_result(self):
+        from masterquo import stats
+        for days, loaded in ((7, True), (60, True), (7, False)):
+            b = self._bridge(days=days, loaded=loaded)
+            db = self._db(b)
+            with b._lock:
+                deals, cover = list(b.deals), stats.deals_coverage_from_utc(b)
+            want30 = stats.account_roi(db, b.account_key, deals, b.clock.offset, deals_from_utc=cover)
+            want10 = stats.account_roi(db, b.account_key, deals, b.clock.offset, days=10, deals_from_utc=cover)
+            self.assertEqual(stats.account_roi_for_bridge(db, b), want30)
+            self.assertEqual(stats.account_roi_for_bridge(db, b, days=None), want30)       # None -> 30 (jak dziś), nigdy timedelta(None)
+            self.assertEqual(stats.account_roi_for_bridge(db, b, days=10), want10)
+
+    def test_copy_under_one_lock_roi_outside_it(self):
+        from masterquo import stats
+        b = self._bridge()
+        db = self._db(b)
+        real = stats.account_roi
+        depth_at_roi = []
+
+        def spy(*a, **k):
+            depth_at_roi.append(b._lock.depth)
+            return real(*a, **k)
+        with mock.patch.object(stats, "account_roi", spy):
+            stats.account_roi_for_bridge(db, b)
+        self.assertEqual(depth_at_roi, [0])                       # liczone poza blokadą
+        self.assertEqual((b.reads_outside, b._lock.max_depth), (0, 1))   # deals czytane pod jedną blokadą, bez zagnieżdżeń
+
+    def test_routes_use_it_and_answers_are_unchanged(self):
+        from fastapi import FastAPI
+        from masterquo import stats
+        from masterquo.api import app as A
+        from masterquo.api import wf32_routes
+        b = self._bridge()
+        db = self._db(b)
+        rt = make_rt(bridge=b, db=db)
+        app = A.create_app(rt, PORT)
+        with mock.patch.multiple("masterquo.stats", bot_stats=mock.DEFAULT, engine_stats=mock.DEFAULT, equity_curve=mock.DEFAULT,
+                                 account_stats=mock.DEFAULT) as m:
+            for v in m.values():
+                v.return_value = {}
+            with mock.patch.object(stats, "account_roi_for_bridge", wraps=stats.account_roi_for_bridge) as w:
+                r = ep(app, "GET", "/api/v1/stats")(mode="PAPER")["account_roi"]
+        self.assertEqual(w.call_count, 1)
+        self.assertEqual((r["status"], r["roi_pct"], r["deals_coverage"], r["period_clipped_to_deal_history"]), ("OK", 0.0, "VERIFIED", True))
+        rt2 = types.SimpleNamespace(bridge=None, baskets=None, cfg=None, db=db, telegram=None)
+        app2 = FastAPI()
+        wf32_routes.register(app2, rt2)
+        rt2.bridge = b
+        with mock.patch.object(stats, "account_roi_for_bridge", wraps=stats.account_roi_for_bridge) as w:
+            t = app2.state.wf32["acct_roi"](30)
+        self.assertEqual(w.call_count, 1)
+        self.assertEqual(t, {"roi_pct": 0.0, "status": "OK", "deals": 0, "net": 0.0, "currency": "USD"})
+        self.assertEqual(b.reads_outside, 0)
 
 
 if __name__ == "__main__":

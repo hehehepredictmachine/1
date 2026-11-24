@@ -12,7 +12,6 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -26,6 +25,8 @@ from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION, DISPLAY_NAME
+from ..stats import deals_coverage_from_utc  # noqa: F401 - 1.46 arch (I0081): moved to stats.py; old name kept
+from .common import body_num  # 1.46 arch (I0081): shared request helper (api/common.py); old name kept
 from .security import SESSION_COOKIE, LocalSecurity
 
 log = logging.getLogger("masterquo.api")
@@ -93,34 +94,6 @@ class CloseReq(BaseModel):
 
 
 SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
-
-
-def body_num(body: dict, key: str, default, cast=int, lo=None, hi=None):
-    """1.46: number from a JSON body - a wrong type / NaN / out-of-range value is a 400 with the field name (was an unhandled 500)."""
-    raw = body.get(key) if isinstance(body, dict) else None
-    if raw is None or raw == "":
-        return default
-    if isinstance(raw, bool):
-        raise HTTPException(400, f"INVALID_{key.upper()}")
-    try:
-        v = cast(raw)
-    except (TypeError, ValueError, OverflowError):
-        raise HTTPException(400, f"INVALID_{key.upper()}") from None
-    if v != v or v in (float("inf"), float("-inf")) or (lo is not None and v < lo) or (hi is not None and v > hi):
-        raise HTTPException(400, f"{key.upper()}_OUT_OF_RANGE" + (f" ({lo}..{hi})" if lo is not None or hi is not None else ""))
-    return v
-
-
-def deals_coverage_from_utc(bridge) -> float | None:
-    """1.46: start (UTC epoch) of the period `bridge.deals` covers - each history poll re-reads mt5.deals_history_days back from the poll
-    time (deals_loaded_at, UTC). stats.account_roi clips its equity window to it (a deposit older than the deal history but newer than the
-    first snapshot counted as profit). None = history not loaded / unknown -> account_roi reports deals_coverage NOT_VERIFIED.
-    Read it under bridge._lock together with bridge.deals."""
-    loaded = getattr(bridge, "deals_loaded_at", None)
-    days = getattr(getattr(bridge, "cfg", None), "deals_history_days", None)
-    if not isinstance(loaded, datetime) or loaded.tzinfo is None or isinstance(days, bool) or not isinstance(days, (int, float)) or not days > 0:
-        return None
-    return loaded.timestamp() - float(days) * 86400
 
 
 class AskReq(BaseModel):
@@ -1601,15 +1574,16 @@ def create_app(rt, port: int) -> FastAPI:
         if mode not in ("PAPER", "AUTO_DEMO", "AUTO_LIVE"):
             raise HTTPException(400, "INVALID_MODE")
         b = rt.bridge
-        with b._lock:
-            deals = list(b.deals)
-            cover = deals_coverage_from_utc(b)        # 1.46: ROI counted deposits older than the deal history (deals_history_days) as profit
+        # 1.46: ROI counted deposits older than the deal history (deals_history_days) as profit -> the deals copy and their coverage come
+        # from ONE atomic snapshot under the bridge lock; 1.46 arch (I0081): one ROI function shared with the Telegram report
+        snap = stats.bridge_deals_snapshot(b)
+        deals = snap[0]
         ds = b.server_day_start_utc()
         ds_raw = ds.timestamp() + b.clock.offset if ds and b.clock.offset is not None else None
         return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "engines": stats.engine_stats(rt.db, mode, b.account_key),
                 "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
                 "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None,
-                "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset, deals_from_utc=cover)}
+                "account_roi": stats.account_roi_for_bridge(rt.db, b, snapshot=snap)}
 
     @app.get("/api/v1/news")
     def news():
