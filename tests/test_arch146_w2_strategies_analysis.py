@@ -286,6 +286,16 @@ class TestSelectorConflictSuspendsSelection(_SelectorCase):
         self.assertEqual(self.pick([b], 20)[0], "S02")                                     # S01 gone -> best at once (today's rule)
         self.assertEqual(self.log()[-1][2], "PREVIOUS_SETUP_NO_LONGER_VALID")
 
+    def test_log_reason_is_a_constant_code(self):
+        # recenzja I0749: powód w strategy_selection_log zawierał różnicę rankingu (..._DIFF_-15.3) - raport replay_strategies grupuje po
+        # pełnym powodzie, więc każdy konflikt dawał osobny klucz. Log: stały kod; różnica zostaje w reason_codes stanu.
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        s, st = self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)
+        self.assertIsNone(s)
+        self.assertEqual(self.log()[-1], ("S01", None, "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY"))
+        self.assertTrue(any(r.startswith("CONFLICT_LONG_SHORT_INTRADAY_DIFF_") for r in st["reason_codes"]), st["reason_codes"])
+
     def test_no_conflict_no_change(self):
         rows = [self.row("S01", "EARLY", 60, 100), self.row("S07", "EARLY", 40, 90, "SHORT")]   # opposite but far below
         self.assertEqual(self.pick(rows, 0)[0], "S01")

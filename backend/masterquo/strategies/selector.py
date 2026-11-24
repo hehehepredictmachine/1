@@ -174,13 +174,16 @@ class StrategyAutoSelector:
             held = None
         conflict = self._conflict(held_row, grouped, cfg.conflict_margin, conflict_h)
         if held is not None and conflict:
-            # 1.46 arch (I0749): the held selection is in a LONG/SHORT conflict -> suspended (not executable), kept as the anchor
-            if conflict not in reasons:
-                reasons.append(conflict)
+            # 1.46 arch (I0749): the held selection is in a LONG/SHORT conflict -> suspended (not executable), kept as the anchor.
+            # The selection log gets the constant code (no rank difference in it - one reason key per conflict kind in reports); the
+            # difference stays in the state's reason_codes.
+            code, detail = conflict
+            if detail not in reasons:
+                reasons.append(detail)
             reasons.append("SELECTION_SUSPENDED_CONFLICT")
             if self.suspended is None or self.suspended["setup_id"] != held["setup_id"]:
                 self._log(now=now_s, mode=mode, account_key=account_key, prev=held, new=None, snapshot_id=snapshot_id,
-                          reason="SELECTION_SUSPENDED_" + conflict, ranking=grouped)
+                          reason="SELECTION_SUSPENDED_" + code, ranking=grouped)
             self.selected, self.suspended = None, held
         else:
             if held is not None and self.suspended is not None and self.suspended["setup_id"] == held["setup_id"]:
@@ -194,16 +197,18 @@ class StrategyAutoSelector:
         return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only)
 
     @staticmethod
-    def _conflict(row: dict | None, grouped: list[dict], margin: float, conflict_h: str | None) -> str | None:
-        """Reason code when the held selection `row` is in a same-horizon LONG/SHORT conflict: its horizon is the one of the conflict of
-        the best candidates, or the best opposite candidate of its own horizon ranks within `margin` of it (or above it)."""
+    def _conflict(row: dict | None, grouped: list[dict], margin: float, conflict_h: str | None) -> tuple[str, str] | None:
+        """(code, detail) when the held selection `row` is in a same-horizon LONG/SHORT conflict: its horizon is the one of the conflict
+        of the best candidates, or the best opposite candidate of its own horizon ranks within `margin` of it (or above it). `code` is
+        constant (CONFLICT_<dir>_<dir>_<horizon> / CONFLICT_<horizon>, for the selection log); `detail` adds the rank difference."""
         if row is None:
             return None
         opp = next((x for x in grouped if x["direction"] != row["direction"] and x["horizon"] == row["horizon"]), None)
         if opp is not None and row["rank_score"] - opp["rank_score"] < margin:
-            return f"CONFLICT_{row['direction']}_{opp['direction']}_{row['horizon']}_DIFF_{row['rank_score'] - opp['rank_score']:.1f}"
+            code = f"CONFLICT_{row['direction']}_{opp['direction']}_{row['horizon']}"
+            return code, f"{code}_DIFF_{row['rank_score'] - opp['rank_score']:.1f}"
         if conflict_h is not None and row["horizon"] == conflict_h:
-            return f"CONFLICT_{row['horizon']}"
+            return f"CONFLICT_{row['horizon']}", f"CONFLICT_{row['horizon']}"
         return None
 
     def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=(), *, stale: bool = False) -> dict:
