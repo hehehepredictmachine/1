@@ -666,11 +666,24 @@ def register(app, rt) -> None:
     def loot_evaluate(body: dict = Body(...)):
         return RLC.evaluate(_loot_body(body))
 
+    @app.get("/api/v1/tlg/loot/settings")
+    def loot_settings():
+        return RLC.settings(tlg())
+
+    @app.put("/api/v1/tlg/loot/settings")
+    def loot_settings_put(body: dict = Body(...)):  # noqa: B008 - FastAPI body declaration (as every route of this module)
+        if not isinstance(body.get("grant_enabled"), bool):
+            raise HTTPException(400, "grant_enabled: true / false")
+        return RLC.set_grant_enabled(tlg(), body["grant_enabled"])
+
     @app.post("/api/v1/tlg/loot/grant")
     def loot_grant(body: dict = Body(...)):
         if body.get("source_mode") != "SIMULATOR":
             raise HTTPException(409, "GRANT_SOURCE_NOT_ENABLED: w tej wersji nagrody tylko z symulatora (MT5 / dziennik: tylko ocena)")
-        return g(RLC.grant, tlg(), _loot_body(body))
+        r = g(RLC.grant, tlg(), _loot_body(body))
+        if r.get("reason") == "GRANT_DISABLED":        # 1.46: RiskLoot is Default OFF - the player turns it on in /tlg/loot/settings
+            raise HTTPException(409, "GRANT_DISABLED: nagrody RiskLoot są wyłączone (domyślnie) – włącz w PUT /api/v1/tlg/loot/settings")
+        return r
 
     # 1.46: the exporters (api/export_routes.py) read THESE objects - one ledger / journal, never a copy
     app.state.wf32 = {"ledger": _ledger, "trials": _trials, "shadow_journal": _journal, "hl": _hl, "universe": universe, "tlg": tlg,

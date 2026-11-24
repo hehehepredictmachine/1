@@ -90,5 +90,58 @@ class TestDoubleBottomUndercut(unittest.TestCase):
             td.close()
 
 
+# ============================================================================================ I0759 RiskLoot Default OFF
+class TestRiskLootDefaultOff(unittest.TestCase):
+    EV: ClassVar[dict] = {"event_id": "e1", "position_id": "p1", "source_mode": "SIMULATOR", "setup_family": "EMA_SMMA_PULLBACK", "strategy_status": "VALIDATED",
+          "sfb_status": "ELIGIBLE", "trap_no_trade": False, "risk_breach": False, "attribution": "SIM:1",
+          "scores": {"setup_quality": 90, "risk_discipline": 95, "execution_adherence": 85, "journal_learning": 80, "evidence_quality": 85}}
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_grant_writes_nothing_until_the_player_turns_it_on(self):
+        from pathlib import Path
+
+        from masterquo.apollo import risk_loot as R
+        from masterquo.trader_life_game import GameService
+        g = GameService(Path(self.td.dir) / "tlg")
+        try:
+            self.assertFalse(R.grant_enabled(g))                           # catalogue: enabled_by_default = NO
+            self.assertTrue(R.evaluate(self.EV)["eligible"])                # assessment keeps working
+            r = R.grant(g, self.EV)
+            self.assertFalse(r["granted"])                                  # was granted=True with the switch absent
+            self.assertEqual(r["reason"], "GRANT_DISABLED")
+            self.assertIsNone(g._one("SELECT 1 AS x FROM inventory"))
+            self.assertIsNone(g._one("SELECT 1 AS x FROM gold_ledger WHERE reason='LOOT_GRANT'"))
+            self.assertTrue(R.set_grant_enabled(g, True)["grant_enabled"])
+            self.assertTrue(R.grant(g, self.EV)["granted"])
+            with self.assertRaises(TypeError):
+                R.set_grant_enabled(g, "yes")
+        finally:
+            g.close()
+
+    def test_api_grant_is_409_by_default_and_settings_route(self):
+        import types
+
+        from fastapi import FastAPI, HTTPException
+        from masterquo.api import wf32_routes
+        app = FastAPI()
+        wf32_routes.register(app, types.SimpleNamespace())
+        ep = {(r.path, m): r.endpoint for r in app.routes if hasattr(r, "methods") for m in r.methods}
+        self.assertFalse(ep[("/api/v1/tlg/loot/settings", "GET")]()["grant_enabled"])
+        with self.assertRaises(HTTPException) as cm:
+            ep[("/api/v1/tlg/loot/grant", "POST")](body=dict(self.EV))
+        self.assertEqual(cm.exception.status_code, 409)
+        self.assertTrue(str(cm.exception.detail).startswith("GRANT_DISABLED"))
+        with self.assertRaises(HTTPException) as cm:
+            ep[("/api/v1/tlg/loot/settings", "PUT")](body={"grant_enabled": "1"})
+        self.assertEqual(cm.exception.status_code, 400)
+        self.assertTrue(ep[("/api/v1/tlg/loot/settings", "PUT")](body={"grant_enabled": True})["grant_enabled"])
+        self.assertTrue(ep[("/api/v1/tlg/loot/grant", "POST")](body=dict(self.EV))["granted"])
+
+
 if __name__ == "__main__":
     unittest.main()
