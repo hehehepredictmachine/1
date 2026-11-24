@@ -1028,7 +1028,7 @@ def create_app(rt, port: int) -> FastAPI:
         sel = [{k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")} for b in bars if str(body.get("start_utc")) <= b["open_utc"] <= str(body.get("end_utc"))]
         if not sel:
             raise HTTPException(400, "NO_CLOSED_BARS_IN_RANGE")
-        r = rt.analytics.library.add_sample(rt.cfg.get().mt5.symbol, tf, sel, "CHART_SELECTION" if not rt.bridge._synthetic else "CHART_SELECTION_SYNTHETIC",
+        r = rt.analytics.library.add_sample(rt.cfg.get().mt5.symbol, tf, sel, "CHART_SELECTION" if not rt.bridge.synthetic else "CHART_SELECTION_SYNTHETIC",
                                             body.get("note"))
         if not r["ok"]:
             raise HTTPException(400, r["error"])
@@ -1658,7 +1658,7 @@ def create_app(rt, port: int) -> FastAPI:
         if req.name == "MT5_PASSWORD":                 # new password: try to connect again (value never logged)
             rt.log.info("MT5", "PASSWORD_SET", "Zapisano lokalnie hasło MT5 (wartość nie jest logowana).")
             if rt.bridge.state != "CONNECTED":
-                rt.bridge.next_retry = 0
+                rt.bridge.retry_now()                  # 1.46 arch (I0089): was a direct write of bridge.next_retry
         return {"ok": True, "source": rt.secrets.source(req.name)}
 
     # ------------------------------------------------------------ agent
@@ -2323,7 +2323,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
         if rt.governor is None:
             raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
-        rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
+        rt.governor.record_event("PROFILE", f"profil {before.get('profile')} → {prof}")
         return rt.governor.public()
 
     @app.get("/api/v1/models/foundation")
@@ -2774,7 +2774,7 @@ def create_app(rt, port: int) -> FastAPI:
         from .. import paths as _P
         from ..tsfm.settings import default_weights_root as _dwr
         argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
-        return rt.tsfm._run_job_proc("install_tabicl", argv)
+        return rt.tsfm.start_job_process("install_tabicl", argv)
 
     # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
     def _research():
@@ -3110,16 +3110,12 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/mm/ledger")
     def mm_ledger(instrument: str = Query("XAUUSD"), model: str = Query("gpr_logret:LIVE"), limit: int = 200):
-        led = rt.mm._ledger(_mm_inst(instrument))
+        led = rt.mm.ledger(_mm_inst(instrument))
         lim = min(max(limit, 1), 2000)
-        # 1.46: Ledger.rows() orders by source_ts ASC with LIMIT -> the OLDEST `limit` predictions came back ([-limit:] did not help) and the
-        # fresh SHADOW predictions never appeared. The newest window here (read-only), returned in time order like before.
-        with led._lock:
-            rows = [dict(r) for r in led.c.execute("SELECT * FROM (SELECT * FROM predictions WHERE model_id=? ORDER BY source_ts DESC LIMIT ?) "
-                                                   "ORDER BY source_ts", (model, lim)).fetchall()]
-        for r in rows:
-            r["payload"] = json.loads(r["payload"]) if r["payload"] else None
-            r["outcome"] = json.loads(r["outcome"]) if r["outcome"] else None
+        # 1.46: the NEWEST `limit` predictions (the oldest came back and the fresh SHADOW predictions never appeared), in time order.
+        # 1.46 arch (I0089): through Ledger.rows(newest=True) - the same query and JSON decoding under the ledger's own lock (was inline
+        # here on led._lock / led.c)
+        rows = led.rows(model, limit=lim, newest=True)
         return {"summary": led.summary(), "rows": rows}
 
     @app.post("/api/v1/mm/rollback")
@@ -3410,7 +3406,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..montecarlo import validate as _MV
         if not _re.fullmatch(r"MC-[0-9A-Za-z\-]{8,64}", run_id):
             raise HTTPException(400, "INVALID_RUN_ID")
-        inst, _ = rt.montecarlo._ctx()
+        inst, _ = rt.montecarlo.context()
         d = _MV.root(inst)
         try:
             reg = _json.loads((d / "registry.json").read_text(encoding="utf-8"))
@@ -3797,7 +3793,7 @@ def create_app(rt, port: int) -> FastAPI:
     def ml_reload():
         """After offline training (training installer): re-read champion of the active instrument's ML registry."""
         rt.ml.registry.reload()
-        rt.ml._pred_cache.clear()
+        rt.ml.clear_prediction_cache()
         return {"ok": True, "instrument": rt.ml.inst, "champion": rt.ml.registry.champion_id}
 
     @app.post("/api/v1/ml/backfill")

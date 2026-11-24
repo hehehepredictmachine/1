@@ -238,26 +238,20 @@ class Runtime:
     def _wire_governor(self) -> None:
         """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
         import os as _os
-        import time as _time
-        from .resources.governor import HEAVY, Governor
+
+        from .resources.governor import Governor
         self.governor = Governor(self.cfg, self.log)
         self.tsfm.governor = self.governor
         self.kronos.governor = self.governor
         self.governor.register("bot", "bot", lambda: _os.getpid())
-        k = self.kronos
-        self.governor.register("kronos", "light", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
-                               release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
-        tb = self.quant.tabicl                                          # 1.41 TabICLv2 worker (heavy slot, idle release)
-        self.quant.tabicl.governor = self.governor
-        self.governor.register("tabicl", "heavy", lambda: tb.worker.proc.pid if (tb.worker.proc and tb.worker.proc.poll() is None) else None,
-                               release=lambda: tb.jobs.empty() and tb.worker.kill(), idle=lambda: _time.monotonic() - tb.worker.last_used)
+        # 1.46 arch (I0089/I0102): every model service registers its own worker(s) (same pid / release / idle callables and the same
+        # 'never release while it computes' guards as the former lambdas here) - this composition root no longer knows their internals
+        self.kronos.register_with(self.governor)
+        self.quant.tabicl.governor = self.governor                     # 1.41 TabICLv2 worker (heavy slot, idle release)
+        self.quant.tabicl.register_with(self.governor)
         if getattr(self, "research", None) is not None:
             self.research.governor = self.governor                     # 1.41 SDformerFlow training / inference (heavy slot)
-        for mid, w in self.tsfm.workers.items():
-            self.governor.register(mid, "heavy" if mid in HEAVY else "light",
-                                   (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
-                                   release=(lambda w=w, mid=mid: (self.tsfm.running is None or self.tsfm.running[0] != mid) and w.kill()),
-                                   idle=(lambda w=w, mid=mid: 0.0 if (self.tsfm.running and self.tsfm.running[0] == mid) else _time.monotonic() - w.last_used))
+        self.tsfm.register_with(self.governor)
 
     def _publish_prefs(self) -> None:
         try:

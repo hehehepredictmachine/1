@@ -358,5 +358,138 @@ class TestAccountRoiOneFunction(_Base):
         self.assertEqual(b.reads_outside, 0)
 
 
+# ------------------------------------------------------------------------------------------------------------------- I0089 / I0102
+class TestApiUsesPublicServiceInterface(_Base):
+    """I0089 (+I0102): API nie sięga do prywatnych pól usług ani do bridge._lock; runtime._wire_governor nie zna wnętrz Kronos/TSFM/TabICL
+    (usługi rejestrują się same: register_with). Publiczne metody to cienkie opakowania dokładnie tych samych operacji."""
+
+    def _api_files(self):
+        return sorted((PKG / "api").glob("*.py"))
+
+    def test_api_has_no_private_service_access(self):
+        bad = []
+        for f in self._api_files():
+            for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+                if not isinstance(n, ast.Attribute):
+                    continue
+                v = n.value
+                if n.attr.startswith("_") and not n.attr.startswith("__") and isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name) \
+                        and v.value.id == "rt":
+                    bad.append(f"{f.name}:{n.lineno} rt.{v.attr}.{n.attr}")
+                if n.attr == "_lock" and not (isinstance(v, ast.Name) and v.id == "self"):    # own lock of an API class is fine
+                    bad.append(f"{f.name}:{n.lineno} ._lock")
+                if n.attr == "next_retry" and isinstance(n.ctx, ast.Store):
+                    bad.append(f"{f.name}:{n.lineno} next_retry=")
+        self.assertEqual(bad, [])
+
+    def test_wire_governor_knows_no_internals(self):
+        tree = ast.parse((PKG / "runtime.py").read_text(encoding="utf-8"))
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_wire_governor")
+        priv = sorted({n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute) and n.attr.startswith("_")})
+        self.assertEqual(priv, [])
+        attrs = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
+        self.assertFalse(attrs & {"proc", "running", "last_used", "worker", "jobs", "workers"}, attrs)
+
+    def _gov(self):
+        regs = {}
+        gov = types.SimpleNamespace(register=lambda name, kind, pid, release=None, idle=None: regs.__setitem__(name, (kind, pid, release, idle)))
+        return gov, regs
+
+    def test_kronos_register_with_keeps_guards(self):
+        from masterquo.kronos.service import KronosService
+        gov, regs = self._gov()
+        killed = []
+        proc = types.SimpleNamespace(pid=11, poll=lambda: None)
+        k = types.SimpleNamespace(proc=proc, running=("K", "XAUUSD", "M5"), last_used=0.0, _kill=lambda: killed.append(1))
+        KronosService.register_with(k, gov)
+        kind, pid, release, idle = regs["kronos"]
+        self.assertEqual((kind, pid()), ("light", 11))
+        self.assertFalse(release())                            # pracuje -> nie zwalniaj
+        self.assertEqual(killed, [])
+        self.assertEqual(idle(), 0.0)
+        k.running = None
+        release()
+        self.assertEqual(killed, [1])                           # bezczynny -> zwolniony (leniwa ewaluacja stanu)
+        k.proc = None
+        self.assertIsNone(pid())
+
+    def test_tabicl_register_with_keeps_guards(self):
+        import queue
+
+        from masterquo.quant.tabicl import TabICLService
+        gov, regs = self._gov()
+        killed = []
+        w = types.SimpleNamespace(proc=types.SimpleNamespace(pid=7, poll=lambda: None), last_used=0.0, kill=lambda: killed.append(1) or True)
+        tb = types.SimpleNamespace(worker=w, jobs=queue.Queue())
+        tb.jobs.put("job")
+        TabICLService.register_with(tb, gov)
+        kind, pid, release, idle = regs["tabicl"]
+        self.assertEqual((kind, pid()), ("heavy", 7))
+        self.assertGreater(idle(), 0.0)
+        self.assertFalse(release())                            # zadanie w kolejce -> nie zwalniaj
+        tb.jobs.get()
+        self.assertTrue(release())
+        self.assertEqual(killed, [1])
+
+    def test_tsfm_register_with_keeps_guards(self):
+        from masterquo.tsfm.service import TsfmService
+        gov, regs = self._gov()
+        killed = []
+        def mk(mid):
+            return types.SimpleNamespace(proc=types.SimpleNamespace(pid=7, poll=lambda: None), last_used=0.0,
+                                         kill=lambda: killed.append(mid) or True)
+        svc = types.SimpleNamespace(workers={"chronos2": mk("chronos2"), "granite_ttm": mk("granite_ttm")}, running=("chronos2", "XAUUSD", "M5"))
+        TsfmService.register_with(svc, gov)
+        self.assertEqual((regs["chronos2"][0], regs["granite_ttm"][0]), ("heavy", "light"))
+        self.assertFalse(regs["chronos2"][2]())                # ten model liczy -> nie zwalniaj
+        self.assertEqual(regs["chronos2"][3](), 0.0)
+        self.assertTrue(regs["granite_ttm"][2]())              # inny model -> wolno zwolnić
+        svc.running = None
+        self.assertTrue(regs["chronos2"][2]())
+        self.assertEqual(killed, ["granite_ttm", "chronos2"])
+
+    def test_public_wrappers_do_the_same(self):
+        from masterquo.mt5.bridge import MarketBridge
+        from masterquo.resources.governor import Governor
+        b = MarketBridge.__new__(MarketBridge)
+        b.next_retry = 99.0
+        b.connect = mock.Mock(side_effect=AssertionError("connect() z wątku API"))
+        MarketBridge.retry_now(b)
+        self.assertEqual(b.next_retry, 0)
+        b.connect.assert_not_called()
+        lock = _TrackLock()
+        from masterquo.timeutil import utcnow
+        b = types.SimpleNamespace(_lock=lock, deals=[{"ticket": 1}], deals_loaded_at=utcnow(), cfg=types.SimpleNamespace(deals_history_days=7),
+                                  account_key="A:1")
+        deals, cover = MarketBridge.deals_snapshot(b)
+        self.assertEqual((deals, lock.max_depth), ([{"ticket": 1}], 1))
+        self.assertAlmostEqual(cover, b.deals_loaded_at.timestamp() - 7 * 86400)
+        self.assertIsNot(deals, b.deals)
+        self.assertEqual(MarketBridge.loaded_deals_copy(b, "A:1", check_account=True), [{"ticket": 1}])
+        self.assertIsNone(MarketBridge.loaded_deals_copy(b, "B:2", check_account=True))
+        b.deals_loaded_at = None
+        self.assertIsNone(MarketBridge.loaded_deals_copy(b))
+        g = Governor.__new__(Governor)
+        g.events, g.applog = [], None
+        Governor.record_event(g, "PROFILE", "x")
+        self.assertEqual([(e["kind"], e["message"]) for e in g.events], [("PROFILE", "x")])
+
+    def test_ml_reload_and_secret_use_public_methods(self):
+        from masterquo.api import app as A
+        rt = make_rt()
+        app = A.create_app(rt, PORT)
+        ep(app, "POST", "/api/v1/ml/reload")()
+        rt.ml.clear_prediction_cache.assert_called_once_with()
+        rt.bridge.state = "DISCONNECTED"
+        ep(app, "POST", "/api/v1/secrets")(A.SecretReq(name="MT5_PASSWORD", value="x"))
+        rt.bridge.retry_now.assert_called_once_with()
+
+    def test_ml_service_clear_prediction_cache(self):
+        from masterquo.ml.service import MLService
+        s = types.SimpleNamespace(_pred_cache={("a",): 1})
+        MLService.clear_prediction_cache(s)
+        self.assertEqual(s._pred_cache, {})
+
+
 if __name__ == "__main__":
     unittest.main()

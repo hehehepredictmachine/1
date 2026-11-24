@@ -43,6 +43,10 @@ class MonteCarloService:
     def stop(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
+    def context(self) -> tuple[str, float]:
+        """1.46 arch (I0089): (active instrument, point) - public name of _ctx (read by the validation-report route)."""
+        return self._ctx()
+
     def _ctx(self):
         cfg = self.cfg_store.get()
         info = getattr(self.bridge, "symbol_info", None) or {}

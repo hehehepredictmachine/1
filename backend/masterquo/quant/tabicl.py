@@ -464,6 +464,14 @@ class TabICLService:
     def settings(self) -> dict:
         return (self.q.settings.get().get("tabicl") or {})
 
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register the TabICL worker with the Memory Governor (heavy slot, idle release) - was a lambda on
+        worker.proc / jobs / worker.last_used in runtime._wire_governor. Same callables, evaluated lazily; never released while a job
+        waits in the queue."""
+        import time as _time
+        governor.register("tabicl", "heavy", lambda: self.worker.proc.pid if (self.worker.proc and self.worker.proc.poll() is None) else None,
+                          release=lambda: self.jobs.empty() and self.worker.kill(), idle=lambda: _time.monotonic() - self.worker.last_used)
+
     def active(self) -> bool:
         s = self.q.settings.get()
         return s.get("estimator") == "tabicl_v2" and bool((s.get("tabicl") or {}).get("enabled", True))

@@ -505,10 +505,9 @@ def register(app, rt) -> None:
             b.add_listener(lambda kind, data: owner.update(key=b.account_key) if kind == "deals" else None)
 
         def deals():
-            with b._lock:
-                if getattr(b, "deals_loaded_at", None) is None or (tracked and owner["key"] != b.account_key):
-                    return None
-                return [dict(d) for d in (b.deals or [])]
+            # 1.46 arch (I0089): the same read under the bridge's lock, through the bridge (the API no longer takes b._lock itself)
+            from ..mt5.bridge import loaded_deals_copy
+            return loaded_deals_copy(b, owner["key"], check_account=tracked)
         return deals
 
     def acct():

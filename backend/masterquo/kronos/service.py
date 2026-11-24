@@ -108,6 +108,14 @@ class KronosService:
                 "manifest_components": ms.get("components")}
 
     # ================================================================== worker process
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register the Kronos worker with the Memory Governor (was a lambda on _kill / proc / running /
+        last_used in runtime._wire_governor). Same callables, evaluated lazily; never released while a forecast runs."""
+        import time as _time
+        governor.register("kronos", "light", lambda: self.proc.pid if (self.proc and self.proc.poll() is None) else None,
+                          release=lambda: self.running is None and self._kill(),
+                          idle=lambda: 0.0 if self.running else _time.monotonic() - self.last_used)
+
     def _kill(self) -> None:
         p, self.proc = self.proc, None
         self.load_info, self.load_key = None, None

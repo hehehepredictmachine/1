@@ -584,6 +584,10 @@ class MLService:
         self.log.info("ML", "PAUSE", "Trening: " + ("wstrzymany" if on else "wznowiony"))
         return self.status(compact=True)
 
+    def clear_prediction_cache(self) -> None:
+        """1.46 arch (I0089): drop cached predictions (after the registry was re-read by POST /api/v1/ml/reload)."""
+        self._pred_cache.clear()
+
     def rollback(self) -> dict:
         r = self.registry.rollback()
         self._pred_cache.clear()
