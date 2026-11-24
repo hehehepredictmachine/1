@@ -340,6 +340,11 @@ def train(rows: list[dict], *, task: dict, crit: dict | None = None, seen_tests:
     status = "VALIDATED_SHADOW" if all(gates.values()) else "VALIDATION_FAILED"
     rep["status"] = status
     rep["failed_gates"] = [k for k, v in gates.items() if not v]
+    # Label of the feature schema (1.46 arch I0027): the rows are built by quant/service.py with F.build2 (FEAT-2 = every FEAT-1 feature +
+    # price-forecast / research-module columns), yet the stored label is F.schema(names) = "PMW-QUANT-FEAT-1:<hash of the names>". The
+    # hash of the exact column names is what identifies the inputs; the prefix is kept on purpose because load() requires
+    # startswith(F.VERSION) (FEAT-1) - changing it to F.schema2 would make every existing artifact INCOMPATIBLE_FEATURE_SCHEMA (an
+    # unloaded MetaModel = no HOLD in ASSIST = a looser filter). A rename needs a versioned migration that accepts both prefixes.
     model = {"version": VERSION, "feature_names": names, "feature_schema": F.schema(names), "scaler": {"mean": mod["scaler"].mean.tolist(),
              "scale": mod["scaler"].scale.tolist()}, "logit": {"coef": mod["coef"].tolist(), "intercept": mod["intercept"], "C": mod["C"]},
              "calibrator": calib, "prior": prior, "event_id": task.get("event_id"), "task_hash": task.get("task_hash"),

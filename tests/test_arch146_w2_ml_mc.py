@@ -396,5 +396,27 @@ class TestMonteCarloPointUnknown(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["spread_price"], 0.02)
 
 
+
+# ============================================================================= I0027 docstrings / labels of the feature schemas
+class TestFeatureDocstringsMatchConstants(unittest.TestCase):
+    def test_ml_and_zone_feature_docs_name_the_current_schema(self):
+        from masterquo.ml import features as mf
+        from masterquo.zones import features as zf
+        self.assertIn(mf.FEATURE_SCHEMA_VERSION, mf.__doc__)
+        self.assertIn("FEATURE_SCHEMA_VERSION", mf.__doc__)
+        self.assertIn("ml.features.FEATURE_SCHEMA_VERSION", zf.__doc__)        # HEAD: "(MQ-FEAT-1.1.0+)" only
+
+    def test_metamodel_keeps_the_feat1_prefix_contract(self):
+        """The MetaModel label keeps the FEAT-1 prefix that load() checks (the rows are FEAT-2 = FEAT-1 superset) - documented, unchanged."""
+        import inspect
+
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        self.assertTrue(F.schema(["a"]).startswith(F.VERSION))
+        src = inspect.getsource(M)
+        self.assertIn("startswith(F.VERSION)", src)
+        self.assertIn("F.build2", src)                                         # HEAD: the label / builder mismatch was undocumented
+
+
 if __name__ == "__main__":
     unittest.main()
