@@ -69,16 +69,22 @@ class StateStack:
         self.d_desc = cl.Buffer(self.ctx, mf.READ_WRITE, self.D * 4)
         self.d_out = cl.Buffer(self.ctx, mf.READ_WRITE, self.S * 4)
         self.cur = 0
-        self.reset()
+        self.reset_cpu()
+        self._upload()
+
+    def _upload(self):
+        for b in self.d_buf:
+            self.cl.enqueue_copy(self.q, b, self.buf)
+        for b in self.d_val:
+            self.cl.enqueue_copy(self.q, b, self.valid)
+        self.q.finish()
 
     def reset(self):
         self.reset_cpu()
-        if self.backend_used == "OPENCL" or hasattr(self, "cl"):
-            for b in self.d_buf:
-                self.cl.enqueue_copy(self.q, b, self.buf)
-            for b in self.d_val:
-                self.cl.enqueue_copy(self.q, b, self.valid)
-            self.q.finish()
+        # 1.46: was `backend_used == "OPENCL" or hasattr(self, "cl")` - a failed OpenCL init (pyopencl without a GPU, kernel build error)
+        # left `self.cl` set while the CPU reference was used, and every segment reset raised AttributeError 'd_buf' (Runtime / replay)
+        if self.backend_used == "OPENCL":
+            self._upload()
 
     def push(self, desc: np.ndarray):
         d = np.asarray(desc, dtype=np.float32).reshape(-1)
@@ -343,10 +349,12 @@ class Runtime:
         act = ev.get("activity", 1.0)
         spok = 1.0 if ev.get("spread_ok", True) else 0.0
         if self.prev is None:
-            self.prev = (ev["t"], mid, sp)
+            self.prev = (ev["t"], mid, sp, spok)
             return None
-        dt, dm, dsp = ev["t"] - self.prev[0], mid - self.prev[1], (sp - self.prev[2]) if spok else 0.0
-        self.prev = (ev["t"], mid, sp)
+        # 1.46: dspread needs a spread on BOTH events, as in events.featurize (was: only the current one -> after an event without a
+        # spread the runtime fed dspread = spread instead of 0 and the online prediction differed from the offline one)
+        dt, dm, dsp = ev["t"] - self.prev[0], mid - self.prev[1], (sp - self.prev[2]) if (spok and self.prev[3]) else 0.0
+        self.prev = (ev["t"], mid, sp, spok)
         f = np.array([math.log1p(dt), dm, abs(dm), float(np.sign(dm)), sp if spok else 0.0, dsp, math.log1p(max(act, 0)), spok])
         self.buf.append(self.sc.transform(f))
         self.lat["features"].append((time.perf_counter_ns() - t1) / 1000)

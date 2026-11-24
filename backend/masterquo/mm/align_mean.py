@@ -69,9 +69,12 @@ def atr_wilder(h, l, c, n: int) -> np.ndarray:  # noqa: E741
 
 
 def session_id(t_close: np.ndarray, cfg: AlignConfig) -> np.ndarray:
-    """Session index of each bar CLOSE time (sessions start at session_start_min local = UTC + offset)."""
+    """Session index of each bar CLOSE time (sessions start at session_start_min local = UTC + offset). A session owns the close times
+    in (start, start + 1 day]: a bar closing exactly AT the session start (23:55-00:00) is the last bar of the session that ends."""
     local = np.asarray(t_close, float) + cfg.session_tz_offset_min * 60.0 - cfg.session_start_min * 60.0
-    return np.floor(local / 86400.0).astype(np.int64)
+    # 1.46: was floor(local / 1 day) - the bar closing at the session start opened the NEW session (its mean / frozen anchor started
+    # with the previous day's last bar and the old session lost it). ceil - 1 = the half-open (start, end] interval, exact on integers.
+    return (np.ceil(local / 86400.0) - 1).astype(np.int64)
 
 
 def compute(t_open, o, h, l, c, tf_s: int, cfg: AlignConfig, point: float) -> dict:  # noqa: E741
@@ -108,13 +111,12 @@ def compute(t_open, o, h, l, c, tf_s: int, cfg: AlignConfig, point: float) -> di
     if cfg.mode == "FIXED_ANCHORED_MEAN":
         # freeze the first READY value of each session until the next session start (reset rule); values never change afterwards
         frozen = np.full(n, np.nan)
-        cur, cur_sid, anchor = math.nan, None, np.full(n, np.nan)
+        cur, cur_sid = math.nan, None                         # 1.46: the unused `anchor` array (never returned) removed
         for i in range(n):
             if sid[i] != cur_sid:
                 cur_sid, cur = sid[i], math.nan
             if math.isnan(cur) and np.isfinite(mean[i]):
                 cur = mean[i]
-                anchor[i] = tc[i]
             frozen[i] = cur
         mean = frozen
     atr = atr_wilder(h, l, c, cfg.atr_period)

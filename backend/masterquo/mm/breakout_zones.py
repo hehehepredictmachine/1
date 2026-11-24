@@ -295,6 +295,7 @@ def evaluate(bars, cfg: BreakoutConfig, point: float, tf_s: int, horizon: int = 
             "accepted": len(e.events), "rejected": len(e.rejected),
             "rejected_by_reason": {r: sum(1 for x in e.rejected if x["filter_status"] == r) for r in ("FILTER_REJECTED", "FILTER_NOT_READY")},
             "follow_through": res["follow"], "false_breakout": res["false"], "unresolved": res["open"],
-            "false_rate": res["false"] / max(1, res["follow"] + res["false"]),
+            # 1.46: no resolved breakout -> null (was 0.0 = "no false breakouts", like median_bars_to_follow next to it)
+            "false_rate": (res["false"] / (res["follow"] + res["false"])) if (res["follow"] + res["false"]) else None,
             "median_bars_to_follow": float(np.median(res["bars_to_follow"])) if res["bars_to_follow"] else None,
             "horizon_bars": horizon, "follow_atr": follow_atr, "panel": e.panel()}

@@ -7,12 +7,16 @@ Gates are fixed here BEFORE any run (never tuned on the test block). On SYNTHETI
 """
 from __future__ import annotations
 
+import collections
+import logging
 import math
 import time
 
 import numpy as np
 
 from . import artifacts, splits
+
+log = logging.getLogger(__name__)
 
 GATES = {
     "hdc": {"min_test": 300, "beat_logreg": 0.0, "beat_null_se": 2.0},
@@ -96,7 +100,8 @@ def job_kalman(ctx) -> dict:
             inc.update(float(b.t[k]), float(b.c[k]))                        # repeated tick on the same bar: ignored
         parity = full.events == inc.events and abs(full.fast.x - inc.fast.x) < 1e-12
         ev = K.evaluate(b.t, b.c, cfg)
-        out[tf] = {**ev, "replay_vs_incremental_identical": parity, "last_state": full.state}
+        # 1.46: last_accepted (+1/-1/0) = direction of the last ACCEPTED crossover; last_state may be an unconfirmed *_CANDIDATE
+        out[tf] = {**ev, "replay_vs_incremental_identical": parity, "last_state": full.state, "last_accepted": full.accepted}
     return {"steady_state": checks, "per_tf": out, "training": "NOT_APPLICABLE (filtr rekurencyjny)",
             "note": "zbieżność K potwierdza równania, nie przewagę"}
 
@@ -108,15 +113,17 @@ def job_kalman_calibration(ctx) -> dict:
     b = ctx.bars("M5")
     n = len(b.t)
     i1, i2 = int(n * 0.6), int(n * 0.8)
-    sp = np.nanmedian(b.spread) * ctx.snap.point if np.isfinite(b.spread).any() else 0.0
-    cost = float(sp / np.median(b.c)) if sp else 0.0
+    # 1.46: no spread in the data -> the cost is UNKNOWN (null + UNAVAILABLE), not 0.0; the scores are then GROSS and the net result is
+    # NOT_VERIFIED. A measured median spread of 0 points stays a real 0.
+    cost = float(np.nanmedian(b.spread) * ctx.snap.point / np.median(b.c)) if np.isfinite(b.spread).any() else None
+    cost_eval = cost if cost is not None else 0.0
 
-    def objective(seg):
+    def objective(seg, warm: int = 0):
         t, c = b.t[seg[0]:seg[1]], b.c[seg[0]:seg[1]]
 
         def f(x):
             cfg = K.CrossConfig(Q_fast=10 ** x[0], Q_slow=10 ** x[1], confirm_bars=int(round(x[2])))
-            e = K.evaluate(t, c, cfg, horizon=12, cost=cost)
+            e = K.evaluate(t, c, cfg, horizon=12, cost=cost_eval) if not warm else _kalman_fwd_from(t, c, cfg, warm, 12, cost_eval)
             if e["fwd_n"] < 30:
                 return float("nan")                                       # too few events: invalid evaluation, never a best
             return e["fwd_mean_logret"]
@@ -125,24 +132,48 @@ def job_kalman_calibration(ctx) -> dict:
     cfg = BZ.BuzoaConfig(pop=10, epochs=1000, max_evals=ctx.prof["buzoa_evals"], seed=ctx.seed % 10000, direction="max")
     res = BZ.buzoa(objective((0, i1)), lb, ub, cfg, cancel=ctx.cancel)
     rnd = BZ.random_search(objective((0, i1)), lb, ub, max_evals=ctx.prof["buzoa_evals"], seed=ctx.seed % 10000, direction="max")
-    val = objective((i1 - 200, i2))
+    # 1.46: the 200 bars before a block only WARM the filter - VAL scored the events of the last 200 TRAIN bars (the block BUZOA optimised
+    # on) and the one-shot TEST scored 200 VAL bars, while the holdout record said i2..n. Now only events at index >= i1 (VAL) / >= i2 (TEST).
+    v0, t0 = max(0, i1 - 200), max(0, i2 - 200)
+    val = objective((v0, i2), warm=i1 - v0)
     default_x = [0.0, math.log10(0.005), 2.0]
     cand = {"buzoa": res["best_x"], "random": rnd["best_x"], "default": default_x}
     val_scores = {k: (val(np.array(x)) if x is not None else None) for k, x in cand.items()}
     pick = max((k for k in cand if val_scores[k] is not None and math.isfinite(val_scores[k])), key=lambda k: val_scores[k], default="default")
     guard = splits.HoldoutGuard(np.arange(i2, n))
     guard.open({"pick": pick, "x": cand[pick]})
-    test_score = objective((i2 - 200, n))(np.array(cand[pick]))
+    test_score = objective((t0, n), warm=i2 - t0)(np.array(cand[pick]))
     trial_count = res["evaluations"] + rnd["evaluations"]
     state = {"params": np.array(cand[pick], float)}
+    target = "fwd 12-bar signed log return net cost" if cost is not None else "fwd 12-bar signed log return GROSS (koszt UNAVAILABLE - netto NOT_VERIFIED)"
     aid, st = _save(ctx, "kalman_params", state, {"model_type": "KALMAN_PARAM_CANDIDATE", "feature_schema": "CLOSE_ONLY",
-                                                  "target": "fwd 12-bar signed log return net cost", "trials": trial_count,
+                                                  "target": target, "trials": trial_count, "cost_log": cost,
                                                   "metrics": {"val": val_scores, "test_once": test_score}, "gates": None}, False)
     return {"buzoa": {k: v for k, v in res.items() if k != "trials"}, "random_search": {k: v for k, v in rnd.items() if k not in ("trials",)},
             "val_scores": val_scores, "picked": pick, "picked_x": cand[pick], "test_once": test_score, "holdout": guard.record(),
-            "trials_total": trial_count, "cost_log": cost, "artifact_id": aid, "artifact_status": st, "training_executed": True,
+            "eval_from_index": {"val": i1, "test": i2, "warmup_bars": 200},
+            "trials_total": trial_count, "cost_log": cost, "cost_status": "OK" if cost is not None else "UNAVAILABLE",
+            "net_of_cost": "YES" if cost is not None else "NOT_VERIFIED",
+            "cost_note": None if cost is not None else "brak spreadu w danych - koszt nieznany; wyniki VAL/TEST są brutto (bez kosztu)",
+            "artifact_id": aid, "artifact_status": st, "training_executed": True,
             "validation_passed": False, "applied_to_production": False,
             "note": "kandydat parametrów nie jest stosowany automatycznie; wybór na VAL, test otwarty raz"}
+
+
+def _kalman_fwd_from(t, c, cfg, start: int, horizon: int, cost: float) -> dict:
+    """1.46: the forward h-bar statistic of kalman.evaluate restricted to events at index >= start (the bars before `start` only warm
+    the filter). Same formula: direction-signed ln(C[i+h]/C[i]) - cost, events whose horizon leaves the segment are not scored."""
+    from . import kalman as K
+    k, rows = K.run(t, c, cfg)
+    c = np.asarray(c, float)
+    idx = {r["bar_time"]: i for i, r in enumerate(rows) if r.get("processed")}
+    fwd = []
+    for e in k.events:
+        i = idx[e["bar_time"]]
+        if i >= start and i + horizon < len(c):
+            s = 1 if e["direction"] == "BULLISH" else -1
+            fwd.append(s * math.log(c[i + horizon] / c[i]) - cost)
+    return {"fwd_n": len(fwd), "fwd_mean_logret": float(np.mean(fwd)) if fwd else None}
 
 
 def job_breakout_zones(ctx) -> dict:
@@ -186,9 +217,11 @@ def job_smc_fvg(ctx) -> dict:
         b = ctx.bars(tf)
         if b is None:
             continue
-        out[tf] = {"PROSE_73": SF.evaluate(b, SF.SMCFVGConfig(tick=ctx.snap.tick_size), _tf_s(tf))}
+        pt = getattr(ctx.snap, "point", None)                              # 1.46: stop buffer in points (not ticks)
+        out[tf] = {"PROSE_73": SF.evaluate(b, SF.SMCFVGConfig(tick=ctx.snap.tick_size, point=pt), _tf_s(tf))}
         if tf == "M5":
-            out[tf]["DIAGRAM_50_UNRESOLVED"] = SF.evaluate(b, SF.SMCFVGConfig(depth_min=0.5, profile="DIAGRAM_50_UNRESOLVED", tick=ctx.snap.tick_size), 300)
+            out[tf]["DIAGRAM_50_UNRESOLVED"] = SF.evaluate(b, SF.SMCFVGConfig(depth_min=0.5, profile="DIAGRAM_50_UNRESOLVED", tick=ctx.snap.tick_size,
+                                                                              point=pt), 300)
     return {"per_tf": out, "training": "NOT_APPLICABLE", "ambiguity": "50% z diagramu vs 73% z opisu - domyślnie 73%, 50% tylko jako jawny profil"}
 
 
@@ -378,22 +411,35 @@ def job_gpr(ctx) -> dict:
 
 
 def _events(ctx):
+    """-> (accepted events, features, source, fallback reason or None). REAL_TICKS when the tick archive holds > 20000 ticks."""
     from . import data as D
     from . import events as EV
-    src = None
+    src, why = None, None
+    b1 = ctx.bars("M1")
     try:
         from ..lab import tick_store
-        tk = tick_store.load(ctx.inst)
-        if tk and len(tk) > 20000:
+        # 1.46: the archive stores t_ms (UTC milliseconds); events_from_ticks reads `t` in SECONDS (gap_reset_s = 900 s, dt_log) - the
+        # KeyError 't' was swallowed and every run silently trained on BAR_CLOSE_EVENTS. Streamed (only t / bid / ask kept), limited to
+        # the time range of the snapshot's M1 bars (the period of the run's dataset) and to the newest `m1_bars` ticks of the profile -
+        # the same event budget as the BAR_CLOSE_EVENTS adapter, so a large archive cannot multiply the training time.
+        lo_ms, hi_ms = (int(b1.t[0] * 1000), int(b1.available_at[-1] * 1000)) if b1 is not None and len(b1) else (None, None)
+        cap = (getattr(ctx, "prof", None) or {}).get("m1_bars") or None
+        tk = list(collections.deque(({"t": x["t_ms"] / 1000.0, "bid": x["bid"], "ask": x["ask"]} for x in tick_store.iter_ticks(ctx.inst, lo_ms, hi_ms)
+                                     if lo_ms is None or lo_ms <= x["t_ms"] <= hi_ms), maxlen=cap))
+        if len(tk) > 20000:
             ev = D.events_from_ticks(tk)
             src = "REAL_TICKS"
-    except Exception:  # noqa: BLE001
-        tk = None
+        else:
+            why = f"archiwum ticków w zakresie snapshotu: {len(tk)} <= 20000 ticków"
+        tk = None                                                            # the event arrays are built; release the tick list
+    except Exception as exc:  # noqa: BLE001 - reported in the job result, never silent
+        why = f"archiwum ticków nieczytelne: {type(exc).__name__}: {exc}"[:200]
+        log.warning("mm events: tick archive of %s unusable, BAR_CLOSE_EVENTS fallback: %s", ctx.inst, why)
     if src is None:
-        ev = D.events_from_bars(ctx.bars("M1"), ctx.snap.point)
+        ev = D.events_from_bars(b1, ctx.snap.point)
         src = "BAR_CLOSE_EVENTS"
     acc = EV.from_arrays(ev, ctx.inst, 900)
-    return acc, EV.featurize(acc), src
+    return acc, EV.featurize(acc), src, why
 
 
 def job_event_engine(ctx) -> dict:
@@ -402,7 +448,7 @@ def job_event_engine(ctx) -> dict:
     from . import event_engine as EE
     from . import events as EV
     from .stfs import STFS
-    acc, fe, src = _events(ctx)
+    acc, fe, src, src_why = _events(ctx)
     u = EV.units(acc, fe, 16)
     tg = EV.unit_targets(u, 2)
     idx = np.where(tg["ok"])[0]
@@ -461,7 +507,8 @@ def job_event_engine(ctx) -> dict:
     aid, ast = _save(ctx, "event_engine_dir3", st, {"model_type": "EVENT_GRU_STACK", "feature_schema": "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES),
                                                      "target": f"DIR3 unit k=2 band={band:.3e}", "event_source": src, "pick": pick,
                                                      "metrics": {"val": variants[pick]["val"], "test_once": test}, "gates": gates}, passed)
-    return {"event_source": src, "ingest_counts": acc["counts"], "units": {"train": int(len(tr)), "val": int(len(va)), "test": int(len(ts))}, "band": band,
+    return {"event_source": src, "event_source_fallback": src_why, "ingest_counts": acc["counts"],
+            "units": {"train": int(len(tr)), "val": int(len(va)), "test": int(len(ts))}, "band": band,
             "variants_val": {k: v["val"] for k, v in variants.items()}, "picked": pick, "test_once": test,
             "baselines_test": {"prior": prior_test, "persistence": EE.metrics(pers_p, y[ts]), "logreg_unit_summary": lr_test},
             "stfs": stfs_cmp, "online_offline_max_prob_diff": max(diffs) if diffs else None, "online_units_compared": len(diffs),
@@ -483,7 +530,7 @@ def job_stfs(ctx) -> dict:
 
 def job_ste_flownet(ctx) -> dict:
     from . import ste_flownet as SF
-    acc, fe, src = _events(ctx)
+    acc, fe, src, src_why = _events(ctx)
     smp = SF.build_samples(acc, fe, 8, 16, 32)
     ok = np.where(np.isfinite(smp["y"]))[0]
     if len(ok) < 600:
@@ -524,7 +571,8 @@ def job_ste_flownet(ctx) -> dict:
     aid, ast = _save(ctx, "ste_flownet_ret", st, {"model_type": "STE_FLOWNET_FIN_ADAPT", "feature_schema": "STE-SPLITS-8x16:" + ",".join(SF.CHANNELS),
                                                    "target": "ln(mid[e+32]/mid[e])", "event_source": src, "pick": pick,
                                                    "metrics": {"val": res[pick]["val"], "test_once": test}, "gates": gates}, passed)
-    return {"event_source": src, "samples": {"train": int(len(tr)), "val": int(len(va)), "test": int(len(ts))}, "ablations_val": {k: v["val"] for k, v in res.items()},
+    return {"event_source": src, "event_source_fallback": src_why, "samples": {"train": int(len(tr)), "val": int(len(va)), "test": int(len(ts))},
+            "ablations_val": {k: v["val"] for k, v in res.items()},
             "n_params": {k: v["res"]["n_params"] for k, v in res.items()}, "picked": pick, "test_once": test,
             "baselines_test": {"zero": zero, "ols_last_split_dmid": ols}, "gates": gates, "artifact_id": aid, "artifact_status": ast,
             "training_executed": True, "validation_passed": passed, "holdout": guard.record(), "backend_used": "CPU (numpy autodiff)",
@@ -555,8 +603,12 @@ def job_fusion_board(ctx) -> dict:
         add("align_mean", "INDICATOR_STATE", {"dist_atr": am.get("dist_atr"), "mean": am.get("mean")})
     kl = ((ctx.results.get("kalman") or {}).get("per_tf") or {}).get("M5", {})
     if kl:
+        from .service import _kalman_direction
         d = kl.get("last_state", "")
-        add("kalman", "INDICATOR_STATE", {"direction": "BULLISH" if "BULLISH" in d else "BEARISH" if "BEARISH" in d else None, "state": d})
+        # 1.46: direction of the last ACCEPTED crossover (was `"BULLISH" in state` - BULLISH_CANDIDATE / BEARISH_CANDIDATE, an unconfirmed
+        # change against the accepted direction, was shown as the direction); the candidate stays visible in `state`
+        add("kalman", "INDICATOR_STATE", {"direction": _kalman_direction(d, kl.get("last_accepted")), "state": d,
+                                          "candidate": d if str(d).endswith("_CANDIDATE") else None})
     bz = (((ctx.results.get("breakout_zones") or {}).get("breakout") or {}).get("M5") or {}).get("SESSION_VWAP", {})
     if bz.get("panel"):
         add("breakout_zones", "INDICATOR_STATE", {"direction": bz["panel"]["direction"] if bz["panel"]["direction"] != "NONE" else None})

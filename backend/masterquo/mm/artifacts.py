@@ -118,9 +118,15 @@ def read_pointer(inst: str) -> dict:
 
 def _write_ptr(inst: str, ptr: dict) -> None:
     p = _ptr_path(inst)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
-    os.replace(tmp, p)
+    # 1.46: a unique temporary file per write (was the fixed SHADOW_ACTIVE.tmp shared by the training process and the API rollback: two
+    # concurrent writers interleaved in one file / the second os.replace found no file). Read-modify-write is still not locked across
+    # processes (see the audit note).
+    tmp = p.with_name(f"{p.stem}.{uuid.uuid4().hex[:12]}.tmp")
+    try:
+        tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)                    # only left over when the write / replace failed
 
 
 def promote_shadow(inst: str, model_id: str, aid: str, reason: str) -> dict:

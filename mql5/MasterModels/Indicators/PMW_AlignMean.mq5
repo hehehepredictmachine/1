@@ -60,7 +60,9 @@ double Px(const double h, const double l, const double c)
      }
    return (h + l + 2.0 * c) / 4.0;
   }
-long Sid(const double t_close) { return (long)MathFloor((t_close + InpSessionTzOffsetMin * 60.0 - InpSessionStartMin * 60.0) / 86400.0); }
+// 1.46: sesja obejmuje czasy zamknięcia (start, start + 1 dzień] – jak backend mm/align_mean.session_id (było MathFloor: bar zamykany
+// dokładnie o starcie sesji otwierał NOWĄ sesję)
+long Sid(const double t_close) { return (long)MathCeil((t_close + InpSessionTzOffsetMin * 60.0 - InpSessionStartMin * 60.0) / 86400.0) - 1; }
 
 int OnCalculate(const int rates_total, const int prev_calculated, const datetime &time[], const double &open[], const double &high[],
                 const double &low[], const double &close[], const long &tick_volume[], const long &volume[], const int &spread[])

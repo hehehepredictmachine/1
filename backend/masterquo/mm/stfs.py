@@ -79,7 +79,10 @@ def label_smoothed_ce(logits: A.T, y: np.ndarray, eps: float) -> A.T:
 def triplet_batch_hard(E: A.T, y: np.ndarray, margin: float = 0.2) -> tuple[A.T, int]:
     """E: [B, C] embeddings (L2-normalised here). d = 1 - cos. For each anchor: hardest positive (same label, != itself) and hardest
     negative. Returns (mean loss over valid anchors, n_valid). n_valid = 0 -> a zero tensor."""
-    norm = A.T(np.sqrt((E.data ** 2).sum(axis=1, keepdims=True)) + 1e-12)
+    # 1.46: the norm was a new constant tensor built from E.data, so autodiff treated Z = E / norm as a division by a constant: the loss
+    # value was right but its gradient had a radial component the scale-invariant cosine loss does not have. The norm is now in the graph
+    # (sqrt(s) = exp(0.5 log s), the lab autodiff has no sqrt); the 1e-24 floor keeps the old 1e-12 guard for an all-zero row.
+    norm = A.exp(A.log((E * E).sum(axis=1, keepdims=True) + 1e-24) * 0.5)
     Z = E / norm
     S = Z @ Z.transpose(1, 0)
     D = 1.0 - S
