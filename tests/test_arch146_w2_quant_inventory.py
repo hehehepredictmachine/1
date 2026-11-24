@@ -483,5 +483,121 @@ class TestCanonicalIds(unittest.TestCase):
                          [{k: v for k, v in p.items() if k != "canonical_id"} for p in cached])
 
 
+# ================================================================================================ decision.required_models (I0000)
+class TestRequiredModelsValidation(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def _store(self):
+        from masterquo.config import ConfigStore
+        return ConfigStore()
+
+    def test_I0000_new_unknown_id_rejected_with_hint_nothing_written(self):
+        cs = self._store()
+        before = cs.path.read_text(encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            cs.update({"decision": {"required_models": ["TH_XGB"]}, "risk": {"max_open_positions": 3}})
+        msg = str(ctx.exception)
+        self.assertIn("UNKNOWN_REQUIRED_MODEL:TH_XGB", msg)
+        self.assertIn("trainhub:TH_XGB", msg)                                  # hint only - never applied automatically
+        self.assertEqual(cs.path.read_text(encoding="utf-8"), before)          # whole patch refused (no partial save)
+        self.assertEqual(cs.get().decision.required_models, [])
+        for bad, hint in (("family:TS_ARIMA", "TS_ARIMA"), ("mm:event_engine_dir3", "SEQ_GRU_EVENT"), ("chronos2", "tsfm:chronos2"),
+                          ("kronos:Kronos-small@M5", "kronos:Kronos-small"), ("TH_XGB_M5_H6", "trainhub:TH_XGB"), ("lab:models", None)):
+            with self.assertRaises(ValueError, msg=bad) as ctx:
+                cs.update({"decision": {"required_models": [bad]}})
+            if hint:
+                self.assertIn(hint, str(ctx.exception))
+        self.assertEqual(cs.get().decision.required_models, [])
+
+    def test_I0000_valid_ids_accepted(self):
+        cs = self._store()
+        for ok in (["TS_ARIMA"], ["trainhub:TH_XGB"], ["SEQ_GRU_EVENT", "tsfm:chronos2", "quant:metamodel", "rule:news", "lab:LOGREG_PCA"]):
+            self.assertEqual(cs.update({"decision": {"required_models": ok}}).decision.required_models, ok)
+
+    def test_I0000_saved_unknown_id_kept_and_never_blocks_other_saves(self):
+        from masterquo.config import ConfigStore
+        cs = ConfigStore()
+        raw = json.loads(cs.path.read_text(encoding="utf-8"))
+        raw["decision"]["required_models"] = ["TH_XGB"]
+        cs.path.write_text(json.dumps(raw), encoding="utf-8")
+        with self.assertLogs("masterquo.config", level="WARNING") as lg:
+            cs2 = ConfigStore()                                               # load: no error, nothing changed
+        self.assertTrue(any("TH_XGB" in m for m in lg.output))
+        self.assertEqual(cs2.get().decision.required_models, ["TH_XGB"])
+        self.assertEqual(json.loads(cs2.path.read_text(encoding="utf-8"))["decision"]["required_models"], ["TH_XGB"])
+        # other saves pass (risk, the whole decision section sent back unchanged, a valid id added next to the saved one)
+        cs2.update({"risk": {"max_open_positions": 4}})
+        cs2.update({"decision": {"required_models": ["TH_XGB"], "enabled": True}})
+        self.assertEqual(cs2.update({"decision": {"required_models": ["TH_XGB", "TS_ARIMA"]}}).decision.required_models, ["TH_XGB", "TS_ARIMA"])
+        with self.assertRaises(ValueError):
+            cs2.update({"decision": {"required_models": ["TH_XGB", "TS_ARIMA", "TH_RF"]}})
+        self.assertEqual(cs2.get().decision.required_models, ["TH_XGB", "TS_ARIMA"])
+
+    def test_I0000_coordinator_status_reports_unknown_and_evaluation_unchanged(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.decision import coordinator as DC
+        cs = ConfigStore()
+        raw = json.loads(cs.path.read_text(encoding="utf-8"))
+        raw["decision"]["required_models"] = ["TH_XGB", "TS_ARIMA"]
+        cs.path.write_text(json.dumps(raw), encoding="utf-8")
+        cs = ConfigStore()
+        db = Database()
+        self.addCleanup(lambda: getattr(db, "close", lambda: None)())
+        st = DC.DecisionCoordinator(db, cs).status()
+        self.assertEqual(st["required_models_unknown"], ["TH_XGB"])
+        # the pure evaluation is unchanged: the unknown id still blocks (MODEL_REQUIRED_UNAVAILABLE), nothing is mapped to trainhub:TH_XGB
+        rec = {"model_key": "TH_XGB_M5_H6", "state": "READY", "task_type": "CLASS_PROBABILITIES", "result": {"UP": 0.6, "DOWN": 0.2, "FLAT": 0.2},
+               "data_time": 1000.0}
+        _, why = DC.evaluate_models([rec], "BUY", required={"TH_XGB"}, assist_threshold=0.6, max_age_s=900, now=1010.0)
+        self.assertEqual(why, ["MODEL_REQUIRED_UNAVAILABLE:TH_XGB"])
+        _, why = DC.evaluate_models([rec], "BUY", required={"trainhub:TH_XGB"}, assist_threshold=0.6, max_age_s=900, now=1010.0)
+        self.assertEqual(why, [])
+
+    def test_I0000_put_config_returns_400(self):
+        from fastapi import HTTPException
+        from masterquo.api import app as A
+        from masterquo.config import ConfigStore
+        rt = mock.MagicMock()
+        rt.license.locked = False
+        rt.cfg = ConfigStore()
+        app = A.create_app(rt, 18785)
+        fn = next(r.endpoint for r in app.routes if getattr(r, "path", None) == "/api/v1/config" and "PUT" in (getattr(r, "methods", None) or ()))
+        with self.assertRaises(HTTPException) as ctx:
+            fn(patch={"decision": {"required_models": ["TH_XGB"]}})
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("UNKNOWN_REQUIRED_MODEL:TH_XGB", str(ctx.exception.detail))
+        self.assertEqual(rt.cfg.get().decision.required_models, [])
+        fn(patch={"decision": {"required_models": ["trainhub:TH_XGB"]}})
+        self.assertEqual(rt.cfg.get().decision.required_models, ["trainhub:TH_XGB"])
+
+    def test_I0000_valid_set_covers_every_live_producer(self):
+        """Safety condition 5: every producer whose record can reach the coordinator is configurable - the inventory entries with a live
+        adapter map to a valid id (the string _mid / family / model_id carries)."""
+        from masterquo.quant import ids as I
+        from masterquo.quant import inventory as QI
+        valid = set(I.required_ids())
+        inv = QI.build(None, INST)
+        need = set()
+        for e in inv["entries"]:
+            if e["adapter"] not in (QI.A_EXISTING, QI.A_FAM, QI.A_EXT) or e["code_state"] != "IMPLEMENTED":
+                continue
+            cid = e["id"]
+            if cid.startswith("family:"):
+                need.add(cid.split(":", 1)[1])
+            elif cid == "mm:event_engine_dir3":
+                need.add(I.EVENT_GRU_FAMILY)
+            elif cid == "research:g7_smc_radar":
+                need.add("research:g7")
+            else:
+                need.add(cid)
+        self.assertEqual(sorted(need - valid), [])
+        self.assertIn("quant:metamodel", valid)
+        for no in ("TH_XGB", "family:TS_ARIMA", "mm:event_engine_dir3", "kronos:Kronos-base", "tsfm:fincast", "lab:models", "group:lab"):
+            self.assertNotIn(no, valid)
+
+
 if __name__ == "__main__":
     unittest.main()

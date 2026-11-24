@@ -243,3 +243,54 @@ def dedup(preds: list[dict]) -> tuple[list[dict], list[dict]]:
 def aliases_of(cid: str) -> list[str]:
     return sorted({a for a, c in _ALIAS_TO.items() if c == cid and a != cid})
 
+
+# ---------------------------------------------------------------------------------------------------------------- decision.required_models
+# 1.46 arch (I0000): the ids decision.required_models can name = EXACTLY the strings decision/coordinator.role_of matches (family /
+# model_id / _mid = family or model_id or canonical) for a producer whose record can reach the coordinator - static, every producer, also
+# one that is not running now:
+#   without Quant ASSIST  FamilyService.predictions (family = the family id WITHOUT 'family:'; the Event GRU record: family SEQ_GRU_EVENT)
+#                         + the TSFM rows (family tsfm:<model>); Kronos rows are no_required (never REQUIRED);
+#   Quant ASSIST          the eligible Quant records (model_id = family or canonical_id - quant/service.coordinator_predictions): trainhub,
+#                         Kronos / TSFM, gold_candles, research (family), quant.adapters.extended, lab families + the MetaModel entry.
+# Used ONLY to refuse a NEWLY added unknown id at save (config.ConfigStore.update) and to report a saved one (coordinator status);
+# role_of / evaluate_models never read it and never map an alias (a saved unknown id keeps blocking exactly as before).
+HISTORY_IDS = ("kronos:Kronos-base", "tsfm:fincast")               # old records only - never produced by the running bot
+REQUIRED_EXTENDED = ("rule:regime_v2", "rule:structure_v2", "rule:atr_vol", "rule:data_quality", "rule:news", "analysis:indicators",
+                     "analysis:dxy_correlation", "analysis:zones", "analysis:montecarlo", "mm:kalman_cross", "mm:breakout_zones",
+                     "mm:multi_indicator", "mm:smc_fvg", "mm:align_mean", "mm:gpr_logret", "scalp:A_direction")   # quant/adapters.extended
+REQUIRED_RESEARCH = {"research:graph50": "research:graph50", "research:g7_smc_radar": "research:g7",
+                     "research:sdformerflow": "research:sdformerflow"}                    # canonical_id -> family (research/service.py)
+QUANT_METAMODEL = "quant:metamodel"
+
+
+def required_ids() -> tuple[str, ...]:
+    out = list(FAMILY_OWNED) + [EVENT_GRU_FAMILY]
+    out += [c for c in ALIASES if c.startswith(("trainhub:", "tsfm:", "kronos:", "forecast:")) and c not in HISTORY_IDS]
+    out += list(REQUIRED_EXTENDED) + list(GROUPS["lab"])            # lab:<family> incl. DUMMY (artifact on an explicit artifact_family=DUMMY)
+    out += list(dict.fromkeys(REQUIRED_RESEARCH.values())) + [QUANT_METAMODEL]
+    return tuple(dict.fromkeys(out))
+
+
+def required_hint(name: str) -> str | None:
+    """The valid REQUIRED id an unknown one most likely means - for the error message only, never applied automatically."""
+    n = str(name or "").split("@", 1)[0]                              # Kronos coordinator rows: kronos:Kronos-small@M5
+    valid = set(required_ids())
+    if n in valid:
+        return n
+    for cid, fam in REQUIRED_RESEARCH.items():
+        if n == cid or n.startswith(cid + ":"):
+            return fam
+    c = resolve(n)
+    if c is None:
+        return None
+    if c.startswith("family:") and c.split(":", 1)[1] in FAMILY_OWNED:
+        return c.split(":", 1)[1]
+    if c == "mm:event_engine_dir3":
+        return EVENT_GRU_FAMILY
+    return c if c in valid else None
+
+
+def unknown_required(names) -> list[tuple[str, str | None]]:
+    """[(id, hint)] for every id that no producer's record can carry - such an id stays MISSING (MODEL_REQUIRED_UNAVAILABLE) for ever."""
+    valid = set(required_ids())
+    return [(str(n), required_hint(n)) for n in names or [] if str(n) not in valid]

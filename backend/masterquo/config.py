@@ -14,6 +14,7 @@ Rules enforced here:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from pathlib import Path
@@ -662,7 +663,10 @@ class FamiliesConfig(_Strict):
 class DecisionConfig(_Strict):
     """1.33 decision architecture (PMW-ARC-1): one coordinator, model roles, shared risk reservation, execution intents."""
     enabled: bool = True
-    required_models: list[str] = Field(default_factory=list, description="family ids in role REQUIRED (missing/stale/contrary -> no new entry)")
+    required_models: list[str] = Field(default_factory=list, description="ids in role REQUIRED (missing/stale/contrary -> no new entry): exactly "
+                                       "the id the coordinator sees - a family WITHOUT 'family:' (TS_ARIMA), trainhub:TH_*, tsfm:<model>, rule:* / "
+                                       "analysis:* / mm:* / lab:* (Quant ASSIST), quant:metamodel; list: quant/ids.required_ids(). A NEW unknown id "
+                                       "is refused at save (UNKNOWN_REQUIRED_MODEL), a saved one is kept and reported")
     required_max_age_s: float = Field(900.0, ge=10, le=86400, description="REQUIRED forecast older than this -> MODEL_REQUIRED_STALE")
     assist_on_active: bool = Field(True, description="ASSIST families may also hold the main (ACTIVE) path: ALLOWED -> BLOCKED with reason")
     reservation_ttl_s: float = Field(180.0, ge=10, le=3600, description="an un-settled reservation (crash) is released after this; UNKNOWN never")
@@ -747,6 +751,7 @@ class ConfigStore:
             cfg = AppConfig.model_validate(raw)
             if migrated:
                 self._write(cfg)
+            _warn_unknown_required(cfg)                # 1.46 arch (I0000): a warning only - the saved list is never changed here
             return cfg
         if paths.DEFAULTS_FILE.exists():
             cfg = AppConfig.model_validate(json.loads(paths.DEFAULTS_FILE.read_text(encoding="utf-8")))
@@ -775,6 +780,7 @@ class ConfigStore:
             # migration chain on the next start (assets reset to UNMAPPED, RR thresholds, AUTO mode -> PAPER)
             merged["config_version"] = self._cfg.config_version
             cfg = AppConfig.model_validate(merged)
+            _check_new_required_models(self._cfg, cfg)     # 1.46 arch (I0000): raises BEFORE anything is written (whole patch refused)
             self._write(cfg)
             self._cfg = cfg
             return cfg.model_copy(deep=True)
@@ -782,6 +788,41 @@ class ConfigStore:
     def set_runtime_flag(self, **flags) -> None:
         with self._lock:
             self._cfg = self._cfg.model_copy(update=flags)
+
+
+def _check_new_required_models(old: AppConfig, new: AppConfig) -> None:
+    """1.46 arch (I0000): decision.required_models was never validated - a typo or the canonical form of a family id ('family:TS_ARIMA',
+    'TH_XGB' instead of 'trainhub:TH_XGB') was saved and then blocked EVERY new entry (MODEL_REQUIRED_UNAVAILABLE), since no record ever
+    carries that id. Only the ids ADDED by this save are checked (a list already on disk - e.g. a settings form sending the decision section
+    back - never blocks another save: risk, mode, STOP); nothing is mapped to a 'correct' id (the hint is in the message only); the whole
+    patch is refused (ValueError -> PUT /api/v1/config 400 INVALID_CONFIG: UNKNOWN_REQUIRED_MODEL:<id>)."""
+    before = set(getattr(getattr(old, "decision", None), "required_models", None) or [])
+    added = [x for x in (new.decision.required_models or []) if x not in before]
+    if not added:
+        return
+    # import-free module (lazy: config stays the base module)
+    from .quant import ids as I
+    bad = I.unknown_required(added)
+    if bad:
+        raise ValueError("; ".join(f"UNKNOWN_REQUIRED_MODEL:{n}" + (f" (czy chodziło o {h}?)" if h else " (brak producenta o tym id)")
+                                   for n, h in bad))
+
+
+def unknown_required_models(cfg: AppConfig) -> list[str]:
+    """Saved decision.required_models no producer can satisfy (they block every new entry) - for the warning and the coordinator status."""
+    from .quant import ids as I
+    return [n for n, _ in I.unknown_required(getattr(getattr(cfg, "decision", None), "required_models", None) or [])]
+
+
+def _warn_unknown_required(cfg: AppConfig) -> None:
+    try:
+        bad = unknown_required_models(cfg)
+    except Exception:  # noqa: BLE001 - a warning must never stop the configuration from loading
+        return
+    if bad:
+        logging.getLogger("masterquo.config").warning(
+            "decision.required_models zawiera id bez producenta: %s – każde nowe wejście będzie blokowane (MODEL_REQUIRED_UNAVAILABLE); "
+            "lista nie jest zmieniana automatycznie (quant/ids.required_ids)", ", ".join(bad))
 
 
 # v1 -> v2: less restrictive defaults. A value is replaced only when it still equals the old

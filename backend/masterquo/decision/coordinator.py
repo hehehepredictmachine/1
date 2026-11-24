@@ -355,9 +355,18 @@ class DecisionCoordinator:
         except Exception as exc:  # noqa: BLE001
             return {"error": f"{type(exc).__name__}: {exc}"[:160]}
 
+    def _required_unknown(self) -> list[str]:
+        """1.46 arch (I0000): REQUIRED ids no producer can satisfy (status only - role_of / evaluate_models never read this)."""
+        try:
+            from ..config import unknown_required_models
+            return unknown_required_models(self.cfg_store.get())
+        except Exception:  # noqa: BLE001 - presentation only
+            return []
+
     def status(self) -> dict:
-        return {"version": K.VERSION, "enabled": self.enabled(), "last": {k: {x: v.get(x) for x in ("record_id", "final_verdict", "reason_codes", "created_at")}
-                                                                           for k, v in self.last.items()},
+        return {"version": K.VERSION, "enabled": self.enabled(), "required_models_unknown": self._required_unknown(),
+                "last": {k: {x: v.get(x) for x in ("record_id", "final_verdict", "reason_codes", "created_at")}
+                         for k, v in self.last.items()},
                 "reservations_live": self.book.live(), "intents": self.intents.recent(20),
                 "records": self.db.query("SELECT record_id, created_at, path, source_id, strategy_id, direction, base_verdict, final_verdict, reason_codes "
                                          "FROM decision_records ORDER BY created_at DESC LIMIT 30")}
