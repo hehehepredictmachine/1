@@ -160,12 +160,18 @@ class Profile:
                 continue
             group = by_ms[ms]
             if ms == self.tail_ms:
-                cnt = Counter(self._sig(t) for t in group)
-                new = []
+                # 1.46: chronological - the first tail_seen[sig] occurrences of each signature were counted by the previous read (that read
+                # was a prefix of this millisecond); the later ones are new and keep their ORIGINAL order. The surplus used to be collected
+                # per signature (Counter order, first occurrences), which reordered the ticks and changed BID_CHANGE eligibility.
+                cnt, new = Counter(), []
+                for t in group:
+                    sig = self._sig(t)
+                    cnt[sig] += 1
+                    if cnt[sig] <= self.tail_seen.get(sig, 0):
+                        self.ignored["duplicate"] += 1
+                    else:
+                        new.append(t)
                 for sig, c in cnt.items():
-                    surplus = c - self.tail_seen.get(sig, 0)
-                    self.ignored["duplicate"] += min(c, self.tail_seen.get(sig, 0))
-                    new += [t for t in group if self._sig(t) == sig][:max(0, surplus)]
                     self.tail_seen[sig] = max(self.tail_seen.get(sig, 0), c)
                 group = new
             else:

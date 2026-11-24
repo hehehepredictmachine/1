@@ -165,6 +165,7 @@ class BookAdapter:
             if self.symbol and self.symbol != symbol:
                 self._release()
             self.symbol, self.epoch = symbol, ep
+            self.last = None                     # 1.46: a new subscription never serves the previous symbol's / session's book
             try:
                 ok = self._call(lambda m: m.market_book_add(symbol) if hasattr(m, "market_book_add") else False)
             except Exception as exc:  # noqa: BLE001 - terminal unavailable -> no DOM, the rest of the bot is unaffected

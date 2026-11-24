@@ -1,0 +1,46 @@
+/* 1.44.0 Ekran licencji – ten sam język co menu i panele systemowe: czerń z poświatą galaktyki, cienki rozstrzelony krój, ramki z narożnikami. */
+.lic-screen{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:24px 16px;overflow:auto;background:#020308;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#f2f2ef}
+.lic-screen.modal{background:rgba(2,3,8,.86);backdrop-filter:blur(3px)}
+.lic-scene{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 60% 45% at 50% 38%,rgba(110,124,160,.16),transparent 70%),
+             radial-gradient(1px 1px at 12% 22%,#cfd6e6 50%,transparent 51%),radial-gradient(1px 1px at 78% 14%,#aeb6c8 50%,transparent 51%),
+             radial-gradient(1px 1px at 64% 72%,#c6ccd9 50%,transparent 51%),radial-gradient(1px 1px at 28% 84%,#9aa3b6 50%,transparent 51%),
+             radial-gradient(1px 1px at 90% 58%,#d7dcea 50%,transparent 51%),radial-gradient(1px 1px at 44% 8%,#b8bfcf 50%,transparent 51%);
+  animation:licFade 1.2s ease both}
+.lic-screen.modal .lic-scene{display:none}
+.lic-card{position:relative;width:min(560px,100%);display:flex;flex-direction:column;gap:18px;padding:34px 34px 26px;
+  background:linear-gradient(180deg,rgba(6,9,20,.94),rgba(3,3,8,.97));border:1px solid #1c2130;animation:licIn .6s cubic-bezier(.22,1,.36,1) both}
+.lic-card .corner{position:absolute;width:12px;height:12px;border-color:#5a6274;border-style:solid;border-width:0}
+.lic-card .corner.tl{left:6px;top:6px;border-left-width:1px;border-top-width:1px}.lic-card .corner.tr{right:6px;top:6px;border-right-width:1px;border-top-width:1px}
+.lic-card .corner.bl{left:6px;bottom:6px;border-left-width:1px;border-bottom-width:1px}.lic-card .corner.br{right:6px;bottom:6px;border-right-width:1px;border-bottom-width:1px}
+.lic-brand{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:6px;text-align:center}
+.lic-logo{font-size:clamp(18px,3.4vw,26px);font-weight:200;letter-spacing:.42em;padding-left:.42em;color:#f2f2ef}
+.lic-sub{font-size:10px;letter-spacing:.32em;color:#9aa0aa}
+.lic-blk{display:flex;flex-direction:column;gap:7px}
+.lic-lbl{font-size:9px;letter-spacing:.2em;color:#9aa0aa}
+.lic-row{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}.lic-row.end{justify-content:flex-end}
+.lic-hwid{flex:1 1 240px;font-family:"SF Mono",Consolas,"Liberation Mono",monospace;font-size:16px;letter-spacing:.12em;color:#fff;
+  background:rgba(223,227,235,.04);border:1px solid #2b303b;padding:10px 12px;user-select:all}
+.lic-key{width:100%;box-sizing:border-box;resize:vertical;min-height:74px;background:rgba(0,0,0,.35);border:1px solid #2b303b;color:#f2f2ef;
+  font-family:"SF Mono",Consolas,"Liberation Mono",monospace;font-size:12px;line-height:1.5;padding:10px 12px;word-break:break-all;border-radius:0}
+.lic-key:focus{outline:0;border-color:#dfe3eb}
+.lic-btn{background:transparent;border:1px solid #3a4152;color:#dfe3eb;font:inherit;font-size:10px;letter-spacing:.18em;padding:10px 16px;cursor:pointer;border-radius:0}
+.lic-btn:hover:not(:disabled){border-color:#dfe3eb;color:#fff}.lic-btn:disabled{opacity:.4;cursor:default}
+.lic-btn.primary{background:#dfe3eb;border-color:#dfe3eb;color:#05060c;font-weight:600;padding:10px 26px}.lic-btn.primary:hover:not(:disabled){background:#fff;color:#05060c}
+.lic-btn.ghost{align-self:center;border-color:transparent;color:#9aa0aa}
+.lic-btn:focus-visible,.lic-key:focus-visible{outline:1px solid #dfe3eb;outline-offset:3px}
+.lic-help,.lic-foot{font-size:11px;line-height:1.55;color:#8b919c}
+.lic-foot{text-align:center;border-top:1px solid #151925;padding-top:14px;margin-top:2px}
+.lic-msg{margin:0;font-size:12px;line-height:1.6;border-left:2px solid #3a4152;padding:8px 12px;color:#dfe3eb;background:rgba(223,227,235,.03)}
+.lic-msg.ok{border-left-color:#7fbf9a;color:#cfe8da}.lic-msg.bad{border-left-color:#d98b8b;color:#e8c4c4}
+@keyframes licIn{from{opacity:0;transform:translateY(14px)}}
+@keyframes licFade{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.lic-card,.lic-scene{animation:none}}
+.lic-code{font-family:"SF Mono",Consolas,"Liberation Mono",monospace;font-size:12px;letter-spacing:.06em;color:#fff;word-break:break-all}
+/* ostrzeżenie o wygaśnięciu (≤ 3 dni) – nad każdym ekranem */
+.lic-warnchip{position:fixed;top:18px;left:26px;z-index:45;background:rgba(40,30,8,.82);border:1px solid #b7a77a;color:#ecdcae;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:.16em;padding:8px 14px;cursor:pointer;max-width:calc(100vw - 32px)}
+.lic-warnchip:hover{color:#fff;border-color:#ecdcae}
+.lic-warnchip.forex{top:auto;bottom:24px;left:50%;transform:translateX(-50%)}   /* FOREX: górny pasek zajęty przez zakładki i interwały */
+@media (max-width:700px){.lic-card{padding:26px 18px 20px}.lic-warnchip{top:52px;left:10px}}

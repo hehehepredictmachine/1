@@ -18,16 +18,17 @@ def main(argv: list[str]) -> int:
         s.add_argument("--asset", choices=INSTR, default="XAUUSD")
         if n in ("prepare", "train"):
             s.add_argument("--dataset", help="eksport treningowy (domyślnie najnowszy REAL_USER_DATA instrumentu)")
-            s.add_argument("--manifest", default="latest")
+            # 1.46: --manifest / --months / --activate are accepted for the .bat / runner command lines and are informational only
+            s.add_argument("--manifest", default="latest", help="informacyjnie (zgodność); zbiór wybiera --dataset albo najnowszy eksport")
             s.add_argument("--months", type=int, default=12, help="eksport wykonuje 00_TRENING_START.bat; tu informacyjnie")
             s.add_argument("--commission", type=float)
-            s.add_argument("--activate", default="none", choices=("none",), help="nowy model nigdy nie jest wybierany automatycznie")
+            s.add_argument("--activate", default="none", choices=("none",), help="informacyjnie: nowy model nigdy nie jest wybierany automatycznie")
             s.add_argument("--allow-synthetic-fixture", action="store_true")
             s.add_argument("--members", help="seedy członków (domyślnie 17,29,43)")
             s.add_argument("--budget-minutes", type=int)
             s.add_argument("--out")
         if n == "report":
-            s.add_argument("--latest", action="store_true")
+            s.add_argument("--latest", action="store_true", help="informacyjnie (zgodność): bez --run raport najnowszego runu")
             s.add_argument("--run")
         if n == "select":
             s.add_argument("--run", required=True)
@@ -63,7 +64,15 @@ def main(argv: list[str]) -> int:
         if not rid:
             print("[BLAD] brak runów NSS")
             return 2
-        print((Path(reg["runs"][rid]["run_dir"]) / "report.json").read_text(encoding="utf-8"))
+        run = (reg.get("runs") or {}).get(rid)                  # 1.46: unknown run / missing report -> [BLAD] + 2, not a traceback
+        if run is None:
+            print(f"[BLAD] nieznany run NSS: {rid}")
+            return 2
+        try:
+            print((Path(run["run_dir"]) / "report.json").read_text(encoding="utf-8"))
+        except (OSError, KeyError, TypeError) as exc:
+            print(f"[BLAD] brak raportu runu {rid}: {exc}")
+            return 2
         return 0
     if a.c in ("rollback", "select"):
         try:

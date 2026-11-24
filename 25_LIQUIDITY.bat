@@ -1,11 +1,14 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - boksy sesji + heatmapa likwidacji (PMW-UPD-06). OBSERVE: nie wysyla zlecen, nie zmienia Execution Lock.
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - sesje i heatmapa
+title Apollo23 - sesje i heatmapa
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
-if not exist "%PY%" (echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat & pause & exit /b 2)
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)
 set "PYTHONIOENCODING=utf-8"
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"

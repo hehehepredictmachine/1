@@ -1,16 +1,15 @@
-"""Shared helpers of the 1.14 lab modules (two assets, closed bars, point-in-time).
+"""Shared helpers of the 1.14 lab modules (two assets, closed bars, point-in-time): time conversion, closed-bar filtering and the
+causal indicator primitives (ATR / EMA / SMA / rolling std / percentile rank).
 
-Every lab result is wrapped in the mq-analytics provenance contract (analytics/contract.py) and additionally carries
-canonical_asset, decision_role (active / shadow / research / visual_only) and implementation_status.
+1.46: the unused wrap() (mq-analytics provenance contract) and timer() helpers were removed - no lab module called them, so the old
+claim that every lab result is wrapped in that contract was not true.
 """
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
 
 import numpy as np
 
-from ..analytics import contract
 from ..analytics.ta import TF_SEC
 
 EPS = 1e-12
@@ -95,17 +94,3 @@ def pct_rank(window: np.ndarray, v: float) -> float | None:
         return None
     return float((w < v).sum() + 0.5 * (w == v).sum()) / len(w)
 
-
-def wrap(module: str, version: str, cfg: dict, *, asset: str | None, symbol: str | None, tf: str | None, bars: list[dict],
-         status: str, values: dict | None = None, reason: str | None = None, quality: list[str] | None = None,
-         role: str = "shadow", t0: float | None = None, available_at: str | None = None, extra: dict | None = None) -> dict:
-    out = contract.result(module, version, cfg, symbol=symbol, tf=tf, bars=bars, status=status, values=values, reason=reason,
-                          quality=quality, tf_seconds=TF_SEC.get(tf or "", None), t0=t0,
-                          extra={"canonical_asset": asset, "decision_role": role, **(extra or {})})
-    if available_at:
-        out["available_at"] = available_at
-    return out
-
-
-def timer() -> float:
-    return time.perf_counter()

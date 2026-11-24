@@ -1,0 +1,5138 @@
+{
+ "version": "CATALOG-1.41.0",
+ "profiles": {
+  "FOREX_MT5": {
+   "name": "FOREX / MT5",
+   "venue": "MT5",
+   "products": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "settlement": "POSITION",
+   "execution_capability": "SIGNALS_AND_MANUAL_TICKET",
+   "execution_note": "1.41: nowe koszyki publikują sygnały i plany; zlecenia składa tylko istniejąca ścieżka bota (bez nowej, równoległej trasy)"
+  },
+  "CRYPTO_FOMO_PERPS": {
+   "name": "CRYPTO PERPS / FOMO (fomo.family)",
+   "venue": "HYPERLIQUID (perps używane przez FOMO)",
+   "products": [
+    "PERPETUAL"
+   ],
+   "settlement": "PERPETUAL",
+   "execution_capability": "MANUAL_ONLY",
+   "execution_note": "brak udokumentowanego API rachunku FOMO – ticket do ręcznego wykonania w FOMO; dane: publiczne Hyperliquid Info API"
+  },
+  "OTC_GOLD_POCKETOPTION": {
+   "name": "OTC GOLD / Pocket Option",
+   "venue": "POCKET_OPTION",
+   "products": [
+    "FIXED_EXPIRY"
+   ],
+   "settlement": "FIXED_EXPIRY",
+   "execution_capability": "MANUAL_ONLY",
+   "execution_note": "brak dopuszczonego interfejsu zleceń – sygnał + ticket ręczny; feed wyłącznie własny Gold OTC (import / konektor)"
+  }
+ },
+ "baskets": [
+  {
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family": "SMC",
+   "strategy_ids": [
+    "FX_SMC_01",
+    "FX_SMC_02",
+    "FX_SMC_03",
+    "FX_SMC_04",
+    "FX_SMC_05",
+    "FX_SMC_06",
+    "FX_SMC_07",
+    "FX_SMC_08",
+    "FX_SMC_09",
+    "FX_SMC_10"
+   ],
+   "execution_capability": "SIGNALS_AND_MANUAL_TICKET"
+  },
+  {
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family": "SCALP",
+   "strategy_ids": [
+    "FX_SCALP_01",
+    "FX_SCALP_02",
+    "FX_SCALP_03",
+    "FX_SCALP_04",
+    "FX_SCALP_05",
+    "FX_SCALP_06",
+    "FX_SCALP_07",
+    "FX_SCALP_08",
+    "FX_SCALP_09",
+    "FX_SCALP_10"
+   ],
+   "execution_capability": "SIGNALS_AND_MANUAL_TICKET"
+  },
+  {
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family": "HEDGING",
+   "strategy_ids": [
+    "FX_HEDGE_01",
+    "FX_HEDGE_02",
+    "FX_HEDGE_03",
+    "FX_HEDGE_04",
+    "FX_HEDGE_05",
+    "FX_HEDGE_06",
+    "FX_HEDGE_07",
+    "FX_HEDGE_08",
+    "FX_HEDGE_09",
+    "FX_HEDGE_10"
+   ],
+   "execution_capability": "SIGNALS_AND_MANUAL_TICKET"
+  },
+  {
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family": "SMC",
+   "strategy_ids": [
+    "CP_SMC_01",
+    "CP_SMC_02",
+    "CP_SMC_03",
+    "CP_SMC_04",
+    "CP_SMC_05",
+    "CP_SMC_06",
+    "CP_SMC_07",
+    "CP_SMC_08",
+    "CP_SMC_09",
+    "CP_SMC_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  },
+  {
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family": "SCALP",
+   "strategy_ids": [
+    "CP_SCALP_01",
+    "CP_SCALP_02",
+    "CP_SCALP_03",
+    "CP_SCALP_04",
+    "CP_SCALP_05",
+    "CP_SCALP_06",
+    "CP_SCALP_07",
+    "CP_SCALP_08",
+    "CP_SCALP_09",
+    "CP_SCALP_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  },
+  {
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family": "HEDGING",
+   "strategy_ids": [
+    "CP_HEDGE_01",
+    "CP_HEDGE_02",
+    "CP_HEDGE_03",
+    "CP_HEDGE_04",
+    "CP_HEDGE_05",
+    "CP_HEDGE_06",
+    "CP_HEDGE_07",
+    "CP_HEDGE_08",
+    "CP_HEDGE_09",
+    "CP_HEDGE_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  },
+  {
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family": "SMC",
+   "strategy_ids": [
+    "OTC_SMC_01",
+    "OTC_SMC_02",
+    "OTC_SMC_03",
+    "OTC_SMC_04",
+    "OTC_SMC_05",
+    "OTC_SMC_06",
+    "OTC_SMC_07",
+    "OTC_SMC_08",
+    "OTC_SMC_09",
+    "OTC_SMC_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  },
+  {
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family": "SCALP",
+   "strategy_ids": [
+    "OTC_SCALP_01",
+    "OTC_SCALP_02",
+    "OTC_SCALP_03",
+    "OTC_SCALP_04",
+    "OTC_SCALP_05",
+    "OTC_SCALP_06",
+    "OTC_SCALP_07",
+    "OTC_SCALP_08",
+    "OTC_SCALP_09",
+    "OTC_SCALP_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  },
+  {
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family": "HEDGING",
+   "strategy_ids": [
+    "OTC_HEDGE_01",
+    "OTC_HEDGE_02",
+    "OTC_HEDGE_03",
+    "OTC_HEDGE_04",
+    "OTC_HEDGE_05",
+    "OTC_HEDGE_06",
+    "OTC_HEDGE_07",
+    "OTC_HEDGE_08",
+    "OTC_HEDGE_09",
+    "OTC_HEDGE_10"
+   ],
+   "execution_capability": "MANUAL_ONLY"
+  }
+ ],
+ "strategies": [
+  {
+   "setup_rule": "sweep ostatniego potwierdzonego swingu; w 3 świecach CHoCH",
+   "trigger_rule": "pierwszy retest złamanej struktury z potwierdzeniem",
+   "cancellation_rule": "ponowne naruszenie ekstremum sweepu",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "FX_SMC_01",
+   "name": "Sweep → CHoCH → Retest",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "sweep_choch_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "c28f9d58894077b3"
+  },
+  {
+   "setup_rule": "kierunek HTF zgodny; displacement z BOS; OB",
+   "trigger_rule": "pierwszy retest w 6 świecach, close ponad środkiem OB",
+   "cancellation_rule": "close za distal edge OB",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BOS_OB",
+   "strategy_id": "FX_SMC_02",
+   "name": "BOS → Order Block",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "bos_ob_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "777a754e1e1e555a"
+  },
+  {
+   "setup_rule": "FVG po displacement zgodne z trendem",
+   "trigger_rule": "pierwszy retest w 6 świecach, close wraca za strefę",
+   "cancellation_rule": "close za dalszą granicą strefy",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "FVG",
+   "strategy_id": "FX_SMC_03",
+   "name": "FVG Continuation",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "fvg_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "max_wait": 6
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "2b3f907aaa532a5e"
+  },
+  {
+   "setup_rule": "przeciwne FVG złamane close po CHoCH",
+   "trigger_rule": "retest iFVG od drugiej strony",
+   "cancellation_rule": "powrót close za strefę",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "IFVG",
+   "strategy_id": "FX_SMC_04",
+   "name": "Inverse FVG Reversal",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "ifvg_reversal",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "e4521ec78cab3523"
+  },
+  {
+   "setup_rule": "przeciwny OB złamany displacement + BOS",
+   "trigger_rule": "pierwszy retest byłego OB",
+   "cancellation_rule": "ponowne złamanie breakera",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BREAKER",
+   "strategy_id": "FX_SMC_05",
+   "name": "Breaker Block Retest",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "breaker_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "bf8ceed2c06aca2d"
+  },
+  {
+   "setup_rule": "ważny OB po 1. reteście i nowym BOS",
+   "trigger_rule": "drugi retest z potwierdzeniem (maks. 2)",
+   "cancellation_rule": "close poza OB",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BOS_OB",
+   "strategy_id": "FX_SMC_06",
+   "name": "Second Mitigation Continuation",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "second_mitigation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "fcb370b2ee5c07c6"
+  },
+  {
+   "setup_rule": "znane EQL naruszone, close wraca",
+   "trigger_rule": "kolejna świeca > high sweepu + b (maks. 2 świece)",
+   "cancellation_rule": "brak triggera w 2 świecach",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "FX_SMC_07",
+   "name": "Equal Lows Raid",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "eq_raid",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "f27f07c3951bf2dc"
+  },
+  {
+   "setup_rule": "impuls BOS, zamrożony zakres, retracement 0.62–0.79 w discount",
+   "trigger_rule": "displacement na TF wejścia",
+   "cancellation_rule": "zmiana zakresu / utrata początku impulsu",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "OTE",
+   "strategy_id": "FX_SMC_08",
+   "name": "Discount OTE Continuation",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "ote_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "ote": [
+     0.62,
+     0.79
+    ]
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "97d1987ee8da5328"
+  },
+  {
+   "setup_rule": "zakres 60 min przed sesją; sweep do 120 min po kotwicy",
+   "trigger_rule": "MSS + pierwszy retest",
+   "cancellation_rule": "jeden event / kierunek / zakres",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "FX_SMC_09",
+   "name": "Session Range Sweep",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "range_sweep",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "session_calendar"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "session_calendar"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "range": "SESSION",
+    "anchors": [
+     [
+      "Europe/London",
+      "08:00"
+     ],
+     [
+      "America/New_York",
+      "08:00"
+     ]
+    ]
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "76ad0e10796d3aa8"
+  },
+  {
+   "setup_rule": "cena w discount zakresu H1; internal sweep + BOS M5",
+   "trigger_rule": "retest; zewnętrzny swing H1 niewybity",
+   "cancellation_rule": "za mało przestrzeni po kosztach",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "FX_SMC_10",
+   "name": "Internal to External Liquidity",
+   "version": "1.0.0",
+   "basket_id": "FX_SMC",
+   "profile_id": "FOREX_MT5",
+   "family_id": "internal_external",
+   "kind": "SMC",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "min_rr": 1.0
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "4671e0e0fb303551"
+  },
+  {
+   "setup_rule": "EMA9 > EMA21, M15 zgodny; dotknięcie EMA9 w 3 świecach",
+   "trigger_rule": "close > high[t−1] + b",
+   "cancellation_rule": "close za EMA21",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "FX_SCALP_01",
+   "name": "EMA9/21 Pullback",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "ema_pullback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "bb124c12359c1818"
+  },
+  {
+   "setup_rule": "BB20/2, ADX14 < 20, low poza wstęgą",
+   "trigger_rule": "bullish close z powrotem wewnątrz",
+   "cancellation_rule": "timeout 8 świec",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "MEAN_REVERSION",
+   "strategy_id": "FX_SCALP_02",
+   "name": "Bollinger Reentry",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "bb_reentry",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "adx_max": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "82552bd4271b5038"
+  },
+  {
+   "setup_rule": "2 close pod VWAP (proxy aktywności tickowej – jawnie)",
+   "trigger_rule": "reclaim i retest w 3 świecach",
+   "cancellation_rule": "close pod VWAP",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "VWAP",
+   "strategy_id": "FX_SCALP_03",
+   "name": "Session VWAP Reclaim",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "vwap_reclaim",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "tick_activity_proxy"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "tick_activity_proxy"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "anchor": "SESSION",
+    "session": [
+     "Europe/London",
+     "08:00"
+    ],
+    "tick_proxy": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "ceb623fa1368dbd9"
+  },
+  {
+   "setup_rule": "zakres pierwszych 15 min sesji; close > OR_high + b",
+   "trigger_rule": "retest do 3 świec, bullish close nad poziomem",
+   "cancellation_rule": "jeden event / kierunek / sesję",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "FX_SCALP_04",
+   "name": "Opening Range Retest",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "level_breakout_retest",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "session_calendar"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "session_calendar"
+   ],
+   "signal_timeframe": "M1",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "level": "OPENING_RANGE",
+    "session": [
+     "Europe/London",
+     "08:00"
+    ],
+    "retest_within": 3
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "0a04cd3d99e46663"
+  },
+  {
+   "setup_rule": "trend, ADX14 ≥ 25, ATR rośnie",
+   "trigger_rule": "close > HH20 + b",
+   "cancellation_rule": "powrót do kanału przed wejściem",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "FX_SCALP_05",
+   "name": "Donchian20 Expansion",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "donchian",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "adx_min": 25
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "c068ee04917e8eaa"
+  },
+  {
+   "setup_rule": "≥3 z 5 zakresów ≤ 0.6A",
+   "trigger_rule": "close nad zamrożonym high, body ≥ A",
+   "cancellation_rule": "powrót do kompresji",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "COMPRESSION",
+   "strategy_id": "FX_SCALP_06",
+   "name": "ATR Compression Breakout",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "compression_breakout",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "k_range": 0.6,
+    "k_body": 1.0
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "bc84e389b8fa9363"
+  },
+  {
+   "setup_rule": "trend EMA20/50; RSI2[t−1] < 10",
+   "trigger_rule": "RSI2 > 20 i close > high[t−1]",
+   "cancellation_rule": "utrata dołka pullbacku",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "FX_SCALP_07",
+   "name": "RSI2 Trend Snapback",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "rsi2_snapback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "8aa36a8c77d6d3f0"
+  },
+  {
+   "setup_rule": "znane wsparcie M15 (±b)",
+   "trigger_rule": "bullish engulfing, close > high[t−1]",
+   "cancellation_rule": "utrata wsparcia",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "SUPPORT_REJECTION",
+   "strategy_id": "FX_SCALP_08",
+   "name": "Engulfing at Known Support",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "engulfing_support",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "support": "HTF_SWINGS"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "198194218ce452e2"
+  },
+  {
+   "setup_rule": "2 potwierdzone dołki (0.2A, 3–12 świec)",
+   "trigger_rule": "close > neckline + b",
+   "cancellation_rule": "utrata niższego dołka",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "DOUBLE_BOTTOM",
+   "strategy_id": "FX_SCALP_09",
+   "name": "Micro Double Bottom",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "double_bottom",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "tol_atr": 0.2
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "0aee6a8b5638b761"
+  },
+  {
+   "setup_rule": "trend; 2 świece body ≥ 0.5A, close w skrajnych 20%",
+   "trigger_rule": "druga zamyka się ponad high pierwszej",
+   "cancellation_rule": "timeout 4 świece",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PositionPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "MOMENTUM",
+   "strategy_id": "FX_SCALP_10",
+   "name": "Two-Bar Momentum Continuation",
+   "version": "1.0.0",
+   "basket_id": "FX_SCALP",
+   "profile_id": "FOREX_MT5",
+   "family_id": "two_bar_momentum",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask"
+   ],
+   "signal_timeframe": "M1",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "30fa00eaa4525869"
+  },
+  {
+   "setup_rule": "long + bearish CHoCH M5, H1 wciąż wzrostowy",
+   "trigger_rule": "long + bearish CHoCH M5, H1 wciąż wzrostowy",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "bullish BOS M5, 6 świec lub zamknięcie rodzica",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "bullish BOS M5, 6 świec lub zamknięcie rodzica",
+   "hedge_plan": "częściowy short tego samego instrumentu (konto hedging)",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_01",
+   "name": "Structural CHoCH Shield",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "structural_choch",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "00d3e94c59b263ec"
+  },
+  {
+   "setup_rule": "long z zyskiem przy oporze; sweep + odrzucenie",
+   "trigger_rule": "long z zyskiem przy oporze; sweep + odrzucenie",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "reclaim oporu, środek range lub timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "reclaim oporu, środek range lub timeout",
+   "hedge_plan": "częściowy short z własnym unieważnieniem",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_02",
+   "name": "Range Boundary Profit Shield",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "range_profit",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "b312b0db468ea8ae"
+  },
+  {
+   "setup_rule": "range M1 > 95. percentyla z 200, close przeciw rodzicowi",
+   "trigger_rule": "range M1 > 95. percentyla z 200, close przeciw rodzicowi",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "3 zakresy poniżej mediany, struktura lub timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "3 zakresy poniżej mediany, struktura lub timeout",
+   "hedge_plan": "jednorazowy hedge (limit kosztu i margin)",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_03",
+   "name": "Volatility Shock Shield",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "vol_shock",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode"
+   ],
+   "signal_timeframe": "M1",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "pct": 0.95,
+    "lookback": 200,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "1d2ff71991c418ac"
+  },
+  {
+   "setup_rule": "zmiana sesji; spread / zmienność ponad próg",
+   "trigger_rule": "zmiana sesji; spread / zmienność ponad próg",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "3 stabilne świece; brak wykonalności = NO_HEDGE",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "3 stabilne świece; brak wykonalności = NO_HEDGE",
+   "hedge_plan": "częściowa ochrona tego samego symbolu",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_04",
+   "name": "Session Transition Shield",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "session_transition",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode",
+    "session_calendar"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode",
+    "session_calendar"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "spread_mult": 2.0,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "d2de2e1ee0b3a3ea"
+  },
+  {
+   "setup_rule": "H1 utrzymuje kierunek; M5 dwie przeciwne sekwencje swingów + retest",
+   "trigger_rule": "H1 utrzymuje kierunek; M5 dwie przeciwne sekwencje swingów + retest",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "zgodność M5/H1 lub 4 świece",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "zgodność M5/H1 lub 4 świece",
+   "hedge_plan": "krótka ochrona korekty",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_05",
+   "name": "Multi-Timeframe Countermove",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "mtf_countermove",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "ratio": 0.5,
+    "timeout": 4
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "607e00420dde8b62"
+  },
+  {
+   "setup_rule": "ekspozycja + wydarzenie z kalendarza za ≤ 5 min",
+   "trigger_rule": "ekspozycja + wydarzenie z kalendarza za ≤ 5 min",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "koniec okna i normalizacja spreadu",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "koniec okna i normalizacja spreadu",
+   "hedge_plan": "częściowa ochrona przy kwotowaniach",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_06",
+   "name": "Scheduled Event Shield",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "event_shield",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "account_hedging_mode",
+    "economic_calendar"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "account_hedging_mode",
+    "economic_calendar"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "before_min": 5,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "97641d0c3c6bf5c2"
+  },
+  {
+   "setup_rule": "ekspozycja jednej waluty ponad limit",
+   "trigger_rule": "ekspozycja jednej waluty ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "powrót do limitu",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "powrót do limitu",
+   "hedge_plan": "przeciwny dostępny instrument FX z macierzy walut",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_07",
+   "name": "Currency Factor Hedge",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "currency_factor",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "fx_pairs",
+    "currency_matrix"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "fx_pairs",
+    "currency_matrix"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "limit_ccy_notional": null
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "3a219837bcfd451c"
+  },
+  {
+   "setup_rule": "XAUUSD + dostępny XAGUSD, dodatnia beta",
+   "trigger_rule": "XAUUSD + dostępny XAGUSD, dodatnia beta",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "wyjście rodzica, rozpad relacji, timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "wyjście rodzica, rozpad relacji, timeout",
+   "hedge_plan": "przeciwna XAGUSD z beta i ekspozycji pieniężnej",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_08",
+   "name": "Gold–Silver Beta Hedge",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "beta_pair",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "partner_symbol"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "partner_symbol"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "partner": "XAGUSD",
+    "ratio": 0.5,
+    "window": 120,
+    "window2": 60,
+    "corr_min": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "ad8d2d513365a4c1"
+  },
+  {
+   "setup_rule": "pozycja na skonfigurowanej parze; druga ma dodatnią betę",
+   "trigger_rule": "pozycja na skonfigurowanej parze; druga ma dodatnią betę",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "residual w limicie / rozpad relacji",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "residual w limicie / rozpad relacji",
+   "hedge_plan": "przeciwna ekspozycja w parze porównawczej",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_09",
+   "name": "FX Pair Relative Exposure",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "pair_relative",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "partner_symbol"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "partner_symbol"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "partner": null,
+    "ratio": 0.5,
+    "window": 120,
+    "window2": 60,
+    "corr_min": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "0eb6be74f39ca3ec"
+  },
+  {
+   "setup_rule": "≥ 2 pozycje FX; ryzyko koszyka ponad limit",
+   "trigger_rule": "≥ 2 pozycje FX; ryzyko koszyka ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "rebalans po przekroczeniu pasma",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "rebalans po przekroczeniu pasma",
+   "hedge_plan": "do 2 instrumentów minimalizujących wariancję",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "FX_HEDGE_10",
+   "name": "Portfolio Minimum-Variance Hedge",
+   "version": "1.0.0",
+   "basket_id": "FX_HEDGE",
+   "profile_id": "FOREX_MT5",
+   "family_id": "min_variance",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "CFD",
+    "FX_SPOT_CFD",
+    "METAL_CFD"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "fx_pairs"
+   ],
+   "required_inputs": [
+    "mt5_closed_bars",
+    "symbol_spec",
+    "bid_ask",
+    "fx_pairs"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "max_instruments": 2,
+    "risk_limit": null
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_FX_HEDGE",
+   "config_hash": "11f38766e4236723"
+  },
+  {
+   "setup_rule": "sweep dołka kontraktu, CHoCH w 3 świecach",
+   "trigger_rule": "retest",
+   "cancellation_rule": "ponowne naruszenie sweepu",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "CP_SMC_01",
+   "name": "Perps Sweep & CHoCH",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "sweep_choch_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "daaf3e3c9659c6a7"
+  },
+  {
+   "setup_rule": "BOS z displacement i RVOL ≥ 1.5",
+   "trigger_rule": "pierwszy retest OB z odrzuceniem",
+   "cancellation_rule": "close pod OB",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BOS_OB",
+   "strategy_id": "CP_SMC_02",
+   "name": "Volume-Confirmed Order Block",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "bos_ob_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "real_volume"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "real_volume"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "rvol_min": 1.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "4ff68970c3602023"
+  },
+  {
+   "setup_rule": "FVG po displacement zgodnym z trendem",
+   "trigger_rule": "pierwszy retest w 6 świecach",
+   "cancellation_rule": "close za strefą",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "FVG",
+   "strategy_id": "CP_SMC_03",
+   "name": "FVG Trend Continuation",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "fvg_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "max_wait": 6
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "78e917d969fc3693"
+  },
+  {
+   "setup_rule": "przeciwne FVG złamane z CHoCH",
+   "trigger_rule": "retest",
+   "cancellation_rule": "close za dalszą granicą",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "IFVG",
+   "strategy_id": "CP_SMC_04",
+   "name": "iFVG Regime Shift",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "ifvg_reversal",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "6d559824854b64c0"
+  },
+  {
+   "setup_rule": "przeciwny OB po zapisanym wybiciu, przełamany BOS",
+   "trigger_rule": "retest breakera",
+   "cancellation_rule": "ponowne złamanie",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BREAKER",
+   "strategy_id": "CP_SMC_05",
+   "name": "Breaker after Failed Breakdown",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "breaker_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "need_failed_break": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "4e1c6d56e773f923"
+  },
+  {
+   "setup_rule": "drugi retest OB po nowym BOS; ΔOI 5 min > 0",
+   "trigger_rule": "potwierdzony retest",
+   "cancellation_rule": "close poza OB",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "BOS_OB",
+   "strategy_id": "CP_SMC_06",
+   "name": "Mitigation with OI Participation",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "second_mitigation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "open_interest"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "open_interest"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "oi_delta": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "f0e356d7313e11c8"
+  },
+  {
+   "setup_rule": "sweep EQL",
+   "trigger_rule": "close > high sweepu + b",
+   "cancellation_rule": "brak triggera w 2 świecach",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "CP_SMC_07",
+   "name": "Equal-Low Liquidity Raid",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "eq_raid",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "7227f433df747972"
+  },
+  {
+   "setup_rule": "retracement 0.62–0.79 impulsu BOS w discount",
+   "trigger_rule": "displacement",
+   "cancellation_rule": "utrata początku impulsu",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "OTE",
+   "strategy_id": "CP_SMC_08",
+   "name": "Discount OTE with Trend",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "ote_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15",
+    "H1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "ote": [
+     0.62,
+     0.79
+    ]
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "ed8600eea5ee877c"
+  },
+  {
+   "setup_rule": "low poprzedniej doby UTC naruszony",
+   "trigger_rule": "reclaim, MSS, pierwszy retest",
+   "cancellation_rule": "nowe low",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "CP_SMC_09",
+   "name": "Previous UTC Day Sweep",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "range_sweep",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "range": "PREV_UTC_DAY"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "0a9bdce2cb354354"
+  },
+  {
+   "setup_rule": "BTC narusza LL20, kontrakt nie",
+   "trigger_rule": "CHoCH + retest",
+   "cancellation_rule": "utrata własnej struktury",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za unieważnieniem + b; TP1 = 2R, TP2 = 3R po 50%; timeout 20 świec",
+   "correlation_group": "XASSET",
+   "strategy_id": "CP_SMC_10",
+   "name": "Cross-Asset Structure Divergence",
+   "version": "1.0.0",
+   "basket_id": "CP_SMC",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "cross_asset_divergence",
+   "kind": "SMC",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "benchmark_btc"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "benchmark_btc"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "tp_r": [
+     2.0,
+     3.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 20,
+    "window": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "441329417ccdfdbc"
+  },
+  {
+   "setup_rule": "EMA9 > EMA21; dotknięcie EMA9",
+   "trigger_rule": "close > high[t−1] + b",
+   "cancellation_rule": "close za EMA21",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "CP_SCALP_01",
+   "name": "EMA Microtrend Pullback",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "ema_pullback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "0749ba6e7548d05c"
+  },
+  {
+   "setup_rule": "close > HH20 + b i RVOL ≥ 1.5",
+   "trigger_rule": "retest w 3 świecach",
+   "cancellation_rule": "close pod poziomem − b",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "CP_SCALP_02",
+   "name": "Volume Breakout Retest",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "level_breakout_retest",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "real_volume"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "real_volume"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "level": "HH20",
+    "rvol_min": 1.5,
+    "retest_within": 3
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "df707f69734a7acd"
+  },
+  {
+   "setup_rule": "2 close pod VWAP od 00:00 UTC, ≤ 3 przecięcia w 10 świecach",
+   "trigger_rule": "reclaim i retest",
+   "cancellation_rule": "close pod VWAP",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "VWAP",
+   "strategy_id": "CP_SCALP_03",
+   "name": "UTC VWAP Reclaim",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "vwap_reclaim",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "real_volume"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "real_volume"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "anchor": "UTC_DAY",
+    "max_crosses": 3
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "8f3bfd3bb6cdcf1c"
+  },
+  {
+   "setup_rule": "ADX14 < 20, low poza lower BB",
+   "trigger_rule": "bullish powrót wewnątrz",
+   "cancellation_rule": "timeout 8",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "MEAN_REVERSION",
+   "strategy_id": "CP_SCALP_04",
+   "name": "Bollinger Range Snapback",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "bb_reentry",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "adx_max": 20
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "f24f48704243d7fc"
+  },
+  {
+   "setup_rule": "trend, ADX ≥ 25, ATR rośnie",
+   "trigger_rule": "close > HH20 + b",
+   "cancellation_rule": "powrót do kanału",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "CP_SCALP_05",
+   "name": "Donchian Momentum",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "donchian",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "adx_min": 25
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "eaad2027ba34fded"
+  },
+  {
+   "setup_rule": "3 z 5 bandwidth < 20. percentyla z 200 wcześniejszych",
+   "trigger_rule": "wybicie HH10 i RVOL ≥ 1.5",
+   "cancellation_rule": "powrót do kompresji",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "COMPRESSION",
+   "strategy_id": "CP_SCALP_06",
+   "name": "Squeeze with Volume Expansion",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "squeeze_volume",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "real_volume"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "real_volume"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "rvol_min": 1.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "3cbc8fc33df62240"
+  },
+  {
+   "setup_rule": "trend EMA20/50; RSI2 < 10",
+   "trigger_rule": "RSI2 > 20, close > high[t−1]",
+   "cancellation_rule": "utrata dołka",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "CP_SCALP_07",
+   "name": "RSI2 Trend Recovery",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "rsi2_snapback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price"
+   ],
+   "signal_timeframe": "M3",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "66a20dcb662c8d8a"
+  },
+  {
+   "setup_rule": "r15 własny i BTC > 0, z_asset − z_BTC ≥ 0.5",
+   "trigger_rule": "wybicie HH20",
+   "cancellation_rule": "utrata 3 świec",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "XASSET",
+   "strategy_id": "CP_SCALP_08",
+   "name": "Relative Strength Breakout",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "relative_strength",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "benchmark_btc"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "benchmark_btc"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8,
+    "z_min": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "752d61569db44204"
+  },
+  {
+   "setup_rule": "close > HH10",
+   "trigger_rule": "imbalance top5 ≥ 0.20 i agresywny buy ≥ 0.60 (30 s) przez 2 s",
+   "cancellation_rule": "reconnect unieważnia",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "ORDERFLOW",
+   "strategy_id": "CP_SCALP_09",
+   "name": "L2 & Aggressor Breakout",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "l2_aggressor",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "l2_orderbook",
+    "trades_aggressor"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "l2_orderbook",
+    "trades_aggressor"
+   ],
+   "signal_timeframe": "M1",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "f7dda1829a5340f8"
+  },
+  {
+   "setup_rule": "close > HH20 + b, RVOL ≥ 1.5, ΔOI 5 min > 0",
+   "trigger_rule": "kierunek M15 zgodny",
+   "cancellation_rule": "powrót pod zakres",
+   "entry_policy": "wejście po potwierdzeniu na dostępnej cenie (bez fill po close)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "PerpetualPlan",
+   "exit_policy_or_expiry_policy": "SL za ekstremum + b; TP1 = 1R, TP2 = 2R po 50%; timeout 8 świec",
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "CP_SCALP_10",
+   "name": "OI-Supported Expansion",
+   "version": "1.0.0",
+   "basket_id": "CP_SCALP",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "oi_expansion",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "real_volume",
+    "open_interest"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "real_volume",
+    "open_interest"
+   ],
+   "signal_timeframe": "M5",
+   "context_timeframes": [
+    "M15"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tp_r": [
+     1.0,
+     2.0
+    ],
+    "partial": 0.5,
+    "timeout_bars": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "08b02ab06d3492c5"
+  },
+  {
+   "setup_rule": "alt long + bearish CHoCH BTC M5",
+   "trigger_rule": "alt long + bearish CHoCH BTC M5",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "bullish BOS BTC, timeout, zamknięcie rodzica",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "bullish BOS BTC, timeout, zamknięcie rodzica",
+   "hedge_plan": "short BTC perp z beta",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_01",
+   "name": "Single-Alt BTC Beta Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "crypto_beta",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure",
+    "benchmark_btc"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure",
+    "benchmark_btc"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "factor": "BTC",
+    "ratio": 0.5,
+    "window": 120,
+    "window2": 60,
+    "corr_min": 0.5,
+    "trigger": "BENCH_CHOCH"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "e63e07d3fbee6783"
+  },
+  {
+   "setup_rule": "ekspozycja oznaczona ETH; ETH zmienia strukturę",
+   "trigger_rule": "ekspozycja oznaczona ETH; ETH zmienia strukturę",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "odbudowa struktury / spadek jakości relacji",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "odbudowa struktury / spadek jakości relacji",
+   "hedge_plan": "przeciwny ETH perp z bety",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_02",
+   "name": "ETH Ecosystem Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "eth_ecosystem",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "factor": "ETH",
+    "ratio": 0.5,
+    "window": 120,
+    "window2": 60,
+    "corr_min": 0.5,
+    "trigger": "BENCH_CHOCH",
+    "require_tag": "ETH"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "8655f57cff3ed22f"
+  },
+  {
+   "setup_rule": "≥ 2 alty; suma beta-exposure ponad limit",
+   "trigger_rule": "≥ 2 alty; suma beta-exposure ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "rebalans po przekroczeniu pasma",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "rebalans po przekroczeniu pasma",
+   "hedge_plan": "jedna noga BTC",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_03",
+   "name": "Alt-Basket Market Beta",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "basket_beta",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "factor": "BTC",
+    "ratio": 0.5,
+    "band": 0.25
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "b8dea8617b965867"
+  },
+  {
+   "setup_rule": "portfel altów z ekspozycją na BTC i ETH",
+   "trigger_rule": "portfel altów z ekspozycją na BTC i ETH",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "brak stabilnego rozwiązania = NO_HEDGE",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "brak stabilnego rozwiązania = NO_HEDGE",
+   "hedge_plan": "dwa notionals z modelu dwuczynnikowego",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_04",
+   "name": "Two-Factor BTC/ETH Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "two_factor",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "ratio": 0.5,
+    "max_cond": 30.0
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "333b773c13c0ed59"
+  },
+  {
+   "setup_rule": "residual z-score log-cen > 2 przy dodatniej becie",
+   "trigger_rule": "residual z-score log-cen > 2 przy dodatniej becie",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "residual 0.5 / rozpad / timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "residual 0.5 / rozpad / timeout",
+   "hedge_plan": "przeciwny perp drugiego instrumentu",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_05",
+   "name": "Sector Relative-Value Protection",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "residual_pair",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure",
+    "partner_symbol"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure",
+    "partner_symbol"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "z_in": 2.0,
+    "z_out": 0.5,
+    "window": 120
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "edb74298e7bd9b23"
+  },
+  {
+   "setup_rule": "range BTC M1 > 95. percentyla z 200, close przeciw ekspozycji",
+   "trigger_rule": "range BTC M1 > 95. percentyla z 200, close przeciw ekspozycji",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "3 normalne zakresy / timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "3 normalne zakresy / timeout",
+   "hedge_plan": "jednorazowy czasowy BTC hedge",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_06",
+   "name": "Volatility Shock Beta Shield",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "crypto_vol_shock",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure",
+    "benchmark_btc"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure",
+    "benchmark_btc"
+   ],
+   "signal_timeframe": "M1",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "pct": 0.95,
+    "lookback": 200,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "8c6e5026af153a05"
+  },
+  {
+   "setup_rule": "perp + drugi kontrakt tego samego underlying w innym namespace",
+   "trigger_rule": "perp + drugi kontrakt tego samego underlying w innym namespace",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "limit basis / koszt / timeout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "limit basis / koszt / timeout",
+   "hedge_plan": "przeciwna noga w drugim rynku",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_07",
+   "name": "Same-Underlying Cross-Market Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "cross_market",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure",
+    "second_market_same_underlying"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure",
+    "second_market_same_underlying"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "basis_limit_bps": 50
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "407900366d3e25b6"
+  },
+  {
+   "setup_rule": "zweryfikowane saldo spot + odpowiadający perp",
+   "trigger_rule": "zweryfikowane saldo spot + odpowiadający perp",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "zmniejszenie inventory / limit margin",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "zmniejszenie inventory / limit margin",
+   "hedge_plan": "short perp do części inventory",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_08",
+   "name": "Owned Spot Inventory Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "spot_inventory",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_spot_inventory"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_spot_inventory"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "ratio": 0.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "17cfc6e772a0c487"
+  },
+  {
+   "setup_rule": "strata scenariuszowa ponad limit",
+   "trigger_rule": "strata scenariuszowa ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "powrót do limitu",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "powrót do limitu",
+   "hedge_plan": "do 2 instrumentów minimalizujących najgorszą stratę",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_09",
+   "name": "Portfolio Stress-Loss Hedge",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "stress_loss",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "scenarios": [
+     -0.05,
+     -0.1,
+     -0.2
+    ],
+    "loss_limit": null
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "361fe6062f9d6f4d"
+  },
+  {
+   "setup_rule": "ekspozycja wymaga hedge; ≥ 2 instrumenty spełniają warunek",
+   "trigger_rule": "ekspozycja wymaga hedge; ≥ 2 instrumenty spełniają warunek",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "zmiana kosztów > koszt przebudowy",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "zmiana kosztów > koszt przebudowy",
+   "hedge_plan": "tańszy zestaw po fees i funding",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "CP_HEDGE_10",
+   "name": "Funding-Aware Hedge Selection",
+   "version": "1.0.0",
+   "basket_id": "CP_HEDGE",
+   "profile_id": "CRYPTO_FOMO_PERPS",
+   "family_id": "funding_aware",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "PERPETUAL"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_exposure",
+    "funding"
+   ],
+   "required_inputs": [
+    "hyperliquid_candles",
+    "asset_meta",
+    "mark_price",
+    "declared_exposure",
+    "funding"
+   ],
+   "signal_timeframe": "M15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "holding_h": 8
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_CP_HEDGE",
+   "config_hash": "dd64858409820a38"
+  },
+  {
+   "setup_rule": "sweep dołka; CHoCH w 3 świecach",
+   "trigger_rule": "pierwszy retest",
+   "cancellation_rule": "utrata ekstremum / deadline",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "OTC_SMC_01",
+   "name": "Micro Sweep & CHoCH",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "sweep_choch_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1",
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "827e9b22aa144cbd"
+  },
+  {
+   "setup_rule": "displacement z BOS tworzy OB",
+   "trigger_rule": "retest, close ponad środkiem",
+   "cancellation_rule": "close pod distal edge",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "BOS_OB",
+   "strategy_id": "OTC_SMC_02",
+   "name": "Micro Order Block Retest",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "bos_ob_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "da494c972ee45ef0"
+  },
+  {
+   "setup_rule": "własne FVG zgodne z M1",
+   "trigger_rule": "retest, close za strefą",
+   "cancellation_rule": "powrót poniżej strefy",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "FVG",
+   "strategy_id": "OTC_SMC_03",
+   "name": "Local FVG Continuation",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "fvg_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "max_wait": 6
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "bdfdcf42b5b1604e"
+  },
+  {
+   "setup_rule": "przeciwne FVG złamane po CHoCH",
+   "trigger_rule": "retest od góry",
+   "cancellation_rule": "utrata strefy",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "IFVG",
+   "strategy_id": "OTC_SMC_04",
+   "name": "Micro iFVG Reversal",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "ifvg_reversal",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "94e5f67e2238dc40"
+  },
+  {
+   "setup_rule": "złamany przeciwny OB, BOS",
+   "trigger_rule": "retest dawnej strefy",
+   "cancellation_rule": "close poza breakerem",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=180 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 180,
+   "correlation_group": "BREAKER",
+   "strategy_id": "OTC_SMC_05",
+   "name": "Local Breaker Block",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "breaker_retest",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1",
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "cf2af299c58b124f"
+  },
+  {
+   "setup_rule": "drugi retest OB po nowym BOS",
+   "trigger_rule": "retest (maks. 2)",
+   "cancellation_rule": "brak nowego BOS",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "BOS_OB",
+   "strategy_id": "OTC_SMC_06",
+   "name": "Second Mitigation Pattern",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "second_mitigation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "158534501b66728c"
+  },
+  {
+   "setup_rule": "sweep 2 EQL; reclaim",
+   "trigger_rule": "close > high sweepu + b",
+   "cancellation_rule": "brak potwierdzenia w 2 świecach",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "OTC_SMC_07",
+   "name": "Equal-Low Raid",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "eq_raid",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "67a7c22db798053e"
+  },
+  {
+   "setup_rule": "impuls BOS, OTE w discount",
+   "trigger_rule": "displacement",
+   "cancellation_rule": "utrata początku impulsu",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=180 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 180,
+   "correlation_group": "OTE",
+   "strategy_id": "OTC_SMC_08",
+   "name": "Discount OTE Microtrend",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "ote_continuation",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1",
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "ote": [
+     0.62,
+     0.79
+    ]
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "47a61d99d427f8be"
+  },
+  {
+   "setup_rule": "zakres 20 świec; sweep low",
+   "trigger_rule": "powrót, MSS, retest",
+   "cancellation_rule": "ten sam zakres przez event",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "OTC_SMC_09",
+   "name": "Rolling Range Sweep",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "range_sweep",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 260,
+   "parameter_schema": {
+    "range": "ROLLING20"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "bede64465e677272"
+  },
+  {
+   "setup_rule": "test OB M1 w trendzie M5",
+   "trigger_rule": "BOS S15 + retest",
+   "cancellation_rule": "utrata strefy nadrzędnej",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → continuation; range → sweep/reversal; zmiana struktury → reversal",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "NESTED",
+   "strategy_id": "OTC_SMC_10",
+   "name": "Nested Structure Continuation",
+   "version": "1.0.0",
+   "basket_id": "OTC_SMC",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "nested_structure",
+   "kind": "SMC",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1",
+    "M5"
+   ],
+   "min_history": 260,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "ba5c7dc72e607207"
+  },
+  {
+   "setup_rule": "EMA9 > EMA21, EMA21 rośnie",
+   "trigger_rule": "close > high[t−1] + b",
+   "cancellation_rule": "utrata dołka pullbacku",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "OTC_SCALP_01",
+   "name": "EMA9/21 Micro Pullback",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "ema_pullback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "ema21_rising": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "aa45bf8275de89a3"
+  },
+  {
+   "setup_rule": "ADX < 20; low poza BB",
+   "trigger_rule": "bullish close wewnątrz, knot ≥ 1.5 × body",
+   "cancellation_rule": "nowe low",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "MEAN_REVERSION",
+   "strategy_id": "OTC_SCALP_02",
+   "name": "Bollinger Wick Reentry",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "bb_reentry",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "adx_max": 20,
+    "wick_ratio": 1.5
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "5c367e5d4df87504"
+  },
+  {
+   "setup_rule": "range ADX < 20; odchylenie ≤ −1A",
+   "trigger_rule": "redukcja odchylenia ≥ 0.5A",
+   "cancellation_rule": "naruszenie min. 2 świec",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "MEAN_REVERSION",
+   "strategy_id": "OTC_SCALP_03",
+   "name": "EMA20 Mean Reclaim",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "ema20_mean_reclaim",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "1fea313ddf8b816a"
+  },
+  {
+   "setup_rule": "close > HH20 + b",
+   "trigger_rule": "retest w 2 świecach",
+   "cancellation_rule": "close pod poziomem − b",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "BREAKOUT",
+   "strategy_id": "OTC_SCALP_04",
+   "name": "Range20 Breakout Retest",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "level_breakout_retest",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "level": "HH20",
+    "retest_within": 2
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "45794de42a7227d1"
+  },
+  {
+   "setup_rule": "3 z 5 zakresów ≤ 0.6A",
+   "trigger_rule": "close nad high, body ≥ 0.8A, close w górnych 20%",
+   "cancellation_rule": "powrót do kompresji",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "COMPRESSION",
+   "strategy_id": "OTC_SCALP_05",
+   "name": "Compression Price Expansion",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "compression_breakout",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "k_range": 0.6,
+    "k_body": 0.8,
+    "close_extreme": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "13181ab1b26cd5b8"
+  },
+  {
+   "setup_rule": "trend M1; RSI2 < 10",
+   "trigger_rule": "RSI2 > 20, close > high[t−1]",
+   "cancellation_rule": "utrata dołka",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "TREND_PULLBACK",
+   "strategy_id": "OTC_SCALP_06",
+   "name": "RSI2 Trend Recovery",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "rsi2_snapback",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "htf_trend": true
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "5db295170e031e79"
+  },
+  {
+   "setup_rule": "wsparcie z 20 M1",
+   "trigger_rule": "engulfing, close > high[t−1]",
+   "cancellation_rule": "utrata poziomu",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=180 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 180,
+   "correlation_group": "SUPPORT_REJECTION",
+   "strategy_id": "OTC_SCALP_07",
+   "name": "Engulfing at Local Support",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "engulfing_support",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S30",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "support": "LOCAL20"
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "ab7aebb05d8c37c4"
+  },
+  {
+   "setup_rule": "2 dołki (0.2A, 3–12 świec)",
+   "trigger_rule": "close > neckline + b",
+   "cancellation_rule": "utrata niższego dołka",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=120 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 120,
+   "correlation_group": "DOUBLE_BOTTOM",
+   "strategy_id": "OTC_SCALP_08",
+   "name": "Micro Double Bottom Break",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "double_bottom",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {
+    "tol_atr": 0.2
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "e6cf139b697fe7e2"
+  },
+  {
+   "setup_rule": "inside bar w świecy matce; kontekst zgodny",
+   "trigger_rule": "close > high matki + b",
+   "cancellation_rule": "utrata low matki",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "MOMENTUM",
+   "strategy_id": "OTC_SCALP_09",
+   "name": "Inside-Bar Release",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "inside_bar",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "0efc779c72947d3e"
+  },
+  {
+   "setup_rule": "low < LL20 − b, close wraca",
+   "trigger_rule": "close > high świecy sweepu",
+   "cancellation_rule": "nowe low",
+   "entry_policy": "CALL/PUT po potwierdzeniu, deadline = min(½ świecy, 10% D)",
+   "regime_rule": "trend → pullback/momentum; range → mean reversion; kompresja → wybicie",
+   "plan_type": "FixedExpiryPlan",
+   "exit_policy_or_expiry_policy": "expiry D=60 s (obsługiwany termin w [0.8D, 1.2D]); unieważnienie dotyczy tylko sygnału przed otwarciem",
+   "expiry_target_s": 60,
+   "correlation_group": "SWEEP_RECLAIM",
+   "strategy_id": "OTC_SCALP_10",
+   "name": "Failed Breakdown Snapback",
+   "version": "1.0.0",
+   "basket_id": "OTC_SCALP",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "failed_breakdown",
+   "kind": "SCALP",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [
+    "M1"
+   ],
+   "min_history": 230,
+   "parameter_schema": {},
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT"
+   ],
+   "detector_version": "DET-1",
+   "config_hash": "4f774362e2cba818"
+  },
+  {
+   "setup_rule": "cena nad strike, bearish CHoCH S15",
+   "trigger_rule": "cena nad strike, bearish CHoCH S15",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "gate dla skrajnych cen",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "gate dla skrajnych cen",
+   "hedge_plan": "PUT z tym samym expiry, stake z planera",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_01",
+   "name": "Structure-Shift Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_structure",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "d80f56577eeb5bd0"
+  },
+  {
+   "setup_rule": "korzystny ruch, sweep oporu, bearish close",
+   "trigger_rule": "korzystny ruch, sweep oporu, bearish close",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "przedział między strikes sprawdzony",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "przedział między strikes sprawdzony",
+   "hedge_plan": "PUT z nowym strike",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_02",
+   "name": "Liquidity-Sweep Profit Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_sweep",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "921e1b29c7a243b5"
+  },
+  {
+   "setup_rule": "range S15 > 95. percentyla, close przeciw CALL",
+   "trigger_rule": "range S15 > 95. percentyla, close przeciw CALL",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "bez dokładania",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "bez dokładania",
+   "hedge_plan": "jednorazowa przeciwna noga",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_03",
+   "name": "Volatility-Shock Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_vol_shock",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "pct": 0.95,
+    "lookback": 200
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "c5c89cc32b662d2f"
+  },
+  {
+   "setup_rule": "pozostało 25–40% czasu, cena po korzystnej stronie",
+   "trigger_rule": "pozostało 25–40% czasu, cena po korzystnej stronie",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "lock ujemnego wyniku widoczny",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "lock ujemnego wyniku widoczny",
+   "hedge_plan": "PUT o identycznym końcu",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_04",
+   "name": "Late-Expiry Risk Lock",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_late_lock",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "remaining": [
+     0.25,
+     0.4
+    ]
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "f1635ad07194729d"
+  },
+  {
+   "setup_rule": "payout przeciwnej nogi wzrósł",
+   "trigger_rule": "payout przeciwnej nogi wzrósł",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "odrzuć nieaktualny payout",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "odrzuć nieaktualny payout",
+   "hedge_plan": "najmniejsza stawka dająca poprawę",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_05",
+   "name": "Payout Repricing Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_payout_reprice",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_payout"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_payout"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "c820ffa99956e041"
+  },
+  {
+   "setup_rule": "3 S15 bez nowego high, body ≤ 0.3A",
+   "trigger_rule": "3 S15 bez nowego high, body ≤ 0.3A",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "jedno uzbrojenie na ciąg",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "jedno uzbrojenie na ciąg",
+   "hedge_plan": "częściowa przeciwna noga",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_06",
+   "name": "Momentum-Stall Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_stall",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "0222099b78154ae1"
+  },
+  {
+   "setup_rule": "≥ 2 CALL o wspólnym expiry ponad limit",
+   "trigger_rule": "≥ 2 CALL o wspólnym expiry ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "limit grupy nie mnoży się",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "limit grupy nie mnoży się",
+   "hedge_plan": "jedna zagregowana noga PUT",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_07",
+   "name": "Same-Expiry Directional Basket",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_basket",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "limit": null
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "e88d56b17d1d3137"
+  },
+  {
+   "setup_rule": "maks. strata grupy ponad limit",
+   "trigger_rule": "maks. strata grupy ponad limit",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "NO_HEDGE gdy brak poprawy",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "NO_HEDGE gdy brak poprawy",
+   "hedge_plan": "przeciwna noga minimalizująca przekroczenie",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_08",
+   "name": "Expiry-Group Loss Budget",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_loss_budget",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1,
+    "loss_limit": null
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "9e9c0d422ac0cc1d"
+  },
+  {
+   "setup_rule": "po 1. ochronie kolejny ruch ≥ 0.5A",
+   "trigger_rule": "po 1. ochronie kolejny ruch ≥ 0.5A",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "domyślnie 1 warstwa",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "domyślnie 1 warstwa",
+   "hedge_plan": "druga warstwa tylko przy jawnej konfiguracji",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_09",
+   "name": "Two-Step Corridor Protection",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_corridor",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts",
+    "otc_feed"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "e1ac1a71001cd456"
+  },
+  {
+   "setup_rule": "CALL i PUT o tym samym expiry, nierówny ogon",
+   "trigger_rule": "CALL i PUT o tym samym expiry, nierówny ogon",
+   "entry_policy": "HEDGE_PLANNER: tylko istniejąca, zidentyfikowana ekspozycja; brak = NO_EXPOSURE",
+   "cancellation_rule": "zakaz naprzemiennego dokładania",
+   "plan_type": "HedgePlan",
+   "exit_policy_or_expiry_policy": "zakaz naprzemiennego dokładania",
+   "hedge_plan": "najmniejsza noga zmniejszająca gorszy ogon",
+   "regime_rule": "ochrona istniejącej ekspozycji (priorytet zasobów, ocena kosztu przez risk engine)",
+   "strategy_id": "OTC_HEDGE_10",
+   "name": "Mixed-Strike Residual Hedge",
+   "version": "1.0.0",
+   "basket_id": "OTC_HEDGE",
+   "profile_id": "OTC_GOLD_POCKETOPTION",
+   "family_id": "otc_residual",
+   "kind": "HEDGING",
+   "supported_product_types": [
+    "FIXED_EXPIRY"
+   ],
+   "required_capabilities": [
+    "closed_bars",
+    "declared_otc_contracts"
+   ],
+   "required_inputs": [
+    "gold_otc_feed",
+    "otc_payout",
+    "otc_expiries",
+    "declared_otc_contracts"
+   ],
+   "signal_timeframe": "S15",
+   "context_timeframes": [],
+   "min_history": 260,
+   "parameter_schema": {
+    "timeout_bars": 6,
+    "max_layers": 1
+   },
+   "risk_policy": "wspólny budżet konta; ilość/stawka = null bez skonfigurowanego kapitału profilu",
+   "model_feature_schema": "BASKET-FEAT-1 (setup_score, model_agreement, p_event_raw – osobne pola)",
+   "reason_codes": [
+    "NO_SETUP",
+    "WAITING_FOR_DATA",
+    "WARMUP",
+    "UNSUPPORTED_INPUT",
+    "CONFLICT",
+    "DUPLICATE_EVENT",
+    "NO_EXPOSURE",
+    "NO_HEDGE"
+   ],
+   "detector_version": "DET-1",
+   "correlation_group": "HEDGE_OTC_HEDGE",
+   "config_hash": "8a98bce666e92cff"
+  }
+ ],
+ "validation": {
+  "total": 90,
+  "unique": 90,
+  "baskets": 9,
+  "per_basket": {
+   "FX_SMC": 10,
+   "FX_SCALP": 10,
+   "FX_HEDGE": 10,
+   "CP_SMC": 10,
+   "CP_SCALP": 10,
+   "CP_HEDGE": 10,
+   "OTC_SMC": 10,
+   "OTC_SCALP": 10,
+   "OTC_HEDGE": 10
+  },
+  "distinct_families_per_basket": {
+   "FX_SMC": 10,
+   "FX_SCALP": 10,
+   "FX_HEDGE": 10,
+   "CP_SMC": 10,
+   "CP_SCALP": 10,
+   "CP_HEDGE": 10,
+   "OTC_SMC": 10,
+   "OTC_SCALP": 10,
+   "OTC_HEDGE": 10
+  },
+  "missing_fields": {},
+  "ok": true
+ }
+}

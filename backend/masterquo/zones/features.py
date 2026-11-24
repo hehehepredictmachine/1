@@ -102,4 +102,5 @@ def context_for(zmap: dict, *, direction: str, entry: float, stop: float | None,
             "opposing_zone": opp and {k: opp[k] for k in ("zone_id", "zone_type", "lower_price", "upper_price", "confluence_score", "status", "flags")},
             "supporting_zone": own and {k: own[k] for k in ("zone_id", "zone_type", "lower_price", "upper_price", "confluence_score", "status")},
             "room_after_costs_r": None if room != room else round(room, 3), "flags": flags,
-            "session_context": zmap.get("context"), "features": f}
+            # 1.46: NaN (missing feature) is not JSON - GET /api/v1/zones/context answered 500; missing = null here, compute() keeps NaN
+            "session_context": zmap.get("context"), "features": {k: (None if math.isnan(v) else v) for k, v in f.items()}}

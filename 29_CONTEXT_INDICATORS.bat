@@ -1,12 +1,15 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - Context indicators (PMW-UPD-14): VAMD, bounded Katz FD, Pullback + SMC (BoS/CHoCH/IDM/x), Buffer Inspector.
 rem Kalibracja tylko na dev (max 24 konfiguracje), trening SHADOW/OBSERVE, brak zlecen, brak zmian AutoTrading i Execution Lock.
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title PepeMarketWizard - Context indicators
+title Apollo23 - Context indicators
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
-if not exist "%PY%" (echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat & pause & exit /b 2)
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)
 set "PYTHONIOENCODING=utf-8"
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"

@@ -53,7 +53,9 @@ def economics(c: SetupCandidate, extra_cost: float | None) -> dict:
     w_tp = sum(t["weight"] * abs(t["price"] - c.entry_price) for t in c.targets)
     g = (w_tp - cost) / r
     l_ = (r + cost) / r
-    return {"ok": True, "R_price": r, "gain_r": g, "loss_r": l_, "cost_r": cost / r, "cost_known": extra_cost is not None,
+    # 1.46: an unknown extra cost is cost_r = None (it was stored as 0.0 and later used as a known zero cost in plan_r_net)
+    return {"ok": True, "R_price": r, "gain_r": g, "loss_r": l_, "cost_r": (cost / r) if extra_cost is not None else None,
+            "cost_known": extra_cost is not None,
             "break_even_p": (l_ / (g + l_)) if g + l_ > 0 and g > 0 else None}
 
 
@@ -90,8 +92,9 @@ def assess(c: SetupCandidate, *, prob: dict | None, extra_cost: float | None, ex
     if not eco["ok"]:
         a.decision, a.rejection_reasons = "REJECT", [eco["reason"]]
         return a
-    a.gain_r, a.loss_r, a.cost_r, a.break_even_probability = (round(eco["gain_r"], 4), round(eco["loss_r"], 4), round(eco["cost_r"], 4),
-                                                              None if eco["break_even_p"] is None else round(eco["break_even_p"], 4))
+    a.gain_r, a.loss_r, a.break_even_probability = (round(eco["gain_r"], 4), round(eco["loss_r"], 4),
+                                                    None if eco["break_even_p"] is None else round(eco["break_even_p"], 4))
+    a.cost_r = None if eco["cost_r"] is None else round(eco["cost_r"], 4)
     if not eco["cost_known"]:
         a.notes.append("koszt dodatkowy nieznany (prowizja/poślizg) – EV liczone bez niego")
     if eco["gain_r"] <= 0:

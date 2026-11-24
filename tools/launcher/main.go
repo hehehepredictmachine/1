@@ -14,11 +14,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-const version = "1.25.0"
+// 1.46: the banner showed the old brand and a frozen "1.25.0" (a const that no build could change). The version shown is read from the
+// package's own backend\masterquo\version.py (APP_VERSION - the release number), falling back to the build value
+// (-ldflags "-X main.version=..."). Only the displayed name changes; PepeMarketWizard.exe, folders and data paths are identifiers.
+var version = "dev"
+
+const displayName = "Apollo23"
+
+var appVersionRe = regexp.MustCompile(`(?m)^APP_VERSION\s*=\s*"([^"]+)"`)
+
+func appVersion(r string) string {
+	if b, err := os.ReadFile(filepath.Join(r, "backend", "masterquo", "version.py")); err == nil {
+		if m := appVersionRe.FindSubmatch(b); m != nil {
+			return string(m[1])
+		}
+	}
+	return version
+}
 
 var required = []string{
 	`tools\check_python.py`, `tools\trening.cmd`, `backend\masterquo\__main__.py`, `backend\mq_instruments.py`,
@@ -150,7 +167,8 @@ func main() {
 	initConsole()
 	r := root()
 	s := loadSettings(r)
-	fmt.Printf("PepeMarketWizard %s - launcher (folder: %s)\n", version, r)
+	ver := appVersion(r)
+	fmt.Printf("%s %s - launcher (folder: %s)\n", displayName, ver, r)
 	fmt.Println("Trening i kalibracja dzialaja offline/SHADOW: nie wysylaja zlecen i nie zmieniaja trybu wykonania.")
 	if miss := missingFiles(r); len(miss) > 0 {
 		fmt.Println("\n[BLAD] Niekompletny folder programu - brak:", strings.Join(miss, ", "))
@@ -173,7 +191,7 @@ func main() {
 		if venvReady(r) {
 			state = "zainstalowane"
 		}
-		fmt.Printf("\n=== PepeMarketWizard %s === srodowisko: %s, budzet RAM treningu: %d MB\n", version, state, s.RAMBudgetMB)
+		fmt.Printf("\n=== %s %s === srodowisko: %s, budzet RAM treningu: %d MB\n", displayName, ver, state, s.RAMBudgetMB)
 		fmt.Println(" 1. Instalacja / naprawa srodowiska (Python z paczki albo 3.13/3.12 x64, .venv + .venv_candles)")
 		fmt.Println(" 2. Kalibracja + trening modeli XAUUSD (eksport z MT5 -> wszystkie zadania -> raport)")
 		fmt.Println(" 3. Kalibracja + trening modeli BTC")

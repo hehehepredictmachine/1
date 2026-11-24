@@ -22,7 +22,11 @@ from . import paths
 CLOSE_ACTIONS = ("ask", "background", "exit")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE = "PepeMarketWizard"
-DEFAULT_PREFS = {"close_action": "ask", "autostart": False, "start_minimized": False}
+DEFAULT_PREFS = {"close_action": "ask", "autostart": False, "start_minimized": False,
+                 # 1.45 (TASK 013): borderless fullscreen + adaptive UI scale + automatic entry into the panel are ON by default.
+                 # The window never changes the Windows display resolution; Auto Scale = native DPI + responsive layout.
+                 "fullscreen": True, "auto_scale": True, "auto_enter": True}
+DISPLAY_KEYS = ("fullscreen", "auto_scale", "auto_enter")
 
 
 class DesktopError(ValueError):
@@ -89,6 +93,9 @@ def load_prefs() -> dict:
         p["close_action"] = raw["close_action"]
     p["autostart"] = bool(raw.get("autostart"))
     p["start_minimized"] = bool(raw.get("start_minimized"))
+    for k in DISPLAY_KEYS:
+        if isinstance(raw.get(k), bool):
+            p[k] = raw[k]
     return p
 
 
@@ -135,8 +142,17 @@ def save_prefs(close_action: str, autostart: bool, start_minimized: bool, reg: R
             reg.set(autostart_command(exe))
         elif reg.get() is not None:
             reg.delete()
-    _write_prefs({"close_action": close_action, "autostart": bool(autostart), "start_minimized": bool(start_minimized)})
+    cur = load_prefs()
+    _write_prefs({"close_action": close_action, "autostart": bool(autostart), "start_minimized": bool(start_minimized),
+                  **{k: cur[k] for k in DISPLAY_KEYS}})
     return info(reg)
+
+
+def save_display(fullscreen: bool, auto_scale: bool, auto_enter: bool) -> dict:
+    """TASK 013 display prefs (read by the Windows shell at the next window switch / start)."""
+    cur = load_prefs()
+    _write_prefs({**cur, "fullscreen": bool(fullscreen), "auto_scale": bool(auto_scale), "auto_enter": bool(auto_enter)})
+    return load_prefs()
 
 
 def request_restart() -> None:

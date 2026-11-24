@@ -170,7 +170,9 @@ def pso(f, lb, ub, pop=20, max_evals=1000, w=0.72, c1=1.49, c2=1.49, seed=7, dir
                     g = i
         hist.append(float(pf[g]))
     sign = 1.0 if direction == "min" else -1.0
-    return {"algorithm": "PSO", "best_x": pb[g].tolist(), "best_f": sign * float(pf[g]), "evaluations": ev.n, "convergence": [sign * h for h in hist]}
+    ok = math.isfinite(float(pf[g]))                  # 1.46: only invalid evaluations -> no best (was best_f = +-inf with a random x)
+    return {"algorithm": "PSO", "status": "OK" if ok else "NO_VALID_EVALUATION", "best_x": pb[g].tolist() if ok else None,
+            "best_f": sign * float(pf[g]) if ok else None, "evaluations": ev.n, "convergence": [sign * h for h in hist]}
 
 
 def differential_evolution(f, lb, ub, pop=20, max_evals=1000, F=0.6, CR=0.9, seed=7, direction="min") -> dict:
@@ -194,7 +196,9 @@ def differential_evolution(f, lb, ub, pop=20, max_evals=1000, F=0.6, CR=0.9, see
         hist.append(float(fit.min()))
     sign = 1.0 if direction == "min" else -1.0
     k = int(np.argmin(fit))
-    return {"algorithm": "DE", "best_x": X[k].tolist(), "best_f": sign * float(fit[k]), "evaluations": ev.n, "convergence": [sign * h for h in hist]}
+    ok = math.isfinite(float(fit[k]))                 # 1.46: only invalid evaluations -> no best (was best_f = +-inf with a random x)
+    return {"algorithm": "DE", "status": "OK" if ok else "NO_VALID_EVALUATION", "best_x": X[k].tolist() if ok else None,
+            "best_f": sign * float(fit[k]) if ok else None, "evaluations": ev.n, "convergence": [sign * h for h in hist]}
 
 
 def random_search(f, lb, ub, max_evals=1000, seed=7, direction="min") -> dict:
@@ -211,7 +215,11 @@ def random_search(f, lb, ub, max_evals=1000, seed=7, direction="min") -> dict:
             best, bx = s, x
         hist.append(best)
     sign = 1.0 if direction == "min" else -1.0
-    return {"algorithm": "RANDOM", "best_x": bx.tolist(), "best_f": sign * best, "evaluations": ev.n, "convergence": [sign * h for h in hist]}
+    # 1.46: every evaluation NaN / inf / failed (e.g. the Kalman calibration objective with < 30 events) left bx None and
+    # bx.tolist() raised AttributeError - the whole job failed although buzoa() reports NO_VALID_EVALUATION for the same objective
+    ok = bx is not None
+    return {"algorithm": "RANDOM", "status": "OK" if ok else "NO_VALID_EVALUATION", "best_x": bx.tolist() if ok else None,
+            "best_f": sign * best if ok else None, "evaluations": ev.n, "convergence": [sign * h for h in hist]}
 
 
 # ------------------------------------------------------------------------------------------ benchmark functions

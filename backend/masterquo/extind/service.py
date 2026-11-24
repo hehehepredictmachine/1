@@ -36,6 +36,7 @@ class ExtIndService:
         self.cfg_store, self.db, self.bridge, self.bus, self.log = cfg_store, db, bridge, bus, log
         self._stop = threading.Event()
         self.heartbeat: dict[str, dict] = {}
+        self.heartbeat_by_inst: dict[tuple[str, str | None], dict] = {}   # 1.46: (adapter, instrument) - one adapter on two charts
         self.errors: list[dict] = []
         self.files_seen: dict[str, float] = {}
 
@@ -81,7 +82,16 @@ class ExtIndService:
                 if self.files_seen.get(str(f)) == st.st_mtime:
                     continue
                 self.files_seen[str(f)] = st.st_mtime
-                n += self.ingest_bytes(f.read_bytes(), f.name, now)
+                try:
+                    raw = f.read_bytes()
+                except OSError as exc:
+                    self.files_seen.pop(str(f), None)            # 1.46: read again on the next scan
+                    self._err(f.name, f"{type(exc).__name__}: {exc}")
+                    continue
+                try:
+                    n += self.ingest_bytes(raw, f.name, now)
+                except Exception as exc:  # noqa: BLE001 - 1.46: one bad file is rejected alone, the scan of the others goes on
+                    self._err(f.name, f"{type(exc).__name__}: {exc}")
         return n
 
     def ingest_bytes(self, raw: bytes, name: str = "<bytes>", now: datetime | None = None) -> int:
@@ -115,18 +125,32 @@ class ExtIndService:
         self.heartbeat[adapter] = {"at": iso(now), "source_instance": src, "sequence": env["sequence"], "generation": env["generation"],
                                    "symbol": env["symbol"], "instrument": inst, "objects": len(env["objects"]),
                                    "inventory": [{"name": o["name"], "type": o["type"]} for o in env["objects"][:200]]}
+        self.heartbeat_by_inst[(adapter, inst)] = self.heartbeat[adapter]
         if self.bus:
             self.bus.publish("extind", {"adapter": adapter, "snapshot_id": sid})
         return 1
 
     # ------------------------------------------------------------------ point-in-time reads
     def as_of(self, adapter: str, instrument: str, t: datetime, approved_only: bool = True) -> dict | None:
-        q = "SELECT * FROM extind_snapshots WHERE adapter=? AND instrument=? AND available_at <= ?"
+        # 1.46: available_at is ISO text with or without a fraction ('...:00.400000Z' < '...:00Z' as text): a snapshot received 0.4 s
+        # AFTER a decision at a full second passed 'available_at <= D' (look-ahead) and the order inside one second was reversed.
+        # The index still selects whole seconds; inside a second the stamps are compared as times.
+        w = " FROM extind_snapshots WHERE adapter=? AND instrument=?"
         if approved_only:
-            q += " AND mapping_status='MAPPING_APPROVED' AND time_status='OK'"
-        r = self.db.one(q + " ORDER BY available_at DESC, sequence DESC LIMIT 1", (adapter, instrument, iso(t)))
-        if not r:
+            w += " AND mapping_status='MAPPING_APPROVED' AND time_status='OK'"
+        tu = parse_iso(iso(t))
+        sec = tu.strftime("%Y-%m-%dT%H:%M:%S")                    # stored stamps: 'YYYY-MM-DDTHH:MM:SS[.ffffff]Z' ('.', 'Z' < '~')
+
+        def second(s: str) -> list[dict]:
+            return self.db.query("SELECT *" + w + " AND available_at >= ? AND available_at < ?", (adapter, instrument, s, s + "~"))
+        rows = [x for x in second(sec) if parse_iso(x["available_at"]) <= tu]
+        if not rows:                                               # the newest earlier second: every stamp in it is before t
+            prev = self.db.one("SELECT substr(available_at, 1, 19) AS s" + w + " AND available_at < ? ORDER BY available_at DESC LIMIT 1",
+                               (adapter, instrument, sec))
+            rows = second(prev["s"]) if prev else []
+        if not rows:
             return None
+        r = max(rows, key=lambda x: (parse_iso(x["available_at"]), x["sequence"]))
         for k in ("levels", "windows", "events"):
             r[k] = json.loads(r[k])
         r["age_s"] = (t - parse_iso(r["available_at"])).total_seconds()
@@ -135,12 +159,16 @@ class ExtIndService:
     def status(self, instrument: str | None = None, now: datetime | None = None) -> dict:
         now = now or utcnow()
         out = {}
+        # 1.46: status(instrument) is the status of THIS instrument's chart (heartbeat, last read, archive); None = every chart (CLI)
+        w, args = (" AND instrument=?", (instrument,)) if instrument is not None else ("", ())
         for a in ADAPTERS:
             man = mp.manifest(a)
-            hb = self.heartbeat.get(a)
-            last = self.db.one("SELECT * FROM extind_snapshots WHERE adapter=? ORDER BY received_at DESC LIMIT 1", (a,))
-            cnt = self.db.one("SELECT COUNT(*) AS n FROM extind_snapshots WHERE adapter=? AND mapping_status='MAPPING_APPROVED'", (a,))["n"]
+            hb = self.heartbeat.get(a) if instrument is None else self.heartbeat_by_inst.get((a, instrument))
+            last = self.db.one("SELECT * FROM extind_snapshots WHERE adapter=?" + w + " ORDER BY received_at DESC LIMIT 1", (a, *args))
+            cnt = self.db.one("SELECT COUNT(*) AS n FROM extind_snapshots WHERE adapter=?" + w + " AND mapping_status='MAPPING_APPROVED'",
+                              (a, *args))["n"]
             ms, _ = mp.mapping_status(a, None)
+            live_ms = last["mapping_status"] if last else None     # 1.46: mapping status of the newest read (product version checked)
             ident = man.get("identity_status")
             if ident != "IDENTIFIED":
                 source = ident
@@ -150,7 +178,7 @@ class ExtIndService:
                 source = "STALE"
             else:
                 source = "RECEIVING"
-            runtime = "READY_RUNTIME" if source == "RECEIVING" and ms == "MAPPING_APPROVED" else "NOT_READY"
+            runtime = "READY_RUNTIME" if source == "RECEIVING" and ms == "MAPPING_APPROVED" and live_ms == "MAPPING_APPROVED" else "NOT_READY"
             needs = []
             if ident == "BLOCKED_IDENTITY_REQUIRED":
                 needs.append("pełna identyfikacja PAL02M: producent, platforma, wersja, wyjścia, licencja (data/extind/manifests/PAL02M.json)")
@@ -160,10 +188,13 @@ class ExtIndService:
                 needs.append("licencjonowany wskaźnik na wykresie MT5 + PMW_ExtIndicatorExporter (mql5/) z tym adapterem")
             if ms != "MAPPING_APPROVED" and ident == "IDENTIFIED":
                 needs.append("mapping obiektów zatwierdzony po porównaniu liczb z wykresem")
+            if live_ms == "MAPPING_VERSION_CHANGED" and ident == "IDENTIFIED":
+                needs.append("nowa wersja produktu na wykresie – ponowne zatwierdzenie mappingu (odczyty nowej wersji nie są używane)")
             if cnt < 200:
                 needs.append(f"archiwum point-in-time: {cnt} zatwierdzonych odczytów (do treningu potrzeba ciągłej rejestracji na żywo)")
             out[a] = {"adapter": a, "title": man.get("title"), "implementation_status": "IMPLEMENTED_INGEST_MAPPING_ARCHIVE",
-                      "identity_status": ident, "source_status": source, "mapping_status": ms, "runtime_status": runtime,
+                      "identity_status": ident, "source_status": source, "mapping_status": ms, "live_mapping_status": live_ms,
+                      "runtime_status": runtime,
                       "dataset_status": "READY_FOR_DATASET" if cnt >= 200 else "BLOCKED_NO_ARCHIVE",
                       "training_status": "BLOCKED_NO_DATA" if cnt < 200 else "TRAINING_PIPELINE_IMPLEMENTED",
                       "validation_status": "NOT_VALIDATED", "mode": "OBSERVE", "archived_approved": cnt, "heartbeat": hb and {k: hb[k] for k in

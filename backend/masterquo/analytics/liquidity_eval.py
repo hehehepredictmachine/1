@@ -130,6 +130,7 @@ def evaluate(inst: str, ds: Path, *, commission: float | None = None, db=None, l
         if name in ("B2", "B3") and not mapping_ok:
             rep["variants"][name] = {"status": "BLOCKED", "reason": heat_status + " – heatmapa obcego instrumentu bez zweryfikowanego mapowania nie jest oceniana na cenie brokera"}
             continue
+        covered = 0                       # 1.46: per variant - B3 reported B2+B3 coverage and could hide BLOCKED_NO_POINT_IN_TIME_HISTORY
         t0 = time.time()
         res = replay.run(m1, data["prof"], data["tick"], data["replay_costs"], accept=None if name == "B0" else acc)
         cyc = res["cycles"]

@@ -24,9 +24,11 @@ import importlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import time
+import threading
 import uuid
 from pathlib import Path
 
@@ -38,6 +40,17 @@ VERSION = "PMW-FAM-1"
 IMPL = ("AVAILABLE", "MISSING_DEPENDENCY", "NO_SOURCE", "ERROR")
 ARTIFACT = ("NOT_TRAINED", "TRAINING", "CANDIDATE", "VALIDATION_FAILED", "APPROVED", "INCOMPATIBLE", "STALE")
 USE = ("OFF", "SHADOW", "ASSIST")
+NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+# 1.46: one vocabulary for the data kind of an artifact. The marketdata Store writes REAL_USER_DATA / SYNTHETIC_TEST / UNKNOWN_SOURCE, the live
+# bridge path MT5_LIVE_BRIDGE (real terminal) or SYNTHETIC_TEST (demo simulator); 1.45.0 compared only with 'REAL' / 'SYNTHETIC'.
+_REAL_KINDS = {"REAL", "REAL_USER_DATA", "MT5_LIVE_BRIDGE"}
+_SYNTH_KINDS = {"SYNTHETIC", "SYNTHETIC_TEST", "SYNTHETIC_DEMO", "SIMULATED"}
+
+
+def kind_class(data_kind) -> str | None:
+    """'REAL' / 'SYNTHETIC' / None (unknown - never treated as real)."""
+    k = str(data_kind or "").upper()
+    return "REAL" if k in _REAL_KINDS else "SYNTHETIC" if k in _SYNTH_KINDS else None
 
 
 class Unavailable(Exception):
@@ -76,9 +89,19 @@ def root() -> Path:
 
 
 def _atomic_json(p: Path, obj) -> None:
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    # 1.42.10: unikalny plik tymczasowy na proces/wątek – stan zadania zapisują równolegle proces treningu i wątki bota
+    # (wspólne „.json.tmp” dawało FileNotFoundError przy jednoczesnym zapisie).
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1, default=_json_default), encoding="utf-8")
-    tmp.replace(p)
+    for i in range(5):
+        try:
+            tmp.replace(p)
+            return
+        except PermissionError:                     # Windows: plik chwilowo otwarty do odczytu przez drugi proces
+            if i == 4:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05 * (i + 1))
 
 
 def _json_default(o):
@@ -100,6 +123,16 @@ def _read(p: Path, default=None):
 
 def finite(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def point_of(data: dict) -> float:
+    """1.46: the symbol's point size from the training data spec. Missing / not positive -> BLOCKED_DATA (1.45.0 assumed 0.01: on a
+    3-digit XAUUSD broker the spread cost of BREAKOUT / SEQ / RL_PPO was 10x too high)."""
+    p = data.get("point")
+    if not finite(p) or p <= 0:
+        raise Unavailable("BLOCKED_DATA", "brak specyfikacji symbolu (rozmiar punktu) – koszt spreadu nie jest liczony na założonym punkcie; "
+                                          "wyeksportuj historię z MT5 (manifest magazynu danych)")
+    return float(p)
 
 
 # ------------------------------------------------------------------ data helpers (one code path for training and runtime)
@@ -143,17 +176,54 @@ class Store:
         self.base = Path(base) if base else root()
 
     def fam_dir(self, family: str, inst: str) -> Path:
+        # 1.46: no path separators / '..' in a family or instrument segment (1.45.0: fid '..' wrote state.json outside model_families)
+        for seg in (family, inst):
+            if not isinstance(seg, str) or not NAME_RX.match(seg):
+                raise KeyError("FAMILY_OR_INSTRUMENT_INVALID")
         d = self.base / family / inst
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    OWNER = ".owner.json"                # 1.46: pid of the training process inside its .tmp-<run> dir (removed before commit)
+    ORPHAN_LEGACY_S = 24 * 3600          # a .tmp-<run> without an owner file (1.45.0) counts as orphaned only after a day
+
     def new_run(self, family: str, inst: str) -> tuple[str, Path]:
+        self.sweep_tmp(family, inst)
         rid = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:8]
         tmp = self.fam_dir(family, inst) / (".tmp-" + rid)
         tmp.mkdir(parents=True, exist_ok=False)
+        _atomic_json(tmp / self.OWNER, {"pid": os.getpid(), "created_at": time.time()})
         return rid, tmp
 
+    def sweep_tmp(self, family: str, inst: str) -> list[str]:
+        """1.46: .tmp-<run> dirs of a training that never finished (cancel = terminate, crash, out of memory, app closed) stayed forever -
+        SEQ left its whole dataset there (seq_data.npz, up to ~200 MB). An unfinished run is never an artifact (runs() skips it, nothing
+        loads it); it is removed only when its owner process is no longer alive (a running training keeps its directory)."""
+        from ...training.core import _pid_alive
+        removed = []
+        for p in self.fam_dir(family, inst).glob(".tmp-*"):
+            if not p.is_dir():
+                continue
+            own = _read(p / self.OWNER, None)
+            if isinstance(own, dict):
+                try:
+                    alive = _pid_alive(int(own.get("pid") or 0))
+                except (TypeError, ValueError, OSError):
+                    alive = True                                     # unknown -> keep
+                if alive:
+                    continue
+            else:
+                try:
+                    if time.time() - p.stat().st_mtime < self.ORPHAN_LEGACY_S:
+                        continue
+                except OSError:
+                    continue
+            shutil.rmtree(p, ignore_errors=True)
+            removed.append(p.name)
+        return removed
+
     def commit(self, family: str, inst: str, rid: str, tmp: Path, manifest: dict) -> Path:
+        (tmp / self.OWNER).unlink(missing_ok=True)                   # 1.46: the owner marker is not a part of the artifact
         files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(tmp.iterdir()) if p.is_file()}
         manifest = dict(manifest, files=files, run_id=rid, family=family, instrument=inst, framework=VERSION, created_at=time.time())
         _atomic_json(tmp / "manifest.json", manifest)
@@ -205,6 +275,15 @@ class Store:
         self._save_state(family, inst, st)
         return st
 
+    def assist_ok(self, family: str, inst: str, rid: str | None) -> tuple[bool, str | None]:
+        """1.46: THE ASSIST gate (one place): an active artifact with validation APPROVED, trained on data verified as REAL."""
+        m = _read(self.run_dir(family, inst, rid) / "manifest.json") if rid else None
+        if not m or (m.get("validation") or {}).get("status") != "APPROVED":
+            return False, "ASSIST wymaga aktywnego artefaktu ze statusem APPROVED (kryteria promocji spełnione na danych rozwojowych)"
+        if kind_class(m.get("data_kind")) != "REAL":
+            return False, f"artefakt na danych {m.get('data_kind') or 'NIEZNANYCH'} (nie REAL) nie uzyskuje roli ASSIST"
+        return True, None
+
     def rollback(self, family: str, inst: str) -> dict:
         st = self.state(family, inst)
         acts = [h for h in st.get("history") or [] if h["action"] == "ACTIVATE"]
@@ -219,11 +298,9 @@ class Store:
             raise ValueError(f"USE_INVALID:{use}")
         st = self.state(family, inst)
         if use == "ASSIST":
-            m = _read(self.run_dir(family, inst, st["active"]) / "manifest.json") if st.get("active") else None
-            if not m or (m.get("validation") or {}).get("status") != "APPROVED":
-                raise ValueError("ASSIST wymaga aktywnego artefaktu ze statusem APPROVED (kryteria promocji spełnione na danych rozwojowych)")
-            if m.get("data_kind") == "SYNTHETIC":
-                raise ValueError("artefakt na danych SYNTETYCZNYCH nie uzyskuje roli ASSIST")
+            ok, why = self.assist_ok(family, inst, st.get("active"))     # 1.46: allowlist REAL (1.45.0 refused only the literal 'SYNTHETIC')
+            if not ok:
+                raise ValueError(why)
         st["use"] = use
         st.setdefault("history", []).append({"at": time.time(), "action": "USE", "use": use})
         self._save_state(family, inst, st)
@@ -250,6 +327,7 @@ class Family:
     RECEIVERS: tuple[str, ...] = ()
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 500}
     FIT_LABEL = "trening"
+    NEEDS_POINT = False              # 1.46: True = fit converts the bar spread (points) to price - the symbol's point size must be known
 
     def capabilities(self) -> dict:
         return {"id": self.ID, "name": self.NAME, "kind": self.KIND, "task_type": self.TASK_TYPE, "unit": self.UNIT, "task": self.TASK,
@@ -281,6 +359,11 @@ class Family:
         t = np.asarray([b["t"] for b in bars])
         if np.any(np.diff(t) <= 0):
             return False, "czas niemonotoniczny / duplikaty"
+        if self.NEEDS_POINT:
+            try:
+                point_of(data)
+            except Unavailable as u:
+                return False, u.reason
         return True, None
 
     # to implement

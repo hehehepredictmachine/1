@@ -1,12 +1,15 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - Scalp ML: P(dodatni wynik netto cyklu) + net_R, XGBoost LONG/SHORT (PMW-UPD-03).
 rem Nie wysyla zlecen, nie zmienia Execution Lock. Nowy model nigdy nie jest wybierany automatycznie (OBSERVE / SHADOW_GATE recznie).
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - Scalp ML
+title Apollo23 - Scalp ML
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
-if not exist "%PY%" (echo [BLAD] Brak .venv - uruchom INSTALUJ_TRENING.bat & pause & exit /b 2)
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje & pause & exit /b 2)
 set "PYTHONIOENCODING=utf-8"
 set "ASSET=%~1"
 if "%ASSET%"=="" set "ASSET=XAUUSD"

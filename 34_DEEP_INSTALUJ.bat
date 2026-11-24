@@ -1,5 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 set "MQ_PAUSE=pause"
 if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
 rem PepeMarketWizard 1.33 - instalacja izolowanego srodowiska .venv_deep (PyTorch CPU, Gymnasium, Stable-Baselines3) dla modeli
@@ -10,7 +13,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=deep"
 set "LOG=%ROOT%data\logs\instalacja_deep_%TS%.log"
-echo [PepeMarketWizard] Instalacja .venv_deep - log: "%LOG%"
+echo [Apollo23] Instalacja .venv_deep - log: "%LOG%"
 set "PYEXE="
 if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
 for %%V in (3.13 3.12) do (

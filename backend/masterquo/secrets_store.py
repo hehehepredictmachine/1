@@ -67,6 +67,9 @@ class SecretStore:
         raw = self._read().get(name)
         if not raw:
             return None
+        return self._decode(raw)
+
+    def _decode(self, raw) -> str | None:
         try:
             if self.windows:
                 return _dpapi(base64.b64decode(raw), protect=False).decode("utf-8")
@@ -77,7 +80,12 @@ class SecretStore:
     def source(self, name: str) -> str:
         if os.environ.get(name):
             return "ENVIRONMENT"
-        return "LOCAL_STORE" if self._read().get(name) else "MISSING"
+        raw = self._read().get(name)
+        if not raw:
+            return "MISSING"
+        # 1.46: stored but not decryptable (DPAPI of another Windows user / computer, e.g. a moved portable folder) - get() returns None,
+        # the panel showed LOCAL_STORE with no mask; UNREADABLE = enter the secret again
+        return "LOCAL_STORE" if self._decode(raw) is not None else "UNREADABLE"
 
     def set(self, name: str, value: str | None) -> None:
         if name not in ALLOWED:
@@ -91,11 +99,15 @@ class SecretStore:
             else:
                 data[name] = value.strip()
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data), encoding="utf-8")
+            # 1.46: created 0600 before any secret is written (was write_text with the umask mode, usually 0644, chmod only afterwards and
+            # its error ignored); fchmod also narrows a stale temp file left by a crash
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             try:
-                os.chmod(tmp, 0o600)
-            except OSError:
+                os.fchmod(fd, 0o600)
+            except (OSError, AttributeError):
                 pass
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data))
             tmp.replace(self.path)
 
     def mask(self, name: str) -> str | None:

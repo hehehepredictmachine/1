@@ -368,7 +368,8 @@ class TestDeepWorker(Base):
         s = self.svc()
         self.assertTrue(s.activate("RL_PPO", "XAUUSD", r["run_id"])["ok"])
         f = s.fams["RL_PPO"]
-        res = f.predict(f.load(self.store.run_dir("RL_PPO", "XAUUSD", r["run_id"])), {"bars": bars})
+        # 1.46: the position is passed explicitly - an unknown position is BLOCKED_DATA, no longer silently FLAT (rule: missing data != 0)
+        res = f.predict(f.load(self.store.run_dir("RL_PPO", "XAUUSD", r["run_id"])), {"bars": bars, "position": 0.0})
         self.assertIn(res["action"], ("SHORT", "FLAT", "LONG"))
         self.assertAlmostEqual(sum(res["action_probabilities"].values()), 1.0, places=5)
         m = self.store.runs("RL_PPO", "XAUUSD")[-1]

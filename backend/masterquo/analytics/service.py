@@ -160,33 +160,41 @@ class AnalyticsService:
                 if self._stop.is_set():
                     return
                 tf, job = self.pending.popitem()
-            key, bars, sym, cfg, timeout = job
-            for mod, fn in (("fft", SG.fft_analysis), ("emd", SG.emd_analysis), ("vmd", SG.vmd_analysis)):
-                ck = (mod, tf, key)
-                try:
-                    if ck in self.cache:
-                        r = self.cache[ck]
-                        self.counters["cache_hits"] += 1
-                    else:
-                        t0 = time.perf_counter()
-                        r = fn(bars, tf, cfg, sym, timeout) if mod == "vmd" else fn(bars, tf, cfg, sym)
-                        if (time.perf_counter() - t0) > timeout:
-                            self.counters["timeouts"] += 1
-                            r = {**r, "status": "error", "reason": f"TIMEOUT > {timeout}s", "values": None}
-                        self.cache[ck] = r
-                        if len(self.cache) > 300:
-                            self.cache.pop(next(iter(self.cache)))
-                except Exception as exc:
-                    self._err(mod, exc)
-                    r = contract.result(mod, "?", cfg, symbol=sym, tf=tf, bars=bars, status="error", reason=f"{type(exc).__name__}: {exc}"[:200])
-                if self.keys.get(tf) != key:                   # late result of an older bar / configuration: never shown as current
-                    self.counters["discarded_stale"] += 1
-                    continue
-                self.state.setdefault(tf, {})[mod] = r
-                self.counters["computed"] += 1
-                self._lat(mod, r.get("latency_ms"))
-                self._archive(r)
-            self.bus.publish("analytics", self.summary())
+            # 1.46: an exception outside the per-module try (publish/summary: 'dictionary changed size during iteration') ended
+            # this thread silently - no entry in errors, FFT/EMD/VMD never computed again until restart. Logged, the loop goes on.
+            try:
+                self._run_job(tf, job)
+            except Exception as exc:  # noqa: BLE001 - analytics never affect the bot; the worker must outlive any job
+                self._err("worker", exc)
+
+    def _run_job(self, tf: str, job: tuple) -> None:
+        key, bars, sym, cfg, timeout = job
+        for mod, fn in (("fft", SG.fft_analysis), ("emd", SG.emd_analysis), ("vmd", SG.vmd_analysis)):
+            ck = (mod, tf, key)
+            try:
+                if ck in self.cache:
+                    r = self.cache[ck]
+                    self.counters["cache_hits"] += 1
+                else:
+                    t0 = time.perf_counter()
+                    r = fn(bars, tf, cfg, sym, timeout) if mod == "vmd" else fn(bars, tf, cfg, sym)
+                    if (time.perf_counter() - t0) > timeout:
+                        self.counters["timeouts"] += 1
+                        r = {**r, "status": "error", "reason": f"TIMEOUT > {timeout}s", "values": None}
+                    self.cache[ck] = r
+                    if len(self.cache) > 300:
+                        self.cache.pop(next(iter(self.cache)))
+            except Exception as exc:
+                self._err(mod, exc)
+                r = contract.result(mod, "?", cfg, symbol=sym, tf=tf, bars=bars, status="error", reason=f"{type(exc).__name__}: {exc}"[:200])
+            if self.keys.get(tf) != key:                   # late result of an older bar / configuration: never shown as current
+                self.counters["discarded_stale"] += 1
+                continue
+            self.state.setdefault(tf, {})[mod] = r
+            self.counters["computed"] += 1
+            self._lat(mod, r.get("latency_ms"))
+            self._archive(r)
+        self.bus.publish("analytics", self.summary())
 
     # ------------------------------------------------------------ persistence
     def _archive(self, r: dict) -> None:
@@ -222,7 +230,9 @@ class AnalyticsService:
     # ------------------------------------------------------------ views
     def tf_state(self, tf: str, full: bool = False) -> dict:
         st = self.state.get(tf) or {}
-        return {k: (v if full or not isinstance(v, dict) else _strip(v)) for k, v in st.items()}
+        # 1.46: the tick / worker threads add keys to these dicts without a lock - views iterate a snapshot (list() is atomic
+        # under the GIL), never the live dict ('dictionary changed size during iteration' -> dead worker / HTTP 500)
+        return {k: (v if full or not isinstance(v, dict) else _strip(v)) for k, v in list(st.items())}
 
     def summary(self) -> dict:
         return {"enabled": self.cfg().enabled, "influence": self.cfg().influence, "config_hash": self.config_hash(),
@@ -249,8 +259,9 @@ class AnalyticsService:
         def pct(v, q):
             s = sorted(v)
             return round(s[int(q * (len(s) - 1))], 2) if s else None
-        return {"latency_ms": {m: {"p50": pct(v, .5), "p95": pct(v, .95), "n": len(v)} for m, v in self.lat.items()}, "counters": self.counters,
-                "queue": len(self.pending), "errors": self.errors[-10:], "keys": self.keys, "cache_size": len(self.cache),
+        # 1.46: snapshots of the dicts the tick / worker threads mutate (see tf_state)
+        return {"latency_ms": {m: {"p50": pct(v, .5), "p95": pct(v, .95), "n": len(v)} for m, v in list(self.lat.items())},
+                "counters": dict(self.counters), "queue": len(self.pending), "errors": self.errors[-10:], "keys": dict(self.keys), "cache_size": len(self.cache),
                 "versions": {"ta": ta.VERSION, "fft": SG.FFT_VERSION, "emd": SG.EMD_VERSION, "vmd": SG.VMD_VERSION, "double_bottom": DB.VERSION,
                              "double_bottom_ext": DB.VERSION_EXT}}
 
@@ -290,7 +301,7 @@ class AnalyticsService:
                 lines.append(f"{mod.upper()} nie dostarczyło stabilnego wyniku na {main_tf}, więc nie wpływa na opis scenariusza.")
         groups.append({"group": "cykliczność", "source": f"FFT/EMD/VMD {main_tf}", "state": "OPISOWO", "detail": "; ".join(cyc),
                        "note": "trzy transformacje tej samej ceny – nie trzy niezależne potwierdzenia"})
-        dq = [tf for tf, st in self.state.items() if st.get("status") in ("stale", "unavailable")]
+        dq = [tf for tf, st in list(self.state.items()) if st.get("status") in ("stale", "unavailable")]   # 1.46: snapshot (see tf_state)
         groups.append({"group": "jakość danych", "source": "MT5", "state": "OK" if not dq else "PROBLEM", "detail": ", ".join(dq) or "wszystkie TF aktualne"})
         if dq:
             lines.append(f"Analiza wstrzymana dla {', '.join(dq)} – brak świeżych danych.")

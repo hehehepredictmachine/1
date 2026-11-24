@@ -156,8 +156,8 @@ const TOWERS: Tokens = {
 };
 
 export const PRESETS: Record<string, { label: string; scheme: "dark" | "light"; tokens: Tokens }> = {
-  wieze: { label: "PepeMarketWizard – trzy wieże (domyślny)", scheme: "dark", tokens: TOWERS },
-  gold: { label: "PepeMarketWizard – złoty (1.13–1.28)", scheme: "dark", tokens: GOLD },
+  wieze: { label: "Apollo23 – trzy wieże (domyślny)", scheme: "dark", tokens: TOWERS },
+  gold: { label: "Apollo23 – złoty (1.13–1.28)", scheme: "dark", tokens: GOLD },
   matrix: { label: "Matrix zielony", scheme: "dark", tokens: MATRIX },
   dark: { label: "Ciemny", scheme: "dark", tokens: DARK },
   light: { label: "Jasny", scheme: "light", tokens: LIGHT },
@@ -187,7 +187,10 @@ export function parseColor(s: string): RGBA | null {
   m = t.match(/^hsla?\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%(?:[\s,/]+([\d.]+%?))?\s*\)$/);
   if (m) {
     const a = m[4] === undefined ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
-    const { r, g, b } = hslToRgb(+m[1], +m[2] / 100, +m[3] / 100);
+    // 1.46: the hue was not checked - "hsl(1.2.3, …)" gave NaN -> toHex "#bf40NaN"; a hue > 360 was not wrapped (hsl(400) != hsl(40))
+    const h = +m[1];
+    if (!Number.isFinite(h)) return null;
+    const { r, g, b } = hslToRgb(h % 360, +m[2] / 100, +m[3] / 100);
     return +m[2] <= 100 && +m[3] <= 100 && a >= 0 && a <= 1 ? { r, g, b, a } : null;
   }
   return null;
@@ -297,7 +300,8 @@ export function parseThemeFile(text: string): { name: string; tokens: Tokens; ov
   res.tokens = v.tokens;
   res.errors.push(...v.errors);
   if (j.chart_overrides !== undefined) {
-    if (typeof j.chart_overrides !== "object" || Array.isArray(j.chart_overrides)) res.errors.push("chart_overrides: oczekiwano obiektu");
+    // 1.46: null passed this check (typeof null === "object") and Object.entries(null) threw a TypeError
+    if (j.chart_overrides === null || typeof j.chart_overrides !== "object" || Array.isArray(j.chart_overrides)) res.errors.push("chart_overrides: oczekiwano obiektu");
     else for (const [cid, ov] of Object.entries(j.chart_overrides)) {
       const LEGACY_TF = ["M1", "M5", "M15", "M30", "H1", "H4", "H8", "D1"];
       const key = /^tf:(M1|M5|M15|M30|H1|H4|H8|D1)$/.test(cid) ? cid : /^panel[1-8]$/.test(cid) ? "tf:" + LEGACY_TF[Number(cid.slice(5)) - 1] : null;
@@ -334,9 +338,15 @@ function load(): Stored {
     // 1.29: an untouched 1.13–1.28 default ("gold" with the original tokens) moves to the three-tower look once; any own colours stay
     if (j.preset === "gold" && sameTokens(t, GOLD) && !localStorage.getItem("mq.theme.towers_1_29")) {
       localStorage.setItem("mq.theme.towers_1_29", "1");
+      // 1.46: the migrated look was never saved - the next start read "gold" again with the flag already set (one start only).
+      // The stored record is rewritten with the new preset / tokens only; own presets and per-chart colours stay exactly as stored.
+      save({ ...j, version: VERSION, preset: "wieze", tokens: { ...TOWERS } });
       return { version: VERSION, preset: "wieze", tokens: { ...TOWERS }, custom, overrides };
     }
-    return { version: VERSION, preset: typeof j.preset === "string" ? j.preset : "matrix", tokens: { ...MATRIX, ...t }, custom, overrides };
+    // 1.46: tokens missing from an older record (added later) or rejected by validateTokens came from MATRIX whatever the preset was
+    // (a "light" theme got the light-green text of MATRIX); they now come from the stored preset itself - MATRIX only for own names.
+    const base = typeof j.preset === "string" && Object.prototype.hasOwnProperty.call(PRESETS, j.preset) ? PRESETS[j.preset].tokens : MATRIX;
+    return { version: VERSION, preset: typeof j.preset === "string" ? j.preset : "matrix", tokens: { ...base, ...t }, custom, overrides };
   } catch {
     return def;
   }

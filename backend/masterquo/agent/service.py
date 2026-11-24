@@ -38,6 +38,7 @@ log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
 
 
 def load_prompt() -> tuple[str, str]:
@@ -77,8 +78,8 @@ class ClaudeAgent:
         self.disable_fallback = False
         self.no_structured: set[str] = set()
         self.no_effort: set[str] = set()
-        self.by_setup: dict[str, dict] = {}       # setup_id -> latest applied result
-        self._started_seq: dict[str, int] = {}     # setup_id -> latest started run seq
+        self.by_setup: dict[str, dict] = {}       # setup_id -> latest applied result (bounded, see _track)
+        self._started_seq: dict[str, int] = {}     # setup_id -> latest started run seq (bounded, see _track)
         self._seq = 0
         self.pending: dict[str, dict] = {}
         self.last_result: dict | None = None
@@ -137,8 +138,9 @@ class ClaudeAgent:
         if self.loop is None or self.queue is None:
             return None
         key = f"{trigger}:{setup_id}:{setup_state}:{question or ''}"
-        if key in self.pending:
-            return self.pending[key]["request_id"]
+        cur = self.pending.get(key)      # 1.46: one lookup - the loop thread may pop the key between 'in' and '[]' (KeyError)
+        if cur is not None:
+            return cur["request_id"]
         rid = "AGQ-" + uuid.uuid4().hex[:12]
         req = {"request_id": rid, "trigger": trigger, "snapshot_id": snapshot_id, "setup_id": setup_id,
                "setup_state": setup_state, "question": question, "queued_at": iso(utcnow()), "key": key}
@@ -162,7 +164,21 @@ class ClaudeAgent:
                 self.state, self.state_detail = "ERROR", f"{type(exc).__name__}: {exc}"[:200]
             finally:
                 self.pending.pop(req["key"], None)
-                self.bus.publish("agent", self.status())
+                # 1.46: status() reads the DB (spent_today) and the secret store - an error there ('database is locked', I/O) escaped
+                # this finally, ended the worker task for good and left every later request queued / AI_ASSESSMENT_RUNNING forever
+                try:
+                    self.bus.publish("agent", self.status())
+                except Exception:  # a status broadcast never stops the worker
+                    log.exception("agent status publish failed")
+
+    @staticmethod
+    def _track(d: dict, key: str, value) -> None:
+        """1.46: by_setup / _started_seq got one entry per assessed setup for the whole life of the process (never removed).
+        Keeps the MAX_TRACKED_SETUPS most recently added setups; the entry just written is never evicted. Only the agent loop writes
+        these maps (the engine thread only reads them with .get), so the eviction never runs concurrently with another write."""
+        d[key] = value
+        while len(d) > MAX_TRACKED_SETUPS:
+            d.pop(next(k for k in d if k != key), None)
 
     # ------------------------------------------------------------ gates
     def _preflight(self, req: dict) -> str | None:
@@ -234,7 +250,9 @@ class ClaudeAgent:
             return {"status": "PENDING", "reason_codes": ["AI_EVALUATES_CONFIRMED_SETUPS_ONLY"]}
         res = self.by_setup.get(setup["setup_id"])
         if not res:
-            busy = any(p.get("setup_id") == setup["setup_id"] for p in self.pending.values())
+            # 1.46: snapshot first - this runs in the engine thread while the loop / API threads add and pop entries
+            # (iterating the live dict raised 'dictionary changed size during iteration' in the decision path)
+            busy = any(p.get("setup_id") == setup["setup_id"] for p in list(self.pending.values()))
             return {"status": "PENDING", "reason_codes": ["AI_ASSESSMENT_RUNNING" if busy else "AI_ASSESSMENT_MISSING"]}
         codes = []
         if res["status"] != "OK":
@@ -265,7 +283,7 @@ class ClaudeAgent:
                 self.state_detail = why
             if req["trigger"] == "SETUP_CONFIRMED" and req["setup_id"]:
                 # the gate must show why the confirmed setup has no AI assessment
-                self.by_setup[req["setup_id"]] = {"status": why, "decision_id": None}
+                self._track(self.by_setup, req["setup_id"], {"status": why, "decision_id": None})
             self._store_skipped(req, why)
             return
         ctx = self.context_provider(req["snapshot_id"]) or self.context_provider(None)
@@ -275,7 +293,7 @@ class ClaudeAgent:
         self._seq += 1
         seq = self._seq
         if req["setup_id"]:
-            self._started_seq[req["setup_id"]] = seq
+            self._track(self._started_seq, req["setup_id"], seq)
         if req["trigger"] == "USER_QUESTION":
             self.last_user_run = time.monotonic()
         else:
@@ -287,7 +305,7 @@ class ClaudeAgent:
         if req["setup_id"] and self._started_seq.get(req["setup_id"]) != seq:
             result["status_note"] = "SUPERSEDED_BY_NEWER_RUN"
         elif req["setup_id"]:
-            self.by_setup[req["setup_id"]] = result
+            self._track(self.by_setup, req["setup_id"], result)
         if result["status"] == "OK":
             self.last_result = result
             self.state, self.state_detail = "OK", None
@@ -362,6 +380,7 @@ class ClaudeAgent:
         status, error, final_text, assessment = "ERROR", None, None, None
         repaired = False
         use_structured = model not in self.no_structured
+        unexpected: Exception | None = None
         try:
             for _turn in range(self.cfg.max_tool_calls + 4):
                 resp = await self._create(client, model, system, messages, use_structured)
@@ -429,8 +448,13 @@ class ClaudeAgent:
             status, error = "BAD_REQUEST", str(getattr(e, "message", e))[:300]
         except anthropic.APIStatusError as e:
             status, error = "API_ERROR", f"HTTP {getattr(e, 'status_code', '?')}"
+        except Exception as e:  # noqa: BLE001 - re-raised below, after the run is recorded
+            # 1.46: an unexpected error (e.g. AttributeError from a tool) skipped the agent_runs INSERT below and the run left no audit
+            # row. The run is recorded first (audit only: est_cost_usd stays NULL, so spent_today() / the daily budget count it as 0
+            # exactly as in 1.45), then the error is re-raised unchanged, so the worker / AI gate see exactly what they saw before.
+            status, error, unexpected = "INTERNAL_ERROR", f"{type(e).__name__}: {e}"[:200], e
         latency = int((time.monotonic() - t0) * 1000)
-        cost = self._cost(served_model or model, usage_total)
+        cost = None if unexpected is not None else self._cost(served_model or model, usage_total)
         now = utcnow()
         rec = None
         if status == "OK" and assessment is not None:
@@ -459,6 +483,8 @@ class ClaudeAgent:
         lvl = "INFO" if status == "OK" else "WARNING"
         self.log.write(lvl, "AGENT", status, f"Agent Claude: {status}" + (f" – {rec['proposed_action']} ({rec['analysis_direction']})" if rec else
                                                                        (f" – {error}" if error else "")))
+        if unexpected is not None:
+            raise unexpected
         return result
 
     async def _create(self, client, model: str, system: str, messages: list, structured: bool, tools: list | None = None,
@@ -504,7 +530,9 @@ class ClaudeAgent:
             return {"ok": False, "error": "MODEL_NOT_CONFIGURED", "proposals": []}
         if self.cfg.daily_budget_usd and self.spent_today() >= self.cfg.daily_budget_usd:
             return {"ok": False, "error": "DAILY_BUDGET_REACHED", "proposals": []}
-        system = ("Jesteś analitykiem profilu wolumenu PepeMarketWizard. Dostajesz zamrożony snapshot Session Volume Profile (POC, VAH, VAL, "
+        # 1.46: user-visible product name (the model echoed the old name 'PepeMarketWizard' into the SVP justifications)
+        from ..version import DISPLAY_NAME
+        system = (f"Jesteś analitykiem profilu wolumenu {DISPLAY_NAME}. Dostajesz zamrożony snapshot Session Volume Profile (POC, VAH, VAL, "
                   "HVN, LVN, histogram koszyków, źródło wolumenu). Zaproponuj 1-5 stref analitycznych WYŁĄCZNIE z poziomów tego profilu. "
                   "Nie wymyślaj cen spoza profilu. Odpowiedz tylko JSON: {\"proposals\": [{\"profile_id\", \"snapshot_id\", \"lower\", \"upper\", "
                   "\"type\" (POC|HVN|LVN|VA_EDGE|VALUE_AREA|ACCEPTANCE|REJECTION), \"justification\", \"confirmation\", \"invalidation\", "

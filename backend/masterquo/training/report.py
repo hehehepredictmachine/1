@@ -8,7 +8,8 @@ import webbrowser
 
 from . import core
 
-PL = {"UKONCZONE": "ukończone", "POMINIETE": "pominięte", "BLAD_TECHNICZNY": "błąd techniczny", "ANULOWANE": "anulowane",
+# 1.46: DO_OCENY_NA_DEV / RAPORT_WALIDACJI (written by the runner) had no label and were shown raw
+PL = {"DO_OCENY_NA_DEV": "do oceny (holdout nieotwarty)", "RAPORT_WALIDACJI": "raport walidacji (werdykty wariantów)", "UKONCZONE": "ukończone", "POMINIETE": "pominięte", "BLAD_TECHNICZNY": "błąd techniczny", "ANULOWANE": "anulowane",
       "NIE_URUCHOMIONE": "nie uruchomione", "W_TOKU": "w toku", "NIE_DOTYCZY": "—", "BRAK_PRZESLANEK": "brak przesłanek (za mało danych)",
       "ODRZUCONY": "odrzucony", "NIEZWALIDOWANY": "niezwalidowany", "CZESCIOWO_ZWALIDOWANY": "częściowo zwalidowany",
       "ZWALIDOWANY_SHADOW": "zwalidowany (SHADOW)", "TEST_TECHNICZNY": "test techniczny", "NIEZAPISANY": "niezapisany",

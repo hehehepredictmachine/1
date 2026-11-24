@@ -7,10 +7,12 @@ Method (fixed BEFORE looking at results; see docs/RAPORT_TESTOW.md):
     (the closed-bar replay never uses the forming bar - conservative vs live, which may show EARLY sooner)
   * the same scanner/tracker/selector code as the live monitor (strategies/registry, tracker, selector)
   * every first CONFIRMED setup is simulated: entry at the OPEN of the next M5 bar after the signal
-    (Bid bars: LONG pays the spread), slippage added against the trade, commission per side;
+    (Bid bars: LONG pays the spread - the bar's CSV spread_points x --point, else --spread), slippage added against the
+    trade, commission per side;
     exits = the shared exit policy (execution/policy.py): targets + weights, BE only if the plan says so, time exit only if
     the plan has one, RR_FROM_FILL from the simulated fill; if one M5 bar touches SL and a target, SL is assumed first
-    (OHLC does not reveal the intrabar order - conservative rule); target + new BE stop in one bar -> AMBIGUOUS
+    (OHLC does not reveal the intrabar order - conservative rule); target + new BE stop in one bar -> AMBIGUOUS;
+    a bar opening beyond the stop fills at its open (gap, as PAPER / MT5); data ending before the exit -> OPEN_AT_DATA_END
   * results in R (initial risk), net of costs; chronological split DEV 60% / VAL 20% / OOS 20% by signal time
   * portfolio = only the AUTO-selected setup, one position at a time, common to all strategies
   * --trade-policy (1.24): ALL = every scanned strategy may be selected and traded (research, the pre-1.24 replay);
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
 import sys
 import tempfile
 import time
@@ -64,8 +67,11 @@ def load_csv(d: Path) -> tuple[dict, str]:
         if f.exists():
             with f.open(encoding="utf-8") as fh:
                 for r in csv.DictReader(fh):
+                    # 1.46: a missing bar spread stays missing (None -> the --spread fallback), it was turned into 0
+                    sp = r.get("spread_points")
                     rows.append({"open_utc": r["time_utc"], "o": float(r["open"]), "h": float(r["high"]), "l": float(r["low"]), "c": float(r["close"]),
-                                 "available_at": r["available_at_utc"], "spread_points": int(r.get("spread_points") or 0), "closed": True})
+                                 "available_at": r["available_at_utc"], "spread_points": int(float(sp)) if sp not in (None, "") else None,
+                                 "closed": True})
         out[tf] = rows
     return out, "BROKER_CSV"
 
@@ -87,19 +93,32 @@ def load_synthetic(days: int, seed: int) -> tuple[dict, str]:
             if t < start:
                 continue
             op = datetime.fromtimestamp(t - off, UTC)
+            # 1.46: the simulator has no broker spread history - None, so the --spread cost model applies (as before)
             rows.append({"open_utc": iso(op), "o": float(x["open"]), "h": float(x["high"]), "l": float(x["low"]), "c": float(x["close"]),
-                         "available_at": iso(op + timedelta(seconds=TF_SECONDS[tf])), "spread_points": 12, "closed": True})
+                         "available_at": iso(op + timedelta(seconds=TF_SECONDS[tf])), "spread_points": None, "closed": True})
         out[tf] = rows[:-1]
     return out, "SYNTHETIC"
 
 
 # ----------------------------------------------------------------------------- simulation
+def bar_spread(bar: dict, cost: dict) -> tuple[float, str]:
+    """1.46: the spread of THIS bar from the broker CSV (spread_points x point) when the bar carries one (> 0); otherwise the
+    --spread cost argument. The CSV spread used to be read and never used (a constant --spread everywhere, contrary to --help)."""
+    sp, pt = bar.get("spread_points"), cost.get("point")
+    if sp is not None and sp > 0 and pt:
+        return sp * pt, "CSV_BAR"
+    return cost["spread"], "COST_ARG"
+
+
 def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, cost: dict) -> dict | None:
     """One setup with the SAME exit policy object as live / PAPER / ML labels (execution/policy.py, MQ-EXIT-POLICY-1.0.0):
     plan targets + weights, BE after TP1 only if the plan says so, time exit only if the plan has one (None = held until
     SL/TP within the data, never an invented 24-bar exit), RR_FROM_FILL target recomputed from the simulated fill.
     M5 OHLC does not reveal the intrabar order: SL+target in one bar -> SL first (conservative); a target and the new BE
-    stop reachable in the SAME bar after it -> AMBIGUOUS (excluded from R statistics, counted)."""
+    stop reachable in the SAME bar after it -> AMBIGUOUS (excluded from R statistics, counted).
+    1.46: a bar that OPENS beyond the stop (weekend / news gap) fills at that open - the worse price, as PAPER and MT5 do
+    (stop_gap=True); targets still fill at the target price (never better - conservative). Data that end before the plan's
+    time exit -> OPEN_AT_DATA_END (not a result), as for a plan without a time exit. Spread per bar: bar_spread()."""
     from masterquo.execution import policy as exit_policy
     d = setup["direction"]
     sl = setup["stop_loss"]
@@ -111,7 +130,7 @@ def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, co
     if k >= len(m5):
         return None
     b = m5[k]
-    spread = cost["spread"]
+    spread, spread_src = bar_spread(b, cost)                       # 1.46: entry bar's own spread (LONG buys at Ask)
     entry = b["o"] + (spread if d == "LONG" else 0.0) + (cost["slip"] if d == "LONG" else -cost["slip"])
     risk = (entry - sl) if d == "LONG" else (sl - entry)
     if risk <= 0:
@@ -126,18 +145,23 @@ def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, co
     mae = mfe = 0.0
     tps = [(t["price"], t["weight"]) for t in pol["targets"]]
     held = 0
+    gap = False
     exit_reason = "TIME" if tf_min is not None else "DATA_END_OPEN"
     for j in range(k, min(len(m5), k + max_bars)):
         bb = m5[j]
         held += 1
-        hi_exec = bb["h"] + (0 if d == "LONG" else spread)          # SHORT exits at Ask
-        lo_exec = bb["l"] + (0 if d == "LONG" else spread)
+        sp_j = bar_spread(bb, cost)[0]                             # 1.46: this bar's spread
+        hi_exec = bb["h"] + (0 if d == "LONG" else sp_j)          # SHORT exits at Ask
+        lo_exec = bb["l"] + (0 if d == "LONG" else sp_j)
         fav = (bb["h"] - entry) if d == "LONG" else (entry - lo_exec)
         adv = (entry - bb["l"]) if d == "LONG" else (hi_exec - entry)
         mfe, mae = max(mfe, fav / risk), max(mae, adv / risk)
         stop_hit = bb["l"] <= stop if d == "LONG" else hi_exec >= stop
         if stop_hit:                                               # conservative: stop before any target in the same bar
-            pnl += remaining * (((stop - entry) if d == "LONG" else (entry - stop)) - cost["slip"])
+            # 1.46: gap beyond the stop -> filled at the bar open (Bid LONG / Ask SHORT), the worse price; was always the stop price
+            px = min(bb["o"], stop) if d == "LONG" else max(bb["o"] + sp_j, stop)
+            gap = px != stop
+            pnl += remaining * (((px - entry) if d == "LONG" else (entry - px)) - cost["slip"])
             remaining = 0
             exit_reason = "STOP" if stop == sl else "BREAKEVEN"
             break
@@ -160,12 +184,14 @@ def simulate(setup: dict, signal_t: datetime, m5: list[dict], m5_index: dict, co
     if remaining > 1e-9:
         if tf_min is None:                                         # no time exit in the plan and the data ended: not a result
             return {"status": "OPEN_AT_DATA_END", "entry_time": b["open_utc"]}
+        if held < max_bars:                                        # 1.46: data ended BEFORE the plan's time exit - not a TIME exit
+            return {"status": "OPEN_AT_DATA_END", "reason": "DATA_END_BEFORE_TIME_EXIT", "entry_time": b["open_utc"]}
         last = m5[min(len(m5) - 1, k + held - 1)]                  # time exit at the last bar close (SHORT buys back at Ask)
-        pnl += remaining * ((last["c"] - entry) if d == "LONG" else (entry - (last["c"] + spread)))
+        pnl += remaining * ((last["c"] - entry) if d == "LONG" else (entry - (last["c"] + bar_spread(last, cost)[0])))
     pnl -= 2 * cost["commission"]
     return {"status": "CLOSED", "r": round(pnl / risk, 4), "mae_r": round(mae, 3), "mfe_r": round(mfe, 3), "held_m5": held, "exit": exit_reason,
             "entry_time": b["open_utc"], "risk_price": round(risk, 4), "exit_policy": pol["version"],
-            "tp_rebased_on_fill": bool(pol.get("tp_rebased_on_fill"))}
+            "tp_rebased_on_fill": bool(pol.get("tp_rebased_on_fill")), "stop_gap": gap, "spread_source": spread_src}
 
 
 def stats(trades: list[dict]) -> dict:
@@ -185,7 +211,9 @@ def stats(trades: list[dict]) -> dict:
             "win_rate": f"{len(wins)}/{len(rs)} ({100 * len(wins) / len(rs):.0f}%)", "max_drawdown_r": round(dd, 2),
             "avg_mae_r": round(sum(t["mae_r"] for t in trades if t.get("status") == "CLOSED") / len(rs), 2),
             "avg_mfe_r": round(sum(t["mfe_r"] for t in trades if t.get("status") == "CLOSED") / len(rs), 2),
-            "avg_hold_m5_bars": round(sum(t["held_m5"] for t in trades if t.get("status") == "CLOSED") / len(rs), 1)}
+            "avg_hold_m5_bars": round(sum(t["held_m5"] for t in trades if t.get("status") == "CLOSED") / len(rs), 1),
+            # 1.46: stops filled at a gap open (worse than the stop price)
+            "stop_gap_fills": sum(1 for t in trades if t.get("status") == "CLOSED" and t.get("stop_gap"))}
 
 
 # ----------------------------------------------------------------------------- replay
@@ -229,8 +257,18 @@ class ReplayWalls:
 
 def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: bool, max_steps: int | None,
         walls: "ReplayWalls | None" = None, overrides: dict | None = None, trade_policy: str = "ALL") -> dict:
+    # 1.46: the temporary replay database is closed and its folder removed (every run left an mq_replay_* folder behind)
     tmp = Path(tempfile.mkdtemp(prefix="mq_replay_"))
     db = Database(tmp / "replay.sqlite")
+    try:
+        return _run(db, data, source, step_tf, cost, compare_original, max_steps, walls, overrides, trade_policy)
+    finally:
+        db.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _run(db: Database, data: dict, source: str, step_tf: str, cost: dict, compare_original: bool, max_steps: int | None,
+         walls: ReplayWalls | None, overrides: dict | None, trade_policy: str) -> dict:
     tr, sel = SetupTracker(db), StrategyAutoSelector(db)
     cfg = AppConfig().active
     steps = [p(b["available_at"]) for b in data[step_tf]]
@@ -260,8 +298,9 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
         last = bars.get("M1") or bars.get("M5")
         if not last:
             continue
-        sp = cost["spread"]
-        view = adapter.build_view(symbol="XAUUSD-", bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + sp, point=0.01, as_of=iso(t),
+        sp = bar_spread(last[-1], cost)[0]                         # 1.46: spread of the last visible bar (CSV), else --spread
+        view = adapter.build_view(symbol="XAUUSD-", bars_by_tf=bars, bid=last[-1]["c"], ask=last[-1]["c"] + sp, point=cost.get("point") or 0.01,
+                                  as_of=iso(t),
                                   synthetic=source == "SYNTHETIC", regime_params=cfg.regime)
         regimes[view.regime["state"]] += 1
         if walls is not None:
@@ -362,7 +401,10 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
            "trade_policy": trade_policy, "selected_but_signal_only": blocked_signal_only,
            "portfolio_segments": {name: stats(seg(port, name)) for name in ("DEV", "VAL", "OOS")},
            "segments_cut": [iso(cut1), iso(cut2)] if cut1 else None,
-           "method": "closed-bar replay, next-M5-open entry, SL-first on ambiguous bars, costs in R; DEV/VAL/OOS 60/20/20",
+           # 1.46: where the spread came from (broker CSV per bar, else the --spread argument)
+           "spread_source": dict(Counter(bar_spread(b, cost)[1] for b in m5)),
+           "method": "closed-bar replay, next-M5-open entry, SL-first on ambiguous bars, stop gaps filled at the open, costs in R; "
+                     "DEV/VAL/OOS 60/20/20",
            "status": "FUNCTIONAL_REPLAY_" + source + (" - wyniki nie są dowodem skuteczności" if source == "SYNTHETIC" else " - OOS do oceny wg z góry ustalonych kryteriów")}
     if compare_original:
         out["original_m07"] = original_counts(data, step_tf="H1", max_steps=None)
@@ -371,8 +413,13 @@ def run(data: dict, source: str, step_tf: str, cost: dict, compare_original: boo
 
 def original_counts(data: dict, step_tf: str = "H1", max_steps: int | None = None) -> dict:
     """ORIGINAL profile on the same data: unique frozen M07 plans (legacy engines, unchanged code)."""
+    # 1.46: the temporary plan-lock databases are removed afterwards (every run left an mq_orig_* folder behind)
+    with tempfile.TemporaryDirectory(prefix="mq_orig_", ignore_cleanup_errors=True) as td:
+        return _original_counts(Path(td), data, step_tf, max_steps)
+
+
+def _original_counts(tmp: Path, data: dict, step_tf: str, max_steps: int | None) -> dict:
     from masterquo.engine.legacy import LegacyEngines, build_snapshot
-    tmp = Path(tempfile.mkdtemp(prefix="mq_orig_"))
     out = {}
     for policy in ("STRICT_H4_H1", "H1_LEAD"):
         eng = LegacyEngines(tmp / f"lock_{policy}.sqlite")
@@ -447,7 +494,10 @@ def main() -> int:
     g.add_argument("--synthetic", type=int, metavar="DAYS")
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--step-tf", default="M15", choices=["M1", "M5", "M15", "H1"], help="S12 triggers on closed M1 bars: use M1 for S12 research")
-    ap.add_argument("--spread", type=float, default=0.12, help="spread in price units when the CSV has none (gold: 0.12 = 12 pts at 2 digits)")
+    # 1.46: the CSV bar spread is really used now (spread_points x --point); --spread only for bars without one
+    ap.add_argument("--spread", type=float, default=0.12,
+                    help="spread in price units for bars without a spread (synthetic data, CSV spread_points empty or 0; gold: 0.12 = 12 pts at 2 digits)")
+    ap.add_argument("--point", type=float, default=0.01, help="price of one point to convert the CSV spread_points (XAUUSD-: 0.01)")
     ap.add_argument("--slippage", type=float, default=0.05, help="slippage per fill, price units")
     ap.add_argument("--commission", type=float, default=0.035, help="commission per side, price units per unit (e.g. 3.5 USD/lot/side = 0.035)")
     ap.add_argument("--compare-original", action="store_true")
@@ -473,7 +523,7 @@ def main() -> int:
         if bad:
             print(f"[UWAGA] odrzucone wiersze IV: {len(bad)} (pierwsze: {bad[:3]})")
     overrides = json.loads(a.params_json) if a.params_json else {}
-    cost = {"spread": a.spread, "slip": a.slippage, "commission": a.commission}
+    cost = {"spread": a.spread, "slip": a.slippage, "commission": a.commission, "point": a.point}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

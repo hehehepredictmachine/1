@@ -16,12 +16,14 @@ export async function initSession(): Promise<void> {
   csrf = j.csrf;
 }
 
-export function getCsrf(): string | null {
-  return csrf;
-}
+// 1.46: getCsrf() removed - no caller since 1.42 (only the archived 1.41 UI, which is not built); the token stays private to this module.
+
+// 1.44.0: 402 = brak ważnej licencji (wersja klienta) – LicenseGate wraca do ekranu aktywacji
+const licenseLost = (status: number) => { if (status === 402) window.dispatchEvent(new CustomEvent("pmw-license-required")); };
 
 export async function apiGet<T = any>(path: string): Promise<T> {
   const r = await fetch(path, { credentials: "same-origin" });
+  licenseLost(r.status);
   if (!r.ok) throw new ApiError(r.status, await r.text());
   return r.json();
 }
@@ -33,6 +35,7 @@ export async function apiSend<T = any>(method: "POST" | "PUT" | "PATCH" | "DELET
     headers: { "Content-Type": "application/json", "X-MQ-CSRF": csrf ?? "" },
     body: JSON.stringify(body ?? {}),
   });
+  licenseLost(r.status);
   const text = await r.text();
   let data: any = null;
   try {
@@ -54,6 +57,7 @@ export class LiveSocket {
   private bootId: string | null = null;
   private closed = false;
   private retry = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   constructor(private onMessage: WsHandler, private onStatus: (s: string) => void) {}
 
   start() {
@@ -61,12 +65,17 @@ export class LiveSocket {
     this.connect();
   }
 
+  // 1.46: stop() also cancels a scheduled reconnect - before, a store unmounted during the back-off (licence screen after 402) got an
+  // orphan WebSocket from the pending timer, and the next StoreProvider a second one (every telemetry event emitted twice).
   stop() {
     this.closed = true;
+    if (this.timer !== null) { clearTimeout(this.timer); this.timer = null; }
     this.ws?.close();
   }
 
   private connect() {
+    this.timer = null;
+    if (this.closed) return;                        // 1.46: a timer that fired after stop() opens nothing
     const url = `ws://${location.host}/api/v1/ws`;
     const ws = new WebSocket(url);
     this.ws = ws;
@@ -103,11 +112,11 @@ export class LiveSocket {
       if (this.closed) return;
       if (ev.code === 4403) {
         // server restarted -> session unknown; reload the page to obtain a new session
-        setTimeout(() => location.reload(), 1500);
+        this.timer = setTimeout(() => location.reload(), 1500);
         return;
       }
       this.retry = Math.min(this.retry + 1, 6);
-      setTimeout(() => this.connect(), 500 * 2 ** this.retry);
+      this.timer = setTimeout(() => this.connect(), 500 * 2 ** this.retry);
     };
   }
 }

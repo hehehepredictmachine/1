@@ -109,7 +109,7 @@ def lifecycle(s: Series, a: list, *, side: str, lower: float, upper: float, star
     n = len(s)
     st = {"status": "ACTIVE", "retests": 0, "first_touch_at": None, "last_touch_at": None, "penetration_max": 0.0, "rejection_max_atr": 0.0,
           "swept_at": None, "broken_at": None, "broken_index": None, "events": []}
-    inside_since, left_for, pending = None, cfg.retest_gap_bars, None   # pending = (index of wick beyond, extreme)
+    left_for, pending = cfg.retest_gap_bars, None   # pending = (index of wick beyond, extreme)
     for j in range(start + 1, n):
         at = _atr_at(a, j) or 0.0
         tol, brk = cfg.touch_tol_atr * at, cfg.break_close_atr * at

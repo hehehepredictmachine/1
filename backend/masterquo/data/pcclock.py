@@ -8,7 +8,6 @@ from __future__ import annotations
 import email.utils
 import threading
 import urllib.request
-from datetime import datetime
 
 from ..timeutil import UTC, iso, utcnow
 
@@ -52,4 +51,4 @@ class PCClockCheck:
             return dict(self.result)
 
 
-__all__ = ["PCClockCheck", "datetime"]
+__all__ = ["PCClockCheck"]                   # 1.46: unused `datetime` import (kept only via __all__) removed

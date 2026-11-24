@@ -10,6 +10,7 @@ A failure here sets ERROR_RECOVERY and never touches existing positions or their
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from datetime import datetime
@@ -205,8 +206,11 @@ class ScalpService:
         mq = self.setup_quality(plan)
         plan["model_b"] = mq
         plan["indicator_context"] = self.indicator_context(plan)      # PMW-UPD-02 reaction model - SHADOW observation, never a gate
-        plan["ml_scalp"] = self.ml_scalp(plan)                         # PMW-UPD-03: candidate stored BEFORE any model filter + inference
-        plan["neural"] = self.neural(plan)                             # PMW-UPD-04: frozen snapshot to the NSS worker (async, OBSERVE)
+        # 1.46: the ML / NSS snapshots were taken before fill_shadow / economics were added to the plan (both None in every sample), so
+        # their labels settled at a cost-free fill and risk; the values are already known here (model features are not affected)
+        priced = dict(plan, fill_shadow=fill, spread_fill=sp, economics=eco, sizing=sz)
+        plan["ml_scalp"] = self.ml_scalp(priced)                       # PMW-UPD-03: candidate stored BEFORE any model filter + inference
+        plan["neural"] = self.neural(dict(priced, ml_scalp=plan["ml_scalp"]))   # PMW-UPD-04: frozen snapshot to the NSS worker (OBSERVE)
         plan["liquidity_context"] = self.liquidity_context(plan)       # PMW-UPD-06: session boxes / heatmap reading (OBSERVE, never a gate)
         if st.V(self.prof, "ml_filter", "enabled", default=False):
             gate("filtr modelu jakości setupu (B)", bool(mq.get("pass")), mq.get("reason") or f"P(TP1 przed SL) {mq.get('p')} vs próg {mq.get('threshold')}")
@@ -247,12 +251,16 @@ class ScalpService:
             ref = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             ref = {}
+        changed = False
         if ref.get("day") != day:
             ref.update(day=day, day_equity=eq)
+            changed = True
         if ref.get("week") != week:
             ref.update(week=week, week_equity=eq)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(ref), encoding="utf-8")                    # persisted: a restart does not reset the counters
+            changed = True
+        if changed:                                                        # persisted: a restart does not reset the counters
+            p.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(p, json.dumps(ref))                         # 1.46: tmp + replace (an interrupted write_text left a broken file)
         dl = (ref["day_equity"] - eq) / ref["day_equity"] * 100
         wl = (ref["week_equity"] - eq) / ref["week_equity"] * 100
         ok = dl < st.V(self.prof, "risk", "daily_loss_pct") and wl < st.V(self.prof, "risk", "weekly_loss_pct")
@@ -281,18 +289,35 @@ class ScalpService:
         f1 = st.V(self.prof, "exits", "tp1_fraction") if sz.get("split", True) else 1.0
         tp2 = plan["tp2"] if f1 < 1 else None
         costs = self._costs(plan)
+        slip = costs["slippage_price"]
+        at_open = True
         if plan.get("entry_mode") == "LIMIT_EDGE":
-            fl = replay.get_fill(plan, P, T, costs["slippage_price"])
+            fl = replay.get_fill(plan, P, T, slip)
             if not fl["ok"]:
+                if fl["reason"] == "SPREAD_UNKNOWN":
+                    return "NO_DATA", None                             # 1.46: was PENDING forever (blocked the one-cycle gate)
                 if fl["reason"] == "MISSED_LIMIT_NOT_FILLED" and P.t[-1] >= T + 60 * (plan.get("limit_wait_m1") or 3):
                     return "MISSED_LIMIT", None
                 return "PENDING", None
-            i, fill = fl["i"], fl["fill"]
+            i, fill, at_open = fl["i"], fl["fill"], fl.get("at_open", True)
+        elif plan.get("fill_shadow") is not None:
+            fill = plan["fill_shadow"] + sgn * slip                     # 1.46: adverse slippage on the entry, as replay.get_fill
         else:
-            fill = plan.get("fill_shadow") or (P.o[i] + ((P.sp[i] or 0) if sgn > 0 else 0))
-        risk = (plan.get("economics") or {}).get("risk_per_unit") or abs(fill - plan["sl"])
+            # 1.46: no live quote in the snapshot (ML / NSS candidates): next M1 open with the replay rules - Ask needs the spread
+            # (unknown = no label, was 0 -> BUY filled at Bid), slippage, and the chase limit when the plan carries it
+            if P.sp[i] is None:
+                return "NO_DATA", None
+            fill = P.o[i] + (P.sp[i] if sgn > 0 else 0.0) + sgn * slip
+            if plan.get("ref_close_bid") is not None and plan.get("chase_limit") is not None:
+                ref_exec = plan["ref_close_bid"] + ((plan.get("spread_at_signal") or P.sp[i]) if sgn > 0 else 0.0)
+                if sgn * (fill - ref_exec) > plan["chase_limit"]:
+                    return "MISSED_LIMIT", None
+        # 1.46: risk with the round-trip costs (as st.economics) when the snapshot has no economics (was the bare price distance)
+        risk = (plan.get("economics") or {}).get("risk_per_unit") or (abs(fill - plan["sl"]) + 2 * costs["commission_price_side"] + 2 * slip)
         res = replay.walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, P.t[i] + st.V(self.prof, "exits", "max_hold_minutes") * 60, costs,
-                          entry=fill, **replay.exit_params(self.prof, costs, risk))
+                          entry=fill, open_in_first_bar=at_open, **replay.exit_params(self.prof, costs, risk))
+        if res.get("spread_unknown"):
+            return "NO_DATA", None                                     # 1.46: a bar without spread on the exit side - no guessed outcome
         if res.get("open_at_end") or not res["exits"]:
             return "PENDING", None
         net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
@@ -498,10 +523,17 @@ class ScalpService:
         stf = d / "TRAINING_STATUS.json"
         runs = sorted((d / "runs").glob("*/report.json"))
         rep = sorted((d / "replay").glob("*/summary.json"))
+        # 1.46: these three were parsed without error handling - one damaged file (interrupted write) raised in every tick ->
+        # ERROR_RECOVERY and a rebuild of the machine on each M1. Unreadable = None + listed, never an exception.
+        bad: list[str] = []
+        status_file = _read_json(stf, bad) if stf.exists() else None
+        last_run = _read_json(runs[-1], bad) if runs else None
+        last_replay = _read_json(rep[-1], bad) if rep else None
         return {"history_exports": [h.parent.name for h in hist[-5:]],
-                "status_file": json.loads(stf.read_text(encoding="utf-8")) if stf.exists() else None,
-                "last_run": json.loads(runs[-1].read_text(encoding="utf-8")).get("summary") if runs else None,
-                "last_replay": json.loads(rep[-1].read_text(encoding="utf-8")) if rep else None,
+                "status_file": status_file,
+                "last_run": last_run.get("summary") if isinstance(last_run, dict) else None,
+                "last_replay": last_replay if isinstance(last_replay, dict) else None,
+                "unreadable_files": bad,
                 "last_variants": _load_last(d / "replay", "variants.json"),
                 "last_task_b": (_load_last(d / "runs", "report.json") or {}).get("task_B"),
                 "blocked": None if hist else "BLOCKED_NO_REAL_DATA – brak eksportu M1/M5/M15/M30/H1 (16_EKSPORT_HISTORII_SCALP.bat przy działającym MT5)"}
@@ -523,6 +555,20 @@ class ScalpService:
         if not v:
             return {}
         return {"p50": round(v[len(v) // 2], 1), "p95": round(v[int(0.95 * (len(v) - 1))], 1), "n": len(v)}
+
+
+def _read_json(p: Path, bad: list[str]):
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        bad.append(f"{p.parent.name}/{p.name}" if p.parent.name else p.name)
+        return None
+
+
+def _atomic_write_text(p: Path, text: str) -> None:
+    tmp = p.with_name(f"{p.name}.tmp{os.getpid()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, p)
 
 
 def _load_last(base: Path, name: str):

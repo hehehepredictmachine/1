@@ -27,6 +27,25 @@ def _engine():
     return M04N_ENGINE
 
 
+class _OsWithEnv:
+    """1.46: what the vendored M04N module sees as its global `os` - the real module, but `environ` is a per-run copy holding the FRED key
+    of the SecretStore. The key used to be written to os.environ for good: SecretStore.get()/source() then preferred that stale copy (a key
+    changed or removed in Settings was ignored until a restart, the panel showed ENVIRONMENT) and every child process inherited it."""
+
+    def __init__(self, environ: dict):
+        self.environ = environ
+
+    def __getattr__(self, name):
+        return getattr(os, name)
+
+
+def _m04n_env(fred: str | None) -> dict:
+    env = {k: v for k, v in os.environ.items() if k != "FRED_API_KEY"}
+    if fred:
+        env["FRED_API_KEY"] = fred
+    return env
+
+
 class NewsService:
     def __init__(self, config_store, secrets, bus, applog):
         self.cfg_store = config_store
@@ -59,9 +78,8 @@ class NewsService:
                 try:
                     eng = _engine()
                     mcfg = json.loads((paths.M04N_DIR / "M04N_CONFIG.json").read_text(encoding="utf-8"))
-                    fred = self.secrets.get("FRED_API_KEY")
-                    if fred:
-                        os.environ["FRED_API_KEY"] = fred
+                    fred = self.secrets.get("FRED_API_KEY")           # the user's environment variable first, then the local store
+                    eng.os = _OsWithEnv(_m04n_env(fred))              # 1.46: handed to M04N only, never written to os.environ
                     if store is None:
                         rt = paths.data_dir() / "m04n"
                         rt.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 set "MQ_PAUSE=pause"
 if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
 rem PepeMarketWizard - izolowane srodowisko .venv_candles dla modulu prognoz gold_candles (numpy/pandas/scikit-learn przypiete
@@ -10,7 +13,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=candles"
 set "LOG=%ROOT%data\logs\instalacja_prognoz_%TS%.log"
-echo [PepeMarketWizard] Srodowisko prognoz - log: "%LOG%"
+echo [Apollo23] Srodowisko prognoz - log: "%LOG%"
 set "PYEXE="
 rem Python z paczki aplikacji Windows (runtime\python) ma pierwszenstwo - paczka DESKTOP nie wymaga osobnej instalacji Pythona
 if exist "%ROOT%runtime\python\python.exe" "%ROOT%runtime\python\python.exe" "%ROOT%tools\check_python.py" >> "%LOG%" 2>&1 && set "PYEXE=%ROOT%runtime\python\python.exe"
@@ -25,6 +28,8 @@ if not defined PYEXE (
   %MQ_PAUSE%
   exit /b 1
 )
+rem 1.42.2: folder programu przeniesiony - przepiecie .venv_candles na biezacy Python (albo odsuniecie i utworzenie od nowa)
+"%PYEXE%" "%ROOT%tools\venv_repair.py" "%ROOT%.venv_candles" >> "%LOG%" 2>&1
 if not exist "%ROOT%.venv_candles\Scripts\python.exe" (
   echo [..] Tworze .venv_candles
   "%PYEXE%" -m venv "%ROOT%.venv_candles" >> "%LOG%" 2>&1 || (echo [BLAD] venv - patrz log & %MQ_PAUSE% & exit /b 2)

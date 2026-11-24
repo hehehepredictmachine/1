@@ -1,4 +1,7 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - menu treningu: instalacja, XAUUSD, BTC, oba, diagnostyka, wyniki, wznowienie, rollback
 rem Trening offline/SHADOW: nie wysyla zlecen, nie zamyka pozycji, nie zmienia Execution Lock.
 setlocal
@@ -16,7 +19,7 @@ if defined MQ_MISSING (
   pause
   exit /b 2
 )
-title PepeMarketWizard - trening modeli
+title Apollo23 - trening modeli
 call "%~dp0tools\trening.cmd" menu
 set "RC=%ERRORLEVEL%"
 echo Kod: %RC%  (0 wszystko wykonane - jakosc w raporcie, 1 blad techniczny, 2 zablokowane, 3 anulowane, 4 czesc pominieta)

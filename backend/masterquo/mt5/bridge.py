@@ -312,6 +312,13 @@ class MarketBridge:
         info["terminal_path"] = cfg.terminal_path or self._detected_path
         self.login_info = info
 
+    def request_reconnect(self, reason: str | None = None) -> None:
+        """A reconnect asked by the API (asset / MT5 settings changed, button): the same effect as the former direct write
+        `state = "RECONNECTING"; next_retry = 0` (1.45 connection behaviour); 1.46 only adds the reason to the state, the log and the
+        connection event."""
+        self._set_state("RECONNECTING", reason or "RECONNECT_REQUESTED")
+        self.next_retry = 0
+
     def connect(self) -> None:
         self._set_state("CONNECTING", None)
         self._initialize()
@@ -384,7 +391,10 @@ class MarketBridge:
                 sym = got
                 info = self._call(lambda m: m.symbol_info(sym))
         if info is None:
-            cands = self._call(lambda m: m.symbols_get(group="*XAU*,*GOLD*")) or ()
+            # 1.46: candidates of the ACTIVE asset (BTC showed gold symbols); name hints of the asset registry
+            hints = (getattr(self.assets, "NAME_HINTS", None) or {}).get(self.cfg_store.get().assets.active) if self.assets is not None else None
+            group = ",".join(f"*{h}*" for h in hints) if hints else "*XAU*,*GOLD*"
+            cands = self._call(lambda m: m.symbols_get(group=group)) or ()
             self.symbol_candidates = sorted({_row(c)["name"] for c in cands})[:30]
             self.symbol_status = "NOT_FOUND"
             self.symbol_info = None
@@ -572,6 +582,10 @@ class MarketBridge:
         recv = iso(self.now())
         if arr is None:
             return {"status": "unsupported", "reason": "COPY_TICKS_UNAVAILABLE", "ticks": []}
+        # 1.46: the terminal returns at most max_count ticks from raw_from; a full answer that ends before to_utc (or a full "last N
+        # seconds" answer) is cut - reported from the RAW answer, because dropped duplicates / invalid quotes made the length check miss it
+        raw_count = len(arr)
+        truncated = raw_count > 0 and raw_count >= int(max_count) and (to_utc is None or int(arr[raw_count - 1]["time_msc"]) / 1000.0 - off <= to_utc)
         out, last = [], None
         for r in arr:
             msc = int(r["time_msc"])
@@ -586,6 +600,7 @@ class MarketBridge:
             out.append({"t": (msc / 1000.0) - off, "bid": float(r["bid"]), "ask": float(r["ask"]), "flags": int(r["flags"]),
                         "time_msc": msc, "t_ms": int(round(msc - off * 1000.0)), "ord": len(out)})   # raw source time kept (PMW-UPD-08)
         return {"status": "ok" if out else "missing_data", "symbol": symbol, "received_at_utc": recv, "count": len(out), "ticks": out,
+                "raw_count": raw_count, "truncated": bool(truncated),
                 "source": "SYNTHETIC" if self._synthetic else "MT5", "clock_transform": f"t_ms = time_msc - server_offset ({off} s)"}
 
     def _merge_tail(self, st: TFState, tf: str, tail: list[Bar], symbol: str) -> list[Bar]:
@@ -853,10 +868,6 @@ class MarketBridge:
 
     def raw_call(self, fn, prio=PRIO_QUOTE, timeout: float | None = None) -> Any:
         return self.worker.call(fn, priority=prio, timeout=timeout or self.cfg.call_timeout_seconds)
-
-    def server_now_raw(self) -> float | None:
-        off = self.clock.offset
-        return None if off is None else self.now().timestamp() + off
 
     def server_day_start_utc(self) -> datetime | None:
         """Start of the current broker-server day, in UTC (daily-loss boundary)."""

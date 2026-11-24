@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import time
 from pathlib import Path
 
 import numpy as np
 
-from .package import ARTIFACT, DATASET, EVAL, LOADER, RAW, VAL_DS, VAL_RAW, Package, atomic_json, read_json
+from .package import ARTIFACT, DATASET, RAW, VAL_RAW, Package, atomic_json, read_json
 
 VERSION = "PMW-STUDIO-PIPE-1"
 FULL_HISTORY_FROM = 946684800            # 2000-01-01: "all available history" - the source decides what exists
@@ -76,6 +77,11 @@ def stage_export(ctx: Ctx) -> dict:
     report = {"mode": mode, "cutoff_utc": cutoff, "timeframes": {}, "requested": "CAŁA DOSTĘPNA HISTORIA" if not ctx.source.get("start") else
               {"from": ctx.source.get("start"), "to": ctx.source.get("end")}}
     if mode in ("BOT_CACHE", "OFFLINE"):
+        from ..marketdata.export import _ts
+        # 1.46: the requested range as epoch seconds and BOTH ends applied - 1.45.0 ignored 'end' here and compared int >= str for an ISO
+        # 'start' (TypeError -> FAILED)
+        t_from, t_to = _ts(ctx.source.get("start")), _ts(ctx.source.get("end"))
+        lim = min(cutoff, t_to) if t_to is not None else cutoff
         src = Store(Path(ctx.source["store_root"]))
         man = src.manifest(inst) or {}
         if not man:
@@ -86,7 +92,7 @@ def stage_export(ctx: Ctx) -> dict:
             for key in src.parts(inst, tf):                                           # chunk = one month part
                 ctx.check()
                 rows = src._read_part(inst, tf, key)
-                keep = [r for t, r in sorted(rows.items()) if t + TF_SECONDS[tf] <= cutoff and (not ctx.source.get("start") or t >= ctx.source["start"])]
+                keep = [r for t, r in sorted(rows.items()) if t + TF_SECONDS[tf] <= lim and (t_from is None or t >= t_from)]
                 if keep:
                     dst.merge(inst, tf, keep)
                     n += len(keep)
@@ -106,12 +112,22 @@ def stage_export(ctx: Ctx) -> dict:
             sym = task.get("broker_symbol") or ("XAUUSD-" if inst == "XAUUSD" else "BTCUSD-")
             start = time.time() - 86400 * float(ctx.source.get("days", 30))
         else:
-            source, sym = open_direct(ctx.cfg_store.get() if ctx.cfg_store else None), task.get("broker_symbol")
+            sym = task.get("broker_symbol")
+            if not sym or ctx.cfg_store is None:            # 1.46: checked BEFORE opening a terminal session; no bot config = UNAVAILABLE
+                raise Blocked("BLOCKED_DATA", f"brak symbolu brokera dla {inst} (konfiguracja aktywów bota niedostępna albo bez mapowania)")
+            source = open_direct(ctx.cfg_store.get())
             start = ctx.source.get("start") or FULL_HISTORY_FROM
         if not sym:
             raise Blocked("BLOCKED_DATA", f"brak symbolu brokera dla {inst} (konfiguracja aktywów)")
         summ = EX.run(source, dst, inst, sym, timeframes=tfs, mode="historical", start=start, end=ctx.source.get("end") or cutoff,
                       progress=lambda d: ctx.progress({"stage": "export", **d}), cancel=lambda: ctx.cancel() or ctx.pause())
+        # 1.46: EX.run RETURNS (does not raise) CANCELLED / FAILED - an interrupted or failed export must not be committed as the stage
+        # (1.45.0 committed partial data; a pause even became a "done" export stage). Checkpoints stay in the store for the resume.
+        if summ.get("status") == "CANCELLED":
+            ctx.check()                                           # raises PAUSED / CANCELLED with the user's reason
+            raise Blocked("CANCELLED", summ.get("reason") or "eksport przerwany")
+        if summ.get("status") != "COMPLETE":
+            raise Blocked("FAILED", f"eksport MT5: {summ.get('status')} {summ.get('reason') or ''}".strip())
         for tf in tfs:
             t = dst.read(inst, tf)["time"]
             report["timeframes"][tf] = {"rows": len(t), "from": t[0] if t else None, "to": t[-1] if t else None,
@@ -136,13 +152,22 @@ def _export_runner(ctx: Ctx) -> dict:
     if mode == "BOT_CACHE":
         raise Blocked("BLOCKED_DEPENDENCY", "zadania grupowe runnera eksportują przez własne połączenie MT5 – zatrzymaj bota (tryb MT5_DIRECT) "
                                             "albo użyj Centrum treningu w bocie")
+    # 1.46: the broker symbol is never guessed for a real export (1.45.0 used 'BTCUSD-' / 'XAUUSD-' without a mapping); only the simulator
+    # (SYNTHETIC) keeps its own symbol names
+    if mode == "SYNTHETIC":
+        sym = task.get("broker_symbol") or ("XAUUSD-" if task["instrument"] == "XAUUSD" else "BTCUSD-")
+    else:
+        sym = task.get("broker_symbol")
+        if not sym:
+            raise Blocked("BLOCKED_DATA", f"brak symbolu brokera dla {task['instrument']} (konfiguracja aktywów bota) – nie zgaduję symbolu")
     tmp = pkg.tmp("export")
     out = tmp / "runner_dataset"
     months = 1 if mode == "SYNTHETIC" else int(ctx.source.get("months") or 240)
     cmd = [sys.executable, "-m", "masterquo", "training", "export", "--instrument", task["instrument"], "--symbol",
-           task.get("broker_symbol") or ("XAUUSD-" if task["instrument"] == "XAUUSD" else "BTCUSD-"), "--months", str(months), "--out", str(out),
+           sym, "--months", str(months), "--out", str(out),
            "--tfs", ",".join(needed_tfs(task))] + (["--synthetic"] if mode == "SYNTHETIC" else [])
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=6 * 3600)
+    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=6 * 3600,
+                       env=dict(os.environ, PYTHONIOENCODING="utf-8"))
     (pkg.dir / "logs" / "runner_export.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
     if p.returncode != 0 or not (out / "source_metadata.json").exists():
         raise Blocked("FAILED", f"eksport runnera zakończony kodem {p.returncode}")
@@ -260,18 +285,20 @@ def deterministic_features(task: dict, bars: list[dict], st) -> list[dict]:
     """Causal per-bar features with the bot's own indicator code."""
     out = []
     if task["model_id"] == "IND_SEMIVAR":
-        lr = [0.0] + [math.log(bars[i]["c"] / bars[i - 1]["c"]) if bars[i]["t"] - bars[i - 1]["t"] <= 90 else float("nan")
-                      for i in range(1, len(bars))]                         # a return across a gap is skipped (SKIP mode of PMW-IND-SEMIVAR-1)
-
-        def share(v):
-            up = sum(x * x for x in v if x > 0)
-            dn = sum(x * x for x in v if x < 0)
-            return (dn / (up + dn)) if up + dn > 0 else ""
-        for i in range(len(bars)):
-            r20 = [x for x in lr[max(0, i - 19):i + 1] if x == x]
-            r60 = [x for x in lr[max(0, i - 59):i + 1] if x == x]
-            out.append({"t": bars[i]["t"], "downside_share_20": share(r20) if len(r20) >= 20 else "",
-                        "downside_share_60": share(r60) if len(r60) >= 60 else ""})
+        # 1.46: the bot's own PMW-IND-SEMIVAR-1 code (returns + window): 1.45.0 re-implemented it with a made-up first return 0.0 and a window
+        # of the last 20 / 60 BARS (gaps dropped) instead of the last 20 / 60 valid returns - features.csv differed from the bot's indicator
+        from ..indicators import semivar as SV
+        from ..timeutil import TF_SECONDS as TFS
+        rets = SV.returns([{"open_utc": b["t"], "c": b["c"]} for b in bars], TFS[task["base_tf"]])
+        k = 0
+        for b in bars:
+            while k < len(rets) and rets[k]["t"] <= b["t"]:          # returns ending at a closed bar <= t (causal)
+                k += 1
+            row = {"t": b["t"]}
+            for n in (20, 60):
+                w = SV.window(rets[max(0, k - n):k], n)
+                row[f"downside_share_{n}"] = w["downside_share"] if w["returns"] >= n and w["downside_share"] is not None else ""
+            out.append(row)
     elif task["model_id"] == "IND_AVWAP_SESSION":
         from ..analytics import session_engine as SE
         from ..indicators.avwap import Accumulator
@@ -302,12 +329,25 @@ def deterministic_features(task: dict, bars: list[dict], st) -> list[dict]:
     return out
 
 
+def _pos(x) -> float | None:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
 def load_family_data(ctx: Ctx) -> dict:
     task, pkg = ctx.task, ctx.pkg
     tf = task["base_tf"]
     p = pkg.dir / DATASET / f"bars_{tf}.json"
     bars = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
-    data = {"instrument": task["instrument"], "point": 0.01, "data_kind": data_kind(pkg), "symbol": task.get("broker_symbol"), "bars": bars}
+    # 1.46: the point size from the symbol spec of THIS package's export (same rule as the bot, modelhub.families.run.load_data): 1.45.0 passed
+    # 0.01 for every instrument / broker (spread cost 10x off on a 3-digit XAUUSD broker). Missing = None: the families that convert the
+    # spread refuse in validate_data (BLOCKED_DATA) instead of training on an assumed point
+    man = raw_store(pkg).manifest(task["instrument"]) or {}
+    point = _pos((man.get("symbol_spec") or {}).get("point")) or _pos(((man.get("costs") or {}).get("spread") or {}).get("point"))
+    data = {"instrument": task["instrument"], "point": point, "data_kind": data_kind(pkg), "symbol": task.get("broker_symbol"), "bars": bars}
     if ctx.cfg_store is not None:
         fc = ctx.cfg_store.get().families
         data["pair"] = (fc.pairs or [None])[0]
@@ -407,8 +447,13 @@ def _train_runner(ctx: Ctx) -> dict:
     from ..training import runner as RN
     task = ctx.task
     kind = task["task_id"]
+    # 1.46: the symbol of the package's own runner export (as training/cli.py for a ready dataset) - 1.45.0 passed 'XAUUSD-' for BTC too and the
+    # runner rejected the dataset (metadata symbol != plan symbol)
+    meta = read_json(ctx.pkg.dir / RAW / "runner_dataset" / "source_metadata.json", {}) or {}
+    if not meta.get("symbol") or meta.get("instrument") != task["instrument"]:
+        raise Blocked("BLOCKED_DATA", "brak symbolu / instrumentu w metadanych eksportu runnera (raw/export/runner_dataset)")
     plan, tasks = RN.build_plan(instruments=[task["instrument"]], profile="quick" if ctx.profile == "smoke" else "standard",
-                                symbols={task["instrument"]: task.get("broker_symbol") or "XAUUSD-"}, commissions={}, months=None,
+                                symbols={task["instrument"]: meta["symbol"]}, commissions={}, months=None,
                                 synthetic=ctx.source["mode"] == "SYNTHETIC", tasks=[kind],
                                 datasets={task["instrument"]: str(ctx.pkg.dir / RAW / "runner_dataset")}, origin="studio")
     plan["activate"] = False                                                   # Studio never inherits activation
@@ -417,6 +462,22 @@ def _train_runner(ctx: Ctx) -> dict:
             t.update(execution="POMINIETE", detail="Studio: aktywacja i przeładowanie bota tylko jawnie w bocie")
     run = RC.Run.create(plan, tasks)
     rc = RN.execute(run)
+    # 1.46: the runner's result decides the stage - 1.45.0 committed 'train' whatever happened (rc 2 = another training running, 3 = cancelled,
+    # BLAD_TECHNICZNY, the task skipped) and the job ended TRAINED; a committed stage is immutable, so a resume never retrained
+    if rc == 2:
+        raise Blocked("BLOCKED_DEPENDENCY", "trwa inny trening runnera (Centrum treningu bota) – wznów zadanie później")
+    if rc == 3:
+        ctx.check()
+        raise Blocked("CANCELLED", "trening runnera anulowany")
+    own = [t for t in run.state["tasks"] if t.get("kind") not in ("activate", "bot")]          # activate / bot: skipped on purpose above
+    err = next((t for t in own if t.get("execution") == "BLAD_TECHNICZNY"), None)
+    if err is not None:
+        raise Blocked("FAILED", f"runner {err.get('id')}: {err.get('detail') or 'BLAD_TECHNICZNY'}"[:600])
+    main = next((t for t in own if t.get("id") == f"{task['instrument']}:{kind}"), None)
+    if main is None or main.get("execution") != "UKONCZONE":
+        ex = (main or {}).get("execution")
+        raise Blocked("BLOCKED_DEPENDENCY" if ex == "POMINIETE" else "FAILED",
+                      f"runner {task['instrument']}:{kind}: {ex} – {(main or {}).get('detail') or 'brak wyniku'}"[:600])
     return {"kind": "RUNNER_GROUP", "rc": rc, "runner_run_id": run.run_id,
             "tasks": {t["id"]: {k: t.get(k) for k in ("execution", "quality", "detail")} for t in run.state["tasks"]}}
 
@@ -427,7 +488,9 @@ def stage_evaluate(ctx: Ctx) -> dict:
     res = read_json(pkg.dir / ARTIFACT / "train_result.json", {}) or {}
     ev = {"result": res}
     if res.get("kind") == "TRAINHUB":
-        ev["decision"] = "BEATS_BASELINE_ON_HOLDOUT" if ((res.get("holdout") or {}).get("skill_vs_baseline") or 0) > 0 else "NO_EDGE_VS_BASELINE"
+        skill = (res.get("holdout") or {}).get("skill_vs_baseline")
+        # 1.46: a missing holdout metric is UNAVAILABLE - `or 0` turned it into NO_EDGE_VS_BASELINE (missing data shown as a result)
+        ev["decision"] = "UNAVAILABLE" if skill is None else ("BEATS_BASELINE_ON_HOLDOUT" if skill > 0 else "NO_EDGE_VS_BASELINE")
     elif res.get("kind") == "FAMILY":
         ev["decision"] = res.get("validation") or "UNKNOWN"
     else:
@@ -444,13 +507,17 @@ def stage_verify_loader(ctx: Ctx) -> dict:
     import sys
     pkg = ctx.pkg
     tmp = pkg.tmp("verify_loader")
-    p = subprocess.run([sys.executable, "-m", "masterquo.studio.verify", str(pkg.dir)], capture_output=True, text=True, timeout=900)
+    p = subprocess.run([sys.executable, "-m", "masterquo.studio.verify", str(pkg.dir)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=900, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
     try:
         res = json.loads((p.stdout or "").strip().splitlines()[-1])
     except (ValueError, IndexError):
         res = {"ok": False, "error": (p.stderr or "")[-800:]}
     atomic_json(tmp / "loader.json", res)
-    pkg.commit("verify_loader", tmp, {"ok": bool(res.get("ok"))}, subdir="evaluation")
+    # 1.46: a negative loader test is stored for the report but NOT as a committed stage - 1.45.0 committed it (status COMMITTED), so
+    # "Wznów" after FAILED skipped the stage and finalize gave PACKAGED with loader.json ok=false
+    ok = bool(res.get("ok"))
+    pkg.commit("verify_loader", tmp, {"ok": ok, **({} if ok else {"status": "FAILED"})}, subdir="evaluation")
     if not res.get("ok"):
         raise Blocked("FAILED", f"loader bota nie odtworzył próbki: {res.get('error') or res.get('reason')}")
     return res
@@ -475,10 +542,18 @@ OPS["FIT"] = OPS["CALIBRATE"] = OPS["FULL_PROCESS"] = OPS["TRAIN"]
 STATE_OF_STAGE = {"export": "EXPORTING", "validate_raw": "VALIDATING_RAW", "build_dataset": "BUILDING_DATASET", "validate_dataset": "VALIDATING_DATASET",
                   "train": "TRAINING", "evaluate": "EVALUATING", "verify_loader": "PACKAGING"}
 FINAL_OF = {"export": "EXPORTED", "validate_raw": "VALIDATED", "validate_dataset": "READY_FOR_TRAINING", "train": "TRAINED", "evaluate": "TRAINED",
-            "verify_loader": "PACKAGED"}
+            "verify_loader": "PACKAGED",
+            "build_dataset": "READY_FOR_TRAINING"}     # 1.46: RUNNER_GROUP BUILD_DATASET ends here (was 'DONE': not final, package left .partial)
+MULTI_SERIES_SOURCES = ("BARS_MULTI", "BARS_DXY")
 
 
 def run_task(task: dict, pkg: Package, op: str, ctx: Ctx) -> dict:
+    # 1.46: Studio exports ONLY the task's own instrument - a task needing other series (pair / basket / DXY) could never succeed (KeyError
+    # 'pair_bars' / 'basket_bars', DXY always missing) after a possibly hours-long export; refused before any work
+    extra = sorted({s.get("kind") for s in task.get("sources") or [] if s.get("kind") in MULTI_SERIES_SOURCES})
+    if extra:
+        raise Blocked("BLOCKED_DEPENDENCY", f"Studio nie eksportuje dodatkowych serii ({', '.join(extra)}: para / koszyk / DXY) – "
+                                            "zadanie wieloseryjne trenuj w bocie (Centrum modeli)")
     stages = OPS[op]
     if task["adapter"] == "RUNNER_GROUP":
         stages = [s for s in stages if s not in ("validate_dataset", "verify_loader")]

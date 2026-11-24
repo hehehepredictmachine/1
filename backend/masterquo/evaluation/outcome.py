@@ -26,8 +26,15 @@ def window(bars: list[dict], t0: float, t1: float) -> list[dict]:
     return [b for b in bars if bar_ts(b) >= t0 - 1e-6 and bar_ts(b) + M1 <= t1 + 1e-6]
 
 
-def label(cand: dict, bars: list[dict], *, cost_r: float = 0.0) -> dict:
-    """cand = SetupCandidate.to_dict(); bars = the closed M1 bars of the horizon window (see window())."""
+def label(cand: dict, bars: list[dict], *, cost_r: float | None = 0.0) -> dict:
+    """cand = SetupCandidate.to_dict(); bars = the closed M1 bars of the horizon window (see window()). cost_r None = the extra cost
+    was unknown at the assessment -> plan_r_net is unknown (None), never the gross result presented as net."""
+    if not bars:
+        # 1.46: an empty window returned exit/first_event TIMEOUT and plan_r / MFE / MAE = 0 next to status NO_BARS - nothing was
+        # observed, so every result field is unknown
+        return {"status": "NO_BARS", "bars_used": 0, "ambiguous_bars": 0, "exit": None, "first_event": None, "targets_hit": None,
+                "targets_hit_at": None, "sl_hit_at": None, "mfe_r": None, "mae_r": None, "plan_r_gross": None, "plan_r_net": None,
+                "hold_s": None, "method": "brak zamkniętych świec M1 w horyzoncie – wynik nieznany"}
     entry, sl = float(cand["entry_price"]), float(cand["stop_loss"])
     sgn = 1.0 if cand["direction"] == "LONG" else -1.0
     shift = float((cand.get("execution_context") or {}).get("spread") or 0.0) if sgn < 0 else 0.0
@@ -80,7 +87,7 @@ def label(cand: dict, bars: list[dict], *, cost_r: float = 0.0) -> dict:
     return {"status": "MATURED" if bars else "NO_BARS", "bars_used": len(bars), "ambiguous_bars": amb, "exit": exit_kind,
             "first_event": first, "targets_hit": hit, "targets_hit_at": hit_at, "sl_hit_at": sl_at,
             "mfe_r": round(mfe / r, 4) if r > 0 else None, "mae_r": round(mae / r, 4) if r > 0 else None,
-            "plan_r_gross": round(gross, 4), "plan_r_net": round(gross - cost_r, 4),
+            "plan_r_gross": round(gross, 4), "plan_r_net": None if cost_r is None else round(gross - cost_r, 4),
             "hold_s": round(exit_at - t0, 1) if exit_at is not None else None,
             "method": "M1 zamknięte w horyzoncie; świeca niejednoznaczna = SL pierwszy; bez BE (BINARY_PLAN_APPROX)"}
 
@@ -95,4 +102,4 @@ def event_hit(engine: str, out: dict) -> bool | None:
         return bool(h[min(1, len(h) - 1)]) if h else None
     if engine == "SCALP_SHADOW":                                    # scalp model B event: TP1 before SL
         return bool(h[0]) if h else None
-    return out["plan_r_net"] > 0
+    return None if out.get("plan_r_net") is None else out["plan_r_net"] > 0      # 1.46: unknown cost -> net R unknown

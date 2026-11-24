@@ -108,6 +108,12 @@ class EvaluationService:
     def _active(self, r: dict, view) -> None:
         now = self.clock()
         q = {"bid": view.bid, "ask": view.ask}
+        try:                                    # 1.46: the quote age was never passed -> QUOTE_AGE was never checked on the ACTIVE path
+            qs = self.bridge.quote_status() if hasattr(self.bridge, "quote_status") else None
+        except Exception:  # noqa: BLE001 - unknown age stays None (not a fresh quote by assumption)
+            qs = None
+        if qs and qs.get("bid") == view.bid and qs.get("ask") == view.ask:          # age of THIS quote only, never of a newer tick
+            q["age_seconds"] = qs.get("age_seconds")
         info = getattr(self.bridge, "symbol_info", None) or {}
         cost, known = self._active_cost(info)
         c = K.from_active_row(r, symbol=view.symbol, instrument=self._inst(), quote=q, regime=view.regime, now=now,
@@ -246,7 +252,8 @@ class EvaluationService:
         c, a = pl["candidate"], pl["assessment"]
         if row["source_ts"] < first_ts - O.M1:
             return {"status": "NO_BARS", "reason": "okno setupu starsze niż bufor M1 (np. po restarcie) – wynik nieznany"}
-        out = O.label(c, O.window(bars, row["source_ts"], row["matures_at"]), cost_r=float(a.get("cost_r") or 0.0))
+        cr = a.get("cost_r")                     # 1.46: None = extra cost unknown -> plan_r_net unknown (was replaced with 0.0)
+        out = O.label(c, O.window(bars, row["source_ts"], row["matures_at"]), cost_r=None if cr is None else float(cr))
         out["event_hit"] = O.event_hit(c["engine"], out)
         return out
 
@@ -295,7 +302,8 @@ class EvaluationService:
             if out.get("status") != "MATURED":
                 continue
             rg["matured"] += 1
-            rg["r"].append(out["plan_r_net"])
+            if out.get("plan_r_net") is not None:                         # 1.46: unknown net R (unknown cost) is not averaged as a number
+                rg["r"].append(out["plan_r_net"])
             ds = dist.setdefault(a["engine"], {"n": 0, "TP_FIRST": 0, "SL_FIRST": 0, "NEITHER": 0, "hold": []})
             ds["n"] += 1
             th = out.get("targets_hit") or []
@@ -311,17 +319,19 @@ class EvaluationService:
             g = groups.setdefault((a["engine"], a["decision"]), {"n": 0, "events": 0, "r": [], "brier": [], "ambiguous": 0})
             g["n"] += 1
             g["events"] += 1 if out.get("event_hit") else 0
-            g["r"].append(out["plan_r_net"])
+            if out.get("plan_r_net") is not None:
+                g["r"].append(out["plan_r_net"])
             g["ambiguous"] += 1 if out.get("ambiguous_bars") else 0
             if a.get("probability") is not None and out.get("event_hit") is not None:
                 g["brier"].append((a["probability"] - (1.0 if out["event_hit"] else 0.0)) ** 2)
         res = []
         for (eng, dec), g in sorted(groups.items()):
-            n = g["n"]
-            mean_r = sum(g["r"]) / n
-            sd = math.sqrt(sum((x - mean_r) ** 2 for x in g["r"]) / (n - 1)) if n > 1 else None
+            n, nr = g["n"], len(g["r"])
+            mean_r = sum(g["r"]) / nr if nr else None
+            sd = math.sqrt(sum((x - mean_r) ** 2 for x in g["r"]) / (nr - 1)) if nr > 1 else None
             res.append({"engine": eng, "decision": dec, "n": n, "event_rate": round(g["events"] / n, 4),
-                        "mean_plan_r_net": round(mean_r, 4), "mean_plan_r_se": round(sd / math.sqrt(n), 4) if sd is not None else None,
+                        "mean_plan_r_net": None if mean_r is None else round(mean_r, 4),
+                        "mean_plan_r_se": round(sd / math.sqrt(nr), 4) if sd is not None else None, "net_r_unknown": n - nr,
                         "brier": round(sum(g["brier"]) / len(g["brier"]), 4) if g["brier"] else None, "with_probability": len(g["brier"]),
                         "ambiguous_share": round(g["ambiguous"] / n, 4), "status": "OK" if n >= 30 else "SMALL_SAMPLE"})
         readiness = {}

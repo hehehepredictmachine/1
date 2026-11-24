@@ -16,6 +16,7 @@ Exit codes of `masterquo training run` (documented in START_TUTAJ_TRENING_PL.md)
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -28,8 +29,11 @@ from pathlib import Path
 from .. import paths
 
 EXEC = ("NIE_URUCHOMIONE", "W_TOKU", "UKONCZONE", "POMINIETE", "BLAD_TECHNICZNY", "ANULOWANE")
-QUAL = ("NIE_DOTYCZY", "BRAK_PRZESLANEK", "ODRZUCONY", "NIEZWALIDOWANY", "CZESCIOWO_ZWALIDOWANY", "ZWALIDOWANY_SHADOW", "TEST_TECHNICZNY")
-INTEG = ("NIEZAPISANY", "ZAPISANY_DO_BADAN", "AKTYWNY_W_REJESTRZE", "ZALADOWANY_DO_SHADOW", "ROLLBACK")
+# 1.46: DO_OCENY_NA_DEV (trained on dev, holdout not opened) and RAPORT_WALIDACJI (sh_pack verdict report) are written by the runner -
+# they were missing on the axes (raw codes in the report and in the training center)
+QUAL = ("NIE_DOTYCZY", "BRAK_PRZESLANEK", "ODRZUCONY", "NIEZWALIDOWANY", "CZESCIOWO_ZWALIDOWANY", "ZWALIDOWANY_SHADOW", "TEST_TECHNICZNY",
+        "DO_OCENY_NA_DEV")
+INTEG = ("NIEZAPISANY", "ZAPISANY_DO_BADAN", "AKTYWNY_W_REJESTRZE", "ZALADOWANY_DO_SHADOW", "ROLLBACK", "RAPORT_WALIDACJI")
 STATE_SCHEMA = "mq-training-run-1"
 
 
@@ -142,16 +146,67 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _proc_start(pid: int) -> int | None:
+    """1.46: creation time of a live process (Windows: FILETIME from GetProcessTimes; Linux: start ticks from /proc/<pid>/stat). Together
+    with the pid it identifies the process - a pid reused by another program after a crash / restart has another start. None = unreadable."""
+    if pid <= 0:
+        return None
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k = ctypes.windll.kernel32
+            k.OpenProcess.restype = wintypes.HANDLE
+            h = k.OpenProcess(0x1000, False, pid)                       # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                c, e, kt, ut = (wintypes.FILETIME() for _ in range(4))
+                if not k.GetProcessTimes(wintypes.HANDLE(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(kt), ctypes.byref(ut)):
+                    return None
+                return (int(c.dwHighDateTime) << 32) | int(c.dwLowDateTime)
+            finally:
+                k.CloseHandle(wintypes.HANDLE(h))
+        txt = Path(f"/proc/{int(pid)}/stat").read_text(encoding="ascii", errors="replace")
+        return int(txt.rsplit(")", 1)[1].split()[19])                   # field 22 (starttime); the name in (...) may hold spaces
+    except Exception:  # noqa: BLE001 - no /proc (macOS) or no access: identity unknown
+        return None
+
+
+def pid_alive_as(pid: int, started) -> bool:
+    """1.46: `pid` lives AND is the process that recorded `started` (_proc_start). Without a recorded start (files of older versions) or when
+    the start cannot be read, only the pid is checked (as before)."""
+    if not _pid_alive(pid):
+        return False
+    if started is None:
+        return True
+    cur = _proc_start(pid)
+    return cur is None or str(cur) == str(started)
+
+
+def lock_owner_alive(cur: dict | None) -> bool:
+    """1.46: the training lock is held only by its LIVE owner - a lock left by a killed runner (closed console, hard kill after 120 s,
+    restart) whose pid now belongs to another program no longer blocks training (and the training center does not wait up to 12 h)."""
+    try:
+        return bool(cur) and pid_alive_as(int(cur.get("pid") or 0), cur.get("started"))
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def acquire_lock(run_id: str) -> str | None:
     """Returns None when acquired, otherwise the id of the run in progress."""
     p = lock_path()
     try:
         cur = json.loads(p.read_text(encoding="utf-8"))
-        if _pid_alive(int(cur.get("pid", 0))) and cur.get("run_id") != run_id:
+        pid = int(cur.get("pid", 0))
+        # 1.46: ANY other live process holds the lock - also for the same run_id (1.45.0 handed the lock of a running run to a second process
+        # resuming the same run: two processes wrote one run folder / state.json)
+        if lock_owner_alive(cur) and (pid != os.getpid() or cur.get("run_id") != run_id):   # re-entrant only for the SAME run in the SAME process
             return cur.get("run_id")
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
-    write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "at": now()})
+    # 1.46: + start time of the owner (the pid alone was taken for a live owner after pid reuse)
+    write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "started": _proc_start(os.getpid()), "at": now()})
     return None
 
 
@@ -178,7 +233,7 @@ def free_ram_mb() -> float | None:
             m.dwLength = ctypes.sizeof(MS)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
             return round(m.ullAvailPhys / 1024 / 1024)
-        for line in Path("/proc/meminfo").read_text().splitlines():
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
             if line.startswith("MemAvailable:"):
                 return round(int(line.split()[1]) / 1024)
     except Exception:  # noqa: BLE001
@@ -243,13 +298,45 @@ def _job_limit(proc: subprocess.Popen, mb: int) -> None:
         k.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
         h = k.OpenProcess(0x1F0FFF, False, proc.pid)
         k.AssignProcessToJobObject(wintypes.HANDLE(job), wintypes.HANDLE(h))
-        proc._mq_job = job                                         # keep the handle alive as long as the child
+        if h:
+            k.CloseHandle(wintypes.HANDLE(h))                      # 1.46: the process handle leaked (one per child, also in the bot - TrainHub)
+        proc._mq_job = job                                         # keep the handle alive as long as the child (close_job after it ended)
     except Exception:  # noqa: BLE001
         pass
 
 
+def close_job(proc) -> None:
+    """1.46: closes the Job Object of a FINISHED child. _job_limit kept the handle as a plain int (never closed by GC): one kernel object
+    leaked per child in a long-lived process (menu runner, TrainHub in the bot). KILL_ON_JOB_CLOSE also ends leftovers of that child."""
+    job = getattr(proc, "_mq_job", None)
+    if not job or os.name != "nt":
+        return
+    proc._mq_job = None
+    import ctypes
+    from ctypes import wintypes
+    with contextlib.suppress(Exception):
+        ctypes.windll.kernel32.CloseHandle(wintypes.HANDLE(job))
+
+
+def _end_child(p: subprocess.Popen) -> None:
+    if p.poll() is not None:
+        return
+    p.terminate()
+    try:
+        p.wait(20)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        try:
+            p.wait(10)
+        except subprocess.TimeoutExpired:
+            pass
+
+
 def child_env(plan: dict, instrument: str | None = None) -> dict:
-    """Environment of every child: thread limits, instrument space, training flag (no order path), UTF-8."""
+    """Environment of every child: thread limits, instrument space, MQ_TRAINING=1 marker, UTF-8.
+
+    1.46: MQ_TRAINING is only a marker (no module reads it) - it does NOT block an order path. Training children have no order path of
+    their own; the export's MT5 connection is wrapped by forecast.export.NoOrders (order functions raise)."""
     th = str(plan["threads"])
     env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8",
                OMP_NUM_THREADS=th, MKL_NUM_THREADS=th, OPENBLAS_NUM_THREADS=th, NUMEXPR_NUM_THREADS=th, MQ_TRAINING="1",
@@ -275,25 +362,34 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
     with open(log_p, "a", encoding="utf-8") as lf:
         lf.write(f"\n=== {now()} {' '.join(cmd)}\n")
         lf.flush()
+        env = dict(env, PYTHONPATH=paths.child_pythonpath(cmd[0]))   # 1.42.11: Python bota dostaje biblioteki aplikacji (DESKTOP)
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
         _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
-        beat = time.monotonic()
-        while p.poll() is None:
-            if time.monotonic() - beat >= 120:                 # heartbeat: long tasks must not look frozen
-                beat = time.monotonic()
-                print(f"[TRENING] {tid}: w toku {int((beat - t0) // 60)} min – {_last_line(log_p)} (nie zamykaj okna)", flush=True)
-            if run.cancel_requested():
-                p.terminate()
-                try:
-                    p.wait(20)
-                except subprocess.TimeoutExpired:
+        try:
+            beat = time.monotonic()
+            while p.poll() is None:
+                if time.monotonic() - beat >= 120:                 # heartbeat: long tasks must not look frozen
+                    beat = time.monotonic()
+                    print(f"[TRENING] {tid}: w toku {int((beat - t0) // 60)} min – {_last_line(log_p)} (nie zamykaj okna)", flush=True)
+                if run.cancel_requested():
+                    p.terminate()
+                    try:
+                        p.wait(20)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                    return None, "ANULOWANE"
+                if time.monotonic() - t0 > timeout_s:
                     p.kill()
-                return None, "ANULOWANE"
-            if time.monotonic() - t0 > timeout_s:
-                p.kill()
-                p.wait()
-                return 124, f"TIMEOUT {timeout_s / 60:.0f} min"
-            time.sleep(1.0)
+                    p.wait()
+                    return 124, f"TIMEOUT {timeout_s / 60:.0f} min"
+                time.sleep(1.0)
+        except BaseException:
+            # 1.46: Ctrl+C in the menu (KeyboardInterrupt in time.sleep) left the child training unsupervised - on Windows it has no console
+            # (CREATE_NO_WINDOW) and never gets Ctrl+C - while execute() released RUNNING.lock: "Wznów" started a second process on the same files
+            _end_child(p)
+            raise
+        finally:
+            close_job(p)                                           # 1.46: Job Object handle of the finished child (leak)
     run.set(tid, seconds=round(time.monotonic() - t0, 1))
     return p.returncode, child_reason(log_p.read_text(encoding="utf-8", errors="replace")[-6000:], log_p)
 

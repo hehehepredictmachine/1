@@ -14,17 +14,14 @@ from __future__ import annotations
 
 import http.cookiejar
 import json
-import time
 import urllib.error
 import urllib.request
 
-
-LAB_FAMILIES = ["DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", "SEW_SNN"]
-LAB_EXPERIMENTS = ["LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED"]
+# 1.46: LAB_FAMILIES / LAB_EXPERIMENTS and _wait removed - unused since train_all runs `training run` (families come from the training profile)
 
 
 def say(msg: str) -> None:
-    print(f"[PepeMarketWizard] {msg}", flush=True)
+    print(f"[Apollo23] {msg}", flush=True)
 
 
 class Bot:
@@ -75,18 +72,6 @@ def _health(port: int) -> dict | None:
             return json.loads(r.read().decode())
     except Exception:
         return None
-
-
-def _wait(pred, timeout: float, step: float = 2.0) -> bool:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        try:
-            if pred():
-                return True
-        except Exception:
-            pass
-        time.sleep(step)
-    return False
 
 
 def train_all(a) -> int:

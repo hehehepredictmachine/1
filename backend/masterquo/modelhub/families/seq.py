@@ -26,11 +26,13 @@ class SeqBase(B.Family):
     HORIZONS = (6,)
     RECEIVERS = ("SH_CONTEXT:direction_distribution", "MODELHUB:direction_group M5", "PANEL:model_status")
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 3000, "schema": "BAR_SEQ_V1"}
+    NEEDS_POINT = True                                               # 1.46: label cost = median bar spread x point
 
     def fit(self, data, cfg, tmp, budget):
         L, H = int(cfg.get("lookback", 64)), self.HORIZONS[0]
         bars = data["bars"][-int(budget.get("max_rows", 20000)):]
-        cost_rel = float(np.median([b.get("spread") or 0 for b in bars])) * float(data.get("point") or 0.01) / float(bars[-1]["c"])
+        # 1.46: point from the symbol spec - was `or 0.01` (unknown spec = an assumed point)
+        cost_rel = float(np.median([b.get("spread") or 0 for b in bars])) * B.point_of(data) / float(bars[-1]["c"])
         X, y, idx = SD.build(bars, L=L, H=H, cost_rel=cost_rel)
         sp = SD.split(len(y), H)
         (a0, a1), (v0, v1), (h0, h1) = sp["train"], sp["val"], sp["holdout"]

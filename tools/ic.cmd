@@ -3,7 +3,7 @@ rem cienki launcher: python -m masterquo indicator-context <polecenie> (status n
 setlocal
 chcp 65001 >nul
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak .venv - INSTALUJ_TRENING.bat & exit /b 2)
 set "PYTHONIOENCODING=utf-8"
 set "CMD=%~1"

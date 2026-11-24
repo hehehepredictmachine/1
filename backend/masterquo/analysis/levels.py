@@ -2,9 +2,11 @@
 
 W1 / MN1: the bridge receives MT5 TFs M1..D1; weeks and months are AGGREGATED from closed D1 bars (source
 AGGREGATED_FROM_D1). The broker date of a D1 bar = calendar date of (open_utc + 12 h) - correct for any server offset in
-[-12 h, +12 h]. A month has calendar boundaries (never "30 days"); a week is the ISO week of that date. A W1/MN1 bar is
-available only after its period is COMPLETE (a D1 bar of the next period exists) - available_at = close of its last D1
-bar. Without enough history the analysis reports BRAK_DANYCH (INSUFFICIENT_HISTORY) - no zone is fabricated.
+[-12 h, +12 h]. A month has calendar boundaries (never "30 days"); a week runs Sunday..Saturday of that date like the MT5 W1
+bar (a Sunday D1 bar - gold / FX reopen on Sunday at servers with UTC+0 or a negative offset - opens the NEXT week, it is
+never glued to the closed one). A W1/MN1 bar is available only after its period is COMPLETE (a D1 bar of the next period
+exists - closed or still forming) - available_at = close of its last D1 bar. Without enough history the analysis reports
+BRAK_DANYCH (INSUFFICIENT_HISTORY) - no zone is fabricated.
 
 Zones: confirmed pivots (left = right = 3 bars; W1/MN1: 2/2) of each TF are clustered by price with tolerance
 `tol_atr` x ATR14(TF) (at least 2 points). A zone records: TF of origin, low/high, number of INDEPENDENT reactions (pivots
@@ -15,13 +17,13 @@ different level types: their proximity is a confluence FEATURE, it never renames
 from __future__ import annotations
 
 import hashlib
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 from ..strategies import indicators as ind
 from ..timeutil import TF_SECONDS, iso, parse_iso
 
 VERSION = "MQ-SR-1.0.0"
-UTC = timezone.utc
+# 1.46: the unused constant UTC (and its timezone import) removed
 
 
 def broker_date(open_utc: str):
@@ -29,7 +31,8 @@ def broker_date(open_utc: str):
 
 
 def aggregate_d1(d1: list[dict], period: str) -> dict:
-    """Closed D1 bars -> closed W1 / MN1 bars (complete periods only)."""
+    """Closed D1 bars -> closed W1 / MN1 bars (complete periods only). A forming (closed=False) D1 bar is used only as the
+    end-of-period marker: its data never enters a bar."""
     closed = [b for b in d1 if b.get("closed") and b.get("open_utc")]
     if not closed:
         return {"status": "INSUFFICIENT_HISTORY", "bars": [], "source": "AGGREGATED_FROM_D1", "period": period}
@@ -38,7 +41,9 @@ def aggregate_d1(d1: list[dict], period: str) -> dict:
         d = broker_date(b["open_utc"])
         if period == "MN1":
             return (d.year, d.month)
-        y, w, _ = d.isocalendar()
+        # 1.46: the ISO week (Mon..Sun) glued a Sunday D1 bar (UTC+0 / negative server offsets) to the PREVIOUS, already closed week
+        # (its h/l/c came from the reopening); the week now starts on Sunday like the MT5 W1 bar
+        y, w, _ = (d + timedelta(days=1) if d.weekday() == 6 else d).isocalendar()
         return (y, w)
     groups: dict = {}
     order = []
@@ -48,16 +53,22 @@ def aggregate_d1(d1: list[dict], period: str) -> dict:
             groups[k] = []
             order.append(k)
         groups[k].append(b)
+    # 1.46: with only CLOSED D1 bars the last group was always treated as incomplete - on Monday (D1 forming, last closed = Friday)
+    # the complete previous week (and on the 1st the previous month) dropped out; a D1 bar of a LATER period (closed or forming) ends it
+    later = [key(b) for b in d1 if b.get("open_utc") and b.get("closed") is False and parse_iso(b["open_utc"]) > parse_iso(closed[-1]["open_utc"])]
+    nxt = next((k for k in later if k != order[-1]), None)
+    complete = order if nxt is not None else order[:-1]
     bars = []
-    for k in order[:-1]:                      # the last group may still be incomplete -> not a closed bar
+    for k in complete:                        # the last group may still be incomplete -> not a closed bar
         g = groups[k]
         last = g[-1]
         avail = last.get("available_at") or iso(parse_iso(last["open_utc"]) + timedelta(seconds=86400))
         bars.append({"open_utc": g[0]["open_utc"], "o": g[0]["o"], "h": max(x["h"] for x in g), "l": min(x["l"] for x in g), "c": last["c"],
                      "tv": sum(float(x.get("tv") or 0) for x in g), "closed": True, "available_at": avail, "days": len(g),
                      "period_key": f"{k[0]}-{k[1]:02d}"})
+    fp = nxt if nxt is not None else order[-1]
     return {"status": "OK" if bars else "INSUFFICIENT_HISTORY", "bars": bars, "source": "AGGREGATED_FROM_D1", "period": period,
-            "forming_period": f"{order[-1][0]}-{order[-1][1]:02d}"}
+            "forming_period": f"{fp[0]}-{fp[1]:02d}"}
 
 
 def zones_for_tf(v, tf: str, *, right: int = 3, tol_atr: float = 0.25, max_zones: int = 8, fresh_bars: int = 60,

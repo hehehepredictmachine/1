@@ -100,7 +100,9 @@ def predict(req):
     model = PPO.load(str(d / "ppo_policy"), device="cpu")
     from masterquo.modelhub.families.rl_core import ReplayCore
     core = ReplayCore(bars, **conf["env"])
-    core.reset(len(bars) - 2)
+    # 1.46: off-by-one - the caller passes CLOSED bars only (include_forming=False) and the action is chosen after the CLOSE of bar t
+    # (rl_core); reset(len - 2) observed the second-to-last bar and ignored the newest closed candle. obs() needs nothing after t.
+    core.reset(len(bars) - 1)
     core.pos = float(req.get("position", 0.0))
     o = core.obs()
     oo = vn.normalize_obs(o[None, :])

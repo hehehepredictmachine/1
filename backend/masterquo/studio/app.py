@@ -3,6 +3,7 @@ Endpoints under /api/studio/*; the UI is the separate frontend entry studio.html
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import urllib.request
@@ -16,8 +17,35 @@ from . import settings as S
 from .queue import Queue
 
 VERSION = "PMW-STUDIO-1"
+DISPLAY_NAME = "Apollo23 Data & Training Studio"          # 1.46: display text only - ids ('PepeTrainingStudio' in /health, exe) unchanged
 REPORT_FILES = ("validation/validate_raw/raw.json", "validation/validate_dataset/dataset.json", "evaluation/evaluate/metrics.json",
                 "evaluation/verify_loader/loader.json", "raw/export/export_report.json")
+
+
+def _epoch(name: str, v) -> int | None:
+    """1.46: start / end of the requested range as epoch seconds (number or ISO text; a text without a zone = UTC, as the exporter). 1.45.0
+    passed the raw value: an ISO string reached `int >= str` in the BOT_CACHE / OFFLINE filter (TypeError -> FAILED)."""
+    if v is None or v == "":
+        return None
+    from ..marketdata.export import _ts
+    try:
+        t = None if isinstance(v, bool) else _ts(v)
+    except (TypeError, ValueError, OverflowError):
+        t = None
+    if t is None or not math.isfinite(t) or not 0 <= t <= 32503680000:
+        raise HTTPException(400, f"{name}: epoch (s) albo data ISO")
+    return int(t)
+
+
+def _imported(b, package: str) -> dict | None:
+    """1.46: the bot's import record of THIS package (CANDIDATE) - the import succeeded although its answer never arrived (timeout)."""
+    try:
+        st, h = b._req("GET", "/api/v1/studio/imports")
+    except (RuntimeError, OSError):
+        return None
+    want = str(Path(package).resolve())
+    items = h.get("items") if st == 200 and isinstance(h, dict) else None
+    return next((r for r in items or [] if isinstance(r, dict) and r.get("package") == want and r.get("state") == "CANDIDATE"), None)
 
 
 def _bot_health(port: int) -> dict | None:
@@ -28,16 +56,52 @@ def _bot_health(port: int) -> dict | None:
         return None
 
 
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def _host_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    v = value.strip().lower()
+    if v.startswith("["):                                    # [::1]:port - not used by Studio (binds 127.0.0.1)
+        return None
+    return v.rsplit(":", 1)[0] if v.count(":") == 1 else v
+
+
+def _guard(app) -> None:
+    """1.46: same local-request rules as the bot API (api/app.py Guard), minus the session: the Host header must be the loopback name
+    (DNS-rebinding protection - a page served from attacker.example resolving to 127.0.0.1 sends Host: attacker.example) and a state-
+    changing request coming from a browser must carry a loopback Origin. Studio binds 127.0.0.1 only."""
+    from fastapi.responses import JSONResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    class StudioGuard(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            if _host_name(request.headers.get("host")) not in LOCAL_HOSTS:
+                return JSONResponse({"error": "HOST_NOT_ALLOWED"}, status_code=421)
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                origin = request.headers.get("origin")
+                if origin is not None and _host_name(origin.split("://", 1)[-1]) not in LOCAL_HOSTS:
+                    return JSONResponse({"error": "ORIGIN_NOT_ALLOWED"}, status_code=403)
+            resp = await call_next(request)
+            resp.headers["X-Frame-Options"] = "DENY"
+            resp.headers["X-Content-Type-Options"] = "nosniff"
+            return resp
+    app.add_middleware(StudioGuard)
+
+
 def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> FastAPI:
     from .. import paths
-    from ..config import ConfigStore
     from ..version import APP_VERSION
     os.environ.setdefault("MASTERQUO_DATA_DIR", str(S.data_dir()))       # Studio's own registries / logs - never the bot's
-    cfg = ConfigStore()
+    # 1.46: the BOT's configuration, read-only, on every request (broker symbols, MT5, family pairs). 1.45.0: ConfigStore() here created a
+    # default <studio>/config.json and ignored the user's mappings; None = no bot config (symbols UNAVAILABLE)
+    cfg = S.bot_config
     q = queue or Queue(env={"MASTERQUO_DATA_DIR": str(S.data_dir()), "MQ_STUDIO_DATA_DIR": str(S.data_dir()),
                             "MQ_BOT_DATA_DIR": str(S.bot_data_dir())})
-    app = FastAPI(title="Pepe Data & Training Studio", version=APP_VERSION)
+    app = FastAPI(title=DISPLAY_NAME, version=APP_VERSION)
     app.state.queue = q
+    _guard(app)
     if start_worker:
         q.start()
 
@@ -49,7 +113,9 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
             m = "BOT_CACHE" if bot else "MT5_DIRECT"
         if m not in ("BOT_CACHE", "MT5_DIRECT", "OFFLINE", "SYNTHETIC"):
             raise HTTPException(400, "źródło: AUTO|BOT_CACHE|MT5_DIRECT|OFFLINE|SYNTHETIC")
-        src = {"mode": m, "cutoff": int(time.time()), "start": body.get("start"), "end": body.get("end")}
+        src = {"mode": m, "cutoff": int(time.time()), "start": _epoch("start", body.get("start")), "end": _epoch("end", body.get("end"))}
+        if src["start"] is not None and src["end"] is not None and src["end"] <= src["start"]:
+            raise HTTPException(400, "end musi być późniejszy niż start")
         if m == "BOT_CACHE":
             src["store_root"] = str(S.bot_data_dir(s) / "marketdata")
         if m == "OFFLINE":
@@ -57,7 +123,11 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
                 raise HTTPException(400, "OFFLINE wymaga store_root (magazyn świec)")
             src["store_root"] = str(body["store_root"])
         if m == "SYNTHETIC":
-            src["days"] = int(body.get("days") or 30)
+            d = body.get("days") or 30
+            # 1.46: 'abc' was int() -> ValueError -> 500
+            if isinstance(d, bool) or not isinstance(d, (int, str)) or not str(d).strip().isdigit() or not 1 <= int(str(d).strip()) <= 3650:
+                raise HTTPException(400, "days: liczba całkowita 1–3650")
+            src["days"] = int(str(d).strip())
         src["indicators_db"] = str(S.bot_data_dir(s) / "indicators" / "indicators.sqlite")
         return src
 
@@ -82,16 +152,19 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
 
     @app.post("/api/studio/settings")
     def settings_save(body: dict = Body(...)):
-        return S.save(body)
+        try:
+            return S.save(body)
+        except ValueError as exc:                                         # 1.46: validated settings (bad port / profile / dir -> 400)
+            raise HTTPException(400, str(exc)) from None
 
     @app.get("/api/studio/models")
     def models(instrument: str | None = Query(None)):
-        rows = [dict(t, operations=R.operations(t)) for t in R.tasks(cfg) if instrument in (None, t["instrument"])]
+        rows = [dict(t, operations=R.operations(t)) for t in R.tasks(cfg()) if instrument in (None, t["instrument"])]
         return {"items": rows, "count": len(rows)}
 
     @app.get("/api/studio/matrix")
     def matrix():
-        m = R.matrix(cfg)
+        m = R.matrix(cfg())
         (S.data_dir() / "MODEL_DATA_MATRIX.json").write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
         return m
 
@@ -100,7 +173,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         keys = body.get("task_keys") or ([body["task_key"]] if body.get("task_key") else [])
         if not keys:
             raise HTTPException(400, "task_key(s) wymagane")
-        known = R.by_key(cfg)
+        known = R.by_key(cfg())
         bad = [k for k in keys if k not in known]
         if bad:
             raise HTTPException(404, f"nieznane zadania: {bad}")
@@ -108,8 +181,11 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         for k in keys:
             if op not in R.operations(known[k]):
                 raise HTTPException(409, f"operacja {op} niedostępna dla {k} ({known[k]['category']}, {known[k]['state']})")
+        profile = str(body.get("profile") or S.load()["profile"])
+        if profile not in S.PROFILES:                                     # 1.46: was accepted and failed only inside the job
+            raise HTTPException(400, f"profile: {'|'.join(S.PROFILES)}")
         src = source_for(body.get("source"), body)
-        return {"items": q.submit_many(keys, op, source=src, profile=str(body.get("profile") or S.load()["profile"]))}
+        return {"items": q.submit_many(keys, op, source=src, profile=profile)}
 
     @app.get("/api/studio/jobs")
     def jobs(limit: int = Query(200, ge=1, le=1000)):
@@ -151,11 +227,19 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         if _bot_health(int(s["bot_port"])):
             from ..train_all import Bot
             b = Bot(int(s["bot_port"]))
-            b.login()
-            st, res = b._req("POST", "/api/v1/studio/import", {"package": j["package"]}, timeout=120)
+            # 1.46: a failed bot session / connection / timeout was a 500; an import that succeeded while its answer timed out left the job
+            # PACKAGED for good (a retry got 409 'already exists') - the bot's import record of this package now completes the transfer
+            try:
+                b.login()
+                st, res = b._req("POST", "/api/v1/studio/import", {"package": j["package"]}, timeout=120)
+            except (RuntimeError, OSError) as exc:
+                raise HTTPException(503, f"bot niedostępny ({type(exc).__name__}: {exc})"[:300]) from None
             if st != 200 or not (isinstance(res, dict) and res.get("ok")):
-                raise HTTPException(409, f"bot odrzucił import: {res}")
-            q.db.execute("UPDATE jobs SET state='TRANSFERRED', progress=? WHERE job_id=?", (json.dumps(res, default=str), jid))
+                prev = _imported(b, j["package"])
+                if prev is None:
+                    raise HTTPException(409, f"bot odrzucił import: {res}")
+                res = prev
+            q.transferred(jid, res)
             return {"ok": True, "via": "BOT_API", "import": res}
         inbox = S.bot_data_dir(s) / "studio_inbox"
         inbox.mkdir(parents=True, exist_ok=True)
@@ -163,7 +247,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         tmp = ptr.with_suffix(".tmp")
         tmp.write_text(json.dumps({"package": j["package"], "job_id": jid, "at": time.time()}), encoding="utf-8")
         tmp.replace(ptr)
-        q.db.execute("UPDATE jobs SET state='TRANSFERRED', progress=? WHERE job_id=?", (json.dumps({"via": "INBOX", "pointer": str(ptr)}), jid))
+        q.transferred(jid, {"via": "INBOX", "pointer": str(ptr)})
         return {"ok": True, "via": "INBOX", "pointer": str(ptr), "note": "bot zaimportuje paczkę przy następnym starcie (kandydat, nieaktywny)"}
 
     @app.get("/", response_class=HTMLResponse)
@@ -171,7 +255,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         p = paths.ROOT_DIR / "frontend" / "dist" / "studio.html"
         if p.exists():
             return FileResponse(p)
-        return HTMLResponse("<h1>Pepe Data &amp; Training Studio</h1><p>Brak zbudowanego interfejsu (frontend/dist/studio.html). API: /api/studio/health</p>")
+        return HTMLResponse(f"<h1>{DISPLAY_NAME.replace('&', '&amp;')}</h1><p>Brak zbudowanego interfejsu (frontend/dist/studio.html). API: /api/studio/health</p>")
 
     from fastapi.staticfiles import StaticFiles
     assets = paths.ROOT_DIR / "frontend" / "dist" / "assets"
@@ -184,6 +268,6 @@ def serve(port: int | None = None) -> int:
     import uvicorn
     s = S.load()
     p = int(port or s["port"])
-    print(f"[PepeTrainingStudio] http://127.0.0.1:{p}/  (dane: {S.data_dir()})", flush=True)
+    print(f"[{DISPLAY_NAME}] http://127.0.0.1:{p}/  (dane: {S.data_dir()})", flush=True)
     uvicorn.run(create_app(), host="127.0.0.1", port=p, log_level="warning")
     return 0

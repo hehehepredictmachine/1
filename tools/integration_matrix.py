@@ -8,6 +8,10 @@ writes the result; a missing file is reported as MISSING, never silently dropped
   python tools/integration_matrix.py                  # write both files
   python tools/integration_matrix.py --results DIR    # + test results parsed from unittest logs DIR/<module>.log
   python tools/integration_matrix.py --check          # only verify (exit 1 on a MISSING path / route)
+
+1.46: ARCHIVAL - the matrix describes the 1.33 specifications; the 1.42 interface rebuild removed several listed panels and UI tests. The
+documents keep the 1.33.0 header (not the current version) and are written only when every path / route / test still exists - a run on a
+later tree reports the missing entries and leaves docs/INTEGRATION_MATRIX.md and integration_manifest.json untouched.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SPEC_RELEASE = "1.33.0"                    # 1.46: archival matrix of this release
 B = "backend/masterquo/"
 F = "frontend/src/"
 
@@ -158,10 +163,12 @@ def build(results_dir: Path | None) -> dict:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     except Exception:  # noqa: BLE001
         commit = None
-    ver = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', (ROOT / B / "version.py").read_text(encoding="utf-8")).group(1)
+    checked = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', (ROOT / B / "version.py").read_text(encoding="utf-8")).group(1)
+    ver = SPEC_RELEASE                     # 1.46: the matrix is the 1.33 one - the header no longer claims the current version
     migs = sorted(p.name for p in (ROOT / B / "db/migrations").glob("*.sql"))
     new_files = sorted({p for _, _, _, mods, *_ in R for p in mods if (ROOT / p).exists()})
-    return {"manifest": "PMW-INTEGRATION-1.33", "version": ver, "base": {"version": "1.32.0", "commit": "5e5d82a"}, "commit_at_generation": commit,
+    return {"manifest": "PMW-INTEGRATION-1.33", "version": ver, "checked_on_version": checked,
+            "base": {"version": "1.32.0", "commit": "5e5d82a"}, "commit_at_generation": commit,
             "specs": {"AUD": "audyt modeli, 15 rodzin, trening", "IND": "wskaźniki, DXY, plany Scalp/Hedge, SVP", "STU": "Data & Training Studio",
                       "ARC": "architektura analizy i decyzji"},
             "requirements": reqs, "families": fams, "migrations": migs, "new_migration": "0025_decision_arc.sql",
@@ -198,7 +205,10 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args(argv)
     m = build(a.results)
-    if not a.check:
+    if not a.check and m["summary"]["missing"]:
+        # 1.46: never overwrite the documents with a matrix full of MISSING entries (archival tool, see the module docstring)
+        print(f"[ARCHIWUM] macierz {SPEC_RELEASE}: {len(m['summary']['missing'])} brakujących wpisów – dokumenty NIE zostały nadpisane")
+    elif not a.check:
         (ROOT / "integration_manifest.json").write_text(json.dumps(m, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         (ROOT / "docs" / "INTEGRATION_MATRIX.md").write_text(markdown(m), encoding="utf-8")
     print(f"requirements {m['summary']['implemented']}/{m['summary']['requirements']}, missing: {m['summary']['missing'] or 'none'}")

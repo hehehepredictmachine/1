@@ -25,6 +25,9 @@ from . import registry
 
 VERSION = "PMW-FAM-SERVICE-1"
 DIRECTIONAL = ("SEQ_LSTM", "SEQ_GRU", "TS_ARIMA", "TS_SARIMAX")
+# 1.46: families whose predict() needs the bars of every leg - _live() has no such path (only training reads the legs from the archive)
+NO_LIVE_PATH = {"PAIR_COINT": "brak ścieżki danych na żywo dla nóg pary (pair_bars) – relacja jest liczona tylko w treningu",
+                "STATARB": "brak ścieżki danych na żywo dla nóg koszyka (basket_bars) – reszty są liczone tylko w treningu"}
 
 
 class FamilyService:
@@ -38,6 +41,7 @@ class FamilyService:
         self.jobs_dir = self.store.base / "_jobs"
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.procs: dict[str, subprocess.Popen] = {}
+        self._starting: set[str] = set()                 # 1.46: family+instrument reserved by submit() while its data are prepared
         self._recover_orphans()
 
     def _cfg(self):
@@ -80,7 +84,13 @@ class FamilyService:
             out.append({**f.capabilities(), "status": st, "data_requirements": f.data_requirements()})
         return out
 
+    def _known(self, fid: str) -> None:
+        # 1.46: runs / rollback / set_use / cancel / activate checked nothing - GET /runs of an unknown name created folders and state.json
+        if fid not in self.fams:
+            raise KeyError("FAMILY_UNKNOWN")
+
     def runs(self, fid: str, inst: str) -> list[dict]:
+        self._known(fid)
         return [{k: r.get(k) for k in ("run_id", "created_at", "profile", "data_kind", "validation", "metrics", "data", "seconds", "deps")}
                 for r in self.store.runs(fid, inst)]
 
@@ -89,13 +99,74 @@ class FamilyService:
         return self.jobs_dir / f"{fid}__{inst}.json"
 
     def job(self, fid, inst) -> dict | None:
-        return B._read(self._job_file(fid, inst), None)
+        j = B._read(self._job_file(fid, inst), None)
+        if (j and j.get("state") in ("RUNNING", "QUEUED") and not j.get("waiting")   # 1.42.10: proces padł -> FAILED z końcówką logu
+                and f"{fid}__{inst}" not in self._starting):                       # 1.46: submit() still preparing - no process yet
+            p = self.procs.get(f"{fid}__{inst}")
+            dead = (p.poll() is not None) if p is not None else (j.get("pid") and not _alive(j.get("pid")))
+            if dead:
+                fresh = B._read(self._job_file(fid, inst), None) or j           # proces mógł zdążyć zapisać wynik
+                if fresh.get("state") in ("RUNNING", "QUEUED"):
+                    fresh.update(state="FAILED", reason="proces treningu zakończył się bez wyniku: " + (self._log_tail(fid, inst) or "brak logu"),
+                                 updated_at=self.clock())
+                    B._atomic_json(self._job_file(fid, inst), fresh)
+                j = fresh
+        return j
+
+    def _log_file(self, fid, inst) -> Path:
+        return self.jobs_dir / f"{fid}__{inst}.log"
+
+    def _log_tail(self, fid, inst, n: int = 400) -> str:
+        try:
+            txt = self._log_file(fid, inst).read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+        lines = [x for x in txt.splitlines() if x.strip()]
+        err = next((x for x in reversed(lines) if "Error" in x or "Exception" in x), None)
+        return (err or (lines[-1] if lines else ""))[-n:]
+
+    def _live_bars_file(self, fid: str, inst: str) -> Path | None:
+        """1.42.10: dane świec rodziny pochodzą z archiwum eksportu (marketdata Store). Gdy archiwum ma za mało świec (np. przed pierwszym
+        eksportem w Centrum treningu), proces dostaje świece z MT5 na żywo (zamknięte, ten sam format) – zamiast błędu „0 świec”."""
+        f = self.fams[fid]
+        d = getattr(f, "DATA", {}) or {}
+        if d.get("kind") != "BARS" or self.bridge is None:
+            return None
+        tf, need = d.get("tf") or getattr(f, "TF", "M5"), int(d.get("min_bars") or 0)
+        try:
+            have = len(self.store_md().read(inst, tf)["time"])
+        except Exception:  # noqa: BLE001 - brak archiwum = 0
+            have = 0
+        if have >= max(need, 1):
+            return None
+        try:
+            m = self.cfg_store.get().assets.mappings.get(inst)
+            sym = m.broker_symbol if m and m.broker_symbol else None
+            rows = self.bridge.symbol_bars(sym, tf, int(min(20000, max(need * 3, 5000)))) if sym else []
+        except Exception:  # noqa: BLE001 - brak połączenia: zostaje komunikat o braku danych
+            rows = []
+        bars = B.bars_from_bridge([r for r in rows if r.get("closed", True)])
+        if len(bars) <= have:
+            return None
+        out = self.jobs_dir / f"{fid}__{inst}.bars.json"
+        syn = getattr(self.bridge, "synthetic", None)       # 1.46: the demo simulator is not REAL data (decides the ASSIST gate)
+        B._atomic_json(out, {"source": "MT5_LIVE_BRIDGE", "symbol": sym, "tf": tf, "bars": bars, "synthetic": syn if isinstance(syn, bool) else None})
+        return out
+
+    @staticmethod
+    def store_md():
+        from ...marketdata.store import Store
+        return Store()
 
     def _recover_orphans(self) -> None:
         for p in self.jobs_dir.glob("*.json"):
             j = B._read(p, {}) or {}
             if j.get("state") == "RUNNING" and not _alive(j.get("pid")):
                 j.update(state="FAILED", reason="proces treningu zakończył się bez wyniku (restart / awaria) – uruchom ponownie")
+                B._atomic_json(p, j)
+            elif j.get("state") == "QUEUED" and (j.get("waiting") or not j.get("pid") or not _alive(j.get("pid"))):
+                # 1.46: the train_all queue thread does not survive a restart - a QUEUED job (waiting, or never started) waited forever
+                j.update(state="CANCELLED", waiting=False, reason="kolejka przerwana restartem aplikacji – uruchom ponownie", updated_at=self.clock())
                 B._atomic_json(p, j)
 
     def _job_config(self) -> dict:
@@ -110,40 +181,77 @@ class FamilyService:
             raise KeyError("FAMILY_UNKNOWN")
         if profile not in ("smoke", "research", "full"):
             raise ValueError("PROFILE_INVALID")
+        key = f"{fid}__{inst}"
         with self._lock:
             j = self.job(fid, inst)
             if j and j.get("state") == "RUNNING" and _alive(j.get("pid")):
                 return {"ok": False, "status": "ALREADY_RUNNING", "job": j}
+            own = self.procs.get(key)
+            if (own is not None and own.poll() is None) or key in self._starting:   # 1.46: QUEUED until the child writes RUNNING - still one job per family+instrument
+                return {"ok": False, "status": "ALREADY_RUNNING", "job": j}
             jf = self._job_file(fid, inst)
             B._atomic_json(jf, {"state": "QUEUED", "family": fid, "instrument": inst, "profile": profile, "submitted_at": self.clock()})
+            self.procs.pop(key, None)                            # 1.46: the finished earlier run (poll() set) is not this job
+            self._starting.add(key)
+        # 1.46: the archive read, the MT5 history fetch (up to 20 000 bars through the MT5 queue) and the bars JSON run WITHOUT the service
+        # lock - 1.45.0 held it here and predict() (SH cycle, decision coordinator) waited for the whole preparation. The reservation above
+        # keeps one job per family+instrument.
+        try:
             from ... import paths
             argv = [sys.executable, "-m", "masterquo.modelhub.families.run", "--family", fid, "--instrument", inst, "--profile", profile,
                     "--job-file", str(jf), "--config", json.dumps(self._job_config())]
-            env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8",
+            bf = self._live_bars_file(fid, inst)
+            if bf is not None:
+                argv += ["--bars-file", str(bf)]
+            env = dict(os.environ, PYTHONPATH=paths.child_pythonpath(sys.executable), PYTHONIOENCODING="utf-8",   # 1.42.11: numpy w DESKTOP
                        PMW_FAMILIES_DIR=str(self.store.base))
-            p = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
-            self.procs[f"{fid}__{inst}"] = p
-            return {"ok": True, "status": "STARTED", "pid": p.pid}
+            with self._lock:
+                cur = B._read(jf, {}) or {}
+                if cur.get("state") == "CANCELLED":              # 1.46: cancelled while the data were prepared - nothing is started
+                    return {"ok": False, "status": "CANCELLED", "job": cur}
+                log = open(self._log_file(fid, inst), "w", encoding="utf-8")     # 1.42.10: log procesu (był DEVNULL – awaria bez śladu)
+                try:
+                    p = subprocess.Popen(argv, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=log, stderr=subprocess.STDOUT,
+                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0),
+                                         start_new_session=os.name != "nt")     # 1.46: own group - cancel ends the whole tree
+                except OSError as exc:
+                    log.close()
+                    B._atomic_json(jf, {"state": "FAILED", "family": fid, "instrument": inst, "reason": f"nie można uruchomić procesu: {exc}"[:300],
+                                        "updated_at": self.clock()})
+                    return {"ok": False, "status": "FAILED", "reason": str(exc)[:300]}
+                log.close()
+                self.procs[key] = p
+                return {"ok": True, "status": "STARTED", "pid": p.pid}
+        except Exception as exc:
+            # 1.46: a failed preparation left the job QUEUED without a process - it never changed state until a restart
+            B._atomic_json(jf, {"state": "FAILED", "family": fid, "instrument": inst, "profile": profile,
+                                "reason": f"przygotowanie danych: {type(exc).__name__}: {exc}"[:300], "updated_at": self.clock()})
+            raise
+        finally:
+            with self._lock:
+                self._starting.discard(key)
 
     def cancel(self, fid: str, inst: str) -> dict:
+        self._known(fid)
         p = self.procs.get(f"{fid}__{inst}")
         j = self.job(fid, inst) or {}
-        pid = j.get("pid") or (p.pid if p else None)
-        if p is not None and p.poll() is None:
-            p.terminate()
-        elif pid and _alive(pid):
-            try:
-                os.kill(int(pid), 15)
-            except OSError:
-                pass
+        pid = (p.pid if p is not None else None) or j.get("pid")
+        # 1.46: the whole process tree - 1.45.0 terminated only the run process; the .venv_deep worker (SEQ_LSTM / SEQ_GRU / RL_PPO) kept
+        # training for hours, outside MAX_PARALLEL
+        if (p is not None and p.poll() is None) or (pid and _alive(pid)):
+            _kill_tree(int(pid), p)
         j.update(state="CANCELLED", reason="anulowano przez użytkownika", updated_at=self.clock())
         B._atomic_json(self._job_file(fid, inst), j)
         return {"ok": True, "status": "CANCELLED"}
 
+    MAX_PARALLEL = 2                                     # 1.42.10: „trenuj wszystkie” – najwyżej 2 procesy naraz (było ~12 równolegle)
+
     def train_all(self, inst: str, profile: str = "smoke") -> dict:
-        """Starts every family that can run; reports started / blocked / delegated separately (never one global 'success')."""
-        out = {"started": [], "blocked": [], "delegated": []}
+        """Starts every family that can run; reports started / queued / blocked / delegated separately (never one global 'success').
+        1.42.10: at most MAX_PARALLEL family processes at once – the rest wait in a queue and start when a slot frees (on 8-16 GB computers
+        a dozen parallel trainings ran out of memory)."""
+        out = {"started": [], "queued": [], "blocked": [], "delegated": []}
+        todo = []
         for fid, f in self.fams.items():
             if fid == "SEQ_GRU_EVENT":
                 out["delegated"].append({"family": fid, "reason": "trening w Centrum MM (mm/event_engine)"})
@@ -155,12 +263,42 @@ class FamilyService:
             if impl != "AVAILABLE":
                 out["blocked"].append({"family": fid, "reason": why})
                 continue
+            todo.append(fid)
+        for fid in todo[:self.MAX_PARALLEL]:
             r = self.submit(fid, inst, profile)
             (out["started"] if r.get("ok") else out["blocked"]).append({"family": fid, **r})
+        rest = todo[self.MAX_PARALLEL:]
+        for fid in rest:
+            B._atomic_json(self._job_file(fid, inst), {"state": "QUEUED", "family": fid, "instrument": inst, "profile": profile,
+                                                      "submitted_at": self.clock(), "reason": "w kolejce – start po zwolnieniu miejsca",
+                                                      "waiting": True})
+            out["queued"].append({"family": fid, "status": "QUEUED"})
+        if rest:
+            threading.Thread(target=self._drain, args=(inst, profile, rest), name="families-queue", daemon=True).start()
         return out
+
+    def _running(self) -> int:
+        # 1.46: a job still preparing its data (no process yet) also takes a MAX_PARALLEL slot
+        return sum(1 for p in list(self.procs.values()) if p.poll() is None) + len(self._starting)
+
+    def _drain(self, inst: str, profile: str, rest: list[str]) -> None:
+        for fid in rest:
+            while self._running() >= self.MAX_PARALLEL:
+                time.sleep(2.0)
+            if not self.jobs_dir.exists():                       # katalog danych usunięty (np. po zamknięciu) – kończymy kolejkę
+                return
+            j = B._read(self._job_file(fid, inst), {}) or {}
+            if j.get("state") != "QUEUED" or not j.get("waiting"):     # 1.46: cancelled, or started by hand meanwhile - never a second run
+                continue
+            try:
+                self.submit(fid, inst, profile)
+            except Exception as exc:  # noqa: BLE001 - jedna rodzina nie zatrzymuje kolejki
+                B._atomic_json(self._job_file(fid, inst), {"state": "FAILED", "family": fid, "instrument": inst,
+                                                          "reason": f"{type(exc).__name__}: {exc}"[:300], "updated_at": self.clock()})
 
     # ------------------------------------------------------------------ activation / roles
     def activate(self, fid: str, inst: str, rid: str) -> dict:
+        self._known(fid)
         ok, why = self.store.verify(fid, inst, rid)
         if not ok:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": why}
@@ -208,11 +346,13 @@ class FamilyService:
                 "reason": None if diff <= tol + 1e-12 else f"wynik po wczytaniu różni się od próbki ({diff:.3g} > {tol})"}
 
     def rollback(self, fid, inst) -> dict:
+        self._known(fid)
         st = self.store.rollback(fid, inst)
         self.invalidate(fid, inst)
         return {"ok": True, "state": st}
 
     def set_use(self, fid, inst, use) -> dict:
+        self._known(fid)
         st = self.store.set_use(fid, inst, use)
         self.invalidate(fid, inst)
         return {"ok": True, "state": st}
@@ -264,11 +404,22 @@ class FamilyService:
             return p if p and p.get("state") == "READY" else None
         st = self.store.state(fid, inst)
         rid, use = st.get("active"), st.get("use", "OFF")
-        symbol = getattr(getattr(self.cfg_store.get(), "mt5", None), "symbol", None)
+        cfg = self.cfg_store.get()
+        symbol = getattr(getattr(cfg, "mt5", None), "symbol", None)
         if fid == "MICROSTRUCTURE" and rid is None:
             use = "SHADOW"                                       # measurements need no artifact
         if use == "OFF" and fid != "MICROSTRUCTURE":
             return None
+        if fid in NO_LIVE_PATH:
+            # 1.46: _live() never provides pair_bars / basket_bars - an active pair / basket artifact was always BLOCKED_DATA "brak danych
+            # jednej z nóg", as if the data were only late
+            return f.pred(inst=inst, symbol=symbol, state="DISABLED", reason=NO_LIVE_PATH[fid], run_id=rid, extra={"use": use})
+        active = getattr(getattr(cfg, "assets", None), "active", None)
+        if active and inst != active and (fid == "MICROSTRUCTURE" or (f.TF and f.TF != "EVENT")):
+            # 1.46: bridge.bars() and indicators.current() belong to the ACTIVE instrument - the artifact of another instrument was computed
+            # on them and published under its name (as adapters.forecast_predictions does for gold_candles)
+            return f.pred(inst=inst, symbol=None, state="DISABLED", reason=f"prognozy liczone dla aktywnego instrumentu ({active})", run_id=rid,
+                          extra={"use": use})
         live = self._live(f, inst)
         bar_t = (live.get("bars") or [{}])[-1].get("t") if live.get("bars") else None
         data_t = bar_t
@@ -299,6 +450,9 @@ class FamilyService:
             pred = f.pred(inst=inst, symbol=symbol, state="ERROR", reason=f"{type(exc).__name__}: {exc}"[:200], run_id=rid, extra={"use": use})
         pred["compute_ms"] = round((time.perf_counter() - t0) * 1000, 2)
         with self._lock:
+            # 1.46: one entry per family+instrument - the key holds the bar time, 1.45.0 kept every bar for weeks
+            for k in [k for k in self._cache if k[:2] == ck[:2] and k != ck]:
+                self._cache.pop(k, None)
             self._cache[ck] = {"pred": pred, "at": self.clock()}
         return pred
 
@@ -350,13 +504,31 @@ def apply_to_setup(su: dict, fc: dict) -> dict:
 
 
 def _alive(pid) -> bool:
-    if not pid:
-        return False
+    # 1.46: os.kill(pid, 0) on Windows is TerminateProcess(pid, 0) - "is it alive?" killed the training process
+    from ...training.core import _pid_alive
     try:
-        os.kill(int(pid), 0)
-        return True
-    except OSError:
+        return bool(pid) and _pid_alive(int(pid))
+    except (TypeError, ValueError):
         return False
+
+
+def _kill_tree(pid: int, proc: subprocess.Popen | None = None) -> None:
+    """Ends the process and its children (the .venv_deep worker): taskkill /T on Windows, the process group elsewhere."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=20,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            import signal
+            pgid = os.getpgid(pid)
+            if pgid == pid:                                      # started by submit() in its own session
+                os.killpg(pgid, signal.SIGTERM)
+            elif proc is not None:
+                proc.terminate()
+            else:
+                os.kill(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def _maxdiff(a, b) -> float:

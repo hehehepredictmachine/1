@@ -61,9 +61,9 @@ def reference(samples: list[dict], *, session: str, slot: int, before_instance_s
 def compute(quote: dict | None, samples: list[dict], *, now: float, instrument: str, broker_symbol: str | None, profile_id: str,
             tick: float, atr_v: float | None = None, tp1_distance: float | None = None, slot_minutes: int = 30, min_sessions: int = 5,
             max_sessions: int = 20, max_quote_age_s: float = 30.0, intensity: dict | None = None, cfg: dict | None = None,
-            sample_every_s: float = 10.0) -> dict:
+            sample_every_s: float = 10.0, unusual_pct: float = 90.0) -> dict:
     cfgd = dict(cfg or {}, slot_minutes=slot_minutes, min_sessions=min_sessions, max_sessions=max_sessions, max_quote_age_s=max_quote_age_s,
-                sampling=f"FIXED_INTERVAL_{int(sample_every_s)}S")
+                sampling=f"FIXED_INTERVAL_{int(sample_every_s)}S", unusual_pct=unusual_pct)
     base = dict(instrument=instrument, broker_symbol=broker_symbol, source="MT5_QUOTE", timeframe=None, cfg=cfgd,
                 instrument_meta={"tick": tick}, units=UNITS)
     if not quote or quote.get("bid") is None or quote.get("ask") is None:
@@ -80,8 +80,13 @@ def compute(quote: dict | None, samples: list[dict], *, now: float, instrument: 
             "quote_interval_s": (intensity or {}).get("mean_interval_s"), "updates_per_min": (intensity or {}).get("updates_per_min"),
             "spread_to_tp1": sp / tp1_distance if tp1_distance else None, "session": ss["session"], "slot": ss["slot"],
             "reference_sessions": len(ref), "reference_median": statistics.median(ref) if ref else None,
-            "unusual": (pct is not None and pct >= 90.0), "spread_in_prices": True}
-    extra = {"session_slot": ss, "note": "spread jest już w cenach bid/ask – nie jest doliczany drugi raz do kosztów"}
+            "unusual": (pct is not None and pct >= unusual_pct), "spread_in_prices": True}   # 1.46: threshold from config (was fixed 90)
+    extra = {"session_slot": ss, "note": "spread jest już w cenach bid/ask – nie jest doliczany drugi raz do kosztów",
+             "intensity_sampling": (intensity or {}).get("sampling")}
+    if qt is None:
+        # 1.46: quote time unknown (server offset not verified) - its age cannot be checked, so it is never READY
+        return C.result("SPREAD", VERSION, values=vals, status="STALE", reason="QUOTE_TIME_UNKNOWN", sample_count=len(ref),
+                        available_at=rec, extra=extra, **base)
     if age is not None and age > max_quote_age_s:
         return C.result("SPREAD", VERSION, values=vals, status="STALE", reason=f"QUOTE_AGE_{int(age)}S", sample_count=len(ref), data_time=qt,
                         available_at=rec, extra=extra, **base)
@@ -92,11 +97,15 @@ def compute(quote: dict | None, samples: list[dict], *, now: float, instrument: 
 
 
 class Intensity:
-    """Distinct quotes per minute and mean interval between distinct quotes (from the quote time_msc sequence)."""
+    """Distinct quotes per minute and mean interval between distinct quotes, SAMPLED on the service loop (one look per second):
+    a change is counted once per look, so updates_per_min is a lower bound (<= 60 with a 1 s loop) and the interval is taken from
+    the quote time_msc of the observed changes (quote clock, not the loop clock). 1.46: was the loop clock with a closed window
+    (61 per minute) presented as the full quote sequence."""
 
-    def __init__(self, window_s: float = 60.0):
-        self.window_s = window_s
+    def __init__(self, window_s: float = 60.0, period_s: float = 1.0):
+        self.window_s, self.period_s = window_s, period_s
         self.ts: list[float] = []
+        self.msc: list[float] = []
         self.last_msc = None
 
     def observe(self, quote: dict | None, now: float) -> None:
@@ -104,11 +113,14 @@ class Intensity:
             return
         self.last_msc = quote["time_msc"]
         self.ts.append(now)
+        self.msc.append(float(quote["time_msc"]) / 1000.0)
         cut = now - self.window_s
-        while self.ts and self.ts[0] < cut:
+        while self.ts and self.ts[0] <= cut:                  # half-open window (now - window, now]
             self.ts.pop(0)
+            self.msc.pop(0)
 
     def view(self) -> dict:
         n = len(self.ts)
-        iv = [b - a for a, b in zip(self.ts, self.ts[1:])]
-        return {"updates_per_min": n * 60.0 / self.window_s, "mean_interval_s": (sum(iv) / len(iv)) if iv else None}
+        iv = [b - a for a, b in zip(self.msc, self.msc[1:]) if b >= a]
+        return {"updates_per_min": n * 60.0 / self.window_s, "mean_interval_s": (sum(iv) / len(iv)) if iv else None,
+                "sampling": f"SAMPLED({self.period_s:g}s)"}

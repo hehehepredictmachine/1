@@ -1,0 +1,10 @@
+[
+ {"id":"K1_xau_m5_wskazniki","asset":"XAUUSD","tf":"M5","tab":"ind","opis":"M5, sygnały strategii, plan bota, RSI/MACD, Kronos"},
+ {"id":"K2_xau_m5_strategie","asset":"XAUUSD","tf":"M5","tab":"strat","opis":"zakładka STRATEGIE – koszyki i stany"},
+ {"id":"K3_xau_m5_svp","asset":"XAUUSD","tf":"M5","tab":"vp","opis":"Session Volume Profile – profil każdej sesji"},
+ {"id":"K4_xau_h1_strefy","asset":"XAUUSD","tf":"H1","tab":"zones","opis":"H1 – brak stref bota, komunikat"},
+ {"id":"K5_xau_m15_plan","asset":"XAUUSD","tf":"M15","tab":"models","opis":"M15 – karta PLAN BOTA, szanse modeli"},
+ {"id":"K6_xau_m15_strefy","asset":"XAUUSD","tf":"M15","tab":"zones","opis":"M15 – strefy bota tylko z M15"},
+ {"id":"K7_btc_m15_strategie","asset":"BTC","tf":"M15","tab":"strat","opis":"BTC – stany niedostępności (S01–S12, SH)"},
+ {"id":"K8_xau_m5_karta_zwinieta","asset":"XAUUSD","tf":"M5","tab":"ind","cardMin":true,"opis":"karta planu zwinięta"}
+]

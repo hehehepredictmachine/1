@@ -80,8 +80,13 @@ def analyze(symbol: str, bars: dict[str, list[dict]], meta: dict | None, quote: 
         return out
     d1, h4, h1 = views["D1"], views["H4"], views["H1"]
     price = (quote or {}).get("bid") or (bars["H1"][-1]["c"] if bars.get("H1") else h1["close"])
-    prev_close = closed["D1"][-1]["c"]
-    c5 = closed["D1"][-6]["c"] if len(closed["D1"]) >= 6 else None
+    # 1.46: reference closes relative to the CURRENT session. With a forming D1 bar the previous session is closed[-1] and 5 sessions
+    # back is closed[-5] (was closed[-6] = 6 sessions); when the last D1 bar is already closed (market closed, e.g. weekend) the current
+    # session is closed[-1] itself, so the references are closed[-2] / closed[-6] (was: D1 change ~0 all weekend).
+    d1_raw = bars.get("D1") or []
+    k = 2 if d1_raw and d1_raw[-1].get("closed") else 1
+    prev_close = closed["D1"][-k]["c"]
+    c5 = closed["D1"][-(k + 4)]["c"] if len(closed["D1"]) >= k + 4 else None
     vol = volzones.compute(bars.get("D1", []), vol_cfg, digits=digits, quote=quote)
     sigma_pos = None
     if vol.get("status") == "OK" and vol.get("expected_move_1s"):

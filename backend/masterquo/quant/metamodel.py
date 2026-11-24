@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import time
 import uuid
 from pathlib import Path
@@ -399,15 +400,27 @@ def contributions(model: dict, feats: dict, top: int = 8) -> list[dict]:
 
 
 # ------------------------------------------------------------------------------------------------ artifacts
+# 1.46: instrument / task_hash / version are path parts of the model store and arrive from API bodies and CLI arguments - '../..' made
+# root() create folders and ACTIVE.json outside data/quant/models and load() read a manifest from anywhere. One plain name each.
+_SAFE_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _part(v, what: str) -> str:
+    if not isinstance(v, str) or not _SAFE_PART.match(v) or ".." in v:
+        raise MetaError(f"{what}_INVALID")
+    return v
+
+
 def root(inst: str) -> Path:
     from .. import paths
-    p = paths.data_dir() / "quant" / "models" / inst
+    base = paths.data_dir() / "quant" / "models"
+    p = base / _part(inst, "INSTRUMENT")
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def save(inst: str, res: dict, *, spec: dict) -> str:
-    th = spec["task_hash"]
+    th = _part(spec["task_hash"], "TASK_HASH")
     ver = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
     d = root(inst) / th / ver
     d.mkdir(parents=True, exist_ok=True)
@@ -421,7 +434,7 @@ def save(inst: str, res: dict, *, spec: dict) -> str:
 
 
 def load(inst: str, task_hash: str, ver: str) -> tuple[dict, dict]:
-    d = root(inst) / task_hash / ver
+    d = root(inst) / _part(task_hash, "TASK_HASH") / _part(ver, "VERSION")
     man = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     blob = (d / "model.json").read_text(encoding="utf-8")
     if hashlib.sha256(blob.encode()).hexdigest() != man.get("sha256"):
@@ -492,4 +505,8 @@ def list_versions(inst: str) -> list[dict]:
         out.append({"task_hash": man["task_hash"], "version": man["version"], "status": man["status"], "created_at": man.get("created_at"),
                     "n_rows": rep.get("n_rows"), "failed_gates": rep.get("failed_gates"), "test": {k: (rep.get("test_once") or {}).get(k) for k in
                                                                                                   ("log_loss", "prior_log_loss", "ece", "n")}})
+    # 1.46: the list was in path order (task_hash / version), so 'the last N' in status / CLI cut off the newest versions of tasks with a
+    # 'lower' hash - oldest first by creation time (a manifest without created_at first), the newest at the end
+    out.sort(key=lambda r: float(r["created_at"]) if isinstance(r["created_at"], (int, float)) and not isinstance(r["created_at"], bool)
+             else float("-inf"))
     return out

@@ -48,7 +48,8 @@ def _server(path: str, timeout: float = 5.0):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="masterquo quant", description="PMW Quant Core – inwentaryzacja, meta-model, tryb SHADOW/ASSIST, pomiary")
+    # 1.46: display name of the Apollo23 layer (prog, routes and PMW-QUANT-* identifiers unchanged)
+    ap = argparse.ArgumentParser(prog="masterquo quant", description="Apollo23 Quant Core – inwentaryzacja, meta-model, tryb SHADOW/ASSIST, pomiary")
     ap.add_argument("cmd", choices=["status", "inventory", "train", "list", "activate", "rollback", "mode", "bench"])
     ap.add_argument("value", nargs="?", help="mode: OFF|SHADOW|ASSIST")
     ap.add_argument("--instrument", default=None, type=str.upper, choices=["XAUUSD", "BTC"], help="XAUUSD albo BTC – jawnie (train/list/activate/rollback/mode)")

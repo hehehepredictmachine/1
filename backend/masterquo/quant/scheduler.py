@@ -4,7 +4,8 @@
 * One OWNER per task name (re-registering a task under another owner is refused - no double execution paths).
 * A task runs in a bounded worker pool with its own deadline; a task that misses it is TIMEOUT and its late answer is DISCARDED (the
   result is bound to the generation it was started for - a late worker never writes into a newer generation).
-* A failed / timed-out task makes its dependents BLOCKED_DEPENDENCY (with the cause); independent branches still run.
+* A failed / timed-out task makes its dependents BLOCKED_DEPENDENCY (with the cause); independent branches still run. A SOFT dependency
+  (`soft_deps`) that failed is passed as None instead - the task works with the branches that succeeded.
 * The finished generation is published atomically (one reference swap under a lock + an atomic file replace) with its id, completeness
   and per-task timings; readers always see one consistent generation.
 """
@@ -34,10 +35,11 @@ class Dag:
         self.tasks: dict[str, dict] = {}
         self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="quant-task")
 
-    def add(self, name: str, fn, *, deps=(), owner: str, deadline_s: float = 10.0, optional: bool = False) -> None:
+    def add(self, name: str, fn, *, deps=(), owner: str, deadline_s: float = 10.0, optional: bool = False, soft_deps=()) -> None:
         if name in self.tasks and self.tasks[name]["owner"] != owner:
             raise OwnershipError(f"TASK_ALREADY_OWNED:{name}:{self.tasks[name]['owner']}")
-        self.tasks[name] = {"fn": fn, "deps": tuple(deps), "owner": owner, "deadline_s": float(deadline_s), "optional": optional}
+        self.tasks[name] = {"fn": fn, "deps": tuple(deps), "soft_deps": tuple(soft_deps), "owner": owner, "deadline_s": float(deadline_s),
+                            "optional": optional}
         try:
             self.order()
         except CycleError:
@@ -55,7 +57,7 @@ class Dag:
             if n not in self.tasks:
                 raise CycleError(f"UNKNOWN_DEPENDENCY:{n}")
             temp.add(n)
-            for d in self.tasks[n]["deps"]:
+            for d in self.tasks[n]["deps"] + self.tasks[n].get("soft_deps", ()):
                 visit(d, path + [n])
             temp.discard(n)
             seen.add(n)
@@ -74,7 +76,9 @@ class Dag:
                 res[name] = {"status": "BLOCKED_DEPENDENCY", "reason": ",".join(bad), "ms": 0.0, "owner": t["owner"]}
                 continue
             t0 = time.perf_counter()
-            fut = self.pool.submit(t["fn"], ctx, {d: res[d]["value"] for d in t["deps"]})
+            dv = {d: res[d]["value"] for d in t["deps"]}
+            dv.update({d: (res[d]["value"] if res.get(d, {}).get("status") == "OK" else None) for d in t.get("soft_deps", ())})
+            fut = self.pool.submit(t["fn"], ctx, dv)
             try:
                 val = fut.result(timeout=t["deadline_s"])
                 res[name] = {"status": "OK", "value": val, "ms": round((time.perf_counter() - t0) * 1000, 3), "owner": t["owner"]}

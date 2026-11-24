@@ -53,8 +53,8 @@ def clean(x):
     t = type(x).__module__
     if t == "numpy":
         if hasattr(x, "tolist"):
-            x = x.tolist()
-            return clean(x) if isinstance(x, (list, dict)) else x
+            # 1.46: a numpy scalar (np.float64('nan')) returned its tolist() value unchecked - NaN / inf left as numbers
+            return clean(x.tolist())
     if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
         return None
     return x

@@ -86,6 +86,11 @@ def main() -> int:
          "* cooldown: detekcji – brak (struktura publikowana raz, unieważniona nie wraca); powiadomień – tylko EARLY/CONFIRMED/unieważnienie; zleceń – UNIQUE entry_key (1 wejście na setup).",
          ""]
     for sid, s in registry.STRATEGIES.items():
+        # 1.46: the registry has S11 / S12 (unvalidated challengers, DEFAULT_NO_TRADE) without editorial fields - KeyError 'S11' stopped
+        # the generator before writing anything; the playbook covers the ACTIVE S01-S10, others are skipped with a warning
+        if sid not in MODULES or sid not in ED:
+            print(f"[INFO] {sid} pominięta – brak w playbooku 10 strategii ACTIVE (MODULES / ED)", file=sys.stderr)
+            continue
         mod = importlib.import_module("masterquo.strategies." + MODULES[sid])
         h, src, form, dist, exit_, near, inval = ED[sid]
         fit = ", ".join(f"{k} {v}" for k, v in sorted(s.regime_fit.items(), key=lambda x: -x[1]))

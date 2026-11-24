@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 
@@ -51,14 +52,41 @@ def main(argv=None) -> int:
     if inst not in ("XAUUSD", "BTC"):
         print("Instrument: XAUUSD albo BTC (trenowane i oceniane osobno).", file=sys.stderr)
         return 2
+    # 1.46: required arguments checked up front - evaluate / package-zip without them died in Path / None (TypeError traceback, exit 1)
+    need = {"evaluate": ("model_key", "version"), "activate": ("model_key", "version"), "rollback": ("model_key",),
+            "package-zip": ("model_key", "version")}.get(a.cmd, ())
+    miss = [f"--{n.replace('_', '-')}" for n in need if not getattr(a, n)]
+    if miss:
+        print(f"[BŁĄD] {a.cmd} wymaga: {' '.join(miss)}", file=sys.stderr)
+        return 2
     from ..config import ConfigStore
+    from ..marketdata.store import Store, default_root
+    cfg_all = ConfigStore().get()
+    # 1.46: --demo (simulator) never writes into the REAL candle store - its own folder next to it (1.45.0 merged synthetic candles into
+    # the user's real store and relabelled it); EX.run additionally refuses to mix data kinds in one store
+    store = Store(default_root().parent / "marketdata_synthetic") if getattr(a, "demo", False) else Store()
+    if not a.demo:
+        return _main(a, inst, cfg_all, store)
+    # 1.46: --demo keeps the trainhub registry in a sandbox data dir too - 1.46 at first separated only the candles: the synthetic dataset
+    # overwrote the user's real dataset (<data>/trainhub/datasets, exported by /trainhub/dataset.zip) and its packages landed in the real
+    # registry (<data>/trainhub/models), where activate() accepted them. Settings (costs) are still the user's, read above.
+    from ..paths import data_dir
+    prev = os.environ.get("MASTERQUO_DATA_DIR")
+    os.environ["MASTERQUO_DATA_DIR"] = str(data_dir() / "trainhub_synthetic")
+    try:
+        return _main(a, inst, cfg_all, store)
+    finally:
+        if prev is None:
+            os.environ.pop("MASTERQUO_DATA_DIR", None)
+        else:
+            os.environ["MASTERQUO_DATA_DIR"] = prev
+
+
+def _main(a, inst: str, cfg_all, store) -> int:
     from ..marketdata import export as EX
-    from ..marketdata.store import Store
     from . import dataset as DS
     from . import pipeline as P
     from . import registry as R
-    cfg_all = ConfigStore().get()
-    store = Store()
     params = {k: v for k, v in {"base_tf": a.base_tf, "horizon": a.horizon, "k_atr": a.k_atr, "seed": a.seed, "start": a.start, "end": a.end,
                                 "commission_price": a.commission_price, "profile": a.profile,
                                 "models": a.models.split(",") if a.models else None}.items() if v is not None}
@@ -128,8 +156,9 @@ def main(argv=None) -> int:
             _p(r)
             return 0 if r["ok"] else 3
         if a.cmd == "rollback":
-            _p(R.rollback(inst, a.model_key))
-            return 0
+            r = R.rollback(inst, a.model_key)
+            _p(r)
+            return 0 if r.get("ok") else 3                       # 1.46: a refused rollback (INCOMPATIBLE) was exit 0
         if a.cmd == "package-zip":
             from pathlib import Path
             out = Path(a.out or f"{inst}_{a.model_key}_{a.version}.zip")

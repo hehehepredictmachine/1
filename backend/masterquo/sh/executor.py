@@ -2,8 +2,7 @@
 * SIGNALS  - nothing is executed (signals only; no plan is opened).
 * PAPER    - simulated fills on the executable side of the current quote (+ configured slippage); no terminal call.
 * AUTO_DEMO - terminal orders through the MT5 worker; a NEW plan needs a demo account.
-* AUTO_LIVE - a NEW plan needs a REAL account AND a passed validation of that SH strategy on the client's own history
-  (`live_check`, see SHService.live_validation); without it the entry is refused with the concrete reason.
+* AUTO_LIVE - a NEW plan needs a REAL account (1.39, user decision: the validation requirement was withdrawn).
 Management of an existing plan (hedge leg, partials, SL/TP, closing) is never refused by the mode rules - it needs the terminal and
 the same account the plan was opened on (the 1.14 Execution Lock is withdrawn, user decision 1.24).
 
@@ -29,6 +28,8 @@ class SHExecutor:
         self.deviation = int(deviation_points)
         self.is_demo = is_demo
         self.is_live = is_live
+        # 1.46 note: live_check and log are kept for call compatibility only - since 1.39 _gate does not read the validation result
+        # (the AUTO_LIVE validation warning comes from risk.evaluate) and nothing is logged from here.
         self.live_check = live_check or (lambda strategy: {"ok": False, "reason": "brak walidacji ścieżki SH na danych klienta"})
         self.symbol_info = symbol_info or {}
         self.log = log or (lambda *a, **k: None)
@@ -54,9 +55,7 @@ class SHExecutor:
         if mode == "AUTO_LIVE":
             if not self.is_live():
                 return "RACHUNEK_NIE_REAL"
-            v = self.live_check(plan.get("strategy")) or {}
-            if not v.get("ok"):
-                return "SH_LIVE_WYMAGA_WALIDACJI: " + str(v.get("reason") or "brak raportu")
+            # 1.39 (user decision): the validation requirement of AUTO_LIVE is withdrawn - a REAL account is still required
         return None
 
     # ------------------------------------------------------------------ public

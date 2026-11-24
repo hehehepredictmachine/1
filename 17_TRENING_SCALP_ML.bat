@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Trening modeli scalp (A: kierunek 1/3/5 min - baseline, regresja logistyczna, HistGradientBoosting, siec MLP 64/32, kwantyle;
 rem B: jakosc setupu z replayu; C: HOLD/REDUCE/CLOSE/HEDGE_PARTIAL) na NAJNOWSZYM eksporcie data\scalp\history.
 rem Opcjonalny argument (domyslnie 0.50): prowizja za 1 lot na strone w walucie konta (z warunkow Twojego rachunku; "Zero" nie oznacza 0 kosztow).

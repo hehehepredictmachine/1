@@ -115,6 +115,10 @@ def kinematics(ticks: list[dict], window_s: float = 30.0, horizon_s: float = 10.
     tt = t[m] - t[-1]
     X = np.vstack([np.ones_like(tt), tt, 0.5 * tt ** 2]).T
     beta, res, rank, _ = np.linalg.lstsq(X, mid[m], rcond=None)
+    if rank < 3:
+        # 1.46: ticks on 1-2 distinct timestamps - the quadratic is not identified (minimum-norm solution, NaN standard errors that broke
+        # the JSON of GET /api/v1/lab); no estimate rather than a 'ready' one
+        return {"status": "missing_data", "reason": "RANK_DEFICIENT", "n": int(m.sum()), "distinct_times": len(np.unique(tt))}
     dof = max(1, m.sum() - 3)
     resid = mid[m] - X @ beta
     s2 = float(resid @ resid) / dof
@@ -127,8 +131,11 @@ def kinematics(ticks: list[dict], window_s: float = 30.0, horizon_s: float = 10.
     fc = float(beta[0] + beta[1] * horizon_s + 0.5 * beta[2] * horizon_s ** 2)
     xf = np.array([1, horizon_s, 0.5 * horizon_s ** 2])
     fse = float(np.sqrt(max(0.0, xf @ cov @ xf + s2))) if (rank == 3 and cov is not None) else None
+
+    def fin(x):                                          # 1.46: never NaN in the payload (JSON allow_nan=False)
+        return float(x) if np.isfinite(x) else None
     return {"status": "ready", "n": int(m.sum()), "window_s": window_s, "mid": float(mid[-1]),
-            "velocity_per_s": float(beta[1]), "velocity_se": float(se[1]), "acceleration_per_s2": float(beta[2]), "acceleration_se": float(se[2]),
+            "velocity_per_s": float(beta[1]), "velocity_se": fin(se[1]), "acceleration_per_s2": float(beta[2]), "acceleration_se": fin(se[2]),
             "forecast": {"horizon_s": horizon_s, "mid": fc, "se": fse, "issued_at_t": float(t[-1])},
             "significant_velocity": bool(abs(beta[1]) > 2 * se[1]) if np.isfinite(se[1]) else False,
             "note": "model statystyczny lokalnej trajektorii – nie prawo fizyki"}
@@ -140,17 +147,20 @@ def verify_forecasts(archive: list[dict], ticks: list[dict]) -> dict:
         return {"verified": 0}
     t = np.array([x["t"] for x in ticks])
     mid = np.array([(x["bid"] + x["ask"]) / 2 for x in ticks])
-    errs, inside = [], 0
+    errs, inside, with_se = [], 0, 0
     for f in archive:
         target = f["issued_at_t"] + f["horizon_s"]
+        if target < t[0]:
+            continue            # 1.46: the price at the target is not in this tick window (was scored against its FIRST tick, maybe hours later)
         j = int(np.searchsorted(t, target))
         if j >= len(t):
             continue
         e = mid[j] - f["mid"]
         errs.append(e)
-        if f.get("se") and abs(e) <= 2 * f["se"]:
-            inside += 1
+        if f.get("se"):         # 1.46: coverage only over forecasts that HAVE an se (those without counted as 'outside')
+            with_se += 1
+            inside += int(abs(e) <= 2 * f["se"])
     if not errs:
         return {"verified": 0}
     e = np.array(errs)
-    return {"verified": len(e), "mae": float(np.abs(e).mean()), "bias": float(e.mean()), "coverage_2se": inside / len(e)}
+    return {"verified": len(e), "mae": float(np.abs(e).mean()), "bias": float(e.mean()), "coverage_2se": inside / with_se if with_se else None}

@@ -163,8 +163,12 @@ class NettingReduce(unittest.TestCase):
         self.assertTrue(any("REDUCE" in w for w in r["warnings"]))
 
     def test_blocked_without_validation_when_disabled_or_on_other_account_types(self):
-        for kw, txt in ((dict(val={"ok": False, "reason": "n=3 < 30"}), "niezwalidowany"), (dict(), "niezwalidowany"),
-                        (dict(val={"ok": True, "source": "x"}, alt="BLOCK"), "wyłączony"),
+        # 1.39 (user decision): the REDUCE validation gate is withdrawn - unvalidated REDUCE passes with a visible warning
+        for kw in (dict(val={"ok": False, "reason": "n=3 < 30"}), dict()):
+            r = self.risk(**kw)
+            self.assertEqual(r["status"], "PASS", (kw, r.get("reasons")))
+            self.assertTrue(any("bez walidacji wariantu REDUCE" in w for w in r["warnings"]), r["warnings"])
+        for kw, txt in ((dict(val={"ok": True, "source": "x"}, alt="BLOCK"), "wyłączony"),
                         (dict(val={"ok": True, "source": "x"}, margin_mode="EXCHANGE"), "nieobsługiwany")):
             r = self.risk(**kw)
             self.assertEqual(r["status"], "BLOCK", kw)

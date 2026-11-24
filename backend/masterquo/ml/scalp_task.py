@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -214,14 +215,18 @@ def _day_boot(days: np.ndarray, x: np.ndarray, reps=2000, seed=7) -> dict:
 
 
 # ------------------------------------------------------------------ evaluation ledger (shared across tasks / sessions)
-def reserve_holdout(db, inst: str, start: str, end: str, artifact_hash: str, task_id: str = TASK_ID) -> dict:
+def reserve_holdout(db, inst: str, start: str, end: str, artifact_hash: str, task_id: str = TASK_ID, same_run: list | None = None) -> dict:
     """Transactional reservation BEFORE the holdout labels are read. An overlapping, already used period of the same market
-    (any task / family / name) returns REUSED_PERIOD_EXPLORATORY."""
+    (any task / family / name) returns REUSED_PERIOD_EXPLORATORY. `same_run` = ledger entries ({"at", "artifact_hash"}) reserved
+    earlier by THIS run (the other side): the frozen models of one run are not a re-use of the period by each other."""
     prev = db.query("SELECT * FROM eval_ledger WHERE instrument=? AND NOT (period_end <= ? OR period_start >= ?)", (inst, start, end))
+    own = {(e["at"], e["artifact_hash"]) for e in same_run or []}
+    prev = [x for x in prev if (x["at"], x["artifact_hash"]) not in own]
     status = "REUSED_PERIOD_EXPLORATORY" if prev else "FRESH"
+    at = datetime.now(timezone.utc).isoformat()
     db.execute("INSERT INTO eval_ledger(at, instrument, task_id, period_start, period_end, artifact_hash, status) VALUES (?,?,?,?,?,?,?)",
-               (datetime.now(timezone.utc).isoformat(), inst, task_id, start, end, artifact_hash, status))
-    return {"status": status, "previous": [dict(x) for x in prev][:5]}
+               (at, inst, task_id, start, end, artifact_hash, status))
+    return {"status": status, "previous": [dict(x) for x in prev][:5], "entry": {"at": at, "artifact_hash": artifact_hash}}
 
 
 # ------------------------------------------------------------------ the run
@@ -247,6 +252,7 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, log=
     t_all = np.array([_ts(r["signal_time"]) for r in rows])
     cut = t_all.min() + 0.8 * (t_all.max() - t_all.min())
     X, y, r = matrix(rows), np.array([x["y"] for x in rows]), np.array([x["net_r"] for x in rows])
+    run_ledger: list[dict] = []            # 1.46: entries of THIS run - SELL was always REUSED_PERIOD_EXPLORATORY because of BUY's entry
     for side in ("BUY", "SELL"):
         sidx = np.array([i for i, x in enumerate(rows) if x["side"] == side], dtype=int)
         dev = _purged(np.array([i for i in sidx if t_all[i] < cut], dtype=int), rows, cut, embargo)
@@ -292,7 +298,9 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, log=
             sr.update(status="INSUFFICIENT_EVIDENCE", reason="pusty holdout")
             continue
         h0, h1 = min(rows[i]["signal_time"] for i in hold), max(rows[i]["label_end"] for i in hold)
-        led = reserve_holdout(db, inst, h0, h1, mhash) if db is not None else {"status": "LEDGER_UNAVAILABLE"}
+        led = reserve_holdout(db, inst, h0, h1, mhash, same_run=run_ledger) if db is not None else {"status": "LEDGER_UNAVAILABLE"}
+        if led.get("entry"):
+            run_ledger.append(led.pop("entry"))
         bl = load_bundle(bdir)
         out = bl.predict_matrix(X[hold])
         ph, evh = out["p"], out["ev"]
@@ -492,6 +500,7 @@ def rollback(inst: str, side: str) -> dict:
 
 
 _cache: dict = {}
+_cache_lock = threading.Lock()
 
 
 def selected_bundle(inst: str, side: str) -> tuple[ScalpBundle | None, dict | None]:
@@ -504,8 +513,14 @@ def selected_bundle(inst: str, side: str) -> tuple[ScalpBundle | None, dict | No
     sel = reg.get("selected", {}).get(side)
     if not sel:
         return None, None
-    key = (inst, side, sel["model_hash"], st)
-    if key not in _cache:
-        _cache.clear()
-        _cache[key] = load_bundle(Path(reg["runs"][sel["run_id"]]["run_dir"]) / f"bundle_{side}")
-    return _cache[key], sel
+    # 1.46: one entry per (instrument, side) validated by (model hash, registry mtime), under a lock. The single-entry cache was
+    # cleared on every side change (BUY/SELL alternating = SHA-256 + two XGBoost loads per candidate) and a concurrent clear()
+    # between the store and the read raised KeyError (scalp thread vs /api/v1/ml/scalp/explain).
+    ver = (sel["model_hash"], st)
+    with _cache_lock:
+        hit = _cache.get((inst, side))
+        if hit is None or hit[0] != ver:
+            hit = (ver, load_bundle(Path(reg["runs"][sel["run_id"]]["run_dir"]) / f"bundle_{side}"))
+            _cache[(inst, side)] = hit
+        bundle = hit[1]
+    return bundle, sel

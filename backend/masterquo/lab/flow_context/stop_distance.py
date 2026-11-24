@@ -60,9 +60,14 @@ def series(bars, cfg=None, point=0.01, tick=None) -> list:
 
 def sl_price(entry: float, side: str, distance_price: float, tick_size: float) -> float:
     """BUY SL = entry - distance, SELL SL = entry + distance; rounded OUTWARD (away from entry) to the legal tick grid."""
-    if side not in ("BUY", "SELL") or not (tick_size > 0) or not (distance_price >= 0):
+    # 1.46: entry was not checked - nan/inf ended in ValueError/OverflowError inside floor/ceil (500) and entry <= 0 gave a negative SL
+    if (side not in ("BUY", "SELL") or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+                                                for x in (entry, tick_size, distance_price))
+            or not entry > 0 or not tick_size > 0 or not distance_price >= 0):
         raise ValueError("SL_INPUT_INVALID")
     raw = entry - distance_price if side == "BUY" else entry + distance_price
+    if raw <= 0:
+        raise ValueError("SL_INPUT_INVALID")
     k = raw / tick_size
     k = math.floor(k + 1e-9) if side == "BUY" else math.ceil(k - 1e-9)
     return round(k * tick_size, 10)

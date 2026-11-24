@@ -69,13 +69,35 @@ class Ledger:
                 n += cur.rowcount
         return n
 
-    def rows(self, model_id: str, scored_only: bool = False, limit: int = 100000) -> list[dict]:
-        q = "SELECT * FROM predictions WHERE model_id=?" + (" AND outcome IS NOT NULL" if scored_only else "") + " ORDER BY source_ts LIMIT ?"
+    def rows(self, model_id: str, scored_only: bool = False, limit: int = 100000, newest: bool = False) -> list[dict]:
+        """Rows in time order (source_ts ascending). Default: the OLDEST `limit` rows; newest=True: the NEWEST `limit` rows."""
+        q = "SELECT * FROM predictions WHERE model_id=?" + (" AND outcome IS NOT NULL" if scored_only else "")
+        # 1.46: ORDER BY ... LIMIT kept the oldest rows - a caller wanting the recent window (live calibration / drift, the ledger view)
+        # froze on the start of the history once the ledger exceeded `limit`
+        q = f"SELECT * FROM ({q} ORDER BY source_ts DESC LIMIT ?) ORDER BY source_ts" if newest else q + " ORDER BY source_ts LIMIT ?"
         with self._lock:
             out = [dict(r) for r in self.c.execute(q, (model_id, limit)).fetchall()]
         for r in out:
             r["payload"] = json.loads(r["payload"]) if r["payload"] else None
             r["outcome"] = json.loads(r["outcome"]) if r["outcome"] else None
+        return out
+
+    def outcome_means(self, model_id: str, keys: tuple[str, ...]) -> dict:
+        """1.46: number of scored rows and the mean of numeric / boolean outcome fields over ALL scored rows of a model, aggregated in
+        SQLite (no load + JSON decode of the whole history on every call). A field never present -> None."""
+        sel = ", ".join(f"AVG(json_extract(outcome, '$.{k}'))" for k in keys)
+        with self._lock:
+            try:
+                r = self.c.execute(f"SELECT COUNT(*){', ' + sel if keys else ''} FROM predictions WHERE model_id=? AND outcome IS NOT NULL",
+                                   (model_id,)).fetchone()
+                return {"n": int(r[0]), **{k: (None if v is None else float(v)) for k, v in zip(keys, tuple(r)[1:])}}
+            except sqlite3.OperationalError:                              # SQLite without JSON1: same numbers in Python
+                pass
+        rows = self.rows(model_id, scored_only=True, limit=-1)
+        out = {"n": len(rows)}
+        for k in keys:
+            v = [float(x["outcome"][k]) for x in rows if isinstance(x["outcome"], dict) and x["outcome"].get(k) is not None]
+            out[k] = sum(v) / len(v) if v else None
         return out
 
     def summary(self) -> list[dict]:

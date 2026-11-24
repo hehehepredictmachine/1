@@ -39,7 +39,11 @@ def _num(x, field: str):
         return None
     if not isinstance(x, (int, float)) or isinstance(x, bool):
         raise EnvelopeError(f"NOT_A_NUMBER:{field}")
-    if not math.isfinite(x):
+    try:
+        finite = math.isfinite(x)
+    except OverflowError:                                     # 1.46: an int with hundreds of digits escaped as OverflowError
+        finite = False
+    if not finite:
         raise EnvelopeError(f"NON_FINITE:{field}")
     return None if abs(x) >= EMPTY_VALUE * 0.999 else float(x)
 
@@ -76,11 +80,24 @@ def validate(raw: bytes) -> dict:
     for k in ("generation", "sequence", "captured_at_server"):
         if not isinstance(d[k], int) or d[k] < 0:
             raise EnvelopeError(f"BAD_INTEGER:{k}")
+    # 1.46: fields the ingest stores / reads - a wrong type was an AttributeError / IntegrityError outside the per-file rejection
+    if not isinstance(d["symbol"], str) or not d["symbol"]:
+        raise EnvelopeError("BAD_FIELD:symbol")
+    if d["product"] is not None and (not isinstance(d["product"], dict) or not isinstance(d["product"].get("version"), (str, int, float, type(None)))):
+        raise EnvelopeError("BAD_FIELD:product")
+    for k in ("adapter_id", "terminal_fingerprint"):
+        if not isinstance(d[k], str):
+            raise EnvelopeError(f"BAD_FIELD:{k}")
+    for k in ("chart_id", "tf"):
+        if not isinstance(d[k], (str, int)) or isinstance(d[k], bool):
+            raise EnvelopeError(f"BAD_FIELD:{k}")
     objs = []
     for i, o in enumerate(d["objects"]):
         if not isinstance(o, dict) or not isinstance(o.get("name"), str):
             raise EnvelopeError(f"OBJECT_INVALID@{i}")
         t = o.get("type") if o.get("type") in OBJECT_TYPES else "OTHER"
+        if not isinstance(o.get("prices") or [], list) or not isinstance(o.get("times") or [], list):
+            raise EnvelopeError(f"GEOMETRY_NOT_A_LIST@{i}")    # 1.46: prices/times as a number was a TypeError
         prices = [_num(p, f"objects[{i}].prices") for p in (o.get("prices") or [])]
         times = [int(x) for x in (o.get("times") or []) if isinstance(x, int) and x >= 0]
         if t == "HLINE" and (not prices or prices[0] is None):

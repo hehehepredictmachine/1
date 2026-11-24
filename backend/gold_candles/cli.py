@@ -9,7 +9,7 @@ import time
 import numpy as np
 import pandas as pd
 from .analysis import analyze
-from .data import Config, DataError, clean_json, read_csv, utc, validate_bars, write_json
+from .data import Config, DataError, clean_json, read_csv, validate_bars, write_json
 from .model import load_model, train
 from .mt5_reader import read_mt5
 
@@ -42,7 +42,8 @@ def from_files(args):
 
 
 def build_parser():
-    parser=argparse.ArgumentParser(description="MasterQUO candle analysis; read-only XAUUSD, no orders.")
+    # 1.46: product name shown in the help (display text only; cli.py is outside the contract hash)
+    parser=argparse.ArgumentParser(description="Apollo23 candle analysis; read-only XAUUSD, no orders.")
     sub=parser.add_subparsers(dest="command",required=True)
     demo=sub.add_parser("demo",help="Clearly synthetic morphology demonstration; no trained forecast.")
     demo.add_argument("--output")

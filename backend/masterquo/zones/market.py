@@ -434,10 +434,10 @@ def score(z: dict) -> None:
 
 # ------------------------------------------------------------------------------------------------ one timeframe / all
 def compute_tf(s: Series, inst: str, tick: float, spread_price: float | None) -> dict:
-    a = ind.atr(s.h, s.l, s.c, 14)
-    if len(s) < 30:
+    if len(s) < 30:                                   # 1.46: checked BEFORE the ATR - an empty series (as_of before the data) crashed true_range
         return {"tf": s.tf, "bars": len(s), "zones": [], "atr": None, "state": "NO_DATA" if not len(s) else "INSUFFICIENT",
                 "last_closed": iso(s.close_time(len(s) - 1)) if len(s) else None}
+    a = ind.atr(s.h, s.l, s.c, 14)
     price = s.c[-1]
     minw = min_width(inst, tick, price, spread_price)
     zones = [lifecycle(z, s, a, inst) for z in detect(s, inst, tick, minw)]

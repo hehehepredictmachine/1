@@ -11,7 +11,7 @@ probability_win:                only from a calibrated ML model validated out of
 """
 from __future__ import annotations
 
-from ..timeutil import CONTEXT_TIMEFRAMES, parse_iso
+from ..timeutil import CONTEXT_TIMEFRAMES, TF_REGISTRY, parse_iso
 
 SIGNAL_SCHEMA = "MQ-SIGNAL-1.0.0"
 RR_NET_DEFINITION = ("RR po kosztach = (ważony zysk do celów − prowizja w obie strony − stres poślizgu) / "
@@ -19,6 +19,8 @@ RR_NET_DEFINITION = ("RR po kosztach = (ważony zysk do celów − prowizja w ob
 RR_GROSS_DEFINITION = "RR brutto = ważona odległość do celów / odległość do SL od planowanej ceny wejścia (bez kosztów)"
 
 STAGE_TERMINAL = {"INVALIDATED": "UNIEWAŻNIONY", "EXPIRED": "WYGASŁY", "MISSED_ENTRY": "WYGASŁY", "CANCELLED": "UNIEWAŻNIONY"}
+# 1.46: M30 / H8 only - M3 (core=False since 1.33) is a TRIGGER timeframe, not context (it was listed as a context TF of every signal)
+CONTEXT_TFS = tuple(tf for tf in CONTEXT_TIMEFRAMES if TF_REGISTRY[tf]["role"] in ("SETUP_CONTEXT", "TREND_REGIME_CONTEXT"))
 
 
 def _rr_gross(side: str, entry: float | None, sl: float | None, targets: list[dict]) -> float | None:
@@ -83,13 +85,15 @@ def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict |
     # ---- status
     block = []
     if (row or {}).get("status") and row["status"] != "ACTIVE":
-        status = STAGE_TERMINAL.get(row.get("terminal_reason") or row["status"], "UNIEWAŻNIONY")
+        # 1.46: keyed by the terminal STATUS (EXPIRED / MISSED_ENTRY -> WYGASŁY); terminal_reason holds codes such as TTL_ELAPSED
+        status = STAGE_TERMINAL.get(row["status"], "UNIEWAŻNIONY")
     elif nodes.get("DATA", {}).get("status") == "FAIL" or (row or {}).get("stale"):
         status = "BRAK_DANYCH"
     elif not confirmed:
         status = "OCZEKIWANIE"
     else:
-        for name in ("DATA", "MARKET", "STRATEGY", "RISK", "AI", "ML", "PERMISSION"):
+        # 1.46: + MODELS (PMW-ARC-1 node) - a signal held only by the model roles was ZABLOKOWANY with an empty reason list
+        for name in ("DATA", "MARKET", "STRATEGY", "RISK", "AI", "ML", "MODELS", "PERMISSION"):
             n = nodes.get(name)
             if n and n["status"] not in ("PASS", "NOT_REQUIRED"):
                 block += [f"{name}:{c}" for c in (n.get("reason_codes") or n.get("unmet") or ["BLOCKED"])]
@@ -112,7 +116,7 @@ def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict |
     spread = (ask - bid) if (bid is not None and ask is not None) else None
     sl_dist = abs(planned - sl) if (planned is not None and sl is not None) else None
     tf = setup.get("setup_tf")
-    ctx_tfs = ["H1", "H4"] + [t for t in CONTEXT_TIMEFRAMES]
+    ctx_tfs = ["H1", "H4"] + list(CONTEXT_TFS)
     valid_until = (row or {}).get("expires_at") or d.get("expires_at_utc")
     prob = None
     if (ml and ml.get("calibrated_probability") is not None and ml.get("calibration_status") not in (None, "NONE")
@@ -124,7 +128,7 @@ def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict |
         "schema": SIGNAL_SCHEMA, "signal_id": f"SIG-{setup['setup_id']}-v{setup.get('version') or 1}", "setup_id": setup["setup_id"],
         "strategy_id": setup.get("strategy_id"), "strategy_version": setup.get("strategy_version"), "strategy_name": setup.get("strategy_name"),
         "symbol": d.get("symbol"), "data_source": data_source, "decision_source": source,
-        "status": status, "execution_state": ex, "side": side if status not in ("BRAK_DANYCH",) else side,
+        "status": status, "execution_state": ex, "side": side,    # 1.46: the conditional had the same value in both branches
         "entry_tf": tf, "context_tfs": ctx_tfs, "snapshot_id": d.get("snapshot_id"), "generated_at": d.get("as_of_utc"), "valid_until": valid_until,
         "reference_price": ep.get("reference_price"), "quote": {"bid": bid, "ask": ask, "time_utc": (quote or {}).get("time_utc"),
                                                                 "age_seconds": (quote or {}).get("age_seconds")},
@@ -141,7 +145,7 @@ def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict |
         "cost_assumptions": {"commission_per_lot_side": (costs or {}).get("per_lot_per_side"), "commission_source": (costs or {}).get("source"),
                              "slippage_stress_points": (costs or {}).get("slippage_stress_points"), "rr_complete": risk.get("rr_complete")},
         "data_flags": {"data_quality": d.get("data_quality"), "market_state": d.get("market_state"),
-                       "context": {k: (context or {}).get(k, {}).get("status") for k in CONTEXT_TIMEFRAMES}},
+                       "context": {k: (context or {}).get(k, {}).get("status") for k in CONTEXT_TFS}},
         "conditions_met": [m.get("label") for m in cl.get("met") or []], "conditions_missing": [m.get("label") for m in cl.get("missing") or []],
         "trigger": ep.get("trigger"), "invalidation": {"level": setup.get("invalidation_level"), "rule": (row or {}).get("record", {}).get("invalidation_rule")},
         "block_reasons": sorted(set(block)), "ai": ai, "quality": {"score": setup.get("setup_score"), "method": "ACTIVE 0–100 (heurystyka strategii, nie prawdopodobieństwo)"},

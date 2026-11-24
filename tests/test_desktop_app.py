@@ -65,7 +65,7 @@ class TestDesktopPrefs(unittest.TestCase):
     def test_defaults_autostart_off(self):
         with DesktopEnv():
             i = desktop.info(FakeRunKey())
-        self.assertEqual(i["prefs"], {"close_action": "ask", "autostart": False, "start_minimized": False})
+        self.assertEqual(i["prefs"], {"close_action": "ask", "autostart": False, "start_minimized": False, "fullscreen": True, "auto_scale": True, "auto_enter": True})     # 1.45: TASK 013 display prefs
         self.assertTrue(i["desktop"])
         self.assertFalse(i["autostart_registered"])
 
@@ -78,12 +78,12 @@ class TestDesktopPrefs(unittest.TestCase):
             self.assertEqual(reg.value, '"C:\\Apps\\PMW\\PepeMarketWizardDesktop.exe" --autostart')
             self.assertTrue(out["autostart_registered"])
             self.assertFalse(out["autostart_other_exe"])
-            self.assertEqual(out["prefs"], {"close_action": "background", "autostart": True, "start_minimized": True})
+            self.assertEqual(out["prefs"], {"close_action": "background", "autostart": True, "start_minimized": True, "fullscreen": True, "auto_scale": True, "auto_enter": True})
             desktop.save_prefs("exit", False, False, reg)
             self.assertIsNone(reg.value)
             self.assertEqual(reg.writes[-1], ("delete", None))
         on_disk = json.loads((self.td_path() / "desktop_prefs.json").read_text(encoding="utf-8"))
-        self.assertEqual(on_disk, {"close_action": "exit", "autostart": False, "start_minimized": False})
+        self.assertEqual(on_disk, {"close_action": "exit", "autostart": False, "start_minimized": False, "fullscreen": True, "auto_scale": True, "auto_enter": True})
 
     def test_entry_of_a_moved_copy_is_reported(self):
         reg = FakeRunKey('"D:\\old\\PepeMarketWizardDesktop.exe" --autostart')

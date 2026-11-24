@@ -23,6 +23,7 @@ Edges: UNTOUCHED -> SWEPT or BROKEN -> EXPIRED at the next scheduled start of th
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -118,7 +119,10 @@ def build(bars: list[dict], tf_s: int, profile_id: str, instrument: str, as_of, 
             continue
         inside = [r for r in rows if r[0] >= s0 and r[0] + tf_s <= s1]
         upto = min(T, s1)
-        slots = [s0 + k * tf_s for k in range(int((upto - s0) // tf_s)) if s0 + (k + 1) * tf_s <= upto]
+        # 1.46: expected slots follow the bar grid of the base TF (bar opens on multiples of tf_s), not the window start - a start off
+        # the grid (LAB_XAU NEW_YORK 08:20 on M15) matched no bar open: every box INCOMPLETE with coverage 1.0. Identical for on-grid starts.
+        g0 = float(math.ceil(s0 / tf_s) * tf_s)
+        slots = [g0 + k * tf_s for k in range(int((upto - g0) // tf_s))] if upto > g0 else []
         sched_closed = [x for x in slots if calendar is not None and calendar(x)]
         expected = len(slots) - len(sched_closed)
         seen = {r[0] for r in inside}

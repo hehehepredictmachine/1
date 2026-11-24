@@ -138,8 +138,12 @@ class MLService:
         flags = []
         spread = q.get("spread")
         if spread is None:
-            spread = (info.get("spread") or 0) * point
-            flags.append("SPREAD_FROM_SYMBOL_INFO")
+            if info.get("spread"):
+                spread = info["spread"] * point
+                flags.append("SPREAD_FROM_SYMBOL_INFO")
+            else:                               # 1.46: no spread in the quote nor in symbol_info was a spread of 0 with quality HIGH
+                spread = 0.0                    # placeholder only: SPREAD_UNKNOWN -> the sample is COST_UNKNOWN (never trained on)
+                flags.append("SPREAD_UNKNOWN")
         slip = (cfg.costs.slippage_stress_points or 0) * point
         with self.bridge._lock:
             deals = list(getattr(self.bridge, "deals", []) or [])
@@ -172,8 +176,12 @@ class MLService:
                     key = (q.get("time_msc"), q.get("bid"), q.get("ask"))
                     if key != self._last_tick_key:
                         self._last_tick_key = key
-                        ts = (q.get("time_msc") / 1000 - (self.bridge.clock.offset or 0)) if q.get("time_msc") else time.time()
-                        self.ticks.append((float(ts), float(q["bid"]), float(q["ask"])))
+                        off = self.bridge.clock.offset
+                        # 1.46: with the server-time offset still unknown (UNKNOWN / MEASURING) the server time (UTC+2/+3) was stored as
+                        # UTC and later decided the SL/TP order inside the wrong M1 bar - such a quote is not recorded
+                        if not (q.get("time_msc") and off is None):
+                            ts = (q.get("time_msc") / 1000 - off) if q.get("time_msc") else time.time()
+                            self.ticks.append((float(ts), float(q["bid"]), float(q["ask"])))
             except Exception:
                 pass
             self._stop.wait(0.5)
@@ -251,6 +259,17 @@ class MLService:
             if hours < c.min_hours_between_trainings:
                 reasons.append(f"OD_OSTATNIEGO_TRENINGU_{hours:.1f}/{c.min_hours_between_trainings}H")
         last_any = self.db.one("SELECT * FROM ml_jobs WHERE kind='TRAIN' ORDER BY created_at DESC LIMIT 1")
+        # 1.46: a failed / interrupted / cancelled run is not restarted on the next scheduler tick (1.45.0: a new snapshot + process every
+        # 60 s without end). CANCELLED waits for a manual start; FAILED / INTERRUPTED wait min_hours_between_trainings.
+        if last_any and last_any["status"] == "CANCELLED":
+            reasons.append("ANULOWANO_RECZNIE_START_TYLKO_RECZNY")
+        elif last_any and last_any["status"] in ("FAILED", "INTERRUPTED"):
+            try:
+                hrs = (utcnow() - parse_iso(last_any["finished_at"] or last_any["created_at"])).total_seconds() / 3600
+            except (TypeError, ValueError):
+                hrs = 0.0
+            if hrs < c.min_hours_between_trainings:
+                reasons.append(f"PO_BLEDZIE_{last_any['status']}_{hrs:.1f}/{c.min_hours_between_trainings}H")
         if last_any and last_any["status"] == "NOT_READY":
             d = json.loads(last_any["detail_json"] or "{}")
             if cnt["labeled"] - int(d.get("labeled_at_start") or 0) < max(25, c.retrain_after_new_labels // 5):
@@ -264,8 +283,10 @@ class MLService:
         if not self._job_lock.acquire(blocking=False):
             return {"started": False, "reason": "JOB_LOCKED"}
         try:
-            if self._job is not None:
-                return {"started": False, "reason": "JOB_ALREADY_RUNNING", "job_id": self._job["job_id"]}
+            with self._lock:
+                cur = self._job                 # 1.46: read once (_finish_job may set it to None between the check and the read)
+            if cur is not None:
+                return {"started": False, "reason": "JOB_ALREADY_RUNNING", "job_id": cur["job_id"]}
             c = self.cfg
             if self.cfg_store.get().assets.active != self.inst:
                 return {"started": False, "reason": f"ML_INSTRUMENT_NOT_ACTIVE:{self.inst}",
@@ -389,19 +410,37 @@ class MLService:
 
     def resume_interrupted(self) -> dict:
         """Re-run the last INTERRUPTED job on the SAME immutable snapshot."""
-        j = self.db.one("SELECT * FROM ml_jobs WHERE status='INTERRUPTED' ORDER BY created_at DESC LIMIT 1")
-        if not j or self._job is not None:
-            return {"started": False, "reason": "NOTHING_TO_RESUME" if not j else "JOB_ALREADY_RUNNING"}
-        f = self.root / "jobs" / f"{j['job_id']}.json"
-        if not f.exists():
-            return {"started": False, "reason": "JOB_FILE_MISSING"}
-        job = json.loads(f.read_text(encoding="utf-8"))
-        Path(f).with_suffix(".result.json").unlink(missing_ok=True)
-        self.db.execute("UPDATE ml_jobs SET status='RUNNING', started_at=?, finished_at=NULL WHERE job_id=?", (iso(utcnow()), j["job_id"]))
-        proc = self._spawn(f)
-        with self._lock:
-            self._proc, self._job = proc, dict(job, file=str(f), started=time.monotonic())
-        return {"started": True, "job_id": j["job_id"], "resumed": True}
+        # 1.46: the same job lock as start_training - without it a resume during a starting training (snapshot being written, _job
+        # still None) spawned a second trainer and one (process, job) pair was lost (no timeout / cancel / reap, row RUNNING)
+        if not self._job_lock.acquire(blocking=False):
+            return {"started": False, "reason": "JOB_LOCKED"}
+        try:
+            with self._lock:
+                cur = self._job
+            j = self.db.one("SELECT * FROM ml_jobs WHERE status='INTERRUPTED' ORDER BY created_at DESC LIMIT 1")
+            if not j or cur is not None:
+                return {"started": False, "reason": "NOTHING_TO_RESUME" if not j else "JOB_ALREADY_RUNNING"}
+            if self.cfg_store.get().assets.active != self.inst:
+                return {"started": False, "reason": f"ML_INSTRUMENT_NOT_ACTIVE:{self.inst}"}
+            f = self.root / "jobs" / f"{j['job_id']}.json"
+            if not f.exists():
+                return {"started": False, "reason": "JOB_FILE_MISSING"}
+            job = json.loads(f.read_text(encoding="utf-8"))
+            # 1.46: prior_test_end was the value from the ORIGINAL start - a model registered meanwhile (e.g. the automatic training after
+            # the restart) used a later test window, and the resumed TEST block could overlap it (validation.split: test after EVERY used
+            # test window; the champion comparison became in-sample). The job file is refreshed before the trainer reads it.
+            cur_end = self.registry.last_test_end()
+            if cur_end and (not job.get("prior_test_end") or cur_end > job["prior_test_end"]):
+                job["prior_test_end"] = cur_end
+                f.write_text(json.dumps(job, default=str), encoding="utf-8")
+            Path(f).with_suffix(".result.json").unlink(missing_ok=True)
+            self.db.execute("UPDATE ml_jobs SET status='RUNNING', started_at=?, finished_at=NULL WHERE job_id=?", (iso(utcnow()), j["job_id"]))
+            proc = self._spawn(f)
+            with self._lock:
+                self._proc, self._job = proc, dict(job, file=str(f), started=time.monotonic())
+            return {"started": True, "job_id": j["job_id"], "resumed": True}
+        finally:
+            self._job_lock.release()
 
     # ------------------------------------------------------------ backfill from history (separate, APPROX quality)
     backfill_state: dict = {"status": "IDLE"}
@@ -422,7 +461,8 @@ class MLService:
                     data = backfill.bridge_data(self.bridge, {tf: min(99000, (days + 30) * n + 50) for tf, n in per_day.items()})
                     feed = "MT5"
                 res = backfill.run(self.db, data, feed=feed, synthetic=self.synthetic, symbol=self.cfg_store.get().mt5.symbol, cost=dict(self._cost(), point=(self.bridge.symbol_info or {}).get("point") or 0.01),
-                                   warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p), should_stop=self._stop.is_set)
+                                   warmup_days=30, progress=lambda p: self.backfill_state.update(progress=p), should_stop=self._stop.is_set,
+                                   cfg=self.cfg_store.get().active)       # 1.46: the user's settings, as live (was package defaults)
                 self.backfill_state = {"status": "DONE", "result": res, "finished_at": iso(utcnow())}
                 self.log.info("ML", "BACKFILL_DONE", f"Backfill {feed}: {res['created']} próbek (jakość APPROX, domyślnie poza treningiem)", res)
             except Exception as exc:
@@ -710,13 +750,16 @@ class MLService:
         else:
             st = "COLLECTING"
         last_q = self.bridge.quote_status() or {}
+        with self._lock:
+            job = self._job                     # 1.46: read once under the lock (a job finishing meanwhile raised TypeError: None[...])
         out = {"status": st, "mode": c.mode, "collect": c.collect, "training_paused": c.training_paused, "counts": cnt,
                "required": {"min_labeled_setups": c.min_labeled_setups, "min_per_class": c.min_per_class, "retrain_after_new_labels": c.retrain_after_new_labels,
                             "min_hours_between_trainings": c.min_hours_between_trainings},
                "progress": round(min(1.0, cnt.get("unique_setups", 0) / max(1, c.min_labeled_setups)), 3),
-               "readiness": self.readiness, "phase": phase, "job": {k: self._job[k] for k in ("job_id", "snapshot_id")} if self._job else None,
+               "readiness": self.readiness, "phase": phase, "job": {k: job[k] for k in ("job_id", "snapshot_id")} if job else None,
                "champion": self.registry.champion_id, "champion_family": champ.family if champ else None,
-               "challengers": list(self.registry.challengers), "drift": self.drift, "last_error": self.last_error,
+               "challengers": list(self.registry.challengers), "challenger_errors": dict(getattr(self.registry, "challenger_errors", {}) or {}),
+               "drift": self.drift, "last_error": self.last_error,
                "last_label_run": self.last_label_run, "last_check": self.last_check, "synthetic": self.synthetic,
                "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks), "backfill": self.backfill_state,
                "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą."}

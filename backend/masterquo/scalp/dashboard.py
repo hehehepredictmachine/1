@@ -148,6 +148,10 @@ class MTFDashboard:
         rl = roles(prof)
         revs = {tf: {"last_open": (bars.get(tf) or [{}])[-1].get("open_utc"), "revision": (bars.get(tf) or [{}])[-1].get("revision"), "n": len(bars.get(tf) or [])}
                 for tf, _ in TFS}
+        # 1.46: bars of the series that were already revised when the analysis ran (rare) + first bar - an archived chart compares every
+        # bar's revision with these (kept outside tf_revisions: the snapshot id hash is unchanged)
+        series_rev = {tf: {"first_open": (bars.get(tf) or [{}])[0].get("open_utc"),
+                           "revised": {b["open_utc"]: b.get("revision") for b in (bars.get(tf) or []) if b.get("revision")}} for tf, _ in TFS}
         conn = getattr(self.bridge, "state", "UNKNOWN")
         clock = ((self.bridge.connection_status() or {}).get("clock") or {}) if hasattr(self.bridge, "connection_status") else {}
         ctx_series = {"H1": sc.machine.h1, "M30": sc.machine.m30, "M15": sc.machine.m15} if sc.machine else {}
@@ -205,7 +209,8 @@ class MTFDashboard:
                 "session_epoch": str(epoch), "profile_id": prof["profile_id"], "profile_hash": st.profile_hash(prof), "strategy_id": "SCALP_RANGE_SWEEP_RETEST",
                 "source": "SYNTHETIC" if getattr(self.bridge, "synthetic", False) else "MT5",
                 "data_mode": "DANE SYNTETYCZNE" if getattr(self.bridge, "synthetic", False) else "LIVE",
-                "as_of": iso(datetime.fromtimestamp(as_of, timezone.utc)) if as_of else None, "tf_revisions": revs, "connection": conn,
+                "as_of": iso(datetime.fromtimestamp(as_of, timezone.utc)) if as_of else None, "tf_revisions": revs, "tf_series_revisions": series_rev,
+                "connection": conn,
                 "clock_status": clock.get("status") or "CLOCK_UNVERIFIED", "timeframes": rows, "context_filter": filt,
                 "machine": mp, "setups": setups, "digits": (info or {}).get("digits"), "tick_size": (info or {}).get("trade_tick_size")}
         sid = "MTF-" + hashlib.sha256(json.dumps({k: body[k] for k in ("asset", "session_epoch", "as_of", "tf_revisions", "profile_hash")}, sort_keys=True,
@@ -350,11 +355,23 @@ class MTFDashboard:
         cut = st.ts(snap["as_of"]) if snap.get("as_of") else 0
         closed = [b for b in bars if st.ts(b["open_utc"]) + secs <= cut and b.get("closed", True)]
         rev = (snap.get("tf_revisions") or {}).get(tf) or {}
+        revised: list[str] | None = None
         if src == "BRIDGE_BUFFER_CUTOFF":
             if not closed or closed[-1]["open_utc"] != rev.get("last_open"):
                 first = bars[0]["open_utc"] if bars else None
                 return {"status": "ARCHIVE_BARS_UNAVAILABLE", "snapshot_id": sid, "tf": tf, "history_from": first,
                         "reason": "bufor MT5 nie zawiera już świec tego snapshotu (lub zostały zrewidowane) – brak archiwum serii"}
+            # 1.46: only the open time of the last bar was compared - a revised OHLC (bridge revision++) was charted as the analysed one,
+            # with status OK. Every bar of the snapshot series is compared with the revision it had (snapshots from 1.46 on; older ones:
+            # the last bar only) and the differences are listed - the chart says the bars are NOT the analysed values.
+            sr = (snap.get("tf_series_revisions") or {}).get(tf)
+            if sr is not None:
+                first_open, known = sr.get("first_open"), sr.get("revised") or {}
+                start = st.ts(first_open) if first_open else None
+                revised = [b["open_utc"] for b in closed if (start is None or st.ts(b["open_utc"]) >= start)
+                           and (b.get("revision") or 0) != (known.get(b["open_utc"]) or 0)]
+            elif rev.get("revision") is not None and closed[-1].get("revision") is not None:
+                revised = [closed[-1]["open_utc"]] if closed[-1]["revision"] != rev["revision"] else []
         closed = closed[-max(50, min(n, 600)):]
         c, h, lo = [b["c"] for b in closed], [b["h"] for b in closed], [b["l"] for b in closed]
         a = ind.atr(h, lo, c) if len(closed) > 15 else []
@@ -366,6 +383,8 @@ class MTFDashboard:
             forming = fb[-1] if fb else None
         return {"status": "OK", "snapshot_id": sid, "asset": snap["asset"], "tf": tf, "cutoff": snap.get("as_of"), "bar_revision": rev.get("revision"),
                 "bars_source": src, "bars": [{k: b.get(k) for k in ("open_utc", "o", "h", "l", "c", "tv", "revision")} for b in closed],
+                "revision_check": None if revised is None else ("REVISED_SINCE_SNAPSHOT" if revised else "MATCHES_SNAPSHOT"),
+                "revised_bars": revised or [],
                 "indicators": {"bb": [None if x is None else {"upper": _r(x["upper"]), "mid": _r(x["basis"]), "lower": _r(x["lower"])} for x in bb[-len(closed):]] if bb else [],
                                "sar": [None if p is None else {"sar": _r(p["sar"]), "trend": p["trend"]} for p in sar]},
                 "overlays": self._overlays(snap, tf), "forming_preview": forming, "history_from": closed[0]["open_utc"] if closed else None}

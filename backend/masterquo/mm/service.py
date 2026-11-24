@@ -21,6 +21,16 @@ from . import artifacts, inventory
 from .data import TF_S, Bars
 
 VERSION = "PMW-MM-SERVICE-1"
+RECENT_SCORED = 500                     # 1.46: live calibration / drift window (newest scored forecasts; >= drift min_recent)
+
+
+def _kalman_direction(state: str | None, accepted: int | None = None) -> str | None:
+    """1.46: direction of the last ACCEPTED Kalman crossover (+1 BULLISH / -1 BEARISH / 0 none). `"BULLISH" in state` also matched the
+    unconfirmed BULLISH_CANDIDATE / BEARISH_CANDIDATE (a raw change AGAINST the accepted direction). Without `accepted` (results of an
+    older run) only the *_CONFIRMED states give a direction."""
+    if accepted is not None:
+        return "BULLISH" if accepted > 0 else "BEARISH" if accepted < 0 else None
+    return {"BULLISH_CONFIRMED": "BULLISH", "BEARISH_CONFIRMED": "BEARISH"}.get(str(state or ""))
 
 
 def _to_bars(rows: list[dict], tf: str) -> Bars | None:
@@ -155,7 +165,7 @@ class MMService:
         out["multi_indicator"] = {"decision": d.get("decision"), "status": d["status"], "long_reasons": (d.get("sides") or {}).get("LONG", {}).get("reasons"),
                                   "short_reasons": (d.get("sides") or {}).get("SHORT", {}).get("reasons"),
                                   "risk": ((d.get("sides") or {}).get(d.get("decision")) or {}).get("risk") if d.get("decision") in ("LONG", "SHORT") else None}
-        se = SF.run(b5.slice(max(0, len(b5) - 1500), len(b5)), SF.SMCFVGConfig(tick=tick), 300, inst, "M5")
+        se = SF.run(b5.slice(max(0, len(b5) - 1500), len(b5)), SF.SMCFVGConfig(tick=tick, point=point), 300, inst, "M5")   # 1.46: buffer in points
         live = [s for s in se.setups.values() if s["state"] in ("IDM_PENDING", "WAITING_FOR_VALID_RETRACEMENT")]
         out["smc_fvg"] = {"trend": se.smc.trend, "live_setups": [{k: s.get(k) for k in ("setup_id", "direction", "state", "A", "B", "idm")} for s in live[-3:]],
                           "last_events": se.events[-4:], "depth_min": SF.SMCFVGConfig().depth_min}
@@ -163,7 +173,7 @@ class MMService:
         from .contracts import Envelope, ModelOutput
         from .fusion import board
         outs = []
-        for src, kind, payload in (("kalman", "INDICATOR_STATE", {"direction": "BULLISH" if "BULLISH" in kc.state else "BEARISH" if "BEARISH" in kc.state else None}),
+        for src, kind, payload in (("kalman", "INDICATOR_STATE", {"direction": _kalman_direction(kc.state, kc.accepted), "state": kc.state}),
                                    ("breakout_zones", "INDICATOR_STATE", {"direction": None if be.panel()["direction"] == "NONE" else be.panel()["direction"]}),
                                    ("multi_indicator", "RULE_SIGNAL", {"direction": d.get("decision") if d.get("decision") in ("LONG", "SHORT") else None})):
             outs.append(ModelOutput(Envelope(src, inst, "M5", t_avail - 300, t_avail, quality), kind, payload).to_dict())
@@ -206,15 +216,23 @@ class MMService:
             z = (real - pl["pred"]) / pl["sd"]
             return {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2}
         led.mature(float(b5.t[-1]) + 300, resolve, mid)
-        sc = [x["outcome"] for x in led.rows(mid, scored_only=True)]
-        cal = {"n_scored": len(sc), "coverage_1sd": float(np.mean([s["in_1sd"] for s in sc])) if sc else None,
-               "coverage_2sd": float(np.mean([s["in_2sd"] for s in sc])) if sc else None, "inconclusive": len(sc) < 200}
         from . import drift as D                     # AR-08: calibration drift of the live forecast vs the nominal 1-sigma coverage
-        enough = len(sc) >= D.DEFAULT_POLICY["min_recent"]
+        # 1.46: the drift input was the coverage of the WHOLE history (and rows() returned the OLDEST 100k): a fresh mis-calibration was
+        # diluted and never alerted, and every M5 bar loaded + decoded the full ledger. Cumulative coverage = SQL aggregate (information);
+        # drift = the newest RECENT_SCORED scored forecasts.
+        tot = led.outcome_means(mid, ("in_1sd", "in_2sd"))
+        rec = [x["outcome"] for x in led.rows(mid, scored_only=True, limit=max(RECENT_SCORED, D.DEFAULT_POLICY["min_recent"]), newest=True)]
+        cal = {"n_scored": tot["n"], "coverage_1sd": tot["in_1sd"] if tot["n"] else None, "coverage_2sd": tot["in_2sd"] if tot["n"] else None,
+               "inconclusive": tot["n"] < 200,
+               "recent": {"n": len(rec), "window": max(RECENT_SCORED, D.DEFAULT_POLICY["min_recent"]),
+                          "coverage_1sd": float(np.mean([s["in_1sd"] for s in rec])) if rec else None,
+                          "coverage_2sd": float(np.mean([s["in_2sd"] for s in rec])) if rec else None}}
+        enough = len(rec) >= D.DEFAULT_POLICY["min_recent"]
         cal["drift"] = D.evaluate(feature_ref={}, feature_cur={}, ref_abs_err=None, cur_abs_err=None, ref_coverage=0.6827 if enough else None,
-                                  cur_coverage=cal["coverage_1sd"] if enough else None, artifact_created_at=None)
+                                  cur_coverage=cal["recent"]["coverage_1sd"] if enough else None, artifact_created_at=None)
+        cal["drift"]["measured_on"] = f"ostatnie {len(rec)} ocenionych prognoz"
         if not enough:
-            cal["drift"]["note"] = f"za mało ocenionych prognoz ({len(sc)} < {D.DEFAULT_POLICY['min_recent']}) – dryf nieoceniany"
+            cal["drift"]["note"] = f"za mało ocenionych prognoz ({len(rec)} < {D.DEFAULT_POLICY['min_recent']}) – dryf nieoceniany"
         return {**{k: p.get(k) for k in ("status", "mean_logret", "latent_var", "observed_var", "sd", "price", "edge_price", "z", "hp", "jitter", "flags")},
                 "horizon_bars": cfg.horizon, "live_calibration": cal, "search": m.last_search and {k: m.last_search[k] for k in ("candidates", "failed", "flat_surface")},
                 "note": "prognoza log-zwrotu z niepewnością; pasma to założenie gaussowskie do kalibracji, nie gwarancja"}

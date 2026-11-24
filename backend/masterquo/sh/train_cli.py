@@ -31,7 +31,9 @@ def _write(p: Path, obj) -> None:
 
 
 def train(dataset: Path, instrument: str, out: Path, *, allow_synthetic: bool = False, last_m1: int | None = None,
-          strategies: tuple = ("SCALPING", "HEDGING"), min_n: int = 200, log=print) -> dict:
+          strategies: tuple = ("SCALPING", "HEDGING"), min_n: int = 200, log=print, live_write: bool = True) -> dict:
+    """live_write=False (1.46, runner profile TEST_INSTALACJI / no activation): reports go to the run folder only - the live validation file
+    (data/sh/validation, gates AUTO_LIVE) is not overwritten and no model is promoted."""
     t0 = time.time()
     bars, meta = RP.load_dataset(dataset, last_m1=last_m1)
     if meta.get("instrument") not in (None, instrument):
@@ -68,14 +70,14 @@ def train(dataset: Path, instrument: str, out: Path, *, allow_synthetic: bool = 
         prof, res = profiles[strat], res_all[strat]
         samples = res["samples"]
         model = TM.train(instrument, strat, samples, embargo_s=60.0 * prof["horizon_minutes"], min_n=min_n, log=log,
-                         allow_promotion=real, provenance={"dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
+                         allow_promotion=real and live_write, provenance={"dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
                                                            "config_hash": cfg["_hash"], "symbol": meta.get("symbol")})
         rep = RP.report(res, strat, meta=meta, model={k: model.get(k) for k in ("run_id", "verdict", "n", "split", "holdout", "reason", "promoted")})
         rep["commission_source"] = "eksport (terminal)" if (meta.get("costs") or {}).get("commission_per_lot_side") is not None else (
             "profil SH" if comm is not None else "NIEZNANA")
         rep["data_kind"] = meta.get("data_kind")
         _write(out.parent / f"{out.stem}_{strat}_report.json", rep)
-        if real:
+        if real and live_write:
             _write(paths.data_dir() / "sh" / "validation" / f"{instrument}_{strat}.json", rep)
         result["strategies"][strat] = {"counts": res["counts"], "setups_ready": len(samples), "model": rep["event_model"],
                                        "metrics": rep.get("metrics"), "baseline": rep["baseline"], "variants": rep.get("variants"),
@@ -96,10 +98,55 @@ def main(argv: list[str]) -> int:
     t.add_argument("--last-m1", type=int, default=None, help="ogranicz replay do ostatnich N świec M1 (test instalacji)")
     t.add_argument("--allow-synthetic", action="store_true")
     t.add_argument("--strategies", default="SCALPING,HEDGING")
+    t.add_argument("--no-live-write", action="store_true", help="1.46: tylko raport w folderze przebiegu (bez data/sh/validation i bez promocji)")
+    pr = sub.add_parser("pack-replay", help="1.38: replay + walidacja walk-forward 20 wariantów (PMW_SC01..HG10) na eksporcie historii")
+    pr.add_argument("--dataset", required=True)
+    pr.add_argument("--last-m1", type=int, default=None)
+    pr.add_argument("--variants", default="", help="lista PMW_.. po przecinku (domyślnie wszystkie 20)")
+    pr.add_argument("--commission-price-rt", type=float, default=None, help="znana prowizja round trip w cenie (brak = scenariusz, wynik nie NET)")
+    pr.add_argument("--commission-per-lot-side", type=float, default=None, help="prowizja na lot i stronę (waluta rachunku) – przeliczana ze specyfikacji eksportu")
+    pr.add_argument("--slippage", type=float, default=0.05)
+    pr.add_argument("--spread-fallback", type=float, default=0.20)
+    pr.add_argument("--allow-synthetic", action="store_true")
+    pr.add_argument("--out", default=None, help="plik JSON z podsumowaniem (runner treningu)")
+    pr.add_argument("--garch-json", default=None, help="garch.json aktywnego modelu VOL_GARCH (HG09 z volatility_method VOL_GARCH)")
+    pr.add_argument("--no-live-write", action="store_true", help="1.46: bez plików statusu wariantów czytanych przez katalog (test instalacji)")
     a = ap.parse_args(argv)
+    if a.cmd == "pack-replay":
+        from .pack import replay as PR
+        try:
+            bars, meta = PR.load(Path(a.dataset), last_m1=a.last_m1)
+            cpx = a.commission_price_rt
+            if cpx is None and a.commission_per_lot_side is not None:
+                sp = meta.get("spec") or {}
+                tv, ts = float(sp.get("trade_tick_value") or 0), float(sp.get("trade_tick_size") or sp.get("point") or 0)
+                if not (tv > 0 and ts > 0):
+                    raise ValueError("COMMISSION_CONVERSION_NEEDS_TICK_VALUE (spec eksportu bez trade_tick_value)")
+                cpx = 2 * a.commission_per_lot_side / (tv / ts)
+            elif cpx is None:
+                c2 = (meta.get("costs") or {}).get("commission_per_lot_side")
+                sp = meta.get("spec") or {}
+                if c2 is not None and float(sp.get("trade_tick_value") or 0) > 0:
+                    cpx = 2 * float(c2) / (float(sp["trade_tick_value"]) / float(sp.get("trade_tick_size") or sp.get("point")))
+            if meta.get("data_kind") != "REAL_USER_DATA" and not a.allow_synthetic:
+                raise ValueError("SYNTHETIC_DATA_REQUIRES_--allow-synthetic (wynik tylko techniczny, NOT_VALIDATED)")
+            gj = json.loads(Path(a.garch_json).read_text(encoding="utf-8")) if a.garch_json else None
+            garch = dict(gj, status="READY", run_id=Path(a.garch_json).parent.name) if gj else None
+            rep = PR.run(bars, meta, variants=[v for v in a.variants.split(",") if v] or None, commission_price_rt=cpx, garch=garch,
+                         slip=a.slippage, spread_fallback=a.spread_fallback, progress=lambda i, n: print(f"[POSTEP] pack-replay {i}/{n}", flush=True))
+            w = PR.write(rep, live=not a.no_live_write)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[BLAD] {type(exc).__name__}: {exc}")
+            return 1
+        summ = {"status": "DONE", "report": w["report"], "variant_files": w["variant_files"], "seconds": rep["seconds"], "data_kind": rep["data_kind"],
+                "verdicts": {k: v["verdict"] for k, v in rep["variants"].items()}}
+        if a.out:
+            _write(Path(a.out), summ)
+        print(json.dumps(summ, ensure_ascii=False))
+        return 0
     try:
         r = train(Path(a.dataset), a.instrument, Path(a.out), allow_synthetic=a.allow_synthetic, last_m1=a.last_m1,
-                  strategies=tuple(s for s in a.strategies.split(",") if s in ("SCALPING", "HEDGING")))
+                  strategies=tuple(s for s in a.strategies.split(",") if s in ("SCALPING", "HEDGING")), live_write=not a.no_live_write)
     except Exception as exc:  # noqa: BLE001 - reported to the runner as a technical error with the reason
         print(f"[BLAD] {type(exc).__name__}: {exc}")
         return 1

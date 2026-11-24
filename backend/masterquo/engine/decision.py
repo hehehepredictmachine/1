@@ -189,8 +189,12 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         "decision_tree": nodes, "reason_codes": sorted(set(reasons)), "ml": (ml_gate or {}).get("prediction"), "structure": {
             "structural_direction": (m02 or {}).get("structural_direction"), "tactical_direction": (m02 or {}).get("tactical_direction"),
             "regime_conflict": (m02 or {}).get("regime_conflict"), "d1_direction": d1, "d1_conflict": d1_conflict,
-            "conflict_rule": "Kierunek strukturalny = zgodność H4 i H1 (M02 SCALP). D1 tylko kontekst" +
-                             (" i blokuje wejścia przy konflikcie." if strategy_cfg.d1_conflict_blocks_entry else "; konflikt D1 opisany, nie blokuje.")},
+            # 1.46: profile ACTIVE never applies d1_conflict_blocks_entry / strategies_requiring_dxy (d1_conflict is always False there);
+            # the record said "D1 ... blokuje wejścia przy konflikcie" whenever the option was on - it now says what is really applied
+            "conflict_rule": ("Profil ACTIVE: kierunek z setupu wybranej strategii; D1 tylko informacyjnie – ustawienia 'Konflikt D1 blokuje "
+                              "wejście' i 'strategie wymagające DXY' dotyczą wyłącznie profilu ORIGINAL." if active is not None else
+                              "Kierunek strukturalny = zgodność H4 i H1 (M02 SCALP). D1 tylko kontekst" +
+                              (" i blokuje wejścia przy konflikcie." if strategy_cfg.d1_conflict_blocks_entry else "; konflikt D1 opisany, nie blokuje."))},
         "profile": "ACTIVE" if active is not None else "ORIGINAL",
         "synthetic": synthetic, "observation_note": None if permission == "ALLOWED" else
             ("Kierunek jest obserwacją analityczną, nie zgodą na wejście." if direction != "NEUTRAL" else None),

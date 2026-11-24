@@ -173,8 +173,10 @@ class ForecastService:
             return
         tick = float(info.get("trade_tick_size") or 0) or 0.01
         q = self.bridge.quote_status() or {}
-        quote = {"bid": q.get("bid"), "ask": q.get("ask"), "time_utc": q.get("time_utc"), "age_seconds": q.get("age_seconds"),
-                 "valid": bool(q.get("bid") and q.get("ask") and (q.get("age_seconds") or 99) <= 2 and q["bid"] <= q["ask"])}
+        q_age = q.get("age_seconds")
+        # 1.46: a quote read in the same millisecond has age 0.0 - '(age or 99) <= 2' treated it as missing (stale); only None is unknown
+        quote = {"bid": q.get("bid"), "ask": q.get("ask"), "time_utc": q.get("time_utc"), "age_seconds": q_age,
+                 "valid": bool(q.get("bid") and q.get("ask") and q_age is not None and q_age <= 2 and q["bid"] <= q["ask"])}
         as_of = iso(utcnow())
         req = {"cmd": "analyze", "instrument": self.inst, "symbol": cfg.mt5.symbol, "tick_size": tick, "as_of": as_of, "quote": quote, "flags_tail": len(m5),
                "m5": [{k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")} for b in m5],
@@ -184,12 +186,23 @@ class ForecastService:
         rt_ms = round((time.perf_counter() - t0) * 1000, 1)
         self.last_key = key
         status = ans.get("status") or "FORECAST_UNAVAILABLE"
-        setup = self.machine.update(m5, m30, {f["time_open_utc"]: f["names"] for f in ans.get("flags_tail") or []}, tick)
-        for fn in list(self.listeners):
-            try:
-                fn(setup, cfg.mt5.symbol)
-            except Exception:  # noqa: BLE001 - an observer never stops the SHADOW forecast
-                logging.getLogger("masterquo.forecast").exception("forecast listener failed")
+        ft = ans.get("flags_tail")
+        if ft is None:
+            # 1.46: the worker answered without pattern flags (DataError of the MODEL - contract mismatch, scaler - or no answer):
+            # missing flags are NOT "no confirmation candle". Replaying the machine with {} invalidated every RETEST_STARTED setup and
+            # dropped completed ones; the last result is kept, marked, and the next answer with flags replays the whole buffer again.
+            prev = self.state.get("setup_v2")
+            note = {"FLAGS_STATE": "UNAVAILABLE", "flags_reason": f"brak flag świec z procesu analityki ({status}) – stan Double Retest "
+                                                                    "nie jest przeliczany na brakujących danych"}
+            setup = dict(prev, **note) if isinstance(prev, dict) else {"version": double_retest.VERSION, "states": {}, "EXECUTION_STATE": "BLOCKED",
+                                                                       "can_submit_order": False, **note}
+        else:
+            setup = self.machine.update(m5, m30, {f["time_open_utc"]: f["names"] for f in ft}, tick)
+            for fn in list(self.listeners):
+                try:
+                    fn(setup, cfg.mt5.symbol)
+                except Exception:  # noqa: BLE001 - an observer never stops the SHADOW forecast
+                    logging.getLogger("masterquo.forecast").exception("forecast listener failed")
         self._set(status, ans.get("reason") or ans.get("error"), report=ans.get("report"), model=ans.get("model"), setup_v2=setup,
                   latency_ms={"worker": ans.get("latency_ms"), "round_trip": rt_ms}, worker_peak_rss_mb=ans.get("peak_rss_mb"),
                   bars={"m5_last_open_utc": m5[-1]["open_utc"], "m30_last_open_utc": m30[-1]["open_utc"], "m5": len(m5), "m30": len(m30)},

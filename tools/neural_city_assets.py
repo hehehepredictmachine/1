@@ -11,7 +11,10 @@ Rules (the same as tools/cult_assets.py - no invented art, no invented numbers):
 * the launcher background is the delivered image of Pepe speaking to the crowd, unchanged (re-encoded only);
 * the neural animation (GIF of the launcher package) is re-encoded as an animated WebP with every frame and its timing kept.
 Output: frontend/public/assets/neural/*.webp, desktop/assets/launcher-speech.webp (embedded in the EXE) and
-frontend/public/assets/neural/zrodla.json (SHA-256 of every source and output, inpainted boxes)."""
+frontend/public/assets/neural/zrodla.json (SHA-256 of every source and output, inpainted boxes).
+
+1.46: ARCHIVAL - the Neural City menu and the 3D intro were removed (1.42 / 1.44.1) and the Windows start screen no longer embeds
+desktop/assets/launcher-speech.webp; nothing reads the outputs. Kept only as the provenance record of those assets."""
 from __future__ import annotations
 
 import argparse

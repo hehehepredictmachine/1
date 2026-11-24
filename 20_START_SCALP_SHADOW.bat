@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Start bota z profilem scalp i kontrolerem hedge w trybie SHADOW (MODE=SHADOW, LIVE_TRADING=false, ML_EXECUTION=false,
 rem HEDGE_EXECUTION=false - konfiguracja nie przyjmuje innych wartosci). Monitor: Wykresy bota - sekcja "Scalp M5 Range".
 cd /d "%~dp0"

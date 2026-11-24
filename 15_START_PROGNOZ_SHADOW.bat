@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Start bota z analityka swiec i prognozami w trybie SHADOW (obserwacja, EXECUTION LOCK - bez zgody na zlecenia).
 rem Prognozy sa wlaczone domyslnie (data\config.json: forecast.enabled=true); ten plik sprawdza srodowisko i uruchamia monitor.
 cd /d "%~dp0"

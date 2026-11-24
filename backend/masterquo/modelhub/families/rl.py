@@ -25,10 +25,11 @@ class PPO(B.Family):
     HORIZONS = ()
     RECEIVERS = ("RISK:exposure_proposal (OBSERVE)", "PANEL:model_status")
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 3000}
+    NEEDS_POINT = True                                               # 1.46: the replay spread = median bar spread x point
 
     def fit(self, data, cfg, tmp, budget):
         bars = data["bars"][-int(budget.get("max_rows", 12000)):]
-        pt = float(data.get("point") or 0.01)
+        pt = B.point_of(data)                                         # 1.46: was `or 0.01` (unknown spec = an assumed point)
         spread = float(np.median([b.get("spread") or 0 for b in bars])) * pt
         env = {"k": 16, "spread": spread, "slippage": float(cfg.get("slippage_price", pt * 5)), "commission": float(cfg.get("commission_price", 0.0)),
                "unit": 1.0, "max_units": 1, "reward_scale": float(np.std(np.diff([b["c"] for b in bars]))) or 1.0, "max_steps": 500}
@@ -50,8 +51,13 @@ class PPO(B.Family):
         bars = live["bars"][-200:]
         if len(bars) < 40:
             raise B.Unavailable("BLOCKED_DATA", "za mało świec")
+        pos = live.get("position")
+        if not B.finite(pos):
+            # 1.46: the observation holds the exposure / unrealised P/L / bars in position; 1.45.0 sent `or 0.0` (no receiver ever passes the
+            # position, so every proposal was computed for a fictitious FLAT state) - unknown is BLOCKED_DATA, never 0
+            raise B.Unavailable("BLOCKED_DATA", "pozycja netto instrumentu nieznana – propozycja PPO wymaga stanu pozycji (brak danych ≠ płasko)")
         r = D.call("predict_ppo", {"dir": art["dir"], "bars": [{k: b[k] for k in ("o", "h", "l", "c")} for b in bars],
-                                   "position": float(live.get("position") or 0.0)}, timeout=120)
+                                   "position": float(pos)}, timeout=120)
         if not r.get("ok"):
             raise B.Unavailable("ERROR", f"inferencja PPO: {r.get('error')}")
         pr = r["probs"]

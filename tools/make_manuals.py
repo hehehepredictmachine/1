@@ -1,4 +1,4 @@
-"""Builds the two PDF manuals (§6 of the update package; 1.30: without the removed license system):
+"""Builds the two PDF manuals (§6 of the update package; 1.44: owner and client editions, 1.46: display name Apollo23):
 
   release/Instrukcja_Administrator_PepeMarketWizard.pdf   (administrator / owner of the bot)
   release/Instrukcja_Klient_PepeMarketWizard.pdf          (user)
@@ -6,7 +6,7 @@
   python tools/make_manuals.py [--shots data/logs] [--out release]
 
 Layout of the manuals delivered with the package (header band, chapters "N / title", note and warning boxes, footer with the version),
-text matching the 1.30 screens. Fonts: DejaVu Sans embedded (Polish characters). Screenshots (optional) come from the UI tests
+text matching the screens (1.46: menu / FOREX / system panels of 1.42+; "Nowe w …" chapters keep their history). Fonts: DejaVu Sans embedded (Polish characters). Screenshots (optional) come from the UI tests
 (data/logs/ui_*), taken on the terminal SIMULATOR - every picture is captioned as synthetic data. Requires reportlab.
 """
 from __future__ import annotations
@@ -26,8 +26,11 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.35.0"
+VERSION = "1.46.0"
 TAG = VERSION.replace(".", "_")
+# 1.46: user-visible product name (= masterquo.version.DISPLAY_NAME, desktop displayName - window title "Apollo23 <version>"). Identifiers
+# stay: PepeMarketWizardDesktop.exe, %LOCALAPPDATA%\PepeMarketWizard, folders inside the ZIP, PMW1 keys, the PDF file names.
+DISPLAY_NAME = "Apollo23"
 FONT_DIRS = [Path("/usr/share/fonts/truetype/dejavu"), Path("C:/Windows/Fonts"), ROOT / "build" / "fonts"]
 
 DARK = colors.HexColor("#14261b")
@@ -109,6 +112,9 @@ def shot(shots: Path | None, rel: str, caption: str, width_mm: float = 170, crop
     if not p.exists():
         return []
     src = p
+    # 1.46: intermediate files are named after the whole relative path - two screenshots with the same file name in different folders
+    # (ui_training_center/01_panel.png, ui_license/01_panel.png) overwrote one shared JPEG before doc.build() read it
+    key = rel.replace("\\", "/").rsplit(".", 1)[0].replace("/", "__")
     if crop:
         from PIL import Image as PILImage
         im = PILImage.open(p)
@@ -116,7 +122,8 @@ def shot(shots: Path | None, rel: str, caption: str, width_mm: float = 170, crop
         box_ = (int(crop[0] * w), int(crop[1] * h), int(crop[2] * w), int(crop[3] * h))
         tmp = Path(ROOT / "build" / "manual_img")
         tmp.mkdir(parents=True, exist_ok=True)
-        src = tmp / (p.stem + f"_{abs(hash(crop)) % 10**6}.png")
+        src = tmp / (key + f"_{abs(hash(crop)) % 10**6}.png")
+        key = src.stem
         im.crop(box_).save(src)
     from PIL import Image as PILImage
     im = PILImage.open(src)
@@ -126,7 +133,7 @@ def shot(shots: Path | None, rel: str, caption: str, width_mm: float = 170, crop
         im = im.convert("RGB")
         if im.width > 1400:
             im = im.resize((1400, round(im.height * 1400 / im.width)), PILImage.LANCZOS)
-        src = tmp / (src.stem + "_s.jpg")
+        src = tmp / (key + "_s.jpg")
         im.save(src, quality=84, optimize=True)
     w, h = PILImage.open(src).size
     width = width_mm * mm
@@ -141,7 +148,7 @@ def page_deco(role: str):
         c.rect(0, h - 15 * mm, w, 15 * mm, stroke=0, fill=1)
         c.setFillColor(colors.white)
         c.setFont("DejaVu-Bold", 8.5)
-        c.drawString(18 * mm, h - 9.4 * mm, "PEPEMARKETWIZARD")
+        c.drawString(18 * mm, h - 9.4 * mm, DISPLAY_NAME.upper())          # 1.46: display name
         c.setFont("DejaVu", 7.5)
         c.drawRightString(w - 18 * mm, h - 9.4 * mm, role)
         c.setStrokeColor(NOTE_LINE)
@@ -157,7 +164,7 @@ def page_deco(role: str):
 
 def build(path: Path, role: str, story: list, title: str) -> None:
     doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=24 * mm, bottomMargin=20 * mm,
-                            title=title, author="PepeMarketWizard", subject=f"PepeMarketWizard {VERSION}", creator="tools/make_manuals.py",
+                            title=title, author=DISPLAY_NAME, subject=f"{DISPLAY_NAME} {VERSION}", creator="tools/make_manuals.py",
                             initialFontName="DejaVu", initialFontSize=9)
     deco = page_deco(role)
     doc.build(story, onFirstPage=deco, onLaterPages=deco)
@@ -166,62 +173,74 @@ def build(path: Path, role: str, story: list, title: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------- administrator
 def admin(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>administratora", "title"),
-               P("Obsługa bota PepeMarketWizard " + VERSION + ": uruchomienie (launcher JOIN THE CULT), menu główne Neural City (siedem wież), "
-                 "panele Lightning / Wind / Control / Strategy Lab, wykresy i strefy, trening modeli, wydawanie paczek, aktualizacja "
-                 "i powrót.", "lead"),
+               P("Obsługa bota " + DISPLAY_NAME + " " + VERSION + ": uruchomienie (okno startowe, WEJDŹ), film intro i menu główne "
+                 "(FOREX / CRYPTO / TraderLifeGame), ekrany FOREX i panele systemowe, wykresy i strefy, trening modeli, licencje, "
+                 "wydawanie paczek, aktualizacja i powrót.", "lead"),
                box("<b>Stan:</b> instrukcja odpowiada wersji <b>" + VERSION + "</b>. Opisane ekrany i polecenia zostały uruchomione "
                    "i sprawdzone testami w Chromium na symulatorze terminala. Czego nie dało się sprawdzić – oznaczono "
-                   "„nie sprawdzono”. <b>System licencji został usunięty</b> (na Twoją prośbę): program działa bez klucza, "
-                   "nie ma License Managera, okna KEY FOR MAGIC, wersji CLIENT ani serwera licencji."),
+                   "„nie sprawdzono”. <b>Licencje (od 1.43 / 1.44):</b> wersja właściciela działa bez klucza i ma GENERATOR LICENCJI; "
+                   "wersja klienta (osobna paczka) wymaga klucza PMW1 – rozdziały 4i i 4j. Nie ma serwera licencji."),
                P("Co znajdziesz w instrukcji", "h2"),
-               bullets(["Uruchomienie aplikacji (launcher JOIN THE CULT) i połączenie z MT5.",
-                        "Menu główne (sześć wież), panele Lightning / Wind / Control / Strategy Lab, menu boczne i pasek stanu.",
+               bullets(["Uruchomienie aplikacji (okno startowe, przycisk WEJDŹ) i połączenie z MT5.",
+                        "Menu główne (film intro, planety FOREX / CRYPTO / TraderLifeGame), ekrany FOREX i panele systemowe.",
                         "Wykresy: „Wyznacz strefy”, własne ustawienia wykresu, warstwy.", "Eksport danych i trening modeli.",
-                        "Paczki do przekazania innym osobom (bez licencji).", "Aktualizacja z 1.29, kopia i powrót, typowe problemy."]),
+                        "Paczki do przekazania innym osobom – tylko wersja KLIENT z licencją (rozdziały 4j i 5).",
+                        "Aktualizacja, kopia i powrót, typowe problemy."]),
                box("Nie przeprowadzono tutaj testu na Twoim Windows ani połączenia z prawdziwym MT5. Zrzuty ekranu pochodzą "
                    "z symulatora (dane syntetyczne). Sprawdź działanie na rachunku DEMO, zanim użyjesz AUTO LIVE.", "warn"),
                PageBreak()]
     # 1
     s += [P("1 / Pierwsze uruchomienie", "h1"), P("Przygotowanie", "h2"),
-          bullets(["Rozpakuj paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> do nowego folderu (nie nadpisuj starej wersji). "
+          bullets(["Rozpakuj paczkę <b>Apollo23_DESKTOP_" + TAG + ".zip</b> do nowego folderu (nie nadpisuj starej wersji). "
                    "Zachowaj kopię danych sprzed aktualizacji (rozdział 6).",
                    "Uruchom MT5 i zaloguj się do właściwego rachunku. Symbol brokera (np. <b>XAUUSD-</b>) musi być widoczny w Market Watch.",
                    "Windows potrzebuje WebView2. Pierwszy start instaluje zależności z Internetu (lub z paczki OFFLINE)."]),
           P("Start aplikacji", "h2"),
-          P("Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Klucz licencji nie jest potrzebny. "
+          P("Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>" + DISPLAY_NAME + " " + VERSION + "</b>). Klucz licencji nie jest potrzebny. "
             "Przy problemie uruchom <b>02_DIAGNOSTYKA.bat</b> i zachowaj wynik."),
-          P("Najpierw otwiera się małe okno <b>JOIN THE CULT</b> (launcher): pokazuje postęp pierwszego startu, wybór danych poprzedniej "
-            "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij</b>. Gdy silnik działa, "
-            "launcher pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. Tłem launchera jest grafika Pepe przemawiającego do zgromadzenia. "
-            "<b>JOIN THE CULT</b> (na dole, pośrodku) powiększa okno do 85 % ekranu i otwiera menu główne <b>Neural City</b> po krótkim "
-            "intro „lotu przez sieć neuronów” (<b>Pomiń intro</b> albo Esc; przy ograniczonych animacjach systemu intro jest pomijane). "
-            "W przeglądarce (bez aplikacji Windows) ten sam launcher pojawia się na początku sesji."),
-          *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT – SYSTEM READY.", width_mm=150),
+          P("Najpierw otwiera się okno startowe <b>APOLLO23 TEAM</b>: pokazuje postęp pierwszego startu, wybór danych poprzedniej "
+            "instalacji albo błąd z przyciskami <b>Spróbuj ponownie</b>, <b>Otwórz folder logów</b> i <b>Zamknij aplikację</b>. Gdy silnik "
+            "działa, okno pokazuje <b>SYSTEM READY</b> – bot pracuje już w tle. <b>WEJDŹ →</b> otwiera panel: najpierw film intro "
+            + DISPLAY_NAME + " (ok. 15 s, z dźwiękiem; kliknięcie w film, Spacja, Esc albo <b>PRZEJDŹ DO MENU</b> pomija; intro gra raz na sesję), "
+            "potem menu główne z trzema planetami: <b>FOREX</b> (ekrany bota), <b>CRYPTO</b> (tryb w przygotowaniu) i <b>TraderLifeGame</b> "
+            "(gra edukacyjna, bez dostępu do zleceń)."),
           P("Dane aplikacji Windows: <b>%LOCALAPPDATA%\\PepeMarketWizard\\data</b> (tryb portable: folder programu). Kopie sprzed "
             "aktualizacji: <b>%LOCALAPPDATA%\\PepeMarketWizard\\backups</b>."),
           box("Pliki EXE nie są podpisane cyfrowo (brak certyfikatu Authenticode) – Windows SmartScreen może pokazać ostrzeżenie. "
               "Uruchamiaj tylko paczkę, której sumę SHA-256 porównałeś z plikiem .sha256 / raportem.", "warn"),
           PageBreak()]
     # 2
-    s += [P("2 / Interfejs: menu główne Neural City (siedem wież), panele i pasek stanu", "h1"),
-          P("Menu główne (1.34) to <b>Neural City</b>: neuronowy Pepe przy holograficznym stole z siedmioma wieżami. Najechanie na wieżę "
-            "pokazuje jej opis, kliknięcie wieży albo przycisku na górnym pasku (ten sam cel), Enter lub dotknięcie listy na małym ekranie "
-            "otwiera istniejący panel (Esc anuluje przejście). Karty Winratio, ROI i Equity pochodzą ze statystyk bota i rachunku MT5 – "
-            "każda ma znacznik źródła (<b>DEMO · symulator</b>, <b>DEMO</b>, <b>REAL</b>, <b>brak danych</b>), bez danych: <b>N/A</b>. "
-            "Scena działa w trybie <b>2.5D</b> (animowane pierścienie, cząsteczki, gest i portal na grafice – nie modele 3D); jakość "
-            "animacji: ⚙ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje."),
+    s += [P("2 / Interfejs: menu główne, ekrany FOREX i panele systemowe", "h1"),
+          # 1.46: the current interface (1.42+) first; the tower table below describes the interface 1.36-1.41 removed in 1.42
+          P("<b>Menu główne</b> (#/menu): film intro " + DISPLAY_NAME + " (raz na sesję; kliknięcie, Spacja, Esc albo <b>PRZEJDŹ DO MENU</b> "
+            "pomija, „Odtwórz intro ponownie” – R) i trzy planety: <b>FOREX</b> (ekrany bota), <b>CRYPTO</b> (tryb w przygotowaniu – wybór "
+            "planety nie zmienia ustawień bota) i <b>TraderLifeGame</b> (gra edukacyjna, bez dostępu do zleceń)."),
+          P("<b>FOREX</b> (#/forex) ma cztery ekrany: <b>CHARTS</b> (wykres, wskaźniki, strefy, profil wolumenu, plan, okno Kronos), "
+            "<b>SIGNALS</b> (sygnały silnika, scenariuszy i SH, bramki ścieżki, oceny modeli), <b>MODELS &amp; BACKTEST</b> (modele, trening, "
+            "backtest, Monte Carlo) i <b>ROI</b> (PAPER / AUTO DEMO / AUTO LIVE). <b>Panele systemowe</b> – ikony w prawym dolnym rogu: "
+            "USTAWIENIA (w tym MT5), TRYB PRACY, STOP, DIAGNOSTYKA, CENTRUM TRENINGOWE i LICENCJA (u właściciela: GENERATOR LICENCJI)."),
+          box("Opis poniżej (stół neuronowy z wieżami, menu boczne obszarów, pasek stanu) dotyczy interfejsu 1.36–1.41, usuniętego w 1.42. "
+              "Stare adresy (#/wykresy, #/galaxy, #/neural-city …) przekierowują na nowe ekrany.", "note"),
+          P("Archiwalnie: interfejs 1.36–1.41", "h2"),
+          P("Menu główne (1.36, Main Menu V2) to <b>stół neuronowy</b>: trzech Pepe w garniturach przy okrągłym stole z ośmioma wieżami. "
+            "Małe logo jest w lewym górnym rogu, nawigacja wszystkich ośmiu modułów na górze; ekran nie ma paneli informacyjnych ani "
+            "przycisków na dole. Najechanie na wieżę pokazuje jej opis, kliknięcie wieży albo pozycji na górnym pasku (ten sam cel), Enter "
+            "lub dotknięcie listy na małym ekranie otwiera panel (Esc anuluje przejście). Menu nie pobiera danych MT5 i nie pokazuje statystyk. "
+            "Scena działa w trybie <b>2.5D</b> (ścieżki neuronowe z impulsami, pierścienie, portal na grafice – nie modele 3D); jakość "
+            "animacji: ✧ (Cinematic / Balanced / Performance), Ⅱ wstrzymuje, Studio – w górnym pasku."),
           table([["Wieża", "Panel"],
-                 ["PEPE$WTC (dawniej WTC PEPE)", "Trading Intelligence – terminal handlowy"],
-                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "Wind Portal – modele AI, konsensus, ślad decyzji, Monte Carlo"],
-                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – sygnały BUY/SELL, plan wejścia, cykl życia sygnału"],
-                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["PEPE$WTC (dawniej WTC PEPE)", "PEPE$WTC – Neural Market Command Center (multi-chart, Kronos, strefy, Volume Profile)"],
+                 ["PEPE$SIGNAL (dawniej BRAIN SIGNAL)", "PEPE$SIGNAL – Signal Intelligence Center (sygnały, warunki, oceny AI)"],
+                 ["PEPE$BANK (dawniej AI AGENT)", "Lightning Tower – pełne informacje i historia sygnałów"],
+                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"],
                  ["STRATEGIES", "Strategy Lab – silnik, ustawienia, biblioteka, porównanie"],
-                 ["SETTINGS", "Ustawienia"],
-                 ["PEPE$ROI (dawniej LEADERBOARD)", "Profits – rozliczone pozycje i wynik rachunku"]], [55, 115]),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=160),
+                 ["MARKET NEWS", "Kontekst rynku – wiadomości i kalendarz makro"],
+                 ["TRAINING LAB", "Centrum treningu – eksport, walidacja, trening, aktywacja"],
+                 ["SETTINGS", "Ustawienia"]], [55, 115]),
+          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne – stół neuronowy z ośmioma wieżami.", width_mm=160),
           P("Menu boczne obszarów (bez zmian) – kliknięcie obszaru otwiera jego pierwszą zakładkę; pozostałe są na pasku zakładek."),
           table([["Obszar", "Zawartość"],
-                 ["Menu główne", "Neural City – siedem wież (logo w lewym górnym rogu również tu prowadzi)"],
+                 ["Menu główne", "stół neuronowy – osiem wież (logo w lewym górnym rogu również tu prowadzi)"],
                  ["Precision", "Pulpit, Wykresy MTF, Strefy rynkowe, Scalping MTF, Kontekst rynku, Indykatory, Analiza sygnału, Neural Cyberpunk"],
                  ["Dyscypline", "Scenariusze, Setup silnika S01–S12, SCALPING / HEDGING, Analiza AI, Formacje, Lightning Tower, Strategy Lab"],
                  ["Profits", "Pozycje i ryzyko, Dziennik i wyniki, widok Profits"],
@@ -259,7 +278,22 @@ def admin(shots: Path | None) -> list:
               "oczekujące. Wynik jakości strefy 0–100 nie jest prawdopodobieństwem.", "warn"),
           PageBreak()]
     # 4
-    s += [P("4 / Eksport danych i trening modeli", "h1"), P("Centrum treningu (Modele i trening → Centrum treningu)", "h2"),
+    s += [P("4 / Eksport danych i trening modeli", "h1"),
+          P("Centrum Treningowe (1.42.10) – najprostsza droga", "h2"),
+          steps(["Otwórz: ikona biretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE " + DISPLAY_NAME.upper() + "</b> w panelu systemowym albo przycisk "
+                 "w ekranie <b>MODELS</b>.",
+                 "Wybierz instrument: <b>OBA</b>, <b>XAUUSD</b> albo <b>BTC</b>.",
+                 "Kliknij <b>TRENUJ</b> przy modelu albo <b>TRENUJ WSZYSTKO</b> (drugie kliknięcie potwierdza). Treningi idą po kolei – "
+                 "jeden naraz; bot sam pobiera historię z MT5 i sprawdza dane przed treningiem.",
+                 "Przy każdym modelu widać stan dla każdego instrumentu: wytrenowany / w toku / w kolejce / błąd (z przyczyną) / pominięty "
+                 "(z powodem). Filtry: DO TRENINGU, BŁĘDY, WYTRENOWANE.",
+                 "<b>PROWIZJA</b>: podaj prowizję za 1 lot na stronę (waluta konta), jeśli konto nie ma jeszcze transakcji danego "
+                 "instrumentu – bez niej modele Scalp i ML po kosztach są pomijane.",
+                 "<b>ZATRZYMAJ</b> przerywa bieżący trening i czyści kolejkę; <b>POKAŻ LOG</b> pokazuje przebieg."]),
+          *shot(shots, "ui_training_center/01_panel.png", "Centrum Treningowe: instrument, TRENUJ WSZYSTKO, prowizja, "
+                "trening w toku z kolejką i stan każdego modelu.", width_mm=170),
+          box("Model trafia do bota tylko po walidacji. Trening nie składa zleceń i nie zmienia ustawień ryzyka.", "note"),
+          P("Centrum treningu (Modele i trening → Centrum treningu)", "h2"),
           steps(["Połącz MT5, sprawdź symbol i dostępność historii u brokera.",
                  "Wybierz XAUUSD albo BTC – instrumenty trenuj i oceniaj osobno.",
                  "<b>Eksportuj dane</b> (przyrostowo). Sprawdź okres, interwały, liczbę świec, luki i raport jakości.",
@@ -269,7 +303,7 @@ def admin(shots: Path | None) -> list:
           P("Bez bota: <b>32_CENTRUM_TRENINGU.bat</b>."),
           box("Wytrenowany model nie jest dowodem przewagi. Nowe modele działają w trybie OBSERVATION (nie głosują w strategiach). "
               "Wynik na danych syntetycznych nic nie mówi o rynku.", "warn"),
-          P("Kronos AI Forecast (1.31) – przetrenowany model, bez treningu w bocie", "h2"),
+          P("Kronos AI Forecast (1.31; od 1.42.8 Kronos-small) – przetrenowany model, bez treningu w bocie", "h2"),
           bullets(["Instalacja: Wykresy bota → <b>Kronos AI Forecast</b> → <b>Zainstaluj model Kronos</b> albo <b>33_KRONOS_INSTALUJ.bat</b> "
                    "(osobne .venv_kronos, PyTorch CPU, oficjalne wagi NeoQuasar w przypiętych rewizjach, sumy sprawdzane ze źródłem).",
                    "<b>Sprawdź instalację</b> naprawdę ładuje model i robi prognozę testową. Po instalacji działa bez internetu.",
@@ -298,7 +332,114 @@ def admin(shots: Path | None) -> list:
                    "Gotową paczkę przenosisz do bota przyciskiem „Przenieś” – w bocie jest nieaktywnym kandydatem do ręcznej aktywacji."]),
           box("Szczegóły: docs/INSTRUKCJA_TRENINGU_PL.md, docs/DATA_TRAINING_STUDIO.md, docs/DECISION_LOGIC.md.", "note"),
           PageBreak()]
-    # 5
+    # 4j - 1.44 (newest "Nowe w" chapters first: 4j, 4i, 4h … 4c; chapter 5 follows 4c)
+    s += [P("4j / Wersja klienta z licencją (1.44.0)", "h1"),
+          steps(["Skopiuj <b>klucz publiczny (hex)</b> z zakładki GENERATOR LICENCJI i wklej go w "
+                 "<b>backend/masterquo/licensing/client_config.py</b> (PUBLIC_KEY_HEX). Pusty klucz = paczka klienta się nie zbuduje.",
+                 "Paczki klienta: <b>python tools/build_release.py --edition client</b> → Apollo23_KLIENT_&lt;wersja&gt;.zip oraz "
+                 "<b>python tools/build_desktop.py --edition client</b> → Apollo23_DESKTOP_KLIENT_&lt;wersja&gt;.zip. Paczka klienta nie "
+                 "zawiera generatora, funkcji podpisywania ani historii licencji (weryfikator paczek to sprawdza).",
+                 "Klient przy pierwszym starcie widzi ekran aktywacji z HWID – wydaj klucz <b>z tym HWID</b>. Klucz „bez przypisania HWID” działa "
+                 "na każdym komputerze (offline nie da się go przypiąć do pierwszego komputera)."]),
+          *shot(shots, "ui_license/03_status.png", "Wersja klienta: zakładka LICENCJA (status, dni do końca, HWID, Zmień klucz).", width_mm=150),
+          box("Licencja offline to zabezpieczenie przed zwykłym kopiowaniem programu, nie przed osobą, która zmienia kod programu "
+              "(Python jest dostarczany w postaci źródłowej).", "warn"),
+          PageBreak()]
+    s += [P("4i / Generator licencji (1.43.0) – licencje offline podpisane Ed25519", "h1"),
+          steps(["Panel systemowy → zakładka <b>GENERATOR LICENCJI</b>. Bez logowania – narzędzie właściciela.",
+                 "<b>Utwórz parę kluczy</b> (raz). Klucz prywatny zostaje w <b>%APPDATA%\\PepeMarketWizard\\owner\\private.key</b>; od razu zrób "
+                 "<b>Eksportuj kopię zapasową klucza prywatnego</b> i przechowuj ją offline. Klucz publiczny (hex) – przycisk <b>Kopiuj</b>.",
+                 "Wpisz <b>nazwę / ID użytkownika</b>, wklej <b>HWID</b> klienta (format XXXXX-XXXXX-XXXXX-XXXXX) albo zaznacz "
+                 "<b>bez przypisania HWID</b>; wybierz ważność (7 / 30 / 90 / 365 dni, własna data, bezterminowa) i kliknij <b>GENERUJ</b>.",
+                 "<b>Kopiuj klucz</b> (PMW1-…) i wyślij go klientowi. Historia: wyszukiwanie, sortowanie, kopiowanie, usuwanie wpisu.",
+                 "<b>Sprawdź klucz</b> pokazuje dane, poprawność podpisu, datę wygaśnięcia i przypisany HWID."]),
+          *shot(shots, "ui_license/01_panel.png", "Generator licencji: para kluczy, formularz, wynik, historia i sprawdzanie klucza.", width_mm=150),
+          box("Kto ma plik klucza prywatnego, może wystawiać licencje – nie wysyłaj go nikomu. Utrata klucza = nowe licencje trzeba podpisać nowym "
+              "kluczem (stare zostają ważne tylko z kluczem publicznym, który je wydał). Format: docs/LICENCJE_PMW1_PL.md.", "warn"),
+          PageBreak()]
+    s += [P("4h / Nowe w 1.40: Granite TTM zamiast FinCast, Memory Governor, trening Granite, nowy WTC$PEPE", "h1"),
+          bullets(["<b>Granite TTM</b> (IBM, 0,8 M parametrów, Apache-2.0) zastępuje wycofany FinCast: instalacja <b>38_MODELE_CHRONOS2_GRANITE.bat</b> "
+                   "albo „Zainstaluj” w sekcji Modele prognoz; ok. 3 MB wag, ok. 0,35 GB RAM. Prognoza punktowa (bez kwantyli i świec), rola OBSERVE.",
+                   "Historia prognoz FinCast zostaje (tylko do odczytu); jego ustawienia zapisano w kopii, role nie przeszły na Granite.",
+                   "<b>Memory Governor</b> (Modele prognoz → Zasoby): profile LOW_MEMORY_16GB / ECO / BALANCED / MANUAL, pomiar RAM procesów, progi 75/80/85 %, "
+                   "jeden ciężki model naraz. Wstrzymana prognoza ma stan STALE z powodem – nigdy wartości zastępczej.",
+                   "<b>Dotrenowanie Granite</b> na Twojej historii MT5: osobny proces, test na niewidzianych danych, aktywacja tylko przy wyniku lepszym od bazowego.",
+                   "<b>WTC$PEPE</b> ma układ z paczki WTC 2.1 na danych bota; menu Galaxy i panel działają płynniej (docs/WYDAJNOSC_UI_1_40_PL.md).",
+                   "Walidacja na złocie (Q4 2025): żaden model (Granite, Chronos-2, Kronos) nie pokonał prognozy „ostatnia cena” – modele są informacją, "
+                   "nie sygnałem."]),
+          PageBreak()]
+    # 4g - 1.39
+    s += [P("4g / Nowe w 1.39: LIVE od startu, GARCH, intro, menu Galaxy, WTC PEPE 2.1", "h1"),
+          box("<b>Bot startuje w AUTO LIVE</b> (na Twoje polecenie) i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem REAL. "
+              "Zdjęte bramki walidacji (VALIDATED, skalibrowany model, znana prowizja) są teraz ostrzeżeniami; STOP, limity ryzyka, spread, "
+              "deduplikacja, uzgadnianie z MT5 i wymóg rachunku REAL działają dalej. Wyłączenie: STOP albo data\\config.json → "
+              "execution.start_mode = \"SIGNALS\", execution.live_autobind = false.", "block"),
+          bullets(["Do handlu nadal potrzebne: ścieżka główna instrumentu (ACTIVE / SH) i limity ryzyka – bez nich bot pokazuje powód i nie wchodzi.",
+                   "<b>GARCH</b>: rodzina VOL_GARCH może liczyć sigmę strategii PMW_HG09 (volatility_method = VOL_GARCH). Bez aktywnego modelu "
+                   "HG09 zwraca NO_DATA (GARCH_NOT_READY) – bez cichego zastępstwa.",
+                   "<b>Intro</b> „$PEPEMARKET WIZARD” (ok. 8,5 s; POMIŃ INTRO / Esc, Ctrl+Alt+B – ponownie) i <b>menu Galaxy</b> (#/menu): 7 planet, "
+                   "pełna sieć 21/21, edytor „Projektuj”, planety otwierają prawdziwe ekrany. Neural City: #/neural-city.",
+                   "<b>WTC PEPE → CUSTOMIZE CHART</b> (Chart Lab 2.1) i Session Volume Profile (POC / VA, London / New York / Asia, impuls 3/5/8/12) "
+                   "na prawdziwych świecach MT5.",
+                   "Instalacja bota i modeli oraz trening krok po kroku: <b>Instrukcja_Instalacja_Modele_Trening_PepeMarketWizard.pdf</b>."]),
+          *shot(shots, "ui_galaxy/galaxy_1920x1080.png", "Menu Galaxy V2.", width_mm=150),
+          PageBreak()]
+    # 4f - 1.38
+    s += [P("4f / Nowe w 1.38: pakiet 20 strategii XAUUSD (SCALPING + HEDGING)", "h1"),
+          bullets(["Strona <b>Strategie</b> → panel <b>Pakiet 20 strategii</b>: PMW_SC01–SC10 (scalp: TP1 ≥ 25 pips, RR planu netto ≥ 2) i "
+                   "PMW_HG01–HG10 (hedge: TP1 ≥ 40 pips, RR koszyka netto ≥ 3). Stan każdego wariantu na każdym TF z powodem, plan Entry/SL/TP1/TP2, "
+                   "warunek hedge i postęp, historia sygnałów.",
+                   "Wykresy: warstwa <b>Pakiet 20</b> – strzałka sygnału na świecy, na której informacja była dostępna, linie wybranego planu "
+                   "i aktywnych pozycji (nie 20 kompletów naraz), filtry Scalp/Hedge, strategia, historia.",
+                   "Wykonanie tylko istniejącą ścieżką i w bieżącym trybie: SIGNALS – zero zleceń, PAPER – symulacja, AUTO_LIVE – tylko wariant z walidacją "
+                   "VALIDATED na Twoich danych. Bot nie zmienia trybu. Hedge tylko na rachunku HEDGING, jedna aktywacja, maks. 50 % bazy.",
+                   "Walidacja na Twojej historii MT5: <b>39_PAKIET_20_WALIDACJA.bat</b>. Bez niej wszystkie warianty mają status NOT_VALIDATED."]),
+          *shot(shots, "ui_kronos/sh_pack_panel.png", "Panel Pakiet 20 strategii (symulator MT5, świeży start – oceny po pierwszej zamkniętej M1).", width_mm=165, crop=(0, 0, 1, 0.68)),
+          box("Szczegóły: docs/strategies20/RUNBOOK_PL.md, STRATEGY_SPECIFICATIONS.md, RISK_AND_UNITS.md. Nazwa strategii i linia 1:3 na wykresie nie są "
+              "dowodem przewagi.", "warn"),
+          PageBreak()]
+    # 4e - 1.37
+    s += [P("4e / Nowe w 1.37: Kronos-base, Chronos-2 i FinCast (FinCast wycofany w 1.40)", "h1"),
+          box("Od 1.42.8 bot używa ponownie <b>Kronos-small</b> (ok. 0,47 GB pamięci) – wagi zmieniają się automatycznie przy starcie; "
+              "od 1.42.9 Kronos jest liczony i pokazywany zawsze, bez względu na zajętość RAM. Opis poniżej dotyczy wersji 1.37–1.42.7.", "note"),
+          bullets(["<b>Kronos-base</b> (102,3M) zastępuje Kronos-small – to największy publiczny Kronos (Kronos-large nie jest udostępniony). "
+                   "Po aktualizacji uruchom <b>33_KRONOS_INSTALUJ.bat</b>; do tego czasu Kronos pokazuje „brak zweryfikowanych wag”. "
+                   "Bot nigdy nie przechodzi po cichu na mniejszy model.",
+                   "<b>Chronos-2</b> (Amazon, 120M) i <b>FinCast</b> (ok. 1B): instalacja <b>38_MODELE_CHRONOS2_FINCAST.bat</b> albo przyciski "
+                   "„Zainstaluj” w sekcji <b>Modele prognoz</b> (Wykresy bota). FinCast potrzebuje ok. 8 GB wolnej pamięci przy ładowaniu.",
+                   "Sekcja <b>Modele prognoz</b>: status, czasy, linie prognoz z przełącznikiem dla każdego modelu (nieaktualna = kropkowana), "
+                   "porównanie na tej samej świecy, walidacja walk-forward i rola w strategiach.",
+                   "Domyślnie <b>obserwacja</b>. ASSIST / REQUIRED tylko po pozytywnej walidacji na danych rzeczywistych i z potwierdzeniem – model może "
+                   "wyłącznie wstrzymać setup. Prognoza to cena, nie prawdopodobieństwo; zgodność modeli nie jest niezależnym potwierdzeniem."]),
+          *shot(shots, "ui_foundation/live.png", "Modele prognoz – trzy modele na symulatorze MT5 (dane syntetyczne).", width_mm=165),
+          box("Szczegóły, zasoby, testy i ograniczenia: docs/MODELE_KRONOS_CHRONOS2_FINCAST_1_37_PL.md.", "note"),
+          PageBreak()]
+    # 4d - 1.36
+    s += [P("4d / Nowe w 1.36: wieże PEPE$WTC i PEPE$SIGNAL", "h1"),
+          P("PEPE$WTC – Neural Market Command Center", "h2"),
+          bullets(["Duży wykres główny aktywnego instrumentu z wyborem interwału; <b>Multi-Chart Workspace</b>: „＋ Dodaj wykres”, × usuwa, "
+                   "każdy wykres ma własny interwał, kliknięcie nazwy przenosi go na wykres główny; „Reset widoku” przywraca układ.",
+                   "<b>Indicator Manager</b> pokazuje tylko warstwy, które bot naprawdę liczy (EMA, VWAP, RSI, MACD, ATR, BOS/CHoCH, OB/FVG, sesje, "
+                   "strefy, S/R + profil sesji, SVP, walls, SAR, IQ/PAL, poziomy AI). Bollinger Bands = N/A (brak w bocie).",
+                   "<b>Kronos M1 / M5</b>: OFF / AUTO / MANUAL („Przelicz” na żądanie), prognoza jako linia na wykresie; status z backendu "
+                   "(np. NOT_INSTALLED) – bez wymyślonego confidence.",
+                   "<b>AI Live Zones</b>: AUTO = przeliczenie stref po zamknięciu każdej świecy M1–M30, MANUAL = „Wyznacz teraz”; filtr typów.",
+                   "<b>Volume Profile Auto Zones</b>: POC, VAH/VAL, HVN, LVN z silnika PMW-SVP-1 dla okna wykresu (100/200/500 świec) – "
+                   "kolumna profilu przy wykresie i typowane strefy na wykresie. Poziom VP to informacja, nie sygnał.",
+                   "<b>Smart Trade Setup Builder</b> liczy R:R = |TP − Entry| / |Entry − SL| – nie ma przycisku zlecenia."]),
+          *shot(shots, "ui_towers/01_wtc_1672.png", "PEPE$WTC (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.55)),
+          P("PEPE$SIGNAL – Signal Intelligence Center", "h2"),
+          bullets(["Strumień sygnałów wszystkich strategii bota (S01–S12, skaner rynków, SCALPING / HEDGING) z filtrami: strategia, symbol, "
+                   "interwał, kierunek, status, czas, siła. Ⅱ zamraża listę.",
+                   "Wybór sygnału (z listy albo tabeli) aktualizuje wykres (Entry / SL / TP, przewinięty do chwili sygnału), podsumowanie, "
+                   "warunki <b>ENTRY / TRIGGER / INVALIDATION</b> z checklisty strategii, narrację, oceny modeli, metryki i zgodność MTF.",
+                   "Sygnał oczekujący jest zawsze <b>WAIT</b>. Siła sygnału to heurystyka 0–100, wynik modelu nie jest prawdopodobieństwem, "
+                   "o ile model nie jest skalibrowany. Dla starych sygnałów oceny modeli są oznaczone jako bieżące.",
+                   "Zakładki: LIVE SIGNALS, ALL STRATEGIES, AI EVALUATION, SIGNAL HISTORY, PERFORMANCE (wyniki w R), SETUP BUILDER (widok setupu)."]),
+          *shot(shots, "ui_towers/02_signal_1672.png", "PEPE$SIGNAL (symulator MT5).", width_mm=165, crop=(0, 0, 1, 0.6)),
+          box("Obie wieże tylko analizują – nie otwierają ani nie zamykają pozycji. Dawne panele: Trading Intelligence i Wind Portal "
+              "są dostępne w menu bocznym wież.", "note"),
+          PageBreak()]
     # 4c - 1.35
     s += [P("4c / Nowe w 1.35: PMW Quant Core (SHADOW)", "h1"),
           bullets(["Wspólny silnik: snapshot zamkniętych świec z kontrolą jakości → wyniki wszystkich dostępnych modeli w jednym kontrakcie → "
@@ -314,16 +455,23 @@ def admin(shots: Path | None) -> list:
           box("Wynik na danych syntetycznych (tryb demo) sprawdza działanie programu, nie skuteczność. Wycofanie: tryb SHADOW / OFF albo "
               "docs/quant/ROLLBACK.md.", "warn"),
           PageBreak()]
+    # 5 - 1.46: two editions since 1.44 (the text "one version without a licence, since 1.30" told the owner to hand out his own package)
     s += [P("5 / Paczki do przekazania", "h1"),
-          P("Od 1.30 jest jedna wersja programu – bez licencji, bez podziału na OWNER i CLIENT. Inna osoba dostaje tę samą paczkę co Ty:"),
+          P("Od 1.44 są dwie edycje programu. Paczki <b>bez</b> słowa KLIENT to wersja <b>właściciela</b> – działa bez klucza i ma "
+            "GENERATOR LICENCJI; zostają u Ciebie. Inna osoba dostaje <b>wyłącznie paczkę KLIENT</b> (bez generatora, z weryfikacją "
+            "klucza PMW1 – rozdział 4j):"),
           table([["Paczka", "Dla kogo"],
-                 ["PepeMarketWizard_DESKTOP_" + TAG + ".zip", "aplikacja Windows: EXE + wbudowany Python + program (główna paczka)"],
-                 ["PepeMarketWizard_" + TAG + ".zip", "sam folder programu (uruchamianie plikami .bat, własny Python)"]], [70, 100]),
-          steps(["Przekaż paczkę razem z plikiem <b>.sha256</b> i <b>Instrukcją użytkownika</b>.",
+                 ["Apollo23_DESKTOP_KLIENT_" + TAG + ".zip", "klient: aplikacja Windows (EXE + wbudowany Python + program) – główna paczka do przekazania"],
+                 ["Apollo23_KLIENT_" + TAG + ".zip", "klient: sam folder programu (uruchamianie plikami .bat, własny Python)"],
+                 ["Apollo23_DESKTOP_" + TAG + ".zip", "<b>tylko właściciel</b>: aplikacja Windows z generatorem licencji"],
+                 ["Apollo23_" + TAG + ".zip", "<b>tylko właściciel</b>: folder programu z generatorem licencji"]], [70, 100]),
+          steps([("Przekaż paczkę <b>KLIENT</b> razem z plikiem <b>.sha256</b> i <b>Instrukcją użytkownika</b>; klucz PMW1 wydaj dla HWID "
+                  "klienta (rozdział 4i)."),
                  "Paczka nie zawiera Twoich danych, kluczy API, haseł MT5, bazy ani dziennika – każdy użytkownik konfiguruje swój MT5 sam.",
-                 "Sprawdzenie paczki: <b>python tools\\verify_release.py &lt;paczka&gt;</b> (ścieżki, sumy, brak plików zabronionych)."]),
-          box("Program nie blokuje nikomu dostępu – kto ma paczkę, może jej używać. Jeśli chcesz kiedyś wrócić do licencji, system z "
-              "wersji 1.27–1.29 jest zachowany w historii repozytorium (git)."),
+                 "Sprawdzenie paczki: <b>python tools\\verify_release.py &lt;paczka&gt;</b> (ścieżki, sumy, brak plików zabronionych; "
+                 "w paczce KLIENT także brak generatora i funkcji podpisywania licencji)."]),
+          box("Paczka bez słowa KLIENT działa bez licencji i zawiera generator licencji – nie przekazuj jej nikomu. Klient z taką paczką "
+              "nie potrzebowałby klucza.", "warn"),
           PageBreak()]
     # 6
     s += [P("6 / Aktualizacja z 1.32, kopia i powrót", "h1"),
@@ -353,24 +501,39 @@ def admin(shots: Path | None) -> list:
 # ---------------------------------------------------------------------------------------------------------------- user
 def client(shots: Path | None) -> list:
     s: list = [Spacer(1, 18 * mm), P("Instrukcja<br/>użytkownika", "title"),
-               P("Instalacja, połączenie z MT5 i korzystanie z PepeMarketWizard 1.30.", "lead"),
-               box("<b>Stan:</b> wersja 1.30 działa <b>bez klucza licencji</b> – nie ma okna aktywacji. Ekrany opisane tutaj sprawdzono "
-                   "na symulatorze terminala; jeśli Twoja paczka wygląda inaczej, zapytaj osobę, od której ją dostałeś, o aktualną wersję."),
+               P("Instalacja, połączenie z MT5 i korzystanie z " + DISPLAY_NAME + " " + VERSION + ".", "lead"),
+               box("<b>Licencja (od 1.44.0):</b> paczka klienta wymaga klucza licencyjnego. Przy pierwszym starcie pokazuje się ekran "
+                   "<b>AKTYWACJA LICENCJI</b> – skopiuj swój <b>HWID</b>, wyślij go wydawcy, wklej otrzymany klucz <b>PMW1-…</b> i kliknij "
+                   "<b>AKTYWUJ</b> (rozdział 1). Ekrany opisane tutaj sprawdzono na symulatorze terminala."),
                P("Co przygotować", "h2"),
                bullets(["Komputer z Windows 10/11 i połączeniem z Internetem (pierwsze uruchomienie pobiera składniki).",
-                        "Paczkę <b>PepeMarketWizard_DESKTOP_" + TAG + ".zip</b> i jej plik <b>.sha256</b>.",
+                        "Paczkę od wydawcy <b>Apollo23_DESKTOP_KLIENT_" + TAG + ".zip</b> (wersja klienta) i jej plik <b>.sha256</b>.",
                         "Terminal MetaTrader 5 z dostępem do własnego rachunku."]),
                box("Nie wysyłaj nikomu hasła do MT5 ani kodów bezpieczeństwa.", "warn"),
+               box("<b>Od wersji 1.39 bot startuje w trybie AUTO LIVE</b> i po pierwszej decyzji handluje na zalogowanym rachunku REAL "
+                   "(prawdziwe pieniądze). Przycisk <b>STOP</b> natychmiast zatrzymuje nowe wejścia. Jeśli chcesz tylko oglądać sygnały, "
+                   "poproś administratora o tryb SIGNALS (data\\config.json → execution.start_mode). Po starcie zobaczysz film intro "
+                   + DISPLAY_NAME + " (kliknięcie, Spacja albo Esc pomija) i menu z planetami <b>FOREX</b>, <b>CRYPTO</b> (w przygotowaniu) i "
+                   "<b>TraderLifeGame</b> – kliknięcie planety otwiera jej ekran.", "block"),
                PageBreak()]
     s += [P("1 / Instalacja", "h1"), P("Pierwsze uruchomienie", "h2"),
           steps(["Rozpakuj całą paczkę do nowego folderu. Nie uruchamiaj programu z wnętrza ZIP-a.",
-                 "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>PepeMarketWizard " + VERSION + "</b>). Pierwszy start pobiera "
-                 "wymagane składniki – może potrwać kilka minut. Postęp widać w małym oknie <b>JOIN THE CULT</b>.",
-                 "Gdy launcher pokaże <b>SYSTEM READY</b>, kliknij <b>JOIN THE CULT</b> (na dole ekranu). Okno się powiększy i po krótkim intro "
-                 "(<b>Pomiń intro</b> / Esc) pokaże menu główne <b>Neural City</b> z siedmioma wieżami. Przy pierwszym starcie kreator prosi o "
-                 "limity ryzyka i koszty."]),
-          *shot(shots, "ui_neural_city/01_launcher_1920.png", "Launcher JOIN THE CULT.", width_mm=140),
-          *shot(shots, "ui_neural_city/04_menu_1920.png", "Menu główne Neural City – siedem wież.", width_mm=150),
+                 "Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: <b>" + DISPLAY_NAME + " " + VERSION + "</b>). Pierwszy start pobiera "
+                 "wymagane składniki – może potrwać kilka minut. Postęp widać w oknie startowym <b>APOLLO23 TEAM</b>.",
+                 "Gdy okno startowe pokaże <b>SYSTEM READY</b>, kliknij <b>WEJDŹ →</b>. Po filmie intro (kliknięcie, Spacja albo Esc pomija) "
+                 "zobaczysz menu główne z planetami <b>FOREX</b>, <b>CRYPTO</b> i <b>TraderLifeGame</b>. Przy pierwszym starcie program "
+                 "otwiera Ustawienia (MT5, ryzyko, koszty)."]),
+          P("Aktywacja licencji (od 1.44.0)", "h2"),
+          steps(["Przy pierwszym starcie – zanim pojawi się intro i menu – zobaczysz ekran <b>AKTYWACJA LICENCJI</b>.",
+                 "Kliknij <b>KOPIUJ</b> przy <b>TWÓJ HWID</b> i wyślij ten kod wydawcy programu. Klucz jest wydawany dla tego jednego komputera.",
+                 "Wklej otrzymany klucz (zaczyna się od <b>PMW1-</b>) przyciskiem <b>WKLEJ</b> albo Ctrl+V i kliknij <b>AKTYWUJ</b>. Po komunikacie "
+                 "<b>Licencja aktywna</b> program przechodzi do intro i menu. Klucz zostaje zapisany – kolejne starty pomijają ten ekran.",
+                 "Status licencji, dni do wygaśnięcia i <b>Zmień klucz</b>: panel systemowy → zakładka <b>LICENCJA</b>. Na 3 dni przed końcem "
+                 "licencji na ekranie pojawia się ostrzeżenie."]),
+          *shot(shots, "ui_license/02_activation.png", "Ekran aktywacji licencji: HWID tego komputera i pole klucza.", width_mm=130),
+          box("Licencja działa offline. Gdy komputer ma internet, datę sprawdza się z czasem z internetu. Cofnięcie zegara Windows o ponad dobę "
+              "albo zegar różniący się od czasu z internetu o ponad dobę blokuje program do czasu ustawienia poprawnej daty. Bez ważnej licencji "
+              "tryby FOREX i CRYPTO oraz handel nie startują (otwarte pozycje dalej chroni SL/TP u brokera).", "note"),
           box("Pliki EXE nie są podpisane cyfrowo – Windows SmartScreen może pokazać ostrzeżenie. Porównaj sumę SHA-256 paczki "
               "z plikiem .sha256."),
           PageBreak()]
@@ -388,11 +551,10 @@ def client(shots: Path | None) -> list:
                  ["Tryb, STOP", "SIGNALS / PAPER / AUTO DEMO / AUTO LIVE; STOP zatrzymuje nowe wejścia"]], [55, 115]),
           PageBreak()]
     s += [P("3 / Korzystanie z panelu", "h1"),
-          P("Menu główne <b>Neural City</b> ma siedem wież: <b>PEPE$WTC</b> (terminal handlowy), <b>PEPE$SIGNAL</b> (modele AI i oceny), "
-            "<b>PEPE$BANK</b> (sygnały na żywo), <b>MARKET NEWS</b> (wiadomości i kalendarz makro), <b>STRATEGIES</b> (strategie), "
-            "<b>SETTINGS</b> (ustawienia) i <b>PEPE$ROI</b> (wyniki rachunku). Najedź na wieżę – zobaczysz opis, kliknij wieżę albo przycisk "
-            "na górnym pasku – otworzysz panel (Esc anuluje). Menu boczne obszarów: <b>Precision</b>, "
-            "<b>Dyscypline</b>, <b>Profits</b>, <b>Modele i trening</b>, <b>Ustawienia i diagnostyka</b>. Logo prowadzi do menu głównego."),
+          P("Menu główne ma trzy planety: <b>FOREX</b> – ekrany bota <b>CHARTS</b> (wykres, strefy, Kronos), <b>SIGNALS</b> (sygnały i "
+            "oceny modeli), <b>MODELS &amp; BACKTEST</b> (modele i testy) i <b>ROI</b> (wyniki); <b>CRYPTO</b> (w przygotowaniu) oraz "
+            "<b>TraderLifeGame</b> (gra edukacyjna, bez zleceń). Ustawienia, tryb pracy, STOP, diagnostyka i licencja są w panelach "
+            "systemowych – ikony w prawym dolnym rogu ekranu."),
           box("Znaczniki przy wartościach mówią, skąd pochodzą: <b>DEMO · symulator</b> (dane syntetyczne), <b>DEMO</b> (rachunek "
               "demonstracyjny), <b>REAL</b>, <b>brak danych</b>, <b>nieaktualne</b>, <b>błąd synchronizacji</b>. Wynik, win rate czy "
               "ROI z symulatora nie są wynikami Twojego rachunku."),
@@ -444,8 +606,8 @@ def main() -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     shots = Path(a.shots) if Path(a.shots).is_dir() else None
-    build(out / "Instrukcja_Administrator_PepeMarketWizard.pdf", "ADMINISTRATOR", admin(shots), "PepeMarketWizard – instrukcja administratora")
-    build(out / "Instrukcja_Klient_PepeMarketWizard.pdf", "UŻYTKOWNIK", client(shots), "PepeMarketWizard – instrukcja użytkownika")
+    build(out / "Instrukcja_Administrator_PepeMarketWizard.pdf", "ADMINISTRATOR", admin(shots), DISPLAY_NAME + " – instrukcja administratora")
+    build(out / "Instrukcja_Klient_PepeMarketWizard.pdf", "UŻYTKOWNIK", client(shots), DISPLAY_NAME + " – instrukcja użytkownika")
     for n in ("Instrukcja_Administrator_PepeMarketWizard.pdf", "Instrukcja_Klient_PepeMarketWizard.pdf"):
         print(f"{n}: {(out / n).stat().st_size} B")
     return 0

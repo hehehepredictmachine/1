@@ -47,6 +47,7 @@ never moves an earlier trigger / SL.  Exit policy (shared, stored at open): BE a
 """
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 
 from ..analysis import candles as CN
@@ -150,7 +151,17 @@ class WallsRangeFamily(Strategy):
     validation_status = "CANDIDATE_FUNCTIONAL_ONLY_OOS_NOT_RUN"
 
     def __init__(self):
-        self.last_rejections: dict = {}
+        # 1.46: rejections are kept PER THREAD - one instance serves the live scan and the 'ml-backfill' thread at the same time, and the
+        # registry reads them after detect(): a shared attribute could be overwritten in between by the other thread's view
+        self._tls = threading.local()
+
+    @property
+    def last_rejections(self) -> dict:
+        return getattr(self._tls, "rejections", {})
+
+    @last_rejections.setter
+    def last_rejections(self, value: dict) -> None:
+        self._tls.rejections = value
 
     # ------------------------------------------------------------ family entry point (arbiter over both directions)
     def detect(self, view: MarketView, p: dict) -> list[Draft]:
@@ -525,16 +536,24 @@ class WallsRangeFamily(Strategy):
         trig_txt = {"RANGE_RECLAIM": "zamknięcie świecy M1 powyżej górnej granicy lokalnej strefy reakcji (+ bufor) po kontakcie i reakcji",
                     "WALL_REJECTION": "zamknięcie świecy M5 z powrotem powyżej strefy wall po jej przebiciu",
                     "BREAKOUT_RETEST": "po retestcie górnej granicy zakresu: zamknięcie M1 powyżej najwyższego high od początku retestu"}[var]
-        ref = entry if entry is not None else (trigger_level if trigger_level is not None else (view.ask or view.mid or 0.0))
+        ref = entry if entry is not None else (trigger_level if trigger_level is not None else (view.ask or view.mid))
         anchor = facts.get("contact_bar") or facts.get("touch_bar") or facts.get("break_bar") or (rng or {}).get("recognised_bar")
         er = {"time_exit_bars": time_exit, "be_after_tp1": True, "trailing": None} if time_exit is not None else {"be_after_tp1": True, "trailing": None,
                                                                                                                    "time_exit_bars": None}
         return Draft(strategy_id=self.id, direction="LONG", timeframe=tf, phase=phase, structure_key=f"{name}:{key}", event_key=f"S12:{var}:LONG:{key.split(':')[1]}",
-                     anchor_time=anchor, entry_plan=plan(f"S12_{name}", ref, z, trig_txt, trigger_level, 3, p["max_entry_atr"]),
+                     anchor_time=anchor, entry_plan=_plan_ref(plan(f"S12_{name}", 0.0 if ref is None else ref, z, trig_txt, trigger_level, 3,
+                                                                    p["max_entry_atr"]), ref),
                      invalidation_level=inv, invalidation_rule="CLOSE_BEYOND", stop_loss=sl, targets=tg or [], exit_rules=er,
                      expires_bars=int(p["expires_bars"]) if phase == "TRIGGER" else 20, components=components, momentum_mode=momentum,
                      missing=list(dict.fromkeys(missing)), reason_codes=[f"S12_{name}", f"RANGE_{(rng or {}).get('state')}"], facts=facts,
                      horizon="SCALP" if tf == "M1" else "INTRADAY")
+
+
+def _plan_ref(ep: dict, ref: float | None) -> dict:
+    # 1.46: no entry, no trigger level and no quote -> reference_price None (UNAVAILABLE); was 0.0 (2 x centre after the SHORT mirror)
+    if ref is None:
+        ep["reference_price"] = None
+    return ep
 
 
 def _rng_quality(rng) -> float:

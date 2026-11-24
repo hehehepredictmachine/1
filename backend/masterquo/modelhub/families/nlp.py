@@ -23,8 +23,10 @@ import numpy as np
 from . import base as B
 
 LABELS = ("NEGATIVE", "NEUTRAL", "POSITIVE")
-TOPICS = {"GOLD": ("gold", "xau", "bullion", "złoto"), "USD": ("dollar", "usd", "dxy", "treasury"), "FED": ("fed", "fomc", "powell", "rate"),
-          "BTC": ("bitcoin", "btc", "crypto")}
+TOPICS = {"GOLD": ("gold", "xau", "xauusd", "bullion", "złoto"), "USD": ("dollar", "usd", "xauusd", "dxy", "treasury", "treasuries"),
+          "FED": ("fed", "fomc", "powell", "rate", "federal reserve"), "BTC": ("bitcoin", "btc", "btcusd", "crypto", "cryptocurrency")}
+# 1.46: whole words (optional plural -s) - a substring test found 'rate' in corporate / generate / separate and 'fed' in federation / fedex
+_TOPIC_RX = {k: re.compile(r"\b(?:" + "|".join(re.escape(w) for w in ws) + r")s?\b") for k, ws in TOPICS.items()}
 
 
 def norm(t: str) -> str:
@@ -85,7 +87,7 @@ def proba3s(m, Xs) -> np.ndarray:
 
 def topics(text: str) -> dict:
     t = norm(text)
-    return {k: (1.0 if any(w in t for w in ws) else 0.0) for k, ws in TOPICS.items()}
+    return {k: (1.0 if _TOPIC_RX[k].search(t) else 0.0) for k in TOPICS}
 
 
 class NLP(B.Family):

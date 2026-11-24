@@ -1,0 +1,112 @@
+{
+  "schema": "PMW-RAM-BENCH-1",
+  "started_at": "2026-11-09T17:35:25+00:00",
+  "cpu_count": 4,
+  "platform": "linux",
+  "baseline": {
+    "used_pct": 3.7,
+    "total_mb": 16086,
+    "available_mb": 15491
+  },
+  "models": {
+    "granite_ttm": {
+      "rss_after_start_mb": 213.4,
+      "rss_loaded_mb": 346.3,
+      "peak_load_mb": 346.3,
+      "load_s": 2.66,
+      "params": 805280,
+      "device": "cpu",
+      "threads": 1,
+      "system_before": {
+        "used_pct": 4.0,
+        "total_mb": 16086,
+        "available_mb": 15443
+      },
+      "system_after": {
+        "used_pct": 5.4,
+        "total_mb": 16086,
+        "available_mb": 15217
+      },
+      "single_m5": {
+        "n": 30,
+        "p50_ms": 3.4,
+        "p95_ms": 5.4,
+        "max_ms": 25.8,
+        "errors": 0,
+        "rss_mb": 356.2,
+        "peak_mb": 356.2,
+        "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"
+      }
+    },
+    "chronos2": {
+      "rss_after_start_mb": 215.2,
+      "rss_loaded_mb": 599.9,
+      "peak_load_mb": 599.9,
+      "load_s": 3.56,
+      "params": 119477664,
+      "device": "cpu",
+      "threads": 2,
+      "system_before": {
+        "used_pct": 5.4,
+        "total_mb": 16086,
+        "available_mb": 15217
+      },
+      "system_after": {
+        "used_pct": 7.2,
+        "total_mb": 16086,
+        "available_mb": 14928
+      },
+      "single_m5": {
+        "n": 30,
+        "p50_ms": 78.6,
+        "p95_ms": 93.9,
+        "max_ms": 110.0,
+        "errors": 0,
+        "rss_mb": 834.7,
+        "peak_mb": 834.7,
+        "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"
+      }
+    }
+  },
+  "not_run": {
+    "kronos": "brak --kronos-weights"
+  },
+  "sequential": {
+    "cycles": 60,
+    "with_m15": true,
+    "seconds": 6.8,
+    "latency": {
+      "granite_ttm": {
+        "n": 80,
+        "p50_ms": 4.6,
+        "p95_ms": 5.4,
+        "max_ms": 7.2
+      },
+      "chronos2": {
+        "n": 80,
+        "p50_ms": 78.5,
+        "p95_ms": 89.5,
+        "max_ms": 108.3
+      }
+    },
+    "errors": 0,
+    "peak_system_used_pct": 7.2,
+    "peak_sum_models_rss_mb": 1190.9,
+    "final": {
+      "granite_ttm": {
+        "rss_mb": 356.2,
+        "peak_mb": 356.2
+      },
+      "chronos2": {
+        "rss_mb": 834.7,
+        "peak_mb": 834.7
+      }
+    },
+    "system_end": {
+      "used_pct": 7.0,
+      "total_mb": 16086,
+      "available_mb": 14960
+    }
+  },
+  "finished_at": "2026-11-09T17:35:43+00:00"
+}

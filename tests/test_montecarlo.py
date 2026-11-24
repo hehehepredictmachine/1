@@ -230,7 +230,7 @@ class TestMonteCarloApi(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from test_ui_export import Server
+        from _demo_server import Server
         cls.S = type("S", (Server,), {})
         cls.S.start_server()
 

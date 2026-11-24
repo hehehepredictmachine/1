@@ -3,6 +3,19 @@
 Trening nigdy nie aktywuje modelu. Aktywacja to Twoje kliknięcie i przechodzi test zgodności oraz próbki inferencji. READY oznacza, że
 model potrafi zwrócić wynik. Nie oznacza zgody na handel.
 
+## 0. Centrum Treningowe Pepe (1.42.10) – najprostsza droga
+* **Gdzie:** ikona biretu na pasku systemowym, zakładka **CENTRUM TRENINGOWE PEPE** w panelu systemowym albo przycisk w ekranie **MODELS**.
+* **Jak:** wybierz instrument (OBA / XAUUSD / BTC) i kliknij **TRENUJ** przy modelu albo **TRENUJ WSZYSTKO** (drugie kliknięcie potwierdza).
+* Treningi idą **po kolei, jeden naraz** (bez braku pamięci). Główny trening (prognozy świec, Scalp A/B/C, ML, Lab, kontekst wskaźników,
+  Scalp ML, Neural Scalp, Structure Intelligence, Flow, VAMD/FD/SMC, SCALPING/HEDGING, pakiet 20 strategii, Monte Carlo, Master models)
+  idzie jednym przebiegiem `training run` – najpierw eksport historii z MT5 i kontrola danych. Dalej po kolei: TrainHub, rodziny modeli,
+  Granite TTM, SDformerFlow.
+* Przy każdym modelu stan per instrument: wytrenowany / w toku / w kolejce / błąd (z przyczyną) / pominięty (z powodem) / niedostępny.
+* **PROWIZJA:** jeśli konto nie ma jeszcze transakcji danego instrumentu, podaj prowizję za 1 lot na stronę (waluta konta) – bez niej
+  modele liczone po kosztach (Scalp, Scalp ML, Neural Scalp, kontekst wskaźników) są pomijane.
+* **ZATRZYMAJ** przerywa bieżący trening i czyści kolejkę; **POKAŻ LOG** pokazuje przebieg; „Ostatnie treningi” – wynik każdego treningu.
+* Centrum nie składa zleceń i nie zmienia ryzyka. Model trafia do bota tylko po walidacji.
+
 ## 1. Dane
 * **Bot działa:** dane pochodzą z jego magazynu świec. Eksport historii uruchomisz z Centrum treningu (Modele i trening → Centrum treningu →
   „1. Dane”) albo plikiem `11_EKSPORT_HISTORII_XAUUSD.bat`.

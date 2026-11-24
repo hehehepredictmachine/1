@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -183,8 +184,14 @@ def promote(inst: str, strategy: str, run_id: str) -> dict:
         raise ValueError("NIEZGODNY:" + why)
     if run.get("verdict") != "HOLDOUT_PASSED":
         raise ValueError(f"RUN_NIE_PRZESZEDŁ_BRAMKI:{run.get('verdict')}")
-    if (run.get("provenance") or {}).get("data_kind") not in (None, "REAL_USER_DATA"):
+    prov = run.get("provenance") or {}
+    if prov.get("data_kind") not in (None, "REAL_USER_DATA"):
         raise ValueError("DANE_TESTOWE_BEZ_PROMOCJI")
+    # 1.46: unknown origin = NOT_VERIFIED, never promoted. 1.45.0 let data_kind None through: a train_cli run on a dataset without
+    # data_kind (treated there as non-real: --allow-synthetic, no promotion) or an imported run without provenance could be activated
+    # here. Only a local run with no provenance record at all (runs of versions that did not record it) keeps the previous rule.
+    if prov.get("data_kind") is None and ("data_kind" in prov or run.get("imported")):
+        raise ValueError("DANE_NIEZWERYFIKOWANE_BEZ_PROMOCJI")
     f = root(inst, strategy) / f"{run_id}.npz"
     if not f.exists() or hashlib.sha256(f.read_bytes()).hexdigest() != run.get("sha256"):
         raise ValueError("PLIK_MODELU_USZKODZONY")
@@ -196,16 +203,29 @@ def promote(inst: str, strategy: str, run_id: str) -> dict:
     return {"active": run_id, "changed": True}
 
 
+IMPORT_INSTRUMENTS = ("XAUUSD", "BTC")
+IMPORT_STRATEGIES = ("SCALPING", "HEDGING")
+RUN_ID_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
+
+
 def import_run(inst: str, strategy: str, run: dict, npz_bytes: bytes) -> dict:
     """Import of an exported run (never activated by the import): checksum and schema compatibility are verified; the run is
-    stored as a candidate and can be promoted explicitly."""
+    stored as a candidate and can be promoted explicitly. 1.46: instrument / strategy / run_id come from the imported package - they
+    are validated before they become a path (1.45.0: run_id "../../x" or an absolute instrument wrote outside data/sh/models)."""
+    if inst not in IMPORT_INSTRUMENTS or strategy not in IMPORT_STRATEGIES:
+        raise ValueError(f"NIEDOZWOLONY_ZAKRES: {inst}/{strategy}")
+    if not isinstance(run.get("run_id"), str) or not RUN_ID_RX.match(run["run_id"]):
+        raise ValueError("NIEDOZWOLONY_RUN_ID")
     if hashlib.sha256(npz_bytes).hexdigest() != run.get("sha256"):
         raise ValueError("SUMA_KONTROLNA_NIEZGODNA")
     ok, why = compatible(run)
     reg_p, reg = _reg(inst, strategy)
     if any(r["run_id"] == run["run_id"] for r in reg["runs"]):
         return {"imported": False, "reason": "RUN_JUŻ_ISTNIEJE", "compatible": ok}
-    f = root(inst, strategy) / f"{run['run_id']}.npz"
+    base = root(inst, strategy).resolve()
+    f = base / f"{run['run_id']}.npz"
+    if f.resolve().parent != base:
+        raise ValueError("NIEDOZWOLONY_RUN_ID")
     tmp = f.with_suffix(".tmp")
     tmp.write_bytes(npz_bytes)
     os.replace(tmp, f)

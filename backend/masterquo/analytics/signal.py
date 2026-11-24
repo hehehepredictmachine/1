@@ -19,7 +19,6 @@ three independent confirmations.
 """
 from __future__ import annotations
 
-import math
 import time
 
 import numpy as np
@@ -82,6 +81,17 @@ def periodogram(x: np.ndarray, detrend: str, window: str = "hann"):
     return f, p
 
 
+def _local_peaks(p: np.ndarray, n: int) -> list[int]:
+    """Indices of the n strongest local maxima of the spectrum (edge bins excluded), strongest first."""
+    peaks = []
+    for j in np.argsort(p)[::-1]:
+        if 0 < j < len(p) - 1 and p[j] >= p[j - 1] and p[j] >= p[j + 1]:
+            peaks.append(int(j))
+        if len(peaks) == n:
+            break
+    return peaks
+
+
 def fft_analysis(bars: list[dict], tf: str, cfg: dict | None = None, symbol: str | None = None) -> dict:
     cfg = {**DEFAULT, **(cfg or {})}
     seg, c, err, t0 = _prep(bars, tf, cfg, "fft", FFT_VERSION, symbol)
@@ -101,13 +111,7 @@ def fft_analysis(bars: list[dict], tf: str, cfg: dict | None = None, symbol: str
         return contract.result("fft", FFT_VERSION, cfg, symbol=symbol, tf=tf, bars=seg, status="ready", t0=t0, tf_seconds=TF_SEC.get(tf),
                                values={"flat": True, "dominant": [], "input": inp}, reason="FLAT_SIGNAL", quality=["FLAT_SIGNAL"])
     share = p / p.sum()
-    order = np.argsort(p)[::-1]
-    peaks = []
-    for j in order:
-        if 0 < j < len(p) - 1 and p[j] >= p[j - 1] and p[j] >= p[j + 1]:
-            peaks.append(int(j))
-        if len(peaks) == 3:
-            break
+    peaks = _local_peaks(p, 3)
     tfm = TF_SEC.get(tf, 60) / 60.0
     dom = [{"frequency_cycles_per_bar": round(float(f[j]), 6), "period_bars": round(float(1 / f[j]), 2), "period_minutes": round(float(1 / f[j]) * tfm, 1),
             "power_share": round(float(share[j]), 4), "peak_to_median": round(float(p[j] / np.median(p)), 2)} for j in peaks]
@@ -116,8 +120,10 @@ def fft_analysis(bars: list[dict], tf: str, cfg: dict | None = None, symbol: str
     stable = None
     if dom and len(x) > lag + 32:
         f2, p2 = spectrum(x[:-lag])
-        j2 = int(np.argmax(p2))
-        stable = abs(1 / f2[j2] - dom[0]["period_bars"]) / dom[0]["period_bars"] < 0.2
+        # 1.46: `stable` was an np.bool_, so `stable is False` below never held (UNSTABLE_DOMINANT_PERIOD never set); and the lagged
+        # dominant was the global argmax incl. the edge bins (Nyquist) - now the same local-peak rule as the current window, plain bool.
+        pk2 = _local_peaks(p2, 1)
+        stable = bool(pk2) and bool(abs(1 / f2[pk2[0]] - dom[0]["period_bars"]) / dom[0]["period_bars"] < 0.2)
     q = []
     if not dom or dom[0]["peak_to_median"] < 5:
         q.append("NO_DOMINANT_PEAK")
@@ -319,7 +325,3 @@ def vmd_analysis(bars: list[dict], tf: str, cfg: dict | None = None, symbol: str
             "padding": "odbicie lustrzane okna (tylko obserwowane próbki)",
             "series": {"modes_last_64": [[round(float(v * scale), 7) for v in m[-64:]] for m in modes]}, "input_scale": scale, "quality_ok": not q}
     return contract.result("vmd", VMD_VERSION, cfg, symbol=symbol, tf=tf, bars=seg, status="ready", values=vals, quality=q, t0=t0, tf_seconds=TF_SEC.get(tf))
-
-
-def _round_list(v, n=6):
-    return [None if (x is None or (isinstance(x, float) and math.isnan(x))) else round(float(x), n) for x in v]

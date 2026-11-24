@@ -30,6 +30,7 @@ import hashlib
 import time
 from datetime import datetime, timezone
 
+from ..timeutil import parse_iso
 from . import contract
 from .ta import TF_SEC, atr14
 
@@ -58,9 +59,17 @@ def check_bars(bars: list[dict]) -> str | None:
             return "MALFORMED_BAR"
         if not all(map(lambda v: v == v and abs(v) != float("inf"), (o, h, lo, c))) or h < max(o, c) or lo > min(o, c):
             return f"INVALID_OHLC at {b.get('open_utc')}"
-        if prev is not None and b["open_utc"] <= prev:
+        # 1.46: open_utc was only compared as text - 'x0019' passed here and raised ValueError later (contract.result / _iso_plus),
+        # which aborted a whole library job (FAILED_EXECUTION, the same sample again on every resume); a time is a UTC ISO time
+        try:
+            t = parse_iso(str(b.get("open_utc")) if b.get("open_utc") is not None else None)
+        except ValueError:
+            t = None
+        if t is None:
+            return f"BAD_OPEN_UTC at {b.get('open_utc')}"
+        if prev is not None and t <= prev:
             return f"UNSORTED_OR_DUPLICATE at {b['open_utc']}"
-        prev = b["open_utc"]
+        prev = t
     return None
 
 

@@ -28,6 +28,7 @@ from .news.service import NewsService
 from .notify.telegram import TelegramNotifier
 from .timeutil import iso, utcnow
 from .secrets_store import SecretStore
+from .version import DISPLAY_NAME
 
 log = logging.getLogger("masterquo.runtime")
 
@@ -40,6 +41,21 @@ def real_mt5_factory():
 class Runtime:
     def __init__(self, *, demo: bool = False, mt5_factory=None):
         self.demo = demo
+        if not demo:
+            try:                                            # 1.41: inventory "before" + configuration snapshot, once, before any 1.41 service
+                from .upgrade import migrate as _UM
+                _UM.before()
+            except Exception:  # noqa: BLE001 - never blocks the start; the after-report shows the missing step
+                log.exception("upgrade 1.41 before-step failed")
+        try:                                                # 1.42.2: program folder moved -> model venvs re-pointed to this Python
+            import mq_venv
+            base = getattr(sys, "_base_executable", None) or sys.executable
+            fixed = mq_venv.repair_all(paths.ROOT_DIR, base, lambda m: log.warning("venv: %s", m))
+            bad = {k: v for k, v in fixed.items() if v["state"] not in ("OK", "MISSING")}
+            if bad:
+                log.warning("model environments after repair: %s", bad)
+        except Exception:  # noqa: BLE001 - never blocks the start; the installers repair too
+            log.exception("venv repair failed")
         self.cfg = ConfigStore()
         if demo:
             self.cfg.set_runtime_flag(synthetic_demo=True)
@@ -56,6 +72,9 @@ class Runtime:
                 mt5_factory = real_mt5_factory
         self.worker = MT5Worker(mt5_factory)
         required = Profiles().required_closed_bars()
+        from .sh.pack.engine import NEEDED_BARS as _PACK_BARS                 # 1.38 pack: H1 EMA200 x5 warm-up, previous-session profile, M3
+        for _tf, _n in _PACK_BARS.items():
+            required[_tf] = max(int(required.get(_tf) or 0), _n)
         self.bridge = MarketBridge(self.cfg, self.worker, self.db, self.bus, self.log, required_bars=required)
         self.bridge.secrets = self.secrets
         from .assets.registry import AssetRegistry
@@ -65,6 +84,8 @@ class Runtime:
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,
                                  account_provider=lambda: (self.bridge.account_status(), self.bridge.account_key, self.bridge.synthetic))
+        if not demo and mt5_factory is None:                                # 1.39: real terminal only - start in execution.start_mode (AUTO_LIVE)
+            self.modes.apply_start_mode()
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
         self.engine = EngineService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, self.news, self.pcclock)
         self.paper = PaperBroker(self.cfg, self.bridge, self.db, self.bus, self.log)
@@ -120,6 +141,8 @@ class Runtime:
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
         self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
+        from .sh.pack.engine import PackEngine
+        self.sh.pack = PackEngine()                                                               # 1.38: 20 variants in the SAME SH cycle
         from .evaluation.service import EvaluationService
         self.evaluation = EvaluationService(self.cfg, self.bridge, self.db, ml=self.ml)          # SHADOW: P/EV ledger of every setup, both paths
         self.engine.active.listeners.append(self.evaluation.on_active_events)
@@ -147,7 +170,7 @@ class Runtime:
         from .zones.market_service import MarketZonesService
         self.market_zones = MarketZonesService(self.cfg, self.bridge, bus=self.bus, log=self.log)  # 1.28: "Strefy rynkowe" M1/M5/M15/M30
         from .kronos.service import KronosService
-        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-small: SHADOW, own .venv_kronos process
+        self.kronos = KronosService(self.cfg, self.bridge, self.db, self.bus, self.log)   # Kronos-small (1.42.8; Kronos-base 1.37-1.42.7), own .venv_kronos process
         from .trainhub.inference import TrainhubInference
         from .trainhub.jobs import TrainingCenter
         self.trainhub = TrainingCenter(self.cfg, self.bridge, bus=self.bus, log=self.log)         # 1.28: Centrum treningu (kolejka, proces obok)
@@ -160,6 +183,34 @@ class Runtime:
         self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
+        from .tsfm.service import TsfmService
+        self.tsfm = TsfmService(self.cfg, self.bridge, self.db, self.bus, self.log)     # Chronos-2 + Granite TTM (1.40, FinCast retired): own processes, OBSERVE default
+        self.tsfm.kronos = self.kronos                                                              # three-model comparison (read only)
+        try:                                                                                        # 1.41 six MQL5-derived research modules (autostart)
+            from .research.service import ResearchModulesService
+            self.research = ResearchModulesService(self)
+        except Exception:  # noqa: BLE001 - a broken research state never stops the engine
+            log.exception("research modules unavailable")
+            self.research = None
+        from .training.pepe_center import PepeTrainingCenter                                        # 1.42.10 Centrum Treningowe Pepe (kolejka 1 naraz)
+        self.pepe_training = PepeTrainingCenter(self)
+        try:                                                                                        # 1.41 three market profiles, 9 baskets / 90 strategies
+            from .baskets.service import BasketService
+            self.baskets = BasketService(self)
+            self.sh.baskets = self.baskets                                                          # 1.42: FX basket plans -> SH execution path
+        except Exception:  # noqa: BLE001
+            log.exception("baskets unavailable")
+            self.baskets = None
+        try:
+            self._wire_governor()
+        except Exception:  # noqa: BLE001 - 1.40.1: no governor = models run unmanaged (as in 1.39), the engine still starts
+            log.exception("memory governor unavailable")
+            self.governor = None
+            self.tsfm.governor = self.kronos.governor = None
+        self.sh.tsfm = self.tsfm                                                                    # SH receivers (roles per strategy)
+        from .tsfm import predictions as _tsfm_pred
+        self.arc.extra_providers = [lambda inst: _tsfm_pred.coordinator_rows(self.tsfm, inst),       # ACTIVE: roles of Chronos-2 / Granite TTM
+                                    lambda inst: _tsfm_pred.kronos_rows(self.kronos, inst)]          # Kronos: recorded as OBSERVE only
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
         self.evaluation.zone_provider = self.zones
@@ -174,8 +225,39 @@ class Runtime:
         self.bridge.add_listener(lambda kind, data: self._publish_prefs() if kind in ("account_changed", "connected") else None)
         self.bus.subscribe(self._on_event)
         self._stop = threading.Event()
+        # 1.44.0: centralna kontrola licencji (wersja klienta). Wersja właściciela: licencja niepotrzebna (gate.required = False).
+        from .licensing.gate import LicenseGate
+        self.license = LicenseGate(log=self.log)
+        self.modes.license_ok = self.license.ok
+        self.start_failures: list[dict] = []
+        self._engine_started = False
+        self._engine_lock = threading.Lock()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+
+    def _wire_governor(self) -> None:
+        """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
+        import os as _os
+        import time as _time
+        from .resources.governor import HEAVY, Governor
+        self.governor = Governor(self.cfg, self.log)
+        self.tsfm.governor = self.governor
+        self.kronos.governor = self.governor
+        self.governor.register("bot", "bot", lambda: _os.getpid())
+        k = self.kronos
+        self.governor.register("kronos", "light", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
+                               release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
+        tb = self.quant.tabicl                                          # 1.41 TabICLv2 worker (heavy slot, idle release)
+        self.quant.tabicl.governor = self.governor
+        self.governor.register("tabicl", "heavy", lambda: tb.worker.proc.pid if (tb.worker.proc and tb.worker.proc.poll() is None) else None,
+                               release=lambda: tb.jobs.empty() and tb.worker.kill(), idle=lambda: _time.monotonic() - tb.worker.last_used)
+        if getattr(self, "research", None) is not None:
+            self.research.governor = self.governor                     # 1.41 SDformerFlow training / inference (heavy slot)
+        for mid, w in self.tsfm.workers.items():
+            self.governor.register(mid, "heavy" if mid in HEAVY else "light",
+                                   (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
+                                   release=(lambda w=w, mid=mid: (self.tsfm.running is None or self.tsfm.running[0] != mid) and w.kill()),
+                                   idle=(lambda w=w, mid=mid: 0.0 if (self.tsfm.running and self.tsfm.running[0] == mid) else _time.monotonic() - w.last_used))
 
     def _publish_prefs(self) -> None:
         try:
@@ -239,41 +321,82 @@ class Runtime:
         return mode, st.get("day") or {}, (self.bridge.account_status() or {}).get("currency")
 
     def start(self) -> None:
-        self.log.info("APP", "START", f"MasterQUO AI start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")
-        self.worker.start()
-        self.bridge.start()
-        self.news.start()
-        self.engine.start()
-        self.manager.start()
-        self.telegram.start()
-        self.ml.start()
-        self.scanner.start()
-        self.forecast.start()
-        self.scalp.start()
-        self.analytics.start()
-        self.lab.start()
-        self.extind.start()
-        self.nss.start()
-        self.mtf.start()
-        self.si.start()                         # PMW-UPD-08 quote collector (same bridge/worker, own thread)
-        self.liquidity.start()
-        self.sh.start()
-        self.mm.start()                         # AR-08: master models on every closed M5 (SHADOW)
-        self.zones.start()                      # PMW-ZONES: zone map on every closed M5
-        self.indicators.start()                 # PMW-IND-1: indicator snapshot on every closed M1, spread sampling, market depth
-        self.svp.start()                        # PMW-SVP-1: LIVE profiles / zones (only profiles switched to LIVE)
+        """1.44.0: wersja klienta bez ważnej licencji – silnik (MT5, strategie, tryby, modele) NIE startuje; działa tylko serwer z ekranem
+        aktywacji. Po aktywacji (gate.on_unlock) silnik startuje raz, tak jak przy zwykłym starcie."""
+        st = self.license.evaluate(refresh_net=True)
+        self.license.start_monitor(self._stop)
+        if self.license.locked:
+            self.log.warn("LICENSE", "LOCKED_AT_START", f"Brak ważnej licencji ({st.get('code')}) – silnik czeka na aktywację klucza.")
+            self.license.on_unlock.append(lambda: threading.Thread(target=self._start_engine, name="engine-start-after-license",
+                                                                   daemon=True).start())
+            return
+        self._start_engine()
+
+    def _start_engine(self) -> None:
+        with self._engine_lock:
+            if self._engine_started:
+                return
+            self._engine_started = True
+        self._start_engine_parts()
+
+    def _start_engine_parts(self) -> None:
+        """1.40.1: every subsystem starts on its own - one failing part (MT5 terminal, a model worker, a broken settings file, a Windows
+        API call) never takes the whole engine down; the failure is logged with its traceback and listed in start_failures (API health)."""
+        self.log.info("APP", "START", f"{DISPLAY_NAME} start ({'DANE SYNTETYCZNE' if self.demo else 'MT5'}), tryb wykonania {self.modes.mode}")   # 1.46: brand
+        self.start_failures: list[dict] = []
+        for name in ("worker", "bridge", "news", "engine", "manager", "telegram", "ml", "scanner", "forecast", "scalp", "analytics", "lab",
+                     "extind", "nss", "mtf", "si", "liquidity", "sh", "mm", "zones", "indicators", "svp"):
+            self._start_part(name)
         try:                                    # Studio packages handed over while the bot was off (candidates, inactive)
             from .studio import importer as _IM
             self.studio_imports = _IM.process_inbox()
         except Exception as exc:  # noqa: BLE001
             self.studio_imports = [{"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}]
-        self.market_zones.start()               # 1.28: job worker only - computes on the panel button / live toggle
-        self.trainhub.start()                   # 1.28: training queue (training itself runs in a separate process)
-        self.trainhub_inference.start()         # 1.28: predictions of ACTIVE packages only (none active = nothing computed)
-        self.kronos.start()                     # Kronos: forecasts after new closed bars (nothing until installed)
-        self.quant.start()                      # 1.35 Quant Core: snapshot -> adapters -> checks -> publication (also with the panel closed)
+        # market_zones/trainhub: job workers; kronos/tsfm: forecasts after new closed bars (nothing until installed);
+        # governor: 1.40 Memory Governor (measurement every 15 s); quant: 1.35 Quant Core
+        try:                                                # 1.42 (DIRECT_USER_REQUEST): models OBSERVE -> ASSIST, FX baskets -> SH path, once
+            from .upgrade import migrate as _UM
+            _UM.apply_142(self)
+        except Exception:  # noqa: BLE001 - never blocks the start
+            log.exception("upgrade 1.42 step failed")
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets"):
+            self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
+        if not self.demo:
+            threading.Thread(target=self._upgrade_after, name="upgrade-1.41", daemon=True).start()
+        try:                                                # 1.45 (TASK 013): verify-first bootstrap; heavy runtimes sequential, after start
+            from .bootstrap import Bootstrap
+            self.bootstrap = Bootstrap(self)
+            self.bootstrap.start()                         # no-op in demo / PMW_BOOTSTRAP=0
+        except Exception:  # noqa: BLE001 - never blocks the start
+            log.exception("bootstrap failed to start")
+        if self.start_failures:
+            self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
+                           + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _upgrade_after(self) -> None:
+        """1.41: after-inventory + preservation report (60 s after start, when every registry is loaded) and the background installation
+        of TiRex-2 / TabICLv2 when they are missing (DIRECT_USER_REQUEST - the bot keeps working)."""
+        self._stop.wait(60)
+        if self._stop.is_set():
+            return
+        try:
+            from .upgrade import migrate as _UM
+            _UM.after(self)
+            _UM.auto_install(self)
+        except Exception:  # noqa: BLE001
+            log.exception("upgrade 1.41 after-step failed")
+
+    def _start_part(self, name: str) -> None:
+        part = getattr(self, name, None)
+        if part is None:
+            return
+        try:
+            part.start()
+        except Exception as exc:  # noqa: BLE001 - see start()
+            log.exception("start of %s failed", name)
+            self.start_failures.append({"part": name, "error": f"{type(exc).__name__}: {exc}"[:300]})
 
     def _clock_loop(self) -> None:
         while not self._stop.is_set():
@@ -290,37 +413,32 @@ class Runtime:
     def attach_loop(self, loop) -> None:
         self.agent.attach(loop)
 
+    # 1.46: stop order (unchanged); every part stops on its own - an exception in one .stop() skipped all later parts (bridge, MT5
+    # worker) and the cleanup of shutdown.token / server.pid in __main__
+    _STOP_ORDER = ("ml", "forecast", "scalp", "sh", "mm", "zones", "indicators", "svp", "market_zones", "trainhub", "trainhub_inference",
+                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "analytics", "lab", "extind", "nss", "mtf", "si",
+                   "liquidity", "scanner", "engine", "manager", "news", "bridge", "worker")
+
+    def _stop_part(self, name: str, method: str = "stop") -> None:
+        part = getattr(self, name, None)
+        if part is None:
+            return
+        try:
+            getattr(part, method)()
+        except Exception:                               # logged, the remaining parts still stop
+            log.exception("stop of %s failed", name)
+
     def stop(self) -> None:
-        self.telegram.stop()
+        self._stop_part("bootstrap")                    # 1.46: was never stopped - it could start another installer after the services
+        self._stop_part("telegram")
         self._stop.set()
-        self.log.info("APP", "STOP", "Zatrzymywanie MasterQUO AI (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
-        self.ml.stop()
-        self.forecast.stop()
-        self.scalp.stop()
-        self.sh.stop()
-        self.mm.stop()
-        self.zones.stop()
-        self.indicators.stop()
-        self.svp.stop()
-        self.market_zones.stop_service()
-        self.trainhub.stop()
-        self.trainhub_inference.stop()
-        self.kronos.stop()
-        self.montecarlo.stop()
-        self.quant.stop()
-        self.analytics.stop()
-        self.lab.stop()
-        self.extind.stop()
-        self.nss.stop()
-        self.mtf.stop()
-        self.si.stop()
-        self.liquidity.stop()
-        self.scanner.stop()
-        self.engine.stop()
-        self.manager.stop()
-        self.news.stop()
-        self.bridge.stop()
-        self.worker.stop()
+        self._stop_part("governor")
+        try:
+            self.log.info("APP", "STOP", f"Zatrzymywanie {DISPLAY_NAME} (pozycje w terminalu pozostają pod ochroną SL/TP po stronie serwera brokera).")
+        except Exception:
+            log.exception("stop log failed")
+        for name in self._STOP_ORDER:
+            self._stop_part(name, "stop_service" if name == "market_zones" else "stop")
 
 
 def platform_info() -> dict:

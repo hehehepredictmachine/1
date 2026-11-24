@@ -58,7 +58,15 @@ def main(argv: list[str]) -> int:
         if not rid:
             print("[BLAD] brak runów")
             return 2
-        print((Path(reg["runs"][rid]["run_dir"]) / "report.json").read_text(encoding="utf-8"))
+        # 1.46: an unknown --run (KeyError) or a missing report.json (FileNotFoundError) ended with a traceback outside the exit codes
+        if rid not in reg["runs"]:
+            print(f"[BLAD] nieznany run: {rid}")
+            return 2
+        rp = Path(reg["runs"][rid]["run_dir"]) / "report.json"
+        if not rp.exists():
+            print(f"[BLAD] brak raportu runu {rid}: {rp}")
+            return 2
+        print(rp.read_text(encoding="utf-8"))
         return 0
     if a.c == "rollback":
         try:

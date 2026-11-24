@@ -394,6 +394,8 @@ class EngineService:
         if self._last_signal_key.get(sig["signal_id"]) == key:
             return
         self._last_signal_key[sig["signal_id"]] = key
+        while len(self._last_signal_key) > 500:       # 1.46: one entry per signal id for the life of the process - bounded now
+            self._last_signal_key.pop(next(iter(self._last_signal_key)))
         now = sig.get("generated_at")
         self.db.execute("""INSERT INTO signal_history(signal_id, first_seen_at, updated_at, symbol, setup_id, strategy_id, entry_tf, side, status,
                            execution_state, decision_source, ai_verdict, synthetic, record_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -474,6 +476,9 @@ class EngineService:
         res["entry_basis"] = basis
         if not live:
             res["risk_gate"] = "BLOCKED" if res.get("risk_gate") == "BLOCKED" else "PREVIEW"
+            if (quote or {}).get("spread") is None:
+                # 1.46: the hypothetical preview without a quote is sized with spread 0 - flagged (no data is never shown as zero cost)
+                res["reason_codes"] = list(res.get("reason_codes") or []) + ["SPREAD_UNKNOWN_PREVIEW"]
         return res
 
     PENDING_BUY = (2, 4, 6)          # ORDER_TYPE_BUY_LIMIT, BUY_STOP, BUY_STOP_LIMIT
@@ -690,6 +695,13 @@ class EngineService:
         view = self.active.view
         if view is None:
             return {"status": "NO_SCAN_YET", "tf": tf}
+        cfg = self.cfg_store.get()
+        # 1.46: maybe_scan returns before replacing the view for an unsupported asset - after XAUUSD -> BTC the last XAUUSD view was
+        # served as OK (walls, M5 range, patterns, pivots) and mixed with the D1 of the new symbol
+        if getattr(getattr(cfg, "assets", None), "active", "XAUUSD") != "XAUUSD":
+            return {"status": "UNSUPPORTED_ASSET", "tf": tf, "symbol": cfg.mt5.symbol}
+        if view.symbol != cfg.mt5.symbol:
+            return {"status": "NO_SCAN_YET", "tf": tf, "symbol": cfg.mt5.symbol, "view_symbol": view.symbol}
         key = (tf, view.as_of)
         cache = getattr(self, "_structure_cache", None)
         if cache and cache[0] == key:

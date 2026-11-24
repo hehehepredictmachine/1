@@ -113,7 +113,10 @@ def build(ctx: dict, mods: dict, model: dict | None) -> list[dict]:
                  _cond("Z-score policzony (odchylenie > próg)", "MET", f"z={z.get('z')}"),
                  _cond("Hipoteza zwalidowana na danych aktywa", "MISSING", "progi z materiałów = punkty startowe")]
         conds = _common(ctx, side, conds)
-        out.append(_finish(ctx, f"ZSCORE_{h}", "M5", side, ctx["last_bar_open"]["M5"], conds, "zamknięcie świecy M5 spełniające regułę", None, [], model))
+        # 1.46: anchored on the first bar of the uninterrupted state (market.zscore hypotheses_since), not on the current bar - a held
+        # H_BO state got a new setup_id / created_at / TTL every bar (EXPIRED unreachable, history never joined)
+        anchor = (z.get("hypotheses_since") or {}).get(h) or ctx["last_bar_open"]["M5"]
+        out.append(_finish(ctx, f"ZSCORE_{h}", "M5", side, anchor, conds, "zamknięcie świecy M5 spełniające regułę", None, [], model))
     # 3. Stochastic daily breakout (M25) on M15
     sd = (mods.get("M15") or {}).get("stoch_breakout") or {}
     if sd.get("state") in ("LONG_CANDIDATE", "SHORT_CANDIDATE"):
@@ -123,6 +126,7 @@ def build(ctx: dict, mods: dict, model: dict | None) -> list[dict]:
                  _cond("Hipoteza zwalidowana dla aktywa", "MISSING", sd.get("hypothesis", ""))]
         conds = _common(ctx, side, conds)
         inv = sd["pdh"] if side == "LONG" else sd["pdl"]
+        # anchor = the bar of the %K/%D cross (a one-bar event: the state exists only on that bar, so the current bar is its own anchor)
         out.append(_finish(ctx, "STOCH_DAILY_BREAKOUT", "M15", side, ctx["last_bar_open"]["M15"], conds, "zamknięcie M15 za poziomem dnia",
                            inv, [{"kind": "PDH", "price": sd["pdh"]}, {"kind": "PDL", "price": sd["pdl"]}], model))
     return out

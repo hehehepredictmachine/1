@@ -51,9 +51,25 @@ type Engine struct {
 	stopping bool
 	restarts []time.Time
 	exited   chan struct{}
+	starting *exec.Cmd // the process spawn() is still waiting for: its early exit is reported by spawn, not auto-restarted
 	client   *http.Client
-	extra    []string // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
+	extra    []string  // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
+	stopReq  *exec.Cmd // 1.46: the process Stop() asked to end - its exit during start is not a start failure
+	warning  string    // 1.46: attached to an engine of ANOTHER version - shown on the start screen, no automatic entry
+
+	restartMu sync.Mutex // 1.46: one Restart at a time (two quick tray clicks started two engines and the shell lost the running one)
 }
+
+// errNeedsEnv: the running engine is an outdated one of this folder and was stopped, but this supervisor has no Python package folder yet -
+// the caller prepares it (ensureEnv) and starts again (1.46; before, spawn ran without site-packages -> ModuleNotFoundError, bot stopped).
+var errNeedsEnv = errors.New("silnik do wymiany: najpierw przygotowanie środowiska Pythona")
+
+// errStopRequested (1.46): the engine was stopped by Stop() (restart from the tray, closing the app) while spawn() waited for it. Before, that
+// exit was reported as FAILED "silnik zakończył się podczas startu (kod -1)" next to the new engine Restart() was starting.
+var errStopRequested = errors.New("uruchamianie silnika przerwane – silnik zatrzymano na żądanie")
+
+// startTimeout: how long spawn() waits for the first answer of a started engine (the first start may migrate the database).
+var startTimeout = 120 * time.Second
 
 func newEngine(l Layout, site string, logf func(string), onState func(EngineState, string)) *Engine {
 	return &Engine{l: l, site: site, logf: logf, onState: onState, state: EngineStopped, client: &http.Client{Timeout: 3 * time.Second}}
@@ -73,6 +89,17 @@ func (e *Engine) State() (EngineState, string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.state, e.detail
+}
+
+// AttachWarning (1.46): non-empty while the shell is attached to an engine of ANOTHER version that it could not replace (another data
+// folder refused the token, or it did not stop in time). Before, this went only to desktop.log while auto_enter opened the old panel.
+func (e *Engine) AttachWarning() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state != EngineExternal {
+		return ""
+	}
+	return e.warning
 }
 
 // Port of the engine: data\config.json server.port, else the engine's default.
@@ -101,16 +128,67 @@ func (e *Engine) URL() string { return fmt.Sprintf("http://127.0.0.1:%d/", e.Por
 
 // healthy = this app answers on the port (another program on the port is not mistaken for the engine).
 func (e *Engine) healthy() bool {
+	ok, _ := e.health()
+	return ok
+}
+
+// health: whether this app answers on the port, and the version of the engine that answers ("" when it does not say).
+func (e *Engine) health() (bool, string) {
 	r, err := e.client.Get(e.URL() + healthPath())
 	if err != nil {
-		return false
+		return false, ""
 	}
 	defer r.Body.Close()
 	var h struct {
-		OK  bool   `json:"ok"`
-		App string `json:"app"`
+		OK      bool   `json:"ok"`
+		App     string `json:"app"`
+		Version string `json:"version"`
 	}
-	return r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, expectedApp())
+	ok := r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&h) == nil && h.OK && strings.EqualFold(h.App, expectedApp())
+	return ok, h.Version
+}
+
+// replaceOutdated (1.40.3): an engine of ANOTHER version answers on our port (e.g. the previous version started from a .bat file or
+// left running) - attaching to it would show the old program after an update. When it belongs to this data folder (it accepts the
+// shutdown token from <data>\runtime\shutdown.token) it is asked to stop and the current version starts. Returns true when the port
+// is free again.
+func (e *Engine) replaceOutdated(running string) bool {
+	tok, err := os.ReadFile(filepath.Join(e.l.RuntimeDir(), "shutdown.token"))
+	if err != nil {
+		return false
+	}
+	req, _ := http.NewRequest("POST", e.URL()+"api/v1/admin/shutdown", strings.NewReader("{}"))
+	req.Header.Set("x-mq-shutdown", strings.TrimSpace(string(tok)))
+	req.Header.Set("Content-Type", "application/json")
+	r, err := e.client.Do(req)
+	if err != nil {
+		return false
+	}
+	r.Body.Close()
+	if r.StatusCode >= 300 {
+		return false // not our engine (another data folder) - never stopped
+	}
+	e.logf("silnik: działała wersja " + running + " – zatrzymano ją, uruchamiam " + version)
+	// 1.46: a free port is not the end of the old process: uvicorn closes its listener first, then stops the services (rt.stop) and only
+	// then deletes runtime\server.pid (its last step) and exits, releasing runtime\instance.lock. A new engine started on the free port
+	// alone ended with code 4 and the start screen showed FAILED after 60 s - so server.pid has to be gone as well.
+	pidFile := filepath.Join(e.l.RuntimeDir(), "server.pid")
+	free, sawPid := false, false
+	for i := 0; i < 75; i++ { // up to 30 s for its graceful stop (positions stay protected by SL/TP on the broker side)
+		time.Sleep(400 * time.Millisecond)
+		free = false
+		if ok, _ := e.health(); !ok && !e.portTakenByOther() {
+			free = true
+			if !exists(pidFile) {
+				if sawPid {
+					time.Sleep(time.Second) // the interpreter ends right after deleting it (releases the lock)
+				}
+				return true
+			}
+			sawPid = true
+		}
+	}
+	return free // the port is free but server.pid stayed (an engine that died without its cleanup) - start anyway
 }
 
 func healthPath() string {
@@ -143,9 +221,9 @@ func (e *Engine) env() []string {
 		pp += sep + e.site
 	}
 	env := []string{}
-	for _, kv := range os.Environ() { // never inherit a foreign PYTHONPATH / PYTHONHOME (another Python on the machine)
+	for _, kv := range os.Environ() { // never inherit a foreign PYTHONPATH / PYTHONHOME / pip settings (another Python on the machine)
 		k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0])
-		if k == "PYTHONPATH" || k == "PYTHONHOME" || k == "MASTERQUO_DATA_DIR" {
+		if foreignPyEnv[k] || k == "MASTERQUO_DATA_DIR" {
 			continue
 		}
 		env = append(env, kv)
@@ -179,9 +257,29 @@ func (e *Engine) consoleLog() (*os.File, error) {
 
 // Start attaches to a running engine or starts one and waits until it answers (first start may migrate the database).
 func (e *Engine) Start(ctx context.Context) error {
-	if e.healthy() {
+	e.mu.Lock()
+	e.warning = ""
+	e.mu.Unlock()
+	if ok, running := e.health(); ok {
 		if e.Owned() { // our own process from an earlier attempt finished starting meanwhile
 			e.set(EngineRunning, "")
+			return nil
+		}
+		if running != "" && version != "" && running != version && !isStudio() {
+			if e.replaceOutdated(running) {
+				e.mu.Lock()
+				noSite := e.site == ""
+				e.mu.Unlock()
+				if noSite {
+					return errNeedsEnv
+				}
+				return e.spawn(ctx)
+			}
+			w := "działa silnik w wersji " + running + " (ta aplikacja: " + version + ") – podłączono; zamknij go, aby używać nowej wersji"
+			e.mu.Lock()
+			e.warning = w // 1.46: before the state change, so the window (onState) already sees it
+			e.mu.Unlock()
+			e.set(EngineExternal, w)
 			return nil
 		}
 		e.set(EngineExternal, "silnik działał już wcześniej – podłączono bez uruchamiania drugiej kopii")
@@ -199,6 +297,8 @@ func (e *Engine) spawn(ctx context.Context) error {
 	e.set(EngineStarting, "uruchamianie silnika…")
 	logFile, err := e.consoleLog()
 	if err != nil {
+		// 1.46: the state said STARTING forever (no error screen when called by the automatic restart)
+		e.set(EngineFailed, "nie można otworzyć logu silnika "+filepath.Join(e.l.LogsDir(), "engine_console.log")+": "+err.Error())
 		return err
 	}
 	cmd := exec.Command(e.l.Python, e.args()...)
@@ -207,6 +307,10 @@ func (e *Engine) spawn(ctx context.Context) error {
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	hideWindow(cmd)
 	fmt.Fprintf(logFile, "\n===== %s start: %s %s\n", nowISO(), e.l.Python, strings.Join(e.args(), " "))
+	var logFrom int64
+	if st, err := logFile.Stat(); err == nil {
+		logFrom = st.Size()
+	}
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
 		e.set(EngineFailed, "nie można uruchomić Pythona: "+err.Error())
@@ -215,8 +319,15 @@ func (e *Engine) spawn(ctx context.Context) error {
 	guard := guardProcess(cmd)
 	exited := make(chan struct{})
 	e.mu.Lock()
-	e.cmd, e.proc, e.stopping, e.exited = cmd, guard, false, exited
+	e.cmd, e.proc, e.stopping, e.exited, e.starting = cmd, guard, false, exited, cmd
 	e.mu.Unlock()
+	started := func() {
+		e.mu.Lock()
+		if e.starting == cmd {
+			e.starting = nil
+		}
+		e.mu.Unlock()
+	}
 	go func() {
 		werr := cmd.Wait()
 		logFile.Close()
@@ -226,21 +337,128 @@ func (e *Engine) spawn(ctx context.Context) error {
 		close(exited)
 		e.afterExit(ctx, cmd, werr)
 	}()
-	deadline := time.Now().Add(120 * time.Second)
+	deadline := time.Now().Add(startTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case <-exited:
-			return errors.New("silnik zakończył się podczas startu – szczegóły: " + filepath.Join(e.l.LogsDir(), "engine_console.log"))
+			e.mu.Lock()
+			requested := e.stopReq == cmd
+			e.mu.Unlock()
+			if requested { // 1.46: ended by Stop() (e.g. restart from the tray during STARTING) - not a start failure
+				return errStopRequested // e.starting stays: afterExit of this process only clears e.cmd (see earlyExit)
+			}
+			return e.earlyExit(ctx, cmd, logFrom)
 		case <-ctx.Done():
+			started()
 			return ctx.Err()
 		case <-time.After(400 * time.Millisecond):
 		}
 		if e.healthy() {
+			started()
 			e.set(EngineRunning, "")
 			return nil
 		}
 	}
-	return errors.New("silnik nie odpowiedział w ciągu 120 s – szczegóły: " + filepath.Join(e.l.LogsDir(), "engine_console.log"))
+	started()
+	msg := fmt.Sprintf("silnik nie odpowiedział w ciągu %d s – szczegóły: %s", int(startTimeout.Seconds()), filepath.Join(e.l.LogsDir(), "engine_console.log"))
+	// 1.46: the state stayed STARTING forever (the automatic restart ignores the error: no error screen, no "Spróbuj ponownie"), and an
+	// engine answering later was never reported RUNNING. The process keeps running (a long migration is not killed) and is watched.
+	e.set(EngineFailed, msg)
+	go e.watchLateStart(ctx, cmd, exited)
+	return errors.New(msg)
+}
+
+// watchLateStart (1.46): an engine that missed startTimeout but is still running - RUNNING as soon as it answers (once; not after a
+// retry already reported it, which would reload the panel a second time).
+func (e *Engine) watchLateStart(ctx context.Context, cmd *exec.Cmd, exited chan struct{}) {
+	for {
+		select {
+		case <-exited:
+			return
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		e.mu.Lock()
+		current := e.cmd == cmd && e.state == EngineFailed // a retry (Start: Owned -> RUNNING) or Stop already took over
+		e.mu.Unlock()
+		if !current {
+			return
+		}
+		if e.healthy() {
+			e.set(EngineRunning, "")
+			return
+		}
+	}
+}
+
+// earlyExit: the engine ended before it answered. Exit codes of `masterquo serve`: 0 = an instance of the app already answers
+// (attach), 3 = port taken by another program, 4 = another engine holds this data folder's lock (it is still starting - wait for
+// it), 5 = startup error with traceback. Every other case: the last lines of the console log go straight into the message.
+func (e *Engine) earlyExit(ctx context.Context, cmd *exec.Cmd, logFrom int64) error {
+	code := -1
+	if cmd.ProcessState != nil {
+		code = cmd.ProcessState.ExitCode()
+	}
+	logPath := filepath.Join(e.l.LogsDir(), "engine_console.log")
+	// 1.46: e.starting is NOT cleared here any more - afterExit runs concurrently (right after close(exited)) and, when this cleared it
+	// first, took the early exit for a crash: FAILED plus CRASHED and the restart loop (TestEarlyExitShowsLogTail failed 4 of 24 runs
+	// under -race). A stale e.starting of an ended process is harmless: only that process's own afterExit / started() compare with it.
+	if code == 0 || code == 4 { // another engine of this folder answers or is about to: attach instead of failing
+		for i := 0; i < 150; i++ {
+			if e.healthy() {
+				e.set(EngineExternal, "silnik działał już wcześniej – podłączono bez uruchamiania drugiej kopii")
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(400 * time.Millisecond):
+			}
+		}
+	}
+	var msg string
+	switch code {
+	case 3:
+		msg = fmt.Sprintf("port %d jest zajęty przez inny program – zmień server.port w %s", e.Port(), filepath.Join(e.l.DataDir, "config.json"))
+	case 4:
+		// 1.46: the user-visible product name (was the old name PepeMarketWizard)
+		msg = "inna kopia silnika trzyma ten folder danych, ale nie odpowiada (zawieszona po poprzednim uruchomieniu). " +
+			"Zamknij procesy python.exe silnika " + displayName + " w Menedżerze zadań albo uruchom ponownie komputer i spróbuj jeszcze raz."
+	default:
+		msg = fmt.Sprintf("silnik zakończył się podczas startu (kod %d)", code)
+	}
+	if t := logTail(logPath, logFrom, 14); t != "" {
+		msg += "\n\nOstatnie linie logu:\n" + t
+	}
+	msg += "\n\nPełny log: " + logPath
+	e.set(EngineFailed, msg)
+	return errors.New(msg)
+}
+
+// logTail: the last n non-empty lines written to the console log since offset `from` (this start only), at most ~1600 characters.
+func logTail(p string, from int64, n int) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	if from > 0 && from <= int64(len(b)) {
+		b = b[from:]
+	}
+	lines := []string{}
+	for _, ln := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		if strings.TrimSpace(ln) != "" {
+			lines = append(lines, strings.TrimRight(ln, " \t"))
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	out := strings.Join(lines, "\n")
+	if r := []rune(out); len(r) > 1600 {
+		out = "…" + string(r[len(r)-1600:])
+	}
+	return out
 }
 
 func (e *Engine) restartRequested() bool {
@@ -260,6 +478,11 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 		e.mu.Unlock()
 		return
 	}
+	if e.starting == cmd { // died while spawn() waits for it: spawn reports why (log tail), no silent restart loop
+		e.cmd, e.proc = nil, nil
+		e.mu.Unlock()
+		return
+	}
 	stopping := e.stopping
 	e.cmd, e.proc = nil, nil
 	e.mu.Unlock()
@@ -269,7 +492,9 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 	}
 	if e.restartRequested() {
 		e.logf("silnik: ponowne uruchomienie na żądanie panelu")
-		_ = e.spawn(ctx)
+		if err := e.spawn(ctx); err != nil && !errors.Is(err, errStopRequested) { // 1.46: spawn reports the state; the reason goes to desktop.log
+			e.logf("silnik: ponowne uruchomienie nieudane: " + err.Error())
+		}
 		return
 	}
 	now := time.Now()
@@ -298,11 +523,18 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 	case <-ctx.Done():
 		return
 	}
-	_ = e.spawn(ctx)
+	if err := e.spawn(ctx); err != nil && !errors.Is(err, errStopRequested) { // 1.46: spawn reports the state; the reason goes to desktop.log
+		e.logf("silnik: ponowne uruchomienie nieudane: " + err.Error())
+	}
 }
 
 // Restart from the shell (tray / start screen): stop the owned engine and start it again.
 func (e *Engine) Restart(ctx context.Context) error {
+	if !e.restartMu.TryLock() {
+		e.logf("silnik: ponowne uruchomienie już trwa – drugie żądanie pominięte")
+		return nil
+	}
+	defer e.restartMu.Unlock()
 	e.Stop(20 * time.Second)
 	e.ResetBackoff()
 	return e.Start(ctx)
@@ -323,7 +555,7 @@ func (e *Engine) Stop(timeout time.Duration) {
 		e.mu.Unlock()
 		return
 	}
-	e.stopping = true
+	e.stopping, e.stopReq = true, cmd
 	e.mu.Unlock()
 	if tok, err := os.ReadFile(filepath.Join(e.l.RuntimeDir(), "shutdown.token")); err == nil {
 		req, _ := http.NewRequest("POST", e.URL()+"api/v1/admin/shutdown", strings.NewReader("{}"))
@@ -339,6 +571,18 @@ func (e *Engine) Stop(timeout time.Duration) {
 		e.logf("silnik: brak zakończenia po " + timeout.String() + " – wymuszone zamknięcie")
 		_ = cmd.Process.Kill()
 		<-exited
+	}
+	// 1.46: exited is closed right BEFORE afterExit releases the process (e.cmd = nil). Stop() returned in between, so Owned() could still
+	// be true right after it (TestEngineSupervisorIntegration "engine still running after Stop" in about 1 of 3 runs). Wait (bounded) until
+	// this process is no longer the owned engine; a newer engine started meanwhile (restart) also ends the wait.
+	for i := 0; i < 250; i++ {
+		e.mu.Lock()
+		still := e.cmd == cmd
+		e.mu.Unlock()
+		if !still {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

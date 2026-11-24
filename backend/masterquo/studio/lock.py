@@ -11,9 +11,11 @@ from pathlib import Path
 
 
 def _alive(pid) -> bool:
+    """1.46: on Windows os.kill(pid, 0) is GenerateConsoleCtrlEvent(CTRL_C_EVENT) - for a process outside the caller's console it fails, so
+    every owner looked dead and the shared export lock never excluded anything. Same check as training.core (OpenProcess + STILL_ACTIVE)."""
     try:
-        os.kill(int(pid), 0)
-        return True
+        from ..training.core import _pid_alive
+        return _pid_alive(int(pid))
     except (OSError, ValueError, TypeError):
         return False
 
@@ -59,9 +61,29 @@ class Lock:
                 tomb = self.path.with_suffix(f".stale-{os.getpid()}")
                 try:
                     os.replace(self.path, tomb)
-                    tomb.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    continue
+                # 1.46: the takeover was not atomic - between reading `o` and the rename another process could take the stale lock over
+                # itself and create a FRESH lock file; the rename then moved THAT lock away and both processes held the lock. Only the
+                # record judged stale is removed: anything else is put back (while the path is still free) and the lock stays taken.
+                try:
+                    data = tomb.read_bytes()
+                except OSError:
+                    data = b""
+                try:
+                    moved = json.loads(data.decode("utf-8"))
+                except ValueError:
+                    moved = None
+                if moved != o:
+                    try:
+                        fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                        os.write(fd, data)
+                        os.close(fd)
+                    except OSError:
+                        pass                                       # the path was taken again meanwhile - that owner holds the lock
+                    tomb.unlink(missing_ok=True)
+                    return False, moved if isinstance(moved, dict) else self.owner()
+                tomb.unlink(missing_ok=True)
         return False, self.owner()
 
     def heartbeat(self) -> None:

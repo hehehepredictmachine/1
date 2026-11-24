@@ -70,23 +70,35 @@ def cmd_serve(args) -> int:
     url = f"http://127.0.0.1:{port}/"
     h = _health(port)
     if h and h.get("app") in (APP_NAME, "MasterQUO AI"):          # also an instance of the pre-1.13 name
-        print(f"[PepeMarketWizard] Aplikacja już działa ({'DANE SYNTETYCZNE' if h.get('synthetic') else 'MT5'}) – otwieram monitor {url}")
+        print(f"[Apollo23] Aplikacja już działa ({'DANE SYNTETYCZNE' if h.get('synthetic') else 'MT5'}) – otwieram monitor {url}")
         if not args.no_browser:
             webbrowser.open(url)
         return 0
     if h is not None or _port_busy(port):
-        print(f"[PepeMarketWizard] Port {port} jest zajęty przez inny program. Zmień server.port w data\\config.json.", file=sys.stderr)
+        print(f"[Apollo23] Port {port} jest zajęty przez inny program. Zmień server.port w data\\config.json.", file=sys.stderr)
         return 3
     _setup_logging()
     lock = _single_instance_lock()
     if lock is None:
-        print("[PepeMarketWizard] Inna instancja PepeMarketWizard już się uruchamia w tym folderze.", file=sys.stderr)
+        print("[Apollo23] Inna instancja Apollo23 już się uruchamia w tym folderze.", file=sys.stderr)
         return 4
-    import uvicorn
-    from .api.app import create_app
-    from .runtime import Runtime
-    rt = Runtime(demo=args.demo)
-    app = create_app(rt, port)
+    try:                                                   # 1.40.1: a native crash (ctypes, DLL) leaves its stack in engine_console.log
+        import faulthandler
+        faulthandler.enable(file=sys.stderr, all_threads=True)
+    except Exception:  # noqa: BLE001 - no usable stderr (pythonw) = nothing to write to
+        pass
+    try:
+        import uvicorn
+        from .api.app import create_app
+        from .runtime import Runtime
+        rt = Runtime(demo=args.demo)
+        app = create_app(rt, port)
+    except Exception:  # noqa: BLE001 - the full reason goes to the console log the launcher shows
+        import traceback
+        print("[Apollo23] BŁĄD STARTU SILNIKA – przyczyna poniżej:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        _crash_report(traceback.format_exc())
+        return 5
     tok = _rt_dir() / "shutdown.token"
     tok.write_text(rt.security.shutdown_token, encoding="utf-8")
     try:
@@ -103,7 +115,7 @@ def cmd_serve(args) -> int:
     def opener():
         for _ in range(120):
             if _health(port, 1.0):
-                print(f"[PepeMarketWizard] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb wykonania wg ustawień'})")
+                print(f"[Apollo23] Monitor gotowy: {url}  ({'DANE SYNTETYCZNE' if args.demo else 'tryb wykonania wg ustawień'})")
                 if not args.no_browser and rt.cfg.get().server.open_browser:
                     webbrowser.open(url)
                 return
@@ -118,8 +130,17 @@ def cmd_serve(args) -> int:
                 (_rt_dir() / f).unlink()
             except OSError:
                 pass
-        print("[PepeMarketWizard] Zatrzymano.")
+        print("[Apollo23] Zatrzymano.")
     return 0
+
+
+def _crash_report(text: str) -> None:
+    try:
+        d = paths.data_dir() / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "engine_crash.txt").write_text(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n{text}", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _port_busy(port: int) -> bool:
@@ -161,10 +182,10 @@ def cmd_stop(args) -> int:
     port = _port()
     tokf = _rt_dir() / "shutdown.token"
     if not _health(port):
-        print("[PepeMarketWizard] Aplikacja nie działa (brak odpowiedzi na porcie %d)." % port)
+        print("[Apollo23] Aplikacja nie działa (brak odpowiedzi na porcie %d)." % port)
         return 0
     if not tokf.exists():
-        print("[PepeMarketWizard] Brak pliku tokenu zatrzymania – zamknij okno serwera MasterQUO ręcznie.", file=sys.stderr)
+        print("[Apollo23] Brak pliku tokenu zatrzymania – zamknij okno serwera Apollo23 ręcznie.", file=sys.stderr)
         return 2
     req = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/admin/shutdown", data=b"{}", method="POST",
                                  headers={"x-mq-shutdown": tokf.read_text(encoding="utf-8").strip(), "Content-Type": "application/json",
@@ -172,14 +193,14 @@ def cmd_stop(args) -> int:
     try:
         urllib.request.urlopen(req, timeout=5).read()
     except (urllib.error.URLError, OSError) as exc:
-        print("[PepeMarketWizard] Nie udało się wysłać żądania zatrzymania:", exc, file=sys.stderr)
+        print("[Apollo23] Nie udało się wysłać żądania zatrzymania:", exc, file=sys.stderr)
         return 3
     for _ in range(40):
         if not _health(port, 0.8):
-            print("[PepeMarketWizard] Zatrzymano serwer PepeMarketWizard (terminal MT5 i inne programy Python nie zostały zamknięte).")
+            print("[Apollo23] Zatrzymano serwer Apollo23 (terminal MT5 i inne programy Python nie zostały zamknięte).")
             return 0
         time.sleep(0.5)
-    print("[PepeMarketWizard] Serwer nie zakończył się w czasie 20 s – zamknij okno 'PepeMarketWizard server'.", file=sys.stderr)
+    print("[Apollo23] Serwer nie zakończył się w czasie 20 s – zamknij okno 'Apollo23 server'.", file=sys.stderr)
     return 4
 
 
@@ -250,6 +271,12 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
+        from .licensing.gate import LicenseGate      # 1.44.0: wersja klienta – Studio tylko z ważną licencją (aktywacja w głównej aplikacji)
+        lg = LicenseGate()
+        st = lg.evaluate(refresh_net=True)
+        if lg.locked:
+            print(f"[PepeTrainingStudio] Brak ważnej licencji: {st.get('message')} Aktywuj klucz w aplikacji Apollo23.", file=sys.stderr)
+            return 6
         from .studio.app import serve
         port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)
@@ -324,6 +351,8 @@ def main(argv=None) -> int:
     ta.add_argument("--demo", action="store_true", help="tylko test: uruchamia bota na danych syntetycznych, jeśli nie działa")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")
     iv.add_argument("file")
+    from .exports import cli as _exports_cli                       # 1.46: export-<nazwa>, export-list, import-trader-life-game
+    _exports_cli.add_parsers(sub)
     a = ap.parse_args(argv)
     _load_dotenv()
     if a.cmd == "serve":
@@ -355,6 +384,12 @@ def main(argv=None) -> int:
     if a.cmd == "train-all":
         from .train_all import train_all
         return train_all(a)
+    if a.cmd == "export-list":
+        return _exports_cli.list_cmd()
+    if a.cmd == "import-trader-life-game":
+        return _exports_cli.import_tlg_cmd(a)
+    if a.cmd.startswith("export-") and a.cmd[len("export-"):] in _exports_cli.R.EXPORTERS:
+        return _exports_cli.run_export(a.cmd[len("export-"):], a)
     return 1
 
 

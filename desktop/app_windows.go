@@ -3,16 +3,15 @@
 package main
 
 // The window: WebView2 with the start screen (setup, data choice, errors) and then the engine's panel. 1.32: the start screen is
-// the small launcher window "JOIN THE CULT" - when the engine is ready it waits for JOIN THE CULT, then the window grows to 85 % of
+// the small launcher window "WEJDŹ" - when the engine is ready it waits for WEJDŹ, then the window grows to 85 % of
 // the monitor and loads the panel (main menu with the intro). One instance per Windows
-// session (a second start brings the window to the front). Closing the window follows the preference from Centrum sterowania →
-// Praca aplikacji: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
+// session (a second start brings the window to the front). Closing the window follows the preference close_action of
+// <data>\desktop_prefs.json: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
 // through one bound function that only works while the start screen is shown; the panel uses the engine's protected HTTP API.
 
 import (
 	"context"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,11 +33,8 @@ func init() { runtime.LockOSThread() } // the window, WebView2 and the message l
 //go:embed splash.html
 var splashHTML string
 
-//go:embed winres/icon256.png
-var iconPNG []byte
-
-//go:embed assets/launcher-speech.webp
-var launcherScene []byte // 1.34 TASK 001: Pepe speaking to the crowd - the full background of the launcher (tools/neural_city_assets.py)
+// 1.46: the launcher background (assets/launcher-speech.webp) and icon256.png are no longer embedded and sent with "state" - the
+// start screen (splash.html, "cinematic" without images since 1.42) never read the scene / icon fields.
 
 var (
 	user32                  = windows.NewLazySystemDLL("user32.dll")
@@ -101,7 +97,8 @@ const (
 	smCxScreen, smCyScreen = 0, 1
 
 	monitorDefaultToNearest           = 2
-	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10
+	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10 // swpFrameChanged, swpShowWindow, wsPopup, wsVisible: window.go
+	hwndTop                           = 0
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
 	mutexName      = `Local\PepeMarketWizardDesktop`
@@ -110,6 +107,7 @@ const (
 )
 
 var gwlpWndProc = ^uintptr(3) // GWLP_WNDPROC (-4)
+var gwlStyle = ^uintptr(15)   // GWL_STYLE (-16)
 
 type notifyIconData struct {
 	CbSize           uint32
@@ -153,7 +151,7 @@ func shellOpen(target string) {
 }
 
 type splashState struct {
-	Phase      string   `json:"phase"` // progress | choose | error | ready (engine running, waiting for JOIN THE CULT)
+	Phase      string   `json:"phase"` // progress | choose | error | ready (engine running, waiting for WEJDŹ)
 	Message    string   `json:"message"`
 	Lines      []string `json:"lines"`
 	Candidates []string `json:"candidates,omitempty"`
@@ -161,8 +159,6 @@ type splashState struct {
 	LogPath    string   `json:"log_path"`
 	DataDir    string   `json:"data_dir"`
 	Version    string   `json:"version"`
-	Icon       string   `json:"icon,omitempty"`
-	Scene      string   `json:"scene,omitempty"` // data URL of the launcher background - only in the answer to "state"
 }
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -194,9 +190,9 @@ type winApp struct {
 	splash       splashState
 	choice       chan dataChoice
 	retry        chan struct{}
-	join         chan struct{} // JOIN THE CULT on the launcher
+	join         chan struct{} // WEJDŹ on the launcher
 	joinAbort    chan struct{} // the engine failed while the launcher waited for JOIN
-	awaiting     bool          // the launcher waits for JOIN THE CULT
+	awaiting     bool          // the launcher waits for WEJDŹ
 	tip          string
 	quitting     bool
 	balloonShown bool
@@ -259,8 +255,6 @@ func (a *winApp) bridge(action, arg string) (any, error) {
 	}
 	switch action {
 	case "state":
-		st.Icon = "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
-		st.Scene = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherScene)
 		return st, nil
 	case "join":
 		if st.Phase != "ready" {
@@ -363,15 +357,12 @@ func (a *winApp) showError(msg string) {
 	a.showWindow()
 }
 
-// readyMessage: the line under JOIN THE CULT while the engine runs.
+// readyMessage: the line under WEJDŹ while the engine runs (1.46: with the warning of an engine of another version - readyLine).
 func (a *winApp) readyMessage() string {
-	if a.eng.Owned() {
-		return fmt.Sprintf("silnik bota działa (port %d)", a.eng.Port())
-	}
-	return fmt.Sprintf("podłączono do działającego silnika (port %d)", a.eng.Port())
+	return readyLine(a.eng.Owned(), a.eng.Port(), a.eng.AttachWarning())
 }
 
-// awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for JOIN THE CULT (true), the engine failing
+// awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for WEJDŹ (true), the engine failing
 // meanwhile (false, the error is already shown) or the app quitting (false). The bot works in the background meanwhile.
 func (a *winApp) awaitJoin() bool {
 	msg := a.readyMessage() // engine calls stay outside a.mu
@@ -391,7 +382,15 @@ func (a *winApp) awaitJoin() bool {
 		}
 	}
 	a.push()
-	a.logf("start: silnik gotowy – oczekiwanie na JOIN THE CULT")
+	warning := a.eng.AttachWarning()
+	if autoEnter(loadPrefs(a.l.DataDir), warning) { // 1.45 (TASK 013): the dashboard opens automatically once the engine is ready
+		a.logf("start: silnik gotowy – automatyczne wejście do panelu (auto_enter)")
+		return true
+	}
+	if warning != "" { // 1.46: an engine of another version - the user decides (the warning is on the start screen and in the tray tip)
+		a.logf("start: podłączono do silnika innej wersji – bez automatycznego wejścia: " + warning)
+	}
+	a.logf("start: silnik gotowy – oczekiwanie na WEJDŹ")
 	select {
 	case <-a.join:
 		return true
@@ -437,31 +436,57 @@ func (a *winApp) openApp() {
 	a.phase, a.appShown = "app", true
 	a.mu.Unlock()
 	url := panelURL(a.eng.URL(), true)
-	a.logf("okno: JOIN THE CULT → panel " + url)
+	a.logf("okno: WEJDŹ → panel " + url)
+	full := loadPrefs(a.l.DataDir).Fullscreen
 	a.wv.Dispatch(func() {
-		wa := a.workArea()
-		w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
-		a.resizeCentred(w, h, false)
+		if full {
+			a.borderlessFullscreen() // 1.45 (TASK 013): monitor rectangle, no frame; Windows resolution untouched
+		} else {
+			wa := a.workArea()
+			w, h := panelSize(int(wa.Right-wa.Left), int(wa.Bottom-wa.Top))
+			a.resizeCentred(w, h, false)
+		}
 		a.wv.SetTitle(a.l.WindowTitle(version))
 		a.wv.Navigate(url)
 	})
+}
+
+// borderlessFullscreen (UI thread): WS_POPUP window covering the whole monitor of the window (rcMonitor, native DPI).
+func (a *winApp) borderlessFullscreen() {
+	mon, _, _ := pMonitorFromWindow.Call(a.hwnd, monitorDefaultToNearest)
+	mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if mon == 0 {
+		return
+	}
+	if ok, _, _ := pGetMonitorInfoW.Call(mon, uintptr(unsafe.Pointer(&mi))); ok == 0 {
+		return
+	}
+	r := mi.RcMonitor
+	// 1.46: a window hidden at start (autostart + start_minimized) stays hidden - fullscreenFlags (window.go)
+	style, swp := fullscreenFlags(windows.IsWindowVisible(windows.HWND(a.hwnd)))
+	_, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlStyle, style)
+	_, _, _ = pSetWindowPos.Call(a.hwnd, hwndTop, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swp)
 }
 
 func (a *winApp) onEngineState(s EngineState, detail string) {
 	port := a.eng.Port()
 	switch s {
 	case EngineRunning:
-		a.setTip(fmt.Sprintf("PepeMarketWizard – bot działa (port %d)", port))
+		a.setTip(fmt.Sprintf(displayName+" – bot działa (port %d)", port))
 	case EngineExternal:
-		a.setTip("PepeMarketWizard – podłączono do działającego silnika")
+		if a.eng.AttachWarning() != "" { // 1.46: the detail of an engine of another version was never shown
+			a.setTip(displayName + " – UWAGA: podłączono do silnika innej wersji")
+		} else {
+			a.setTip(displayName + " – podłączono do działającego silnika")
+		}
 	case EngineStarting:
-		a.setTip("PepeMarketWizard – uruchamianie silnika…")
+		a.setTip(displayName + " – uruchamianie silnika…")
 	case EngineCrashed:
-		a.setTip("PepeMarketWizard – silnik zatrzymał się, ponowne uruchomienie…")
+		a.setTip(displayName + " – silnik zatrzymał się, ponowne uruchomienie…")
 	case EngineFailed:
-		a.setTip("PepeMarketWizard – silnik nie działa (szczegóły w oknie)")
+		a.setTip(displayName + " – silnik nie działa (szczegóły w oknie)")
 	case EngineStopped:
-		a.setTip("PepeMarketWizard – silnik zatrzymany")
+		a.setTip(displayName + " – silnik zatrzymany")
 	}
 	a.mu.Lock()
 	inApp, shown, quitting, awaiting := a.phase == "app", a.appShown, a.quitting, a.awaiting
@@ -469,7 +494,7 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 	if quitting {
 		return
 	}
-	if awaiting { // the launcher waits for JOIN THE CULT: it always tells the true state of the engine
+	if awaiting { // the launcher waits for WEJDŹ: it always tells the true state of the engine
 		switch s {
 		case EngineRunning, EngineExternal:
 			msg := a.readyMessage()
@@ -553,12 +578,13 @@ func (a *winApp) onClose() {
 			"Tak – okno zostanie ukryte, bot pracuje dalej (ikona przy zegarze; tam też „Zamknij aplikację”).\n" +
 			"Nie – zamknij aplikację i zatrzymaj bota.\n" +
 			"Anuluj – wróć do okna.\n\n" +
-			"Domyślne zachowanie ustawisz w Centrum sterowania → Praca aplikacji."
+			// 1.46: the panel has no "Praca aplikacji" card any more - the dialog pointed to a place that does not exist
+			"Domyślne zachowanie: close_action (ask / background / exit) w pliku desktop_prefs.json w folderze danych."
 		if external {
 			text = "Silnik bota został uruchomiony poza tą aplikacją i będzie działał dalej niezależnie od okna.\n\n" +
 				"Tak – ukryj okno (ikona przy zegarze).\nNie – zamknij okno aplikacji.\nAnuluj – wróć do okna."
 		}
-		switch messageBox(a.hwnd, text, "PepeMarketWizard", mbYesNoCancel|mbIconQuestion) {
+		switch messageBox(a.hwnd, text, displayName, mbYesNoCancel|mbIconQuestion) {
 		case idYes:
 			a.toBackground()
 		case idNo:
@@ -574,7 +600,7 @@ func (a *winApp) toBackground() {
 	a.balloonShown = true
 	a.mu.Unlock()
 	if first {
-		a.balloon("PepeMarketWizard działa w tle", "Bot pracuje dalej. Kliknij ikonę, aby otworzyć okno; prawy przycisk → Zamknij aplikację.")
+		a.balloon(displayName+" działa w tle", "Bot pracuje dalej. Kliknij ikonę, aby otworzyć okno; prawy przycisk → Zamknij aplikację.")
 	}
 }
 
@@ -599,7 +625,7 @@ func (a *winApp) quit() {
 	a.quitting = true
 	a.mu.Unlock()
 	_, _, _ = pShowWindow.Call(a.hwnd, swHide)
-	a.setTip("PepeMarketWizard – zatrzymywanie bota…")
+	a.setTip(displayName + " – zatrzymywanie bota…")
 	go func() {
 		a.cancel()
 		if a.eng.Owned() {
@@ -741,7 +767,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 			"(w Windows 11 jest wbudowany, w Windows 10 instaluje go zwykle Microsoft Edge).\n\n"+
 			"Tak – otwórz stronę Microsoftu z instalatorem (Evergreen), potem uruchom aplikację ponownie.\n"+
 			"Nie – uruchom bota i otwórz panel w domyślnej przeglądarce (bez ikony przy zegarze).",
-			"PepeMarketWizard", mbYesNoCancel|mbIconWarning) {
+			displayName, mbYesNoCancel|mbIconWarning) {
 		case idYes:
 			shellOpen(webview2URL)
 			return 0
@@ -755,16 +781,17 @@ func runApp(l Layout, o options, logf func(string)) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &winApp{l: l, o: o, logf: logf, ctx: ctx, cancel: cancel, phase: "splash",
 		choice: make(chan dataChoice, 1), retry: make(chan struct{}, 1), join: make(chan struct{}, 1), joinAbort: make(chan struct{}, 1),
-		tip: "PepeMarketWizard – uruchamianie…"}
+		tip: displayName + " – uruchamianie…"}
 	a.splash = splashState{Phase: "progress", Message: "Przygotowanie…", LogPath: filepath.Join(l.LogsDir(), "engine_console.log"),
 		DataDir: l.DataDir, Version: version}
 	a.eng = newEngine(l, "", logf, a.onEngineState)
 
 	sw, _, _ := pGetSystemMetrics.Call(smCxScreen)
 	sh, _, _ := pGetSystemMetrics.Call(smCyScreen)
-	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; JOIN THE CULT grows it to 85 %
+	lw, lh := launcherSize(int(sw), int(sh)) // 1.32: the launcher is a small window; WEJDŹ grows it to 85 %
 	w, h := uint(lw), uint(lh)
 	_ = os.MkdirAll(l.Home, 0o755)
+	_ = os.Setenv(webview2ArgsEnv, withAutoplay(os.Getenv(webview2ArgsEnv))) // 1.44.1: intro (film z dźwiękiem) rusza bez kliknięcia
 	wv := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     os.Getenv("PMW_DEBUG") == "1",
 		AutoFocus: true,
@@ -775,7 +802,7 @@ func runApp(l Layout, o options, logf func(string)) int {
 	})
 	if wv == nil {
 		logf("WebView2: nie udało się utworzyć okna")
-		messageBox(0, "Nie udało się utworzyć okna WebView2. Panel zostanie otwarty w domyślnej przeglądarce.", "PepeMarketWizard", mbOK|mbIconError)
+		messageBox(0, "Nie udało się utworzyć okna WebView2. Panel zostanie otwarty w domyślnej przeglądarce.", displayName, mbOK|mbIconError)
 		cancel()
 		return runBrowserFallback(l, o, logf)
 	}
@@ -822,7 +849,7 @@ func runBrowserFallback(l Layout, o options, logf func(string)) int {
 		}
 	})
 	if err := boot(ctx, l, fallbackUI{}, o.importSrc, logf, eng); err != nil {
-		messageBox(0, "Nie udało się uruchomić bota:\n\n"+err.Error(), "PepeMarketWizard", mbOK|mbIconError)
+		messageBox(0, "Nie udało się uruchomić bota:\n\n"+err.Error(), displayName, mbOK|mbIconError)
 		eng.Stop(10 * time.Second)
 		return 1
 	}
@@ -841,7 +868,7 @@ func (fallbackUI) Detail(string) {}
 func (fallbackUI) ChooseData(cands []string, lastErr string) (string, bool, bool) {
 	if lastErr == "" && len(cands) > 0 {
 		r := messageBox(0, "Znaleziono dane poprzedniej instalacji:\n"+strings.Join(cands, "\n")+
-			"\n\nTak – skopiuj je (oryginał pozostaje bez zmian).\nNie – zacznij od zera.", "PepeMarketWizard", mbYesNo|mbIconQuestion)
+			"\n\nTak – skopiuj je (oryginał pozostaje bez zmian).\nNie – zacznij od zera.", displayName, mbYesNo|mbIconQuestion)
 		if r == idYes {
 			return cands[0], false, true
 		}

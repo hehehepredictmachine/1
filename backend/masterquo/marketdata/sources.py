@@ -30,8 +30,21 @@ class BridgeSource:
         return self.bridge.raw_call(fn, PRIO_HISTORY, timeout=120)
 
     def offset(self, symbol: str) -> tuple[float | None, str]:
-        off = getattr(self.bridge.clock, "offset", None)
-        return (float(off), "BRIDGE_CLOCK_MEASURED") if off is not None else (None, "UNKNOWN")
+        clock = self.bridge.clock
+        off = getattr(clock, "offset", None)
+        if off is None:
+            return None, "UNKNOWN"
+        # 1.46: ServerClock.offset also returns a STORED (previous session, not re-measured) and an INCONSISTENT offset (new samples
+        # disagree - typically right after a DST switch); both were labelled "BRIDGE_CLOCK_MEASURED" and an outdated offset shifted the
+        # whole export by 1 h. Basis as in DirectSource (STORED_<measured_at>); an inconsistent clock is not used at all.
+        ev = getattr(clock, "evidence", None)
+        status = getattr(ev, "status", None)
+        if status == "INCONSISTENT":
+            return None, "BRIDGE_CLOCK_INCONSISTENT"
+        if status == "STORED_UNVERIFIED":
+            at = getattr(ev, "measured_at", None)
+            return float(off), f"STORED_{at.isoformat() if hasattr(at, 'isoformat') else at}"
+        return float(off), "BRIDGE_CLOCK_MEASURED"
 
     def synthetic(self) -> bool | None:
         """True = terminal simulator, False = a real MetaTrader5 terminal, None = could not tell (then the data is never labelled real)."""

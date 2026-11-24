@@ -15,6 +15,7 @@ reported UNVALIDATED (no incremental out-of-sample evidence yet) - never promote
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,9 +66,14 @@ def snapshot(name: str, symbol: str, now: datetime | None = None, max_age_s: flo
     try:
         d = json.loads(f.read_text(encoding="utf-8"))
         ka = datetime.fromisoformat(str(d["known_at"]).replace("Z", "+00:00"))
-        vals = {k: (float(v) if isinstance(v, (int, float)) else None) for k, v in (d.get("values") or {}).items()}
+        # 1.46: NaN / inf (json.loads accepts them) broke the JSON answer of /api/v1/scalp - a non-finite number is not a value
+        vals = {k: (float(v) if isinstance(v, (int, float)) and math.isfinite(v) else None)
+                for k, v in (d.get("values") or {}).items()}
     except Exception as exc:                                  # malformed export -> unavailable, never a value
         return dict(base, status="UNAVAILABLE", reason=f"nieczytelny eksport: {type(exc).__name__}")
+    if ka.tzinfo is None or ka.utcoffset() is None:
+        # 1.46: a naive known_at was compared with an aware 'now' OUTSIDE the try - TypeError -> ScalpService ERROR_RECOVERY on every M1
+        return dict(base, status="UNAVAILABLE", reason="known_at bez strefy czasowej (wymagany UTC, np. ...Z lub +00:00)")
     if d.get("symbol") != symbol:
         return dict(base, status="UNAVAILABLE", reason=f"symbol eksportu {d.get('symbol')!r} ≠ {symbol!r}")
     if ka > now:
@@ -101,4 +107,12 @@ def extind_snapshot(name: str, symbol: str, ext, instrument: str | None, now: da
 
 def all_snapshots(symbol: str, now: datetime | None = None, ext=None, instrument: str | None = None) -> list[dict]:
     now = now or datetime.now(timezone.utc)
-    return [extind_snapshot(n, symbol, ext, instrument, now) if (ext is not None and n in EXTIND) else snapshot(n, symbol, now) for n in ADAPTERS]
+    out = []
+    for n in ADAPTERS:
+        try:
+            out.append(extind_snapshot(n, symbol, ext, instrument, now) if (ext is not None and n in EXTIND) else snapshot(n, symbol, now))
+        except Exception as exc:  # noqa: BLE001 - 1.46: one broken adapter is UNAVAILABLE, it never stops the scalp tick (ERROR_RECOVERY)
+            out.append({"adapter": n, "title": ADAPTERS[n]["title"], "version": None, "symbol": symbol, "values": None, "known_at": None,
+                        "received_at": now.isoformat(), "delay_seconds": None, "needs": ADAPTERS[n]["needs"], "status": "UNAVAILABLE",
+                        "reason": f"błąd adaptera: {type(exc).__name__}"})
+    return out

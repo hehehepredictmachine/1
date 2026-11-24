@@ -4,12 +4,32 @@ closed bar and plan. The variant is the one chosen by the user's validation when
 result says that the variant was NOT chosen by validation and that the probability is a model probability only."""
 from __future__ import annotations
 
+import math
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 
 from . import engine as E
 from . import validate as V
+
+# 1.46: default scenario levels are USD price moves sized for gold; an instrument without its own levels gets none (BTC showed p ~ 1 on
+# every gold level). Levels passed by the caller (e.g. the SH profile tp_usd in sh/scenario) are always used.
+DEFAULT_LEVELS = {"XAUUSD": (2.5, 3.0, 5.0, 7.5, 10.0)}
+
+
+def _plan_error(p) -> str | None:
+    """1.46: a plan with a non-finite or non-positive entry (POST /api/v1/montecarlo/run accepted "nan" / "inf" / -5) gave NaN SL / TP,
+    probabilities 0 and a 500 (NaN is not JSON). Refused here, for every caller."""
+    try:
+        vals = [float(p.entry), float(p.sl), *(float(x) for x in p.tps)]
+    except (TypeError, ValueError):
+        return "ceny planu nie są liczbami"
+    if p.side not in ("BUY", "SELL") or not p.tps:
+        return "plan bez strony BUY/SELL albo bez poziomów TP"
+    if not all(math.isfinite(x) for x in vals):
+        return "cena wejścia / SL / TP nie jest skończoną liczbą"
+    if vals[0] <= 0:
+        return "cena wejścia musi być dodatnia"
+    return None
 
 
 class MonteCarloService:
@@ -36,6 +56,10 @@ class MonteCarloService:
     def compute(self, plans: list[E.Plan] | None = None, *, horizon: int = 60, variant: str | None = None, n_paths: int | None = None,
                 timeout: float = 20.0, levels: tuple | None = None) -> dict:
         inst, point = self._ctx()
+        for p in plans or []:
+            err = _plan_error(p)
+            if err:
+                return {"status": "BAD_PLAN", "reason": err, "instrument": inst}
         bars = [b for b in self.bridge.bars("M1", include_forming=False) if b.get("open_utc")]   # UTC time verified (clock) only
         if not bars:
             return {"status": "NO_DATA", "reason": "brak zamkniętych świec M1 z potwierdzonym czasem UTC (MT5 rozłączony albo zegar serwera "
@@ -43,7 +67,7 @@ class MonteCarloService:
         last = bars[-1].get("open_utc")
         chosen, cal = self._variant(inst)
         v = variant or chosen
-        levels = tuple(float(x) for x in levels) if levels else (2.5, 3.0, 5.0, 7.5, 10.0)
+        levels = tuple(float(x) for x in levels) if levels else DEFAULT_LEVELS.get(inst, ())
         key = (inst, last, v, horizon, n_paths or self.n_paths, levels, tuple((p.side, round(p.entry, 5), round(p.sl, 5), tuple(round(x, 5) for x in p.tps), p.horizon)
                                                                    for p in plans or []))
         with self._lock:
@@ -60,8 +84,15 @@ class MonteCarloService:
             self.state["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
             return {"status": "ERROR", "reason": self.state["last_error"], "instrument": inst}
         res["instrument"] = inst
-        res["variant_basis"] = ("wybrany walidacją na Twoich danych (" + cal["run_id"] + ")") if cal else \
-            "domyślny BLOCK – wariant NIE był wybrany walidacją (brak aktywnej kalibracji); to prawdopodobieństwo w modelu, nie skalibrowane"
+        if cal and v == cal["variant"]:
+            res["variant_basis"] = "wybrany walidacją na Twoich danych (" + cal["run_id"] + ")"
+        elif cal:                                    # 1.46: a variant chosen by hand is neither the validated one nor calibrated
+            res["variant_basis"] = (f"wariant {v} wskazany ręcznie – NIE wybrany walidacją (walidacja wybrała {cal['variant']}); "
+                                    "to prawdopodobieństwo w modelu, nie skalibrowane")
+        else:
+            res["variant_basis"] = ("domyślny BLOCK – wariant NIE był wybrany walidacją (brak aktywnej kalibracji); to prawdopodobieństwo w "
+                                    "modelu, nie skalibrowane") if v == "BLOCK" else \
+                f"wariant {v} wskazany ręcznie – brak aktywnej kalibracji; to prawdopodobieństwo w modelu, nie skalibrowane"
         self.state.update(runs=self.state["runs"] + 1, last_ms=res.get("compute_ms"), last_error=None)
         with self._lock:
             if len(self._cache) > 64:

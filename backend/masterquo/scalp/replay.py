@@ -53,7 +53,12 @@ def walk(P: Path, i0: int, sgn: int, vol: float, sl: float, tp1: float | None, t
          early: tuple[int, float] | None = None) -> dict:
     """Exit path of a position (volume `vol`) from bar i0. Returns exits [(vol, price, t, reason)], ambiguity, MFE/MAE in price.
     be_offset: after TP1 the stop moves to entry + be_offset (cost-adjusted BE) from the NEXT bar.
-    early=(n, min_mfe): after n closed bars without TP1 and with MFE < min_mfe (price) the position exits at the close."""
+    early=(n, min_mfe): after n closed bars without TP1 and with MFE < min_mfe (price) the position exits at the close.
+    open_in_first_bar=False (1.46): the position was filled INSIDE bar i0 (limit touched intrabar) - the favourable extreme of that bar
+    may come before the fill, so a TP there counts only when the close is beyond it, otherwise it is not taken and the cycle is
+    flagged ambiguous (conservative, as for SL+TP in one bar).
+    A bar without a known spread where the exit side needs it (SELL exits on Ask, or a BUY entry from the open) ends the path
+    with spread_unknown=True and the volume left open (1.46: was 0.0 - a missing spread is not a zero spread)."""
     rem, exits, amb = vol, [], False
     new_sl = None
     tp1_left = tp1 is not None and f1 > 0
@@ -61,6 +66,8 @@ def walk(P: Path, i0: int, sgn: int, vol: float, sl: float, tp1: float | None, t
     mfe = mae = 0.0
     entry_ref = None
     for i in range(i0, len(P.t)):
+        if P.sp[i] is None and (sgn < 0 or (entry_ref is None and entry is None)):
+            return {"exits": exits, "ambiguous": amb, "mfe": mfe, "mae": mae, "end_i": i, "open_at_end": rem, "spread_unknown": True}
         sp = P.sp[i] or 0.0
         if sgn > 0:
             lo, hi, cl = P.l[i], P.h[i], P.c[i]
@@ -71,11 +78,19 @@ def walk(P: Path, i0: int, sgn: int, vol: float, sl: float, tp1: float | None, t
         if entry_ref is None:
             entry_ref = entry if entry is not None else P.o[i] + (sp if sgn > 0 else 0.0)
         adverse, favor = (lo, hi) if sgn > 0 else (hi, lo)
-        mfe = max(mfe, sgn * (favor - entry_ref))
+        intrabar = i == i0 and not open_in_first_bar
+        mfe = max(mfe, sgn * ((cl if intrabar else favor) - entry_ref))     # 1.46: the fill bar's extreme may precede the fill
         mae = max(mae, sgn * (entry_ref - adverse))
         sl_hit = (lo <= sl) if sgn > 0 else (hi >= sl)
         t1_hit = tp1_left and ((hi >= tp1) if sgn > 0 else (lo <= tp1))
         t2_hit = tp2 is not None and ((hi >= tp2) if sgn > 0 else (lo <= tp2))
+        if intrabar and (t1_hit or t2_hit):
+            # 1.46: LIMIT_EDGE fill inside this bar - TP only when the close is beyond it (reached after the fill), else unknown order
+            c1 = t1_hit and ((cl >= tp1) if sgn > 0 else (cl <= tp1))
+            c2 = t2_hit and ((cl >= tp2) if sgn > 0 else (cl <= tp2))
+            if (t1_hit and not c1) or (t2_hit and not c2):
+                amb = True
+            t1_hit, t2_hit = c1, c2
         if sl_hit and (t1_hit or t2_hit):
             amb = True                                               # conservative: adverse extreme first
         if sl_hit:
@@ -127,18 +142,22 @@ def get_fill(plan: dict, P: Path, T: int, slip: float) -> dict:
         for k in range(i, min(len(P.t), i + (plan.get("limit_wait_m1") or 3))):
             if k > i and P.t[k] - P.t[k - 1] != 60:
                 break
-            spk = P.sp[k] or 0.0
+            if P.sp[k] is None:
+                return {"ok": False, "reason": "SPREAD_UNKNOWN"}            # 1.46: was 0.0 (Ask = Bid) - missing spread is not zero
+            spk = P.sp[k]
+            # at_open (1.46): the bar opened through the limit -> filled at the open, otherwise somewhere inside the bar (walk() then
+            # does not take a TP whose order against the fill is unknown)
             if sgn > 0 and P.l[k] + spk <= lim:
-                return {"ok": True, "i": k, "fill": min(lim, P.o[k] + spk), "spread": spk, "mode": "LIMIT"}
+                return {"ok": True, "i": k, "fill": min(lim, P.o[k] + spk), "spread": spk, "mode": "LIMIT", "at_open": P.o[k] + spk <= lim}
             if sgn < 0 and P.h[k] >= lim:
-                return {"ok": True, "i": k, "fill": max(lim, P.o[k]), "spread": spk, "mode": "LIMIT"}
+                return {"ok": True, "i": k, "fill": max(lim, P.o[k]), "spread": spk, "mode": "LIMIT", "at_open": P.o[k] >= lim}
         return {"ok": False, "reason": "MISSED_LIMIT_NOT_FILLED"}
     sp = P.sp[i]
     fill = P.o[i] + (sp if sgn > 0 else 0.0) + sgn * slip
     ref_exec = plan["ref_close_bid"] + ((plan["spread_at_signal"] or sp) if sgn > 0 else 0.0)
     if sgn * (fill - ref_exec) > plan["chase_limit"]:
         return {"ok": False, "reason": "MISSED_CHASE_LIMIT"}
-    return {"ok": True, "i": i, "fill": fill, "spread": sp, "mode": "MARKET"}
+    return {"ok": True, "i": i, "fill": fill, "spread": sp, "mode": "MARKET", "at_open": True}
 
 
 def exit_params(prof: dict, costs: dict, risk: float) -> dict:
@@ -212,9 +231,9 @@ def run(m1: list[dict], prof: dict, tick: float, costs: dict, m5: list[dict] | N
             f1 = V(prof, "exits", "tp1_fraction") if costs.get("split_allowed", True) else 1.0
             tp2 = plan["tp2"] if f1 < 1.0 else None
             res = walk(P, i, sgn, 1.0, plan["sl"], plan["tp1"], tp2, f1, P.t[i] + hold, costs, entry=fill,
-                       **exit_params(prof, costs, eco["risk_per_unit"]))
+                       open_in_first_bar=fl.get("at_open", True), **exit_params(prof, costs, eco["risk_per_unit"]))
             if res.get("open_at_end"):
-                blocked.append(dict(rec, reason="DATA_END_OPEN"))
+                blocked.append(dict(rec, reason="SPREAD_UNKNOWN_IN_PATH" if res.get("spread_unknown") else "DATA_END_OPEN"))
                 continue
             risk = eco["risk_per_unit"]
             net = pnl(sgn, fill, 1.0, res["exits"], costs)
@@ -242,13 +261,16 @@ def policies(P: Path, i_fill: int, base: dict, plan: dict, sgn: int, fill: float
     for k in range(i_fill, min(first_exit_i, i_fill + max_points)):
         if k + 1 >= len(P.t):
             break
+        if sgn < 0 and P.sp[k] is None:
+            continue                                              # 1.46: SELL closes on Ask - unknown spread = no label (was 0.0)
         sp_k = P.sp[k] or 0.0
         mark = P.c[k] if sgn > 0 else P.c[k] + sp_k              # price at which the base would close now
         unreal = sgn * (mark - fill)
         res = {"HOLD": hold_net}
         res["CLOSE"] = sgn * (mark - sgn * slip - fill) - 2 * com
         rest = walk(P, k + 1, sgn, 0.5, plan["sl"], plan["tp1"], tp2, f1, t_end, costs, entry=fill)
-        res["REDUCE"] = 0.5 * (sgn * (mark - sgn * slip - fill) - 2 * com) + pnl(sgn, fill, 0.5, rest["exits"], costs)
+        res["REDUCE"] = (None if rest.get("spread_unknown") else
+                         0.5 * (sgn * (mark - sgn * slip - fill) - 2 * com) + pnl(sgn, fill, 0.5, rest["exits"], costs))
         if margin_mode == "NETTING":
             res["HEDGE_PARTIAL"] = None                               # opposite order reduces the net position = REDUCE
         else:
@@ -256,7 +278,7 @@ def policies(P: Path, i_fill: int, base: dict, plan: dict, sgn: int, fill: float
         out.append({"setup_id": plan["setup_id"], "decision_time": iso_ts(P.t[k] + 60), "k": k - i_fill, "unrealized_r": unreal / risk,
                     "values_r": {a: (None if v is None else v / risk) for a, v in res.items()},
                     "best": max((a for a in res if res[a] is not None), key=lambda a: res[a]),
-                    "hedge_minus_reduce_r": None if res["HEDGE_PARTIAL"] is None else (res["HEDGE_PARTIAL"] - res["REDUCE"]) / risk,
+                    "hedge_minus_reduce_r": None if res["HEDGE_PARTIAL"] is None or res["REDUCE"] is None else (res["HEDGE_PARTIAL"] - res["REDUCE"]) / risk,
                     "label_end": iso_ts(t_end)})
     return out
 
@@ -270,6 +292,8 @@ def hedge_value(P: Path, i: int, sgn: int, plan: dict, base_fill: float, base_ne
         return None
     hs = -sgn
     slip, com = costs.get("slippage_price", 0.0), costs.get("commission_price_side", 0.0)
+    if hs > 0 and P.sp[i] is None:
+        return None                                                   # 1.46: BUY hedge fills at Ask - unknown spread = no value (was 0.0)
     sp = P.sp[i] or 0.0
     hfill = P.o[i] + (sp if hs > 0 else 0.0) + hs * slip
     h_sl = hfill - hs * risk
@@ -279,6 +303,8 @@ def hedge_value(P: Path, i: int, sgn: int, plan: dict, base_fill: float, base_ne
     run = 0
     vol = V(prof, "hedge", "max_fraction_of_base")
     for k in range(i, len(P.t)):
+        if hs < 0 and P.sp[k] is None:
+            return None                                               # 1.46: SELL hedge exits on Ask - unknown spread = no value
         spk = P.sp[k] or 0.0
         hi, lo = (P.h[k], P.l[k]) if hs > 0 else (P.h[k] + spk, P.l[k] + spk)
         close_side = P.c[k] if hs > 0 else P.c[k] + spk

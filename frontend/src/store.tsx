@@ -8,10 +8,47 @@ type Action = { type: "full"; state: any } | { type: "ev"; ev: any } | { type: "
 
 const initial: AppState = { loaded: false, ws: "INIT", barTick: {}, analysisSeq: 0, logs: [] };
 
+// 1.46: the 30 s / tab-visible GET /api/v1/state snapshot was merged unconditionally - a response built BEFORE a WS event that arrived
+// first rolled that event back (mode / prefs / auto / positions ... stayed stale until the next event). `_sync` remembers the bus seq of
+// the last snapshot (full or WS resync) and, per state key, the seq of the last WS event that changed it; an older snapshot of the same
+// boot is skipped, a newer one keeps only the keys changed by even newer events.
+type Sync = { boot: string | null; seq: number; keys: Record<string, number> };
+const UNTRACKED = new Set(["loaded", "ws", "analysisSeq", "_sync"]);
+
+function applyFull(s: AppState, st: any): AppState {
+  const sy: Sync | undefined = s._sync;
+  const seq = typeof st?.seq === "number" ? st.seq : null;
+  const boot = st?.boot_id ?? null;
+  if (!sy || seq === null || boot !== sy.boot)
+    return { ...s, ...st, loaded: true, analysisSeq: s.analysisSeq + 1, _sync: { boot, seq: seq ?? -1, keys: {} } };
+  if (seq < sy.seq) return s.loaded ? s : { ...s, loaded: true };            // older than the snapshot already applied
+  const next: AppState = { ...s, ...st, loaded: true, analysisSeq: s.analysisSeq + 1 };
+  const keys: Record<string, number> = {};
+  for (const [k, q] of Object.entries(sy.keys)) if (q > seq) { keys[k] = q; if (k in s) next[k] = s[k]; }
+  next._sync = { boot, seq, keys };
+  return next;
+}
+
+function trackEv(s: AppState, next: AppState, ev: any): AppState {
+  if (next === s || typeof ev?.seq !== "number") return next;
+  // `next` is a fresh object of evReducer here (never `s`), so _sync is set on it directly
+  if (ev.type === "resync") { next._sync = { boot: ev.boot_id ?? ev.state?.boot_id ?? null, seq: ev.seq, keys: {} }; return next; }
+  const sy: Sync | undefined = s._sync;
+  const boot = ev.boot_id ?? null;
+  const same = !!sy && sy.boot === boot;
+  const keys = same ? { ...sy.keys } : {};
+  for (const k of Object.keys(next)) if (!UNTRACKED.has(k) && next[k] !== s[k]) keys[k] = ev.seq;
+  next._sync = { boot, seq: same ? sy.seq : -1, keys };
+  return next;
+}
+
 function reducer(s: AppState, a: Action): AppState {
-  if (a.type === "full") return { ...s, ...a.state, loaded: true, analysisSeq: s.analysisSeq + 1 };
+  if (a.type === "full") return applyFull(s, a.state);
   if (a.type === "ws") return { ...s, ws: a.status };
-  const ev = a.ev;
+  return trackEv(s, evReducer(s, a.ev), a.ev);
+}
+
+function evReducer(s: AppState, ev: any): AppState {
   const d = ev.data;
   switch (ev.type) {
     case "resync":
@@ -61,6 +98,8 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, forecast: d };
     case "kronos":
       return { ...s, kronos: d };
+    case "tsfm":
+      return { ...s, tsfm: d };
     case "scalp":
       return { ...s, scalp: d };
     case "analytics":
@@ -102,18 +141,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
   useEffect(() => {
     let alive = true;
-    (async () => {
+    let retryT: number | undefined;
+    let attempt = 0;
+    // 1.46: one failed start (initSession / first /state - e.g. backend still starting, one HTTP 500) left the error screen up for good
+    // and the WebSocket never started, although the polling below kept succeeding. The start is retried with back-off (1 s .. 30 s);
+    // a successful one clears the error and starts the LiveSocket once.
+    const start = async () => {
       try {
         await initSession();
         await refresh();
         if (!alive) return;
-        sock.current = new LiveSocket((m) => { dispatch({ type: "ev", ev: m }); telemetry.emit(m); },
-          (st) => { dispatch({ type: "ws", status: st }); telemetry.status(st); });
-        sock.current.start();
+        setError(null);
+        if (!sock.current) {
+          sock.current = new LiveSocket((m) => { dispatch({ type: "ev", ev: m }); telemetry.emit(m); },
+            (st) => { dispatch({ type: "ws", status: st }); telemetry.status(st); });
+          sock.current.start();
+        }
       } catch (e: any) {
+        if (!alive) return;
         setError(String(e?.message || e));
+        retryT = window.setTimeout(() => { void start(); }, Math.min(30000, 1000 * 2 ** Math.min(attempt++, 5)));
       }
-    })();
+    };
+    void start();
     const t = setInterval(() => {
       refresh().catch(() => undefined);
     }, 30000);
@@ -124,9 +174,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
+      window.clearTimeout(retryT);
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVis);
       sock.current?.stop();
+      sock.current = null;
     };
   }, []);
   (window as any).__mqRefresh = refresh;          // used by UI tests to force a full data refresh
@@ -134,9 +186,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   if (error)
     return (
       <div className="fatal">
-        <h1>PepeMarketWizard</h1>
+        <h1>Apollo23</h1>
         <p>Nie można połączyć się z lokalnym backendem: {error}</p>
-        <p>Uruchom 03_START_MASTERQUO.bat i odśwież stronę.</p>
+        <p>Ponawiam połączenie automatycznie. Jeśli bot nie działa, uruchom 03_START_MASTERQUO.bat.</p>
       </div>
     );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -146,4 +198,10 @@ export function useStore() {
   const c = useContext(Ctx);
   if (!c) throw new Error("no store");
   return c;
+}
+
+/** CHARTS 1:1 (tryb testowy, charts-test.html): store o stałej wartości – bez WebSocketu i bez zapytań do API. */
+export function StaticStoreProvider({ value, children }: { value: AppState; children: React.ReactNode }) {
+  const v = useMemo(() => ({ s: value, refresh: async () => undefined }), [value]);
+  return <Ctx.Provider value={v}>{children}</Ctx.Provider>;
 }

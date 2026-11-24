@@ -34,7 +34,10 @@ LOCATION = {
     "mm_smc_fvg": ("mm/smc_fvg.py", "świece M5"), "mm_gpr": ("mm/gpr.py", "świece M5"), "mm_hdc": ("mm/hdc.py", "cechy M5"),
     "mm_event_engine": ("mm/event_engine.py", "ticki / zdarzenia"), "mm_ste_flownet": ("mm/ste_flownet.py", "zdarzenia"), "agent": ("agent/", "kontekst + klucz API"),
     "th_direction": ("trainhub/inference.py (aktywne paczki)", "świece M1–M30 przez bridge"),
-    "kronos": ("kronos/ (serwis) + backend/kronos_runtime (proces .venv_kronos, kod Kronos MIT)", "zamknięte świece M1–H1 z MT5 przez bridge"),
+    "kronos": ("kronos/ (serwis) + backend/kronos_runtime (proces .venv_kronos, kod Kronos MIT; 1.42.8: Kronos-small)", "zamknięte świece M1–H1 z MT5 przez bridge"),
+    "chronos2": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_chronos2, chronos-forecasting 2.3.2, Apache-2.0)", "zamknięte świece M5/M15 z MT5 przez bridge"),
+    "granite_ttm": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_granite, granite-tsfm 0.3.11, Apache-2.0; 1.40 zamiast FinCast)",
+                    "zamknięte świece M5/M15 z MT5 przez bridge (wspólny snapshot z Chronos-2)"),
 }
 
 
@@ -52,12 +55,16 @@ def _th_entries(inst: str, rt) -> list[dict]:
     except Exception:  # noqa: BLE001
         pass
     preds = {}
+    inf_err = None                       # 1.46: why there are no predictions at all (no service / the service failed) - never READY then
     try:
         inf = getattr(rt, "trainhub_inference", None) if rt else None
         if inf is not None:
             preds = {p["model_key"]: p for p in inf.predictions(inst)}
-    except Exception:  # noqa: BLE001
+        else:
+            inf_err = ("DISABLED", "serwis inferencji Centrum treningu nie działa w tym procesie – brak predykcji aktywnej wersji")
+    except Exception as exc:  # noqa: BLE001
         preds = {}
+        inf_err = ("ERROR", f"inferencja Centrum treningu: {type(exc).__name__}: {exc}"[:200])
     avail = L.available()
     out = []
     for mid, spec in L.MODELS.items():
@@ -74,10 +81,15 @@ def _th_entries(inst: str, rt) -> list[dict]:
                 state, reason = bad[0]["state"], bad[0]["unavailable_reason"]
             elif all(ps):
                 state, reason = "READY", "aktywna wersja: " + ", ".join(f"{k}={v}" for k, v in act.items())
+            elif inf_err is not None:
+                state, reason = inf_err
             else:
-                state, reason = "READY", "aktywna wersja (czeka na pierwszą zamkniętą świecę): " + ", ".join(f"{k}={v}" for k, v in act.items())
+                # 1.46: READY means a result exists (PMW-PRED-2) - an active version without any prediction yet is waiting for data
+                state, reason = "BLOCKED_DATA", "aktywna wersja bez predykcji (czeka na pierwszą zamkniętą świecę): " + \
+                    ", ".join(f"{k}={v}" for k, v in act.items())
         elif keys:
-            state, reason = "DISABLED", f"{sum(len(reg['versions'][k]) for k in keys)} wersji, żadna nieaktywna – aktywacja ręczna w Centrum treningu"
+            # 1.46: the message said "none inactive" (= all active) in the branch where NO version is active
+            state, reason = "DISABLED", f"{sum(len(reg['versions'][k]) for k in keys)} wersji, żadna nie jest aktywna – aktywacja ręczna w Centrum treningu"
         else:
             state, reason = "NOT_TRAINED", "brak paczki – trening w Centrum treningu"
         out.append({"id": mid.lower(), "name": spec["name"] + " – kierunek po kosztach (Centrum treningu)", "category": "TRAINABLE",

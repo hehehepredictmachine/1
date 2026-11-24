@@ -2,7 +2,8 @@
 
 Procedure (one instrument, one timeframe):
 * bars: closed bars from the bridge (one call, up to 8000 - at least 4 weeks when available), quality-checked (order, duplicates,
-  OHLC geometry); the session calendar is measured only on bars up to the end of the DEV period;
+  OHLC geometry); the session calendar is measured only on bars up to the end of the DEV period (M1: also on M5 bars closed by then,
+  as in the live service - 8000 M1 bars are shorter than the 7 days a calendar needs);
 * origins every H bars (horizons do NOT overlap): context = the `lookback` bars before the origin, target = the close H bars later;
   future candle times come from the session calendar measured on the DEV part only (no knowledge of the test period), and an origin
   whose real next H bars do not sit on those times (session break the calendar did not foresee) is skipped and counted;
@@ -154,7 +155,24 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
     if len(origins) < 20:
         return _save({**base, "status": "BLOCKED", "verdict": {"positive": False, "reason": f"za mało punktów startu ({len(origins)}) – potrzebna dłuższa historia"}})
     dev_end_raw = int(bars[origins[n_dev] - 1]["t_raw"]) if n_dev < len(origins) else int(bars[-1]["t_raw"])
-    cal = CAL.Calendar([int(b["t_raw"]) for b in bars if int(b["t_raw"]) <= dev_end_raw], CAL.slot_seconds(tf_sec))
+    cal_raw = [int(b["t_raw"]) for b in bars if int(b["t_raw"]) <= dev_end_raw]
+    cal_src = tf
+    if tf == "M1":
+        # 1.46: M1 never had a session calendar here - 8000 M1 bars cover < 7 days (CAL.MIN_DAYS), so every origin ended as
+        # CALENDAR_INSUFFICIENT and the verdict was always negative. Like the live service (service._calendar) the M1 calendar is also
+        # measured on M5 bars (>= 4 weeks) - still only on bars that had CLOSED by the end of the DEV period (no look-ahead).
+        src_sec = TF_SECONDS["M5"]
+        try:
+            m5 = svc.bridge.symbol_bars(sym, "M5", int(min(8100, 28 * 86400 // src_sec)))
+            cal_raw += [int(b["t_raw"]) for b in m5 if b.get("closed") and int(b["t_raw"]) + src_sec <= dev_end_raw + tf_sec]
+            cal_src = "M5+M1"
+        except Exception as exc:  # noqa: BLE001 - the M1 bars alone stay the calendar (the check below reports if that is too short)
+            cal_src = f"M1 (M5 niedostępne: {type(exc).__name__})"
+    cal = CAL.Calendar(cal_raw, CAL.slot_seconds(tf_sec))
+    cal_ok, cal_why = cal.usable()
+    if not cal_ok:                                   # 1.46: say so BEFORE loading a model - every origin would be skipped anyway
+        return _save({**base, "status": "BLOCKED", "calendar": {"source": cal_src, "coverage_days": round(cal.coverage_days, 1)},
+                      "verdict": {"positive": False, "reason": f"kalendarz sesji (część DEV): {cal_why}"}})
     py = find_python(s)
     if not py and client_factory is None:
         return _save({**base, "status": "BLOCKED", "verdict": {"positive": False, "reason": "brak środowiska .venv_kronos"}})
@@ -230,6 +248,7 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
     if p is None or p >= 0.05:
         reasons.append(f"trafność kierunku nieistotna statystycznie (p = {p if p is None else round(p, 4)})")
     rep = {**base, "status": "DONE", "finished_at": iso(utcnow()), "duration_s": round(time.time() - t0, 1), "horizon_bars": H, "lookback": L,
+           "calendar": {"source": cal_src, "coverage_days": round(cal.coverage_days, 1)},
            "bars_used": len(bars), "first_bar": bars[0]["open_utc"], "last_bar": bars[-1]["open_utc"], "origins": len(origins),
            "evaluated": {"dev": len(dev), "test": len(test)}, "skipped": skipped, "load": load_info,
            "dev": {"grid": dev_scores, "chosen_band_k": k_best, "note": "jedyny wybierany parametr – tylko na DEV"},

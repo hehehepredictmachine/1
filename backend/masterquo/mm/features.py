@@ -83,14 +83,17 @@ def features(b, names: list[str]) -> np.ndarray:
     return np.column_stack([out[n] for n in names])
 
 
-def target_dir3(b, h: int = 12, band_k: float = 0.35) -> tuple[np.ndarray, np.ndarray]:
-    """Class 0/1/2 = DOWN/FLAT/UP and the label availability time; NaN (-1) when i+h does not exist."""
+def target_dir3(b, h: int = 12, band_k: float = 0.35, tf_s: float | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Class 0/1/2 = DOWN/FLAT/UP and the label availability time (close of bar i+h); NaN (-1) when i+h does not exist."""
     from .align_mean import atr_wilder
+    from .data import TF_S
     c = np.asarray(b.c, float)
     atr_rel = atr_wilder(b.h, b.l, c, 14) / c
     y = np.full(len(c), -1, dtype=int)
     t_end = np.full(len(c), np.nan)
-    tf = float(b.t[1] - b.t[0]) if len(b.t) > 1 else 60.0
+    # 1.46: the bar length comes from the timeframe (was t[1] - t[0]: a weekend / daily break / missing bar after the first bar - and
+    # any quick-profile slice - shifted every t_end by that gap, corrupting chrono_split cuts, purge / embargo and the HDC label watermark)
+    tf = float(tf_s) if tf_s else float(TF_S[b.tf]) if getattr(b, "tf", None) in TF_S else (float(b.t[1] - b.t[0]) if len(b.t) > 1 else 60.0)
     for i in range(len(c) - h):
         if not np.isfinite(atr_rel[i]):
             continue
@@ -103,7 +106,7 @@ def target_dir3(b, h: int = 12, band_k: float = 0.35) -> tuple[np.ndarray, np.nd
 
 def dataset(b, names: list[str], tf_s: int, h: int = 12) -> dict:
     X = features(b, names)
-    y, t_end = target_dir3(b, h)
+    y, t_end = target_dir3(b, h, tf_s=tf_s)
     t_obs = np.asarray(b.t, float) + tf_s
     ok = np.isfinite(X).all(axis=1) & (y >= 0)
     return {"X": X[ok], "y": y[ok], "t_obs": t_obs[ok], "t_end": t_end[ok], "idx": np.where(ok)[0], "names": names, "schema": schema_id(names),

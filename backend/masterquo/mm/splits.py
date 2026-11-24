@@ -2,8 +2,9 @@
 
 Every supervised sample i has an observation time t_obs[i] (when its features are known) and a label end time t_end[i] (when its
 target is fully realised). Partitions are contiguous in time: TRAIN | VAL | TEST. A sample belongs to a partition only if its whole
-[t_obs, t_end] interval lies inside it (purge), and the first `embargo_s` seconds after a boundary are dropped. Walk-forward folds
-reuse the existing lab implementation (lab/protocol.walk_forward) on the development (TRAIN+VAL) indices.
+[t_obs, t_end] interval lies inside it (purge), and the first `embargo_s` seconds after a boundary are dropped. (The GPR job's rolling
+evaluation is gpr.walk_forward - a one-step refit loop on the VAL / TEST bars, not a fold splitter; nothing in mm uses lab/protocol
+walk-forward folds.)
 
 The final TEST block is behind `HoldoutGuard`: optimizers and model selection only see TRAIN/VAL; the guard releases the TEST indices
 once, after the candidate is frozen, and records the hash of the frozen candidate - a second request raises.
@@ -15,7 +16,7 @@ import json
 
 import numpy as np
 
-from ..lab.protocol import walk_forward  # noqa: F401  (re-exported: the shared purged walk-forward)
+# 1.46: the unused re-export of lab.protocol.walk_forward removed (no caller of splits.walk_forward; the docstring claimed mm used it)
 
 VERSION = "PMW-MM-SPLITS-1"
 

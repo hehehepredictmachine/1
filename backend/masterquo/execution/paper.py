@@ -43,16 +43,20 @@ class PaperBroker:
         floating, unknown = 0.0, 0
         q = self.bridge.quote_status()
         for p in self.db.query("SELECT * FROM managed_positions WHERE mode='PAPER' AND state='OPEN'"):
-            if q:
-                px = q["bid"] if p["side"] == "BUY" else q["ask"]
-                v = self._profit(p["side"], p["volume_open"], p["entry_price"], px)
-                if v is None:
-                    unknown += 1
-                else:
-                    floating += v
-        return {"mode": "PAPER", "currency": row["currency"], "balance": round(row["balance"], 2), "equity": round(row["balance"] + floating, 2),
-                "floating": round(floating, 2), "floating_unknown_positions": unknown, "starting_balance": row["starting_balance"],
-                "started_at": row["started_at"]}
+            if not q:
+                unknown += 1                    # 1.46: no quote = the position is NOT valued (was: silently floating 0, unknown 0)
+                continue
+            px = q["bid"] if p["side"] == "BUY" else q["ask"]
+            v = self._profit(p["side"], p["volume_open"], p["entry_price"], px)
+            if v is None:
+                unknown += 1
+            else:
+                floating += v
+        known = unknown == 0                    # 1.46: incomplete valuation -> equity / floating null (never balance + partial floating)
+        return {"mode": "PAPER", "currency": row["currency"], "balance": round(row["balance"], 2),
+                "equity": round(row["balance"] + floating, 2) if known else None, "floating": round(floating, 2) if known else None,
+                "floating_unknown_positions": unknown, "valuation": "OK" if known else ("NO_QUOTE" if not q else "PNL_UNAVAILABLE"),
+                "starting_balance": row["starting_balance"], "started_at": row["started_at"]}
 
     def _profit(self, side, vol, o, c):
         try:
@@ -67,6 +71,18 @@ class PaperBroker:
             deals = list(self.bridge.deals)
         c = resolve_commission(cfg.costs, deals, cfg.mt5.symbol).get("per_lot_per_side")
         return None if c is None else round(c * vol, 2)
+
+    def _entry_commission(self, pos: dict) -> float | None:
+        """1.46: the entry commission exactly as booked at open (order_attempts.result_json) - recomputed at the first exit it could differ
+        from what the balance paid (commission source changed meanwhile). Positions without the stored value: recomputed as before."""
+        a = self.db.one("SELECT result_json FROM order_attempts WHERE attempt_id=?", (pos.get("attempt_id"),)) if pos.get("attempt_id") else None
+        try:
+            res = json.loads((a or {}).get("result_json") or "null")
+        except (TypeError, ValueError):
+            res = None
+        if isinstance(res, dict) and res.get("paper") and "commission" in res:
+            return res["commission"]
+        return self._commission(pos["volume_initial"])
 
     def open(self, *, attempt_id: str, decision: dict, side: str, lots: float, sl: float, targets: list[dict], exit_policy: dict | None = None) -> dict:
         q = self.bridge.quote_status()
@@ -98,16 +114,24 @@ class PaperBroker:
         return {"status": "FILLED", "ticket": ticket, "price": price, "volume": lots, "paper": True, "commission": comm}
 
     def close_part(self, pos: dict, volume: float, price: float, reason: str) -> float | None:
-        """Close `volume` of a PAPER position at `price`; returns net P/L of the part (None = could not be calculated)."""
+        """Close `volume` of a PAPER position at `price`; returns net P/L of the part (None = could not be calculated).
+        1.46: the row is changed only if it is still OPEN with the volume the caller saw (compare-and-set); a stale position dict
+        (closed / reduced meanwhile by another thread) books nothing and returns None."""
         gross = self._profit(pos["side"], volume, pos["entry_price"], price)
         comm = self._commission(volume)
         net = None if gross is None else round(gross - (comm or 0.0), 2)
-        if net is not None:
-            self.db.execute("UPDATE paper_account SET balance = balance + ? WHERE id=1", (net,))
         left = round(pos["volume_open"] - volume, 8)
         closed = left <= 1e-9
-        self.db.execute("UPDATE managed_positions SET volume_open=?, state=?, closed_at=? WHERE position_key=?",
-                        (max(0.0, left), "CLOSED" if closed else "OPEN", iso(utcnow()) if closed else None, pos["position_key"]))
+        with self.db.tx() as c:
+            cur = c.execute("UPDATE managed_positions SET volume_open=?, state=?, closed_at=? WHERE position_key=? AND state='OPEN' "
+                            "AND abs(volume_open - ?) < 1e-9", (max(0.0, left), "CLOSED" if closed else "OPEN", iso(utcnow()) if closed else None,
+                                                                 pos["position_key"], float(pos["volume_open"])))
+            stale = cur.rowcount != 1
+            if not stale and net is not None:
+                c.execute("UPDATE paper_account SET balance = balance + ? WHERE id=1", (net,))
+        if stale:
+            self.log.write("WARNING", "PAPER", "CLOSE_STALE", f"PAPER: pozycja {pos.get('position_ticket')} już zamknięta / zmieniona – bez ponownego księgowania ({reason})")
+            return None
         pos["volume_open"] = max(0.0, left)
         self._accumulate(pos, volume, price, gross, comm, reason, closed)
         self.log.info("PAPER", reason, f"PAPER: zamknięto {volume} @ {price} ({reason}), wynik netto "
@@ -122,7 +146,7 @@ class PaperBroker:
                 "settled": gross is not None, "commission_unknown": comm is None}
         pol = json.loads(pos.get("exit_policy_json") or "null") or {}
         if row is None:
-            entry_comm = self._commission(pos["volume_initial"])    # entry side commission charged at open
+            entry_comm = self._entry_commission(pos)                 # entry side commission charged at open
             deals = [{"entry_commission": entry_comm, "settled": True, "commission_unknown": entry_comm is None}, part]
         else:
             deals = json.loads(row["deals_json"] or "[]") + [part]

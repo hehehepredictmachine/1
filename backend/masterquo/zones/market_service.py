@@ -89,6 +89,7 @@ class MarketZonesService:
         self.status: dict[tuple[str, str], dict] = {}        # (inst, tf) -> data source status
         self.live: dict[str, dict] = {}                      # instrument -> {"tfs": [...], "last_closed": {tf: iso}, "since": iso}
         self.quotes: dict[str, dict] = {}
+        self._poll_errors: dict[str, tuple[str, float]] = {}  # instrument -> (last logged poll error, when) - no log flood
         self.counters = {"jobs": 0, "deduplicated_clicks": 0, "discarded_older_results": 0, "live_recomputes": 0}
         self._restore()
 
@@ -192,6 +193,7 @@ class MarketZonesService:
         inst = str(instrument).upper()
         with self._lock:
             self.live.pop(inst, None)
+            self.quotes.pop(inst, None)                      # 1.46: the last live quote was used for ever after 'Zatrzymaj'
             n = 0
             for j in list(self._queue) + [self.current_job.get(inst)]:
                 if j is not None and j.instrument == inst and j.status in ("QUEUED", "RUNNING"):
@@ -210,6 +212,10 @@ class MarketZonesService:
                     j = self._queue.popleft()
                     if j.status == "QUEUED" and not j.cancel.is_set():
                         job = j
+                        # 1.46: RUNNING is set under the lock stop() / request() take. Set later in _run (unlocked), a 'Zatrzymaj' between
+                        # the pop and _run was overwritten back to RUNNING (job stuck RUNNING for ever) and request() did not see the
+                        # popped job (QUEUED but out of the queue -> no deduplication)
+                        job.status, job.started_at, job.stage = "RUNNING", time.time(), "pobieranie danych"
             if job is None:
                 self._wake.wait(1.0)
                 self._wake.clear()
@@ -222,7 +228,11 @@ class MarketZonesService:
 
     def _run(self, job: Job) -> None:
         inst = job.instrument
-        job.status, job.started_at, job.stage = "RUNNING", time.time(), "pobieranie danych"
+        with self._lock:
+            if job.cancel.is_set():                          # 1.46: cancelled / superseded before the start - never back to RUNNING
+                return
+            if job.status != "RUNNING":
+                job.status, job.started_at, job.stage = "RUNNING", time.time(), "pobieranie danych"
         steps = 2 * len(job.tfs) + 1
         done = 0
         fresh: dict[str, dict] = {}
@@ -258,15 +268,16 @@ class MarketZonesService:
             return
         job.stage = "zapis i rysowanie"
         applied = self._apply(job, fresh)
-        if job.cancel.is_set():
-            return
-        job.progress = 1.0
-        job.finished_at = time.time()
-        failed = [t for t, r in job.tf_result.items() if r in ("ERROR", "NO_DATA")]
-        job.status = "DONE" if not failed else ("FAILED" if len(failed) == len(job.tfs) else "PARTIAL")
-        job.stage = (f"gotowe: {', '.join(applied)}" if applied else "brak nowych wyników") + (f"; bez danych: {', '.join(failed)}" if failed else "")
-        if failed and len(failed) == len(job.tfs):
-            job.error = "żaden interwał nie zwrócił danych – pokazane są ostatnie strefy oznaczone jako nieaktualne"
+        with self._lock:                                     # 1.46: a stop() during the save keeps CANCELLED (not overwritten by DONE)
+            if job.cancel.is_set():
+                return
+            job.progress = 1.0
+            job.finished_at = time.time()
+            failed = [t for t, r in job.tf_result.items() if r in ("ERROR", "NO_DATA")]
+            job.status = "DONE" if not failed else ("FAILED" if len(failed) == len(job.tfs) else "PARTIAL")
+            job.stage = (f"gotowe: {', '.join(applied)}" if applied else "brak nowych wyników") + (f"; bez danych: {', '.join(failed)}" if failed else "")
+            if failed and len(failed) == len(job.tfs):
+                job.error = "żaden interwał nie zwrócił danych – pokazane są ostatnie strefy oznaczone jako nieaktualne"
 
     def _apply(self, job: Job, fresh: dict[str, dict]) -> list[str]:
         applied = []
@@ -311,13 +322,23 @@ class MarketZonesService:
                                         (inst, tf, z["id"], e["event"], e["at"], json.dumps({"type": z["type"], "lower": z["lower"],
                                                                                               "upper": z["upper"]})))
                 self.db.execute("COMMIT")
-        except sqlite3.Error as exc:
+        except Exception as exc:  # noqa: BLE001 - 1.46: any failure is rolled back and reported, never raised into _apply / the job
             try:
                 self.db.execute("ROLLBACK")
             except sqlite3.Error:
                 pass
-            if self.log:
-                self.log.warning("market_zones", f"zapis historii stref nieudany: {exc}")
+            # 1.46: was self.log.warning(...) - AppLog has warn(category, code, message), no warning(): the AttributeError failed the
+            # job (FAILED, misleading error) and the remaining timeframes of _apply were never written to the history
+            self._warn("HISTORY_WRITE_FAILED", f"{inst} {tf}: zapis historii stref nieudany: {type(exc).__name__}: {exc}")
+
+    def _warn(self, code: str, message: str) -> None:
+        """AppLog API (runtime): warn(category, code, message). A logging error never stops the poller or fails a job."""
+        if self.log is None:
+            return
+        try:
+            self.log.warn("MARKET_ZONES", code, str(message)[:300])   # noqa: G010, PLE1205 - AppLog.warn, not logging.Logger
+        except Exception:  # noqa: BLE001, S110 - nothing left to report to
+            pass
 
     # ------------------------------------------------------------------ live
     def set_live(self, instrument: str, enabled: bool, timeframes: list[str] | None = None) -> dict:
@@ -328,6 +349,7 @@ class MarketZonesService:
         with self._lock:
             if not enabled:
                 self.live.pop(inst, None)
+                self.quotes.pop(inst, None)                  # 1.46: the last live quote was used for ever after LIVE off
             else:
                 cur = self.live.get(inst)
                 if cur:
@@ -347,14 +369,23 @@ class MarketZonesService:
         while not self._stop.wait(self.poll_s):
             with self._lock:
                 subs = {k: dict(v, tfs=list(v["tfs"])) for k, v in self.live.items()}
-            if not subs:
-                return
+                if not subs:
+                    # 1.46: the exit is decided under the lock and the handle cleared - decided after the unlock, a set_live() in
+                    # between saw this (exiting) poller alive and started none: the new LIVE subscription stayed without a thread
+                    if self._poller is threading.current_thread():
+                        self._poller = None
+                    return
             for inst, sub in subs.items():
                 try:
                     self.poll_once(inst, sub["tfs"])
                 except Exception as exc:  # noqa: BLE001
-                    if self.log:
-                        self.log.warning("market_zones", f"live {inst}: {type(exc).__name__}: {exc}"[:200])
+                    # 1.46: was self.log.warning(...) (AppLog has no warning()) -> AttributeError outside the try killed the
+                    # 'mzones-live' thread on the first error while the subscription stayed (UI: LIVE on, nothing recomputed)
+                    msg, now = f"live {inst}: {type(exc).__name__}: {exc}", time.time()
+                    last = self._poll_errors.get(inst)
+                    if last is None or last[0] != msg or now - last[1] >= 300:     # the same error at most once per 5 min
+                        self._poll_errors[inst] = (msg, now)
+                        self._warn("LIVE_POLL_FAILED", msg)
 
     def poll_once(self, inst: str, tfs: list[str]) -> list[str]:
         """One live check: TFs whose newest CLOSED candle changed (or that recovered after a data loss) are recomputed; the live quote
@@ -389,15 +420,29 @@ class MarketZonesService:
         sym = self.symbol_for(inst)
         if not sym:
             return
+        now = self.clock()
         try:
             q = self.bridge.symbol_quote(sym)
         except Exception as exc:  # noqa: BLE001
-            self.quotes[inst] = {"status": "ERROR", "reason": f"{type(exc).__name__}"}
+            self.quotes[inst] = {"status": "ERROR", "reason": f"{type(exc).__name__}", "received_at": now}
             return
         if not q:
+            # 1.46: an empty read kept the previous bid as if it were current - no quote = no bid (missing, never the old value)
+            self.quotes[inst] = {"status": "UNAVAILABLE", "reason": "terminal nie zwrócił kwotowania", "received_at": now}
             return
-        self.quotes[inst] = {**q, "status": "OK", "preliminary": True,
+        self.quotes[inst] = {**q, "status": "OK", "preliminary": True, "received_at": now,
                              "note": "dotknięcia / przełamania z ceny na żywo są wstępne – potwierdzenie po zamknięciu świecy"}
+
+    def _quote(self, inst: str) -> dict:
+        """1.46: the live quote with its age; older than max(30 s, 5 x poll period) (poller stopped, market closed) = stale - its bid /
+        spread are not used for the live marks or the checklist."""
+        q = dict(self.quotes.get(inst) or {})
+        if q:
+            got = q.get("received_at")
+            age = self.clock() - got if got is not None else None
+            q["age_s"] = round(age, 1) if age is not None else None
+            q["stale"] = age is None or age > max(30.0, 5.0 * float(self.poll_s))
+        return q
 
     # ------------------------------------------------------------------ outputs
     def view(self, instrument: str, *, all_zones: bool = False) -> dict:
@@ -410,8 +455,8 @@ class MarketZonesService:
             live = self.live.get(inst)
         fin = MZ.finalize(per, instrument=inst, symbol=self.symbol_for(inst) or "", as_of=None) if per else {"timeframes": {}, "rules": MZ.RULES,
                                                                                                             "params": MZ.params_for(inst)}
-        q = self.quotes.get(inst) or {}
-        bid = q.get("bid")
+        q = self._quote(inst)
+        bid = q.get("bid") if not q.get("stale") else None
         out_tf = {}
         for tf in MZ.TFS:
             st = status[tf]
@@ -430,6 +475,7 @@ class MarketZonesService:
                     z["live"] = {"price": bid, "touching": inside, "beyond": beyond, "preliminary": True}
             out_tf[tf] = {"status": st, "zones": zones, "visible": r["visible"], "counts": r["counts"], "atr": r.get("atr"),
                           "min_width": r.get("min_width"), "bars": r.get("bars"), "last_closed": r.get("last_closed"),
+                          "price": r.get("price"),           # 1.46: close of the last closed candle - the checklist fallback had no price
                           "computed_as_of": r.get("computed_as_of"), "computed_at": iso((meta.get(tf) or {}).get("computed_at")),
                           "stale": stale, "restored": bool((meta.get(tf) or {}).get("restored")), "computed": True}
         return {"instrument": inst, "symbol": self.symbol_for(inst), "version": MZ.VERSION, "timeframes": out_tf,
@@ -445,7 +491,9 @@ class MarketZonesService:
                     with self._lock:
                         ev = [dict(x) for x in self.db.execute("SELECT tf, event, at FROM mz_events WHERE instrument=? AND zone_id=? ORDER BY at",
                                                                (v["instrument"], zone_id)).fetchall()]
-                    return {"zone": z, "checklist": checklist(z, r, v.get("quote")), "events": ev, "timeframe_status": r["status"],
+                    q = v.get("quote")
+                    q = q if q and not q.get("stale") else None   # 1.46: an old bid / spread is not evaluated as current
+                    return {"zone": z, "checklist": checklist(z, r, q), "events": ev, "timeframe_status": r["status"],
                             "rules": MZ.RULES}
         return None
 
@@ -484,6 +532,7 @@ def checklist(z: dict, tf_view: dict, quote: dict | None) -> dict:
     width = z["upper"] - z["lower"]
     spread = (quote or {}).get("spread")
     price = (quote or {}).get("bid") or tf_view.get("price")
+    price_source = "bid" if (quote or {}).get("bid") else ("last_close" if tf_view.get("price") is not None else None)
     dist = None
     if price is not None:
         dist = 0.0 if z["lower"] <= price <= z["upper"] else min(abs(price - z["lower"]), abs(price - z["upper"]))
@@ -498,7 +547,7 @@ def checklist(z: dict, tf_view: dict, quote: dict | None) -> dict:
         {"label": "Spread <= 25 % szerokości strefy (bieżące bid/ask)", "ok": None if spread is None else spread <= 0.25 * width,
          "value": spread, "threshold": round(0.25 * width, 6)},
         {"label": "Cena w odległości <= 2 ATR", "ok": None if dist is None or not atr else dist <= 2 * atr,
-         "value": round(dist / atr, 2) if dist is not None and atr else None, "threshold": 2.0},
+         "value": round(dist / atr, 2) if dist is not None and atr else None, "threshold": 2.0, "price_source": price_source},
     ]
     if z["type"] in ("EQH", "EQL"):
         items.append({"label": "Obszar płynności wnioskowany z OHLC (nie zmierzony, nie zlecenia)", "ok": None, "value": "informacja"})

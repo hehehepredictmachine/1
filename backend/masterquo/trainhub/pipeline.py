@@ -3,10 +3,8 @@ package -> (controlled, manual) activation. Used by the Training Center jobs (wo
 XAUUSD and BTC are always trained and evaluated separately (one instrument per call)."""
 from __future__ import annotations
 
-import json
+import math
 import time
-
-import numpy as np
 
 from ..marketdata.store import Store, atomic_json, iso, read_json
 from . import dataset as DS
@@ -16,7 +14,6 @@ from . import registry as R
 
 DEFAULTS = {"base_tf": "M5", "horizon": 6, "k_atr": 0.25, "holdout_frac": 0.2, "n_folds": 4, "embargo_bars": None, "min_samples": 2000,
             "min_train": 500, "seed": 7, "models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB"], "start": None, "end": None}
-INSTRUMENTS = ("XAUUSD", "BTC")
 # 1.33 training profiles: budgets, not quality promises. smoke = the process runs end to end (one grid point, 2 folds) - it says
 # nothing about investment skill; research = every available tabular model with its grid; full = more folds and the whole grid.
 PROFILES = {
@@ -24,6 +21,22 @@ PROFILES = {
     "research": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 4, "grid_limit": None, "time_budget_s": 3600},
     "full": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 6, "grid_limit": None, "time_budget_s": 6 * 3600},
 }
+
+
+def _check_num(cfg: dict, k: str, lo: float, hi: float | None = None, *, integer: bool = False, none_ok: bool = False) -> None:
+    """1.46: range check of one training parameter (API params / CLI) - ValueError (HTTP 400 / CLI exit 2) instead of an IndexError /
+    empty grid deep inside the training job."""
+    v = cfg.get(k)
+    if v is None and none_ok:
+        return
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        f = math.nan
+    if not math.isfinite(f) or f < lo or (hi is not None and f > hi) or (integer and f != int(f)):
+        rng = f"{lo:g}..{hi:g}" if hi is not None else f">= {lo:g}"
+        raise ValueError(f"parametr {k}={v!r} poza zakresem ({rng}{', liczba całkowita' if integer else ''}{', albo brak' if none_ok else ''})")
+    cfg[k] = int(f) if integer else f
 
 
 def config(params: dict | None, store_manifest: dict | None = None, cost_cfg=None) -> dict:
@@ -39,27 +52,69 @@ def config(params: dict | None, store_manifest: dict | None = None, cost_cfg=Non
         raise ValueError("horyzont 1..96 świec")
     if cfg["embargo_bars"] is None:
         cfg["embargo_bars"] = cfg["horizon"]
+    models = cfg["models"]
+    cfg["models"] = list(models) if isinstance(models, (list, tuple)) else [models]   # 1.46: one id as text / number -> list, not chars
     bad = [m for m in cfg["models"] if m not in L.MODELS]
     if bad:
         raise ValueError(f"nieznane modele: {bad}")
+    # 1.46: ranges of the remaining parameters (1.45.0 checked only base_tf / horizon / models: holdout_frac=0 -> IndexError, >1 -> a
+    # negative split index, grid_limit<0 -> empty grid -> min() of an empty sequence in learn.train_one)
+    _check_num(cfg, "holdout_frac", 0.05, 0.5)
+    _check_num(cfg, "n_folds", 2, 20, integer=True)
+    _check_num(cfg, "embargo_bars", 0, 10_000, integer=True)
+    _check_num(cfg, "min_samples", 1, integer=True)
+    _check_num(cfg, "min_train", 1, integer=True)
+    _check_num(cfg, "grid_limit", 1, integer=True, none_ok=True)
+    _check_num(cfg, "time_budget_s", 0, none_ok=True)
+    _check_num(cfg, "k_atr", 0, 100)
+    _check_num(cfg, "seed", 0, 2 ** 32 - 1, integer=True)
+    t0, t1 = DS.epoch(cfg.get("start"), "start (--from)"), DS.epoch(cfg.get("end"), "end (--to)")   # ISO kept in cfg (REPRODUCE.md)
+    if t0 is not None and t1 is not None and t0 >= t1:
+        raise ValueError(f"zakres dat pusty: start {cfg.get('start')} >= end {cfg.get('end')}")
     man = store_manifest or {}
     costs = man.get("costs") or {}
-    point = float((costs.get("spread") or {}).get("point") or 0.01)
-    contract = float((costs.get("spread") or {}).get("contract_size") or 0) or None
+    spec = man.get("symbol_spec") or {}
+    if (params or {}).get("point") is not None and DS.positive(params["point"]) is None:
+        raise ValueError(f"point={params['point']!r} – oczekiwana liczba dodatnia")
+    # 1.46: point measured (manifest) or given explicitly - never the 0.01 default (DS.build refuses an unknown point)
+    point = DS.symbol_point(man, {"point": (params or {}).get("point")})
     comm = (costs.get("commission") or {}).get("commission_per_lot_side")
     comm_status = "MEASURED_FROM_DEALS"
     if comm is None:
         comm = getattr(cost_cfg, "commission_per_lot_per_side", None) if cost_cfg is not None else None
         comm_status = "USER_ASSUMPTION" if comm is not None else "UNKNOWN_ZERO_USED"
+    blockers = []
     cfg["point"] = point
-    cfg["commission_price"] = float(params.get("commission_price")) if params and params.get("commission_price") is not None else \
-        (2 * float(comm) / contract if comm and contract else 0.0)
     if params and params.get("commission_price") is not None:
+        cfg["commission_price"] = float(params.get("commission_price"))
         comm_status = "USER_GIVEN_PRICE_UNITS"
+    elif comm is None or float(comm) == 0:
+        cfg["commission_price"] = 0.0                                  # unknown -> 'UNKNOWN_ZERO_USED' (labelled), known zero -> 0
+    else:
+        # 1.46: the commission is in the ACCOUNT currency per lot and side (deal history / Settings). 1.45.0 divided it by contract_size
+        # as if account currency = quote currency (PLN account: cost ~3.7x too high) and, without contract_size, used 0.0 while still
+        # reporting MEASURED_FROM_DEALS / USER_ASSUMPTION. Account currency per 1.0 of price per lot = trade_tick_value / trade_tick_size.
+        tsz, tvl = DS.positive(spec.get("trade_tick_size")), DS.positive(spec.get("trade_tick_value"))
+        if tsz and tvl:
+            cfg["commission_price"] = 2 * float(comm) / (tvl / tsz)
+        else:
+            cfg["commission_price"] = 0.0                              # never used: stage_dataset refuses while cost_blockers is not empty
+            blockers.append(f"prowizja {comm} ({comm_status}, waluta rachunku) bez specyfikacji symbolu (trade_tick_value / trade_tick_size) – "
+                            "nie da się jej przeliczyć na jednostki ceny; ponów „Eksportuj dane” przy połączonym MT5 albo podaj commission_price")
+            comm_status = "CONVERSION_UNKNOWN"
     slip_pts = getattr(cost_cfg, "slippage_stress_points", None) if cost_cfg is not None else None
-    cfg["slippage_price"] = float(params.get("slippage_price")) if params and params.get("slippage_price") is not None else float(slip_pts or 0) * point
-    cfg["cost_status"] = {"spread": "MEASURED_PER_BAR", "commission": comm_status, "slippage": "ASSUMPTION_STRESS",
-                          "note": "prowizja/poślizg w jednostkach ceny na 1 lot (round-trip); 'UNKNOWN_ZERO_USED' zawyża ocenę"}
+    if params and params.get("slippage_price") is not None:
+        cfg["slippage_price"], slip_status = float(params.get("slippage_price")), "USER_GIVEN_PRICE_UNITS"
+    elif slip_pts is None:
+        cfg["slippage_price"], slip_status = 0.0, "UNKNOWN_ZERO_USED"   # 1.46: was reported as ASSUMPTION_STRESS
+    elif point is None:
+        cfg["slippage_price"], slip_status = 0.0, "POINT_UNKNOWN"       # never used: DS.build refuses an unknown point
+    else:
+        cfg["slippage_price"], slip_status = float(slip_pts) * point, "ASSUMPTION_STRESS"
+    cfg["cost_blockers"] = blockers
+    cfg["cost_status"] = {"spread": "MEASURED_PER_BAR" if point is not None else "POINT_UNKNOWN", "commission": comm_status, "slippage": slip_status,
+                          "note": "prowizja (waluta rachunku -> cena przez trade_tick_value/trade_tick_size) i poślizg w jednostkach ceny na 1 lot "
+                                  "(round-trip); 'UNKNOWN_ZERO_USED' zawyża ocenę"}
     return cfg
 
 
@@ -84,6 +139,8 @@ def stage_validate(store: Store, inst: str) -> dict:
 def stage_dataset(store: Store, inst: str, cfg: dict, progress=None) -> tuple[dict, dict]:
     if progress:
         progress({"stage": "cechy i etykiety", "instrument": inst})
+    if cfg.get("cost_blockers"):                       # 1.46: a known commission that cannot be converted is not replaced by 0
+        raise DS.InsufficientData("koszty etykiet nieznane: " + "; ".join(cfg["cost_blockers"]))
     ds = DS.build(store, inst, cfg, cfg.get("start"), cfg.get("end"))
     d = dataset_dir(inst, cfg)
     d.mkdir(parents=True, exist_ok=True)
@@ -127,14 +184,19 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
 
 def stage_evaluate(store: Store, inst: str, key: str, version: str) -> dict:
     """'Oceń': the package on data AFTER its training data (forward check), same features / labels / costs as at training."""
+    # 1.46: model_key / version of an EVALUATE job come from free API params and become a path (joblib.load, evaluations.json write)
+    if not (isinstance(key, str) and isinstance(version, str) and R.SAFE_ID.match(key) and R.SAFE_ID.match(version)):
+        raise ValueError(f"nieprawidłowy identyfikator modelu / wersji: {str(key)[:80]!r} / {str(version)[:80]!r}")
     d = R.package_dir(inst, key, version)
-    conf = read_json(d / "config.json", {}) or {}
-    obj, conf, _ = R.load(inst, key, version)
+    if not d.resolve().is_relative_to((R.root() / "models" / inst).resolve()):
+        raise ValueError("ścieżka paczki poza katalogiem modeli")
+    obj, conf, _ = R.load(inst, key, version)          # 1.46: config.json was read here twice (the first read skipped the compatibility check)
     dm = read_json(d / "data_manifest.json", {}) or {}
     end_utc = ((dm.get("dataset") or {}).get("range_utc") or [None, None])[1]
     from ..marketdata.export import _ts
     after = (_ts(end_utc) or 0) + F.TF_S[conf["base_tf"]] * (int(conf["horizon"]) + 1)
     cfg = {k: conf[k] for k in ("base_tf", "horizon", "k_atr", "commission_price", "slippage_price")}
+    cfg["point"] = conf.get("point")                   # 1.46: the package's point when the store manifest has none (no 0.01 guess any more)
     ds = DS.build(store, inst, cfg)
     m = ds["t"] >= after
     if m.sum() < 50:
@@ -169,7 +231,3 @@ def export_dataset_zip(inst: str, cfg: dict, out) -> str:
         if man.exists():
             z.write(man, f"{inst}_{d.name}/store_manifest.json")
     return str(out)
-
-
-def summarize_np(x) -> str:
-    return json.dumps(np.asarray(x).tolist())[:200]

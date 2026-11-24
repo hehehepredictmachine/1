@@ -400,6 +400,8 @@ def fit(net: SpikeBrain, batches, val=None, *, epochs=10, lr=1e-3, patience=4, s
             opt.load_state({kk[5:]: z[kk] for kk in z.files if kk.startswith("opt__")} | {"t": st["opt_t"]})
             rng.bit_generator.state = st["rng"]
             start, hist, best, bad = st["epoch"], st["history"], st["best"], st["bad"]
+            # 1.46: the best weights are part of the early-stop state (a resumed fit could not restore them; old checkpoints: none)
+            best_p = {kk[6:]: z[kk].copy() for kk in z.files if kk.startswith("best__")} or None
     status = "TRAINED"
     net.capacity_training = True
     t0 = time.monotonic()
@@ -423,7 +425,7 @@ def fit(net: SpikeBrain, batches, val=None, *, epochs=10, lr=1e-3, patience=4, s
             _, pv = net.loss(*val)
             net.capacity_training = True
             rec["val_loss"] = pv["loss"]
-            if best is None or pv["loss"] < best - 1e-6:
+            if math.isfinite(pv["loss"]) and (best is None or pv["loss"] < best - 1e-6):     # 1.46: a NaN epoch is never the "best"
                 best, best_p, bad = pv["loss"], {k: v.data.copy() for k, v in net.p.items()}, 0
             else:
                 bad += 1
@@ -435,7 +437,7 @@ def fit(net: SpikeBrain, batches, val=None, *, epochs=10, lr=1e-3, patience=4, s
             meta = json.dumps({"epoch": ep + 1, "history": hist, "best": best, "bad": bad, "opt_t": opt.t, "rng": rng.bit_generator.state}, default=int)
             tmp = ck.with_name("checkpoint.tmp.npz")
             np.savez(tmp, meta=np.array(meta), **{f"p__{k}": v.data for k, v in net.p.items()},
-                     **{f"opt__{k}": v for k, v in opt.state().items() if k != "t"})
+                     **{f"opt__{k}": v for k, v in opt.state().items() if k != "t"}, **{f"best__{k}": v for k, v in (best_p or {}).items()})
             tmp.replace(ck)
         if status != "TRAINED" or (val is not None and bad >= patience):
             break
@@ -443,7 +445,9 @@ def fit(net: SpikeBrain, batches, val=None, *, epochs=10, lr=1e-3, patience=4, s
             status = "BUDGET_EXCEEDED"
             break
     net.capacity_training = False
-    if best_p is not None and status == "TRAINED":
+    # 1.46: the best checkpoint on EVERY exit (as structure_nets.fit) - BUDGET_EXCEEDED / CANCELLED / NAN_LOSS returned the last epoch's
+    # weights (possibly much worse or NaN), and structure_task.train saves the candidate whatever the status
+    if best_p is not None:
         for k, v in best_p.items():
             net.p[k].data = v
-    return {"status": status, "history": hist, "epochs_run": len(hist)}
+    return {"status": status, "history": hist, "epochs_run": len(hist), "best_restored": best_p is not None}

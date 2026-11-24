@@ -1,5 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 set "MQ_PAUSE=pause"
 if defined MQ_NO_PAUSE set "MQ_PAUSE=type nul"
 rem PepeMarketWizard - instalacja (Windows 10/11 x64). Nie zmienia globalnego Pythona ani zabezpieczen Windows.
@@ -23,7 +26,7 @@ if not exist "%ROOT%data\logs" mkdir "%ROOT%data\logs"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TS=%%i"
 if "%TS%"=="" set "TS=install"
 set "LOG=%ROOT%data\logs\instalacja_%TS%.log"
-echo [PepeMarketWizard] Instalacja - log: "%LOG%"
+echo [Apollo23] Instalacja - log: "%LOG%"
 echo PepeMarketWizard install %DATE% %TIME% > "%LOG%"
 
 rem ---- 1. wybor sprawnego interpretera: Python z paczki aplikacji Windows (runtime\python), potem Python 3.13 x64, potem 3.12

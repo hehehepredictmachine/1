@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import pickle
 import sys
 import time
@@ -41,6 +42,38 @@ SEED = 0
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _registry_for_update() -> dict:
+    """1.46: the registry this run is written into. scalp_infer.read_registry() returns an EMPTY view of an unreadable file (locked
+    by an antivirus / indexer, truncated JSON) - written back it dropped every earlier run and the active model."""
+    reg = read_registry()
+    if reg.get("error"):
+        raise SystemExit(f"[BLAD] {reg['error']}: {registry_path()} – plik rejestru zostaje bez zmian; artefakty runu są zapisane, "
+                         "zamknij program blokujący plik albo przywróć kopię i powtórz")
+    return reg
+
+
+def commission_price(com: float, meta: dict) -> tuple[float, str]:
+    """Commission (ACCOUNT currency per lot side) -> price units per unit volume (QUOTE currency), the unit of the label dead zone and of
+    the replay costs. 1.46: it was always com / contract size - right only when the account currency is the quote currency; for another
+    account currency (export metadata account_currency != quote_currency) MT5's tick value (account currency per tick per lot at the
+    export) converts it; without a valid tick value -> COMMISSION_CURRENCY_UNKNOWN instead of a silent USD assumption. Metadata without
+    the currencies (older / synthetic exports) keep the previous conversion."""
+    spec = meta["spec"]
+    acc, quote = meta.get("account_currency"), meta.get("quote_currency")
+    if acc and quote and str(acc).upper() != str(quote).upper():
+        tv, ts = spec.get("trade_tick_value"), spec.get("trade_tick_size")
+        try:
+            tv, ts = float(tv), float(ts)
+        except (TypeError, ValueError):
+            tv = ts = float("nan")
+        if not (math.isfinite(tv) and math.isfinite(ts) and tv > 0 and ts > 0):
+            raise SystemExit(f"[BLAD] COMMISSION_CURRENCY_UNKNOWN: prowizja w {acc}, ceny w {quote}, a eksport nie ma wartości ticka "
+                             "(trade_tick_value) do przeliczenia – powtórz eksport przy zalogowanym MT5.")
+        return com * ts / tv, (f"commission {acc} per lot side x tick_size / tick_value ({tv} {acc} per tick per lot, MT5 at the export) "
+                               f"= {quote} price units per unit volume")
+    return com / float(spec["trade_contract_size"]), "commission cash per lot side / contract size = price units per unit volume"
 
 
 def load(hist: Path, data_kind: str) -> dict:
@@ -234,7 +267,6 @@ def main(argv=None) -> int:
         hist = h[-1].parent
     d = load(hist, a.data_kind)
     tick = float(d["meta"]["tick_size"])
-    cs = float(d["meta"]["spec"]["trade_contract_size"])
     mc = (d["meta"].get("costs") or {})
     if a.commission_per_lot_side is not None:
         com, com_src = a.commission_per_lot_side, "USER_ARGUMENT"
@@ -245,9 +277,10 @@ def main(argv=None) -> int:
     else:
         raise SystemExit(f"[BLAD] COMMISSION_UNKNOWN: brak prowizji dla {instrument()} w historii transakcji – podaj --commission-per-lot-side.")
     a.commission_per_lot_side = com
-    costs = {"commission_per_lot_side": com, "commission_source": com_src, "commission_unit": "waluta rachunku / 1 lot / strona", "commission_price_side": a.commission_per_lot_side / cs,
+    com_price, conversion = commission_price(com, d["meta"])
+    costs = {"commission_per_lot_side": com, "commission_source": com_src, "commission_unit": "waluta rachunku / 1 lot / strona", "commission_price_side": com_price,
              "slippage_ticks": a.slippage_ticks, "slippage_price": a.slippage_ticks * tick, "reference_volume_lots": 1.0,
-             "conversion": "commission cash per lot side / contract size = price units per unit volume"}
+             "conversion": conversion}
     run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "_" + d["dataset_sha"][:8] + ("_SYN" if a.data_kind == "SYNTHETIC_TEST" else "")
     rd = scalp_dir() / "runs" / run_id
     rd.mkdir(parents=True, exist_ok=True)
@@ -424,7 +457,7 @@ def main(argv=None) -> int:
     report["summary"] = {"overall_task_A": overall, "task_B": report["task_B"]["status"], "task_C": report["task_C"]["status"], "run_id": run_id,
                          "data_kind": a.data_kind, "strategy_status": "STRATEGY_VALID wymaga replayu OOS na rzeczywistych danych (report.task_B)"}
     write_json_atomic(rd / "report.json", report)
-    reg = read_registry()
+    reg = _registry_for_update()
     reg["runs"][run_id] = entry
     ok, why = activatable(entry, plan["contract_hash"])
     if ok and overall not in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):

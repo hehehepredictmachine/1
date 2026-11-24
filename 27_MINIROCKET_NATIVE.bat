@@ -1,11 +1,14 @@
 @echo off
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem PepeMarketWizard - MiniRocket V2 native MQL5 (PMW-UPD-09 R21): instalacja zrodel, kompilacja w WYKRYTYM MetaEditorze,
 rem weryfikacja (kod wyjscia + log + NOWY plik EX5 + hashe), status do MQL5\Files\PMW\native_status.json.
 rem Nie zmienia ustawien terminala, nie uruchamia handlu, nie tworzy fikcyjnego EX5. Self-test/benchmark uruchamiasz w terminalu (Skrypty).
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "PY=%ROOT%\.venv\Scripts\python.exe"
+call "%ROOT%\tools\pmwpy.cmd"
 set "DATA=%~1"
 set "ME=%~2"
 if "%DATA%"=="" set /p "DATA=Podaj folder danych terminala (Plik > Otworz folder danych), np. C:\Users\X\AppData\Roaming\MetaQuotes\Terminal\HASH: "

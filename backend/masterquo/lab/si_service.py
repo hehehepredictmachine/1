@@ -80,7 +80,8 @@ class StructureIntelligenceService:
         except Exception as exc:                                # noqa: BLE001
             flow = {"status": "ERROR", "error": type(exc).__name__}
         try:
-            context = self.ctx.summary(self.ctx.update(instrument or "XAUUSD", tf, bars, tick))
+            # 1.46: an unsupported TF (M30) is reported NOT_SUPPORTED_TF - it was WARMING_UP forever
+            context = self.ctx.summary(self.ctx.update(instrument or "XAUUSD", tf, bars, tick), tf=tf)
         except Exception as exc:                                # noqa: BLE001
             context = {"status": "ERROR", "error": type(exc).__name__}
         t, o, h, lo, c = [x["open_utc"] for x in b], [x["o"] for x in b], [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
@@ -140,7 +141,10 @@ class StructureIntelligenceService:
                 cells[tf] = self.cell(tf, bars.get(tf) or [], tick, zones, instrument)
             except Exception as exc:                            # noqa: BLE001
                 cells[tf] = {"tf": tf, "status": "ERROR", "error": type(exc).__name__}
-        fc = self.forecast(bars, instrument, tick, as_of)
+        try:
+            fc = self.forecast(bars, instrument, tick, as_of)
+        except Exception as exc:                                # noqa: BLE001 - 1.46: a failing SHADOW forecast lost every TF cell
+            fc = {"forecast_status": "ABSTAIN", "reason": f"FORECAST_ERROR: {type(exc).__name__}: {exc}"[:200]}
         try:
             neu = self.neutralize(instrument, bars.get("M1") or [])
         except Exception as exc:                                # noqa: BLE001
@@ -269,7 +273,6 @@ class StructureIntelligenceService:
         key = (inst, sym, getattr(b, "session_epoch", None))
         if self.quote_key != key or self.quote_engine is None:
             self.quote_engine, self.quote_key = Q.QuoteEngine(f"{inst}|{sym}", tick, point), key     # reset on asset / session change
-            self._q_since = None
         eng = self.quote_engine
         secs = 600 if eng.last_tick_ms is None else max(5, min(600, int(time.time() - eng.last_tick_ms / 1000.0) + 5))
         r = b.ticks(sym, secs)
@@ -330,13 +333,17 @@ class StructureIntelligenceService:
             reg = T._reg(instrument)
         except Exception:                                       # noqa: BLE001
             return {"forecast_status": "ABSTAIN", "reason": "REGISTRY_UNAVAILABLE"}
-        key = json.dumps(reg.get("shadow", {}).get(T.TASK_MOVE), sort_keys=True)
+        # 1.46: the cache key carries the indicator-profile hash - after `calibrate` the cached forecaster kept answering OK on features of the
+        # new profile (a fresh load rejects the artefact as INCOMPATIBLE_ARTIFACT)
+        key = json.dumps({"shadow": reg.get("shadow", {}).get(T.TASK_MOVE), "profile": T.indicator_profile(instrument).get("hash")}, sort_keys=True)
         if self._fc is None or self._fc_key != (instrument, key):
             self._fc, self._fc_key = T.Forecaster(instrument), (instrument, key)
         if self._fc.model is None:
             return {"forecast_status": "ABSTAIN", "reason": self._fc.reason}
         m1 = bars.get("M1") or []
-        out = self._fc.forecast(m1[-1500:], {tf: bars.get(tf) or [] for tf in ("M5", "M15", "H1")}, tick)
+        info = getattr(self.bridge, "symbol_info", None) or {}
+        point = float(info.get("point") or 0) or None     # 1.46: spread_atr in points, as in the dataset (unknown -> tick, as before)
+        out = self._fc.forecast(m1[-1500:], {tf: bars.get(tf) or [] for tf in ("M5", "M15", "H1")}, tick, point=point)
         if out.get("forecast_status") == "OK":
             for hd in out["heads"]:
                 try:
@@ -395,11 +402,30 @@ class StructureIntelligenceService:
                 "note": "ocena tylko dojrzałych etykiet; brak dojrzałych = brak oceny"}
 
     # ------------------------------------------------------------ background jobs (progress / cancel; GET never trains)
+    # 1.46: kinds whose worker honours the cancel event - cancel() of any other kind answers False (they were reported CANCELLED although
+    # they ran to the end and kept their effects, e.g. a new indicator profile or a registered dataset)
+    CANCELLABLE = ("train", "tick_export", "flow_train")
+
     def start_job(self, kind: str, params: dict) -> dict:
         if kind not in ("dataset", "train", "calibrate", "calibrate_market", "tick_export", "tick_replay", "experiment",
                         "flow_calibrate", "flow_markov", "flow_dataset", "flow_train",
                         "context_calibrate", "context_dataset", "context_train"):
             raise ValueError("JOB_KIND_INVALID")
+        from ..assets.registry import ALLOWED
+        params = dict(params or {})
+        active = self.cfg.get().assets.active
+        a = params.get("asset") or active
+        # 1.46: the asset becomes a directory name (data/ticks/<asset>, structure_intelligence/<asset>) - '../..' or an absolute path wrote
+        # index.json / ticks_*.npz outside the data dir; only the allowed instruments, as on every other SI route
+        if not isinstance(a, str) or a not in ALLOWED:
+            raise ValueError(f"ASSET_NOT_ALLOWED:STRUCTURE_INTELLIGENCE:{a!r}"[:200])
+        if kind in ("tick_export", "tick_replay") and a != active:
+            # 1.46: both read the ACTIVE broker symbol (ticks / symbol_info) - saving them under another asset mixed the archives
+            raise ValueError(f"ASSET_NOT_ACTIVE: {kind} działa na symbolu aktywnego instrumentu {active}, nie {a}")
+        params["asset"] = a
+        if kind == "tick_export":
+            from . import tick_store as TS
+            params["days"] = TS.check_days(params.get("days") or 7)          # 1.46: inf / NaN / negative refused up front (409)
         jid = "SIJ-" + uuid.uuid4().hex[:10]
         ev = threading.Event()
         job = {"job_id": jid, "kind": kind, "params": params, "status": "RUNNING", "log": [], "started_at": iso(utcnow()), "cancel": ev}
@@ -437,7 +463,7 @@ class StructureIntelligenceService:
                 point = float((meta.get("spec") or {}).get("point") or tick)
                 if job["kind"] in ("flow_calibrate", "flow_markov"):
                     m1 = _bars(ds, meta.get("file_prefix") or "XAUUSD", "M1")
-                    dev = m1[: int(0.8 * len(m1))]
+                    dev = FT.dev_bars(m1)   # 1.46: time-based DEV cut (same rule as structure_task.split); count-based 80 % reached into the holdout
                     job["result"] = (FCLI.calibrate(inst, dev, point, tick, ["heikin", "sr-channels", "stopdistance"], meta) if job["kind"] == "flow_calibrate"
                                      else FCLI.train_markov(inst, dev, point, tick, meta))
                 elif job["kind"] == "flow_dataset":
@@ -484,7 +510,10 @@ class StructureIntelligenceService:
             elif job["kind"] == "tick_replay":
                 from . import tick_store as TS
                 info = getattr(self.bridge, "symbol_info", None) or {}
-                job["result"] = {k: v for k, v in TS.replay(inst, float(info.get("trade_tick_size") or 0.01), float(info.get("point") or 0.01)).items()}
+                if not (info.get("trade_tick_size") and info.get("point")):
+                    # 1.46: 0.01 / 0.01 were guessed when the bridge had no symbol_info - never a default contract spec
+                    raise ValueError("BLOCKED_NO_SYMBOL_INFO: brak trade_tick_size / point aktywnego symbolu (połącz MT5)")
+                job["result"] = {k: v for k, v in TS.replay(inst, float(info["trade_tick_size"]), float(info["point"])).items()}
             elif job["kind"] == "experiment":
                 d = T.latest_dataset(inst, T.TASK_MOVE)
                 if d is None:
@@ -513,7 +542,7 @@ class StructureIntelligenceService:
 
     def cancel(self, jid: str) -> bool:
         j = self.jobs.get(jid)
-        if j and j["status"] == "RUNNING":
+        if j and j["status"] == "RUNNING" and j["kind"] in self.CANCELLABLE:
             j["cancel"].set()
             return True
         return False

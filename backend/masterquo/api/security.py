@@ -12,14 +12,18 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import threading
+from collections import OrderedDict
 
 SESSION_COOKIE = "mq_sid"
+MAX_SESSIONS = 200
 
 
 class LocalSecurity:
     def __init__(self, port: int):
         self.port = port
-        self.sessions: dict[str, str] = {}  # sid -> csrf
+        self.sessions: OrderedDict[str, str] = OrderedDict()  # sid -> csrf, least recently USED first
+        self._lock = threading.Lock()
         self.shutdown_token = secrets.token_urlsafe(32)
 
     @property
@@ -37,15 +41,25 @@ class LocalSecurity:
         return bool(origin) and origin in self.origins
 
     def new_session(self) -> tuple[str, str]:
-        if len(self.sessions) > 200:
-            self.sessions.clear()
+        # 1.46: evict the least recently USED session, never all of them (1.45.0: >200 GET / from any web page cleared every session and
+        # logged the open panel out - its STOP / close buttons stopped working until a reload)
         sid, csrf = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
-        self.sessions[sid] = csrf
+        with self._lock:
+            while len(self.sessions) >= MAX_SESSIONS:
+                self.sessions.popitem(last=False)
+            self.sessions[sid] = csrf
         return sid, csrf
 
     def csrf_for(self, sid: str | None) -> str | None:
-        return self.sessions.get(sid or "")
+        with self._lock:
+            csrf = self.sessions.get(sid or "")
+            if csrf is not None:
+                self.sessions.move_to_end(sid)          # an active panel (polling / WebSocket) is never the eviction candidate
+            return csrf
 
     def csrf_ok(self, sid: str | None, token: str | None) -> bool:
         exp = self.csrf_for(sid)
-        return bool(exp and token and hmac.compare_digest(exp, token))
+        if not (exp and isinstance(token, str) and token):
+            return False
+        # 1.46: bytes - compare_digest(str, str) raises TypeError for non-ASCII text (a 500 instead of a 403)
+        return hmac.compare_digest(exp.encode("utf-8"), token.encode("utf-8", "surrogatepass"))

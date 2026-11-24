@@ -1,0 +1,28 @@
+/* TraderLifeGame – układ funkcjonalny (bez osobnego projektu graficznego): korzysta z tokenów i klas .panel / .btn aplikacji */
+.tlg { position: fixed; inset: 0; overflow: auto; padding: 16px 24px 32px; background: var(--bg, #05070b); color: var(--fg, #e8e4da); z-index: 5; }
+.tlg-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.tlg-top h1 { margin: 0; font-size: 20px; letter-spacing: .08em; }
+.tlg-top h1 small { font-size: 12px; opacity: .6; }
+.tlg-bar { display: flex; gap: 14px; margin-left: auto; font-size: 13px; }
+.tlg-bar span { padding: 3px 8px; border: 1px solid rgba(214, 180, 106, .35); border-radius: 4px; }
+.tlg-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 12px; }
+.tlg-main .panel, .tlg-create { margin-bottom: 12px; padding: 12px; }
+.tlg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.tlg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0; }
+.tlg-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px; background: transparent; color: inherit;
+  border: 1px solid rgba(255, 255, 255, .15); border-radius: 6px; cursor: pointer; }
+.tlg-card.on { border-color: #d6b46a; box-shadow: 0 0 0 1px #d6b46a inset; }
+.tlg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tlg-table td, .tlg-table th { padding: 4px 6px; border-bottom: 1px solid rgba(255, 255, 255, .08); text-align: left; vertical-align: top; }
+.tlg-create label, .tlg label { display: inline-flex; gap: 6px; align-items: center; margin: 4px 10px 4px 0; }
+.tlg input, .tlg select, .tlg textarea { background: rgba(255, 255, 255, .05); color: inherit; border: 1px solid rgba(255, 255, 255, .18); border-radius: 4px; padding: 4px 6px; }
+.tlg textarea { width: 100%; }
+.tlg-node { padding: 6px 8px; margin: 6px 0; border-left: 3px solid rgba(255, 255, 255, .15); }
+.tlg-node.unlocked { border-left-color: #d6b46a; }
+.tlg-node.available { border-left-color: #7bb37b; }
+.tlg-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.tlg-chart { width: 100%; max-width: 900px; height: 180px; background: rgba(255, 255, 255, .02); }
+.tlg-chart .wick { stroke: rgba(230, 230, 230, .6); stroke-width: 1; }
+.tlg-chart .up { fill: #d9d9d9; } .tlg-chart .down { fill: #4a4a4a; stroke: #bbb; stroke-width: .5; }
+.tlg-msg { padding: 6px 10px; border: 1px solid rgba(214, 180, 106, .4); border-radius: 4px; font-size: 13px; }
+.tlg-foot { margin-top: 16px; }

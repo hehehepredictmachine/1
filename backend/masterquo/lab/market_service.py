@@ -1,7 +1,8 @@
 """PMW-UPD-09 runtime adapter of the R22-R25 cores for the Structure Intelligence snapshot (one producer, many consumers: snapshot
 cells -> MTF dashboard / agent, REST /regimes /swings /smma /zscore). State per (instrument, TF): Market Behavior, RegimeMachine and
 SmmaChannel are updated ONLY with new closed bars (a poll without a new bar changes nothing); a history revision (non-contiguous or
-rewritten bar) resets the state and replays the bounded window. Regime/SMMA checkpoints are persisted (restart never recounts a bar).
+rewritten bar) resets the state and replays the bounded window. The Regime checkpoint is persisted (a restart on the same bars never
+recounts a regime bar); SmmaChannel is recomputed from the window (1.46: its checkpoint in the file is diagnostic only, never restored).
 Profiles come from market_profiles.json (dev calibration) when present, else the documented defaults."""
 from __future__ import annotations
 
@@ -34,7 +35,8 @@ def calibrated(inst: str) -> dict:
     prof = rep.get("profiles") or {}
     rg = (prof.get(V.REGIME_PROFILE) or {}).get("chosen") or {}
     sm = (prof.get(V.SMMA_PROFILE) or {}).get("chosen") or {}
-    return {"regime": {k: rg[k] for k in ("confirm", "trend_e") if k in rg}, "smma": sm, "source": "CALIBRATED_ON_DEV" if prof else "DEFAULT"}
+    # 1.46: a calibration without a chosen profile (INSUFFICIENT_EVIDENCE) leaves the defaults - not labelled CALIBRATED_ON_DEV
+    return {"regime": {k: rg[k] for k in ("confirm", "trend_e") if k in rg}, "smma": sm, "source": "CALIBRATED_ON_DEV" if (rg or sm) else "DEFAULT"}
 
 
 class _Key:
@@ -66,6 +68,8 @@ class MarketSections:
     def _replay(self, k: _Key, bars: list[dict], ck: dict | None) -> None:
         resume_after = (ck or {}).get("last_bar") if ck and ck.get("regime", {}).get("cfg_hash") == k.rm.hash else None
         ids = [b["open_utc"] for b in bars]
+        if resume_after in ids and "last_c" in ck and bars[ids.index(resume_after)]["c"] != ck["last_c"]:
+            resume_after = None                                    # 1.46: that bar was revised after the checkpoint -> full replay
         if resume_after in ids:
             k.rm.restore(ck["regime"])
             k.bands = ck.get("bands", [])
@@ -100,6 +104,7 @@ class MarketSections:
         if len(bars) < 20:
             return None
         with self._lock:
+            revised = False
             k = self.keys.get((inst, tf))
             if k is not None and len(k.mb.c) > 5 * MAX_BARS:
                 k = None                                           # bounded memory: periodic rebuild from the window (ids are bar-time based)
@@ -108,6 +113,7 @@ class MarketSections:
                 pos = next((j for j in range(len(bars) - 1, -1, -1) if bars[j]["open_utc"] == last), None)
                 if pos is None or bars[pos]["c"] != k.bars[-1]["c"]:
                     k = None                                       # revision / gap beyond window -> rebuild
+                    revised = True
                 else:
                     for b in bars[pos + 1:]:
                         self._step(k, b)
@@ -115,24 +121,31 @@ class MarketSections:
                 k = _Key(inst, tf, tick)
                 ck = None
                 try:
-                    ck = json.loads(k.path.read_text(encoding="utf-8")) if k.path.exists() else None
+                    # 1.46: a rebuild caused by a revision never resumes the checkpoint - it was computed on the pre-revision bars
+                    ck = json.loads(k.path.read_text(encoding="utf-8")) if k.path.exists() and not revised else None
                 except (OSError, ValueError):
                     ck = None
                 self._replay(k, bars, ck)
                 self.keys[(inst, tf)] = k
             try:
                 tmp = k.path.with_suffix(".tmp")
-                tmp.write_text(json.dumps({"last_bar": k.bars[-1]["open_utc"], "regime": k.rm.checkpoint(), "bands": k.bands[-MAX_BARS:],
-                                           "smma": k.sm.checkpoint()}, default=str), encoding="utf-8")
+                tmp.write_text(json.dumps({"last_bar": k.bars[-1]["open_utc"], "last_c": k.bars[-1]["c"], "regime": k.rm.checkpoint(),
+                                           "bands": k.bands[-MAX_BARS:], "smma": k.sm.checkpoint()}, default=str), encoding="utf-8")
                 tmp.replace(k.path)
             except OSError:
                 pass
             return k
 
     # ---------------------------------------------------------------- views
+    # 1.46: every view reads the per-key state under the same lock update() holds - the heartbeat thread inserts legs/swings/events
+    # while REST threads iterated them ("dictionary changed size during iteration" -> HTTP 500)
     def summary(self, k: _Key | None) -> dict:
         if k is None:
             return {"status": "WARMING_UP"}
+        with self._lock:
+            return self._summary(k)
+
+    def _summary(self, k: _Key) -> dict:
         rv = getattr(k, "last_view", None) or k.rm.view(None)
         story = k.mb.story()
         sm = k.sm.hist[-1] if k.sm.hist else {}
@@ -150,12 +163,20 @@ class MarketSections:
                            "previous": {x: zp.get(x) for x in ("z", "status", "window", "mean", "std")}}}
 
     def regimes(self, k: _Key, limit: int = 300) -> dict:
+        with self._lock:
+            return self._regimes(k, limit)
+
+    def _regimes(self, k: _Key, limit: int) -> dict:
         rv = getattr(k, "last_view", None) or k.rm.view(None)
         return {"instrument": k.inst, "tf": k.tf, "current": rv, "bands": k.bands[-limit:], "history": k.rm.st["history"][-50:],
                 "resumed_from_checkpoint": k.resumed, "profiles_source": k.cal_source,
                 "note": "pasy pokazują stan znany po zamknięciu danej świecy (available_at); strength ≠ prawdopodobieństwo"}
 
     def swings(self, k: _Key, as_of: float | None = None, limit: int = 120) -> dict:
+        with self._lock:
+            return self._swings(k, as_of, limit)
+
+    def _swings(self, k: _Key, as_of: float | None, limit: int) -> dict:
         sw = [s for s in sorted(k.mb.swings.values(), key=lambda s: s["origin_index"]) if as_of is None or s["known_at"] <= as_of][-limit:]
         legs = [lg for lg in k.mb.legs.values() if as_of is None or lg["available_at"] <= as_of][-limit:]
         out = []
@@ -167,13 +188,17 @@ class MarketSections:
         return {"instrument": k.inst, "tf": k.tf, "as_of": as_of, "swings": out, "legs": legs, "story": k.mb.story(), "profile": k.mb.profile}
 
     def swing(self, inst: str, sid: str, as_of: float | None = None) -> dict | None:
-        for (i, tf), k in self.keys.items():
-            if i == inst and sid in k.mb.swings:
-                return dict(k.mb.swing_asof(sid, as_of) or {"id": sid, "status": "NOT_KNOWN_AT_AS_OF"}, tf=tf)
+        with self._lock:
+            for (i, tf), k in self.keys.items():
+                if i == inst and sid in k.mb.swings:
+                    return dict(k.mb.swing_asof(sid, as_of) or {"id": sid, "status": "NOT_KNOWN_AT_AS_OF"}, tf=tf)
         return None
 
     def smma(self, k: _Key, limit: int = 200) -> dict:
-        return {"instrument": k.inst, "tf": k.tf, "profile": k.sm.profile, "series": k.sm.hist[-limit:], "events": list(k.sm.events.values())[-100:]}
+        with self._lock:
+            return {"instrument": k.inst, "tf": k.tf, "profile": k.sm.profile, "series": k.sm.hist[-limit:], "events": list(k.sm.events.values())[-100:]}
 
     def zscore(self, k: _Key, mode: str = "INCLUSIVE_N", n: int = 20) -> dict:
-        return dict(V.zscore_series(k.bars, n=n, mode=mode, tick=k.tick, context=f"{k.inst}|{k.tf}", keep=200), instrument=k.inst, tf=k.tf)
+        with self._lock:
+            bars = list(k.bars)
+        return dict(V.zscore_series(bars, n=n, mode=mode, tick=k.tick, context=f"{k.inst}|{k.tf}", keep=200), instrument=k.inst, tf=k.tf)

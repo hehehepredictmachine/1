@@ -15,9 +15,16 @@ type Prefs struct {
 	CloseAction    string `json:"close_action"` // ask | background | exit
 	Autostart      bool   `json:"autostart"`
 	StartMinimized bool   `json:"start_minimized"`
+	// 1.45 (Apollo23 TASK 013): borderless fullscreen, adaptive UI scale and automatic entry into the panel - ON by default.
+	// Missing keys keep the defaults (JSON is decoded over defaultPrefs). The Windows display resolution is never changed.
+	Fullscreen bool `json:"fullscreen"`
+	AutoScale  bool `json:"auto_scale"` // 1.46 (audit): reserved - no UI scaling reads it yet; the key stays (engine API desktop.py, existing prefs files)
+	AutoEnter  bool `json:"auto_enter"`
 }
 
-func defaultPrefs() Prefs { return Prefs{CloseAction: "ask"} }
+func defaultPrefs() Prefs {
+	return Prefs{CloseAction: "ask", Fullscreen: true, AutoScale: true, AutoEnter: true}
+}
 
 func loadPrefs(dataDir string) Prefs {
 	p := defaultPrefs()
@@ -41,6 +48,9 @@ type State struct {
 	Import      *ImportLog `json:"import,omitempty"`
 	FreshStart  string     `json:"fresh_start,omitempty"` // time the user chose to start without importing old data
 	LastBackup  string     `json:"last_backup,omitempty"`
+	// 1.46: the version the pre-upgrade copy (LastBackup) was made for while that version has not started yet - a failed start / "Spróbuj
+	// ponownie" does not copy the data again. Additive key; older desktop_state.json files load unchanged.
+	BackupVersion string `json:"backup_version,omitempty"`
 }
 
 type ImportLog struct {

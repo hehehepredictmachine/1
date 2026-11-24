@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from pathlib import Path
 
@@ -19,7 +20,9 @@ from . import heikin as HF
 from . import stop_distance as SD
 
 SCHEMA = "PMW-FLOW-EXPORT-1"
-MAX_BYTES = 8 * 1024 * 1024
+# 1.46: was 8 MB - MQ_FlowCollector with the default InpBars=0 (full history, needed for parity) writes ~190-300 B per bar (18 fields,
+# DoubleToString(v, 10)), so 100k bars (MT5 default 'Max bars in chart') = 18-30 MB and the feed / parity were always REJECTED.
+MAX_BYTES = 64 * 1024 * 1024
 FIELDS = ["bar_time", "o", "h", "l", "c", "ha_o", "ha_h", "ha_l", "ha_c", "sd_range", "sd_avg", "sd_sugg", "sup_lo", "sup_hi", "res_lo", "res_hi",
           "in_lo", "in_hi"]
 
@@ -39,7 +42,7 @@ def parse_export(raw: bytes) -> dict:
         raise FlowExportError("EXPORT_CHECKSUM_MISMATCH")
     lines = body.split("\n")
     head = json.loads(lines[0])
-    if head.get("schema") != SCHEMA:
+    if not isinstance(head, dict) or head.get("schema") != SCHEMA:          # 1.46: a non-object header was an AttributeError (500)
         raise FlowExportError("EXPORT_SCHEMA_MISMATCH")
     rows = []
     for ln in lines[1:]:
@@ -85,11 +88,17 @@ class FlowImporter:
         h = ex["header"]
         if h.get("symbol") != self.symbol or h.get("tf") != self.tf:
             return {"status": "REJECTED", "reason": "CONTEXT_MISMATCH"}
-        if int(h.get("seq", -1)) <= self.last_seq:
+        try:                                         # 1.46: seq null/'abc' or written_at_utc null were a 500 in GET /flow-context/native
+            seq, written = int(h.get("seq", -1)), float(h.get("written_at_utc", 0))
+            if not math.isfinite(written):
+                raise ValueError("written_at_utc")
+        except (TypeError, ValueError, OverflowError):
+            return {"status": "REJECTED", "reason": "HEADER_FORMAT"}
+        if seq <= self.last_seq:
             return {"status": "STALE_SEQUENCE", "last": self.last}
-        if now - float(h.get("written_at_utc", 0)) > self.max_age:
+        if now - written > self.max_age:
             return {"status": "REJECTED", "reason": "EXPORT_TOO_OLD"}
-        self.last_seq = int(h["seq"])
+        self.last_seq = seq
         self.last = {"status": "IMPORTED", "header": h, "rows": len(ex["rows"]), "last_row": ex["rows"][-1] if ex["rows"] else None,
                      "role": "SHADOW_AUDIT", "clock_basis": h.get("clock_basis", "BROKER_WALL_TIME")}
         return self.last
@@ -132,7 +141,7 @@ def parity(fixtures: Path, status_file: Path | None = None) -> dict:
     if f.exists():
         try:
             out["OWN_IMPLEMENTATIONS"] = compare(parse_export(f.read_bytes()))
-        except FlowExportError as exc:
+        except (FlowExportError, ValueError, TypeError, KeyError) as exc:    # 1.46: bad numbers / header in the export (was FlowExportError only)
             out["OWN_IMPLEMENTATIONS"] = {"status": "REJECTED", "reason": str(exc)}
     else:
         out["OWN_IMPLEMENTATIONS"] = {"status": "NOT_RUN", "reason": "brak eksportu natywnego kolektora (MetaEditor/terminal niedostępny)"}

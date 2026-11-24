@@ -16,7 +16,7 @@ import math
 from collections import Counter
 from datetime import datetime, timedelta
 
-from ..timeutil import CONTEXT_TIMEFRAMES, CORE_TIMEFRAMES, TF_SECONDS, TIMEFRAMES, from_epoch, iso, parse_iso
+from ..timeutil import CONTEXT_TIMEFRAMES, CORE_TIMEFRAMES, TF_SECONDS, TIMEFRAMES, from_epoch, iso  # 1.46: unused parse_iso dropped
 
 FIX_HISTORY = ("Otwórz w MT5 wykres {sym} {tf}, przewiń go w lewo (Home) aż do pobrania historii; "
                "sprawdź Narzędzia → Opcje → Wykresy → 'Maks. liczba słupków na wykresie' (min. 5000).")
@@ -196,8 +196,11 @@ def assess(*, symbol: str, bars_by_tf: dict[str, list[dict]], required: dict[str
         dq = "DEGRADED"
     else:
         dq = "GOOD"
+    # 1.46: server_now is the broker's WALL clock (UTC + offset); iso() gave it a 'Z' suffix, so it read as a UTC instant shifted by
+    # the offset - now without a zone designator, with the offset next to it
     return {"data_quality": dq, "analysis_allowed": analysis_allowed, "entries_allowed": entries_allowed,
-            "market_state": market_state, "server_now": iso(server_now) if server_now else None,
+            "market_state": market_state, "server_now": server_now.replace(tzinfo=None).isoformat() if server_now else None,
+            "server_tz_offset_s": offset,
             "quote_fresh": quote_fresh, "timeframes": per_tf, "context_timeframes": context, "session_model": session.as_dict(),
             "reason_codes": sorted(set(reasons)), "warming_up": warming, "assessed_at": iso(now)}
 
@@ -211,4 +214,4 @@ def tf_status_message(r: dict) -> str:
     return st
 
 
-__all__ = ["assess", "SessionModel", "tf_status_message", "parse_iso", "datetime"]
+__all__ = ["assess", "SessionModel", "tf_status_message", "datetime"]

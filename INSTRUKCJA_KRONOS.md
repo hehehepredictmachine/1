@@ -1,6 +1,7 @@
 # Kronos AI Forecast w PepeMarketWizard – instrukcja
 
-Kronos-small to **przetrenowany** model prognozy świec OHLC (autorzy: NeoQuasar / ShiYu, https://github.com/shiyu-coder/Kronos).
+Od 1.42.8 bot używa **Kronos-small** (24,7M parametrów, szczyt pamięci ok. 0,5 GB – prognoza widoczna na wykresie także przy małej ilości wolnej pamięci; parity i dane referencyjne autorów: PASS). W 1.37–1.42.7 używał **Kronos-base** (102,3M parametrów; największy publicznie dostępny wariant – Kronos-large 499,2M według autorów
+nie jest udostępniony). Do 1.36 był to Kronos-small; historyczne rekordy zachowują swoją nazwę. Kronos to **przetrenowany** model prognozy świec OHLC (autorzy: NeoQuasar / ShiYu, https://github.com/shiyu-coder/Kronos).
 Bot go **nie trenuje** – używa oficjalnych wag z Hugging Face i liczy prognozy **lokalnie** na Twoim komputerze. Nie korzysta z płatnego
 API i nie wysyła danych rachunku ani historii transakcji na zewnątrz.
 
@@ -20,7 +21,7 @@ Domyślnie działa w trybie **SHADOW (obserwacja)**. Gotowość do prognozowania
 * Windows 10/11 64-bit. Wystarczy procesor (CPU); karta NVIDIA nie jest wymagana.
 * Internet tylko przy pierwszej instalacji. Pobierane są:
   * z PyPI: PyTorch (CPU) i inne pakiety, ok. 250 MB;
-  * z Hugging Face: wagi modelu i tokenizera, ok. 120 MB.
+  * z Hugging Face: wagi modelu i tokenizera, ok. 115 MB (Kronos-small; 1.37–1.42.7 Kronos-base ok. 420 MB).
 * Ok. 1,2 GB wolnego miejsca. Środowisko `.venv_kronos` powstaje obok programu, a wagi trafiają do folderu danych.
 * Działający bot PepeMarketWizard 1.31 z podłączonym MT5 (tak jak dotąd).
 
@@ -40,7 +41,7 @@ Instalator wykonuje 5 kroków:
    * tylko pakiety binarne z **sumami SHA-256**: `--require-hashes --only-binary=:all:`;
    * `torch==2.14.1` z PyPI, czyli wersja **CPU**.
 4. **Wagi** (`python -m kronos_runtime.install download`) w przypiętych rewizjach:
-   * `NeoQuasar/Kronos-small` @ `901c26c1332695a2a8f243eb2f37243a37bea320`;
+   * `NeoQuasar/Kronos-small` @ `901c26c1332695a2a8f243eb2f37243a37bea320` (1.42.8; do 1.36 też Kronos-small; 1.37–1.42.7: `NeoQuasar/Kronos-base` @ `2b554741…`);
    * `NeoQuasar/Kronos-Tokenizer-base` @ `0e0117387f39004a9016484a186a908917e22426`.
 
    Instalator sprawdza, że rewizja istnieje w źródle. Każdy plik porównuje z metadanymi źródła: `model.safetensors` – SHA-256 z LFS,

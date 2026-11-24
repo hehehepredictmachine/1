@@ -91,6 +91,13 @@ _OVR: dict[str, dict] = {
     "mm:ste_flownet_ret": {"role": "BASE_FORECAST", "adapter": None, "na": "brak ścieżki na żywo (tylko artefakt badawczy); log-zwrot h zdarzeń",
                            "unit": "log_return", "task_type": "REGRESSION", "tfs": ["EVENT"]},
     # --- other SH rows ------------------------------------------------------------------------------------------------
+    "tsfm:chronos2": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                      "tfs": ["M5", "M15"], "env": ".venv_chronos2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                      "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera"},
+    "tsfm:granite_ttm": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                         "tfs": ["M5", "M15"], "env": ".venv_granite", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                         "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; "
+                                  "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)"},
     "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
                             "tfs": ["M1", "M5", "M15", "H1"], "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
                             "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera"},
@@ -133,7 +140,7 @@ def _sh_rows() -> list[dict]:
             continue
         cid = I.resolve(sid) or f"sh:{sid}"
         cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
-        if sid == "kronos":
+        if sid in ("kronos", "chronos2", "granite_ttm"):
             cat = "MODEL_PRETRAINED"
         out.append(_e(cid, name=it["name"], category=cat, output=it["output"], owner_train=it.get("train"), source_registry=["sh.models.REGISTRY"],
                       receivers=[f"SH:{it['roles']['SCALPING']}/{it['roles']['HEDGING']}"], dependencies=[f"grupa korelacji {it['group']}"],
@@ -189,7 +196,8 @@ def _lab_rows() -> list[dict]:
     out = []
     for f in P.FAMILIES:
         out.append(_e(f"lab:{f}", name=f"Lab {f}", category="MODEL_TRAINED" if f not in ("DUMMY", "RULE") else "BASELINE",
-                      files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="score_0_100", task_type="SCORE",
+                      # 1.46: the lab adapter publishes raw_score as unit 'ratio' (0-1, lab.service round(p, 4)), not score_0_100
+                      files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="ratio", task_type="SCORE",
                       task="TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)", timeframes=["M5"], owner_train="lab (training: lab)", owner_infer="lab.service",
                       artifact="<data>/lab/models/<asset>/", validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if f not in ("DUMMY", "RULE") else "TOOL",
                       adapter=A_EXT, source_registry=["lab.protocol.FAMILIES"], notes="score innego zdarzenia niż TP setupu – cecha pod własną nazwą"))
@@ -380,7 +388,7 @@ def _count(es, k) -> dict:
 
 def to_markdown(inv: dict) -> str:
     c = inv["coverage"]
-    L = [f"# Inwentaryzacja komponentów obliczeniowych – PMW Quant Core", "",
+    L = ["# Inwentaryzacja komponentów obliczeniowych – Apollo23 Quant Core", "",      # 1.46: display name (identifiers unchanged)
          f"Wygenerowano: {inv['generated_at']} · instrument: {inv['instrument']} · tryb: {inv['runtime']} · generator: `python -m masterquo quant inventory` ({VERSION})", "",
          "Plik maszynowy: `docs/quant/INVENTORY.json`. Kanoniczne identyfikatory i aliasy: `backend/masterquo/quant/ids.py`.", "",
          "## Pokrycie (cztery osobne miary)", "",

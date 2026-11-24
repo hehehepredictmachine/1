@@ -71,29 +71,38 @@ def _check(f, k, sigma, t, d):
         raise Black76Error("DISCOUNT_INVALID")
 
 
+def _finite_out(out: dict) -> dict:
+    # 1.46: an extreme sigma*sqrt(T) overflowed to inf -> d1 = NaN, call/gamma NaN and the JSON response failed (HTTP 500)
+    if any(isinstance(x, float) and not math.isfinite(x) for x in out.values()):
+        raise Black76Error("NUMERIC_OVERFLOW (sigma*sqrt(T) poza zakresem liczbowym)")
+    return out
+
+
 def price(f: float, k: float, sigma: float, t: float, d: float = 1.0) -> dict:
     _check(f, k, sigma, t, d)
     v = sigma * math.sqrt(t)
+    if not math.isfinite(0.5 * v * v):
+        raise Black76Error("NUMERIC_OVERFLOW (sigma*sqrt(T) poza zakresem liczbowym)")
     if v == 0.0:
         call, put = d * max(f - k, 0.0), d * max(k - f, 0.0)
         atm = f == k
         dc = 0.5 * d if atm else (d if f > k else 0.0)
         vega = d * f * npdf(0.0) * math.sqrt(t) if (atm and t > 0) else 0.0
-        return {"version": VERSION, "call": call, "put": put, "parity_residual": (call - put) - d * (f - k), "d1": None, "d2": None,
-                "delta_call": dc, "delta_put": dc - d, "gamma": None if atm else 0.0, "gamma_reason": "NONDIFFERENTIABLE" if atm else None,
-                "vega": vega, "vega_per_vol_point": 0.01 * vega,
-                "p_above_strict": 1.0 if f > k else 0.0, "p_below_strict": 1.0 if f < k else 0.0, "p_at_strike": 1.0 if atm else 0.0,
-                "p_touch": None, "p_touch_reason": "NOT_ESTIMATED", "degenerate": True}
+        return _finite_out({"version": VERSION, "call": call, "put": put, "parity_residual": (call - put) - d * (f - k), "d1": None, "d2": None,
+                            "delta_call": dc, "delta_put": dc - d, "gamma": None if atm else 0.0, "gamma_reason": "NONDIFFERENTIABLE" if atm else None,
+                            "vega": vega, "vega_per_vol_point": 0.01 * vega,
+                            "p_above_strict": 1.0 if f > k else 0.0, "p_below_strict": 1.0 if f < k else 0.0, "p_at_strike": 1.0 if atm else 0.0,
+                            "p_touch": None, "p_touch_reason": "NOT_ESTIMATED", "degenerate": True})
     d1 = (math.log(f / k) + 0.5 * v * v) / v
     d2 = d1 - v
     call = d * (f * ncdf(d1) - k * ncdf(d2))
     put = d * (k * ncdf(-d2) - f * ncdf(-d1))
     vega = d * f * npdf(d1) * math.sqrt(t)
-    return {"version": VERSION, "call": call, "put": put, "parity_residual": (call - put) - d * (f - k), "d1": d1, "d2": d2,
-            "delta_call": d * ncdf(d1), "delta_put": d * (ncdf(d1) - 1.0), "gamma": d * npdf(d1) / (f * v), "gamma_reason": None,
-            "vega": vega, "vega_per_vol_point": 0.01 * vega, "p_above_strict": ncdf(d2), "p_below_strict": ncdf(-d2), "p_at_strike": 0.0,
-            "p_touch": None, "p_touch_reason": "NOT_ESTIMATED", "degenerate": False,
-            "note": "N(d2) = prawdopodobieństwo neutralne względem ryzyka w modelu, nie prawdopodobieństwo transakcji"}
+    return _finite_out({"version": VERSION, "call": call, "put": put, "parity_residual": (call - put) - d * (f - k), "d1": d1, "d2": d2,
+                        "delta_call": d * ncdf(d1), "delta_put": d * (ncdf(d1) - 1.0), "gamma": d * npdf(d1) / (f * v), "gamma_reason": None,
+                        "vega": vega, "vega_per_vol_point": 0.01 * vega, "p_above_strict": ncdf(d2), "p_below_strict": ncdf(-d2), "p_at_strike": 0.0,
+                        "p_touch": None, "p_touch_reason": "NOT_ESTIMATED", "degenerate": False,
+                        "note": "N(d2) = prawdopodobieństwo neutralne względem ryzyka w modelu, nie prawdopodobieństwo transakcji"})
 
 
 def bounds(f: float, k: float, d: float, kind: str) -> tuple[float, float]:
@@ -139,25 +148,46 @@ def forward_from_parity(pairs: list[dict], d: float, *, max_age_s: float = 120.0
     uncrossed pairs; returns the median F, spread and the admissible interval from bid/ask. American / unknown style -> blocked."""
     if exercise_style != "EUROPEAN":
         return {"status": "BLOCKED_EXERCISE_STYLE", "reason": f"{exercise_style}: parytet put-call Black-76 nie obowiązuje dokładnie"}
+    # 1.46: the discount factor was not validated (0 / negative / NaN gave a sign-flipped or NaN forward) - the same rule as _check
+    if not _num(d) or d <= 0:
+        raise Black76Error("DISCOUNT_INVALID")
     good, rejected = [], []
     for p in pairs:
+        # 1.46: a pair that is not an object (p.get -> AttributeError) or without a strike (p["strike"] -> KeyError) was HTTP 500;
+        # a pair WITHOUT age_s counted as 0 s old (fresh) - an unknown age is never "fresh" (missing data is not 0)
+        if not isinstance(p, dict):
+            rejected.append((None, "PAIR_NOT_OBJECT"))
+            continue
+        k = p.get("strike")
         q = [p.get(x) for x in ("call_bid", "call_ask", "put_bid", "put_ask")]
-        if any(v is None or not math.isfinite(v) or v < 0 for v in q):
-            rejected.append((p.get("strike"), "MISSING_OR_NEGATIVE"))
+        if not _num(k) or k <= 0:
+            rejected.append((k if _num(k) else None, "STRIKE_INVALID"))
+        elif any(not _num(v) or v < 0 for v in q):
+            rejected.append((k, "MISSING_OR_NEGATIVE"))
         elif q[0] > q[1] or q[2] > q[3]:
-            rejected.append((p.get("strike"), "CROSSED"))
-        elif (p.get("age_s") or 0) > max_age_s:
-            rejected.append((p.get("strike"), "STALE"))
+            rejected.append((k, "CROSSED"))
+        elif not _num(p.get("age_s")):
+            rejected.append((k, "AGE_UNKNOWN"))
+        elif p["age_s"] < 0:
+            rejected.append((k, "AGE_INVALID"))
+        elif p["age_s"] > max_age_s:
+            rejected.append((k, "STALE"))
         else:
-            k = p["strike"]
             good.append({"strike": k, "F": k + ((q[0] + q[1]) / 2 - (q[2] + q[3]) / 2) / d,
                          "F_lo": k + (q[0] - q[3]) / d, "F_hi": k + (q[1] - q[2]) / d})
     if len(good) < min_pairs:
         return {"status": "INSUFFICIENT_PAIRS", "pairs_ok": len(good), "rejected": rejected, "min_pairs": min_pairs}
     fs = sorted(g["F"] for g in good)
     med = fs[len(fs) // 2] if len(fs) % 2 else 0.5 * (fs[len(fs) // 2 - 1] + fs[len(fs) // 2])
-    return {"status": "OK", "forward": med, "dispersion": fs[-1] - fs[0], "pairs_ok": len(good), "admissible": [max(g["F_lo"] for g in good), min(g["F_hi"] for g in good)],
+    adm = [max(g["F_lo"] for g in good), min(g["F_hi"] for g in good)]
+    # 1.46: an empty admissible interval (lo > hi: the bid/ask bounds of the pairs do not overlap) was returned without a flag
+    return {"status": "OK", "forward": med, "dispersion": fs[-1] - fs[0], "pairs_ok": len(good), "admissible": adm,
+            "admissible_status": "EMPTY_INCONSISTENT_QUOTES" if adm[0] > adm[1] else "OK",
             "rejected": rejected, "qa": {"max_age_s": max_age_s, "min_pairs": min_pairs}}
+
+
+def _num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
 def quantile(f: float, sigma: float, t: float, q: float) -> float:

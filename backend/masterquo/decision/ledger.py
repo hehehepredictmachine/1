@@ -119,8 +119,8 @@ class IntentLedger:
         self.book = book
 
     def open(self, *, path: str, mode: str, account_key: str | None, subject: str, symbol: str, side: str, volume: float | None,
-             risk_money: float | None, record_id: str | None, equity: float | None, reserve_subject: str | None = None) -> dict:
-        """Create the ENTRY intent and reserve risk for it. -> {status: RESERVED|DUPLICATE|BLOCKED, intent, reasons}.
+             risk_money: float | None, record_id: str | None, equity: float | None, reserve_subject: str | None = None, kind: str = "ENTRY") -> dict:
+        """Create the ENTRY (or 1.38: HEDGE leg) intent and reserve risk for it. -> {status: RESERVED|DUPLICATE|BLOCKED, intent, reasons}.
         subject = what is deduplicated (ACTIVE setup_id / SH plan_id); reserve_subject = what becomes the open position (default subject).
         A BLOCKED intent frees its dedup key (the entry may be asked again once there is room), every other state keeps it."""
         dedup = f"{path}:{mode}:{account_key or '-'}:{subject}"
@@ -128,13 +128,13 @@ class IntentLedger:
         if ex:
             return {"status": "DUPLICATE", "intent": ex, "reasons": ["INTENT_ALREADY_EXISTS"]}
         iid = "INT-" + uuid.uuid4().hex[:16]
-        K.make("ExecutionIntent", intent_id=iid, dedup_key=dedup, record_id=record_id, path=path, kind="ENTRY", mode=mode,
+        K.make("ExecutionIntent", intent_id=iid, dedup_key=dedup, record_id=record_id, path=path, kind=kind, mode=mode,
                account_key=account_key, symbol=symbol, side=side if side in K.SIDES else "NONE", volume=volume, risk_money=risk_money, state="NEW")
         now = _now_iso()
         try:
             self.db.execute("""INSERT INTO execution_intents(intent_id, dedup_key, created_at, updated_at, path, kind, record_id, mode, account_key,
-                               symbol, side, volume, risk_money, state) VALUES (?,?,?,?,?,'ENTRY',?,?,?,?,?,?,?,'NEW')""",
-                            (iid, dedup, now, now, path, record_id, mode, account_key, symbol, side, volume, risk_money))
+                               symbol, side, volume, risk_money, state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'NEW')""",
+                            (iid, dedup, now, now, path, kind, record_id, mode, account_key, symbol, side, volume, risk_money))
         except sqlite3.IntegrityError:
             return {"status": "DUPLICATE", "intent": self.db.one("SELECT * FROM execution_intents WHERE dedup_key=?", (dedup,)),
                     "reasons": ["INTENT_ALREADY_EXISTS"]}

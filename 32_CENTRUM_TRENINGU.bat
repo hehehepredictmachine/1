@@ -4,14 +4,12 @@ rem Trening NIE aktywuje modelu - aktywacja tylko recznie (panel: Modele i treni
 rem Zadne zlecenie nie jest wysylane. Wymaga zainstalowanego srodowiska (01_INSTALUJ.bat / INSTALUJ_TRENING.bat).
 setlocal
 chcp 65001 >nul
-title PepeMarketWizard - Centrum treningu
+title Apollo23 - Centrum treningu
 set "ROOT=%~dp0"
-set "PY=%ROOT%.venv\Scripts\python.exe"
-if not exist "%PY%" (
-  echo [BLAD] Brak srodowiska .venv - uruchom najpierw 01_INSTALUJ.bat
-  pause
-  exit /b 2
-)
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje Apollo23 - PepeMarketWizard.exe & pause & exit /b 2)
+set "ROOT=%ROOT%\"
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"
 :menu

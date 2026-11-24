@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { BRAND } from "../brand";
 import "./studio.css";
 
 type Json = Record<string, any>;
@@ -84,7 +85,7 @@ function App() {
   return (
     <div>
       <div className="st-top">
-        <h1>Pepe Data &amp; Training Studio</h1>
+        <h1>{BRAND} Data &amp; Training Studio</h1>{/* 1.46: display name (app id "PepeTrainingStudio" of /api/studio/health unchanged) */}
         <span className="sub">osobna aplikacja · jeden eksport = jeden model · Studio nie wysyła zleceń</span>
         <span style={{ flex: 1 }} />
         <span className="sub" data-testid="running">{running ? <>Teraz: <b>{running.task_key.split(":")[0]}</b> · {STATE_PL[running.state] || running.state} · {running.progress?.tf || ""} {running.progress?.rows ?? ""}</> : "Kolejka bezczynna"}</span>
@@ -163,4 +164,5 @@ function App() {
   );
 }
 
+document.title = `${BRAND} Data & Training Studio`;          // 1.46: display name also in the tab title (studio.html still carries the old static one)
 createRoot(document.getElementById("studio-root")!).render(<App />);

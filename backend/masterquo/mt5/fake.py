@@ -229,7 +229,8 @@ class FakeMT5:
     def terminal_info(self):
         if not self._guard():
             return None
-        return TerminalInfo(True, True, False, "Synthetic MT5", "MasterQUO synthetic", "SYNTHETIC", 9999, 25000)
+        # 1.46: display label of the demo terminal shows the product name (was the internal "MasterQUO"); identifiers unchanged
+        return TerminalInfo(True, True, False, "Synthetic MT5", "Apollo23 synthetic", "SYNTHETIC", 9999, 25000)
 
     def version(self):
         return (500, 9999, "synthetic")
@@ -250,7 +251,8 @@ class FakeMT5:
             profit = sum(self._pos_profit(p) for p in self._positions.values())
             margin = sum(self._margin(p["volume"], p["price_open"]) for p in self._positions.values())
             eq = a["balance"] + profit
-            return AccountInfo(a["login"], a["server"], "MasterQUO Synthetic Ltd", "Synthetic", "USD", a["trade_mode"],
+            # 1.46: company label (display only) - Apollo23 instead of the internal "MasterQUO"
+            return AccountInfo(a["login"], a["server"], "Apollo23 Synthetic Ltd", "Synthetic", "USD", a["trade_mode"],
                                ACCOUNT_MARGIN_MODE_RETAIL_HEDGING if self.hedging else ACCOUNT_MARGIN_MODE_RETAIL_NETTING,
                                100, round(a["balance"], 2), round(eq, 2), round(margin, 2), round(eq - margin, 2),
                                round(eq / margin * 100, 2) if margin else 0.0, round(profit, 2), True, True)

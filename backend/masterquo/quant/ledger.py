@@ -46,10 +46,12 @@ class QuantLedger:
             self.c.commit()
             return cur.rowcount == 1
 
-    def pending(self, now: float, limit: int = 500) -> list[dict]:
+    def pending(self, now: float, limit: int = 500, instrument: str | None = None) -> list[dict]:
+        # 1.46: per instrument (QuantService.mature passes it) - rows of the other instrument filled the LIMIT and were simulated on
+        # the current instrument's bars
+        q = "SELECT * FROM rows WHERE status='PENDING' AND matures_at<=?" + (" AND instrument=?" if instrument else "") + " ORDER BY matures_at LIMIT ?"
         with self._lock:
-            return [dict(x) for x in self.c.execute("SELECT * FROM rows WHERE status='PENDING' AND matures_at<=? ORDER BY matures_at LIMIT ?",
-                                                     (now, limit)).fetchall()]
+            return [dict(x) for x in self.c.execute(q, (now, instrument, limit) if instrument else (now, limit)).fetchall()]
 
     def label(self, row_id: str, status: str, label: dict | None, resolve_ts: float | None) -> None:
         y = None if not label or label.get("y_event") is None else int(bool(label["y_event"]))

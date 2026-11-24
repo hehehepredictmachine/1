@@ -24,9 +24,7 @@ from pathlib import Path
 
 from ..timeutil import iso
 
-TFS = {"M5": 300, "M30": 1800}
-ALL_TFS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
-TRAINING_TFS = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
+ALL_TFS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}   # 1.46: unused TFS / TRAINING_TFS removed
 SCALP_TFS = ("M1", "M5", "M15", "M30", "H1")
 CHUNK_DAYS = 31
 
@@ -175,6 +173,32 @@ def _read_chunk(ck: Path) -> list[tuple] | None:
         return None
 
 
+def _chunk_matches(part: list[tuple], model: str, offset: int, server_to_utc) -> bool:
+    """1.46: a checkpoint holds UTC times converted with the model / offset of the export that wrote it, and its name depends only
+    on TF + window. A new (non-resumed) export into the same folder with another --dst-model or offset read those rows as its own
+    (old UTC times under new metadata). Every row keeps the raw server time (field 7): the conversion is re-done and compared."""
+    try:
+        return all(server_to_utc(int(p[7]), model, int(offset))[0] == int(p[0]) for p in part)
+    except (IndexError, TypeError, ValueError):
+        return False
+
+
+def _ticks_match(arr: dict, model: str, offset: int, server_to_utc) -> bool:
+    """1.46: same check for an hourly tick file - by its clock tag (files written from 1.46 on), else by the first / last tick
+    (an untagged empty hour cannot be verified -> fetched again)."""
+    tag = arr.get("clock_model")
+    if tag is not None:
+        return len(tag) == 1 and str(tag[0]) == f"{model}|{int(offset)}"
+    t, srv = arr.get("time_msc_utc"), arr.get("time_msc_server")
+    if t is None or srv is None or len(t) == 0 or len(t) != len(srv):
+        return False
+    for j in (0, len(t) - 1):
+        _u, off, _a = server_to_utc(int(srv[j]) // 1000, model, int(offset))
+        if int(t[j]) != int(srv[j]) - off * 1000:
+            return False
+    return True
+
+
 def _offset_at(model: str, offset: int, utc_ts: float) -> int:
     from ..diagnostics import ny_close_offset
     return int(offset) if model == "UNIFORM" else ny_close_offset(utc_ts)
@@ -206,6 +230,9 @@ def export_ticks(mt5, sym: str, out: Path, t_from: datetime, t_to: datetime, mod
             except Exception:  # noqa: BLE001 - truncated npz (BadZipFile, EOFError, ValueError ...) = interrupted write
                 print(f"[UWAGA] uszkodzony plik ticków {f.name} – pobieram ponownie")
                 arr = None
+            if arr is not None and not _ticks_match(arr, model, offset, server_to_utc):
+                print(f"[UWAGA] plik ticków {f.name} zapisany w innym modelu czasu serwera – pobieram ponownie")
+                arr = None
         if arr is None:
             off = _offset_at(model, offset, a_ms / 1000)
             r = mt5.copy_ticks_range(sym, datetime.fromtimestamp(a_ms / 1000 + off - 120, timezone.utc),
@@ -222,7 +249,7 @@ def export_ticks(mt5, sym: str, out: Path, t_from: datetime, t_to: datetime, mod
                    "bid": np.array([x[2] for x in rows], float), "ask": np.array([x[3] for x in rows], float),
                    "last": np.array([x[4] for x in rows], float), "volume": np.array([x[5] for x in rows], np.int64),
                    "volume_real": np.array([x[6] for x in rows], float), "flags": np.array([x[7] for x in rows], np.int64),
-                   "ord": np.arange(len(rows), dtype=np.int64)}
+                   "ord": np.arange(len(rows), dtype=np.int64), "clock_model": np.array([f"{model}|{int(offset)}"])}   # 1.46: clock tag
             tmp = f.with_name(f.name + f".tmp{os.getpid()}.npz")
             np.savez_compressed(tmp, **arr)
             os.replace(tmp, f)
@@ -500,6 +527,9 @@ def _bars_and_reports(mt5, sym, inst, prefix, out, st, timeframes, start, cutoff
         for wi, (cur, nxt) in enumerate(windows):
             ck = out / "chunks" / f"{tf}_{cur.strftime('%Y%m%d')}_{nxt.strftime('%Y%m%dT%H%M')}.json"
             part = _read_chunk(ck)
+            if part is not None and not _chunk_matches(part, model, int(offset), server_to_utc):
+                print(f"[UWAGA] partia {ck.name} zapisana w innym modelu czasu serwera / offsecie – pobieram ją ponownie")
+                part = None
             if part is None:
                 margin = 4 * 3600                     # server-time query window must cover any offset of the model
                 r = mt5.copy_rates_range(sym, const, datetime.fromtimestamp(cur.timestamp() + offset - margin, timezone.utc),

@@ -7,34 +7,45 @@ import json
 import sys
 from pathlib import Path
 
-from .common import RunLog, activatable, read_registry, sha256_file, write_json_atomic
+from .common import RunLog, activatable, current_contract, forecast_dir, read_registry, relocated, sha256_file, use_instrument, write_json_atomic
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Walidacja zapisanych modeli prognoz XAUUSD.")
     ap.add_argument("--run-id")
+    ap.add_argument("--instrument", help="XAUUSD (domyślnie) albo BTC – osobny rejestr każdego instrumentu")   # 1.46: like registry_cli
     args = ap.parse_args(argv)
+    use_instrument(args.instrument)
     reg = read_registry()
+    if reg.get("error"):                       # 1.46: an unreadable registry is not "no run" (BLOCKED_NO_REAL_DATA)
+        print(f"[BLAD] {reg['error']}: rejestr modeli prognoz nieczytelny (zablokowany lub uszkodzony).")
+        return 2
     rid = args.run_id or reg.get("active") or (sorted(reg["runs"])[-1] if reg["runs"] else None)
     if not rid:
         print("[BLAD] BLOCKED_NO_REAL_DATA: w rejestrze nie ma żadnego runu – najpierw eksport i trening.")
         return 3
+    if rid not in reg["runs"]:                 # 1.46: was a KeyError traceback
+        print(f"[BLAD] Nieznany run_id {rid} – dostępne: {', '.join(sorted(reg['runs'])) or 'brak'}")
+        return 3
     e = reg["runs"][rid]
-    from gold_candles.data import Config
     from gold_candles.model import load_model
     from .plan_train import load_dataset, runtime_check
-    out = Path(e["validation_path"]).parent
+    # 1.46: registry paths are absolute - after the project folder was moved they are found under the current data root (like the
+    # worker / activatable); the contract is the worker's (make_config of the instrument profile, not the XAUUSD-only Config)
+    model_p = relocated(e["model_path"], forecast_dir())
+    val_p = relocated(e["validation_path"], forecast_dir())
+    out = val_p.parent
     log = RunLog(out / "validate_log.jsonl")
-    cur = Config(symbol=e["symbol"], tick_size=e["tick_size"]).contract_hash()
+    cur = current_contract(e)
     ok, why = activatable(e, cur)
-    res = {"run_id": rid, "checksum_ok": sha256_file(Path(e["model_path"])) == e["artifact_sha256"], "contract_hash_matches_current_code": e["contract_hash"] == cur,
+    res = {"run_id": rid, "checksum_ok": model_p.exists() and sha256_file(model_p) == e["artifact_sha256"], "contract_hash_matches_current_code": e["contract_hash"] == cur,
            "activatable": ok, "not_activatable_reason": why, "overall_status": e.get("overall_status"), "horizon_status": e.get("horizon_status")}
-    load_model(e["model_path"])
+    load_model(model_p)
     if e.get("data_dir") and Path(e["data_dir"]).exists() and len(e.get("horizons_trained") or []) == 3:
         m5, m30, config, *_ = load_dataset(Path(e["data_dir"]), e["data_kind"])
         plan = json.loads((out / "TRAINING_PLAN.json").read_text(encoding="utf-8"))
-        res["runtime_check"] = runtime_check(Path(e["model_path"]), m5, m30, config, plan, log)
-    val = json.loads(Path(e["validation_path"]).read_text(encoding="utf-8"))
+        res["runtime_check"] = runtime_check(model_p, m5, m30, config, plan, log)
+    val = json.loads(val_p.read_text(encoding="utf-8"))
     print(f"Run {rid}: {e.get('overall_status')} · kontrakt {'zgodny' if res['contract_hash_matches_current_code'] else 'NIEZGODNY'} · checksum {'OK' if res['checksum_ok'] else 'BŁĄD'}")
     print(f"{'h':>4} {'status':<20} {'Brier':>8} {'base':>8} {'bez form.':>9} {'logloss':>8} {'base':>8} {'maxECE':>7} {'q10-q90':>8} {'dni':>4}")
     for hm, r in (val.get("horizons") or {}).items():

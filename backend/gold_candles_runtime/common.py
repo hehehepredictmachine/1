@@ -116,13 +116,19 @@ def registry_path() -> Path:
     return forecast_dir() / "registry.json"
 
 
-def read_registry() -> dict:
+def read_registry(strict: bool = False) -> dict:
+    """strict=True for every caller that WRITES the registry back: an existing but unreadable file (locked by an antivirus /
+    indexer, truncated JSON) raises SystemExit instead of returning the empty view."""
     p = registry_path()
     if not p.exists():
         return {"schema": "masterquo-forecast-registry-1", "active": None, "history": [], "runs": {}}
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        # 1.46: the empty view used to be written back by plan_train / registry_cli - every run and the active model were lost
+        if strict:
+            raise SystemExit(f"[BLAD] REGISTRY_UNREADABLE: {p} ({type(exc).__name__}: {exc}) – plik rejestru zostaje bez zmian; "
+                             "zamknij program blokujący plik albo przywróć kopię i powtórz") from None
         return {"schema": "masterquo-forecast-registry-1", "active": None, "history": [], "runs": {}, "error": "REGISTRY_UNREADABLE"}
 
 
@@ -143,13 +149,20 @@ def activatable(entry: dict, current_contract: str | None = None) -> tuple[bool,
     return True, None
 
 
+def current_contract(entry: dict) -> str:
+    """Contract hash of the CURRENT code for a registry entry, computed exactly like the worker (_active_model): the instrument
+    profile's grid_step, never the value stored in the entry (a model trained with another grid_step is CONTRACT_MISMATCH)."""
+    return make_config(entry["symbol"], entry["tick_size"], entry.get("instrument")).contract_hash()
+
+
 def activate(run_id: str, *, reason: str) -> dict:
     """Atomic switch of the active observational model; the previous one is kept for rollback."""
-    reg = read_registry()
+    reg = read_registry(strict=True)
     entry = reg["runs"].get(run_id)
     if not entry:
         raise SystemExit(f"[BLAD] Nieznany run_id {run_id}")
-    ok, why = activatable(entry, make_config(entry["symbol"], entry["tick_size"], entry.get("instrument"), entry.get("grid_step")).contract_hash())
+    # 1.46: was make_config(..., entry["grid_step"]) - activation passed after a profile change and the worker then rejected the model
+    ok, why = activatable(entry, current_contract(entry))
     if not ok:
         raise SystemExit(f"[BLAD] Model {run_id} nie może być aktywny: {why}")
     if reg.get("active") and reg["active"] != run_id:

@@ -13,10 +13,32 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from datetime import UTC, datetime
 
 ALGO = "MQ_SR_CHANNELS_V1"
 DEFAULT = {"depth": 10, "source": "WICK", "retention": 290, "loopback": 300, "width_pct": 5.0, "range_window": 300, "max_selected": 10,
            "visible": 6, "min_pivots": 1}
+
+
+def as_of_ts(x) -> float:
+    """1.46: as-of times were compared as TEXT - '...+01:00' picked a snapshot from after the requested moment and an epoch string matched
+    nothing. Epoch seconds UTC from a number, a numeric string or ISO 8601 with Z / any offset (naive = UTC); otherwise ValueError."""
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        v = float(x)
+    else:
+        s = str(x).strip()
+        try:
+            v = float(s)
+        except ValueError:
+            try:
+                d = datetime.fromisoformat(s)
+            except ValueError as exc:
+                raise ValueError("AS_OF_INVALID") from exc
+            v = (d if d.tzinfo else d.replace(tzinfo=UTC)).timestamp()
+    if not math.isfinite(v):
+        raise ValueError("AS_OF_INVALID")
+    return v
 
 
 def validate(cfg: dict | None) -> dict:
@@ -149,5 +171,6 @@ class ChannelHistory:
         return snap
 
     def as_of(self, t_open) -> dict | None:
-        xs = [s for s in self.snaps if str(s["as_of"]) <= str(t_open)]
+        t = as_of_ts(t_open)                                     # 1.46: numeric comparison (was str <= str)
+        xs = [s for s in self.snaps if as_of_ts(s["as_of"]) <= t]
         return xs[-1] if xs else None

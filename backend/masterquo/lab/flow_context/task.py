@@ -143,6 +143,26 @@ def _ts(x) -> float:
     return x if isinstance(x, (int, float)) else datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
 
 
+def dev_bars(m1: list[dict]) -> list[dict]:
+    """1.46: DEV part for calibration / Markov fits by the SAME rule as structure_task.split on the FLOW_CONTEXT dataset (rows >= WARM
+    with a valid ATR): cut = first + 80 % of the signal-time span, minus the embargo. The count-based m1[:80 %] reached into the
+    time-based holdout across weekends / history gaps (holdout_read=False was not true). Returns bars with t + 60 < cut - embargo."""
+    if not m1:
+        return []
+    from ...analysis import structure_v2 as S
+    t = np.array([_ts(b["open_utc"]) for b in m1], float)
+    atr = S.atr_series([b["h"] for b in m1], [b["l"] for b in m1], [b["c"] for b in m1])
+    rows = np.array([i for i in range(WARM, len(m1)) if atr[i] and atr[i] > 0], dtype=int)
+    if not len(rows):
+        return []
+    ts = t[rows] + 60
+    end = ts.min() + 0.8 * (ts.max() - ts.min()) - 60.0 * max(T.HORIZONS)
+    n = 0
+    while n < len(m1) and t[n] + 60 < end:
+        n += 1
+    return m1[:n]
+
+
 # ------------------------------------------------------------------ dataset
 def build_dataset(inst: str, ds: Path, log=print) -> dict:
     from ...extind.trainer import _bars
@@ -384,21 +404,64 @@ def select_shadow(inst: str, candidate_id: str) -> dict:
         raise ValueError("TEST_ONLY_ARTIFACT")
     prev = reg["shadow"].get(TASK)
     reg["shadow"][TASK] = {"candidate_id": candidate_id, "dir": str(d), "model_hash": meta["model_hash"]}
-    reg["history"].append({"from": prev, "to": candidate_id, "at": datetime.now(timezone.utc).isoformat()})
+    reg["history"].append({"from": prev, "to": candidate_id, "to_record": reg["shadow"][TASK], "at": datetime.now(timezone.utc).isoformat()})
     _save_reg(inst, reg)
     return {"ok": True, "shadow": reg["shadow"][TASK], "execution": "NEVER_AUTOMATIC"}
+
+
+def _selection_stack(reg: dict) -> list:
+    """Undo stack of SHADOW selections replayed from the history (select pushes, rollback pops). Full records come from 'to_record'
+    (1.46+) or, for older entries, from a later entry's 'from' record / the current SHADOW pointer."""
+    known = {}
+    for h in reg["history"]:
+        for r in (h.get("from"), h.get("to_record"), h.get("from_record")):
+            if isinstance(r, dict) and r.get("candidate_id"):
+                known[r["candidate_id"]] = r
+    cur = reg["shadow"].get(TASK)
+    if isinstance(cur, dict) and cur.get("candidate_id"):
+        known[cur["candidate_id"]] = cur
+    stack: list = []
+    for h in reg["history"]:
+        if h.get("rollback"):
+            if stack:
+                stack.pop()
+        else:
+            to = h.get("to_record") or h.get("to")
+            stack.append(known.get(to, {"candidate_id": to}) if isinstance(to, str) else to)
+    return stack
 
 
 def rollback(inst: str) -> dict:
     reg = _reg(inst)
     if not reg["history"]:
         raise ValueError("NO_HISTORY")
-    prev = reg["history"][-1]["from"]
+    # 1.46: rollback entries stored 'from' as a candidate_id string, so a second rollback put a string into reg['shadow'] and died on
+    # prev['candidate_id'] (TypeError). The previous record now comes from the stack of selections (rollback entries pop it).
+    stack = _selection_stack(reg)
+    if not stack and not reg["shadow"].get(TASK):
+        raise ValueError("NOTHING_TO_ROLLBACK")
+    cur = stack.pop() if stack else reg["shadow"].get(TASK)
+    prev = stack[-1] if stack else None
+    if isinstance(prev, dict) and not prev.get("dir"):
+        prev = _record_of(reg, prev.get("candidate_id"))
     if prev is None:
         reg["shadow"].pop(TASK, None)
     else:
         reg["shadow"][TASK] = prev
-    reg["history"].append({"from": reg["history"][-1]["to"], "to": prev["candidate_id"] if prev else None, "rollback": True,
+    reg["history"].append({"from": cur.get("candidate_id") if isinstance(cur, dict) else cur, "to": prev["candidate_id"] if prev else None,
+                           "from_record": cur if isinstance(cur, dict) else None, "to_record": prev, "rollback": True,
                            "at": datetime.now(timezone.utc).isoformat()})
     _save_reg(inst, reg)
     return {"ok": True, "shadow": reg["shadow"].get(TASK)}
+
+
+def _record_of(reg: dict, candidate_id: str | None) -> dict | None:
+    """Rebuild a SHADOW record (candidate_id / dir / model_hash) from the run registry when the history has no full record."""
+    if not candidate_id:
+        return None
+    rid = next((r for r in reg["runs"] if candidate_id.startswith(r + "-")), None)
+    if rid is None:
+        raise ValueError(f"ROLLBACK_TARGET_UNKNOWN:{candidate_id}")
+    d = Path(reg["runs"][rid]["run_dir"]) / "models" / candidate_id[len(rid) + 1:]
+    meta, _ = load_candidate(d)
+    return {"candidate_id": candidate_id, "dir": str(d), "model_hash": meta["model_hash"]}

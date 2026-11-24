@@ -20,6 +20,9 @@ Pattern instance automaton (any family with a confirm level, a direction and an 
 from __future__ import annotations
 
 import hashlib
+from bisect import bisect_right
+
+from ..timeutil import TF_SECONDS, parse_iso
 
 PROFILE = "STRUCTURE_CAUSAL_V2"
 PARAMS = {"internal": (3, 3), "major": (5, 5), "window": 300, "eq_tol_atr": 0.5, "breakout_buffer_atr": 0.1, "retest_tol_atr": 0.3, "ttl_bars": 30,
@@ -36,22 +39,7 @@ def pivots(h: list[float], lo: list[float], left: int, right: int) -> list[dict]
     return out
 
 
-def label_swings(piv: list[dict], tol: float) -> list[dict]:
-    last = {"H": None, "L": None}
-    out = []
-    for p in sorted(piv, key=lambda x: (x["known_index"], x["index"])):
-        prev = last[p["kind"]]
-        if prev is None:
-            lab = "UNKNOWN"
-        elif abs(p["price"] - prev["price"]) <= tol:
-            lab = "EQH" if p["kind"] == "H" else "EQL"
-        elif p["kind"] == "H":
-            lab = "HH" if p["price"] > prev["price"] else "LH"
-        else:
-            lab = "HL" if p["price"] > prev["price"] else "LL"
-        out.append(dict(p, label=lab))
-        last[p["kind"]] = p
-    return out
+# 1.46: label_swings() removed - unused, and a second definition of the labels that diverged from walk() (the only labeller)
 
 
 def trend(labeled: list[dict], upto_index: int) -> str:
@@ -222,22 +210,65 @@ def evaluate_instance(pattern_id: str, direction: int, confirm, invalidation, st
             "confirmed_index": inst.confirmed_index}
 
 
+def confirm_level(r: dict, n: int):
+    """Confirm level of a LEGACY_COMPAT record (analysis/chart_patterns): `neckline` (DOUBLE/TRIPLE/H&S), `level` (FAILED_BREAKOUT_RECLAIM /
+    BREAKOUT_RETEST), `upper` / `lower` by direction_if_confirmed (rectangles, triangles, wedges, channels, flags). The record's boundary
+    values are taken at the LAST bar of the scanned window (index n-1); a sloped line becomes a callable of the bar index. None = no level."""
+    b = r.get("boundary")
+    if isinstance(b, (int, float)) and not isinstance(b, bool):
+        return float(b)
+    if not isinstance(b, dict):
+        return None
+    d = r.get("direction_if_confirmed")
+    if b.get("price") is not None:
+        val, slope = b["price"], 0.0
+    elif b.get("neckline") is not None:
+        val, slope = b["neckline"], b.get("slope") or 0.0
+    elif b.get("level") is not None:
+        val, slope = b["level"], 0.0
+    elif d == "LONG" and b.get("upper") is not None:
+        val, slope = b["upper"], b.get("upper_slope") or 0.0
+    elif d == "SHORT" and b.get("lower") is not None:
+        val, slope = b["lower"], b.get("lower_slope") or 0.0
+    else:
+        return None
+    if not slope:
+        return float(val)
+    return lambda i, v=float(val), s=float(slope), e=n - 1: v + s * (i - e)
+
+
 def upgrade_patterns(scan_result: dict, t: list[str], o, h, lo, c, atr: float | None) -> list[dict]:
     """STRUCTURE_CAUSAL_V2 view of the LEGACY_COMPAT records: same anchors, v2 automaton (invalidation checked before confirmation),
-    geometry_quality from the number of contacts. Legacy records stay unchanged (separate profile)."""
+    geometry_quality from the number of contacts. Legacy records stay unchanged (separate profile). `t..c` = the SAME closed bars the
+    scan ran on (boundary values are at the last bar). The automaton starts AFTER the bar at whose close the pattern became known
+    (detected_at) - never at the last anchor's bar (its pivot is known only `right` bars later)."""
     out = []
     idx = {x: i for i, x in enumerate(t)}
+    # 1.46: the level was read from boundary['price'], which chart_patterns never sets -> every record was UNSUPPORTED_FOR_V2
+    # (empty SI `pattern`, unreachable NECKLINE_BREAK / BREAKOUT_FAILURE / RETEST_HOLD); the start bar was the last anchor's
+    # pivot bar, i.e. before the pattern was known (look-ahead once the level is fixed) -> confirm_level() + the detected_at bar
+    try:
+        ts = [parse_iso(x).timestamp() for x in t]
+    except (TypeError, ValueError, AttributeError):
+        ts = None
     for r in scan_result.get("patterns", []):
         d = {"LONG": 1, "SHORT": -1}.get(r.get("direction_if_confirmed"))
-        b = r.get("boundary")
-        lvl = b.get("price") if isinstance(b, dict) else b if isinstance(b, (int, float)) else None
-        if d is None or lvl is None or r.get("invalidation") is None or r["anchors"][-1]["t"] not in idx:
+        lvl = confirm_level(r, len(t))
+        sec = TF_SECONDS.get(r.get("tf") or scan_result.get("tf") or "")
+        start = None
+        if ts and sec and r.get("detected_at"):
+            try:
+                start = bisect_right(ts, parse_iso(r["detected_at"]).timestamp() - sec) - 1     # last bar closed at detected_at
+            except (TypeError, ValueError, AttributeError):
+                start = None
+        if d is None or lvl is None or r.get("invalidation") is None or not r.get("anchors") or r["anchors"][-1]["t"] not in idx \
+                or start is None or start < 0:
             out.append(dict(r, profile=PROFILE, v2_state="UNSUPPORTED_FOR_V2", geometry_quality="PRELIMINARY"))
             continue
-        start = idx[r["anchors"][-1]["t"]]
         ev = evaluate_instance(r["pattern_id"], d, lvl, r["invalidation"], start, o, h, lo, c, retest_tol=0.3 * (atr or 0.0))
         contacts = len(r["anchors"])
         out.append(dict(r, profile=PROFILE, v2_state=ev["state"], v2_flags=ev["flags"], v2_history=ev["history"],
+                        v2_confirm_level=round(lvl(len(t) - 1) if callable(lvl) else lvl, 5), v2_start_index=start,
                         geometry_quality="QUALIFIED" if contacts >= (3 if r["type"].startswith(("DOUBLE", "TRIPLE", "HEAD")) else 5) else "PRELIMINARY",
                         contacts=contacts))
     return out

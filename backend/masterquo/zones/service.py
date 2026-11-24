@@ -19,9 +19,10 @@ from pathlib import Path
 
 from . import engine as ZE
 from . import features as ZF
-from .series import iso
+from .series import iso, ts
 
 VERSION = "PMW-ZONES-SERVICE-1"
+STALE_AFTER_S = 3 * 300          # 1.46: a map not recomputed for 3 x M5 (feed down, loop stopped) is STALE for the zone context
 CHART_KEYS = ("zone_id", "zone_type", "polarity", "role", "timeframes", "lower_price", "upper_price", "width_atr", "created_at", "confirmed_at",
               "status", "provisional", "confluence_score", "flags", "reaction_metrics", "distance_atr")   # what the chart draws / shows
 SCHEMA = """
@@ -51,6 +52,7 @@ class ZoneService:
         self._thread: threading.Thread | None = None
         self.map: dict | None = None
         self.last_bar: str | None = None
+        self._polled: tuple | None = None           # 1.46: (instrument, broker symbol, last closed M5) of the last recomputation trigger
         self.state = {"version": VERSION, "runs": 0, "last_error": None, "last_ms": None, "mode": "ANALYTICAL_ONLY"}
         self.poll_s = 5.0
         self._restore()
@@ -88,12 +90,16 @@ class ZoneService:
     def _loop(self) -> None:
         while not self._stop.wait(self.poll_s):
             try:
-                if not self.cfg_store.get().zones.enabled:
+                cfg = self.cfg_store.get()
+                if not cfg.zones.enabled:
                     continue
                 rows = self.bridge.bars("M5", include_forming=False)
                 t = rows[-1].get("open_utc") if rows else None
-                if t and t != self.last_bar:
-                    self.last_bar = t
+                # 1.46: the trigger was the last bar time only - after assets.switch the new symbol's buffer ends in the same M5 slot,
+                # so the map of the PREVIOUS instrument stayed (state OK) until the next bar closed; the instrument is part of the key
+                key = (cfg.assets.active, cfg.mt5.symbol, t)
+                if t and key != self._polled:
+                    self._polled, self.last_bar = key, t
                     self.refresh()
             except Exception as exc:  # noqa: BLE001 - analytical loop never stops the bot
                 self.state["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
@@ -160,9 +166,17 @@ class ZoneService:
                                             default=float)))
 
     # ------------------------------------------------------------------ outputs
+    def _is_active(self, zm: dict) -> bool:
+        """1.46: the map belongs to the active instrument (and broker symbol, when the map records it)."""
+        cfg = self.cfg_store.get()
+        return zm.get("instrument") == cfg.assets.active and zm.get("symbol") in (None, cfg.mt5.symbol)
+
     def current(self) -> dict | None:
         with self._lock:
-            return self.map
+            zm = self.map
+        if zm is not None and not self._is_active(zm):
+            return None                                     # 1.46: a map of another instrument (before the switch) is never the current one
+        return zm
 
     def current_or_refresh(self) -> dict | None:
         """The live map, computed on demand when none exists yet; None (reason in status.last_error) when the inputs are unavailable."""
@@ -186,10 +200,22 @@ class ZoneService:
             return [dict(r) for r in self.db.execute("SELECT * FROM zone_events ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()]
 
     def context_for(self, *, direction: str, entry: float, stop: float | None, cost_price: float = 0.0) -> dict | None:
+        cfg = self.cfg_store.get().zones
+        if not cfg.enabled:
+            return None                                     # 1.46: zones disabled - the last map is no longer recomputed and must not count
         zm = self.current()
         if zm is None:
             return None
-        return ZF.context_for(zm, direction=direction, entry=entry, stop=stop, cost_price=cost_price, cfg=self.cfg_store.get().zones)
+        try:
+            age = self.clock() - ts(zm["as_of"])
+        except (KeyError, TypeError, ValueError):
+            age = float("inf")                              # unknown age = not verified as current
+        if (zm.get("data") or {}).get("state") == "OK" and not age <= STALE_AFTER_S:
+            # 1.46: a map that is not recomputed any more (feed down, no new closed M5) kept state OK forever and its flags kept counting
+            why = f"mapa nieprzeliczana dłużej niż {STALE_AFTER_S} s – nieaktualna"
+            zm = dict(zm, data=dict(zm["data"], state="STALE", state_before_age_check="OK", reasons=[*(zm["data"].get("reasons") or []), why]))
+            # ^ a copy: the stored map, its id and as_of stay unchanged
+        return ZF.context_for(zm, direction=direction, entry=entry, stop=stop, cost_price=cost_price, cfg=cfg)
 
     @staticmethod
     def chart_view(zm: dict | None, tf: str | None = None) -> dict:

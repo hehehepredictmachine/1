@@ -1,0 +1,72 @@
+{
+ "progi": {
+  "rozne_piksele_proc": 0.5,
+  "sredni_blad": 0.12,
+  "piksel_rozny_gdy_kanal_rozni_sie_o": 8
+ },
+ "wyniki": [
+  {
+   "klatka": "T01_ciemnosc",
+   "t": 1.2,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T02_wylaniaja_sie",
+   "t": 3,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T03_blizej",
+   "t": 5,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T04_zatrzymanie",
+   "t": 7,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T05_planety",
+   "t": 8.6,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T06_siegniecie",
+   "t": 9.6,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T07_dlon_na_planetach",
+   "t": 10.6,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T08_najazd",
+   "t": 12.4,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  },
+  {
+   "klatka": "T09_blysk",
+   "t": 13.4,
+   "pct": 0,
+   "mean": 0,
+   "wynik": "OK"
+  }
+ ]
+}

@@ -94,13 +94,20 @@ def _first_close(cx, from_i, pred):
     return None
 
 
-def _finish(cx, kind, direction, anchors, known_i, boundary, invalidation, target, score, extra=None, confirm=None, broken_fn=None):
-    """Common state machine: FORMING -> CONFIRMED -> INVALIDATED / EXPIRED."""
+def _finish(cx, kind, direction, anchors, known_i, boundary, invalidation, target, score, extra=None, confirm=None, broken_fn=None,
+            pre_broken_fn=None):
+    """Common state machine: FORMING -> CONFIRMED -> INVALIDATED / EXPIRED. `broken_fn` = close back beyond the invalidation level
+    after the confirmation; `pre_broken_fn` = close beyond the pattern's extreme BEFORE it (judged first, never revived later)."""
     p = cx.p
     state, avail, conf_i = "FORMING", cx.close_time(known_i), None
     if confirm is not None:
         conf_i = _first_close(cx, known_i + 1, confirm)
-    if conf_i is not None:
+    # 1.46: invalidation before the confirmation was never checked - a DOUBLE_TOP whose peaks were already closed above stayed
+    # FORMING and was later CONFIRMED by a neckline break (the A-07-01 case); the docstring rule "before it beyond the extreme"
+    pre_i = _first_close(cx, known_i + 1, pre_broken_fn) if pre_broken_fn is not None else None
+    if pre_i is not None and (conf_i is None or pre_i < conf_i):
+        state, conf_i = "INVALIDATED", None
+    elif conf_i is not None:
         state, avail = "CONFIRMED", cx.close_time(conf_i)
         if broken_fn is not None and any(broken_fn(j) for j in range(conf_i + 1, cx.n)):
             state = "INVALIDATED"
@@ -153,10 +160,14 @@ def _double(cx, top: bool, n_peaks: int):
         anchors.sort(key=lambda a: a["index"])
         known_i = max(g["confirmed_index"] for g in grp + troughs)
         conf = (lambda j: cx.v.c[j] < neck) if top else (lambda j: cx.v.c[j] > neck)
-        broken = (lambda j: cx.v.c[j] > ext) if top else (lambda j: cx.v.c[j] < ext)
+        inval = ext + (0.1 if top else -0.1) * cx.atr
+        # 1.46: the state rule used `ext` while `invalidation` reported ext +- 0.1 ATR - after the confirmation the reported level
+        # is the rule; before it the pattern's extreme (docstring)
+        broken = (lambda j, x=inval: cx.v.c[j] > x) if top else (lambda j, x=inval: cx.v.c[j] < x)
+        pre_broken = (lambda j, x=ext: cx.v.c[j] > x) if top else (lambda j, x=ext: cx.v.c[j] < x)
         score = 1 - (max(prices) - min(prices)) / (tol + 1e-12) * 0.5
-        out.append(_finish(cx, name, d, anchors, known_i, {"neckline": round(neck, 5), "slope": 0.0}, ext + (0.1 if top else -0.1) * cx.atr,
-                           neck - depth if top else neck + depth, score, confirm=conf, broken_fn=broken))
+        out.append(_finish(cx, name, d, anchors, known_i, {"neckline": round(neck, 5), "slope": 0.0}, inval,
+                           neck - depth if top else neck + depth, score, confirm=conf, broken_fn=broken, pre_broken_fn=pre_broken))
         if len(out) >= cx.p["max_per_family"]:
             break
     return out
@@ -185,14 +196,19 @@ def _hs(cx, inverse: bool):
         known_i = max(x["confirmed_index"] for x in (ls, hd, rs, T1, T2))
         height = s * (hd["price"] - _at(line, hd["index"]))
         conf = (lambda j: cx.v.c[j] > _at(line, j)) if inverse else (lambda j: cx.v.c[j] < _at(line, j))
-        broken = (lambda j: cx.v.c[j] < hd["price"]) if inverse else (lambda j: cx.v.c[j] > hd["price"])
+        # 1.46: the invalidation was rs - s*0.1 ATR, i.e. BELOW the right shoulder of a (bearish) H&S and above it for the inverse
+        # one, while the state rule used the head - now beyond the right shoulder; after the confirmation the reported level is
+        # the rule, before it the head (the pattern's extreme)
+        inval = rs["price"] + s * 0.1 * cx.atr
+        broken = (lambda j, x=inval: cx.v.c[j] < x) if inverse else (lambda j, x=inval: cx.v.c[j] > x)
+        pre_broken = (lambda j, x=hd["price"]: cx.v.c[j] < x) if inverse else (lambda j, x=hd["price"]: cx.v.c[j] > x)
         anchors = sorted([cx.anchor(ls, "LEFT_SHOULDER"), cx.anchor(hd, "HEAD"), cx.anchor(rs, "RIGHT_SHOULDER"),
                           cx.anchor(T1, "NECK_1"), cx.anchor(T2, "NECK_2")], key=lambda a: a["index"])
         neck_end = _at(line, cx.n - 1)
         out.append(_finish(cx, "INVERSE_HEAD_SHOULDERS" if inverse else "HEAD_SHOULDERS", "LONG" if inverse else "SHORT", anchors, known_i,
-                           {"neckline": round(neck_end, 5), "slope": round(line["b"], 6)}, rs["price"] - s * 0.1 * cx.atr,
+                           {"neckline": round(neck_end, 5), "slope": round(line["b"], 6)}, inval,
                            neck_end + (height if inverse else -height), 1 - abs(ls["price"] - rs["price"]) / (cx.atr + 1e-12) * 0.5,
-                           confirm=conf, broken_fn=broken))
+                           confirm=conf, broken_fn=broken, pre_broken_fn=pre_broken))
         if len(out) >= cx.p["max_per_family"]:
             break
     return out
@@ -330,7 +346,7 @@ def _flags(cx):
     return out
 
 
-def _flag_breaks(cx, params):
+def _flag_breaks(cx):                                  # 1.46: the unused `params` argument removed (cx.p holds the parameters)
     """FLAG/PENNANT confirmation: a close beyond the consolidation box in the pole's direction (checked on the bar AFTER
     the consolidation ended - the box of the previous scan is re-detected one bar earlier)."""
     out = []
@@ -368,7 +384,7 @@ def scan(v, tf: str, params: dict | None = None) -> dict:
         return {"version": VERSION, "tf": tf, "status": "NO_ATR", "patterns": []}
     pats = []
     for fn in (lambda: _double(cx, True, 2), lambda: _double(cx, False, 2), lambda: _double(cx, True, 3), lambda: _double(cx, False, 3),
-               lambda: _hs(cx, False), lambda: _hs(cx, True), lambda: _geometric(cx), lambda: _flags(cx), lambda: _flag_breaks(cx, p)):
+               lambda: _hs(cx, False), lambda: _hs(cx, True), lambda: _geometric(cx), lambda: _flags(cx), lambda: _flag_breaks(cx)):
         try:
             pats += fn()
         except (ZeroDivisionError, ValueError, IndexError):

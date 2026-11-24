@@ -21,7 +21,6 @@ import time
 from datetime import timedelta
 
 from ..db.database import dumps
-from ..engine.lifecycle import TERMINAL
 from ..mt5.worker import PRIO_TRADE, MT5CallTimeout
 from . import policy as exit_policy
 from ..timeutil import from_epoch, iso, parse_iso, utcnow
@@ -314,7 +313,8 @@ class PositionManager:
         except Exception as exc:  # noqa: BLE001 - F-08
             note["tp_sync"] = f"REFUSED_{type(exc).__name__}"
         self._save_note(mp, note)
-        self.db.execute("UPDATE managed_positions SET tp2=? WHERE position_key=?", (want, mp["position_key"]))
+        if note["tp_sync"] == "DONE":            # 1.46: the stored TP follows the broker - not written after REJECTED / UNKNOWN / REFUSED
+            self.db.execute("UPDATE managed_positions SET tp2=? WHERE position_key=?", (want, mp["position_key"]))
 
     def _time_exit_mt5(self, mp: dict, p: dict) -> None:
         note = self._note(mp)
@@ -480,6 +480,8 @@ class PositionManager:
                             (now, "ACCOUNT", self.bridge.account_key, a.get("balance"), a.get("equity"), a.get("margin"), a.get("free_margin"), a.get("currency")))
         if self.db.one("SELECT 1 AS x FROM paper_account WHERE id=1"):
             pa = self.paper.account()
+            if pa.get("equity") is None:
+                return                          # 1.46: incomplete PAPER valuation (no quote / P&L unknown) is not stored as equity
             self.db.execute("INSERT INTO equity_snapshots(ts, mode, account_key, balance, equity, margin, free_margin, currency) VALUES (?,?,?,?,?,?,?,?)",
                             (now, "PAPER", None, pa["balance"], pa["equity"], None, None, pa["currency"]))
 
@@ -490,12 +492,10 @@ class PositionManager:
         cfg = self.cfg_store.get()
         rows = self.db.query("SELECT * FROM managed_positions WHERE state='OPEN'" + (" AND position_ticket=?" if ticket else ""), (ticket,) if ticket else ())
         done, errors = [], []
-        q = b.quote_status()
+        paper_rows = []
         for mp in rows:
             if mp["mode"] == "PAPER":
-                if q:
-                    self.paper.close_part(mp, mp["volume_open"], q["bid"] if mp["side"] == "BUY" else q["ask"], "MANUAL_CLOSE")
-                    done.append(mp["position_ticket"])
+                paper_rows.append(mp)           # 1.46: closed below under the manager lock (account positions never wait for it)
                 continue
             if mp["account_key"] != b.account_key:
                 errors.append({"ticket": mp["position_ticket"], "error": "OTHER_ACCOUNT"})
@@ -517,8 +517,26 @@ class PositionManager:
                 errors.append({"ticket": p["ticket"], "error": "TIMEOUT_CHECK_TERMINAL"})
             except Exception as exc:  # noqa: BLE001 - F-08
                 errors.append({"ticket": p["ticket"], "error": type(exc).__name__})
+        if paper_rows:
+            self._close_paper(paper_rows, cfg, done, errors)
         self.log.warn("EXECUTION", "CLOSE_REQUEST", f"Zamknięcie pozycji ({scope}): wykonane {len(done)}, błędy {len(errors)}")
         return {"closed": done, "errors": errors}
+
+    def _close_paper(self, rows: list[dict], cfg, done: list, errors: list) -> None:
+        """1.46: PAPER closes run under the manager lock, serialized with the tick (a PAPER position was closed - and booked - twice);
+        the row and the quote are read under the lock. PAPER only: MT5 closes of account positions stay unlocked, as in 1.45."""
+        with self._lock:
+            q = self.bridge.quote_status()
+            for row in rows:
+                mp = self.db.one("SELECT * FROM managed_positions WHERE position_key=? AND state='OPEN'", (row["position_key"],))
+                if mp is None:
+                    continue                    # closed by the tick meanwhile
+                # 1.46: no quote / a stale quote is reported (was: skipped silently - "0 done, 0 errors" with the position still open)
+                if not q or q.get("age_seconds") is None or q["age_seconds"] > cfg.mt5.max_quote_age_seconds:
+                    errors.append({"ticket": mp["position_ticket"], "error": "NO_QUOTE" if not q else "QUOTE_STALE"})
+                    continue
+                self.paper.close_part(mp, mp["volume_open"], q["bid"] if mp["side"] == "BUY" else q["ask"], "MANUAL_CLOSE")
+                done.append(mp["position_ticket"])
 
     def adopt(self, ticket: int) -> dict:
         b = self.bridge
@@ -544,4 +562,4 @@ class PositionManager:
         return {"ok": True}
 
 
-__all__ = ["PositionManager", "TERMINAL"]
+__all__ = ["PositionManager"]          # 1.46: unused re-export of engine.lifecycle.TERMINAL removed

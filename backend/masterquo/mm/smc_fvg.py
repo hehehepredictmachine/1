@@ -14,7 +14,8 @@ Ordering (causal, per closed bar i, after the structure engine processed bar i):
                      WAITING_FOR_VALID_RETRACEMENT. Requires A < B.
  4. From the bar AFTER B's confirmation: depth(p) = (B - p) / (B - A). For each frozen gap the qualifying price is
                      p* = min(gap_top, B - d_min (B - A)); the gap can qualify only if p* >= gap_bottom. A bar qualifies when low <= p*
-                     (bar-only fill: entry = p*, or the open if the bar opened inside the gap below p*). Touches of a gap above p* are
+                     (bar-only fill: entry = p*, or the open if the bar opened below p* - inside the gap or beyond it, e.g. after a
+                     session gap; an open at / beyond the stop then fails the R > 0 check). Touches of a gap above p* are
                      recorded as insufficient depth and never promoted later. Default d_min = 0.73 (prose rule); the 0.50 diagram label is
                      an unresolved ambiguity, available only as an explicitly selected profile.
  5. Entry -> stop = A - buffer, R = entry - stop (> 0 required), target = entry + 2R. Tick-rounded executable prices are reported
@@ -31,8 +32,7 @@ from ..lab.context_ind import smc as SM
 
 VERSION = "PMW-MM-SMCFVG-1"
 PROFILES = {"PROSE_73": 0.73, "DIAGRAM_50_UNRESOLVED": 0.50}
-STATES = ("WAITING_FOR_TREND", "WAITING_FOR_BOS", "BOS_CONFIRMED", "GAPS_SCANNED", "IDM_PENDING", "LEG_CONFIRMED", "WAITING_FOR_VALID_RETRACEMENT",
-          "ENTRY_TOUCH_CONFIRMED", "SETUP_INVALIDATED", "SETUP_EXPIRED", "OBSERVATION_ONLY")
+# 1.46: the unused STATES tuple (it listed states the engine never sets) and the write-only `last_bos` attribute removed (dead code)
 
 
 @dataclass
@@ -45,11 +45,14 @@ class SMCFVGConfig:
     idm_mode: str = "WICK"
     pb_mode: str = "WICK"
     tick: float = 0.01
+    point: float | None = None          # 1.46: symbol point for stop_buffer_points (None = unknown -> the old tick convention)
 
     def validate(self):
         if self.profile not in PROFILES or abs(PROFILES[self.profile] - self.depth_min) > 1e-12:
             raise ValueError("SMCFVG_PROFILE_DEPTH_MISMATCH")         # 0.50 only when the 50% profile is explicitly selected
         if not (0 < self.depth_min < 1) or self.target_r <= 0 or self.max_wait_bars < 1 or self.stop_buffer_points < 0 or self.tick <= 0:
+            raise ValueError("SMCFVG_PARAM_INVALID")
+        if self.point is not None and not (math.isfinite(self.point) and self.point > 0):
             raise ValueError("SMCFVG_PARAM_INVALID")
 
 
@@ -60,9 +63,9 @@ class ContinuationEngine:
         self.tf_s, self.symbol, self.tf = tf_s, symbol, tf
         self.smc = SM.SMC(idm_mode=self.cfg.idm_mode, pb_mode=self.cfg.pb_mode, tick=self.cfg.tick)
         self.bars: list[dict] = []
+        self._smc_idx: list[int] = []        # 1.46: engine index of every bar fed to the structure engine (SMC index -> self.bars index)
         self.setups: dict[str, dict] = {}
         self.events: list[dict] = []
-        self.last_bos = None
         self.last_choch = None
 
     # transformed coordinates for the exact mirror
@@ -97,10 +100,13 @@ class ContinuationEngine:
             self._set(st, "SETUP_INVALIDATED", i, "NO_PROTECTED_ORIGIN")
             return self._emit(st, "INVALIDATED", i, reason="NO_PROTECTED_ORIGIN")
         pt = self.smc.points[slot["point_id"]]
-        st["A"] = {"price": pt["price"], "bar": pt["origin_bar"], "ts": self.bars[pt["origin_bar"]]["t"], "point_id": pt["point_id"],
+        a_bar = self._smc_idx[pt["origin_bar"]]                                  # 1.46: SMC numbering -> engine numbering
+        st["A"] = {"price": pt["price"], "bar": a_bar, "ts": self.bars[a_bar]["t"], "point_id": pt["point_id"],
                    "available_at": pt["available_at"]}
         gaps = []
-        for k in range(max(pt["origin_bar"], 0) + 2, i + 1):                     # one scan, origin .. breaking bar
+        for k in range(max(a_bar, 0) + 2, i + 1):                                # one scan, origin .. breaking bar
+            if not all(self.bars[j].get("valid", True) for j in (k - 2, k - 1, k)):
+                continue                                                          # 1.46: no 3-candle gap across an invalid bar
             _, h2, _, _ = self._tb(self.bars[k - 2], s)
             _, _, lk, _ = self._tb(self.bars[k], s)
             if lk > h2:
@@ -110,7 +116,7 @@ class ContinuationEngine:
                 if all(not (abs(x["t_low"] - lo_t) < 1e-12 and abs(x["t_high"] - hi_t) < 1e-12) for x in gaps):
                     gaps.append(g)
         st["gaps"] = gaps
-        self._set(st, "GAPS_SCANNED", i, f"{len(gaps)} gaps in [{pt['origin_bar']}, {i}]")
+        self._set(st, "GAPS_SCANNED", i, f"{len(gaps)} gaps in [{a_bar}, {i}]")
         if not gaps:
             self._set(st, "SETUP_INVALIDATED", i, "NO_ELIGIBLE_FVG")
             return self._emit(st, "INVALIDATED", i, reason="NO_ELIGIBLE_FVG")
@@ -131,10 +137,14 @@ class ContinuationEngine:
         self.bars.append(b)
         valid = all(math.isfinite(b[k]) and b[k] > 0 for k in ("o", "h", "l", "c")) and b["h"] >= max(b["o"], b["c"]) and b["l"] <= min(b["o"], b["c"])
         if not valid:
+            # 1.46: the invalid bar stays in self.bars (time order / dedup) but is never fed to the structure engine, whose bar numbers
+            # (origin_bar of A / B) are mapped back through self._smc_idx - they were used directly, one bar too early after it
+            b["valid"] = False
             for st in self._live():
                 self._set(st, "SETUP_INVALIDATED", i, "INVALID_BAR")
                 self._emit(st, "INVALIDATED", i, reason="INVALID_BAR")
             return {"processed": True, "events": self.events[n0:], "quality": "INVALID"}
+        self._smc_idx.append(i)
         res = self.smc.update({"open_utc": bar.get("open_utc", t), "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"]}, t_close)
         # 4. retracement / entry for setups confirmed on EARLIER bars (uses this bar's range)
         for st in self._live():
@@ -159,7 +169,6 @@ class ContinuationEngine:
                     self._set(st, "SETUP_INVALIDATED", i, f"{k}_STAND_DOWN")
                     self._emit(st, "INVALIDATED", i, reason=f"{k}_STAND_DOWN")
             elif k in ("BOS_UP", "BOS_DOWN"):
-                self.last_bos = {"event_id": ev["event_id"], "kind": k, "bar": i, "ts": t}
                 d = "LONG" if k == "BOS_UP" else "SHORT"
                 for st in self._live():
                     if st["direction"] != d:
@@ -178,7 +187,8 @@ class ContinuationEngine:
                             self._set(st, "SETUP_INVALIDATED", i, "LEG_GEOMETRY_INVALID")
                             self._emit(st, "INVALIDATED", i, reason="LEG_GEOMETRY_INVALID")
                             continue
-                        st["B"] = {"price": B, "bar": ev["origin_bar"], "ts": self.bars[ev["origin_bar"]]["t"], "confirm_bar": i, "confirm_ts": t_close}
+                        b_bar = self._smc_idx[ev["origin_bar"]]                    # 1.46: SMC numbering -> engine numbering
+                        st["B"] = {"price": B, "bar": b_bar, "ts": self.bars[b_bar]["t"], "confirm_bar": i, "confirm_ts": t_close}
                         st["idm"] = {"level": idm.get("ref") if idm else None, "kind": idm.get("ref_kind") if idm else None, "confirmed_ts": t_close,
                                      "status": "TAKEN"}
                         self._set(st, "LEG_CONFIRMED", i, "IDM taken; B frozen")
@@ -196,7 +206,9 @@ class ContinuationEngine:
             if p_star < g["t_low"] - 1e-12:
                 continue                                                  # this gap can never satisfy the depth rule
             if lo <= p_star:
-                entry_t = o if (g["t_low"] <= o < p_star) else p_star     # opened inside the gap below p*: filled at the open
+                # 1.46: a limit at p* fills at the OPEN whenever the bar opens below p* - also below the whole gap or beyond the stop (session /
+                # weekend gap). The entry was p*, a price such a bar may never have traded (R > 0 although the fill was below the stop).
+                entry_t = min(p_star, o)
                 if best is None or entry_t > best[0]:
                     best = (entry_t, g)
             elif lo <= g["t_high"]:
@@ -206,7 +218,9 @@ class ContinuationEngine:
         entry_t, g = best
         depth = (B - entry_t) / (B - A)
         entry = s * entry_t
-        stop = st["A"]["price"] - s * cfg.stop_buffer_points * cfg.tick           # buffer in ticks beyond A
+        # 1.46: stop_buffer_points is in POINTS - multiplied by the symbol point when known (was always x tick_size; the default buffer 0
+        # made no difference, a non-zero buffer was off by tick/point); without a known point the old tick convention is kept
+        stop = st["A"]["price"] - s * cfg.stop_buffer_points * (cfg.point if cfg.point else cfg.tick)
         R = s * (entry - stop)
         if not (R > 0) or not math.isfinite(R):
             self._set(st, "SETUP_INVALIDATED", i, "INVALID_RISK_GEOMETRY")
@@ -239,7 +253,9 @@ def run(bars, cfg: SMCFVGConfig | None = None, tf_s: int = 300, symbol: str = "X
 
 def evaluate(bars, cfg: SMCFVGConfig, tf_s: int, horizon: int = 96, spread: float = 0.0) -> dict:
     """Setup statistics + hypothetical stop/target outcome after each entry (bar OHLC; same bar touching both = STOP, conservative;
-    entry bar itself is excluded; spread added against the entry). Not an order backtest."""
+    on the ENTRY bar only the stop counts - the fill at p* / open happens before any price beyond the stop, the target order inside the
+    bar is unknown; spread added against the entry). Unresolved entries without the full horizon of later bars are NOT_MATURED (not
+    TIMEOUT). Not an order backtest."""
     e = run(bars, cfg, tf_s)
     st = list(e.setups.values())
     outs = []
@@ -248,15 +264,24 @@ def evaluate(bars, cfg: SMCFVGConfig, tf_s: int, horizon: int = 96, spread: floa
             continue
         en, s = x["entry"], x["s"]
         res, r_mult = "TIMEOUT", None
-        for k in range(en["bar"] + 1, min(len(bars.t), en["bar"] + 1 + horizon)):
-            hit_stop = (bars.l[k] <= en["stop"]) if s > 0 else (bars.h[k] >= en["stop"])
-            hit_tgt = (bars.h[k] >= en["target"]) if s > 0 else (bars.l[k] <= en["target"])
-            if hit_stop:
-                res, r_mult = "STOP", -1.0 - spread / en["R"]
-                break
-            if hit_tgt:
-                res, r_mult = "TARGET", cfg.target_r - spread / en["R"]
-                break
+        k0 = en["bar"]
+        # 1.46: the entry bar was skipped - a stop touched on the entry bar (low <= stop after the fill) was ignored and a later target
+        # counted +2R; an entry with fewer than `horizon` later bars was a TIMEOUT instead of NOT_MATURED
+        if ((bars.l[k0] <= en["stop"]) if s > 0 else (bars.h[k0] >= en["stop"])):
+            res, r_mult = "STOP", -1.0 - spread / en["R"]
+        else:
+            for k in range(k0 + 1, min(len(bars.t), k0 + 1 + horizon)):
+                hit_stop = (bars.l[k] <= en["stop"]) if s > 0 else (bars.h[k] >= en["stop"])
+                hit_tgt = (bars.h[k] >= en["target"]) if s > 0 else (bars.l[k] <= en["target"])
+                if hit_stop:
+                    res, r_mult = "STOP", -1.0 - spread / en["R"]
+                    break
+                if hit_tgt:
+                    res, r_mult = "TARGET", cfg.target_r - spread / en["R"]
+                    break
+            else:
+                if k0 + horizon >= len(bars.t):
+                    res = "NOT_MATURED"
         outs.append({"setup_id": x["setup_id"], "direction": x["direction"], "outcome": res, "r": r_mult})
     by = {}
     for x in st:
@@ -265,6 +290,7 @@ def evaluate(bars, cfg: SMCFVGConfig, tf_s: int, horizon: int = 96, spread: floa
     return {"setups": len(st), "by_final_state": by, "entries": len(outs), "long": sum(o["direction"] == "LONG" for o in outs),
             "short": sum(o["direction"] == "SHORT" for o in outs), "target": sum(o["outcome"] == "TARGET" for o in outs),
             "stop": sum(o["outcome"] == "STOP" for o in outs), "timeout": sum(o["outcome"] == "TIMEOUT" for o in outs),
+            "not_matured": sum(o["outcome"] == "NOT_MATURED" for o in outs),
             "mean_r_resolved": (sum(rs) / len(rs)) if rs else None, "spread_assumption": spread, "horizon_bars": horizon,
             "invalidation_reasons": _reasons(st), "config": asdict(cfg)}
 

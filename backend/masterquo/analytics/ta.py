@@ -194,8 +194,11 @@ def ma_analysis(bars: list[dict], mas: list[dict] | None = None, *, symbol: str 
                 if d0 <= 0 < d1 or d0 >= 0 > d1:
                     kind = "BULLISH_CROSS" if d1 > 0 else "BEARISH_CROSS"
                     eid = "MAX-" + hashlib.sha256(f"{symbol}|{tf}|{bars[j]['open_utc']}|{ordered[x]['id']}|{ordered[y]['id']}|{kind}".encode()).hexdigest()[:12]
-                    events.append({"event_id": eid, "kind": kind, "fast": ordered[x]["id"], "slow": ordered[y]["id"], "bar_open_utc": bars[j]["open_utc"],
-                                   "confirmed_on_close": True})
+                    events.append((j, {"event_id": eid, "kind": kind, "fast": ordered[x]["id"], "slow": ordered[y]["id"], "bar_open_utc": bars[j]["open_utc"],
+                                       "confirmed_on_close": True}))
+    # 1.46: events were collected pair by pair, so events[-10:] kept mostly the slow pairs (older too) and dropped the newest fast-pair
+    # crosses, out of time order. Chronological (stable: pair order within one bar) before the last 10 are taken.
+    events = [e for _, e in sorted(events, key=lambda t: t[0])]
     vals = [r["value"] for r in ordered]
     asc = len(vals) >= 2 and all(vals[q] > vals[q + 1] for q in range(len(vals) - 1))      # fast above slow = bullish order
     desc = len(vals) >= 2 and all(vals[q] < vals[q + 1] for q in range(len(vals) - 1))

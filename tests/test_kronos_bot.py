@@ -217,8 +217,10 @@ class TestServiceWithStub(unittest.TestCase):
 
     def test_not_installed_no_weights_and_no_terminal_reads(self):
         os.environ.pop("MQ_KRONOS_PYTHON", None)
+        from unittest import mock
         svc = self.make(mode=None)
-        svc.tick()
+        with mock.patch("masterquo.kronos.service.find_python", return_value=None):   # independent of a real .venv_kronos on this machine
+            svc.tick()
         self.assertEqual(svc.state["status"], "NOT_INSTALLED")
         self.assertEqual(self.bridge.calls, [])
         p = KP.contract_predictions(svc, "XAUUSD")[0]

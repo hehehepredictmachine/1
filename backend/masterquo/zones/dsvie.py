@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import statistics
-from datetime import datetime, timezone
+from datetime import datetime
 
 from ..analytics import session_engine as SE
 from . import hlze as HZ
@@ -315,7 +315,4 @@ def build(s: Series, *, profile_id: str, instrument: str, cfg, as_of: float, tic
     price = s.c[-1] if len(s) else None
     return {"version": VERSION, "volume_source": src, "profile_id": profile_id, "profiles": profiles, "demand_supply": ds,
             "context": context(profiles, price, s) if price is not None else {}}
-
-
-def now_utc() -> float:
-    return datetime.now(timezone.utc).timestamp()
+# 1.46: unused now_utc() removed (no caller in backend/, tools/, tests/)

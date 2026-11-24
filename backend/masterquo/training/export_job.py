@@ -23,11 +23,33 @@ INSTR = ("XAUUSD", "BTC")
 _PROCS: dict[int, subprocess.Popen] = {}             # children started by this server (poll() also reaps them - no zombie "alive")
 
 
-def _alive(pid: int) -> bool:
+def _alive(pid: int, started=None) -> bool:
     p = _PROCS.get(pid)
     if p is not None:
         return p.poll() is None
-    return core._pid_alive(pid)
+    return core.pid_alive_as(pid, started)          # 1.46: with the recorded start time a pid reused by another program is not "the export"
+
+
+def _reap() -> None:
+    """1.46: finished children leave _PROCS (poll() already reaped them) - the dict grew with every export of a long-running bot."""
+    for pid, p in list(_PROCS.items()):
+        if p.poll() is not None:
+            _PROCS.pop(pid, None)
+
+
+def _owned_alive(j: dict, st: dict | None) -> bool:
+    """1.46: may cancel() kill the job's pid (taskkill /T, killpg)? A child of this server: while it runs. After a bot restart (_PROCS
+    empty) only when the export still reports IN_PROGRESS and the pid is the same process (start time recorded in the job file; job files
+    of older versions: the export's own pid must match) - never a pid reused by another program."""
+    pid = int(j.get("pid") or 0)
+    p = _PROCS.get(pid)
+    if p is not None:
+        return p.poll() is None
+    if not st or st.get("status") != "IN_PROGRESS" or not core._pid_alive(pid):
+        return False
+    if j.get("pid_started") is not None:
+        return core.pid_alive_as(pid, j["pid_started"])
+    return st.get("pid") == pid
 
 
 def _job_path() -> Path:
@@ -66,6 +88,7 @@ def start(body: dict, *, demo: bool = False, default_symbol=None) -> dict:
     ticks = float(body.get("ticks_days") or 0)
     if not 0 <= ticks <= 31:
         raise ValueError("BAD_TICK_DAYS")
+    _reap()
     cur = status()
     if cur.get("running"):
         return {"started": False, "reason": "EXPORT_ALREADY_RUNNING", "job": cur}
@@ -74,9 +97,20 @@ def start(body: dict, *, demo: bool = False, default_symbol=None) -> dict:
     if held and held.get("alive"):
         return {"started": False, "reason": f"TRAINING_RUNNING:{held.get('run_id')}"}
     if body.get("resume_dir"):                        # continue a cancelled / failed export into the same folder
+        from ..forecast.export import dataset_state, read_status
         out = Path(body["resume_dir"]).resolve()
-        if paths.data_dir().resolve() not in out.parents:
+        # 1.46: only an UNFINISHED export of THIS instrument (training/datasets/<inst>/<folder>) with the SAME request. Any folder under
+        # data_dir was accepted: export_candles resumes only the same request - otherwise (or after COMPLETE) it started a new export into
+        # that folder, overwrote its metadata / status / CSV and left interval files of the previous range or symbol behind.
+        if out.parent != (paths.data_dir() / "training" / "datasets" / inst).resolve():
             raise ValueError("BAD_DIR")
+        state = dataset_state(out)["state"]
+        if state not in ("CANCELLED", "FAILED", "INTERRUPTED"):
+            raise ValueError(f"RESUME_NOT_ALLOWED:{state}")
+        want = {"instrument": inst, "symbol": sym, "timeframes": tfs, "kind": "training", "date_from": d_from, "date_to": d_to,
+                "months": None if d_from else months, "tick_days": ticks, "dst_model_requested": "AUTO"}     # = req_key of export_candles
+        if (read_status(out) or {}).get("request") != want:
+            raise ValueError("RESUME_REQUEST_MISMATCH")
     else:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out = paths.data_dir() / "training" / "datasets" / inst / f"EXP-{stamp}"
@@ -86,15 +120,18 @@ def start(body: dict, *, demo: bool = False, default_symbol=None) -> dict:
     cmd += ["--from", d_from] + (["--to", d_to] if d_to else []) if d_from else ["--months", str(months)]
     if demo:
         cmd.append("--synthetic")
-    log = open(out / "export.log", "a", encoding="utf-8")
     kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)} if os.name == "nt" \
         else {"start_new_session": True}
-    p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, PYTHONIOENCODING="utf-8"), stdout=log,
-                         stderr=subprocess.STDOUT, **kw)
+    log = open(out / "export.log", "a", encoding="utf-8")
+    try:
+        p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=dict(os.environ, PYTHONIOENCODING="utf-8"), stdout=log,
+                             stderr=subprocess.STDOUT, **kw)
+    finally:
+        log.close()                                   # 1.46: the child has its own copy - the bot kept one open handle per export (leak)
     _PROCS[p.pid] = p
-    core.write_json_atomic(_job_path(), {"pid": p.pid, "out": str(out), "instrument": inst, "symbol": sym, "timeframes": tfs, "from": d_from,
-                                         "to": d_to, "months": None if d_from else months, "ticks_days": ticks, "started_at": core.now(),
-                                         "synthetic": bool(demo)})
+    core.write_json_atomic(_job_path(), {"pid": p.pid, "pid_started": core._proc_start(p.pid), "out": str(out), "instrument": inst,
+                                         "symbol": sym, "timeframes": tfs, "from": d_from, "to": d_to, "months": None if d_from else months,
+                                         "ticks_days": ticks, "started_at": core.now(), "synthetic": bool(demo)})
     return {"started": True, "out": str(out), "pid": p.pid}
 
 
@@ -104,7 +141,8 @@ def status() -> dict:
     if not j:
         return {"job": None, "running": False}
     out = Path(j["out"])
-    alive = _alive(int(j.get("pid") or 0))
+    alive = _alive(int(j.get("pid") or 0), j.get("pid_started"))
+    _reap()
     st = read_status(out) or {}
     if st.get("status") in ("COMPLETE", "FAILED", "CANCELLED"):
         alive = alive and st.get("pid") != j.get("pid")                # the export said it ended: never shown as running
@@ -133,7 +171,7 @@ def cancel() -> dict:
     if not j:
         return {"ok": False, "reason": "NO_EXPORT"}
     pid = int(j.get("pid") or 0)
-    if _alive(pid):
+    if _owned_alive(j, read_status(Path(j["out"]))):
         try:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=20)
@@ -143,9 +181,10 @@ def cancel() -> dict:
         except (OSError, subprocess.SubprocessError):
             pass
         for _ in range(40):
-            if not _alive(pid):
+            if not _alive(pid, j.get("pid_started")):
                 break
             time.sleep(0.25)
+    _reap()
     out = Path(j["out"])
     st = read_status(out)
     if st and st.get("status") == "IN_PROGRESS":

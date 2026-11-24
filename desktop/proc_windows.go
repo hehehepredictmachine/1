@@ -25,13 +25,17 @@ func hideWindow(cmd *exec.Cmd) {
 // Task Manager - Windows ends the engine and everything it started, so no invisible bot keeps trading without its window and
 // tray icon. A normal exit stops the engine gracefully first (Engine.Stop). Nil when the job cannot be set up (the engine then
 // still runs; only the orphan protection is missing).
+// 1.46: BREAKAWAY_OK - a process the engine starts WITH CREATE_BREAKAWAY_FROM_JOB (a separate program such as Pepe Data & Training
+// Studio) may leave the job and outlive the engine; without the flag CreateProcess with that flag fails with ACCESS_DENIED. Children
+// started without the flag stay in the job exactly as before (no SILENT_BREAKAWAY).
 func guardProcess(cmd *exec.Cmd) procGuard {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
-		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE},
+		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+			windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK},
 	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {

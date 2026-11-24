@@ -22,6 +22,7 @@ RUNNER_GROUPS = {   # existing training/runner.py tasks: each is ONE model task 
     "flow_context": ("CALIBRATABLE", "Flow context: kalibracja + model reakcji FLOW_CONTEXT_MOVE_M1_V1", ".venv", ["M1", "M5"]),
     "context_indicators": ("CALIBRATABLE", "VAMD / FD / Pullback+SMC: kalibracja + CONTEXT_MOVE_M5_V1", ".venv", ["M5"]),
     "sh_models": ("TRAINABLE", "SCALPING/HEDGING: model zdarzenia P(TP2 przed SL) + replay", ".venv", ["M1", "M5", "M15", "H1"]),
+    "sh_pack": ("SIMULATION", "Pakiet 20 strategii SC/HG: replay walk-forward i werdykt per wariant (bez treningu parametrów)", ".venv", ["M1", "M3", "M5", "M15", "H1"]),
     "monte_carlo": ("SIMULATION", "Monte Carlo ścieżek: walidacja wariantów IID/BLOCK/REGIME", ".venv", ["M1", "M5"]),
     "master_models": ("TRAINABLE", "Master models: HDC/GPR/event engine/STE-FlowNet + ewaluacja deterministycznych", ".venv", ["M5"]),
 }
@@ -30,6 +31,9 @@ DETERMINISTIC = {
     "IND_SEMIVAR": ("Semiwariancja 20/60 M1 (PMW-IND-SEMIVAR-1)", "M1"),
     "IND_XAU_DXY": ("Relacja XAUUSD × DXY H1 (PMW-IND-DXY-1)", "H1"),
 }
+# 1.46: tasks that need series other than the task's own instrument (Studio does not export them - pipeline.run_task refuses them too)
+NO_MULTI_SERIES = {"MULTI_SERIES": "Studio nie eksportuje serii pary / koszyka – trenuj w bocie (Centrum modeli)",
+                   "IND_XAU_DXY": "Studio nie eksportuje serii DXY – wskaźnik liczy bot"}
 
 
 def _key(d: dict) -> str:
@@ -81,6 +85,10 @@ def tasks(cfg_store=None) -> list[dict]:
             st = "SUPPORTED" if impl == "AVAILABLE" else "BLOCKED_DEPENDENCY"
             if fid == "SEQ_GRU_EVENT":
                 st, why = "EXTERNAL", "trening w Centrum MM (mm/event_engine) – Studio pokazuje stan, nie trenuje drugi raz"
+            if kind == "MULTI_SERIES":
+                # 1.46: Studio exports ONLY the task's own instrument - pair / basket tasks (PAIR_COINT, STATARB) were SUPPORTED with export /
+                # train buttons and always failed (KeyError pair_bars / basket_bars); the task key does not depend on state / reason
+                st, why = "NOT_IMPLEMENTED", NO_MULTI_SERIES["MULTI_SERIES"]
             src = {"BARS": [{"kind": "BARS", "tf": f.DATA.get("tf") or f.TF, "mandatory": True}],
                    "MULTI_SERIES": [{"kind": "BARS_MULTI", "tf": f.TF, "mandatory": True, "config": f.DATA.get("config")}],
                    "L2_BOOK": [{"kind": "BOOK_SNAPSHOTS", "mandatory": True, "note": "archiwum arkusza bota (book_snapshots)"}],
@@ -105,10 +113,14 @@ def tasks(cfg_store=None) -> list[dict]:
                              name=title, trainer=None, loader=None, env=".venv",
                              sources=[{"kind": "BARS", "tf": tf, "mandatory": True}] + ([{"kind": "BARS_DXY", "tf": "H1", "mandatory": True}]
                                                                                        if iid == "IND_XAU_DXY" else []),
-                             resume={"export": "CHUNK_CHECKPOINT", "training": "NOT_APPLICABLE"}, state="SUPPORTED", reason=None, transfer=None))
+                             resume={"export": "CHUNK_CHECKPOINT", "training": "NOT_APPLICABLE"},
+                             # 1.46: the DXY series is never exported into the package - IND_XAU_DXY (also offered for BTC) always ended
+                             # BLOCKED_DATA after the export; not offered as SUPPORTED any more
+                             state="NOT_IMPLEMENTED" if iid in NO_MULTI_SERIES else "SUPPORTED", reason=NO_MULTI_SERIES.get(iid),
+                             transfer=None))
         out.append(_task(model_id="KRONOS_SMALL", task_id="CANDLE_PATH", instrument=inst, broker_symbol=sym.get(inst), base_tf="M5", horizon=None,
                          feature_schema_version="kronos-tokenizer-base", label_schema_version="NOT_APPLICABLE", adapter="PRETRAINED",
-                         category="PRETRAINED", name="Kronos-small (wagi pretrained NeoQuasar)", trainer=None,
+                         category="PRETRAINED", name="Kronos-small (wagi pretrained NeoQuasar, 1.42.8)", trainer=None,
                          loader="kronos_runtime (.venv_kronos)", env=".venv_kronos", sources=[{"kind": "BARS", "tf": "M5", "mandatory": True}],
                          resume={}, state="EXTERNAL", reason="ewaluacja i instalacja w panelu Kronos bota; fine-tuning nie jest obsługiwany przez projekt",
                          transfer=None))

@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem 1.40.3: Python w trybie UTF-8 - polskie znaki i symbole w logach nie przerywaja skryptu (UnicodeEncodeError przy cp1250)
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 rem Replay profilu scalp na najnowszym eksporcie (OHLC M1 + spread z MT5; przyblizony - bez tickow), z kosztami i stresem +50%%.
 rem Opcjonalny argument (domyslnie 0.50): prowizja za 1 lot na strone (waluta konta). Przyklad: 19_REPLAY_SCALP.bat 3.5
 rem Wynik: data\scalp\replay\^<czas^>\summary.json (cykle, dni, win ratio, expectancy R z 95%% CI, hedge vs REDUCE) oraz
@@ -8,13 +11,15 @@ cd /d "%~dp0"
 set "COMM=%~1"
 if "%COMM%"=="" set "COMM=0.50"
 echo Prowizja za 1 lot na strone: %COMM% ^(domyslnie 0.50 - inna wartosc: %~nx0 3.5^)
-if not exist "%~dp0.venv\Scripts\python.exe" (echo [BLAD] Brak .venv - uruchom 01_INSTALUJ.bat & pause & exit /b 1)
+for %%I in ("%~dp0.") do set "ROOT=%%~fI"
+call "%ROOT%\tools\pmwpy.cmd"
+if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje Apollo23 - PepeMarketWizard.exe & pause & exit /b 2)
 pushd "%~dp0backend"
-"%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM%
+"%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM%
 set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --cost-stress 1.5
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --margin-mode NETTING
-if "%RC%"=="0" "%~dp0.venv\Scripts\python.exe" -m masterquo scalp-replay --commission-per-lot-side %COMM% --variants
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --cost-stress 1.5
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --margin-mode NETTING
+if "%RC%"=="0" "%PY%" -m masterquo scalp-replay --commission-per-lot-side %COMM% --variants
 popd
 pause
 exit /b %RC%

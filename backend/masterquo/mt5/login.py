@@ -7,15 +7,17 @@ terminal is logged into. "-6 Terminal: Authorization failed" therefore means: th
 What this module adds (nothing here sends an order):
   * optional explicit login: mt5.login + mt5.server from the config, password ONLY from the local secret store
     (MT5_PASSWORD - Windows DPAPI; never in config.json, never in logs or API responses);
-  * after an authorization / IPC failure with no fixed terminal_path: the installed terminals are discovered (running
-    processes and the usual install folders, MetaQuotes "origin.txt") and tried one by one;
+  * after an authorization / IPC failure with no fixed terminal_path: the RUNNING terminal64.exe processes are tried one by
+    one (an installation that is not running is never started; discover_terminals() only lists installed terminals);
   * a rejected password is not retried in a loop (brokers lock accounts after repeated failures) - it is retried only
-    after the login / server / password changes;
+    after the login / server / password changes (any change of the password, also one of the same length);
   * a Polish hint for the known error codes.
 """
 from __future__ import annotations
 
 import glob
+import hashlib
+import hmac
 import os
 import subprocess
 import sys
@@ -60,9 +62,17 @@ def init_kwargs(cfg, password: str | None, *, path: str | None = None) -> dict:
     return kw
 
 
+# 1.46: per-process random key of the password fingerprint below - held in memory only, never stored nor logged
+_FP_KEY = os.urandom(32)
+
+
 def credentials_key(cfg, password: str | None) -> str:
-    """Identifies the credential set (no secret in clear: only whether a password exists and its length)."""
-    return f"{getattr(cfg, 'login', None)}@{getattr(cfg, 'server', None)}#{len(password or '')}"
+    """Identifies the credential set (no secret in clear: a keyed fingerprint of the password with a per-process random key,
+    kept in memory only - never persisted, logged nor returned by the API)."""
+    # 1.46: the key held only len(password) - a corrected password of the SAME length (a typo fix) kept the key of the rejected one
+    # and was never tried until a restart or a login / server change
+    fp = hmac.new(_FP_KEY, password.encode("utf-8"), hashlib.sha256).hexdigest()[:16] if password else "-"
+    return f"{getattr(cfg, 'login', None)}@{getattr(cfg, 'server', None)}#{fp}"
 
 
 def running_terminals() -> list[str]:

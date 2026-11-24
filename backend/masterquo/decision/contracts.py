@@ -41,8 +41,9 @@ SCHEMAS: dict[str, dict] = {
                           "entry": "num?", "sl": "num?", "tp": "num?", "risk_money": "num?", "volume": "num?", "reasons": "list"},
     "DecisionRecord": {"record_id": "str", "created_at": "str", "path": PATHS, "source_id": "str", "strategy_id": "str", "symbol": "str",
                        "account_key": "str?", "mode": MODES, "side": SIDES, "base_verdict": VERDICTS, "final_verdict": VERDICTS,
-                       "reason_codes": "list", "models": "list", "gates": "dict", "inputs_hash": "str"},
-    "ExecutionIntent": {"intent_id": "str", "dedup_key": "str", "record_id": "str?", "path": PATHS, "kind": ("ENTRY",), "mode": MODES,
+                       "reason_codes": "list", "models": "list", "gates": "dict", "inputs_hash": "str",
+                       "confidence": "dict?"},      # 1.41: TabICLv2 raw confidence of THIS plan (presentation / ranking - never a gate)
+    "ExecutionIntent": {"intent_id": "str", "dedup_key": "str", "record_id": "str?", "path": PATHS, "kind": ("ENTRY", "HEDGE"), "mode": MODES,
                         "account_key": "str?", "symbol": "str", "side": SIDES, "volume": "num?", "risk_money": "num?", "state": INTENT_STATES},
     "ExecutionOutcome": {"intent_id": "str", "status": OUTCOMES, "ticket": "int?", "price": "num?", "volume": "num?", "reason": "str?",
                          "at": "str"},
@@ -108,7 +109,9 @@ def inputs_hash(obj) -> str:
 def instrument_spec(symbol: str, info: dict | None) -> dict:
     i = info or {}
     f = (lambda k: float(i[k]) if i.get(k) is not None else None)
-    return make("InstrumentSpec", symbol=symbol, digits=int(i.get("digits") or 2), point=float(i.get("point") or 0.01),
-                tick_size=float(i.get("trade_tick_size") or i.get("point") or 0.01), tick_value=f("trade_tick_value"),
+    # 1.46: no invented defaults - 'digits or 2' turned a valid digits=0 into 2 and a missing point / tick size became 0.01; a missing
+    # required field is now a ContractViolation (a broken spec never travels further as if it were valid)
+    return make("InstrumentSpec", symbol=symbol, digits=None if i.get("digits") is None else int(i["digits"]), point=f("point"),
+                tick_size=f("trade_tick_size"), tick_value=f("trade_tick_value"),
                 contract_size=f("trade_contract_size"), volume_min=f("volume_min"), volume_step=f("volume_step"), volume_max=f("volume_max"),
                 currency_profit=i.get("currency_profit"), margin_mode=i.get("margin_mode_name"))
