@@ -310,11 +310,19 @@ def create_app(rt, port: int) -> FastAPI:
     def state():
         return full_state()
 
+    def _walls_last() -> dict:
+        """The walls snapshot S12 works on - rt.walls.last, read exactly like GET /api/v1/walls. Never WallsService.snapshot() / context()
+        / store.freeze from an API thread (they compute, version and store snapshots - that is the engine thread's job)."""
+        snap = {k: v for k, v in (getattr(rt.walls, "last", None) or {}).items() if not k.startswith("_")}
+        return snap or {"status": "NO_SNAPSHOT_YET", "walls": []}
+
     @app.get("/api/v1/candles")
     def candles(tf: str = Query(...)):
         if tf not in TIMEFRAMES:
             raise HTTPException(400, "INVALID_TIMEFRAME")
-        return rt.engine.chart(tf)
+        # 1.46 arch (I0109): the chart also gets the S12 walls snapshot (same object as /api/v1/walls, signed by snapshot_id) - the
+        # 'volatility' bands stay the panel's model pricing (cfg.volatility, chart only)
+        return {**rt.engine.chart(tf), "walls_snapshot": _walls_last()}
 
     @app.get("/api/v1/volatility")
     def volatility():

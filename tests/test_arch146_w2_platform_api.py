@@ -895,5 +895,41 @@ class TestAccountLoopLifecycle(unittest.TestCase):
             td.close()
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0109
+class TestChartWallsSource(_Base):
+    """I0109: wykres dostaje ściany z TEGO SAMEGO snapshotu co S12 (rt.walls.last, jak GET /api/v1/walls – nigdy snapshot()/freeze z API),
+    z podpisanym snapshot_id; parametry walls.* w Ustawieniach tylko do odczytu; sekcja volatility = wycena modelowa / tylko wykres."""
+
+    def _candles(self, last):
+        from masterquo.api import app as A
+        rt = make_rt()
+        rt.engine.chart.return_value = {"tf": "M5", "bars": [], "volatility": {"status": "OK"}}
+        rt.walls.last = last
+        rt.walls.snapshot.side_effect = AssertionError("snapshot() z wątku API")
+        rt.walls.context.side_effect = AssertionError("context() z wątku API")
+        return ep(A.create_app(rt, PORT), "GET", "/api/v1/candles")(tf="M5"), rt
+
+    def test_chart_data_carries_the_s12_snapshot(self):
+        last = {"status": "OK", "snapshot_id": "WS-abc", "snapshot_version": 2, "walls": [{"k": 1.0, "side": "UPPER", "low": 1, "high": 2}],
+                "_fp": ["x"]}
+        d, rt = self._candles(last)
+        self.assertEqual(d["walls_snapshot"]["snapshot_id"], rt.walls.last["snapshot_id"])          # HEAD: brak walls_snapshot
+        self.assertNotIn("_fp", d["walls_snapshot"])
+        self.assertEqual(d["volatility"], {"status": "OK"})                                           # wycena panelu bez zmian
+
+    def test_no_snapshot_yet(self):
+        d, _ = self._candles(None)
+        self.assertEqual(d["walls_snapshot"]["status"], "NO_SNAPSHOT_YET")
+
+    def test_frontend_draws_the_snapshot_and_walls_settings_are_read_only(self):
+        chart = (ROOT / "frontend" / "src" / "components" / "ChartPanel.tsx").read_text(encoding="utf-8")
+        self.assertTrue("walls_snapshot" in chart and "snapshot_id" in chart)
+        dlg = (ROOT / "frontend" / "src" / "components" / "Dialogs.tsx").read_text(encoding="utf-8")
+        self.assertTrue("cfg.walls" in dlg)
+        self.assertFalse('set("walls.' in dlg)                                                         # tylko do odczytu
+        self.assertFalse("walls: cfg.walls" in dlg)                                                   # zapis Ustawień nie wysyła walls.*
+        self.assertTrue("tylko wykres" in dlg)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -188,7 +188,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       {tab === "vol" && cfg.volatility && <div className="form">
         <div className="note">Poziomy dzienne: Daily Open, Daily High/Low (±1σ – etykieta podaje źródło: HV-proxy albo IV ręczna), PDH/PDL, straddle ATM i walls ±kσ. MT5 nie udostępnia opcji na złoto –
           domyślnie IV = zmienność historyczna z zamkniętych świec D1. Możesz wpisać IV z innego źródła (np. indeks GVZ). To informacja na wykresie i wycena modelowa – nie zmienia strategii ani zleceń.
-          Strategia S12 używa osobnych ścian (ustawienia walls, snapshot /api/v1/walls) – mogą się różnić od tych pasm σ panelu.</div>
+          Strategia S12 używa osobnych ścian (ustawienia walls, snapshot /api/v1/walls) – mogą się różnić od tych pasm σ panelu.
+          Sekcja poniżej to wycena modelowa – tylko wykres.</div>
+        {cfg.walls && <div className="note">Ściany strategii S12 (tylko do odczytu – ich zmiana zmieniłaby strategię): źródło {String(cfg.walls.source)},
+          okno HV {String(cfg.walls.hv_window)} świec D1, k = {(cfg.walls.ks || []).join(", ")} σ, połowa pasma {String(cfg.walls.band_sigma)} σ.
+          Na wykresie rysowane z tego samego snapshotu co S12 (podpis: snapshot_id).</div>}
         {field("Pokazuj i licz poziomy", "volatility.enabled", "bool")}
         {field("Estymator HV", "volatility.estimator", "text", "close_to_close = zwroty zamknięć · parkinson = zakres high/low", ["close_to_close", "parkinson"])}
         {field("Okno HV [świece D1]", "volatility.window", "num", "5–250, domyślnie 20")}
