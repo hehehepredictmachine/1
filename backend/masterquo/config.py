@@ -155,9 +155,11 @@ class AgentConfig(_Strict):
     ai_wait_seconds: float = Field(60.0, ge=0, le=900)
     decision_ttl_seconds: int = Field(900, ge=60, le=86400)
     use_refusal_fallback: bool = True
-    # Price table for *estimates* only (USD per 1M tokens), cached 2026-10-06.
+    # Price table for *estimates* only (USD per 1M tokens), cached 2026-10-06; claude-fable-5-2 (successor of 5-1) added 2026-11 (arch146 D13).
+    # A saved config.json keeps its own whole table (_deep_merge does not merge it) - the agent falls back to these defaults for a model
+    # missing from the saved table (agent/service.py _cost), so a new model is priced without rewriting the user's file.
     price_per_mtok: dict[str, tuple[float, float]] = Field(default_factory=lambda: {
-        "claude-fable-5-1": (10.0, 50.0), "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0),
+        "claude-fable-5-2": (8.0, 40.0), "claude-fable-5-1": (10.0, 50.0), "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0),
         "claude-sonnet-5-5": (2.0, 10.0), "claude-sonnet-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50),
     })
 

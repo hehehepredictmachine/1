@@ -36,8 +36,14 @@ from .tools import TOOL_DEFS, Toolbox
 
 log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
-FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def _default_prices() -> dict:
+    """The default price table of AgentConfig (config.py is the single source of the prices)."""
+    from ..config import AgentConfig
+    return AgentConfig.model_fields["price_per_mtok"].default_factory()
 MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
 
 
@@ -339,7 +345,8 @@ class ClaudeAgent:
                              "promotion_rule": "Wymaga testu M06R/M06T na danych OOS + forward DEMO i zatwierdzenia użytkownika; nie zmienia LIVE."})))
 
     def _cost(self, model: str, usage: dict) -> float | None:
-        price = self.cfg.price_per_mtok.get(model)
+        # the saved table wins; a model missing from it (a table saved before the model was added) is priced from the defaults
+        price = self.cfg.price_per_mtok.get(model) or _default_prices().get(model)
         if not price:
             return None
         pin, pout = price
