@@ -33,6 +33,14 @@ ANALYSIS_MIN_BARS = 260
 
 
 class EngineService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    si = None
+    liquidity = None
+    indicators_provider = None
+    svp_provider = None
+    extind = None
+    mm_provider = None
+
     def __init__(self, cfg_store, bridge, db, bus, applog, modes, news, pcclock):
         self.cfg_store = cfg_store
         self.bridge = bridge
@@ -597,9 +605,9 @@ class EngineService:
                # 1.46 arch (I0756, neutral variant): the view and the newest SI snapshot id AT this evaluation; the tools return them as
                # the frozen view next to the newer data (after_as_of + NEWER_DATA_AVAILABLE) - nothing newer is withheld from the agent
                "structure_as_of_fn": (lambda tf, _v=self.active.view: EngineService._structure_for(self, _v, tf)),
-               "si_as_of_id": (getattr(getattr(self, "si", None), "last", None) or {}).get("snapshot_id"),
+               "si_as_of_id": (getattr(self.si, "last", None) or {}).get("snapshot_id"),
                "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
-               "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None),
+               "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": self.mm_provider,
                "pmw_indicators": self._pmw_indicators(), "svp": self._svp_view()}
         with self._lock:
             if sid in self.contexts:
@@ -613,7 +621,7 @@ class EngineService:
         1.46 arch (I0186): a COPY marked with the snapshot freshness (IndicatorService.freshness - the rule compact() applies for the
         panel; the snapshot is refreshed only on a new closed M1 bar, so after a weekend / break it was READY for hours). The stored
         snapshot is never mutated; a failed freshness check marks the copy STALE (FRESHNESS_ERROR) instead of dropping it."""
-        ind = getattr(self, "indicators_provider", None)
+        ind = self.indicators_provider
         if ind is None:
             return None
         try:
@@ -630,7 +638,7 @@ class EngineService:
 
     def _svp_view(self) -> dict | None:
         """Latest stored SVP snapshots of the user's profiles + active zones (MANUAL / ALGORITHM / AI), frozen with the agent context."""
-        svp = getattr(self, "svp_provider", None)
+        svp = self.svp_provider
         if svp is None:
             return None
         try:
@@ -648,7 +656,7 @@ class EngineService:
 
     def _structure_snapshot(self, sid: str) -> dict | None:
         """PMW-UPD-07: frozen Structure Intelligence snapshot by id ('latest' = the newest one); read-only."""
-        si = getattr(self, "si", None)
+        si = self.si
         if si is None:
             return None
         if sid == "latest":
@@ -661,7 +669,7 @@ class EngineService:
         try:
             from ..analytics import liquidity_context as lc
             from ..timeutil import parse_iso
-            liq = getattr(self, "liquidity", None)
+            liq = self.liquidity
             if liq is None:
                 return None
             inst = self.cfg_store.get().assets.active
@@ -692,7 +700,7 @@ class EngineService:
                 h, lo, c = [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
                 a = ind.atr(h, lo, c) if len(b) >= 15 else [None]
                 sar[tf] = ind.sar_diagnostics(h, lo, c, a[-1], 0.02, 0.2) if len(b) >= 2 else {"status": "WARMING_UP"}
-            ext = getattr(self, "extind", None)
+            ext = self.extind
             inst = self.cfg_store.get().assets.active
             sources = {}
             if ext is not None:

@@ -30,6 +30,9 @@ NO_LIVE_PATH = {"PAIR_COINT": "brak ścieżki danych na żywo dla nóg pary (pai
 
 
 class FamilyService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    event_gru_provider = None
+
     def __init__(self, cfg_store, bridge=None, *, indicators=None, news=None, store: B.Store | None = None, clock=time.time):
         self.cfg_store, self.bridge, self.indicators, self.news, self.clock = cfg_store, bridge, indicators, news, clock
         self.store = store or B.Store()
@@ -462,7 +465,7 @@ class FamilyService:
         if fid == "SEQ_GRU_EVENT":
             # 1.35: the Event GRU had no live path (MM only listed its artifact). The Quant scheduler owns its inference; here only the
             # cached READY result is read (no computation in the decision path); nothing READY -> no record, as before.
-            prov = getattr(self, "event_gru_provider", None)
+            prov = self.event_gru_provider
             p = prov(inst) if prov is not None else None
             return p if p and p.get("state") == "READY" else None
         st = self.store.state(fid, inst)

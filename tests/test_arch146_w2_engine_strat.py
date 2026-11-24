@@ -391,7 +391,8 @@ class TestI0756FrozenViewNothingWithheld(unittest.TestCase):
                                active=SimpleNamespace(view=v1, status=lambda compact=True: {}, tracker=SimpleNamespace(get=lambda k: None)),
                                volatility=dict, _indicator_context=lambda f: None, _liquidity_context=lambda f: None, _structure_snapshot=lambda s: None,
                                _pmw_indicators=lambda: None, _svp_view=lambda: None, _lock=threading.Lock(), contexts=OrderedDict(),
-                               si=SimpleNamespace(last={"snapshot_id": "SIS-1"}), _structure_cache=None)
+                               si=SimpleNamespace(last={"snapshot_id": "SIS-1"}), _structure_cache=None,
+                               mm_provider=None)                       # w2 (I0095): class default of EngineService (read as self.x)
         fake.structure = lambda tf: EngineService.structure(fake, tf)
         full = {"snapshot_id": "S1", "as_of": "2026-11-24T10:00:05+00:00", "epoch": 1, "account_key": "A", "legacy": {}, "closed": {}}
         EngineService._store_context(fake, full, {}, None, {}, {}, {}, {})

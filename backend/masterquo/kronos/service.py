@@ -48,6 +48,9 @@ USABLE_MAPPING = ("CONFIRMED", "USER_SPECIFIED", "AUTO_DETECTED")
 
 
 class KronosService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    governor = None
+
     def __init__(self, cfg_store, bridge, db, bus, log_, *, clock=time.time, settings: SettingsStore | None = None):
         self.cfg_store, self.bridge, self.db, self.bus, self.applog, self.clock = cfg_store, bridge, db, bus, log_, clock
         self.settings = settings or SettingsStore()
@@ -151,7 +154,7 @@ class KronosService:
         return (str(self.weights_dir()), s.device, s.max_context, s.cpu_threads)
 
     def _threads_default(self) -> int:
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             return gov.threads_for("kronos")                                     # 1.40: resource profile
         return max(1, min(4, (os.cpu_count() or 2) // 2))
@@ -415,7 +418,7 @@ class KronosService:
     def run_job(self, job: dict) -> dict | None:
         k = (job["instrument"], job["timeframe"])
         t = self._target(k)
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             essential = any(v.use in ("ASSIST", "REQUIRED") for v in self.settings.get().strategy_use.values())   # 1.42.6: Kronos w decyzjach
             ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info), essential=essential)
@@ -475,7 +478,7 @@ class KronosService:
             return None
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo)
         self.last_used = time.monotonic()
-        if getattr(self, "governor", None) is not None:
+        if self.governor is not None:
             self.governor.record("kronos", ms=r.get("ms"))
         self.latest[k] = fc
         self.context_tail[k] = [{"t": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"]} for b in bars[-120:]]
