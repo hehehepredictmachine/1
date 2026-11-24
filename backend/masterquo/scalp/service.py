@@ -398,19 +398,23 @@ class ScalpService:
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def indicator_context(self, plan: dict) -> dict:
-        """SCALP_INDICATOR_CONTEXT_V1 for THIS setup (same composer as training). No active model -> NO_MODEL (no percentage)."""
+        """SCALP_INDICATOR_CONTEXT_V2 for THIS setup (same composer as training). No active model -> NO_MODEL (no percentage).
+        1.46 arch: the model comes from the injected ExtIndService (I0077 - scalp does not import extind); the SAR window gets its
+        own fetch of closed M5 / M15 (I0165 - the 400 bars of tick() lose one bar to _closed when an M5 closed after the decision)."""
         try:
-            from ..extind import trainer as ict
-            m = ict.active_model(self.inst)
+            why: list = []
+            m = self.extind.active_model(self.inst, why) if self.extind is not None else None
             if m is None:
                 return {"status": "NO_MODEL", "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1",
-                        "reason": "brak aktywnego modelu kontekstu wskaźników (indicator-context train + activate)"}
+                        "reason": (f"aktywny model kontekstu wskaźników nie daje się wczytać: {why[0]}" if why else
+                                   "brak aktywnego modelu kontekstu wskaźników (indicator-context train + activate)")}
             from datetime import datetime as _dt, timezone as _tz
             t = _dt.fromtimestamp(plan["decision_ts"], _tz.utc)
-            bars = getattr(self, "_bars", {}) or {}
-            ext = {a: (self.extind.as_of(a, self.inst, t) if self.extind else None) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}
+            need = int(getattr(m, "bars_needed", 404))
+            bars = {k: [b for b in self.bridge.bars(k, need, include_forming=False) if b.get("open_utc")] for k in ("M5", "M15")}
+            ext = {a: self.extind.as_of(a, self.inst, t) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}
             return dict(m.predict({"decision_time": t, "side": plan["direction"], "price": plan["ref_close_bid"], "atr_m5": plan["range"]["atr_m5"],
-                                   "base": plan.get("features") or {}, "bars": {k: bars.get(k) or [] for k in ("M5", "M15")}, "ext": ext}, self.inst),
+                                   "base": plan.get("features") or {}, "bars": bars, "ext": ext}, self.inst),
                         setup_id=plan["setup_id"], as_of=plan["decision_time"])
         except Exception as exc:  # noqa: BLE001 - observation only
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
