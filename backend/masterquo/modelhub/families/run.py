@@ -92,8 +92,11 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             lim = max(int(max_rows or BUDGETS["smoke"]["max_rows"]), 4 * MIN_SNAPSHOTS)
             out["books"] = books_from_archive(cfg.get("indicators_db"), sym, limit=lim, levels=BOOK_LEVELS)
     elif kind == "TEXT":
-        from .nlp import load_corpus
+        from .nlp import corpus_data_kind, load_corpus
         out["corpus"] = load_corpus()
+        # 1.46 arch (I0469): the texts' own data kind (recorded per record at import) - the kind of the CANDLE archive was inherited, so a
+        # synthetic corpus gave an artifact labelled REAL_USER_DATA (passing the ASSIST gate's 'REAL data only')
+        out["data_kind"] = corpus_data_kind(out["corpus"])
     return out
 
 

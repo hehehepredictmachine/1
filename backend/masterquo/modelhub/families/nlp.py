@@ -41,8 +41,44 @@ def corpus_path() -> Path:
     return B.root() / "_corpus" / "nlp_corpus.jsonl"
 
 
-def import_file(path: Path) -> dict:
-    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS)."""
+# 1.46 arch (I0469): the data kind of the imported texts is recorded on every corpus record (run.load_data derives the artifact's data kind
+# from the corpus - it inherited the kind of the CANDLE archive, so a synthetic corpus could give an artifact labelled REAL_USER_DATA)
+CORPUS_KINDS = ("REAL_USER_DATA", "SYNTHETIC_TEST", "UNKNOWN_SOURCE")
+IMPORT_SUFFIXES = (".jsonl", ".csv")
+MAX_IMPORT_BYTES = 200 * 1024 * 1024
+
+
+def check_import(path: Path) -> None:
+    """Existing .jsonl / .csv file within the size limit - checked before anything is read (ValueError with the reason)."""
+    path = Path(path)
+    if not path.is_file():
+        raise ValueError(f"brak pliku korpusu: {path}")
+    if path.suffix.lower() not in IMPORT_SUFFIXES:
+        raise ValueError(f"korpus musi mieć rozszerzenie {' / '.join(IMPORT_SUFFIXES)} (podano {path.suffix or 'brak'})")
+    size = path.stat().st_size
+    if size > MAX_IMPORT_BYTES:
+        raise ValueError(f"plik korpusu za duży: {size} B > {MAX_IMPORT_BYTES} B")
+
+
+def corpus_data_kind(rows: list[dict]) -> str:
+    """Data kind of a training corpus: SYNTHETIC_TEST when any record is synthetic, REAL_USER_DATA only when EVERY record is marked real,
+    otherwise UNKNOWN_SOURCE (records imported before 1.46 carry no marker - never treated as real)."""
+    kinds = {B.kind_class(r.get("data_kind")) for r in rows}
+    if "SYNTHETIC" in kinds:
+        return "SYNTHETIC_TEST"
+    if rows and kinds == {"REAL"}:
+        return "REAL_USER_DATA"
+    return "UNKNOWN_SOURCE"
+
+
+def import_file(path: Path, data_kind: str | None = None) -> dict:
+    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS). Append only - nothing is overwritten or removed.
+    data_kind (1.46 arch I0469): REAL_USER_DATA / SYNTHETIC_TEST / UNKNOWN_SOURCE recorded on every added record (None = UNKNOWN_SOURCE)."""
+    path = Path(path)
+    dk = str(data_kind or "UNKNOWN_SOURCE").upper()
+    if dk not in CORPUS_KINDS:
+        raise ValueError(f"data_kind korpusu: {'|'.join(CORPUS_KINDS)} (podano {data_kind})")
+    check_import(path)
     cp = corpus_path()
     cp.parent.mkdir(parents=True, exist_ok=True)
     have = {r["hash"] for r in load_corpus()}
@@ -62,7 +98,8 @@ def import_file(path: Path) -> dict:
             continue
         have.add(h)
         rows.append({"hash": h, "id": r.get("id") or h, "source": r.get("source"), "lang": r.get("lang") or "en", "text": r["text"], "label": lab,
-                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version")})
+                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version"),
+                     "data_kind": dk})
     with cp.open("a", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")

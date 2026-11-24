@@ -34,6 +34,19 @@ UNITS = ("probability", "score_0_100", "price", "atr", "log_return", "return", "
 CALIBRATION = ("CALIBRATED_DEV", "UNCALIBRATED", "NOT_APPLICABLE")
 DATA_KINDS = ("REAL", "SYNTHETIC")
 VOL_SCALES = ("decimal", "percent")
+# 1.46 arch (I0052): ONE data-quality vocabulary (the PMW-MM / PMW-ARC enums) and the mapping of the producers' own words (data/quality
+# GOOD / BAD, sh/context OK / BLOCK, the store's SYNTHETIC_TEST). make() normalises and keeps the producer's word in data_quality_raw;
+# an unknown word is kept as it is with data_quality_warning - a record is never refused for it (Quant inputs unchanged).
+DQ = ("OK", "DEGRADED", "STALE", "MISSING", "INVALID", "SYNTHETIC")
+_DQ_MAP = {"GOOD": "OK", "BAD": "INVALID", "BLOCK": "INVALID", "SYNTHETIC_TEST": "SYNTHETIC"}
+
+
+def normalize_dq(value) -> str | None:
+    """The DQ word of a producer's data quality, or None when it is not a known word (kept as it is by make)."""
+    v = str(value).upper() if isinstance(value, str) else None
+    if v in DQ:
+        return v
+    return _DQ_MAP.get(v) if v else None
 
 
 class ContractError(ValueError):
@@ -190,6 +203,11 @@ def make(*, instrument: str, symbol: str | None, timeframe: str | None, model_na
          "compute_ms": compute_ms, "state": state, "state_pl": STATES.get(state, state), "source": source, "data_kind": data_kind,
          "available_at": available_at, "computed_at": time.time(), "ttl_s": ttl_s,
          "unavailable_reason": unavailable_reason if state != "READY" else None, "created_at": time.time(), **(extra or {})}
+    dq = normalize_dq(data_quality)
+    if dq is None:
+        p["data_quality_warning"] = f"DATA_QUALITY_UNKNOWN:{data_quality}"[:120]
+    elif dq != data_quality:
+        p["data_quality"], p["data_quality_raw"] = dq, data_quality
     validate(p)
     return p
 

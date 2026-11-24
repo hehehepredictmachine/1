@@ -9,8 +9,8 @@ One path per family, the same functions the CLI / panel / Training Center and th
   -> FamilyService.activate (re-load + the inference sample stored at training) -> ASSIST gate (a synthetic artifact is refused)
   -> FamilyService.predict (live bars of the FakeMT5 terminal through a bridge stand-in) -> PMW-PRED-2 + data_kind of the record.
 
-PAIR_COINT / STATARB have no live data path for their legs (FamilyService.NO_LIVE_PATH -> DISABLED) and RL_PPO has no live position
-(BLOCKED_DATA): the service state is checked as the documented one and the artifact is additionally predicted directly.
+PAIR_COINT / STATARB have no live data path for their legs and RL_PPO no live position source (FamilyService.NO_LIVE_PATH -> DISABLED;
+RL_PPO since 1.46 arch I0464): the service state is checked as the documented one and the artifact is additionally predicted directly.
 SEQ_LSTM / SEQ_GRU / RL_PPO need .venv_deep (deep_runtime worker process); without it they are NIEZWERYFIKOWANY, never a pass.
 """
 from __future__ import annotations
@@ -173,7 +173,7 @@ def _corpus(ctx: Ctx, n: int = 600) -> dict:
             txt = (pos, neu, neg)[k][(i // 3) % 3] + f" item {i} " + " ".join(rng.choice(["today", "again", "now", "on fed"], 2))
             fh.write(json.dumps({"text": txt, "label": ("POSITIVE", "NEUTRAL", "NEGATIVE")[k], "source": "SYNTHETIC_TEST",
                                  "first_seen_at": f"2026-01-{1 + i % 28:02d}T00:{i % 60:02d}:00Z"}) + "\n")
-    return NL.import_file(p)
+    return NL.import_file(p, "SYNTHETIC_TEST")                  # 1.46 arch (I0469): the corpus records carry their own data kind
 
 
 # ---------------------------------------------------------------------------------------------------------------- helpers
@@ -500,8 +500,8 @@ def _seq_gru(ctx: Ctx) -> dict:
 
 
 def _rl_ppo(ctx: Ctx) -> dict:
-    return _family(ctx, "RL_PPO", src=_SRC_M5P, live_state="BLOCKED_DATA", direct=_direct_ppo,
-                   live_note="brak źródła pozycji w FamilyService._live, service.py:370-386; rl.py:54-58")
+    return _family(ctx, "RL_PPO", src=_SRC_M5P, live_state="DISABLED", direct=_direct_ppo,
+                   live_note="NO_LIVE_PATH: brak źródła stanu pozycji na żywo (FamilyService.NO_LIVE_PATH, I0464)")
 
 
 def _nlp_sentiment(ctx: Ctx) -> dict:

@@ -18,7 +18,10 @@ CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_
                "RULE_STRATEGY": "RULE", "OPTIMIZER": "INFRA", "DATA_INFRA": "INFRA", "VISUALIZATION": "INDICATOR", "BENCHMARK": "INFRA"}
 # where the code lives + what it needs (sh/models.REGISTRY ids)
 LOCATION = {
-    "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
+    # 1.46 arch (I0553): the three data-quality checks that really run (SH limits, ACTIVE session model, Quant snapshot QC) - it named
+    # 'mt5/bridge.py, engine (M01)', where none of them lives
+    "data_quality": ("sh/context.py (SH), data/quality.py (ACTIVE), quant/snapshot.py (QC migawki Quant)", "notowania + świece z MT5"),
+    "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
     "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
     "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("extind/vamd.py", "świece M1/M5"), "fractal": ("extind/fractal.py", "świece M1/M5"),
     "atr_vol": ("indicators/series.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
@@ -100,6 +103,103 @@ def _th_entries(inst: str, rt) -> list[dict]:
     return out
 
 
+# 1.46 arch (I0002): the catalog is the only model list the panel reads - it now covers the canonical registry (quant/inventory, quant/ids)
+CAT_FROM_INV = {"MODEL_TRAINED": "TRAINABLE", "MODEL_PRETRAINED": "TRAINABLE", "TRAINABLE": "TRAINABLE", "BASELINE": "TRAINABLE",
+                "META_MODEL": "TRAINABLE", "MODEL_ESTIMATED": "ONLINE", "MEASUREMENT": "INDICATOR", "RULE_OR_MEASUREMENT": "RULE",
+                "ANALYSIS": "INDICATOR", "NATIVE_MQL5": "INDICATOR", "VISUALIZATION": "INDICATOR", "SIMULATION": "SIMULATION", "AGENT": "EXTERNAL",
+                "RESEARCH": "INFRA", "TOOL": "INFRA", "OPTIMIZER": "INFRA", "BENCHMARK": "INFRA", "DATA_INFRA": "INFRA"}
+_FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
+
+
+def _canonical_of(r: dict) -> str:
+    """Canonical id (quant/ids) of an existing catalog row - the same id the inventory gives its producer."""
+    from ..quant import ids as I
+    rid, src = r["id"], r.get("source")
+    if src == "trainhub":
+        return "trainhub:" + rid.upper()
+    if src == "mm/inventory.MODULES":
+        mid = rid.removeprefix("mm_")
+        return I.resolve(mid) or I.resolve("mm:" + mid) or "mm:" + mid
+    if rid in _FIXED_CANON:
+        return _FIXED_CANON[rid]
+    if rid in I.GROUPS:
+        return "group:" + rid
+    return I.resolve(rid) or "sh:" + rid
+
+
+def _family_state(fid: str, rt, inst: str) -> tuple[str, str]:
+    """State of a family row from FamilyService: its stored state, its training job and the last cached record - no computation and no
+    dependency probe (the .venv_deep health process is never started by the catalog); never READY without a record."""
+    from .families.service import NO_LIVE_PATH
+    fam = getattr(rt, "families", None) if rt is not None else None
+    if fam is None:
+        return "DISABLED", "serwis rodzin modeli nie działa w tym procesie – stan na żywo nieznany"
+    st = fam.store.state(fid, inst)
+    if ((fam.job(fid, inst) or {}).get("state")) == "RUNNING":
+        return "TRAINING", "trening rodziny w toku"
+    use = st.get("use", "OFF")
+    if fid != "MICROSTRUCTURE":                          # MICROSTRUCTURE measures without an artifact
+        if not st.get("active"):
+            return "NOT_TRAINED", "brak aktywnego artefaktu – trening / aktywacja w Centrum treningu (rodziny modeli)"
+        if use == "OFF":
+            return "DISABLED", "rola OFF – rodzina nie jest liczona"
+        if fid in NO_LIVE_PATH:
+            return "DISABLED", NO_LIVE_PATH[fid]
+    last = fam.last_prediction(fid, inst)
+    if not last:
+        return "BLOCKED_DATA", f"brak prognozy w tym cyklu (rola {use}) – liczona przy odczycie prognoz rodzin"
+    state = last.get("state") if last.get("state") in C.STATES else "ERROR"
+    return state, last.get("unavailable_reason") or f"ostatnia prognoza: {C.STATES[state]} (rola {last.get('use') or use})"
+
+
+def _canonical_rows(rt, inst: str, rows: list[dict]) -> list[dict]:
+    """canonical_id / aliases on every row + one row per canonical producer the catalog did not list yet (families, TiRex-2, TabICL,
+    research modules, lab / SI members, ...). Existing ids and fields stay as they were (contract); NO_SPEC / NOT_IMPLEMENTED entries
+    are not added. State of an added row: families from FamilyService; otherwise READY only when its record is eligible in the current
+    Quant snapshot, else the inventory probe - an unprobed producer is never shown as READY."""
+    from ..quant import ids as I
+    from ..quant import inventory as QI
+    for r in rows:
+        r["canonical_id"] = _canonical_of(r)
+        r["aliases"] = I.aliases_of(r["canonical_id"])
+    have = {r["canonical_id"] for r in rows}
+    pub = getattr(getattr(rt, "quant", None), "pub", None) if rt is not None else None
+    cur = (pub.current() if pub is not None else None) or {}
+    ready = {p.get("canonical_id") for p in cur.get("eligible") or []}
+    excluded = {p.get("canonical_id"): (p.get("eligibility") or {}).get("reason") for p in cur.get("excluded") or []}
+    out = []
+    for e in QI.build(None, inst)["entries"]:
+        cid = e["id"]
+        if cid in have or e.get("code_state") in ("NO_SPEC", "NOT_IMPLEMENTED", "GROUP"):
+            continue
+        have.add(cid)
+        rs = e.get("runtime_state") or "NOT_EVALUATED"
+        if cid.startswith("family:"):
+            try:
+                state, reason = _family_state(cid.split(":", 1)[1], rt, inst)
+            except Exception as exc:  # noqa: BLE001
+                state, reason = "ERROR", f"{type(exc).__name__}: {exc}"[:160]
+        elif cid in ready:
+            state, reason = "READY", "rekord dopuszczony w bieżącej migawce Quant"
+        elif cid in excluded:
+            state, reason = "BLOCKED_DATA", f"poza migawką Quant: {excluded[cid]}"
+        elif rs in ("MISSING_DEPENDENCY", "UNAVAILABLE", "NOT_CONNECTED"):
+            state, reason = "DISABLED", str(e.get("state_reason") or rs)
+        elif rs in ("NOT_TRAINED", "ERROR"):
+            state, reason = rs, str(e.get("state_reason") or rs)
+        else:
+            state, reason = "DISABLED", ("stan na żywo nie jest sondowany w katalogu – "
+                                         + str(e.get("not_applicable_reason") or e.get("notes") or "producent z rejestru kanonicznego"))[:300]
+        files = [str(f).replace("backend/masterquo/", "") for f in e.get("files") or []]
+        out.append({"id": cid, "name": e.get("name") or cid, "category": CAT_FROM_INV.get(e.get("category"), "INFRA"),
+                    "location": ", ".join(files) or "—", "purpose": e.get("output") or e.get("task") or "—",
+                    "required_data": e.get("data_required") or "—", "input": e.get("input") or "—", "output": e.get("output") or e.get("task") or "—",
+                    "instruments": ["XAUUSD", "BTC"], "training": e.get("owner_train") or "nie dotyczy", "state": state, "state_pl": C.STATES[state],
+                    "reason": reason, "probe_status": rs, "source": "quant/inventory (rejestr kanoniczny)", "canonical_id": cid,
+                    "aliases": list(e.get("aliases") or [])})
+    return out
+
+
 def _use_note(pr: dict) -> str | None:
     """1.46: the configured use of a model that can act outside OBSERVE (the catalog note 'not admitted to vote' is not true for them)."""
     d = pr.get("detail") or {}
@@ -161,6 +261,11 @@ def build(rt, inst: str) -> dict:
                  "output": "prawdopodobieństwo w modelu (kalibracja osobno)", "instruments": ["XAUUSD", "BTC"], "training": "kalibracja: montecarlo validate",
                  "state": "READY", "state_pl": C.STATES["READY"], "reason": "symulacja na żądanie", "source": "montecarlo"})
     rows += _th_entries(inst, rt)
+    try:
+        rows += _canonical_rows(rt, inst, rows)
+    except Exception as exc:  # noqa: BLE001 - the canonical view never breaks the catalog the panel already shows
+        import logging
+        logging.getLogger(__name__).warning("catalog: canonical registry rows unavailable: %s: %s", type(exc).__name__, exc)
     counts = {}
     for r in rows:
         counts.setdefault(r["category"], 0)
