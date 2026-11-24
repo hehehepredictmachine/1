@@ -222,5 +222,102 @@ class TestRegimeArtifactsKeepTheirInput(unittest.TestCase):
         self.assertTrue(T._current({"feature_version": F.VERSION4}))
 
 
+# ================================================================================================ I0530 never-missing features
+def manual_model(names, mean, scale, coef, *, ridge=None, intercept=0.0, version=None):
+    from masterquo.quant import features as F
+    from masterquo.quant import metamodel as M
+    return {"version": M.VERSION, "feature_names": list(names), "feature_schema": F.schema_for(version or F.CURRENT, list(names)),
+            "scaler": {"mean": list(mean), "scale": list(scale)}, "logit": {"coef": list(coef), "intercept": intercept, "C": 1.0},
+            "calibrator": {"kind": "identity"}, "prior": 0.5, "event_id": "E", "task_hash": "t", "ridge": ridge}
+
+
+class TestMetaMissingNeverSeen(unittest.TestCase):
+    """A feature present in every training row has a constant mask column (scaler mean 0, scale 1, coefficient 0): vectorise() turned a
+    missing value into 0, so p(missing) == p(value 0) - an arbitrary point of its scale. Now: training mean + missing_never_seen + an
+    ASSIST hold (fail-closed); the pre-change value stays in `legacy` (reproduction check, D4 floor) so no HOLD can disappear."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_missing_never_seen_feature_gets_the_training_mean(self):
+        from masterquo.quant import metamodel as M
+        from masterquo.quant import numeric as N
+        m = manual_model(["ctx:hour_sin"], [0.3, 0.0], [0.5, 1.0], [2.0, 0.0])
+        got = M.predict(m, {})
+        self.assertAlmostEqual(got["p_event"], M.predict(m, {"ctx:hour_sin": 0.3})["p_event"], places=12)     # neutral, not value 0
+        self.assertAlmostEqual(got["p_event"], 0.5, places=12)
+        self.assertEqual(got["missing_never_seen"], ["ctx:hour_sin"])
+        self.assertAlmostEqual(got["legacy"]["p_event"], float(N.sigmoid((0.0 - 0.3) / 0.5 * 2.0)), places=12)    # the old value
+        self.assertNotIn("legacy", M.predict(m, {"ctx:hour_sin": 0.1}))                                       # present: unchanged
+
+    def test_feature_seen_missing_in_training_keeps_its_learned_mask(self):
+        from masterquo.quant import metamodel as M
+        m = manual_model(["a", "b"], [0.3, 0.1, 0.0, 0.25], [0.5, 0.2, 1.0, 0.4], [1.0, 0.5, 0.0, 0.7])
+        got = M.predict(m, {"a": 0.3})
+        self.assertEqual(got["missing_never_seen"], [])
+        x = [(0.3 - 0.3) / 0.5 * 1.0, (0.0 - 0.1) / 0.2 * 0.5, 0.0, (1.0 - 0.25) / 0.4 * 0.7]                     # value 0 + mask 1 as before
+        from masterquo.quant import numeric as N
+        self.assertAlmostEqual(got["p_event"], float(N.sigmoid(sum(x))), places=12)
+
+    def _service_with(self, model):
+        from masterquo.quant import events as QE
+        from masterquo.quant import metamodel as M
+        from test_arch146_fix_quant import AssessFixture
+        fx = AssessFixture()
+        fx.td = self.td
+        q = fx.service()
+        cd = fx.cand_dict({"state": "TREND_UP"})
+        th = QE.spec_from_candidate(cd).task_hash()
+        model = dict(model, task_hash=th)
+        M.activate("XAUUSD", th, M.save("XAUUSD", {"status": "VALIDATED_SHADOW", "model": model, "report": {"reproduction": []}},
+                                         spec={"task_hash": th}))
+        return q, cd
+
+    def test_assist_holds_when_a_never_missing_feature_is_missing(self):
+        m = manual_model(["ctx:hour_sin", "fc:not_in_this_snapshot:X:M5:edge"], [0.1, 0.2, 0.0, 0.0], [0.7, 0.3, 1.0, 1.0],
+                         [0.1, 0.1, 0.0, 0.0])
+        q, cd = self._service_with(m)
+        e = q.coordinator_entry("SH", cand=cd)
+        self.assertEqual(e["state"], "READY", e)
+        self.assertIn("brak cech obecnych w każdym wierszu treningu", e["quant_hold"] or "")
+        a = q.assess(cd, mode="SHADOW")
+        self.assertEqual(a["probability"]["status"], "DEGRADED_MISSING_FEATURES")
+        self.assertEqual(a["probability"]["missing_never_seen"], ["fc:not_in_this_snapshot:X:M5:edge"])
+        self.assertEqual(a["influence"], "NONE")                                                       # SHADOW: recorded only
+
+    def test_no_change_when_every_trained_feature_is_present(self):
+        m = manual_model(["ctx:hour_sin"], [0.1, 0.0], [0.7, 1.0], [0.1, 0.0])
+        q, cd = self._service_with(m)
+        a = q.assess(cd, mode="ASSIST")
+        self.assertEqual(a["probability"]["status"], "CALIBRATED_VALIDATED")
+        self.assertEqual(a["probability"]["missing_never_seen"], [])
+        self.assertIsNone(a["would_hold"])
+
+    def test_d4_evaluation_without_regime_keeps_the_pre_change_hold(self):
+        """The regime column was present in every training row: the D4 evaluation WITHOUT regime has it missing. The old computation
+        (value 0) holds there (E[net R] <= 0); the mean fill would not - the floor must stay the old one (never a looser gate)."""
+        ridge = {"scaler": {"mean": [0.5, 0.0], "scale": [0.5, 1.0]}, "coef": [1.0, 0.0], "intercept": 0.5, "alpha": 1.0, "resid_q": None}
+        m = manual_model(["ctx:regime_sh=TREND_UP"], [0.5, 0.0], [0.5, 1.0], [1.0, 0.0], ridge=ridge)
+        q, cd = self._service_with(m)
+        e = q.coordinator_entry("SH", cand=cd)
+        self.assertEqual(e["state"], "READY", e)
+        self.assertAlmostEqual(e["result"]["e_net_r"], 1.5)                                            # with the regime: no hold
+        self.assertIsNotNone(e["quant_hold"])
+        self.assertIn("bez reżimu", e["quant_hold"])
+        self.assertIn("E[net R] = -0.500", e["quant_hold"])                                            # value 0, exactly as before
+        self.assertNotIn("brak cech", e["quant_hold"])
+
+    def test_old_artifact_reproduction_stays_loadable(self):
+        """An artifact whose stored reproduction row lacks a never-missing feature (computed with value 0) still loads."""
+        from masterquo.quant import metamodel as M
+        m = manual_model(["ctx:hour_sin"], [0.3, 0.0], [0.5, 1.0], [2.0, 0.0])
+        old_out = M.predict(m, {})["legacy"]
+        ver = M.save("XAUUSD", {"status": "VALIDATED_SHADOW", "model": m, "report": {"reproduction": [{"features": {}, "out": old_out}]}},
+                     spec={"task_hash": "t"})
+        model, _ = M.load("XAUUSD", "t", ver)
+        self.assertEqual(model["feature_names"], ["ctx:hour_sin"])
+
+
 if __name__ == "__main__":
     unittest.main()

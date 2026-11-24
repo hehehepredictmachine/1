@@ -380,8 +380,10 @@ class QuantService:
                 a["status"] = "READY"
                 a["model"] = {"version": ver, "calibrator": model["calibrator"]["kind"], "feature_schema": model["feature_schema"], "feature_version": fv,
                               "test": {k: ((man.get("report") or {}).get("test_once") or {}).get(k) for k in ("log_loss", "prior_log_loss", "ece", "n")}}
-                a["probability"] = {"p": out["p_event"], "event_id": spec.event_id, "status": "CALIBRATED_VALIDATED", "coverage": out["coverage"],
-                                    "missing_features": out["missing_features"][:20], "interval": None,
+                never = list(out.get("missing_never_seen") or [])
+                a["probability"] = {"p": out["p_event"], "event_id": spec.event_id, "coverage": out["coverage"],
+                                    "status": "DEGRADED_MISSING_FEATURES" if never else "CALIBRATED_VALIDATED",
+                                    "missing_features": out["missing_features"][:20], "missing_never_seen": never[:20], "interval": None,
                                     "interval_reason": "brak zwalidowanej metody przedziału dla pojedynczej predykcji"}
                 R = spec.R
                 tg = [(float(p), float(w)) for p, w in spec.targets]
@@ -410,9 +412,17 @@ class QuantService:
                         return f"Quant: P({spec.event_id}) = {o['p_event']:.3f} < próg {be_p:.3f}"
                     return None
                 hold = hold_of(out)
+                if never:
+                    # 1.46 arch (I0530), fail-closed only: a feature present in every training row is missing now - the model never
+                    # learned that case (mask coefficient 0), the value is the training mean, the estimate is not trustworthy -> HOLD
+                    # (ASSIST); every candidate held before stays held (this replaces nothing, it only adds a hold)
+                    forced = (f"Quant: brak cech obecnych w każdym wierszu treningu ({', '.join(never[:5])}"
+                              f"{' …' if len(never) > 5 else ''}) – ocena niewiarygodna (model {ver})")
+                    hold = f"{hold}; {forced}" if hold else forced
                 if out_nr is not None:
-                    hold_nr = hold_of(out_nr)
-                    a["without_regime"] = {"p": out_nr["p_event"], "e_net_r": out_nr["e_net_r"], "would_hold": hold_nr,
+                    o_nr = out_nr.get("legacy") or out_nr       # D4 floor: exactly the pre-change evaluation (missing = 0, I0530)
+                    hold_nr = hold_of(o_nr)
+                    a["without_regime"] = {"p": o_nr["p_event"], "e_net_r": o_nr["e_net_r"], "would_hold": hold_nr,
                                            "rule": "D4: reżim w kandydacie SH tylko zaostrza – HOLD, gdy wstrzymuje którakolwiek ocena"}
                     if hold is None and hold_nr:
                         hold = f"{hold_nr} – ocena bez reżimu (D4: reżim tylko zaostrza)"
