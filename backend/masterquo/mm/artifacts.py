@@ -109,24 +109,21 @@ def _ptr_path(inst: str) -> Path:
     return root(inst) / "SHADOW_ACTIVE.json"
 
 
-def read_pointer(inst: str) -> dict:
-    try:
-        return json.loads(_ptr_path(inst).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"active": {}, "history": [], "events": []}
+def read_pointer(inst: str, *, strict: bool = False) -> dict:
+    """strict=True for the writers (1.46 arch): an unreadable SHADOW_ACTIVE.json raises instead of being rewritten as an empty pointer."""
+    from .. import registry_io as RIO
+    return RIO.read_json(_ptr_path(inst), lambda: {"active": {}, "history": [], "events": []}, strict=strict)
 
 
 def _write_ptr(inst: str, ptr: dict) -> None:
-    p = _ptr_path(inst)
-    # 1.46: a unique temporary file per write (was the fixed SHADOW_ACTIVE.tmp shared by the training process and the API rollback: two
-    # concurrent writers interleaved in one file / the second os.replace found no file). Read-modify-write is still not locked across
-    # processes (see the audit note).
-    tmp = p.with_name(f"{p.stem}.{uuid.uuid4().hex[:12]}.tmp")
-    try:
-        tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
-        os.replace(tmp, p)
-    finally:
-        tmp.unlink(missing_ok=True)                    # only left over when the write / replace failed
+    # 1.46: unique temporary file per write; 1.46 arch: the read-modify-write callers hold registry_io.file_lock (training process vs API)
+    from .. import registry_io as RIO
+    RIO.write_json_atomic(_ptr_path(inst), ptr)
+
+
+def _ptr_lock(inst: str):
+    from .. import registry_io as RIO
+    return RIO.file_lock(RIO.lock_for(_ptr_path(inst)))
 
 
 def promote_shadow(inst: str, model_id: str, aid: str, reason: str) -> dict:
@@ -134,25 +131,27 @@ def promote_shadow(inst: str, model_id: str, aid: str, reason: str) -> dict:
     _, man = load(inst, model_id, aid)
     if man.get("status") != "VALIDATED_SHADOW":
         raise ArtifactError(f"NOT_VALIDATED:{man.get('status')}")
-    ptr = read_pointer(inst)
-    prev = ptr["active"].get(model_id)
-    if prev and prev != aid:
-        ptr["history"].append({"model_id": model_id, "artifact_id": prev, "at": time.time()})
-    ptr["active"][model_id] = aid
-    ptr["events"].append({"at": time.time(), "model_id": model_id, "from": prev, "to": aid, "reason": reason})
-    _write_ptr(inst, ptr)
+    with _ptr_lock(inst):
+        ptr = read_pointer(inst, strict=True)
+        prev = ptr["active"].get(model_id)
+        if prev and prev != aid:
+            ptr["history"].append({"model_id": model_id, "artifact_id": prev, "at": time.time()})
+        ptr["active"][model_id] = aid
+        ptr.setdefault("events", []).append({"at": time.time(), "model_id": model_id, "from": prev, "to": aid, "reason": reason})
+        _write_ptr(inst, ptr)
     return ptr
 
 
 def rollback(inst: str, model_id: str) -> dict:
-    ptr = read_pointer(inst)
-    hist = [h for h in ptr["history"] if h["model_id"] == model_id and (path(inst, model_id, h["artifact_id"]) / "manifest.json").exists()]
-    if not hist:
-        raise ArtifactError(f"NO_PREVIOUS_ARTIFACT:{model_id}")
-    last = hist[-1]
-    ptr["history"].remove(last)
-    cur = ptr["active"].get(model_id)
-    ptr["active"][model_id] = last["artifact_id"]
-    ptr["events"].append({"at": time.time(), "model_id": model_id, "from": cur, "to": last["artifact_id"], "reason": "ROLLBACK"})
-    _write_ptr(inst, ptr)
+    with _ptr_lock(inst):
+        ptr = read_pointer(inst, strict=True)
+        hist = [h for h in ptr["history"] if h["model_id"] == model_id and (path(inst, model_id, h["artifact_id"]) / "manifest.json").exists()]
+        if not hist:
+            raise ArtifactError(f"NO_PREVIOUS_ARTIFACT:{model_id}")
+        last = hist[-1]
+        ptr["history"].remove(last)
+        cur = ptr["active"].get(model_id)
+        ptr["active"][model_id] = last["artifact_id"]
+        ptr.setdefault("events", []).append({"at": time.time(), "model_id": model_id, "from": cur, "to": last["artifact_id"], "reason": "ROLLBACK"})
+        _write_ptr(inst, ptr)
     return ptr

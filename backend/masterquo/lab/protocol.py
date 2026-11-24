@@ -317,16 +317,23 @@ def pointer_path(root: Path, asset: str) -> Path:
     return Path(root) / "models" / asset / "ACTIVE.json"
 
 
-def read_pointer(root: Path, asset: str) -> dict:
-    try:
-        return json.loads(pointer_path(root, asset).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"active": {}, "history": []}
+def read_pointer(root: Path, asset: str, *, strict: bool = False) -> dict:
+    """strict=True for every writer (1.46 arch): an unreadable ACTIVE.json raises instead of becoming an empty pointer that is written
+    back (the active models and the rollback history were lost - masterquo/registry_io.py)."""
+    from .. import registry_io as RIO
+    return RIO.read_json(pointer_path(root, asset), lambda: {"active": {}, "history": []}, strict=strict)
 
 
 def set_active(root: Path, asset: str, family: str, model_id: str | None, reason: str) -> dict:
     """Atomic pointer update; the previous model of the family is kept in history (rollback)."""
-    ptr = read_pointer(root, asset)
+    from .. import registry_io as RIO
+    with RIO.file_lock(RIO.lock_for(pointer_path(root, asset))):
+        return _set_active(root, asset, family, model_id, reason)
+
+
+def _set_active(root: Path, asset: str, family: str, model_id: str | None, reason: str) -> dict:
+    from .. import registry_io as RIO
+    ptr = read_pointer(root, asset, strict=True)
     prev = ptr["active"].get(family)
     if model_id and not (Path(root) / "models" / asset / model_id / "manifest.json").exists():
         raise ValueError(f"UNKNOWN_MODEL:{model_id}")
@@ -337,26 +344,21 @@ def set_active(root: Path, asset: str, family: str, model_id: str | None, reason
     else:
         ptr["active"].pop(family, None)
     ptr.setdefault("events", []).append({"at": now(), "family": family, "from": prev, "to": model_id, "reason": reason})
-    p = pointer_path(root, asset)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
-    os.replace(tmp, p)
+    RIO.write_json_atomic(pointer_path(root, asset), ptr)
     return ptr
 
 
 def rollback_family(root: Path, asset: str, family: str) -> dict:
     """Previous model of this asset x family back as active (the replaced one goes to history)."""
-    ptr = read_pointer(root, asset)
-    hist = [h for h in ptr["history"] if h["family"] == family and (Path(root) / "models" / asset / h["model_id"]).exists()]
-    if not hist:
-        raise ValueError(f"NO_PREVIOUS_MODEL:{asset}:{family}")
-    ptr["history"].remove(hist[-1])
-    p = pointer_path(root, asset)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(ptr, indent=1), encoding="utf-8")
-    os.replace(tmp, p)
-    return set_active(root, asset, family, hist[-1]["model_id"], "ROLLBACK")
+    from .. import registry_io as RIO
+    with RIO.file_lock(RIO.lock_for(pointer_path(root, asset))):
+        ptr = read_pointer(root, asset, strict=True)
+        hist = [h for h in ptr["history"] if h["family"] == family and (Path(root) / "models" / asset / h["model_id"]).exists()]
+        if not hist:
+            raise ValueError(f"NO_PREVIOUS_MODEL:{asset}:{family}")
+        ptr["history"].remove(hist[-1])
+        RIO.write_json_atomic(pointer_path(root, asset), ptr)
+        return _set_active(root, asset, family, hist[-1]["model_id"], "ROLLBACK")
 
 
 # ----------------------------------------------------------------------------- the study

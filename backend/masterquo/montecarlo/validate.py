@@ -310,10 +310,16 @@ def save(inst: str, rep: dict) -> dict:
     d = root(inst) / "runs" / rid
     _write(d / "report.json", rep)
     reg_p = root(inst) / "registry.json"
-    try:
-        reg = json.loads(reg_p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        reg = {"active": None, "history": [], "runs": {}}
+    from .. import registry_io as RIO
+    with RIO.file_lock(RIO.lock_for(reg_p)):
+        # 1.46 arch: strict - an unreadable registry.json was replaced by an empty one (active calibrator + every run lost)
+        reg = RIO.read_json(reg_p, lambda: {"active": None, "history": [], "runs": {}}, strict=True)
+        return _save_locked(rep, rid, d, reg_p, reg)
+
+
+def _save_locked(rep: dict, rid: str, d: Path, reg_p: Path, reg: dict) -> dict:
+    reg.setdefault("runs", {})
+    reg.setdefault("history", [])
     activate = rep.get("status") == "DONE" and rep.get("data_kind") == "REAL_USER_DATA" and rep.get("verdict") == "PRZEWAGA_NAD_BAZOWYM"
     reg["runs"][rid] = {"created_at": datetime.now(timezone.utc).isoformat(), "status": rep.get("status"), "verdict": rep.get("verdict"),
                         "variant": rep.get("chosen_variant"), "data_kind": rep.get("data_kind"), "dataset_id": rep.get("dataset_id"),

@@ -455,43 +455,60 @@ def _ptr(inst: str) -> Path:
     return root(inst) / "ACTIVE.json"
 
 
-def pointer(inst: str) -> dict:
-    try:
-        return json.loads(_ptr(inst).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+def pointer(inst: str, *, strict: bool = False) -> dict:
+    """strict=True for the writers (1.46 arch): an unreadable ACTIVE.json raises instead of being rewritten empty (active versions,
+    rollback history and the seen-test list that forbids reusing a TEST block were lost - masterquo/registry_io.py)."""
+    from .. import registry_io as RIO
+
+    def empty():
         return {"active": {}, "history": [], "seen_tests": {}}
+    try:
+        p = _ptr(inst)
+    except ValueError:                                  # MetaError: an invalid instrument name - the read side shows nothing (1.46)
+        if strict:
+            raise
+        return empty()
+    return RIO.read_json(p, empty, strict=strict)
+
+
+def _ptr_lock(inst: str):
+    from .. import registry_io as RIO
+    return RIO.file_lock(RIO.lock_for(_ptr(inst)))
 
 
 def activate(inst: str, task_hash: str, ver: str) -> dict:
     model, man = load(inst, task_hash, ver)
     if man["status"] != "VALIDATED_SHADOW":
         raise MetaError(f"NOT_VALIDATED:{man['status']}")
-    p = pointer(inst)
-    prev = p["active"].get(task_hash)
-    if prev:
-        p["history"].append({"task_hash": task_hash, "version": prev, "replaced_at": time.time()})
-    p["active"][task_hash] = ver
-    write_json_atomic(_ptr(inst), p)
+    with _ptr_lock(inst):
+        p = pointer(inst, strict=True)
+        prev = p["active"].get(task_hash)
+        if prev:
+            p["history"].append({"task_hash": task_hash, "version": prev, "replaced_at": time.time()})
+        p["active"][task_hash] = ver
+        write_json_atomic(_ptr(inst), p)
     return p
 
 
 def rollback(inst: str, task_hash: str) -> dict:
-    p = pointer(inst)
-    hist = [h for h in p["history"] if h["task_hash"] == task_hash]
-    if hist:
-        last = hist[-1]
-        p["history"].remove(last)
-        p["active"][task_hash] = last["version"]
-    else:
-        p["active"].pop(task_hash, None)
-    write_json_atomic(_ptr(inst), p)
+    with _ptr_lock(inst):
+        p = pointer(inst, strict=True)
+        hist = [h for h in p["history"] if h["task_hash"] == task_hash]
+        if hist:
+            last = hist[-1]
+            p["history"].remove(last)
+            p["active"][task_hash] = last["version"]
+        else:
+            p["active"].pop(task_hash, None)
+        write_json_atomic(_ptr(inst), p)
     return p
 
 
 def record_test(inst: str, task_hash: str, ids: list[str]) -> None:
-    p = pointer(inst)
-    p.setdefault("seen_tests", {}).setdefault(task_hash, []).append(ids)
-    write_json_atomic(_ptr(inst), p)
+    with _ptr_lock(inst):
+        p = pointer(inst, strict=True)
+        p.setdefault("seen_tests", {}).setdefault(task_hash, []).append(ids)
+        write_json_atomic(_ptr(inst), p)
 
 
 def list_versions(inst: str) -> list[dict]:

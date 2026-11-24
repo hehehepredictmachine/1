@@ -12,12 +12,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import platform
 import re
 import shutil
 import sys
-import threading
 import time
 import zipfile
 from contextlib import contextmanager
@@ -130,61 +128,15 @@ def _save_reg(inst: str, reg: dict) -> None:
     atomic_json(_reg_path(inst), reg)
 
 
-_REG_TLOCK = threading.RLock()
-_REG_HELD = threading.local()
-
-
 @contextmanager
 def reg_lock(inst: str, timeout_s: float = 60.0):
     """1.46: registry.json was rewritten read-modify-write without any lock while the training process (save_package) and the panel
     (activate / rollback / deactivate / remove_version) wrote it concurrently - the later writer dropped the other's new version or
-    activation. One exclusive OS file lock per instrument (models/<inst>/registry.lock: fcntl.flock / msvcrt.locking - released by the
-    OS when a process dies) plus a thread lock; re-entrant in the same thread. Hold it only for re-read -> change -> save."""
-    with _REG_TLOCK:
-        held = _REG_HELD.__dict__.setdefault("n", {})               # per instrument: this thread already holds its file lock
-        if held.get(inst):
-            held[inst] += 1
-            try:
-                yield
-            finally:
-                held[inst] -= 1
-            return
-        p = _reg_path(inst).with_name("registry.lock")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        f = open(p, "a+b")  # noqa: SIM115 - the handle IS the lock, closed in finally
-        try:
-            if os.name == "nt":
-                import msvcrt
-                f.seek(0)
-                end = time.monotonic() + timeout_s
-                while True:
-                    try:
-                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                        break
-                    except OSError:
-                        if time.monotonic() > end:
-                            raise TimeoutError(f"rejestr modeli {inst} zajęty przez inny proces dłużej niż {timeout_s:.0f} s") from None
-                        time.sleep(0.05)
-            else:
-                import fcntl
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            held[inst] = 1
-            try:
-                yield
-            finally:
-                held[inst] = 0
-                try:
-                    if os.name == "nt":
-                        import msvcrt
-                        f.seek(0)
-                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-                    else:
-                        import fcntl
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                except OSError:
-                    pass                                   # closing the handle releases the lock anyway
-        finally:
-            f.close()
+    activation. One exclusive OS file lock per instrument (models/<inst>/registry.lock) plus a thread lock; re-entrant in the same
+    thread. 1.46 arch: the implementation moved to masterquo/registry_io.file_lock (one lock for every registry of the bot)."""
+    from .. import registry_io as RIO
+    with RIO.file_lock(_reg_path(inst).with_name("registry.lock"), timeout_s):
+        yield
 
 
 def registry(inst: str) -> dict:
