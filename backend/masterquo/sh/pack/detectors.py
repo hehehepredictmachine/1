@@ -493,8 +493,12 @@ def value_area_rejection(X, vid, tf, mir, cfg) -> Det:
             return r
     prof = X.prev_session_profile(float(p.get("value_area_pct", 0.70)), int(p.get("bin_ticks", 10)))
     if prof.get("status") not in ("READY",) or prof.get("val") is None:
-        _cl(cl, "profile", "Profil poprzedniej sesji", "FAIL", prof.get("reason") or str(prof.get("status")))
-        return _done("NO_DATA", "NO_PROFILE", f"profil poprzedniej sesji niedostępny: {prof.get('reason') or prof.get('status')}", cl)
+        why = prof.get("reason") or str(prof.get("status"))
+        gap = X.prev_day_gap_note()                    # 1.46 arch (I0744, text only): name the weekend / holiday gap; status unchanged
+        if gap:
+            why = f"{why} ({gap})"
+        _cl(cl, "profile", "Profil poprzedniej sesji", "FAIL", why)
+        return _done("NO_DATA", "NO_PROFILE", f"profil poprzedniej sesji niedostępny: {why}", cl)
     VAL, POC, VAH = (prof["val"], prof["poc"], prof["vah"]) if not mir else (-prof["vah"], -prof["poc"], -prof["val"])
     _cl(cl, "profile", "Profil poprzedniej sesji (zamrożony)", "PASS", f"VAL {prof['val']} POC {prof['poc']} VAH {prof['vah']} ({prof.get('volume_source')})")
     i = v.n - 1

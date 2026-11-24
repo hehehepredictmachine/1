@@ -701,5 +701,58 @@ class TestI0777DecisionSnapshotAtSend(unittest.TestCase):
         self.assertEqual(len(self.sent), 2)
 
 
+# ------------------------------------------------------------------ I0744 (safe variant: extra target obstacle only + reason text)
+class TestI0744MondayPreviousDay(unittest.TestCase):
+    @staticmethod
+    def _bars(start_utc, n, base, hi_bump=0.0):
+        from datetime import UTC, datetime, timedelta
+        t0 = datetime.fromisoformat(start_utc).replace(tzinfo=UTC)
+        out = []
+        for i in range(n):
+            px = base + (hi_bump if i == n // 2 else 0.0)
+            out.append({"open_utc": (t0 + timedelta(minutes=5 * i)).isoformat().replace("+00:00", "Z"), "o": base, "h": px + 0.5, "l": base - 0.5,
+                        "c": base, "tv": 10})
+        return out
+
+    def _ctx(self, as_of_utc, bars):
+        from datetime import UTC, datetime
+
+        from masterquo.sh.pack import features as F
+        as_of = datetime.fromisoformat(as_of_utc).replace(tzinfo=UTC).timestamp()
+        return F.Context({"M5": bars}, tick=0.01, common={"trading_day": {"tz": "America/New_York", "start": "17:00"}}, as_of=as_of)
+
+    def _obst(self, X, E):
+        from types import SimpleNamespace as NS
+
+        from masterquo.sh.pack.engine import PackEngine
+        v = NS(swings=lambda *a: [], n=0, name="M5")                               # isolate the previous-day candidate
+        return PackEngine._obstacle(None, X, v, [], False, E)
+
+    def test_monday_gets_the_last_traded_day_as_obstacle(self):
+        fri = self._bars("2026-11-20T14:00:00", 36, 2050.0, hi_bump=40.0)            # Friday 09:00-12:00 NY, high 2090.5
+        mon = self._bars("2026-11-22T23:00:00", 180, 2050.0)                         # Sunday 18:00 NY -> Monday session
+        X = self._ctx("2026-11-23T14:05:00", fri + mon)
+        self.assertEqual(X.prev_day_range(False), (None, None))                    # detection input unchanged (S0)
+        hi, lo, _day = X.last_traded_day_range(False)
+        self.assertEqual((hi, lo), (2090.5, 2049.5))
+        lvl, src = self._obst(X, 2051.0)
+        self.assertEqual(lvl, 2090.5)                                               # 1.45: (None, None) - no obstacle at all
+        self.assertIn("weekend", src)
+        self.assertIn("weekend", X.prev_day_gap_note())
+
+    def test_other_days_unchanged_and_never_looser(self):
+        mon = self._bars("2026-11-23T14:00:00", 36, 2050.0, hi_bump=20.0)            # Monday 09:00-12:00 NY
+        tue = self._bars("2026-11-23T23:00:00", 100, 2050.0)
+        X = self._ctx("2026-11-24T14:05:00", mon + tue)
+        self.assertEqual(self._obst(X, 2051.0), (2070.5, "maksimum poprzedniej doby"))   # as in 1.45
+        self.assertIsNone(X.prev_day_gap_note())
+        self.assertEqual(self._obst(X, 2080.0), (None, None))                       # previous high below entry: no fallback (as 1.45)
+
+    def test_profile_reason_names_the_gap_but_status_is_unchanged(self):
+        from masterquo.sh.pack import detectors as D
+        src = __import__("inspect").getsource(D)
+        self.assertIn('_done("NO_DATA", "NO_PROFILE"', src)                          # same status / reason code, only the text grows
+
+
 if __name__ == "__main__":
     unittest.main()
