@@ -32,12 +32,14 @@ log = logging.getLogger("masterquo.signals")
 OPEN_STATES = ("OPEN",)
 SIGNAL_EVENTS = ("NEW_CONFIRMED", "STAGE_CONFIRMED")
 STRATEGY_TFS = {"M5": 400, "M15": 400, "M30": 400, "H1": 400, "H4": 300, "H8": 300, "D1": 420}
+TRACK_TF_S = 900                     # tracking bars: M15
+TRACK_MAX_BARS = 10000               # 1.46: bars read for tracking cover the whole hold window (max_hold_hours <= 720 h = 2880 M15 bars)
 
 
 # ---------------------------------------------------------------------------------------------- validation
 def validate(rec: dict, bid: float | None, ask: float | None, atr_setup: float | None, min_rr: float) -> dict:
-    """min_rr = the bot's risk.rr_block_below; R:R = sum(weight x reward) / risk over the strategy's targets (gross)."""
-    """Checks of a CONFIRMED setup turned into a market signal. Returns {ok, reasons, entry, risk, rr}."""
+    """Checks of a CONFIRMED setup turned into a market signal. Returns {ok, reasons, entry, risk, rr}.
+    min_rr = the bot's risk.rr_block_below; R:R = sum(weight x reward) / risk over the strategy's targets (gross)."""
     reasons = []
     if bid is None or ask is None:
         return {"ok": False, "reasons": ["NO_QUOTE"], "rr": []}
@@ -73,7 +75,7 @@ def validate(rec: dict, bid: float | None, ask: float | None, atr_setup: float |
 def evaluate(sig: dict, bars: list[dict], now_iso: str, max_hold_hours: int) -> dict | None:
     """Advance an OPEN signal on closed M15 Bid bars opening at/after the signal. Returns field updates or None.
     SL and TP in one bar = loss (order unknown). The last target closes as WIN, earlier targets are recorded in tp_hit.
-    After max_hold_hours the signal is closed at the last close (TIMEOUT)."""
+    After max_hold_hours the signal is closed (TIMEOUT) at the close of the last bar that opened by the end of the hold window."""
     if sig["status"] not in OPEN_STATES:
         return None
     long = sig["action"] == "BUY"
@@ -81,11 +83,16 @@ def evaluate(sig: dict, bars: list[dict], now_iso: str, max_hold_hours: int) -> 
     tps = json.loads(sig["take_profits_json"] or "[]")
     risk = abs(entry - sl)
     t0 = parse_iso(sig["created_at"])
+    end = t0 + timedelta(hours=max_hold_hours)
     tp_hit = sig.get("tp_hit") or 0
     upd: dict = {}
     for b in sorted((b for b in bars if b.get("closed") and b.get("open_utc")), key=lambda b: b["open_utc"]):
         if parse_iso(b["open_utc"]) < t0:
             continue
+        if parse_iso(b["open_utc"]) > end:
+            # 1.46: bars after the hold window are not this signal's outcome - after a pause of tracking (app closed, MT5 disconnected)
+            # an SL / TP touched AFTER max_hold_hours was booked as LOSS / WIN
+            break
         if (b["l"] <= sl) if long else (b["h"] >= sl):
             return {**upd, "status": "LOSS", "closed_at": b["open_utc"], "exit_price": sl, "outcome_r": -1.0, "tp_hit": tp_hit}
         hits = [i for i, t in enumerate(tps) if ((b["h"] >= t) if long else (b["l"] <= t))]
@@ -97,12 +104,19 @@ def evaluate(sig: dict, bars: list[dict], now_iso: str, max_hold_hours: int) -> 
             if k + 1 > tp_hit:
                 tp_hit = k + 1
                 upd["tp_hit"] = tp_hit
-    if parse_iso(now_iso) - t0 >= timedelta(hours=max_hold_hours):
-        last = next((b for b in reversed(bars) if b.get("closed")), None)
+    if parse_iso(now_iso) >= end:
+        # 1.46: TIMEOUT at the price of the end of the window: the close of the last CLOSED bar that opened by then (was: the last closed
+        # bar at the time tracking resumed - after a pause any later price). With tracking running (every 60 s) it is the same bar as
+        # before; only after a pause does it differ.
+        timed = [b for b in bars if b.get("closed") and b.get("open_utc")]
+        last = max((b for b in timed if parse_iso(b["open_utc"]) <= end), key=lambda b: b["open_utc"], default=None)
         if last:
             px = last["c"]
             r = ((px - entry) if long else (entry - px)) / risk if risk else None
             return {**upd, "status": "TIMEOUT", "closed_at": last["open_utc"], "exit_price": px, "outcome_r": None if r is None else round(r, 2)}
+        if timed:
+            # 1.46: the bars read no longer reach back to the end of the window - its price is unknown (null), never a later price
+            return {**upd, "status": "TIMEOUT", "closed_at": iso(end), "exit_price": None, "outcome_r": None}
     return upd or None
 
 
@@ -113,7 +127,9 @@ def stats(rows: list[dict]) -> dict:
     def oc(r):
         if r["status"] in ("WIN", "LOSS"):
             return r["status"]
-        x = r["outcome_r"] or 0.0
+        x = r["outcome_r"]
+        if x is None:                       # 1.46: unknown exit price = no result (was counted as breakeven: 0 for missing data)
+            return "NA"
         return "BE" if abs(x) <= 0.05 else ("WIN" if x > 0 else "LOSS")
     o = [oc(r) for r in done]
     wins, losses, be = o.count("WIN"), o.count("LOSS"), o.count("BE")
@@ -320,8 +336,15 @@ class BotSignalService:
             by_symbol.setdefault(r["symbol"], []).append(dict(r))
         now = iso(utcnow())
         for sym, sigs in by_symbol.items():
+            # 1.46: enough M15 bars to reach back to the oldest open signal of the symbol (was a fixed 400 = 100 h, while max_hold_hours
+            # may be up to 720 h - after a longer pause part of the window was never checked)
             try:
-                bars = self.bridge.symbol_bars(sym, "M15", 400)
+                oldest = min(parse_iso(s["created_at"]) for s in sigs)
+                n = int((parse_iso(now) - oldest).total_seconds() // TRACK_TF_S) + 8
+            except (TypeError, ValueError):
+                n = 400
+            try:
+                bars = self.bridge.symbol_bars(sym, "M15", max(400, min(TRACK_MAX_BARS, n)))
             except Exception:
                 continue
             for s in sigs:

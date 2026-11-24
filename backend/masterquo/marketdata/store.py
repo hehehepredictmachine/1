@@ -194,13 +194,6 @@ class Store:
                 return max(r)
         return None
 
-    def first_time(self, inst: str, tf: str) -> int | None:
-        for key in self.parts(inst, tf):
-            r = self._read_part(inst, tf, key)
-            if r:
-                return min(r)
-        return None
-
     # ------------------------------------------------------------------ manifest
     def file_checksums(self, inst: str) -> dict:
         out = {}

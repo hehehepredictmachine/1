@@ -82,7 +82,10 @@ def _iso(ts) -> str | None:
     if ts is None:
         return None
     from datetime import datetime, timezone
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    except (OverflowError, OSError, ValueError, TypeError):    # 1.46: a date outside the platform's range is "unknown", not a crash
+        return None
 
 
 class LicenseGate:
@@ -135,9 +138,9 @@ class LicenseGate:
         st.update(kw)
         return st
 
-    def _evaluate(self, key: str | None, *, refresh_net: bool = False) -> tuple[dict, dict | None]:
-        """(stan, nowe_dane_pliku|None). Nie zapisuje."""
-        store = self._read()
+    def _evaluate(self, key: str | None, *, refresh_net: bool = False, store: dict | None = None) -> tuple[dict, dict | None]:
+        """(stan, nowe_dane_pliku|None). Nie zapisuje. `store` = już odczytana zawartość license.dat (inaczej odczyt tutaj)."""
+        store = self._read() if store is None else store
         key = key if key is not None else store.get("key")
         pub, perr = public_key()
         if pub is None:
@@ -187,14 +190,23 @@ class LicenseGate:
             with self._lock:
                 self._state = self._owner_state()
                 return dict(self._state)
-        st, store = self._evaluate(None, refresh_net=refresh_net)
-        with self._lock:
-            was = bool(self._state.get("valid"))
-            if store is not None and store.get("key"):
-                self._write(store)
-            self._state = st
-        self._transition(was, st)
-        return dict(st)
+        for attempt in range(3):
+            snap = self._read()
+            st, store = self._evaluate(None, refresh_net=refresh_net and attempt == 0, store=snap)
+            with self._lock:
+                # 1.46: race with activate() (or another process, e.g. Studio): the check above runs OUTSIDE the lock (internet time up to
+                # ~3.5 s) on the key read at its start. When license.dat got a NEW key meanwhile, writing `store` back restored the OLD key
+                # and the old key's state locked the program again. A changed file -> nothing is written, the new content is evaluated.
+                if self._read() != snap:
+                    continue
+                was = bool(self._state.get("valid"))
+                if store is not None and store.get("key"):
+                    self._write(store)
+                self._state = st
+            self._transition(was, st)
+            return dict(st)
+        with self._lock:                                            # the key kept changing: keep the state set by the writer
+            return dict(self._state or st)
 
     def activate(self, key: str) -> dict:
         """Aktywacja wklejonego klucza. Zły klucz NIE nadpisuje zapisanego (Zmień klucz)."""

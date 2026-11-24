@@ -1,7 +1,8 @@
-"""MT5 -> candle store export (PMW-MD-EXPORT-1): historical (from..to) and incremental (from the last stored bar), M1/M5/M15/M30
-(H1/H4/D1 optional), chunked (<= 7200 bars per request), each chunk retried with backoff, checkpointed - an interrupted export resumes
-at the first chunk that is not done. UTC everywhere: broker server time is converted with the measured offset and the server's DST
-convention (NY_CLOSE vs UNIFORM, detected from the history - forecast.export.dst_model_probe), frozen for the whole run.
+"""MT5 -> candle store export (PMW-MD-EXPORT-1): historical (from..to) and incremental (from the last stored bar), M1/M3/M5/M15/M30
+(H1 optional; H4/D1 are refused - see SERVER_GRID_TFS), chunked (<= 7200 bars per request), each chunk retried with backoff,
+checkpointed - an interrupted export resumes at the first chunk that is not done. UTC everywhere: broker server time is converted
+with the measured offset and the server's DST convention (NY_CLOSE vs UNIFORM, detected from the history -
+forecast.export.dst_model_probe), frozen for the whole run.
 
 * Only CLOSED candles: the cutoff is the open time of the candle forming at the start of the run.
 * Rows are merged into the store by (instrument, timeframe, time) - repeated exports never duplicate.
@@ -23,6 +24,10 @@ from .store import SCHEMA_VERSION, TF_SECONDS, Store, atomic_json, iso, read_jso
 
 EXPORT_TFS = ("M1", "M3", "M5", "M15", "M30")
 CHUNK_BARS = 7200
+# 1.46: MT5 opens H4 / D1 candles on the SERVER time grid (server midnight = 21:00/22:00 UTC); the store keeps candles on the UTC grid of
+# their timeframe (closed-candle cutoff, dedup, quality.report misaligned_to_tf). 1.45.0 accepted them and then dropped every one of them
+# silently (u % step != 0) - the export ended COMPLETE with 0 rows. They are refused explicitly until the store supports server-grid TFs.
+SERVER_GRID_TFS = ("H4", "D1")
 MARGIN_S = 4 * 3600
 LOCK_STALE_S = 600
 
@@ -45,7 +50,8 @@ def time_model(source, symbol: str, now: float, previous: dict | None) -> dict:
     from ..forecast.export import dst_model_probe
     off, basis = source.offset(symbol)
     if off is None:
-        raise SourceError("nie można ustalić offsetu czasu serwera MT5 (brak notowań?) – uruchom eksport przy otwartym rynku")
+        raise SourceError(f"nie można ustalić offsetu czasu serwera MT5 ({basis}; brak notowań albo niespójny pomiar zegara) – uruchom "
+                          "eksport przy otwartym rynku")
     probe = {}
     try:
         probe = source.call(lambda m: dst_model_probe(m, symbol, datetime.fromtimestamp(now, timezone.utc)))
@@ -71,7 +77,7 @@ def _windows(start: int, end: int, step: int) -> list[tuple[int, int]]:
     return out
 
 
-def _fetch(source, symbol: str, tf: str, a: int, b: int, cutoff: int, tm: dict, sleep) -> list[tuple]:
+def _fetch(source, symbol: str, tf: str, a: int, b: int, cutoff: int, tm: dict, sleep, stats: dict | None = None) -> list[tuple]:
     from ..diagnostics import server_to_utc
     step = TF_SECONDS[tf]
     off = tm["offset_seconds"]
@@ -86,7 +92,11 @@ def _fetch(source, symbol: str, tf: str, a: int, b: int, cutoff: int, tm: dict, 
     for x in r:
         raw = int(x["time"])
         u, _, amb = server_to_utc(raw, tm["model"], off)
-        if a <= u < b and u < cutoff and u % step == 0:                  # closed candles of this window only
+        if a <= u < b and u < cutoff and u % step:
+            if stats is not None:                                        # 1.46: counted - was dropped without a trace
+                stats["misaligned"] = stats.get("misaligned", 0) + 1
+            continue
+        if a <= u < b and u < cutoff:                                    # closed candles of this window only
             out.append((u, float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"]), int(x["tick_volume"]),
                         int(x["spread"]) if "spread" in names else 0, int(x["real_volume"]) if "real_volume" in names else 0, raw, int(amb)))
     return out
@@ -120,6 +130,10 @@ def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPOR
     tfs = [t for t in timeframes if t in TF_SECONDS]
     if not tfs:
         raise ValueError("brak interwałów do eksportu")
+    bad_tfs = [t for t in tfs if t in SERVER_GRID_TFS]
+    if bad_tfs:                                     # 1.46: refused with a reason instead of "COMPLETE" with 0 rows (see SERVER_GRID_TFS)
+        raise ValueError(f"UNSUPPORTED_TF: {', '.join(bad_tfs)} – eksport świec do magazynu obsługuje M1–H1; świece MT5 H4/D1 otwierają się "
+                         "na siatce czasu serwera, a magazyn przechowuje świece na siatce UTC")
     t_start = _ts(start)
     t_end = _ts(end)
     if mode == "historical" and t_start is None:
@@ -176,7 +190,7 @@ def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPOR
             a, cutoff = frozen["ranges"][tf]
             wins = _windows(a, cutoff, step)
             acc = {"requested_from_utc": iso(a), "requested_to_utc": iso(cutoff), "chunks": len(wins), "chunks_skipped_done": 0, "received": 0,
-                   "added": 0, "duplicates": 0, "conflicts": 0, "invalid": 0, "conflict_list": [], "invalid_list": []}
+                   "added": 0, "duplicates": 0, "conflicts": 0, "invalid": 0, "misaligned": 0, "conflict_list": [], "invalid_list": []}
             for (wa, wb) in wins:
                 k_chunk += 1
                 if cancel and cancel():
@@ -184,7 +198,9 @@ def _run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPOR
                 if (wa, wb) in done.get(tf, set()):
                     acc["chunks_skipped_done"] += 1
                     continue
-                rows = _fetch(source, symbol, tf, wa, wb, cutoff, tm, sleep)
+                fst: dict = {}
+                rows = _fetch(source, symbol, tf, wa, wb, cutoff, tm, sleep, fst)
+                acc["misaligned"] += fst.get("misaligned", 0)
                 ok, bad = Q.check_rows(rows)
                 m = store.merge(instrument, tf, ok)
                 acc["received"] += len(rows)
@@ -290,18 +306,20 @@ def import_folder(store: Store, instrument: str, src) -> dict:
     from pathlib import Path
     src = Path(src)
     tmp = None
-    if src.is_file() and src.suffix.lower() == ".zip":
-        tmp = Path(tempfile.mkdtemp(prefix="pmw_import_"))
-        with zipfile.ZipFile(src) as z:
-            for n in z.namelist():
-                if n.startswith("/") or ".." in Path(n).parts:
-                    raise ValueError(f"niebezpieczna ścieżka w archiwum: {n}")
-            z.extractall(tmp)
-        cands = [p.parent for p in tmp.rglob("manifest.json")]
-        if not cands:
-            raise ValueError("w archiwum nie ma manifest.json")
-        src = cands[0]
     try:
+        # 1.46: the temporary folder is created INSIDE try - a bad path in the archive, a missing manifest.json or a broken zip left
+        # pmw_import_* behind in %TEMP% (the cleanup in finally was never reached)
+        if src.is_file() and src.suffix.lower() == ".zip":
+            tmp = Path(tempfile.mkdtemp(prefix="pmw_import_"))
+            with zipfile.ZipFile(src) as z:
+                for n in z.namelist():
+                    if n.startswith("/") or ".." in Path(n).parts:
+                        raise ValueError(f"niebezpieczna ścieżka w archiwum: {n}")
+                z.extractall(tmp)
+            cands = [p.parent for p in tmp.rglob("manifest.json")]
+            if not cands:
+                raise ValueError("w archiwum nie ma manifest.json")
+            src = cands[0]
         other = Store(src.parent)
         name = src.name
         man = other.manifest(name)

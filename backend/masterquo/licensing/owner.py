@@ -16,6 +16,7 @@ import sqlite3
 import sys
 import threading
 import time
+from contextlib import closing
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -81,19 +82,30 @@ def parse_key_file(text: str) -> tuple[bytes, bytes]:
     return seed, pub
 
 
-def _write_private(p: Path, text: str) -> None:
+def _write_private(p: Path, text: str | bytes) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + f".{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="ascii", newline="\n") as f:
-        f.write(text)
+    if isinstance(text, bytes):                              # 1.46: raw copy of a damaged key file (kept byte for byte)
+        with os.fdopen(fd, "wb") as f:
+            f.write(text)
+    else:
+        with os.fdopen(fd, "w", encoding="ascii", newline="\n") as f:
+            f.write(text)
     os.replace(tmp, p)
     if os.name != "nt":
         os.chmod(p, 0o600)
 
 
 def _iso(ts: float | None) -> str | None:
-    return None if ts is None else datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    except (OverflowError, OSError, ValueError, TypeError):
+        # 1.46: "Sprawdź klucz" reads the data of ANY pasted key (also with a bad signature); iat/exp outside the platform's date range
+        # raised here -> HTTP 500. Such a date is shown as unknown (the key itself is reported invalid by read_license).
+        return None
 
 
 class OwnerLicenses:
@@ -168,13 +180,27 @@ class OwnerLicenses:
         if k is None:
             raise LicenseInputError("keys", "brak klucza do eksportu")
         stamp = datetime.fromtimestamp(self.clock()).strftime("%Y%m%d")
-        return {"filename": f"PepeMarketWizard_klucz_prywatny_{stamp}.key", "content": self.key_path.read_text(encoding="ascii"),
+        # 1.46: display name in the suggested file name (the owner folder %APPDATA%\PepeMarketWizard\owner is unchanged)
+        return {"filename": f"Apollo23_klucz_prywatny_{stamp}.key", "content": self.key_path.read_text(encoding="ascii"),
                 "public_key": k[1].hex()}
+
+    def _backup_path(self) -> Path:
+        stamp = datetime.fromtimestamp(self.clock()).strftime('%Y%m%d-%H%M%S')
+        p, i = self.key_path.with_name(f"private.key.bak-{stamp}"), 1
+        while p.exists():                                    # 1.46: two backups in the same second never overwrite each other
+            p, i = self.key_path.with_name(f"private.key.bak-{stamp}-{i}"), i + 1
+        return p
 
     def import_key(self, content: str, replace: bool = False) -> dict:
         seed, pub = parse_key_file(content)
         with self._lock:
-            cur = self._load() if self.key_path.exists() else None
+            damaged = None
+            try:
+                cur = self._load() if self.key_path.exists() else None
+            except LicenseInputError as exc:
+                # 1.46: a damaged private.key on disk made the import fail (400, as if the PASTED file were bad) - exactly when restoring
+                # the backup is needed; create_keypair refuses too (the file exists). The damaged file is kept as a raw copy, then replaced.
+                cur, damaged = None, exc.message
             if cur is not None and cur[1] == pub:
                 return {**self.state(), "imported": False, "same_key": True}
             if cur is not None and not replace:
@@ -182,10 +208,21 @@ class OwnerLicenses:
                                                     "obecnym kluczem. Potwierdź zastąpienie (stary klucz zostanie zachowany jako kopia).")
             backup = None
             if cur is not None:
-                backup = self.key_path.with_name(f"private.key.bak-{datetime.fromtimestamp(self.clock()).strftime('%Y%m%d-%H%M%S')}")
+                backup = self._backup_path()
                 _write_private(backup, self.key_path.read_text(encoding="ascii"))
+            elif damaged is not None:
+                try:
+                    raw = self.key_path.read_bytes()
+                except OSError as exc:                       # never replaced without a copy
+                    raise LicenseInputError("keys", f"plik klucza na dysku ({self.key_path}) jest uszkodzony i nie da się go skopiować: "
+                                                    f"{exc}") from exc
+                backup = self._backup_path()
+                _write_private(backup, raw)
             _write_private(self.key_path, _key_text(seed, pub, _iso(self.clock())))
-            return {**self.state(), "imported": True, "previous_key_backup": str(backup) if backup else None}
+            out = {**self.state(), "imported": True, "previous_key_backup": str(backup) if backup else None}
+            if damaged is not None:
+                out["previous_key_damaged"] = f"uszkodzony był plik na dysku ({self.key_path}): {damaged}"
+            return out
 
     # ------------------------------------------------------------------------------------------------ licencje
     def _expiry(self, validity: dict | None, iat: int) -> int | None:
@@ -232,11 +269,20 @@ class OwnerLicenses:
         with self._lock:
             sk, pub = self._signer()
             key = sign_license(sk, u, hw, iat, exp)
-            with self._db() as c:
-                cur = c.execute("INSERT INTO licenses (user, hwid, iat, exp, note, license_key, public_key, created_at) VALUES (?,?,?,?,?,?,?,?)",
-                                (u, hw, iat, exp, note, key, pub.hex(), iat))
-                rid = cur.lastrowid
-            c.close()
+            # 1.46: the connection is closed also on an error (was: close() after the block - skipped by an exception)
+            with closing(self._db()) as c:
+                try:
+                    with c:
+                        cur = c.execute("INSERT INTO licenses (user, hwid, iat, exp, note, license_key, public_key, created_at) "
+                                        "VALUES (?,?,?,?,?,?,?,?)", (u, hw, iat, exp, note, key, pub.hex(), iat))
+                        rid = cur.lastrowid
+                except sqlite3.IntegrityError:
+                    # 1.46: the same user / HWID / validity in the same second = the SAME key (Ed25519 is deterministic, iat in
+                    # seconds) -> UNIQUE(license_key) -> IntegrityError -> HTTP 500. It is the same license: the stored row is returned.
+                    row = c.execute("SELECT * FROM licenses WHERE license_key = ?", (key,)).fetchone()
+                    if row is None:
+                        raise
+                    return {**self._row_out(dict(row), pub.hex()), "already_generated": True}
         return self._row_out({"id": rid, "user": u, "hwid": hw, "iat": iat, "exp": exp, "note": note, "license_key": key,
                               "public_key": pub.hex()}, pub.hex())
 
@@ -256,17 +302,15 @@ class OwnerLicenses:
         pub = k[1].hex() if k else None
         if not self.db_path.exists():
             return []
-        with self._db() as c:
+        with closing(self._db()) as c, c:                   # 1.46: closed also on an error
             rows = [dict(r) for r in c.execute("SELECT * FROM licenses ORDER BY iat DESC, id DESC LIMIT 10000")]
-        c.close()
         return [self._row_out(r, pub) for r in rows]
 
     def delete(self, rid: int) -> dict:
         if not self.db_path.exists():
             return {"deleted": 0}
-        with self._db() as c:
+        with closing(self._db()) as c, c:                   # 1.46: closed also on an error
             n = c.execute("DELETE FROM licenses WHERE id = ?", (int(rid),)).rowcount
-        c.close()
         return {"deleted": n}
 
     def check(self, key: str) -> dict:

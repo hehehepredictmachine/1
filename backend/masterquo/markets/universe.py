@@ -221,8 +221,12 @@ class MarketBridge:
         ins = self._ins(instrument_id)
         b = self.hl.post({"type": "l2Book", "coin": ins.native_symbol}) or {}
         lv = b.get("levels") or [[], []]
-        return {"instrument_id": ins.instrument_id, "t": float(b.get("time") or 0) / 1000.0, "bids": [[float(x["px"]), float(x["sz"])] for x in lv[0]],
-                "asks": [[float(x["px"]), float(x["sz"])] for x in lv[1]], "quality": "DEGRADED (snapshot top-N)"}
+        tm = b.get("time")
+        # 1.46: a snapshot without the provider's time got t = 0.0 (1970-01-01) in the heatmap column - missing time is null + flagged
+        t = float(tm) / 1000.0 if tm not in (None, "", 0) else None
+        return {"instrument_id": ins.instrument_id, "t": t, "bids": [[float(x["px"]), float(x["sz"])] for x in lv[0]],
+                "asks": [[float(x["px"]), float(x["sz"])] for x in lv[1]], "quality": "DEGRADED (snapshot top-N)",
+                "time_status": "OK" if t is not None else "TIME_UNAVAILABLE"}
 
     def trades(self, instrument_id: str):
         from ..orderflow.trades import from_hyperliquid
