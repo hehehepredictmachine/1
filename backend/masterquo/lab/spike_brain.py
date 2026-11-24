@@ -35,6 +35,10 @@ from . import autodiff as A
 
 ARCH_ID = "MQ_SPIKE_BRAIN_FINANCE_V1"
 VERSION = "MQ-SPIKE-BRAIN-1.0.0"
+# 1.46: encoder semantics version (stored with every candidate). 1.1.0 = ON/OFF channel by the sign of the accumulator that fired the
+# impulses (1.0.0 used the sign of the current z: a positive residual with a small negative z emitted OFF impulses). Candidates without
+# this version were trained on 1.0.0 tokens and are INCOMPATIBLE (SHADOW-only family - retrain).
+ENCODER_VERSION = "MQ-SPIKE-ENC-1.1.0"
 ENCODERS = ("BAR_EVENT_V1", "QUOTE_EVENT_V1")
 ATTENTION = ("LINEAR", "SLIDING", "HYBRID")
 CLASSES = ("DOWN", "FLAT", "UP")
@@ -93,8 +97,9 @@ class EventEncoder:
                     self.overflow += cnt - self.max_n
                     cnt = self.max_n
                 if cnt:
+                    pos = a > 0                                          # polarity of the accumulator that fired (before the subtraction)
                     a -= math.copysign(cnt * theta, a)
-                    (on if z > 0 or a > 0 and z == 0 else off)[c] = cnt
+                    (on if pos else off)[c] = cnt
                 self.acc[c] = a
             elif self.n[c] >= self.warmup:
                 flags.append(f"LOW_DISPERSION_{c}")

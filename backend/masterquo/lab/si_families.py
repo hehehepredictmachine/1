@@ -285,10 +285,15 @@ def predict_spike(model, inst: str, data: dict, bars: np.ndarray):
 def save_spike(d: Path, model) -> dict:
     _, net, enc_cfg, encoder = model
     man = net.save(d / "net")
-    return {"net": man, "encoder": encoder, "encoder_cfg": enc_cfg}
+    return {"net": man, "encoder": encoder, "encoder_cfg": enc_cfg, "encoder_version": SB.ENCODER_VERSION}
 
 
 def load_spike(d: Path, meta: dict):
+    ev = (meta.get("sb") or {}).get("encoder_version")
+    if ev != SB.ENCODER_VERSION:
+        # 1.46: tokens of another encoder version would be fed silently (polarity fix 1.1.0) - SHADOW / research family, never a gate
+        raise ValueError(f"INCOMPATIBLE_ARTIFACT: encoder_version={ev or 'MQ-SPIKE-ENC-1.0.0 (brak)'} (oczekiwano {SB.ENCODER_VERSION}) – "
+                         "przetrenuj MQ_SPIKE_BRAIN_FINANCE_V1")
     net = SB.SpikeBrain.load(d / "net", {"architecture_id": SB.ARCH_ID})
     sb = meta.get("sb") or {}
     return ("SB", net, sb.get("encoder_cfg") or {}, sb.get("encoder", "BAR_EVENT_V1"))
