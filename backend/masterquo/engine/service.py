@@ -161,7 +161,8 @@ class EngineService:
             legacy_out["errors"].append("LEGACY_ENGINE_XAUUSD_ONLY")
         elif dq["analysis_allowed"]:
             snap = build_snapshot(snapshot_id=sid, analysis_id=f"MQAI-{self.bus.boot_id}", as_of=as_of, symbol=sym, alias=alias,
-                                  closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"])
+                                  closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"],
+                                  costs_account_profile=cfg.costs.account_profile)
             legacy_out = self.legacy.run(snap, cfg.strategy.mode, cfg.strategy.structure_policy)
         else:
             legacy_out["errors"].append("ANALYSIS_NOT_ALLOWED_BY_DATA_GATE")
@@ -450,13 +451,34 @@ class EngineService:
 
         def pos_risk(p):
             try:
-                return b.calc_profit(p["side"], p["volume"], p["price_current"], p["sl"])
+                r_cfg = b.calc_profit(p["side"], p["volume"], p["price_current"], p["sl"])
             except Exception:
                 return None
+            # 1.46 arch (I0709, ONLY the tightening variant): a position on ANOTHER symbol was valued with the calculator of the configured
+            # symbol (e.g. a BTCUSD position with the XAUUSD contract). The value of 1.46 stays a floor: risk = max(today's, the position's
+            # own symbol calculator) and a failed own-symbol calculation = unknown risk (blocks, as a position without SL) - a block or a
+            # smaller budget of today never disappears; a lower own-symbol risk does not enlarge the budget (owner decision, S0 otherwise)
+            sym = p.get("symbol")
+            if r_cfg is None or not sym or sym == cfg.mt5.symbol:
+                return r_cfg
+            try:
+                r_own = b.calc_profit_sym(sym, p["side"], p["volume"], p["price_current"], p["sl"])
+            except Exception:  # noqa: BLE001 - terminal call failed -> unknown risk (blocks)
+                return None
+            return None if r_own is None else min(r_cfg, r_own)   # profit at SL: the more negative = the larger risk (max(0, -r))
         try:
             portfolio = self.portfolio_snapshot(positions, orders)
         except Exception:                            # terminal call failed -> exposure unknown (blocks when a limit is set)
             portfolio = {"positions_notional": None, "pending_count": 0, "error": "PORTFOLIO_SNAPSHOT_FAILED"}
+            # 1.46 arch (I0723, only tightening): pending orders present while the snapshot failed are UNKNOWN (blocks:
+            # PENDING_ORDER_RISK_UNKNOWN, no usable margin, exposure not computable) and counted - before, they counted as 0 / none.
+            # Without pending orders nothing changes.
+            try:
+                pend = [o.get("ticket") for o in orders if o.get("type") in self.PENDING_BUY or o.get("type") in self.PENDING_SELL]
+            except Exception:  # noqa: BLE001 - orders unreadable -> pending orders unknown (blocks)
+                pend = [None]
+            if pend:
+                portfolio.update(pending_count=len(pend), pending_unknown=pend, pending_margin=None, pending_notional=None, pending_risk=None)
         exposure = self.prefs.exposure_limit() if self.prefs is not None else None
         try:
             orisk = risk_engine.open_risk(positions, pos_risk)
@@ -473,6 +495,23 @@ class EngineService:
                                        portfolio=portfolio, settings_version=self.prefs.settings_version() if self.prefs is not None else None)
         except Exception as exc:  # terminal call failure etc. -> blocked, never guessed
             res = {"risk_gate": "BLOCKED", "reason_codes": ["RISK_EVALUATION_FAILED:" + type(exc).__name__]}
+        if "DRAWDOWN_BREACH" in (res.get("reason_codes") or []):
+            # 1.46 arch (I0808, informational only): the peak is MAX(equity) without capital flows - a withdrawal after the peak keeps
+            # DRAWDOWN_BREACH for good. The block itself is unchanged (S0: correcting the peak would lift it); the status says so.
+            try:
+                pk = self.db.one("SELECT ts FROM equity_snapshots WHERE account_key=? AND mode='ACCOUNT' ORDER BY equity DESC, ts ASC LIMIT 1",
+                                 (b.account_key,))
+                peak_raw = (parse_iso(pk["ts"]).timestamp() + b.clock.offset) if (pk and pk.get("ts") and b.clock.offset is not None) else None
+                note = risk_engine.capital_flow_note(deals, peak_raw)
+                if note:
+                    res["drawdown_note"] = note
+            except Exception:  # noqa: BLE001, S110 - a note never changes or breaks the risk result
+                pass
+        # 1.46 arch (I0107): risk.daily_reset is validated and saved, but the daily-loss day always starts at the broker server midnight
+        # (b.server_day_start_utc above) - UTC_MIDNIGHT was ignored silently. Reported only (separate fields, never a reason code).
+        res["daily_reset_effective"] = "BROKER_SERVER_MIDNIGHT"
+        if getattr(cfg.risk, "daily_reset", "BROKER_SERVER_MIDNIGHT") != "BROKER_SERVER_MIDNIGHT":
+            res["warnings"] = list(res.get("warnings") or []) + ["DAILY_RESET_UTC_MIDNIGHT_NOT_APPLIED"]
         res["entry_basis"] = basis
         if not live:
             res["risk_gate"] = "BLOCKED" if res.get("risk_gate") == "BLOCKED" else "PREVIEW"
@@ -500,6 +539,11 @@ class EngineService:
             pos_notional += abs(v) * 100.0
         pend_notional = pend_margin = pend_risk = 0.0
         without_sl, count = [], 0
+        # 1.46 arch (I0723): a failed broker calculation for a pending order was summed as 0 (margin, notional, risk) and the risk gate
+        # took the totals as known. Now the affected total is None and the ticket is listed in pending_unknown (the gate blocks:
+        # PENDING_ORDER_RISK_UNKNOWN); with every calculation known the totals are identical.
+        unknown: list = []
+        miss = {"margin": False, "notional": False, "risk": False}
         for o in orders:
             t = o.get("type")
             if t not in self.PENDING_BUY and t not in self.PENDING_SELL:
@@ -509,16 +553,25 @@ class EngineService:
             vol, px, sym = float(o.get("volume_current") or 0), float(o.get("price_open") or 0), o.get("symbol")
             m = b.calc_margin_sym(sym, side, vol, px) if px else None
             n = b.calc_profit_sym(sym, side, vol, px, px * 1.01 if side == "BUY" else px * 0.99) if px else None
+            bad = m is None or n is None
+            miss["margin"] |= m is None
+            miss["notional"] |= n is None
             pend_margin += m or 0.0
             pend_notional += abs(n or 0.0) * 100.0
             if o.get("sl"):
                 r = b.calc_profit_sym(sym, side, vol, px, float(o["sl"]))
+                bad |= r is None
+                miss["risk"] |= r is None
                 pend_risk += max(0.0, -(r or 0.0))
             else:
                 without_sl.append(o.get("ticket"))
-        return {"positions_notional": None if pos_notional is None else round(pos_notional, 2), "pending_notional": round(pend_notional, 2),
-                "pending_margin": round(pend_margin, 2), "pending_risk": round(pend_risk, 2), "pending_count": count,
-                "pending_without_sl": without_sl, "margin_mode": (b.account or {}).get("margin_mode")}
+            if bad:
+                unknown.append(o.get("ticket"))
+        return {"positions_notional": None if pos_notional is None else round(pos_notional, 2),
+                "pending_notional": None if miss["notional"] else round(pend_notional, 2),
+                "pending_margin": None if miss["margin"] else round(pend_margin, 2), "pending_risk": None if miss["risk"] else round(pend_risk, 2),
+                "pending_count": count, "pending_without_sl": without_sl, "pending_unknown": unknown,
+                "margin_mode": (b.account or {}).get("margin_mode")}
 
     def recheck_risk(self, d: dict) -> dict:
         """Fresh risk evaluation for an existing decision (gateway, right before sending): current price, account,
@@ -541,6 +594,10 @@ class EngineService:
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
+               # 1.46 arch (I0756, neutral variant): the view and the newest SI snapshot id AT this evaluation; the tools return them as
+               # the frozen view next to the newer data (after_as_of + NEWER_DATA_AVAILABLE) - nothing newer is withheld from the agent
+               "structure_as_of_fn": (lambda tf, _v=self.active.view: EngineService._structure_for(self, _v, tf)),
+               "si_as_of_id": (getattr(getattr(self, "si", None), "last", None) or {}).get("snapshot_id"),
                "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
                "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None),
                "pmw_indicators": self._pmw_indicators(), "svp": self._svp_view()}
@@ -552,14 +609,24 @@ class EngineService:
                 self.contexts.popitem(last=False)
 
     def _pmw_indicators(self) -> dict | None:
-        """PMW-IND-1 snapshot frozen with the agent context (full results incl. DXY relation; the agent never recomputes)."""
+        """PMW-IND-1 snapshot frozen with the agent context (full results incl. DXY relation; the agent never recomputes).
+        1.46 arch (I0186): a COPY marked with the snapshot freshness (IndicatorService.freshness - the rule compact() applies for the
+        panel; the snapshot is refreshed only on a new closed M1 bar, so after a weekend / break it was READY for hours). The stored
+        snapshot is never mutated; a failed freshness check marks the copy STALE (FRESHNESS_ERROR) instead of dropping it."""
         ind = getattr(self, "indicators_provider", None)
         if ind is None:
             return None
         try:
-            return ind.current()
+            s = ind.current()
         except Exception:  # noqa: BLE001
             return None
+        if not isinstance(s, dict):
+            return s
+        try:
+            st, why, age = ind.freshness(s)
+        except Exception:  # noqa: BLE001 - the snapshot stays, marked as not fresh
+            st, why, age = "STALE", "FRESHNESS_ERROR", None
+        return dict(s, snapshot_status=st, snapshot_status_reason=why, snapshot_age_s=round(age, 1) if age is not None else None)
 
     def _svp_view(self) -> dict | None:
         """Latest stored SVP snapshots of the user's profiles + active zones (MANUAL / ALGORITHM / AI), frozen with the agent context."""
@@ -684,15 +751,19 @@ class EngineService:
             digits = int((self.bridge.symbol_info or {}).get("digits") or 2)
             return volzones.compute(self.bridge.bars("D1"), self.cfg_store.get().volatility, digits=digits, quote=self.bridge.quote_status())
         except Exception as exc:  # never break the chart because of the reference levels
-            return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__}
+            return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__, "usage": "PANEL_REFERENCE"}
 
     def structure(self, tf: str) -> dict:
         """Market structure for charts / agent / setup pages (read-only, from the SAME MarketView the last scan used):
         S/R zones (H1/H4/H8/D1 + W1/MN1 aggregated from D1), the frozen M5 range with M1 local zones, chart and candle
         patterns of `tf` with their states, confirmed pivots with the time they became known, and the walls snapshot."""
+        return EngineService._structure_for(self, self.active.view, tf)
+
+    def _structure_for(self, view, tf: str) -> dict:
+        """structure() of a GIVEN MarketView (1.46 arch, I0756: the agent context keeps the view of its evaluation; structure() = the
+        latest scan). Same computation and the same single-entry cache key (tf, view.as_of) as before."""
         from ..analysis import candles as CN, chart_patterns as CH, levels as LV, range_m5 as RG
-        from ..strategies import indicators as ind
-        view = self.active.view
+        from ..indicators import series as ind
         if view is None:
             return {"status": "NO_SCAN_YET", "tf": tf}
         cfg = self.cfg_store.get()
@@ -703,9 +774,13 @@ class EngineService:
         if view.symbol != cfg.mt5.symbol:
             return {"status": "NO_SCAN_YET", "tf": tf, "symbol": cfg.mt5.symbol, "view_symbol": view.symbol}
         key = (tf, view.as_of)
+        # 1.46 arch (I0756, review): a few entries (an immutable tuple, replaced in one assignment) - the agent asks for the view of its
+        # evaluation and the latest scan in turn (and the chart for several TFs); a single entry was evicted by each of them
         cache = getattr(self, "_structure_cache", None)
-        if cache and cache[0] == key:
-            return cache[1]
+        entries = cache if isinstance(cache, tuple) and all(isinstance(e, tuple) and len(e) == 2 for e in cache) else ()
+        for k, v in entries:
+            if k == key:
+                return v
         out = {"status": "OK", "tf": tf, "as_of": view.as_of, "symbol": view.symbol, "synthetic": view.synthetic,
                "walls": {k: v for k, v in ((view.context or {}).get("walls") or {}).items() if not k.startswith("_")}}
         try:
@@ -726,7 +801,7 @@ class EngineService:
             out["pivots"] = [{"kind": x["kind"], "t": v.t[x["index"]], "price": x["price"],
                               "known_at": iso(parse_iso(v.t[x["confirmed_index"]]) + timedelta(seconds=sec))}
                              for x in ind.pivots(v.h, v.l, 3, 3)[-40:]]
-        self._structure_cache = (key, out)
+        self._structure_cache = (((key, out),) + tuple(e for e in entries if e[0] != key))[:4]
         return out
 
     def mark_entered(self, setup_id: str, reason: str) -> None:

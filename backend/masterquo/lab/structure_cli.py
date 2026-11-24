@@ -55,8 +55,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--attention", choices=("LINEAR", "SLIDING", "HYBRID"), help="tryb uwagi MQ_SPIKE_BRAIN_FINANCE_V1")
     s.add_argument("--transform", help="MQ_MINIROCKET_UNIVARIATE_V2 dla MQ_MINIROCKET_RIDGE_V2")
     s.add_argument("--out")
-    s = sub.add_parser("minirocket", help="MiniRocket V2: export-native / export-fixture / parity / native-status")
-    s.add_argument("action", choices=("export-native", "export-fixture", "parity", "native-status"))
+    s = sub.add_parser("minirocket", help="MiniRocket V2: export-native / export-fixture / parity / native-status (export-train: NOT_IMPLEMENTED)")
+    s.add_argument("action", choices=("export-native", "export-fixture", "parity", "native-status", "export-train"))
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--model-id", help="candidate_id MQ_MINIROCKET_RIDGE_V2 (export-native)")
     s.add_argument("--output", default="./exports/minirocket")
@@ -245,6 +245,12 @@ def main(argv: list[str]) -> int:
             return 0
         if a.c == "minirocket":
             from . import minirocket_v2 as MR
+            if a.action == "export-train":
+                # 1.46 arch (I0114): PMW_MR2_Fit.mq5 names this action, but the lab protocol has no function returning the TRAIN rows
+                # (X, Y, R) of a candidate - choosing them here would be a guess (NO_SPEC); the file writer MR.export_train stays for it
+                print("[BLAD] NOT_IMPLEMENTED: minirocket export-train – protokół lab nie udostępnia wierszy TRAIN kandydata (X, Y, R); "
+                      "natywny Fit (PMW_MR2_Fit.mq5) nie ma pliku wejściowego. Użyj export-native (model wytrenowany w Pythonie).")
+                return 2
             if a.action == "parity":
                 rep = MR.parity(Path(a.fixtures), a.reference_python, Path(a.native_scores) if a.native_scores else None,
                                 Path(a.output) if a.native_scores else None, Path(a.native_status_file) if a.native_status_file else None)

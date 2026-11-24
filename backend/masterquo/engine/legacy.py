@@ -75,7 +75,8 @@ class Profiles:
 
 
 def build_snapshot(*, snapshot_id: str, analysis_id: str, as_of: str, symbol: str, alias: str,
-                   closed_bars: dict[str, list[dict]], analysis_status: str, reason_codes: list[str]) -> dict:
+                   closed_bars: dict[str, list[dict]], analysis_status: str, reason_codes: list[str],
+                   costs_account_profile: str | None = None) -> dict:
     """Legacy M01 DATA_SNAPSHOT from closed MT5 bars (Bid-based OHLC from the terminal)."""
     by_tf = {}
     from ..timeutil import CORE_TIMEFRAMES
@@ -104,7 +105,10 @@ def build_snapshot(*, snapshot_id: str, analysis_id: str, as_of: str, symbol: st
                             "reason_codes": ["EXECUTION_DECIDED_BY_RISK_AND_MODE_GATE"]}],
             "analysis_gate": {"status": analysis_status, "required_for": ["ANALYSIS", "DIRECTION"]},
             "execution_gate": {"status": "PENDING", "required_for": ["EXECUTION"]},
-            "account_profile": "ZERO_SPREAD_DECLARED_UNVERIFIED"}
+            # the vendor contract requires this exact constant (M02I live bridge, M10A adapter, INTEGRATION_OUTPUT_SCHEMA const);
+            # 1.46 arch (I0124): the configured label is reported separately, never in its place
+            "account_profile": "ZERO_SPREAD_DECLARED_UNVERIFIED",
+            **({"costs_account_profile": costs_account_profile} if costs_account_profile is not None else {})}
 
 
 def _tf_direction(market: dict, tf: str) -> str:

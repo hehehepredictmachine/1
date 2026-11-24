@@ -59,7 +59,6 @@ class TestPipeline(unittest.TestCase):
         self.td.close()
 
     def _confirmed_setup(self):
-        from masterquo.engine import lifecycle
         q = self.b.quote_status()
         bid = q["bid"]
         rule = lambda f, op, lv: {"timeframe": "M15", "field": f, "operator": op, "level": lv, "requires_closed_bar": True, "reference_evidence_id": "x"}  # noqa: E731

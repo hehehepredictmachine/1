@@ -1,5 +1,4 @@
 """PMW-UPD-08 R19 MQ_NEWTONIAN_QUOTES_V2 - T80-T96 on generated quote streams (code behaviour; not a market calibration)."""
-import math
 import unittest
 
 import numpy as np

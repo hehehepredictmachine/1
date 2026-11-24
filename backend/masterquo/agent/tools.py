@@ -214,11 +214,35 @@ class Toolbox:
         if timeframe not in TFS:
             raise ToolError("INVALID_TIMEFRAME")
         fn = self.ctx.get("structure_fn")
-        if fn is None:
+        fz = self.ctx.get("structure_as_of_fn")
+        if fn is None and fz is None:
             return {"status": "UNAVAILABLE"}
-        st = fn(timeframe)
-        if st.get("status") != "OK":
-            return {"status": st.get("status")}
+        # 1.46 arch (I0756, neutral variant): the view of THIS evaluation (frozen at its as_of) + the newest scan as a separate, labelled
+        # block (after_as_of, NEWER_DATA_AVAILABLE). Nothing newer is withheld: the newest market state stays visible for a veto.
+        latest = fn(timeframe) if fn is not None else None
+        frozen = fz(timeframe) if fz is not None else None
+        main = frozen if (frozen or {}).get("status") == "OK" else latest
+        if (main or {}).get("status") != "OK":
+            return {"status": (latest or frozen or {}).get("status")}
+        out = self._walls_body(main)
+        out["view"], out["view_as_of"] = ("AS_OF_EVALUATION" if main is frozen else "LATEST_SCAN"), main.get("as_of")
+        newer = main is frozen and latest is not None and (latest.get("status") != "OK" or latest.get("as_of") != main.get("as_of"))
+        out["NEWER_DATA_AVAILABLE"] = bool(newer)
+        if newer:
+            # first in the answer (review): Toolbox.run truncates the text at its end - the newest state is never the part cut off
+            out = {"after_as_of": (dict(self._walls_body(latest), view="LATEST_SCAN", view_as_of=latest.get("as_of"),
+                                        note="skan nowszy niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji")
+                                   if latest.get("status") == "OK" else {"status": latest.get("status"), "view": "LATEST_SCAN"}), **out}
+        setup = self.ctx.get("setup") or {}
+        row = self.ctx.get("setup_row_fn")(setup["setup_id"]) if (setup.get("setup_id") and self.ctx.get("setup_row_fn")) else None
+        if row and (row.get("record") or {}).get("strategy_id") == "S12":
+            f = row["record"].get("facts") or {}
+            out["s12_selected_setup"] = {"variant": f.get("variant"), "arbiter": f.get("arbiter"), "alternatives": f.get("alternatives"),
+                                         "missing": row["record"].get("missing_confirmations"), "checklist": f.get("checklist")}
+        return out
+
+    @staticmethod
+    def _walls_body(st: dict) -> dict:
         w = st.get("walls") or {}
         out = {"walls": {k: w.get(k) for k in ("status", "source_type", "flags", "notes", "sigma_annual", "day_count_basis", "anchor_time", "anchor_price",
                                                "available_at", "valid_until", "snapshot_id", "snapshot_version", "walls", "interpretation")},
@@ -231,24 +255,35 @@ class Toolbox:
                                                          "target_projection", "geometric_score", "missing")} for p in (st.get("chart") or {}).get("patterns", [])][:10],
                "candle_evidence": ((st.get("candles") or {}).get("evidence") or [])[-10:],
                "note": "score formacji = jakość geometrii, nie prawdopodobieństwo; tick volume = aktywność feedu brokera"}
-        setup = self.ctx.get("setup") or {}
-        row = self.ctx.get("setup_row_fn")(setup["setup_id"]) if (setup.get("setup_id") and self.ctx.get("setup_row_fn")) else None
-        if row and (row.get("record") or {}).get("strategy_id") == "S12":
-            f = row["record"].get("facts") or {}
-            out["s12_selected_setup"] = {"variant": f.get("variant"), "arbiter": f.get("arbiter"), "alternatives": f.get("alternatives"),
-                                         "missing": row["record"].get("missing_confirmations"), "checklist": f.get("checklist")}
         return out
+
+    @staticmethod
+    def _fresh_mark(s: dict):
+        """1.46 arch (I0186): the frozen PMW-IND-1 snapshot carries its freshness (engine._pmw_indicators). Not READY -> every READY
+        component (all of them when DISABLED) is shown with the snapshot status + reason - the same rule compact() applies for the panel.
+        Values stay; ERROR / NO_DATA are never softened. Returns a function on NEW dicts (the frozen context is never mutated)."""
+        st, why = s.get("snapshot_status"), s.get("snapshot_status_reason")
+
+        def mark(r: dict) -> dict:
+            if st in (None, "READY") or not isinstance(r, dict):
+                return r
+            if r.get("status") == "READY" or st == "DISABLED":
+                return dict(r, status=st, reason=why)
+            return r
+        return mark
 
     def t_get_pmw_indicators(self) -> dict:
         s = self.ctx.get("pmw_indicators")
         if not s:
             return {"status": "UNAVAILABLE", "reason": "brak snapshotu wskaźników w kontekście"}
-        out = {k: s.get(k) for k in ("version", "contract", "instrument", "broker_symbol", "as_of", "snapshot_id")}
+        mark = self._fresh_mark(s)
+        out = {k: s.get(k) for k in ("version", "contract", "instrument", "broker_symbol", "as_of", "snapshot_id", "snapshot_status",
+                                     "snapshot_status_reason", "snapshot_age_s")}
         for k in ("semivar", "spread", "profile", "microstructure"):
             r = s.get(k) or {}
-            out[k] = {kk: r.get(kk) for kk in ("status", "reason", "values", "units", "data_time", "available_at", "volume_source", "sample_count")}
-        out["avwap"] = {tf: {m: ({kk: r.get(kk) for kk in ("status", "reason", "values", "anchor", "volume_source", "events")} if isinstance(r, dict)
-                                 else [{kk: x.get(kk) for kk in ("status", "values", "anchor")} for x in r])
+            out[k] = mark({kk: r.get(kk) for kk in ("status", "reason", "values", "units", "data_time", "available_at", "volume_source", "sample_count")})
+        out["avwap"] = {tf: {m: (mark({kk: r.get(kk) for kk in ("status", "reason", "values", "anchor", "volume_source", "events")}) if isinstance(r, dict)
+                                 else [mark({kk: x.get(kk) for kk in ("status", "values", "anchor")}) for x in r])
                              for m, r in modes.items()} for tf, modes in (s.get("avwap") or {}).items()}
         return out
 
@@ -257,11 +292,13 @@ class Toolbox:
         return v if v else {"status": "UNAVAILABLE", "reason": "brak profili SVP w snapshocie"}
 
     def t_get_dxy_relation(self) -> dict:
-        s = (self.ctx.get("pmw_indicators") or {}).get("dxy")
+        snap = self.ctx.get("pmw_indicators") or {}
+        s = snap.get("dxy")
         if not s:
             return {"status": "UNAVAILABLE", "reason": "brak relacji DXY w snapshocie"}
-        return {k: s.get(k) for k in ("status", "reason", "values", "units", "dxy", "windows", "equation", "data_time", "available_at",
-                                       "sample_count", "snapshot_id")}
+        out = self._fresh_mark(snap)({k: s.get(k) for k in ("status", "reason", "values", "units", "dxy", "windows", "equation", "data_time",
+                                                            "available_at", "sample_count", "snapshot_id")})
+        return dict(out, snapshot_status=snap.get("snapshot_status"), snapshot_age_s=snap.get("snapshot_age_s"))
 
     def t_get_indicator_context(self) -> dict:
         c = self.ctx.get("indicator_context")
@@ -278,16 +315,47 @@ class Toolbox:
         if not isinstance(snapshot_id, str) or len(snapshot_id) > 40:
             raise ToolError("SNAPSHOT_ID_INVALID")
         fn = self.ctx.get("structure_snapshot_fn")
-        snap = fn(snapshot_id) if fn else None
+        # 1.46 arch (I0756, neutral variant): 'latest' = the newest snapshot AT this evaluation (si_as_of_id); a newer one is added as a
+        # separate block (after_as_of, NEWER_DATA_AVAILABLE) - never withheld. Not archived -> today's behaviour (si.last).
+        frozen_id = self.ctx.get("si_as_of_id") if snapshot_id == "latest" else None
+        snap = fn(frozen_id) if (fn and frozen_id) else None
+        if snap is None:
+            frozen_id = None
+            snap = fn(snapshot_id) if fn else None
         if snap is None:
             return {"status": "UNAVAILABLE", "snapshot_id": snapshot_id, "rules": ["K01", "K15"]}
         out = sk.explain(snap)
-        out["cells"] = {tf: {k: c.get(k) for k in ("status", "last_closed_open", "structure", "pattern", "candle_role", "mitp", "zone", "market", "flow")}
-                        for tf, c in (snap.get("cells") or {}).items()}
+        out["cells"] = self._si_cells(snap)
         out["neutralization"] = snap.get("neutralization")
         out["quotes"] = snap.get("quotes")
         out["native"] = snap.get("native")
+        if frozen_id:
+            cur = fn("latest")
+            newer = bool(cur) and cur.get("snapshot_id") != snap.get("snapshot_id")
+            out["view"], out["NEWER_DATA_AVAILABLE"] = "AS_OF_EVALUATION", newer
+            if newer:                                                # first in the answer: never the part truncated by Toolbox.run
+                out = {"after_as_of": {"snapshot_id": cur.get("snapshot_id"), "as_of": cur.get("as_of"), "computed_at": cur.get("computed_at"),
+                                       "cells": self._si_cells(cur), "note": "migawka nowsza niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji"},
+                       **out}
+        elif self._after_as_of(snap.get("as_of")):
+            out["NEWER_DATA_AVAILABLE"] = True                       # an explicit id newer than the evaluation: shown, labelled
+            out["snapshot_after_as_of"] = True
         return out
+
+    @staticmethod
+    def _si_cells(snap: dict) -> dict:
+        return {tf: {k: c.get(k) for k in ("status", "last_closed_open", "structure", "pattern", "candle_role", "mitp", "zone", "market", "flow")}
+                for tf, c in (snap.get("cells") or {}).items()}
+
+    def _after_as_of(self, t) -> bool:
+        """True when the data time t (ISO or epoch s) is later than the as_of of this evaluation context."""
+        from ..timeutil import parse_iso
+        try:
+            ref = parse_iso(self.ctx["as_of"]).timestamp() if isinstance(self.ctx.get("as_of"), str) else None
+            v = float(t) if isinstance(t, (int, float)) else (parse_iso(t).timestamp() if isinstance(t, str) and t else None)
+        except (TypeError, ValueError):
+            return False
+        return ref is not None and v is not None and v > ref
 
     def t_get_master_models(self) -> dict:
         fn = self.ctx.get("master_models_fn")
@@ -295,7 +363,12 @@ class Toolbox:
         if not lv or lv.get("status") != "OK":
             return {"status": (lv or {}).get("status", "UNAVAILABLE"), "reason": (lv or {}).get("reason"), "rules": ["MM-K01"]}
         g = lv.get("gpr") or {}
+        lc = lv.get("last_closed_m5")
+        # 1.46 arch (I0756, neutral variant): master models are computed live (no frozen copy) - a closed M5 bar after the evaluation
+        # as_of is labelled (NEWER_DATA_AVAILABLE), never withheld
+        newer = self._after_as_of(float(lc) + 300.0) if isinstance(lc, (int, float)) else False
         return {"status": "OK", "mode": "SHADOW_OBSERVE", "execution_allowed": False, "last_closed_m5": lv.get("last_closed_m5"),
+                "view": "LIVE", "NEWER_DATA_AVAILABLE": newer, "evaluation_as_of": self.ctx.get("as_of"),
                 "data_quality": lv.get("data_quality"),
                 "align_mean": lv.get("align_mean"), "kalman": lv.get("kalman"), "breakout": {"panel": (lv.get("breakout") or {}).get("panel")},
                 "robust_vol": lv.get("robust_vol"), "multi_indicator": {k: (lv.get("multi_indicator") or {}).get(k) for k in ("decision", "long_reasons", "short_reasons")},

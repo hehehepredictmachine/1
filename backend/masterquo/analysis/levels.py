@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 from datetime import timedelta
 
-from ..strategies import indicators as ind
+from ..indicators import series as ind
 from ..timeutil import TF_SECONDS, iso, parse_iso
 
 VERSION = "MQ-SR-1.0.0"

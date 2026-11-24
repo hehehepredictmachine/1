@@ -484,7 +484,9 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
     if (!show || !v || v.status !== "OK") { volZones.current?.setZones([]); return; }
     volZones.current?.setZones((v.zones || []).map((z: any) => {
       const col = String(z.side === "UP" ? t.ivWallUp : t.ivWallDown);
-      return { from: z.from_utc ? (TT(z.from_utc) as number) : 0, low: z.low, high: z.high, color: col, border: withAlpha(col, 0.7), label: z.label };
+      // 1.46 arch (I0602): panel sigma bands (model pricing, cfg.volatility) - not the S12 walls (snapshot /api/v1/walls, cfg.walls)
+      return { from: z.from_utc ? (TT(z.from_utc) as number) : 0, low: z.low, high: z.high, color: col, border: withAlpha(col, 0.7),
+        label: `${z.label} · σ panelu (wycena modelowa, nie S12)` };
     }));
     const style: Record<string, [string, LineStyle, number]> = {
       DAILY_OPEN: ["dailyOpen", LineStyle.Solid, 1], EXPECTED_HIGH: ["expectedHL", LineStyle.Dashed, 2], EXPECTED_LOW: ["expectedHL", LineStyle.Dashed, 2],
@@ -536,7 +538,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       for (const x of w.walls || []) {
         const col = String(x.side === "UPPER" ? t.ivWallUp : t.ivWallDown);
         zs.push({ from: TT(w.anchor_time) as number, low: x.low, high: x.high, color: col, border: withAlpha(col, 0.8),
-          label: `${src} wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ (v${w.snapshot_version ?? 1})` });
+          label: `S12 ${src} wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ (v${w.snapshot_version ?? 1})` });
       }
     }
     const rg = st.range || {};

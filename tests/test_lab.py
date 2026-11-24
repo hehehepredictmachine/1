@@ -5,7 +5,6 @@ cases (gaps, duplicates, DST, missing ticks, short history) and one end-to-end r
 from __future__ import annotations
 
 import json
-import math
 import unittest
 from datetime import datetime, timedelta, timezone
 

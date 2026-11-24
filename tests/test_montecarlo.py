@@ -4,19 +4,17 @@ runtime service and API. All market data here is SYNTHETIC."""
 from __future__ import annotations
 
 import json
-import math
-import os
 import shutil
 import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 
-import _env
+import _env  # noqa: F401 - side effect: sys.path / offline flags
 from _env import TempData
 
 T0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()

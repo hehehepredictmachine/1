@@ -626,10 +626,6 @@ class FakeMT5:
                     del self._positions[t]
 
 
-def make_fake_module(**kw) -> FakeMT5:
-    return FakeMT5(**kw)
-
-
 def is_fake(module) -> bool:
     # training processes hand over the read-only proxy (forecast.export.NoOrders) - look through it, otherwise synthetic data
     # would be labelled REAL_USER_DATA

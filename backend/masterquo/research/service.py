@@ -273,13 +273,6 @@ class ResearchModulesService:
                 self.contexts[key] = c
             return self.contexts[key]
 
-    def register_context(self, key: str, inst: str, bars_fn, profile: str) -> None:
-        with self._lock:
-            if key not in self.contexts:
-                c = Context(key, inst, bars_fn, profile)
-                self._load_ctx(c)
-                self.contexts[key] = c
-
     def _ctx_file(self, c: Context) -> Path:
         import hashlib
         return self.base / f"ctx_{hashlib.sha256(c.key.encode()).hexdigest()[:12]}.json"
