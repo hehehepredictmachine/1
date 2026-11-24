@@ -134,6 +134,13 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
                 # clean() turns the bool into 'TAK' / 'NIE'
                 influence, why = "BLOCK", "aktywne okno wydarzenia (blackout)"
                 reasons.append(f"MODEL_REQUIRED_BLACKOUT:{mid}")
+            elif p.get("quant_hold"):
+                # 1.46 arch (QFENCE, review): a READY record carrying a Quant hold (an assessment that would hold, or the QFENCE fail-closed
+                # entry of a MetaModel trained before the producer fixes - READY, result None) never PASSes a REQUIRED role. Without it the
+                # fence entry turned today's MODEL_REQUIRED_UNAVAILABLE (NOT_TRAINED / no ACTIVE assessment / SH outside the contract)
+                # into PASS. Tightening only: a REQUIRED quant:metamodel with a hold was PASS before, now BLOCK
+                influence, why = "BLOCK", str(p["quant_hold"])[:200]
+                reasons.append(f"MODEL_REQUIRED_QUANT_HOLD:{mid}")
             else:
                 influence = "PASS"
         out.append(K.make("ModelForecast", model_id=mid, role=role, state=str(p.get("state")), task_type=str(p.get("task_type")),

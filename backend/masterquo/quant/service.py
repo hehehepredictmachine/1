@@ -163,8 +163,10 @@ class QuantService:
     def fence_entry(self) -> dict | None:
         """QFENCE (fail-closed, tightening only): Quant in an activated ASSIST with an active MetaModel trained before the producer fixes ->
         one READY ASSIST entry with quant_hold for EVERY new entry of both paths (the coordinator gives MODEL_QUANT_HOLD: SH READY -> WAIT,
-        ACTIVE ENTER -> BLOCKED) instead of an assessment on inputs whose meaning changed under it. assist_active() is NOT turned off for
-        it (that would lift every Quant HOLD). None otherwise (SHADOW / OFF / not activated / every active artifact current)."""
+        ACTIVE ENTER -> BLOCKED; with quant:metamodel in decision.required_models MODEL_REQUIRED_QUANT_HOLD - the entry is READY with
+        result None, so a REQUIRED role must never PASS it) instead of an assessment on inputs whose meaning changed under it.
+        assist_active() is NOT turned off for it (that would lift every Quant HOLD). None otherwise (SHADOW / OFF / not activated / every
+        active artifact current)."""
         s = self.settings.get()
         if s.get("mode") != "ASSIST" or not (s.get("assist") or {}).get("activated"):
             return None

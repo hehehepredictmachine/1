@@ -184,6 +184,54 @@ class TestQFenceFailClosed(QFenceFixture, unittest.TestCase):
         self.assertIn("QFENCE", sem["revalidation_note"])
 
 
+class TestQFenceRequiredRole(QFenceFixture, unittest.TestCase):
+    """Review (S0): the fence entry is READY with result None - a REQUIRED quant:metamodel (decision.required_models) must not PASS it.
+    Before the fence the same candidates got MODEL_REQUIRED_UNAVAILABLE (no ACTIVE assessment, SH outside the contract); they stay blocked."""
+
+    def _assist_legacy(self):
+        q = self.service()
+        cd = self.cand()
+        self.activate(self.task_of(cd), legacy=True)
+        self.assertTrue(q.set_mode("ASSIST", confirm=True, by="TEST")["ok"])
+        c = coordinator(q)
+        c.cfg_store.update({"decision": {"required_models": ["quant:metamodel"]}})
+        return q, c
+
+    def test_required_role_never_passes_a_quant_hold(self):
+        from masterquo.decision.coordinator import evaluate_models
+        now = time.time()
+        fence = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso(now), "state": "READY",
+                 "result": None, "quant_hold": "QUANT_REVALIDATION_REQUIRED: test"}
+        hold = dict(fence, result={"p": 0.2, "e_net_r": -0.3}, quant_hold="P(TP1)=0.20 < 0.35")
+        for p in (fence, hold):
+            models, reasons = evaluate_models([p], "BUY", required={"quant:metamodel"}, assist_threshold=0.6, max_age_s=900.0, now=now)
+            self.assertEqual(reasons, ["MODEL_REQUIRED_QUANT_HOLD:quant:metamodel"], p)
+            self.assertEqual(models[0]["influence"], "BLOCK")
+            # the ASSIST role (no REQUIRED) is unchanged: MODEL_QUANT_HOLD
+            self.assertEqual(evaluate_models([p], "BUY", required=set(), assist_threshold=0.6, max_age_s=900.0, now=now)[1],
+                             ["MODEL_QUANT_HOLD:quant:metamodel"])
+        ok = dict(fence, result={"p": 0.6, "e_net_r": 0.4}, quant_hold=None)          # an assessment without a hold still PASSes REQUIRED
+        models, reasons = evaluate_models([ok], "BUY", required={"quant:metamodel"}, assist_threshold=0.6, max_age_s=900.0, now=now)
+        self.assertEqual((reasons, models[0]["influence"]), ([], "PASS"))
+
+    def test_required_quant_with_fence_blocks_active_without_assessment(self):
+        _, c = self._assist_legacy()
+        self.assertEqual(c.cfg_store.get().decision.required_models, ["quant:metamodel"])
+        g = c.model_gate_active({"strategy_id": "S07", "direction": "LONG"})        # no recent assessment (before QFENCE: UNAVAILABLE)
+        self.assertEqual(g["status"], "FAIL")
+        self.assertIn("MODEL_REQUIRED_QUANT_HOLD:quant:metamodel", g["codes"])
+
+    def test_required_quant_with_fence_blocks_sh_in_and_outside_the_contract(self):
+        _, c = self._assist_legacy()
+        rec = c.record_sh(su_ready(), None, "PAPER", "acc", None, regime={"state": "TREND"})
+        self.assertEqual(rec["final_verdict"], "BLOCKED")
+        self.assertIn("MODEL_REQUIRED_QUANT_HOLD:quant:metamodel", rec["reason_codes"])
+        with mock.patch("masterquo.evaluation.contract.sh_candidate", side_effect=ValueError("poza kontraktem")):
+            rec = c.record_sh(dict(su_ready(), signal_id="SIG-RQ"), None, "PAPER", "acc", None)
+        self.assertEqual(rec["final_verdict"], "BLOCKED")                             # before QFENCE: MODEL_REQUIRED_UNAVAILABLE
+        self.assertIn("MODEL_REQUIRED_QUANT_HOLD:quant:metamodel", rec["reason_codes"])
+
+
 # ================================================================================================ helpers: coordinator view
 def required_codes(recs, side="BUY", required=(), now=None):
     """Coordinator evaluation (REQUIRED roles) of what quant.checks lets through - the Quant ASSIST view of the records."""
