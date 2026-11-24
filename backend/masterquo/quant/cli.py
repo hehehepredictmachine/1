@@ -115,6 +115,11 @@ def main(argv=None) -> int:
         except (M.MetaError, OSError, ValueError) as exc:
             print(f"[ODMOWA] {exc}")
             return 3
+        try:                                  # 1.46: which feature semantics the activated MetaModel gets (FEAT-1 / FEAT-3)
+            sem = M.feature_semantics(inst, a.task, a.version)
+            print(f"[QUANT] semantyka cech: {sem['feature_version']} – {sem['note']}")
+        except (M.MetaError, OSError, ValueError) as exc:
+            print(f"[QUANT] semantyka cech: nieznana ({exc})")
         return 0
     if a.cmd == "rollback":
         if not a.task:

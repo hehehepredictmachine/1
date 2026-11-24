@@ -503,6 +503,25 @@ def activate(inst: str, task_hash: str, ver: str) -> dict:
     return p
 
 
+SEMANTICS_NOTE = {
+    F.VERSION: "PMW-QUANT-FEAT-1 (artefakt sprzed 1.46): dostaje wejście jak przed 1.46 – kandydat SH koordynatora bez reżimu, "
+               "Kalman *_CANDIDATE i DXY STALE z dawnym znaczeniem.",
+    F.VERSION3: "PMW-QUANT-FEAT-3: w ścieżce SH koordynatora (Quant ASSIST) kandydat niesie reżim migawki SH (ctx:regime=*), Kalman "
+                "*_CANDIDATE = 0, DXY STALE = brak wartości (maska). HOLD liczony z reżimem ORAZ bez niego (wstrzymuje, gdy wstrzymuje "
+                "którakolwiek ocena – sam reżim tylko zaostrza). Względem dotychczasowego artefaktu FEAT-1 to inny model na innych cechach: "
+                "zbiór HOLD w ASSIST zmienia się w obie strony. Cofnięcie: POST /api/v1/quant/models/rollback albo "
+                "python -m masterquo quant rollback --instrument <I> --task <task_hash>.",
+}
+
+
+def feature_semantics(inst: str, task_hash: str, ver: str) -> dict:
+    """1.46: which feature semantics an artifact gets when served (for the activation answer of the API / CLI): FEAT-1 = the pre-1.46
+    input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9)."""
+    model, _ = load(inst, task_hash, ver)
+    fv = F.version_of(model.get("feature_schema"))
+    return {"feature_version": fv, "feature_schema": model.get("feature_schema"), "note": SEMANTICS_NOTE.get(fv)}
+
+
 def rollback(inst: str, task_hash: str) -> dict:
     with _ptr_lock(inst):
         p = pointer(inst, strict=True)

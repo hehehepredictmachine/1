@@ -573,6 +573,49 @@ class TestTrainingEvidenceAfterUpdate(unittest.TestCase):
         self.assertIn("FEAT-1", ev["note"])
 
 
+class TestActivationFeatureSemantics(unittest.TestCase):
+    """Activating the first FEAT-3 MetaModel changes the Quant HOLD set both ways (another model: SH candidate with the regime, Kalman
+    candidate = 0, stale DXY = mask) - the activation answer (API / CLI) now says which feature semantics the activated artifact gets."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_feature_semantics_of_feat1_and_feat3(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
+        v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
+        v1 = M.save("XAUUSD", as_legacy_artifact(res), spec={"task_hash": "t"})
+        s3, s1 = M.feature_semantics("XAUUSD", "t", v3), M.feature_semantics("XAUUSD", "t", v1)
+        self.assertEqual((s3["feature_version"], s1["feature_version"]), (F.VERSION3, F.VERSION))
+        self.assertIn("ctx:regime", s3["note"])
+        self.assertIn("w obie strony", s3["note"])
+        self.assertIn("rollback", s3["note"])
+        self.assertIn("przed 1.46", s1["note"])
+
+    def test_api_and_cli_activation_answers_carry_the_semantics(self):
+        from masterquo.quant import cli as QC
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        from test_audit_146_b_mq_api import call, make_app, make_rt
+        res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
+        v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
+        rt = make_rt()
+        rt.quant.instrument.return_value = "XAUUSD"
+        st, body, _ = call(make_app(rt), rt, "POST", "/api/v1/quant/models/activate", body={"instrument": "XAUUSD", "task_hash": "t", "version": v3})
+        self.assertEqual(st, 200, body[:300])
+        got = json.loads(body)
+        self.assertEqual(got["pointer"]["active"], {"t": v3})                              # the existing answer unchanged
+        self.assertEqual(got["feature_semantics"]["feature_version"], F.VERSION3)
+        out = []
+        with mock.patch("builtins.print", side_effect=lambda *a, **k: out.append(" ".join(map(str, a)))):
+            rc = QC.main(["activate", "--instrument", "XAUUSD", "--task", "t", "--version", v3])
+        self.assertEqual(rc, 0)
+        self.assertIn(F.VERSION3, "\n".join(out))
+        self.assertIn("ctx:regime", "\n".join(out))
+
+
 # ================================================================================================ D11
 class TestMonteCarloAdapterD11(unittest.TestCase):
     """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did
