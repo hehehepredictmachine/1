@@ -7,12 +7,15 @@ sh/setup.py kopiuje z wierszy macierzy tylko id / status / group / use / role (n
 * I0304: flow_reaction wskazuje model reakcji (lab/flow_context/task.py), nie Markov3 (osobny producent flow:markov3).
 * I0579: atr_vol wskazuje sh/context.py (_atr, Wilder 14); StopDistance nie jest częścią komponentu SH.
 * I0384: katalog nie odsyła do nieistniejącego „panelu 12 Master Models”.
+* I0003: wiersze grupowe (th_direction / lab / si_move) oznaczone is_group i nieliczone w counts_by_*; obok stratnego `state` katalog
+  publikuje runtime_state (surowa sonda) i oś use (udział per strategia z sh/models.participation).
 """
 from __future__ import annotations
 
 import re
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _env  # noqa: F401
 from _env import TempData
@@ -150,6 +153,68 @@ class TestI0384CatalogTexts(unittest.TestCase):
         self.assertTrue(mm)
         for r in mm:
             self.assertIn("/api/v1/mm/", r["reason"])
+
+
+# ================================================================================================ grupy i osie stanu (I0003)
+class TestI0003CatalogGroupsNotDoubleCounted(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    @staticmethod
+    def _reg():
+        return {"versions": {"TH_LOGREG_M5_H6": [{"version": "v1"}]}, "active": {"TH_LOGREG_M5_H6": "v1"}}
+
+    def _build(self, rt=None):
+        from masterquo.modelhub import catalog as CAT
+        with mock.patch("masterquo.trainhub.registry.registry", return_value=self._reg()):
+            return CAT.build(rt, INST)
+
+    def test_group_rows_are_flagged_and_not_counted(self):
+        from masterquo.quant import ids as I
+        out = self._build()
+        rows = out["items"]
+        by = {r["id"]: r for r in rows}
+        for gid in I.GROUPS:
+            self.assertTrue(by[gid].get("is_group"), gid)
+            self.assertEqual(by[gid]["members"], list(I.GROUPS[gid]))
+        self.assertFalse(any(r.get("is_group") for r in rows if r["id"] not in I.GROUPS))
+        real = [r for r in rows if not r.get("is_group")]
+        exp_cat = {}
+        for r in real:
+            exp_cat[r["category"]] = exp_cat.get(r["category"], 0) + 1
+        self.assertEqual(out["counts_by_category"], exp_cat)
+        # before: TRAINABLE counted th_direction next to th_logreg (and the lab / si_move groups)
+        self.assertEqual(out["counts_by_category"]["TRAINABLE"], sum(1 for r in real if r["category"] == "TRAINABLE"))
+        self.assertEqual(sum(out["counts_by_state"].values()), len(real))
+        self.assertEqual(out["counts_group_rows"], len(I.GROUPS))
+        # the rows themselves stay (ids, category, state unchanged - the panel lists them)
+        self.assertEqual(by["th_direction"]["category"], "TRAINABLE")
+        self.assertEqual(by["th_direction"]["state"], "READY")
+
+    def test_runtime_state_is_the_raw_probe(self):
+        out = self._build()
+        by = {r["id"]: r for r in out["items"]}
+        th = by["th_direction"]
+        self.assertEqual(th["runtime_state"], "SHADOW_ONLY")                   # state READY is the lossy mapping (kept for compatibility)
+        self.assertEqual(th["state"], "READY")
+        for r in out["items"]:
+            self.assertIn("runtime_state", r, r["id"])
+            if r.get("source") == "sh/models.REGISTRY":
+                self.assertEqual(r["runtime_state"], r["probe_status"], r["id"])
+            else:
+                self.assertEqual(r["runtime_state"], r["state"], r["id"])         # no probe, no mapping
+
+    def test_use_axis_matches_the_sh_matrix(self):
+        from masterquo.sh import models as SM
+        out = self._build()
+        with mock.patch("masterquo.trainhub.registry.registry", return_value=self._reg()):
+            mx = {r["id"]: r for r in SM.matrix(None, INST)["rows"]}
+        for r in out["items"]:
+            if r.get("source") != "sh/models.REGISTRY":
+                self.assertNotIn("use", r, r["id"])
+                continue
+            self.assertEqual(r["use"], {s: mx[r["id"]][s]["use"] for s in ("SCALPING", "HEDGING")}, r["id"])
 
 
 if __name__ == "__main__":

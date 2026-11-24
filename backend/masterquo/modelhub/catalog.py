@@ -6,6 +6,10 @@ blocked status), trainhub registry (Training Center packages) + the modules adde
 code appears only from those sources with its blocker - nothing is reported as implemented or trained without evidence.
 Categories: TRAINABLE (artifact from training), ONLINE (estimated / filtered online), INDICATOR (deterministic calculation), RULE
 (rule / state machine / strategy), SIMULATION (Monte Carlo), EXTERNAL (Claude agent), INFRA (optimiser, benchmark, data).
+1.46 arch (I0003), state axes per row: `state` (unified catalog state - kept for compatibility; for SH rows a LOSSY mapping of the probe,
+e.g. SHADOW_ONLY -> READY), `runtime_state` (the raw probe status of an SH row; the state itself for rows without a probe) and, for SH rows,
+`use` (participation per strategy from sh/models.participation - the SH matrix). Rows naming a GROUP of producers (quant/ids.GROUPS:
+th_direction, lab, si_move) carry is_group / members and are left out of counts_by_category / counts_by_state (counts_group_rows).
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_
                "RULE_STRATEGY": "RULE", "OPTIMIZER": "INFRA", "DATA_INFRA": "INFRA", "VISUALIZATION": "INDICATOR", "BENCHMARK": "INFRA"}
 # 1.46 arch (I0384): the 1.41 panel "12 Master Models" is not in the current frontend - the API stays (public contract)
 MM_NO_PATH = "moduł PMW-MM bez ścieżki w strategiach (obserwacja / badania – API /api/v1/mm/*; brak panelu w bieżącym interfejsie)"
+STRATEGIES = ("SCALPING", "HEDGING")
 # where the code lives + what it needs (sh/models.REGISTRY ids)
 LOCATION = {
     "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
@@ -122,6 +127,7 @@ def _use_note(pr: dict) -> str | None:
 
 
 def build(rt, inst: str) -> dict:
+    from ..quant import ids as I
     from ..sh import models as SM
     rows = []
     for it in SM.REGISTRY:
@@ -137,9 +143,13 @@ def build(rt, inst: str) -> dict:
         rows.append({"id": it["id"], "name": it["name"], "category": cat, "location": loc, "purpose": it["output"], "required_data": data,
                      "input": data, "output": it["output"], "instruments": ["XAUUSD", "BTC"], "training": it.get("train") or "nie dotyczy",
                      "state": state, "state_pl": C.STATES[state], "reason": pr.get("reason"), "probe_status": pr["status"], "group": it["group"],
-                     "roles": it["roles"], "source": "sh/models.REGISTRY", "use_note": _use_note(pr)})
+                     "roles": it["roles"], "source": "sh/models.REGISTRY", "use_note": _use_note(pr),
+                     # 1.46 arch (I0003): the raw probe (state above is the lossy compatibility mapping) and what the bot really does
+                     # with the component per strategy (sh/models.participation - the SH matrix; presentation only)
+                     "runtime_state": pr["status"], "use": {s: SM.participation(it, pr, s)["use"] for s in STRATEGIES}})
+        if it["id"] in I.GROUPS:                                         # a GROUP of producers (th_direction / lab / si_move), never one
+            rows[-1].update(is_group=True, members=list(I.GROUPS[it["id"]]))
     seen = {r["id"] for r in rows}
-    from ..quant import ids as I
     seen_canon = {I.resolve(r["id"]) for r in rows} - {None}          # 1.46 arch: join MM modules to SH rows by canonical id, not by 'mm_'
     try:
         from ..mm import inventory as MI
@@ -170,11 +180,17 @@ def build(rt, inst: str) -> dict:
                  "output": "prawdopodobieństwo w modelu (kalibracja osobno)", "instruments": ["XAUUSD", "BTC"], "training": "kalibracja: montecarlo validate",
                  "state": "READY", "state_pl": C.STATES["READY"], "reason": "symulacja na żądanie", "source": "montecarlo"})
     rows += _th_entries(inst, rt)
-    counts = {}
     for r in rows:
+        r.setdefault("runtime_state", r["state"])                       # rows without a probe: the state itself (no mapping happened)
+    # 1.46 arch (I0003): group rows are not producers - counting them doubled th_direction next to th_* (TRAINABLE)
+    real = [r for r in rows if not r.get("is_group")]
+    counts = {}
+    for r in real:
         counts.setdefault(r["category"], 0)
         counts[r["category"]] += 1
     return {"instrument": inst, "items": rows, "counts_by_category": counts,
-            "counts_by_state": {s: sum(1 for r in rows if r["state"] == s) for s in C.STATES}, "states": C.STATES,
+            "counts_by_state": {s: sum(1 for r in real if r["state"] == s) for s in C.STATES}, "states": C.STATES,
+            "counts_group_rows": len(rows) - len(real),
             "note": "stan = sonda na żywo; 'gotowy' dla modelu SHADOW oznacza gotowy do obserwacji, nie dopuszczony do głosu w strategii "
-                    "(wyjątki – ASSIST / REQUIRED – opisuje pole use_note wiersza)"}
+                    "(wyjątki – ASSIST / REQUIRED – opisuje pole use_note wiersza); runtime_state = surowa sonda, use = udział per strategia "
+                    "(macierz SH); wiersze grupowe (is_group: th_direction, lab, si_move) nie są liczone w counts_by_*"}
