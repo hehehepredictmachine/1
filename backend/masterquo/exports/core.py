@@ -37,7 +37,9 @@ SECRET_PATTERNS = (
     re.compile(r"\b\d{6,12}:[A-Za-z0-9_\-]{30,}\b"),                     # Telegram bot token <id>:<35 chars>
     re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{16,}"),                          # Anthropic API key
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),                  # PEM private key
-    re.compile(r"\bPMW1-PRIV-[A-Za-z0-9_\-]{16,}"),                       # (defensive) private licence material marker
+    # 1.46: was r"\bPMW1-PRIV-..." - a format that does not exist; the owner's licence private key (licensing/owner.py KEY_HEADER +
+    # "seed: <64 hex>", the pattern of tools/verify_release.py) was neither redacted nor caught by leaks(). Also the JSON-escaped form.
+    re.compile(r"PMW-OWNER-ED25519-PRIVATE-KEY v1(?:\\r)?(?:\\n|\s)+seed:\s*[0-9a-fA-F]{64}"),
 )
 SECRET_NAMES = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")
 

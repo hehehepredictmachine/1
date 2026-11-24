@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -15,6 +14,7 @@ from ..timeutil import iso, utcnow
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 _MIG_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+_INSERT_RE = re.compile(r"\s*(?:INSERT|REPLACE)\b", re.IGNORECASE)
 
 
 class Database:
@@ -59,9 +59,14 @@ class Database:
         return dict(r) if r else None
 
     def execute(self, sql: str, args: tuple | list = ()) -> int:
+        """INSERT / REPLACE that wrote a row -> its rowid; any other statement -> the number of changed rows."""
         with self.tx() as c:
             cur = c.execute(sql, args)
-            return cur.lastrowid or cur.rowcount
+            # 1.46: lastrowid is the connection's LAST INSERT rowid - after an UPDATE / DELETE (or an ignored INSERT OR IGNORE) it returned
+            # that stale id instead of the changed-row count (e.g. 1 for an UPDATE that matched nothing)
+            if cur.rowcount > 0 and _INSERT_RE.match(sql):
+                return cur.lastrowid or cur.rowcount
+            return cur.rowcount
 
     # -- migrations ---------------------------------------------------------
     def migrate(self) -> list[str]:
@@ -120,6 +125,7 @@ class Database:
             self._local.conn = None
 
 
+# 1.46: the unused copy_file() helper (and its shutil import) was removed - dead code, no caller
 def _split_sql(sql: str) -> list[str]:
     lines = [ln for ln in sql.splitlines() if not ln.strip().startswith("--")]
     return [s.strip() for s in "\n".join(lines).split(";") if s.strip()]
@@ -127,7 +133,3 @@ def _split_sql(sql: str) -> list[str]:
 
 def dumps(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), allow_nan=False, default=str)
-
-
-def copy_file(src: Path, dst: Path) -> None:
-    shutil.copy2(src, dst)

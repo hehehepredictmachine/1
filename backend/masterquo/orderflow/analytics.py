@@ -7,7 +7,6 @@ Depth (resting liquidity) is a separate domain and is never counted as traded vo
 """
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from decimal import Decimal, ROUND_FLOOR
 
@@ -194,9 +193,7 @@ def heatmap(snapshots: list[dict], row: float) -> dict:
     return {"columns": cols, "row_size": row, "quality": "DEGRADED (snapshoty odpytywane, top-N; brak pełnej historii L2/MBO)"}
 
 
+# 1.46: the unused is_finite_profile() (and the math import) was removed - dead code, no caller
 def bubbles(events, min_size: float = 0.0) -> list[dict]:
     return [{"ts": e.ts, "price": e.price, "size": e.size, "aggressor": e.aggressor} for e in events if e.size >= min_size]
 
-
-def is_finite_profile(vp: dict) -> bool:
-    return all(math.isfinite(r["total"]) for r in vp.get("rows", []))

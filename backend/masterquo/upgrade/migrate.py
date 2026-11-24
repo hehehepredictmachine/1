@@ -5,7 +5,9 @@
              NOT copied: a rollback restores configuration and routing, never older trade / event history.
   after(rt)  after the services started: inventory "after" + strategy_preservation.json + model_inventory_after.json.
   auto_install(rt)  TiRex-2 then TabICLv2 installed in the background (own environments + pinned weights) when missing; at most one
-             attempt per 24 h; never while the user switched auto_install off. The bot works during the installation.
+             attempt per 24 h; never while the user switched auto_install off. The bot works during the installation. 1.46: never a
+             second heavy install at once - left to Bootstrap (profile FULL, it queues both models itself) and otherwise each step waits
+             until no other heavy install (panel, Bootstrap, Kronos) runs.
 
 Activation policy of the update: DIRECT_USER_REQUEST (enabled, autostart, analysis use ACTIVE as soon as the technical inputs exist;
 no SHADOW / backtest / win-rate gate). It never changes the account execution mode, STOP, risk, stakes or leverage.
@@ -77,8 +79,10 @@ def before() -> dict:
         rep = {"error": f"{type(exc).__name__}: {exc}"[:300]}
     st.update(version=VERSION, before_done=True, before_at=_now(), snapshot_dir=str(bdir), snapshot_files=saved, reports_before=rep,
               activation_policy="DIRECT_USER_REQUEST",
+              # 1.46: the 1.41 catalog text ("9 x 10 profiles") was written on every fresh install - the active catalog is the current one
               activation_scope=["tsfm:tirex2 (analysis ACTIVE; hold-roles OBSERVE)", "quant:tabicl_v2 (confidence estimator)",
-                                "research modules (ETC, G7, graph, SDformerFlow, COA, BChimp)", "baskets (9 x 10 profiles, SIGNALS)"],
+                                "research modules (ETC, G7, graph, SDformerFlow, COA, BChimp)",
+                                "baskets (active catalog: 60 strategies / 6 baskets / 2 profiles, SIGNALS; OTC retired)"],
               not_changed=["account execution mode", "STOP", "risk / stakes / leverage", "existing strategy parameters and switches"])
     _save(st)
     return st
@@ -104,6 +108,36 @@ def after(rt) -> dict:
     return st
 
 
+_START_DELAY_S = 30.0          # after the start burst (feed, UI) - installation is background work
+_POLL_S = 1.0
+_WAIT_MAX_S = 6 * 3600.0       # 1.46: longest wait for another heavy install (= Bootstrap.run_heavy timeout); then this attempt is skipped
+
+
+def _heavy_install_running(rt) -> str | None:
+    """1.46: '<service>:<job>' of a heavy install that runs now (TSFM install_* incl. install_tabicl, Kronos install / migrate) or None."""
+    for svc_name, names in (("tsfm", None), ("kronos", ("install", "migrate"))):
+        jobs = getattr(getattr(rt, svc_name, None), "jobs", None)
+        if not isinstance(jobs, dict):
+            continue
+        for name, job in list(jobs.items()):
+            if (names is None and not str(name).startswith("install_")) or (names is not None and name not in names):
+                continue
+            if isinstance(job, dict) and job.get("state") == "RUNNING":
+                return f"{svc_name}:{name}"
+    return None
+
+
+def _bootstrap_installs(rt) -> bool:
+    """1.46: Bootstrap (profile FULL, its thread running) queues TiRex-2 and TabICLv2 itself, strictly one heavy install at a time - a
+    second scheduler here started tirex2 while Bootstrap.run_heavy installed chronos2 (two heavy installs at once)."""
+    bs = getattr(rt, "bootstrap", None)
+    t = getattr(bs, "_thread", None)
+    try:
+        return bool(t is not None and t.is_alive() and not bs._stop.is_set() and (bs.state or {}).get("profile") == "FULL")
+    except Exception:  # noqa: BLE001 - an unexpected Bootstrap shape = not delegated (the wait below still applies)
+        return False
+
+
 def auto_install(rt) -> dict:
     """TiRex-2 -> TabICLv2, sequential (one heavy job at a time), background; one attempt per 24 h."""
     st = state()
@@ -123,6 +157,10 @@ def auto_install(rt) -> dict:
         pass
     if not (need_tirex or need_tabicl):
         return {"ok": True, "reason": "oba modele zainstalowane"}
+    if _bootstrap_installs(rt):                                # 1.46: one installation queue - Bootstrap's (no last_try: nothing was tried)
+        rt.log.info("UPGRADE", "AI_AUTO_INSTALL",  # noqa: PLE1205 - AppLog.info(source, code, message), not logging
+                    "Instalacja modeli 1.41 (TiRex-2 / TabICLv2) w kolejce Bootstrap – jedna ciężka instalacja naraz.")
+        return {"ok": True, "delegated": "bootstrap", "tirex2": need_tirex, "tabicl": need_tabicl}
     cfg.update(enabled=True, last_try=time.time(), started_at=_now(), tirex2=need_tirex, tabicl=need_tabicl)
     st["auto_install"] = cfg
     _save(st)
@@ -135,17 +173,25 @@ def auto_install(rt) -> dict:
                     "--weights-root", str(default_weights_root())]
             rt.tsfm._run_job_proc("install_tabicl", argv, on_done=lambda ok, job: QT._INST_CACHE.clear())
 
+    stop_ev = getattr(rt, "_stop", None)
+
+    def idle() -> bool:
+        """1.46: wait until no heavy install runs (the TiRex-2 job started here, the panel, Bootstrap, Kronos) - before EACH step; the
+        old code waited only for its own TiRex-2 job (max 1 h) and started TabICL next to any other install. False = still busy after
+        _WAIT_MAX_S or the engine stops -> the step is skipped (next attempt after 24 h)."""
+        t0 = time.monotonic()
+        while _heavy_install_running(rt):
+            if (stop_ev is not None and stop_ev.is_set()) or time.monotonic() - t0 > _WAIT_MAX_S:
+                return False
+            time.sleep(_POLL_S)
+        return not (stop_ev is not None and stop_ev.is_set())
+
     def run():
-        time.sleep(30)                                        # after the start burst (feed, UI) - installation is background work
-        if need_tirex:
-            r = rt.tsfm.start_install("tirex2")
-            if r.get("ok"):
-                for _ in range(3600):                         # wait for the TiRex-2 job (max 1 h) before the TabICL job: one heavy job
-                    j = rt.tsfm.job("install_tirex2") or {}
-                    if j.get("state") in ("DONE", "FAILED", "CANCELLED"):
-                        break
-                    time.sleep(1)
-        tabicl_job()
+        time.sleep(_START_DELAY_S)                            # after the start burst (feed, UI) - installation is background work
+        if need_tirex and idle():
+            rt.tsfm.start_install("tirex2")                   # its job is RUNNING from here on - idle() below waits for it
+        if need_tabicl and idle():
+            tabicl_job()
     threading.Thread(target=run, name="ai141-autoinstall", daemon=True).start()
     rt.log.info("UPGRADE", "AI_AUTO_INSTALL", "Automatyczna instalacja modeli 1.41 w tle: "
                 + ", ".join(x for x, n in (("TiRex-2", need_tirex), ("TabICLv2", need_tabicl)) if n) + " (bot działa dalej).")
@@ -195,7 +241,8 @@ def apply_142(rt) -> dict:
       * Kronos: SCALPING / HEDGING OBSERVE -> ASSIST (REQUIRED kept);
       * FOREX_MT5 baskets: execution AUTO_SH (plans go to the existing SH path).
     ASSIST may only HOLD an entry on a fresh contrary forecast - it never opens a position. Not changed: the account execution mode,
-    STOP, the user's risk limits, stakes, leverage, SL; CRYPTO / OTC stay manual. A later user change is never overwritten (runs once)."""
+    STOP, the user's risk limits, stakes, leverage, SL; CRYPTO stays manual (1.46: OTC was retired in 1.45 - history only; "90 strategii"
+    is the 1.42 catalog, the active one has 60 strategies / 6 baskets / 2 profiles). A later user change is never overwritten (runs once)."""
     st = state_142()
     if st.get("models_assist_done"):
         return st
@@ -229,7 +276,8 @@ def apply_142(rt) -> dict:
         except Exception as exc:  # noqa: BLE001
             errors.append(f"baskets: {type(exc).__name__}: {exc}"[:200])
     st.update(version=V142, models_assist_done=True, at=_now(), activation_policy="DIRECT_USER_REQUEST", applied=done, errors=errors,
-              not_changed=["account execution mode", "STOP", "risk limits / stakes / leverage / SL", "CRYPTO / OTC (manual)"])
+              # 1.46: "CRYPTO / OTC (manual)" described OTC as a live manual line on fresh installs - OTC is retired (history only)
+              not_changed=["account execution mode", "STOP", "risk limits / stakes / leverage / SL", "CRYPTO (manual)", "OTC retired (history only)"])
     p = _st142_path()
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")

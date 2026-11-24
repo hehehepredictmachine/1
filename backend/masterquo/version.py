@@ -11,6 +11,4 @@ DECISION_SCHEMA_VERSION = "mq-decision-1.0.0"
 AGENT_SCHEMA_VERSION = "mq-agent-1.0.0"
 # Reconstructed MasterQUO specification (docs/MASTERQUO_SPEC_REKONSTRUKCJA_v1.0.0.md).
 SPEC_VERSION = "MQ-SPEC-RECON-1.0.0"
-# Legacy contract versions carried by the vendored engines (unchanged).
-LEGACY_SCHEMA_VERSION = "2.0.0"
-LEGACY_PROMPT_VERSION = "4.1.0"
+# 1.46: LEGACY_SCHEMA_VERSION / LEGACY_PROMPT_VERSION removed - dead constants, nothing read them.

@@ -8,7 +8,7 @@ semantics is VERIFIED; otherwise the trade's aggressor is UNKNOWN and every dire
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 ENGINE_VERSION = "PMW-TRADE-LEDGER-1"
 
@@ -115,6 +115,7 @@ class TradeLedger:
         return sum(e.size for e in self.events(instrument_id))
 
 
+# 1.46: the unused with_aggressor() was removed (dead code - no caller); the aggressor is set once, at parse time (aggressor_from_raw)
 def from_hyperliquid(instrument_id: str, rows: list[dict]) -> list[TradeEvent]:
     out = []
     for r in rows or []:
@@ -126,6 +127,3 @@ def from_hyperliquid(instrument_id: str, rows: list[dict]) -> list[TradeEvent]:
             continue
     return out
 
-
-def with_aggressor(e: TradeEvent, provider: str | None = None) -> TradeEvent:
-    return replace(e, aggressor=aggressor_from_raw(provider or e.provider, e.raw_side))
