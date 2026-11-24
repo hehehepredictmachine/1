@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _env  # noqa: F401
 from _env import TempData
-from test_sh_service import NOW, Bridge, Log, mk_setup
+from test_sh_service import NOW, Bridge, mk_setup
 
 from masterquo.evaluation import contract as K
 from masterquo.evaluation import engine as E

@@ -6,7 +6,6 @@ import time
 import unittest
 from pathlib import Path
 
-import numpy as np
 
 import _env  # noqa: F401
 from _env import TempData

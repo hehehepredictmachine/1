@@ -64,10 +64,6 @@ def event_key(spec: EV.EventSpec) -> str:
     return "|".join(str(x) for x in (spec.instrument, spec.event_id, spec.label_version, spec.ambiguity, spec.be_after, spec.timeout_rule))
 
 
-def _kid(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()[:12]
-
-
 def tdir() -> Path:
     p = paths.data_dir() / "quant" / "tabicl"
     p.mkdir(parents=True, exist_ok=True)

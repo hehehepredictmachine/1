@@ -9,8 +9,6 @@ from ..db.database import dumps
 from .hedge_fsm import Basket, HedgeConfig, Leg2
 from .lifecycle import Leg, Position
 
-SIGNAL_STATUSES = ("READY", "WAIT", "NO_TRADE", "EXPIRED", "INVALIDATED")
-
 
 # ---------------------------------------------------------------------------- state machine (de)serialization
 def pos_dump(p: Position) -> dict:

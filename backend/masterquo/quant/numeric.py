@@ -3,11 +3,12 @@
 Every function either returns a finite result or raises NumericError with a named reason (ZERO_VARIANCE, SMALL_SAMPLE, SINGULAR,
 NON_FINITE_INPUT, ZERO_DENOMINATOR ...). Callers turn the error into an unavailable result with that reason - never into 0 / 0.5.
 
-Contents: simple / log returns, rolling mean / variance (Welford, stable), quantiles, historical and EWMA volatility, GARCH(1,1) variance
-recursion for given parameters, percent <-> decimal scale, time-aligned covariance / correlation with PSD repair (eigenvalue floor +
-shrinkage) and sample-size checks, stable log-sum-exp / softmax, log loss, Brier score, reliability bins with counts + ECE, regression
-metrics, moving-block bootstrap for metrics of dependent series.
-Square-root-of-time scaling is NOT applied anywhere implicitly (it assumes i.i.d. increments; a caller must ask for it by name).
+Contents: log returns, rolling mean / variance (Welford, stable), quantiles, historical volatility, GARCH(1,1) variance recursion for
+given parameters, time-aligned covariance / correlation with PSD repair (eigenvalue floor + shrinkage) and sample-size checks, stable
+softmax, log loss, Brier score, reliability bins with counts + ECE, regression metrics, moving-block bootstrap for metrics of dependent
+series. (1.46 arch, I0114: simple_returns, EWMA volatility, percent/decimal scale, sqrt-of-time scaling and log-sum-exp had no caller
+and were removed.)
+Square-root-of-time scaling is NOT applied anywhere implicitly (it assumes i.i.d. increments; a caller must apply it explicitly).
 """
 from __future__ import annotations
 
@@ -35,13 +36,6 @@ def _arr(x, what: str = "x", min_n: int = 1) -> np.ndarray:
 
 
 # ------------------------------------------------------------------------------------------------ returns and statistics
-def simple_returns(prices) -> np.ndarray:
-    p = _arr(prices, "prices", 2)
-    if np.any(p <= 0):
-        raise NumericError("NON_POSITIVE_PRICE")
-    return p[1:] / p[:-1] - 1.0
-
-
 def log_returns(prices) -> np.ndarray:
     p = _arr(prices, "prices", 2)
     if np.any(p <= 0):
@@ -85,20 +79,6 @@ def hist_vol(returns, ddof: int = 1) -> float:
     return math.sqrt(v)
 
 
-def ewma_vol(returns, lam: float = 0.94, seed_n: int = 20) -> np.ndarray:
-    """RiskMetrics recursion sigma2_t = lam * sigma2_{t-1} + (1 - lam) * r_{t-1}^2, seeded with the variance of the first seed_n returns."""
-    r = _arr(returns, "returns", seed_n + 1)
-    if not 0 < lam < 1:
-        raise NumericError("LAMBDA_OUT_OF_RANGE")
-    s2 = np.empty(len(r) - seed_n + 1)
-    s2[0] = float(np.mean(r[:seed_n] ** 2))
-    if s2[0] <= 0:
-        raise NumericError("ZERO_VARIANCE")
-    for i, x in enumerate(r[seed_n:], start=1):
-        s2[i] = lam * s2[i - 1] + (1 - lam) * x * x
-    return np.sqrt(s2)
-
-
 def garch11_forecast(returns, omega: float, alpha: float, beta: float, h: int = 1) -> dict:
     """Variance recursion for GIVEN parameters (fitting belongs to the VOL_GARCH family); h-step forecast of the per-bar variance.
     Requires omega > 0, alpha, beta >= 0, alpha + beta < 1 (covariance stationary)."""
@@ -112,21 +92,6 @@ def garch11_forecast(returns, omega: float, alpha: float, beta: float, h: int = 
     path = [lr + (alpha + beta) ** (k - 1) * (s2 - lr) for k in range(1, h + 1)]
     return {"variance_next": float(s2), "variance_path": [float(v) for v in path], "long_run_variance": float(lr),
             "variance_sum_h": float(sum(path)), "note": "suma wariancji po krokach (bez skalowania pierwiastkiem czasu)"}
-
-
-def to_decimal(v: float, scale: str) -> float:
-    if scale == "decimal":
-        return float(v)
-    if scale == "percent":
-        return float(v) / 100.0
-    raise NumericError(f"SCALE_UNKNOWN:{scale}")
-
-
-def sqrt_time(sigma: float, h: int) -> float:
-    """Explicit i.i.d. scaling - only when the caller accepts that assumption."""
-    if h <= 0:
-        raise NumericError("HORIZON_INVALID")
-    return float(sigma) * math.sqrt(h)
 
 
 # ------------------------------------------------------------------------------------------------ covariance
@@ -177,12 +142,6 @@ def covariance(X, *, min_obs_per_var: int = 5, shrink: float | None = None) -> d
 
 
 # ------------------------------------------------------------------------------------------------ probabilities
-def logsumexp(z, axis: int = -1) -> np.ndarray:
-    z = _arr(z, "z", 1)
-    m = np.max(z, axis=axis, keepdims=True)
-    return (m + np.log(np.sum(np.exp(z - m), axis=axis, keepdims=True))).squeeze(axis)
-
-
 def softmax(z, axis: int = -1) -> np.ndarray:
     z = _arr(z, "z", 1)
     e = np.exp(z - np.max(z, axis=axis, keepdims=True))

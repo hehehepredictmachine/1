@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-import _env
+import _env  # noqa: F401 - side effect: sys.path / offline flags
 from _env import TempData
 
 

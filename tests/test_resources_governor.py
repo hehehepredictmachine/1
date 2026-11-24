@@ -14,7 +14,7 @@ import time
 import unittest
 from pathlib import Path
 
-import _env
+import _env  # noqa: F401 - side effect: sys.path / offline flags
 from _env import TempData
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

@@ -33,7 +33,6 @@ from datetime import timedelta
 from ..timeutil import iso, parse_iso
 
 VERSION = "MQ-WALLS-1.0.0"
-SOURCE_PRIORITY = ("IV_SOURCED", "IV_IMPORT", "IV_MANUAL", "HV_PROXY")
 
 
 def hv_annual(d1_closed: list[dict], window: int) -> float | None:

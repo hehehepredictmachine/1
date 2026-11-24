@@ -24,7 +24,6 @@ from . import base as B
 from . import registry
 
 VERSION = "PMW-FAM-SERVICE-1"
-DIRECTIONAL = ("SEQ_LSTM", "SEQ_GRU", "TS_ARIMA", "TS_SARIMAX")
 # 1.46: families whose predict() needs the bars of every leg - _live() has no such path (only training reads the legs from the archive)
 NO_LIVE_PATH = {"PAIR_COINT": "brak ścieżki danych na żywo dla nóg pary (pair_bars) – relacja jest liczona tylko w treningu",
                 "STATARB": "brak ścieżki danych na żywo dla nóg koszyka (basket_bars) – reszty są liczone tylko w treningu"}
