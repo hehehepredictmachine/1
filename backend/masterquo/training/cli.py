@@ -235,7 +235,8 @@ def cmd_export(a) -> int:
 
 def cmd_ml_offline(a) -> int:
     from ..ml import offline
-    res = offline.train(a.instrument, Path(a.dataset), include_approx=a.include_approx, days=a.days, commission=a.commission, threads=a.threads)
+    res = offline.train(a.instrument, Path(a.dataset), include_approx=a.include_approx, days=a.days, commission=a.commission, threads=a.threads,
+                        activate=not a.no_activate)
     core.write_json_atomic(Path(a.out), res)
     print(json.dumps({k: res.get(k) for k in ("status", "reason", "role", "champion")}, ensure_ascii=False))
     return 0 if res.get("status") in ("DONE", "INSUFFICIENT_DATA") else 1
@@ -517,6 +518,8 @@ def parser() -> argparse.ArgumentParser:
     mo.add_argument("--threads", type=int, default=2)
     mo.add_argument("--include-approx", action="store_true")
     mo.add_argument("--commission", type=float)
+    mo.add_argument("--no-activate", "--no-promote", dest="no_activate", action="store_true",
+                    help="1.46: modele oceniane i zapisane, champion bez zmian (profil TEST_INSTALACJI)")
     mo.add_argument("--out", required=True)
     lo = sub.add_parser("lab-offline")
     lo.add_argument("--instrument", choices=INSTR, required=True)

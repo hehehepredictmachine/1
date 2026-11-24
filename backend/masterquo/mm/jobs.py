@@ -37,7 +37,11 @@ def _save(ctx, model_id: str, state: dict, manifest: dict, passed: bool) -> tupl
     aid = artifacts.save(ctx.inst, model_id, state, {**manifest, "status": st, "snapshot_id": ctx.snap.snapshot_id, "data_kind": ctx.snap.data_kind,
                                                      "seed": ctx.seed, "profile": ctx.profile})
     if st == "VALIDATED_SHADOW":
-        artifacts.promote_shadow(ctx.inst, model_id, aid, "gates passed on REAL_USER_DATA (shadow observation only)")
+        if getattr(ctx, "activate", True):
+            artifacts.promote_shadow(ctx.inst, model_id, aid, "gates passed on REAL_USER_DATA (shadow observation only)")
+            getattr(ctx, "promoted", []).append(model_id)
+        elif hasattr(ctx, "log"):          # 1.46 D7: mm train --no-activate (TEST_INSTALACJI) - validated artifact kept, pointer unchanged
+            ctx.log(f"[{model_id}] VALIDATED_SHADOW {aid} zapisany bez aktywacji (--no-activate) – wskaźnik SHADOW bez zmian")
     return aid, st
 
 

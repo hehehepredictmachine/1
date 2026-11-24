@@ -9,7 +9,9 @@ any flag - each step promoted / activated its artifact (ML champion, active Mont
 Offline, synthetic or mocked data only; nothing here touches MT5, orders or execution."""
 from __future__ import annotations
 
+import io
 import json
+import os
 import threading
 import unittest
 from pathlib import Path
@@ -237,6 +239,164 @@ class TestOfflinePolicyAndNoActivate(unittest.TestCase):
         promote.assert_not_called()
         self.assertEqual(out["role"], "ELIGIBLE_NOT_ACTIVATED")
         self.assertFalse(out["activate"])
+
+    def test_cli_flag_no_activate_and_alias(self):
+        from masterquo.ml import offline
+        from masterquo.training import cli
+        for flag in ("--no-activate", "--no-promote"):
+            with self.subTest(flag=flag), mock.patch.object(offline, "train", return_value={"status": "DONE"}) as tr, \
+                    mock.patch("sys.stdout", io.StringIO()):
+                rc = cli.main(["ml-offline", "--instrument", "XAUUSD", "--dataset", "D", "--out", str(Path(self.td.dir) / "o.json"), flag])
+                self.assertEqual(rc, 0)
+                self.assertIs(tr.call_args.kwargs["activate"], False)
+        with mock.patch.object(offline, "train", return_value={"status": "DONE"}) as tr, mock.patch("sys.stdout", io.StringIO()):
+            cli.main(["ml-offline", "--instrument", "XAUUSD", "--dataset", "D", "--out", str(Path(self.td.dir) / "o.json")])
+        self.assertIs(tr.call_args.kwargs["activate"], True)                  # default unchanged (contract of the CLI)
+
+
+# ============================================================================= D7 Monte Carlo
+def _mc_rep():
+    return {"status": "DONE", "data_kind": "REAL_USER_DATA", "verdict": "PRZEWAGA_NAD_BAZOWYM", "instrument": "XAUUSD", "chosen_variant": "IID",
+            "calibrator": {"x": [0.0, 1.0], "y": [0.0, 1.0]}, "dataset_id": "D",
+            "test": {"n": 100, "calibrated": {"brier": 0.20}, "base": {"brier": 0.25}, "ambiguous_share": 0.1},
+            "brier_diff_calibrated_minus_base_ci95": [-0.08, -0.01]}
+
+
+class TestMonteCarloNoActivate(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_save_without_activation_keeps_active(self):
+        from masterquo.montecarlo import validate as V
+        first = V.save("XAUUSD", _mc_rep())
+        self.assertTrue(first["activated"])
+        s = V.save("XAUUSD", dict(_mc_rep(), dataset_id="D2"), activate=False)        # another report (run id = time + report hash)
+        self.assertEqual((s["activated"], s["eligible"]), (False, True))
+        reg = json.loads((V.root("XAUUSD") / "registry.json").read_text(encoding="utf-8"))
+        self.assertEqual(reg["active"], first["run_id"])                      # previous calibrator stays active
+        self.assertEqual(reg["runs"][s["run_id"]]["activation"], "NOT_ACTIVATED_BY_PLAN")
+        self.assertFalse((V.root("XAUUSD") / "runs" / s["run_id"] / "calibrator.json").exists())
+
+    def test_cli_no_activate(self):
+        from masterquo.montecarlo import cli
+        from masterquo.montecarlo import validate as V
+        with mock.patch.object(V, "validate", return_value=_mc_rep()), mock.patch("sys.stdout", io.StringIO()):
+            rc = cli.main(["validate", "--dataset", "D", "--no-activate"])
+        self.assertEqual(rc, 0)
+        reg = json.loads((V.root("XAUUSD") / "registry.json").read_text(encoding="utf-8"))
+        self.assertIsNone(reg["active"])
+        with mock.patch.object(V, "validate", return_value=_mc_rep()), mock.patch("sys.stdout", io.StringIO()):
+            cli.main(["validate", "--dataset", "D"])
+        reg = json.loads((V.root("XAUUSD") / "registry.json").read_text(encoding="utf-8"))
+        self.assertIsNotNone(reg["active"])                                   # without the flag: as before
+
+
+# ============================================================================= D7 master models
+class TestMasterModelsNoActivate(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def _ctx(self, activate: bool):
+        import numpy as np  # noqa: F401
+        snap = SimpleNamespace(snapshot_id="SNAP", data_kind="REAL_USER_DATA")
+        return SimpleNamespace(inst="XAUUSD", synthetic=False, snap=snap, seed=1, profile="quick", activate=activate, promoted=[],
+                               log=lambda m: None)
+
+    def test_validated_artifact_does_not_move_pointer(self):
+        import numpy as np
+        from masterquo.mm import artifacts, jobs
+        aid, st = jobs._save(self._ctx(False), "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T"}, True)
+        self.assertEqual(st, "VALIDATED_SHADOW")
+        self.assertEqual(artifacts.load("XAUUSD", "gpr_logret", aid)[1]["status"], "VALIDATED_SHADOW")   # artifact kept for inspection
+        self.assertEqual(artifacts.read_pointer("XAUUSD")["active"], {})       # HEAD: {'gpr_logret': aid}
+        ctx = self._ctx(True)
+        aid2, _ = jobs._save(ctx, "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T"}, True)
+        self.assertEqual(artifacts.read_pointer("XAUUSD")["active"], {"gpr_logret": aid2})
+        self.assertEqual(ctx.promoted, ["gpr_logret"])
+
+    def test_cli_and_orchestrator_flag(self):
+        from masterquo.mm import cli, orchestrator
+        with mock.patch.object(orchestrator, "run", return_value={"status": "FINISHED", "jobs": {}}) as run, mock.patch("sys.stdout", io.StringIO()):
+            cli.main(["train", "--dataset", "D", "--instrument", "XAUUSD", "--out", "O", "--no-activate"])
+        self.assertIs(run.call_args.kwargs["activate"], False)
+        with mock.patch.object(orchestrator, "run", return_value={"status": "FINISHED", "jobs": {}}) as run, mock.patch("sys.stdout", io.StringIO()):
+            cli.main(["train", "--dataset", "D", "--instrument", "XAUUSD", "--out", "O"])
+        self.assertIs(run.call_args.kwargs["activate"], True)
+
+    def test_orchestrator_report_records_activation(self):
+        from masterquo.mm import orchestrator
+        rep = orchestrator.run(str(Path(self.td.dir) / "missing"), "XAUUSD", str(Path(self.td.dir) / "out"), "quick", activate=False)
+        self.assertEqual(rep["status"], "BLOCKED_DATA_QUALITY")               # no dataset: blocked before any job
+        self.assertIs(rep["activate"], False)
+
+
+# ============================================================================= D7 runner (TEST_INSTALACJI)
+class TestRunnerTestInstalacjiNeverActivates(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        self.data = Path(self.td.dir)
+        self._env = mock.patch.dict(os.environ, {"MQ_NO_BROWSER": "1"})
+        self._env.start()
+
+    def tearDown(self):
+        self._env.stop()
+        self.td.close()
+
+    def _run(self, profile: str):
+        from masterquo.training import core, runner
+        plan, ts = runner.build_plan(instruments=["XAUUSD"], profile=profile, symbols={"XAUUSD": "XAUUSD-"}, commissions={}, months=1,
+                                     synthetic=False)
+        run = core.Run.create(plan, ts)
+        ds = self.data / "ds" / run.run_id
+        ds.mkdir(parents=True)
+        (ds / "source_metadata.json").write_text(json.dumps({"dataset_id": "D1", "instrument": "XAUUSD", "costs": {}}), encoding="utf-8")
+        run.set("XAUUSD:export", execution="UKONCZONE", dataset_dir=str(ds), data_kind="REAL_USER_DATA")
+        run.set("XAUUSD:quality", execution="UKONCZONE", quality="NIE_DOTYCZY")
+        return run
+
+    def _cmds(self, profile: str) -> tuple[dict, object]:
+        from masterquo.training import core, runner
+        run = self._run(profile)
+        cmds = {}
+        mm_rep = {"run_id": "MMRUN-1", "jobs": {"gpr": {"status": "SUCCEEDED", "training_executed": True, "validation_passed": True}}}
+
+        def child(run_, tid, cmd, env, timeout, log):
+            cmds[tid.split(":")[1]] = cmd
+            if "--out" in cmd:
+                out = Path(cmd[cmd.index("--out") + 1])
+                if tid.endswith("master_models"):
+                    out.mkdir(parents=True, exist_ok=True)
+                    (out / "REPORT.json").write_text(json.dumps(mm_rep), encoding="utf-8")
+                else:
+                    out.write_text(json.dumps({"status": "INSUFFICIENT_DATA", "reason": "test"}), encoding="utf-8")
+            return 0, ""
+        with mock.patch.object(core, "run_child", child), mock.patch.object(core, "ram_gate", lambda plan: (1.0, None)), \
+                mock.patch("sys.stdout", io.StringIO()):
+            runner.t_ml(run, "XAUUSD")
+            runner.t_monte_carlo(run, "XAUUSD")
+            runner.t_master_models(run, "XAUUSD")
+        return cmds, run
+
+    def test_test_instalacji_passes_no_activate_to_every_step(self):
+        cmds, run = self._cmds("TEST_INSTALACJI")
+        self.assertEqual(set(cmds), {"ml", "monte_carlo", "master_models"})
+        for k, cmd in cmds.items():
+            with self.subTest(step=k):
+                self.assertIn("--no-activate", cmd)                           # HEAD: no flag -> the step activated its artifact
+        self.assertEqual(run.task("XAUUSD:master_models")["integration"], "ZAPISANY_DO_BADAN")   # HEAD: AKTYWNY_W_REJESTRZE
+
+    def test_full_training_unchanged(self):
+        cmds, run = self._cmds("PELNY_TRENING")
+        for k, cmd in cmds.items():
+            with self.subTest(step=k):
+                self.assertNotIn("--no-activate", cmd)
+        self.assertEqual(run.task("XAUUSD:master_models")["integration"], "AKTYWNY_W_REJESTRZE")
 
 
 if __name__ == "__main__":

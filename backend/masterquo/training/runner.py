@@ -180,6 +180,12 @@ def _kind(run: Run) -> str:
     return "SYNTHETIC_TEST" if run.state["plan"]["synthetic"] else "REAL_USER_DATA"
 
 
+def _no_activate(plan: dict) -> list[str]:
+    """1.46 D7: one flag for every step that can activate its own artifact (ml-offline champion, Monte Carlo calibrator, master-model
+    SHADOW pointer) when the plan does not activate (profile TEST_INSTALACJI "modele NIGDY nie są aktywowane", synthetic data)."""
+    return [] if plan.get("activate", True) else ["--no-activate"]
+
+
 def t_forecast(run: Run, inst: str) -> None:
     tid, plan = f"{inst}:forecast", run.state["plan"]
     ds = _ready(run, inst, tid, True)
@@ -276,7 +282,7 @@ def t_ml(run: Run, inst: str) -> None:
     com = plan["commissions"].get(inst)
     cmd = [core.bot_python(), "-m", "masterquo", "training", "ml-offline", "--instrument", inst, "--dataset", str(ds), "--days", str(days),
            "--threads", str(plan["threads"]), "--out", str(out)] + (["--include-approx"] if plan["include_approx"] else []) + \
-        (["--commission", str(com)] if com is not None else [])
+        (["--commission", str(com)] if com is not None else []) + _no_activate(plan)
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_ml")
     if rc is None:
         return run.set(tid, execution="ANULOWANE")
@@ -501,7 +507,7 @@ def t_monte_carlo(run: Run, inst: str) -> None:
     out = run.dir / f"{inst}_montecarlo.json"
     quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
     cmd = [core.bot_python(), "-m", "masterquo", "montecarlo", "validate", "--dataset", str(ds), "--out", str(out)]
-    cmd += ["--max-points", "200", "--n-paths", "300"] if quick else []
+    cmd += (["--max-points", "200", "--n-paths", "300"] if quick else []) + _no_activate(plan)
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_montecarlo")
     if rc is None:
         return run.set(tid, execution="ANULOWANE")
@@ -512,7 +518,8 @@ def t_monte_carlo(run: Run, inst: str) -> None:
         return _skip(run, tid, rep.get("reason") or rep.get("status") or "brak wyniku", quality="BRAK_PRZESLANEK")
     saved = rep.get("saved") or {}
     t = rep["test"]
-    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if saved.get("activated") else "BRAK_PRZESLANEK")
+    # 1.46 D7: a run with an edge saved without activation (TEST_INSTALACJI) is still validated - only not active
+    q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if saved.get("activated") or saved.get("eligible") else "BRAK_PRZESLANEK")
     run.set(tid, execution="UKONCZONE", quality=q, integration="AKTYWNY_W_REJESTRZE" if saved.get("activated") else "ZAPISANY_DO_BADAN",
             model_id=saved.get("run_id"), artifacts=[str(out)],
             detail=f"wariant {rep['chosen_variant']}, werdykt {rep['verdict']}; TEST n={t['n']}: Brier skalibrowany {t['calibrated']['brier']:.4f} "
@@ -601,7 +608,7 @@ def t_master_models(run: Run, inst: str) -> None:
     out = run.dir / f"{inst}_master_models"
     prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
     cmd = [core.bot_python(), "-m", "masterquo", "mm", "train", "--dataset", str(ds), "--instrument", inst, "--out", str(out), "--profile", prof,
-           "--cancel-file", str(run.dir / "CANCEL")]
+           "--cancel-file", str(run.dir / "CANCEL")] + _no_activate(plan)
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_master_models")
     if rc is None:
         return run.set(tid, execution="ANULOWANE")
@@ -614,10 +621,13 @@ def t_master_models(run: Run, inst: str) -> None:
     failed = [k for k, v in jobs.items() if v["status"] == "FAILED"]
     blocked = [f"{k}={v['status']}" for k, v in jobs.items() if v["status"].startswith("BLOCKED")]
     q = "TEST_TECHNICZNY" if plan["synthetic"] else ("ZWALIDOWANY_SHADOW" if valid else "BRAK_PRZESLANEK")
+    moved = rep.get("shadow_promoted")                   # 1.46 D7: what the run really moved (reports before 1.46: VALIDATED on REAL = moved)
+    active = (bool(moved) if moved is not None else bool(valid) and not plan["synthetic"]) and plan.get("activate", True) is not False
     run.set(tid, execution="UKONCZONE" if not failed else "BLAD_TECHNICZNY", quality=q,
-            integration="AKTYWNY_W_REJESTRZE" if valid and not plan["synthetic"] else "ZAPISANY_DO_BADAN", model_id=rep.get("run_id"),
+            integration="AKTYWNY_W_REJESTRZE" if active else "ZAPISANY_DO_BADAN", model_id=rep.get("run_id"),
             detail=f"zadania {len(jobs)}; trening wykonany: {', '.join(trained) or '-'}; walidacja PASS: {', '.join(valid) or 'brak'}"
-                   + (f"; BŁĘDY: {', '.join(failed)}" if failed else "") + (f"; zablokowane: {', '.join(blocked)}" if blocked else "") + f"; profil {prof}; SHADOW",
+                   + (f"; BŁĘDY: {', '.join(failed)}" if failed else "") + (f"; zablokowane: {', '.join(blocked)}" if blocked else "") + f"; profil {prof}; SHADOW"
+                   + ("" if plan.get("activate", True) else " bez aktywacji (wskaźnik SHADOW bez zmian)"),
             artifacts=[str(out / "REPORT.json"), str(out / "REPORT.md")],
             unit={"task": "HDC/event/STE: kierunek lub log-zwrot; GPR: rozkład log-zwrotu 3×M5; reszta: ewaluacja deterministyczna", "tf": "M1 (zdarzenia) / M5 / M15",
                   "horizons": "12×M5 (HDC), 3×M5 (GPR), 2 jednostki (event), 32 zdarzenia (STE)", "side": "kierunek (nie zlecenie)"})
