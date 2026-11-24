@@ -316,7 +316,7 @@ def vs_base(data: dict, r: dict, base: dict) -> dict:
     days = np.array([data["rows"][i]["decision_time"][:10] for i in hold])
     lv = -(y * np.log(np.clip(pv, 1e-6, 1)) + (1 - y) * np.log(np.clip(1 - pv, 1e-6, 1)))
     lb = -(y * np.log(np.clip(pb, 1e-6, 1)) + (1 - y) * np.log(np.clip(1 - pb, 1e-6, 1)))
-    return dict(_boot_day_diff(days, lv, lb), rows=int(len(hold)))
+    return dict(_boot_day_diff(days, lv, lb), rows=len(hold))
 
 
 def calibrate_sar(data: dict, sp: dict) -> dict:
