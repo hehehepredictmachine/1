@@ -56,7 +56,8 @@ Pełna instrukcja: `docs/AKTUALIZACJA_1_33_PL.md`. W skrócie:
 Wykrywanie wraca do dotychczasowego M07/M10A (jak w wersji 1.1). Tryb pracy, limity i historia zostają.
 * w monitorze: ⚙ Ustawienia → **AUTO / ACTIVE** → Profil wykrywania = `ORIGINAL` → Zapisz, albo
 * zatrzymaj program (`04_STOP_MASTERQUO.bat`) i uruchom `08_PROFIL_ORIGINAL.bat` (ponowne włączenie: `08_PROFIL_ORIGINAL.bat ACTIVE`).
-Kopia ustawień obu profili: `config/profiles/ACTIVE.json`, `config/profiles/ORIGINAL.json` (fragmenty sekcji `active`).
+Przełączenie zmienia wyłącznie `active.profile` w `data/config.json` (pozostałe ustawienia sekcji `active` zostają; wartości domyślne
+są w kodzie – `ActiveConfig` w `backend/masterquo/config.py`). Ścisłe reguły MasterQUO 1.0 profil ORIGINAL NIE ustawia – patrz punkt 2.
 
 ## 2. Łagodne bramki 1.1 → ścisłe reguły MasterQUO 1.0
 Ustawienia → Strategia M07 → Kierunek struktury `STRICT_H4_H1`; Ryzyko → RR 1,5 / 2,0 i „RR pomiędzy progami” wyłączone;
