@@ -358,5 +358,101 @@ class TestTabICLStrategyEncoding(unittest.TestCase):
         self.assertIn("ctx:strategy_code", T.recon_path("XAUUSD").read_text(encoding="utf-8"))   # the file itself is not rewritten
 
 
+# ================================================================================================ I0536 TabICL READY persisted
+class TestTabICLConfidencePersisted(unittest.TestCase):
+    """A READY TabICLv2 result lived only in RAM (newest 500) and the ledger kept the assessment as at submit (QUEUED): no durable
+    p_event_raw for a later calibration check. Now one row per plan_hash in the additive ledger table confidence_scores."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_ready_result_is_written_to_the_ledger(self):
+        import time
+        from pathlib import Path
+
+        from masterquo.quant import events as EV
+        from masterquo.quant import tabicl as QT
+        from masterquo.quant.ledger import QuantLedger
+        from masterquo.quant.tabicl import TabICLService
+        from test_audit_146_g2_tabicl import (
+            FakeLedger,
+            FakeQ,
+            FakeWorkerCalls,
+            ledger_row,
+            sh_cd,
+        )
+
+        real = QuantLedger(Path(self.td.dir) / "quant" / "ledger.sqlite")
+
+        class Ledger(FakeLedger):
+            def add_confidence(self, r):
+                real.add_confidence(r)
+        D = time.time() - 7200
+        spec = EV.spec_from_candidate(sh_cd(D))
+        rows = [ledger_row(i, spec, D - 9000 + i, D - 5000 + i, i % 2) for i in range(30)]
+        tb = TabICLService(FakeQ(ledger=Ledger(rows)))
+        fake = FakeWorkerCalls()
+        tb.worker.call = fake
+        tb.submit(sh_cd(D), spec, {"a": 1.0}, 1)
+        with mock.patch.object(QT, "find_python", lambda: "/stub/python"):
+            tb._score(tb.jobs.get_nowait())
+        r = tb.results[spec.plan_hash()]
+        self.assertEqual(r["state"], "READY", r)
+        got = real.confidences()
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["plan_hash"], spec.plan_hash())
+        self.assertEqual(got[0]["p_event_raw"], 0.5)
+        self.assertEqual((got[0]["task_hash"], got[0]["strategy"], got[0]["calibration_status"]), (spec.task_hash(), "PMW_SC01", "UNCALIBRATED"))
+        self.assertEqual(got[0]["context_id"], r["context_id"])
+        self.assertEqual(got[0]["context_n"], 30)
+
+    def test_write_failure_never_changes_the_result(self):
+        import time
+
+        from masterquo.quant import events as EV
+        from masterquo.quant import tabicl as QT
+        from masterquo.quant.tabicl import TabICLService
+        from test_audit_146_g2_tabicl import (
+            FakeLedger,
+            FakeQ,
+            FakeWorkerCalls,
+            ledger_row,
+            sh_cd,
+        )
+
+        class Broken(FakeLedger):
+            def add_confidence(self, r):
+                raise OSError("disk full")
+        D = time.time() - 7200
+        spec = EV.spec_from_candidate(sh_cd(D))
+        tb = TabICLService(FakeQ(ledger=Broken([ledger_row(i, spec, D - 9000 + i, D - 5000 + i, i % 2) for i in range(30)])))
+        tb.worker.call = FakeWorkerCalls()
+        tb.submit(sh_cd(D), spec, {"a": 1.0}, 1)
+        with mock.patch.object(QT, "find_python", lambda: "/stub/python"):
+            tb._score(tb.jobs.get_nowait())
+        self.assertEqual(tb.results[spec.plan_hash()]["state"], "READY")
+
+    def test_table_is_additive_and_replaces_per_plan(self):
+        import sqlite3
+        from pathlib import Path
+
+        from masterquo.quant.ledger import QuantLedger
+        p = Path(self.td.dir) / "old.sqlite"
+        con = sqlite3.connect(p)                                    # a ledger file from before: rows + assessments only
+        con.executescript("CREATE TABLE rows(row_id TEXT PRIMARY KEY, instrument TEXT, engine TEXT, strategy TEXT, direction TEXT, "
+                          "decision_ts REAL, task_hash TEXT, event_id TEXT, spec_json TEXT, features_json TEXT, snapshot_id TEXT, "
+                          "generation INTEGER, data_kind TEXT, matures_at REAL, status TEXT, label_json TEXT, resolve_ts REAL, y INTEGER, "
+                          "net_r REAL, created_at REAL); INSERT INTO rows(row_id) VALUES ('keep');")
+        con.commit()
+        con.close()
+        led = QuantLedger(p)
+        led.add_confidence({"plan_hash": "P", "p_event_raw": 0.4, "instrument": "XAUUSD", "computed_at": 1.0})
+        led.add_confidence({"plan_hash": "P", "p_event_raw": 0.6, "instrument": "XAUUSD", "computed_at": 2.0})
+        self.assertEqual([(r["plan_hash"], r["p_event_raw"]) for r in led.confidences(instrument="XAUUSD")], [("P", 0.6)])
+        with led._lock:
+            self.assertEqual(led.c.execute("SELECT row_id FROM rows").fetchall()[0][0], "keep")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -626,6 +626,23 @@ class TabICLService:
                                             "missing_features": missing[:20], "coverage": round(1 - len(missing) / max(1, len(ctx["names"])), 3),
                                             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "computed_at": time.time(),
                                             "model": (self.worker.info or {}).get("fingerprint")})
+        self._persist(job, ctx, p)
+
+    def _persist(self, job: dict, ctx: dict, p: float) -> None:
+        """1.46 arch (I0536): the READY p_event_raw is kept durably (quant ledger, table confidence_scores) for a later calibration check -
+        best effort: a write failure never changes the published result."""
+        add = getattr(getattr(self.q, "ledger", None), "add_confidence", None)
+        if add is None:
+            return
+        ident = job.get("ident") or {}
+        try:
+            add({"plan_hash": job["plan_hash"], "task_hash": ident.get("task_hash"), "event_key": job.get("event_key"),
+                 "instrument": job.get("instrument"), "decision_ts": ident.get("decision_ts"), "strategy": ident.get("strategy"),
+                 "engine": ident.get("engine"), "p_event_raw": p, "calibration_status": "UNCALIBRATED", "estimator_kind": "tabicl_v2",
+                 "context_id": ctx.get("context_id"), "context_n": ctx.get("n"), "feature_schema": ctx.get("feature_schema"),
+                 "model_fingerprint": (self.worker.info or {}).get("fingerprint"), "computed_at": time.time()})
+        except Exception as exc:  # noqa: BLE001 - persistence is evidence only, never the result
+            log.warning("TabICL: zapis wyniku do ledgera: %s: %s", type(exc).__name__, exc)
 
     def submit(self, cd: dict, spec: EV.EventSpec, feats: dict, gen) -> dict:
         """Enqueue the candidate (non-blocking). Returns the current state for THIS plan_hash (READY only when computed for it)."""
