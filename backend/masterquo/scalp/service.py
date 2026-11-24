@@ -490,8 +490,11 @@ class ScalpService:
         try:
             m1 = self.bridge.bars("M1", 400, include_forming=False)
             pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)
-            ans = self.forecast._ask({"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
-                                                                         spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
+            # 1.46 (I0754): as_of of the request - the worker answers STALE_DATA when the newest closed M1 is older than the feed allows
+            # (a frozen feed after a disconnect was published as the current task-A forecast)
+            ans = self.forecast._ask({"cmd": "scalp_forecast", "as_of": iso(utcnow()),
+                                      "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
+                                                  spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
             return ans
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200]}
