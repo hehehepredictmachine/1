@@ -30,6 +30,8 @@ from .nets import SEWSNN, ResNet1D, train as train_net
 
 VERSION = "MQ-LAB-VAL-1.0.0"
 FAMILIES = ("DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", "SEW_SNN")
+# 1.46 arch (I0225): reference baselines (base rate / rule) - one source for the Quant inventory role (TOOL) and the adapter analytic_role
+BASELINE_FAMILIES = ("DUMMY", "RULE")
 EXPERIMENTS = ("LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED")
 SEEDS = (11, 23, 37)
 

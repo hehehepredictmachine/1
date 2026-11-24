@@ -428,6 +428,7 @@ def lab(rt, inst: str) -> list[dict]:
     if not st:
         return [_p(canonical_id="lab:models", instrument=inst, timeframe="M5", model_name="lab:models", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
                    horizon_bars=None, unit="ratio", state="BLOCKED_DATA", unavailable_reason="pętla lab nie policzyła jeszcze instrumentu")]
+    from ..lab.protocol import BASELINE_FAMILIES
     out = []
     for m in st.get("models") or []:
         fam = m.get("family") or "?"
@@ -442,7 +443,9 @@ def lab(rt, inst: str) -> list[dict]:
                           task=f"TRIPLE_BARRIER_{m.get('side', 'LONG')}_SCORE_H{hb}", horizon_bars=hb, unit="ratio", state="READY",
                           result={"raw_score": float(m["raw_score"])}, data_time=st.get("as_of"), source="lab.service",
                           data_kind="SYNTHETIC" if st.get("data_mode") == "fixture" else "REAL",
-                          extra={"analytic_role": "BASE_FORECAST", "event": m.get("event"), "note": "score nieskalibrowany innego zdarzenia – nie p(win)"}))
+                          # 1.46 arch (I0225): DUMMY / RULE are reference baselines - the inventory role (TOOL), not a base forecast
+                          extra={"analytic_role": "TOOL" if fam in BASELINE_FAMILIES else "BASE_FORECAST", "event": m.get("event"),
+                                 "note": "score nieskalibrowany innego zdarzenia – nie p(win)"}))
         else:
             out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, model_version=m.get("model_id"), task_type="SCORE",
                           task="TRIPLE_BARRIER_SCORE", horizon_bars=hb, unit="ratio", state="ERROR" if m.get("status") == "error" else "BLOCKED_DATA",
