@@ -18,6 +18,7 @@ import types
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
 import _env  # noqa: F401  (sys.path, MQ_BASKETS_OFFLINE)
@@ -90,7 +91,7 @@ class _Svc(unittest.TestCase):
 class TestQuantEventIdField(_Svc):
     """BasketService._quant: 'p_event' held the Quant event id (text), not a probability -> 'quant_event_id' (+ alias for one version)."""
 
-    PLAN = {"plan_type": "PositionPlan", "side": "LONG", "entry_ref": 2000.0, "sl": 1990.0, "targets": [{"price": 2020.0, "weight": 1.0}],
+    PLAN: ClassVar[dict] = {"plan_type": "PositionPlan", "side": "LONG", "entry_ref": 2000.0, "sl": 1990.0, "targets": [{"price": 2020.0, "weight": 1.0}],
             "timeout_bars": 8, "timeframe": "M5", "risk_per_unit": 10.0}
 
     def _quant(self):
@@ -211,7 +212,7 @@ class TestSetupScoreInformationalOnly(_Svc):
         s._resolve(c, found, st, {})
         sig = s.ledger.open_signals("FOREX_MT5")
         self.assertEqual(len(sig), 1)
-        expected = sorted(sc, key=lambda k: -sc[k]["setup_score"])[0]                  # stable sort in found order, as _resolve ranks
+        expected = min(sc, key=lambda k: -sc[k]["setup_score"])                         # first best in found order, as _resolve ranks
         self.assertEqual(sig[0]["strategy_id"], expected)
         self.assertEqual(sig[0]["scores"]["setup_score"], sc[expected]["setup_score"])
 
@@ -267,8 +268,8 @@ class TestFxParentOwnSymbolOnly(unittest.TestCase):
 
 # ======================================================================================================================== I0763
 class TestFxHedgeLayers(_Svc):
-    PRIMARY = {"leg": "PRIMARY", "symbol": "XAUUSD", "side": "LONG", "volume": 1.0, "id": "P1", "entry": 100.0}
-    HEDGE = {"leg": "HEDGE", "symbol": "XAUUSD", "side": "SHORT", "volume": 0.5, "id": "P1", "entry": 100.0}
+    PRIMARY: ClassVar[dict] = {"leg": "PRIMARY", "symbol": "XAUUSD", "side": "LONG", "volume": 1.0, "id": "P1", "entry": 100.0}
+    HEDGE: ClassVar[dict] = {"leg": "HEDGE", "symbol": "XAUUSD", "side": "SHORT", "volume": 0.5, "id": "P1", "entry": 100.0}
 
     def test_open_hedge_leg_of_the_parent_uses_the_single_layer(self):
         from masterquo.baskets import detectors as D
@@ -381,7 +382,9 @@ class TestCryptoHedgeQuantityBelowPrecision(unittest.TestCase):
         le = np.log(100.0) + np.cumsum(rng.normal(0, 0.01, n))
         ls = 0.3 + 0.8 * le + rng.normal(0, 0.001, n)
         ls[-1] += 0.05                                                                  # SOL far above its relation: residual z >> 2
-        mk = lambda lg: [{"t": end - (n - 1 - k) * 900, "c": float(np.exp(lg[k]))} for k in range(n)]   # noqa: E731
+
+        def mk(lg):
+            return [{"t": end - (n - 1 - k) * 900, "c": float(np.exp(lg[k]))} for k in range(n)]
         ctx = self._base([{"kind": "PERP", "instrument": "SOL", "side": "LONG", "size": 0.001}], {"SOL": {"M15": mk(ls)}, "ETH": {"M15": mk(le)}},
                          pairs={"SOL": "ETH"})
         self._check(HG.residual_pair(ctx))
@@ -627,7 +630,7 @@ class _VwF:
 
 class TestVwapReclaimCrossWindow(unittest.TestCase):
     # bars i-12 .. i: three extra crosses in i-9..i-6, then below VWAP x4 and the reclaim (1 cross in the last 7 bars)
-    SIGNS = [1, 1, 1, 1, -1, 1, -1, -1, -1, -1, 1, 1, 1]
+    SIGNS: ClassVar[list] = [1, 1, 1, 1, -1, 1, -1, -1, -1, -1, 1, 1, 1]
 
     def _p(self, sid):
         from masterquo.baskets import catalog as CAT

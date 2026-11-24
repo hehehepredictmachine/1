@@ -14,6 +14,7 @@ Setup: {entry, invalidation, sl, target?, event: {type, level, t}, conditions: {
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from itertools import pairwise
 
 import numpy as np
 
@@ -496,7 +497,7 @@ def vwap_reclaim(F, s, p, x):
             v_k, _ = F.vwap(k, a, use_tick_proxy=bool(p.get("tick_proxy")))
             older.append(None if v_k is None else float(np.sign(F.c[k] - v_k)))
         sg = older + [float(x) for x in np.sign(cl - vw)]
-        cr += sum(1 for u, w in zip(sg[:len(older)], sg[1:len(older) + 1]) if u is not None and w is not None and u != w)
+        cr += sum(1 for u, w in pairwise(sg[:len(older) + 1]) if u is not None and w is not None and u != w)
         if cr > int(p["max_crosses"]):
             return None
     v = vw[6]
