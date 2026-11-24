@@ -641,5 +641,65 @@ class TestI0120SnapshotPerVersion(_DataDir):
         self.assertIn("_UM.snapshot_before()", (root / "runtime.py").read_text(encoding="utf-8"))
 
 
+# ------------------------------------------------------------------ I0777
+class TestI0777DecisionSnapshotAtSend(unittest.TestCase):
+    """Two decisions with the same id (same core) and a different SL: decisions.record_json keeps the first one; the attempt must carry a
+    copy of the decision really used for the send. The MT5 request itself is unchanged."""
+
+    def setUp(self):
+        import test_risk_execution as TR
+        self.TR = TR
+        TR.TestExecution.setUp(self)
+        self.sent = []
+        orig = self.fake.order_send
+        self.fake.order_send = lambda r: self.sent.append(r) or orig(r)
+
+    def tearDown(self):
+        self.TR.TestExecution.tearDown(self)
+
+    def _auto_demo(self):
+        acct = self.b.account_status()
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+
+    def test_attempt_keeps_the_sent_levels(self):
+        self._auto_demo()
+        first = self.TR.TestExecution.decision(self)
+        second = self.TR.TestExecution.decision(self)
+        second["risk"] = dict(second["risk"], stop_loss=round(second["risk"]["stop_loss"] + 1.5, 2))
+        second["content_hash"] = "abc"
+        second["setup"] = dict(second["setup"], version="1.0.0")
+        self.assertNotEqual(first["risk"]["stop_loss"], second["risk"]["stop_loss"])
+        self.engine.decision = second
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        row = self.db.one("SELECT decision_json, sl, volume FROM order_attempts")
+        self.assertIsNotNone(row["decision_json"])                                  # 1.45: no column / no copy
+        snap = json.loads(row["decision_json"])
+        self.assertEqual(snap["risk"]["stop_loss"], second["risk"]["stop_loss"])
+        self.assertEqual(snap["sent"]["sl"], row["sl"])
+        self.assertEqual((snap["decision_id"], snap["content_hash"], snap["setup"]["version"]), ("MQD-1", "abc", "1.0.0"))
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0]["sl"], second["risk"]["stop_loss"])            # the request is what it was
+
+    def test_audit_failure_never_blocks_the_send(self):
+        self._auto_demo()
+        d = self.TR.TestExecution.decision(self)
+        d["levels"] = {"stop_loss": float("nan")}                                   # not serialisable (allow_nan=False)
+        self.engine.decision = d
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        self.assertEqual(len(self.sent), 1)
+        snap = json.loads(self.db.one("SELECT decision_json FROM order_attempts")["decision_json"])
+        self.assertEqual(snap["status"], "DECISION_COPY_FAILED")
+        orig = self.db.execute
+
+        def broken(sql, args=()):
+            if "decision_json" in sql:
+                raise RuntimeError("disk")
+            return orig(sql, args)
+        self.db.execute = broken
+        self.engine.decision = self.TR.TestExecution.decision(self, did="MQD-2", setup_id="MQS-T2")
+        self.assertEqual(self.gw.execute("MQD-2")["status"], "FILLED")              # a failed audit write: the order still goes out
+        self.assertEqual(len(self.sent), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
