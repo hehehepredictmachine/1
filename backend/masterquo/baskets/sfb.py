@@ -8,7 +8,8 @@ Two independent gates per exact scope (profile | venue | environment | product |
      independent events, active days, chronological outer folds with positive net-R, observed regimes, cost coverage, block-bootstrap LCB of
      mean net R -> ELIGIBLE / VALIDATION_PENDING / COMPATIBLE_UNVALIDATED / STALE_ARTIFACT.
 Modes: OFF (default, zero effect) | OBSERVE | SHADOW (record what would be filtered) | ASSIST (only ELIGIBLE strategies run; none -> NO_TRADE_BUCKET).
-1.46: the application never runs ASSIST (workflow v3.2 modules stay read-only) - BasketService refuses it and runs a stored ASSIST as SHADOW.
+1.46: ASSIST can no longer be saved (BasketService.set_sfb refuses it - workflow v3.2 modules stay read-only); an ASSIST stored by 1.45
+still runs as ASSIST (rule 1: the filter decides which basket strategies reach execution).
 apply_to_execution is a constant False (not configurable). No cross-profile pooling. Never adds a strategy, signal, side or plan.
 """
 from __future__ import annotations

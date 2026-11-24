@@ -297,8 +297,8 @@ func TestEngineSupervisorIntegration(t *testing.T) {
 	}
 	repo, _ := filepath.Abs("..")
 	// 1.46: the shell under test has the SAME version as the engine (as a real build: -ldflags -X main.version). Without it the default
-	// "1.25.0" made the second supervisor "replace an outdated engine" - the test only passed because the clean stop of that engine was
-	// (wrongly) auto-restarted as a crash. The replacement itself is covered by TestOutdatedEngineIsReplacedOnlyWhenItIsOurs.
+	// "1.25.0" made the second supervisor "replace an outdated engine" (stop the engine the first one owns) instead of attaching to it.
+	// The replacement itself is covered by TestOutdatedEngineIsReplacedOnlyWhenItIsOurs.
 	if b, err := os.ReadFile(filepath.Join(repo, "backend", "masterquo", "version.py")); err == nil {
 		if m := regexp.MustCompile(`APP_VERSION = "([^"]+)"`).FindSubmatch(b); m != nil {
 			old := version
@@ -378,22 +378,6 @@ func TestEngineSupervisorIntegration(t *testing.T) {
 	}
 	if !e.healthy() {
 		t.Fatalf("not running after a requested restart: %v", snapshot()[n:])
-	}
-
-	// 1.46: a clean shutdown WITHOUT restart.request (panel "Zatrzymaj Apollo23" / 04_STOP) is a stop - no automatic restart
-	e.mu.Lock()
-	pid3 := e.cmd.Process.Pid
-	e.mu.Unlock()
-	shutdown(t, l, port)
-	if !waitState(e, EngineStopped, 60*time.Second) {
-		t.Fatalf("clean shutdown not reported as STOPPED: %v", snapshot())
-	}
-	time.Sleep(3 * time.Second) // longer than the first crash backoff (2 s)
-	if e.Owned() || e.healthy() {
-		t.Fatalf("engine restarted after a clean user stop (pid %d): %v", pid3, snapshot())
-	}
-	if err := e.Start(ctx); err != nil { // the user starts it again from the menu
-		t.Fatalf("start after stop: %v", err)
 	}
 
 	// stop: graceful shutdown through the token, process gone, port free
@@ -733,36 +717,6 @@ func TestDisplayPrefsDefaults(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(d, "desktop_prefs.json"), []byte(`{"close_action":"ask","fullscreen":false,"auto_enter":false}`), 0o644)
 	if p := loadPrefs(d); p.Fullscreen || p.AutoEnter || !p.AutoScale {
 		t.Fatalf("explicit: %+v", p)
-	}
-}
-
-// 1.46: a clean engine exit (code 0 - "Zatrzymaj Apollo23", 04_STOP_MASTERQUO.bat) is a stop, not a crash: no automatic restart.
-func TestCleanExitIsAStopNotACrash(t *testing.T) {
-	repo, _ := filepath.Abs("..")
-	l := testLayout(t, repo)
-	var smu sync.Mutex
-	var states []EngineState
-	e := newEngine(l, "", func(string) {}, func(s EngineState, d string) { smu.Lock(); states = append(states, s); smu.Unlock() })
-	cmd := &exec.Cmd{}
-	e.mu.Lock()
-	e.cmd = cmd
-	e.mu.Unlock()
-	done := make(chan struct{})
-	go func() { e.afterExit(context.Background(), cmd, nil); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("afterExit waited for a restart backoff after a clean exit")
-	}
-	if s, _ := e.State(); s != EngineStopped {
-		t.Fatalf("state after a clean exit = %v (want STOPPED)", s)
-	}
-	smu.Lock()
-	defer smu.Unlock()
-	for _, s := range states {
-		if s == EngineCrashed || s == EngineStarting {
-			t.Fatalf("clean exit treated as a crash / restarted: %v", states)
-		}
 	}
 }
 

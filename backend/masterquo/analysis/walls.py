@@ -140,12 +140,11 @@ class WallsStore:
             hist = [json.loads(x["json"]) for x in rows]
             self._mem[key] = hist
         hist = self._mem.setdefault(key, hist or [])
-        fpj = json.loads(json.dumps(list(fp)))           # 1.46: JSON form - a stored _fp (after a restart) has lists, never tuples
         for h in hist:
-            if h.get("_fp") == fpj:
+            if h.get("_fp") == list(fp):
                 return h
         ver = len(hist) + 1
-        out = dict(snap, snapshot_version=ver, _fp=fpj)
+        out = dict(snap, snapshot_version=ver, _fp=list(fp))
         out["snapshot_id"] = _sid(snap["symbol"], snap["anchor_time"], ver, *fp)
         for w in out["walls"]:
             w["snapshot_id"] = out["snapshot_id"]

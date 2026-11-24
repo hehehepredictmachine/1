@@ -30,7 +30,6 @@ from . import adapters as A
 from . import checks as CK
 from . import events as EV
 from . import features as F
-from . import ids as I
 from . import metamodel as M
 from . import snapshot as S
 from . import units as U
@@ -189,32 +188,26 @@ class QuantService:
         d.add("snapshot", lambda c, _: S.build(c["rt"].bridge, instrument=c["inst"], now=c["now"]), owner="quant.snapshot", deadline_s=5.0)
         d.add("base_predictions", lambda c, _: MA.all_predictions(c["rt"], c["inst"]), deps=("snapshot",), owner="modelhub.adapters", deadline_s=20.0)
         d.add("extended_predictions", self._extended, deps=("snapshot",), owner="quant.adapters", deadline_s=25.0)
-        # 1.46: the predictions are SOFT dependencies - a timed-out / failed branch no longer throws away the records of the other one
-        # (the generation stays complete=False)
-        d.add("contract_checks", self._checks, deps=("snapshot",), soft_deps=("base_predictions", "extended_predictions"), owner="quant.checks",
-              deadline_s=5.0)
+        d.add("contract_checks", self._checks, deps=("snapshot", "base_predictions", "extended_predictions"), owner="quant.checks", deadline_s=5.0)
         return d
 
     def _extended(self, c, deps) -> list[dict]:
         snap = deps["snapshot"]
         m1 = S.last_closed(snap, "M1")
-        # 1.46: the cache was keyed by the M1 bar only - after a switch of the instrument (same minute) the scalp A records of the previous
-        # instrument went into the new generation; the key is (instrument, bar) and only records of this instrument are reused
-        key = (c["inst"], m1["t"]) if m1 is not None else None
-        new_m1 = key is not None and key != self._last_m1
+        new_m1 = m1 is not None and m1["t"] != self._last_m1
         out = A.extended(c["rt"], c["inst"], self.event_gru, with_scalp=new_m1)
         if new_m1:
-            self._last_m1 = key
+            self._last_m1 = m1["t"]
             self._last_scalp = [p for p in out if p.get("canonical_id") == "scalp:A_direction"]
         else:
-            out += [p for p in self._last_scalp if p.get("instrument") == c["inst"]]   # scalp A: one inference per closed M1 bar (cached)
+            out += self._last_scalp                       # scalp A: one inference per closed M1 bar (cached between bars)
         return out
 
     def _checks(self, c, deps) -> dict:
         snap = deps["snapshot"]
         floor = {tf: (bs[-1]["t"] if bs else None) for tf, bs in (snap.get("bars") or {}).items()}
-        base, ext = _prefer_fresh(list(deps.get("base_predictions") or []), list(deps.get("extended_predictions") or []))
-        return CK.screen(base + ext, now=c["now"], snapshot_kind=snap.get("data_kind"), generation_floor=floor)
+        return CK.screen(deps["base_predictions"] + deps["extended_predictions"], now=c["now"], snapshot_kind=snap.get("data_kind"),
+                         generation_floor=floor)
 
     def cycle(self) -> dict:
         inst = self.instrument()
@@ -608,35 +601,6 @@ class QuantService:
     def predictions(self) -> dict:
         pub = self.pub.current() or {}
         return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "eligible", "excluded", "aliases_dropped")}
-
-
-def _fresher(a: dict, b: dict) -> bool:
-    """a was computed later than b (computed_at, then data_time); unknown times never win."""
-    for k in ("computed_at", "data_time"):
-        ta, tb = CK.ts(a.get(k)), CK.ts(b.get(k))
-        if ta is not None and tb is not None and ta != tb:
-            return ta > tb
-    return False
-
-
-def _prefer_fresh(base: list[dict], ext: list[dict]) -> tuple[list[dict], list[dict]]:
-    """1.46: ids.dedup keeps the FIRST record of one identity - base + extended kept the Event GRU answer of the PREVIOUS cycle (families
-    read event_gru.latest before the extended adapters refresh it) and dropped the fresh one as an alias; a fresh ERROR never replaced an
-    old READY. When base and extended carry the same identity, the later-computed record takes the base position (the other one is still
-    reported as the dropped alias)."""
-    if not base or not ext:
-        return base, ext
-    pos: dict[tuple, int] = {}
-    for i, q in enumerate(ext):
-        pos.setdefault(I.identity({**q, "canonical_id": I.canonical(q)}), i)
-    base, ext = list(base), list(ext)
-    for j, p in enumerate(base):
-        k = I.identity({**p, "canonical_id": I.canonical(p)})
-        i = pos.get(k)
-        if i is not None and _fresher(ext[i], p):
-            base[j], ext[i] = ext[i], p
-            pos.pop(k)                                   # one swap per identity
-    return base, ext
 
 
 def percentiles(tim: dict) -> dict:

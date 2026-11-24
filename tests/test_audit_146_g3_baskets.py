@@ -138,36 +138,6 @@ class TestResearchOnlyMarkets(_Svc):
             self.assertEqual(db.execute("SELECT count(*) FROM hedge_plans").fetchone()[0], 0)
 
 
-# ---------------------------------------------------------------------------------------------------------------- chunk_06#2 / #3
-class TestHyperliquidSeries(_Svc):
-    def test_cache_does_not_truncate_a_longer_request(self):                       # chunk_06#2
-        s = self.svc()
-        c = s._context("CRYPTO_FOMO_PERPS", "ETH", "HYPERLIQUID:core", "MAINNET", "PUBLIC_DATA", "PERPETUAL")
-        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 300)), 300)                   # auxiliary series first (as in _crypto)
-        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 500)), 500)                   # own signal series: full length
-        n_calls = len(s.hl.calls)
-        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 300)), 300)                   # served from the cache, sliced
-        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 500)), 500)
-        self.assertEqual(len(s.hl.calls), n_calls)
-
-    def test_signal_series_covers_previous_utc_day(self):                          # chunk_06#3
-        self.write("settings.json", {"profiles": {"CRYPTO_FOMO_PERPS": {"instruments": ["BTC"]}}})
-        s = self.svc()
-        seen = []
-        s._run_ctx = lambda c, st, bars_fn, q, extra: seen.append(bars_fn) or {"state": "READY"}
-        with mock.patch.dict(os.environ):
-            os.environ.pop("MQ_BASKETS_OFFLINE", None)
-            s._crypto(s.settings())
-        self.assertEqual(len(seen[0]("M5", 600)), 600)                                 # _run_ctx asks for 600 (was capped at 500)
-        # why 600: CP_SMC_09 (PREV_UTC_DAY) needs the whole previous UTC day + the current day; at 22:00 UTC 500 M5 bars are not enough
-        from masterquo.baskets import detectors as D
-        from masterquo.baskets import rules as R
-        end = datetime(2026, 11, 20, 22, 0, tzinfo=UTC).timestamp()
-        with self.assertRaises(R.Unavailable):
-            R.range_sweep(D.build(_walk(500, end_t=end, step=300), 0.01), 1, {"range": "PREV_UTC_DAY"}, {})
-        R.range_sweep(D.build(_walk(600, end_t=end, step=300), 0.01), 1, {"range": "PREV_UTC_DAY"}, {})     # no Unavailable
-
-
 # ---------------------------------------------------------------------------------------------------------------- chunk_06#4
 class TestFxHedgeUnsuppliedInputs(_Svc):
     def _fx(self, s, tf, end_t):
@@ -216,7 +186,8 @@ class TestSettingsValidation(_Svc):
            {"strategies": {"FX_SMC_01": {"params": "x"}}}, {"strategies": {"FX_SMC_01": {"enabled": "yes"}}},
            {"strategies": {"FX_SMC_03": {"params": {"max_wait": "6"}}}}, {"strategies": {"FX_SMC_01": {"params": {"timeout_bars": float("nan")}}}},
            {"manual_select": {"FOREX_MT5": 5}}, {"manual_select": {"FOREX_MT5": [5]}}, {"manual_select": {"NOPE": ["FX_SMC_01"]}},
-           {"active_profile": ["FOREX_MT5"]})
+           {"active_profile": ["FOREX_MT5"]},
+           {"profiles": None}, {"baskets": None}, {"strategies": None}, {"manual_select": None})      # null sections would be stored as given
 
     def test_bad_types_are_400_and_never_stored(self):
         s = self.svc()
@@ -243,34 +214,29 @@ class TestSettingsValidation(_Svc):
         self.assertEqual(st["strategies"]["FX_SMC_01"]["params"]["tp_r"], [1.5, 2])
         self.assertEqual(st["baskets"]["FX_SMC"]["max_pending_intents"], 2)
 
-    def test_stored_non_object_entries_do_not_break_views(self):
-        self.write("settings.json", {"profiles": {"FOREX_MT5": "x", "CRYPTO_FOMO_PERPS": None}, "baskets": {"FX_SMC": 5}})
-        s = self.svc()
-        st = s.settings()
-        self.assertIsInstance(st["profiles"]["FOREX_MT5"], dict)
-        self.assertIsInstance(st["baskets"]["FX_SMC"], dict)
-        s.status()
-        s.basket_view()
-        s.sh_candidates("XAUUSD-")
-
 
 # ---------------------------------------------------------------------------------------------------------------- chunk_06#11 / focus_X2#12 / chunk_07#6
 class TestDamagedFiles(_Svc):
     def test_sfb_json_not_an_object_keeps_the_service_alive(self):
-        for raw in ("null", "[]", "5", '"x"', '{"mode": "OFF", "future_key": 1}', '{"mode": "TURBO"}'):
+        for raw in ("5", '"x"', "[1]", '{"mode": "OFF", "future_key": 1}', '{"mode": "TURBO"}'):      # 1.45: BasketService not constructed
             self.write("sfb.json", raw)
             s = self.svc()                                                               # must not raise
             st = s.sfb.status()
             self.assertEqual(st["mode"], "OFF", raw)
             self.assertTrue(str(st["mode_requested"]).startswith("INVALID_CONFIG"), (raw, st["mode_requested"]))
             self.assertEqual((self.d / "sfb.json").read_text(encoding="utf-8"), raw)    # file left as it is
-
-    def test_settings_json_not_an_object(self):
-        for raw in ("[1]", "5", '"x"'):
-            self.write("settings.json", raw)
-            s = self.svc()
-            self.assertEqual(s.settings()["active_profile"], "FOREX_MT5", raw)
+            self.assertEqual(s.cycle()["state"], "BLOCKED", raw)                          # fail-closed as in 1.45: nothing scanned
+            self.assertEqual(s.sh_candidates("XAUUSD-"), [], raw)                         # ... and no basket plan reaches SH
             s.status()
+        for raw in ("null", "[]"):                                                       # 1.45: empty config = OFF, runs normally
+            self.write("sfb.json", raw)
+            s = self.svc()
+            self.assertEqual((s.sfb.status()["mode"], s.sfb_blocked), ("OFF", None), raw)
+        self.write("sfb.json", '{"mode": "SHADOW", "bootstrap_reps": 5}')                # accepted by 1.45, out of the 1.46 range
+        s = self.svc()
+        self.assertEqual((s.sfb.status()["mode"], s.sfb_blocked), ("SHADOW", None))      # runs as stored (1.45), not blocked
+        s.set_sfb({"mode": "OFF"})                                                       # a valid config saved -> the block ends
+        self.assertIsNone(s.sfb_blocked)
 
     def _run_thread(self, cycle_s, secs):
         self.write("settings.json", {"cycle_s": cycle_s, "profiles": {"FOREX_MT5": {"enabled": False}, "CRYPTO_FOMO_PERPS": {"enabled": False}}})

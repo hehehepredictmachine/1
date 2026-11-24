@@ -410,8 +410,6 @@ class FamilyService:
             use = "SHADOW"                                       # measurements need no artifact
         if use == "OFF" and fid != "MICROSTRUCTURE":
             return None
-        if use == "ASSIST" and not self.store.assist_ok(fid, inst, rid)[0]:
-            use = "SHADOW"                                       # 1.46: a state saved by 1.45 (ASSIST kept on an unapproved / non-REAL artifact)
         if fid in NO_LIVE_PATH:
             # 1.46: _live() never provides pair_bars / basket_bars - an active pair / basket artifact was always BLOCKED_DATA "brak danych
             # jednej z nóg", as if the data were only late
@@ -434,7 +432,7 @@ class FamilyService:
             if ck in self._cache and (bar_t is not None or self.clock() - self._cache[ck]["at"] < 5):
                 return self._cache[ck]["pred"]
         man = B._read(self.store.run_dir(fid, inst, rid) / "manifest.json", {}) if rid else {}
-        kind = B.kind_class(man.get("data_kind"))           # 1.46: REAL_USER_DATA / SYNTHETIC_TEST were published as None
+        kind = man.get("data_kind") if man.get("data_kind") in ("REAL", "SYNTHETIC") else None
         impl, why = f.implementation()
         t0 = time.perf_counter()
         try:

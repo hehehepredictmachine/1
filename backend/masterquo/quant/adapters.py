@@ -304,9 +304,8 @@ class EventGRU:
             return p
         res = {"DOWN": float(P[0]), "FLAT": float(P[1]), "UP": float(P[2])}
         tot = sum(res.values())
-        # 1.46: NaN passed `abs(tot - 1) > 1e-6` (False for NaN) -> READY record -> ContractError outside any try (whole branch failed)
-        if not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in res.values()) or not math.isfinite(tot) or abs(tot - 1.0) > 1e-6:
-            p = self._none(inst, "ERROR", f"rozkład nieprawidłowy lub nie sumuje się do 1 ({tot:.8f})", aid)  # never renormalised silently
+        if abs(tot - 1.0) > 1e-6:                                 # never renormalised silently: a broken softmax is an error
+            p = self._none(inst, "ERROR", f"rozkład nie sumuje się do 1 ({tot:.8f})", aid)
         else:
             t_end = float(u["t_end"][-1])
             p = _p(canonical_id=self.CID, instrument=inst, timeframe="EVENT", model_name=self.CID, model_version=aid, task_type="CLASS_PROBABILITIES",
@@ -416,10 +415,7 @@ def extended(rt, inst: str, event_gru: EventGRU | None = None, *, with_scalp: bo
         except Exception as exc:  # noqa: BLE001
             out.append(_err(f"adapter:{fn.__name__}", inst, None, "STATE", fn.__name__.upper(), "state", exc))
     if event_gru is not None:
-        try:                                                      # 1.46: the only adapter call without its own try (one failure = no records at all)
-            out.append(event_gru.predict(rt, inst))
-        except Exception as exc:  # noqa: BLE001
-            out.append(_err(EventGRU.CID, inst, "EVENT", "CLASS_PROBABILITIES", "EVENT_UNITS_DIR3", "probability", exc, 2))
+        out.append(event_gru.predict(rt, inst))
     if with_scalp:
         try:
             out += scalp_a(rt, inst)

@@ -87,17 +87,12 @@ def train_dt(folds, X_full, y_full, *, budget: int, seed: int, prep_fit) -> tupl
         for tr, va in folds:
             if len(tr) < 30 or len(va) < 10:
                 continue
-            ytr = np.array([r["label"] for r in tr])
-            yva = np.array([r["label"] for r in va])
-            # 1.46: a one-class VALIDATION part gave log loss inf -> every trial scored inf (the first shuffled grid entry "won") and the
-            # inf in the result made Registry.register fail (dumps allow_nan=False) after both bundles were saved. Such a fold is skipped.
-            if len(set(ytr.tolist())) < 2 or len(set(yva.tolist())) < 2:
-                continue
             pp = prep_fit(tr)
+            ytr = np.array([r["label"] for r in tr])
+            if len(set(ytr.tolist())) < 2:
+                continue
             m = DecisionTreeClassifier(random_state=seed, **params).fit(pp.transform(tr), ytr)
-            ll = _ll(yva, m.predict_proba(pp.transform(va))[:, 1])
-            if math.isfinite(ll):
-                losses.append(ll)
+            losses.append(_ll(np.array([r["label"] for r in va]), m.predict_proba(pp.transform(va))[:, 1]))
         if losses:
             trials.append((float(np.mean(losses)), params))
     if not trials:

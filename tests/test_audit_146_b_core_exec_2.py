@@ -154,6 +154,36 @@ class TestPaperDoubleClose(_Base):
         t.join(10)
         self.assertEqual(res.get("status"), "DONE", res)
 
+    def test_account_positions_do_not_wait_for_the_manager_lock(self):
+        """Rule 1: only the PAPER work is serialized with the tick - closes / Manual Pad actions of account positions go to MT5 without the
+        manager lock, at the same moment as in 1.45.0."""
+        from masterquo.execution.manual import ManualPad
+        mp = self.mt5_row(1001, decision_id="MTI-acct")
+        self.db.execute("INSERT INTO manual_intents(intent_id, version, created_at, updated_at, mode, account, instrument, side, state, plan) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)", ("MTI-acct", 1, "x", "x", "AUTO_DEMO", "srv:1", "XAUUSD-", "BUY", "OPEN", "{}"))
+        sent = []
+        gw = SimpleNamespace(manager=self.mgr, engine=None, manual_modify=lambda p, action, **kw: sent.append((p["position_ticket"], action)) or {"status": "DONE"})
+        pad = ManualPad(self.cfg, self.b, self.db, self.bus, self.log, self.modes, self.paper, gw)
+        self.b.positions = [{"ticket": 1001, "volume": 0.05}]
+        self.b.raw_result = SimpleNamespace(retcode=10009)
+        res = {}
+        self.mgr._lock.acquire()                                          # a tick in progress
+        try:
+            t = threading.Thread(target=lambda: res.update(manage=pad.manage("MTI-acct", "BREAK_EVEN", 1)))
+            t.start()
+            t.join(5)
+            self.assertFalse(t.is_alive())
+            t = threading.Thread(target=lambda: res.update(close=self.mgr.close_positions("ALL", mp["position_ticket"])))
+            t.start()
+            t.join(5)
+            self.assertFalse(t.is_alive())
+        finally:
+            self.mgr._lock.release()
+        self.assertEqual(res["manage"]["status"], "DONE", res)
+        self.assertEqual(sent, [(1001, "BREAK_EVEN")])
+        self.assertEqual([c["ticket"] for c in res["close"]["closed"]], [1001])
+        self.assertEqual(self.b.raw_calls, 1)
+
     def test_close_positions_reports_missing_or_stale_quote(self):
         mp = self.open_paper(0.05)
         self.b.q = None
@@ -174,35 +204,6 @@ class TestAdoptManagedPosition(_Base):
         self.assertTrue(self.mgr.adopt(2002)["ok"])
         self.assertTrue(self.mgr.adopt(2002)["ok"])                       # double click: same ADOPTED row
         self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE position_ticket=2002")), 1)
-
-
-# ------------------------------------------------------------------------------------------------ chunk_10#12 / chunk_24#1 (manager side)
-class TestSettlement(_Base):
-    def deals(self, raw_close):
-        return [{"position_id": 1001, "entry": 0, "volume": 0.05, "price": 2000.0, "time": raw_close - 600, "profit": 0.0, "commission": -0.15},
-                {"position_id": 1001, "entry": 1, "volume": 0.05, "price": 2005.0, "time": raw_close, "profit": 25.0, "commission": -0.15}]
-
-    def test_unknown_server_offset_is_not_taken_as_zero(self):
-        mp = self.mt5_row(1001)
-        raw_close = 1_795_000_000
-        self.b.clock.offset = None
-        self.mgr._settle_mt5(mp, self.deals(raw_close))
-        self.assertIsNone(self.db.one("SELECT * FROM trades WHERE position_ticket=1001"))      # was: closed_at = server time as UTC
-        self.assertEqual(self.db.one("SELECT state FROM managed_positions WHERE position_ticket=1001")["state"], "OPEN")
-        self.b.clock.offset = 10800
-        self.mgr._settle_mt5(mp, self.deals(raw_close))
-        tr = self.db.one("SELECT * FROM trades WHERE position_ticket=1001")
-        from masterquo.timeutil import from_epoch, iso
-        self.assertEqual(tr["closed_at"], iso(from_epoch(raw_close - 10800)))
-
-    def test_no_settlement_before_deal_history_is_loaded(self):
-        self.mt5_row(1001, opened_min_ago=30)
-        self.b.positions, self.b.deals, self.b.deals_loaded_at = [], [], None    # account switch / start: lists not loaded yet
-        self.mgr._manage_mt5_positions()
-        self.assertEqual(self.db.one("SELECT state FROM managed_positions WHERE position_ticket=1001")["state"], "OPEN")   # was CLOSED_UNSETTLED
-        self.b.deals_loaded_at = datetime.now(UTC)                                        # history loaded, position really gone
-        self.mgr._manage_mt5_positions()
-        self.assertEqual(self.db.one("SELECT state FROM managed_positions WHERE position_ticket=1001")["state"], "CLOSED_UNSETTLED")
 
 
 # ------------------------------------------------------------------------------------------------ chunk_10#11 (stored TP only)
@@ -357,32 +358,6 @@ def _bridge_offline(cfg_store=None):
     return MarketBridge(cfg_store or ConfigStore(), None, db, bus, AppLog(db, bus))
 
 
-class TestBridgeResampledMerge(unittest.TestCase):
-    def setUp(self):
-        self.td = TempData()
-
-    def tearDown(self):
-        self.td.close()
-
-    def test_resampled_bucket_takes_parts_and_complete(self):
-        from masterquo.mt5.bridge import Bar, TFState
-        b = _bridge_offline()
-        base = 1_791_000_000 - 1_791_000_000 % 180
-        rb = lambda k, parts, **kw: Bar(base + k * 180, 1, 2, 0.5, 1.5, parts, 0, 0, source="resampled", parts=parts, complete=parts == 3, **kw)
-        st = TFState()
-        st.bars = [rb(0, 3, closed=True), rb(1, 3, closed=True), rb(2, 1)]                # bucket 2 first seen with 1 of 3 minutes
-        b._merge_tail(st, "M3", [rb(1, 3), rb(2, 2)], "XAUUSD-")
-        self.assertEqual((st.bars[2].parts, st.bars[2].complete), (2, False))
-        closed = b._merge_tail(st, "M3", [rb(2, 3), rb(3, 1)], "XAUUSD-")
-        self.assertEqual([x.t_raw for x in closed], [base + 2 * 180])
-        self.assertTrue(st.bars[2].closed)
-        self.assertEqual((st.bars[2].parts, st.bars[2].complete), (3, True))            # was parts=1, complete=False after closing
-        self.assertTrue(b._bar_json(st.bars[2], "M3")["complete"])
-        st.bars[1].parts, st.bars[1].complete = 2, False                                   # closed bucket revised with the late minute
-        b._merge_tail(st, "M3", [rb(1, 3), rb(2, 3), rb(3, 1)], "XAUUSD-")
-        self.assertEqual((st.bars[1].parts, st.bars[1].complete, st.bars[1].revision), (3, True, 1))
-
-
 class TestBridgeTicksTruncation(unittest.TestCase):
     def setUp(self):
         self.td = TempData()
@@ -404,69 +379,6 @@ class TestBridgeTicksTruncation(unittest.TestCase):
         self.assertFalse(r["truncated"])                                                  # the range end was reached
         r = b.ticks_range("XAUUSD-", t0, t0 + 3600, max_count=10)
         self.assertFalse(r["truncated"])
-
-
-class TestBridgeAccountSwitch(unittest.TestCase):
-    def setUp(self):
-        self.td = TempData()
-        self.cfg, self.db, self.bus, self.log, self.fake, self.worker, self.b = core()
-
-    def tearDown(self):
-        self.worker.stop()
-        self.td.close()
-
-    def test_switch_refreshes_symbol_and_deals(self):
-        b = self.b
-        events = []
-        b.add_listener(lambda k, d: events.append(k))
-        b.connect()
-        b._poll_account()
-        b._poll_deals()
-        with b._lock:
-            b.deals.append({"ticket": -1, "position_id": -1})                         # sentinel: a deal of the previous account
-            b.symbol_info["sentinel"] = True                                           # sentinel: metadata of the previous broker
-        epoch = b.session_epoch
-        self.fake.switch_account(7770001)
-        b._poll_account()
-        self.assertTrue(b.account_key.endswith(":7770001"))
-        self.assertGreater(b.session_epoch, epoch)
-        self.assertNotIn("sentinel", b.symbol_info)                                    # was: kept until a reconnect
-        self.assertFalse(any(d.get("ticket") == -1 for d in b.deals))                  # was: kept up to history_poll_seconds
-        self.assertIsNotNone(b.deals_loaded_at)
-        self.assertIn("account_changed", events)
-
-    def test_reconnect_to_another_account_drops_the_old_lists(self):
-        b = self.b
-        b.connect()
-        b._poll_account()
-        b._poll_deals()
-        with b._lock:
-            b.deals.append({"ticket": -1, "position_id": -1})
-        self.fake.switch_account(7770003)
-        b.connect()                                                                   # reconnect lands on another account
-        self.assertTrue(b.account_key.endswith(":7770003"))
-        self.assertEqual((b.deals, b.positions, b.deals_loaded_at), ([], [], None))   # was: previous account's deals + loaded_at
-        b._poll_account()
-        b._poll_deals()
-        self.assertIsNotNone(b.deals_loaded_at)
-
-    def test_failed_reload_after_switch_forces_a_reconnect(self):
-        from masterquo.mt5.bridge import BridgeError
-        b = self.b
-        events = []
-        b.add_listener(lambda k, d: events.append(k))
-        b.connect()
-        b._poll_account()
-
-        def boom():
-            raise BridgeError("SYMBOL_NOT_FOUND:X")
-        b._check_symbol = boom
-        self.fake.switch_account(7770002)
-        with self.assertRaises(BridgeError):
-            b._poll_account()
-        self.assertEqual(b.state, "RECONNECTING")
-        self.assertIn("account_changed", events)
-        self.assertEqual((b.deals, b.positions, b.deals_loaded_at), ([], [], None))
 
 
 class TestBridgeSymbolCandidates(unittest.TestCase):

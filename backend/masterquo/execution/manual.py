@@ -349,13 +349,6 @@ class ManualPad:
                             (key, iid, action, int(action_revision), "PREPARED", now, now))
         except sqlite3.IntegrityError:
             return {"status": "DUPLICATE", "reason": "ACTION_ALREADY_ATTEMPTED"}
-        # 1.46: serialized with the position manager's tick (it closes PAPER positions on SL/TP/time): positions are read and changed
-        # under the same lock, so one position is never closed - and booked - twice
-        mgr_lock = getattr(getattr(self.gateway, "manager", None), "_lock", None)
-        with mgr_lock if mgr_lock is not None else contextlib.nullcontext():
-            return self._manage_locked(iid, key, action, offset_points=offset_points, volume=volume)
-
-    def _manage_locked(self, iid: str, key: str, action: str, *, offset_points: float, volume: float | None) -> dict:
         pos = self._positions(iid)
         if not pos:
             self._act(key, "REJECTED", {"reason": "NO_OPEN_POSITION_FOR_INTENT"})
@@ -363,42 +356,58 @@ class ManualPad:
         meta = self.bridge.symbol_info or {}
         point, vmin, vstep = float(meta.get("point") or 0.01), float(meta.get("volume_min") or 0.01), float(meta.get("volume_step") or 0.01)
         out = []
+        paper = []
         for mp in pos:
-            if action == "PARTIAL_CLOSE" and mp["mode"] == "PAPER" and _floor_step(float(volume or 0), vstep) > float(mp["volume_open"]) + 1e-9:
-                # 1.46: more than the open volume - PAPER booked P/L for lots that never existed (the account path is unchanged:
-                # what is sent to MT5 is an owner decision, see docs/AUDYT_1_45.md)
-                out.append({"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "VOLUME_ABOVE_OPEN"})
-                continue
             if mp["mode"] != "PAPER":
                 out.append({"ticket": mp["position_ticket"], **self.gateway.manual_modify(mp, action, offset_points=offset_points, volume=volume)})
                 continue
-            q = self.bridge.quote_status()
-            px = (q["bid"] if mp["side"] == "BUY" else q["ask"]) if q else None
-            if action == "BREAK_EVEN":
-                new_sl = mp["entry_price"] + (offset_points * point if mp["side"] == "BUY" else -offset_points * point)
-                better = (mp["sl"] is not None) and ((mp["side"] == "BUY" and mp["sl"] >= new_sl) or (mp["side"] == "SELL" and mp["sl"] <= new_sl))
-                if better:
-                    out.append({"ticket": mp["position_ticket"], "status": "UNCHANGED", "reason": "SL_ALREADY_BETTER"})
-                    continue
-                if px is None or (mp["side"] == "BUY" and new_sl >= px) or (mp["side"] == "SELL" and new_sl <= px):
-                    out.append({"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "BE_BEYOND_MARKET"})
-                    continue
-                self.db.execute("UPDATE managed_positions SET sl=? WHERE position_key=?", (new_sl, mp["position_key"]))
-                out.append({"ticket": mp["position_ticket"], "status": "DONE", "sl": new_sl, "kind": "PRICE_BREAK_EVEN"})
-            else:
-                vol = mp["volume_open"] if action == "CLOSE" else _floor_step(float(volume or 0), vstep)
-                left = round(mp["volume_open"] - vol, 10)
-                if vol <= 0 or (action == "PARTIAL_CLOSE" and (vol < vmin or (0 < left < vmin))):
-                    out.append({"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "VOLUME_STEP_OR_MIN_REMAINING"})
-                    continue
-                if px is None:
-                    out.append({"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "NO_QUOTE"})
-                    continue
-                net = self.paper.close_part(mp, vol, px, "MANUAL_" + action)
-                out.append({"ticket": mp["position_ticket"], "status": "DONE", "closed": vol, "remaining": max(0.0, left), "net": net})
+            paper.append(mp)                    # 1.46: changed below under the position manager's lock (account positions never wait for it)
+        if paper:
+            out += self._manage_paper(paper, action, offset_points=offset_points, volume=volume, point=point, vmin=vmin, vstep=vstep)
         st = "DONE" if any(o["status"] == "DONE" for o in out) else (out[0]["status"] if out else "REJECTED")
         self._act(key, st, {"items": out})
         return {"status": st, "items": out, "idempotency_key": key}
+
+    def _manage_paper(self, rows: list[dict], action: str, *, offset_points: float, volume: float | None, point: float, vmin: float,
+                      vstep: float) -> list[dict]:
+        """1.46: PAPER positions are re-read and changed under the position manager's lock (its tick closes PAPER positions on SL/TP/time),
+        so one position is never closed - and booked - twice. PAPER only: account positions go to MT5 without this lock, as in 1.45."""
+        mgr_lock = getattr(getattr(self.gateway, "manager", None), "_lock", None)
+        out = []
+        with mgr_lock if mgr_lock is not None else contextlib.nullcontext():
+            for row in rows:
+                mp = self.db.one("SELECT * FROM managed_positions WHERE position_key=? AND state='OPEN'", (row["position_key"],))
+                if mp is None:                  # closed by the manager tick meanwhile
+                    out.append({"ticket": row["position_ticket"], "status": "REJECTED", "reason": "NO_OPEN_POSITION_FOR_INTENT"})
+                    continue
+                out.append(self._manage_paper_one(mp, action, offset_points=offset_points, volume=volume, point=point, vmin=vmin, vstep=vstep))
+        return out
+
+    def _manage_paper_one(self, mp: dict, action: str, *, offset_points: float, volume: float | None, point: float, vmin: float,
+                          vstep: float) -> dict:
+        if action == "PARTIAL_CLOSE" and _floor_step(float(volume or 0), vstep) > float(mp["volume_open"]) + 1e-9:
+            # 1.46: more than the open volume - PAPER booked P/L for lots that never existed (the account path is unchanged:
+            # what is sent to MT5 is an owner decision, see docs/AUDYT_1_45.md)
+            return {"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "VOLUME_ABOVE_OPEN"}
+        q = self.bridge.quote_status()
+        px = (q["bid"] if mp["side"] == "BUY" else q["ask"]) if q else None
+        if action == "BREAK_EVEN":
+            new_sl = mp["entry_price"] + (offset_points * point if mp["side"] == "BUY" else -offset_points * point)
+            better = (mp["sl"] is not None) and ((mp["side"] == "BUY" and mp["sl"] >= new_sl) or (mp["side"] == "SELL" and mp["sl"] <= new_sl))
+            if better:
+                return {"ticket": mp["position_ticket"], "status": "UNCHANGED", "reason": "SL_ALREADY_BETTER"}
+            if px is None or (mp["side"] == "BUY" and new_sl >= px) or (mp["side"] == "SELL" and new_sl <= px):
+                return {"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "BE_BEYOND_MARKET"}
+            self.db.execute("UPDATE managed_positions SET sl=? WHERE position_key=?", (new_sl, mp["position_key"]))
+            return {"ticket": mp["position_ticket"], "status": "DONE", "sl": new_sl, "kind": "PRICE_BREAK_EVEN"}
+        vol = mp["volume_open"] if action == "CLOSE" else _floor_step(float(volume or 0), vstep)
+        left = round(mp["volume_open"] - vol, 10)
+        if vol <= 0 or (action == "PARTIAL_CLOSE" and (vol < vmin or (0 < left < vmin))):
+            return {"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "VOLUME_STEP_OR_MIN_REMAINING"}
+        if px is None:
+            return {"ticket": mp["position_ticket"], "status": "REJECTED", "reason": "NO_QUOTE"}
+        net = self.paper.close_part(mp, vol, px, "MANUAL_" + action)
+        return {"ticket": mp["position_ticket"], "status": "DONE", "closed": vol, "remaining": max(0.0, left), "net": net}
 
     def reconcile(self) -> dict:
         """UNKNOWN entries: look for the position by client tag in the terminal; never re-send."""

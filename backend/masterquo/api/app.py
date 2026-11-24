@@ -678,20 +678,32 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(404, "INTENT_NOT_FOUND")
         return r
 
+    def _manual_arg(key: str, parse):
+        """1.46: a Manual Pad value that 1.45 could not parse (ValueError / TypeError / OverflowError -> HTTP 500, nothing sent) is a 400
+        with the field name. The parsing is the 1.45 one: every value that reached the Manual Pad (and order_send) in 1.45 is unchanged."""
+        try:
+            return parse()
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(400, f"INVALID_{key.upper()}") from None
+
     @app.post("/api/v1/manual/intents/{iid}/execute")
     def manual_execute(iid: str, body: dict = Body(default={})):
         from ..execution.manual import PlanError
+        rev = _manual_arg("action_revision", lambda: int(body.get("action_revision") or 1))
         try:
-            return rt.manual.execute(iid, body_num(body, "action_revision", 1, int) or 1)
+            return rt.manual.execute(iid, rev)
         except PlanError as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/v1/manual/intents/{iid}/manage")
     def manual_manage(iid: str, body: dict = Body(...)):
         from ..execution.manual import PlanError
+        action = str(body.get("action"))
+        rev = _manual_arg("action_revision", lambda: int(body.get("action_revision") or 1))
+        off = _manual_arg("offset_points", lambda: float(body.get("offset_points") or 0))
+        vol = _manual_arg("volume", lambda: None if body.get("volume") is None else float(body["volume"]))
         try:
-            return rt.manual.manage(iid, str(body.get("action")), body_num(body, "action_revision", 1, int) or 1,
-                                    offset_points=body_num(body, "offset_points", 0.0, float) or 0.0, volume=body_num(body, "volume", None, float))
+            return rt.manual.manage(iid, action, rev, offset_points=off, volume=vol)
         except PlanError as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -1471,7 +1483,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.db.execute("INSERT INTO settings_audit(ts, change_json) VALUES (?,?)", (iso(utcnow()), json.dumps({"active_asset": req.asset})))
         if rt.cfg.get().mt5.symbol != old:
             rt.modes.reset("ACTIVE_ASSET_CHANGED")
-            rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")      # 1.46: not a bare state write (lost inside a running connect)
+            rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")
         rt.engine.mark_dirty()
         rt.bus.publish("assets", st)
         return st

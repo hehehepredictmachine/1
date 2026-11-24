@@ -497,13 +497,6 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 		}
 		return
 	}
-	if werr == nil {
-		// 1.46: a CLEAN exit (code 0: "Zatrzymaj Apollo23" in the panel, 04_STOP_MASTERQUO.bat, python -m masterquo stop) is the user's stop,
-		// not a crash - 1.45.0 restarted the engine after 2 s, so a stopped bot came back by itself
-		e.logf("silnik zakończył pracę (czyste wyjście) – bez ponownego uruchomienia")
-		e.set(EngineStopped, "silnik zatrzymany na żądanie (czyste wyjście) – uruchom ponownie z menu, gdy zechcesz")
-		return
-	}
 	now := time.Now()
 	e.mu.Lock()
 	recent := e.restarts[:0]

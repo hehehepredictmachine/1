@@ -66,9 +66,7 @@ def bdir() -> Path:
 
 def _merge(a, b):
     out = json.loads(json.dumps(a))
-    for k, v in (b if isinstance(b, dict) else {}).items():      # 1.46: a non-object settings.json ([1], "x") raised AttributeError
-        if isinstance(out.get(k), dict) and not isinstance(v, dict):
-            continue          # 1.46: a stored non-object (profiles.FOREX_MT5 = "x", baskets.FX_SMC = 5) never replaces an object -> no 500 / dead cycle
+    for k, v in (b or {}).items():
         out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
     return out
 
@@ -114,7 +112,8 @@ def _check_shape(patch) -> None:
     stored and then broke status / basket_view / the cycle, or raised TypeError = HTTP 500). Raises ValueError (HTTP 400)."""
     _need(isinstance(patch, dict), "body", "obiekt")
     for sec in ("profiles", "baskets", "strategies", "manual_select"):
-        _need(patch.get(sec) is None or isinstance(patch[sec], dict), sec, "obiekt")
+        # an explicit null section is refused too: the settings merge stores it as given (as in 1.45) and the cycle would stop on it
+        _need(sec not in patch or isinstance(patch[sec], dict), sec, "obiekt")
     for sec in ("profiles", "baskets", "strategies"):
         for k, v in (patch.get(sec) or {}).items():
             _need(isinstance(v, dict), f"{sec}.{k}", "obiekt")
@@ -316,7 +315,7 @@ class Ctx:
         self.reason: str | None = None
         self.oi: list[tuple[float, float]] = []
         self.flow: list[dict] = []
-        self.cache: dict[str, tuple] = {}                  # coin|tf -> (fetched_at, bars, requested n) - 1.46: n remembered
+        self.cache: dict[str, tuple[float, list]] = {}
         self.sfb: dict | None = None                       # TASK 018: last SFB snapshot meta for this scope (diagnostic)
 
 
@@ -339,14 +338,16 @@ class BasketService:
         self.loop = {"cycles": 0, "errors": 0, "last_error": None, "profile_errors": {}}
         self.hl_ctx: dict = {}
         self.hl_ctx_at = 0.0
-        from .sfb import ConfigError, StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
+        from .sfb import StrategyFilterBucket            # TASK 018: OFF by default -> exact parity with the previous route
+        # 1.46: an sfb.json that 1.45 rejected (not an object, unknown key, apply_to_execution, bad mode, pooling) made BasketService fail to
+        # construct - no scan, no signal, no plan to SH. The service now stays up for the views / the repair PUT, but stays FAIL-CLOSED as in
+        # 1.45 (cycle() scans nothing, sh_candidates() = []) until a valid config is saved; the file is left as it is.
+        self.sfb_blocked: str | None = None
         try:
-            raw = self._sfb_cfg()
-            if not isinstance(raw, dict):              # 1.46: valid JSON that is not an object (null / [] / 5) raised TypeError -> service gone
-                raise ConfigError(f"CONFIG_NOT_OBJECT ({type(raw).__name__})")
-            cfg, requested = self._sfb_effective(raw)
-        except (TypeError, ValueError) as exc:         # 1.46: a damaged sfb.json no longer kills the whole BasketService (-> OFF + reason)
-            cfg, requested = {}, f"INVALID_CONFIG: {exc}"[:200]          # ConfigError is a ValueError; the file is left as it is
+            cfg, requested = self._sfb_effective(self._sfb_cfg())
+        except (TypeError, ValueError) as exc:         # ConfigError is a ValueError
+            cfg, requested = {}, f"INVALID_CONFIG: {exc}"[:200]
+            self.sfb_blocked = requested
         self.sfb = StrategyFilterBucket(cfg)
         self.sfb.mode_requested = requested
 
@@ -364,10 +365,9 @@ class BasketService:
     # ------------------------------------------------------------------ settings
     def _read(self):
         try:
-            d = json.loads((self.base / "settings.json").read_text(encoding="utf-8"))
+            return json.loads((self.base / "settings.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
-        return d if isinstance(d, dict) else {}     # 1.46: a non-object settings.json ([1], 5) = defaults (was AttributeError -> dead thread)
 
     def _sfb_cfg(self) -> dict:
         try:
@@ -376,14 +376,26 @@ class BasketService:
             return {}
 
     @staticmethod
-    def _sfb_effective(cfg: dict) -> tuple[dict, str | None]:
-        """1.46 (rule: workflow v3.2 modules stay OFF / SHADOW / read-only): a stored ASSIST - the only SFB mode that narrows the strategies
-        reaching execution - runs as SHADOW (records what it would filter, filters nothing). The file is not rewritten."""
-        from .sfb import validate_config
-        clean = validate_config(cfg)
+    def _sfb_effective(raw) -> tuple[dict, str | None]:
+        """The stored sfb.json as 1.45 ran it (rule 1: the filter gates which basket strategies reach execution). Raises ConfigError for
+        a file 1.45 rejected. 1.46 adds only a notice (status mode_requested); the file is not rewritten."""
+        from .sfb import DEFAULT_CONFIG, ConfigError, validate_config
+        cfg = raw or {}                                   # 1.45: an empty file / null / [] = defaults (OFF)
+        if not isinstance(cfg, dict):
+            raise ConfigError(f"CONFIG_NOT_OBJECT ({type(cfg).__name__})")
+        # the 1.45 acceptance rules = validate_config without the 1.46 type / range checks of the evidence thresholds
+        base = validate_config({k: v for k, v in cfg.items() if k not in DEFAULT_CONFIG or k in ("mode", "allow_cross_profile_pooling")})
+        try:
+            clean, notice = validate_config(cfg), None
+        except ConfigError as exc:
+            # accepted by 1.45, only the 1.46 threshold checks fail: the stored mode runs as in 1.45; the thresholds are never evaluated
+            # without an evidence source (ELIGIBLE unreachable), so the defaults stand in for them
+            clean, notice = base, f"THRESHOLDS_IGNORED: {exc} – tryb zachowany jak w 1.45, progi domyślne (brak źródła dowodów)"[:200]
         if clean["mode"] == "ASSIST":
-            return {**clean, "mode": "SHADOW"}, "ASSIST (wyłączony: moduły v3.2 tylko do odczytu – działa jako SHADOW)"
-        return clean, None
+            # an ASSIST stored by 1.45 keeps narrowing exactly as in 1.45 (only ELIGIBLE + HEDGING; never adds) - it cannot be set again
+            notice = ("ASSIST (zapisany przez 1.45 – działa jak w 1.45: tylko zawęża, nigdy nie dodaje; nie można go ustawić ponownie – "
+                      "przełącz na OFF / SHADOW, aby wznowić wejścia koszyków)" + (f"; {notice}" if notice else ""))[:300]
+        return clean, notice
 
     def set_sfb(self, cfg: dict) -> dict:
         from .sfb import ConfigError, StrategyFilterBucket, validate_config
@@ -395,6 +407,7 @@ class BasketService:
         tmp.replace(self.base / "sfb.json")
         self.sfb = StrategyFilterBucket(clean, self.sfb.outcomes_fn)
         self.sfb.mode_requested = None
+        self.sfb_blocked = None                           # a valid config was saved - the fail-closed state of a rejected file ends
         return self.sfb.status()
 
     def settings(self) -> dict:
@@ -510,6 +523,11 @@ class BasketService:
         return max(1.0, w) if math.isfinite(w) else 5.0
 
     def cycle(self) -> dict:
+        if self.sfb_blocked:
+            # sfb.json rejected (1.45: BasketService not constructed at all) - nothing is scanned, tracked or published
+            self.loop["blocked"] = self.sfb_blocked
+            return {"state": "BLOCKED", "reason": self.sfb_blocked}
+        self.loop.pop("blocked", None)
         st = self.settings()
         out = {}
         for prof, fn in (("FOREX_MT5", self._forex), ("CRYPTO_FOMO_PERPS", self._crypto)):     # TASK 020: OTC retired - never scanned
@@ -595,18 +613,14 @@ class BasketService:
         sec = HL_TF_S[tf]
         now = time.time()
         got = c.cache.get(key)
-        # 1.46: the cache remembers how many candles were requested - a smaller auxiliary request first (M15 300, BTC M1 400, ETH M5 300)
-        # truncated the signal series of the same coin / TF (ETH M5 = 300, every M15 = 300 instead of 500) for the whole session
-        have = (got[2] if len(got) > 2 else len(got[1])) if got else 0
-        if got and have >= n and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
-            return got[1][-n:]
-        want = max(n, have)
+        if got and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
+            return got[1]
         try:
-            b = self.hl.candles(coin, tf, want)
+            b = self.hl.candles(coin, tf, n)
         except HLError:
-            return got[1][-n:] if got else []
-        c.cache[key] = (now, b, want)
-        return b[-n:]
+            return got[1] if got else []
+        c.cache[key] = (now, b)
+        return b
 
     def _crypto(self, st: dict) -> dict:
         pr = st["profiles"]["CRYPTO_FOMO_PERPS"]
@@ -675,9 +689,7 @@ class BasketService:
                      "funding": {k: (self.hl_ctx.get(k) or {}).get("funding_rate") for k in ("BTC", "ETH")}, "fees": pr.get("fees") or {},
                      "pair_map": pair_map, "same_underlying": same_underlying, "symbol": coin,
                      "market": {"mark": hc.get("mark"), "oracle": hc.get("oracle"), "funding_rate_1h": hc.get("funding_rate"), "open_interest": hc.get("open_interest")}}
-            # 1.46: up to 600 candles (as _run_ctx asks): CP_SMC_09 (previous UTC day) needs the whole previous day + today = up to 576 M5;
-            # with the old 500 cap it was Unavailable every day 20:00-24:00 UTC although the data exists
-            out[coin] = self._run_ctx(c, st, lambda tf, n=600, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 600)), q, extra)
+            out[coin] = self._run_ctx(c, st, lambda tf, n=500, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 500)), q, extra)
         return out
 
     # 1.46: the dead `_otc` scanner (retired in TASK 020, never called by cycle()) was removed - the legacy history reader stays (`otc`)
@@ -925,6 +937,8 @@ class BasketService:
     def sh_candidates(self, symbol: str, now: float | None = None) -> list[dict]:
         """ACTIVE FOREX_MT5 PositionPlans on `symbol` that were not handed over yet and are still fresh (<= 3 signal bars, max 30 min).
         Conflicts / duplicates were already resolved in _resolve (one primary plan per event)."""
+        if self.sfb_blocked:                              # rejected sfb.json: 1.45 had no BasketService -> no basket plan reached SH
+            return []
         st = self.settings()
         if (st["profiles"]["FOREX_MT5"].get("execution") or "AUTO_SH") != "AUTO_SH" or not st["profiles"]["FOREX_MT5"].get("enabled", True):
             return []

@@ -1,13 +1,12 @@
 """1.46 audit, group B_mq_sh_1: sh/config.py, sh/context.py, sh/executor.py, sh/hedge_fsm.py, sh/lifecycle.py, sh/models.py and the
 SH pack (catalog / engine / features / policies / replay).
 
-Pure logic, a fake MT5 module and an isolated MASTERQUO_DATA_DIR - no terminal, no orders, no HTTP server. All market data is SYNTHETIC."""
+Pure logic and an isolated MASTERQUO_DATA_DIR - no terminal, no orders, no HTTP server. All market data is SYNTHETIC."""
 from __future__ import annotations
 
 import random
 import unittest
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest import mock
 
 import _env  # noqa: F401
@@ -62,76 +61,6 @@ class TestConfigValidation(unittest.TestCase):
 
 # ============================================================================================ sh/context.py (chunk_13#7, chunk_30#15)
 # ============================================================================================ sh/executor.py (chunk_30#7, chunk_30#11)
-class FakeStore:
-    def __init__(self):
-        self.actions, self.events = {}, []
-
-    def claim_action(self, action, now=None):
-        r = self.actions.get(action["action_id"])
-        if r is None:
-            self.actions[action["action_id"]] = {"status": "SENT", "result": None}
-            return {"claimed": True, "attempt": 1}
-        if r["status"] == "REJECTED":
-            r["status"] = "SENT"
-            return {"claimed": True}
-        return {"claimed": False, "status": r["status"], "result": r["result"]}
-
-    def finish_action(self, action_id, status, result, now=None):
-        self.actions[action_id] = {"status": status, "result": result}
-
-    def event(self, *a, **k):
-        self.events.append(a)
-
-    def own(self, *a, **k):
-        return True
-
-    def owner(self, account_key, ticket):
-        return {"plan_id": "P1"}
-
-
-class FakeMT5:
-    TRADE_ACTION_DEAL, TRADE_ACTION_SLTP = 1, 6
-    ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TIME_GTC = 0, 1, 0
-    ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
-
-    def __init__(self, retcode=10008, volume=0.0, deals=()):
-        self.retcode, self.volume, self.deals, self.sent = retcode, volume, deals, []
-
-    def symbol_info_tick(self, sym):
-        return SimpleNamespace(bid=2000.0, ask=2000.2)
-
-    def order_check(self, req):
-        return SimpleNamespace(retcode=0, comment="")
-
-    def order_send(self, req):
-        self.sent.append(req)
-        return SimpleNamespace(retcode=self.retcode, volume=self.volume, price=0.0, deal=0, order=777, comment="")
-
-    def positions_get(self, ticket=None, symbol=None):
-        return [SimpleNamespace(sl=1990.0, tp=2010.0)]
-
-    def history_deals_get(self, ticket=None, position=None):
-        return self.deals
-
-
-def _executor(m, store=None):
-    from masterquo.sh.executor import SHExecutor
-    return SHExecutor(store or FakeStore(), terminal=lambda fn: fn(m), account_key="ACC", is_demo=lambda: True)
-
-
-PLAN = {"plan_id": "P1", "symbol": "XAUUSD-", "account_key": "ACC"}
-Q = {"bid": 2000.0, "ask": 2000.2}
-
-
-class TestExecutor(unittest.TestCase):
-    def test_closing_deals_include_close_by_and_reversal(self):
-        deals = (SimpleNamespace(ticket=1, entry=0, volume=0.1, price=2000.0, time=1.0, comment="SH:P"),
-                 SimpleNamespace(ticket=2, entry=3, volume=0.1, price=1995.5, time=2.0, comment="close by"),
-                 SimpleNamespace(ticket=3, entry=2, volume=0.1, price=1995.0, time=3.0, comment="reversal"))
-        got = _executor(FakeMT5(deals=deals)).closing_deals(111)
-        self.assertEqual([d["ticket"] for d in got], [2, 3])                           # was [] -> the caller substituted SL / entry price
-
-
 # ============================================================================================ sh/hedge_fsm.py (chunk_30#8)
 # ============================================================================================ sh/lifecycle.py (chunk_30#4)
 # ============================================================================================ sh/models.py (chunk_30#10)

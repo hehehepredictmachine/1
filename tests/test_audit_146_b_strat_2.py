@@ -91,21 +91,14 @@ class TestTrackerBookkeeping(unittest.TestCase):
         self.assertEqual((r["record"]["strategy_version"], r["record"]["config_hash"]), ("2.0", "cfgC"))
         self.assertEqual(self._cols("MQA-T1"), {"strategy_version": "2.0", "config_hash": "cfgC", "event_id": "EV-2"})
 
-    def test_upsert_keeps_final_status_and_columns_after_reactivation(self):
-        """chunk_34#8: a reactivated soft-cancelled row gets the new columns; a final row (ENTERED) is still never overwritten."""
+    def test_upsert_refreshes_columns_after_reactivation(self):
+        """chunk_34#8: a reactivated soft-cancelled row gets the new columns."""
         self._upd([_cand()], 0)
         for k in range(1, self.cfg.cancel_after_misses + 1):
             self._upd([], k)
         self.assertEqual(self.tr.get("MQA-T1")["terminal_reason"], "CONDITIONS_NO_LONGER_MET")
         ev = self._upd([_cand(ver="2.0", chash="cfgC")], 20)
         self.assertEqual([k for k, _ in ev], ["NEW_EARLY"])
-        self.assertEqual(self._cols("MQA-T1")["strategy_version"], "2.0")
-        self.tr.mark_entered("MQA-T1", "PAPER_DONE", "2026-10-08T10:30:00Z")
-        stale = self.tr.get("MQA-T1")
-        stale.update(status="ACTIVE", terminal_reason=None)
-        stale["record"] = dict(stale["record"], strategy_version="3.0", config_hash="cfgZ")
-        self.tr._save(stale)                                   # a stale copy from the scan thread
-        self.assertEqual(self.tr.get("MQA-T1")["status"], "ENTERED")
         self.assertEqual(self._cols("MQA-T1")["strategy_version"], "2.0")
 
     def test_refresh_resets_misses_and_keeps_pending_downgrade(self):

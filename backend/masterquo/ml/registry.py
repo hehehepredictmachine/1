@@ -99,12 +99,8 @@ class Registry:
         best = min(cand) if cand else None
         if best and self.champion is not None and promotion_cfg.get("must_beat_champion_brier", True):
             champ_brier = self._champion_brier_on(result)
-            if champ_brier is None:
-                # 1.46: an impossible comparison (exception, results without test ids, empty test set) promoted the challenger WITHOUT
-                # beating the champion - "a weaker challenger never replaces a better champion" requires the comparison
-                decisions[best[1]]["passed"] = False
-                decisions[best[1]]["reasons"].append("CHAMPION_COMPARISON_UNAVAILABLE" + (f":{self.compare_error}" if self.compare_error else ""))
-                best = None
+            if champ_brier is None:                         # 1.46: diagnostics only (the promotion rule is the 1.45.0 one)
+                self.event("CHAMPION_COMPARISON_UNAVAILABLE", best[1], {"error": self.compare_error})
             elif best[0] >= champ_brier:
                 decisions[best[1]]["passed"] = False
                 decisions[best[1]]["reasons"].append(f"NOT_BETTER_THAN_CHAMPION_BRIER_{champ_brier:.4f}")

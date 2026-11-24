@@ -12,8 +12,8 @@ chunk_40#7   scalp labels skip rows with ATR == 0 (ZeroDivisionError ended the w
 chunk_40#6   scalp training: the commission (account currency) is converted to quote-currency price units with MT5's tick value when
              the account currency differs; no tick value -> COMMISSION_CURRENCY_UNKNOWN.
 chunk_40#9   session_check: the gold weekend break is not assumed for BTC (NOT_VERIFIED_BROKER_SESSIONS).
-chunk_41#1   Kronos GPU -> CPU fallback resets the RoPE caches (the retry and every later forecast failed); predict_batch is covered too.
-chunk_41#2   Kronos selftest(reference=True) restores the device; install.verify reports the LOAD state.
+chunk_41#2   Kronos selftest(reference=True) restores the device (RoPE caches reset on that report-only path); install.verify reports the
+             LOAD state. (The live predict() GPU -> CPU fallback, chunk_41#1, is unchanged from 1.45 - rule 1.)
 chunk_41#3   SDformerFlow resume writes a NEW version folder (never into the active version); nothing to do -> NOTHING_TO_DO.
 chunk_41#5   SDformerFlow: a cancel inside an epoch keeps the last COMPLETE checkpoint.
 chunk_41#9   SDformerFlow: trained_until = last TARGET bar of the training samples; the validation tail starts after an embargo.
@@ -534,7 +534,7 @@ class TestSessionCheckInstrument(unittest.TestCase):
             self.assertEqual(worker.session_check(fri, 30, "XAUUSD"), "BLOCKED_SESSION_BREAK")
 
 
-# ===================================================================================================== chunk_41#1 / #2 Kronos engine
+# ===================================================================================================== chunk_41#2 Kronos engine (selftest)
 class _Rope:
     def __init__(self):
         self.seq_len_cached = self.cos_cached = self.sin_cached = None
@@ -603,27 +603,6 @@ class TestKronosGpuFallback(unittest.TestCase):
         eng.predictor = pred
         eng.info = {"device": pred.device, "device_note": None}
         return eng
-
-    def test_to_cpu_resets_rope_caches_and_the_retry_works(self):
-        pred = _KPred(fail={"predict"})
-        eng = self._engine(pred)
-        with mock.patch.dict(sys.modules, {"torch": _fake_torch()}):
-            res = eng.predict(_kronos_req())
-            self.assertEqual(res["device"], "cpu")
-            self.assertTrue(res["device_note"].startswith("GPU_ERROR_FALLBACK_CPU"))
-            self.assertEqual(len(res["pred"]["close"]), 12)
-            self.assertEqual(eng.predict(_kronos_req())["device"], "cpu")       # later forecasts keep working
-        for m in (pred.model, pred.tokenizer):
-            self.assertEqual(m.dev, "cpu")
-
-    def test_paths_block_falls_back_too(self):
-        pred = _KPred(fail={"predict_batch"})
-        eng = self._engine(pred)
-        with mock.patch.dict(sys.modules, {"torch": _fake_torch()}):
-            res = eng.predict(_kronos_req(paths=3))
-        self.assertEqual(res["paths"]["n"], 3)
-        self.assertEqual(res["device"], "cpu")
-        self.assertTrue(res["device_note"].startswith("GPU_ERROR_FALLBACK_CPU"))
 
     def test_reference_selftest_restores_the_device(self):
         pred = _KPred()

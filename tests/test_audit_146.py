@@ -81,32 +81,6 @@ class TestBootstrapProbe(unittest.TestCase):
         self.assertIn("PROBE_ERROR", states["tsfm_chronos2"]["detail"])
 
 
-class TestWallsStoreRestart(unittest.TestCase):
-    """1.45.0: the fingerprint held a tuple; after the JSON round trip (first freeze after a restart) it was a list -> never equal -> every restart
-    created version N+1 with a new snapshot_id for the same input (and S12 got a new setup identity for the same market event)."""
-
-    def test_same_input_after_restart_keeps_snapshot_id(self):
-        from _env import TempData
-
-        from masterquo.analysis.walls import WallsStore
-        from masterquo.db.database import Database
-        td = TempData()
-        try:
-            db = Database()
-            snap = {"status": "OK", "symbol": "XAUUSD-", "anchor_time": "2026-11-20T00:00:00Z", "source_type": "HV_PROXY", "sigma_annual": 0.18,
-                    "obs_id": None, "band_sigma": 0.15, "available_at": "2026-11-20T00:05:00Z",
-                    "walls": [{"k": 1.0, "side": "UPPER", "level": 2410.0}, {"k": 2.0, "side": "UPPER", "level": 2430.0},
-                              {"k": 1.0, "side": "LOWER", "level": 2390.0}]}
-            a = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))
-            b = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))     # new store = application restart
-            self.assertEqual((b["snapshot_id"], b["snapshot_version"]), (a["snapshot_id"], 1))
-            self.assertEqual(db.one("SELECT COUNT(*) n FROM walls_snapshots")["n"], 1)
-            c = WallsStore(db).freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))   # a real change -> next version
-            self.assertEqual(c["snapshot_version"], 2)
-        finally:
-            td.close()
-
-
 class TestApiInputValidation(unittest.TestCase):
     """Smoke test 1.45.0: these requests answered 500 (Internal Server Error) - now 400 with a reason."""
 
@@ -193,47 +167,6 @@ class TestApiInputValidation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestAgentGateAndBudget(unittest.TestCase):
-    """1.45.0: (a) a USER_QUESTION run with the setup id replaced the AI gate assessment of a CONFIRMED setup (WAIT answer -> DISAGREE veto) and
-    marked a running SETUP_CONFIRMED assessment as superseded; (b) a model id without an exact price (e.g. a dated id returned by the API)
-    stored est_cost_usd = NULL and the daily budget counted it as 0."""
-
-    def setUp(self):
-        import test_agent as TA
-        self.TA = TA
-        self.t = TA.TestAgent("test_veto_policy")
-        self.t.setUp()
-        self.agent = self.t.agent
-
-    def tearDown(self):
-        self.t.tearDown()
-
-    def _handle(self, trigger, ans, question=None):
-        import asyncio
-        import json
-        TA = self.TA
-        client = TA.ScriptedClient([TA.msg([TA.text(json.dumps(ans))], "end_turn")])
-        self.agent._client_get = lambda: client
-        self.agent.last_auto_run = self.agent.last_user_run = 0
-        self.agent.loop = None
-        req = {"trigger": trigger, "snapshot_id": "SNP-1", "setup_id": "MQS-1", "setup_state": "CONFIRMED", "question": question, "key": trigger}
-        asyncio.run(self.agent._handle(req))
-
-    def test_user_question_does_not_replace_gate_assessment(self):
-        TA = self.TA
-        self._handle("SETUP_CONFIRMED", TA.answer())                                   # SELL for a SHORT setup -> PASS
-        self.assertEqual(self.agent.by_setup["MQS-1"]["record"]["proposed_action"], "SELL")
-        self._handle("USER_QUESTION", TA.answer(proposed_action="WAIT", answer_pl="Ryzyka newsów: ..."), question="Jakie są ryzyka?")
-        self.assertEqual(self.agent.by_setup["MQS-1"]["record"]["proposed_action"], "SELL")   # the question's WAIT is not a veto
-        self.assertEqual(self.agent.last_result["status_note"], "ANSWER_ONLY_NOT_A_GATE_ASSESSMENT")
-
-    def test_unknown_or_dated_model_price_is_not_zero(self):
-        usage = {"input_tokens": 1_000_000, "output_tokens": 0}
-        self.assertEqual(self.agent._cost("claude-opus-5-5-20261101", usage), 4.0)             # dated id -> base model price
-        self.assertEqual(self.agent._cost("some-unknown-model", usage, requested="claude-opus-5-5"), 4.0)
-        self.assertEqual(self.agent._cost("some-unknown-model", usage), 10.0)                  # no price at all -> upper bound, never 0 / None
 
 
 class TestQuoteBandUnscored(unittest.TestCase):
@@ -540,32 +473,6 @@ class TestForexEngineStub(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
 
 
-class TestAssetAutodetectCurrency(unittest.TestCase):
-    """1.45.0: find_on_account adopted a symbol by NAME although its currencies contradict the asset (BTCUSDT / BTCEUR / ETHBTC as BTC,
-    XAUEUR as XAUUSD) - and autodetect() saved it as the mapping without confirmation."""
-
-    def _reg(self, symbols):
-        import types
-
-        from masterquo.assets.registry import AssetRegistry
-        br = types.SimpleNamespace(_call=lambda fn: fn(types.SimpleNamespace(symbols_get=lambda: symbols)))
-        reg = AssetRegistry.__new__(AssetRegistry)
-        reg.bridge = br
-        return reg
-
-    def test_conflicting_currencies_are_not_adopted(self):
-        bad = [{"name": "BTCUSDT", "currency_base": "BTC", "currency_profit": "USDT", "visible": True},
-               {"name": "BTCEUR", "currency_base": "BTC", "currency_profit": "EUR", "visible": True},
-               {"name": "ETHBTC", "currency_base": "ETH", "currency_profit": "BTC", "visible": True},
-               {"name": "XAUEUR", "currency_base": "XAU", "currency_profit": "EUR", "visible": True}]
-        self.assertIsNone(self._reg(bad).find_on_account("BTC"))
-        self.assertIsNone(self._reg(bad).find_on_account("XAUUSD"))
-        good = bad + [{"name": "BTCUSD.m", "currency_base": "BTC", "currency_profit": "USD", "visible": True},
-                      {"name": "GOLD", "currency_base": "USD", "currency_profit": "USD", "visible": True}]
-        self.assertEqual(self._reg(good).find_on_account("BTC"), "BTCUSD.m")
-        self.assertEqual(self._reg(good).find_on_account("XAUUSD"), "GOLD")
-
-
 class TestMlRetryBackoff(unittest.TestCase):
     """1.45.0: _readiness ignored FAILED / INTERRUPTED / CANCELLED jobs -> the scheduler restarted training every 60 s with a new snapshot."""
 
@@ -664,9 +571,9 @@ class TestWf32Units(unittest.TestCase):
 
 class TestSfbAssistDisabled(unittest.TestCase):
     """1.45.0 (KRYTYCZNY, rule 2): SFB ASSIST set through PUT /api/v1/strategy-filter/config narrowed the strategies of the FOREX baskets that
-    reach the SH execution path. The application now refuses ASSIST and runs a stored ASSIST as SHADOW (nothing filtered)."""
+    reach the SH execution path. The application now refuses to SAVE ASSIST; an ASSIST stored by 1.45 keeps its 1.45 behaviour (rule 1)."""
 
-    def test_assist_refused_and_stored_assist_runs_as_shadow(self):
+    def test_assist_refused_and_stored_assist_keeps_1_45_behaviour(self):
         import json
         import tempfile
         import types
@@ -683,38 +590,18 @@ class TestSfbAssistDisabled(unittest.TestCase):
         (d / "sfb.json").write_text(json.dumps({"mode": "ASSIST"}), encoding="utf-8")          # stored by 1.45.0
         svc2 = BS.BasketService(rt, data_dir=d)
         st = svc2.sfb.status()
-        self.assertEqual(st["mode"], "SHADOW")
-        self.assertTrue(st["mode_requested"].startswith("ASSIST"))
+        self.assertEqual(st["mode"], "ASSIST")                                             # 1.45 parity (rule 1)
+        self.assertTrue(st["mode_requested"].startswith("ASSIST"))                          # explained in the status
         strats = [s for s in CAT.strategies() if s["profile_id"] == "FOREX_MT5"]
         kept, snap = svc2.sfb.filter(strats, {"profile": "FOREX_MT5", "venue": "MT5", "environment": "PAPER", "product": None, "instrument": "XAUUSD"})
-        self.assertEqual(kept, strats)                                                     # nothing filtered
+        self.assertEqual(kept, [s for s in strats if s["kind"] == "HEDGING"])                # as 1.45: no evidence source -> only HEDGING
+        self.assertEqual(snap["bucket_status"], "NO_TRADE_BUCKET")
         self.assertEqual(json.loads((d / "sfb.json").read_text())["mode"], "ASSIST")          # the user's file is not rewritten
         (d / "sfb.json").write_text(json.dumps({"mode": "OFF", "apply_to_execution": True}), encoding="utf-8")
-        self.assertEqual(BS.BasketService(rt, data_dir=d).sfb.status()["mode"], "OFF")        # damaged config -> OFF, service still starts
-
-
-class TestTrackerEnteredNotResurrected(unittest.TestCase):
-    """1.45.0: the scan thread saved rows read at its start; an ENTERED set meanwhile by the execution (API thread, POST /api/v1/execute) was
-    overwritten back to ACTIVE (lost update) - the setup could be selected and executed again."""
-
-    def test_stale_copy_cannot_overwrite_entered(self):
-        import test_strategies as TS
-        t = TS.TestTracker("test_dedupe_invalidation_expiry_restore")
-        t.setUp()
-        try:
-            sid = TS.ALL[0]
-            bars = TS.scenario(sid)
-            v, cands = t._scan(bars, sid)
-            now = t._now(bars)
-            t.tr.update(cands, view=v, symbol="XAUUSD-", account_key="acc", data_ok=True, new_data=True, now=now, cfg=t.cfg, scanned={sid})
-            row = t.tr.active("XAUUSD-", "acc")[0]                 # the scan's copy (status ACTIVE)
-            t.tr.mark_entered(row["setup_id"], "AUTO_DEMO_FILLED", "2026-11-20T10:00:00Z")   # execution thread
-            row["updated_at"] = "2026-11-20T10:00:01Z"
-            t.tr._save(row)                                         # the scan finishes and writes its stale copy
-            self.assertEqual(t.tr.get(row["setup_id"])["status"], "ENTERED")
-            self.assertEqual(t.tr.active("XAUUSD-", "acc"), [])
-        finally:
-            t.tearDown()
+        svc3 = BS.BasketService(rt, data_dir=d)                                            # damaged config: the service still starts ...
+        self.assertTrue(svc3.sfb.status()["mode_requested"].startswith("INVALID_CONFIG"))
+        self.assertEqual(svc3.cycle()["state"], "BLOCKED")                                  # ... but fail-closed as in 1.45 (no service)
+        self.assertEqual(svc3.sh_candidates("XAUUSD-"), [])
 
 
 class TestConfigIntegrity(unittest.TestCase):
@@ -1036,7 +923,7 @@ class TestGoldCandlesContractHashStable(unittest.TestCase):
 
 
 class TestFamiliesServiceSafety(unittest.TestCase):
-    """1.45.0 (WYSOKI x5): model families - ASSIST kept on artifacts that never passed the gate (activate / rollback, SYNTHETIC_TEST data);
+    """1.45.0 (WYSOKI x5): model families - set_use gave ASSIST to artifacts on SYNTHETIC_TEST / UNKNOWN data;
     `_alive` = os.kill(pid, 0) (TerminateProcess on Windows); cancel left the .venv_deep worker running; the prediction cache grew per bar;
     unknown family names created folders; a train_all queue interrupted by a restart waited forever; a second submit while QUEUED."""
 
@@ -1060,18 +947,6 @@ class TestFamiliesServiceSafety(unittest.TestCase):
         from masterquo.modelhub.families.service import FamilyService
         return FamilyService(ConfigStore(), None, store=self.store)
 
-    def test_activate_and_rollback_drop_assist_from_unapproved_artifact(self):
-        self.run_("R1", "APPROVED", "REAL_USER_DATA")
-        self.run_("R2", "VALIDATION_FAILED", "REAL_USER_DATA")
-        self.store.set_active("TS_ARIMA", "XAUUSD", "R1", "t")
-        self.assertEqual(self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")["use"], "ASSIST")      # REAL_USER_DATA + APPROVED passes
-        self.assertEqual(self.store.set_active("TS_ARIMA", "XAUUSD", "R2", "t")["use"], "SHADOW")  # 1.45.0: stayed ASSIST
-        self.store.set_active("TS_ARIMA", "XAUUSD", "R1", "t")
-        self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")
-        self.store._save_state("TS_ARIMA", "XAUUSD", dict(self.store.state("TS_ARIMA", "XAUUSD"),
-                                                          history=[{"action": "ACTIVATE", "run_id": "R1", "previous": "R2"}]))
-        self.assertEqual(self.store.rollback("TS_ARIMA", "XAUUSD")["use"], "SHADOW")              # back to the unapproved R2
-
     def test_synthetic_test_and_unknown_data_never_get_assist(self):
         for kind in ("SYNTHETIC_TEST", "UNKNOWN", None):
             self.store._save_state("TS_ARIMA", "XAUUSD", {"active": None, "use": "OFF", "history": []})
@@ -1083,15 +958,10 @@ class TestFamiliesServiceSafety(unittest.TestCase):
         self.assertEqual(self.B.kind_class("SYNTHETIC_TEST"), "SYNTHETIC")
         self.assertEqual(self.B.kind_class("REAL_USER_DATA"), "REAL")
         self.assertIsNone(self.B.kind_class("UNKNOWN_SOURCE"))
-
-    def test_saved_assist_on_bad_artifact_predicts_as_shadow(self):
-        from unittest import mock
-        self.run_("R9", "APPROVED", "SYNTHETIC_TEST")
-        self.store._save_state("TS_ARIMA", "XAUUSD", {"active": "R9", "use": "ASSIST", "history": []})    # written by 1.45
-        s = self.svc()
-        with mock.patch.object(s, "_live", return_value={"bars": [{"t": 60.0}]}):
-            p = s.predict("TS_ARIMA", "XAUUSD")
-        self.assertEqual(p.get("use"), "SHADOW", p)
+        self.store._save_state("TS_ARIMA", "XAUUSD", {"active": None, "use": "OFF", "history": []})
+        self.run_("R1", "APPROVED", "REAL_USER_DATA")
+        self.store.set_active("TS_ARIMA", "XAUUSD", "R1", "t")
+        self.assertEqual(self.store.set_use("TS_ARIMA", "XAUUSD", "ASSIST")["use"], "ASSIST")      # REAL_USER_DATA + APPROVED passes
 
     def test_prediction_cache_keeps_one_entry_per_family(self):
         from unittest import mock

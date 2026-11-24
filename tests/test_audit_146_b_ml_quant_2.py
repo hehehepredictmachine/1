@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import threading
 import time
 import unittest
 from datetime import UTC, datetime
@@ -17,28 +16,22 @@ from _env import TempData
 from test_quant_core import NOW, StubBridge, StubRt, bar, cand, pred
 
 
-# =============================================================================================== checks: data_time basis (chunk_26#5)
-class TestChecksDataTimeBasis(unittest.TestCase):
-    def test_close_basis_record_two_bars_old_is_late(self):
+# =============================================================================================== checks: 1.45 gating kept (rule 1)
+class TestChecksGatingAsIn145(unittest.TestCase):
+    """chunk_26#5 (data_time basis of trainhub / Kronos / TSFM records) changes which records are eligible - it is on the owner's decision
+    list; TTL and LATE_GENERATION stay measured from data_time exactly as in 1.45.0."""
+
+    def test_close_producers_keep_145_ttl_and_late_generation(self):
         from masterquo.quant import checks as CK
         floor = {"M5": NOW - 300}                               # newest closed M5 bar opened 300 s ago
-        p1 = pred(age=300)                                     # trainhub: data_time = CLOSE of the bar one before the newest
-        self.assertTrue(CK.check(p1, now=NOW, generation_floor=floor)["eligible"])
-        p2 = pred(age=600)                                     # close of the bar two before the newest -> late worker answer
-        self.assertEqual(CK.check(p2, now=NOW, generation_floor=floor)["reason"], "LATE_GENERATION:M5")
-        # the same time on a bar-OPEN record is one bar newer -> not late (unchanged rule for open-basis producers)
-        p3 = dict(pred(age=600), data_time_basis="BAR_OPEN")
-        self.assertTrue(CK.check(p3, now=NOW, generation_floor=floor)["eligible"])
-
-    def test_close_basis_ttl_is_two_bars_after_close(self):
-        from masterquo.quant import checks as CK
-        self.assertTrue(CK.check(pred(age=590), now=NOW)["eligible"])                       # close + < 2 bars
-        self.assertEqual(CK.check(pred(age=700), now=NOW)["reason"].split(":")[0], "STALE")  # close + 2 bars + 100 s
-        p = dict(pred(age=700), data_time_basis="BAR_OPEN")                                  # open + 700 s < open + 3 bars
-        self.assertTrue(CK.check(p, now=NOW)["eligible"])
-        kr = pred(name="Kronos-small", task="KRONOS_CLOSE_PATH_H6_M5", age=700)
-        self.assertEqual(CK.data_time_basis(kr), "BAR_CLOSE")
-        self.assertEqual(CK.check(kr, now=NOW)["reason"].split(":")[0], "STALE")
+        self.assertTrue(CK.check(pred(age=300), now=NOW, generation_floor=floor)["eligible"])
+        self.assertTrue(CK.check(pred(age=600), now=NOW, generation_floor=floor)["eligible"])
+        self.assertEqual(CK.check(pred(age=700), now=NOW, generation_floor=floor)["reason"], "LATE_GENERATION:M5")
+        for age in (650, 850):                                  # TTL = 3 bars from data_time
+            self.assertTrue(CK.check(pred(age=age), now=NOW)["eligible"], age)
+        self.assertEqual(CK.check(pred(age=950), now=NOW)["reason"].split(":")[0], "STALE")
+        kr = pred(name="Kronos-small", task="KRONOS_CLOSE_PATH_H6_M5", age=850)
+        self.assertTrue(CK.check(kr, now=NOW)["eligible"])
 
 
 # =============================================================================================== events (chunk_26#8, #16)
@@ -107,32 +100,8 @@ class TestMetaModelPaths(unittest.TestCase):
         self.assertEqual(M.list_versions("XAUUSD")[-1:][0]["version"], "v-new")
 
 
-# =============================================================================================== scheduler (chunk_26#3)
-class TestSchedulerHungTasks(unittest.TestCase):
-    def test_hung_tasks_do_not_starve_the_next_cycles(self):
-        from masterquo.quant.scheduler import Dag
-        release = threading.Event()
-        d = Dag(max_workers=2)
-        calls = {"base": 0}
-
-        def hang(c, _):
-            calls["base"] += 1
-            release.wait(10)
-            return []
-        d.add("snapshot", lambda c, _: {"ok": 1}, owner="x", deadline_s=1.0)
-        d.add("base", hang, deps=("snapshot",), owner="x", deadline_s=0.1)
-        d.add("ext", lambda c, _: release.wait(10) or [], deps=("snapshot",), owner="x", deadline_s=0.1)
-        try:
-            r1 = d.run({}, 1)
-            self.assertEqual((r1["tasks"]["base"]["status"], r1["tasks"]["ext"]["status"]), ("TIMEOUT", "TIMEOUT"))
-            r2 = d.run({}, 2)
-            self.assertEqual(r2["tasks"]["snapshot"]["status"], "OK")          # the two hung calls no longer occupy its worker
-            self.assertEqual(r2["tasks"]["base"]["status"], "BUSY_PREVIOUS")  # not queued behind its own hung call
-            self.assertEqual(calls["base"], 1)
-        finally:
-            release.set()
-            d.shutdown()
-
+# =============================================================================================== scheduler (soft_deps capability)
+class TestSchedulerSoftDeps(unittest.TestCase):
     def test_soft_dependency_keeps_the_successful_branch(self):
         from masterquo.quant.scheduler import Dag
         d = Dag()
@@ -159,21 +128,6 @@ class _Svc(unittest.TestCase):
     def tearDown(self):
         self.q.stop()
         self.td.close()
-
-
-class TestServiceExtendedFailure(_Svc):
-    def test_base_predictions_survive_a_failed_extended_branch(self):
-        now = time.time()
-
-        def boom(c, deps):
-            raise RuntimeError("extended down")
-        self.q.dag.tasks["extended_predictions"]["fn"] = boom
-        self.q.dag.tasks["base_predictions"]["fn"] = lambda c, deps: [pred(age=60, now=now)]
-        with mock.patch.object(self.q, "clock", lambda: now):
-            p = self.q.cycle()
-        self.assertEqual(p["tasks"]["contract_checks"]["status"], "OK")
-        self.assertEqual(len(p["eligible"]), 1)
-        self.assertFalse(p["complete"])
 
 
 class TestConfidenceForSamePlan(_Svc):
@@ -227,21 +181,6 @@ class TestMatureIsolationAndInstrument(_Svc):
         self.assertNotIn("PENDING", self.q.ledger.counts("XAUUSD")["tasks"][0]["by_status"])
 
 
-class TestDedupKeepsFreshEventGru(_Svc):
-    def test_fresh_extended_record_wins_over_previous_cycle(self):
-        old = pred(name="mm:event_engine_dir3", tf="EVENT", task="EVENT_UNITS_DIR3", h=2, family="SEQ_GRU_EVENT", up=0.6, down=0.2, age=30)
-        new = pred(name="mm:event_engine_dir3", tf="EVENT", task="EVENT_UNITS_DIR3", h=2, up=0.2, down=0.6, age=5)
-        old["computed_at"], new["computed_at"] = NOW - 30, NOW - 1
-        snap = {"bars": {}, "data_kind": "SYNTHETIC"}
-        r = self.q._checks({"now": NOW}, {"snapshot": snap, "base_predictions": [old], "extended_predictions": [new]})
-        self.assertEqual(len(r["eligible"]), 1)
-        self.assertEqual(r["eligible"][0]["result"]["UP"], 0.2)
-        self.assertEqual(len(r["aliases_dropped"]), 1)
-        err = dict(new, state="ERROR", result=None, unavailable_reason="inference failed")
-        r2 = self.q._checks({"now": NOW}, {"snapshot": snap, "base_predictions": [old], "extended_predictions": [err]})
-        self.assertEqual(r2["eligible"], [])                   # a fresh ERROR is not hidden by the old READY
-
-
 class TestDataKindUnknown(_Svc):
     def test_row_before_first_generation_takes_the_bridge_kind(self):
         a = self.q.assess(cand(ts=time.time()), log_row=True)
@@ -267,20 +206,6 @@ class TestDataKindUnknown(_Svc):
         self.assertEqual(seen["kinds"], ["REAL"])
         self.assertEqual(res[0]["n_rows"], 2)
         self.assertEqual(res[0]["excluded_unknown_data_kind"], 2)
-
-
-class TestScalpCacheInstrument(_Svc):
-    def test_switch_of_instrument_never_reuses_scalp_records(self):
-        def fake_extended(rt, inst, gru, with_scalp=False):
-            return [{"canonical_id": "scalp:A_direction", "instrument": inst}] if with_scalp else []
-        snap = {"bars": {"M1": [{"t": NOW - 60, "available_at": NOW}]}}
-        with mock.patch("masterquo.quant.service.A.extended", side_effect=fake_extended):
-            x1 = self.q._extended({"rt": None, "inst": "XAUUSD"}, {"snapshot": snap})
-            x2 = self.q._extended({"rt": None, "inst": "XAUUSD"}, {"snapshot": snap})          # same bar: cached
-            b1 = self.q._extended({"rt": None, "inst": "BTC"}, {"snapshot": snap})              # same minute, other instrument
-        self.assertEqual([p["instrument"] for p in x1], ["XAUUSD"])
-        self.assertEqual([p["instrument"] for p in x2], ["XAUUSD"])
-        self.assertEqual([p["instrument"] for p in b1], ["BTC"])
 
 
 class TestSettingsRobust(unittest.TestCase):

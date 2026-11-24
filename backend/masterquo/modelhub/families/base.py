@@ -272,7 +272,6 @@ class Store:
         st["active"] = rid
         if rid and st.get("use") == "OFF":
             st["use"] = "SHADOW"                                     # a newly activated artifact starts observing, never influencing
-        self._recheck_assist(family, inst, st)
         self._save_state(family, inst, st)
         return st
 
@@ -285,23 +284,12 @@ class Store:
             return False, f"artefakt na danych {m.get('data_kind') or 'NIEZNANYCH'} (nie REAL) nie uzyskuje roli ASSIST"
         return True, None
 
-    def _recheck_assist(self, family: str, inst: str, st: dict) -> None:
-        # 1.45.0: activate / rollback kept ASSIST on an artifact that never passed the gate (VALIDATION_FAILED, SYNTHETIC) - it could hold SH
-        # entries. The role drops to SHADOW (or OFF without an active run) and the change is written to the history.
-        if st.get("use") != "ASSIST":
-            return
-        ok, why = self.assist_ok(family, inst, st.get("active"))
-        if not ok:
-            st["use"] = "SHADOW" if st.get("active") else "OFF"
-            st.setdefault("history", []).append({"at": time.time(), "action": "USE", "use": st["use"], "reason": "bramka ASSIST: " + (why or "")})
-
     def rollback(self, family: str, inst: str) -> dict:
         st = self.state(family, inst)
         acts = [h for h in st.get("history") or [] if h["action"] == "ACTIVATE"]
         prev = acts[-1]["previous"] if acts and acts[-1]["run_id"] == st.get("active") else None
         st["history"].append({"at": time.time(), "action": "ROLLBACK", "run_id": prev, "previous": st.get("active")})
         st["active"] = prev
-        self._recheck_assist(family, inst, st)
         self._save_state(family, inst, st)
         return st
 

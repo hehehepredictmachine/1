@@ -208,22 +208,6 @@ class TestModelsValidation(unittest.TestCase):
     def tearDown(self):
         self.td.close()
 
-    def test_dt_one_class_validation_fold_is_not_inf(self):
-        """chunk_20#2: a fold whose VALIDATION part has one class gave walk_forward_logloss=inf -> Registry dumps ValueError."""
-        from masterquo.db.database import dumps
-        from masterquo.ml.models import train_dt
-        from masterquo.ml.prep import Preprocessor
-        rng = random.Random(3)
-        tr = [dict(_feat(rng), label=i % 2) for i in range(80)]
-        va = [dict(_feat(rng), label=1) for _ in range(20)]                # one class only
-        pp = Preprocessor().fit(tr)
-        X = pp.transform(tr)
-        import numpy as np
-        _m, info = train_dt([(tr, va)], X, np.array([r["label"] for r in tr]), budget=4, seed=1, prep_fit=lambda rows: Preprocessor().fit(rows))
-        s = info["walk_forward_logloss"]
-        self.assertTrue(s is None or math.isfinite(s), info)
-        dumps({"train": info})                                            # allow_nan=False must not raise
-
     def test_policy_exposure_never_above_one(self):
         """chunk_20#4: an earlier row with a longer label window must not push exposure above 1."""
         import numpy as np
@@ -293,8 +277,9 @@ class TestRegistry(unittest.TestCase):
         self.db.close()
         self.td.close()
 
-    def test_no_promotion_without_champion_comparison(self):
-        """chunk_19#3: with a champion, an impossible comparison (here: result without test ids) is a failed rule, not a promotion."""
+    def test_unavailable_champion_comparison_is_reported_promotion_as_in_145(self):
+        """Rule 1: the promotion rule stays the 1.45.0 one (chunk_19#3 is on the owner's decision list) - an impossible comparison
+        (here: result without test ids) still promotes the passing challenger; the cause is only reported (event + compare_error)."""
         from masterquo.ml.registry import Registry
         reg = Registry(self.db, self.root / "models")
         reg.champion = object()                                           # a loaded champion exists
@@ -302,10 +287,11 @@ class TestRegistry(unittest.TestCase):
         res, prom = _fake_result(self.root, ids=None, snapshot=snap)
         with mock.patch.object(Registry, "promote") as promote:
             dec = reg.register(res, "SNAP", prom)
-        promote.assert_not_called()
         best = min((m["test"]["brier"], m["model_id"]) for m in res["models"].values())[1]
-        self.assertFalse(dec[best]["passed"])
-        self.assertTrue(any(x.startswith("CHAMPION_COMPARISON_UNAVAILABLE") for x in dec[best]["reasons"]), dec)
+        promote.assert_called_once_with(best, "PASSED_RULES_AND_BEAT_CHAMPION")
+        self.assertTrue(dec[best]["passed"], dec)
+        ev = [e for e in reg.events() if e["kind"] == "CHAMPION_COMPARISON_UNAVAILABLE"]
+        self.assertEqual([(e["model_id"], json.loads(e["detail_json"])["error"]) for e in ev], [(best, "NO_TEST_SAMPLE_IDS")])
 
     def test_approx_models_are_all_research_approx(self):
         """chunk_19#14: allow_promotion=False -> EVERY passing model is RESEARCH_APPROX (none becomes a shadow-scored CHALLENGER)."""
@@ -615,42 +601,6 @@ class TestScalpTask(unittest.TestCase):
         self._registry()                                                  # run R1 exists, its report.json does not
         with contextlib.redirect_stdout(buf):
             self.assertEqual(scalp_cli.main(["report", "--asset", "XAUUSD", "--run", "R1"]), 2)
-
-
-# ============================================================================= quant adapters
-class TestQuantAdapters(unittest.TestCase):
-    def _gru(self, P):
-        import numpy as np
-        from masterquo.quant import adapters as A
-        g = A.EventGRU()
-        sc = SimpleNamespace(transform=lambda X: X)
-        g._loaded = {("XAUUSD", "A1"): (object(), sc, {"event_source": "REAL_TICKS", "feature_schema": "f"})}
-        rt = SimpleNamespace(bridge=SimpleNamespace(cfg=SimpleNamespace(symbol="XAUUSD-"), synthetic=True,
-                                                    ticks=lambda sym, seconds=0: {"ticks": [1, 2, 3]}))
-        units = {"X": np.zeros((1, 3)), "segment": [0], "t_end": [1_772_445_600.0]}
-        with mock.patch("masterquo.mm.artifacts.read_pointer", return_value={"active": {"event_engine_dir3": "A1"}}), \
-                mock.patch("masterquo.mm.data.events_from_ticks", return_value=[]), \
-                mock.patch("masterquo.mm.events.from_arrays", return_value={}), \
-                mock.patch("masterquo.mm.events.featurize", return_value={}), \
-                mock.patch("masterquo.mm.events.units", return_value=units), \
-                mock.patch("masterquo.mm.event_engine.predict", return_value=np.array([P])):
-            return g.predict(rt, "XAUUSD")
-
-    def test_event_gru_nan_distribution_is_error_record(self):
-        """chunk_26#7: NaN passed the sum check (abs(NaN-1) > 1e-6 is False) and the READY record raised ContractError."""
-        p = self._gru([float("nan"), 0.5, 0.5])
-        self.assertEqual(p["state"], "ERROR")
-        ok = self._gru([0.2, 0.3, 0.5])
-        self.assertEqual(ok["state"], "READY", ok)
-
-    def test_extended_wraps_event_gru(self):
-        """chunk_26#7: an exception of the Event GRU becomes an ERROR record; the other adapters still report."""
-        from masterquo.quant import adapters as A
-        boom = SimpleNamespace(predict=mock.Mock(side_effect=RuntimeError("x")))
-        out = A.extended(SimpleNamespace(), "XAUUSD", boom, with_scalp=False)
-        gru = [r for r in out if (r.get("extra") or {}).get("canonical_id") == A.EventGRU.CID or r.get("model_name") == A.EventGRU.CID]
-        self.assertEqual(len(gru), 1, out)
-        self.assertEqual(gru[0]["state"], "ERROR")
 
 
 # ============================================================================= association rules (already fixed in 1.46)

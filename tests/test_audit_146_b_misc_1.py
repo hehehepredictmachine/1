@@ -2,7 +2,7 @@
 
 chunk_01#11  agent: an error while broadcasting the status in the worker's finally no longer ends the worker task
 chunk_01#12  agent: _strict_gate iterates a snapshot of `pending` (engine thread vs loop / API threads)
-chunk_01#10  agent: an unexpected exception during a run still writes the agent_runs row (tokens -> daily budget, audit), then re-raises
+chunk_01#10  agent: an unexpected exception during a run still writes the agent_runs row (audit only, est_cost_usd NULL), then re-raises
 chunk_01#16  agent: by_setup / _started_seq are bounded
 chunk_01#18  agent: the SVP zone prompt uses the display name Apollo23
 chunk_05#10  RiskLoot.evaluate validates scores / setup_family itself (no NaN, no 500, no LEGENDARY from 1e6)
@@ -135,8 +135,9 @@ class TestAgentWorkerAndGate(_AgentCase):
         g = a._strict_gate(CTX["setup"], session_epoch=1, account_key="srv:1", now_iso="2026-10-08T12:00:30Z")
         self.assertEqual(g["reason_codes"], ["AI_ASSESSMENT_RUNNING"])          # unchanged gate semantics
 
-    def test_unexpected_tool_error_still_records_run_and_cost(self):
-        """chunk_01#10: an AttributeError from a tool skipped the agent_runs INSERT - tokens never reached the daily budget."""
+    def test_unexpected_tool_error_still_records_run(self):
+        """chunk_01#10: an AttributeError from a tool skipped the agent_runs INSERT (no audit row). The row is audit only: its est_cost_usd
+        stays NULL, so spent_today() / the daily budget (an AI gate input) are exactly as in 1.45."""
         a = self.agent
 
         def broken_mm():
@@ -154,8 +155,8 @@ class TestAgentWorkerAndGate(_AgentCase):
         self.assertEqual(row["status"], "INTERNAL_ERROR")
         self.assertIn("AttributeError", row["error_code"])
         self.assertEqual((row["input_tokens"], row["output_tokens"]), (1000, 200))
-        self.assertGreater(row["est_cost_usd"], 0)
-        self.assertGreater(a.spent_today(), 0)
+        self.assertIsNone(row["est_cost_usd"])
+        self.assertEqual(a.spent_today(), 0.0)                               # the daily budget input is unchanged from 1.45
         self.assertEqual(a.by_setup, {})                                     # no gate result written (unchanged behaviour)
 
     def test_setup_maps_are_bounded(self):
