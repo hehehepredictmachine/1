@@ -398,9 +398,21 @@ def register(app, rt) -> None:
         return res
 
     @app.get("/api/v1/models/bat/shadow")
-    def bat_shadow(timeframe: str = "H1"):
+    def bat_shadow(timeframe: str = "H1", diagnostic: bool = False):
         bars = [{**b, "v": b.get("tv", 0)} for b in _bars(timeframe, 600)]
-        return {**lazy("bat", BATEncoder).run(bars), "timeframe": timeframe} if bars else {"status": "NOT_CONFIGURED", "reason": "brak świec"}
+        if not bars:
+            return {"status": "NOT_CONFIGURED", "reason": "brak świec"}
+        r = {**lazy("bat", BATEncoder).run(bars), "timeframe": timeframe}
+        if r.get("status") != "SHADOW_UNTRAINED":
+            return r
+        # 1.46 (I0346): the heads come from random, never-trained weights (no training, no artefact; ~uniform LONG/FLAT/SHORT) - they carry
+        # no information and are not published as a model output; the raw heads only on explicit request (diagnostic=true)
+        heads = {"actor": r.get("actor"), "critic_value": r.get("critic_value")}
+        out = {**r, "status": "NOT_TRAINED", "encoder_status": "SHADOW_UNTRAINED", "actor": None, "critic_value": None,
+               "reason": "wagi losowe (deterministyczny seed), brak treningu i artefaktu – głowice actor/critic nie są wynikiem modelu"}
+        if diagnostic:
+            out["untrained_heads_diagnostic"] = heads
+        return out
 
     # ------------------------------------------------------------------ TASK 012 / 014 / 015: long horizon, strategy ROI, change points (read-only)
     from ..evaluation import strategy_roi as SR
@@ -616,11 +628,25 @@ def register(app, rt) -> None:
     def rel_pair(a: str, b: str, market: str = "CRYPTO", timeframe: str = "1h", n: int = 500):
         return REL.analyse(_hl_closes(market, a, timeframe, n), _hl_closes(market, b, timeframe, n))
 
+    def _spread_baseline(bars: list[dict], min_bars: int = 50) -> tuple[float | None, str]:
+        """1.46 (I0607): median spread [points] of the CLOSED bars (MT5 bar field 'spread', the same unit as quote spread_points), when at
+        least `min_bars` bars carry a positive value; otherwise None (EXECUTION_STRESS stays UNAVAILABLE)."""
+        sp = sorted(float(b["spread"]) for b in bars if isinstance(b.get("spread"), (int, float)) and not isinstance(b.get("spread"), bool)
+                    and math.isfinite(b["spread"]) and b["spread"] > 0)
+        if len(sp) < min_bars:
+            return None, f"UNAVAILABLE: {len(sp)} świec z dodatnim spreadem < {min_bars}"
+        n = len(sp)
+        med = sp[n // 2] if n % 2 else (sp[n // 2 - 1] + sp[n // 2]) / 2
+        return med, f"MEDIAN_BAR_SPREAD_POINTS ({n} zamkniętych świec)"
+
     @app.get("/api/v1/market-trap")
     def market_trap(timeframe: str = "M5"):
-        bars = [{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(timeframe, 300)]
+        raw = _bars(timeframe, 300)
+        bars = [{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in raw]
         q = getattr(rt, "bridge", None).quote_status() if getattr(rt, "bridge", None) else None
-        return MTD.detect(bars, spread_points=(q or {}).get("spread_points"), spread_baseline=None)
+        base, src = _spread_baseline(raw)
+        return {**MTD.detect(bars, spread_points=(q or {}).get("spread_points"), spread_baseline=base), "spread_baseline": base,
+                "spread_baseline_source": src}
 
     @app.get("/api/v1/smma-cci")
     def smma_cci(timeframe: str = "M5"):
