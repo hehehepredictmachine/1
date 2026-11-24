@@ -122,6 +122,9 @@ class SetupTracker:
                             old.update(status=st, terminal_reason="TTL_ELAPSED_BEFORE_REACTIVATION", terminal_at=now_s, updated_at=now_s)
                             old["history"].append({"at": now_s, "event": st, "reason": "TTL_ELAPSED_BEFORE_REACTIVATION"})
                             self._save(old)
+                            # the terminal transition is reported like the hard checks below (funnel, log, listeners); the row is not
+                            # ACTIVE, so no listener can act on it as a live setup (signals / evaluation / ML take *_CONFIRMED kinds only)
+                            events.append((st, old))
                             continue
                         n_bars = max(1, c["expires_bars"])
                         if c["stage"] == "CONFIRMED":

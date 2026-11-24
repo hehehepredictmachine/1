@@ -145,6 +145,8 @@ class TestTrackerReactivationTtl(_TrackerCase):
                 self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
                 r = self.tr.get(c["setup_id"])
                 self.assertEqual((r["status"], r["terminal_reason"]), (final, "TTL_ELAPSED_BEFORE_REACTIVATION"))
+                # recenzja I0750: przejście w stan końcowy trafia do zdarzeń skanu (lejek, log, listenery) jak przy twardych kontrolach
+                self.assertEqual([(k, x["setup_id"], x["status"]) for k, x in ev], [(final, c["setup_id"], final)])
 
     def test_reactivated_window_is_never_longer(self):
         from datetime import timedelta
