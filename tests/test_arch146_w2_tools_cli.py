@@ -1,7 +1,11 @@
-"""Fala 2 / grupa tools_cli (Apollo23 1.46): narzędzia i CLI bez wpływu na decyzje handlowe.
+"""Fala 2 / grupa tools_cli (Apollo23 1.46): narzędzia, CLI i warstwy tylko-do-odczytu bez wpływu na decyzje handlowe.
 
-I0480 (build terminala w statusie natywnym MiniRocket v2). Każdy test nie przechodzi na kodzie sprzed poprawki.
-Bez serwera HTTP, bez MT5, bez zleceń.
+I0480 (build terminala w statusie natywnym MiniRocket v2), I0137 (`studio --port`), I0132 (pomoc train-all, martwe flagi),
+I0658 / I0666 / I0012 (mapa modeli z rejestru kanonicznego, karty rodzin-aliasów), I0084 (strażnik warstw / importów leniwych),
+I0113 / I0136 (inwentarz tras API + testy kontraktowe tras wykonawczych), I0028 / I0037 (widok ledgerów PMW-LEDGER-VIEW-1),
+I0021 (słownik cech PMW-FEAT-DICT-1). Testy poprawek nie przechodzą na kodzie sprzed poprawki; testy kontraktowe tras wykonawczych
+(brakujące testy) potwierdzają dzisiejsze zachowanie. Bez serwera HTTP (TestClient w procesie), bez MT5 (FakeMT5), bez zleceń;
+dane rynkowe SYNTETYCZNE.
 """
 from __future__ import annotations
 
@@ -668,6 +672,119 @@ class TestLedgerView(unittest.TestCase):
             self.assertEqual(LV.canonical_status(raw)[0], want, raw)
         self.assertEqual(LV.canonical_status("WHATEVER"), ("INVALID", "UNKNOWN_STATUS:WHATEVER"))
         self.assertEqual(LV._t("2026-09-21T00:00:00Z"), LV._t("2026-09-21T00:00:00+00:00"))
+
+
+# ============================================================================================== I0021 feature dictionary
+def _synthetic_bars(n: int = 320, seed: int = 11):
+    """SYNTHETIC M5 random walk (checks formulas, not market behaviour)."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    c = 2650.0 + np.cumsum(rng.normal(0, 1.2, n))
+    o = np.r_[c[0], c[:-1]] + rng.normal(0, 0.2, n)
+    h = np.maximum(o, c) + np.abs(rng.normal(0, 0.8, n))
+    lo = np.minimum(o, c) - np.abs(rng.normal(0, 0.8, n))
+    tv = rng.integers(50, 400, n).astype(float)
+    t = 1_790_000_000 - (1_790_000_000 % 300) + 300 * np.arange(n)
+    return t, o, h, lo, c, tv
+
+
+class TestFeatureDictionary(unittest.TestCase):
+    """I0021: the same feature names mean different formulas / units across the lab, mm, ml, trainhub and scalp registries.
+    masterquo/features/catalog.py maps every registry name to a canonical entry (unit, window, seed, impl, aliases) - metadata only."""
+
+    def test_every_registry_name_has_an_entry_and_no_alias_is_stale(self):
+        from masterquo.features import catalog as FC
+        names = FC.registry_names()
+        self.assertEqual(set(names), set(FC.REGISTRIES))
+        for reg, ns in names.items():
+            self.assertTrue(ns, reg)
+            for n in ns:
+                r = FC.resolve(reg, n)
+                self.assertTrue(r["canonical"], (reg, n))
+        self.assertEqual(FC.resolve("ml", "M15_ret1")["tf"], "M15")
+        self.assertEqual(FC.resolve("trainhub", "M30_rsi14")["canonical"], "rsi14_wilder_centered_th_seed")
+        for e in FC.CANONICAL:
+            for reg, al in e.aliases.items():
+                live = {FC._split_tf(reg, n)[1] for n in names[reg]}
+                self.assertLessEqual(set(al), live, (e.name, reg))                    # every declared alias exists in its registry
+        d = FC.dictionary()
+        self.assertEqual(d["version"], "PMW-FEAT-DICT-1")
+        self.assertEqual(sorted(d["entries"]["range_over_atr14_wilder"]["aliases"]), ["lab", "ml", "scalp", "trainhub"])
+
+    def test_same_name_different_formula_gets_different_canonical_names(self):
+        from masterquo.features import catalog as FC
+        c = lambda reg, n: FC.resolve(reg, n)["canonical"]
+        self.assertEqual((c("lab", "range_rel"), c("mm", "range_rel")), ("range_over_atr14_wilder", "range_over_close"))
+        self.assertEqual(len({c("lab", "ret_1"), c("mm", "ret_1"), c("ml", "M5_ret1"), c("scalp", "ret1")}), 4)
+        self.assertEqual((c("lab", "ret_1"), c("mm", "ret_1")), ("ret_simple_1", "ret_log_1"))
+        self.assertEqual(c("mm", "ret_1"), c("trainhub", "M5_r1"))                        # both ln(C/C[-1])
+        self.assertEqual(len({c("mm", "rsi_14"), c("trainhub", "M5_rsi14"), c("ml", "M5_rsi")}), 3)
+        self.assertEqual(len({c("lab", "tv_pct"), c("mm", "tv_rel_48"), c("trainhub", "M5_tick_ratio"), c("ml", "M5_tick_activity"),
+                              c("scalp", "tv_log_ratio")}), 5)
+        self.assertEqual(len({c("mm", "body_rel"), c("ml", "M5_body"), c("trainhub", "M5_body_atr")}), 3)
+        self.assertEqual(c("ml", "M5_body"), c("scalp", "body_ratio"))
+        self.assertEqual(len({c("lab", "hour_sin"), c("ml", "hour_sin"), c("scalp", "hour_sin")}), 3)
+        self.assertEqual(c("lab", "hour_sin"), c("trainhub", "M5_tod_sin"))
+        # a base name present in several registries shares a canonical name ONLY through an explicit (declared) entry
+        names = FC.registry_names()
+        by_base: dict[str, list[tuple[str, str]]] = {}
+        for reg, ns in names.items():
+            for n in ns:
+                by_base.setdefault(FC._split_tf(reg, n)[1], []).append((reg, n))
+        for base, occ in by_base.items():
+            regs = {r for r, _ in occ}
+            if len(regs) < 2:
+                continue
+            canon = {(r, c(r, n)) for r, n in occ}
+            shared = {k for k in {x for _, x in canon} if len({r for r, x in canon if x == k}) > 1}
+            for k in shared:
+                self.assertFalse(k.split(":")[0] in FC.REGISTRIES, (base, k))             # never a registry-scoped name
+
+    def test_impl_points_to_an_existing_function(self):
+        import importlib
+
+        from masterquo.features import catalog as FC
+        for name, e in FC.dictionary()["entries"].items():
+            mod, fn = e["impl"].split(":")
+            self.assertTrue(callable(getattr(importlib.import_module(mod), fn)), name)
+
+    def test_shared_canonical_entries_are_numerically_equal_and_split_ones_differ(self):
+        import types
+
+        import numpy as np
+        from gold_candles_runtime import scalp_features as SF
+        from masterquo.lab import features as LF
+        from masterquo.mm import features as MMF
+        from masterquo.trainhub import features as TF
+        t, o, h, lo, c, tv = _synthetic_bars()
+        lab = LF.feature_matrix([{"open_utc": _iso(float(t[i])), "o": o[i], "h": h[i], "l": lo[i], "c": c[i], "tv": tv[i]} for i in range(len(c))],
+                                "M5")
+        L = {n: lab["X"][:, j] for j, n in enumerate(lab["features"])}
+        mmx = MMF.features(types.SimpleNamespace(c=c, o=o, h=h, l=lo, tv=tv), ["ret_1", "range_rel", "atr_rel_14", "rsi_14"])
+        M = {"ret_1": mmx[:, 0], "range_rel": mmx[:, 1], "atr_rel_14": mmx[:, 2], "rsi_14": mmx[:, 3]}
+        thx = TF._base({"time": list(t), "open": list(o), "high": list(h), "low": list(lo), "close": list(c), "tick_volume": list(tv),
+                        "spread": [20.0] * len(c)}, "M5", 0.01)
+        T = {n: thx[:, j] for j, n in enumerate(TF.BASE_NAMES)}
+        sx, _atr = SF.build(list(t), list(o), list(h), list(lo), list(c), list(tv), [0.2] * len(c))
+        S = {n: sx[:, j] for j, n in enumerate(SF.FEATURES)}
+
+        def same(a, b):
+            ok = np.isfinite(a) & np.isfinite(b)
+            self.assertGreater(ok.sum(), 200)
+            np.testing.assert_allclose(a[ok], b[ok], rtol=1e-9, atol=1e-12)
+
+        same(M["ret_1"], T["r1"])                                                       # ret_log_1
+        same(L["range_rel"], T["rng_atr"])                                              # range_over_atr14_wilder
+        same(L["range_rel"], S["r_atr"])
+        same(L["atr_rel"], M["atr_rel_14"])                                             # atr14_over_close
+        same(L["atr_rel"], T["atr_rel"])
+        same(L["hour_sin"], T["tod_sin"])                                               # hour_of_close_sin
+        same(L["bb_pctb"], S["bb_pctb"])                                                # bb_pctb_sma20_2sd
+        same(L["bb_pctb"], L["z20"] / 4 + 0.5)                                          # I0026 note
+        ok = np.isfinite(L["range_rel"]) & np.isfinite(M["range_rel"])
+        self.assertFalse(np.allclose(L["range_rel"][ok], M["range_rel"][ok]))           # same name, different feature
+        self.assertGreater(abs(M["rsi_14"][14] - T["rsi14"][14]), 1e-4)                 # RSI seeds differ -> two canonical entries
+        self.assertLess(abs(M["rsi_14"][-1] - T["rsi14"][-1]), 1e-6)
 
 
 if __name__ == "__main__":
