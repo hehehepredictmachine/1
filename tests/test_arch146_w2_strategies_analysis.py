@@ -139,7 +139,7 @@ class TestTrackerReactivationTtl(_TrackerCase):
         for stage, final in (("CONFIRMED", "MISSED_ENTRY"), ("EARLY", "EXPIRED")):
             with self.subTest(stage=stage):
                 self.tr.db.execute("DELETE FROM strategy_setups")
-                sid, v, c, now, old_exp = self._created(stage)
+                sid, v, c, _now, old_exp = self._created(stage)
                 ev = self.upd([c], v, old_exp + timedelta(seconds=1), sid)
                 self.assertFalse([k for k, _ in ev if k.startswith("NEW_")])
                 self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
@@ -164,6 +164,72 @@ class TestTrackerReactivationTtl(_TrackerCase):
                 self.assertLessEqual(exp, old_exp)
                 if again == "CONFIRMED":
                     self.assertLessEqual(exp, t2 + timedelta(seconds=TF_SECONDS[c["timeframe"]] * self.cfg.confirmed_window_bars))
+
+
+class TestTrackerInvalidationBeforeRevision(_TrackerCase):
+    """I0752: rekord z nowym poziomem inwalidacji był zapisywany PRZED twardą kontrolą, która czytała wiersze już po aktualizacji - zamknięcie
+    poza opublikowanym (starym) poziomem nie unieważniało setupu, jeśli ten sam skan przesunął poziom dalej."""
+
+    def _setup(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = cands[0]
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        return sid, bars, c, now
+
+    def _bar_closing_at(self, bars, close):
+        from datetime import timedelta
+
+        from masterquo.timeutil import parse_iso
+        last = bars[-1]
+        nb = self.TS.F.bars_from_closes([last["c"], close], tf_min=15, wick=0.2, start=parse_iso(last["open_utc"]))[1]
+        nb["open_utc"] = last["close_confirmed_utc"]
+        nb["close_confirmed_utc"] = nb["available_at"] = iso_(parse_iso(last["close_confirmed_utc"]) + timedelta(minutes=15))
+        return bars + [nb]
+
+    def test_close_beyond_the_published_level_invalidates_despite_a_moved_level(self):
+        from datetime import timedelta
+        sid, bars, c, now = self._setup()
+        lvl = c["invalidation_level"]
+        bars2 = self._bar_closing_at(bars, lvl - 0.5)                 # closed beyond the level in force
+        c2 = dict(c, invalidation_level=lvl - 1.0, stop_loss=lvl - 1.0)  # the next scan moves the level below that close
+        ev = self.upd([c2], self.TS.view_for(bars2), now + timedelta(minutes=20), sid)
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["terminal_reason"]), ("INVALIDATED", f"CLOSE_BEYOND_{round(lvl, 3)}"))
+        self.assertIn(("INVALIDATED", c["setup_id"]), [(k, x["setup_id"]) for k, x in ev])
+        self.assertNotIn("PLAN_REVISED", [k for k, _ in ev])
+        self.assertEqual(r["record"]["invalidation_level"], lvl)                  # the published plan is kept as it was
+
+    def test_touch_rule_against_the_published_level(self):
+        from datetime import timedelta
+
+        from masterquo.strategies import adapter
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = dict(cands[0], invalidation_rule="TOUCH")
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        lvl = c["invalidation_level"]
+        tfs = {tf: bars for tf in ("M1", "M5", "M15", "H1")}
+        v2 = adapter.build_view(symbol="XAUUSD-", bars_by_tf=tfs, bid=lvl - 0.3, ask=lvl - 0.2, point=0.01, as_of=bars[-1]["close_confirmed_utc"],
+                                synthetic=True)
+        self.upd([dict(c, invalidation_level=lvl - 1.0)], v2, now + timedelta(seconds=30), sid)
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["terminal_reason"]), ("INVALIDATED", f"TOUCH_{round(lvl, 3)}"))
+
+    def test_unchanged_level_keeps_todays_path(self):
+        from datetime import timedelta
+        sid, bars, c, now = self._setup()
+        lvl = c["invalidation_level"]
+        bars2 = self._bar_closing_at(bars, lvl + 0.5)                 # no violation: the new plan is applied as before
+        c2 = dict(c, invalidation_level=lvl - 1.0, stop_loss=lvl - 1.0)
+        ev = self.upd([c2], self.TS.view_for(bars2), now + timedelta(minutes=20), sid)
+        self.assertNotIn("INVALIDATED", [k for k, _ in ev])
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["record"]["invalidation_level"]), ("ACTIVE", lvl - 1.0))
 
 
 if __name__ == "__main__":

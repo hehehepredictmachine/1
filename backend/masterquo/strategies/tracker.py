@@ -148,6 +148,14 @@ class SetupTracker:
                 events.append(("NEW_" + c["stage"], r))
                 continue
             rec = r["record"]
+            # 1.46 arch (I0752): a new invalidation level / rule replaces the published one only if the published one still holds - the
+            # record was overwritten first and the hard checks below compared the closes with the NEW level, so a close beyond the level
+            # in force was forgiven when the same scan moved the level further away. Only adds invalidations (same level -> as before).
+            if (rec.get("invalidation_level"), rec.get("invalidation_rule")) != (c.get("invalidation_level"), c.get("invalidation_rule")):
+                why = self._invalidation(r, view)
+                if why:
+                    events.append(("INVALIDATED", self.terminate(sid, "INVALIDATED", why, now_s)))
+                    continue
             changed = False
             if r["stale"]:
                 r["stale"] = 0
@@ -222,7 +230,9 @@ class SetupTracker:
         return moved(old.get("stop_loss"), new.get("stop_loss")) or moved(old.get("invalidation_level"), new.get("invalidation_level"))
 
     @staticmethod
-    def _hard_check(r: dict, view, now: datetime) -> tuple[str, str] | None:
+    def _invalidation(r: dict, view) -> str | None:
+        """Reason code when the row's CURRENT record level is violated: a closed setup-TF bar since first detection beyond the level, or
+        (TOUCH rule) the quote beyond it; None otherwise."""
         rec = r["record"]
         lvl = rec.get("invalidation_level")
         d = rec["direction"]
@@ -235,10 +245,17 @@ class SetupTracker:
                 if close_time <= since:
                     break
                 if (d == "LONG" and v.c[k] < lvl) or (d == "SHORT" and v.c[k] > lvl):
-                    return "INVALIDATED", f"CLOSE_BEYOND_{round(lvl, 3)}"
+                    return f"CLOSE_BEYOND_{round(lvl, 3)}"
             if rec.get("invalidation_rule") == "TOUCH" and view.bid is not None:
                 if (d == "LONG" and view.bid < lvl) or (d == "SHORT" and view.ask > lvl):
-                    return "INVALIDATED", f"TOUCH_{round(lvl, 3)}"
+                    return f"TOUCH_{round(lvl, 3)}"
+        return None
+
+    @staticmethod
+    def _hard_check(r: dict, view, now: datetime) -> tuple[str, str] | None:
+        why = SetupTracker._invalidation(r, view)
+        if why:
+            return "INVALIDATED", why
         if r.get("expires_at") and parse_iso(r["expires_at"]) <= now:
             return ("MISSED_ENTRY", "CONFIRMED_WINDOW_ELAPSED") if r["stage"] == "CONFIRMED" else ("EXPIRED", "TTL_ELAPSED")
         return None
