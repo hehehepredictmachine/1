@@ -142,18 +142,19 @@ class TrainhubInference:
         if x is None or not np.all(np.isfinite(x)):
             return self._pred(inst, key, version, conf, "ERROR", "niepełne cechy (za krótka historia / brak świec wyższego interwału)",
                               data_quality="DEGRADED", data_time=_iso(close_t))
+        if dq != "OK":
+            return self._stale(inst, key, version, conf, close_t, age)
         # arch146 D10: the dataset drops rows whose higher-TF block is FROZEN (features.htf_stale: the M15/M30 history ends / has a hole
         # while the base TF traded on) - c8277f4 inference gave READY on such finite but stale values (train/serve skew). Same rule here.
         if F.htf_stale(cols, tf)[-1]:
             frozen = [h for h in F.HTF_OF[tf] if F.htf_stale({tf: cols[tf], h: cols[h]}, tf)[-1]]
-            last = ", ".join(f"{h} {_iso(cols[h]['time'][-1] + F.TF_S[h])}" for h in frozen)
+            used = {h: np.asarray(cols[h]["time"], dtype=np.int64) + F.TF_S[h] for h in frozen}      # close times; joined = last <= base close
+            last = ", ".join(f"{h} {_iso(int(a[max(0, np.searchsorted(a, close_t, side='right') - 1)]))}" for h, a in used.items())
             # not cached until the next base candle: the higher-TF candle closing with the base one can arrive a moment later
             self.last_bar.pop((inst, key), None)
-            return self._pred(inst, key, version, conf, "ERROR", f"nieaktualny wyższy interwał (htf_stale, jak w treningu): ostatnia zamknięta "
-                              f"świeca {last} przy świeżym {tf} – cechy wyższego interwału zamrożone", data_quality="DEGRADED",
-                              data_time=_iso(close_t))
-        if dq != "OK":
-            return self._stale(inst, key, version, conf, close_t, age)
+            return self._pred(inst, key, version, conf, "ERROR", f"nieaktualny wyższy interwał (htf_stale, jak w treningu): użyta świeca "
+                              f"zamknięta {last} przy świeżym {tf} – cechy wyższego interwału zamrożone", data_quality="DEGRADED",
+                              data_time=_iso(close_t), freshness_s=round(age, 1))
         p = R.predict_loaded(obj, x.reshape(1, -1))[0]
         res = {"DOWN": round(float(p[0]), 6), "FLAT": round(float(p[1]), 6), "UP": round(1.0 - round(float(p[0]), 6) - round(float(p[1]), 6), 6)}
         return self._pred(inst, key, version, conf, "READY", result=res, data_time=_iso(close_t), freshness_s=round(age, 1),

@@ -102,8 +102,17 @@ class TestTrainhubInferenceHtfStale(InferenceCase):
         self.assertEqual(p["data_quality"], "DEGRADED")
         self.assertIsNone(p["result"])
         self.assertIn("htf_stale", p["unavailable_reason"])
-        self.assertIn("M15", p["unavailable_reason"])
+        self.assertIn(f"M15 {iso(cols['M15']['time'][-1] + 900)}", p["unavailable_reason"])     # the HTF candle the row really used
+        self.assertIn(f"M30 {iso(cols['M30']['time'][-1] + 1800)}", p["unavailable_reason"])
         self.assertNotEqual(inf.predictions("XAUUSD")[0]["state"], "READY")
+
+    def test_closed_market_still_reports_stale_base(self):
+        """Base candle old (market closed) and HTF frozen: the base staleness (STALE) is reported, as before."""
+        cols = m5_set(10 * 288, htf_upto=1_790_000_000 // 1800 * 1800 + 3 * DAY)
+        inf = self.make(cols)
+        self.now[0] = self.close_t + 2 * DAY
+        p = inf.predict("XAUUSD", KEY, "v1")
+        self.assertEqual((p["state"], p["data_quality"]), ("ERROR", "STALE"))
 
     def test_fresh_htf_is_ready(self):
         cols = m5_set(10 * 288)
