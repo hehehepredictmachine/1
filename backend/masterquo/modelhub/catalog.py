@@ -19,7 +19,7 @@ CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_
 # where the code lives + what it needs (sh/models.REGISTRY ids)
 LOCATION = {
     "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
-    "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M1–H1"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
+    "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
     "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("extind/vamd.py", "świece M1/M5"), "fractal": ("extind/fractal.py", "świece M1/M5"),
     "atr_vol": ("strategies/indicators.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
     "liquidity": ("analytics/liquidity_context.py, analytics/session_engine.py", "świece M5, sesje"),
@@ -100,6 +100,18 @@ def _th_entries(inst: str, rt) -> list[dict]:
     return out
 
 
+def _use_note(pr: dict) -> str | None:
+    """1.46: the configured use of a model that can act outside OBSERVE (the catalog note 'not admitted to vote' is not true for them)."""
+    d = pr.get("detail") or {}
+    if d.get("ml_mode") == "ASSIST":
+        return "ml.mode ASSIST: bramka ścieżki ACTIVE (S01–S12) – może zablokować decyzję ścieżki ACTIVE; w SH tylko nadzór"
+    use = d.get("use") if isinstance(d.get("use"), dict) else {}
+    act = {k: v for k, v in use.items() if v in ("ASSIST", "REQUIRED")}
+    if act:
+        return "użycie " + ", ".join(f"{k}={v}" for k, v in sorted(act.items())) + " – może tylko wstrzymać READY -> WAIT (nigdy nie dopuszcza wejścia)"
+    return None
+
+
 def build(rt, inst: str) -> dict:
     from ..sh import models as SM
     rows = []
@@ -116,7 +128,7 @@ def build(rt, inst: str) -> dict:
         rows.append({"id": it["id"], "name": it["name"], "category": cat, "location": loc, "purpose": it["output"], "required_data": data,
                      "input": data, "output": it["output"], "instruments": ["XAUUSD", "BTC"], "training": it.get("train") or "nie dotyczy",
                      "state": state, "state_pl": C.STATES[state], "reason": pr.get("reason"), "probe_status": pr["status"], "group": it["group"],
-                     "roles": it["roles"], "source": "sh/models.REGISTRY"})
+                     "roles": it["roles"], "source": "sh/models.REGISTRY", "use_note": _use_note(pr)})
     seen = {r["id"] for r in rows}
     from ..quant import ids as I
     seen_canon = {I.resolve(r["id"]) for r in rows} - {None}          # 1.46 arch: join MM modules to SH rows by canonical id, not by 'mm_'
@@ -155,4 +167,5 @@ def build(rt, inst: str) -> dict:
         counts[r["category"]] += 1
     return {"instrument": inst, "items": rows, "counts_by_category": counts,
             "counts_by_state": {s: sum(1 for r in rows if r["state"] == s) for s in C.STATES}, "states": C.STATES,
-            "note": "stan = sonda na żywo; 'gotowy' dla modelu SHADOW oznacza gotowy do obserwacji, nie dopuszczony do głosu w strategii"}
+            "note": "stan = sonda na żywo; 'gotowy' dla modelu SHADOW oznacza gotowy do obserwacji, nie dopuszczony do głosu w strategii "
+                    "(wyjątki – ASSIST / REQUIRED – opisuje pole use_note wiersza)"}

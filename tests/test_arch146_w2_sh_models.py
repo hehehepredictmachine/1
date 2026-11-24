@@ -154,5 +154,120 @@ class TestI0352I0356MMShadowStatusHonest(_Data):
         self.assertNotIn("mm.service", mods["hdc"]["callers"])                 # the service only lists the pointer
         self.assertTrue(any("EventGRU" in c for c in mods["event_engine"]["callers"]))
 
+
+# ================================================================================================ udział w macierzy SH
+class TestI0569I0586I0591I0593I0318ParticipationMatchesSetup(unittest.TestCase):
+    def test_participation_matches_setup_consumers(self):
+        td = TempData()
+        self.addCleanup(td.close)
+        from masterquo.sh import models as SM
+        rows = {r["id"]: r for r in SM.matrix(None, INST)["rows"]}
+        for strat in ("SCALPING", "HEDGING"):
+            self.assertEqual(rows["structure_v2"][strat]["use"], "GATE")          # HTF conflict -> WAIT, obstacle -> NO_TRADE
+            self.assertEqual(rows["vamd"][strat]["use"], "GATE")                  # CONTINUATION confirmation
+            self.assertEqual(rows["candles_patterns"][strat]["use"], "GATE")      # REVERSAL confirmation
+            self.assertEqual(rows["atr_vol"][strat]["use"], "GATE")               # ATR warm-up -> WAIT, reach -> NO_TRADE
+            self.assertEqual(rows["smc_pullback"][strat]["use"], "EVIDENCE")      # zone / levels of the setup
+            for mid in ("liquidity", "flow_sr", "decomposition"):                 # nothing in sh/setup.py reads them
+                self.assertEqual(rows[mid][strat]["use"], "INFO", (mid, strat))
+
+    def test_supervision_is_never_evidence(self):
+        from masterquo.sh import models as SM
+        for mid in ("decomposition", "scalp_B", "legacy_ml", "agent"):
+            for s in ("READY", "DETERMINISTIC_OK", "SHADOW_ONLY"):
+                self.assertEqual(SM.participation(_item(mid), {"status": s}, "SCALPING")["use"], "INFO", (mid, s))
+            self.assertEqual(SM.participation(_item(mid), {"status": "NOT_TRAINED"}, "SCALPING")["use"], "NONE")
+
+    def test_every_sh_use_is_known(self):
+        from masterquo.sh import models as SM
+        for it in SM.REGISTRY:
+            self.assertIn(it.get("sh_use"), (None, "GATE", "INPUT"), it["id"])
+
+
+# ================================================================================================ oś use (I0005)
+def _kronos_rt(use_s: str, status: str = "READY"):
+    st = SimpleNamespace(strategy_use={"SCALPING": SimpleNamespace(use=use_s), "HEDGING": SimpleNamespace(use="OBSERVE")})
+    return SimpleNamespace(kronos=SimpleNamespace(state={"status": status, "reason": status}, settings=SimpleNamespace(get=lambda: st)))
+
+
+class TestI0005SHMatrixUse(_Data):
+    def test_required_or_assist_is_shown_as_hold_only(self):
+        from masterquo.sh import models as SM
+        it = _item("kronos")
+        st = SM.probe(it, _kronos_rt("REQUIRED"), INST)
+        p = SM.participation(it, st, "SCALPING")
+        self.assertEqual((p["use"], p.get("use_configured")), ("HOLD_ONLY", "REQUIRED"))
+        self.assertEqual(SM.participation(it, st, "HEDGING")["use"], "INFO")
+        st = SM.probe(it, _kronos_rt("REQUIRED", "NO_WEIGHTS"), INST)          # REQUIRED holds READY -> WAIT also when unavailable
+        self.assertEqual(SM.participation(it, st, "SCALPING")["use"], "HOLD_ONLY")
+        st = SM.probe(it, _kronos_rt("ASSIST", "NO_WEIGHTS"), INST)            # ASSIST without a forecast changes nothing
+        self.assertEqual(SM.participation(it, st, "SCALPING")["use"], "NONE")
+        st = SM.probe(it, _kronos_rt("ASSIST"), INST)
+        self.assertEqual(SM.participation(it, st, "SCALPING")["use"], "HOLD_ONLY")
+
+    def test_tsfm_use_is_read(self):
+        from masterquo.sh import models as SM
+        uses = {"ACTIVE": SimpleNamespace(use="OBSERVE"), "SCALPING": SimpleNamespace(use="ASSIST"), "HEDGING": SimpleNamespace(use="OBSERVE")}
+        ts = SimpleNamespace(workers={"chronos2": SimpleNamespace(state={"status": "READY"})},
+                             settings=SimpleNamespace(get=lambda: SimpleNamespace(models={"chronos2": SimpleNamespace(use=uses)})))
+        it = _item("chronos2")
+        st = SM.probe(it, SimpleNamespace(tsfm=ts), INST)
+        self.assertEqual(SM.participation(it, st, "SCALPING")["use"], "HOLD_ONLY")
+        self.assertEqual(SM.participation(it, st, "HEDGING")["use"], "INFO")
+
+    def test_legacy_ml_mode_is_shown(self):
+        from masterquo.modelhub import catalog as CATL
+        from masterquo.sh import models as SM
+        rt = SimpleNamespace(ml=SimpleNamespace(inst=INST, registry=SimpleNamespace(champion_id="C1")),
+                             cfg=SimpleNamespace(get=lambda: SimpleNamespace(ml=SimpleNamespace(mode="ASSIST"))))
+        st = SM.probe(_item("legacy_ml"), rt, INST)
+        self.assertEqual(st["detail"]["ml_mode"], "ASSIST")
+        self.assertIn("bramka ścieżki ACTIVE", st["reason"])
+        row = next(r for r in CATL.build(rt, INST)["items"] if r["id"] == "legacy_ml")
+        self.assertIn("ASSIST", row.get("use_note") or "")
+        self.assertNotIn("nie dopuszczony do głosu", row.get("use_note") or "")
+
+
+# ================================================================================================ runner_step (I0014)
+class TestI0014TrainOwner(_Data):
+    def test_runner_step_is_a_runner_step_or_none(self):
+        from masterquo.sh import models as SM
+        from masterquo.training import runner as R
+        for it in SM.REGISTRY:
+            step = SM.runner_step(it)
+            self.assertTrue(step is None or step in R.STEPS, (it["id"], step))
+        for mid in ("th_direction", "granite_ttm"):
+            self.assertIsNone(SM.runner_step(_item(mid)))
+            self.assertTrue(_item(mid).get("owner_train"))
+
+    def test_panel_names_the_owner_instead_of_a_missing_task(self):
+        from masterquo.training import panel as TP
+        rows = {r["id"]: r for r in TP.models(None, INST)["models"]}
+        th = rows["th_direction"]
+        self.assertNotIn("uruchom zadanie trainhub", " ".join(th["blockers"]))
+        self.assertTrue(any("Centrum treningu" in b for b in th["blockers"]), th["blockers"])
+        self.assertIsNone(th["runner_step"])
+
+
+# ================================================================================================ opisy rejestru
+class TestI0563RegimeText(unittest.TestCase):
+    def test_regime_outputs_match_machine(self):
+        from masterquo.modelhub import catalog as CATL
+        out = _item("regime_v2")["output"]
+        self.assertNotIn("HIGH_VOL", out)
+        for s in ("TREND_UP", "TREND_DOWN", "RANGE", "TRANSITION"):
+            self.assertIn(s, out)
+        self.assertEqual(CATL.LOCATION["regime_v2"][1], "świece M5")         # sh/context._regime(m5) – M5 only
+
+
+class TestI0660ThDirectionName(unittest.TestCase):
+    def test_name_lists_every_trainhub_model(self):
+        from masterquo.trainhub import learn as L
+        name = _item("th_direction")["name"]
+        for mid in L.MODELS:
+            if mid != "TH_BASELINE":
+                self.assertIn(mid.removeprefix("TH_"), name, mid)
+        self.assertIn("bazowy", name)
+
 if __name__ == "__main__":
     unittest.main()
