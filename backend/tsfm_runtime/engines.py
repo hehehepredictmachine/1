@@ -1,19 +1,22 @@
-"""Inference engines of Chronos-2 and Granite TTM (run ONLY inside the model's own environment / process: .venv_chronos2, .venv_granite).
-1.40: FinCast is retired (replaced by Granite TTM) - its engine and vendored code were removed; old FinCast forecasts stay in the history.
+"""Inference engines of Chronos-2, Granite TTM and TiRex-2 (run ONLY inside the model's own environment / process: .venv_chronos2,
+.venv_granite, .venv_tirex2). 1.40: FinCast is retired (replaced by Granite TTM) - its engine and vendored code were removed; old FinCast
+forecasts stay in the history.
 
-Both call the ORIGINAL upstream API and nothing else:
+All three call the ORIGINAL upstream API and nothing else:
   Chronos-2    chronos.Chronos2Pipeline.from_pretrained(<local dir>) + predict_quantiles(inputs, prediction_length, quantile_levels)
   Granite TTM  tsfm_public.models.tinytimemixer.TinyTimeMixerForPrediction.from_pretrained(<local dir>) + forward(past_values)
+  TiRex-2      tirex2.load_model(<local dir>) + forecast([TimeseriesType(target)], prediction_length) (1.41)
 What this file adds: loading from local, checksum-verified files (offline), the identity check of the loaded checkpoint (parameter
 count == the pinned measurement), input validation (finite, length, horizon), the explicit target / input profile, the device choice
 (CUDA only when available AND working, else CPU, the reason reported) and a self test with a PARITY check against a direct call of the
 official API on the same data (independent code path - the expected values are never produced by this wrapper).
 
 Output semantics (never re-labelled):
-  quantiles    Chronos-2: the model's own quantile forecasts of the close at every step (21 trained levels); Granite TTM: none
-  point        Chronos-2: the 0.5 quantile (the pipeline's "mean" output IS the median) -> point_kind "median";
+  quantiles    Chronos-2: the model's own quantile forecasts of the close at every step (21 trained levels); TiRex-2: its 9 levels
+               0.1..0.9 (never interpolated); Granite TTM: none
+  point        Chronos-2 / TiRex-2: the 0.5 quantile (Chronos-2: the pipeline's "mean" output IS the median) -> point_kind "median";
                Granite TTM: the MSE head -> point_kind "point" (no median, no quantiles).
-Close only: neither model produces OHLC candles here - no high / low is ever derived from the close forecast.
+Close only: no model produces OHLC candles here - no high / low is ever derived from the close forecast.
 """
 from __future__ import annotations
 

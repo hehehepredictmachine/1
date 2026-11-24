@@ -1,4 +1,4 @@
-"""Manifest of installed Chronos-2 / FinCast files (stdlib only).
+"""Manifest of installed Chronos-2 / Granite TTM / TiRex-2 files (stdlib only).
 
 <weights_root>/<model_id>/tsfm_manifest.json, written by the installer only after every file matched the pinned SOURCE metadata of
 lock.py (size + LFS sha256 / git blob sha1):

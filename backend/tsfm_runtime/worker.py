@@ -1,4 +1,4 @@
-"""Inference process of Chronos-2 / Granite TTM (started by masterquo/tsfm/service.py with the model's own interpreter).
+"""Inference process of Chronos-2 / Granite TTM / TiRex-2 (started by masterquo/tsfm/service.py with the model's own interpreter).
 
   python -m tsfm_runtime.worker --model chronos2|granite_ttm|tirex2
 Protocol: one JSON object per line on stdin -> one JSON object per line on stdout carrying the request "id".

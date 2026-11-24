@@ -100,6 +100,21 @@ class _Svc(unittest.TestCase):
         return evaluate_models(rows, side, required=set(), assist_threshold=0.6, max_age_s=10 ** 9, now=WED_1200 + 60)
 
 
+# ======================================================================================================== I0201 docstrings
+class TestI0201Docstrings(unittest.TestCase):
+    def test_active_models_and_fincast_retired(self):
+        import importlib
+        for name in ("tsfm_runtime", "tsfm_runtime.manifest", "tsfm_runtime.install", "tsfm_runtime.engines", "tsfm_runtime.worker",
+                     "masterquo.tsfm.service"):
+            doc = importlib.import_module(name).__doc__ or ""
+            head = doc.split("\n\n")[0]
+            for model in ("Chronos-2", "Granite TTM", "TiRex-2"):
+                self.assertIn(model, head, name)
+            self.assertNotIn(".venv_fincast", doc, name)
+            if "FinCast" in doc:
+                self.assertRegex(doc, r"FinCast[^.]{0,60}(wycofany|RETIRED|retired)", name)
+
+
 # ======================================================================================================== I0207 TiRex2Engine
 class _FT:
     """Fake torch tensor (numpy inside)."""

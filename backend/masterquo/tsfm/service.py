@@ -1,19 +1,20 @@
-"""Chronos-2 and Granite TTM forecasts in the bot (1.37; 1.40: Granite TTM replaced FinCast) - OBSERVE by default, never an order.
+"""Chronos-2 (1.37), Granite TTM (1.40) and TiRex-2 (1.41) forecasts in the bot - OBSERVE by default, never an order. FinCast is
+retired (wycofany w 1.40, replaced by Granite TTM): history only.
 
 Data path (the SAME as Kronos - no second terminal connection, no new data source):
   closed bars of the existing MT5 bridge -> kronos.quality.check (closed only, order, duplicates, gaps, NaN/Inf, OHLC geometry, staleness)
   -> kronos.calendar (future candle times from the broker's real session slots: no weekend / break candles) -> ONE immutable snapshot
-  per (instrument, timeframe, last closed bar) shared by both models -> JSON line -> long-lived model process (`python -m
-  tsfm_runtime.worker` from .venv_chronos2 / .venv_granite, weights loaded once) -> forecast -> stored BEFORE its outcome.
+  per (instrument, timeframe, last closed bar) shared by all models -> JSON line -> long-lived model process (`python -m
+  tsfm_runtime.worker` from .venv_chronos2 / .venv_granite / .venv_tirex2, weights loaded once) -> forecast -> stored BEFORE its outcome.
 
-Load control: a forecast only after a NEW closed bar of an enabled (model, instrument, timeframe) or on demand; one bounded queue for both
+Load control: a forecast only after a NEW closed bar of an enabled (model, instrument, timeframe) or on demand; one bounded queue for all
 models processed by ONE executor thread (the models never run at the same time -> no shared-GPU OOM, CPU threads not oversubscribed); a
 newer bar replaces a waiting older job (dedup on (model, instrument, timeframe)); timeouts kill and restart the process with back-off; a
 heartbeat (ping) checks an idle process; the MT5 bridge, the UI and the order path never wait for a model.
 A result that arrives after a NEWER bar closed is stored but never shown as current (`superseded`). Failures (not installed, checksum,
 wrong checkpoint, out of memory, timeout, MT5 disconnected, stale / bad data, uncertain calendar) give a state with a reason and NO value.
 
-Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 median / Granite TTM point (point_kind);
+Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 / TiRex-2 median, Granite TTM point (point_kind);
 model quantiles (uncalibrated on the user's data); direction UP / FLAT / DOWN from the point at H by the explicit neutral band rule
 (the same rule as Kronos). No probability is derived from it.
 """
