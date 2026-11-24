@@ -432,6 +432,9 @@ def main(argv=None) -> int:
     # ---- tasks B and C from the full-policy replay
     report["task_B"], report["task_C"], setup_spec, setup_arts = task_bc(d, plan, costs, log, X, mins, rd)
     artifacts.update(setup_arts)
+    if isinstance(setup_spec, dict):                     # 1.46 arch I0020: SETUP_FEATURES identity of model B (worker: SETUP_FEATURES_MISMATCH)
+        from masterquo.scalp.strategy import setup_features_tag
+        setup_spec = dict(setup_spec, **setup_features_tag())
     a_status = [r.get("status") for r in report["task_A"].values()]
     overall = ("INSUFFICIENT_DATA" if all(s == "INSUFFICIENT_DATA" for s in a_status) else "TRAINED_SHADOW" if all(s == "SHADOW_VALIDATED" for s in a_status)
                else "PARTIAL_VALIDATION" if any(s == "SHADOW_VALIDATED" for s in a_status) else "SHADOW_UNVALIDATED" if any(s == "SHADOW_UNVALIDATED" for s in a_status)

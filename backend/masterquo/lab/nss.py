@@ -580,6 +580,8 @@ def save_bundle(d: Path, ens: Ensemble, rep: dict, data: dict) -> str:
            "params_per_member": m0.n_params(), "macs_per_member": m0.macs(), "role": rep["role"], "data_kind": rep["data_kind"], "dataset_id": rep["dataset_id"],
            "content_hash": rep["content_hash"], "costs": rep["costs"], "files_sha256": files, "model_hash": mhash, "trained_until": None,
            "label": "first exit TP1/SL/TIME within max_hold + net_R of the full cycle (scalp/replay.py)"}
+    from ..scalp.strategy import setup_features_tag
+    man.update(setup_features_tag())                               # 1.46 arch I0020: identity of the setup_* context block
     (tmp / "manifest.json").write_text(json.dumps(man, indent=1, default=str), encoding="utf-8")
     if d.exists():
         shutil.rmtree(d)
@@ -593,6 +595,10 @@ class NSSBundle:
         self.man = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
         if self.man.get("architecture_id") != sn.ARCH_ID or self.man.get("task_id") != TASK_ID:
             raise ValueError("ARTIFACT_TASK_OR_ARCH_MISMATCH")
+        from ..scalp.strategy import setup_features_check
+        sf_bad = setup_features_check(self.man)                       # 1.46 arch I0020 (no field = legacy-compatible)
+        if sf_bad:
+            raise ValueError(sf_bad)
         for f, h in self.man["files_sha256"].items():
             if hashlib.sha256((d / f).read_bytes()).hexdigest() != h:
                 raise ValueError(f"ARTIFACT_CHECKSUM_MISMATCH:{f}")

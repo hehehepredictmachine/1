@@ -450,6 +450,29 @@ SETUP_FEATURES = ("sweep_depth_atr5", "range_w_atr5", "zone_w_atr5", "er10", "to
                   "conf_displacement", "conf_score", "tv_log_ratio", "retest_dist_atr1", "risk_atr1", "tp1_dist_atr1", "spread_atr1",
                   "m5_pct_b_dir", "m15_sar_with", "m30_sar_with", "h1_sar_with", "m30_slope_dir", "m15_bw_pct", "minutes_since_arm",
                   "dist_round5_atr5", "hour_sin", "hour_cos")
+# 1.46 arch I0020: identity of SETUP_FEATURES (consumers: model B, extind BASE, NSS, NET). setup_features() fills a missing context with
+# 0.0 (neutral); extind BASE / NSS read a missing value as NaN - both conventions stay as they are (changing them changes model inputs).
+SETUP_FEATURES_ID = "SCALP-SETUP-FEAT-1.0.0"
+SETUP_MISSING_CONVENTION = "0.0"
+
+
+def setup_features_fingerprint() -> str:
+    """sha256 (16 hex) of the id, the names in order and the missing-value convention of setup_features()."""
+    return hashlib.sha256(json.dumps({"id": SETUP_FEATURES_ID, "names": list(SETUP_FEATURES), "missing": SETUP_MISSING_CONVENTION},
+                                     sort_keys=True).encode()).hexdigest()[:16]
+
+
+def setup_features_tag() -> dict:
+    """Written into the manifests of the models trained on SETUP_FEATURES."""
+    return {"setup_features_id": SETUP_FEATURES_ID, "setup_features_fp": setup_features_fingerprint()}
+
+
+def setup_features_check(man: dict | None) -> str | None:
+    """None = compatible (same fingerprint, or an artefact without the field = legacy-compatible); else SETUP_FEATURES_MISMATCH:<id>."""
+    fp = (man or {}).get("setup_features_fp")
+    if fp is None or fp == setup_features_fingerprint():
+        return None
+    return f"SETUP_FEATURES_MISMATCH:{(man or {}).get('setup_features_id')}"
 
 
 def setup_features(mach: "ScalpMachine", plan: dict, d: dict, i: int, a1: float) -> dict:

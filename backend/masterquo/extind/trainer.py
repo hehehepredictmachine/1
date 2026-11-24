@@ -350,6 +350,9 @@ def _save_artifact(rd: Path, inst: str, r: dict, data: dict, rep: dict) -> None:
            "groups": r["groups"], "feature_order": F.feature_names(r["spec"]), "spec": r["spec"], "model_kind": r["model_kind"], "platt": r["platt"],
            "threshold": r["threshold"], "profile_id": data["profile_id"], "dataset_id": data["dataset_id"], "data_kind": data["data_kind"],
            "role": rep["role"], "pkl_sha256": hashlib.sha256(blob).hexdigest(), "holdout": r["holdout"], "mode": "SHADOW"}
+    if "BASE" in r["groups"]:                                     # 1.46 arch I0020: identity of the BASE block (SETUP_FEATURES)
+        from ..scalp.strategy import setup_features_tag
+        man.update(setup_features_tag())
     # parity: reload exactly what was written and reproduce the holdout predictions of the training code
     m = load_artifact(rd, name, man)
     X, _ = matrix(data, r["spec"])
@@ -373,6 +376,10 @@ class ContextModel:
             # 1.46 arch I0163 / I0180: an artefact of another feature schema (V1: ATR of 40 M5 bars, IQ only with a verified clock) is
             # never fed the new inputs - ABSTAIN before any computation (SHADOW observation; retrain + activate)
             return {"status": "ABSTAIN", "reason": f"FEATURE_SCHEMA_MISMATCH:{self.man.get('feature_schema')}"}
+        from ..scalp.strategy import setup_features_check
+        sf_bad = setup_features_check(self.man)                       # 1.46 arch I0020 (no field = legacy-compatible)
+        if sf_bad:
+            return {"status": "ABSTAIN", "reason": sf_bad}
         f = F.build_indicator_context_features(snap, self.man["spec"])
         if list(f["features"]) != self.man["feature_order"]:
             return {"status": "ABSTAIN", "reason": "FEATURE_SCHEMA_MISMATCH"}

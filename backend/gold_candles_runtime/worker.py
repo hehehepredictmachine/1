@@ -183,6 +183,13 @@ def setup_quality(req: dict) -> dict:
     ok, why = activatable(entry, contract, sha_cache=_sha_cache)
     if not ok:
         return {"status": "UNAVAILABLE", "reason": why, "pass": False, "execution_permission": False}
+    if entry["setup_model"].get("setup_features_fp") is not None:
+        # 1.46 arch I0020: model B records the SETUP_FEATURES identity (the task-A contract above does not cover it); a run without the
+        # field is legacy-compatible
+        from masterquo.scalp.strategy import setup_features_check
+        bad = setup_features_check(entry["setup_model"])
+        if bad:
+            return {"status": "UNAVAILABLE", "reason": bad, "pass": False, "execution_permission": False}
     if _scalp_cache.get("setup_run") != rid:
         _scalp_cache.update(setup_run=rid, setup=SetupModel(entry))
     sm = entry["setup_model"]
