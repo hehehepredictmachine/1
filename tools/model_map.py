@@ -92,7 +92,7 @@ ELEMENTS += [
      "data_source": "ticki copy_ticks_from", "tf": "tick", "horizon": "następne zdarzenie", "side": "nie dotyczy", "features": "czasy między tickami skorygowane dobowo",
      "label": "—", "trainer": "QMLE wykładnicze, ograniczenia a+b<1 z konstrukcji – estymacja online", "loader": "LabService", "artifact": "—", "instruments": BOTH,
      "status": "ESTYMOWANY_ONLINE; minimum 300 zdarzeń, inaczej warming_up"},
-    {"id": "INDICATORS_FFT_VMD_EMD", "name": "Wskaźniki, FFT/VMD/EMD, BB/MA, Double Bottom", "implementation": "masterquo/analytics/*, strategies/indicators.py",
+    {"id": "INDICATORS_FFT_VMD_EMD", "name": "Wskaźniki, FFT/VMD/EMD, BB/MA, Double Bottom", "implementation": "masterquo/analytics/*, indicators/series.py",
      "task": "obliczenia – nie są sieciami i nie mają przycisku „trenuj”", "data_source": "bary bota", "tf": "różne", "horizon": "—", "side": "—", "features": "—",
      "label": "—", "trainer": "brak", "loader": "AnalyticsService", "artifact": "—", "instruments": BOTH, "status": "OBLICZENIA"},
     {"id": "MARKET_ZONES_MZ1", "name": "Strefy rynkowe M1/M5/M15/M30 (PMW-MZ-1) – S/R, popyt/podaż, FVG, order blocks, EQH/EQL, konfluencja",

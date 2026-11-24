@@ -295,10 +295,12 @@ class ActiveThresholds(_Strict):
 
 
 def _default_toggles() -> dict[str, StrategyToggle]:
-    """One toggle per strategy of the REGISTRY; unvalidated challengers (registry.DEFAULT_NO_TRADE: S11 EMA20 Pullback,
-    S12 walls/range family) are scan-only until the user explicitly enables trading."""
-    from .strategies import registry
-    return {sid: StrategyToggle(scan=True, trade=sid not in registry.DEFAULT_NO_TRADE) for sid in registry.STRATEGIES}
+    """One toggle per strategy of the REGISTRY; unvalidated challengers (DEFAULT_NO_TRADE: S11 EMA20 Pullback,
+    S12 walls/range family) are scan-only until the user explicitly enables trading.
+    1.46 arch (I0083): ids and DEFAULT_NO_TRADE from the import-free leaf strategies/ids.py (the registry uses the same objects and a
+    test keeps tuple(registry.STRATEGIES) == ids.STRATEGY_IDS) - this base module no longer loads the 12 strategy modules."""
+    from .strategies import ids
+    return {sid: StrategyToggle(scan=True, trade=sid not in ids.DEFAULT_NO_TRADE) for sid in ids.STRATEGY_IDS}
 
 
 class ActiveConfig(_Strict):
@@ -324,8 +326,8 @@ class ActiveConfig(_Strict):
     def _manual(cls, v: str | None) -> str | None:
         if v in (None, ""):
             return None
-        from .strategies import registry
-        if v not in registry.STRATEGIES:                 # derived from the registry - a new strategy file needs no edit here
+        from .strategies import ids
+        if v not in ids.STRATEGY_IDS:                    # 1.46 arch (I0083): the ids leaf (= tuple(registry.STRATEGIES), checked by a test)
             raise ValueError("UNKNOWN_STRATEGY_ID")
         return v
 

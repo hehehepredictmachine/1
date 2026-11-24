@@ -21,7 +21,7 @@ LOCATION = {
     "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
     "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
     "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("extind/vamd.py", "świece M1/M5"), "fractal": ("extind/fractal.py", "świece M1/M5"),
-    "atr_vol": ("strategies/indicators.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
+    "atr_vol": ("indicators/series.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
     "liquidity": ("analytics/liquidity_context.py, analytics/session_engine.py", "świece M5, sesje"),
     "flow_sr": ("lab/flow_context/", "świece M1/M5"), "decomposition": ("analytics/ (FFT/EMD/VMD)", "świece"),
     "sh_tp_model": ("sh/tpmodel.py", "historia klienta (cykle SH) + świece"), "scalp_A": ("scalp/ (runner scalp)", "eksport M1–H1"),

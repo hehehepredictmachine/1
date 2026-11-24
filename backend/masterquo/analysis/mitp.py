@@ -4,7 +4,7 @@ OWN complete profile (not a claim of parity with the MT4 original R38 - that one
 its source, parameters and reference vectors exist). 16 base series, each with two nodes:
   BIAS  = sign(x - neutral)    (for moving averages x = close - MA)      SLOPE = sign(x_t - x_{t-1})  (for MAs: change of the MA)
 Bases: EMA9, EMA21, ALMA9, HMA16, KAMA10, AO, MACD_LINE, MACD_HIST, PPO_LINE, PPO_HIST, RSI_MA, CCI_MA, FISHER10, TRUE_STRENGTH,
-RCI26, TREND_STRENGTH14 (definitions in the code below, shared EMA/SMA/RSI/KAMA operators of strategies.indicators).
+RCI26, TREND_STRENGTH14 (definitions in the code below, shared EMA/SMA/RSI/KAMA operators of indicators.series).
 Missing history -> UNKNOWN (never NEUTRAL, never a vote). sign has a scale-dependent tolerance (TOL_REL x price scale).
 
 Two levels of confirmation per node (and for the general trigger):
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 
-from ..strategies import indicators as ind
+from ..indicators import series as ind
 
 VERSION = "MQ_MITP_32_V1"
 TOL_REL = 1e-9
