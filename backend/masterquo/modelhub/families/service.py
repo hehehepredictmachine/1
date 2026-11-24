@@ -432,7 +432,9 @@ class FamilyService:
             if ck in self._cache and (bar_t is not None or self.clock() - self._cache[ck]["at"] < 5):
                 return self._cache[ck]["pred"]
         man = B._read(self.store.run_dir(fid, inst, rid) / "manifest.json", {}) if rid else {}
-        kind = man.get("data_kind") if man.get("data_kind") in ("REAL", "SYNTHETIC") else None
+        # 1.46 D18: the marketdata Store / live bridge write REAL_USER_DATA / SYNTHETIC_TEST / MT5_LIVE_BRIDGE - only the literal 'REAL' /
+        # 'SYNTHETIC' were kept, so every record had data_kind None and Quant let a family fitted on synthetic data into a REAL snapshot
+        kind = B.kind_class(man.get("data_kind"))
         impl, why = f.implementation()
         t0 = time.perf_counter()
         try:
