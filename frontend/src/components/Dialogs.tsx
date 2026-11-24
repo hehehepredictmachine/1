@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { apiGet, apiSend, apiUpload } from "../api";
-import { useAppearance, type AnimMode } from "../appearance";
+import { apiGet, apiSend } from "../api";
 import { useStore } from "../store";
 import { cls } from "../util";
 import { LeverageSettings } from "./LeverageSettings";
@@ -43,15 +42,21 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<any[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState("mt5");
-  const load = () => apiGet("/api/v1/config").then((r) => { setCfg(r.config); setSecrets(r.secrets); });
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  // 1.46: a failed GET /api/v1/config shows the error with a retry (before: "Ładowanie…" forever + an unhandled rejection)
+  const load = () => apiGet("/api/v1/config").then((r) => { setCfg(r.config); setSecrets(r.secrets); setLoadErr(null); })
+    .catch((e: any) => setLoadErr(String(e?.message || e)));
   useEffect(() => { load(); }, []);
-  if (!cfg) return <Modal title="Ustawienia" onClose={onClose}><div>Ładowanie…</div></Modal>;
+  if (!cfg) return <Modal title="Ustawienia" onClose={onClose}>{loadErr
+    ? <div className="row"><span className="bad">Błąd: {loadErr}</span> <button className="btn ghost" onClick={() => { setLoadErr(null); load(); }}>Ponów</button></div>
+    : <div>Ładowanie…</div>}</Modal>;
   const set = (path: string, value: any) => {
     const keys = path.split(".");
     const upd = (obj: any, i: number): any => (i === keys.length - 1 ? { ...obj, [keys[i]]: value } : { ...obj, [keys[i]]: upd(obj?.[keys[i]] ?? {}, i + 1) });
     setCfg(upd(cfg, 0));
   };
-  const save = async (extra: any = {}) => {
+  // 1.46: returns whether the configuration was saved - "Zakończ konfigurację" closed the window even when the backend rejected it
+  const save = async (extra: any = {}): Promise<boolean> => {
     setMsg(null);
     try {
       const { strategies: _st, ...activeRest } = cfg.active || {};
@@ -63,8 +68,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       setCfg(r.config);
       setMsg("Zapisano.");
       refresh();
+      return true;
     } catch (e: any) {
       setMsg("Błąd: " + (e.message || e));
+      return false;
     }
   };
   const saveMt5Password = async (value: string | null) => {
@@ -88,14 +95,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       setMsg("Błąd: " + (e.message || e));
     }
   };
+  // 1.46: HTTP errors of both buttons are shown (before: unhandled rejection, no answer to the click)
   const listModels = async () => {
-    const r = await apiGet("/api/v1/agent/models");
-    if (r.ok) setModels(r.models);
-    setMsg(r.ok ? `Dostępnych modeli: ${r.models.length}` : `Błąd: ${r.error}`);
+    try {
+      const r = await apiGet("/api/v1/agent/models");
+      if (r.ok) setModels(r.models);
+      setMsg(r.ok ? `Dostępnych modeli: ${r.models.length}` : `Błąd: ${r.error}`);
+    } catch (e: any) {
+      setMsg("Błąd: " + (e?.message || e));
+    }
   };
   const testAgent = async () => {
-    const r = await apiSend("POST", "/api/v1/agent/test");
-    setMsg(r.ok ? `Połączenie OK: ${r.model}` : `Test nieudany: ${r.error}`);
+    try {
+      const r = await apiSend("POST", "/api/v1/agent/test");
+      setMsg(r.ok ? `Połączenie OK: ${r.model}` : `Test nieudany: ${r.error}`);
+    } catch (e: any) {
+      setMsg("Test nieudany: " + (e?.message || e));
+    }
   };
   const field = (label: string, path: string, type: "text" | "num" | "bool" = "text", hint?: string, opts?: string[]) => {
     const v = path.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), cfg);
@@ -114,6 +130,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     );
   };
   const acct = s.account;
+  // 1.46: MANUAL strategy choices come from the configured strategies (registry S01–S12); a hard-coded S01–S10 list showed a configured
+  // S11/S12 as an empty choice. The current value is always listed.
+  const sids: string[] = Object.keys(cfg.active?.strategies || {}).filter((k) => /^S\d+$/.test(k)).sort();
+  if (!sids.length) sids.push("S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10");
+  const manualOpts = ["", ...sids, ...(cfg.active?.manual_strategy_id && !sids.includes(cfg.active.manual_strategy_id) ? [cfg.active.manual_strategy_id] : [])];
+  const sidRange = `${sids.length} strategii ${sids[0]}–${sids[sids.length - 1]}`;
   return (
     <Modal title={cfg.first_run_completed ? "Ustawienia" : "Pierwsze uruchomienie – konfiguracja"} onClose={onClose} wide>
       <div className="tabs">
@@ -233,11 +255,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("SL na BE po TP1", "strategy.move_sl_to_breakeven_after_tp1", "bool")}
       </div>}
       {tab === "active" && <div className="form">
-        <div className="note">Profil ACTIVE: 10 strategii S01–S10, etapy WATCH / EARLY / CONFIRMED z punktacją 0–100 (heurystyka, nie prawdopodobieństwo).
+        <div className="note">Profil ACTIVE: {sidRange}, etapy WATCH / EARLY / CONFIRMED z punktacją 0–100 (heurystyka, nie prawdopodobieństwo).
           AUTO wybiera strategię – <b>nie</b> włącza składania zleceń (to osobny przełącznik „Wykonywanie zleceń”). ORIGINAL = wyłącznie dotychczasowy M07.</div>
         {field("Profil wykrywania", "active.profile", "text", "", ["ACTIVE", "ORIGINAL"])}
         {field("Wybór strategii", "active.strategy_mode", "text", "AUTO = bot dobiera strategię do rynku", ["AUTO", "MANUAL"])}
-        {field("Strategia w trybie MANUAL", "active.manual_strategy_id", "text", "", ["", "S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10"])}
+        {field("Strategia w trybie MANUAL", "active.manual_strategy_id", "text", "", manualOpts)}
         {field("Próg WATCH", "active.thresholds.watch", "num")}
         {field("Próg EARLY", "active.thresholds.early", "num")}
         {field("Próg CONFIRMED", "active.thresholds.confirmed", "num", "plus prawdziwy trigger strategii")}
@@ -251,7 +273,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Okno wejścia po CONFIRMED [świece]", "active.confirmed_window_bars", "num")}
         <div className="note">Skanowanie i dopuszczenie do handlu każdej strategii ustawiasz w panelu „Strategie (10)”. Powrót do poprzedniej konfiguracji: profil ORIGINAL (instrukcja w ROLLBACK.md).</div>
       </div>}
-      {tab === "look" && <LookTab />}
       {tab === "kronos" && <KronosTfs />}
       {tab === "zones" && <MarketZonesSettings />}
       {tab === "other" && <div className="form">
@@ -266,7 +287,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="row end">
         {msg && <span className="small">{msg}</span>}
         <button className="btn" onClick={() => save()}>Zapisz</button>
-        {!cfg.first_run_completed && <button className="btn ghost" onClick={async () => { await save({ first_run_completed: true }); onClose(); }}>Zakończ konfigurację</button>}
+        {!cfg.first_run_completed && <button className="btn ghost" onClick={async () => { if (await save({ first_run_completed: true })) onClose(); }}>Zakończ konfigurację</button>}
       </div>
     </Modal>
   );
@@ -336,12 +357,20 @@ export function ModeDialog({ onClose, initial }: { onClose: () => void; initial?
 
 // ------------------------------------------------------------------ power / stop
 export function PowerDialog({ onClose }: { onClose: () => void }) {
-  const { s } = useStore();
+  const { s, refresh } = useStore();
   const [confirm, setConfirm] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  // 1.46: a rejected STOP / resume (403 CSRF, 402, 500) is reported instead of an unhandled rejection with no message; after success the
+  // state is refreshed so the button label follows kill_switch. The request itself is unchanged.
   const kill = async (on: boolean) => {
-    await apiSend("POST", "/api/v1/kill", { on, reason: on ? "user_stop_button" : "user_resume" });
+    try {
+      await apiSend("POST", "/api/v1/kill", { on, reason: on ? "user_stop_button" : "user_resume" });
+    } catch (e: any) {
+      setMsg((on ? "STOP NIE wykonany – nowe wejścia NIE są zatrzymane: " : "Wznowienie NIE wykonane: ") + (e?.message || e));
+      return;
+    }
     setMsg(on ? "Nowe wejścia zatrzymane. Otwarte pozycje pozostają z SL/TP po stronie brokera." : "Wznowiono możliwość wejść (bramki sprawdzane ponownie).");
+    refresh().catch(() => undefined);
   };
   const close = async () => {
     try {
@@ -370,52 +399,6 @@ export function PowerDialog({ onClose }: { onClose: () => void }) {
     </Modal>
   );
 }
-
-// ------------------------------------------------------------------ appearance (presentation only)
-function LookTab() {
-  const { prefs, setPrefs, assets, reloadAssets } = useAppearance();
-  const [msg, setMsg] = useState<string | null>(null);
-  const upload = async (slot: "background" | "frog", f: File | undefined) => {
-    if (!f) return;
-    setMsg(null);
-    try {
-      const r = await apiUpload(`/api/v1/appearance/upload?slot=${slot}`, f);
-      setMsg(`Wgrano: ${r.gif.width}×${r.gif.height}, ${r.gif.frames} klatek, pętla ${r.gif.loop_duration_ms} ms, przezroczystość: ${r.gif.transparency ? "tak" : "nie"}`);
-      reloadAssets();
-    } catch (e: any) {
-      setMsg("Błąd: " + (e?.message || e));
-    }
-  };
-  const info = (slot: string) => {
-    const a = assets?.[slot];
-    if (!a) return "brak informacji";
-    if (!a.animated_available) return "animowany GIF niedostępny – używany kadr statyczny";
-    return `${a.source === "USER_UPLOAD" ? "wgrany przez Ciebie" : "wbudowany"}: ${a.gif?.width}×${a.gif?.height}, ${a.gif?.frames} klatek, ${a.gif?.loop_duration_ms} ms`;
-  };
-  return (
-    <div className="form">
-      <div className="note">Ustawienia wyglądu nie zmieniają danych, wyboru strategii ani zleceń. Zapisywane lokalnie w tej przeglądarce.</div>
-      <label className="field"><span>Animacje</span>
-        <select value={prefs.mode} onChange={(e) => setPrefs({ mode: e.target.value as AnimMode })}>
-          <option value="FULL">FULL – animowane tło i tańcząca żaba</option>
-          <option value="LIGHT">LIGHT – statyczne tło, żaba animowana</option>
-          <option value="OFF">OFF – statyczne kadry obu grafik</option>
-        </select></label>
-      <div className="note">Kolor i siłę przyciemnienia tła, widoczność GIF-ów oraz wszystkie kolory interfejsu i wykresów ustawisz w oknie <b>🎨 Wygląd</b> (nagłówek).</div>
-      <label className="field"><span>Kadrowanie tła – poziomo <small>{prefs.posX}%</small></span>
-        <input type="range" min={0} max={100} step={1} value={prefs.posX} onChange={(e) => setPrefs({ posX: Number(e.target.value) })} /></label>
-      <label className="field"><span>Kadrowanie tła – pionowo <small>{prefs.posY}%</small></span>
-        <input type="range" min={0} max={100} step={1} value={prefs.posY} onChange={(e) => setPrefs({ posY: Number(e.target.value) })} /></label>
-      <div className="note">Tło (pierwszy GIF, 4FDC48DF…): {info("background")}.<br />Żaba przy BALANCE (drugi GIF, 2C98C50C…): {info("frog")}.</div>
-      <label className="field"><span>Wgraj oryginalny GIF tła (4FDC48DF-6C65-4AF7-9C88-3AA720BEAEB4.gif)</span>
-        <input type="file" accept="image/gif" onChange={(e) => upload("background", e.target.files?.[0])} /></label>
-      <label className="field"><span>Wgraj GIF żaby (opcjonalnie – wbudowany jest już dołączony)</span>
-        <input type="file" accept="image/gif" onChange={(e) => upload("frog", e.target.files?.[0])} /></label>
-      {msg && <div className="note">{msg}</div>}
-    </div>
-  );
-}
-
 
 /* 1.42.5: wybór interwałów PRACY Kronosa (funkcja dodana w 1.42 na prośbę użytkownika) – przeniesiony z ekranu CHARTS, który po pakiecie
    CHARTS 1:1 jest tylko do odczytu. Zapis przez istniejące PUT /api/v1/kronos/settings, po potwierdzeniu. */

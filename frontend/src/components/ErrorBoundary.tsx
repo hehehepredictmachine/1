@@ -49,7 +49,8 @@ class Boundary extends Component<Props, State> {
           <p>Bot i silnik działają dalej – to dotyczy tylko widoku w oknie. Możesz wrócić do menu albo odświeżyć widok.</p>
           <pre>{this.state.err}{this.state.stack ? "\n\n" + this.state.stack : ""}</pre>
           <div className="pmw-crash-row">
-            <button type="button" onClick={() => { location.hash = "#/menu"; }}>Menu główne</button>
+            {/* 1.46: clears the error itself - on #/menu the hash does not change (no hashchange, no reset) and the button did nothing */}
+            <button type="button" onClick={() => { this.setState({ err: null, stack: "" }); location.hash = "#/menu"; }}>Menu główne</button>
             <button type="button" onClick={() => location.reload()}>Odśwież</button>
           </div>
         </div>

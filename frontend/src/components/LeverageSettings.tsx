@@ -13,7 +13,11 @@ export function LeverageSettings() {
   const load = () => apiGet("/api/v1/prefs").then((r) => { setP(r); setMode(r.leverage.mode); if (r.leverage.limit) setLimit(r.leverage.limit); }).catch(() => undefined);
   useEffect(() => { load(); }, [s.account?.login, s.prefs?.settings_version]);
   const acc = p?.exposure?.account_leverage;
-  const save = () => apiSend("POST", "/api/v1/prefs/leverage", mode === "AUTO" ? { mode } : { mode, limit: Number(limit) })
+  // 1.46: the select value is always one of its options - a limit outside the list (default 30 with a 1:20 account) was shown by the
+  // browser as the first option "1:1" while 30 was saved (and rejected). Such a value becomes the largest offered limit not above it.
+  const choices: number[] = (p?.leverage_choices ?? [1, 10, 20, 30, 50, 100]).filter((x: number) => !acc || x <= acc);
+  const shown = choices.includes(limit) ? limit : (choices.filter((x) => x <= limit).pop() ?? choices[0] ?? limit);
+  const save = () => apiSend("POST", "/api/v1/prefs/leverage", mode === "AUTO" ? { mode } : { mode, limit: Number(shown) })
     .then((r: any) => { setP(r); setMsg("Zapisano. Dotyczy przyszłych decyzji; otwarte pozycje i zlecenia bez zmian."); })
     .catch((e: any) => setMsg(String(e.message || e).replace(/LEVERAGE_LIMIT_ABOVE_ACCOUNT_1_(\d+)/, "Limit wyższy niż dźwignia rachunku 1:$1")));
   return (
@@ -27,8 +31,8 @@ export function LeverageSettings() {
       <div className="row">
         <label><input type="radio" checked={mode === "AUTO"} onChange={() => setMode("AUTO")} /> AUTO – parametry aktualnego rachunku MT5</label>
         <label><input type="radio" checked={mode === "MANUAL"} onChange={() => setMode("MANUAL")} /> RĘCZNIE</label>
-        {mode === "MANUAL" && <select value={limit} data-testid="lev-select" onChange={(e) => setLimit(Number(e.target.value))}>
-          {(p?.leverage_choices ?? [1, 10, 20, 30, 50, 100]).filter((x: number) => !acc || x <= acc).map((x: number) => <option key={x} value={x}>1:{x}</option>)}
+        {mode === "MANUAL" && <select value={shown} data-testid="lev-select" onChange={(e) => setLimit(Number(e.target.value))}>
+          {choices.map((x: number) => <option key={x} value={x}>1:{x}</option>)}
         </select>}
         <button className="btn" data-testid="lev-save" onClick={save}>Zapisz limit</button>
       </div>

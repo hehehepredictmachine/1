@@ -1,5 +1,8 @@
 // Shadery GLSL menu głównego – przeniesione 1:1 ze wzorca update_1_42/referencje/REF_A_menu_glowne_v1_1.html (stałe tekstowe, bez zmian matematyki).
 // Nie edytuj ręcznie: zmiana kształtu planet wymaga zmiany wzorca i ponownego przeniesienia.
+// 1.46 (jedyne odstępstwo od tekstu wzorca, bez zmiany kształtu): pow() z możliwie ujemną podstawą jest niezdefiniowane w GLSL ES
+// (ANGLE/D3D w WebView2 i Metal liczą exp2(y*log2(x)) = NaN → czarne kropki planety FOREX i pyłu). pow(sin(..),8.) → pow(abs(sin(..)),8.)
+// i pow(x,2.) → x*x dają te same wartości co wzorzec tam, gdzie są zdefiniowane – tak samo liczy renderer CPU (Math.pow w menuEngine.ts).
 
 export const vertexShared = `
  precision highp float;
@@ -22,7 +25,7 @@ export const vertexShared = `
      else if(seed<.124){gAux=1.;float id=floor((seed-.10)/.006);float oa=id*1.5708+t*(.17+.035*id);float orr=1.92+.07*id;
        vec3 c=rotX(vec3(cos(oa)*orr,0.,sin(oa)*orr),.30+.05*id);p=c+n*(.085+.012*id);gA=.95;gSat=.15;}
      else{float l2=lon+t*.05;float b=sin(lat*18.+sin(l2*2.+lat*3.)*.7);float eq=exp(-lat*lat*28.);
-       p=n*(1.+.006*b);gA=.16+.95*pow(b*b,1.6)+.7*eq*(.6+.4*sin(l2*6.-t*.4))+.3*pow(sin(lat*37.+l2),8.);}
+       p=n*(1.+.006*b);gA=.16+.95*pow(b*b,1.6)+.7*eq*(.6+.4*sin(l2*6.-t*.4))+.3*pow(abs(sin(lat*37.+l2)),8.);}
    }else if(uKind<1.5){ /* CRYPTO: planeta z bloków – pasy siatki obracają się naprzemiennie, bloki zapalają się jak potwierdzenia; łańcuch bloków na orbicie */
      if(seed<.11){gAux=1.;float k=floor(inf.z*20.);float ang;vec3 c;
        if(fract(inf.y*5.)<.28){ang=(k+fract(inf.y*71.))/20.*6.2832+t*.10;c=vec3(cos(ang)*1.62,0.,sin(ang)*1.62);gA=.32;}
@@ -33,7 +36,7 @@ export const vertexShared = `
        float cu=l2/st,cv=(lat+1.5708)/st;float fu=fract(cu),fv=fract(cv);float e=min(min(fu,1.-fu)*cos(lat),min(fv,1.-fv));float ln=1.-smoothstep(0.,.07,e);
        float id=floor(mod(cu,24.))+bd*37.;float lit=step(.88,h1(id+floor(t*.6+h1(id)*5.)*13.));p=n*(1.+.028*lit*(1.-ln));
        gA=.10+.95*ln+.75*lit*(1.-ln);gSat=.45*lit;}
-   }else{ /* OTC: rdzeń w powłoce – świecący rdzeń i cienka powłoka z południków, po których biegną impulsy */
+   }else{ /* TraderLifeGame (1.45): rdzeń w powłoce – świecący rdzeń i cienka powłoka z południków, po których biegną impulsy */
      if(seed<.40){p=n*.56;gA=.30+.75*pow(.5+.5*sin(lat*9.-t*.8+sin(lon*3.)*1.2),4.);gSat=.1;}
      else{float sec=6.2832/9.;float lm=lon+t*.05;float dm=abs(fract(lm/sec+.5)-.5)*sec*cos(lat);float seam=1.-smoothstep(0.,.03,dm);
        float sid=floor(lm/sec+.5);float pulse=pow(.5+.5*sin(lat*2.5-t*1.5+sid*1.9),14.);float eq=1.-smoothstep(0.,.02,abs(lat));
@@ -71,7 +74,7 @@ export const particleFrag = `precision mediump float;varying vec3 vColor;varying
 
 export const meshFrag = `precision mediump float;varying vec3 vColor;varying float vAlpha;void main(){gl_FragColor=vec4(vColor*vAlpha,vAlpha);}`;
 
-export const starVert = `precision highp float;attribute vec3 aPos;attribute vec3 aInfo;uniform vec2 uResolution,uPointer;uniform float uTime,uDpr,uOpacity,uWarp,uDust;varying float vAlpha;varying vec3 vColor;void main(){vec2 p=aPos.xy;float z=aPos.z;float t=uTime;vec2 drift=vec2(t*.00035*(z+.15),t*.00010*(z+.1));p=mod(p+drift+1.,2.)-1.;p+=uPointer*(z*.012+.002);p*=1.+uWarp*(.1+z*.8);gl_Position=vec4(p,0.,1.);gl_PointSize=(aInfo.x*.9+.45)*uDpr*(.7+z*.45)*(1.+uWarp*.6);float tw=.65+.35*sin(t*(aInfo.y*.4+.2)+aInfo.z*25.);vAlpha=(.085+pow(aInfo.x,6.)*.65)*tw*uOpacity;vColor=mix(vec3(.53,.62,.83),vec3(.95,.95,.93),aInfo.y);if(uDust>.5){float center=exp(-pow((p.y+p.x*.17+.38)*3.9,2.));vAlpha*=center*.11;gl_PointSize*=.65;}}`;
+export const starVert = `precision highp float;attribute vec3 aPos;attribute vec3 aInfo;uniform vec2 uResolution,uPointer;uniform float uTime,uDpr,uOpacity,uWarp,uDust;varying float vAlpha;varying vec3 vColor;void main(){vec2 p=aPos.xy;float z=aPos.z;float t=uTime;vec2 drift=vec2(t*.00035*(z+.15),t*.00010*(z+.1));p=mod(p+drift+1.,2.)-1.;p+=uPointer*(z*.012+.002);p*=1.+uWarp*(.1+z*.8);gl_Position=vec4(p,0.,1.);gl_PointSize=(aInfo.x*.9+.45)*uDpr*(.7+z*.45)*(1.+uWarp*.6);float tw=.65+.35*sin(t*(aInfo.y*.4+.2)+aInfo.z*25.);vAlpha=(.085+pow(aInfo.x,6.)*.65)*tw*uOpacity;vColor=mix(vec3(.53,.62,.83),vec3(.95,.95,.93),aInfo.y);if(uDust>.5){float cd=(p.y+p.x*.17+.38)*3.9;float center=exp(-cd*cd);vAlpha*=center*.11;gl_PointSize*=.65;}}`;
 
 export const starFrag = `precision mediump float;varying float vAlpha;varying vec3 vColor;void main(){vec2 p=gl_PointCoord*2.-1.;float r=dot(p,p);if(r>1.)discard;float a=exp(-r*3.1)*vAlpha;gl_FragColor=vec4(vColor*a,a);}`;
 

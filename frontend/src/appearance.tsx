@@ -5,7 +5,10 @@
 // OFF   = static frames of both images, no decorative animation
 // The static mode really swaps the <img> source for a still frame (prepared PNG/WebP, or frame 0
 // decoded in the browser with ImageDecoder / canvas for a user-uploaded GIF) - CSS cannot stop GIF frames.
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+// 1.46: the layer is not rendered by the current UI (BackgroundLayer / Frog are used only by the archived 1.41 UI, the "look" Settings tab
+// was unreachable and is removed). The assets (GET /api/v1/appearance/assets, decoding of user GIFs of up to 15 MB) are loaded when the
+// first useAppearance() consumer mounts - not at every start by the provider alone.
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet } from "./api";
 import { useTheme } from "./theme";
 
@@ -66,6 +69,7 @@ type Ctx = {
   setPrefs: (p: Partial<Prefs>) => void;
   assets: Assets | null;
   reloadAssets: () => void;
+  ensureAssets: () => void;
   hidden: boolean;
   bgSrc: string | null;
   bgAnimated: boolean;
@@ -79,8 +83,10 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   const [assets, setAssets] = useState<Assets | null>(null);
   const [hidden, setHidden] = useState(typeof document !== "undefined" && document.visibilityState === "hidden");
   const [stills, setStills] = useState<Record<string, string | null>>({});
+  const [wanted, setWanted] = useState(false);
   const reloadAssets = () => apiGet<Assets>("/api/v1/appearance/assets").then(setAssets).catch(() => setAssets(null));
-  useEffect(() => { reloadAssets(); }, []);
+  const ensureAssets = useCallback(() => setWanted(true), []);
+  useEffect(() => { if (wanted) reloadAssets(); }, [wanted]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const f = () => setHidden(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", f);
@@ -118,7 +124,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     const bgStill = bg ? (bg.source === "USER_UPLOAD" ? stills.background ?? null : bg.static_url) : null;
     const frogStill = frog ? (frog.source === "USER_UPLOAD" ? stills.frog ?? null : frog.static_url) : null;
     return {
-      prefs, setPrefs, assets, reloadAssets, hidden,
+      prefs, setPrefs, assets, reloadAssets, ensureAssets, hidden,
       bgSrc: bg ? (bgAnimated ? bg.animated_url : bgStill ?? bg.static_url) : null,
       bgAnimated,
       frogSrc: frog ? (frogAnimated ? frog.animated_url : frogStill ?? frog.static_url) : null,
@@ -132,6 +138,8 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
 export function useAppearance(): Ctx {
   const c = useContext(AppearanceCtx);
   if (!c) throw new Error("no appearance");
+  const ensure = c.ensureAssets;
+  useEffect(() => { ensure(); }, [ensure]);                    // 1.46: a consumer loads the assets (once)
   return c;
 }
 

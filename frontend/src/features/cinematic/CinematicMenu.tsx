@@ -1,9 +1,10 @@
-// Trasa #/menu (E1; 1.44.1: intro = film Apollo23_intro_land.mp4 zamiast intro 3D z 1.42.7): intro + menu 3 planet (FOREX / CRYPTO / OTC). Markup i style ze wzorca REF_A, silnik w menuEngine.ts
-// montowany w useEffect (jeden kontekst WebGL, dispose przy odmontowaniu). CRYPTO / OTC: ekran „tryb w przygotowaniu” bez żadnego
-// wywołania API – wybór planety to nawigacja, nie przełączenie profilu rynku bota (S2 §4).
+// Trasa #/menu (E1; 1.44.1: intro = film Apollo23_intro_land.mp4 zamiast intro 3D z 1.42.7): intro + menu 3 planet (FOREX / CRYPTO / TraderLifeGame).
+// Markup i style ze wzorca REF_A, silnik w menuEngine.ts montowany w useEffect (jeden kontekst WebGL, dispose przy odmontowaniu).
+// CRYPTO: ekran „tryb w przygotowaniu” bez żadnego wywołania API – wybór planety to nawigacja, nie przełączenie profilu rynku bota (S2 §4);
+// TraderLifeGame: trasa #/trader-life-game (1.45, OTC wycofane).
 import { useEffect, useRef } from "react";
 import { useStore } from "../../store";
-import { mountMenu, PREPARING_NOTE, type MenuElements, type Mode, type Pose } from "./menuEngine";
+import { mountMenu, PREPARING_NOTE, type MenuElements, type Pose } from "./menuEngine";
 import { prefersReducedMotion, shouldPlayIntro } from "./introGate";
 import introFilm from "../../assets/Apollo23_intro_land.mp4";      // build: dist/assets/Apollo23_intro_land-<hash>.mp4 (serwowane z /assets/)
 import "./cinematic.css";
@@ -13,9 +14,11 @@ const soundOn = () => { try { return localStorage.getItem(SOUND_KEY) !== "off"; 
 const saveSound = (on: boolean) => { try { localStorage.setItem(SOUND_KEY, on ? "on" : "off"); } catch { /* bez trwałości */ } };
 
 type Props = {
-  onSettings?(): void;                                     // ustawienia otwiera pasek ikon systemowych (SystemIcons)
+  onSettings?(): void;                                     // nieużywane – ustawienia otwiera pasek ikon systemowych (SystemIcons); App.tsx jeszcze je przekazuje
   onMenuReady?(): void;
-  onForexReady?(pose: Pose): void;
+  // 1.46: wymagane (App zawsze je przekazuje; zapasowy tekst „etap E2” usunięty). signal = przekazanie FOREX anulowane (POWRÓT, Esc, intro,
+  // odmontowanie) – po sprawdzeniu licencji App nie nawiguje, gdy signal.aborted.
+  onForexReady(pose: Pose, signal: AbortSignal): void;
   onGameReady?(): void;
   forceSoftware?: boolean;
 };
@@ -46,14 +49,9 @@ export default function CinematicMenu({ onMenuReady, onForexReady, onGameReady, 
     const dispose = mountMenu(el, {
       playIntro: shouldPlayIntro(), reduced: prefersReducedMotion(), forceSoftware: soft,
       audio: soundOn(), onSoundChange: saveSound,
-      onChoose: (_m: Mode) => undefined,
       onMenuReady: () => readyRef.current?.(),
       onGameReady: () => gameRef.current?.(),
-      onForexReady: (pose) => {
-        if (forexRef.current) { forexRef.current(pose); return; }
-        el.selectedNote.textContent = "Kula FOREX – ekran FOREX zostanie podłączony w etapie E2 (przelot i 4 planety).";       // tymczasowo do E2
-        el.returnBtn.focus({ preventScroll: true });
-      },
+      onForexReady: (pose, signal) => forexRef.current(pose, signal),
     });
     return () => {
       dispose();
@@ -71,7 +69,7 @@ export default function CinematicMenu({ onMenuReady, onForexReady, onGameReady, 
           <span className="label"><span className="number">01</span><span className="mode-name">FOREX</span><span className="enter-mark" /></span></button>
         <button className="mode cin-mode-crypto" type="button" data-mode="CRYPTO" aria-label="Wybierz tryb CRYPTO. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-crypto">
           <span className="label"><span className="number">02</span><span className="mode-name">CRYPTO</span><span className="enter-mark" /></span></button>
-        <button className="mode cin-mode-otc cin-mode-tlg" type="button" data-mode="TRADER_LIFEGAME" aria-label="Otwórz TraderLifeGame – grę edukacyjną. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-tlg">
+        <button className="mode cin-mode-tlg" type="button" data-mode="TRADER_LIFEGAME" aria-label="Otwórz TraderLifeGame – grę edukacyjną. Przeciągnij, aby obracać kulę." aria-pressed="false" data-testid="menu-tlg">
           <span className="label"><span className="number">03</span><span className="mode-name">TRADERLIFEGAME</span><span className="enter-mark" /></span></button>
         <div className="cin-menu-hint">PRZECIĄGNIJ, ABY OBRÓCIĆ<span className="hint-separator">·</span>KLIKNIJ, ABY WYBRAĆ</div>
       </main>

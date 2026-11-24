@@ -4,9 +4,9 @@
 // visibilitychange, dispose przez AbortController. Zmiany względem wzorca:
 //  * 1.44.1: intro = film Apollo23_intro_land.mp4 (<video>, pełny ekran z zachowaniem proporcji, bez kontrolek, z dźwiękiem); koniec filmu,
 //    klik, Spacja, Esc i „Przejdź do menu” → enter() (wejście z czerni do menu, bez zmian); film nieodtwarzalny → od razu menu, bez błędu.
-//  * 1.42.7–1.44.0: intro = scena 3D bez dźwięku (usunięta w 1.44.1); IntroLike.release/dispose zostają opcjonalne;
+//  * 1.42.7–1.44.0: intro = scena 3D bez dźwięku (usunięta w 1.44.1; 1.46: usunięte też jej IntroLike.release/dispose);
 //  * stan fazy trafia do data-state kontenera .app-cinematic (nie do <body>), elementy przychodzą z komponentu React;
-//  * wybór FOREX kończy się wywołaniem onForexReady(pose) zamiast ekranu „prezentacji”; CRYPTO – ekran „tryb w przygotowaniu”; TRADER_LIFEGAME – onGameReady() (trasa #/trader-life-game);
+//  * wybór FOREX kończy się wywołaniem onForexReady(pose, signal) zamiast ekranu „prezentacji” (1.46: signal = anulowanie przekazania); CRYPTO – ekran „tryb w przygotowaniu”; TRADER_LIFEGAME – onGameReady() (trasa #/trader-life-game);
 //  * PMW_PREVIEW zastąpiony hakiem window.__PMW_E2E__.menu dostępnym tylko w trybie testów; brak zdarzenia pmw:mode-preview-selected.
 import { meshFrag, particleFrag, starFrag, starVert, streakFrag, streakVert, vertexShared } from "./menuShaders";
 import { markIntroSeen, saveMotionChoice, testMode } from "./introGate";
@@ -18,7 +18,7 @@ export type Pose = { x: number; y: number; r: number };
 
 /** Obiekt intro z kontraktem <video> (play / pause / currentTime / duration / muted / readyState / style, zdarzenia ended / error). */
 export type IntroLike = EventTarget & { play(): Promise<void>; pause(): void; currentTime: number; readonly duration: number; muted: boolean;
-  readyState: number; readonly style: CSSStyleDeclaration; release?(): void; dispose?(): void };
+  readyState: number; readonly style: CSSStyleDeclaration };
 
 export type MenuElements = {
   root: HTMLElement; canvas: HTMLCanvasElement; video: IntroLike; cinema: HTMLElement; menu: HTMLElement; selected: HTMLElement;
@@ -33,9 +33,10 @@ export type MenuOptions = {
   reduced: boolean;
   forceSoftware?: boolean;
   onChoose?(mode: Mode): void;
-  onForexReady?(pose: Pose): void;
+  // 1.46: signal is aborted when the hand-off is cancelled (POWRÓT / Esc, replayed intro, renderer error, dispose) - the receiver must not
+  // navigate to FOREX after an asynchronous check (licence) when signal.aborted.
+  onForexReady?(pose: Pose, signal: AbortSignal): void;
   onGameReady?(): void;
-  onMotionChange?(reduced: boolean): void;
   onMenuReady?(): void;                                    // pierwsze wejście do fazy menu (np. Ustawienia przy pierwszym uruchomieniu – po intro)
   audio?: boolean;                                         // 1.44.1: dźwięk filmu intro (domyślnie włączony; wybór użytkownika zapamiętany)
   onSoundChange?(on: boolean): void;
@@ -49,6 +50,8 @@ const SVG_SOUND_OFF = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4
 const SVG_PLAY = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 4 10 6-10 6z"/></svg>';
 const SVG_PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4v12m6-12v12"/></svg>';
 export const PREPARING_NOTE = "Tryb w przygotowaniu – ten tryb pracy bota nie ma jeszcze ekranu.";
+/** 1.46: FOREX after the selection animation waits for the licence check (App) - not "tryb w przygotowaniu". */
+export const FOREX_WAIT_NOTE = "Sprawdzanie licencji i otwieranie FOREX…";
 
 export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   const { canvas, video, cinema, root } = el;
@@ -57,7 +60,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   const smooth = (x: number) => { x = clamp(x); return x * x * (3 - 2 * x); };
   const ease = (x: number) => { x = clamp(x); return 1 - Math.pow(1 - x, 4); };
   const config = Object.freeze({ counts: [110000, 94000, 66000], starCount: 1500, dustCount: 11000, pixelRatioCap: 1.65, entrySeconds: 3.0, selectSeconds: 1.85, returnSeconds: 1.35 });
-  const state: any = { phase: "boot", phaseT: 0, time: 0, rotationTime: 0, hidden: false, reduced: opts.reduced, pointer: [0, 0], pointerTarget: [0, 0], selected: -1, hover: -1,
+  const state: any = { phase: "boot", phaseT: 0, rotationTime: 0, hidden: false, reduced: opts.reduced, pointer: [0, 0], pointerTarget: [0, 0], selected: -1, hover: -1,
     focus: -1, drag: null, raf: 0, disposed: false, contextLost: false, frame: 0, last: 0, noticeTimer: 0, watchdog: 0, quality: "full", audio: opts.audio ?? true, slowSince: 0, frameAvg: 16 };
   const modes: Mode[] = ["FOREX", "CRYPTO", "TRADER_LIFEGAME"];
   const orbs: any[] = modes.map((name, i) => ({ name, button: el.buttons[i], kind: i, angles: [0.11 + i * 0.24, -0.22 + i * 1.8], velocity: [0, 0], hover: 0, mouse: [0, 0],
@@ -68,6 +71,9 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   let view = { w: innerWidth, h: innerHeight, dpr: 1 };
   let buffers: WebGLBuffer[] = [], programs: WebGLProgram[] = [], glShaders: WebGLShader[] = [];
   let software: any = null;
+  let renderer: "" | "webgl" | "cpu" = "";                 // 1.46: which renderer setup() tried (the retry after an error picks the CPU one)
+  let forexHandoff: AbortController | null = null;         // 1.46: pending FOREX hand-off (licence check in App)
+  function cancelForex() { forexHandoff?.abort(); forexHandoff = null; }
 
   function prng(seed: number) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function announce(text: string) { el.announcer.textContent = text; }
@@ -75,6 +81,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   let menuReadyFired = false;
   function setPhase(phase: string) {
     if (phase === "menu" && !menuReadyFired) { menuReadyFired = true; setTimeout(() => { if (!state.disposed) opts.onMenuReady?.(); }, 0); }
+    if (phase !== "selected") cancelForex();               // 1.46: leaving "selected" (POWRÓT, intro, error) cancels the FOREX hand-off
     state.phase = phase; state.phaseT = 0; root.dataset.state = phase;
     (el.menu as any).inert = phase !== "menu"; (el.selected as any).inert = phase !== "selected";
     el.skip.hidden = phase !== "boot"; el.videoStart.hidden = true;
@@ -154,6 +161,7 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   }
   function setup() {
     gl = opts.forceSoftware ? null : (canvas.getContext("webgl", { alpha: false, antialias: false, depth: true, premultipliedAlpha: false, powerPreference: "high-performance", preserveDrawingBuffer: false }) as WebGLRenderingContext | null);
+    renderer = gl ? "webgl" : "cpu";
     if (!gl) { setupSoftware(); return; }
     program = link(vertexShared, particleFrag); meshProgram = link(vertexShared, meshFrag); starProgram = link(starVert, starFrag); streakProgram = link(streakVert, streakFrag);
     const uniformNames = ["Time", "Kind", "Hover", "Dpr", "Opacity", "Radius", "Burst", "Mesh", "Resolution", "Center", "Mouse", "Rotation"];
@@ -193,8 +201,8 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
     if (state.quality === "full" && state.frameAvg > 28) { state.slowSince += dt; if (state.slowSince > 3) { state.quality = "low"; resize(); } } else state.slowSince = 0;
   }
   function tick(now: number) {
-    state.raf = 0; if (state.disposed || state.hidden || state.contextLost) return;
-    const dt = Math.min((now - (state.last || now)) / 1000, 0.25); state.last = now; state.time += dt; state.phaseT += dt; state.frame++;
+    state.raf = 0; if (state.disposed || state.hidden || state.contextLost || state.phase === "error") return;     // 1.46: no frame without a renderer
+    const dt = Math.min((now - (state.last || now)) / 1000, 0.25); state.last = now; state.phaseT += dt; state.frame++;
     if (dt > 0) quality(dt);
     if (!state.reduced) state.rotationTime += dt;
     state.pointer = state.pointer.map((p: number, i: number) => lerp(p, state.reduced ? 0 : state.pointerTarget[i], 1 - Math.exp(-dt * 4)));
@@ -220,7 +228,10 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
       const o = orbs[state.selected]; drawOrb(o, mixPose(orbitalPose(o), selectPose(), progress), 1, 0);
       if (k >= 1) {
         if (phase === "selecting") {
-          if (o.name === "FOREX" && opts.onForexReady) { setPhase("selected"); root.dataset.forex = "1"; opts.onForexReady(selectPose()); }
+          if (o.name === "FOREX" && opts.onForexReady) {
+            setPhase("selected"); el.selectedNote.textContent = FOREX_WAIT_NOTE; announce("Wybrano tryb FOREX. " + FOREX_WAIT_NOTE);
+            forexHandoff = new AbortController(); opts.onForexReady(selectPose(), forexHandoff.signal);
+          }
           else if (o.name === "TRADER_LIFEGAME" && opts.onGameReady) { setPhase("selected"); opts.onGameReady(); }
           else { setPhase("selected"); el.returnBtn.focus({ preventScroll: true }); announce("Wybrano tryb " + MODE_LABEL[o.name as Mode] + ". " + PREPARING_NOTE); }
         } else { setPhase("menu"); orbs[state.selected].button.focus({ preventScroll: true }); }
@@ -231,9 +242,9 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
     if (software) software.ctx.putImageData(software.image, 0, 0);
     if (!state.reduced || !["menu", "selected"].includes(state.phase)) state.raf = requestAnimationFrame(tick);
   }
-  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); video.release?.(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); }
+  function finishEnter() { cinema.hidden = true; cinema.style.opacity = "0"; video.pause(); el.progress.hidden = true; setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); }
   function enter() { if (state.phase !== "boot") return; video.pause(); clearTimeout(state.watchdog); setPhase("enter"); el.progress.hidden = true; wake(); }
-  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); video.release?.(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); wake(); }
+  function skipToMenu() { clearTimeout(state.watchdog); video.pause(); cinema.hidden = true; el.progress.hidden = true; root.style.setProperty("--reveal", "1"); setPhase("menu"); announce("Wybierz cel: FOREX, CRYPTO lub TraderLifeGame."); wake(); }
   // 1.44.1: intro = film (Apollo23_intro_land.mp4). Film, którego nie da się odtworzyć (brak pliku, brak kodeka), nie pokazuje błędu –
   // od razu zaczyna się wejście do menu (ta sama ścieżka enter() co po końcu filmu).
   function introUnplayable(why: string) { if (state.phase !== "boot") return; console.warn("[intro] " + why + " – od razu menu"); enter(); }
@@ -268,11 +279,11 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   }
   function choose(i: number) {
     if (state.phase !== "menu" || state.drag) return; state.selected = i; orbs.forEach((o, j) => o.button.setAttribute("aria-pressed", String(j === i)));
-    el.selectedName.textContent = MODE_LABEL[orbs[i].name as Mode]; el.selectedNote.textContent = PREPARING_NOTE; delete root.dataset.forex; setPhase("selecting"); opts.onChoose?.(orbs[i].name);
+    el.selectedName.textContent = MODE_LABEL[orbs[i].name as Mode]; el.selectedNote.textContent = PREPARING_NOTE; setPhase("selecting"); opts.onChoose?.(orbs[i].name);
   }
-  function goBack() { if (state.phase === "selected" || state.phase === "selecting") { delete root.dataset.forex; setPhase("returning"); wake(); } }
+  function goBack() { if (state.phase === "selected" || state.phase === "selecting") { setPhase("returning"); wake(); } }
   function pointerXY(e: PointerEvent, o: any) { return [(e.clientX - o.layout.x) / o.layout.r, -(e.clientY - o.layout.y) / o.layout.r]; }
-  function wake() { if (!state.raf && !state.hidden && !state.disposed && !state.contextLost) { state.last = performance.now(); state.raf = requestAnimationFrame(tick); } }
+  function wake() { if (!state.raf && !state.hidden && !state.disposed && !state.contextLost && state.phase !== "error") { state.last = performance.now(); state.raf = requestAnimationFrame(tick); } }
   const controller = new AbortController();
   const listen = (target: EventTarget, type: string, fn: (e: any) => void, o: AddEventListenerOptions = {}) => target.addEventListener(type, (event) => { fn(event); if (type !== "pointermove" || state.drag) wake(); }, { ...o, signal: controller.signal });
   orbs.forEach((o, i) => {
@@ -290,27 +301,46 @@ export function mountMenu(el: MenuElements, opts: MenuOptions): () => void {
   listen(window, "blur", () => { state.pointerTarget = [0, 0]; state.hover = -1; state.drag = null; });
   listen(window, "resize", resize); listen(video, "ended", enter); listen(video, "error", () => introUnplayable("błąd wczytania filmu"));
   listen(cinema, "click", () => { if (state.phase === "boot") enter(); });       // 1.44.1: klik w film pomija intro
-  listen(el.skip, "click", enter); listen(el.videoStart, "click", () => { video.play().then(() => { el.videoStart.hidden = true; }).catch(() => notice("Odtwarzanie jest zablokowane. Możesz przejść do menu.")); });
-  listen(el.replay, "click", () => { if (["enter", "selecting", "returning"].includes(state.phase)) return; playIntro(); }); listen(el.returnBtn, "click", goBack);
+  // 1.46: "URUCHOM INTRO" plays the film only during the intro (a stale button over the menu started the sound in the hidden cinema)
+  listen(el.skip, "click", enter); listen(el.videoStart, "click", () => { if (state.phase !== "boot") { el.videoStart.hidden = true; return; } video.play().then(() => { el.videoStart.hidden = true; }).catch(() => notice("Odtwarzanie jest zablokowane. Możesz przejść do menu.")); });
+  listen(el.replay, "click", () => { if (["enter", "selecting", "returning", "error"].includes(state.phase)) return; playIntro(); }); listen(el.returnBtn, "click", goBack);
   listen(el.sound, "click", () => { state.audio = video.muted; video.muted = !state.audio; soundUI(state.audio); opts.onSoundChange?.(state.audio); });
   function updateMotionUI() { root.dataset.motion = state.reduced ? "reduced" : "full"; el.motion.setAttribute("aria-pressed", String(state.reduced)); el.motion.setAttribute("aria-label", state.reduced ? "Włącz pełny ruch" : "Ogranicz ruch"); el.motion.dataset.label = state.reduced ? "Włącz pełny ruch" : "Ogranicz ruch"; el.motion.innerHTML = state.reduced ? SVG_PLAY : SVG_PAUSE; }
-  listen(el.motion, "click", () => { state.reduced = !state.reduced; saveMotionChoice(state.reduced); opts.onMotionChange?.(state.reduced); orbs.forEach((o) => o.velocity = [0, 0]); updateMotionUI(); if (state.reduced && state.phase === "boot") enter(); notice(state.reduced ? "Ruch ograniczony. Obracanie i wybór kul pozostają dostępne." : "Pełne animacje włączone."); });
+  listen(el.motion, "click", () => { state.reduced = !state.reduced; saveMotionChoice(state.reduced); orbs.forEach((o) => o.velocity = [0, 0]); updateMotionUI(); if (state.reduced && state.phase === "boot") enter(); notice(state.reduced ? "Ruch ograniczony. Obracanie i wybór kul pozostają dostępne." : "Pełne animacje włączone."); });
   listen(el.fullscreen, "click", async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); else notice("Pełny ekran uruchomisz klawiszem F11 w przeglądarce."); } catch { notice("Przeglądarka zablokowała pełny ekran. Użyj F11."); } });
   listen(document, "fullscreenchange", () => { el.fullscreen.setAttribute("aria-label", document.fullscreenElement ? "Opuść pełny ekran" : "Pełny ekran"); });
+  // 1.46: the shortcuts are ignored for a key already handled, typed in a field, or while a modal is open (the system drawer over the menu,
+  // aria-modal) - before, "r" on a focused button of the STOP panel replayed the intro under the drawer and hid STOP. Space on a focused
+  // button / link activates it instead of skipping the intro. (Focus returned to a system icon after closing the drawer keeps R / Esc.)
+  function shortcutBlocked(e: KeyboardEvent): boolean {
+    if (e.defaultPrevented) return true;
+    const t = e.target as HTMLElement | null;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable)) return true;
+    return !!document.querySelector('[aria-modal="true"]');
+  }
   listen(document, "keydown", (e: KeyboardEvent) => {
+    if (shortcutBlocked(e)) return;
     if (e.key === "Escape") { if (state.phase === "boot") enter(); else if (state.phase === "selected") goBack(); }
-    if ((e.code === "Space" || e.key === " ") && state.phase === "boot") { e.preventDefault(); enter(); }     // 1.44.1: Spacja pomija intro
+    if ((e.code === "Space" || e.key === " ") && state.phase === "boot") {                                     // 1.44.1: Spacja pomija intro
+      const t = e.target as HTMLElement | null;
+      if (t && (/^(BUTTON|A)$/.test(t.tagName || "") || t.getAttribute?.("role") === "button")) return;
+      e.preventDefault(); enter();
+    }
     const replayKey = (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.code === "KeyB" && e.ctrlKey && e.altKey);
-    if (replayKey && ["menu", "selected"].includes(state.phase)) { const t = e.target as HTMLElement | null; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; e.preventDefault(); playIntro(); }
+    if (replayKey && ["menu", "selected"].includes(state.phase)) { e.preventDefault(); playIntro(); }
   });
-  listen(document, "visibilitychange", () => { state.hidden = document.hidden; if (state.hidden) { cancelAnimationFrame(state.raf); state.raf = 0; if (state.phase === "boot") video.pause(); } else { state.last = 0; if (state.phase === "boot" && !state.reduced) video.play().catch(() => { el.videoStart.hidden = false; }); if (!state.raf && !state.contextLost) state.raf = requestAnimationFrame(tick); } });
-  function rendererError(message?: string) { el.rendererError.hidden = false; if (message) el.rendererMessage.textContent = message; video.pause(); el.skip.hidden = true; }
+  // 1.46: a play() aborted by skipping (AbortError) or settled after the intro does not show "URUCHOM INTRO" over the menu (as in startVideo)
+  listen(document, "visibilitychange", () => { state.hidden = document.hidden; if (state.hidden) { cancelAnimationFrame(state.raf); state.raf = 0; if (state.phase === "boot") video.pause(); } else { state.last = 0; if (state.phase === "boot" && !state.reduced) video.play().catch((err: any) => { if (state.phase !== "boot" || err?.name === "AbortError") return; el.videoStart.hidden = false; }); if (!state.raf && !state.contextLost) state.raf = requestAnimationFrame(tick); } });
+  // 1.46: the error is a phase of its own (data-state="error"): in boot / enter CSS hid the system icons with STOP under the error screen,
+  // and the intro watchdog / replay could move on. The retry after a WebGL failure reloads with the CPU renderer (#/menu?renderer=cpu)
+  // instead of the same failing configuration; after a CPU failure it is a plain reload.
+  function rendererError(message?: string) { clearTimeout(state.watchdog); setPhase("error"); el.rendererError.hidden = false; if (message) el.rendererMessage.textContent = message; video.pause(); el.skip.hidden = true; }
   listen(canvas, "webglcontextlost", (e: Event) => { e.preventDefault(); state.contextLost = true; cancelAnimationFrame(state.raf); state.raf = 0; rendererError("Utracono kontekst renderowania 3D. Kliknij „Spróbuj ponownie”, aby odtworzyć scenę."); });
   listen(canvas, "webglcontextrestored", () => { try { buffers = []; programs = []; glShaders = []; setup(); state.contextLost = false; el.rendererError.hidden = true; cinema.hidden = true; setPhase("menu"); state.last = 0; state.raf = requestAnimationFrame(tick); } catch (err) { console.error(err); rendererError(); } });
-  listen(el.rendererRetry, "click", () => location.reload());
+  listen(el.rendererRetry, "click", () => { if (renderer !== "cpu") { try { history.replaceState(null, "", "#/menu?renderer=cpu"); } catch { location.hash = "#/menu?renderer=cpu"; } } location.reload(); });
 
   function dispose() {
-    state.disposed = true; cancelAnimationFrame(state.raf); clearTimeout(state.watchdog); clearTimeout(state.noticeTimer); video.pause(); video.dispose?.(); controller.abort();
+    state.disposed = true; cancelForex(); cancelAnimationFrame(state.raf); clearTimeout(state.watchdog); clearTimeout(state.noticeTimer); video.pause(); controller.abort();
     if (gl && !state.contextLost) {
       for (const b of buffers) gl.deleteBuffer(b); for (const p of programs) gl.deleteProgram(p); for (const s of glShaders) gl.deleteShader(s);
       gl.getExtension("WEBGL_lose_context")?.loseContext();      // kontekst zwolniony od razu (nasłuchy już odpięte) – bez kumulacji przy wejściach/wyjściach
