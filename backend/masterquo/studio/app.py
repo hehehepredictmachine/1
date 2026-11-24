@@ -146,7 +146,8 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         except Exception:  # noqa: BLE001
             mt5 = "NOT_INSTALLED (Windows + MetaTrader5)"
         envs = {e: (paths.ROOT_DIR / e).exists() for e in (".venv", ".venv_deep", ".venv_kronos", ".venv_candles")}
-        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "data_dir": str(S.bot_data_dir(s))},
+        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "port_source": s.get("bot_port_source"),   # I0125
+                        "data_dir": str(S.bot_data_dir(s))},
                 "mt5_package": mt5, "envs": envs, "studio_data_dir": str(S.data_dir()), "export_lock": q.lock.owner(),
                 "mode_hint": "BOT_CACHE" if bot else "MT5_DIRECT", "settings": s}
 

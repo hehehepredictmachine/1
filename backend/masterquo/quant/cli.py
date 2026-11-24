@@ -28,11 +28,8 @@ _OPENER = None
 
 
 def _server(path: str, timeout: float = 5.0):
-    try:
-        from ..config import ConfigStore
-        port = ConfigStore().get().server.port
-    except Exception:  # noqa: BLE001
-        port = 8765
+    from ..config import server_port
+    port = server_port()          # 1.46 arch (I0094/I0125): read-only (never migrates / writes the bot's config.json), paths.DEFAULT_PORT fallback
     global _OPENER
     base = f"http://127.0.0.1:{port}"
     try:

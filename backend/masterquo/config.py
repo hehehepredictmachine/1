@@ -211,7 +211,7 @@ class TelegramConfig(_Strict):
 
 class ServerConfig(_Strict):
     host: Literal["127.0.0.1"] = "127.0.0.1"  # loopback only, by design
-    port: int = Field(8765, ge=1024, le=65535)
+    port: int = Field(paths.DEFAULT_PORT, ge=1024, le=65535)
     open_browser: bool = True
 
 
@@ -722,7 +722,11 @@ class AppConfig(_Strict):
 
 
 class ConfigStore:
-    """Thread-safe holder with atomic persistence to data/config.json."""
+    """Thread-safe holder with atomic persistence to data/config.json.
+
+    1.46 arch (I0094): ONE process writes config.json - the running bot (its Runtime owns this store and keeps the configuration in memory).
+    Other processes (CLI, Studio, launchers) only READ it with peek() / server_port(); a CLI command that changes the configuration refuses
+    while the bot runs (python -m masterquo profile) - the running bot would overwrite the change with its own copy."""
 
     def __init__(self, path: Path | None = None):
         self.path = path or (paths.data_dir() / "config.json")
@@ -782,6 +786,28 @@ class ConfigStore:
     def set_runtime_flag(self, **flags) -> None:
         with self._lock:
             self._cfg = self._cfg.model_copy(update=flags)
+
+
+def peek(path: Path | None = None) -> AppConfig:
+    """1.46 arch (I0094): read-only view of config.json for processes that do not own it (CLI, Studio). The same migrations as
+    ConfigStore, in memory only: never writes the file, never a config.v<N>.bak.json, never creates a missing file (missing = the packaged
+    defaults, exactly what ConfigStore would create). Raises on an unreadable / invalid file (the caller decides the fallback)."""
+    p = path or (paths.data_dir() / "config.json")
+    if p.exists():
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        migrate(raw)
+        return AppConfig.model_validate(raw)
+    if paths.DEFAULTS_FILE.exists():
+        return AppConfig.model_validate(json.loads(paths.DEFAULTS_FILE.read_text(encoding="utf-8")))
+    return AppConfig()
+
+
+def server_port(path: Path | None = None) -> int:
+    """server.port from config.json without writing anything; paths.DEFAULT_PORT when the file cannot be read (never raises)."""
+    try:
+        return int(peek(path).server.port)
+    except Exception:  # noqa: BLE001 - a broken file is reported by the server itself; a launcher / CLI only needs a port to try
+        return paths.DEFAULT_PORT
 
 
 # v1 -> v2: less restrictive defaults. A value is replaced only when it still equals the old

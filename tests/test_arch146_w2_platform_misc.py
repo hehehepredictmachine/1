@@ -8,7 +8,7 @@ import asyncio
 import json
 import unittest
 
-import _env  # noqa: F401
+import _env
 
 SETUP_NOW = "2026-10-08T12:01:00Z"
 
@@ -194,6 +194,150 @@ class TestI0152Fable52SafeVariant(_AgentBase):
     def test_user_price_in_table_stays_the_budgeted_one(self):
         self.cfg.update({"agent": {"model": "claude-fable-5-2", "price_per_mtok": {"claude-fable-5-2": [8.0, 40.0]}}})
         self.assertIsNone(self.agent.status()["cost_estimate_only"])
+
+
+# ------------------------------------------------------------------ I0094 / I0125
+def _old_config(path, **server):
+    """A valid config.json one schema version older (v14) -> ConfigStore() would migrate it and WRITE the file + config.v14.bak.json."""
+    from masterquo.config import ConfigStore
+    st = ConfigStore(path)
+    if server:
+        st.update({"server": server})
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["config_version"] = 14
+    raw.pop("resources", None)
+    path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    return path.read_bytes()
+
+
+class _DataDir(unittest.TestCase):
+    def setUp(self):
+        from pathlib import Path
+
+        from _env import TempData
+        self.td = TempData()
+        self.data = Path(self.td.dir)
+
+    def tearDown(self):
+        self.td.close()
+
+
+class TestI0094ReadOnlyPortAndProfileRefusal(_DataDir):
+    def test_port_never_writes_config(self):
+        import masterquo.__main__ as M
+        cfg = self.data / "config.json"
+        before = _old_config(cfg, port=9123)
+        self.assertEqual(M._port(), 9123)
+        self.assertEqual(cfg.read_bytes(), before)                                  # 1.45: migrated + rewritten
+        self.assertEqual(sorted(p.name for p in self.data.glob("config.v*.bak.json")), [])
+        cfg.unlink()
+        self.assertEqual(M._port(), 8765)
+        self.assertFalse(cfg.exists())                                              # 1.45: a default config.json was created
+
+    def test_port_never_raises(self):
+        import masterquo.__main__ as M
+        (self.data / "config.json").write_text("{broken", encoding="utf-8")
+        self.assertEqual(M._port(), 8765)
+
+    def test_profile_refused_while_bot_answers(self):
+        from unittest import mock
+
+        import masterquo.__main__ as M
+        from masterquo.config import ConfigStore
+        ConfigStore().update({"active": {"profile": "ACTIVE"}})
+        cfg = self.data / "config.json"
+        before = cfg.read_bytes()
+        with mock.patch.object(M, "_health", return_value={"app": M.APP_NAME}):
+            self.assertEqual(M.cmd_profile("ORIGINAL"), 3)                          # 1.45: 0 and the file rewritten
+        self.assertEqual(cfg.read_bytes(), before)
+
+    def test_profile_refused_while_instance_lock_held(self):
+        import fcntl
+        from unittest import mock
+
+        import masterquo.__main__ as M
+        from masterquo.config import ConfigStore
+        ConfigStore().update({"active": {"profile": "ACTIVE"}})
+        before = (self.data / "config.json").read_bytes()
+        with open(M._rt_dir() / "instance.lock", "a+b") as holder:                 # another process = another open file description
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with mock.patch.object(M, "_health", return_value=None):
+                self.assertEqual(M.cmd_profile("ORIGINAL"), 3)
+            self.assertEqual((self.data / "config.json").read_bytes(), before)
+
+    def test_profile_written_when_bot_stopped_and_probe_releases_lock(self):
+        from unittest import mock
+
+        import masterquo.__main__ as M
+        from masterquo.config import ConfigStore
+        ConfigStore().update({"active": {"profile": "ACTIVE"}})
+        with mock.patch.object(M, "_health", return_value=None):
+            self.assertEqual(M.cmd_profile("ORIGINAL"), 0)
+        self.assertEqual(ConfigStore().get().active.profile, "ORIGINAL")
+        lock = M._single_instance_lock(retries=1)                                  # the probe did not keep the lock
+        try:
+            self.assertIsNotNone(lock)
+        finally:
+            if lock is not None:
+                lock.close()
+            M._LOCK_HANDLE = None
+
+
+class TestI0125DefaultPortSingleSource(_DataDir):
+    def test_literal_only_in_paths(self):
+        import re
+        from pathlib import Path
+        pkg = Path(_env.ROOT) / "backend" / "masterquo"
+        hits = [f"{p.relative_to(pkg)}:{i}" for p in pkg.rglob("*.py") for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+                if re.search(r"\b8765\b", line)]
+        self.assertEqual([h.split(":")[0] for h in hits], ["paths.py"], hits)        # 1.45: config, __main__, quant/cli, studio/settings
+        from masterquo import paths
+        from masterquo.config import ServerConfig
+        self.assertEqual((paths.DEFAULT_PORT, ServerConfig().port), (8765, 8765))
+        tool = (Path(_env.ROOT) / "tools" / "tsfm_setup.py").read_text(encoding="utf-8")
+        self.assertIn(f"DEFAULT_PORT = {paths.DEFAULT_PORT}", tool)
+
+    def test_studio_follows_bot_server_port(self):
+        import os
+        bot = self.data / "bot"
+        studio = self.data / "studio"
+        bot.mkdir()
+        studio.mkdir()
+        old = {k: os.environ.get(k) for k in ("MQ_STUDIO_DATA_DIR", "MQ_BOT_DATA_DIR")}
+        os.environ.update(MQ_STUDIO_DATA_DIR=str(studio), MQ_BOT_DATA_DIR=str(bot))
+        try:
+            from masterquo.config import ConfigStore
+            from masterquo.studio import settings as S
+            ConfigStore(bot / "config.json").update({"server": {"port": 9001}})
+            s = S.load()
+            self.assertEqual((s["bot_port"], s.get("bot_port_source")), (9001, "BOT_CONFIG"))   # 1.45: 8765
+            S.save({"profile": "research"})                                         # an unrelated save keeps the port automatic
+            self.assertIsNone(json.loads((studio / "settings.json").read_text())["bot_port"])
+            ConfigStore(bot / "config.json").update({"server": {"port": 9002}})
+            self.assertEqual(S.load()["bot_port"], 9002)
+            self.assertEqual(S.save({"bot_port": 8766})["bot_port"], 8766)          # an explicit value stays
+            ConfigStore(bot / "config.json").update({"server": {"port": 9003}})
+            self.assertEqual((S.load()["bot_port"], S.load()["bot_port_source"]), (8766, "SETTINGS"))
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_quant_cli_server_never_writes_config(self):
+        import socket
+
+        from masterquo.quant import cli as QC
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        free = s.getsockname()[1]
+        s.close()
+        cfg = self.data / "config.json"
+        before = _old_config(cfg, port=max(free, 1024))
+        QC._OPENER = None
+        self.assertIsNone(QC._server("/api/v1/health", timeout=0.5))
+        self.assertEqual(cfg.read_bytes(), before)                                  # 1.45: ConfigStore() migrated and rewrote it
 
 
 if __name__ == "__main__":
