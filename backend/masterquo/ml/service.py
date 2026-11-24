@@ -543,7 +543,11 @@ class MLService:
         return self.db.query("SELECT sample_id, plan FROM ml_scalp_samples WHERE instrument=? AND status='PENDING' ORDER BY signal_time LIMIT ?", (instrument, limit))
 
     def scalp_label(self, sample_id: str, status: str, out: dict | None) -> None:
-        if status == "SETTLED" and out and out.get("net_r") is not None:
+        if status == "SETTLED" and out and out.get("cost_status") == "COMMISSION_UNKNOWN":
+            # 1.46 arch I0045: an outcome without the commission is not a net label - COST_UNKNOWN (outside training, like _cost samples)
+            self.db.execute("UPDATE ml_scalp_samples SET status='COST_UNKNOWN', label_end=?, precision=? WHERE sample_id=?",
+                            (out.get("label_end"), out.get("precision"), sample_id))
+        elif status == "SETTLED" and out and out.get("net_r") is not None:
             self.db.execute("UPDATE ml_scalp_samples SET status='LABELED', net_r=?, y=?, label_end=?, label_available_at=?, precision=? WHERE sample_id=?",
                             (out["net_r"], 1 if out["net_r"] > 0 else 0, out["label_end"], iso(utcnow()), out.get("precision"), sample_id))
         else:                                                   # no fill / no data: never a loss

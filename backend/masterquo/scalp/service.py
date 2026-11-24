@@ -323,10 +323,15 @@ class ScalpService:
         if res.get("open_at_end") or not res["exits"]:
             return "PENDING", None
         net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
-        return "SETTLED", {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
-                           "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
-                           "net_r": net / risk if risk else None, "label_end": st.iso_ts(res["exits"][-1][2]),
-                           "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
+        out = {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
+               "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
+               "net_r": net / risk if risk else None, "label_end": st.iso_ts(res["exits"][-1][2]),
+               "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
+        if self.cfg_store.get().scalp.commission_per_lot_side is None:
+            # 1.46 arch I0045: the gate blocks at an unknown commission (Zero != 0 costs), but the label was computed with commission 0 and
+            # stored as an ordinary net result - marked here; ML scalp / NSS store it as COST_UNKNOWN (never trained on)
+            out.update(cost_status="COMMISSION_UNKNOWN", note="wynik BEZ prowizji (prowizja nieznana – net_R niepełny, nie jest etykietą treningową)")
+        return "SETTLED", out
 
     def settle(self, m1: list[dict], point: float) -> None:
         rows = self.db.query("SELECT * FROM scalp_shadow WHERE outcome_status='PENDING' AND instrument=? LIMIT 50", (self.inst,))
