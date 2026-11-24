@@ -474,6 +474,60 @@ class TestI0540TabiclEngine(unittest.TestCase):
         self.assertNotIn("_selftest", e.contexts)
 
 
+# ======================================================================================================== I0845 verdict minimum sample
+class TestI0845VerdictMinSample(unittest.TestCase):
+    def test_verdict(self):
+        import inspect
+
+        from tsfm_runtime import granite_finetune as GF
+        self.assertEqual(GF.verdict(3, {"mae_h": 1.0}, {"mae_h": 1.1}, 26), "INSUFFICIENT_TEST")   # before: IMPROVED_VS_BASE on 26 windows
+        self.assertEqual(GF.verdict(3, {"mae_h": 1.0}, {"mae_h": 1.1}, 150), "IMPROVED_VS_BASE")
+        self.assertEqual(GF.verdict(0, {"mae_h": 1.0}, {"mae_h": 1.1}, 150), "NOT_BETTER_THAN_BASE")
+        self.assertEqual(GF.verdict(2, {"mae_h": 1.2}, {"mae_h": 1.1}, 150), "NOT_BETTER_THAN_BASE")
+        self.assertEqual(GF.verdict(2, {"mae_h": 1.2}, {"mae_h": 1.1}, 10), "NOT_BETTER_THAN_BASE")
+        self.assertEqual(GF.MIN_TEST_WINDOWS, 100)
+        self.assertIn("verdict(best_epoch", inspect.getsource(GF.main))
+
+    def test_activation_refuses_a_small_test_sample(self):
+        import hashlib
+
+        from masterquo.tsfm import granite_train as G
+        from masterquo.tsfm.settings import SettingsStore
+        from tsfm_runtime import lock as L
+        td = TempData()
+        try:
+            class W:
+                def kill(self):
+                    pass
+
+            class Log:
+                def info(self, *a):
+                    pass
+            svc = types.SimpleNamespace(settings=SettingsStore(Path(td.dir) / "tsfm" / "settings.json"), workers={"granite_ttm": W()}, applog=Log())
+            for rid, metrics, train in (("GTR-SMALL01", {"verdict": "IMPROVED_VS_BASE", "test_windows": 26}, {"horizon": 12}),
+                                        ("GTR-NOCNT01", {"verdict": "IMPROVED_VS_BASE"}, {"horizon": 12}),
+                                        ("GTR-OLDWIN1", {"verdict": "IMPROVED_VS_BASE"}, {"horizon": 12, "windows": {"test": 140}}),
+                                        ("GTR-BIG0001", {"verdict": "IMPROVED_VS_BASE", "test_windows": 150}, {"horizon": 12})):
+                d = G.finetune_dir() / rid
+                d.mkdir(parents=True, exist_ok=True)
+                files = []
+                for name in ("config.json", "model.safetensors"):
+                    (d / name).write_bytes(name.encode())
+                    files.append({"name": name, "sha256": hashlib.sha256(name.encode()).hexdigest()})
+                (d / "granite_finetune.json").write_text(json.dumps({"run_id": rid, "base_fingerprint": L.fingerprint("granite_ttm"), "files": files,
+                                                                     "data": {"timeframe": "M5"}, "train": train, "metrics": metrics}), encoding="utf-8")
+            r = G.activate(svc, "GTR-SMALL01")
+            self.assertFalse(r["ok"])                                            # before: activated on 26 test windows
+            self.assertIn("26", r["reason"])
+            self.assertFalse(G.activate(svc, "GTR-NOCNT01")["ok"])
+            self.assertEqual(svc.settings.get().models["granite_ttm"].checkpoint, "BASE")
+            self.assertTrue(G.activate(svc, "GTR-OLDWIN1")["ok"])               # count from train.windows (manifests of 1.40-1.45)
+            self.assertTrue(G.activate(svc, "GTR-BIG0001")["ok"])
+            self.assertEqual(svc.settings.get().models["granite_ttm"].checkpoint, "GTR-BIG0001")
+        finally:
+            td.close()
+
+
 # ======================================================================================================== P001 / P002 manifest verify
 class _Pin(unittest.TestCase):
     def setUp(self):
