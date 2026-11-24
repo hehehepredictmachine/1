@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import native_selftest as NS
 from . import fractal as FD
 from . import smc as SM
 from . import vamd as VM
@@ -117,14 +118,12 @@ def compare(export: dict, tol: float = 1e-7) -> dict:
 
 
 def native_status(status_file: Path | None) -> dict:
+    # 1.46 arch: one status name with FlowContext / MiniRocket V2 (I0522; was NOT_EXECUTED_METAEDITOR_UNAVAILABLE) and the live self-test
+    # file read only when it belongs to this build - not older than the status file (I0479; an old ctx_selftest.txt counted as PASS)
     if status_file is None or not Path(status_file).exists():
-        return {"NATIVE_COMPILED": "NOT_EXECUTED_METAEDITOR_UNAVAILABLE", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
+        return {"NATIVE_COMPILED": NS.NOT_COMPILED, "NATIVE_EXECUTED": NS.NOT_EXECUTED}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
-    res = st.get("selftest_result", "NATIVE_NOT_EXECUTED")
-    live = Path(status_file).parent / "ctx_selftest.txt"                  # self-test runs in the terminal AFTER compilation
-    if live.exists():
-        txt = live.read_text(errors="replace")
-        res = "PASS" if "RESULT=PASS" in txt else ("FAIL" if "RESULT=FAIL" in txt else res)
+    res, _ = NS.executed(st, Path(status_file), "ctx_selftest.txt")      # self-test runs in the terminal AFTER compilation
     return {"NATIVE_COMPILED": "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL",
             "NATIVE_EXECUTED": res, "metaeditor": st.get("log"), "ex5_sha256": st.get("ex5_sha256")}
 

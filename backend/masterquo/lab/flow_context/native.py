@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import native_selftest as NS
 from . import heikin as HF
 from . import stop_distance as SD
 
@@ -128,11 +129,14 @@ def compare(export: dict, tol_price: float = 1e-6, tol_points: float = 1e-6) -> 
 
 
 def native_status(status_file: Path | None) -> dict:
+    """1.46 arch (I0519): 28_FLOW_CONTEXT.bat writes the status before the self-test runs in the terminal - flow_selftest.txt of this build
+    (not older than the status file) is read live (lab/native_selftest.py)."""
     if status_file is None or not Path(status_file).exists():
-        return {"NATIVE_COMPILED": "NOT_COMPILED_NO_METAEDITOR", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
+        return {"NATIVE_COMPILED": NS.NOT_COMPILED, "NATIVE_EXECUTED": NS.NOT_EXECUTED}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
+    res, _ = NS.executed(st, Path(status_file), "flow_selftest.txt")
     return {"NATIVE_COMPILED": "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL",
-            "NATIVE_EXECUTED": st.get("selftest_result", "NATIVE_NOT_EXECUTED"), "ex5_sha256": st.get("ex5_sha256")}
+            "NATIVE_EXECUTED": res, "ex5_sha256": st.get("ex5_sha256")}
 
 
 def parity(fixtures: Path, status_file: Path | None = None) -> dict:
