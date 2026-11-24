@@ -304,5 +304,178 @@ class TestLayerGuard(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ============================================================================================== I0113 (+I0136) route inventory
+ORDER_ROUTES = [("POST", "/api/v1/execute"), ("POST", "/api/v1/auto"), ("POST", "/api/v1/lab/tradepad/execute"),
+                ("POST", "/api/v1/manual/intents/{iid}/execute"), ("POST", "/api/v1/manual/intents/{iid}/manage"),
+                ("POST", "/api/v1/positions/close"), ("POST", "/api/v1/positions/{ticket}/adopt"), ("POST", "/api/v1/sh/plans/{pid}/close"),
+                ("POST", "/api/v1/mode")]
+ROUTE_PORT = 18797
+
+
+def _mock_rt(edition: str = "OWNER"):
+    rt = mock.MagicMock()
+    rt.license.locked = False
+    rt.license.edition = edition
+    rt.cfg.get.return_value.assets.active = "XAUUSD"
+    return rt
+
+
+class TestRouteInventory(unittest.TestCase):
+    """I0113 / I0136: no inventory of the ~520 routes; order routes without any client or test. The inventory is generated from
+    create_app (tools/routes_inventory.py) and kept equal to it by this test; nothing is removed or blocked."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib
+
+        import routes_inventory
+        cls.td = _env.TempData()
+        cls.RI = importlib.reload(routes_inventory)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.td.close()
+
+    def test_inventory_matches_app(self):
+        self.assertTrue(self.RI.OUT.exists(), "brak docs/arch146/routes_inventory.json")
+        self.assertEqual(self.RI.check(), [], "odśwież: python tools/routes_inventory.py")
+
+    def test_order_routes_are_classified_execution(self):
+        inv = json.loads(self.RI.OUT.read_text(encoding="utf-8"))
+        cls = {(x["method"], x["path"]): x for x in inv["routes"]}
+        for k in ORDER_ROUTES:
+            self.assertEqual(cls[k]["class"], "EXECUTION", k)
+        self.assertLessEqual(set(inv["by_class"]), {"EXECUTION", "PUBLIC", "INTERNAL", "LEGACY_UI141"})
+        self.assertEqual(inv["total"], len(inv["routes"]))
+        self.assertEqual(sum(inv["by_class"].values()), inv["total"])
+        self.assertEqual(cls[("GET", "/api/v1/health")]["editions"], ["CLIENT", "OWNER"])
+        self.assertTrue(any(x["editions"] == ["OWNER"] for x in inv["routes"]))           # owner-only routes are marked
+        self.assertIn("POST /api/v1/execute", inv["execution_without_client"])
+
+    def test_classification_rules(self):
+        self.assertEqual(self.RI.classify(True, {"frontend": 3}), "EXECUTION")
+        self.assertEqual(self.RI.classify(False, {"frontend": 1}), "PUBLIC")
+        self.assertEqual(self.RI.classify(False, {"tests": 2, "archive_ui141": 1}), "LEGACY_UI141")
+        self.assertEqual(self.RI.classify(False, {"tests": 2}), "INTERNAL")
+        rx = self.RI._path_re("/api/v1/manual/intents/{iid}/execute")
+        self.assertTrue(rx.search("post(`/api/v1/manual/intents/${id}/execute`)"))
+        self.assertFalse(rx.search("'/api/v1/manual/intents/x/execute-more'"))
+
+
+class TestExecutionRoutesGuarded(unittest.TestCase):
+    """I0113 contract: every EXECUTION route needs the session cookie, the CSRF token and an allowed Origin - without them the handler
+    (and the order path behind it) is never reached. Positive control: with all three the mocked service IS called."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        from masterquo.api import app as A
+        self.td = _env.TempData()
+        self.rt = _mock_rt()
+        self.c = TestClient(A.create_app(self.rt, ROUTE_PORT), base_url=f"http://127.0.0.1:{ROUTE_PORT}")
+        self.origin = {"Origin": f"http://127.0.0.1:{ROUTE_PORT}"}
+
+    def tearDown(self):
+        self.c.close()
+        self.td.close()
+
+    def _order_calls(self):
+        rt = self.rt
+        return [m.call_count for m in (rt.gateway.execute, rt.manual.execute, rt.manual.manage, rt.manager.close_positions, rt.manager.adopt,
+                                       rt.sh.close_plan, rt.modes.set_auto, rt.modes.set_mode, rt.modes.set_primary_path)]
+
+    def test_no_session_no_csrf_or_foreign_origin_never_reaches_the_order_path(self):
+        for _m, path in ORDER_ROUTES:
+            url = path.replace("{iid}", "I1").replace("{pid}", "P1").replace("{ticket}", "1")
+            r = self.c.post(url, json={}, headers=self.origin)                              # no session cookie
+            self.assertEqual((r.status_code, r.json().get("error")), (403, "CSRF_OR_SESSION_INVALID"), url)
+        self.c.get("/")                                                                     # session cookie of the panel
+        csrf = self.c.get("/api/v1/session").json()["csrf"]
+        self.assertTrue(csrf)
+        for _m, path in ORDER_ROUTES:
+            url = path.replace("{iid}", "I1").replace("{pid}", "P1").replace("{ticket}", "1")
+            r = self.c.post(url, json={}, headers=self.origin)                              # session, no CSRF header
+            self.assertEqual(r.status_code, 403, url)
+            r = self.c.post(url, json={}, headers={"Origin": "http://127.0.0.1:9", "X-MQ-CSRF": csrf})   # other local app
+            self.assertEqual((r.status_code, r.json().get("error")), (403, "ORIGIN_NOT_ALLOWED"), url)
+        self.assertEqual(self._order_calls(), [0] * 9)
+        self.rt.gateway.execute.return_value = {"status": "BLOCKED"}
+        r = self.c.post("/api/v1/execute", json={"decision_id": "MQD-X"}, headers={**self.origin, "X-MQ-CSRF": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.rt.gateway.execute.assert_called_once_with("MQD-X", initiated_by="USER")
+
+
+class TestExecuteRouteSignalsPaper(unittest.TestCase):
+    """I0113 contract: POST /api/v1/execute through the route on the terminal simulator - SIGNALS blocks, PAPER fills on paper; in neither
+    mode does the route reach order_send."""
+
+    def setUp(self):
+        from masterquo.engine.lifecycle import LifecycleStore
+        from masterquo.execution.gateway import ExecutionGateway
+        from masterquo.execution.manager import PositionManager
+        from masterquo.execution.modes import ModeManager
+        from masterquo.execution.paper import PaperBroker
+        from test_risk_execution import LIMITS
+        self.td = _env.TempData()
+        cfg, db, bus, log, fake, worker, b = _env.core()
+        self.db, self.fake, self.worker, self.b = db, fake, worker, b
+        cfg.update({"execution": {"primary_path": {"XAUUSD": "ACTIVE"}}})
+        cfg.update({"risk": LIMITS, "costs": {"slippage_stress_points": 5}})
+        b.start()
+        self.assertTrue(_env.wait_for(lambda: b.state == "CONNECTED" and b.quote_status() and b.symbol_info, 40))
+        self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
+        self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True)
+
+        class Engine:
+            decision = None
+
+            def __init__(self, lc):
+                self.lifecycle = lc
+
+            def current_decision(self):
+                return self.decision
+
+            def mark_entered(self, setup_id, reason):
+                self.lifecycle.terminate(setup_id, "ENTERED", reason)
+
+        self.engine = Engine(LifecycleStore(db))
+        paper = PaperBroker(cfg, b, db, bus, log)
+        self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, self.engine, paper)
+        self.gw.manager = PositionManager(cfg, b, db, bus, log, self.modes, paper)
+        self.gw.manager.reconciled_epoch = b.session_epoch
+        from masterquo.api import app as A
+        rt = _mock_rt()
+        rt.gateway, rt.modes = self.gw, self.modes
+        app = A.create_app(rt, ROUTE_PORT)
+        self.route = next(r.endpoint for r in app.routes if getattr(r, "path", None) == "/api/v1/execute")
+        self.ExecReq = A.ExecReq
+
+    def tearDown(self):
+        self.b.stop()
+        self.worker.stop()
+        self.td.close()
+
+    def _decision(self, did):
+        from datetime import UTC, datetime, timedelta
+        e = self.b.quote_status()["bid"]
+        return {"decision_id": did, "execution_permission": "ALLOWED", "expires_at_utc": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+                "account_key": self.b.account_key, "session_epoch": self.b.session_epoch, "symbol": "XAUUSD-", "analysis_direction": "SHORT",
+                "reason_codes": [], "setup": {"setup_id": "MQS-" + did, "state": "CONFIRMED", "strategy_id": "XAU-S01"},
+                "risk": {"risk_gate": "PASS", "lots": 0.05, "entry": e, "stop_loss": round(e + 8, 2),
+                         "targets": [{"price": round(e - 6, 2), "weight": 0.5}, {"price": round(e - 12, 2), "weight": 0.5}], "modeled_loss": 41.0}}
+
+    def test_signals_and_paper_never_call_order_send_through_the_route(self):
+        calls = []
+        self.fake.order_send = lambda r: calls.append(r)
+        self.engine.decision = self._decision("MQD-S")
+        r = self.route(self.ExecReq(decision_id="MQD-S"))
+        self.assertEqual(r["status"], "BLOCKED")
+        self.assertIn("EXECUTION_MODE_SIGNALS", r["reason"])
+        self.modes.set_mode("PAPER", confirm="PAPER", account=self.b.account_status(), account_key=self.b.account_key, synthetic=True)
+        self.engine.decision = self._decision("MQD-P")
+        r = self.route(self.ExecReq(decision_id="MQD-P"))
+        self.assertEqual((r["status"], r.get("paper")), ("FILLED", True))
+        self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,7962 @@
+{
+ "schema": "pmw-routes-inventory-1",
+ "generated_by": "python tools/routes_inventory.py",
+ "note": "trasy z create_app (OWNER = nadzbiór; editions mówi, które są też w wersji klienta); wywołujący = statyczne wyszukiwanie szablonu ścieżki; nic nie jest usuwane ani blokowane (kontrakt publiczny, decyzja właściciela)",
+ "total": 522,
+ "by_class": {
+  "EXECUTION": 10,
+  "INTERNAL": 116,
+  "LEGACY_UI141": 195,
+  "PUBLIC": 201
+ },
+ "execution_without_client": [
+  "POST /api/v1/auto",
+  "POST /api/v1/execute",
+  "POST /api/v1/lab/tradepad/execute",
+  "POST /api/v1/manual/intents/{iid}/execute",
+  "POST /api/v1/manual/intents/{iid}/manage",
+  "POST /api/v1/positions/{ticket}/adopt",
+  "POST /api/v1/sh/plans/{pid}/close"
+ ],
+ "routes": [
+  {
+   "method": "GET",
+   "path": "/",
+   "handler": "backend/masterquo/api/app.py:index",
+   "line": 267,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/shutdown",
+   "handler": "backend/masterquo/api/app.py:shutdown",
+   "line": 4116,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "desktop": 3,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent",
+   "handler": "backend/masterquo/api/app.py:agent_status",
+   "line": 1691,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/analyze",
+   "handler": "backend/masterquo/api/app.py:agent_analyze",
+   "line": 1713,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/ask",
+   "handler": "backend/masterquo/api/app.py:agent_ask",
+   "line": 1705,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/memory",
+   "handler": "backend/masterquo/api/app.py:agent_memory",
+   "line": 1722,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/memory/{mid}",
+   "handler": "backend/masterquo/api/app.py:agent_memory_set",
+   "line": 1726,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/agent/models",
+   "handler": "backend/masterquo/api/app.py:agent_models",
+   "line": 1697,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/agent/test",
+   "handler": "backend/masterquo/api/app.py:agent_test",
+   "line": 1701,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analytics",
+   "handler": "backend/masterquo/api/app.py:analytics_get",
+   "line": 1028,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analytics/diagnostics",
+   "handler": "backend/masterquo/api/app.py:analytics_diag",
+   "line": 1042,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analytics/history",
+   "handler": "backend/masterquo/api/app.py:analytics_history",
+   "line": 1038,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analytics/tf/{tf}",
+   "handler": "backend/masterquo/api/app.py:analytics_tf",
+   "line": 1032,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/appearance/assets",
+   "handler": "backend/masterquo/api/app.py:appearance_assets",
+   "line": 3910,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/appearance/upload",
+   "handler": "backend/masterquo/api/app.py:appearance_upload",
+   "line": 3922,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/asge/ledger",
+   "handler": "backend/masterquo/api/wf32_routes.py:asge_ledger",
+   "line": 647,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/asge/run",
+   "handler": "backend/masterquo/api/wf32_routes.py:asge_run",
+   "line": 633,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/assets",
+   "handler": "backend/masterquo/api/app.py:assets_state",
+   "line": 1447,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/assets/active",
+   "handler": "backend/masterquo/api/app.py:assets_active",
+   "line": 1476,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/assets/confirm",
+   "handler": "backend/masterquo/api/app.py:assets_confirm",
+   "line": 1463,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/assets/{asset}/candidates",
+   "handler": "backend/masterquo/api/app.py:assets_candidates",
+   "line": 1453,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auto",
+   "handler": "backend/masterquo/api/app.py:set_auto",
+   "line": 3947,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets",
+   "handler": "backend/masterquo/api/app.py:baskets_list",
+   "line": 2882,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets/catalog",
+   "handler": "backend/masterquo/api/app.py:baskets_catalog",
+   "line": 2887,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/baskets/declared/{item_id}",
+   "handler": "backend/masterquo/api/app.py:baskets_undeclare",
+   "line": 2923,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets/declared/{profile}",
+   "handler": "backend/masterquo/api/app.py:baskets_declared",
+   "line": 2907,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/baskets/declared/{profile}",
+   "handler": "backend/masterquo/api/app.py:baskets_declare",
+   "line": 2911,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets/otc",
+   "handler": "backend/masterquo/api/app.py:baskets_otc",
+   "line": 2931,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/baskets/otc/meta",
+   "handler": "backend/masterquo/api/app.py:baskets_otc_meta",
+   "line": 2936,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/baskets/otc/payoff",
+   "handler": "backend/masterquo/api/app.py:baskets_otc_payoff",
+   "line": 2944,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/baskets/otc/ticks",
+   "handler": "backend/masterquo/api/app.py:baskets_otc_ticks",
+   "line": 2940,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets/settings",
+   "handler": "backend/masterquo/api/app.py:baskets_settings",
+   "line": 2892,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/baskets/settings",
+   "handler": "backend/masterquo/api/app.py:baskets_settings_put",
+   "line": 2896,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/baskets/signals",
+   "handler": "backend/masterquo/api/app.py:baskets_signals",
+   "line": 2903,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tools": 1,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/black76/forward",
+   "handler": "backend/masterquo/api/app.py:b76_forward",
+   "line": 1020,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/black76/iv",
+   "handler": "backend/masterquo/api/app.py:b76_iv",
+   "line": 1010,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/black76/price",
+   "handler": "backend/masterquo/api/app.py:b76_price",
+   "line": 1001,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bootstrap",
+   "handler": "backend/masterquo/api/wf32_routes.py:bootstrap_status",
+   "line": 446,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/bootstrap",
+   "handler": "backend/masterquo/api/wf32_routes.py:bootstrap_profile",
+   "line": 454,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bot-signals",
+   "handler": "backend/masterquo/api/app.py:bot_signals",
+   "line": 1566,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 7,
+    "tools": 1,
+    "archive_ui141": 8
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bot-signals/{signal_id}",
+   "handler": "backend/masterquo/api/app.py:bot_signal_get",
+   "line": 1572,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/candles",
+   "handler": "backend/masterquo/api/app.py:candles",
+   "line": 338,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 7,
+    "tests": 2,
+    "archive_ui141": 12
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/change-points",
+   "handler": "backend/masterquo/api/wf32_routes.py:change_points",
+   "line": 432,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/config",
+   "handler": "backend/masterquo/api/app.py:get_config",
+   "line": 1622,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tools": 1,
+    "backend": 2,
+    "tests": 10,
+    "archive_ui141": 10
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/config",
+   "handler": "backend/masterquo/api/app.py:put_config",
+   "line": 1629,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tools": 1,
+    "backend": 2,
+    "tests": 10,
+    "archive_ui141": 10
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/context-tf",
+   "handler": "backend/masterquo/api/app.py:context_tf_view",
+   "line": 1561,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/decision",
+   "handler": "backend/masterquo/api/app.py:decision",
+   "line": 1595,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/decision/records/{record_id}",
+   "handler": "backend/masterquo/api/app.py:decision_record",
+   "line": 2667,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/decision/status",
+   "handler": "backend/masterquo/api/app.py:decision_status",
+   "line": 2659,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/desktop",
+   "handler": "backend/masterquo/api/app.py:desktop_get",
+   "line": 4090,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/desktop/display",
+   "handler": "backend/masterquo/api/wf32_routes.py:desktop_display",
+   "line": 464,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/desktop/prefs",
+   "handler": "backend/masterquo/api/app.py:desktop_prefs",
+   "line": 4094,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 5,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/desktop/restart-engine",
+   "handler": "backend/masterquo/api/app.py:desktop_restart",
+   "line": 4106,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/diagnostics",
+   "handler": "backend/masterquo/api/app.py:diagnostics",
+   "line": 3986,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/eval/assessments",
+   "handler": "backend/masterquo/api/app.py:eval_assessments",
+   "line": 3103,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/eval/exposure",
+   "handler": "backend/masterquo/api/app.py:eval_exposure",
+   "line": 3114,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/eval/report",
+   "handler": "backend/masterquo/api/app.py:eval_report",
+   "line": 3110,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/eval/status",
+   "handler": "backend/masterquo/api/app.py:eval_status",
+   "line": 3099,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/execute",
+   "handler": "backend/masterquo/api/app.py:execute",
+   "line": 3960,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/execution/lock",
+   "handler": "backend/masterquo/api/app.py:exec_lock",
+   "line": 1494,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/execution/lock",
+   "handler": "backend/masterquo/api/app.py:exec_lock_set",
+   "line": 1499,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/export/cancel",
+   "handler": "backend/masterquo/api/app.py:export_cancel",
+   "line": 3405,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/export/datasets",
+   "handler": "backend/masterquo/api/app.py:export_datasets",
+   "line": 3410,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/export/readiness",
+   "handler": "backend/masterquo/api/app.py:export_readiness",
+   "line": 3417,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/export/start",
+   "handler": "backend/masterquo/api/app.py:export_start",
+   "line": 3392,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/export/status",
+   "handler": "backend/masterquo/api/app.py:export_status",
+   "line": 3400,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/exports",
+   "handler": "backend/masterquo/api/export_routes.py:exports_index",
+   "line": 31,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/exports/trader-life-game/import",
+   "handler": "backend/masterquo/api/export_routes.py:tlg_import",
+   "line": 70,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/exports/{name}",
+   "handler": "backend/masterquo/api/export_routes.py:export_run",
+   "line": 52,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 7
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/exports/{name}/{export_id}/manifest",
+   "handler": "backend/masterquo/api/export_routes.py:export_manifest",
+   "line": 39,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/families",
+   "handler": "backend/masterquo/api/app.py:families_catalog",
+   "line": 2674,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/families/predictions",
+   "handler": "backend/masterquo/api/app.py:families_predictions",
+   "line": 2712,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/train-all",
+   "handler": "backend/masterquo/api/app.py:families_train_all",
+   "line": 2689,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/{fid}/activate",
+   "handler": "backend/masterquo/api/app.py:families_activate",
+   "line": 2697,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/{fid}/cancel",
+   "handler": "backend/masterquo/api/app.py:families_cancel",
+   "line": 2693,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/{fid}/rollback",
+   "handler": "backend/masterquo/api/app.py:families_rollback",
+   "line": 2704,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/families/{fid}/runs",
+   "handler": "backend/masterquo/api/app.py:families_runs",
+   "line": 2681,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/{fid}/train",
+   "handler": "backend/masterquo/api/app.py:families_train",
+   "line": 2685,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/families/{fid}/use",
+   "handler": "backend/masterquo/api/app.py:families_use",
+   "line": 2708,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context",
+   "handler": "backend/masterquo/api/app.py:fc_summary",
+   "line": 845,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/channels",
+   "handler": "backend/masterquo/api/app.py:fc_channels",
+   "line": 855,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/markov",
+   "handler": "backend/masterquo/api/app.py:fc_markov",
+   "line": 861,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/models",
+   "handler": "backend/masterquo/api/app.py:fc_models",
+   "line": 874,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/native",
+   "handler": "backend/masterquo/api/app.py:fc_native",
+   "line": 869,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/series",
+   "handler": "backend/masterquo/api/app.py:fc_series",
+   "line": 851,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flow-context/stopdistance",
+   "handler": "backend/masterquo/api/app.py:fc_stop",
+   "line": 865,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/forecast",
+   "handler": "backend/masterquo/api/app.py:forecast_get",
+   "line": 364,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/forecast/long-horizon",
+   "handler": "backend/masterquo/api/wf32_routes.py:long_horizon",
+   "line": 417,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 3,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/forecast/reload",
+   "handler": "backend/masterquo/api/app.py:forecast_reload",
+   "line": 1404,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/forecast/shadow",
+   "handler": "backend/masterquo/api/app.py:forecast_shadow",
+   "line": 1400,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/health",
+   "handler": "backend/masterquo/api/app.py:health",
+   "line": 294,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "desktop": 5,
+    "tools": 5,
+    "backend": 4,
+    "tests": 17,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicator-context",
+   "handler": "backend/masterquo/api/app.py:indicator_context_status",
+   "line": 447,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicator-context/activate",
+   "handler": "backend/masterquo/api/app.py:indicator_context_activate",
+   "line": 532,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicator-context/chart",
+   "handler": "backend/masterquo/api/app.py:indicator_context_chart",
+   "line": 459,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicator-context/inventory",
+   "handler": "backend/masterquo/api/app.py:indicator_context_inventory",
+   "line": 481,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/indicator-context/mapping",
+   "handler": "backend/masterquo/api/app.py:indicator_context_mapping",
+   "line": 488,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicator-context/rollback",
+   "handler": "backend/masterquo/api/app.py:indicator_context_rollback",
+   "line": 541,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicator-context/train",
+   "handler": "backend/masterquo/api/app.py:indicator_context_train",
+   "line": 511,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/anchors",
+   "handler": "backend/masterquo/api/app.py:indicators_anchors",
+   "line": 2523,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicators/anchors",
+   "handler": "backend/masterquo/api/app.py:indicators_anchor_add",
+   "line": 2527,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/indicators/anchors/{anchor_id}",
+   "handler": "backend/masterquo/api/app.py:indicators_anchor_del",
+   "line": 2541,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicators/calculate",
+   "handler": "backend/masterquo/api/wf32_routes.py:ind_calculate",
+   "line": 196,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/catalog",
+   "handler": "backend/masterquo/api/wf32_routes.py:ind_catalog",
+   "line": 192,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/chart",
+   "handler": "backend/masterquo/api/app.py:indicators_chart",
+   "line": 2514,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/diagnostics",
+   "handler": "backend/masterquo/api/wf32_routes.py:ind_diag",
+   "line": 222,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/dxy",
+   "handler": "backend/masterquo/api/app.py:indicators_dxy",
+   "line": 2518,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/manifest",
+   "handler": "backend/masterquo/api/app.py:indicators_manifest",
+   "line": 2547,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/indicators/refresh",
+   "handler": "backend/masterquo/api/app.py:indicators_refresh",
+   "line": 2510,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/snapshot",
+   "handler": "backend/masterquo/api/app.py:indicators_snapshot",
+   "line": 2503,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/indicators/status",
+   "handler": "backend/masterquo/api/app.py:indicators_status",
+   "line": 2499,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kill",
+   "handler": "backend/masterquo/api/app.py:kill",
+   "line": 3954,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/kronos",
+   "handler": "backend/masterquo/api/app.py:kronos_status",
+   "line": 2219,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 4,
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/enable",
+   "handler": "backend/masterquo/api/app.py:kronos_enable",
+   "line": 2247,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/kronos/forecast",
+   "handler": "backend/masterquo/api/app.py:kronos_forecast",
+   "line": 2228,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "archive_ui141": 5
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/kronos/history",
+   "handler": "backend/masterquo/api/app.py:kronos_history",
+   "line": 2232,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/install",
+   "handler": "backend/masterquo/api/app.py:kronos_install",
+   "line": 2254,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/kronos/job/{name}",
+   "handler": "backend/masterquo/api/app.py:kronos_job",
+   "line": 2271,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/refresh",
+   "handler": "backend/masterquo/api/app.py:kronos_refresh",
+   "line": 2277,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/kronos/settings",
+   "handler": "backend/masterquo/api/app.py:kronos_settings_put",
+   "line": 2236,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/strategy-use",
+   "handler": "backend/masterquo/api/app.py:kronos_strategy_use",
+   "line": 2302,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/validate",
+   "handler": "backend/masterquo/api/app.py:kronos_validate",
+   "line": 2284,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/kronos/validation",
+   "handler": "backend/masterquo/api/app.py:kronos_validation",
+   "line": 2294,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/kronos/verify",
+   "handler": "backend/masterquo/api/app.py:kronos_verify",
+   "line": 2264,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab",
+   "handler": "backend/masterquo/api/app.py:lab_state",
+   "line": 391,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 3,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/buffers/mappings",
+   "handler": "backend/masterquo/api/app.py:buf_mappings",
+   "line": 940,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/buffers/mappings",
+   "handler": "backend/masterquo/api/app.py:buf_save",
+   "line": 950,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/buffers/mappings/validate",
+   "handler": "backend/masterquo/api/app.py:buf_validate",
+   "line": 945,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/buffers/mappings/{mid}/rollback",
+   "handler": "backend/masterquo/api/app.py:buf_rollback",
+   "line": 955,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/buffers/reports",
+   "handler": "backend/masterquo/api/app.py:buf_reports",
+   "line": 910,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/buffers/reports/import",
+   "handler": "backend/masterquo/api/app.py:buf_import",
+   "line": 923,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/buffers/reports/{rid}",
+   "handler": "backend/masterquo/api/app.py:buf_report",
+   "line": 915,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/buffers/source",
+   "handler": "backend/masterquo/api/app.py:buf_source",
+   "line": 963,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/context",
+   "handler": "backend/masterquo/api/app.py:ctx_summary",
+   "line": 892,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/context/calibrate",
+   "handler": "backend/masterquo/api/app.py:ctx_calibrate",
+   "line": 967,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/fractal-regime",
+   "handler": "backend/masterquo/api/app.py:ctx_fd",
+   "line": 902,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/jobs",
+   "handler": "backend/masterquo/api/app.py:lab_jobs",
+   "line": 438,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/jobs/{jid}/cancel",
+   "handler": "backend/masterquo/api/app.py:lab_cancel",
+   "line": 442,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/memory",
+   "handler": "backend/masterquo/api/app.py:lab_memory",
+   "line": 400,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/models",
+   "handler": "backend/masterquo/api/app.py:lab_models",
+   "line": 550,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/neural",
+   "handler": "backend/masterquo/api/app.py:nss_state",
+   "line": 3661,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/cancel",
+   "handler": "backend/masterquo/api/app.py:nss_cancel",
+   "line": 3707,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/doctor",
+   "handler": "backend/masterquo/api/app.py:nss_doctor",
+   "line": 3689,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/neural/history",
+   "handler": "backend/masterquo/api/app.py:nss_history",
+   "line": 3665,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/neural/jobs",
+   "handler": "backend/masterquo/api/app.py:nss_jobs_list",
+   "line": 3681,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/prepare",
+   "handler": "backend/masterquo/api/app.py:nss_prepare",
+   "line": 3685,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/neural/report",
+   "handler": "backend/masterquo/api/app.py:nss_report",
+   "line": 3669,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/rollback",
+   "handler": "backend/masterquo/api/app.py:nss_rollback",
+   "line": 3724,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/select",
+   "handler": "backend/masterquo/api/app.py:nss_select",
+   "line": 3716,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/neural/train",
+   "handler": "backend/masterquo/api/app.py:nss_train",
+   "line": 3703,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/repaint",
+   "handler": "backend/masterquo/api/app.py:lab_repaint",
+   "line": 614,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/smc",
+   "handler": "backend/masterquo/api/app.py:ctx_smc",
+   "line": 906,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/studies/{jid}",
+   "handler": "backend/masterquo/api/app.py:lab_study",
+   "line": 555,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/traceability",
+   "handler": "backend/masterquo/api/app.py:lab_trace",
+   "line": 395,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/tradepad",
+   "handler": "backend/masterquo/api/app.py:lab_tradepad",
+   "line": 619,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 5,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/tradepad/execute",
+   "handler": "backend/masterquo/api/app.py:lab_tradepad_execute",
+   "line": 645,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/train",
+   "handler": "backend/masterquo/api/app.py:lab_train",
+   "line": 413,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/trials",
+   "handler": "backend/masterquo/api/app.py:lab_trials",
+   "line": 564,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/vamd",
+   "handler": "backend/masterquo/api/app.py:ctx_vamd",
+   "line": 898,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/zones",
+   "handler": "backend/masterquo/api/app.py:lab_zones",
+   "line": 609,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lab/zones",
+   "handler": "backend/masterquo/api/app.py:lab_zone_add",
+   "line": 571,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lab/zones/diagnostics",
+   "handler": "backend/masterquo/api/app.py:lab_zone_diag",
+   "line": 604,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/lab/zones/{zone_id}",
+   "handler": "backend/masterquo/api/app.py:lab_zone_delete",
+   "line": 595,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/lab/zones/{zone_id}",
+   "handler": "backend/masterquo/api/app.py:lab_zone_patch",
+   "line": 580,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/license/activate",
+   "handler": "backend/masterquo/api/app.py:license_activate",
+   "line": 3331,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/license/require",
+   "handler": "backend/masterquo/api/app.py:license_require",
+   "line": 3338,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/license/status",
+   "handler": "backend/masterquo/api/app.py:license_status",
+   "line": 3327,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/liquidity/context",
+   "handler": "backend/masterquo/api/app.py:liq_context",
+   "line": 3563,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/liquidity/heatmap",
+   "handler": "backend/masterquo/api/app.py:liq_heatmap",
+   "line": 3559,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/liquidity/key",
+   "handler": "backend/masterquo/api/app.py:liq_key",
+   "line": 3592,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/liquidity/poll",
+   "handler": "backend/masterquo/api/app.py:liq_poll",
+   "line": 3600,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/liquidity/sessions",
+   "handler": "backend/masterquo/api/app.py:liq_sessions",
+   "line": 3545,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/liquidity/source",
+   "handler": "backend/masterquo/api/app.py:liq_source",
+   "line": 3578,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/logs",
+   "handler": "backend/masterquo/api/app.py:logs",
+   "line": 1618,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/manual/intents",
+   "handler": "backend/masterquo/api/app.py:manual_intents",
+   "line": 670,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/manual/intents",
+   "handler": "backend/masterquo/api/app.py:manual_intent",
+   "line": 662,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/manual/intents/{iid}",
+   "handler": "backend/masterquo/api/app.py:manual_intent_get",
+   "line": 674,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/manual/intents/{iid}/execute",
+   "handler": "backend/masterquo/api/app.py:manual_execute",
+   "line": 689,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/manual/intents/{iid}/manage",
+   "handler": "backend/masterquo/api/app.py:manual_manage",
+   "line": 698,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/manual/plan",
+   "handler": "backend/masterquo/api/app.py:manual_plan",
+   "line": 654,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/manual/reconcile",
+   "handler": "backend/masterquo/api/app.py:manual_reconcile",
+   "line": 710,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-trap",
+   "handler": "backend/masterquo/api/wf32_routes.py:market_trap",
+   "line": 619,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones",
+   "handler": "backend/masterquo/api/app.py:market_zones",
+   "line": 1913,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 8,
+    "tools": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones/as-of",
+   "handler": "backend/masterquo/api/app.py:market_zones_as_of",
+   "line": 1969,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones/bars",
+   "handler": "backend/masterquo/api/app.py:market_zones_bars",
+   "line": 1956,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/market-zones/compute",
+   "handler": "backend/masterquo/api/app.py:market_zones_compute",
+   "line": 1920,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones/events",
+   "handler": "backend/masterquo/api/app.py:market_zones_events",
+   "line": 1952,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones/job/{job_id}",
+   "handler": "backend/masterquo/api/app.py:market_zones_job",
+   "line": 1938,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/market-zones/live",
+   "handler": "backend/masterquo/api/app.py:market_zones_live",
+   "line": 1927,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/market-zones/stop",
+   "handler": "backend/masterquo/api/app.py:market_zones_stop",
+   "line": 1934,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/market-zones/zone/{zone_id}",
+   "handler": "backend/masterquo/api/app.py:market_zones_zone",
+   "line": 1945,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets",
+   "handler": "backend/masterquo/api/app.py:markets",
+   "line": 1503,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/chart",
+   "handler": "backend/masterquo/api/app.py:markets_chart",
+   "line": 1532,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/detail",
+   "handler": "backend/masterquo/api/app.py:markets_detail",
+   "line": 1521,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/markets/scan",
+   "handler": "backend/masterquo/api/app.py:markets_scan",
+   "line": 1507,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/symbols",
+   "handler": "backend/masterquo/api/app.py:markets_symbols",
+   "line": 1514,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/v2",
+   "handler": "backend/masterquo/api/wf32_routes.py:markets_v2",
+   "line": 289,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/v2/fomo-universe",
+   "handler": "backend/masterquo/api/wf32_routes.py:fomo_universe",
+   "line": 294,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/v2/{market}/candles",
+   "handler": "backend/masterquo/api/wf32_routes.py:market_candles",
+   "line": 309,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/v2/{market}/context",
+   "handler": "backend/masterquo/api/wf32_routes.py:market_context",
+   "line": 313,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/markets/v2/{market}/instruments",
+   "handler": "backend/masterquo/api/wf32_routes.py:market_instruments",
+   "line": 305,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/backfill",
+   "handler": "backend/masterquo/api/app.py:ml_backfill",
+   "line": 3829,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/cancel",
+   "handler": "backend/masterquo/api/app.py:ml_cancel",
+   "line": 3833,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/collect",
+   "handler": "backend/masterquo/api/app.py:ml_collect",
+   "line": 1842,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/explain",
+   "handler": "backend/masterquo/api/app.py:ml_explain",
+   "line": 3856,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/mode",
+   "handler": "backend/masterquo/api/app.py:ml_mode",
+   "line": 1835,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/models",
+   "handler": "backend/masterquo/api/app.py:ml_models",
+   "line": 3848,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/pause",
+   "handler": "backend/masterquo/api/app.py:ml_pause",
+   "line": 1846,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/predict",
+   "handler": "backend/masterquo/api/app.py:ml_predict",
+   "line": 3860,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/reload",
+   "handler": "backend/masterquo/api/app.py:ml_reload",
+   "line": 3822,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/report",
+   "handler": "backend/masterquo/api/app.py:ml_report",
+   "line": 3852,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/resume",
+   "handler": "backend/masterquo/api/app.py:ml_resume",
+   "line": 3837,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/rollback",
+   "handler": "backend/masterquo/api/app.py:ml_rollback",
+   "line": 3841,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/scalp",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_status",
+   "line": 3733,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/scalp/explain",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_explain",
+   "line": 3792,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/scalp/predictions",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_predictions",
+   "line": 3784,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/scalp/prepare",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_prepare",
+   "line": 3766,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/scalp/rollback",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_rollback",
+   "line": 3813,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/scalp/select",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_select",
+   "line": 3804,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/scalp/train",
+   "handler": "backend/masterquo/api/app.py:ml_scalp_train",
+   "line": 3773,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ml/status",
+   "handler": "backend/masterquo/api/app.py:ml_status",
+   "line": 1831,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ml/train",
+   "handler": "backend/masterquo/api/app.py:ml_train",
+   "line": 1850,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mm/job",
+   "handler": "backend/masterquo/api/app.py:mm_job",
+   "line": 3122,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mm/ledger",
+   "handler": "backend/masterquo/api/app.py:mm_ledger",
+   "line": 3137,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mm/live",
+   "handler": "backend/masterquo/api/app.py:mm_live",
+   "line": 3118,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 3,
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mm/rollback",
+   "handler": "backend/masterquo/api/app.py:mm_rollback",
+   "line": 3151,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mm/status",
+   "handler": "backend/masterquo/api/app.py:mm_status",
+   "line": 1884,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mode",
+   "handler": "backend/masterquo/api/app.py:set_mode",
+   "line": 1735,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 8,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mode/primary-path",
+   "handler": "backend/masterquo/api/app.py:set_primary_path",
+   "line": 1749,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/association/snapshot",
+   "handler": "backend/masterquo/api/wf32_routes.py:ar_snapshot",
+   "line": 365,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/bat/shadow",
+   "handler": "backend/masterquo/api/wf32_routes.py:bat_shadow",
+   "line": 400,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/catalog",
+   "handler": "backend/masterquo/api/app.py:models_catalog",
+   "line": 2190,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 4,
+    "tests": 1,
+    "archive_ui141": 6
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/dt-ranker/rank",
+   "handler": "backend/masterquo/api/wf32_routes.py:dtr_rank",
+   "line": 387,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/dt-ranker/status",
+   "handler": "backend/masterquo/api/wf32_routes.py:dtr_status",
+   "line": 382,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/evidence",
+   "handler": "backend/masterquo/api/app.py:models_evidence",
+   "line": 2201,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation",
+   "handler": "backend/masterquo/api/app.py:tsfm_status",
+   "line": 2355,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/compare",
+   "handler": "backend/masterquo/api/app.py:tsfm_compare",
+   "line": 2370,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/forecast",
+   "handler": "backend/masterquo/api/app.py:tsfm_forecast",
+   "line": 2366,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/granite",
+   "handler": "backend/masterquo/api/app.py:granite_get",
+   "line": 2426,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/granite/activate",
+   "handler": "backend/masterquo/api/app.py:granite_activate",
+   "line": 2454,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/granite/cancel",
+   "handler": "backend/masterquo/api/app.py:granite_cancel",
+   "line": 2446,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/granite/rollback",
+   "handler": "backend/masterquo/api/app.py:granite_rollback",
+   "line": 2465,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/granite/train",
+   "handler": "backend/masterquo/api/app.py:granite_train",
+   "line": 2433,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/history",
+   "handler": "backend/masterquo/api/app.py:tsfm_history",
+   "line": 2374,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/install",
+   "handler": "backend/masterquo/api/app.py:tsfm_install",
+   "line": 2394,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/job/{name}",
+   "handler": "backend/masterquo/api/app.py:tsfm_job",
+   "line": 2470,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/refresh",
+   "handler": "backend/masterquo/api/app.py:tsfm_refresh",
+   "line": 2408,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/models/foundation/settings",
+   "handler": "backend/masterquo/api/app.py:tsfm_settings_put",
+   "line": 2379,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/use",
+   "handler": "backend/masterquo/api/app.py:tsfm_use",
+   "line": 2484,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/validate",
+   "handler": "backend/masterquo/api/app.py:tsfm_validate",
+   "line": 2415,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/foundation/validation",
+   "handler": "backend/masterquo/api/app.py:tsfm_validation",
+   "line": 2476,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/foundation/verify",
+   "handler": "backend/masterquo/api/app.py:tsfm_verify",
+   "line": 2401,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/models/predictions",
+   "handler": "backend/masterquo/api/app.py:models_predictions",
+   "line": 2195,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 6,
+    "tools": 1,
+    "archive_ui141": 9
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/models/pt/evaluate",
+   "handler": "backend/masterquo/api/wf32_routes.py:pt_evaluate",
+   "line": 351,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 4,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/montecarlo/run",
+   "handler": "backend/masterquo/api/app.py:montecarlo_run",
+   "line": 3458,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/montecarlo/scenarios",
+   "handler": "backend/masterquo/api/app.py:montecarlo_scenarios",
+   "line": 3453,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/montecarlo/status",
+   "handler": "backend/masterquo/api/app.py:montecarlo_status",
+   "line": 3426,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/montecarlo/validations/{run_id}/report",
+   "handler": "backend/masterquo/api/app.py:montecarlo_validation_report",
+   "line": 3430,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mt5/reconnect",
+   "handler": "backend/masterquo/api/app.py:reconnect",
+   "line": 3976,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/news",
+   "handler": "backend/masterquo/api/app.py:news",
+   "line": 1614,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 6
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/news/refresh",
+   "handler": "backend/masterquo/api/app.py:news_refresh",
+   "line": 3981,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/orderflow/{market}/workspace",
+   "handler": "backend/masterquo/api/wf32_routes.py:orderflow_workspace",
+   "line": 317,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/owner/license/check",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_check",
+   "line": 52,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/owner/license/generate",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_generate",
+   "line": 44,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/owner/license/hwid",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_hwid",
+   "line": 40,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/owner/license/keys",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_create_keys",
+   "line": 26,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/owner/license/keys/export",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_export_key",
+   "line": 30,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/owner/license/keys/import",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_import_key",
+   "line": 34,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/owner/license/state",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_state",
+   "line": 22,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/owner/licenses",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_licenses",
+   "line": 59,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/owner/licenses/{rid}",
+   "handler": "backend/masterquo/api/owner_routes.py:owner_license_delete",
+   "line": 63,
+   "class": "PUBLIC",
+   "editions": [
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/export",
+   "handler": "backend/masterquo/api/app.py:pat_export",
+   "line": 1138,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/import",
+   "handler": "backend/masterquo/api/app.py:pat_import",
+   "line": 1142,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/jobs/{job_id}",
+   "handler": "backend/masterquo/api/app.py:pat_job",
+   "line": 1089,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/jobs/{job_id}/cancel",
+   "handler": "backend/masterquo/api/app.py:pat_cancel",
+   "line": 1096,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/jobs/{job_id}/export",
+   "handler": "backend/masterquo/api/app.py:pat_export_job",
+   "line": 1107,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/jobs/{job_id}/results",
+   "handler": "backend/masterquo/api/app.py:pat_job_results",
+   "line": 1112,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/jobs/{job_id}/resume",
+   "handler": "backend/masterquo/api/app.py:pat_resume",
+   "line": 1100,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/live",
+   "handler": "backend/masterquo/api/app.py:pat_live",
+   "line": 1146,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/reports/{report_id}",
+   "handler": "backend/masterquo/api/app.py:pat_report",
+   "line": 1131,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/results/{result_id}",
+   "handler": "backend/masterquo/api/app.py:pat_result",
+   "line": 1116,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/samples",
+   "handler": "backend/masterquo/api/app.py:pat_list",
+   "line": 1046,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/samples",
+   "handler": "backend/masterquo/api/app.py:pat_add",
+   "line": 1050,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/patterns/samples/{sid}",
+   "handler": "backend/masterquo/api/app.py:pat_del",
+   "line": 1071,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/samples/{sid}",
+   "handler": "backend/masterquo/api/app.py:pat_get",
+   "line": 1064,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/patterns/samples/{sid}/result",
+   "handler": "backend/masterquo/api/app.py:pat_sample_result",
+   "line": 1124,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/samples/{sid}/validate",
+   "handler": "backend/masterquo/api/app.py:pat_validate_one",
+   "line": 1075,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/patterns/validate",
+   "handler": "backend/masterquo/api/app.py:pat_validate",
+   "line": 1082,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pepe-training",
+   "handler": "backend/masterquo/api/app.py:pepe_training_status",
+   "line": 3346,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pepe-training/cancel",
+   "handler": "backend/masterquo/api/app.py:pepe_training_cancel",
+   "line": 3367,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pepe-training/log",
+   "handler": "backend/masterquo/api/app.py:pepe_training_log",
+   "line": 3375,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pepe-training/remove",
+   "handler": "backend/masterquo/api/app.py:pepe_training_remove",
+   "line": 3371,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/pepe-training/settings",
+   "handler": "backend/masterquo/api/app.py:pepe_training_settings",
+   "line": 3360,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pepe-training/train",
+   "handler": "backend/masterquo/api/app.py:pepe_training_train",
+   "line": 3350,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/plans/chart",
+   "handler": "backend/masterquo/api/app.py:plans_chart",
+   "line": 1308,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tools": 1,
+    "tests": 3,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playbook",
+   "handler": "backend/masterquo/api/app.py:playbook",
+   "line": 3895,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/positions/close",
+   "handler": "backend/masterquo/api/app.py:close_positions",
+   "line": 3964,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/positions/{ticket}/adopt",
+   "handler": "backend/masterquo/api/app.py:adopt",
+   "line": 3970,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/prefs",
+   "handler": "backend/masterquo/api/app.py:prefs_get",
+   "line": 1786,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/prefs/leverage",
+   "handler": "backend/masterquo/api/app.py:prefs_leverage",
+   "line": 1804,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/prefs/setup-view",
+   "handler": "backend/masterquo/api/app.py:prefs_setup_view",
+   "line": 1791,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/presets/strategy",
+   "handler": "backend/masterquo/api/app.py:presets_list",
+   "line": 4046,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3,
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/presets/strategy",
+   "handler": "backend/masterquo/api/app.py:presets_save",
+   "line": 4054,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 3,
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/presets/strategy/load",
+   "handler": "backend/masterquo/api/app.py:presets_load",
+   "line": 4063,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/presets/strategy/reset",
+   "handler": "backend/masterquo/api/app.py:presets_reset",
+   "line": 4072,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/assessment",
+   "handler": "backend/masterquo/api/app.py:quant_assessments",
+   "line": 2732,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "backend": 1,
+    "tests": 3,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/assessment",
+   "handler": "backend/masterquo/api/app.py:quant_assess",
+   "line": 2738,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "backend": 1,
+    "tests": 3,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/quant/estimator",
+   "handler": "backend/masterquo/api/app.py:quant_estimator",
+   "line": 2779,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/inventory",
+   "handler": "backend/masterquo/api/app.py:quant_inventory",
+   "line": 2966,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/jobs",
+   "handler": "backend/masterquo/api/app.py:quant_jobs",
+   "line": 2751,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/jobs",
+   "handler": "backend/masterquo/api/app.py:quant_train",
+   "line": 2756,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/mode",
+   "handler": "backend/masterquo/api/app.py:quant_mode",
+   "line": 2767,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/models/activate",
+   "handler": "backend/masterquo/api/app.py:quant_activate",
+   "line": 2948,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/models/rollback",
+   "handler": "backend/masterquo/api/app.py:quant_rollback",
+   "line": 2960,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/predictions",
+   "handler": "backend/masterquo/api/app.py:quant_predictions",
+   "line": 2728,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/status",
+   "handler": "backend/masterquo/api/app.py:quant_status",
+   "line": 2723,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "backend": 4,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/quant/tabicl",
+   "handler": "backend/masterquo/api/app.py:quant_tabicl",
+   "line": 2775,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/tabicl/install",
+   "handler": "backend/masterquo/api/app.py:quant_tabicl_install",
+   "line": 2797,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/quant/tabicl/reconstruct",
+   "handler": "backend/masterquo/api/app.py:quant_tabicl_reconstruct",
+   "line": 2787,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/relationships/candidates",
+   "handler": "backend/masterquo/api/wf32_routes.py:rel_candidates",
+   "line": 611,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/relationships/pair",
+   "handler": "backend/masterquo/api/wf32_routes.py:rel_pair",
+   "line": 615,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/research-modules",
+   "handler": "backend/masterquo/api/app.py:research_status",
+   "line": 2812,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/research-modules/feature-graph",
+   "handler": "backend/masterquo/api/app.py:research_graph",
+   "line": 2833,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/research-modules/features",
+   "handler": "backend/masterquo/api/app.py:research_features",
+   "line": 2827,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/research-modules/optimizer/jobs",
+   "handler": "backend/masterquo/api/app.py:research_opt_jobs",
+   "line": 2837,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/research-modules/optimizer/run",
+   "handler": "backend/masterquo/api/app.py:research_opt_run",
+   "line": 2841,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/research-modules/parameters/rollback",
+   "handler": "backend/masterquo/api/app.py:research_rollback",
+   "line": 2850,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/research-modules/sdformerflow/cancel",
+   "handler": "backend/masterquo/api/app.py:research_sdf_cancel",
+   "line": 2870,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/research-modules/sdformerflow/train",
+   "handler": "backend/masterquo/api/app.py:research_sdf_train",
+   "line": 2854,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/research-modules/settings",
+   "handler": "backend/masterquo/api/app.py:research_settings",
+   "line": 2816,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/research-modules/settings",
+   "handler": "backend/masterquo/api/app.py:research_settings_put",
+   "line": 2820,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/resources",
+   "handler": "backend/masterquo/api/app.py:resources_get",
+   "line": 2328,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/resources/profile",
+   "handler": "backend/masterquo/api/app.py:resources_profile",
+   "line": 2335,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp",
+   "handler": "backend/masterquo/api/app.py:scalp_get",
+   "line": 1152,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp/dashboard",
+   "handler": "backend/masterquo/api/app.py:mtf_dashboard",
+   "line": 3611,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp/dashboard/chart",
+   "handler": "backend/masterquo/api/app.py:mtf_chart",
+   "line": 3627,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp/dashboard/snapshots",
+   "handler": "backend/masterquo/api/app.py:mtf_snapshots",
+   "line": 3634,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp/dashboard/snapshots/{sid}",
+   "handler": "backend/masterquo/api/app.py:mtf_snapshot",
+   "line": 3639,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/scalp/shadow",
+   "handler": "backend/masterquo/api/app.py:scalp_shadow",
+   "line": 1396,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/secrets",
+   "handler": "backend/masterquo/api/app.py:set_secret",
+   "line": 1679,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/secrets/anthropic",
+   "handler": "backend/masterquo/api/app.py:set_key",
+   "line": 1673,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/session",
+   "handler": "backend/masterquo/api/app.py:session",
+   "line": 300,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 2,
+    "backend": 1,
+    "tests": 9
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/session-context",
+   "handler": "backend/masterquo/api/wf32_routes.py:session_ctx",
+   "line": 240,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/session-context/boxes",
+   "handler": "backend/masterquo/api/wf32_routes.py:session_boxes",
+   "line": 250,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/setups",
+   "handler": "backend/masterquo/api/app.py:setups_list",
+   "line": 1815,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3,
+    "tools": 1,
+    "archive_ui141": 9
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/setups/{setup_id}/details",
+   "handler": "backend/masterquo/api/app.py:setup_detail",
+   "line": 1820,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh",
+   "handler": "backend/masterquo/api/app.py:sh_get",
+   "line": 1188,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 6,
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/chart",
+   "handler": "backend/masterquo/api/app.py:sh_chart",
+   "line": 1388,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/config",
+   "handler": "backend/masterquo/api/app.py:sh_config_get",
+   "line": 1364,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 4,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sh/config",
+   "handler": "backend/masterquo/api/app.py:sh_config_set",
+   "line": 1369,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 4,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sh/config/rollback",
+   "handler": "backend/masterquo/api/app.py:sh_config_rollback",
+   "line": 1380,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/pack/evaluations",
+   "handler": "backend/masterquo/api/app.py:sh_pack_evaluations",
+   "line": 1285,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/pack/stats",
+   "handler": "backend/masterquo/api/app.py:sh_pack_stats",
+   "line": 1257,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/plans",
+   "handler": "backend/masterquo/api/app.py:sh_plans",
+   "line": 1325,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/plans/{pid}",
+   "handler": "backend/masterquo/api/app.py:sh_plan",
+   "line": 1333,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sh/plans/{pid}/close",
+   "handler": "backend/masterquo/api/app.py:sh_plan_close",
+   "line": 1342,
+   "class": "EXECUTION",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/scenario",
+   "handler": "backend/masterquo/api/app.py:sh_scenario",
+   "line": 1198,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 5,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/signals",
+   "handler": "backend/masterquo/api/app.py:sh_signals",
+   "line": 1225,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 5,
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/signals/{sid}",
+   "handler": "backend/masterquo/api/app.py:sh_signal",
+   "line": 1301,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/strategies",
+   "handler": "backend/masterquo/api/app.py:sh_strategies",
+   "line": 1234,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sh/strategies/config",
+   "handler": "backend/masterquo/api/app.py:sh_strategies_config",
+   "line": 1246,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sh/validation",
+   "handler": "backend/masterquo/api/app.py:sh_validation",
+   "line": 1349,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/signal-history",
+   "handler": "backend/masterquo/api/app.py:signal_history",
+   "line": 1551,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/signals",
+   "handler": "backend/masterquo/api/app.py:signals",
+   "line": 1579,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/smma-cci",
+   "handler": "backend/masterquo/api/wf32_routes.py:smma_cci",
+   "line": 625,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/state",
+   "handler": "backend/masterquo/api/app.py:state",
+   "line": 334,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tools": 6,
+    "tests": 6
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stats",
+   "handler": "backend/masterquo/api/app.py:get_stats",
+   "line": 1599,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 16
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/strategy-filter/config",
+   "handler": "backend/masterquo/api/wf32_routes.py:sfb_config",
+   "line": 589,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/strategy-filter/status",
+   "handler": "backend/masterquo/api/wf32_routes.py:sfb_status",
+   "line": 582,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/strategy-roi",
+   "handler": "backend/masterquo/api/wf32_routes.py:strategy_roi",
+   "line": 410,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/strategy/auto",
+   "handler": "backend/masterquo/api/app.py:strategy_auto",
+   "line": 1764,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tools": 1,
+    "tests": 4,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/strategy/mode",
+   "handler": "backend/masterquo/api/app.py:strategy_mode",
+   "line": 1768,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 4,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/strategy/profile",
+   "handler": "backend/masterquo/api/app.py:strategy_profile",
+   "line": 3883,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/strategy/selection-log",
+   "handler": "backend/masterquo/api/app.py:selection_log",
+   "line": 3891,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/strategy/toggle",
+   "handler": "backend/masterquo/api/app.py:strategy_toggle",
+   "line": 3867,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure",
+   "handler": "backend/masterquo/api/app.py:structure",
+   "line": 1432,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence",
+   "handler": "backend/masterquo/api/app.py:si_latest",
+   "line": 720,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/forecasts",
+   "handler": "backend/masterquo/api/app.py:si_forecasts",
+   "line": 733,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/structure-intelligence/jobs",
+   "handler": "backend/masterquo/api/app.py:si_job_start",
+   "line": 981,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/jobs/{jid}",
+   "handler": "backend/masterquo/api/app.py:si_job",
+   "line": 989,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/structure-intelligence/jobs/{jid}/cancel",
+   "handler": "backend/masterquo/api/app.py:si_job_cancel",
+   "line": 996,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/model-diagnostics",
+   "handler": "backend/masterquo/api/app.py:si_model_diag",
+   "line": 816,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/models",
+   "handler": "backend/masterquo/api/app.py:si_models",
+   "line": 737,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/structure-intelligence/models/rollback",
+   "handler": "backend/masterquo/api/app.py:si_rollback",
+   "line": 753,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/structure-intelligence/models/select",
+   "handler": "backend/masterquo/api/app.py:si_select",
+   "line": 745,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/native-status",
+   "handler": "backend/masterquo/api/app.py:si_native",
+   "line": 812,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/neutralization",
+   "handler": "backend/masterquo/api/app.py:si_neutral",
+   "line": 761,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/quality",
+   "handler": "backend/masterquo/api/app.py:si_quality",
+   "line": 977,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/quote-forecasts",
+   "handler": "backend/masterquo/api/app.py:si_quote_fc",
+   "line": 769,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/quote-quality",
+   "handler": "backend/masterquo/api/app.py:si_quote_q",
+   "line": 773,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/quotes",
+   "handler": "backend/masterquo/api/app.py:si_quotes",
+   "line": 765,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/regimes",
+   "handler": "backend/masterquo/api/app.py:si_regimes",
+   "line": 787,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/smma",
+   "handler": "backend/masterquo/api/app.py:si_smma",
+   "line": 802,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/snapshots/{sid}",
+   "handler": "backend/masterquo/api/app.py:si_snapshot",
+   "line": 726,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/swings",
+   "handler": "backend/masterquo/api/app.py:si_swings",
+   "line": 791,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/swings/{sid}",
+   "handler": "backend/masterquo/api/app.py:si_swing",
+   "line": 795,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/structure-intelligence/zscore",
+   "handler": "backend/masterquo/api/app.py:si_zscore",
+   "line": 806,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/studio/import",
+   "handler": "backend/masterquo/api/app.py:studio_import",
+   "line": 2620,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "backend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/studio/import/{import_id}",
+   "handler": "backend/masterquo/api/app.py:studio_import_rollback",
+   "line": 2636,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/studio/imports",
+   "handler": "backend/masterquo/api/app.py:studio_imports",
+   "line": 2631,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "backend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/studio/launch",
+   "handler": "backend/masterquo/api/app.py:studio_launch",
+   "line": 2582,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/studio/status",
+   "handler": "backend/masterquo/api/app.py:studio_status",
+   "line": 2578,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/ai-jobs",
+   "handler": "backend/masterquo/api/app.py:svp_ai_jobs",
+   "line": 3074,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/clear-auto",
+   "handler": "backend/masterquo/api/app.py:svp_clear_auto",
+   "line": 3070,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/profiles",
+   "handler": "backend/masterquo/api/app.py:svp_profiles",
+   "line": 2986,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles",
+   "handler": "backend/masterquo/api/app.py:svp_profile_create",
+   "line": 2990,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/svp/profiles/{pid}",
+   "handler": "backend/masterquo/api/app.py:svp_profile_delete",
+   "line": 2998,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/svp/profiles/{pid}",
+   "handler": "backend/masterquo/api/app.py:svp_profile_update",
+   "line": 2994,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/ai-live",
+   "handler": "backend/masterquo/api/app.py:svp_profile_ai_live",
+   "line": 3020,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/ai-propose",
+   "handler": "backend/masterquo/api/app.py:svp_ai_propose",
+   "line": 3028,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tools": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/profiles/{pid}/compute",
+   "handler": "backend/masterquo/api/app.py:svp_profile_compute",
+   "line": 3008,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/copy-settings",
+   "handler": "backend/masterquo/api/app.py:svp_profile_copy",
+   "line": 3004,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/freeze",
+   "handler": "backend/masterquo/api/app.py:svp_profile_freeze",
+   "line": 3012,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/live",
+   "handler": "backend/masterquo/api/app.py:svp_profile_live",
+   "line": 3016,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/profiles/{pid}/zones-now",
+   "handler": "backend/masterquo/api/app.py:svp_zones_now",
+   "line": 3024,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/status",
+   "handler": "backend/masterquo/api/app.py:svp_status",
+   "line": 2982,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/visible",
+   "handler": "backend/masterquo/api/app.py:svp_visible",
+   "line": 3034,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 4,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/zones",
+   "handler": "backend/masterquo/api/app.py:svp_zones",
+   "line": 3041,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/svp/zones",
+   "handler": "backend/masterquo/api/app.py:svp_zone_create",
+   "line": 3052,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tools": 1,
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/svp/zones/{zid}",
+   "handler": "backend/masterquo/api/app.py:svp_zone_delete",
+   "line": 3060,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/svp/zones/{zid}",
+   "handler": "backend/masterquo/api/app.py:svp_zone_edit",
+   "line": 3056,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/svp/zones/{zid}/history",
+   "handler": "backend/masterquo/api/app.py:svp_zone_history",
+   "line": 3066,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/system/resources",
+   "handler": "backend/masterquo/api/app.py:system_resources",
+   "line": 4040,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telegram",
+   "handler": "backend/masterquo/api/app.py:telegram_status",
+   "line": 3999,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telegram/account",
+   "handler": "backend/masterquo/api/wf32_routes.py:tg_account",
+   "line": 557,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/telegram/account",
+   "handler": "backend/masterquo/api/wf32_routes.py:tg_update",
+   "line": 569,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telegram/account/bind",
+   "handler": "backend/masterquo/api/wf32_routes.py:tg_bind",
+   "line": 561,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/telegram/account/templates/{kind}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tg_template",
+   "line": 573,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telegram/account/unbind",
+   "handler": "backend/masterquo/api/wf32_routes.py:tg_unbind",
+   "line": 565,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telegram/preview",
+   "handler": "backend/masterquo/api/app.py:telegram_preview",
+   "line": 4017,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telegram/stats-now",
+   "handler": "backend/masterquo/api/app.py:telegram_stats_now",
+   "line": 4034,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telegram/template",
+   "handler": "backend/masterquo/api/app.py:telegram_template_get",
+   "line": 4003,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/telegram/template",
+   "handler": "backend/masterquo/api/app.py:telegram_template_put",
+   "line": 4008,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 4,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telegram/test",
+   "handler": "backend/masterquo/api/app.py:telegram_test",
+   "line": 4025,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telemetry",
+   "handler": "backend/masterquo/api/app.py:telemetry",
+   "line": 1161,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 5,
+    "archive_ui141": 4
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/timeframes",
+   "handler": "backend/masterquo/api/app.py:timeframes",
+   "line": 349,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 4,
+    "tests": 2,
+    "archive_ui141": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/academy",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_academy",
+   "line": 80,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/academy/lesson/{lesson_id}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_lesson",
+   "line": 84,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/academy/quiz/{level}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_quiz",
+   "line": 88,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/academy/risk",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_risk",
+   "line": 92,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/academy/risk",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_risk_submit",
+   "line": 96,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/calendar",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_calendar",
+   "line": 116,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/coach",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_coach",
+   "line": 120,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tlg/coach/memory",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_mem_del",
+   "line": 128,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/coach/memory",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_mem_add",
+   "line": 124,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/journal",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_journal",
+   "line": 64,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tlg/journal/{ref}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_annotate",
+   "line": 68,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/leaderboard",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_board",
+   "line": 174,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/lifestyle",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_life",
+   "line": 162,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/lifestyle/{item_id}/buy",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_buy",
+   "line": 166,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/lifestyle/{item_id}/equip",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_equip",
+   "line": 170,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/loot/catalog",
+   "handler": "backend/masterquo/api/wf32_routes.py:loot_catalog",
+   "line": 651,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/loot/evaluate",
+   "handler": "backend/masterquo/api/wf32_routes.py:loot_evaluate",
+   "line": 665,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/loot/grant",
+   "handler": "backend/masterquo/api/wf32_routes.py:loot_grant",
+   "line": 679,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/loot/settings",
+   "handler": "backend/masterquo/api/wf32_routes.py:loot_settings",
+   "line": 669,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tlg/loot/settings",
+   "handler": "backend/masterquo/api/wf32_routes.py:loot_settings_put",
+   "line": 673,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 3
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/meta",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_meta",
+   "line": 41,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/notes",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_notes",
+   "line": 72,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/notes/{kind}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_note",
+   "line": 76,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/profile",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_profile_create",
+   "line": 52,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tlg/profile",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_profile_update",
+   "line": 56,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 4
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/quests",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_quests",
+   "line": 100,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/quests/{quest_id}/claim",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_claim",
+   "line": 104,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/sim",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sims",
+   "line": 132,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/sim",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_start",
+   "line": 136,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/sim/{sid}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_view",
+   "line": 141,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 6,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/sim/{sid}/close/{trade_id}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_close",
+   "line": 154,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/sim/{sid}/finish",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_finish",
+   "line": 158,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/sim/{sid}/open",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_open",
+   "line": 149,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/sim/{sid}/step",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_sim_step",
+   "line": 145,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/skills",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_skills",
+   "line": 108,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tlg/skills/{skill_id}",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_unlock",
+   "line": 112,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/state",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_state",
+   "line": 45,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tlg/xp",
+   "handler": "backend/masterquo/api/wf32_routes.py:tlg_xp",
+   "line": 60,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/activate",
+   "handler": "backend/masterquo/api/app.py:trainhub_activate",
+   "line": 2137,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/components",
+   "handler": "backend/masterquo/api/app.py:th_components",
+   "line": 2012,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/components/{cid}/activate",
+   "handler": "backend/masterquo/api/app.py:th_component_activate",
+   "line": 2032,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/components/{cid}/cancel",
+   "handler": "backend/masterquo/api/app.py:th_component_cancel",
+   "line": 2028,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/components/{cid}/export.zip",
+   "handler": "backend/masterquo/api/app.py:th_component_export",
+   "line": 2048,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/components/{cid}/import",
+   "handler": "backend/masterquo/api/app.py:th_component_import",
+   "line": 2056,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/components/{cid}/jobs",
+   "handler": "backend/masterquo/api/app.py:th_component_job",
+   "line": 2016,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/components/{cid}/rollback",
+   "handler": "backend/masterquo/api/app.py:th_component_rollback",
+   "line": 2040,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/data",
+   "handler": "backend/masterquo/api/app.py:trainhub_data",
+   "line": 2111,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/dataset.zip",
+   "handler": "backend/masterquo/api/app.py:trainhub_dataset_zip",
+   "line": 2176,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/deactivate",
+   "handler": "backend/masterquo/api/app.py:trainhub_deactivate",
+   "line": 2155,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/jobs",
+   "handler": "backend/masterquo/api/app.py:trainhub_jobs",
+   "line": 2093,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/jobs",
+   "handler": "backend/masterquo/api/app.py:trainhub_submit",
+   "line": 2086,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/jobs/{jid}",
+   "handler": "backend/masterquo/api/app.py:trainhub_job",
+   "line": 2097,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/jobs/{jid}/cancel",
+   "handler": "backend/masterquo/api/app.py:trainhub_cancel",
+   "line": 2104,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/package.zip",
+   "handler": "backend/masterquo/api/app.py:trainhub_package_zip",
+   "line": 2163,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/registry",
+   "handler": "backend/masterquo/api/app.py:trainhub_registry",
+   "line": 2118,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/trainhub/rollback",
+   "handler": "backend/masterquo/api/app.py:trainhub_rollback",
+   "line": 2147,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/status",
+   "handler": "backend/masterquo/api/app.py:trainhub_status",
+   "line": 2070,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "archive_ui141": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/trainhub/version",
+   "handler": "backend/masterquo/api/app.py:trainhub_version",
+   "line": 2123,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training",
+   "handler": "backend/masterquo/api/app.py:training_state",
+   "line": 1860,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 5
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/active",
+   "handler": "backend/masterquo/api/app.py:training_active",
+   "line": 3490,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/cancel",
+   "handler": "backend/masterquo/api/app.py:training_cancel",
+   "line": 3481,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/compare",
+   "handler": "backend/masterquo/api/app.py:training_compare",
+   "line": 3199,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/export",
+   "handler": "backend/masterquo/api/app.py:training_export",
+   "line": 3222,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/exports/{name}",
+   "handler": "backend/masterquo/api/app.py:training_export_file",
+   "line": 3236,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/import",
+   "handler": "backend/masterquo/api/app.py:training_import",
+   "line": 3246,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 2,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/models",
+   "handler": "backend/masterquo/api/app.py:training_models",
+   "line": 1871,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/readiness",
+   "handler": "backend/masterquo/api/app.py:training_readiness",
+   "line": 3159,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/resume",
+   "handler": "backend/masterquo/api/app.py:training_resume",
+   "line": 3204,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/rollback",
+   "handler": "backend/masterquo/api/app.py:training_rollback",
+   "line": 3516,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "tests": 1,
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/runs",
+   "handler": "backend/masterquo/api/app.py:training_runs",
+   "line": 3166,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/runs/{rid}",
+   "handler": "backend/masterquo/api/app.py:training_run",
+   "line": 3178,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 2
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/runs/{rid}/log",
+   "handler": "backend/masterquo/api/app.py:training_run_log",
+   "line": 3183,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/training/runs/{rid}/report",
+   "handler": "backend/masterquo/api/app.py:training_run_report",
+   "line": 3191,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/sh/promote",
+   "handler": "backend/masterquo/api/app.py:training_sh_promote",
+   "line": 3259,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/training/start",
+   "handler": "backend/masterquo/api/app.py:training_start",
+   "line": 3272,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 3
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/volatility",
+   "handler": "backend/masterquo/api/app.py:volatility",
+   "line": 344,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/walls",
+   "handler": "backend/masterquo/api/app.py:walls_get",
+   "line": 1410,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/walls/iv-import",
+   "handler": "backend/masterquo/api/app.py:walls_iv_import",
+   "line": 1416,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "WS",
+   "path": "/api/v1/ws",
+   "handler": "backend/masterquo/api/app.py:ws",
+   "line": 4124,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 1,
+    "tests": 5
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/zones/context",
+   "handler": "backend/masterquo/api/app.py:zones_context",
+   "line": 3093,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "backend": 1,
+    "tests": 2
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/zones/events",
+   "handler": "backend/masterquo/api/app.py:zones_events",
+   "line": 3082,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/zones/map",
+   "handler": "backend/masterquo/api/app.py:zones_map",
+   "line": 1888,
+   "class": "PUBLIC",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "frontend": 2,
+    "backend": 1,
+    "tests": 1
+   },
+   "no_client": false
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/zones/profiles",
+   "handler": "backend/masterquo/api/app.py:zones_profiles",
+   "line": 3086,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/zones/status",
+   "handler": "backend/masterquo/api/app.py:zones_status",
+   "line": 3078,
+   "class": "LEGACY_UI141",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {
+    "archive_ui141": 1
+   },
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/assets/{name:path}",
+   "handler": "backend/masterquo/api/app.py:assets",
+   "line": 278,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/media/masterquo/{slot}",
+   "handler": "backend/masterquo/api/app.py:media",
+   "line": 3937,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  },
+  {
+   "method": "GET",
+   "path": "/static/{name:path}",
+   "handler": "backend/masterquo/api/app.py:static",
+   "line": 286,
+   "class": "INTERNAL",
+   "editions": [
+    "CLIENT",
+    "OWNER"
+   ],
+   "callers": {},
+   "no_client": true
+  }
+ ]
+}
