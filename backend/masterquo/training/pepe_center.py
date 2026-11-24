@@ -127,6 +127,7 @@ class PepeTrainingCenter:
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
         self._proc: subprocess.Popen | None = None
+        self._stopping = False                               # arch146 I0100: Runtime.stop() – kolejka nie startuje już nowych zadań
         self.history: list[dict] = self._load_history()
         self._granite_inst: str | None = None                # instrument bieżącego / ostatniego dostrajania Granite z Centrum
 
@@ -380,6 +381,33 @@ class PepeTrainingCenter:
             stopped = self._stop(cur)
         return {"ok": True, "dropped": dropped, "stopped": stopped}
 
+    def stop(self) -> dict:
+        """arch146 I0100: Runtime.stop() (zamknięcie aplikacji). Do 1.46 Centrum nie miało stop() – proces `training run` uruchomiony z kolejki
+        trenował dalej po zamknięciu bota (TrainingCenter trainhub swój proces kończy). Teraz: kolejka nie startuje nic nowego, własny proces
+        głównego treningu (i jego drzewo, bez terminala MT5 – procs.kill_tree) jest kończony w ciągu kilku sekund, wpis historii = CANCELLED
+        „przerwany zamknięciem aplikacji” (zapis atomowy). NIE woła cancel() (kolejka zostaje w pamięci), nie usuwa runów, eksportów ani
+        artefaktów; przerwany run kończy się przed krokiem aktywacji (CANCEL w jego katalogu – wznowienie tylko ręcznie). Jednostki innych
+        serwisów (TH, rodziny, Granite, SDformer) kończą ich własne stop()."""
+        from .. import procs as PR
+        with self._lock:
+            self._stopping = True
+            cur, p = self.current, self._proc
+            live = p is not None and p.poll() is None and cur is not None and cur.get("_proc") is p
+            if live:
+                cur["_shutdown"] = True
+        if not live:
+            return {"stopped": []}
+        try:
+            rid = self._own_run_id(cur)
+            if rid:
+                (tc.runs_dir() / rid / "CANCEL").write_text(tc.now(), encoding="utf-8")   # = `training cancel <rid>`: nic nie aktywuje
+        except OSError:
+            pass
+        stopped = PR.stop_procs([("pepe-center:pipeline", p)], timeout_s=3.0)
+        cur.update(state="CANCELLED", detail="przerwany zamknięciem aplikacji", finished_at=self.clock())
+        self._remember(cur)
+        return {"stopped": stopped}
+
     def _stop(self, q: dict) -> str | None:
         try:
             u = q["unit"]
@@ -434,7 +462,7 @@ class PepeTrainingCenter:
     def _loop(self) -> None:
         while True:
             with self._lock:
-                if not self.queue:
+                if not self.queue or self._stopping:             # arch146 I0100: po stop() (zamknięcie aplikacji) nic nowego nie startuje
                     self.current = None
                     if self._thread is threading.current_thread():
                         self._thread = None                      # 1.46: see _ensure_thread
@@ -447,6 +475,12 @@ class PepeTrainingCenter:
                 res = self._run(q)
             except Exception as exc:  # noqa: BLE001 - jedno zadanie nie zatrzymuje kolejki
                 res = {"state": "FAILED", "detail": f"{type(exc).__name__}: {exc}"[:400]}
+            with self._lock:
+                if q.get("_shutdown"):                           # arch146 I0100: stop() już zapisał ten wpis (przerwany zamknięciem)
+                    self.current = None
+                    if self._thread is threading.current_thread():
+                        self._thread = None
+                    return
             if self._cancel.is_set():
                 res = {"state": "CANCELLED", "detail": "anulowane przez użytkownika"}
             q.update(state=res["state"], detail=res.get("detail", ""), finished_at=self.clock())
@@ -608,11 +642,13 @@ class PepeTrainingCenter:
         # inny trening (np. 00_TRENING_START.bat) w toku -> czekamy, nigdy dwa naraz
         if _lock_alive():
             q["detail"] = "czeka na zakończenie innego treningu"
-            self._wait(lambda: not _lock_alive(), timeout=12 * 3600, step=5.0)
+            self._wait(lambda: not _lock_alive() or self._stopping, timeout=12 * 3600, step=5.0)
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
         if self._cancel.is_set():                               # 1.46: cancelled before our own process started
             return {"state": "CANCELLED", "detail": "anulowane"}
+        if self._stopping:                                      # arch146 I0100: aplikacja się zamyka – bez nowego procesu treningu
+            return {"state": "CANCELLED", "detail": "przerwany zamknięciem aplikacji"}
         cmd = [sys.executable, "-m", "masterquo", "training", "run", "--instruments", ",".join(q["instruments"]), "--profile", "PELNY_TRENING",
                "--origin", "pepe-center"]
         if q.get("tasks"):
@@ -635,6 +671,8 @@ class PepeTrainingCenter:
             log.close()
             return {"state": "FAILED", "detail": f"nie można uruchomić treningu: {exc}"[:300]}
         p = q["_proc"] = self._proc
+        from .. import procs as PR
+        PR.REGISTRY.register("pepe-center:pipeline", p, "training")   # arch146 I0100: one registry of the server's training children
         while p.poll() is None:
             if self._cancel.wait(3.0):
                 for _ in range(12):                             # 1.46: repeated - a CANCEL written before execute() started is removed by it
@@ -720,10 +758,28 @@ class PepeTrainingCenter:
 
     # ------------------------------------------------------------------ history
     def _load_history(self) -> list[dict]:
+        """arch146 I0101 (wariant bezpieczny): history.json, który nie jest listą wpisów (np. '{}'), dawał KeyError / TypeError z konstruktora
+        – wyjątek wychodził z Runtime() i bot kończył start kodem 5. Teraz: pusta historia, a nieczytelny plik zostaje zachowany jako
+        history.json.corrupt-<czas> (pierwszy _remember() go nie nadpisuje)."""
+        p = center_dir() / "history.json"
         try:
-            return json.loads((center_dir() / "history.json").read_text(encoding="utf-8"))[-100:]
-        except (OSError, ValueError):
+            raw = p.read_text(encoding="utf-8")
+        except OSError:
             return []
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            d = None
+        if isinstance(d, list):
+            return [x for x in d if isinstance(x, dict)][-100:]
+        keep = p.with_name(f"history.json.corrupt-{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}")
+        try:
+            p.replace(keep)
+            import logging
+            logging.getLogger(__name__).warning("Centrum Treningowe: history.json nie jest listą wpisów – zachowany jako %s, historia od zera", keep.name)
+        except OSError:
+            pass
+        return []
 
     def _remember(self, q: dict) -> None:
         self.history.append({k: q.get(k) for k in ("id", "unit", "name", "instruments", "tasks", "state", "detail", "started_at", "finished_at", "run_id")}

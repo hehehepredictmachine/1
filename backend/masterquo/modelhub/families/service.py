@@ -41,7 +41,31 @@ class FamilyService:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.procs: dict[str, subprocess.Popen] = {}
         self._starting: set[str] = set()                 # 1.46: family+instrument reserved by submit() while its data are prepared
+        self._stopping = False                           # arch146 I0100: after stop() no new training process is started
         self._recover_orphans()
+
+    def stop(self) -> dict:
+        """arch146 I0100: Runtime.stop() (application close). FamilyService had no stop(): the training processes (self.procs, the .venv_deep
+        worker under them) kept training after the bot closed. Now every live child of THIS service (Popen objects, never a pid from a job
+        file) is ended with its tree without the MT5 terminal (procs.kill_tree), waiting at most ~3 s together; its job becomes CANCELLED
+        "przerwany zamknięciem aplikacji" (atomic job file); the train_all queue starts nothing more. Runs, artifacts and the active pointers
+        are untouched (an unfinished run was never activated); predict() / status() work as before."""
+        from ... import procs as PR
+        with self._lock:
+            self._stopping = True
+            items = [(k, p) for k, p in self.procs.items() if p is not None and p.poll() is None]
+        stopped = PR.stop_procs(items, timeout_s=3.0)
+        for key in stopped:
+            fid, _, inst = key.partition("__")
+            try:
+                jf = self._job_file(fid, inst)
+                j = B._read(jf, {}) or {}
+                if j.get("state") in ("RUNNING", "QUEUED"):
+                    j.update(state="CANCELLED", reason="przerwany zamknięciem aplikacji", updated_at=self.clock())
+                    B._atomic_json(jf, j)
+            except Exception:  # noqa: BLE001, S110 - one job file never stops the shutdown
+                pass
+        return {"stopped": stopped}
 
     def _cfg(self):
         return self.cfg_store.get().families
@@ -182,6 +206,8 @@ class FamilyService:
             raise ValueError("PROFILE_INVALID")
         key = f"{fid}__{inst}"
         with self._lock:
+            if self._stopping:                                   # arch146 I0100: the application is closing - no new process
+                return {"ok": False, "status": "STOPPING", "reason": "aplikacja jest zamykana"}
             j = self.job(fid, inst)
             if j and j.get("state") == "RUNNING" and _alive(j.get("pid")):
                 return {"ok": False, "status": "ALREADY_RUNNING", "job": j}
@@ -220,6 +246,8 @@ class FamilyService:
                     return {"ok": False, "status": "FAILED", "reason": str(exc)[:300]}
                 log.close()
                 self.procs[key] = p
+                from ... import procs as PR
+                PR.REGISTRY.register(f"families:{key}", p, "training")   # arch146 I0100: one registry of the server's training children
                 return {"ok": True, "status": "STARTED", "pid": p.pid}
         except Exception as exc:
             # 1.46: a failed preparation left the job QUEUED without a process - it never changed state until a restart
@@ -282,9 +310,9 @@ class FamilyService:
 
     def _drain(self, inst: str, profile: str, rest: list[str]) -> None:
         for fid in rest:
-            while self._running() >= self.MAX_PARALLEL:
+            while self._running() >= self.MAX_PARALLEL and not self._stopping:
                 time.sleep(2.0)
-            if not self.jobs_dir.exists():                       # katalog danych usunięty (np. po zamknięciu) – kończymy kolejkę
+            if not self.jobs_dir.exists() or self._stopping:     # katalog danych usunięty / zamknięcie aplikacji – kończymy kolejkę
                 return
             j = B._read(self._job_file(fid, inst), {}) or {}
             if j.get("state") != "QUEUED" or not j.get("waiting"):     # 1.46: cancelled, or started by hand meanwhile - never a second run
