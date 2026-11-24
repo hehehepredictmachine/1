@@ -844,9 +844,30 @@ class BasketService:
         scale = sum(25 for v in comp.values() if v is not None)
         out = {"setup_score": round(100 * score / scale, 1) if scale else None, "setup_components": comp, "model_agreement": None, "p_event_raw": None,
                "p_event_calibrated": None, "calibration_status": "UNCALIBRATED"}
+        out.update(self._score_info(s, h, comp))
         if s["profile_id"] == "FOREX_MT5" and s["plan_type"] == "PositionPlan":
             out.update(self._quant(c, s, side, plan))
         return out
+
+    @staticmethod
+    def _score_info(s: dict, h, comp: dict) -> dict:
+        """1.46 (I0718, informational only): setup_score above is computed exactly as in 1.46.0 - a declared but missing HTF context
+        counts 0 and 'confirmation' / 'data' are constants of 25 - because it ranks the plans of one event, is the SH score and the Quant
+        feature ctx:heuristic_score. Changing it would change which plan reaches SH / which Quant hold applies, so the honest reading is
+        shown NEXT to it: the basis of every component, a DATA_INCOMPLETE flag and a score of the measured components only."""
+        declared = bool(s["context_timeframes"])
+        htf = ("NOT_DECLARED" if not declared else "MISSING_CONTEXT" if h is None else "ALIGNED" if comp["htf_alignment"] else "NOT_ALIGNED")
+        measured = {"room": comp["room"]} if comp["room"] is not None else {}
+        if htf in ("ALIGNED", "NOT_ALIGNED"):
+            measured["htf_alignment"] = comp["htf_alignment"]
+        return {"setup_flags": ["DATA_INCOMPLETE"] if htf == "MISSING_CONTEXT" else [],
+                "setup_components_basis": {"htf_alignment": htf, "room": "MEASURED" if comp["room"] is not None else "NO_TARGET",
+                                           "confirmation": "CONSTANT_25 (brak definicji – stała, nie pomiar)",
+                                           "data": "CONSTANT_25 (brak definicji – stała, nie pomiar)"},
+                "setup_score_measured": round(100 * sum(measured.values()) / (25 * len(measured)), 1) if measured else None,
+                "setup_score_note": "setup_score (ranking zdarzenia, wynik w SH, cecha Quant) liczony jak w 1.46.0: brak kontekstu HTF = 0, "
+                                    "confirmation / data = stałe 25; setup_score_measured = tylko zmierzone składniki – informacyjnie, "
+                                    "nie wpływa na ranking ani na wejścia"}
 
     def _quant(self, c: Ctx, s: dict, side: int, plan: dict) -> dict:
         q = getattr(self.rt, "quant", None)

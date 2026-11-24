@@ -145,5 +145,76 @@ class TestRetiredOtcCodeRemoved(_Svc):
         self.assertTrue(CAT.retired_reason("OTC_HEDGE_01"))
 
 
+# ======================================================================================================================== I0718
+class TestSetupScoreInformationalOnly(_Svc):
+    """Safe variant only: setup_score (ranking, SH score, Quant ctx:heuristic_score) is computed exactly as before; the missing HTF
+    context and the constant components are shown next to it."""
+
+    def _plan(self, rr):
+        return {"plan_type": "PositionPlan", "side": "LONG", "entry_ref": 100.0, "sl": 99.0, "targets": [{"price": 100.0 + rr, "weight": 1.0}],
+                "timeout_bars": 8, "timeframe": "M5", "risk_per_unit": 1.0}
+
+    def test_missing_htf_is_flagged_and_score_is_unchanged(self):
+        from masterquo.baskets import catalog as CAT
+        s = self.svc()
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        strat = CAT.BY_ID["FX_SMC_01"]                                                  # context M15 / H1 declared, none loaded
+        out = s._scores(c, strat, None, 1, {}, self._plan(1.0))
+        room = min(25.0, 12.5 * 1.0)
+        self.assertEqual(out["setup_score"], round(100 * (0 + room + 25 + 25) / 100, 1))  # 1.46.0 formula (missing HTF = 0)
+        self.assertEqual(out["setup_components"], {"htf_alignment": 0, "room": room, "confirmation": 25, "data": 25})
+        self.assertEqual(out.get("setup_flags"), ["DATA_INCOMPLETE"])
+        basis = out["setup_components_basis"]
+        self.assertEqual(basis["htf_alignment"], "MISSING_CONTEXT")
+        self.assertTrue(basis["confirmation"].startswith("CONSTANT_25"))
+        self.assertTrue(basis["data"].startswith("CONSTANT_25"))
+        self.assertEqual(out["setup_score_measured"], round(100 * room / 25, 1))      # measured components only (room), informational
+
+    def test_htf_present_no_flag_and_measured_score_includes_it(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        s = self.svc()
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        H = D.build(_walk(300, end_t=1.79e9, step=900), 0.01)
+        c.feats["M15"] = H
+        strat = CAT.BY_ID["FX_SMC_01"]
+        side = H.trend()[0] or 1
+        plan = {**self._plan(2.0), "side": "LONG" if side > 0 else "SHORT"}
+        out = s._scores(c, strat, None, side, {}, plan)
+        htf = 25 if H.trend()[0] == side else 0
+        self.assertEqual(out["setup_components"]["htf_alignment"], htf)
+        self.assertEqual(out["setup_score"], round(100 * (htf + 25 + 25 + 25) / 100, 1))
+        self.assertEqual(out["setup_flags"], [])
+        self.assertEqual(out["setup_score_measured"], round(100 * (htf + 25) / 50, 1))
+
+    def test_ranking_of_the_event_group_is_unchanged(self):
+        """Two strategies of one event: the one without HTF context keeps losing exactly as in 1.46.0 (score unchanged)."""
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        s = self.svc()
+        st = s.settings()
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        c.regime = {"regime": "TREND"}
+        F = D.build(_walk(300, end_t=1.79e9, step=300), 0.01)
+        H = D.build(_walk(300, end_t=1.79e9, step=900, seed=9), 0.01)
+        side = H.trend()[0] or 1
+        c.feats["M15"] = H                                                              # FX_SMC_01 / 02: M15 context present
+        ev = {"type": "BOS", "level": float(F.c[F.i - 3]), "t": float(F.t[F.i - 3])}
+        r = {"entry": float(F.c[F.i]), "sl": float(F.c[F.i]) - side * 5.0, "event": ev}
+        no_htf = CAT.BY_ID["FX_SMC_10"]                                                  # M5, context H1 (not loaded)
+        self.assertEqual(no_htf["context_timeframes"], ["H1"])
+        found = [(no_htf, F, side, dict(r), s.params(no_htf, st)), (CAT.BY_ID["FX_SMC_01"], F, side, dict(r), s.params(CAT.BY_ID["FX_SMC_01"], st))]
+        sc = {x[0]["strategy_id"]: s._scores(c, x[0], F, side, x[3], s._plan(c, x[0], F, side, x[3], x[4], st, {})) for x in found}
+        room = sc["FX_SMC_10"]["setup_components"]["room"]
+        self.assertEqual(sc["FX_SMC_10"]["setup_score"], round(100 * (0 + room + 25 + 25) / 100, 1))     # 1.46.0 formula: missing HTF = 0
+        self.assertEqual(sc["FX_SMC_10"]["setup_flags"], ["DATA_INCOMPLETE"])
+        s._resolve(c, found, st, {})
+        sig = s.ledger.open_signals("FOREX_MT5")
+        self.assertEqual(len(sig), 1)
+        expected = sorted(sc, key=lambda k: -sc[k]["setup_score"])[0]                  # stable sort in found order, as _resolve ranks
+        self.assertEqual(sig[0]["strategy_id"], expected)
+        self.assertEqual(sig[0]["scores"]["setup_score"], sc[expected]["setup_score"])
+
+
 if __name__ == "__main__":
     unittest.main()
