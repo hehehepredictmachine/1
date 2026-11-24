@@ -767,6 +767,8 @@ class MLService:
                "last_label_run": self.last_label_run, "last_check": self.last_check, "synthetic": self.synthetic,
                "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks), "backfill": self.backfill_state,
                "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą."}
+        # 1.46 (I0024): zone defaults / session profiles of the champion's training vs this code - a warning only (never a gate change)
+        out["feature_context"] = champ.meta.get("feature_context") if champ is not None else None
         if not compact:
             out["models"] = self.registry.models()
             out["events"] = self.registry.events()
