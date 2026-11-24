@@ -350,6 +350,11 @@ class FamilyService:
             got = f._proba(art, np.asarray(smp["X"])).tolist()
         elif fid == "NLP_SENTIMENT":
             got = f.score(art, smp["texts"]).tolist()
+        elif fid == "PAIR_COINT" and smp.get("a_last") is not None and smp.get("b_last") is not None:
+            got = {"z_last": f._z(art, float(smp["a_last"]), float(smp["b_last"]))}         # 1.46 (I0422); older samples: load only
+        elif fid == "STATARB" and smp.get("prices_tail"):
+            P = np.asarray(smp["prices_tail"], dtype=float)                                  # 1.46 (I0427)
+            got = {"s_scores": [float(x) for x in f._scores(art, np.diff(np.log(P), axis=0))[0]]}
         elif fid in ("SEQ_LSTM", "SEQ_GRU"):
             from . import deep as D
             r = D.call("predict_seq", {"dir": str(d), "x_path": str(d / smp["x_file"])}, timeout=120)
