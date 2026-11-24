@@ -517,6 +517,48 @@ class TestOiDeltaAtSignalClose(_Svc):
         self.assertEqual(seen, {"second_mitigation": 900, "oi_expansion": 300})
 
 
+# ======================================================================================================================== I0767 / I0768
+class TestHyperliquidSeries(_Svc):
+    def test_cache_does_not_truncate_a_longer_request(self):                           # I0767 (chunk_06#2)
+        s = self.svc()
+        c = s._context("CRYPTO_FOMO_PERPS", "ETH", "HYPERLIQUID:core", "MAINNET", "PUBLIC_DATA", "PERPETUAL")
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 300)), 300)                   # auxiliary series first (as in _crypto)
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 500)), 500)                   # own signal series: full length (was 300)
+        n_calls = len(s.hl.calls)
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 300)), 300)                   # served from the cache, sliced
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 500)), 500)
+        self.assertEqual(len(s.hl.calls), n_calls)                                      # no extra request in the same candle
+        s.hl.fail = True                                                                # HLError: the last cache, no exception
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 600)), 500)                   # longer request -> refetch fails -> cached 500
+        self.assertEqual(len(s._hl_bars(c, "SOL", "M5", 300)), 0)
+
+    def test_old_cache_entries_without_n_still_work(self):
+        s = self.svc()
+        c = s._context("CRYPTO_FOMO_PERPS", "ETH", "HYPERLIQUID:core", "MAINNET", "PUBLIC_DATA", "PERPETUAL")
+        bars = s.hl.candles("ETH", "M5", 300)
+        c.cache["ETH|M5"] = (time.time(), bars)                                          # 2-tuple (shape of 1.46.0)
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 200)), 200)
+        self.assertEqual(len(s._hl_bars(c, "ETH", "M5", 500)), 500)
+
+    def test_signal_series_covers_the_previous_utc_day(self):                          # I0768 (chunk_06#3)
+        self.write("settings.json", {"profiles": {"CRYPTO_FOMO_PERPS": {"instruments": ["BTC"]}}})
+        s = self.svc()
+        seen = []
+        s._run_ctx = lambda c, st, bars_fn, q, extra: seen.append(bars_fn) or {"state": "READY"}
+        with mock.patch.dict(os.environ):
+            os.environ.pop("MQ_BASKETS_OFFLINE", None)
+            s._crypto(s.settings())
+        self.assertEqual(len(seen[0]("M5", 600)), 600)                                 # _run_ctx asks for 600 (was capped at 500)
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import rules as R
+        end = datetime(2026, 11, 20, 22, 0, tzinfo=UTC).timestamp()                    # 22:00 UTC: 500 M5 do not cover the previous day
+        with self.assertRaises(R.Unavailable):
+            R.range_sweep(D.build(_walk(500, end_t=end, step=300), 0.01), 1, {"range": "PREV_UTC_DAY"}, {})
+        R.range_sweep(D.build(_walk(600, end_t=end, step=300), 0.01), 1, {"range": "PREV_UTC_DAY"}, {})
+        end = datetime(2026, 11, 20, 23, 55, tzinfo=UTC).timestamp()
+        R.range_sweep(D.build(_walk(600, end_t=end, step=300), 0.01), 1, {"range": "PREV_UTC_DAY"}, {})
+
+
 # ======================================================================================================================== I0769
 class TestBasketPendingLimitSameCycle(_Svc):
     def test_two_events_in_one_cycle_respect_max_pending_intents(self):

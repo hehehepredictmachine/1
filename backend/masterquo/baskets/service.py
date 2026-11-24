@@ -327,7 +327,7 @@ class Ctx:
         self.reason: str | None = None
         self.oi: list[tuple[float, float]] = []
         self.flow: list[dict] = []
-        self.cache: dict[str, tuple[float, list]] = {}
+        self.cache: dict[str, tuple] = {}                  # coin|tf -> (fetched_at, bars, requested n) - 1.46 (I0767): n remembered
         self.sfb: dict | None = None                       # TASK 018: last SFB snapshot meta for this scope (diagnostic)
 
 
@@ -612,14 +612,19 @@ class BasketService:
         sec = HL_TF_S[tf]
         now = time.time()
         got = c.cache.get(key)
-        if got and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
-            return got[1]
+        # 1.46 (I0767): the cache remembers how many candles were requested - a smaller auxiliary request first (M15 300, BTC M1 400,
+        # ETH M5 300) truncated the signal series of the same coin / TF for the whole session; one refetch of max(n, cached n) per key
+        # and candle, the answer is the tail of n
+        have = (got[2] if len(got) > 2 else len(got[1])) if got else 0
+        if got and have >= n and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
+            return got[1][-n:]
+        want = max(n, have)
         try:
-            b = self.hl.candles(coin, tf, n)
+            b = self.hl.candles(coin, tf, want)
         except HLError:
-            return got[1] if got else []
-        c.cache[key] = (now, b)
-        return b
+            return got[1][-n:] if got else []
+        c.cache[key] = (now, b, want)
+        return b[-n:]
 
     def _crypto(self, st: dict) -> dict:
         pr = st["profiles"]["CRYPTO_FOMO_PERPS"]
@@ -688,7 +693,8 @@ class BasketService:
                      "funding": {k: (self.hl_ctx.get(k) or {}).get("funding_rate") for k in ("BTC", "ETH")}, "fees": pr.get("fees") or {},
                      "pair_map": pair_map, "same_underlying": same_underlying, "symbol": coin,
                      "market": {"mark": hc.get("mark"), "oracle": hc.get("oracle"), "funding_rate_1h": hc.get("funding_rate"), "open_interest": hc.get("open_interest")}}
-            out[coin] = self._run_ctx(c, st, lambda tf, n=500, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 500)), q, extra)
+            # 1.46 (I0768): up to 600 candles (was 500 = 41.7 h of M5): CP_SMC_09 (previous UTC day) needs the whole previous day + today
+            out[coin] = self._run_ctx(c, st, lambda tf, n=600, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 600)), q, extra)
         return out
 
     # 1.46: the dead `_otc` scanner and the OTC feed reader (retired in TASK 020, never called by cycle()) were removed
