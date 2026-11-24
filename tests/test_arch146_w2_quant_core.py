@@ -454,5 +454,42 @@ class TestTabICLConfidencePersisted(unittest.TestCase):
             self.assertEqual(led.c.execute("SELECT row_id FROM rows").fetchall()[0][0], "keep")
 
 
+# ================================================================================================ P004 one weights folder
+class TestTabICLWeightsFolderP004(unittest.TestCase):
+    """quant/tabicl.weights_root was always <data>/tsfm/models, the installer (tools/tsfm_setup.py --weights-root auto) used weights_root
+    from <data>/tsfm/settings.json - with a user weights folder TabICL was installed where the bot never looked."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def _installer_root(self):
+        import sys
+        tools = str(_env.ROOT / "tools")
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import tsfm_setup as TS
+        return TS.default_weights_root(_env.ROOT)
+
+    def test_custom_folder_is_the_same_for_bot_and_installer(self):
+        from pathlib import Path
+
+        from masterquo.quant import tabicl as T
+        from masterquo.tsfm.settings import tsfm_dir
+        custom = Path(self.td.dir) / "my_weights"
+        (tsfm_dir() / "settings.json").write_text(json.dumps({"weights_root": str(custom)}), encoding="utf-8")
+        self.assertEqual(T.weights_root(), custom)
+        self.assertEqual(self._installer_root(), custom)
+
+    def test_default_folder_unchanged(self):
+        from masterquo.quant import tabicl as T
+        from masterquo.tsfm.settings import tsfm_dir
+        self.assertEqual(T.weights_root(), tsfm_dir() / "models")
+        self.assertEqual(self._installer_root().resolve(), (tsfm_dir() / "models").resolve())
+        for bad in ("[1, 2]", "{not json", json.dumps({"weights_root": None}), json.dumps({"weights_root": ""})):
+            (tsfm_dir() / "settings.json").write_text(bad, encoding="utf-8")
+            self.assertEqual(T.weights_root(), tsfm_dir() / "models", bad)
+
+
 if __name__ == "__main__":
     unittest.main()

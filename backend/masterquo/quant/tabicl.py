@@ -71,6 +71,8 @@ def tdir() -> Path:
 
 
 def weights_root() -> Path:
+    """The folder of tabicl_v2 = the one the installer uses (P004: tsfm.settings.default_weights_root honours weights_root from
+    <data>/tsfm/settings.json exactly like tools/tsfm_setup.py --weights-root auto)."""
     from ..tsfm.settings import default_weights_root
     return default_weights_root()
 

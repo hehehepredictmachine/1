@@ -150,7 +150,17 @@ def tsfm_dir() -> Path:
 
 
 def default_weights_root() -> Path:
-    return tsfm_dir() / "models"
+    """THE weights folder of the bot (TabICL: quant/tabicl.weights_root and its installs from Bootstrap / upgrade / API; TSFM: fallback of
+    TsfmService.weights_root): weights_root from <data>/tsfm/settings.json when set, else <data>/tsfm/models - the same rule as the
+    installer (tools/tsfm_setup.default_weights_root, --weights-root auto). 1.46 arch (P004): it always returned <data>/tsfm/models, so with
+    a user weights folder the .bat installer put TabICL where the bot never looked."""
+    d = tsfm_dir()
+    try:
+        w = json.loads((d / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        w = None
+    w = w.get("weights_root") if isinstance(w, dict) else None
+    return Path(w) if isinstance(w, str) and w.strip() else d / "models"
 
 
 def python_candidates(mid: str, c: ModelCfg) -> list[str]:
