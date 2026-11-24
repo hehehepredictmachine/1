@@ -3,11 +3,13 @@
   python -m kronos_runtime.install download --weights-dir DIR [--status-file F]
   python -m kronos_runtime.install verify   --weights-dir DIR [--reference] [--device AUTO|CPU|CUDA] [--status-file F]
 
-download: for the pinned pair of lock.py (1.37: NeoQuasar/Kronos-base + Kronos-Tokenizer-base) at the revisions of lock.py -
+download: for the pinned pair of lock.py (since 1.42.8: NeoQuasar/Kronos-small + Kronos-Tokenizer-base; Kronos-base 1.37-1.42.7) at the
+  revisions of lock.py -
   1. the revision must exist (model_info at that commit; the returned sha must equal the pinned commit),
   2. config.json + model.safetensors must be present (a pickle checkpoint is never accepted),
   3. each file is downloaded into DIR/.partial, checked against the SOURCE metadata (LFS sha256 for model.safetensors, git blob sha1
-     for config.json) and its size; only when both components pass are they moved into place and kronos_manifest.json is written.
+     for config.json), against the sha256 pinned in lock.py where there is one (arch 1.46 I0194: model.safetensors of both components)
+     and its size; only when both components pass are they moved into place and kronos_manifest.json is written.
 verify: offline - manifest sha256 of every file, load once (eval, no grad), model/tokenizer compatibility, a short real forecast on the
   bundled upstream regression input, timing and device; --reference also compares with the upstream expected outputs (CPU, greedy).
 Messages: human lines on stdout ("[KRONOS] ..."), the last line is "RESULT <json>". Nothing here talks to MetaTrader 5.
@@ -206,6 +208,12 @@ def download(weights_dir: str, status_file: str | None) -> int:
                 src = blob
             if not ok:
                 return result(False, "CHECKSUM_MISMATCH", rep, error=f"{c['repo']}/{name}: {check} {got[:16]}… ≠ źródło {str(src)[:16]}…")
+            pin = (c.get("sha256") or {}).get(name)          # arch 1.46 I0194: the pin of lock.py is enforced, not only the source metadata
+            if pin:
+                got_sha = got if check == "lfs_sha256" else M.sha256_file(p)
+                if got_sha != pin:
+                    return result(False, "CHECKSUM_MISMATCH", rep,
+                                  error=f"{c['repo']}/{name}: SHA-256 {got_sha[:16]}… ≠ przypięty w lock.py {pin[:16]}…")
             if size is not None and p.stat().st_size != size:
                 return result(False, "CHECKSUM_MISMATCH", rep, error=f"{c['repo']}/{name}: rozmiar {p.stat().st_size} B ≠ {size} B ze źródła")
             files.append({"name": name, "size": p.stat().st_size, "sha256": M.sha256_file(p), "source_check": check, "source_value": src,

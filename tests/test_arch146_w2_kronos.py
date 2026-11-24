@@ -10,6 +10,7 @@ Wszystkie świece poniżej są SYNTETYCZNE; dublery modelu nie są prognozami.
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import os
 import sys
@@ -600,6 +601,107 @@ class TestI0035ScorecardHorizonFilter(_SvcCase):
             self.assertEqual((sc["settled"], sc["mae_h"], sc["horizon_bars"], sc["other_horizons"]), (1, 1.0, H, {str(2 * H): 1}))
         finally:
             db.close()
+
+
+# ===================================================================================================== I0194 przypięte sha256 wag Kronos
+class TestI0194KronosPinnedSha(unittest.TestCase):
+    """Dziś sumy sha256 wag w lock.py czytał tylko test: instalator ufał metadanym LFS z HF, verify - własnemu manifestowi. Teraz pin jest
+    wymuszany w obu miejscach (wyjątek: manifest fixture testów, przyjmowany tylko z MQ_KRONOS_ALLOW_FIXTURE=1)."""
+
+    CONTENT = {"config.json": b'{"d_model": 1}', "model.safetensors": b"\x01" * 4096, "README.md": b"---\nlicense: mit\n---\n"}
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="kr_pin_"))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _hub(self):
+        from kronos_runtime import lock
+        from kronos_runtime import manifest as M
+        src = self.tmp / "src"
+        src.mkdir(exist_ok=True)
+        for n, b in self.CONTENT.items():
+            (src / n).write_bytes(b)
+
+        class Sib:
+            def __init__(self, name):
+                p = src / name
+                lfs = name == "model.safetensors"
+                self.rfilename, self.size = name, p.stat().st_size
+                self.lfs = {"sha256": M.sha256_file(p)} if lfs else None          # źródło (HF) zgodne z plikiem
+                self.blob_id = None if lfs else M.git_blob_sha1(p)
+
+        names = list(self.CONTENT)
+
+        class HfApi:
+            def model_info(self, repo, revision=None, files_metadata=False):
+                assert any(c["repo"] == repo for c in lock.COMPONENTS)
+                return types.SimpleNamespace(sha=revision, siblings=[Sib(n) for n in names])
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.HfApi, hub.__version__ = HfApi, "test"
+
+        def fetch(url, part, size, label, rep, step, retries=4):
+            Path(part).write_bytes(self.CONTENT[url.rsplit("/", 1)[1]])
+        return hub, fetch
+
+    def _download(self, dest):
+        from kronos_runtime import install as I
+        hub, fetch = self._hub()
+        out = io.StringIO()
+        with mock.patch.dict(sys.modules, {"huggingface_hub": hub}), mock.patch.object(I, "_fetch", side_effect=fetch), \
+                mock.patch.dict(os.environ, {"HF_HUB_OFFLINE": "0"}), contextlib.redirect_stdout(out):
+            rc = I.download(str(dest), None)
+        res = json.loads(next(x for x in out.getvalue().splitlines() if x.startswith("RESULT "))[7:])
+        return rc, res
+
+    def test_download_refuses_source_file_that_differs_from_the_pin(self):
+        from kronos_runtime import manifest as M
+        rc, res = self._download(self.tmp / "w")
+        self.assertEqual((rc, res["code"]), (1, "CHECKSUM_MISMATCH"))
+        self.assertIn("przypięty w lock.py", res["error"])
+        self.assertIsNone(M.read(self.tmp / "w"))                                         # nic nie zostaje oznaczone jako zainstalowane
+
+    def test_download_with_the_pinned_files_installs(self):
+        from kronos_runtime import lock
+        from kronos_runtime import manifest as M
+        pin = __import__("hashlib").sha256(self.CONTENT["model.safetensors"]).hexdigest()
+        with mock.patch.dict(lock.MODEL["sha256"], {"model.safetensors": pin}), mock.patch.dict(lock.TOKENIZER["sha256"], {"model.safetensors": pin}):
+            rc, res = self._download(self.tmp / "w")
+            self.assertEqual((rc, res["code"]), (0, None), res)
+            self.assertTrue(M.verify(self.tmp / "w")["ok"])
+        with self.assertRaises(M.ManifestError) as cm:                                     # te same pliki, prawdziwe piny lock.py
+            M.verify(self.tmp / "w")
+        self.assertEqual(cm.exception.code, "CHECKSUM")
+        self.assertIn("przypięty", cm.exception.detail)
+
+    def test_fixture_manifest_is_exempt_only_as_a_fixture(self):
+        from kronos_runtime import manifest as M
+        wd = K.fixture_weights(self.tmp / "fx")
+        with mock.patch.dict(os.environ, {"MQ_KRONOS_ALLOW_FIXTURE": "1"}):
+            self.assertTrue(M.verify(wd)["ok"])
+        man = M.read(wd)
+        man.pop("fixture")
+        M.write(wd, man)
+        with mock.patch.dict(os.environ, {"MQ_KRONOS_ALLOW_FIXTURE": "1"}), self.assertRaises(M.ManifestError):
+            M.verify(wd)
+
+    @unittest.skipUnless(os.environ.get("MQ_KRONOS_WEIGHTS_DIR"), "oficjalne wagi Kronos niedostępne (MQ_KRONOS_WEIGHTS_DIR)")
+    def test_official_installation_matches_the_pins(self):
+        from kronos_runtime import manifest as M
+        self.assertTrue(M.verify(os.environ["MQ_KRONOS_WEIGHTS_DIR"])["ok"])
+
+
+class TestI0197KronosDocs(unittest.TestCase):
+    def test_installer_and_runtime_test_describe_the_pinned_pair(self):
+        from kronos_runtime import install as I
+        from kronos_runtime import lock
+        self.assertIn(lock.MODEL["repo"], I.__doc__)
+        self.assertNotIn("1.37: NeoQuasar/Kronos-base +", I.__doc__)
+        doc = (Path(__file__).resolve().parent / "test_kronos_runtime.py").read_text(encoding="utf-8").split('"""')[1]
+        self.assertNotIn("test_foundation_real", doc)                               # tam nie ma testów Kronos
 
 
 class TestI0785ValidationSaveAtomic(unittest.TestCase):
