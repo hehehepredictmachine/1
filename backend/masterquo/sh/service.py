@@ -1037,8 +1037,16 @@ class SHService:
             if v and v["best"] != "HEDGE":
                 dec = {"decision": "REDUCE" if v["best"] == "REDUCE" else "HOLD",
                        "reason": f"walidacja replay: wariant {v['best']} lepszy niż HEDGE ({v['source']})"}
+        blocked = False
+        if dec["decision"] == "HEDGE":
+            # w2 (I0826): as pack_hedge_step - STOP / licence / any block of new entries forbids a NEW opposite leg (HOLD: no activation used
+            # up, no REDUCE instead); exits / reductions decided above are never blocked
+            eb = self.gate()["entry_block"]
+            if eb:
+                blocked = True
+                dec = {"decision": "HOLD", "reason": "nowe ekspozycje zablokowane: " + ",".join(eb)}
         key = f"{dec['decision']}|{dec['reason'][:40]}"
-        if dec["decision"] != "HOLD" and self.last_saved.get(row["plan_id"]) != key:
+        if (dec["decision"] != "HOLD" or blocked) and self.last_saved.get(row["plan_id"]) != key:
             self.store.event(row["plan_id"], "HEDGE_DECISION", dec, now)
             self.last_saved[row["plan_id"]] = key
         if dec["decision"] == "HEDGE":
