@@ -73,7 +73,8 @@ class ExecutionGateway:
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ validation
-    def _validate(self, decision_id: str) -> dict:
+    def _validate(self, decision_id: str) -> tuple[dict, dict]:
+        """-> (decision, gate). w2 (I0725): the gate checked here (its mode) is the one execute() uses - the mode is not read again."""
         d = self.engine.current_decision()
         if not d:
             raise ExecutionError("NO_CURRENT_DECISION")
@@ -117,7 +118,7 @@ class ExecutionGateway:
                 raise ExecutionError("RISK_RECHECK_FAILED:" + ",".join((fresh.get("reason_codes") or [])[:6]))
             if fresh["lots"] + 1e-9 < float(risk["lots"]):
                 raise ExecutionError("LIMITS_CHANGED_SIZE_SMALLER_RECALC")
-        return d
+        return d, gate
 
     # ------------------------------------------------------------ common controls (shared by BOT_SETUP and MANUAL_USER sources)
     def common_checks(self, *, side: str, entry: float, require_real: bool = False) -> str:
@@ -197,12 +198,12 @@ class ExecutionGateway:
     def execute(self, decision_id: str, initiated_by: str = "USER") -> dict:
         with self._lock:
             try:
-                d = self._validate(decision_id)
+                d, gate0 = self._validate(decision_id)
             except ExecutionError as exc:
                 if initiated_by == "USER":
                     self.log.warn("EXECUTION", "BLOCKED", f"Wykonanie zablokowane: {exc}")
                 return {"status": "BLOCKED", "reason": str(exc)}
-            mode = self.modes.gate(self.bridge.account_key)["mode"]
+            mode = gate0["mode"]                    # w2 (I0725): the validated mode (was read again without `allowed` - SIGNALS reached _send)
             setup = d["setup"]
             risk = d["risk"]
             side = "BUY" if d["analysis_direction"] == "LONG" else "SELL"
@@ -224,6 +225,16 @@ class ExecutionGateway:
                         self.log.warn("EXECUTION", "BLOCKED", f"Wykonanie zablokowane (rezerwacja ryzyka): {','.join(op['reasons'])}")
                     return {"status": "BLOCKED", "reason": "RESERVATION:" + ",".join(op["reasons"])}
                 intent = op["intent"]["intent_id"]
+            # w2 (I0725): the mode gate once more right before anything is persisted / sent - a mode switch (or a new block) after the
+            # validation never sends under another mode (nor in SIGNALS)
+            now_gate = self.modes.gate(self.bridge.account_key, path="ACTIVE")
+            if now_gate["mode"] != mode or not now_gate["allowed"] or mode == "SIGNALS":
+                res = {"status": "BLOCKED", "reason": "MODE_CHANGED_DURING_EXECUTION"}
+                if intent:
+                    self.arc.intents.outcome(intent, res)
+                if initiated_by == "USER":
+                    self.log.write("WARNING", "EXECUTION", "BLOCKED", f"Wykonanie zablokowane: tryb zmienił się w trakcie ({mode} -> {now_gate['mode']})")
+                return res
             try:
                 with self.db.tx() as c:
                     c.execute("""INSERT INTO order_attempts(attempt_id, entry_key, decision_id, setup_id, created_at, updated_at, mode, account_key, symbol,
@@ -338,7 +349,12 @@ class ExecutionGateway:
             return None
 
     def _register_position(self, attempt_id, d, side, ticket, volume, price, risk) -> None:
-        mode = self.modes.gate(self.bridge.account_key)["mode"]
+        # w2 (I0725): the mode the order was SENT under (order_attempts, both the bot and the manual path) - never read again from the
+        # mode manager after order_send (a switch to PAPER meanwhile registered a real position as PAPER)
+        row = self.db.one("SELECT mode FROM order_attempts WHERE attempt_id=?", (attempt_id,))
+        mode = (row or {}).get("mode")
+        if mode not in ("AUTO_DEMO", "AUTO_LIVE"):
+            mode = "AUTO_LIVE" if (self.bridge.account_status() or {}).get("trade_mode") == "REAL" else "AUTO_DEMO"
         pol = self.plan_policy(d, fill=price)
         t = pol["targets"]
         self.db.execute("""INSERT OR IGNORE INTO managed_positions(position_key, mode, account_key, position_ticket, attempt_id, decision_id, setup_id,

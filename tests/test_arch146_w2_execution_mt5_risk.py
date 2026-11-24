@@ -442,5 +442,90 @@ class TestBridgeReconnectDuringConnect(unittest.TestCase):
         self.assertEqual(b.state, "RECONNECTING")                                     # dane starego symbolu nie są CONNECTED
 
 
+# ------------------------------------------------------------------------------------------------ I0725 (tryb wykonania czytany po walidacji)
+class _ExecBase(unittest.TestCase):
+    """Bramka wykonania na syntetycznym terminalu (setUp/tearDown jak test_risk_execution.TestExecution)."""
+
+    def setUp(self):
+        import test_risk_execution as TR
+        self.TR = TR
+        TR.TestExecution.setUp(self)
+        self.sent = []
+        self._orig_send = self.fake.order_send
+        self.fake.order_send = lambda r: self.sent.append(r) or self._orig_send(r)
+
+    def tearDown(self):
+        self.TR.TestExecution.tearDown(self)
+
+    def decision(self, **kw):
+        return self.TR.TestExecution.decision(self, **kw)
+
+    def auto_demo(self):
+        acct = self.b.account_status()
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+
+    def switch_after_validation(self, fn):
+        orig = self.gw._validate
+
+        def wrapped(did):
+            out = orig(did)
+            fn()
+            return out
+        self.gw._validate = wrapped
+
+
+class TestModeRaceInExecute(_ExecBase):
+    def test_switch_to_signals_after_validation_sends_nothing(self):
+        self.auto_demo()
+        self.engine.decision = self.decision()
+        self.switch_after_validation(lambda: self.modes.set_mode("SIGNALS", account=None, account_key=None, synthetic=True))
+        r = self.gw.execute("MQD-1")
+        self.assertEqual(r, {"status": "BLOCKED", "reason": "MODE_CHANGED_DURING_EXECUTION"})   # przed: order_send w trybie SIGNALS
+        self.assertEqual(self.sent, [])
+        self.assertIsNone(self.db.one("SELECT * FROM order_attempts"))
+
+    def test_switch_from_paper_to_demo_after_validation_sends_nothing(self):
+        self.modes.set_mode("PAPER", confirm="PAPER", account=self.b.account_status(), account_key=self.b.account_key, synthetic=True)
+        self.engine.decision = self.decision()
+        self.switch_after_validation(self.auto_demo)
+        r = self.gw.execute("MQD-1")
+        self.assertEqual(r["status"], "BLOCKED")                                       # przed: order_send bez walidacji ścieżki MT5
+        self.assertEqual(self.sent, [])
+        self.assertIsNone(self.db.one("SELECT * FROM managed_positions"))
+
+    def test_reservation_released_when_blocked(self):
+        calls = []
+        self.gw.arc = SimpleNamespace(intents=SimpleNamespace(
+            open=lambda **kw: {"status": "RESERVED", "intent": {"intent_id": "INT-1"}},
+            outcome=lambda iid, res: calls.append((iid, res["status"])), sent=lambda *a: None))
+        self.auto_demo()
+        self.engine.decision = self.decision()
+        self.switch_after_validation(lambda: self.modes.set_kill(True, "TEST"))
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "BLOCKED")
+        self.assertEqual(calls, [("INT-1", "BLOCKED")])
+        self.assertEqual(self.sent, [])
+
+    def test_real_position_keeps_the_mode_it_was_sent_under(self):
+        self.auto_demo()
+        self.engine.decision = self.decision()
+        acct = self.b.account_status()
+
+        def send_then_switch(r):
+            res = self._orig_send(r)
+            self.modes.set_mode("PAPER", confirm="PAPER", account=acct, account_key=self.b.account_key, synthetic=True)
+            return res
+        self.fake.order_send = send_then_switch
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        mp = self.db.one("SELECT mode, position_key FROM managed_positions")
+        self.assertEqual(mp["mode"], "AUTO_DEMO")                                       # przed: 'PAPER' dla realnej pozycji
+        self.assertTrue(mp["position_key"].startswith("AUTO_DEMO:"))
+
+    def test_unchanged_mode_still_executes(self):
+        self.auto_demo()
+        self.engine.decision = self.decision()
+        self.assertEqual(self.gw.execute("MQD-1")["status"], "FILLED")
+        self.assertEqual(len(self.sent), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
