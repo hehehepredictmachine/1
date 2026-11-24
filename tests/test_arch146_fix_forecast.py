@@ -194,6 +194,19 @@ class TestScalpActivationRefusesRejected(_Case):
         self.assertIn("NIE: VALIDATION_REJECTED", next(x for x in out.splitlines() if "S_REJ" in x and "REAL_USER_DATA" in x))
         self.assertTrue(any(x.startswith("[UWAGA]") and "S_REJ" in x for x in out.splitlines()), out)
 
+    def test_synthetic_code_path_test_still_activates(self):
+        # tests/gold_candles/test_scalp_train.py::test_worker_path_and_checksum and models check --smoke scalp_gold activate a synthetic
+        # (REJECTED by construction) run under the test override; without the override it stays refused (NOT_REAL_USER_DATA first)
+        from gold_candles_runtime.scalp_infer import read_registry
+        self.write(None, [], {"S_SYN": _scalp_entry("S_SYN", "REJECTED", data_kind="SYNTHETIC_TEST")})
+        rc, out = self.run_cli("activate", "S_SYN")
+        self.assertEqual(rc, 2)
+        self.assertIn("NOT_REAL_USER_DATA", out)
+        os.environ["MQ_FORECAST_TEST_ALLOW_SYNTHETIC"] = "1"
+        rc, out = self.run_cli("activate", "S_SYN")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(read_registry()["active"], "S_SYN")
+
 
 # ===================================================================================================== D21 gold_candles adapter
 def _rt(state: dict):
