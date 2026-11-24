@@ -126,5 +126,63 @@ class TestStudioCliArgs(unittest.TestCase):
         self.assertEqual((rc, calls[-1]), (0, ("serve", 8792)))
 
 
+# ============================================================================================== I0132 `masterquo train-all`
+TODAY_TASKS = ["forecast", "scalp_A", "ml", "lab", "indicator_context", "ml_scalp", "neural_scalp", "structure_intelligence", "flow_context",
+               "context_indicators"]
+
+
+class TestTrainAllHelp(unittest.TestCase):
+    """I0132: help claimed `train-all` = 22_TRENUJ_WSZYSTKIE_MODELE.bat (`training run`, every task) while it trains an explicit subset of
+    10 tasks; --scalp-months / --mt5-wait were parsed and silently ignored. The trained set must stay EXACTLY the same."""
+
+    def _help(self, *args) -> str:
+        from masterquo import __main__ as M
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit):
+            M.main([*args, "--help"])
+        return " ".join(out.getvalue().split())
+
+    def _tasks(self, *args):
+        from masterquo import __main__ as M
+        seen = []
+        out = io.StringIO()
+        with mock.patch("masterquo.training.cli.main", side_effect=lambda argv: seen.append(list(argv)) or 0), \
+                mock.patch.object(M, "_load_dotenv"), redirect_stdout(out):
+            self.assertEqual(M.main(["train-all", *args]), 0)
+        argv = seen[0]
+        return argv[argv.index("--tasks") + 1], out.getvalue()
+
+    def test_help_does_not_claim_the_22_mechanism_and_lists_the_tasks(self):
+        top = self._help()
+        self.assertNotIn("ten sam mechanizm co `training run`", top)
+        sub = self._help("train-all")
+        for t in TODAY_TASKS:
+            self.assertIn(t, sub)
+        self.assertIn("22_TRENUJ_WSZYSTKIE_MODELE.bat", sub)
+        self.assertRegex(sub, r"--mt5-wait [A-Z0-9_]+ \(przestarzałe, ignorowane")
+        self.assertRegex(sub, r"--scalp-months [A-Z0-9_]+ \(przestarzałe, ignorowane")
+
+    def test_task_subset_identical_to_today(self):
+        from masterquo import train_all as TA
+        self.assertEqual([t for t, _ in TA.TRAIN_ALL_TASKS], TODAY_TASKS)
+        tasks, _ = self._tasks()
+        self.assertEqual(tasks, ",".join(TODAY_TASKS))
+        tasks, _ = self._tasks("--skip-candles")
+        self.assertEqual(tasks, "ml,lab,ml_scalp,neural_scalp,structure_intelligence,flow_context,context_indicators")
+        tasks, _ = self._tasks("--skip-ml", "--skip-lab")
+        self.assertEqual(tasks, "forecast,scalp_A,indicator_context")
+        tasks, _ = self._tasks("--skip-candles", "--skip-ml", "--skip-lab")
+        self.assertEqual(tasks, "none")
+
+    def test_deprecated_flags_warn_and_change_nothing(self):
+        tasks, out = self._tasks("--mt5-wait", "60", "--scalp-months", "3")
+        self.assertEqual(tasks, ",".join(TODAY_TASKS))
+        self.assertIn("--mt5-wait", out)
+        self.assertIn("--scalp-months", out)
+        self.assertIn("ignorowan", out)
+        _, out = self._tasks()
+        self.assertNotIn("ignorowan", out)
+
+
 if __name__ == "__main__":
     unittest.main()
