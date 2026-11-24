@@ -161,19 +161,11 @@ class Strategy:
     def detect(self, view: MarketView, p: dict) -> list[Draft]:
         out = list(self.detect_long(view, p))
         mv = mirror_view(view)
-        out += [unmirror_draft(d, mv.center) for d in self.detect_long(mv, p)]
+        out += [swap_fact_pairs(unmirror_draft(d, mv.center)) for d in self.detect_long(mv, p)]
         for d in out:
             d.strategy_id = self.id
         return out
-
-    # ---- helpers shared by implementations
-    @staticmethod
-    def tick_round(x: float | None, point: float | None) -> float | None:
-        if x is None:
-            return None
-        if not point:
-            return round(x, 2)
-        return round(round(x / point) * point, 8)
+    # 1.46: unused helper Strategy.tick_round removed (no caller in backend / tests / tools)
 
 
 # ----------------------------------------------------------------------------- mirroring
@@ -230,7 +222,15 @@ _TEXT_SWAP = [("powyżej", "poniżej"), ("poniżej", "powyżej"), ("wzrostowo", 
               ("zawraca z poziomu ≤", "zawraca z poziomu ≥"), ("rosnącej", "malejącej")]
 
 
+# 1.46: codes without a direction - mirroring them changed their meaning ('RR_NET_TOO_LOW' -> 'RR_NET_TOO_HIGH' made the S12 checklist
+# show the RR condition as met on SHORT; ADX has no direction, 'ADX_BELOW_20' -> 'ADX_ABOVE_20'). Exact codes and prefixes.
+NON_DIRECTIONAL_CODES = frozenset({"RR_NET_TOO_LOW"})
+NON_DIRECTIONAL_PREFIXES = ("ADX_BELOW_", "SCORE_BELOW_")
+
+
 def mirror_code(code: str) -> str:
+    if code in NON_DIRECTIONAL_CODES or code.startswith(NON_DIRECTIONAL_PREFIXES):
+        return code
     return "_".join(_CODE_SWAP.get(t, t) for t in code.split("_"))
 
 
@@ -273,6 +273,18 @@ def unmirror_draft(d: Draft, center: float) -> Draft:
     d.facts = facts
     d.structure_key = "S|" + d.structure_key
     d.event_key = d.event_key.replace("LONG", "SHORT")
+    return d
+
+
+# 1.46: upper / lower fact pairs of S01-S10. On the mirrored view the 'upper' value is the reflection of the real LOWER edge, so after
+# the reflection back the values sit under swapped labels (S03 SHORT showed 'Górna granica kanału' = the lower edge). A key alone of
+# its pair (S07 range_top_px) is renamed to its partner. S12 swaps its own PAIRS (it does not use Strategy.detect).
+FACT_PAIRS = (("upper_px", "lower_px"), ("box_top_px", "box_bottom_px"), ("range_high_px", "range_low_px"), ("range_top_px", "range_bottom_px"))
+_FACT_RENAME = {a: b for a, b in FACT_PAIRS} | {b: a for a, b in FACT_PAIRS}
+
+
+def swap_fact_pairs(d: Draft) -> Draft:
+    d.facts = {_FACT_RENAME.get(k, k): v for k, v in d.facts.items()}
     return d
 
 

@@ -84,6 +84,12 @@ def _spread(bar: dict, m: ExecModel) -> float:
     return float(sp) * m.point if sp else 0.0
 
 
+def _spread_missing(bar: dict, m: ExecModel) -> bool:
+    """1.46: MT5 model without a fixed spread_price and a bar without its spread field: the cost is UNKNOWN (simulated as 0.0, as
+    before, but counted and reported - a 'realistic' result with unknown spread costs is NOT_VERIFIED, never silently complete)."""
+    return m.mode == "MT5" and m.spread_price is None and bar.get("spread") is None
+
+
 def _round_tick(x: float, t: float) -> float:
     return round(round(x / t) * t, 10)
 
@@ -106,9 +112,11 @@ def simulate(bars: list[dict], machine: core.MachineResult, p: core.Params, m: E
     last_entry_signal_i = -10**9
     eq_curve, peak, max_dd, in_pos_bars = [], equity, 0.0, 0
     diag = {"signals": 0, "blocked_position": 0, "blocked_cooldown": 0, "rejected_min_lot": 0, "rejected_gap_beyond_sl": 0,
-            "rejected_small_risk": 0, "rejected_no_margin": 0, "fills": 0, "same_bar_sl_tp": 0, "gap_exits": 0}
+            "rejected_small_risk": 0, "rejected_no_margin": 0, "fills": 0, "same_bar_sl_tp": 0, "gap_exits": 0, "spread_missing_bars": 0}
     for i in range(len(bars)):
         sp = _spread(bars[i], m)
+        if _spread_missing(bars[i], m):
+            diag["spread_missing_bars"] += 1
         slip = m.slippage_ticks * m.tick_size
         # ---- 1. pending entry fills at this bar's open
         if pending and pending[0] == i:
@@ -213,7 +221,10 @@ def simulate(bars: list[dict], machine: core.MachineResult, p: core.Params, m: E
         _close(pos, len(bars) - 1, c[-1], "END_OF_DATA", bars, m)
         equity += pos.net
         trades.append(pos)
-    return {"variant": variant, "model": m.as_dict(), "params": p.as_dict(), "trades": trades, "diag": diag,
+    return {"variant": variant, "bt_version": BT_VERSION, "model": m.as_dict(), "params": p.as_dict(), "trades": trades, "diag": diag,
+            "spread_cost_status": ("NOT_APPLICABLE" if m.mode != "MT5" else "FIXED_SPREAD_PRICE" if m.spread_price is not None else
+                                   "COMPLETE" if not diag["spread_missing_bars"] else
+                                   f"NOT_VERIFIED – brak spreadu w {diag['spread_missing_bars']} świecach (liczony jako 0)"),
             "final_equity": equity, "max_dd_pct": round(100 * max_dd, 2), "exposure_pct": round(100 * in_pos_bars / max(1, len(bars)), 2),
             "bars": len(bars), "machine_counts": machine.counts, "equity_curve": eq_curve}
 

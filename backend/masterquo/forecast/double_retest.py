@@ -234,10 +234,23 @@ def step(s, x, i, m5, a5, names, sign, gap, done, cooldown):
     return s
 
 
+def _real_kind(kind: str, sign: int) -> str:
+    """1.46: SELL runs on negated prices, so a level found as LOW (or ASIA_LOW ...) is a real HIGH - the public view swaps the
+    label back (prices were already negated back, the labels were not)."""
+    if sign > 0 or not isinstance(kind, str):
+        return kind
+    head, _, tail = kind.rpartition("_")
+    tail = {"LOW": "HIGH", "HIGH": "LOW"}.get(tail, tail)
+    return f"{head}_{tail}" if head else tail
+
+
 def _public(s: dict | None, sign: int, tick: float) -> dict | None:
     if s is None:
         return None
     f = (lambda v: None if v is None else round(v * sign, 6))
+    # 1.46: the raw 'observed_retest_low' is a price of the negated space for SELL (e.g. -2655.1) - only the real-space extreme is
+    # published for SELL (BUY keeps the field: there it is the real low)
+    trig = None if not s["trigger"] else {k: v for k, v in s["trigger"].items() if sign > 0 or k != "observed_retest_low"}
     zone = sorted([f(s["zone"][0]), f(s["zone"][1])])
     nxt = {"ARMED": f"zamknięta M5 w strefie {zone[0]:g}–{zone[1]:g} i odbicie o ≥ {s['bounce']:.2f}",
            "FIRST_EPISODE_CONFIRMED": f"2 zamknięte M5 poza strefą (reset {s['reset_count']}/2), potem nowy kontakt i odbicie",
@@ -248,12 +261,12 @@ def _public(s: dict | None, sign: int, tick: float) -> dict | None:
             "L": f(s["L"]), "deep_zone": zone, "epsilon": round(s["eps"], 4), "bounce_min": round(s["bounce"], 4), "probe_allowance": round(s["probe"], 4),
             "A5": round(s["A5"], 4), "A30": round(s["A30"], 4), "armed_at": iso(s["armed_at"]), "expires_at": iso(s["expires_at"]),
             "location": {**s["location"], "L": f(s["location"]["L"]), "trace_price": f(s["location"]["trace_price"]),
-                         "trace_confirmed_at": iso(s["location"]["trace_confirmed_at"])},
+                         "trace": _real_kind(s["location"].get("trace"), sign), "trace_confirmed_at": iso(s["location"]["trace_confirmed_at"])},
             "episodes": [{"contact_at": iso(e["contact_at"]), "confirmed_at": iso(e["confirmed_at"]), "close": f(e["close"])} for e in s["episodes"]],
             "reclaim": s["reclaim"] and {"at": iso(s["reclaim"]["at"]), "close": f(s["reclaim"]["close"])},
             "retest": s["retest"] and {"contact_at": iso(s["retest"]["contact_at"]), "extreme": f(s["retest"]["low"])},
-            "trigger": s["trigger"] and {**s["trigger"], "at": iso(s["trigger"]["at"]), "close": f(s["trigger"]["close"]),
-                                        "observed_retest_extreme": f(s["trigger"]["observed_retest_low"])},
+            "trigger": trig and {**trig, "at": iso(s["trigger"]["at"]), "close": f(s["trigger"]["close"]),
+                                 "observed_retest_extreme": f(s["trigger"]["observed_retest_low"])},
             "targets_hypothetical": [f(s["L"] + G), f(s["L"] + 2 * G)], "next_required_event": nxt,
             "invalidation": f"zamknięcie M5 {'poniżej' if sign > 0 else 'powyżej'} {f(s['zone'][0] - s['eps']):g} albo knot poza {f(s['zone'][0] - s['probe']):g}; "
                             f"TTL do {iso(s['expires_at'])}; luka danych; zmiana reżimu ATR5",
