@@ -6,6 +6,7 @@ I0152  agent: claude-fable-5-2 in FALLBACK_MODELS, no server-side fallback under
 """
 import asyncio
 import json
+import os
 import unittest
 
 import _env
@@ -515,6 +516,75 @@ class TestI0104CpuSamplerIsolation(_DataDir):
                      "masterquo.training.core:reset_candles_cache", "masterquo.sysres:reset_cpu_samplers"):
             mod, fn = hook.split(":")
             __import__(mod, fromlist=[fn]).__dict__[fn]()                           # process-cache hooks exist and run
+
+
+# ------------------------------------------------------------------ I0118
+class TestI0118SecretNamesSingleSource(_DataDir):
+    def test_one_source_and_pinned_sets(self):
+        from masterquo import secrets_store as SS
+        from masterquo.exports import core as EC
+        self.assertIs(EC.SECRET_NAMES, SS.ALLOWED)                                  # 1.45: a separate copy
+        self.assertEqual(SS.ALLOWED, ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY"))
+        self.assertEqual(set(SS.UI_SETTABLE), {"TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "ANTHROPIC_API_KEY", "MT5_PASSWORD"})
+        self.assertEqual(SS.DOTENV_VARS, ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN"))
+
+    def test_verify_release_is_a_superset(self):
+        import ast
+        from pathlib import Path
+
+        from masterquo import secrets_store as SS
+        tree = ast.parse((Path(_env.ROOT) / "tools" / "verify_release.py").read_text(encoding="utf-8"))
+        names = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+                     and any(getattr(t, "id", None) == "SECRET_NAMES" for t in n.targets))
+        self.assertLessEqual(set(SS.ALLOWED) | {"PMW_ADMIN_PASSWORD_HASH", "PMW_SIGNING_KEY"}, set(names))
+
+    def test_dotenv_never_loads_mt5_password_or_coinglass(self):
+        from unittest import mock
+
+        import masterquo.__main__ as M
+        from masterquo import paths
+        (self.data / ".env").write_text("MT5_PASSWORD=x1\nCOINGLASS_API_KEY=x2\nFRED_API_KEY=x3\n", encoding="utf-8")
+        keep = {k: os.environ.pop(k, None) for k in ("MT5_PASSWORD", "COINGLASS_API_KEY", "FRED_API_KEY")}
+        try:
+            with mock.patch.object(paths, "ROOT_DIR", self.data):
+                M._load_dotenv()
+            self.assertEqual((os.environ.get("MT5_PASSWORD"), os.environ.get("COINGLASS_API_KEY"), os.environ.get("FRED_API_KEY")),
+                             (None, None, "x3"))
+        finally:
+            for k, v in keep.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
+
+    def test_env_example_matches_dotenv_vars(self):
+        import re
+        from pathlib import Path
+
+        from masterquo import secrets_store as SS
+        text = (Path(_env.ROOT) / ".env.example").read_text(encoding="utf-8")
+        keys = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", text, flags=re.MULTILINE))
+        self.assertEqual(keys, set(SS.DOTENV_VARS))                                 # 1.45: 4 of 5 (no MASTERQUO_DATA_DIR)
+        head = " ".join(text.splitlines()[:3])
+        self.assertTrue(all(v in head for v in SS.DOTENV_VARS), head)                # 1.45: 'WYŁĄCZNIE zmienne wymienione poniżej' (4)
+
+    def test_config_route_masks_every_secret(self):
+        import test_audit_146_b_mq_api as MQ
+        from masterquo.config import ConfigStore
+        from masterquo.secrets_store import ALLOWED, SecretStore
+        os.environ["COINGLASS_API_KEY"] = "cg-secret-value-123456"
+        try:
+            rt = MQ.make_rt(cfg=ConfigStore(), secrets=SecretStore())
+            app = MQ.make_app(rt)
+            st, body, _ = MQ.call(app, rt, "GET", "/api/v1/config")
+            self.assertEqual(st, 200, body[:300])
+            sec = json.loads(body)["secrets"]
+            self.assertEqual(set(sec), set(ALLOWED))                               # 1.45: COINGLASS_API_KEY missing
+            self.assertTrue(all(set(v) == {"source", "masked"} for v in sec.values()))
+            self.assertNotIn(b"cg-secret-value-123456", body)
+            st, _, _ = MQ.call(app, rt, "POST", "/api/v1/secrets", body={"name": "COINGLASS_API_KEY", "value": "x"})
+            self.assertEqual(st, 400)                                               # unchanged: own route for COINGLASS
+        finally:
+            os.environ.pop("COINGLASS_API_KEY", None)
 
 
 if __name__ == "__main__":

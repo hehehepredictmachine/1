@@ -235,7 +235,10 @@ def cmd_stop(args) -> int:
 
 
 def _load_dotenv() -> None:
-    """Optional <root>/.env with ANTHROPIC_API_KEY / ANTHROPIC_MODEL / MASTERQUO_DATA_DIR (never packaged)."""
+    """Optional <root>/.env (never packaged). Only secrets_store.DOTENV_VARS are taken (ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
+    MASTERQUO_DATA_DIR, FRED_API_KEY, TELEGRAM_BOT_TOKEN - 1.46 arch I0118: one list, the same as before); a variable already set in the
+    environment wins."""
+    from .secrets_store import DOTENV_VARS
     f = paths.ROOT_DIR / ".env"
     if not f.exists():
         return
@@ -244,7 +247,7 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
+        if k in DOTENV_VARS and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
