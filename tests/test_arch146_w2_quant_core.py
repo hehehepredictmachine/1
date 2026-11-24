@@ -604,5 +604,78 @@ class TestNoSpecRows(unittest.TestCase):
             self.assertEqual(prod[cid]["code_state"], "NO_SPEC", cid)
 
 
+# ================================================================================================ I0053 / I0115 dead cost models
+def _production_trees():
+    """(relative path, AST) of every module of backend/masterquo - parsed only, nothing imported (tests excluded by construction)."""
+    import ast
+    root = _env.ROOT / "backend" / "masterquo"
+    for p in sorted(root.rglob("*.py")):
+        yield p.relative_to(root), ast.parse(p.read_text(encoding="utf-8"))
+
+
+def _absolute(rel, level: int, module: str | None) -> str:
+    pkg = ["masterquo", *rel.parent.parts]
+    base = pkg[:len(pkg) - (level - 1)] if level else []
+    return ".".join([*base, *([module] if module else [])])
+
+
+class TestQuantUnitsProductionApi(unittest.TestCase):
+    """quant/units: production used only binary_ev (CostModel, InstrumentSpec, ev_for_plan ... tests only) and three instrument
+    specifications coexisted. The module now names its production API and the AST scan of backend/masterquo keeps it honest; the unused
+    PMW-ARC-1 schemas are named in decision/contracts.UNUSED_IN_PRODUCTION (a separate constant - SCHEMAS / make / validate unchanged)."""
+
+    def test_only_the_production_api_of_quant_units_is_used(self):
+        import ast
+        from pathlib import Path
+
+        from masterquo.quant import units as U
+        used: set[str] = set()
+        for rel, tree in _production_trees():
+            if rel == Path("quant/units.py"):
+                continue
+            aliases = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    target = _absolute(rel, node.level, node.module)
+                    if target == "masterquo.quant.units":
+                        used |= {a.name for a in node.names}
+                    elif target == "masterquo.quant":
+                        aliases |= {a.asname or a.name for a in node.names if a.name == "units"}
+                elif isinstance(node, ast.Import):
+                    aliases |= {a.asname or a.name for a in node.names if a.name == "masterquo.quant.units"}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in aliases:
+                    used.add(node.attr)
+        self.assertEqual(U.PRODUCTION_API, ("binary_ev",))
+        self.assertIn("binary_ev", used)                                    # the scan sees quant/service.py
+        self.assertLessEqual(used, set(U.PRODUCTION_API), used - set(U.PRODUCTION_API))
+
+    def test_unused_arc1_schemas_are_not_created_in_production(self):
+        import ast
+        from pathlib import Path
+
+        from masterquo.decision import contracts as K
+        self.assertEqual(K.UNUSED_IN_PRODUCTION, ("InstrumentSpec", "ObservationEvent", "MarketSnapshot", "FeatureSet", "MarketContext",
+                                                  "instrument_spec"))
+        self.assertNotIn("UNUSED_IN_PRODUCTION", K.SCHEMAS)
+        for name in K.UNUSED_IN_PRODUCTION[:-1]:
+            self.assertIn(name, K.SCHEMAS)                                  # still valid contracts (tests use them)
+        made, calls = set(), set()
+        for rel, tree in _production_trees():
+            if rel == Path("decision/contracts.py"):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else None
+                if fn in ("make", "validate") and node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    made.add(node.args[0].value)
+                if fn == "instrument_spec":
+                    calls.add(str(rel))
+        self.assertFalse(made & set(K.UNUSED_IN_PRODUCTION), made & set(K.UNUSED_IN_PRODUCTION))
+        self.assertIn("DecisionRecord", made)                                # the scan sees the coordinator
+        self.assertEqual(calls, set())
+
+
 if __name__ == "__main__":
     unittest.main()
