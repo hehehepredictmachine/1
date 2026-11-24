@@ -539,6 +539,40 @@ class TestTabICLReferenceRowsOneVersion(unittest.TestCase):
         self.assertEqual(ctx["live_rows"], 3)
 
 
+class TestTrainingEvidenceAfterUpdate(unittest.TestCase):
+    """After the update every pre-1.46 row (LEGACY_ROWS) is skipped by the training: train_from_ledger answers INSUFFICIENT_EVIDENCE until
+    enough FEAT-3 rows mature - visible only in the log. The Quant status now shows labelled rows of the current version vs the minimum."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_ledger_counts_labelled_rows_per_feature_version(self):
+        from masterquo.quant import features as F
+        led, spec = ledger_with_versions(Path(self.td.dir) / "l.sqlite", [F.LEGACY_ROWS, F.CURRENT, F.LEGACY_ROWS, F.LEGACY_ROWS])
+        led.add_row({"row_id": "pending", "instrument": "XAUUSD", "engine": "SH_SCALPING", "strategy": "SCALPING", "direction": "LONG",
+                     "decision_ts": 2e9, "task_hash": spec.task_hash(), "event_id": spec.event_id, "spec": spec.to_dict(), "features": {},
+                     "data_kind": "REAL", "matures_at": 2e9, "feature_version": F.CURRENT})
+        t = led.counts("XAUUSD")["tasks"][0]
+        self.assertEqual(t["labelled_by_feature_version"], {F.LEGACY_ROWS: 3, F.CURRENT: 1})
+        self.assertEqual(t["by_status"], {"LABELLED": 4, "PENDING": 1})                   # the existing fields unchanged
+
+    def test_status_shows_current_rows_against_the_training_minimum(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        from masterquo.quant.service import QuantService
+        q = QuantService(StubRt())
+        led, spec = ledger_with_versions(q.base / "ledger.sqlite", [F.LEGACY_ROWS] * 3 + [F.CURRENT] * 2)
+        q.ledger = led
+        ev = q.status()["training_evidence"]
+        need = M.CRITERIA["min_dev"] + M.CRITERIA["min_cal"] + M.CRITERIA["min_test"]
+        self.assertEqual(ev["feature_version"], F.CURRENT)
+        self.assertEqual(ev["required_min_labelled"], need)
+        self.assertEqual(ev["tasks"], [{"task_hash": spec.task_hash(), "event_id": spec.event_id, "engine": "SH_SCALPING", "labelled_current": 2,
+                                        "labelled_older_versions": 3, "required_min_labelled": need, "missing": need - 2}])
+        self.assertIn("FEAT-1", ev["note"])
+
+
 # ================================================================================================ D11
 class TestMonteCarloAdapterD11(unittest.TestCase):
     """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did

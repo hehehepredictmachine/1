@@ -94,7 +94,8 @@ def main(argv=None) -> int:
         st = SV.Settings(SV.qdir() / "settings.json").get()
         live = _server("/api/v1/quant/status")
         insts = [inst] if inst else ["XAUUSD", "BTC"]
-        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": led.counts(inst),
+        cnt = led.counts(inst)
+        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": cnt, "training_evidence": SV.training_evidence(cnt),
             "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0

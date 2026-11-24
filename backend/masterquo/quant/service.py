@@ -617,6 +617,7 @@ class QuantService:
             k = str((p.get("eligibility") or {}).get("reason") or "?").split(":")[0]
             by_reason[k] = by_reason.get(k, 0) + 1
         s = self.settings.get()
+        counts = self.ledger.counts(inst)
         return {"version": VERSION, "instrument": inst, "mode": s["mode"], "assist": s.get("assist"), "assist_active": self.assist_active(),
                 "settings_error": self.settings.error, "generation": pub.get("generation"), "complete": pub.get("complete"),
                 "computed_at": pub.get("computed_at"), "cycle_ms": pub.get("cycle_ms"), "tasks": pub.get("tasks"), "snapshot": pub.get("snapshot"),
@@ -624,14 +625,33 @@ class QuantService:
                            "ready_ids": sorted({p.get("canonical_id") for p in el})},
                 "setup_scoped": _safe(lambda: A.setup_scoped(self.rt, inst), []),
                 "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:]},
-                "ledger": self.ledger.counts(inst), "loop": dict(self.loop), "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at",
-                                                                                                          "error")} for j in self.jobs.values()][-10:],
+                "ledger": counts, "training_evidence": training_evidence(counts), "loop": dict(self.loop),
+                "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at", "error")} for j in self.jobs.values()][-10:],
                 "timings": percentiles(self.timings), "execution_allowed": False,
                 "estimator": s.get("estimator"), "tabicl": _safe(self.tabicl.status, {})}
 
     def predictions(self) -> dict:
         pub = self.pub.current() or {}
         return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "eligible", "excluded", "aliases_dropped")}
+
+
+def training_evidence(counts: dict) -> dict:
+    """1.46: new MetaModels learn from labelled rows of features.CURRENT only (train_from_ledger); pre-1.46 rows (LEGACY_ROWS) stay in the
+    ledger but no longer train, so after the update training answers INSUFFICIENT_EVIDENCE until enough CURRENT rows mature (weeks) - the
+    active FEAT-1 artifact keeps working. Per task: labelled rows of the current version vs the minimum the time blocks need."""
+    need = int(M.CRITERIA["min_dev"]) + int(M.CRITERIA["min_cal"]) + int(M.CRITERIA["min_test"])
+    tasks = []
+    for t in (counts or {}).get("tasks") or []:
+        byv = t.get("labelled_by_feature_version") or {}
+        cur = int(byv.get(F.CURRENT, 0))
+        tasks.append({"task_hash": t.get("task_hash"), "event_id": t.get("event_id"), "engine": t.get("engine"), "labelled_current": cur,
+                      "labelled_older_versions": sum(int(n) for v, n in byv.items() if v != F.CURRENT), "required_min_labelled": need,
+                      "missing": max(0, need - cur)})
+    return {"feature_version": F.CURRENT, "required_min_labelled": need,
+            "required_basis": f"DEV {M.CRITERIA['min_dev']} + CAL {M.CRITERIA['min_cal']} + TEST {M.CRITERIA['min_test']} (bloki czasowe z "
+                              "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
+            "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze sprzed 1.46 (FEAT-1) zostają w ledgerze, ale nie trenują. "
+                    "Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt FEAT-1."}
 
 
 def percentiles(tim: dict) -> dict:

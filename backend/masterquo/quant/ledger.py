@@ -83,13 +83,20 @@ class QuantLedger:
             (" WHERE instrument=?" if instrument else "") + " GROUP BY task_hash, event_id, engine, status"
         with self._lock:
             rs = [dict(x) for x in self.c.execute(q, (instrument,) if instrument else ()).fetchall()]
+        # 1.46: labelled rows (what training_rows returns) per feature version - training uses features.CURRENT only
+        qv = "SELECT task_hash, COALESCE(feature_version, ?) fv, COUNT(*) n FROM rows WHERE status='LABELLED' AND y IS NOT NULL" +              (" AND instrument=?" if instrument else "") + " GROUP BY task_hash, fv"
+        with self._lock:
+            vs = [dict(x) for x in self.c.execute(qv, (F.LEGACY_ROWS, instrument) if instrument else (F.LEGACY_ROWS,)).fetchall()]
         tasks: dict = {}
         for r in rs:
             t = tasks.setdefault(r["task_hash"], {"task_hash": r["task_hash"], "event_id": r["event_id"], "engine": r["engine"], "by_status": {},
-                                                  "positives": 0, "from": r["t0"], "to": r["t1"]})
+                                                  "positives": 0, "from": r["t0"], "to": r["t1"], "labelled_by_feature_version": {}})
             t["by_status"][r["status"]] = r["n"]
             t["positives"] += int(r["pos"] or 0)
             t["from"], t["to"] = min(t["from"], r["t0"]), max(t["to"], r["t1"])
+        for v in vs:
+            if v["task_hash"] in tasks:
+                tasks[v["task_hash"]]["labelled_by_feature_version"][v["fv"]] = v["n"]
         return {"tasks": list(tasks.values()), "total": sum(r["n"] for r in rs)}
 
     def add_assessment(self, a: dict) -> None:
