@@ -217,12 +217,14 @@ class SHService:
         inst = self.instrument()
         shc = C.load()
         if inst not in (shc.get("instruments") or {}):
+            self._watch(None, now)                        # w2 (I0748): open plans are not managed now - shown, never touched
             self._set("UNSUPPORTED_INSTRUMENT", f"brak profilu SH dla {inst}")
             return
         acc = self.account()
         try:
             spec = self.spec(acc)
         except UnitError as exc:
+            self._watch(None, now)
             self._set("NO_SYMBOL", str(exc))
             return
         q = self.quote(now)
@@ -234,8 +236,12 @@ class SHService:
             rec = self.recover(ex, spec, now)
             if not rec.get("incomplete"):                 # terminal data unavailable: recovery is repeated on the next tick
                 self.recovered_epoch = epoch
+        elif now - self._adopt_at >= ADOPT_EVERY_SECONDS:
+            self._adopt_at = now
+            self.adopt_pending(ex, spec, now)             # w2 (I0745): unknown entry outcomes between reconnects (adoption only)
         if q:
             self.manage(ex, spec, q, now, shc)
+        self._watch(spec, now)
         self.store.expire_signals(now)
         bars = {tf: [b for b in self.bridge.bars(tf, 400, include_forming=False) if b.get("open_utc")] for tf in ("M1", "M5", "M15", "H1")}
         if self.pack is not None:                                       # 1.38 pack: longer closed history + M3 (native or complete triples)
@@ -748,7 +754,14 @@ class SHService:
             self.store.update_plan(pid, state=st, result={"reason": res.get("reason"), "retcode": res.get("retcode")}, now=now)
             self.log.warn("SH", "ENTRY_" + res["status"], f"{su['strategy']} {su['side']}: {res.get('reason')}")
             return res
-        return self.bind_fill(ex, plan, res, spec, q, mode, now)
+        try:
+            return self.bind_fill(ex, plan, res, spec, q, mode, now)
+        except Exception as exc:  # noqa: BLE001 - w2 (I0745): the position exists; adoption finishes the binding (never a crash of the cycle)
+            why = f"{type(exc).__name__}: {exc}"[:200]
+            self.store.update_plan(pid, state="ENTRY_UNKNOWN", result={"reason": "BIND_ERROR: " + why}, now=now)
+            self.store.event(pid, "BIND_ERROR", {"reason": why, "fill": res}, now)
+            self.log.error("SH", "BIND_ERROR", f"{pid}: {why}"[:300])  # noqa: PLE1205 - application log (source, code, text)
+            return {"status": "UNKNOWN", "reason": "BIND_ERROR: " + why}
 
     def bind_fill(self, ex, plan, res, spec, q, mode, now) -> dict:
         """Targets from the ACTUAL fill price (snapped to ticks, never closer than requested); split of the ACTUAL filled volume."""
@@ -908,6 +921,8 @@ class SHService:
             return b._unwind(now, dec["reason"], gated=True)
         if dec["decision"] != "HEDGE" or hedged:
             return out                                           # never a new HEDGE intent next to an open / closing leg
+        if (b.policy or {}).get("hedge_disabled"):
+            return out                                           # w2 (I0745): adopted outside a reconnect - no leg from a mid-life decision
         acc = self.account()
         ok, why = True, ""
         if acc.get("margin_mode") != "HEDGING":
@@ -1544,21 +1559,9 @@ class SHService:
         except Exception as exc:  # noqa: BLE001 - no data: nothing is adopted or rejected, the recovery is repeated (next tick)
             return {**out, "incomplete": f"{type(exc).__name__}: {exc}"[:200]}
         shm = C.load()["magic_number"]
-        for r in demo:
-            if r.get("account_key") not in (None, ex.account_key):
-                continue                                             # decided only on its own account (never rejected from another one)
-            if r["state"] == "ENTRY_UNKNOWN":
-                tag = ex.comment(r["plan_id"], "P")
-                hit = next((p for p in term if p["magic"] == shm and p["comment"] == tag), None)
-                if hit:
-                    self.store.own(ex.account_key, hit["ticket"], r["plan_id"], "OPEN_P", now)
-                    self.store.event(r["plan_id"], "ADOPTED", hit, now)
-                    self.bind_fill(ex, r["plan"], {"status": "FILLED", "price": hit["price_open"], "volume": hit["volume"], "ticket": hit["ticket"]},
-                                   spec, self.quote(now) or {"bid": hit["price_open"], "ask": hit["price_open"], "spread": 0.0}, r["exec_mode"], now)
-                    out["adopted"].append(r["plan_id"])
-                else:
-                    self.store.update_plan(r["plan_id"], state="REJECTED", result={"reason": "brak pozycji w terminalu po wyniku UNKNOWN"}, now=now)
-                    out["rejected"].append(r["plan_id"])
+        self._adopt_fail.clear()                                     # a reconnect starts the bounded adoption attempts again
+        res = self.adopt_unknown(ex, spec, now, term, [r for r in demo if r["state"] == "ENTRY_UNKNOWN"], on_reconnect=True)
+        out["adopted"], out["rejected"] = res["adopted"], res["rejected"]
         for p in term:
             if p["magic"] == shm and not self.store.owner(ex.account_key, p["ticket"]):
                 out["orphans"].append(p["ticket"])
@@ -1566,6 +1569,113 @@ class SHService:
             self.log.warn("SH", "ORPHANS", f"pozycje z magic SH bez planu: {out['orphans']} – nie są zarządzane automatycznie")
         self.state["recovery"] = {**out, "at": now}
         return out
+
+    def adopt_unknown(self, ex, spec, now: float, term: list[dict], rows: list[dict], *, on_reconnect: bool) -> dict:
+        """THE adoption of plans whose entry outcome is unknown (recover on a reconnect and, w2 I0745, every ADOPT_EVERY_SECONDS between
+        reconnects): the terminal position with the SH magic and the plan's own comment, on the plan's own account, registered to this plan
+        as its single owner (store.own True - another owner: no adoption, warning). Without the position: REJECTED only on a reconnect (as
+        before); between reconnects the plan stays (the symbol stays blocked). An adopted basket outside a reconnect gets no hedge leg (its
+        activations are used up: the hedge decision would come from this tick only). Per plan in try/except with a bounded attempt count."""
+        out: dict = {"adopted": [], "rejected": [], "refused": []}
+        shm = C.load()["magic_number"]
+        for r in rows:
+            pid = r["plan_id"]
+            acc_ok = r.get("account_key") == ex.account_key or (on_reconnect and r.get("account_key") is None)
+            if not acc_ok or r.get("exec_mode") not in RK.REAL_MODES:
+                continue                                             # decided only on its own account (never rejected from another one)
+            if not on_reconnect and self._adopt_fail.get(pid, 0) >= ADOPT_MAX_FAILS:
+                continue
+            try:
+                tag = ex.comment(pid, "P")
+                hit = next((p for p in term if p["magic"] == shm and p["comment"] == tag), None)
+                if not hit:
+                    if on_reconnect:
+                        self.store.update_plan(pid, state="REJECTED", result={"reason": "brak pozycji w terminalu po wyniku UNKNOWN"}, now=now)
+                        out["rejected"].append(pid)
+                    continue
+                if not self.store.own(ex.account_key, hit["ticket"], pid, "OPEN_P", now):
+                    own = (self.store.owner(ex.account_key, hit["ticket"]) or {}).get("plan_id")
+                    if self.last_saved.get(f"adopt:{pid}") != own:
+                        self.last_saved[f"adopt:{pid}"] = own
+                        self.store.event(pid, "ADOPT_REFUSED", {"ticket": hit["ticket"], "owner": own}, now)
+                        self.log.warn("SH", "ADOPT_REFUSED", f"{pid}: pozycja {hit['ticket']} należy do planu {own} – plan zostaje ENTRY_UNKNOWN")  # noqa: PLE1205, G010 - application log (source, code, text)
+                    out["refused"].append(pid)
+                    continue
+                self.store.event(pid, "ADOPTED", dict(hit, on_reconnect=on_reconnect), now)
+                self.bind_fill(ex, r["plan"], {"status": "FILLED", "price": hit["price_open"], "volume": hit["volume"], "ticket": hit["ticket"]},
+                               spec, self.quote(now) or {"bid": hit["price_open"], "ask": hit["price_open"], "spread": 0.0}, r["exec_mode"], now)
+                if not on_reconnect:
+                    row = self.store.plan(pid)
+                    b = (row or {}).get("fsm_obj")
+                    if isinstance(b, Basket) and b.state not in ("CLOSED",):
+                        b.activations = max(int(b.activations), int(b.cfg.max_activations))
+                        b.policy = dict(b.policy or {}, hedge_disabled="ADOPTED")
+                        self.store.update_plan(pid, fsm=b, now=now)
+                        self.store.event(pid, "HEDGE_DISABLED_ADOPTED", {"reason": "koszyk przejęty po wyniku UNKNOWN bez ponownego połączenia – "
+                                                                                    "bez nogi hedge (tylko wyjścia, SL/TP, limit czasu)"}, now)
+                out["adopted"].append(pid)
+                self._adopt_fail.pop(pid, None)
+            except Exception as exc:  # noqa: BLE001 - per plan: never stops management / the cycle
+                n = self._adopt_fail.get(pid, 0) + 1
+                self._adopt_fail[pid] = n
+                self.store.event(pid, "ADOPT_ERROR", {"reason": f"{type(exc).__name__}: {exc}"[:200], "attempt": n}, now)
+                self.log.warn("SH", "ADOPT_ERROR", f"{pid}: {type(exc).__name__}: {exc}"[:300])  # noqa: PLE1205, G010 - application log (source, code, text)
+        return out
+
+    def adopt_pending(self, ex, spec, now: float) -> dict | None:
+        """w2 (I0745): between reconnects - ENTRY_UNKNOWN plans and PENDING_ENTRY plans older than 2 x order timeout (a send that never
+        returned) of the REAL modes; adoption only (never REJECTED here). No terminal data -> nothing, repeated later."""
+        try:
+            tmo = 2.0 * float(self.cfg_store.get().execution.order_timeout_seconds)
+        except Exception:  # noqa: BLE001
+            tmo = 60.0
+        rows = [r for r in self.store.open_plans(spec.symbol) if r.get("exec_mode") in RK.REAL_MODES and
+                (r["state"] == "ENTRY_UNKNOWN" or (r["state"] == "PENDING_ENTRY" and now - float(r.get("created_at") or now) > tmo))]
+        if not rows or ex.terminal is None:
+            return None
+        try:
+            term = ex.terminal_positions(spec.symbol)
+        except Exception:  # noqa: BLE001 - no data: nothing adopted now
+            return None
+        return self.adopt_unknown(ex, spec, now, term, rows, on_reconnect=False)
+
+    # ------------------------------------------------------------------ read-only status (I0111 / I0748)
+    def _watch(self, spec, now: float) -> None:
+        """w2: read-only, at most every WATCH_EVERY_SECONDS, never stops a tick. (I0111) actions of OPEN plans whose outcome is unknown (SENT /
+        UNKNOWN in sh_actions: nothing resends or resolves them - wolumen rozlicza reconcile, wejścia adopcja, zamknięcia i modyfikacje
+        UNKNOWN nie są ponawiane); (I0748) open plans of another symbol than the active one - not managed by the bot now (only the broker
+        SL / TP of the entry order) - listed with a warning; nothing is sent for them."""
+        if now - self._watch_at < WATCH_EVERY_SECONDS:
+            return
+        self._watch_at = now
+        try:
+            ua = [{"action_id": a["action_id"], "plan_id": a["plan_id"], "kind": a["kind"], "status": a["status"],
+                   "age_s": round(now - float(a.get("updated_at") or a.get("created_at") or now), 1)} for a in self.store.unknown_actions(open_only=True)]
+            sym = getattr(spec, "symbol", None)
+            un = [{"plan_id": p["plan_id"], "symbol": p["symbol"], "strategy": p["strategy"], "state": p["state"], "exec_mode": p["exec_mode"]}
+                  for p in self.store.open_plans() if p.get("symbol") != sym]
+            self.state["unknown_actions"] = ua
+            self.state["unmanaged_plans"] = un
+            new_u = [a["action_id"] for a in ua if ("A", a["action_id"]) not in self._watch_seen]
+            new_p = [p["plan_id"] for p in un if ("P", p["plan_id"]) not in self._watch_seen]
+            self._watch_seen = {("A", a["action_id"]) for a in ua} | {("P", p["plan_id"]) for p in un}
+            if new_u:
+                self.log.warn("SH", "ACTIONS_UNKNOWN", f"akcje SH z nieznanym wynikiem (bez ponawiania): {new_u[:10]}"[:300])  # noqa: PLE1205, G010 - application log (source, code, text)
+            if new_p:
+                self.log.warn("SH", "PLANS_OTHER_SYMBOL", f"otwarte plany SH innego symbolu niż aktywny {sym} – bez zarządzania bota: {new_p[:10]}"[:300])  # noqa: PLE1205, G010 - application log (source, code, text)
+        except Exception as exc:  # noqa: BLE001
+            self.state["watch_error"] = f"{type(exc).__name__}: {exc}"[:200]
+
+    @staticmethod
+    def open_plans_warning(store, symbol: str | None) -> dict | None:
+        """w2 (I0748, informative): open SH plans of a symbol other than `symbol` (e.g. after switching the active asset) - the bot manages
+        only the active symbol's plans; the others keep the broker SL / TP of their entry. None when there are none."""
+        ps = [{"plan_id": p["plan_id"], "symbol": p["symbol"], "strategy": p["strategy"], "state": p["state"], "exec_mode": p["exec_mode"]}
+              for p in store.open_plans() if p.get("symbol") != symbol]
+        if not ps:
+            return None
+        return {"plans": ps, "note": "otwarte plany SH innego symbolu nie są zarządzane przez bota po zmianie aktywa (częściowe TP, BE, limit "
+                                     "czasu, hedge) – działają tylko SL/TP brokera; wróć do tego aktywa albo zamknij je ręcznie"}
 
     # ------------------------------------------------------------------ views
     def plan_view(self, row: dict, q: dict | None) -> dict:

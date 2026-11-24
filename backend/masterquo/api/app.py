@@ -1486,7 +1486,11 @@ def create_app(rt, port: int) -> FastAPI:
             rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")
         rt.engine.mark_dirty()
         rt.bus.publish("assets", st)
-        return st
+        try:                                              # w2 (I0748, informative): open SH plans of another symbol are not managed now
+            w = rt.sh.open_plans_warning(rt.sh.store, rt.cfg.get().mt5.symbol)
+        except Exception:  # noqa: BLE001 - the switch itself already happened
+            w = None
+        return dict(st, sh_open_plans_warning=w) if w and isinstance(st, dict) else st
 
     LOCK_NOTE = ("Execution Lock został wycofany (1.24, decyzja użytkownika). O wysyłce zleceń decydują: tryb wykonania, potwierdzony "
                  "rachunek (DEMO / REAL), STOP nowych wejść, limity ryzyka użytkownika, aktualne dane i warunki brokera.")

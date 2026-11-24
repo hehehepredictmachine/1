@@ -229,14 +229,16 @@ class SHStore:
             q += " AND account_key=?"
             args.append(account_key)
         tot = 0.0
-        for r in self.db.query("SELECT result FROM sh_plans WHERE closed_at >= ? AND result IS NOT NULL", (since,)):
+        for r in self.db.query(q, args):
             tot += float((json.loads(r["result"]) or {}).get("net_money") or 0.0)
         return tot
 
     # actions (idempotency) ----------------------------------------------------------------------------------------------
     def claim_action(self, action: dict, now: float | None = None) -> dict:
         """Claim an action id before touching the terminal. Returns {claimed: True} for a new id (or a retry of a REJECTED one),
-        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent (reconciliation decides).
+        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent. w2 (I0111) what really settles them:
+        the volume of a close by reconcile (volume drop / closing deal), an entry by adoption (recover / adopt_pending); a close / modify left
+        UNKNOWN is not retried - it is only shown (SHService._watch: state 'unknown_actions' + log ACTIONS_UNKNOWN).
         w2 (I0739): a NOT_SENT management action (certainly not sent) may be claimed again like a REJECTED one - never an OPEN_* entry."""
         now = time.time() if now is None else now
         with self.db.tx() as c:
@@ -258,7 +260,12 @@ class SHStore:
     def actions(self, plan_id: str) -> list[dict]:
         return self.db.query("SELECT * FROM sh_actions WHERE plan_id=? ORDER BY created_at", (plan_id,))
 
-    def unknown_actions(self) -> list[dict]:
+    def unknown_actions(self, open_only: bool = False) -> list[dict]:
+        """Actions whose outcome is unknown (SENT / UNKNOWN). w2 (I0111): open_only = only of plans still open (one JOIN, no full scan
+        of the history) - read by the SH status, never resent or resolved."""
+        if open_only:
+            return self.db.query("SELECT a.* FROM sh_actions a JOIN sh_plans p ON p.plan_id = a.plan_id WHERE a.status IN ('SENT','UNKNOWN') "
+                                 "AND p.state NOT IN ('CLOSED','ERROR_CLOSED','REJECTED') ORDER BY a.created_at")
         return self.db.query("SELECT * FROM sh_actions WHERE status IN ('SENT','UNKNOWN')")
 
     # ownership -----------------------------------------------------------------------------------------------------------
