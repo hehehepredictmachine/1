@@ -25,27 +25,12 @@ from pathlib import Path
 
 from .. import paths
 from . import core as tc
+from . import tasks as TT
 
 INSTRUMENTS = ("XAUUSD", "BTC")
-# modele głównego treningu: id zadania `training run` -> (krótka nazwa, grupa)
-PIPELINE = (
-    ("forecast", "Prognozy świec 5/15/30 min", "Prognozy i kierunek"),
-    ("scalp_A", "Scalp A – kierunek 1/3/5 min", "Scalp"),
-    ("scalp_B", "Scalp B – jakość setupu", "Scalp"),
-    ("scalp_C", "Scalp C – polityka hedge", "Scalp"),
-    ("ml", "Legacy ML – setupy S01–S12", "Strategie"),
-    ("lab", "Lab – LOGREG / TREE / XGB / ResNet / SNN", "Laboratorium"),
-    ("indicator_context", "Kontekst wskaźników SAR / IQ / PAL", "Kontekst rynku"),
-    ("ml_scalp", "Scalp ML – XGBoost wynik netto", "Scalp"),
-    ("neural_scalp", "Neural Scalp – sieć TCN", "Scalp"),
-    ("structure_intelligence", "Structure Intelligence – ruch M1", "Laboratorium"),
-    ("flow_context", "Flow context – reakcja M1", "Kontekst rynku"),
-    ("context_indicators", "Kontekst VAMD / FD / SMC", "Kontekst rynku"),
-    ("sh_models", "SCALPING / HEDGING – model zdarzenia", "Strategie"),
-    ("sh_pack", "Pakiet 20 strategii SC / HG", "Strategie"),
-    ("monte_carlo", "Monte Carlo ścieżek", "Strategie"),
-    ("master_models", "Master models – HDC / GPR / STE", "Laboratorium"),
-)
+# modele głównego treningu: id zadania `training run` -> (krótka nazwa, grupa); arch146 I0131: z jednego rejestru zadań (training/tasks.py),
+# te same id, nazwy i grupy w tej samej kolejności
+PIPELINE = TT.center_pipeline()
 EXTRA = (
     ("trainhub", "Kierunek TH – BASELINE / LOGREG / HGB", "Prognozy i kierunek"),
     ("families", "Rodziny modeli – ARIMA / GARCH / Kalman …", "Rodziny modeli"),
@@ -712,8 +697,8 @@ class PepeTrainingCenter:
         exp = [f"{t.get('instrument')}: {_short(t.get('detail'))}" for t in st.get("tasks") or []      # 1.42.11: błąd eksportu na początku
                if t.get("kind") in ("export", "quality") and t.get("execution") == "BLAD_TECHNICZNY"]
         for t in st.get("tasks") or []:
-            if t.get("kind") in ("export", "quality", "activate", "bot") or (t.get("detail") == "nie wybrano w planie"):
-                continue
+            if t.get("kind") in ("export", "quality", "activate", "bot") or (t.get("detail") == "nie wybrano w planie") or t.get("not_applicable"):
+                continue                                         # arch146 I0073: „nie dotyczy instrumentu” (sh_pack BTC) nie jest pominięciem
             ex = t.get("execution")
             if ex in c:
                 c[ex] += 1

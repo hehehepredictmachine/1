@@ -75,11 +75,11 @@ def _health(port: int) -> dict | None:
 
 
 def train_all(a) -> int:
+    from .training import tasks as TT
     from .training.cli import main as training_main
-    tasks = [t for t, skip in (("forecast", a.skip_candles), ("scalp_A", a.skip_candles), ("ml", a.skip_ml), ("lab", a.skip_lab),
-                               ("indicator_context", a.skip_candles), ("ml_scalp", a.skip_ml), ("neural_scalp", a.skip_lab),
-                               ("structure_intelligence", a.skip_lab), ("flow_context", a.skip_lab),
-                               ("context_indicators", a.skip_lab)) if not skip]
+    # arch146 I0131: the train-all set comes from the one task registry (training/tasks.py, field train_all): the same 10 tasks in the same
+    # order with the same skip flags - never sh_models / sh_pack / monte_carlo / master_models
+    tasks = TT.train_all_tasks({"skip_candles": a.skip_candles, "skip_ml": a.skip_ml, "skip_lab": a.skip_lab})
     argv = ["run", "--instruments", a.instruments, "--profile", "TEST_INSTALACJI" if a.quick else "PELNY_TRENING", "--origin", "train-all",
             "--tasks", ",".join(tasks) or "none"]
     for flag, v in (("--months", a.months), ("--commission-xauusd", a.commission), ("--commission-btc", a.commission_btc), ("--ml-days", a.ml_days),

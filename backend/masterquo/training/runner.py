@@ -13,24 +13,14 @@ from pathlib import Path
 
 from .. import paths
 from . import core
+from . import profiles as PR
+from . import tasks as T
 from .core import Run, now
 
-TASKS = (("export", "Eksport historii z MT5"), ("quality", "Kontrola jakości danych"), ("forecast", "Prognozy świec gold_candles 5/15/30 min"),
-         ("scalp_A", "Scalp A: kierunek 1/3/5 min (LR/HGB/MLP)"), ("scalp_B", "Scalp B: jakość setupu P(TP1 przed SL)"),
-         ("scalp_C", "Scalp C: ocena polityki hedge vs REDUCE w replayu (to nie jest sieć)"), ("ml", "Legacy ML: Decision Tree + XGBoost (setupy S01–S12)"),
-         ("lab", "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN (+eksperymenty), strona LONG"),
-         ("indicator_context", "Kontekst wskaźników (SAR + IQ/PAL): kalibracja SAR i model reakcji P(TP1 przed SL)"),
-         ("ml_scalp", "Scalp ML: XGBoost P(dodatni wynik netto cyklu) + net_R, osobno LONG/SHORT"),
-         ("neural_scalp", "Neural Scalp System: TCN M1/M5 + kontekst – P(TP1/SL/TIMEOUT) i net_R kandydata scalp"),
-         ("structure_intelligence", "Structure Intelligence: ruch M1 h=3/5/15 (LOGREG/XGB/ResNeXt/SEW/SEW-EB/SpikingBrain/MiniRocket V2) + kontekst setupu"),
-         ("flow_context", "Flow context: kalibracja Heikin/S-R/StopDistance, Markov3 + koszyki, model reakcji FLOW_CONTEXT_MOVE_M1_V1"),
-         ("context_indicators", "Kontekst VAMD / FD / Pullback+SMC: kalibracja dev (<=24 konfiguracje), model CONTEXT_MOVE_M5_V1 + ablacje"),
-         ("sh_models", "SCALPING/HEDGING: replay strategii + model zdarzenia P(TP2 przed SL) + raport walidacji"),
-         ("sh_pack", "Pakiet 20 strategii SC/HG: replay walk-forward (te same detektory, solver i polityki hedge) + werdykt per wariant"),
-         ("monte_carlo", "Monte Carlo ścieżek: walidacja wariantów IID/BLOCK/REGIME, P(TP przed SL) i kalibracja poza próbą"),
-         ("master_models", "Master models (XXX.rar): HDC/GPR/event engine+STFS/STE-FlowNet + ewaluacja Kalman/Breakout/SMC/Multi-Indicator/TSVP/BUZOA"),
-         ("activate", "Aktywacja w rejestrach + zgodność loaderów"),
-         ("bot", "Przekazanie do działającego bota (przeładowanie)"))
+# arch146 I0131: the task list lives in ONE registry (training/tasks.py) - the same (id, title) pairs in the same order of execution
+# ('activate' second to last, 'bot' last); pepe_center.PIPELINE, studio RUNNER_GROUPS, requirements.REQUIREMENTS and the train-all list are
+# derived from it too.
+TASKS = T.runner_tasks()
 
 
 SCALP_UNITS = ("scalp_A", "scalp_B", "scalp_C")
@@ -45,7 +35,9 @@ def build_plan(*, instruments: list[str], profile: str, symbols: dict, commissio
                tasks: list[str] | None = None, include_approx: bool = True, lab_bars: int | None = None, threads: int | None = None,
                ml_days: int | None = None, min_events: int | None = None, origin: str = "menu", datasets: dict | None = None) -> tuple[dict, list[dict]]:
     prof = dict(core.profiles()[profile])
-    req = list(tasks or [k for k, _ in TASKS])
+    # arch146 I0133: unknown names raise ValueError('BAD_TASKS: ...') - a typo ('sh_modelz') ran export + quality + bot reload without any
+    # training and without a warning; 'none' (train-all with every model skipped) = no model task, as before
+    req = T.validate(tasks) if tasks else [k for k, _ in TASKS]
     if any(k in req for k in SCALP_UNITS):            # 1.46: A/B/C come from ONE scalp_train process (run under scalp_A): "Trenuj" at Scalp B or C
         req += [k for k in SCALP_UNITS if k not in req]   # marked scalp_A "nie wybrano w planie" - nothing trained, run reported success
     plan = {"run_id": core.new_run_id(), "profile": profile, "profile_params": prof, "instruments": instruments, "symbols": symbols,
@@ -62,10 +54,30 @@ def build_plan(*, instruments: list[str], profile: str, symbols: dict, commissio
     for inst in instruments:
         for kind, title in TASKS:
             t = core.task(f"{inst}:{kind}", inst, kind, title)
-            if kind not in plan["requested_tasks"] and kind not in ("export", "quality", "activate", "bot"):
+            if kind not in plan["requested_tasks"] and kind not in T.ALWAYS:
                 t.update(execution="POMINIETE", detail="nie wybrano w planie")
+            elif not T.applies_to(kind, inst):
+                # arch146 I0073: a task that does not apply to the instrument (sh_pack for BTC) is NOT APPLICABLE - it was skipped at run time
+                # and every full BTC run ended with exit code 4 ("część pominięta")
+                why = T.not_applicable_detail(kind)
+                t.update(execution="POMINIETE", quality="NIE_DOTYCZY", detail=why, reasons=[why], not_applicable=True)
             tasks_out.append(t)
     return plan, tasks_out
+
+
+def exit_code(state: dict) -> int:
+    """Exit code of `masterquo training run` from the run state (core module docstring): 3 cancelled, 1 a technical error, 4 a task skipped
+    for a reason (environment, commission, RAM, data ...), 0 otherwise. Not selected in the plan and NOT APPLICABLE to the instrument
+    (arch146 I0073) are not skips."""
+    tasks = state["tasks"]
+    if state.get("status") == "CANCELLED":
+        return 3
+    if any(t["execution"] == "BLAD_TECHNICZNY" for t in tasks):
+        return 1
+    if any(t["execution"] == "POMINIETE" and t.get("detail") != "nie wybrano w planie" and not t.get("not_applicable")
+           for t in tasks if t["kind"] != "bot"):
+        return 4
+    return 0
 
 
 # ------------------------------------------------------------------ helpers
@@ -258,8 +270,10 @@ def t_scalp(run: Run, inst: str) -> None:
                    f"({entry['costs']['commission_source']}); loader {json.dumps((rep.get('runtime_check') or {}).get('horizons'))}",
             parity=rep.get("runtime_check"), artifacts=[str(Path(entry["run_dir"]) / "report.json")], **common,
             unit={"task": "kierunek M1 po kosztach", "tf": "M1", "horizons": "1/3/5 min", "side": "oba (klasy DOWN/FLAT/UP)"})
+    b_saved = bool(entry.get("setup_model"))            # arch146 I0625: model B exists only when the run stored a setup_model
     run.set(ids[1], execution="UKONCZONE", quality="TEST_TECHNICZNY" if syn else SCALP_B_QUALITY.get(tb, "NIEZWALIDOWANY"),
-            detail=f"{tb}: {(rep.get('task_B') or {}).get('reason') or ''}", **common,
+            detail=f"{tb}: {(rep.get('task_B') or {}).get('reason') or ''}",
+            **{**common, "integration": "ZAPISANY_DO_BADAN" if b_saved else "NIEZAPISANY"}, setup_model_saved=b_saved, task_b_status=tb,
             unit={"task": "P(TP1 przed SL) setupu Range→Sweep→Retest", "tf": "M1/M5", "horizons": "do 30 min", "side": "BUY i SELL w jednym modelu (cecha kierunku)"})
     run.set(ids[2], execution="UKONCZONE", quality="TEST_TECHNICZNY" if syn else ("BRAK_PRZESLANEK" if tc == "INSUFFICIENT_DATA" else
                                                                                  "NIEZWALIDOWANY"),
@@ -428,7 +442,7 @@ def t_structure_intelligence(run: Run, inst: str) -> None:
         return
     out = run.dir / f"{inst}_structure_intelligence.json"
     com = plan["commissions"].get(inst)
-    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    prof = PR.module_profile(plan)                # arch146 I0134: one mapping runner profile -> module CLI profile
     cmd = [core.bot_python(), "-m", "masterquo", "structure-intelligence", "pipeline", "--asset", inst, "--dataset", str(ds), "--out", str(out),
            "--profile", prof] + (["--allow-synthetic-fixture"] if plan["synthetic"] else []) + (["--commission", str(com)] if com is not None else [])
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_structure_intelligence")
@@ -455,7 +469,7 @@ def t_flow_context(run: Run, inst: str) -> None:
     if ds is None:
         return
     out = run.dir / f"{inst}_flow_context.json"
-    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    prof = PR.module_profile(plan)                # arch146 I0134: one mapping runner profile -> module CLI profile
     cmd = [core.bot_python(), "-m", "masterquo", "flow-context", "pipeline", "--asset", inst, "--dataset", str(ds), "--out", str(out),
            "--profile", prof] + (["--allow-synthetic-fixture"] if plan["synthetic"] else [])
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_flow_context")
@@ -479,7 +493,7 @@ def t_context_indicators(run: Run, inst: str) -> None:
     if ds is None:
         return
     out = run.dir / f"{inst}_context_indicators.json"
-    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    prof = PR.module_profile(plan)                # arch146 I0134: one mapping runner profile -> module CLI profile
     cmd = [core.bot_python(), "-m", "masterquo", "context-indicators", "pipeline", "--asset", inst, "--dataset", str(ds), "--out", str(out),
            "--profile", prof] + (["--allow-synthetic-fixture"] if plan["synthetic"] else [])
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_context_indicators")
@@ -505,7 +519,7 @@ def t_monte_carlo(run: Run, inst: str) -> None:
     if ds is None:
         return
     out = run.dir / f"{inst}_montecarlo.json"
-    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    quick = PR.is_quick(plan)
     cmd = [core.bot_python(), "-m", "masterquo", "montecarlo", "validate", "--dataset", str(ds), "--out", str(out)]
     cmd += (["--max-points", "200", "--n-paths", "300"] if quick else []) + _no_activate(plan)
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_montecarlo")
@@ -531,12 +545,14 @@ def t_sh_pack(run: Run, inst: str) -> None:
     """1.38 PMW-SH-PACK-2: replay + walk-forward validation of the 20 variants with the live code. Real data with a known commission can
     produce VALIDATED per variant (data/sh/pack_validation/<ID>.json, read by the catalog); synthetic data -> NOT_VALIDATED (technical)."""
     tid, plan = f"{inst}:sh_pack", run.state["plan"]
-    if inst != "XAUUSD":
-        return _skip(run, tid, "pakiet 20 strategii jest zdefiniowany dla XAUUSD (definicja pipsa PMW_XAU_PRICE_0_10_V1)")
+    if not T.applies_to("sh_pack", inst):               # arch146 I0073: NOT APPLICABLE (a plan made before 1.46 arch did not mark it)
+        why = T.not_applicable_detail("sh_pack")
+        run.set(tid, execution="POMINIETE", quality="NIE_DOTYCZY", detail=why, reasons=[why], not_applicable=True)
+        return run.event(f"{tid}: nie dotyczy – {why}")
     ds = _ready(run, inst, tid)
     if ds is None:
         return
-    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    quick = PR.is_quick(plan)
     out = run.dir / f"{inst}_sh_pack.json"
     cmd = [core.bot_python(), "-m", "masterquo", "sh", "pack-replay", "--dataset", str(ds), "--out", str(out)]
     comm = (plan.get("commissions") or {}).get(inst)
@@ -570,7 +586,7 @@ def t_sh_models(run: Run, inst: str) -> None:
     if ds is None:
         return
     out = run.dir / f"{inst}_sh_models.json"
-    quick = plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"]
+    quick = PR.is_quick(plan)
     cmd = [core.bot_python(), "-m", "masterquo", "sh", "train", "--instrument", inst, "--dataset", str(ds), "--out", str(out)]
     cmd += (["--last-m1", "6000"] if quick else []) + (["--allow-synthetic"] if plan["synthetic"] else [])
     if quick or not plan.get("activate", True):          # 1.46: TEST_INSTALACJI ("modele nie są aktywowane") - no live validation / promotion
@@ -606,7 +622,7 @@ def t_master_models(run: Run, inst: str) -> None:
     if ds is None:
         return
     out = run.dir / f"{inst}_master_models"
-    prof = "quick" if plan["profile"] == "TEST_INSTALACJI" or plan["synthetic"] else "standard"
+    prof = PR.module_profile(plan)                # arch146 I0134: one mapping runner profile -> module CLI profile
     cmd = [core.bot_python(), "-m", "masterquo", "mm", "train", "--dataset", str(ds), "--instrument", inst, "--out", str(out), "--profile", prof,
            "--cancel-file", str(run.dir / "CANCEL")] + _no_activate(plan)
     rc, tail = core.run_child(run, tid, cmd, core.child_env(plan, inst), plan["profile_params"]["task_timeout_minutes"] * 60, f"{inst}_master_models")
@@ -631,6 +647,17 @@ def t_master_models(run: Run, inst: str) -> None:
             artifacts=[str(out / "REPORT.json"), str(out / "REPORT.md")],
             unit={"task": "HDC/event/STE: kierunek lub log-zwrot; GPR: rozkład log-zwrotu 3×M5; reszta: ewaluacja deterministyczna", "tf": "M1 (zdarzenia) / M5 / M15",
                   "horizons": "12×M5 (HDC), 3×M5 (GPR), 2 jednostki (event), 32 zdarzenia (STE)", "side": "kierunek (nie zlecenie)"})
+
+
+SCALP_B_SAVED = ("FILTER_HELPS_IN_HOLDOUT", "FILTER_NOT_HELPING_IN_HOLDOUT")   # scalp_train stores setup_model only for these statuses
+
+
+def _scalp_b_saved(tb: dict) -> bool:
+    """Did the scalp run store model B (setup quality)? The flag written by t_scalp; a run state written before 1.46 arch has only the
+    detail line '<task B status>: <reason>'."""
+    if "setup_model_saved" in tb:
+        return bool(tb["setup_model_saved"])
+    return (tb.get("task_b_status") or str(tb.get("detail") or "").split(":", 1)[0].strip()) in SCALP_B_SAVED
 
 
 def t_activate(run: Run, inst: str) -> None:
@@ -658,8 +685,13 @@ def t_activate(run: Run, inst: str) -> None:
                            cwd=str(paths.ROOT_DIR / "backend"), env=env, capture_output=True, text=True, timeout=300)
         (done if r.returncode == 0 else kept).append(f"scalp {sa['model_id']}" + ("" if r.returncode == 0 else f": {r.stdout[-200:]}"))
         if r.returncode == 0:
-            for x in "AB":
-                run.set(f"{inst}:scalp_{x}", integration="AKTYWNY_W_REJESTRZE")
+            run.set(f"{inst}:scalp_A", integration="AKTYWNY_W_REJESTRZE")
+            # arch146 I0625: B rides on A's 'active' pointer - it is active only when this run really stored the setup model (statuses
+            # INSUFFICIENT_DATA / REJECTED / NO_USEFUL_THRESHOLD store none; the worker then has no setup filter)
+            if _scalp_b_saved(run.task(f"{inst}:scalp_B")):
+                run.set(f"{inst}:scalp_B", integration="AKTYWNY_W_REJESTRZE")
+            else:
+                run.set(f"{inst}:scalp_B", integration="NIEZAPISANY")
     elif sa.get("model_id"):
         kept.append(f"scalp {sa['model_id']} ({sa['quality']}) – poprzedni aktywny bez zmian")
     ml = run.task(f"{inst}:ml")
@@ -782,11 +814,4 @@ def execute(run: Run) -> int:
         core.release_lock(run.run_id)
     from . import report
     report.write(run)
-    tasks = run.state["tasks"]
-    if run.state["status"] == "CANCELLED":
-        return 3
-    if any(t["execution"] == "BLAD_TECHNICZNY" for t in tasks):
-        return 1
-    if any(t["execution"] == "POMINIETE" and t.get("detail") != "nie wybrano w planie" for t in tasks if t["kind"] != "bot"):
-        return 4
-    return 0
+    return exit_code(run.state)
