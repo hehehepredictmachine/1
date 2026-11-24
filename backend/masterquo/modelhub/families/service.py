@@ -70,9 +70,14 @@ class FamilyService:
             art = "CANDIDATE"
         else:
             art = "NOT_TRAINED"
-        return {"implementation": impl, "implementation_reason": why, "artifact": art, "use": st.get("use", "OFF") if active else "OFF",
+        use = st.get("use", "OFF") if active else "OFF"
+        # 1.46 D5: a role ASSIST saved before the gate covered activate / rollback may sit on an artifact that would not get it today -
+        # shown (reason), never lowered here
+        gate = self.store.assist_ok(fid, inst, st.get("active"))[1] if use == "ASSIST" else None
+        return {"implementation": impl, "implementation_reason": why, "artifact": art, "use": use,
                 "active_run": st.get("active"), "runs": len(runs), "last_run": runs[-1]["run_id"] if runs else None,
-                "last_validation": (runs[-1].get("validation") or {}).get("status") if runs else None, "job": job}
+                "last_validation": (runs[-1].get("validation") or {}).get("status") if runs else None, "job": job,
+                "assist_gate_violation": gate}
 
     def catalog(self, inst: str) -> list[dict]:
         out = []
@@ -303,13 +308,20 @@ class FamilyService:
         if not ok:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": why}
         try:
+            self.store.assist_guard(fid, inst, rid, f"aktywowanie artefaktu {rid}")   # 1.46 D5: before the (costly) load + sample
+        except B.AssistGate as exc:
+            return {"ok": False, "status": "ASSIST_GATE", "reason": str(exc)}
+        try:
             art = self.fams[fid].load(self.store.run_dir(fid, inst, rid))
             chk = self._sample_check(fid, art, self.store.run_dir(fid, inst, rid))
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "status": "INCOMPATIBLE", "reason": f"wczytanie / próbka inferencji: {type(exc).__name__}: {exc}"[:300]}
         if not chk["ok"]:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": chk["reason"]}
-        st = self.store.set_active(fid, inst, rid, "panel")
+        try:
+            st = self.store.set_active(fid, inst, rid, "panel")
+        except B.AssistGate as exc:                              # the role was set to ASSIST meanwhile
+            return {"ok": False, "status": "ASSIST_GATE", "reason": str(exc)}
         self.invalidate(fid, inst)
         return {"ok": True, "status": "ACTIVE", "state": st, "sample_check": chk}
 

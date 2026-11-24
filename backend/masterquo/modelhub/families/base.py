@@ -61,6 +61,11 @@ class Unavailable(Exception):
         self.state, self.reason = state, reason
 
 
+class AssistGate(ValueError):
+    """1.46 D5: a change of the active artifact refused because the family has the role ASSIST and the target does not pass
+    Store.assist_ok. A ValueError, so the API (_fam) answers 409 as for set_use; nothing is written."""
+
+
 def missing_deps(mods: tuple[str, ...]) -> list[str]:
     out = []
     for m in mods:
@@ -265,8 +270,21 @@ class Store:
     def _save_state(self, family: str, inst: str, st: dict) -> None:
         _atomic_json(self._state_path(family, inst), st)
 
+    def assist_guard(self, family: str, inst: str, rid: str | None, what: str, st: dict | None = None) -> None:
+        """1.46 D5: the ASSIST gate also on a change of the active artifact (it was checked only in set_use - activate / rollback left
+        ASSIST on an artifact without APPROVED or not on REAL data, or on no artifact). At the role ASSIST the target `rid` must pass
+        assist_ok, else AssistGate and no state write. Tightening only: the role is never lowered here and a state saved earlier is left
+        as it is (nothing lifts the holds of the approved artifact); the user sets SHADOW first."""
+        st = self.state(family, inst) if st is None else st
+        if st.get("use") != "ASSIST":
+            return
+        ok, why = self.assist_ok(family, inst, rid)
+        if not ok:
+            raise AssistGate(f"ASSIST_GATE: {what} odrzucone przy roli ASSIST – {why}. Najpierw ustaw rolę SHADOW (albo OFF).")
+
     def set_active(self, family: str, inst: str, rid: str | None, why: str) -> dict:
         st = self.state(family, inst)
+        self.assist_guard(family, inst, rid, f"aktywowanie artefaktu {rid}" if rid else "dezaktywowanie artefaktu", st)
         st["history"] = (st.get("history") or [])[-50:] + [{"at": time.time(), "action": "ACTIVATE" if rid else "DEACTIVATE", "run_id": rid,
                                                              "previous": st.get("active"), "reason": why}]
         st["active"] = rid
@@ -288,6 +306,7 @@ class Store:
         st = self.state(family, inst)
         acts = [h for h in st.get("history") or [] if h["action"] == "ACTIVATE"]
         prev = acts[-1]["previous"] if acts and acts[-1]["run_id"] == st.get("active") else None
+        self.assist_guard(family, inst, prev, f"cofnięcie do artefaktu {prev}" if prev else "cofnięcie do braku artefaktu", st)
         st["history"].append({"at": time.time(), "action": "ROLLBACK", "run_id": prev, "previous": st.get("active")})
         st["active"] = prev
         self._save_state(family, inst, st)

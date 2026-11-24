@@ -5,7 +5,9 @@
   activate  --instrument XAUUSD --family F --run R   integrity + inference-sample check, then use SHADOW
   use       --instrument XAUUSD --family F --use OFF|SHADOW|ASSIST
   rollback  --instrument XAUUSD --family F
-Exit codes: 0 ok, 2 bad arguments, 3 nothing trained / blocked."""
+At the role ASSIST activate / rollback accept only a target that passes the ASSIST gate (APPROVED, REAL data) - otherwise ASSIST_GATE
+(set the role SHADOW first).
+Exit codes: 0 ok, 2 bad arguments, 3 nothing trained / blocked / refused."""
 from __future__ import annotations
 
 import argparse
@@ -59,12 +61,20 @@ def main(argv=None) -> int:
         print(json.dumps({"done": done, "blocked": [k for k, v in out.items() if v["state"] == "BLOCKED"],
                           "failed": [k for k, v in out.items() if v["state"] == "FAILED"]}, ensure_ascii=False))
         return 0 if done else 3
-    if a.cmd == "activate":
-        r = svc.activate(a.family, a.instrument, a.run)
-    elif a.cmd == "use":
-        r = svc.set_use(a.family, a.instrument, a.use)
-    else:
-        r = svc.rollback(a.family, a.instrument)
+    from . import base as B
+    try:
+        if a.cmd == "activate":
+            r = svc.activate(a.family, a.instrument, a.run)
+        elif a.cmd == "use":
+            r = svc.set_use(a.family, a.instrument, a.use)
+        else:
+            r = svc.rollback(a.family, a.instrument)
+    except KeyError as exc:                                      # FAMILY_UNKNOWN (also a missing --family)
+        print(str(exc).strip("'") + " – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        # 1.46 D5: a refusal (ASSIST gate on activate / rollback, set_use) is an answer, not a traceback
+        r = {"ok": False, "status": "ASSIST_GATE" if isinstance(exc, B.AssistGate) else "REFUSED", "reason": str(exc)}
     print(json.dumps(r, ensure_ascii=False, default=str, indent=1))
     return 0 if r.get("ok") else 3
 
