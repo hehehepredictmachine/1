@@ -171,6 +171,9 @@ class TestI0357GprLiveRetune(unittest.TestCase):
             p = m.predict(math.log(b.c[n - 1] / b.c[n - 2]), b.c[n - 1])
             self.assertEqual((g["mean_logret"], g["sd"]), (p["mean_logret"], p["sd"]))
         self.assertEqual(len(svc._ledger("XAUUSD").rows("gpr_logret:LIVE")), 3)
+        with mock.patch.object(type(svc), "_gpr_walk_forward", side_effect=RuntimeError("boom")):
+            g2 = svc._gpr("XAUUSD", self.b.slice(0, 640), "OK")                  # a failing SHADOW track never takes the forecast down
+        self.assertEqual((g2["mean_logret"], g2["walk_forward"]["status"]), (g["mean_logret"], "ERROR"))
 
 
 class TestI0358LedgerOutOfWindow(unittest.TestCase):

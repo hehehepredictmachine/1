@@ -45,16 +45,20 @@ class Ledger:
                                   horizon, kind, json.dumps(payload, default=float), quality, run_mode))
             return cur.rowcount == 1
 
-    def pending(self, model_id: str | None = None, until: float | None = None) -> list[dict]:
-        q = "SELECT * FROM predictions WHERE outcome IS NULL" + (" AND model_id=?" if model_id else "") + (" AND matures_at<=?" if until is not None else "")
-        args = tuple(x for x in (model_id, until) if x is not None)
+    def pending(self, model_id: str | None = None, until: float | None = None, min_source_ts: float | None = None) -> list[dict]:
+        q = ("SELECT * FROM predictions WHERE outcome IS NULL" + (" AND model_id=?" if model_id else "") + (" AND matures_at<=?" if until is not None else "")
+             + (" AND source_ts>=?" if min_source_ts is not None else ""))
+        args = tuple(x for x in (model_id, until, min_source_ts) if x is not None)
         with self._lock:
             return [dict(r) for r in self.c.execute(q + " ORDER BY matures_at", args).fetchall()]
 
-    def mature(self, observed_until: float, resolver, model_id: str | None = None) -> int:
-        """resolver(row) -> outcome dict or None (target data not available yet). Only rows with matures_at <= observed_until."""
+    def mature(self, observed_until: float, resolver, model_id: str | None = None, min_source_ts: float | None = None) -> int:
+        """resolver(row) -> outcome dict or None (target data not available yet). Only rows with matures_at <= observed_until.
+        1.46 arch (I0358): min_source_ts = the first bar the resolver can see (live window of the bridge). Older unscored rows (e.g. a
+        restart after a gap longer than the window) can never be resolved there - they stay in the ledger unscored (nothing is deleted
+        or marked) but are no longer re-scanned on every recompute."""
         n = 0
-        for r in self.pending(model_id, observed_until):
+        for r in self.pending(model_id, observed_until, min_source_ts):
             try:
                 out = resolver(r)
             except Exception as exc:  # noqa: BLE001 - one bad row never blocks the queue
