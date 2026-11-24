@@ -527,5 +527,154 @@ class TestModeRaceInExecute(_ExecBase):
         self.assertEqual(len(self.sent), 1)
 
 
+# ------------------------------------------------------------------------------------------------ I0727 / I0782 / I0783 (panel ręczny)
+class _PadBase(unittest.TestCase):
+    """Panel ręczny na syntetycznym terminalu (jak test_audit_146_b_core_exec_2.TestManualPad146)."""
+
+    def setUp(self):
+        import test_risk_execution as TR
+        from _env import wait_for
+        self.wait_for = wait_for
+        self.td = TempData()
+        cfg, db, bus, log, fake, worker, b = core()
+        self.cfg, self.db, self.fake, self.worker, self.b = cfg, db, fake, worker, b
+        cfg.update({"risk": TR.LIMITS, "costs": {"commission_mode": "CONFIGURED", "commission_per_lot_per_side": 3.0}})
+        b.start()
+        self.assertTrue(wait_for(lambda: b.state == "CONNECTED" and b.quote_status() and b.symbol_info, 40))
+        from masterquo.engine.lifecycle import LifecycleStore
+        from masterquo.execution.gateway import ExecutionGateway
+        from masterquo.execution.manager import PositionManager
+        from masterquo.execution.manual import ManualPad
+        from masterquo.execution.modes import ModeManager
+        from masterquo.execution.paper import PaperBroker
+        self.modes = ModeManager(cfg, db, bus, log, account_provider=lambda: (b.account_status(), b.account_key, b.synthetic))
+        self.paper = PaperBroker(cfg, b, db, bus, log)
+        self.gw = ExecutionGateway(cfg, b, db, bus, log, self.modes, TR.StubEngine(LifecycleStore(db)), self.paper)
+        self.mgr = self.gw.manager = PositionManager(cfg, b, db, bus, log, self.modes, self.paper)
+        self.mgr.reconciled_epoch = b.session_epoch
+        self.pad = ManualPad(cfg, b, db, bus, log, self.modes, self.paper, self.gw, ttl_s=60)
+        self.sent = []
+        self._orig_send = self.fake.order_send
+        self.fake.order_send = lambda r: self.sent.append(r) or self._orig_send(r)
+        self.modes.set_mode("PAPER", account=None, account_key=None, synthetic=True)
+
+    def tearDown(self):
+        self.b.stop()
+        self.worker.stop()
+        self.td.close()
+
+    def body(self, **kw):
+        q = self.b.quote_status()
+        return dict({"side": "BUY", "sl": q["ask"] - 5, "tp": q["ask"] + 10, "sizing_mode": "FIXED", "lots": 0.05}, **kw)
+
+    def auto_demo(self):
+        acct = self.b.account_status()
+        self.modes.set_mode("AUTO_DEMO", confirm=str(acct["login"]), account=acct, account_key=self.b.account_key, synthetic=True)
+
+
+class TestManualUnknownReconcile(_PadBase):
+    def test_unknown_manual_entry_is_found_by_tag(self):
+        self.auto_demo()
+        it = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+
+        def executes_but_no_answer(r):
+            self.sent.append(r)
+            self._orig_send(r)                                                        # broker wykonał, odpowiedź (None) nie dotarła
+        self.fake.order_send = executes_but_no_answer
+        r = self.pad.execute(it["intent_id"])
+        self.assertEqual(r["status"], "UNKNOWN", r)
+        att = self.db.one("SELECT * FROM order_attempts WHERE attempt_id=?", (r["attempt_id"],))
+        self.assertEqual(att["client_tag"], self.sent[0]["comment"])                  # przed: 'MQM:...' != komentarz 'MQ:MTI-...'
+        self.b._t_account = 0
+        self.assertTrue(self.wait_for(lambda: bool(self.b.positions), 15))
+        self.assertEqual(self.pad.reconcile()["reconciled"], [r["idempotency_key"]])   # przed: []
+        self.mgr._resolve_unknown()
+        self.assertEqual(self.db.one("SELECT state FROM order_attempts WHERE attempt_id=?", (r["attempt_id"],))["state"], "FILLED")
+        rows = self.db.query("SELECT * FROM managed_positions WHERE decision_id=?", (it["intent_id"],))
+        self.assertEqual(len(rows), 1)
+        n = len(self.sent)
+        for _ in range(3):                                                            # menedżer nic nie wysyła (bez częściowych, BE, czasu)
+            self.mgr.tick()
+        self.assertEqual(len(self.sent), n)
+        self.mgr._resolve_unknown()
+        self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE decision_id=?", (it["intent_id"],))), 1)
+
+
+PAD_META = {"trade_tick_size": 0.01, "point": 0.01, "volume_min": 0.01, "volume_max": 100.0, "volume_step": 0.01, "digits": 2}
+
+
+class TestManualPadRiskPolicy(unittest.TestCase):
+
+    def plan(self, **kw):
+        from masterquo.execution.manual import plan_math
+        args = {"side": "BUY", "quote": {"bid": 2000.0, "ask": 2000.2}, "meta": dict(PAD_META), "sl": 1990.0, "tp": 2030.0, "sizing_mode": "FIXED",
+                "lots": 5.0, "basis_value": 1000.0, "max_risk_pct": 1.0, "calc_profit": lambda s, v, o, c: round((c - o) * 100.0 * v, 2),
+                "commission": {"per_lot_per_side": 3.0, "source": "CONFIGURED"}}
+        args.update(kw)
+        return plan_math(**args)
+
+    def test_fixed_lots_above_risk_policy_not_eligible(self):
+        p = self.plan()
+        self.assertIn("RISK_ABOVE_POLICY", p["reason_codes"])                         # przed: wykonywalny mimo ryzyka >> 1%
+        self.assertFalse(p["execution_eligible"])
+
+    def test_fixed_lots_within_policy_unchanged(self):
+        p = self.plan(lots=0.01, basis_value=100000.0)
+        self.assertTrue(p["execution_eligible"], p["reason_codes"])
+
+    def test_unknown_basis_blocks(self):
+        p = self.plan(lots=0.01, basis_value=None)
+        self.assertIn("RISK_BASIS_UNKNOWN", p["reason_codes"])
+        self.assertFalse(p["execution_eligible"])
+
+
+class TestManualPortfolioGuard(_PadBase):
+    def test_manual_entry_respects_portfolio_max_open_positions(self):
+        self.cfg.update({"risk": {"max_open_positions": 1}})
+        it1 = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        self.assertEqual(self.pad.execute(it1["intent_id"])["status"], "FILLED")     # jedna pozycja PAPER
+        it2 = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        r = self.pad.execute(it2["intent_id"])
+        self.assertEqual(r["status"], "BLOCKED", r)                                   # przed: FILLED (strażnik portfela pominięty)
+        self.assertIn("PORTFOLIO_MAX_OPEN_POSITIONS", r["reason"])
+        self.assertNotIn("NOT_PRIMARY_PATH", r["reason"])                              # O1: reguła ścieżki głównej nie dotyczy ręcznych
+        self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE state='OPEN'")), 1)
+
+    def test_portfolio_guard_error_blocks(self):
+        from unittest import mock
+        it = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        with mock.patch("masterquo.risk.portfolio.state", side_effect=RuntimeError("db")):
+            r = self.pad.execute(it["intent_id"])
+        self.assertEqual(r["status"], "BLOCKED")
+        self.assertIn("PORTFOLIO_GUARD_ERROR", r["reason"])
+
+
+class TestManualIntentSingleEntry(_PadBase):
+    def test_second_revision_does_not_open_another_position(self):
+        it = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        self.assertEqual(self.pad.execute(it["intent_id"], 1)["status"], "FILLED")
+        r = self.pad.execute(it["intent_id"], 2)
+        self.assertEqual((r["status"], r["reason"]), ("DUPLICATE", "INTENT_ALREADY_EXECUTED"))   # przed: drugi FILLED
+        self.assertEqual(len(self.db.query("SELECT * FROM managed_positions WHERE decision_id=?", (it["intent_id"],))), 1)
+        again = self.pad.execute(it["intent_id"], 1)                                   # podwójne kliknięcie tej samej rewizji - jak dotąd
+        self.assertEqual((again["status"], again["reason"]), ("DUPLICATE", "ACTION_ALREADY_ATTEMPTED"))
+
+    def test_blocked_intent_may_be_retried(self):
+        it = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        self.modes.set_kill(True, "TEST")
+        self.assertEqual(self.pad.execute(it["intent_id"], 1)["status"], "BLOCKED")
+        self.assertEqual(self.pad.intent(it["intent_id"])["state"], "BLOCKED")
+        self.modes.set_kill(False, "TEST")
+        self.assertEqual(self.pad.execute(it["intent_id"], 2)["status"], "FILLED")
+        self.assertEqual(self.pad.execute(it["intent_id"], 3)["status"], "DUPLICATE")
+
+    def test_concurrent_claim_lets_one_revision_through(self):
+        it = self.pad.create_intent(self.pad.plan(self.body())["plan_id"])
+        self.db.execute("UPDATE manual_intents SET state='EXECUTING' WHERE intent_id=?", (it["intent_id"],))
+        r = self.pad.execute(it["intent_id"], 1)
+        self.assertEqual((r["status"], r["reason"]), ("DUPLICATE", "INTENT_ALREADY_EXECUTED"))
+        self.assertIsNone(self.db.one("SELECT * FROM managed_positions WHERE decision_id=?", (it["intent_id"],)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 import uuid
 
 from ..db.database import dumps
@@ -121,9 +122,11 @@ class ExecutionGateway:
         return d, gate
 
     # ------------------------------------------------------------ common controls (shared by BOT_SETUP and MANUAL_USER sources)
-    def common_checks(self, *, side: str, entry: float, require_real: bool = False) -> str:
+    def common_checks(self, *, side: str, entry: float, require_real: bool = False, source: str | None = None) -> str:
         """Mode gate (account / DEMO-LIVE / STOP / risk limits), reconciliation, quote freshness and drift.
-        Returns the mode; raises ExecutionError with the concrete reason. Source-specific checks stay in each validator."""
+        Returns the mode; raises ExecutionError with the concrete reason. Source-specific checks stay in each validator.
+        w2 (I0782): source MANUAL_USER also passes the shared portfolio guard of both paths (risk/portfolio: daily loss of the day,
+        open positions) - called directly, NOT through gate(path=...), so the primary-path rule (O1) and autobind are not involved."""
         b = self.bridge
         gate = self.modes.gate(b.account_key)
         mode = gate["mode"]
@@ -131,6 +134,17 @@ class ExecutionGateway:
             return mode
         if not gate["allowed"]:
             raise ExecutionError("MODE_GATE:" + ",".join(gate["reason_codes"]))
+        if source == "MANUAL_USER":
+            try:
+                from ..risk import portfolio as PF
+                from ..sh import config as SHC
+                st = PF.state(self.db, mode, b.account_key, time.time())
+                pf = PF.check(st, equity=(b.account_status() or {}).get("equity"), legacy_limits=self.cfg_store.get().risk,
+                              sh_limits=SHC.load().get("risk"))
+            except Exception as exc:  # noqa: BLE001 - unknown portfolio state = no new entry (never skipped)
+                raise ExecutionError(f"PORTFOLIO_GUARD_ERROR:{type(exc).__name__}") from None
+            if pf:
+                raise ExecutionError("PORTFOLIO:" + ",".join(pf))
         if require_real and mode == "PAPER":
             raise ExecutionError("REAL_MODE_REQUIRED")
         if mode != "PAPER" and self.manager is not None and self.manager.reconciled_epoch != b.session_epoch:
