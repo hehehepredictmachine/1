@@ -26,7 +26,7 @@ import math
 from datetime import datetime, timedelta
 from typing import Callable
 
-from .costs import DEAL_ENTRY_IN, DEAL_ENTRY_OUT
+from .costs import DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_OUT_BY
 
 ProfitFn = Callable[[str, float, float, float], "float | None"]
 MarginFn = Callable[[str, float, float], "float | None"]
@@ -52,16 +52,23 @@ def daily_loss_used(deals: list[dict], day_start_raw: float | None, floating: fl
     """Realized net P/L of trading deals since the broker-day start + negative floating P/L.
 
     Deposits/withdrawals (balance deals) are excluded; floating *profit* never enlarges the limit.
+    w2 (I0807): deals closed by an opposite position (DEAL_ENTRY_OUT_BY - Close By done in the terminal) count too, but only their
+    net LOSS of the day (a Close By profit never enlarges the limit).
     """
     if day_start_raw is None:
         return {"status": "UNKNOWN", "used": None, "realized_today": None, "floating": floating}
-    realized = 0.0
+    realized, out_by = 0.0, 0.0
     for d in deals:
         if d.get("type") not in (0, 1) or (d.get("time") or 0) < day_start_raw:
             continue
+        net = float(d.get("profit") or 0) + float(d.get("commission") or 0) + float(d.get("swap") or 0) + float(d.get("fee") or 0)
+        if d.get("entry") == DEAL_ENTRY_OUT_BY:
+            out_by += net
+            continue
         if d.get("entry") not in (DEAL_ENTRY_IN, DEAL_ENTRY_OUT, 2):
             continue
-        realized += float(d.get("profit") or 0) + float(d.get("commission") or 0) + float(d.get("swap") or 0) + float(d.get("fee") or 0)
+        realized += net
+    realized += min(0.0, out_by)
     used = max(0.0, -realized) + max(0.0, -floating)
     return {"status": "OK", "used": round(used, 2), "realized_today": round(realized, 2), "floating": round(floating, 2)}
 
