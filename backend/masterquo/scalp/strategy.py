@@ -196,12 +196,14 @@ def detect_range(m5: Series, prof: dict) -> dict:
     H, L = max(m5.h[i0:]), min(m5.l[i0:])
     W, a = H - L, m5.atr()
     er = ind.er(m5.c[-11:], 10)[-1]
-    info = {"L": L, "H": H, "MID": (H + L) / 2, "W": W, "atr_m5": a, "w_atr": W / a, "er10": er}
+    # 1.46 arch (I0860): ind.er returns 0.0 for a zero denominator, so 10 identical closes passed the ER filter and the 'flat market'
+    # branch (inside er > max) was unreachable. The flag is checked by the caller (ScalpMachine.on_m5_close: no candidates)
+    flat = sum(abs(m5.c[k] - m5.c[k - 1]) for k in range(len(m5) - 10, len(m5))) == 0
+    info = {"L": L, "H": H, "MID": (H + L) / 2, "W": W, "atr_m5": a, "w_atr": W / a, "er10": er, "flat": flat}
     if not (V(prof, "range", "width_min_atr") <= W / a <= V(prof, "range", "width_max_atr")):
         return dict(info, ok=False, state="SEARCH_RANGE", reason=f"szerokość {W / a:.2f} ATR poza [{V(prof, 'range', 'width_min_atr')}, {V(prof, 'range', 'width_max_atr')}]")
     if er is None or er > V(prof, "range", "er10_max"):
-        flat = sum(abs(m5.c[k] - m5.c[k - 1]) for k in range(len(m5) - 10, len(m5))) == 0
-        return dict(info, ok=False, state="SEARCH_RANGE", reason="płaski rynek (ER mianownik 0)" if flat else f"ER10 {er:.2f} > {V(prof, 'range', 'er10_max')}")
+        return dict(info, ok=False, state="SEARCH_RANGE", reason=f"ER10 {er if er is not None else float('nan'):.2f} > {V(prof, 'range', 'er10_max')}")
     tol = V(prof, "range", "touch_tolerance_atr") * a
     sep = V(prof, "range", "touch_min_separation_bars") + 1
     need = V(prof, "range", "touch_min_per_edge")
@@ -288,6 +290,13 @@ class ScalpMachine:
         self.last_detect = d
         self.state = "RANGE_ARMED"
         self._j(T, "RANGE_ARMED", "zakres zamrożony", L=d["L"], H=d["H"], MID=d["MID"], W=d["W"], atr_m5=a)
+        if d.get("flat"):
+            # 1.46 arch (I0860): 10 identical M5 closes (frozen feed / no quotes) - the range stays armed for its TTL exactly as before (no
+            # earlier re-detection of another range), but neither direction can produce a candidate from it
+            for direction in ("BUY", "SELL"):
+                self.dirs[direction] = {"state": "BLOCKED", "reason": "płaski rynek (ER mianownik 0) – zakres bez kandydatów"}
+                self._j(T, "BLOCKED", self.dirs[direction]["reason"], direction=direction)
+            return
         since = self.m5.t[len(self.m5) - V(self.p, "range", "lookback_m5_bars")]
         zmax = min(V(self.p, "zone", "max_width_atr_m5") * a, V(self.p, "zone", "max_width_range_fraction") * d["W"])
         for direction, side, edge in (("BUY", "LOW", d["L"]), ("SELL", "HIGH", d["H"])):
@@ -397,8 +406,12 @@ class ScalpMachine:
     def _candidate(self, direction: str, d: dict, i: int, T: int, a1: float) -> dict | None:
         m1, p, r, tick = self.m1, self.p, self.range, self.tick
         sgn = 1 if direction == "BUY" else -1
-        spread = m1.sp[i] if m1.sp[i] is not None else None
-        sp = spread if spread is not None else 0.0
+        if m1.sp[i] is None:
+            # 1.46 arch (I0809): the SL / TP2 buffers and the SHORT stop (hi + buf + spread) were built with spread 0.0 - a candidate
+            # with an understated stop. No spread on the retest bar = no candidate (the direction closes, as a blocked candidate would)
+            self.close_direction(direction, "BLOCKED", "SPREAD_UNKNOWN – brak spreadu na świecy retestu", T)
+            return None
+        spread = sp = m1.sp[i]
         lo_seq = min(m1.l[d["sweep_bar"]: i + 1])
         hi_seq = max(m1.h[d["sweep_bar"]: i + 1])
         buf = max(2 * tick, sp, 0.10 * a1)
@@ -574,11 +587,18 @@ def economics(plan: dict, fill: float, spread: float, cost_extra: float, prof: d
     return out
 
 
-def size(risk_per_unit_price: float, contract_size: float, equity: float, prof: dict, vmin: float, vstep: float, vmax: float) -> dict:
+def size(risk_per_unit_price: float, contract_size: float, equity: float, prof: dict, vmin: float, vstep: float, vmax: float,
+         money_per_price: float | None = None) -> dict:
     """Lots from the full cash risk per lot (price risk incl. costs x contract size); floored to the step, never rounded up.
-    Split TP1/TP2 only if both parts are legal lots; otherwise the frozen single-TP1 variant."""
+    Split TP1/TP2 only if both parts are legal lots; otherwise the frozen single-TP1 variant.
+    1.46 arch (I0738): the budget is in the ACCOUNT currency, price x contract size is in the QUOTE currency. With MT5's money per
+    price unit per lot (trade_tick_value / trade_tick_size, account currency) the lots use the LARGER per-lot risk of both (never
+    more lots than before; an account weaker than the quote currency, e.g. PLN, was oversized) and risk_cash is in the account
+    currency."""
     budget = equity * V(prof, "risk", "cycle_risk_pct_equity") / 100.0
-    per_lot = risk_per_unit_price * contract_size
+    per_lot_quote = risk_per_unit_price * contract_size
+    per_lot_acc = risk_per_unit_price * money_per_price if money_per_price else None
+    per_lot = max(per_lot_quote, per_lot_acc) if per_lot_acc is not None else per_lot_quote
     raw = budget / per_lot if per_lot > 0 else 0.0
     lots = math.floor(raw / vstep + 1e-9) * vstep
     lots = math.floor(min(lots, vmax) / vstep + 1e-9) * vstep          # F-15: re-floor after the vmax cap (vmax may be off-grid)
@@ -587,5 +607,5 @@ def size(risk_per_unit_price: float, contract_size: float, equity: float, prof: 
     half = math.floor(lots * V(prof, "exits", "tp1_fraction") / vstep + 1e-9) * vstep
     split = half >= vmin and (lots - half) >= vmin - 1e-12
     return {"ok": True, "lots": round(lots, 8), "tp1_lots": round(half if split else lots, 8), "tp2_lots": round(lots - half, 8) if split else 0.0,
-            "split": split, "raw": raw, "budget": budget, "risk_cash": round(lots * per_lot, 2),
-            "exit_variant": "TP1_TP2_SPLIT" if split else "SINGLE_TP1"}
+            "split": split, "raw": raw, "budget": budget, "risk_cash": round(lots * (per_lot_acc if per_lot_acc is not None else per_lot), 2),
+            "per_lot_basis": "TICK_VALUE" if per_lot_acc is not None else "CONTRACT_SIZE", "exit_variant": "TP1_TP2_SPLIT" if split else "SINGLE_TP1"}
