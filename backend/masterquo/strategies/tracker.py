@@ -55,6 +55,9 @@ class SetupTracker:
     def _save(self, r: dict) -> None:
         # 1.46: strategy_version / config_hash / event_id follow record_json on update (were frozen at the first write - the playbook
         # report showed a strategy version different from the plan after a reactivation or a parameter change)
+        # 1.46 arch (I0751, patch 649be2f): a final status that is never republished (ENTERED / INVALIDATED / EXPIRED / MISSED_ENTRY) is not
+        # overwritten by a stale copy - the scan thread writes rows read at its start, so an ENTERED set meanwhile by the execution (API
+        # thread) went back to ACTIVE and the setup could be selected and executed again. CANCELLED (soft stop) is still reactivated.
         rec = r["record"]
         self.db.execute("""INSERT INTO strategy_setups(setup_id, account_key, symbol, strategy_id, strategy_version, config_hash, direction, timeframe,
                            structure_key, event_id, stage, status, version, score, first_seen_at, first_price, updated_at, stage_changed_at, data_updates,
@@ -64,7 +67,8 @@ class SetupTracker:
                            strategy_version=excluded.strategy_version, config_hash=excluded.config_hash, event_id=excluded.event_id,
                            updated_at=excluded.updated_at, stage_changed_at=excluded.stage_changed_at, data_updates=excluded.data_updates,
                            expires_at=excluded.expires_at, terminal_reason=excluded.terminal_reason, terminal_at=excluded.terminal_at, stale=excluded.stale,
-                           record_json=excluded.record_json, history_json=excluded.history_json""",
+                           record_json=excluded.record_json, history_json=excluded.history_json
+                           WHERE strategy_setups.status NOT IN ('ENTERED', 'INVALIDATED', 'EXPIRED', 'MISSED_ENTRY')""",
                         (r["setup_id"], r["account_key"], r["symbol"], rec["strategy_id"], rec["strategy_version"], rec["config_hash"], rec["direction"],
                          rec["timeframe"], rec["structure_key"], rec["event_id"], r["stage"], r["status"], r["version"], rec["setup_score"],
                          r["first_seen_at"], r["first_price"], r["updated_at"], r["stage_changed_at"], r["data_updates"], r["expires_at"],

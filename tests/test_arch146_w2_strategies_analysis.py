@@ -60,5 +60,63 @@ class TestStrategyParamsIsolation(unittest.TestCase):
             self.assertLessEqual(set(vars(s)), {"_tls"}, sid)
 
 
+def iso_(dt) -> str:
+    from masterquo.timeutil import iso
+    return iso(dt)
+
+
+class _TrackerCase(unittest.TestCase):
+    """Tracker on a temporary DB with the S01-S10 synthetic scenarios of test_strategies."""
+
+    def setUp(self):
+        import test_strategies as TS
+        self.TS = TS
+        self.t = TS.TestTracker("test_dedupe_invalidation_expiry_restore")
+        self.t.setUp()
+        self.tr, self.cfg = self.t.tr, self.t.cfg
+
+    def tearDown(self):
+        self.t.tearDown()
+
+    def upd(self, cands, view, now, sid, new_data=True):
+        return self.tr.update(cands, view=view, symbol="XAUUSD-", account_key="acc", data_ok=True, new_data=new_data, now=now, cfg=self.cfg,
+                              scanned={sid})
+
+
+class TestTrackerEnteredNotResurrected(_TrackerCase):
+    """I0751 (łata 649be2f cofnięta w 00f269b): skan (wątek silnika) zapisywał wiersze przeczytane na swoim początku; ENTERED ustawione w tym
+    czasie przez wykonanie (POST /api/v1/execute, wątek API) wracało na ACTIVE - setup mógł zostać wybrany i wykonany drugi raz."""
+
+    def test_stale_copy_cannot_overwrite_entered_or_final(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        now = self.t._now(bars)
+        self.upd(cands, v, now, sid)
+        row = self.tr.active("XAUUSD-", "acc")[0]                                  # the scan's copy (status ACTIVE)
+        self.tr.mark_entered(row["setup_id"], "AUTO_DEMO_FILLED", "2026-11-20T10:00:00Z")   # execution thread
+        row["updated_at"] = "2026-11-20T10:00:01Z"
+        self.tr._save(row)                                                          # the scan finishes and writes its stale copy
+        self.assertEqual(self.tr.get(row["setup_id"])["status"], "ENTERED")
+        self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
+        for st in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY"):
+            with self.subTest(final=st):
+                self.tr.db.execute("UPDATE strategy_setups SET status=? WHERE setup_id=?", (st, row["setup_id"]))
+                self.tr._save(dict(row, status="ACTIVE"))
+                self.assertEqual(self.tr.get(row["setup_id"])["status"], st)
+
+    def test_cancelled_soft_stop_is_still_reactivated(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        now = self.t._now(bars)
+        self.upd(cands, v, now, sid)
+        sids = {r["setup_id"] for r in self.tr.active("XAUUSD-", "acc")}
+        self.tr.cancel_all("XAUUSD-", "acc", "RESTART_REVALIDATION", iso_(now))
+        ev = self.upd(cands, v, now, sid)
+        self.assertTrue(any(k.startswith("NEW_") for k, _ in ev))
+        self.assertEqual({r["setup_id"] for r in self.tr.active("XAUUSD-", "acc")}, sids)
+
+
 if __name__ == "__main__":
     unittest.main()
