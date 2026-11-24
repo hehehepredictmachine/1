@@ -10,7 +10,12 @@ enter the rank (no verified out-of-sample history exists yet - documented rule, 
 
 * signals sharing an event_id (same breakout/level/move) are grouped; only the best one is ranked,
   the others are listed as `grouped_with` (no double counting, no duplicate orders)
-* LONG vs SHORT in the same horizon with rank difference < conflict_margin -> CONFLICT, no selection
+* LONG vs SHORT in the same horizon with rank difference < conflict_margin -> CONFLICT, no selection. 1.46 arch (I0749): this also
+  applies to the HELD selection - one in the conflicting horizon (or with an opposite candidate of its own horizon within the margin)
+  is SUSPENDED: not executable (`selected` None, the engine's selected_row() returns None) but kept as the hysteresis anchor, so when
+  the conflict ends the same selection comes back with its time and challenger state (the executable selection is always the one the
+  rules without the suspension would hold, or none). Before, the conflict cleared only the new candidate and the held setup could be
+  executed in the CONFLICT state.
 * hysteresis: a challenger replaces the current selection only if it leads by >= min_switch_margin
   on `switch_confirm_updates` consecutive updates with NEW data and the current selection is older
   than min_selection_hold_seconds. Invalid/expired/stale/disabled selections are dropped immediately.
@@ -39,6 +44,7 @@ class StrategyAutoSelector:
         self.db = db
         self.selected: dict | None = None        # {"setup_id", "strategy_id", "at", "rank"}
         self.challenger: dict | None = None      # {"setup_id", "count"}
+        self.suspended: dict | None = None       # 1.46 arch (I0749): the selection held during a CONFLICT (not executable)
         self.last_change: dict | None = None
         self.state: dict = {"system_state": "STARTING", "selected": None, "ranking": [], "reason_codes": ["NO_SCAN_YET"]}
         row = db.one("SELECT * FROM strategy_selection_log ORDER BY id DESC LIMIT 1")
@@ -56,6 +62,7 @@ class StrategyAutoSelector:
 
     def reset(self, reason: str) -> None:
         self.selected = None
+        self.suspended = None
         self.challenger = None
         self.state = {"system_state": "SCANNING", "selected": None, "ranking": [], "reason_codes": [reason]}
 
@@ -116,7 +123,7 @@ class StrategyAutoSelector:
             grouped, signal_only = group(ranked), []
         reasons: list[str] = []
         if not data_ok:
-            prev = self.selected
+            prev = self.selected or self.suspended
             self.reset("DATA_STALE_OR_UNAVAILABLE")
             if prev:
                 self._log(now=now_s, mode=mode, account_key=account_key, prev=prev, new=None, snapshot_id=snapshot_id,
@@ -125,13 +132,15 @@ class StrategyAutoSelector:
             return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, ["DATA_STALE_OR_UNAVAILABLE"], signal_only,
                                  stale=True)
         best = grouped[0] if grouped else None
+        conflict_h = None
         # same-horizon LONG/SHORT conflict
         if best and len(grouped) > 1:
             opp = next((x for x in grouped[1:] if x["direction"] != best["direction"] and x["horizon"] == best["horizon"]), None)
             if opp and best["rank_score"] - opp["rank_score"] < cfg.conflict_margin:
                 reasons.append(f"CONFLICT_{best['direction']}_{opp['direction']}_{best['horizon']}_DIFF_{best['rank_score'] - opp['rank_score']:.1f}")
+                conflict_h = best["horizon"]
                 best = None
-        cur = self.selected
+        cur = self.selected or self.suspended         # 1.46 arch: a suspended selection stays the anchor of the hysteresis
         cur_row = next((x for x in grouped if cur and x["setup_id"] == cur["setup_id"]), None)
         new_sel, why = cur, None
         if cur and cur_row is None:
@@ -156,18 +165,46 @@ class StrategyAutoSelector:
                     reasons.append(f"SWITCH_PENDING_{ch['count']}/{cfg.switch_confirm_updates}_HOLD_{int(held)}s")
             else:
                 self.challenger = None
+        held = cur
         if why is not None and (new_sel or {}).get("setup_id") != (cur or {}).get("setup_id"):
             self._log(now=now_s, mode=mode, account_key=account_key, prev=cur, new=new_sel, snapshot_id=snapshot_id, reason=why, ranking=grouped)
-            self.selected = None if new_sel is None else {"setup_id": new_sel["setup_id"], "strategy_id": new_sel["strategy_id"], "at": now_s}
-        if self.selected:
-            sel = next((x for x in grouped if x["setup_id"] == self.selected["setup_id"]), None)
-            if sel is None:
-                self.selected = None
+            held = None if new_sel is None else {"setup_id": new_sel["setup_id"], "strategy_id": new_sel["strategy_id"], "at": now_s}
+        held_row = next((x for x in grouped if held and x["setup_id"] == held["setup_id"]), None)
+        if held_row is None:
+            held = None
+        conflict = self._conflict(held_row, grouped, cfg.conflict_margin, conflict_h)
+        if held is not None and conflict:
+            # 1.46 arch (I0749): the held selection is in a LONG/SHORT conflict -> suspended (not executable), kept as the anchor
+            if conflict not in reasons:
+                reasons.append(conflict)
+            reasons.append("SELECTION_SUSPENDED_CONFLICT")
+            if self.suspended is None or self.suspended["setup_id"] != held["setup_id"]:
+                self._log(now=now_s, mode=mode, account_key=account_key, prev=held, new=None, snapshot_id=snapshot_id,
+                          reason="SELECTION_SUSPENDED_" + conflict, ranking=grouped)
+            self.selected, self.suspended = None, held
+        else:
+            if held is not None and self.suspended is not None and self.suspended["setup_id"] == held["setup_id"]:
+                self._log(now=now_s, mode=mode, account_key=account_key, prev=None, new=held, snapshot_id=snapshot_id,
+                          reason="CONFLICT_RESOLVED_SELECTION_RESTORED", ranking=grouped)
+            self.selected, self.suspended = held, None
         if not self.selected:
             reasons.append("NO_VALID_CANDIDATE" if not grouped else "NO_SELECTION")
             if signal_only and not grouped:
                 reasons.append("ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS")
         return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only)
+
+    @staticmethod
+    def _conflict(row: dict | None, grouped: list[dict], margin: float, conflict_h: str | None) -> str | None:
+        """Reason code when the held selection `row` is in a same-horizon LONG/SHORT conflict: its horizon is the one of the conflict of
+        the best candidates, or the best opposite candidate of its own horizon ranks within `margin` of it (or above it)."""
+        if row is None:
+            return None
+        opp = next((x for x in grouped if x["direction"] != row["direction"] and x["horizon"] == row["horizon"]), None)
+        if opp is not None and row["rank_score"] - opp["rank_score"] < margin:
+            return f"CONFLICT_{row['direction']}_{opp['direction']}_{row['horizon']}_DIFF_{row['rank_score'] - opp['rank_score']:.1f}"
+        if conflict_h is not None and row["horizon"] == conflict_h:
+            return f"CONFLICT_{row['horizon']}"
+        return None
 
     def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=(), *, stale: bool = False) -> dict:
         sel = next((x for x in grouped if self.selected and x["setup_id"] == self.selected["setup_id"]), None)
@@ -192,6 +229,7 @@ class StrategyAutoSelector:
                       "regime": regime, "selected": sel, "selected_at": (self.selected or {}).get("at"),
                       "candidate_ranking": (list(grouped) + list(signal_only))[:10],
                       "alternative": alt, "reason_codes": reasons, "last_evaluated_at": now_s, "snapshot_id": snapshot_id,
+                      "suspended": ({k: self.suspended.get(k) for k in ("setup_id", "strategy_id", "at")} if self.suspended else None),
                       "last_change": self.last_change, "per_strategy": per_strategy}
         return self.state
 

@@ -232,5 +232,66 @@ class TestTrackerInvalidationBeforeRevision(_TrackerCase):
         self.assertEqual((r["status"], r["record"]["invalidation_level"]), ("ACTIVE", lvl - 1.0))
 
 
+class _SelectorCase(unittest.TestCase):
+    def setUp(self):
+        import test_strategies as TS
+        self.s = TS.TestSelector("test_small_difference_never_switches")
+        self.s.setUp()
+        self.row, self.pick, self.sel, self.db = self.s.row, self.s.pick, self.s.sel, self.s.db
+
+    def tearDown(self):
+        self.s.tearDown()
+
+    def log(self):
+        return [(r["previous_strategy"], r["selected_strategy"], r["reason"])
+                for r in self.db.query("SELECT previous_strategy, selected_strategy, reason FROM strategy_selection_log ORDER BY id")]
+
+
+class TestSelectorConflictSuspendsSelection(_SelectorCase):
+    """I0749: konflikt LONG/SHORT w horyzoncie zerował tylko `best`; istniejący wybór zostawał (żadna gałąź go nie zdejmowała) i bot mógł
+    wykonać setup w stanie CONFLICT. Teraz wybór w horyzoncie konfliktu jest ZAWIESZANY (niewykonywalny), a po ustąpieniu konfliktu wraca
+    ten sam (stan histerezy bez zmian) - wykonywalny wybór to zawsze dzisiejszy albo żaden."""
+
+    def test_conflict_suspends_and_restores_the_same_selection(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        t0 = self.sel.selected["at"]
+        s, st = self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)          # opposite setup, rank difference < margin
+        self.assertIsNone(s)
+        self.assertIsNone(self.sel.selected)                                               # engine: selected_row() -> None, no execution
+        self.assertTrue(any(r.startswith("CONFLICT_") for r in st["reason_codes"]))
+        self.assertIn("SELECTION_SUSPENDED_CONFLICT", st["reason_codes"])
+        self.assertEqual((st["suspended"] or {}).get("strategy_id"), "S01")
+        self.assertTrue(self.log()[-1][2].startswith("SELECTION_SUSPENDED_CONFLICT_"))
+        s, st = self.pick([a], 20)                                                          # conflict gone -> the same selection is back
+        self.assertEqual(s, "S01")
+        self.assertEqual(self.sel.selected["at"], t0)                                       # hold time / hysteresis state unchanged
+        self.assertIsNone(st["suspended"])
+        self.assertEqual(self.log()[-1], (None, "S01", "CONFLICT_RESOLVED_SELECTION_RESTORED"))
+
+    def test_conflict_in_the_horizon_of_a_held_selection_that_is_not_the_best(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        x = self.row("S03", "CONFIRMED", 66, 100, "LONG", horizon="SWING")                  # leads by < min_switch_margin, other horizon
+        y = self.row("S07", "CONFIRMED", 58, 100, "SHORT")                                  # opposite, same horizon as S01, close rank
+        s, st = self.pick([a, x, y], 10)
+        self.assertIsNone(s)
+        self.assertTrue(any(r.startswith("CONFLICT_LONG_SHORT_INTRADAY") for r in st["reason_codes"]))
+
+    def test_suspended_selection_that_disappears_is_dropped_as_today(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        b = self.row("S02", "CONFIRMED", 61, 100, "LONG", setup="MQA-B")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        self.assertIsNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[0])
+        self.assertEqual(self.pick([b], 20)[0], "S02")                                     # S01 gone -> best at once (today's rule)
+        self.assertEqual(self.log()[-1][2], "PREVIOUS_SETUP_NO_LONGER_VALID")
+
+    def test_no_conflict_no_change(self):
+        rows = [self.row("S01", "EARLY", 60, 100), self.row("S07", "EARLY", 40, 90, "SHORT")]   # opposite but far below
+        self.assertEqual(self.pick(rows, 0)[0], "S01")
+        self.assertEqual(self.pick(rows, 10)[0], "S01")
+        self.assertEqual([x[2] for x in self.log()], ["FIRST_SELECTION"])
+
+
 if __name__ == "__main__":
     unittest.main()
