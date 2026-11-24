@@ -388,25 +388,24 @@ def _hdc_dir3(ctx) -> dict:
                             f"{r.get('online_equals_rebuild_bit_exact')}")}
     ctx.step = "artifact"
     st, man = AR.load(ctx.inst, "hdc_dir3", r["artifact_id"])
-    D_, seed, L, C = (int(x) for x in st["meta"])
-    sp = H.Space(D_, seed=seed)
-    enc = H.Encoder(sp, man["features"], levels=L)
-    same_basis = bool(np.array_equal(sp.tie, st["tie"]) and np.array_equal(enc.roles, st["roles"]) and np.array_equal(enc.levels, st["levels"]))
-    enc.lo, enc.hi = np.asarray(st["lo"], float), np.asarray(st["hi"], float)
-    clf = H.Classifier(sp, C)
-    clf.acc = np.asarray(st["acc"]).astype(np.int32)
+    try:
+        _, enc, clf = H.from_state(st, man["features"])                     # 1.46 arch (I0351): loader of the artifact, basis checked
+    except ValueError as exc:
+        steps["artifact"] = fail(f"HDC: artefakt {r['artifact_id']} nie wczytany przez hdc.from_state: {exc}")
+        return steps
     ds = FE.dataset(_orch(ctx).bars("M5"), J.HDC_FEATURES, 300, 12)
     ts = splits.chrono_split(ds["t_obs"], ds["t_end"], (0.6, 0.2, 0.2), embargo_s=12 * 300)["test"]
     pred = np.array([clf.predict(enc.record(ds["X"][i]))[0] for i in ts])
     fresh = cls_metrics(np.clip(np.eye(3)[pred], 1e-6, 1), ds["y"][ts])
     d, keys = _metric_diff((man.get("metrics") or {}).get("test_once") or {}, fresh)
-    steps["artifact"] = check(same_basis and d <= 1e-9,
-                              f"artefakt {r['artifact_id']} wczytany; ręczna rekonstrukcja Space/Encoder/Classifier (hdc.py nie ma from_state): bazy "
-                              f"identyczne, metryki TEST z odczytu vs manifest ({len(keys)} pól) różnica {d:.1e}",
-                              f"HDC roundtrip: bazy identyczne {same_basis}, różnica metryk TEST {d} (pola {keys})")
+    steps["artifact"] = check(d <= 1e-9,
+                              f"artefakt {r['artifact_id']} wczytany przez hdc.from_state (codebooki z ziarna == zapisane): metryki TEST z odczytu vs "
+                              f"manifest ({len(keys)} pól) różnica {d:.1e}",
+                              f"HDC roundtrip: różnica metryk TEST {d} (pola {keys})")
     ctx.step = "predict"
     _, v, _ = _live(ctx)
-    steps["predict"] = skip("brak ścieżki predykcji na żywo (stan faktyczny): hdc.py bez from_state/loadera, quant/inventory.py:87 adapter=None, "
+    steps["predict"] = skip("brak ścieżki predykcji na żywo (stan faktyczny): artefakt wczytywalny (hdc.from_state), ale bez konsumenta, "
+                            "quant/inventory.py:87 adapter=None, "
                             f"MMService tylko wypisuje wskaźnik: '{(v.get('trained_models') or {}).get('hdc_dir3')}' (mm/service.py:186-187); rejestr "
                             "deklaruje callers 'mm.service' (mm/inventory.py:26) i SHADOW_ONLY przy wskaźniku (sh/models.py:182-183) – rozjazd statusów")
     return steps
