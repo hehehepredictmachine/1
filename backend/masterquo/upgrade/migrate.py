@@ -57,6 +57,56 @@ def backup_dir() -> Path:
     return paths.data_dir() / "backups" / f"pre-{VERSION}"
 
 
+# ====================================================================== 1.46 arch (I0120): settings snapshot before EVERY update (copy only)
+# The ONE registry of the user's settings files (data dir relative). The 1.41 list above stays as it was (the 1.41 snapshot / rollback);
+# 1.45 froze the snapshot at 1.41.0 (before() ends at before_done) and missed the three files added here.
+SETTINGS_FILES = SNAPSHOT_FILES + ("training_center/settings.json", "telegram/signal_template.json", "presets/strategy.json")
+
+
+def snapshot_state_path(version: str) -> Path:
+    """upgrade/snapshot-<version>.json - its own name, never one of the migration state files (upgrade/1.41.0.json, 1.42.0.json ...)."""
+    p = paths.data_dir() / "upgrade"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"snapshot-{version}.json"
+
+
+def snapshot_before(version: str | None = None) -> dict:
+    """Once per application version, at the start before any service reads its settings (Runtime, right after before()): a COPY of every
+    settings file of SETTINGS_FILES to backups/pre-<version>/. Only copies - an existing target is never overwritten, nothing is deleted or
+    pruned, nothing is restored automatically (there is deliberately no rollback command: restoring an older config.json would also bring
+    back e.g. execution.start_mode / live_autobind or looser limits - restoring stays a manual, reviewed step)."""
+    if version is None:
+        from ..version import APP_VERSION as version
+    sp = snapshot_state_path(version)
+    try:
+        st = json.loads(sp.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {}
+    if st.get("done"):
+        return st
+    d = paths.data_dir()
+    bdir = d / "backups" / f"pre-{version}"
+    saved, kept = [], []
+    for rel in SETTINGS_FILES:
+        src = d / rel
+        if not src.is_file():
+            continue
+        dst = bdir / rel
+        if dst.exists():                                   # first snapshot wins (never overwritten)
+            kept.append(rel)
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        saved.append(rel)
+    st = {"version": version, "done": True, "at": _now(), "snapshot_dir": str(bdir), "snapshot_files": saved, "already_present": kept,
+          "registry": list(SETTINGS_FILES),
+          "note": "kopia ustawień sprzed pierwszego startu tej wersji; nic nie jest przywracane automatycznie ani usuwane"}
+    tmp = sp.with_suffix(".tmp")
+    tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(sp)
+    return st
+
+
 def before() -> dict:
     st = state()
     if st.get("before_done"):
@@ -199,7 +249,12 @@ def auto_install(rt) -> dict:
 
 
 def rollback_config() -> dict:
-    """Restore the configuration snapshot (not the ledgers): every file that existed before the update gets its pre-update content."""
+    """Restore the configuration snapshot (not the ledgers): every file that existed before the update gets its pre-update content.
+
+    1.46 arch (I0120 / I0106): deliberately WITHOUT a caller in the application (no CLI, no API; only a test). It writes the files past the
+    in-memory stores of a running bot and would bring back old execution settings (start_mode / live_autobind, basket execution, limits)
+    without a copy of the current files. A usable rollback first needs its safeguards (instance lock held for the copy, a copy of the
+    current files, execution / risk / STOP keys merged from the current file, basket execution never raised to AUTO) - not implemented."""
     bdir = backup_dir()
     if not bdir.is_dir():
         return {"ok": False, "reason": "brak migawki pre-1.41.0"}

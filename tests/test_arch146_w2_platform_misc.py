@@ -587,5 +587,59 @@ class TestI0118SecretNamesSingleSource(_DataDir):
             os.environ.pop("COINGLASS_API_KEY", None)
 
 
+# ------------------------------------------------------------------ I0120 (safe subset: copy-only snapshot per version, no rollback CLI)
+class TestI0120SnapshotPerVersion(_DataDir):
+    def _write(self, rel, text):
+        p = self.data / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def test_snapshot_of_the_current_version_with_all_settings_files(self):
+        from unittest import mock
+
+        from masterquo.upgrade import migrate as M
+        self._write("tsfm/settings.json", '{"v": 1}')
+        with mock.patch.object(M.INV, "write_reports", return_value={}):
+            M.before()                                                              # 1.41 state: before_done
+        st41 = (self.data / "upgrade" / "1.41.0.json").read_bytes()
+        for rel in ("training_center/settings.json", "telegram/signal_template.json", "presets/strategy.json", "config.json"):
+            self._write(rel, '{"user": "' + rel + '"}')
+        st = M.snapshot_before("1.46.0")                                            # 1.45: nothing (frozen at 1.41.0)
+        b = self.data / "backups" / "pre-1.46.0"
+        for rel in ("training_center/settings.json", "telegram/signal_template.json", "presets/strategy.json", "config.json",
+                    "tsfm/settings.json"):
+            self.assertTrue((b / rel).is_file(), rel)
+            self.assertIn(rel, st["snapshot_files"])
+        self.assertEqual((self.data / "upgrade" / "1.41.0.json").read_bytes(), st41)   # the 1.41 state file untouched
+        self.assertTrue((self.data / "upgrade" / "snapshot-1.46.0.json").is_file())
+
+    def test_copy_only_never_overwrites_or_deletes(self):
+        from masterquo.upgrade import migrate as M
+        cfg = self._write("presets/strategy.json", '{"v": "pre"}')
+        old = self._write("backups/pre-1.46.0/presets/strategy.json", '{"v": "older-snapshot"}')
+        st = M.snapshot_before("1.46.0")
+        self.assertEqual(old.read_text(encoding="utf-8"), '{"v": "older-snapshot"}')  # first snapshot wins
+        self.assertIn("presets/strategy.json", st["already_present"])
+        cfg.write_text('{"v": "post"}', encoding="utf-8")
+        st2 = M.snapshot_before("1.46.0")                                           # once per version
+        self.assertTrue(st2["done"])
+        self.assertEqual(cfg.read_text(encoding="utf-8"), '{"v": "post"}')          # current files are never touched
+        M.snapshot_before("1.47.0")
+        self.assertEqual((self.data / "backups" / "pre-1.47.0" / "presets" / "strategy.json").read_text(encoding="utf-8"), '{"v": "post"}')
+        self.assertTrue((self.data / "backups" / "pre-1.46.0").is_dir())             # no pruning
+
+    def test_default_version_and_no_rollback_command(self):
+        from pathlib import Path
+
+        from masterquo.upgrade import migrate as M
+        from masterquo.version import APP_VERSION
+        self.assertEqual(M.snapshot_before()["version"], APP_VERSION)
+        root = Path(_env.ROOT) / "backend" / "masterquo"
+        self.assertNotIn("rollback-config", (root / "__main__.py").read_text(encoding="utf-8"))     # S0: no CLI rollback path
+        self.assertNotIn("rollback_config", (root / "api" / "app.py").read_text(encoding="utf-8"))
+        self.assertIn("_UM.snapshot_before()", (root / "runtime.py").read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
