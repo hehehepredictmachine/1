@@ -191,6 +191,17 @@ def columns(rows: list[dict], max_cols: int = MAX_COLUMNS) -> list[str]:
     return sorted(names)
 
 
+def coverage_by_provenance(rows: list[dict], names: list[str]) -> dict:
+    """w2 (I0017, diagnostics only - the context and its result are unchanged): per provenance the rows and the context columns
+    that NONE of its rows carries (LIVE_LEDGER vs RECONSTRUCTED_HISTORY had disjoint columns: the query always looks like a live row)."""
+    out: dict = {}
+    for prov in sorted({str(r.get("provenance")) for r in rows}):
+        rs = [r for r in rows if str(r.get("provenance")) == prov]
+        have = {k for r in rs for k in (r.get("features") or {})}
+        out[prov] = {"rows": len(rs), "missing_columns": [n for n in names if n not in have]}
+    return out
+
+
 def vector(feats: dict, names: list[str]) -> list[float]:
     out = []
     for n in names:
@@ -217,7 +228,8 @@ def build_context(ledger, inst: str, key: str, now: float, *, target: int = 512,
             "last_ts": rows[-1]["decision_ts"] if rows else None, "X": [vector(r["features"], names) for r in rows], "y": ys,
             "row_ids": [r["id"] for r in rows], "built_at": time.time(),
             # 1.46 (additive): as-of time, data kinds of the rows, REAL-only filter, labelled live rows of this event before selection
-            "as_of": now, "data_kinds": kinds, "real_only": real_only, "live_rows": len(live)}
+            "as_of": now, "data_kinds": kinds, "real_only": real_only, "live_rows": len(live),
+            "coverage_by_provenance": coverage_by_provenance(rows, names)}
 
 
 # ---------------------------------------------------------------------------------------------------------------- reconstruction
@@ -260,6 +272,24 @@ def store_bars(inst: str, days: int) -> tuple[dict, dict] | dict | None:
     return bars, meta
 
 
+def recon_candidate(inst: str, vid: str, t: float, su: dict) -> dict | None:
+    """Candidate dict of one replayed SH pack setup (None = not a two-target plan). w2 (I0017): the spread of the setup's costs as on the
+    live SH candidate (execution_context.spread -> ctx:spread_r); the regime is not known in the replay and stays absent (never guessed)."""
+    side = "LONG" if su.get("side") == "BUY" else "SHORT"
+    tps = su.get("tps") or []
+    if len(tps) < 2 or su.get("sl") is None or su.get("entry_ref") is None:
+        return None
+    fam = "SH_HEDGING" if vid.startswith("PMW_HG") else "SH_SCALPING"
+    costs = su.get("costs") or {}
+    return {"instrument": inst, "engine": fam, "strategy_id": vid, "direction": side, "entry_price": float(su["entry_ref"]),
+            "stop_loss": float(su["sl"]), "targets": [{"price": float(x["price"]), "weight": float(x["share"])} for x in tps],
+            "horizon_s": 60.0 * float(su.get("position_max_minutes") or su.get("horizon_minutes") or 60), "decision_ts": float(t),
+            "score": (su.get("score") or {}).get("value"), "entry_type": "MARKET",
+            "execution_context": {"cost_price": costs.get("round_trip_price"), "commission_known": costs.get("commission_known"),
+                                  "spread": costs.get("spread")},
+            "features": {"atr_m5": ((su.get("pack") or {}).get("features") or {}).get("atr_m5")}}
+
+
 def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_meta: tuple | None = None) -> dict:
     """Historical candidates of the live SH pack detectors (causal replay, plans only) labelled with the live EventSpec simulator.
     Written to reconstructed_<inst>.jsonl (provenance RECONSTRUCTED_HISTORY). Idempotent: rows are keyed by (variant, tf, t, side)."""
@@ -276,18 +306,9 @@ def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_m
     rows = []
 
     def on_ready(t, vid, tf, su):
-        side = "LONG" if su.get("side") == "BUY" else "SHORT"
-        tps = su.get("tps") or []
-        if len(tps) < 2 or su.get("sl") is None or su.get("entry_ref") is None:
+        cd = recon_candidate(inst, vid, t, su)
+        if cd is None:
             return
-        fam = "SH_HEDGING" if vid.startswith("PMW_HG") else "SH_SCALPING"
-        cd = {"instrument": inst, "engine": fam, "strategy_id": vid, "direction": side, "entry_price": float(su["entry_ref"]),
-              "stop_loss": float(su["sl"]), "targets": [{"price": float(x["price"]), "weight": float(x["share"])} for x in tps],
-              "horizon_s": 60.0 * float(su.get("position_max_minutes") or su.get("horizon_minutes") or 60), "decision_ts": float(t),
-              "score": (su.get("score") or {}).get("value"), "entry_type": "MARKET",
-              "execution_context": {"cost_price": (su.get("costs") or {}).get("round_trip_price"),
-                                    "commission_known": (su.get("costs") or {}).get("commission_known")},
-              "features": {"atr_m5": ((su.get("pack") or {}).get("features") or {}).get("atr_m5")}}
         try:
             spec = EV.spec_from_candidate(cd)
         except (EV.EventError, KeyError, TypeError, ValueError):
