@@ -383,7 +383,8 @@ def long_horizon(ctx: SourceContext, timeframe: str = "H1", horizons: list[str] 
         pq = f.get("price_quantiles") or {}
         rows.append({"horizon": h, "as_of_utc": utc_iso(f.get("as_of")), "target_utc": utc_iso(f["as_of"] + f["horizon_seconds"]) if f.get("as_of") else None,
                      "status": f.get("status"), "reason": f.get("reason"), "data_age_seconds": f.get("data_age_seconds"),
-                     "calibration": f.get("calibration"), "samples": f.get("samples"),
+                     "calibration": f.get("calibration"), "calibration_scope": f.get("calibration_scope"), "p_calibration": f.get("p_calibration"),
+                     "samples": f.get("samples"),
                      "calib_coverage_q05_q95": f.get("calib_coverage_q05_q95"), "p_down": f.get("p_down"), "p_flat": f.get("p_flat"), "p_up": f.get("p_up"),
                      "median_log_return": f.get("median_log_return"), "volatility_h": f.get("volatility_h"), "vol_scale": f.get("vol_scale"),
                      **{f"logret_{k}": v for k, v in q.items()}, **{f"price_{k}": v for k, v in pq.items()}, "engine": f.get("engine")})
@@ -549,6 +550,26 @@ STORES = {
     "trainhub": ("trainhub/jobs.sqlite", set()),
     "news": ("m04n/M04N_STATE.sqlite", set()),
 }
+
+
+def _instrument_stores() -> dict:
+    """1.46 (I0033): ledgers of an instrument other than the default one live in its own space instruments/<INST>/<kind> (the rule of
+    mq_instruments.root, used by mm/artifacts.root and ml/router.ml_store) - the fixed paths above never reached them. Additive, read-only:
+    'mm@<INST>' = the MM SHADOW ledger, 'ml@<INST>' = the legacy ML database (a full copy of the main schema -> the same excluded tables).
+    Quant and evaluation keep one shared file for every instrument (rows carry the instrument)."""
+    try:
+        import mq_instruments as mi
+        insts = [i for i in mi.profiles() if i != mi.DEFAULT]
+    except Exception:  # noqa: BLE001 - no instrument profiles: only the fixed stores
+        return {}
+    out = {}
+    for i in insts:
+        out[f"mm@{i}"] = (f"instruments/{i}/mm/ledger.sqlite", set())
+        out[f"ml@{i}"] = (f"instruments/{i}/ml/ml.sqlite", set(STORES["main"][1]))
+    return out
+
+
+STORES.update(_instrument_stores())
 MODE_KINDS = {"PAPER": "VIRTUAL", "AUTO_DEMO": "DEMO", "AUTO_LIVE": "REAL"}
 TABLE_KINDS = {"paper_account": "VIRTUAL", "schema_migrations": "STATE", "book_snapshots": "PROVIDER", "spread_samples": "PROVIDER",
                "dxy_bars": "PROVIDER", "articles": "PROVIDER", "calendar": "PROVIDER", "observations": "PROVIDER"}
