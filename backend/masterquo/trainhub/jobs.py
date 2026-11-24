@@ -301,6 +301,14 @@ class TrainingCenter:
                 self._publish(jid, quiet=True)
             rc = self.proc.returncode
         finally:
+            # 1.46: the Windows Job Object handle of the child is closed when the job ends (one handle per job was kept for the bot's
+            # lifetime; with KILL_ON_JOB_CLOSE closing it also ends leftover grandchildren)
+            try:
+                from ..training.core import close_job
+                if self.proc is not None:
+                    close_job(self.proc)
+            except Exception:  # noqa: BLE001 - never blocks the job bookkeeping
+                pass
             logf.close()
         r = self.get(jid)
         if r["status"] == "RUNNING":                          # the child did not record its end (killed / crashed)

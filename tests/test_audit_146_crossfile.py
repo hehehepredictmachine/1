@@ -124,3 +124,28 @@ class TickExportUsesRawTruncation(unittest.TestCase):
             r = TS.export_via_bridge(br, "XAUUSD-", "XAUUSD", days=1 / 24, chunk_hours=1.0, max_count=10)
         self.assertEqual([c["status"] for c in r["chunks"]], ["TRUNCATED"])
         self.assertFalse(r["complete"])
+
+
+class TrainhubClosesJobHandle(unittest.TestCase):
+    """chunk_37#18 (trainhub part): the Windows Job Object handle of every TrainHub child stayed open for the bot's lifetime."""
+
+    def test_close_job_called_after_child_ends(self):
+        import types
+        from unittest import mock
+
+        from masterquo.trainhub import jobs as J
+        td = __import__("_env").TempData()
+        self.addCleanup(td.close)
+        tc = J.TrainingCenter.__new__(J.TrainingCenter)          # only what _child uses
+        log = Path(td.dir) / "job.log"
+        tc.python, tc.poll_s, tc.proc = "python", 0.01, None
+        tc._stop = __import__("threading").Event()
+        tc.db = None
+        proc = types.SimpleNamespace(pid=1, returncode=0, poll=lambda: 0)
+        with mock.patch.object(J.TrainingCenter, "get", return_value={"log": str(log), "status": "DONE"}), \
+                mock.patch.object(J, "update"), mock.patch.object(J, "db_path", return_value=Path(td.dir) / "x.sqlite"), \
+                mock.patch.object(J.subprocess, "Popen", return_value=proc), \
+                mock.patch("masterquo.training.core._job_limit"), \
+                mock.patch("masterquo.training.core.close_job") as cj:
+            tc._child("J1")
+        cj.assert_called_once_with(proc)
