@@ -477,5 +477,198 @@ class TestExecuteRouteSignalsPaper(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+# ============================================================================================== I0028 / I0037 ledger view
+MAIN_TABLES = {"ml_predictions", "ml_scalp_predictions", "forecast_shadow", "scalp_shadow", "lab_forecasts", "nss_inferences", "si_forecasts",
+               "quote_forecasts", "kronos_forecasts", "tsfm_forecasts", "ai_signals", "si_outcomes", "quote_outcomes", "ml_samples",
+               "ml_scalp_samples"}
+T0 = 1_790_000_000.0                                                    # 2026-09-21 UTC (fixed)
+
+
+def _iso(t: float) -> str:
+    from datetime import UTC, datetime
+    return datetime.fromtimestamp(t, UTC).isoformat().replace("+00:00", "Z")
+
+
+def _insert(db, table: str, **vals) -> None:
+    """One fixture row: NOT NULL columns without a default get a placeholder of their type, the rest is given explicitly."""
+    for c in db.query(f'PRAGMA table_info("{table}")'):
+        if c["name"] in vals or not c["notnull"] or c["dflt_value"] is not None or (c["pk"] and "INT" in (c["type"] or "").upper()):
+            continue
+        vals[c["name"]] = 0 if (c["type"] or "").upper() in ("INTEGER", "REAL", "INT", "FLOAT") else "x"
+    cols = ", ".join(vals)
+    db.execute(f'INSERT INTO "{table}"({cols}) VALUES ({", ".join("?" * len(vals))})', tuple(vals.values()))
+
+
+class TestLedgerView(unittest.TestCase):
+    """I0028: no common format for 15 tables + 3 files (keys, times, statuses, instrument ids). I0037: status vocabularies
+    (SCORED / SETTLED / MATURED / LABELED / LABELLED, 6 'no data' names) and time columns with different meanings (decision_time = plan,
+    dequeue or processing time). masterquo/ledgers/view.py: read-only PMW-LEDGER-VIEW-1, writers and data unchanged."""
+
+    def setUp(self):
+        self.td = _env.TempData()
+        self.data = Path(self.td.dir)
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_registry_covers_15_tables_and_3_files(self):
+        from masterquo.ledgers import view as LV
+        self.assertEqual({a.table for a in LV.ADAPTERS.values() if set(a.stores) & {"main", "ml"}}, MAIN_TABLES)
+        self.assertEqual({k for a in LV.ADAPTERS.values() for k in a.stores} - {"main", "ml"}, {"mm", "evaluation", "quant"})
+        self.assertEqual({a.table for a in LV.ADAPTERS.values() if "quant" in a.stores}, {"rows", "assessments"})
+        self.assertEqual(set(LV.OUTCOME_STATUSES), {"PENDING", "SCORED", "NO_DATA", "OUT_OF_BUFFER", "EXCLUDED", "NOT_APPLICABLE", "INVALID"})
+
+    def test_store_paths_are_the_writers_paths_and_the_view_creates_nothing(self):
+        import mq_instruments as mi
+        from masterquo.db.database import Database
+        from masterquo.evaluation import service as ES
+        from masterquo.ledgers import view as LV
+        from masterquo.mm import artifacts
+        from masterquo.quant import service as QS
+        st = {s.id: s for s in LV.stores()}
+        self.assertEqual(list(self.data.rglob("*")), [])                    # registry only: no file, no folder
+        self.assertEqual(list(LV.records("nss_inferences")), [])
+        self.assertEqual(list(self.data.rglob("*")), [])
+        self.assertEqual(st["main"].path, Database().path)
+        for inst in mi.profiles():
+            self.assertEqual(st[f"mm:{inst}"].path, artifacts.root(inst) / "ledger.sqlite")
+            if inst != mi.DEFAULT:
+                self.assertEqual(st[f"ml:{inst}"].path, mi.root("ml", inst) / "ml.sqlite")
+        self.assertEqual(st["evaluation"].path, ES._default_dir() / "ledger.sqlite")
+        self.assertEqual(st["quant"].path, QS.qdir() / "ledger.sqlite")
+
+    def test_read_only_connection_refuses_writes(self):
+        import sqlite3
+
+        from masterquo.db.database import Database
+        from masterquo.ledgers import view as LV
+        db = Database()
+        db.query("SELECT 1")
+        c = LV.connect_ro(db.path)
+        try:
+            with self.assertRaises(sqlite3.OperationalError):
+                c.execute("INSERT INTO lab_forecasts(forecast_id, asset, module, tf, issued_as_of, payload) VALUES ('a','b','c','d','e','f')")
+        finally:
+            c.close()
+        with self.assertRaises(FileNotFoundError):
+            LV.connect_ro(self.data / "nope.sqlite")
+        self.assertFalse((self.data / "nope.sqlite").exists())
+
+    def _fill(self):
+        from masterquo.db.database import Database
+        from masterquo.evaluation import service as ES
+        from masterquo.ml.router import ml_store
+        from masterquo.mm import artifacts
+        from masterquo.mm.ledger import Ledger
+        from masterquo.quant import service as QS
+        from masterquo.quant.ledger import QuantLedger
+        db = Database()
+        i = _iso
+        _insert(db, "ml_predictions", at=i(T0), setup_id="S1", setup_version=1, model_id="DT-1", role="OBSERVE", raw_score=0.4,
+                calibrated_probability=0.55, readiness="READY", contract_json="{}")
+        _insert(db, "ml_scalp_predictions", prediction_id="P1", sample_id="SS1", model_hash="h", role="OBSERVE", instrument="XAUUSD", side="BUY",
+                as_of=i(T0), computed_at=i(T0 + 2), expires_at=i(T0 + 60), status="OK", p=0.6)
+        _insert(db, "forecast_shadow", created_at=i(T0 + 1), run_id="R1", feature_time_utc=i(T0), horizon_minutes=15, target_time_utc=i(T0 + 900),
+                p_down=0.2, p_flat=0.5, p_up=0.3, outcome_status="SCORED", outcome_close=2650.0, outcome_class="UP", scored_at=i(T0 + 1000),
+                instrument="XAUUSD")
+        _insert(db, "scalp_shadow", created_at=i(T0 + 1), setup_id="SC1", profile_id="P", direction="BUY", decision_time_utc=i(T0),
+                status="READY_SHADOW", plan="{}", outcome_status="SETTLED", outcome='{"exits": []}', net_r=0.8, settled_at=i(T0 + 600),
+                instrument="XAUUSD")
+        _insert(db, "scalp_shadow", created_at=i(T0 + 2), setup_id="SC2", profile_id="P", direction="SELL", decision_time_utc=i(T0),
+                status="READY_SHADOW", plan="{}", outcome_status="NO_DATA", settled_at=i(T0 + 9000), instrument="XAUUSD")
+        _insert(db, "lab_forecasts", forecast_id="L1", asset="XAUUSD", module="M29", tf="M5", issued_as_of=i(T0), payload='{"p": 0.5}')
+        _insert(db, "nss_inferences", inference_id="N1", request_id="Q1", task_id="T", instrument="XAUUSD", setup_id="SC1", side="BUY",
+                signal_time=i(T0), decision_time=i(T0 + 5), computed_at=i(T0 + 6), label_status="LABELED", label_event="TP1_FIRST",
+                label_net_r=1.1, label_end=i(T0 + 300), label_available_at=i(T0 + 360))
+        _insert(db, "si_forecasts", instrument="XAUUSD", task_id="M1_MOVE", model_id="SI-A", as_of=i(T0), horizon=5, emitted_at=i(T0 + 1),
+                payload="{}")
+        _insert(db, "si_outcomes", forecast_id=1, data_revision=0, matured_at=i(T0 + 400), r_h=0.3, label="UP", status="MATURED")
+        _insert(db, "quote_forecasts", forecast_id="QF1", context="c", side="BUY", scale="s", issued_at=i(T0), target_at=i(T0 + 60), payload="{}")
+        _insert(db, "quote_outcomes", forecast_id="QF1", status="SCORED", scored_at=i(T0 + 70), outcome="{}")
+        for t in ("kronos_forecasts", "tsfm_forecasts"):
+            _insert(db, t, forecast_id=f"{t}-1", created_at=i(T0), instrument="XAUUSD", symbol="XAUUSD-", timeframe="M5", horizon_bars=6,
+                    outcome_status="OUT_OF_BUFFER", settled_at=i(T0 + 7200), data_kind="REAL")
+        _insert(db, "ai_signals", signal_id="A1", created_at=i(T0), updated_at=i(T0), symbol="XAUUSD-", status="WIN", action="BUY",
+                outcome_r=1.2, closed_at=i(T0 + 900), synthetic=1)
+        _insert(db, "ml_samples", sample_id="MS1", setup_id="S1", setup_version=1, symbol="XAUUSD-", strategy_id="XAU-S01", direction="LONG",
+                timeframe="M5", asof_utc=i(T0), status="LABELED", outcome_r=0.5, label_end_utc=i(T0 + 600), label_known_utc=i(T0 + 660),
+                source="LIVE", synthetic=0, created_at=i(T0), updated_at=i(T0))
+        _insert(db, "ml_scalp_samples", sample_id="SS1", instrument="XAUUSD", side="BUY", signal_time=i(T0), decision_time=i(T0 + 4),
+                status="NO_EXECUTABLE_ENTRY", created_at=i(T0 + 4))
+        btc_db, _ = ml_store("BTC")                                             # the writers' own BTC ML space
+        _insert(btc_db, "ml_samples", sample_id="MS-BTC", setup_id="S9", setup_version=1, symbol="BTCUSDT-", strategy_id="BTC-S01",
+                direction="SHORT", timeframe="M5", asof_utc=i(T0), status="PENDING", source="BACKFILL_X", synthetic=0, created_at=i(T0),
+                updated_at=i(T0))
+        btc_db.close()
+        mm = Ledger(artifacts.root("XAUUSD") / "ledger.sqlite")
+        mm.log(pred_id="MM1", model_id="mm:gpr", artifact_id="a", feature_schema="F", symbol="XAUUSD-", timeframe="M5", source_ts=T0,
+               available_at=T0 + 1, matures_at=T0 + 900, horizon="3", kind="REG", payload={"mu": 0.1}, quality="OK")
+        mm.mature(T0 + 1000, lambda r: {"err": 0.01})
+        mm.c.close()
+        ev = Ledger(ES._default_dir() / "ledger.sqlite")
+        ev.log(pred_id="E1", model_id="PMW-EVAL/SH", artifact_id=None, feature_schema=None, symbol="XAUUSD-", timeframe="M1", source_ts=T0,
+               available_at=T0, matures_at=T0 + 60, horizon="H", kind="P", payload={}, quality="OK")
+        ev.mature(T0 + 100, lambda r: {"status": "NO_BARS", "reason": "x"})
+        ev.c.close()
+        q = QuantLedger(QS.qdir() / "ledger.sqlite")
+        q.add_row({"row_id": "QR1", "instrument": "XAUUSD", "engine": "SH", "strategy": "s", "direction": "BUY", "decision_ts": T0, "task_hash": "th",
+                   "event_id": "ev", "spec": {}, "features": {}, "matures_at": T0 + 600})
+        q.label("QR1", "LABELLED", {"y_event": 1, "net_r": 0.7}, T0 + 500)
+        q.add_assessment({"assessment_id": "QA1", "row_id": "QR1", "created_at": time.time(), "mode": "SHADOW", "direction": "BUY"})
+        q.c.close()
+        db.close()
+
+    def test_every_adapter_maps_a_fixture_row_to_the_canonical_record(self):
+        from masterquo.ledgers import view as LV
+        self._fill()
+        seen = {}
+        for name in LV.ADAPTERS:
+            recs = list(LV.records(name))
+            self.assertTrue(recs, name)
+            for r in recs:
+                self.assertLessEqual(set(LV.REQUIRED), set(r), name)
+                self.assertIn(r["outcome_status"], LV.OUTCOME_STATUSES, name)
+                self.assertEqual(r["pred_id"], f"{name}:{r['source_key']}")
+                self.assertEqual(r["view"], "PMW-LEDGER-VIEW-1")
+                self.assertIsInstance(r["raw"], dict)
+            seen[name] = recs
+        by = {n: {r["source_key"]: r for r in rs} for n, rs in seen.items()}
+        self.assertEqual(by["ml_samples"]["MS-BTC"]["instrument"], "BTC")
+        self.assertEqual(by["ml_samples"]["MS-BTC"]["run_mode"], "REPLAY")
+        self.assertEqual(by["ml_samples"]["MS1"]["instrument"], "XAUUSD")
+        self.assertEqual([r["source_key"] for r in LV.records("ml_samples", instrument="BTC")], ["MS-BTC"])
+        self.assertEqual(by["ai_signals"]["A1"]["data_kind"], "SYNTHETIC")
+        self.assertEqual(by["kronos_forecasts"]["1"]["outcome_status"], "OUT_OF_BUFFER")
+        self.assertEqual(by["mm_predictions"]["MM1"]["instrument"], "XAUUSD")
+        self.assertEqual(by["mm_predictions"]["MM1"]["outcome_status"], "SCORED")
+        self.assertEqual((by["evaluation"]["E1"]["outcome_status"], by["evaluation"]["E1"]["status_raw"]), ("NO_DATA", "NO_BARS"))
+        self.assertEqual(by["forecast_shadow"]["1"]["horizon"], {"seconds": 900})
+        self.assertEqual(by["quant_assessments"]["QA1"]["outcome_status"], "NOT_APPLICABLE")
+        self.assertEqual(by["si_outcomes"]["1:0"]["link_ids"], {"forecast_id": 1})
+
+    def test_i0037_one_status_vocabulary_and_plan_time_as_decision_ts(self):
+        from masterquo.ledgers import view as LV
+        self._fill()
+        one = {n: {r["source_key"]: r for r in LV.records(n)} for n in ("quant_rows", "nss_inferences", "scalp_shadow", "si_outcomes",
+                                                                          "ml_scalp_samples", "ml_scalp_predictions")}
+        for n, k, raw in (("quant_rows", "QR1", "LABELLED"), ("nss_inferences", "N1", "LABELED"), ("scalp_shadow", "1", "SETTLED"),
+                          ("si_outcomes", "1:0", "MATURED")):
+            self.assertEqual((one[n][k]["outcome_status"], one[n][k]["status_raw"]), ("SCORED", raw), n)
+        n1 = one["nss_inferences"]["N1"]
+        self.assertEqual((n1["decision_ts"], n1["processed_at"]), (T0, T0 + 5))           # plan time, not the dequeue time
+        self.assertEqual((n1["outcome_event_ts"], n1["matured_at"]), (T0 + 300, T0 + 360))
+        ss = one["ml_scalp_samples"]["SS1"]
+        self.assertEqual((ss["decision_ts"], ss["processed_at"], ss["outcome_status"]), (T0, T0 + 4, "EXCLUDED"))
+        self.assertEqual(one["ml_scalp_predictions"]["P1"]["decision_ts"], T0)
+        settled, nodata = one["scalp_shadow"]["1"], one["scalp_shadow"]["2"]
+        self.assertEqual((settled["outcome_event_ts"], settled["matured_at"]), (T0 + 600, None))   # SETTLED: settled_at = label_end
+        self.assertEqual((nodata["outcome_event_ts"], nodata["matured_at"], nodata["outcome_status"]), (None, T0 + 9000, "NO_DATA"))
+        for raw, want in (("DATA_GAP", "NO_DATA"), ("NO_CONTINUOUS_DATA", "NO_DATA"), ("EXCLUDED_GAP", "NO_DATA"), ("UNSCORED_GAP", "NO_DATA"),
+                          ("MISSED_LIMIT", "EXCLUDED"), ("OUT_OF_BUFFER", "OUT_OF_BUFFER"), ("PENDING", "PENDING"), ("ERROR", "INVALID")):
+            self.assertEqual(LV.canonical_status(raw)[0], want, raw)
+        self.assertEqual(LV.canonical_status("WHATEVER"), ("INVALID", "UNKNOWN_STATUS:WHATEVER"))
+        self.assertEqual(LV._t("2026-09-21T00:00:00Z"), LV._t("2026-09-21T00:00:00+00:00"))
+
+
 if __name__ == "__main__":
     unittest.main()

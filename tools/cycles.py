@@ -42,7 +42,7 @@ LAYERS: dict[str, int] = {
     "strategies": 3, "risk": 3, "engine": 3, "execution": 3, "decision": 3, "sh": 3, "baskets": 3,
     # L4 - SHADOW / research / trained and pretrained models
     "lab": 4, "ml": 4, "tsfm": 4, "kronos": 4, "quant": 4, "modelhub": 4, "trainhub": 4, "mm": 4, "extind": 4, "scalp": 4, "forecast": 4,
-    "evaluation": 4, "montecarlo": 4, "research": 4, "apollo": 4, "trader_life_game": 4,
+    "evaluation": 4, "montecarlo": 4, "research": 4, "apollo": 4, "trader_life_game": 4, "ledgers": 4,
     # L5 - composition roots
     "runtime": 5, "api": 5, "__main__": 5, "train_all": 5, "bootstrap": 5, "diagnostics": 5, "upgrade": 5, "desktop": 5, "agent": 5,
     "exports": 5, "studio": 5, "training": 5,

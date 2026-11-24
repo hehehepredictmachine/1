@@ -100,7 +100,7 @@ Mapa jest danymi w `tools/cycles.py` (`LAYERS`, każdy pakiet i moduł najwyższ
 | L1 dane | db, mt5, marketdata, data, markets, news, notify, licensing, stats |
 | L2 analizy | indicators, analysis, analytics, svp, zones, orderflow, plans |
 | L3 rdzeń handlowy | strategies, risk, engine, execution, decision, sh, baskets |
-| L4 SHADOW / badania / modele | lab, ml, tsfm, kronos, quant, modelhub, trainhub, mm, extind, scalp, forecast, evaluation, montecarlo, research, apollo, trader_life_game |
+| L4 SHADOW / badania / modele | lab, ml, tsfm, kronos, quant, modelhub, trainhub, mm, extind, scalp, forecast, evaluation, montecarlo, research, apollo, trader_life_game, ledgers (widok PMW-LEDGER-VIEW-1) |
 | L5 kompozycja | runtime, api, `__main__`, train_all, bootstrap, diagnostics, upgrade, desktop, agent, exports, studio, training |
 
 Krawędź w obrębie jednej warstwy jest dozwolona; import z warstwy niższej do wyższej to krawędź „w górę”. `tools/cycles.py` zbiera przez
