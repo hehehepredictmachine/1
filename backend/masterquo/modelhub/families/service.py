@@ -374,14 +374,20 @@ class FamilyService:
         if f.ID == "MICROSTRUCTURE" and self.indicators is not None:
             s = self.indicators.current() or {}
             live["micro_snapshot"] = s.get("microstructure")
-            # 1.46 arch (I0191): the CURRENT book (polled every book_period_s) - the snapshot is recomputed only per closed M1 bar (up to
-            # ~60 s old for a 10 s classifier); without microstructure_now() (stand-ins, old services) the snapshot as before
+            # 1.46 arch (I0191): the values come from the CURRENT book (polled every book_period_s) - the snapshot is recomputed only per
+            # closed M1 bar (up to ~60 s old for a 10 s classifier). Without microstructure_now() (stand-ins, old services) or when its
+            # book is older than the snapshot's, the snapshot measurement as before. The record keeps the snapshot TIME (_micro_times).
             now_fn = getattr(self.indicators, "microstructure_now", None)
             fresh = None
             if now_fn is not None:
                 try:
                     fresh = now_fn()
                 except Exception:  # noqa: BLE001 - the snapshot measurement is used instead
+                    fresh = None
+            if fresh is not None and live["micro_snapshot"]:
+                from ...quant import checks as QC
+                t_f, t_s = QC.ts(fresh.get("data_time")), QC.ts(live["micro_snapshot"].get("data_time"))
+                if t_f is not None and t_s is not None and t_f < t_s:
                     fresh = None
             live["micro"] = fresh if fresh is not None else live["micro_snapshot"]
             q = getattr(self.bridge, "quote", None) or {}
@@ -394,34 +400,37 @@ class FamilyService:
                 live["news"] = []
         return live
 
-    def _micro_ttl_s(self) -> float:
-        """1.46 arch (I0191): a book measurement is a state of seconds - its record carries its own TTL (Quant / coordinator exclude it as
-        STALE afterwards; without it the state default was 900 s)."""
+    def _micro_times(self, live) -> tuple:
+        """1.46 arch (I0191; S0 of the first version withdrawn by tightening) -> (data_time, ttl_s, book_data_time) of the MICROSTRUCTURE
+        record. data_time stays EXACTLY the 1.46 value - the time of the PMW-IND-1 snapshot measurement - although the values come from
+        the current book: the coordinator measures the age of a REQUIRED model from data_time at DECISION time (required_max_age_s), up to
+        5 s later from the family cache and later still from the Quant snapshot; a fresher data_time lifted MODEL_REQUIRED_STALE there
+        (new entry). ttl_s (Quant) = the book TTL counted from the book actually read, never above the 1.46 state TTL (900 s): Quant
+        excludes the record once that book is older than the book TTL and never later than in 1.46. book_data_time = time of that book."""
+        from ...quant import checks as QC
+        used = live.get("micro") or {}
+        rec_t = (live.get("micro_snapshot") or {}).get("data_time") if "micro_snapshot" in live else used.get("data_time")
         try:
             period = float(self.cfg_store.get().indicators.book_period_s)
         except (AttributeError, TypeError, ValueError):
             period = 1.0
-        return max(10.0, 5.0 * period)
+        ttl = max(10.0, 5.0 * period)
+        t_rec, t_book = QC.ts(rec_t), QC.ts(used.get("data_time"))
+        if t_rec is not None and t_book is not None and t_book > t_rec:
+            ttl += t_book - t_rec
+        return rec_t, min(ttl, QC.STATE_TTL_S), used.get("data_time")
 
-    def _micro_snapshot_guard(self, live) -> tuple[str, str] | None:
-        """1.46 arch (I0191, only tightening): the record reads the CURRENT book, but it is never READY where the record of the snapshot
-        measurement (1.46 input) was not - the snapshot measurement must be READY and not older than the REQUIRED-model age limit
-        (decision.required_max_age_s) nor the Quant state TTL (900 s). With the snapshot refreshed every closed M1 bar this is inert;
-        it keeps every block of a REQUIRED MICROSTRUCTURE model of today (a fresher book never lifts one)."""
+    @staticmethod
+    def _micro_snapshot_guard(live) -> tuple[str, str] | None:
+        """1.46 arch (I0191, only tightening): the record is never READY where the 1.46 record (the snapshot measurement) was not - a
+        snapshot measurement that is not READY gives exactly the 1.46 BLOCKED_DATA and reason, even with a READY current book. Its age is
+        not checked here: the record keeps the snapshot data_time (_micro_times), so the coordinator and Quant apply the 1.46 age rules
+        themselves, at their own (later) time."""
         if "micro_snapshot" not in live:
             return None
         snap = live.get("micro_snapshot") or {}
         if snap.get("status") != "READY":                          # exactly the 1.46 record of a snapshot without a READY book
             return "BLOCKED_DATA", snap.get("reason") or "Brak danych arkusza"
-        from ...quant import checks as QC
-        t = QC.ts(snap.get("data_time"))
-        try:
-            lim = float(getattr(getattr(self.cfg_store.get(), "decision", None), "required_max_age_s", QC.STATE_TTL_S))
-        except (TypeError, ValueError):
-            lim = QC.STATE_TTL_S
-        lim = min(lim, QC.STATE_TTL_S)
-        if t is None or self.clock() - t > lim:
-            return "STALE", f"migawka arkusza PMW-IND-1 starsza niż {lim:.0f} s"
         return None
 
     def _artifact(self, fid, inst, rid):
@@ -462,10 +471,10 @@ class FamilyService:
         live = self._live(f, inst)
         bar_t = (live.get("bars") or [{}])[-1].get("t") if live.get("bars") else None
         data_t = bar_t
-        ttl = None
+        ttl, extra_t = None, {}
         if fid == "MICROSTRUCTURE":
-            data_t = (live.get("micro") or {}).get("data_time")
-            ttl = self._micro_ttl_s()
+            data_t, ttl, book_t = self._micro_times(live)
+            extra_t = {"book_data_time": book_t}
         elif fid == "NLP_SENTIMENT":
             data_t = max((n.get("first_seen_at") or n.get("published_at") or "" for n in live.get("news") or []), default=None) or None
         ck = (fid, inst, rid, bar_t, use)
@@ -487,7 +496,7 @@ class FamilyService:
             res = f.predict(art, live)
             calib = {"method": "temperature (walidacja)", "status": "CALIBRATED_DEV"} if f.TASK_TYPE == "CLASS_PROBABILITIES" else None
             pred = f.pred(inst=inst, symbol=symbol, state="READY", result=res, run_id=rid, data_time=data_t, data_kind=kind, calibration=calib,
-                          extra={"use": use, "compute_ms": None}, ttl_s=ttl)
+                          extra={"use": use, "compute_ms": None, **extra_t}, ttl_s=ttl)
         except B.Unavailable as u:
             state = u.state if u.state in ("BLOCKED_DATA", "ERROR", "NOT_TRAINED", "STALE", "INCOMPATIBLE") else "BLOCKED_DATA"
             pred = f.pred(inst=inst, symbol=symbol, state=state, reason=u.reason, run_id=rid, data_time=bar_t, extra={"use": use})

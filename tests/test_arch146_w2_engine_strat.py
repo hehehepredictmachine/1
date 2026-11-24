@@ -126,16 +126,19 @@ class TestI0191MicroLiveBook(unittest.TestCase):
         shutil.rmtree(self.td, ignore_errors=True)
         self.data.close()
 
-    def svc(self, ind, upd=None):
+    def svc(self, ind, upd=None, clock=None, cs=None):
         from masterquo.config import ConfigStore
         from masterquo.modelhub.families.service import FamilyService
-        cs = ConfigStore()
-        if upd:
-            cs.update(upd)
+        if cs is None:
+            cs = ConfigStore()
+            if upd:
+                cs.update(upd)
         br = SimpleNamespace(quote={"bid": 2000.0, "ask": 2000.5}, bars=lambda *a, **k: [])
-        return FamilyService(cs, br, indicators=ind, store=self.store)
+        return FamilyService(cs, br, indicators=ind, store=self.store, **({"clock": clock} if clock else {}))
 
-    def test_live_uses_current_book_with_short_ttl(self):
+    def test_live_uses_current_book_record_keeps_snapshot_time(self):
+        """Values from the current book; data_time = the snapshot measurement time EXACTLY as in 1.46 (after review, S0 withdrawn); the
+        Quant TTL is counted from the book actually read (book TTL), never above 900 s."""
         from masterquo.quant import checks as QC
         now = time.time()
         old = _measure(_book(now - 50, qb=1.0, qa=5.0))                            # snapshot of the last closed M1 (50 s old)
@@ -143,12 +146,23 @@ class TestI0191MicroLiveBook(unittest.TestCase):
         p = self.svc(_IndMicro(old, fresh)).predict("MICROSTRUCTURE", "XAUUSD")
         self.assertEqual(p["state"], "READY", p.get("unavailable_reason"))
         self.assertAlmostEqual(p["result"]["best_imbalance"], fresh["values"]["best_imbalance"])   # 1.46: the 50 s old book
-        self.assertEqual(QC.ts(p["data_time"]), QC.ts(fresh["data_time"]))
-        self.assertLessEqual(p["ttl_s"], 25.0)
+        self.assertEqual(p["data_time"], old["data_time"])                          # the 1.46 data_time (coordinator age rule unchanged)
+        self.assertEqual(p["book_data_time"], fresh["data_time"])                   # the book read (information)
+        self.assertAlmostEqual(p["ttl_s"], 10.0 + QC.ts(fresh["data_time"]) - QC.ts(old["data_time"]), places=3)
         self.assertTrue(QC.check(p, now=now)["eligible"])
-        later = QC.check(p, now=QC.ts(p["data_time"]) + 60)                           # 1.46: eligible up to 900 s
+        later = QC.check(p, now=QC.ts(fresh["data_time"]) + 11)                       # the book read is 11 s old (1.46: eligible up to 900 s)
         self.assertFalse(later["eligible"])
         self.assertTrue(later["reason"].startswith("STALE"))
+        older = _measure(_book(now - 3000))                                          # snapshot 3000 s old: the TTL never exceeds 1.46 (900 s)
+        p2 = self.svc(_IndMicro(older, fresh)).predict("MICROSTRUCTURE", "XAUUSD")
+        self.assertEqual(p2["ttl_s"], QC.STATE_TTL_S)
+
+    def test_book_older_than_snapshot_is_not_used(self):
+        now = time.time()
+        snap = _measure(_book(now - 2, qb=1.0, qa=5.0))
+        stale_now = _measure(_book(now - 20, qb=5.0, qa=1.0), now=now - 20)
+        p = self.svc(_IndMicro(snap, stale_now)).predict("MICROSTRUCTURE", "XAUUSD")
+        self.assertAlmostEqual(p["result"]["best_imbalance"], snap["values"]["best_imbalance"])
 
     def test_stale_current_book_blocks(self):
         now = time.time()
@@ -158,25 +172,69 @@ class TestI0191MicroLiveBook(unittest.TestCase):
         self.assertNotEqual(p["state"], "READY")
 
     def test_tightening_guard_keeps_todays_blocks(self):
-        """A fresher book never lifts a block of the snapshot-based record (REQUIRED MICROSTRUCTURE): snapshot not READY or older than
-        the REQUIRED age limit -> not READY, like the record of 1.46."""
+        """A fresher book never lifts a block of the snapshot-based record (REQUIRED MICROSTRUCTURE): snapshot not READY -> the 1.46
+        BLOCKED_DATA; snapshot older than the REQUIRED age limit -> the 1.46 MODEL_REQUIRED_STALE (same data_time)."""
         from masterquo.decision.coordinator import evaluate_models
         now = time.time()
         fresh = _measure(_book(now - 1), now=now)
         nod = {"status": "NO_DATA", "reason": "Brak danych arkusza", "values": {}}
         p = self.svc(_IndMicro(nod, fresh)).predict("MICROSTRUCTURE", "XAUUSD")
         self.assertEqual((p["state"], p["unavailable_reason"]), ("BLOCKED_DATA", "Brak danych arkusza"))   # as 1.46
-        self.svc(_IndMicro(nod, fresh)).invalidate()
         old = _measure(_book(now - 50))
-        s = self.svc(_IndMicro(old, fresh), {"decision": {"required_max_age_s": 30}})
+        p = self.svc(_IndMicro(old, fresh), {"decision": {"required_max_age_s": 30}}).predict("MICROSTRUCTURE", "XAUUSD")
+        _, reasons = evaluate_models([p], "BUY", required={"MICROSTRUCTURE"}, assist_threshold=0.6, max_age_s=30, now=now)
+        self.assertEqual(reasons, ["MODEL_REQUIRED_STALE:MICROSTRUCTURE"])           # exactly the 1.46 block
+
+    def test_review_race_cache_keeps_the_required_stale_block(self):
+        """Review I0191 (S0 of the first version): snapshot 29 s old, current book 1 s, required_max_age_s=30, predict at T0, the
+        coordinator at T0+3 s (family cache hit). 1.46: MODEL_REQUIRED_STALE; first version: [] (no block) - now the 1.46 block."""
+        from masterquo.decision.coordinator import evaluate_models
+        t0 = 1_800_000_000.0
+        clk = {"t": t0}
+        snap = _measure(_book(t0 - 29), now=t0 - 29)
+        fresh = _measure(_book(t0 - 1), now=t0)
+        s = self.svc(_IndMicro(snap, fresh), {"decision": {"required_max_age_s": 30}}, clock=lambda: clk["t"])
         p = s.predict("MICROSTRUCTURE", "XAUUSD")
-        self.assertEqual(p["state"], "STALE")
-        # 1.46 record: READY with the snapshot data_time (50 s) -> REQUIRED blocks (age > 30); after: STALE -> blocks as well
-        today = dict(p, state="READY", data_time=old["data_time"], result={"best_imbalance": 0.1})
-        for rec in (today, p):
-            _, reasons = evaluate_models([dict(rec, family="MICROSTRUCTURE")], "BUY", required={"MICROSTRUCTURE"}, assist_threshold=0.6,
-                                         max_age_s=30, now=now)
-            self.assertTrue(any(r.startswith("MODEL_REQUIRED_") for r in reasons), reasons)
+        clk["t"] = t0 + 3
+        self.assertIs(s.predict("MICROSTRUCTURE", "XAUUSD"), p)                      # cache hit: the record computed at T0
+        _, reasons = evaluate_models([p], "BUY", required={"MICROSTRUCTURE"}, assist_threshold=0.6, max_age_s=30, now=t0 + 3)
+        self.assertEqual(reasons, ["MODEL_REQUIRED_STALE:MICROSTRUCTURE"])
+
+    def test_required_and_quant_never_looser_than_the_snapshot_record(self):
+        """Grid: snapshot age x current-book age x REQUIRED limit x evaluation delay after the computation (family cache up to 5 s,
+        the Quant snapshot longer). Reference = the 1.46 record (the snapshot measurement, no ttl_s). Every 1.46 REQUIRED block stays
+        (with a READY current book: identical reason codes) and Quant never keeps the record eligible longer than 1.46."""
+        from masterquo.config import ConfigStore
+        from masterquo.decision.coordinator import evaluate_models
+        from masterquo.quant import checks as QC
+        t0 = 1_800_000_000.0
+        clk = {"t": t0}
+        checked = 0
+        for lim in (10, 30, 60, 900):
+            cs = ConfigStore()
+            cs.update({"decision": {"required_max_age_s": lim}})
+            for sa in (0, 2, 9, 29, 31, 59, 61, 200, 899, 901, 2000):
+                snap = _measure(_book(t0 - sa, qb=1.0, qa=5.0), now=t0 - sa)
+                for fa in (0, 1, 4, 8):
+                    fresh = _measure(_book(t0 - fa, qb=5.0, qa=1.0), now=t0)
+                    clk["t"] = t0
+                    new = self.svc(_IndMicro(snap, fresh), clock=lambda: clk["t"], cs=cs).predict("MICROSTRUCTURE", "XAUUSD")
+                    ref = self.svc(_IndMicro(snap, has_now=False), clock=lambda: clk["t"], cs=cs).predict("MICROSTRUCTURE", "XAUUSD")
+                    ref = dict(ref, ttl_s=None)                                       # the 1.46 record: no TTL (Quant state default)
+                    for delay in (0.0, 3.0, 4.9, 20.0, 60.0, 120.0, 1000.0):
+                        now = t0 + delay
+                        args = {"required": {"MICROSTRUCTURE"}, "assist_threshold": 0.6, "max_age_s": float(lim), "now": now}
+                        _, r_new = evaluate_models([new], "BUY", **args)
+                        _, r_ref = evaluate_models([ref], "BUY", **args)
+                        case = (lim, sa, fa, delay, r_ref, r_new)
+                        if r_ref:
+                            self.assertTrue(r_new, case)                             # a 1.46 block never disappears
+                        if fresh["status"] == "READY":
+                            self.assertEqual(r_new, r_ref, case)
+                        if QC.check(new, now=now)["eligible"]:
+                            self.assertTrue(QC.check(ref, now=now)["eligible"], case)
+                        checked += 1
+        self.assertEqual(checked, 4 * 11 * 4 * 7)
 
     def test_without_microstructure_now_the_snapshot_is_used(self):
         now = time.time()
