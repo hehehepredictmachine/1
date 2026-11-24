@@ -11,7 +11,8 @@
 .sys-head{display:flex;align-items:baseline;gap:14px;padding:22px 26px 10px}
 .sys-num{font-size:9px;letter-spacing:.22em;color:#777d87}.sys-head b{font-size:15px;font-weight:300;letter-spacing:.3em}
 .sys-x{margin-left:auto;background:none;border:0;color:#9aa0aa;font-size:14px;cursor:pointer;padding:6px}
-.sys-tabs{display:flex;gap:2px;padding:0 22px 10px;border-bottom:1px solid #1c2130}
+/* 1.46: flex-wrap - in the narrow drawer (34vw) the tab row overflowed and LICENCJA was outside the drawer (not clickable) */
+.sys-tabs{display:flex;flex-wrap:wrap;gap:2px;padding:0 22px 10px;border-bottom:1px solid #1c2130}
 .sys-tabs button{background:none;border:0;border-bottom:1px solid transparent;color:#9aa0aa;font:inherit;font-size:10px;letter-spacing:.18em;padding:9px 10px;cursor:pointer}
 .sys-tabs button[aria-selected="true"]{color:#fff;border-bottom-color:#dfe3eb}.sys-tabs button.danger{color:#e0b3b3}
 .sys-tabs button:focus-visible,.sys-drawer button:focus-visible{outline:1px solid #dfe3eb;outline-offset:3px}

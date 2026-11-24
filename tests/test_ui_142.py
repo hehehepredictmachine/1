@@ -161,6 +161,30 @@ class TestUI142(unittest.TestCase):
         self.assertEqual(p.sent, [])                                    # STOP panel opened, nothing confirmed -> no POST
         self.assertEqual(p.errors, [])
 
+    # 1.46: in a 1280 px window the drawer is 34vw (~435 px) - the tab row overflowed and LICENCJA lay outside the drawer (not clickable);
+    # the cap icon still said "Centrum Treningowe Pepe"
+    def test_h_drawer_tabs_fit_a_narrow_window_and_display_name(self):
+        c = self.browser.new_context(viewport={"width": 1280, "height": 800})
+        c.add_init_script("try{sessionStorage.setItem('pmw.cinematic.seen','1');localStorage.setItem('pmw.motion','reduced')}catch(e){}")
+        self.addCleanup(c.close)
+        p = c.new_page()
+        self.menu(p)
+        self.assertIn("Apollo23", p.get_attribute("[data-testid=open-training]", "aria-label"))
+        self.assertNotIn("Pepe", p.get_attribute("[data-testid=open-training]", "aria-label"))
+        p.click("[data-testid=open-settings]")
+        p.wait_for_selector("[data-testid=system-settings]", timeout=30000)
+        p.wait_for_function("() => document.getAnimations().every(a => a.playState !== 'running')", timeout=10000)   # slide-in done
+        drawer = p.locator("[data-testid=system-settings]").bounding_box()        # the aside (the layer is full screen)
+        tabs = p.locator(".sys-tabs button")
+        self.assertGreaterEqual(tabs.count(), 6)
+        for i in range(tabs.count()):
+            b = tabs.nth(i).bounding_box()
+            name = tabs.nth(i).inner_text()
+            self.assertGreaterEqual(b["x"], drawer["x"] - 0.5, name)
+            self.assertLessEqual(b["x"] + b["width"], drawer["x"] + drawer["width"] + 0.5, name)   # inside the drawer = clickable
+        tabs.nth(tabs.count() - 1).click()                              # LICENCJA (owner edition: GENERATOR LICENCJI) - the last tab
+        p.wait_for_selector("[data-testid=system-license]", timeout=30000)
+
     # 1.44.1: intro = film Apollo23_intro_land.mp4 (pełny ekran z zachowaniem proporcji, bez kontrolek, z dźwiękiem); koniec filmu / klik /
     # Spacja / Esc / „Przejdź do menu” -> wejście do menu; film nieodtwarzalny -> od razu menu, bez komunikatu o błędzie; tylko GET
     def intro_page(self):
