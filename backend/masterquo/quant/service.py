@@ -177,7 +177,7 @@ class QuantService:
         return {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock()), "state": "READY",
                 "result": None, "revalidation_required": rv,
                 "quant_hold": f"{M.REVALIDATION_REASON}: MetaModel wytrenowany przed poprawkami producentów ({names}) – wytrenuj i aktywuj "
-                              f"ponownie (albo Quant SHADOW)"}
+                              f"nowy model, potem quant rollback --task <stary klucz> aż zniknie z active (albo Quant SHADOW)"}
 
     def set_mode(self, mode: str, *, confirm: bool = False, by: str = "CLI") -> dict:
         mode = str(mode).upper()
@@ -199,7 +199,7 @@ class QuantService:
         if mode == "ASSIST":
             rv = self.revalidation_required(self.instrument())
             if rv:                                  # QFENCE: activated, but it holds every new entry until a current model is active
-                out.update(revalidation_required=rv, warning=M.REVALIDATION_NOTE)
+                out.update(revalidation_required=rv, warning=M.REVALIDATION_NOTE.replace("<I>", self.instrument()))
         return out
 
     def set_estimator(self, kind: str, *, by: str = "panel") -> dict:

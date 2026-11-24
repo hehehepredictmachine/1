@@ -59,10 +59,13 @@ GOLD_FC_PREFIXES = ("fc:forecast:gold_candles:", "fc:gold_candles_")
 # zones / Kalman warm-up states not READY, Event GRU point / schema / NaN, lab fixture_only = SYNTHETIC, scalp A of another instrument,
 # ...) change the values / masks of the records a MetaModel reads (fc:* / st:* / ctx:dxy_*). An artifact trained before them was fitted on
 # the OLD producer semantics; giving it the new inputs silently could lift a HOLD it gives today, and invalidating it would switch ASSIST
-# off (validated_active() empty) and lift every Quant HOLD - both looser. Fail-CLOSED instead: save() records the producer semantics
-# the rows were logged under; an active artifact without it (= PRODUCERS_LEGACY) keeps being loaded and served in SHADOW exactly as
-# before, but in an activated ASSIST QuantService.coordinator_entry HOLDs every new SH / ACTIVE entry (QUANT_REVALIDATION_REQUIRED)
-# until a model trained on the current semantics is activated (or the user switches Quant back to SHADOW / OFF).
+# off (validated_active() empty) and lift every Quant HOLD - both looser. Fail-CLOSED instead: save() stamps the producer semantics of
+# the code that TRAINED the artifact (the stamp is the training time, not the logging time of its rows - the ledger has no per-row producer
+# marker: FEAT-3 rows logged by a 1.46 build before these fixes still enter the training of a new artifact; only rows of an older feature
+# version are filtered, by feature_version); an active artifact without it (= PRODUCERS_LEGACY) keeps being loaded and served in SHADOW
+# exactly as before, but in an activated ASSIST QuantService.coordinator_entry HOLDs every new SH / ACTIVE entry
+# (QUANT_REVALIDATION_REQUIRED) until a model trained by the current code is activated and the old keys are rolled back out of `active`
+# (or the user switches Quant back to SHADOW / OFF).
 PRODUCERS = "PMW-QUANT-PRODUCERS-2"
 PRODUCERS_LEGACY = "PMW-QUANT-PRODUCERS-1"
 REVALIDATION_REASON = "QUANT_REVALIDATION_REQUIRED"
@@ -466,7 +469,7 @@ def save(inst: str, res: dict, *, spec: dict) -> str:
     man = {"model": "quant:metamodel", "version": ver, "instrument": inst, "status": res["status"], "task_hash": th, "event_spec": spec,
            "feature_schema": res["model"]["feature_schema"], "sha256": hashlib.sha256(blob.encode()).hexdigest(), "created_at": time.time(),
            "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}, "inputs_rev": list(INPUTS_REV),
-           "producer_semantics": PRODUCERS}                       # QFENCE: rows of the current producer semantics
+           "producer_semantics": PRODUCERS}                       # QFENCE: trained by the current producer code (training time, not row time)
     if spec.get("task_group"):                                    # 1.46 arch (I0528 / I0798): trained per group (task_hash = group key)
         man.update(train_key="TASK_GROUP", task_group=spec["task_group"], member_task_hashes=list(spec.get("member_task_hashes") or [])[:200])
     write_json_atomic(d / "manifest.json", man)
@@ -559,8 +562,11 @@ def feature_semantics(inst: str, task_hash: str, ver: str) -> dict:
 
 REVALIDATION_NOTE = ("QFENCE: model wytrenowano przed poprawkami producentów 1.46 (wejścia fc:* / st:* / ctx:dxy_* mają dziś inne wartości "
                      "lub maski). W SHADOW działa jak dotąd; w aktywnym ASSIST Quant wstrzymuje (HOLD) każde nowe wejście SH i ACTIVE "
-                     "(QUANT_REVALIDATION_REQUIRED) do czasu wytrenowania i aktywacji modelu na bieżącej semantyce: quant train --instrument <I>, "
-                     "potem quant activate. Zdjęcie wstrzymania bez retreningu: quant mode SHADOW.")
+                     "(QUANT_REVALIDATION_REQUIRED), dopóki choć jeden aktywny zwalidowany artefakt ma starą semantykę. Wyjście: quant train "
+                     "--instrument <I> (artefakt pod kluczem grupy G…), quant activate --instrument <I> --task <G…> --version <V>, a potem "
+                     "zdjęcie STARYCH kluczy z listy revalidation_required (nowy model ich nie zastępuje): quant rollback --instrument <I> --task "
+                     "<task_hash> – powtarzać, aż klucz zniknie z active (rollback przywraca poprzednią wersję z historii). Zdjęcie wstrzymania "
+                     "bez retreningu: quant mode SHADOW.")
 
 
 def revalidation_notices(inst: str) -> list[dict]:

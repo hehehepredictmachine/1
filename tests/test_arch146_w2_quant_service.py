@@ -736,6 +736,38 @@ class TestTaskGroupTraining(unittest.TestCase):
         self.assertEqual(a["status"], "READY", a.get("reason"))
         self.assertEqual(a["task_group"], g)
 
+    def test_qfence_exit_path_needs_the_old_keys_rolled_back(self):
+        """Review (QFENCE/I0528): a new group model (key G…) does not replace a legacy artifact stored under its task_hash - the fence
+        holds every entry until each old key is rolled back out of `active` (repeated while its history has versions), as the note says."""
+        from masterquo.quant import metamodel as M
+        from masterquo.quant import service as SV
+        from masterquo.quant.service import QuantService
+        q = QuantService(StubRt())
+        q.tabicl.submit = lambda *a, **k: {"state": "DISABLED", "reason": "test"}
+        q.instrument = lambda: "XAUUSD"
+        th = self.spec(1998.0).task_hash()
+        for _ in range(2):                                     # two legacy versions under the old key (history)
+            res = M.train(synth_rows(), task={"task_hash": th, "event_id": "TP2_BEFORE_STOP"})
+            ver = M.save("XAUUSD", res, spec={"task_hash": th})
+            p = M.root("XAUUSD") / th / ver / "manifest.json"
+            man = json.loads(p.read_text(encoding="utf-8"))
+            man.pop("producer_semantics", None)
+            p.write_text(json.dumps(man), encoding="utf-8")
+            M.activate("XAUUSD", th, ver)
+        self.assertTrue(q.set_mode("ASSIST", confirm=True, by="TEST")["ok"])
+        self.assertIn("quant rollback", M.REVALIDATION_NOTE)
+        r = SV.train_from_ledger(self.ledger(900), "XAUUSD", log=lambda *_: None)[0]
+        self.assertEqual(r["status"], "VALIDATED_SHADOW", r)
+        M.activate("XAUUSD", r["task_hash"], r["version"])
+        self.assertIsNotNone(q.fence_entry())                  # train + activate alone: still fenced (old key stays in ACTIVE.json)
+        self.assertEqual([x["task_hash"] for x in q.revalidation_required()], [th])
+        M.rollback("XAUUSD", th)
+        self.assertIsNotNone(q.fence_entry())                  # the previous legacy version is back from the history
+        M.rollback("XAUUSD", th)
+        self.assertNotIn(th, M.pointer("XAUUSD")["active"])
+        self.assertIsNone(q.fence_entry())
+        self.assertTrue(q.assist_active())                     # the group model keeps ASSIST active (its assessments, no fence)
+
 
 if __name__ == "__main__":
     unittest.main()

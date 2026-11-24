@@ -90,6 +90,16 @@ W panelu: zaznacz „rozumiem…”, a potem przycisk ASSIST.
 ASSIST może tylko **wstrzymać** kandydata (`MODEL_QUANT_HOLD`), gdy E[net R] ≤ 0 albo P < próg rentowności planu binarnego. Przy nieznanym koszcie nigdy nie wstrzymuje.
 Nie składa zleceń, nie zmienia limitów, wolumenu ani trybu SIGNALS/PAPER/AUTO DEMO/AUTO LIVE. Nie omija STOP ani rezerwacji.
 
+QFENCE: jeśli aktywny jest MetaModel wytrenowany przed poprawkami producentów 1.46 (`revalidation_required` w `quant status`), ASSIST
+wstrzymuje każde nowe wejście SH i ACTIVE (`QUANT_REVALIDATION_REQUIRED`). Wyjście: trening i aktywacja nowego modelu (krok 4, klucz `G…`),
+potem dla każdego starego klucza z `revalidation_required`:
+
+```bat
+..\.venv\Scripts\python.exe -m masterquo quant rollback --instrument XAUUSD --task <task_hash>
+```
+
+powtarzane, aż klucz zniknie z `active` (nowy model grupy nie zastępuje starych kluczy; rollback przywraca poprzednią wersję z historii).
+
 Powrót do domyślnego trybu: `quant mode SHADOW --instrument XAUUSD`. Wyłączenie Quant Core: `quant mode OFF --instrument XAUUSD` (zachowanie jak 1.34).
 
 ## 6. Pomiary
