@@ -13,6 +13,10 @@ spread, costs or positions - the context says so.
         only TAKE AWAY a READY status (-> WAIT) when the forecast is unavailable, stale, FLAT or against the side. It never creates a
         setup, never changes the side, size, TP / SL, risk limits, the STOP switch or the execution mode; a model failure is never BUY,
         SELL or a permission.
+Arch 1.46 (fala 2): a forecast marked `decision_limited` (one the code before the fixes I0193 / I0854 / I0853 would not have produced:
+after a GPU -> CPU fallback, from a calendar re-read inside the old 6-hour window of an unusable calendar, with a first-day session slot
+resolved by the corrected rule) is unavailable for REQUIRED, OBSERVE and the PMW-PRED-1 record (Quant features) - as before - and is
+used only by ASSIST, which can only hold (READY -> WAIT).
 """
 from __future__ import annotations
 
@@ -53,6 +57,12 @@ def _state(svc, k: tuple) -> tuple[str, str | None]:
     return "READY", None
 
 
+def _limited(svc, k: tuple) -> str | None:
+    """Reason when the current forecast of `k` is decision-limited (see the module docstring), else None."""
+    lim = (svc.latest.get(k) or {}).get("decision_limited")
+    return (lim.get("reason") or "prognoza o ograniczonym użyciu") if isinstance(lim, dict) else None
+
+
 def contract_predictions(svc, inst: str) -> list[dict]:
     if svc is None:
         return []
@@ -64,6 +74,8 @@ def contract_predictions(svc, inst: str) -> list[dict]:
         state, why = _state(svc, k) if inst in s.instruments else ("DISABLED", f"{inst} nie jest włączony w ustawieniach Kronos")
         if not s.enabled:
             state, why = "DISABLED", "Kronos wyłączony w ustawieniach"
+        if state == "READY" and _limited(svc, k):                   # arch 1.46: as before the fix - no value in the record
+            state, why = "ERROR", _limited(svc, k)
         fc = svc.latest.get(k)
         common = dict(instrument=inst, symbol=(fc or {}).get("symbol") or svc.target_view(k).get("symbol"), timeframe=tf, model_name=model_name(),
                       model_version=((fc or {}).get("model") or {}).get("revision"), feature_schema="KRONOS_OHLCV_TIME_V1", task_type="REGRESSION",
@@ -97,6 +109,9 @@ def context(svc, inst: str, strategy: str, *, side: str | None = None, other_pre
         state, why = "DISABLED", "Kronos wyłączony w ustawieniach"
     if tf not in s.timeframes or inst not in s.instruments:
         state, why = "DISABLED", f"Kronos nie liczy {inst} {tf} (włącz w ustawieniach Kronos)"
+    limited = _limited(svc, k) if state == "READY" else None
+    if limited and use.use != "ASSIST":                     # arch 1.46: only ASSIST (hold-only) uses a decision-limited forecast
+        state, why = "ERROR", limited
     if use.use == "REQUIRED" and state == "READY":         # 1.33: an approval is valid only for the binding it was validated on
         try:
             from . import validation as V
@@ -135,7 +150,7 @@ def context(svc, inst: str, strategy: str, *, side: str | None = None, other_pre
             struct = {"timeframe": tf, "trend_internal": tr, "trend_major": st.get("major"),
                       "relation": "BRAK" if tr not in ("UP", "DOWN") or d == "FLAT" else ("ZGODNY" if tr == d else "KONFLIKT")}
     return {"model": model_name(), "timeframe": tf, "use": use.use, "use_pl": USE_PL[use.use], "validation_report": use.validation_report,
-            "available": state == "READY", "state": state, "reason": why,
+            "available": state == "READY", "state": state, "reason": why, "decision_limited": limited if state == "READY" else None,
             "forecast": None if not fc else {k2: fc[k2] for k2 in ("id", "direction", "direction_pl", "delta_price", "delta_pct", "last_close",
                                                                     "pred_close_h", "horizon_bars", "last_bar_open_utc", "created_at", "neutral_band",
                                                                     "data_source")},

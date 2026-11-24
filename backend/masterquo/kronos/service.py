@@ -511,13 +511,14 @@ class KronosService:
                           "v": (p.get("volume") or [None] * len(y_raw))[i]})
         kind, kind_pl = self.data_kind()
         comps = {c["kind"]: c for c in (self.load_info or {}).get("components") or []}
-        return {"id": uuid.uuid4().hex[:16], "instrument": job["instrument"], "symbol": job["symbol"], "timeframe": tf, "horizon_bars": H,
+        return {"id": uuid.uuid4().hex[:16], "decision_limited": decision_limited(r, job, cinfo), "instrument": job["instrument"], "symbol": job["symbol"], "timeframe": tf, "horizon_bars": H,
                 "created_at": iso(utcnow()), "last_bar_open_utc": last["open_utc"],
                 "last_bar_close_utc": iso(datetime.fromtimestamp(parse_iso(last["open_utc"]).timestamp() + TF_SECONDS[tf], tz=timezone.utc)),
                 "last_close": last_close, "pred": steps, "pred_close_h": pc, "delta_price": delta,
                 "delta_pct": (delta / last_close * 100.0) if last_close else None, "direction": direction, "direction_pl": DIR_PL[direction],
                 "neutral_band": band, "band_rule": f"bocznie, gdy |zmiana| ≤ max({s.direction_band_atr} × ATR14({tf}), {s.direction_band_min_points} × point)",
-                "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "device": r.get("device"), "device_note": r.get("device_note"),
+                "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "paths_error": r.get("paths_error"),
+                "device": r.get("device"), "device_note": r.get("device_note"),
                 "compute_ms": r.get("ms"), "seed": r.get("seed"), "sampling": r.get("sampling"), "context_bars": r.get("context_bars"),
                 "model": comps.get("model"), "tokenizer": comps.get("tokenizer"), "runtime": (self.worker_info or {}).get("runtime"),
                 "model_name": (self.load_info or {}).get("model_name"), "params": (self.load_info or {}).get("params_model"),
@@ -855,3 +856,33 @@ class KronosService:
 def _mean(it) -> float | None:
     xs = [float(x) for x in it if x is not None]
     return sum(xs) / len(xs) if xs else None
+
+
+LIMITED_PL = {
+    "GPU_FALLBACK_CPU": "prognoza po awaryjnym przejściu GPU → CPU (przed poprawką arch 1.46 każda kolejna prognoza była błędem do restartu "
+                        "procesu modelu)",
+    "PATHS_GPU_ERROR": "prognoza bez pasma ścieżek po błędzie GPU w bloku ścieżek (przed poprawką arch 1.46 cała prognoza była błędem)",
+    "CALENDAR_LEGACY_WINDOW": "kalendarz sesji pobrany ponownie po krótkiej historii (przed poprawką arch 1.46 nieużywalny kalendarz był "
+                              "trzymany 6 h i prognoza była niedostępna)",
+    "CALENDAR_FIRST_DAY": "slot sesji rozstrzygnięty bez pierwszego, niepełnego dnia historii (przed poprawką arch 1.46 slot był "
+                          "niepewny i prognoza niedostępna)",
+}
+
+
+def decision_limited(r: dict, job: dict, cinfo: dict | None) -> dict | None:
+    """Arch 1.46 (fala 2, kierunek wejść): a forecast the code before the fixes I0193 / I0854 / I0853 would NOT have produced. It is
+    stored, shown and may HOLD an ASSIST setup (READY -> WAIT on a contrary forecast); the REQUIRED condition, the PMW-PRED-1 record
+    (Quant features, coordinator) and the OBSERVE context see it as unavailable - exactly as before the fixes. None = a normal forecast."""
+    codes = []
+    if str(r.get("device_note") or "").startswith("GPU_ERROR_FALLBACK_CPU"):
+        codes.append("GPU_FALLBACK_CPU")
+    if r.get("paths_error"):
+        codes.append("PATHS_GPU_ERROR")
+    if job.get("calendar_limited"):
+        codes.append("CALENDAR_LEGACY_WINDOW")
+    if (cinfo or {}).get("first_day_resolved"):
+        codes.append("CALENDAR_FIRST_DAY")
+    if not codes:
+        return None
+    return {"codes": codes, "reason": "; ".join(LIMITED_PL[c] for c in codes) + " – tylko informacja i wstrzymanie ASSIST, "
+                                                                                  "nie potwierdza warunku REQUIRED"}
