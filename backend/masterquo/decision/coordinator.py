@@ -343,8 +343,15 @@ class DecisionCoordinator:
                     from ..evaluation import contract as EK
                     preds = preds + self._quant_entry("SH", cand=EK.sh_candidate(su, regime=regime).to_dict())
                 except Exception as exc:  # noqa: BLE001 - not a candidate the evaluation contract accepts -> Quant has no entry
-                    preds = preds + [{"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
-                                      "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
+                    # QFENCE: an active MetaModel of the old producer semantics holds every SH entry - this one too (tightening only)
+                    fence = None
+                    try:
+                        fe = getattr(self.quant, "fence_entry", None)
+                        fence = fe() if callable(fe) else None
+                    except Exception:  # noqa: BLE001
+                        fence = None
+                    preds = preds + [fence or {"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
+                                               "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
             return self.decide(self.sh_candidate(su, risk), gates=gates, mode=mode, account_key=account_key, preds=preds)
         except K.ContractViolation:
             return None

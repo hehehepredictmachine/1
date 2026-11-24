@@ -133,21 +133,48 @@ class QuantService:
         except Exception:  # noqa: BLE001
             return "XAUUSD"
 
-    def validated_active(self, inst: str) -> dict:
+    def _validated(self, inst: str) -> dict:
+        """task key -> (version, manifest) of the active artifacts that load and are VALIDATED_SHADOW."""
         p = M.pointer(inst)
         out = {}
         for th, ver in (p.get("active") or {}).items():
             try:
                 _, man = M.load(inst, th, ver)
                 if man["status"] == "VALIDATED_SHADOW":
-                    out[th] = ver
+                    out[th] = (ver, man)
             except Exception:  # noqa: BLE001 - an incompatible / broken artifact is not active evidence
                 continue
         return out
 
+    def validated_active(self, inst: str) -> dict:
+        return {th: ver for th, (ver, _) in self._validated(inst).items()}
+
     def assist_active(self) -> bool:
         s = self.settings.get()
         return s["mode"] == "ASSIST" and bool((s.get("assist") or {}).get("activated")) and bool(self.validated_active(self.instrument()))
+
+    def revalidation_required(self, inst: str | None = None) -> list[dict]:
+        """QFENCE: the validated active artifacts (the ones that make ASSIST active) trained before the producer fixes (metamodel.PRODUCERS)."""
+        inst = inst or self.instrument()
+        return [{"task_hash": th, "version": ver, "reason": M.REVALIDATION_REASON, "producer_semantics": M.producer_semantics(man),
+                 "required": M.PRODUCERS} for th, (ver, man) in sorted(self._validated(inst).items()) if M.producer_semantics(man) != M.PRODUCERS]
+
+    def fence_entry(self) -> dict | None:
+        """QFENCE (fail-closed, tightening only): Quant in an activated ASSIST with an active MetaModel trained before the producer fixes ->
+        one READY ASSIST entry with quant_hold for EVERY new entry of both paths (the coordinator gives MODEL_QUANT_HOLD: SH READY -> WAIT,
+        ACTIVE ENTER -> BLOCKED) instead of an assessment on inputs whose meaning changed under it. assist_active() is NOT turned off for
+        it (that would lift every Quant HOLD). None otherwise (SHADOW / OFF / not activated / every active artifact current)."""
+        s = self.settings.get()
+        if s.get("mode") != "ASSIST" or not (s.get("assist") or {}).get("activated"):
+            return None
+        rv = self.revalidation_required(self.instrument())
+        if not rv:
+            return None
+        names = ", ".join(f"{r['task_hash']}/{r['version']}" for r in rv[:3]) + (" …" if len(rv) > 3 else "")
+        return {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock()), "state": "READY",
+                "result": None, "revalidation_required": rv,
+                "quant_hold": f"{M.REVALIDATION_REASON}: MetaModel wytrenowany przed poprawkami producentów ({names}) – wytrenuj i aktywuj "
+                              f"ponownie (albo Quant SHADOW)"}
 
     def set_mode(self, mode: str, *, confirm: bool = False, by: str = "CLI") -> dict:
         mode = str(mode).upper()
@@ -165,7 +192,12 @@ class QuantService:
             s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
         s["mode"] = mode
         self.settings.put(s)
-        return {"ok": True, "mode": mode, "assist": s["assist"]}
+        out = {"ok": True, "mode": mode, "assist": s["assist"]}
+        if mode == "ASSIST":
+            rv = self.revalidation_required(self.instrument())
+            if rv:                                  # QFENCE: activated, but it holds every new entry until a current model is active
+                out.update(revalidation_required=rv, warning=M.REVALIDATION_NOTE)
+        return out
 
     def set_estimator(self, kind: str, *, by: str = "panel") -> dict:
         """1.41: tabicl_v2 (raw TabICLv2 confidence, DIRECT_USER_REQUEST) or legacy_logistic (1.35 artifacts, original meaning) -
@@ -462,6 +494,9 @@ class QuantService:
         return [dict(p, model_id=p.get("family") or p.get("canonical_id")) for p in pub.get("eligible") or []]
 
     def coordinator_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> dict | None:
+        fence = self.fence_entry()                 # QFENCE: an artifact of the old producer semantics holds every entry, no assessment
+        if fence is not None:
+            return fence
         base = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock())}
         if cand is not None:
             # 1.46 (D4): the coordinator's SH candidate now carries the regime of its SH cycle (evaluation.contract.sh_candidate - as the
@@ -618,14 +653,18 @@ class QuantService:
             by_reason[k] = by_reason.get(k, 0) + 1
         s = self.settings.get()
         counts = self.ledger.counts(inst)
+        rv = _safe(lambda: self.revalidation_required(inst), [])
         return {"version": VERSION, "instrument": inst, "mode": s["mode"], "assist": s.get("assist"), "assist_active": self.assist_active(),
+                # QFENCE: True = an active MetaModel of the old producer semantics; in an activated ASSIST every new entry is held
+                "revalidation_required": bool(rv), "assist_fail_closed": bool(rv) and s["mode"] == "ASSIST" and bool((s.get("assist") or {}).get("activated")),
                 "settings_error": self.settings.error, "generation": pub.get("generation"), "complete": pub.get("complete"),
                 "computed_at": pub.get("computed_at"), "cycle_ms": pub.get("cycle_ms"), "tasks": pub.get("tasks"), "snapshot": pub.get("snapshot"),
                 "models": {"eligible": len(el), "excluded": len(ex), "excluded_by_reason": by_reason, "aliases_dropped": len(pub.get("aliases_dropped") or []),
                            "ready_ids": sorted({p.get("canonical_id") for p in el})},
                 "setup_scoped": _safe(lambda: A.setup_scoped(self.rt, inst), []),
                 "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:],
-                              "retrain_required": _safe(lambda: M.retrain_notices(inst), [])},          # D21: presentation only
+                              "retrain_required": _safe(lambda: M.retrain_notices(inst), []),          # D21: presentation only
+                              "revalidation_required": rv, "producer_semantics": M.PRODUCERS},
                 "ledger": counts, "training_evidence": training_evidence(counts), "loop": dict(self.loop),
                 "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at", "error")} for j in self.jobs.values()][-10:],
                 "timings": percentiles(self.timings), "execution_allowed": False,
