@@ -364,6 +364,197 @@ class TestI0786ValidatedBandBinding(_SvcCase):
         self.assertFalse(svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)["ok"])
 
 
+# ===================================================================================================== I0853 / I0854 kalendarz sesji
+def _raw(y, mo, d, h=0, mi=0):
+    return int(datetime(y, mo, d, h, mi, tzinfo=UTC).timestamp())        # czas SERWERA zapisany jak epoka (jak t_raw z MT5)
+
+
+def _bars_24x5(first_raw, last_raw, tf=3600, price=2000.0):
+    """Synthetic 24/5 bars (closed Saturday + Sunday server time) from first_raw to last_raw (+ the forming bar)."""
+    out, i, t = [], 0, first_raw
+    while t <= last_raw + tf:
+        if (t // 86400 + 3) % 7 not in (5, 6):
+            c = price + 3 * ((i % 40) - 20) / 20 + i * 0.001
+            out.append({"t_raw": t, "open_utc": K.iso(t - K.OFF), "o": c - 0.2, "h": c + 0.5, "l": c - 0.5, "c": c, "tv": 50, "rv": 0,
+                        "closed": t <= last_raw})
+            i += 1
+        t += tf
+    return out
+
+
+WED1_1400 = _raw(2026, 10, 14, 14)        # pierwsza świeca historii: środa 14:00 (czas serwera) - pierwszy dzień niepełny
+WED3_0900 = _raw(2026, 10, 28, 9)         # ostatnia zamknięta świeca H1: środa 09:00 (dzień bieżący)
+
+
+class TestI0853CalendarFirstPartialDay(unittest.TestCase):
+    def setUp(self):
+        from masterquo.kronos import calendar as CAL
+        self.CAL = CAL
+        self.cal = CAL.Calendar([b["t_raw"] for b in _bars_24x5(WED1_1400, WED3_0900) if b["closed"]], 3600)
+
+    def test_first_partial_day_made_the_slot_ambiguous(self):
+        wed_1000 = WED3_0900 + 3600
+        self.assertEqual(self.cal.state(wed_1000), ("AMBIGUOUS", 0.5))                       # reguła pierwotna - bez zmian
+        self.assertEqual(self.cal.state(wed_1000, exclude_first_partial=True), ("OPEN", 1.0))
+
+    def test_live_future_resolves_only_with_the_flag(self):
+        y, info = self.cal.future(WED3_0900, 3600, 6)                                         # walidacja / TSFM: jak dziś
+        self.assertIsNone(y)
+        self.assertEqual(info["status"], "CALENDAR_UNCERTAIN")
+        y, info = self.cal.future(WED3_0900, 3600, 6, resolve_first_day=True)                 # serwis na żywo
+        self.assertEqual(info["status"], "OK")
+        self.assertEqual(y, [WED3_0900 + 3600 * (i + 1) for i in range(6)])
+        self.assertEqual(len(info["first_day_resolved"]), 4)                                   # 10:00-13:00 środy
+
+    def test_resolution_never_changes_or_removes_todays_timestamps(self):
+        """Gdy reguła pierwotna daje czasy, wynik z resolve_first_day jest identyczny (CLOSED zostaje CLOSED, OPEN zostaje OPEN)."""
+        rng = np.random.default_rng(11)
+        checked = 0
+        for _trial in range(25):
+            first = _raw(2026, 9, 1) + int(rng.integers(0, 14 * 24)) * 3600
+            bars = [b["t_raw"] for b in _bars_24x5(first, first + int(rng.integers(8, 30)) * 86400) if b["closed"]]
+            keep = [t for t in bars if rng.random() > 0.15 or t == bars[-1]]                 # losowe dziury w historii
+            cal = self.CAL.Calendar(keep, 3600)
+            for back in range(0, 72, 5):
+                last = keep[-1] - back * 3600
+                a, ia = cal.future(last, 3600, 6)
+                b, ib = cal.future(last, 3600, 6, resolve_first_day=True)
+                if a is not None:
+                    checked += 1
+                    self.assertEqual(a, b)
+                    self.assertNotIn("first_day_resolved", ib)
+                elif b is not None:
+                    self.assertTrue(ib.get("first_day_resolved"))
+        self.assertGreater(checked, 50)
+
+    def test_quality_gap_count_keeps_the_original_rule(self):
+        ts = [b["t_raw"] for b in _bars_24x5(WED1_1400, WED3_0900) if b["closed"]]
+        self.assertEqual(self.cal.expected_missing(ts, 3600), {"missing_open_slots": 0, "ambiguous_slots": 0})
+
+
+class _FakeWorkerSvcCase(_SvcCase):
+    """KronosService z dublerem odpowiedzi workera (bez procesu): prognoza = ostatnia cena - 0,5 na krok."""
+
+    def make(self, **settings):
+        svc = super().make(**settings)
+        svc.ensure_worker = lambda: svc.state.update(status="READY") or True
+        svc.env_status = lambda: {"python_found": True, "weights_installed": True, "weights_reason": None}
+
+        def ask(req, timeout):
+            last = req["candles"]["close"][-1]
+            cl = [last - 0.5 * (i + 1) for i in range(req["pred_len"])]
+            return {"ok": True, "pred": {"open": cl, "high": [c + 0.1 for c in cl], "low": [c - 0.1 for c in cl], "close": cl, "volume": None},
+                    "ms": 1.0, "device": "cpu", "device_note": None, "seed": req["seed"], "sampling": {}, "context_bars": len(req["candles"]["close"]),
+                    "paths": None}
+        svc._ask = ask
+        return svc
+
+    def cycle(self, inst="XAUUSD", tf="M5"):
+        svc = self.svc
+        svc._target((inst, tf))["next_check"] = 0
+        svc.tick()
+        out = None
+        while svc.queue:
+            _k, job = svc.queue.popitem(last=False)
+            out = svc.run_job(job)
+        return out
+
+
+class TestI0853LiveForecastLimited(_FakeWorkerSvcCase):
+    def test_first_day_resolved_forecast_is_limited(self):
+        from masterquo.kronos import predictions as KP
+        self.bridge.bars_by[("XAUUSD-", "H1")] = _bars_24x5(WED1_1400, WED3_0900)
+        self.now[0] = WED3_0900 - K.OFF + 3600 + 30
+        svc = self.make(timeframes=["H1"], strategy_use={"SCALPING": {"use": "ASSIST", "timeframe": "H1", "validation_report": None,
+                                                                      "confirmed_at": None}})
+        fc = self.cycle(tf="H1")
+        self.assertIsNotNone(fc, svc.targets)                                             # dziś: CALENDAR_UNCERTAIN, brak prognozy
+        self.assertEqual(fc["decision_limited"]["codes"], ["CALENDAR_FIRST_DAY"])
+        self.assertEqual(fc["direction"], "DOWN")
+        self.assertEqual(KP.contract_predictions(svc, "XAUUSD")[0]["state"], "ERROR")        # Quant / koordynator: jak dziś
+        ctx = KP.context(svc, "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual(KP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "WAIT")   # ASSIST: tylko wstrzymanie
+        svc.settings.update({"strategy_use": {"SCALPING": {"use": "OBSERVE", "timeframe": "H1", "validation_report": None, "confirmed_at": None}}})
+        self.assertFalse(KP.context(svc, "XAUUSD", "SCALPING", side="BUY")["available"])
+
+
+class TestI0854UnusableCalendarCache(_FakeWorkerSvcCase):
+    """Dziś nieużywalny kalendarz (pusta / krótka historia) był trzymany 6 h: przez 6 h CALENDAR_INSUFFICIENT. Teraz ponowny odczyt po
+    5 min; prognozy z kalendarza odczytanego w dawnym oknie 6 h są ograniczone (ASSIST / informacja), po oknie - jak dziś."""
+
+    def test_unusable_calendar_is_reread_after_five_minutes(self):
+        svc = self.make()
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 2)
+        cal, err = svc._calendar("XAUUSD-", "M5")
+        self.assertFalse(cal.usable()[0])
+        n0 = len(self.bridge.calls)
+        self.now[0] += 120
+        svc._calendar("XAUUSD-", "M5")
+        self.assertEqual(len(self.bridge.calls), n0)                                       # w ciągu 5 min - z pamięci
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
+        self.now[0] += 200
+        cal, err = svc._calendar("XAUUSD-", "M5")
+        self.assertEqual(len(self.bridge.calls), n0 + 1)
+        self.assertTrue(cal.usable()[0])
+        self.assertTrue(svc._calendar_limited("XAUUSD-", "M5"))
+
+    def test_forecasts_inside_the_old_window_are_limited_and_after_it_identical(self):
+        from masterquo.kronos import predictions as KP
+        t0 = self.now[0]
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, t0, 2)
+        svc = self.make(strategy_use={"SCALPING": {"use": "REQUIRED", "timeframe": "M5", "validation_report": "x", "confirmed_at": None}})
+        self.assertIsNone(self.cycle())
+        self.assertEqual(svc.targets[("XAUUSD", "M5")]["state"], "CALENDAR_INSUFFICIENT")
+        self.now[0] = t0 + 600
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
+        fc = self.cycle()
+        self.assertIsNotNone(fc, svc.targets)                                             # dziś: CALENDAR_INSUFFICIENT do t0 + 6 h
+        self.assertEqual(fc["decision_limited"]["codes"], ["CALENDAR_LEGACY_WINDOW"])
+        self.assertFalse(KP.context(svc, "XAUUSD", "SCALPING", side="SELL")["available"])  # REQUIRED: niedostępna jak dziś
+        n_calls = len(self.bridge.calls)
+        self.now[0] = t0 + 6 * 3600 + 60                                                   # koniec dawnego okna: nowy odczyt jak dziś
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
+        fc = self.cycle()
+        self.assertIsNotNone(fc)
+        self.assertIsNone(fc["decision_limited"])
+        self.assertIn(("XAUUSD-", "M5", int(min(8100, 28 * 86400 // 300))), self.bridge.calls[n_calls:])
+        self.assertFalse(svc._calendar_limited("XAUUSD-", "M5"))
+
+    def test_tsfm_borrowed_calendar_cache_unchanged(self):
+        """TsfmService pożycza KronosService._calendar - poprawka I0854 dotyczy tylko Kronos; TSFM zachowuje dzisiejsze 6 h."""
+        from masterquo.db.database import Database
+        from masterquo.tsfm.service import TsfmService
+        from masterquo.tsfm.settings import SettingsStore
+        st = SettingsStore(self.dir / "tsfm" / "settings.json")
+        db = Database(self.dir / "tsfm.sqlite")
+        try:
+            svc = TsfmService(self.cfg, self.bridge, db, K.Bus(), K.Log(), clock=lambda: self.now[0], settings=st)
+            self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 2)
+            self.assertFalse(svc._calendar("XAUUSD-", "M5")[0].usable()[0])
+            n0 = len(self.bridge.calls)
+            self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
+            self.now[0] += 6 * 3600 - 1
+            self.assertFalse(svc._calendar("XAUUSD-", "M5")[0].usable()[0])               # jak dziś: z pamięci przez 6 h
+            self.assertEqual(len(self.bridge.calls), n0)
+            self.now[0] += 1
+            self.assertTrue(svc._calendar("XAUUSD-", "M5")[0].usable()[0])
+        finally:
+            db.close()
+
+    def test_usable_calendar_cache_unchanged(self):
+        svc = self.make()
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
+        svc._calendar("XAUUSD-", "M5")
+        n0 = len(self.bridge.calls)
+        self.now[0] += 6 * 3600 - 1
+        svc._calendar("XAUUSD-", "M5")
+        self.assertEqual(len(self.bridge.calls), n0)
+        self.now[0] += 1
+        svc._calendar("XAUUSD-", "M5")
+        self.assertEqual(len(self.bridge.calls), n0 + 1)
+        self.assertFalse(svc._calendar_limited("XAUUSD-", "M5"))
+
+
 class TestI0785ValidationSaveAtomic(unittest.TestCase):
     def setUp(self):
         self.td = TempData()

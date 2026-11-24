@@ -45,6 +45,7 @@ TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pami
              "ERROR": "błąd", "MODEL_UNAVAILABLE": "model niedostępny", "DISABLED": "wyłączony"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
 USABLE_MAPPING = ("CONFIRMED", "USER_SPECIFIED", "AUTO_DETECTED")
+CAL_TTL_S = 6 * 3600                  # session calendar cache (KronosService._calendar, also borrowed by TsfmService)
 
 
 class KronosService:
@@ -68,7 +69,7 @@ class KronosService:
         self.state = {"status": "STARTING", "code": None, "reason": None, "updated_at": None}
         self.counters = {"enqueued": 0, "deduplicated": 0, "dropped_queue_full": 0, "done": 0, "errors": 0, "timeouts": 0, "worker_starts": 0}
         self.last_used = time.monotonic()
-        self._cal: dict[tuple, tuple] = {}
+        self._cal: dict[tuple, dict] = {}
         self._meta: dict[str, tuple] = {}
         self.jobs: dict[str, dict | None] = {"install": None, "verify": None, "validation": None}
         self._job_procs: dict[str, subprocess.Popen] = {}
@@ -246,20 +247,44 @@ class KronosService:
                 return b
         return self.bridge.symbol_bars(sym, tf, n)
 
+    CAL_UNUSABLE_TTL_S = 300          # arch 1.46 I0854 - Kronos only (TsfmService borrows _calendar without it: 6 h as before)
+
     def _calendar(self, sym: str, tf: str):
+        """Session calendar of (symbol, TF), cached CAL_TTL_S. Arch 1.46 I0854 (KronosService): an UNUSABLE calendar (empty / short
+        history, e.g. right after the terminal connected) is re-read after CAL_UNUSABLE_TTL_S instead of being kept for 6 h. Direction of
+        entries: inside the 6-hour window in which the code before the fix kept the unusable calendar, a usable one re-read early is
+        marked `limited` (its forecasts: information / ASSIST hold only - kronos.predictions) and expires at the end of that window, so
+        from then on the calendars (and forecasts) are exactly those of the code before the fix. TsfmService borrows this method and has
+        no CAL_UNUSABLE_TTL_S: the unusable TTL is CAL_TTL_S there, i.e. exactly the previous behaviour."""
         src = "M5" if tf == "M1" else tf
         key = (sym, tf)
+        now = self.clock()
+        unusable_ttl = float(getattr(self, "CAL_UNUSABLE_TTL_S", CAL_TTL_S))
         hit = self._cal.get(key)
-        if hit and self.clock() - hit[0] < 6 * 3600:
-            return hit[1], hit[2]
+        if hit and now < hit["until"]:
+            return hit["cal"], hit["err"]
+        legacy = hit.get("legacy_until") if hit else None                   # end of the old 6-h cache of an unusable calendar
+        if legacy is not None and now >= legacy:
+            legacy = None
         count = int(min(8100, 28 * 86400 // TF_SECONDS[src]))
         try:
             bars = self.bridge.symbol_bars(sym, src, count)
         except Exception as exc:  # noqa: BLE001
             return None, f"historia do kalendarza sesji niedostępna: {type(exc).__name__}: {exc}"[:200]
         cal = CAL.Calendar([int(b["t_raw"]) for b in bars if b.get("closed")], CAL.slot_seconds(TF_SECONDS[tf]))
-        self._cal[key] = (self.clock(), cal, None)
+        if cal.usable()[0]:
+            self._cal[key] = {"at": now, "cal": cal, "err": None, "until": legacy if legacy is not None else now + CAL_TTL_S,
+                              "legacy_until": legacy, "limited": legacy is not None}
+        else:
+            lu = legacy if legacy is not None else now + CAL_TTL_S
+            self._cal[key] = {"at": now, "cal": cal, "err": None, "until": min(now + unusable_ttl, lu), "legacy_until": lu,
+                              "limited": False}
         return cal, None
+
+    def _calendar_limited(self, sym: str, tf: str) -> bool:
+        """True while the cached calendar of (symbol, TF) is a usable one re-read inside the old 6-hour window (see _calendar)."""
+        hit = self._cal.get((sym, tf))
+        return bool(hit and hit.get("limited") and self.clock() < hit["until"])
 
     def _point(self, sym: str) -> tuple[float | None, int | None]:
         hit = self._meta.get(sym)
@@ -366,7 +391,7 @@ class KronosService:
                 t.update(state="READY", reason=None)
             return
         self.enqueue({"instrument": inst, "timeframe": tf, "symbol": sym, "bar_key": bar_key, "bars": q["bars"], "quality": t["quality"],
-                      "calendar": cal, "force": force, "enqueued_at": now})
+                      "calendar": cal, "calendar_limited": self._calendar_limited(sym, tf), "force": force, "enqueued_at": now})
         t.update(state="QUEUED", reason=None)
 
     def enqueue(self, job: dict) -> bool:
@@ -442,7 +467,7 @@ class KronosService:
         last = bars[-1]
         last_raw = int(last["t_raw"])
         off = last_raw - int(parse_iso(last["open_utc"]).timestamp())           # server offset of these bars (s)
-        y_raw, cinfo = job["calendar"].future(last_raw, tf_sec, H)
+        y_raw, cinfo = job["calendar"].future(last_raw, tf_sec, H, resolve_first_day=True)       # arch 1.46 I0853 (decision_limited)
         if y_raw is None:
             t.update(state=cinfo["status"], reason=cinfo["reason"], last_key=job["bar_key"])
             return None
