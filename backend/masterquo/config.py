@@ -287,7 +287,11 @@ class MLConfig(_Strict):
     xgb_device: Literal["cpu", "cuda"] = "cpu"
     train_timeout_minutes: int = Field(30, ge=1, le=600)
     random_state: int = 42
-    assist_rank_weight: float = Field(10.0, ge=0, le=50)   # ASSIST: rank += weight x (calibrated p - base rate) x 10
+    # ASSIST: rank += weight x (calibrated p - base rate) x 10. 1.46 arch (I0327, neutral variant): the scale is only described / warned
+    # about - capping it can lift a LONG/SHORT conflict or change a hysteresis switch (a new entry), so the formula stays unchanged
+    assist_rank_weight: float = Field(10.0, ge=0, le=50, description=(
+        "ASSIST: ranking setupu += waga × (p skalibrowane − base rate) × 10 – przy wadze 10 do ±50 pkt (premia etapu maks. 8 pkt, margines "
+        "konfliktu LONG/SHORT 5 pkt), więc ML może przestawić wybór setupu; skala i ostrzeżenie: status ML, pole assist_rank_scale"))
     drift_psi_warn: float = Field(0.2, gt=0)
     drift_psi_degraded: float = Field(0.35, gt=0)
     degrade_brier_increase: float = Field(0.05, ge=0)      # mature-label Brier above validation Brier by more -> DEGRADED

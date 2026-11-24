@@ -989,5 +989,47 @@ class TestStudioLaunchVerified(_Base):
         self.assertEqual((r["started"], r["starting"]), (True, False))
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0327
+class TestAssistRankScaleNeutral(unittest.TestCase):
+    """I0327 – wyłącznie WARIANT NEUTRALNY (S1): skala bonusu ASSIST jest jawnie opisana i ostrzegana w statusie ML (pole informacyjne);
+    rank_adjust, selektor, konflikt LONG/SHORT i bramka ML BEZ ZMIAN (przycięcie bonusu = S0: nowe wejście, patrz wynik grupy)."""
+
+    def _svc(self, mode="ASSIST", weight=10.0, base=0.5, champion=True, p=0.95):
+        from masterquo.ml.service import MLService
+        s = types.SimpleNamespace()
+        s.cfg = types.SimpleNamespace(mode=mode, assist_rank_weight=weight)
+        s.registry = types.SimpleNamespace(champion=types.SimpleNamespace(meta={"base_rate": base}) if champion else None)
+        s.cfg_store = types.SimpleNamespace(get=lambda: types.SimpleNamespace(active=types.SimpleNamespace(conflict_margin=5.0, min_switch_margin=8.0)))
+        s.predict = lambda row, view: {"readiness": "READY", "calibrated_probability": p}
+        return MLService, s
+
+    def test_rank_adjust_is_unchanged(self):
+        M, s = self._svc()
+        self.assertEqual(M.rank_adjust(s, {}, None), 45.0)                                     # dziś: 10 × (0.95 − 0.5) × 10
+        M, s = self._svc(p=0.05)
+        self.assertEqual(M.rank_adjust(s, {}, None), -45.0)
+        M, s = self._svc(mode="SHADOW")
+        self.assertEqual(M.rank_adjust(s, {}, None), 0.0)
+
+    def test_scale_is_reported_with_a_warning(self):
+        M, s = self._svc(base=0.3)
+        sc = M.assist_rank_scale(s)
+        self.assertEqual((sc["points_per_probability"], sc["max_abs_bonus"], sc["stage_bonus_max"], sc["conflict_margin"]), (100.0, 70.0, 8.0, 5.0))
+        self.assertTrue(sc["can_dominate"])
+        self.assertEqual(sc["warning"], "ML_ASSIST_BONUS_CAN_DOMINATE_RANK")
+        self.assertEqual(sc["applies"], True)
+        M, s = self._svc(mode="SHADOW")
+        sc = M.assist_rank_scale(s)
+        self.assertEqual((sc["applies"], sc["warning"]), (False, None))                       # SHADOW: bonus = 0, bez ostrzeżenia
+        M, s = self._svc(weight=0.5)
+        self.assertFalse(M.assist_rank_scale(s)["can_dominate"])                               # 0.5 × 0.5 × 10 = 2.5 ≤ 8
+
+    def test_config_field_describes_the_scale(self):
+        from masterquo.config import MLConfig
+        f = MLConfig.model_fields["assist_rank_weight"]
+        self.assertEqual((f.default, f.metadata[0].ge if f.metadata else None), (10.0, 0))
+        self.assertTrue(f.description and "assist_rank_scale" in f.description)
+
+
 if __name__ == "__main__":
     unittest.main()
