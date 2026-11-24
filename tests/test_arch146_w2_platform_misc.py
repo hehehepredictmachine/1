@@ -872,9 +872,24 @@ class TestI0744MondayPreviousDay(unittest.TestCase):
         self.assertEqual(self._obst(X, 2080.0), (None, None))                       # previous high below entry: no fallback (as 1.45)
 
     def test_profile_reason_names_the_gap_but_status_is_unchanged(self):
+        """Review: the detector itself on a Monday context (before, only the source text was checked - passed on the base code too)."""
+        from unittest import mock
+
         from masterquo.sh.pack import detectors as D
-        src = __import__("inspect").getsource(D)
-        self.assertIn('_done("NO_DATA", "NO_PROFILE"', src)                          # same status / reason code, only the text grows
+        fri = self._bars("2026-11-20T14:00:00", 36, 2050.0, hi_bump=40.0)
+        mon = self._bars("2026-11-22T23:00:00", 180, 2050.0)
+        X = self._ctx("2026-11-23T14:05:00", fri + mon)
+        with mock.patch.object(D, "_ctx_range", return_value=None):                # isolate the profile step (M15 context not built here)
+            r = D.value_area_rejection(X, "PMW_SC10", "M5", False, {"params": {}})
+        self.assertEqual((r["status"], r["reason_code"]), ("NO_DATA", "NO_PROFILE"))  # = 1.45 (no Monday VA setups: S0)
+        self.assertIn("weekend", r["reason"])                                       # before: reason without the gap
+        self.assertIn("weekend", r["checklist"][-1]["detail"])
+        tue = self._bars("2026-11-23T23:00:00", 100, 2050.0)                         # a day with a previous trading day: no note
+        Y = self._ctx("2026-11-24T14:05:00", self._bars("2026-11-23T14:00:00", 36, 2050.0) + tue)
+        with mock.patch.object(D, "_ctx_range", return_value=None):
+            r2 = D.value_area_rejection(Y, "PMW_SC10", "M5", False, {"params": {}})
+        self.assertEqual(r2["reason_code"], "NO_PROFILE")                           # partial previous day (12 % coverage) - a real day
+        self.assertNotIn("weekend", r2["reason"])                                   # with bars is never called a weekend gap
 
 
 # ------------------------------------------------------------------ I0119 (NOT migrated in wave 2 - ratchet only)
