@@ -303,12 +303,16 @@ class TestRetiredOtcFeedIsLazy(_Svc):
         s.cycle()                                                                       # offline: nothing scanned, OTC never touched
         self.assertFalse((self.d / "otc").exists())
 
-    def test_legacy_history_reader_still_available_on_demand(self):
+    def test_stored_history_stays_on_disk_untouched(self):
+        # 1.46 (I0112): the unreachable OTC feed reader was removed (nothing but tests read it); the stored history is user data and
+        # stays exactly as it is - never read, rewritten or extended by the service
         (self.d / "otc").mkdir()
         (self.d / "otc" / "ticks.jsonl").write_text("[1700000000.0, 2000.5]\n", encoding="utf-8")
         s = self.svc()
-        self.assertEqual(s.otc.state()["state"], "HISTORY_ONLY")
-        self.assertEqual(s.otc.price_at(1700000001.0), 2000.5)
+        s.cycle()
+        self.assertFalse(hasattr(s, "otc"))
+        self.assertEqual(sorted(p.name for p in (self.d / "otc").iterdir()), ["ticks.jsonl"])
+        self.assertEqual((self.d / "otc" / "ticks.jsonl").read_text(encoding="utf-8"), "[1700000000.0, 2000.5]\n")
 
 
 # ---------------------------------------------------------------------------------------------------------------- focus_X2#18

@@ -1,10 +1,10 @@
-"""The 30 hedge planners (FX_HEDGE / CP_HEDGE / OTC_HEDGE). A planner works only on EXISTING, identified exposure; without it the
+"""The 20 hedge planners (FX_HEDGE / CP_HEDGE; OTC_HEDGE retired). A planner works only on EXISTING, identified exposure; without it the
 result is NO_EXPOSURE (not an error). It may correctly return NO_HEDGE with the computed reason. It never opens a pair of opposite
 positions to look "active", never uses martingale / grids / doubling, never moves the parent SL, never raises leverage.
 
 planner(ctx) -> {"state": NO_EXPOSURE | NO_HEDGE | HEDGE_PLAN | WAITING_FOR_DATA | UNSUPPORTED_EXECUTION, "reason", "plan"?}
 ctx: {"strategy": catalog entry, "p": parameters, "exposure": [...], "F": Feat of the signal TF (own instrument), "feats": {symbol: Feat},
-      "bars": {symbol: {tf: bars}}, "account": {...}, "spec": {symbol: meta}, "events": [...] | None, "now": t, "otc": {...}}
+      "bars": {symbol: {tf: bars}}, "account": {...}, "spec": {symbol: meta}, "events": [...] | None, "now": t}
 """
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ import math
 import numpy as np
 
 from . import detectors as D
-from . import payoff as PO
 from .rules import Unavailable
 
 
@@ -37,10 +36,35 @@ def _fx_parent(ctx, side_needed: str | None = None):
     if not exp:
         return None
     sym = ctx.get("symbol")
-    own = [e for e in exp if e.get("symbol") == sym] or exp
+    # 1.46 (I0762): only the context symbol's own positions - a position on another symbol was taken as the parent and judged on the
+    # candles of the chart symbol (and the default volume step); without one the planner reports NO_EXPOSURE
+    own = [e for e in exp if e.get("symbol") == sym]
+    if not own:
+        return None
     if side_needed:
         own = [e for e in own if e["side"] == side_needed] or own
     return own[0]
+
+
+def _layers_used(ctx, parent) -> int:
+    """1.46 (I0763): protection layers the parent already has - open HEDGE legs of the same plan id in the exposure (SH hedge legs carry
+    the parent's plan id) + recent PROPOSED hedge plans for it: ctx['layers_used'] = {parent_id: n}, counted read-only by the basket
+    service (an int from a direct caller = the count of this parent)."""
+    pid = parent.get("id")
+    legs = sum(1 for e in ctx.get("exposure") or [] if e.get("leg") == "HEDGE" and pid is not None and e.get("id") == pid)
+    lu = ctx.get("layers_used")
+    proposed = lu.get(pid, 0) if isinstance(lu, dict) else (lu or 0)
+    return legs + int(proposed)
+
+
+def _layers_full(ctx, parent, reason_trigger: str):
+    """NO_HEDGE when the parent's protection layers reached p['max_layers'] (catalog default 1) - checked only where a HEDGE_PLAN would
+    be returned (the triggers and the other NO_HEDGE answers are unchanged)."""
+    mx = int(ctx["p"].get("max_layers", 1))
+    n = _layers_used(ctx, parent)
+    if n >= mx:
+        return {"state": "NO_HEDGE", "reason": f"{reason_trigger}; limit warstw ochrony (max_layers={mx}) wyczerpany – rodzic ma już {n}"}
+    return None
 
 
 def _fx_same_symbol(ctx, parent, reason_trigger: str, extra=None):
@@ -77,6 +101,9 @@ def _fx_same_symbol(ctx, parent, reason_trigger: str, extra=None):
         plan["action_type"] = "REDUCE"
         return {"state": "NO_HEDGE", "reason": f"{reason_trigger}; rachunek {acc.get('margin_mode') or 'nieznany'} – przeciwna transakcja zmniejszy pozycję "
                 "(alternatywa REDUCE, nie hedge)", "alternative": plan}
+    full = _layers_full(ctx, parent, reason_trigger)              # 1.46 (I0763): max_layers was never checked by the FX planners
+    if full:
+        return full
     return {"state": "HEDGE_PLAN", "reason": reason_trigger, "plan": plan}
 
 
@@ -131,8 +158,8 @@ def vol_shock(ctx):
         return {"state": "NO_HEDGE", "reason": "zakres M1 poniżej 95. percentyla 200 poprzednich"}
     if not (F.bear(F.i) if s > 0 else F.bull(F.i)):
         return {"state": "NO_HEDGE", "reason": "zamknięcie nie jest przeciw rodzicowi"}
-    if ctx.get("layers_used", 0) >= 1:
-        return {"state": "NO_HEDGE", "reason": "jednorazowy hedge już przygotowany – bez kolejnej warstwy"}
+    if _layers_used(ctx, par) >= 1:                                # 1.46 (I0763): layers_used was never supplied - counted per parent now
+        return {"state": "NO_HEDGE", "reason": "jednorazowy hedge już przygotowany – bez kolejnej warstwy (max_layers)"}
     return _fx_same_symbol(ctx, par, "szok zmienności przeciw rodzicowi")
 
 
@@ -282,6 +309,9 @@ def _beta_hedge(ctx, partner: str | None):
     # without an FX conversion (different quote currencies -> DIFFERENT_NOT_CONVERTED; the conversion itself is an owner decision)
     qc_p, qc_h = (spec.get(par["symbol"]) or {}).get("currency_profit"), hs.get("currency_profit")
     qc = {"parent": qc_p, "partner": qc_h, "status": ("SAME" if qc_p == qc_h else "DIFFERENT_NOT_CONVERTED") if qc_p and qc_h else "NOT_VERIFIED"}
+    full = _layers_full(ctx, par, f"beta {b1['beta']:.3f} (120) / {b2['beta']:.3f} (60)")      # 1.46 (I0763)
+    if full:
+        return full
     return {"state": "HEDGE_PLAN", "reason": f"beta {b1['beta']:.3f} (120) / {b2['beta']:.3f} (60), korelacja {b1['corr']:.2f}",
             "plan": _plan({"id": par["id"], "symbol": par["symbol"], "side": par["side"], "volume": par["volume"]}, [leg], ratio=ratio,
                           risk_before={"factor_notional": b1["beta"] * parent_notional},
@@ -432,6 +462,8 @@ def basket_beta(ctx):
         return {"state": "NO_HEDGE", "reason": "w paśmie", "beta_exposure_usd": tot}
     hn = -float(ctx["p"].get("ratio", 0.5)) * tot
     q = _cp_qty(ctx, "BTC", hn, float(fb[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"suma beta-exposure {tot:,.0f} USD",
             "plan": _plan({"basket": [e["instrument"] for e in exp]}, [{"instrument": "BTC", "side": "SHORT" if hn < 0 else "LONG", "size": q, "unit": "BTC"}],
                           ratio=float(ctx["p"].get("ratio", 0.5)), risk_before={"beta_usd": tot}, risk_after={"beta_usd": tot + hn}, cost=None, residual=None,
@@ -498,6 +530,8 @@ def residual_pair(ctx):
         return {"state": "NO_HEDGE", "reason": f"residual z = {z:.2f} poniżej progu", "z": z}
     pn = sgn * float(par["size"]) * float(a[-1]["c"])
     q = _cp_qty(ctx, other, beta_ * pn, float(b[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"residual z = {z:.2f}",
             "plan": _plan({"instrument": par["instrument"]}, [{"instrument": other, "side": "SHORT" if pn > 0 else "LONG", "size": q, "unit": other}],
                           ratio=1.0, risk_before={"z": z}, risk_after=None, cost=None, residual=None, exit_rule=f"residual z ≤ {ctx['p'].get('z_out', 0.5)} / rozpad / timeout",
@@ -533,6 +567,8 @@ def cross_market(ctx):
     if abs(basis) > float(ctx["p"].get("basis_limit_bps", 50)):
         return {"state": "NO_HEDGE", "reason": f"basis {basis:.1f} bps ponad limit"}
     q = _cp_qty(ctx, other, float(par["size"]) * pa, pb)
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"basis {basis:.1f} bps",
             "plan": _plan({"instrument": par["instrument"]}, [{"instrument": other, "side": "SHORT" if par["side"] == "LONG" else "LONG", "size": q}], ratio=1.0,
                           risk_before=None, risk_after=None, cost=None, residual={"basis_oracle_collateral": "osobne ryzyka"}, exit_rule="limit basis / koszt / timeout",
@@ -549,6 +585,8 @@ def spot_inventory(ctx):
         raise Unavailable(f"brak perpa {e['instrument']}")
     px = float(_cp_bars(ctx, e["instrument"])[-1]["c"])
     q = _cp_qty(ctx, e["instrument"], float(ctx["p"].get("ratio", 0.5)) * float(e["size"]) * px, px)
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": "ochrona części salda spot",
             "plan": _plan({"spot": e["instrument"], "size": e["size"]}, [{"instrument": e["instrument"], "side": "SHORT", "size": q}], ratio=float(ctx["p"].get("ratio", 0.5)),
                           risk_before={"spot_units": e["size"]}, risk_after={"net_units": float(e["size"]) - (q or 0)}, cost=None,
@@ -582,6 +620,8 @@ def stress_loss(ctx):
     grid = np.linspace(0, -expo, 21)
     h = max(grid, key=worst)
     q = _cp_qty(ctx, "BTC", h, float(fb[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"strata scenariuszowa {w0:,.0f} > limit {lim}",
             "plan": _plan({"positions": [e["instrument"] for e in exp]}, [{"instrument": "BTC", "side": "SHORT" if h < 0 else "LONG", "size": q}], ratio=None,
                           risk_before={"worst_scenario_usd": w0}, risk_after={"worst_scenario_usd": worst(h)}, cost=None,
@@ -622,181 +662,8 @@ def funding_aware(ctx):
     return best[2]
 
 
-# ============================================================================ OTC (declared contracts + payoff gate)
-def _otc_parents(ctx):
-    return [c for c in ctx.get("exposure") or [] if c.get("status", "OPEN") == "OPEN" and c.get("expiry", 0) > ctx["now"]]
-
-
-def _otc_gate(ctx, parents, reason, *, partial=False):
-    o = ctx.get("otc") or {}
-    exp = parents[0]["expiry"]
-    grp = [c for c in _otc_parents(ctx) if c["expiry"] == exp]
-    F = ctx["F"]
-    px = float(F.c[F.i])
-    if ctx["now"] + float(o.get("min_accept_s", 5)) >= exp:
-        return {"state": "NO_HEDGE", "reason": "brak realnego czasu przyjęcia drugiej nogi przed expiry"}
-    dir_new = "PUT" if parents[0]["dir"] == "CALL" else "CALL"
-    g = PO.gate(grp, dir_new=dir_new, strike_est=px, strike_band=float(o.get("strike_uncertainty", F.b() or 0.0)), r_new=o.get("payout", {}).get(dir_new),
-                expiry=exp, stake_min=float(o.get("stake_min", 1)), stake_step=float(o.get("stake_step", 1)), stake_max=float(o.get("stake_max_hedge") or 0),
-                cash_free=o.get("cash_free"), min_improvement=float(o.get("min_improvement_money", 1.0)), allow_negative_lock=bool(o.get("allow_negative_lock", True)),
-                params_confirmed=False, layers_used=len([c for c in grp if c.get("role") == "HEDGE"]), max_layers=int(ctx["p"].get("max_layers", 1)))
-    g["trigger"] = reason
-    if g["state"] == "HEDGE_PLAN":
-        g["plan"] = {"plan_type": "HedgePlan", "action_type": "HEDGE", "parent": [c.get("id") for c in grp], "legs": [g["leg"]], "payoff_before": g["before"],
-                     "payoff_after": g["after"], "protection_cost": g["extra_cash"], "label": g["label"], "execution": "MANUAL_TICKET (Pocket Option)",
-                     "deadline": min(exp - float(o.get("min_accept_s", 5)), ctx["now"] + 15)}
-    return g
-
-
-def otc_structure(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    F = ctx["F"]
-    p = ps[0]
-    s = 1 if p["dir"] == "CALL" else -1
-    if (F.c[F.i] - p["strike"]) * s <= 0:
-        return {"state": "NO_HEDGE", "reason": "cena nie jest po korzystnej stronie strike"}
-    if not F.last_break(F.i, -s, 2, kinds=("CHOCH",)):
-        return {"state": "NO_HEDGE", "reason": "brak przeciwnego CHoCH S15"}
-    return _otc_gate(ctx, [p], "przeciwny CHoCH S15")
-
-
-def otc_sweep(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    F, p = ctx["F"], ps[0]
-    s = 1 if p["dir"] == "CALL" else -1
-    sw = F.swings(F.i - 1, "H" if s > 0 else "L", 1)
-    if not sw or (F.c[F.i] - p["strike"]) * s <= 0 or not F.sweep(F.i, sw[-1].price, -s):
-        return {"state": "NO_HEDGE", "reason": "brak sweepu oporu po korzystnym ruchu"}
-    return _otc_gate(ctx, [p], f"sweep {sw[-1].price:.5g}")
-
-
-def otc_vol_shock(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    F, p = ctx["F"], ps[0]
-    s = 1 if p["dir"] == "CALL" else -1
-    if not _shock(F, F.i, float(ctx["p"].get("pct", 0.95)), int(ctx["p"].get("lookback", 200))) or not (F.bear(F.i) if s > 0 else F.bull(F.i)):
-        return {"state": "NO_HEDGE", "reason": "brak szoku zmienności przeciw kontraktowi"}
-    return _otc_gate(ctx, [p], "szok zmienności S15")
-
-
-def otc_late_lock(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    F, p = ctx["F"], ps[0]
-    tot = p["expiry"] - p["opened_at"]
-    rem = (p["expiry"] - ctx["now"]) / tot if tot > 0 else 0
-    lo, hi = ctx["p"].get("remaining", [0.25, 0.40])
-    s = 1 if p["dir"] == "CALL" else -1
-    if not lo <= rem <= hi or (F.c[F.i] - p["strike"]) * s <= 0:
-        return {"state": "NO_HEDGE", "reason": f"pozostało {rem:.0%} czasu lub cena po złej stronie strike"}
-    return _otc_gate(ctx, [p], f"pozostało {rem:.0%} czasu")
-
-
-def otc_payout_reprice(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    o = ctx.get("otc") or {}
-    hist = o.get("payout_history") or []
-    if len(hist) < 2:
-        raise Unavailable("brak dwóch ważnych odczytów payout")
-    d = "PUT" if ps[0]["dir"] == "CALL" else "CALL"
-    if not (hist[-1].get(d) or 0) > (hist[-2].get(d) or 0):
-        return {"state": "NO_HEDGE", "reason": "payout przeciwnej nogi nie wzrósł"}
-    return _otc_gate(ctx, [ps[0]], "wzrost payout przeciwnej nogi")
-
-
-def otc_stall(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    F, p = ctx["F"], ps[0]
-    s = 1 if p["dir"] == "CALL" else -1
-    a = F.A()
-    i = F.i
-    ext = F.h[:i - 2].max() if s > 0 else F.l[:i - 2].min()
-    stall = all((F.h[k] <= ext if s > 0 else F.l[k] >= ext) and F.body(k) <= 0.3 * a for k in (i - 2, i - 1, i)) and (F.bear(i) if s > 0 else F.bull(i))
-    if not stall:
-        return {"state": "NO_HEDGE", "reason": "brak zatrzymania momentum (3 S15)"}
-    return _otc_gate(ctx, [p], "zatrzymanie momentum")
-
-
-def otc_basket(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    from collections import Counter
-    cnt = Counter((c["expiry"], c["dir"]) for c in ps)
-    (exp, d), n = cnt.most_common(1)[0]
-    if n < 2:
-        return {"state": "NO_HEDGE", "reason": "mniej niż 2 kontrakty w tym samym kierunku i expiry"}
-    lim = ctx["p"].get("limit")
-    grp = [c for c in ps if c["expiry"] == exp and c["dir"] == d]
-    if lim is None:
-        return {"state": "NO_HEDGE", "reason": "limit ekspozycji terminu nieskonfigurowany", "stake_sum": sum(c["stake"] for c in grp)}
-    if sum(c["stake"] for c in grp) <= float(lim):
-        return {"state": "NO_HEDGE", "reason": "ekspozycja terminu w limicie"}
-    return _otc_gate(ctx, grp, "zagregowana ekspozycja terminu ponad limit")
-
-
-def otc_loss_budget(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    lim = ctx["p"].get("loss_limit")
-    exp = ps[0]["expiry"]
-    t = PO.table([c for c in ps if c["expiry"] == exp])
-    if lim is None:
-        return {"state": "NO_HEDGE", "reason": "budżet straty grupy nieskonfigurowany", "worst": t["worst"]}
-    if t["worst"] >= -float(lim):
-        return {"state": "NO_HEDGE", "reason": "najgorszy wynik grupy w budżecie", "worst": t["worst"]}
-    return _otc_gate(ctx, [ps[0]], f"najgorszy wynik {t['worst']:.2f} poza budżetem {lim}")
-
-
-def otc_corridor(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    if int(ctx["p"].get("max_layers", 1)) < 2:
-        return {"state": "NO_HEDGE", "reason": "druga warstwa wyłączona (domyślny limit 1 warstwy)"}
-    hedges = [c for c in ps if c.get("role") == "HEDGE"]
-    if not hedges:
-        return {"state": "NO_HEDGE", "reason": "brak pierwszej ochrony"}
-    F, p = ctx["F"], [c for c in ps if c.get("role") != "HEDGE"][0]
-    s = 1 if p["dir"] == "CALL" else -1
-    if (F.c[F.i] - hedges[-1]["strike"]) * s < 0.5 * (F.A() or math.inf):
-        return {"state": "NO_HEDGE", "reason": "brak kolejnego ruchu ≥ 0.5A"}
-    return _otc_gate(ctx, [p], "druga warstwa korytarza")
-
-
-def otc_residual(ctx):
-    ps = _otc_parents(ctx)
-    if not ps:
-        return {"state": "NO_EXPOSURE"}
-    by = {}
-    for c in ps:
-        by.setdefault(c["expiry"], []).append(c)
-    grp = next((g for g in by.values() if {c["dir"] for c in g} == {"CALL", "PUT"}), None)
-    if not grp:
-        return {"state": "NO_HEDGE", "reason": "brak grupy CALL+PUT o wspólnym expiry"}
-    t = PO.table(grp)
-    lo_tail = [r["pnl"] for r in t["rows"] if r["kind"] == "below"][0]
-    hi_tail = [r["pnl"] for r in t["rows"] if r["kind"] == "above"][0]
-    if abs(lo_tail - hi_tail) < 1e-9:
-        return {"state": "NO_HEDGE", "reason": "ogony wyrównane"}
-    worse_dir = "PUT" if lo_tail < hi_tail else "CALL"                 # protect the worse tail: low prices -> a PUT pays there
-    par = [c for c in grp if c["dir"] != worse_dir][:1] or grp[:1]
-    return _otc_gate(ctx, par, f"nierówny ogon: poniżej {lo_tail:.2f}, powyżej {hi_tail:.2f}")
-
-
+# 1.46 (I0112): the 10 otc_* planners (+ _otc_parents / _otc_gate and baskets/payoff.py) were removed - OTC retired in TASK 020, no
+# strategy of the active catalog points at them (OTC_HEDGE_* stay only as historical labels in catalog.HISTORICAL_STRATEGIES)
 PLANNERS = {f.__name__: f for f in (structural_choch, range_profit, vol_shock, session_transition, mtf_countermove, event_shield, currency_factor, beta_pair,
                                     pair_relative, min_variance, crypto_beta, eth_ecosystem, basket_beta, two_factor, residual_pair, crypto_vol_shock,
-                                    cross_market, spot_inventory, stress_loss, funding_aware, otc_structure, otc_sweep, otc_vol_shock, otc_late_lock,
-                                    otc_payout_reprice, otc_stall, otc_basket, otc_loss_budget, otc_corridor, otc_residual)}
+                                    cross_market, spot_inventory, stress_loss, funding_aware)}

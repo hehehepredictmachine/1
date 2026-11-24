@@ -24,6 +24,9 @@ identyczny z Etapem 0), `backend/vendor/` bez zmian, kontrakty publiczne bez zmi
   testy: `test_train_all` (/20), `test_families_u4` (ścieżka .venv_deep).
 * Testy architektury (`tests/test_arch146_architecture.py`): jeden wiersz na producenta, stare rejestry są widokami rejestru kanonicznego,
   adapter albo uzasadnienie dla każdego producenta, dokładnie jeden wpis smoke, brak cykli importów, `backend/vendor` bez zmian.
+* Koszyki: w `scores` sygnału koszyka FOREX (pola z Quant) identyfikator zdarzenia Quant ma nazwę `quant_event_id`. Pole `p_event`
+  (ta sama wartość – tekst, nie prawdopodobieństwo) zostaje jako przestarzały alias na tę jedną wersję; zapisane wiersze ledgera
+  koszyków bez zmian.
 * Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23.
 
 ## 1.46.0 – Apollo23: audyt całego kodu, naprawy z testami regresji, eksportery danych
