@@ -7,6 +7,7 @@ not reconstructed from its name); native MQL5 code is IMPLEMENTED until it is co
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 VERSION = "PMW-MM-INVENTORY-1"
@@ -17,7 +18,8 @@ Q = "mql5/MasterModels/"
 
 MODULES: list[dict] = [
     {"n": 1, "id": "align_mean", "name": "Align Mean & Cross-Chart Visibility", "version": "PMW-MM-ALIGNMEAN-1", "category": "DETERMINISTIC_INDICATOR",
-     "spec": "PEPEMARKETWIZARD_AlignMean_HDC_SMC_Claude_Code_Prompt.md (Module A)", "files": [M + "align_mean.py", Q + "Indicators/PMW_AlignMean.mq5"],
+     "spec": "PEPEMARKETWIZARD_AlignMean_HDC_SMC_Claude_Code_Prompt.md (Module A)", "files": [M + "align_mean.py", Q + "Indicators/PMW_AlignMean.mq5",
+     Q + "Include/PMW/PMW_AlignMeanCore.mqh"],
      "entry": "align_mean.compute / latest; API /api/v1/mm/live (align_mean)", "inputs": "closed OHLC (any TF)", "outputs": "mean, dist points/%/ATR (INDICATOR_STATE)",
      "training": "NOT_APPLICABLE", "callers": ["mm.service (panel)", "mm.orchestrator:align_mean"], "execution_risk": "none (read-only)"},
     {"n": 2, "id": "hdc", "name": "HDC (binary hypervectors, online accumulators)", "version": "PMW-MM-HDC-1", "category": "ONLINE_LEARNER",
@@ -100,9 +102,70 @@ def by_id() -> dict:
     return {m["id"]: m for m in MODULES}
 
 
-def merge_run(run_report: dict | None) -> list[dict]:
-    """Inventory rows with evidence-based statuses from the latest orchestrator report."""
+# 1.46 arch (I0488): native evidence written by 44_MASTERMODELS_NATIVE.bat (tools/mr2_native_status.py --mm) into
+# <MQ_MT5_FILES_DIR>/PMW/mm_native_status.json, and the self-test output <MQ_MT5_FILES_DIR>/PMW_MM/PMW_MM_NATIVE.txt compared with the
+# references exported next to it (mm/fixtures.parity). Without them the status stays NOT_COMPILED (never a claim without evidence).
+PARITY_GATE = {"align_mean": "align", "hdc": "hdc", "gpr": "gpr", "kalman": "kalman", "breakout_zones": "breakout"}
+SELFTEST_HEADERS = {"PMW_AlignMeanCore.mqh", "PMW_BreakoutCore.mqh", "PMW_GPR.mqh", "PMW_HDC.mqh", "PMW_Kalman.mqh"}   # #include of PMW_MM_SelfTest
+
+
+def native_evidence(files_dir: str | None) -> dict:
+    if not files_dir:
+        return {"status": None, "reason": "MQ_MT5_FILES_DIR nie ustawione"}
+    f = Path(files_dir)
+    try:
+        st = json.loads((f / "PMW" / "mm_native_status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"status": None, "reason": "brak MQL5\\Files\\PMW\\mm_native_status.json (uruchom 44_MASTERMODELS_NATIVE.bat)"}
+    out: dict = {"status": st, "parity": None}
+    nat = f / "PMW_MM" / "PMW_MM_NATIVE.txt"
+    newest = st.get("ex5_newest_mtime")
+    # the self-test runs AFTER the compilation: only an output newer than the newest EX5 of this build is evidence for it
+    fresh = nat.exists() and isinstance(newest, (int, float)) and nat.stat().st_mtime >= newest
+    if st.get("compile_errors") == 0 and fresh and (f / "PMW_MM" / "mm_ref_kalman.csv").exists():
+        from . import fixtures
+        try:
+            out["parity"] = fixtures.parity(nat, f / "PMW_MM")
+        except (OSError, ValueError, KeyError, IndexError) as exc:
+            out["parity"] = {"status": "NATIVE_OUTPUT_INVALID", "reason": str(exc)[:200]}
+    return out
+
+
+def native_status(m: dict, ev: dict) -> str | None:
+    files = [x.split(" (")[0] for x in m.get("files", []) if x.startswith("mql5/")]
+    if not files:
+        return None
+    st = ev.get("status")
+    if not st:
+        return f"NOT_COMPILED ({ev.get('reason')}; brak MetaEditor/terminala w środowisku budowy)"
+    if st.get("compile_errors") != 0:
+        return f"COMPILE_FAIL ({st.get('compile_errors')} programów bez EX5 – log: {st.get('log')})"
+    ex5 = set(st.get("ex5_files") or [])
+    progs = [Path(x).stem for x in files if x.endswith(".mq5")]
+    heads = [Path(x).name for x in files if x.endswith(".mqh")]
+    if progs:
+        missing = [x for x in progs if x + ".ex5" not in ex5]
+        if missing:
+            return f"NOT_COMPILED (brak EX5: {', '.join(missing)})"
+        txt = "COMPILED (" + ", ".join(x + ".ex5" for x in progs) + ")"
+    elif "PMW_MM_SelfTest.ex5" in ex5 and set(heads) & SELFTEST_HEADERS:
+        txt = "COMPILED (nagłówek w PMW_MM_SelfTest.ex5)"
+    else:
+        return "NOT_COMPILED (nagłówek nie jest dołączany przez żaden skompilowany program)"
+    gate = PARITY_GATE.get(m["id"])
+    par = ev.get("parity") or {}
+    if gate and (par.get("gates") or {}).get(gate) is not None:
+        txt += " + NATIVE_PARITY_PASS" if par["gates"][gate] else " + NATIVE_PARITY_FAIL"
+    elif gate:
+        txt += " + NATIVE_NOT_EXECUTED" if not par else f" + {par.get('status')}"
+    return txt
+
+
+def merge_run(run_report: dict | None, files_dir: str | None = None) -> list[dict]:
+    """Inventory rows with evidence-based statuses from the latest orchestrator report; `native` from the MT5 evidence in files_dir
+    (default MQ_MT5_FILES_DIR, see native_evidence)."""
     jobs = (run_report or {}).get("jobs") or {}
+    ev = native_evidence(files_dir if files_dir is not None else os.environ.get("MQ_MT5_FILES_DIR"))
     out = []
     for m in MODULES:
         row = dict(m)
@@ -121,7 +184,7 @@ def merge_run(run_report: dict | None) -> list[dict]:
         row["status_chain"] = st
         row["status"] = st[-1]
         row["last_job"] = {k: j.get(k) for k in ("status", "reason", "data_kind", "training_executed", "validation_passed", "artifact_id", "gates")} if j else None
-        row["native"] = "IMPLEMENTED (MQL5 nieskompilowany: brak MetaEditor/terminala w tym środowisku)" if any(f.startswith("mql5/") for f in m.get("files", [])) else None
+        row["native"] = native_status(m, ev)                                 # 1.46 arch (I0488): was a constant text for every module
         out.append(row)
     return out
 
