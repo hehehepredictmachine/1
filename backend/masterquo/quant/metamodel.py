@@ -520,12 +520,20 @@ SEMANTICS_NOTE = {
                 "którakolwiek ocena – sam reżim tylko zaostrza). Względem dotychczasowego artefaktu FEAT-1 to inny model na innych cechach: "
                 "zbiór HOLD w ASSIST zmienia się w obie strony. Cofnięcie: POST /api/v1/quant/models/rollback albo "
                 "python -m masterquo quant rollback --instrument <I> --task <task_hash>.",
+    F.VERSION4: "PMW-QUANT-FEAT-4: jak FEAT-3 (reżim w kandydacie SH koordynatora z oceną bez reżimu – HOLD, gdy wstrzymuje którakolwiek; "
+                "Kalman *_CANDIDATE = 0, DXY STALE = maska), a reżim w słowniku swojego źródła: ctx:regime_sh=<stan> (SH RegimeMachine v2: "
+                "TREND_UP/TREND_DOWN/RANGE/TRANSITION) i ctx:regime_active=<stan> (ACTIVE MarketRegimeEngine) + ctx:regime_<źródło>:"
+                "trend_aligned; stan nieznany / DATA_UNAVAILABLE / STALE = brak cechy (maska). FEAT-3 kodował trend jako same zera "
+                "(ctx:regime=*). Względem dotychczasowego artefaktu to inny model na innych cechach: zbiór HOLD w ASSIST zmienia się w obie "
+                "strony. Cofnięcie: POST /api/v1/quant/models/rollback albo python -m masterquo quant rollback --instrument <I> "
+                "--task <task_hash>.",
 }
 
 
 def feature_semantics(inst: str, task_hash: str, ver: str) -> dict:
     """1.46: which feature semantics an artifact gets when served (for the activation answer of the API / CLI): FEAT-1 = the pre-1.46
-    input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9)."""
+    input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9), FEAT-4 = FEAT-3 with the
+    regime in the vocabulary of its source (I0561 / I0566)."""
     model, _ = load(inst, task_hash, ver)
     fv = F.version_of(model.get("feature_schema"))
     return {"feature_version": fv, "feature_schema": model.get("feature_schema"), "note": SEMANTICS_NOTE.get(fv)}

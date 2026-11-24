@@ -212,7 +212,8 @@ def build_context(ledger, inst: str, key: str, now: float, *, target: int = 512,
     kinds: dict[str, int] = {}
     for r in rows:
         kinds[kind_of(r.get("data_kind"))] = kinds.get(kind_of(r.get("data_kind")), 0) + 1
-    return {"context_id": cid, "event_key": key, "instrument": inst, "names": names, "feature_schema": F.schema2(names), "n": len(rows),
+    # 1.46 (I0531): the label names the feature semantics of the rows (features.CURRENT - live_rows keeps those only), not FEAT-2
+    return {"context_id": cid, "event_key": key, "instrument": inst, "names": names, "feature_schema": F.schema_for(F.CURRENT, names), "n": len(rows),
             "positives": sum(ys), "classes": sorted(set(ys)), "provenance": prov, "first_ts": rows[0]["decision_ts"] if rows else None,
             "last_ts": rows[-1]["decision_ts"] if rows else None, "X": [vector(r["features"], names) for r in rows], "y": ys,
             "row_ids": [r["id"] for r in rows], "built_at": time.time(),
@@ -307,7 +308,7 @@ def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_m
             continue                                       # unfinished / no bars: not a loss, simply not a reference row
         fills = lab.get("fills") or []
         resolve = max([float(f["t"]) + 60 for f in fills] or [cd["decision_ts"] + spec.horizon_s])
-        feats = F.build2(cd, [])                           # no historical model forecast existed -> those columns are missing
+        feats = F.build_for(F.CURRENT, cd, [])             # no historical model forecast existed -> those columns are missing
         feats.update(strategy_features(cd["engine"], spec.strategy))
         # 1.46: the TF is part of the id - a variant with several signal TFs can publish two different plans at the same t
         # (the same id made select() drop one of them silently)

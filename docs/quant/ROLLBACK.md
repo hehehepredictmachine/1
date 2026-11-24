@@ -79,3 +79,12 @@ Cofnięcie aktywacji: rollback jak wyżej.
 **Licznik wierszy.** Do czasu zebrania wierszy FEAT-3 (co najmniej DEV 300 + CAL 100 + TEST 100 na zadanie) trening odpowiada
 INSUFFICIENT_EVIDENCE, a działa dotychczasowy artefakt FEAT-1. Stan: pole `training_evidence` w `GET /api/v1/quant/status` i
 `python -m masterquo quant status`.
+
+**1.46 – `PMW-QUANT-FEAT-4` (reżim w słowniku źródła).** Nowe wiersze ledgera i nowe modele mają `PMW-QUANT-FEAT-4`: to FEAT-3, w którym
+reżim kandydata jest kodowany słownikiem jego źródła – `ctx:regime_sh=<stan>` (SH RegimeMachine v2: TREND_UP / TREND_DOWN / RANGE /
+TRANSITION), `ctx:regime_active=<stan>` (ACTIVE MarketRegimeEngine) i `ctx:regime_<źródło>:trend_aligned`; stan nieznany, DATA_UNAVAILABLE,
+STALE albo rozgrzewka = brak kolumny (maska). FEAT-1 / FEAT-3 porównywały stan z TREND / RANGE / TRANSITION / HIGH_VOL, więc każdy trend
+był „znany, żaden” (same zera). Artefakty FEAT-1 i FEAT-3 dostają dokładnie swoje dotychczasowe wejście (nic nie jest unieważniane);
+wiersze FEAT-3 zostają w ledgerze, ale nie trenują nowych modeli i nie wchodzą do kontekstu TabICL (licznik `training_evidence` liczy
+od nowa wiersze FEAT-4). Powrót do wersji z FEAT-3: jak wyżej – nie trenuj na ledgerze z wierszami `PMW-QUANT-FEAT-4` albo odfiltruj je
+(`DELETE FROM rows WHERE feature_version = 'PMW-QUANT-FEAT-4';` w kopii pliku), a aktywny artefakt FEAT-4 cofnij (`quant rollback`).

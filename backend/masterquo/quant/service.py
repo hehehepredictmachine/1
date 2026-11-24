@@ -307,9 +307,10 @@ class QuantService:
                legacy_without_regime: bool = False) -> dict:
         """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot.
         1.46: features of the CURRENT semantics (features.CURRENT) go to the ledger row / TabICL; a MetaModel gets the input of ITS feature
-        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input. legacy_without_regime (coordinator SH candidate):
-        before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to FEAT-3 only); a FEAT-3
-        artifact gets it with the regime AND is evaluated without it too - HOLD when either evaluation holds (the regime only tightens)."""
+        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input, a FEAT-3 artifact exactly build3. legacy_without_regime
+        (coordinator SH candidate): before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to
+        FEAT-3 / FEAT-4 only - features.REGIME_IN_SH_CANDIDATE); such an artifact gets it with the regime AND is evaluated without it too -
+        HOLD when either evaluation holds (the regime only tightens)."""
         mode = mode or self.mode()
         now = self.clock()
         inst = str(cd.get("instrument") or self.instrument())
@@ -331,7 +332,7 @@ class QuantService:
                 cd = {**cd, "research_features": rs.features_for(inst, float(cd.get("decision_ts") or now))}
             except Exception:  # noqa: BLE001 - missing research features = missing columns, never invented values
                 pass
-        feats = F.build_for(F.CURRENT, cd, preds)       # 1.46 FEAT-3 = FEAT-2 columns (1.41: + price-forecast + research) with D8 / D9 meaning
+        feats = F.build_for(F.CURRENT, cd, preds)       # 1.46 FEAT-4 = FEAT-3 (D8 / D9) with the regime of the candidate's own source
         a["sources"] = {"generation": (pub or {}).get("generation"), "eligible": len(preds), "excluded": len((pub or {}).get("excluded") or []),
                         "snapshot_status": ((pub or {}).get("snapshot") or {}).get("status"), "features": len(feats)}
         edges = [v for k, v in feats.items() if k.endswith(":edge")]
@@ -359,8 +360,8 @@ class QuantService:
         else:
             fv = F.version_of(model.get("feature_schema")) or F.VERSION
             nfeats = None
-            if fv == F.CURRENT:
-                mfeats = feats
+            if fv in F.REGIME_IN_SH_CANDIDATE:
+                mfeats = feats if fv == F.CURRENT else F.build_for(fv, cd, preds)      # a FEAT-3 artifact: exactly its own input (build3)
                 if legacy_without_regime and (cd.get("market_regime") or {}).get("state") is not None:
                     # 1.46 D4, tightening only (safety verdicts I0015 / I0143): the regime of the coordinator SH candidate may ADD a HOLD,
                     # never remove one - the same artifact is also evaluated on that candidate without the regime (no ledger row, no
@@ -651,8 +652,9 @@ def training_evidence(counts: dict) -> dict:
     return {"feature_version": F.CURRENT, "required_min_labelled": need,
             "required_basis": f"DEV {M.CRITERIA['min_dev']} + CAL {M.CRITERIA['min_cal']} + TEST {M.CRITERIA['min_test']} (bloki czasowe z "
                               "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
-            "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze sprzed 1.46 (FEAT-1) zostają w ledgerze, ale nie trenują. "
-                    "Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt FEAT-1."}
+            "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze starszych wersji cech (sprzed 1.46: FEAT-1, wcześniejsze "
+                    "1.46: FEAT-3) zostają w ledgerze, ale nie trenują. Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt "
+                    "(dostaje wejście swojej wersji)."}
 
 
 def percentiles(tim: dict) -> dict:
