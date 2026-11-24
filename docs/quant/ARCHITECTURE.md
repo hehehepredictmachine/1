@@ -40,7 +40,7 @@ Zasada jednego właściciela: jeśli model ma własny cykl (pętla MM co zamkni�
 
 Rejestracja zadania pod innym właścicielem jest odrzucana (`OwnershipError`). Cykle zależności są odrzucane (`CycleError`).
 Zadanie po deadline ma stan `TIMEOUT`, a jego późny wynik nie trafia do nowszej generacji. `Publisher` odrzuca generację starszą od bieżącej.
-Błąd zadania blokuje tylko zależne od niego zadania (`BLOCKED_DEPENDENCY`). Gałęzie predykcji są miękkimi zależnościami kontroli kontraktu (1.46 arch, I0799/I0796): awaria jednej gałęzi (albo wyjątek Event GRU) nie kasuje rekordów drugiej dla cech, ledgera i statusu, ale generacja ma `complete=false`, a koordynator (ASSIST) nie czyta z niej żadnego rekordu – jak dotąd. Świeższy alias Event GRU trafia tylko do cech (`fresh_for_features`), lista `eligible` koordynatora bez zmian (I0366/I0801).
+Błąd zadania blokuje tylko zależne od niego zadania (`BLOCKED_DEPENDENCY`). Gałęzie predykcji są miękkimi zależnościami kontroli kontraktu (1.46 arch, I0799/I0796): awaria jednej gałęzi (albo wyjątek Event GRU) nie kasuje rekordów drugiej dla cech, ledgera i statusu, ale generacja ma `complete=false`, a koordynator (ASSIST) nie czyta z niej żadnego rekordu – jak dotąd. Rekord takiej generacji (klucz `incomplete_generation`) nie trafia też do `event_gru.latest`, więc rodzina `SEQ_GRU_EVENT` w następnym cyklu publikuje poprzedni rekord, jak wtedy, gdy gałąź rzucała wyjątek. Świeższy alias Event GRU trafia tylko do cech (`fresh_for_features`), lista `eligible` koordynatora bez zmian (I0366/I0801).
 
 ## Wątki i obciążenie
 

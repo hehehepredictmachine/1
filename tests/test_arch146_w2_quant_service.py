@@ -406,7 +406,36 @@ class TestEventGru(unittest.TestCase):
         g, r = self.predict(symbol_info={"point": 0.01}, probs=(float("nan"), 0.5, 0.5))
         self.assertEqual(r["state"], "ERROR")
         self.assertEqual(r[A.INCOMPLETE_KEY], "EVENT_GRU_INVALID_DISTRIBUTION")
-        self.assertIs(g.latest["XAUUSD"], r)
+        # review (I0796): the old code raised before `latest` was written - the incomplete record is never stored there
+        self.assertNotIn("XAUUSD", g.latest)
+
+    def test_family_keeps_the_previous_ready_record_after_an_incomplete_cycle(self):
+        """Review (I0796): families SEQ_GRU_EVENT (next cycle's base branch) reads event_gru.latest - after a NaN / out-of-[0, 1] cycle or an
+        exception out of predict() it still sees the last READY record (bit for bit as when the old code raised), not the ERROR record."""
+        from masterquo.modelhub.families.service import FamilyService
+        from masterquo.quant import adapters as A
+        probs = {"v": (0.1, 0.2, 0.7)}
+        bars = m1_bars()
+        rt = SimpleNamespace(bridge=SimpleNamespace(bars=lambda tf, include_forming=False: bars, symbol_info={"point": 0.01}, synthetic=False))
+        g, r0 = self.predict(symbol_info={"point": 0.01})
+        with mock.patch("masterquo.mm.event_engine.predict", side_effect=lambda m, X, seg: np.tile(list(probs["v"]), (len(X), 1))):
+            r0 = g.predict(rt, "XAUUSD")
+            self.assertEqual(r0["state"], "READY")
+            fam = SimpleNamespace(event_gru_provider=lambda inst: g.latest.get(inst), fams={"SEQ_GRU_EVENT": None})
+            for bad in ((float("nan"), 0.5, 0.5), (-0.1, 0.6, 0.5)):
+                probs["v"] = bad
+                out = A.extended(rt, "XAUUSD", g, with_scalp=False)
+                e = next(p for p in out if p["canonical_id"] == "mm:event_engine_dir3")
+                self.assertEqual(e[A.INCOMPLETE_KEY], "EVENT_GRU_INVALID_DISTRIBUTION")
+                self.assertIs(g.latest["XAUUSD"], r0, bad)
+                self.assertIs(FamilyService.predict(fam, "SEQ_GRU_EVENT", "XAUUSD"), r0, bad)
+            with mock.patch.object(g, "predict", side_effect=RuntimeError("boom")):
+                A.extended(rt, "XAUUSD", g, with_scalp=False)
+            self.assertIs(g.latest["XAUUSD"], r0)
+            probs["v"] = (0.2, 0.3, 0.6)                                            # wrong sum: the old ERROR record (stored as before)
+            r2 = g.predict(rt, "XAUUSD")
+            self.assertEqual((r2["state"], r2.get(A.INCOMPLETE_KEY)), ("ERROR", None))
+            self.assertIs(g.latest["XAUUSD"], r2)
 
     def test_incomplete_marker_exactly_where_the_old_code_raised(self):
         from masterquo.quant import adapters as A
@@ -428,6 +457,7 @@ class TestEventGru(unittest.TestCase):
         self.assertIn("mm:kalman_cross", ids)
         e = next(p for p in out if p["canonical_id"] == "mm:event_engine_dir3")
         self.assertEqual((e["state"], e[A.INCOMPLETE_KEY]), ("ERROR", "EVENT_GRU_EXCEPTION"))
+        self.assertEqual(g.latest, {})                         # review (I0796): `latest` untouched, as when the exception left the branch
 
 
 # ================================================================================================ service: I0796 / I0799 / I0366 / I0801 / I0800

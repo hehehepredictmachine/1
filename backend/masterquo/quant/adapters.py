@@ -338,7 +338,8 @@ def mm(rt, inst: str) -> list[dict]:
 # ---------------------------------------------------------------------------------------------------------------- Event GRU (owner: Quant)
 # 1.46 arch (I0796): a record with this key would have failed the whole extended branch before (an exception out of the Event GRU); the
 # generation keeps the other records for the features / ledger but is published incomplete, so the coordinator reads exactly what it read
-# then - no records (quant/service.cycle, coordinator_predictions): the fix lifts no REQUIRED block.
+# then - no records (quant/service.cycle, coordinator_predictions): the fix lifts no REQUIRED block. Such a record is never stored in
+# EventGRU.latest either (the family SEQ_GRU_EVENT of the next base branch keeps the record it had, as when the old code raised).
 INCOMPLETE_KEY = "incomplete_generation"
 
 
@@ -452,7 +453,10 @@ class EventGRU:
                    compute_ms=round((time.perf_counter() - t0) * 1000, 2),
                    extra={"family": "SEQ_GRU_EVENT", "use": "SHADOW", "analytic_role": "BASE_FORECAST", "event_source": src,
                           "note": "kierunek jednostki zdarzeń (2 jednostki naprzód) – nie P(TP przed SL)"})
-        self.latest[inst] = p
+        if not p.get(INCOMPLETE_KEY):
+            # review (I0796): where the old code raised it never reached this line - `latest` (the family SEQ_GRU_EVENT reads it in the
+            # next cycle's base branch) keeps the last record, bit for bit as before (no fresher / missing record for REQUIRED)
+            self.latest[inst] = p
         return p
 
 
@@ -590,9 +594,9 @@ def extended(rt, inst: str, event_gru: EventGRU | None = None, *, with_scalp: bo
         try:
             out.append(event_gru.predict(rt, inst))
         except Exception as exc:  # noqa: BLE001 - 1.46 arch (I0796): one producer no longer takes the whole branch with it
-            e = event_gru._none(inst, "ERROR", f"adapter: {type(exc).__name__}: {exc}", incomplete="EVENT_GRU_EXCEPTION")
-            event_gru.latest[inst] = e
-            out.append(e)
+            # `latest` is NOT updated (review, I0796): the old code lost the branch here without touching it, so the family SEQ_GRU_EVENT
+            # keeps publishing what it did before
+            out.append(event_gru._none(inst, "ERROR", f"adapter: {type(exc).__name__}: {exc}", incomplete="EVENT_GRU_EXCEPTION"))
     if with_scalp:
         try:
             out += scalp_a(rt, inst)
