@@ -19,13 +19,16 @@ import json
 import urllib.error
 import urllib.request
 
+
 def port() -> int:
     """The port of the local server from the configuration; paths.DEFAULT_PORT when it cannot be read (same as the former __main__._port)."""
     try:
-        from .config import server_port            # 1.46 arch I0094: read-only (no migration write / .bak from a CLI process)
+        # 1.46 arch I0094: read-only (no migration write / .bak from a CLI process)
+        from .config import server_port
         return server_port()
     except Exception:  # noqa: BLE001 - unreadable configuration -> the default port (as before)
-        from .paths import DEFAULT_PORT             # 1.46 arch I0125: the one literal lives in paths.py
+        # 1.46 arch I0125: the one literal lives in paths.py
+        from .paths import DEFAULT_PORT
         return DEFAULT_PORT
 
 
