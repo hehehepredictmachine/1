@@ -55,10 +55,17 @@ def data_quality(bars: dict, quote: dict | None, now: float, cfg: dict) -> dict:
     if not quote:
         issues.append("brak notowania Bid/Ask")
     else:
-        q_age = round(now - float(quote.get("time") or now), 2)
+        try:                                          # 1.46: a quote without its time (or time 0) was age 0 = always fresh
+            qt = float(quote.get("time") or 0.0)
+        except (TypeError, ValueError):
+            qt = 0.0
         spread = float(quote["ask"]) - float(quote["bid"])
-        if q_age > cfg["max_quote_age_s"]:
-            issues.append(f"notowanie nieaktualne ({q_age:.1f} s)")
+        if not (math.isfinite(qt) and qt > 0):
+            issues.append("brak znacznika czasu notowania")
+        else:
+            q_age = round(now - qt, 2)
+            if q_age > cfg["max_quote_age_s"]:
+                issues.append(f"notowanie nieaktualne ({q_age:.1f} s)")
         if spread < 0:
             issues.append("Ask < Bid")
         elif cfg.get("max_spread_usd") is not None and spread > cfg["max_spread_usd"]:

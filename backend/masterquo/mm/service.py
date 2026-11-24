@@ -4,8 +4,9 @@ Recomputes on the bot's CLOSED bars (rt.bridge, forming bar excluded) only when 
 every loaded TF (one shared configuration = the cross-chart view), read-only account P&L from the same bridge data the statistics page
 uses, Kalman state, breakout zones + latest-direction panel, robust volatility, Multi-Indicator decision trace, SMC continuation setups
 and a GP forecast (fitted transactionally on the current window; every forecast logged to the SHADOW ledger, matured from later closed
-bars). Trained candidates (HDC / event engine / STE) are only listed: they are served only after a VALIDATED_SHADOW artifact exists for
-the instrument (REAL data + gates). Nothing here can place, modify or close an order; execution_allowed is always False.
+bars). Trained artifacts are only LISTED here (_trained_models): the event engine is inferred in SHADOW by Quant (EventGRU) once a
+VALIDATED_SHADOW artifact is active; HDC / STE-FlowNet have no live inference even with a validated pointer; the live GP never loads
+the gpr_logret artifact (validation reference only). Nothing here can place, modify or close an order; execution_allowed is always False.
 """
 from __future__ import annotations
 
@@ -22,6 +23,25 @@ from .data import TF_S, Bars
 
 VERSION = "PMW-MM-SERVICE-1"
 RECENT_SCORED = 500                     # 1.46: live calibration / drift window (newest scored forecasts; >= drift min_recent)
+
+
+def _trained_models(ptr: dict) -> dict:
+    """1.46: what each SHADOW pointer really serves ('SHADOW: <aid>' suggested a live forecast from the artifact for all four)."""
+    act = ptr.get("active") or {}
+    none = "brak artefaktu VALIDATED_SHADOW (dane rzeczywiste + bramki)"
+    out = {}
+    for m in ("hdc_dir3", "event_engine_dir3", "ste_flownet_ret"):
+        aid = act.get(m)
+        if not aid:
+            out[m] = none
+        elif m == "event_engine_dir3":
+            out[m] = f"SHADOW: {aid} – inferencja SHADOW w Quant (EventGRU)"
+        else:
+            out[m] = f"zwalidowany {aid} – brak inferencji na żywo (nic nie liczy predykcji)"
+    aid = act.get("gpr_logret")
+    out["gpr_logret"] = ("na żywo: dopasowanie GP co świecę M5; " + (f"artefakt {aid} tylko jako referencja walidacji (nie jest wczytywany)" if aid
+                                                                    else "brak artefaktu walidacji VALIDATED_SHADOW"))
+    return out
 
 
 def _kalman_direction(state: str | None, accepted: int | None = None) -> str | None:
@@ -182,9 +202,7 @@ class MMService:
             outs.append(ModelOutput(Envelope("gpr", inst, "M5", t_avail - 300, t_avail, quality, model_version="PMW-MM-GPR-1"), "GAUSSIAN_PREDICTIVE",
                                     {"mean_logret": g["mean_logret"], "horizon": "3 bars"}).to_dict())
         out["board"] = board(outs, inst, now=t_avail + 1)
-        ptr = artifacts.read_pointer(inst)
-        out["trained_models"] = {m: ("SHADOW: " + ptr["active"][m]) if m in ptr["active"] else "brak artefaktu VALIDATED_SHADOW (dane rzeczywiste + bramki)"
-                                 for m in ("hdc_dir3", "event_engine_dir3", "ste_flownet_ret", "gpr_logret")}
+        out["trained_models"] = _trained_models(artifacts.read_pointer(inst))
         return out
 
     def _gpr(self, inst: str, b5: Bars, quality: str) -> dict:
