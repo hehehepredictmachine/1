@@ -1,4 +1,4 @@
-"""Instrukcja instalacji PepeMarketWizard KROK PO KROKU – w prostym języku (1.44.0).
+"""Instrukcja instalacji Apollo23 (dawniej PepeMarketWizard) KROK PO KROKU – w prostym języku (1.44.0; 1.46: nazwa wyświetlana Apollo23).
 
   release/Instrukcja_Krok_Po_Kroku_PepeMarketWizard.pdf   (+ kopia w docs/ – trafia do paczek)
 
@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import make_manuals as M  # noqa: E402  (czcionki DejaVu, wersja)
 
 VERSION = M.VERSION
+DISPLAY = M.DISPLAY_NAME      # 1.46: user-visible name (splash "APOLLO23 TEAM", button "Zatrzymaj Apollo23"); exe / folders / data paths unchanged
 NAME = "Instrukcja_Krok_Po_Kroku_PepeMarketWizard.pdf"
 INK = colors.HexColor("#14161c")
 GREY = colors.HexColor("#4a505c")
@@ -117,7 +118,7 @@ def zip_menu_drawing() -> Drawing:
     d.add(Rect(2 * mm, 26 * mm, 52 * mm, 20 * mm, fillColor=colors.HexColor("#f3f5f9"), strokeColor=colors.HexColor("#8a93a3")))
     d.add(Rect(6 * mm, 31 * mm, 10 * mm, 11 * mm, fillColor=colors.HexColor("#f6d36b"), strokeColor=colors.HexColor("#a07f1c")))
     d.add(String(9 * mm, 35 * mm, "ZIP", fontName="DejaVu-Bold", fontSize=7, fillColor=INK))
-    d.add(String(19 * mm, 37 * mm, "PepeMarketWizard_", fontName="DejaVu", fontSize=8, fillColor=INK))
+    d.add(String(19 * mm, 37 * mm, "Apollo23_", fontName="DejaVu", fontSize=8, fillColor=INK))           # 1.46: package file name
     d.add(String(19 * mm, 33 * mm, "DESKTOP_KLIENT…zip", fontName="DejaVu", fontSize=8, fillColor=INK))
     menu = [("Otwórz", False), ("Wyodrębnij wszystkie…", True), ("Udostępnij", False), ("Kopiuj", False), ("Właściwości", False)]
     x0, y0 = 70 * mm, 50 * mm
@@ -167,8 +168,8 @@ def table(rows: list[list[str]], widths: list[float]) -> Table:
 
 # ---------------------------------------------------------------------------------------------------------------- treść
 def story(sh: Path | None) -> list:
-    pkg = f"PepeMarketWizard_DESKTOP_KLIENT_{VERSION.replace('.', '_')}.zip"
-    s: list = [Spacer(1, 22 * mm), P("PepeMarketWizard", "cover"), P("Instalacja krok po kroku", "cover"),
+    pkg = f"Apollo23_DESKTOP_KLIENT_{VERSION.replace('.', '_')}.zip"          # 1.46: package file name (tools/build_desktop.py)
+    s: list = [Spacer(1, 22 * mm), P(DISPLAY, "cover"), P("Instalacja krok po kroku", "cover"),
                P("Instrukcja w prostym języku. Rób <b>jeden krok naraz</b>. Gdy skończysz krok, zaznacz <b>☐ Zrobione</b> "
                  "i przejdź do następnego. Nie spiesz się – nic się nie stanie, jeśli zrobisz przerwę.", "coversub"),
                box(f"<b>Wersja programu:</b> {VERSION}<br/><b>Ile to trwa:</b> około 20–40 minut (najdłużej trwa pierwsze uruchomienie).<br/>"
@@ -235,7 +236,7 @@ def story(sh: Path | None) -> list:
                                                                        "Kliknij przycisk <b>„Uruchom mimo to”</b>."]),
                                                                *drawing_block(smartscreen_drawing(), "Okno „System Windows ochronił ten komputer”."),
                                                                P("Jeśli tego okna nie ma – po prostu przejdź dalej.", "small")])
-    s += step(7, "Poczekaj – pierwsze uruchomienie", [*doit(["Pojawi się czarne okno z napisem <b>PEPEMARKETWIZARD</b>.",
+    s += step(7, "Poczekaj – pierwsze uruchomienie", [*doit([f"Pojawi się czarne okno z napisem <b>{DISPLAY.upper()} TEAM</b>.",
                                                               "Za pierwszym razem program pobiera swoje składniki. To trwa <b>kilka minut</b>. "
                                                               "Na dole widać, co się dzieje.",
                                                               "<b>Nie zamykaj okna.</b> Nie wyłączaj internetu."]),
@@ -260,7 +261,8 @@ def story(sh: Path | None) -> list:
                                                     P("Czerwony napis? Zobacz rozdział „Co zrobić, gdy…”.", "small")])
     s += step(11, "Intro i menu", [*doit(["Pojawi się krótki film (15 sekund, z dźwiękiem). Możesz go pominąć: <b>kliknij</b> w film albo naciśnij <b>Spację</b> lub <b>Esc</b>. "
                                           "Głośnik w prawym dolnym rogu wycisza dźwięk.",
-                                          "Potem zobaczysz menu z trzema planetami: <b>FOREX</b>, <b>CRYPTO</b> i <b>OTC</b>. Główna jest <b>FOREX</b>."]),
+                                          ("Potem zobaczysz menu z trzema planetami: <b>FOREX</b>, <b>CRYPTO</b> (w przygotowaniu) i "
+                                           "<b>TraderLifeGame</b> (gra edukacyjna). Główna jest <b>FOREX</b>.")]),
                                    *shot(sh, "05_menu.png", "Menu główne.", 150)])
     s += step(12, "Sprawdź połączenie z MT5", [*doit(["Za pierwszym razem program sam otworzy <b>Ustawienia</b>. Jeśli nie – kliknij ikonkę "
                                                        "<b>☼</b> w prawym dolnym rogu (po najechaniu myszką pokaże się napis „Ustawienia”).",
@@ -298,9 +300,9 @@ def story(sh: Path | None) -> list:
 
     s += [P("Jak zatrzymać bota (STOP)", "h1"),
           *doit(["Kliknij czerwony przycisk <b>STOP</b> w prawym dolnym rogu ekranu.",
-                 "<b>1. STOP NOWYCH WEJŚĆ</b> – bot nie otwiera nowych pozycji. Otwarte pozycje zostają.",
-                 "<b>2. Zamknij pozycje bota</b> – wpisz słowo <b>ZAMKNIJ</b> i kliknij <b>ZAMKNIJ POZYCJE</b>. Zamyka pozycje otwarte przez bota.",
-                 "<b>3. ZATRZYMAJ PEPEMARKETWIZARD</b> – wyłącza program. Pozycje w MT5 zostają (chroni je Stop Loss u brokera)."]),
+                 "<b>1. STOP nowych wejść</b> – bot nie otwiera nowych pozycji. Otwarte pozycje zostają.",
+                 "<b>2. Zamknij pozycje bota</b> – wpisz słowo <b>ZAMKNIJ</b> i kliknij <b>Zamknij pozycje</b>. Zamyka pozycje otwarte przez bota.",
+                 f"<b>3. Zatrzymaj {DISPLAY}</b> – wyłącza program. Pozycje w MT5 zostają (chroni je Stop Loss u brokera)."]),
           *shot(sh, "13_bottom_icons.png", "Prawy dolny róg: ikonki panelu i czerwony przycisk STOP.", 100),
           *shot(sh, "09_stop.png", "Okno STOP.", 100, crop=(0.66, 0.15, 1.0, 0.66)),
           PageBreak()]
@@ -308,10 +310,10 @@ def story(sh: Path | None) -> list:
     s += [P("Codzienne uruchamianie", "h1"),
           table([["", "Co zrobić"],
                  ["1", "Włącz <b>MetaTrader 5</b> i sprawdź, czy jesteś zalogowany."],
-                 ["2", "Uruchom <b>PepeMarketWizard</b> (skrót na Pulpicie albo PepeMarketWizardDesktop.exe)."],
+                 ["2", f"Uruchom <b>{DISPLAY}</b> (skrót na Pulpicie albo PepeMarketWizardDesktop.exe)."],
                  ["3", "Kliknij <b>WEJDŹ →</b> (gdy jest SYSTEM READY). Klucza nie trzeba wpisywać ponownie."],
                  ["4", "Sprawdź <b>TRYB PRACY</b> (PAPER = symulacja, AUTO LIVE = prawdziwe pieniądze)."],
-                 ["5", "Na koniec: STOP → <b>ZATRZYMAJ PEPEMARKETWIZARD</b> albo zamknij okno."]],
+                 ["5", f"Na koniec: STOP → <b>Zatrzymaj {DISPLAY}</b> albo zamknij okno."]],
                 [12, 158]),
           PageBreak(),
           KeepTogether([P("Licencja", "h1"),
@@ -348,7 +350,7 @@ def story(sh: Path | None) -> list:
           PageBreak()]
 
     s += [P("Nowa wersja programu", "h1"),
-          *doit(["Wydawca przyśle nowy plik ZIP. Najpierw zamknij program (STOP → <b>ZATRZYMAJ PEPEMARKETWIZARD</b>).",
+          *doit([f"Wydawca przyśle nowy plik ZIP. Najpierw zamknij program (STOP → <b>Zatrzymaj {DISPLAY}</b>).",
                  "Rozpakuj nowy plik do <b>nowego</b> folderu, np. <b>C:\\PepeMarketWizard_nowa</b> (jak w kroku 4).",
                  "Uruchom <b>PepeMarketWizardDesktop.exe</b> z nowego folderu. Ustawienia, historia i licencja zostają – są zapisane "
                  "w Twoim folderze użytkownika, nie w folderze programu.",
@@ -357,7 +359,7 @@ def story(sh: Path | None) -> list:
           box("Gdzie program trzyma dane: <b>C:\\Users\\(Twoja nazwa)\\AppData\\Local\\PepeMarketWizard</b>. "
               "Licencja: <b>C:\\Users\\(Twoja nazwa)\\AppData\\Roaming\\PepeMarketWizard\\license.dat</b>. Nie usuwaj tych folderów."),
           Spacer(1, 12),
-          P(f"PepeMarketWizard {VERSION} · zrzuty ekranu z symulatora (dane testowe) – na Twoim komputerze liczby będą inne.", "small")]
+          P(f"{DISPLAY} {VERSION} · zrzuty ekranu z symulatora (dane testowe) – na Twoim komputerze liczby będą inne.", "small")]
     return s
 
 
@@ -365,7 +367,7 @@ def deco(canvas, doc) -> None:
     canvas.saveState()
     canvas.setFont("DejaVu", 9)
     canvas.setFillColor(GREY)
-    canvas.drawString(20 * mm, A4[1] - 12 * mm, "PepeMarketWizard – instalacja krok po kroku")
+    canvas.drawString(20 * mm, A4[1] - 12 * mm, f"{DISPLAY} – instalacja krok po kroku")
     canvas.drawRightString(A4[0] - 20 * mm, 10 * mm, f"Strona {doc.page}")
     canvas.restoreState()
 
@@ -382,8 +384,8 @@ def main() -> int:
     sh = Path(a.shots) if Path(a.shots).is_dir() else None
     path = out / NAME
     doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=16 * mm,
-                            title="PepeMarketWizard – instalacja krok po kroku", author="PepeMarketWizard",
-                            subject=f"PepeMarketWizard {VERSION}", creator="tools/make_easy_guide.py", initialFontName="DejaVu")
+                            title=f"{DISPLAY} – instalacja krok po kroku", author=DISPLAY,
+                            subject=f"{DISPLAY} {VERSION}", creator="tools/make_easy_guide.py", initialFontName="DejaVu")
     doc.build(story(sh), onFirstPage=deco, onLaterPages=deco)
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"{NAME}: {path.stat().st_size} B")

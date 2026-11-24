@@ -34,32 +34,57 @@ class Worker:
         self.p = subprocess.Popen(argv, cwd=str(ROOT / "backend"), env=env, text=True, encoding="utf-8", stdin=subprocess.PIPE,
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=1)
         self.n = 0
+        # 1.46: ONE reader thread per worker hands the answers out by id. A reader thread per ask() kept reading after a timeout
+        # and swallowed the answers of the following requests (every next ask waited the full timeout - a timeout avalanche).
+        self._cv = threading.Condition()
+        self._pending: set[str] = set()
+        self._answers: dict[str, dict] = {}
+        self._eof = False
+        threading.Thread(target=self._read, daemon=True).start()
 
-    def ask(self, req, timeout=600):
-        self.n += 1
-        req = {**req, "id": f"r{self.n}"}
-        self.p.stdin.write(json.dumps(req) + "\n")
-        self.p.stdin.flush()
-        box = {}
-
-        def rd():
-            while True:
-                line = self.p.stdout.readline()
-                if not line:
-                    return
+    def _read(self):
+        try:
+            for line in self.p.stdout:
                 try:
                     m = json.loads(line)
                 except ValueError:
                     continue
-                if m.get("id") == req["id"]:
-                    box["m"] = m
-                    return
-        th = threading.Thread(target=rd, daemon=True)
-        th.start()
-        th.join(timeout)
-        if "m" not in box:
-            raise TimeoutError(f"{self.name}: brak odpowiedzi w {timeout} s")
-        return box["m"]
+                if not isinstance(m, dict):
+                    continue
+                with self._cv:
+                    if m.get("id") in self._pending:            # late answers of abandoned (timed out) requests are dropped
+                        self._answers[m["id"]] = m
+                        self._cv.notify_all()
+        except (OSError, ValueError):
+            pass
+        finally:
+            with self._cv:
+                self._eof = True
+                self._cv.notify_all()
+
+    def ask(self, req, timeout=600):
+        self.n += 1
+        rid = f"r{self.n}"
+        req = {**req, "id": rid}
+        with self._cv:
+            self._pending.add(rid)
+        try:
+            self.p.stdin.write(json.dumps(req) + "\n")
+            self.p.stdin.flush()
+            end = time.monotonic() + timeout
+            with self._cv:
+                while rid not in self._answers and not self._eof:
+                    left = end - time.monotonic()
+                    if left <= 0:
+                        break
+                    self._cv.wait(left)
+                m = self._answers.pop(rid, None)
+        finally:
+            with self._cv:
+                self._pending.discard(rid)
+        if m is None:
+            raise TimeoutError(f"{self.name}: brak odpowiedzi w {timeout} s" + (" (proces modelu zakończył się)" if self._eof else ""))
+        return m
 
     def mem(self):
         return _proc_mem(self.p.pid)
@@ -71,6 +96,15 @@ class Worker:
             pass
         if self.p.poll() is None:
             self.p.kill()
+        try:                       # 1.46: the process is reaped and its pipes closed (no zombie / open handles until exit)
+            self.p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        for f in (self.p.stdin, self.p.stdout):
+            try:
+                f.close()
+            except (OSError, ValueError):
+                pass
 
 
 def pct(xs):
@@ -118,6 +152,13 @@ def main(argv=None) -> int:
         rep["backend"] = {"rss_mb": rss, "peak_mb": peak, "note": "proces backendu bota (FastAPI + silnik + bridge) w chwili pomiaru"}
     b5 = load_bars(a.bars)
     b15 = load_bars(a.bars15) if a.bars15 else None
+    # 1.46: every request uses a 512-bar context ending at the replayed bar - a shorter history gave negative slice starts (an empty
+    # or wrong context window) instead of an error
+    need5, need15 = 512 + a.single + a.cycles + 20, 512 + a.cycles // 3 + 1
+    if a.single < 0 or a.cycles < 0 or len(b5) < need5 or (b15 is not None and len(b15) < need15):
+        print(f"[BLAD] Za krótka historia: M5 {len(b5)} świec (potrzeba {need5} = 512 + --single + --cycles + 20)"
+              + (f", M15 {len(b15)} świec (potrzeba {need15})" if b15 is not None else "") + "; --single i --cycles >= 0.")
+        return 2
     workers = {}
     specs = [("granite_ttm", a.granite_python, ["-m", "tsfm_runtime.worker", "--model", "granite_ttm"],
               {"cmd": "load", "weights_root": a.tsfm_weights, "device": "CPU", "threads": a.threads_light, "verify_files": True}),
@@ -169,49 +210,54 @@ def main(argv=None) -> int:
         return {"cmd": "predict", "close": [x[4] for x in ctx], "pred_len": H, "context_len": 512, "profile": "CLOSE_V1",
                 "quantiles": [0.1, 0.5, 0.9], "freq_tf": "M5" if tf_min == 5 else "M15"}
 
-    # single inference latency per model (M5, H = 12)
-    start = len(b5) - a.single - a.cycles - 20
-    for name, w in workers.items():
-        ms, errs = [], 0
-        for k in range(a.single):
-            t0 = time.perf_counter()
-            r = w.ask(req(name, b5, start + k, 12, 5), 600)
-            if r.get("ok"):
-                ms.append((time.perf_counter() - t0) * 1000)
-            else:
-                errs += 1
-        rss, peak = w.mem()
-        rep["models"][name]["single_m5"] = {**pct(ms), "errors": errs, "rss_mb": rss, "peak_mb": peak,
-                                            "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"}
-    # sequential cycles: every closed bar -> all models on M5 (and M15 every 3rd bar), one at a time
-    cyc = {n: [] for n in workers}
-    peak_sys, peak_sum, errors = 0.0, 0.0, 0
-    t_start = time.perf_counter()
-    for c in range(a.cycles):
-        i = len(b5) - a.cycles + c - 1
-        jobs = [(n, b5, i, 12, 5) for n in workers]
-        if b15 and c % 3 == 0:
-            j15 = len(b15) - a.cycles // 3 + c // 3 - 1
-            jobs += [(n, b15, j15, 8, 15) for n in workers]
-        for n, bars, idx, H, tfm in jobs:
-            t0 = time.perf_counter()
-            try:
-                r = workers[n].ask(req(n, bars, idx, H, tfm), 600)
+    try:   # 1.46: the model processes are always closed (an exception in a phase left them running)
+        # single inference latency per model (M5, H = 12)
+        start = len(b5) - a.single - a.cycles - 20
+        for name, w in workers.items():
+            ms, errs = [], 0
+            for k in range(a.single):
+                t0 = time.perf_counter()
+                try:   # 1.46: a timeout / dead model process is an error of the phase, not the end of the benchmark
+                    r = w.ask(req(name, b5, start + k, 12, 5), 600)
+                except Exception:  # noqa: BLE001
+                    r = {}
                 if r.get("ok"):
-                    cyc[n].append((time.perf_counter() - t0) * 1000)
+                    ms.append((time.perf_counter() - t0) * 1000)
                 else:
+                    errs += 1
+            rss, peak = w.mem()
+            rep["models"][name]["single_m5"] = {**pct(ms), "errors": errs, "rss_mb": rss, "peak_mb": peak,
+                                                "note": "czas obejmuje komunikację JSON z procesem modelu (jak w bocie)"}
+        # sequential cycles: every closed bar -> all models on M5 (and M15 every 3rd bar), one at a time
+        cyc = {n: [] for n in workers}
+        peak_sys, peak_sum, errors = 0.0, 0.0, 0
+        t_start = time.perf_counter()
+        for c in range(a.cycles):
+            i = len(b5) - a.cycles + c - 1
+            jobs = [(n, b5, i, 12, 5) for n in workers]
+            if b15 and c % 3 == 0:
+                j15 = len(b15) - a.cycles // 3 + c // 3 - 1
+                jobs += [(n, b15, j15, 8, 15) for n in workers]
+            for n, bars, idx, H, tfm in jobs:
+                t0 = time.perf_counter()
+                try:
+                    r = workers[n].ask(req(n, bars, idx, H, tfm), 600)
+                    if r.get("ok"):
+                        cyc[n].append((time.perf_counter() - t0) * 1000)
+                    else:
+                        errors += 1
+                except Exception:  # noqa: BLE001
                     errors += 1
-            except Exception:  # noqa: BLE001
-                errors += 1
-        sm = sysmem()
-        peak_sys = max(peak_sys, sm["used_pct"] or 0)
-        peak_sum = max(peak_sum, sum((w.mem()[0] or 0) for w in workers.values()))
-    rep["sequential"] = {"cycles": a.cycles, "with_m15": bool(b15), "seconds": round(time.perf_counter() - t_start, 1),
-                         "latency": {n: pct(v) for n, v in cyc.items()}, "errors": errors, "peak_system_used_pct": peak_sys,
-                         "peak_sum_models_rss_mb": round(peak_sum, 1),
-                         "final": {n: dict(zip(("rss_mb", "peak_mb"), w.mem())) for n, w in workers.items()}, "system_end": sysmem()}
-    for w in workers.values():
-        w.close()
+            sm = sysmem()
+            peak_sys = max(peak_sys, sm["used_pct"] or 0)
+            peak_sum = max(peak_sum, sum((w.mem()[0] or 0) for w in workers.values()))
+        rep["sequential"] = {"cycles": a.cycles, "with_m15": bool(b15), "seconds": round(time.perf_counter() - t_start, 1),
+                             "latency": {n: pct(v) for n, v in cyc.items()}, "errors": errors, "peak_system_used_pct": peak_sys,
+                             "peak_sum_models_rss_mb": round(peak_sum, 1),
+                             "final": {n: dict(zip(("rss_mb", "peak_mb"), w.mem())) for n, w in workers.items()}, "system_end": sysmem()}
+    finally:
+        for w in workers.values():
+            w.close()
     rep["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     txt = json.dumps(rep, indent=2, ensure_ascii=False)
     if a.out:

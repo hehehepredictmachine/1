@@ -32,8 +32,9 @@ def cmd(text: str):
 
 def story(shots: Path | None) -> list:
     V, TAG = M.VERSION, M.VERSION.replace(".", "_")
+    D = M.DISPLAY_NAME            # 1.46: user-visible name (window title "Apollo23 <version>"); exe / ZIP folders / data paths unchanged
     s: list = [Spacer(1, 18 * mm), P("Instalacja bota,<br/>modeli i trening", "title"),
-               P(f"PepeMarketWizard {V}: instalacja na Windows, pierwsze uruchomienie, tryb LIVE od startu, instalacja modeli prognoz "
+               P(f"{D} {V}: instalacja na Windows, pierwsze uruchomienie, tryb LIVE od startu, instalacja modeli prognoz "
                  "(Kronos-small, Chronos-2, Granite TTM), Memory Governor (16 GB), rodziny modeli (ARIMA, GARCH, LSTM, PPO …), trening, aktywacja, GARCH w strategii "
                  "PMW_HG09, walidacja 20 wariantów, aktualizacja i powrót do poprzedniej wersji.", "lead"),
                box(f"<b>Stan:</b> instrukcja odpowiada wersji <b>{V}</b>. Polecenia i nazwy plików pochodzą z paczki i są sprawdzane testem "
@@ -46,8 +47,8 @@ def story(shots: Path | None) -> list:
                steps(["Wymagania", "Instalacja bota", "Tryb LIVE od startu – co się zmieniło", "Modele – przegląd",
                       "Instalacja modeli prognoz (Kronos-small, Chronos-2, Granite TTM)", "Rodziny modeli – instalacja i trening",
                       "GARCH (VOL_GARCH) i strategia PMW_HG09", "Centrum treningu i eksport danych z MT5",
-                      "Walidacja (replay 20 wariantów, prognozy, scalp)", "Nowe menu, intro i WTC PEPE 2.1",
-                      "Aktualizacja z 1.38 i powrót", "Problemy i logi"]),
+                      "Walidacja (replay 20 wariantów, prognozy, scalp)", "Menu, intro i ekrany (od 1.42)",
+                      "Aktualizacja z poprzedniej wersji i powrót", "Problemy i logi"]),
                PageBreak()]
     # 1
     s += [P("1 / Wymagania", "h1"),
@@ -63,12 +64,13 @@ def story(shots: Path | None) -> list:
           PageBreak()]
     # 2
     s += [P("2 / Instalacja bota", "h1"), P("Aplikacja Windows (zalecane)", "h2"),
-          steps([f"Rozpakuj <b>PepeMarketWizard_DESKTOP_{TAG}.zip</b> do <b>nowego</b> folderu (nie nadpisuj starej wersji – to Twój punkt "
+          steps([f"Rozpakuj <b>Apollo23_DESKTOP_{TAG}.zip</b> (u klienta: <b>Apollo23_DESKTOP_KLIENT_{TAG}.zip</b>) do <b>nowego</b> folderu (nie nadpisuj starej wersji – to Twój punkt "
                  "powrotu). Porównaj sumę SHA-256 z plikiem <b>.sha256</b>.",
                  "Uruchom MT5 i zaloguj się do rachunku, którym bot ma handlować.",
-                 f"Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: PepeMarketWizard {V}). Pierwszy start instaluje zależności – "
-                 "postęp pokazuje okno startowe.",
-                 "Po starcie widać intro (ok. 8,5 s, <b>POMIŃ INTRO</b> lub Esc), a potem menu główne <b>Galaxy</b>."]),
+                 f"Uruchom <b>PepeMarketWizardDesktop.exe</b> (tytuł okna: {D} {V}). Pierwszy start instaluje zależności – "
+                 "postęp pokazuje okno startowe; gdy pokaże SYSTEM READY, kliknij <b>WEJDŹ →</b>.",
+                 (f"Potem gra film intro {D} (ok. 15 s; kliknięcie, Spacja, Esc albo <b>PRZEJDŹ DO MENU</b> pomija) i pojawia się menu "
+                  "główne z planetami <b>FOREX</b>, <b>CRYPTO</b> i <b>TraderLifeGame</b> (rozdział 10).")]),
           box("Pliki EXE nie są podpisane certyfikatem Authenticode – Windows SmartScreen może pokazać ostrzeżenie. Uruchamiaj tylko paczkę "
               "o zgodnej sumie SHA-256.", "warn"),
           P("Wariant z plikami .bat (bez aplikacji Windows)", "h2"),
@@ -101,7 +103,7 @@ def story(shots: Path | None) -> list:
                    "<b>execution.live_autobind = true</b>: przy pierwszej decyzji bot wiąże tryb LIVE z zalogowanym rachunkiem <b>REAL</b> "
                    "(wpis LIVE_AUTOBIND w dzienniku). Rachunek DEMO nie zostaje związany – LIVE czeka. Zmiana rachunku w MT5 na inny "
                    "blokuje wejścia (ACCOUNT_DIFFERS_FROM_CONFIRMED_…), dopóki nie potwierdzisz nowego.",
-                   "Do handlu nadal potrzebne są: <b>ścieżka główna</b> instrumentu (ACTIVE albo SH – panel <b>System Control → Tryb</b> lub "
+                   "Do handlu nadal potrzebne są: <b>ścieżka główna</b> instrumentu (ACTIVE albo SH – panel systemowy <b>TRYB PRACY</b> lub "
                    "POST /api/v1/mode/primary-path) oraz <b>limity ryzyka</b> (risk_per_trade_pct, max_total_open_risk_pct, "
                    "daily_loss_limit_pct, max_drawdown_pct, max_open_positions). Bez nich bot pokazuje powód (PRIMARY_PATH_NOT_SELECTED, "
                    "RISK_LIMITS_NOT_CONFIGURED) i nie otwiera pozycji."]),
@@ -109,7 +111,7 @@ def story(shots: Path | None) -> list:
           bullets(["Natychmiast: przycisk <b>STOP</b> (nowe wejścia zatrzymane; otwarte pozycje zostają z SL/TP).",
                    "Na stałe: w <b>data\\config.json</b> ustaw <b>\"execution\": {\"start_mode\": \"SIGNALS\"}</b> (albo \"AUTO_DEMO\", albo null = "
                    "ostatni zapisany tryb) i <b>\"live_autobind\": false</b>, potem uruchom bota ponownie.",
-                   "Tryb możesz też zmienić w panelu System Control → Tryb (SIGNALS / PAPER / AUTO DEMO / AUTO LIVE)."]),
+                   "Tryb możesz też zmienić w panelu systemowym TRYB PRACY (SIGNALS / PAPER / AUTO DEMO / AUTO LIVE)."]),
           box("Wyniki replay i walidacji nie są obietnicą zysku. Brak walidacji wariantu oznacza, że nie wiesz, jak zachowywał się na "
               "Twoich danych po kosztach. Zalecamy najpierw rachunek DEMO i rozdział 9 (walidacja), nawet jeśli LIVE już tego nie wymaga.", "warn"),
           PageBreak()]
@@ -137,7 +139,7 @@ def story(shots: Path | None) -> list:
           cmd("33_KRONOS_INSTALUJ.bat        (CPU)"), cmd("33_KRONOS_INSTALUJ.bat cu126  (GPU NVIDIA, CUDA 12.6)"),
           P("Tworzy izolowane <b>.venv_kronos</b> (PyTorch CPU ≈ 250 MB), pobiera oficjalne wagi Kronos-small + Kronos-Tokenizer-base "
             "(≈ 115 MB; szczyt pamięci ok. 0,47 GB) w przypiętych rewizjach, sprawdza sumy i wykonuje prognozę testową. Główne .venv bota nie jest zmieniane. "
-            "Status: <b>Wykresy bota → Kronos AI Forecast</b> oraz WTC PEPE → karta KRONOS."),
+            "Status: <b>FOREX → CHARTS</b> (okno Kronos)."),
           P("Chronos-2 i Granite TTM (1.40: zamiast wycofanego FinCast)", "h2"),
           cmd("38_MODELE_CHRONOS2_GRANITE.bat                 (oba modele, CPU)"),
           cmd("38_MODELE_CHRONOS2_GRANITE.bat chronos2        |  38_MODELE_CHRONOS2_GRANITE.bat granite"),
@@ -199,8 +201,8 @@ def story(shots: Path | None) -> list:
           PageBreak()]
     # 8
     s += [P("8 / Centrum treningu i eksport danych z MT5", "h1"),
-          P("Najprościej: Centrum Treningowe Pepe (1.42.10)", "h2"),
-          bullets(["Otwórz: ikona biretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE PEPE</b> w panelu systemowym albo przycisk w "
+          P("Najprościej: Centrum Treningowe (1.42.10)", "h2"),
+          bullets(["Otwórz: ikona biretu na pasku systemowym, zakładka <b>CENTRUM TRENINGOWE " + D.upper() + "</b> w panelu systemowym albo przycisk w "
                    "ekranie <b>MODELS</b>. Wybierz OBA / XAUUSD / BTC i kliknij <b>TRENUJ</b> przy modelu albo <b>TRENUJ WSZYSTKO</b>.",
                    "Treningi idą po kolei, jeden naraz. Bot sam pobiera historię z MT5 i sprawdza dane przed treningiem; przy każdym modelu "
                    "widać stan per instrument (wytrenowany / w toku / w kolejce / błąd z przyczyną / pominięty z powodem).",
@@ -234,45 +236,42 @@ def story(shots: Path | None) -> list:
             "<b>13_WALIDACJA_MODELI_XAUUSD.bat</b>, <b>18_WALIDACJA_SCALP.bat</b>."),
           PageBreak()]
     # 10
-    s += [P("10 / Nowe menu, intro i WTC PEPE 2.1", "h1"),
-          bullets(["<b>Intro startowe</b> (ok. 8,5 s): „$PEPEMARKET WIZARD” i „They call us cult but we are something more”, cyfrowa siatka "
-                   "przechodząca w sieć neuronową. <b>POMIŃ INTRO</b> / Esc pomija, <b>Ctrl+Alt+B</b> lub <b>↻ INTRO</b> odtwarza ponownie. "
-                   "Raz na sesję; przy ograniczonych animacjach systemu – od razu koniec.",
-                   "<b>Menu Galaxy</b> (#/menu): 7 planet – WTC PEPE (środek), Brain Signal, PEPE$BANK, PEPE$ROI, Models, Signals, Settings – "
-                   "pełna sieć 21/21 połączeń, boczne emitery, dolne błyskawice. Planeta otwiera prawdziwy ekran bota; planeta bez "
-                   "sekcji pokazuje „Niepołączony moduł”. Status u góry pochodzi z backendu (MT5 ONLINE / DEMO SIM / OFFLINE / UNKNOWN).",
-                   "<b>⚙ Projektuj</b>: przeciąganie planet, nazwa, rozmiar, pozycja, kolor, sekcja bota, efekty, dodaj / usuń planetę, "
-                   "eksport / import JSON, reset. Poprzednie menu Neural City: <b>#/neural-city</b>.",
-                   "<b>WTC PEPE → ⚙ CUSTOMIZE CHART</b> (Chart Lab 2.1): motywy, Candles / Hollow / Heikin Ashi / Line / Area, EMA, VWAP, BB, "
-                   "RSI, MACD, ATR, SVP, SMC (okres, kolor, grubość), presety (zapis, import / eksport JSON). Session Volume Profile z POC i "
-                   "Value Area dla okna lub sesji London / New York / Asia oraz największy impuls w oknie 3 / 5 / 8 / 12 świec – na "
-                   "prawdziwych świecach MT5. Profil z OHLC to przybliżenie (bez footprint / ticków)."]),
-          *shot(shots, "ui_galaxy/galaxy_1920x1080.png", "Menu Galaxy V2 – 7 planet, pełna sieć 21/21.", width_mm=150),
-          *shot(shots, "ui_wtc_chartlab/chartlab_1920.png", "WTC PEPE – Chart Lab 2.1 z Session Volume Profile.", width_mm=150),
+    # 1.46: the interface of 1.42+ (the intro 8.5 s, the Galaxy menu, #/neural-city and WTC PEPE of 1.39-1.41 were removed in 1.42 / 1.44.1)
+    s += [P("10 / Menu, intro i ekrany (od 1.42)", "h1"),
+          bullets([f"<b>Intro</b>: film {D} (ok. 15 s, z dźwiękiem – głośnik w prawym dolnym rogu wycisza). Pominięcie: kliknięcie w film, "
+                   "<b>Spacja</b>, <b>Esc</b> albo <b>PRZEJDŹ DO MENU</b>; „Odtwórz intro ponownie” (R) gra film jeszcze raz. Raz na sesję.",
+                   "<b>Menu główne</b> (#/menu): trzy planety – <b>FOREX</b> (ekrany bota), <b>CRYPTO</b> (tryb w przygotowaniu, wybór nie "
+                   "zmienia ustawień bota) i <b>TraderLifeGame</b> (gra edukacyjna, bez dostępu do zleceń).",
+                   "<b>FOREX</b> (#/forex): <b>CHARTS</b> (wykres, wskaźniki, strefy, profil wolumenu, plan, okno Kronos), <b>SIGNALS</b> "
+                   "(sygnały, bramki ścieżki, oceny modeli), <b>MODELS &amp; BACKTEST</b> (modele, trening, backtest, Monte Carlo) i <b>ROI</b>.",
+                   "<b>Panele systemowe</b> (#/system, ikony w prawym dolnym rogu): USTAWIENIA (w tym MT5), TRYB PRACY, STOP, DIAGNOSTYKA, "
+                   "CENTRUM TRENINGOWE, LICENCJA. Stare adresy (#/galaxy, #/neural-city, #/wykresy …) przekierowują na nowe ekrany."]),
           PageBreak()]
     # 11
-    s += [P("11 / Aktualizacja z 1.38 i powrót", "h1"),
+    # 1.46: generic update / rollback (the chapter described only 1.38 -> 1.39 with fixed config numbers)
+    s += [P("11 / Aktualizacja z poprzedniej wersji i powrót", "h1"),
           steps([f"Rozpakuj {V} do nowego folderu; skopiuj folder <b>data\\</b> ze starej wersji (aplikacja Windows robi to sama przy "
-                 "pierwszym starcie – wybór danych w oknie startowym).",
-                 "Przy pierwszym starcie konfiguracja przechodzi na wersję 14 (execution.start_mode, execution.live_autobind); kopia "
-                 "poprzedniej: <b>data\\config.v13.bak.json</b>.",
+                 "pierwszym starcie – wybór danych w oknie startowym – i zapisuje kopię danych w <b>backups</b>).",
+                 "Gdy nowa wersja zmienia format konfiguracji, pierwszy start zostawia nietknięty poprzedni plik jako "
+                 "<b>data\\config.v&lt;poprzednia wersja&gt;.bak.json</b>.",
                  "Sprawdź ścieżkę główną i limity ryzyka (rozdział 3) zanim zostawisz bota w LIVE."]),
-          P("Powrót do 1.38", "h2"),
+          P("Powrót do poprzedniej wersji", "h2"),
           steps(["<b>STOP</b>, potem zamknij aplikację (lub 04_STOP_MASTERQUO.bat).",
-                 "Przywróć <b>data\\config.v13.bak.json</b> jako <b>data\\config.json</b> (1.38 nie zna wersji 14 konfiguracji).",
-                 "Uruchom folder z wersją 1.38. Modele i baza są zgodne – 1.39 nie zmienia ich formatu."]),
+                 ("Przywróć najnowszą kopię <b>data\\config.v&lt;N&gt;.bak.json</b> jako <b>data\\config.json</b> (starsza wersja odrzuca "
+                  "nieznane sekcje konfiguracji) albo cały folder danych z kopii (backups)."),
+                 "Uruchom folder z poprzednią wersją. Migracje bazy są addytywne – starsza wersja ignoruje dodane tabele."]),
           PageBreak()]
     # 12
     s += [P("12 / Problemy i logi", "h1"),
           table([["Objaw", "Co zrobić"],
-                 ["LIVE nie otwiera pozycji", "Panel System Control → Tryb pokazuje powód: PRIMARY_PATH_NOT_SELECTED (wybierz ACTIVE / SH), "
+                 ["LIVE nie otwiera pozycji", "Panel systemowy TRYB PRACY pokazuje powód: PRIMARY_PATH_NOT_SELECTED (wybierz ACTIVE / SH), "
                   "RISK_LIMITS_NOT_CONFIGURED (ustaw limity), AUTO_LIVE_BUT_ACCOUNT_IS_DEMO (zaloguj REAL), NEW_ENTRIES_STOPPED (zdejmij STOP)."],
                  ["HG09: NO_DATA GARCH_NOT_READY", "Wytrenuj i aktywuj VOL_GARCH (rozdział 7) albo wróć do volatility_method STD_LOGRET_60_M5."],
                  ["Model w stanie BLOCKED", "Brak danych lub środowiska – raport podaje powód; zainstaluj brakujące środowisko (34_DEEP_INSTALUJ.bat) "
                   "albo wyeksportuj więcej historii."],
                  ["Prognozy STALE „Memory Governor”", "RAM komputera ≥ 85 % (albo ≥ 80 % dla nieładowanego ciężkiego modelu) – zamknij inne programy lub zmień profil (Modele prognoz → Zasoby)."],
                  ["Krótka historia z MT5", "Zwiększ „Maks. barów na wykresie” w MT5 i powtórz eksport."],
-                 ["Intro / animacje obciążają komputer", "⚙ Projektuj → wyłącz efekty; system z „ograniczonymi animacjami” pomija intro."]],
+                 ["Intro / animacje obciążają komputer", "W menu przycisk „Ogranicz ruch” (prawy dolny róg); przy ograniczeniu ruchu menu pomija intro."]],
                 [52, 118]),
           P("Logi", "h2"),
           bullets(["<b>data\\logs</b> – logi instalacji (01_INSTALUJ, 33_KRONOS_INSTALUJ, 38_…), serwera i treningu.",
@@ -290,7 +289,7 @@ def main() -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     shots = Path(a.shots) if Path(a.shots).is_dir() else None
-    M.build(out / NAME, "INSTALACJA • MODELE • TRENING", story(shots), "PepeMarketWizard – instalacja bota, modeli i trening")
+    M.build(out / NAME, "INSTALACJA • MODELE • TRENING", story(shots), M.DISPLAY_NAME + " – instalacja bota, modeli i trening")
     print(f"{NAME}: {(out / NAME).stat().st_size} B")
     return 0
 

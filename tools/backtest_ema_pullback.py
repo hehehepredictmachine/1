@@ -40,16 +40,57 @@ CANDIDATES = {
 }
 
 
+DEFAULT_POINT = 0.01                           # XAUUSD quoted with 2 decimals (the defaults below are gold-only)
+
+
 def load_csv(path: Path) -> list[dict]:
     out = []
     with path.open(encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             if r.get("bar_state", "CLOSED") != "CLOSED":
                 continue
+            # 1.46: a missing / empty spread_points stays None (was 0.0, so a CSV without spreads looked like a complete MT5 cost
+            # model); the backtest counts such bars (spread_missing_bars) and the run reports them as NOT_VERIFIED
+            sp = (r.get("spread_points") or "").strip()
             out.append({"t": r["time_utc"], "o": float(r["open"]), "h": float(r["high"]), "l": float(r["low"]), "c": float(r["close"]),
-                        "spread": float(r.get("spread_points") or 0)})
+                        "spread": float(sp) if sp else None})
     out.sort(key=lambda b: b["t"])
     return out
+
+
+def csv_symbols(path: Path) -> list[str]:
+    """1.46: broker symbols named in the export CSV (column `symbol`) - the default units are valid only for gold."""
+    with path.open(encoding="utf-8") as fh:
+        return sorted({(r.get("symbol") or "").strip() for r in csv.DictReader(fh)} - {""})
+
+
+def is_gold(symbol: str) -> bool:
+    u = symbol.upper()
+    return "XAU" in u or "GOLD" in u
+
+
+def off_grid(bars: list[dict], step: float) -> int:
+    """1.46: bars whose OHLC are not multiples of `step` (prices with more decimals than the point used for spread / slippage)."""
+    tol = step * 1e-3
+    return sum(1 for b in bars if any(abs(round(b[k] / step) * step - b[k]) > tol for k in "ohlc"))
+
+
+def spread_quality(bars: list[dict], spread_price: float | None = None) -> dict:
+    """1.46 (rule 6): bars without a spread (None) or with spread 0 (old broker history often stores 0 = not recorded) are simulated
+    with a ZERO spread cost - the share is reported and such a run is NOT_VERIFIED, never presented as a complete MT5 cost model.
+    --spread-price replaces the bar spreads with a fixed, user-given cost."""
+    n = len(bars)
+    missing = sum(1 for b in bars if b.get("spread") is None)
+    zero = sum(1 for b in bars if b.get("spread") is not None and float(b["spread"]) == 0.0)
+    share = round(100.0 * (missing + zero) / n, 2) if n else None
+    if spread_price is not None:
+        status = "FIXED_SPREAD_PRICE"
+    elif missing or zero:
+        status = (f"NOT_VERIFIED – brak spreadu w {missing} i spread 0 w {zero} z {n} świec ({share}%); koszt spreadu tych świec "
+                  "liczony jako 0 – podaj --spread-price")
+    else:
+        status = "COMPLETE"
+    return {"bars": n, "missing": missing, "zero": zero, "share_pct": share, "spread_price": spread_price, "status": status}
 
 
 def synthetic(tf: str, days: int = 420) -> list[dict]:
@@ -76,7 +117,8 @@ def evaluate(bars, h8, tf_sec, p: core.Params, m: bt.ExecModel, variant: str) ->
     tr = h8_series(bars, h8, tf_sec, p) if p.h8_trend_filter else None
     r = bt.run(bars, p, m, variant, tr)
     return {"variant": variant, "metrics": r["metrics"], "bootstrap": r["bootstrap"], "max_dd_pct": r["max_dd_pct"],
-            "exposure_pct": r["exposure_pct"], "diag": r["diag"], "machine": r["machine_counts"], "_trades": r["trades"]}
+            "exposure_pct": r["exposure_pct"], "diag": r["diag"], "machine": r["machine_counts"],
+            "spread_cost_status": r.get("spread_cost_status"), "_trades": r["trades"]}     # 1.46: spread status per variant
 
 
 def classify_original(bars, p: core.Params) -> dict:
@@ -135,9 +177,20 @@ def main(argv=None) -> int:
     ap.add_argument("--commission-lot-side", type=float, default=3.5, help="account money per lot per side (MT5 model); 'Zero' accounts must be checked in the terminal")
     ap.add_argument("--slippage-ticks", type=int, default=3)
     ap.add_argument("--contract-size", type=float, default=100.0)
+    # 1.46: instrument units were fixed to gold with 2 decimals (point = tick = 0.01) - a 3-digit quote multiplied the spread x10
+    ap.add_argument("--point", type=float, help="symbol_info.point (bez podania: 0.01 = XAUUSD z 2 miejscami, NIEZWERYFIKOWANE)")
+    ap.add_argument("--tick-size", type=float, help="symbol_info.trade_tick_size (bez podania: = point)")
+    ap.add_argument("--spread-price", type=float, help="stały spread w cenie (np. 0.20) zamiast pola spread_points świec")
     ap.add_argument("--report", default=str(ROOT / "RAPORT_WYNIKOW.md"))
     a = ap.parse_args(argv)
     tf_sec = {"M15": 900, "M30": 1800}[a.tf]
+    point = a.point if a.point is not None else DEFAULT_POINT
+    tick = a.tick_size if a.tick_size is not None else point
+    if point <= 0 or tick <= 0 or (a.spread_price is not None and a.spread_price < 0):
+        print("[BLAD] --point i --tick-size muszą być > 0, --spread-price >= 0.")
+        return 2
+    units = {"point": point, "tick_size": tick, "contract_size": a.contract_size,
+             "source": "CLI" if a.point is not None else "DEFAULT_XAUUSD_2_DIGITS – NOT_VERIFIED (podaj --point / --tick-size z symbol_info)"}
     if a.synthetic:
         bars, h8, source = synthetic(a.tf), synthetic("H8"), "SYNTHETIC_SIMULATOR (FakeMT5 seed=11) - NIE SĄ TO NOTOWANIA"
         manifest = {"source": source}
@@ -152,12 +205,29 @@ def main(argv=None) -> int:
     if len(bars) < 2000:
         print(f"[BLAD] Za mało świec ({len(bars)}); potrzeba co najmniej 2000 zamkniętych świec {a.tf}.")
         return 2
+    if not a.synthetic:
+        # 1.46: the units must match the exported instrument - the symbol of the export (manifest / CSV) is checked and prices
+        # with more decimals than the point stop the run instead of pricing spread / slippage / min. risk in the wrong units
+        em = manifest.get("export_manifest")
+        syms = sorted(set(csv_symbols(d / f"{a.tf}.csv")) | ({em["symbol"]} if isinstance(em, dict) and em.get("symbol") else set()))
+        units["symbols"] = syms
+        if a.point is None and any(not is_gold(x) for x in syms):
+            print(f"[BLAD] Symbol eksportu {syms} nie jest złotem – domyślne jednostki (point 0.01, kontrakt 100) dotyczą XAUUSD. "
+                  "Podaj --point, --tick-size i --contract-size z symbol_info.")
+            return 2
+        bad = off_grid(bars, point)
+        if bad:
+            print(f"[BLAD] {bad} świec ma ceny spoza siatki point={point:g} – jednostki nie pasują do danych. "
+                  "Podaj --point / --tick-size z symbol_info (np. 0.001 dla kwotowania z 3 miejscami).")
+            return 2
+    manifest["spread_data"] = spread_quality(bars, a.spread_price)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ("_SYN" if a.synthetic else "")
     out = ROOT / "data" / "results" / "ema_pullback" / run_id
     out.mkdir(parents=True, exist_ok=True)
     base = core.Params()
     mt5 = bt.ExecModel(mode="MT5", initial_capital=a.capital, risk_pct=a.risk_pct, commission_per_lot_side=a.commission_lot_side,
-                       slippage_ticks=a.slippage_ticks, contract_size=a.contract_size)
+                       slippage_ticks=a.slippage_ticks, contract_size=a.contract_size, point=point, tick_size=tick,
+                       spread_price=a.spread_price)
     pine = bt.ExecModel(mode="PINE_DEFAULT", initial_capital=a.capital, risk_pct=a.risk_pct, same_bar_policy="PINE_HEURISTIC")
     n = len(bars)
     cut = int(n * 0.75)
@@ -166,7 +236,7 @@ def main(argv=None) -> int:
     period = lambda b: f"{b[0]['t']} – {b[-1]['t']} ({len(b)} świec)"  # noqa: E731
     results = {"run_id": run_id, "source": source, "tf": a.tf, "bars": n, "periods": {"development": period(dev), "final_test": period(test),
                "folds": [period(f) for f in folds]}, "params_base": base.as_dict(), "model_mt5": mt5.as_dict(), "model_pine": pine.as_dict(),
-               "protocol": __doc__.split("Protocol")[1].strip(), "variants_tried": [], "manifest": manifest}
+               "protocol": __doc__.split("Protocol")[1].strip(), "variants_tried": [], "manifest": manifest, "units": units}
     # ---- baseline and fixes on the whole development period
     stage = {}
     for name, p, m, var in (("ORIGINAL_PINE_DEFAULT", base, pine, "ORIGINAL"), ("ORIGINAL_MT5", base, mt5, "ORIGINAL"),
@@ -228,12 +298,13 @@ def main(argv=None) -> int:
     (out / "results.json").write_text(json.dumps(results, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
     with (out / "summary.csv").open("w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["segment", "variant", "trades", "winrate_pct", "breakeven", "profit_factor", "expectancy_r", "roi_pct", "max_dd_pct", "costs"])
+        w.writerow(["segment", "variant", "trades", "winrate_pct", "breakeven", "profit_factor", "expectancy_r", "roi_pct", "max_dd_pct", "costs",
+                    "spread_cost_status"])                                     # 1.46: trailing column (additive)
         for seg, block in (("development", results["development"]), ("final_test", results["final_test"])):
             for k, v in block.items():
                 mm = v["metrics"]
                 w.writerow([seg, k, mm.get("trades"), mm.get("winrate_pct"), mm.get("breakeven"), mm.get("profit_factor"), mm.get("expectancy_r"),
-                            mm.get("roi_pct"), v["max_dd_pct"], mm.get("costs")])
+                            mm.get("roi_pct"), v["max_dd_pct"], mm.get("costs"), v.get("spread_cost_status")])
     Path(a.report).write_text(report_md(results, out), encoding="utf-8")
     print(f"[OK] Wyniki: {out}\n[OK] Raport: {a.report}")
     return 0
@@ -254,6 +325,15 @@ def report_md(r: dict, out: Path) -> str:
     hdr = "| Wariant | Transakcje | Winrate % (bez BE) | BE | PF | E[R] [90% CI] | ROI % | Max DD % | Koszty |\n|---|---|---|---|---|---|---|---|---|"
     s = [f"# Raport wyników – EMA20 Pullback 2.5R ({r['tf']})", "",
          f"Źródło danych: **{r['source']}**. Run `{r['run_id']}`, pliki: `{out.relative_to(ROOT)}`.", ""]
+    # 1.46: spread data and instrument units are stated in the report (missing spread = NOT_VERIFIED, never a silent zero cost)
+    sq, un = (r.get("manifest") or {}).get("spread_data") or {}, r.get("units") or {}
+    if sq:
+        s += [f"Koszt spreadu (model MT5): **{sq['status']}**.", ""]
+        if sq["status"].startswith("NOT_VERIFIED"):
+            s += [("> **Wyniki modelu MT5 nie są zweryfikowane kosztowo** – część świec nie ma spreadu w danych; E[R], PF i ROI mogą być "
+                   "zawyżone o nieznany koszt spreadu tych świec."), ""]
+    if un:
+        s += [f"Jednostki instrumentu: point {un['point']:g}, tick {un['tick_size']:g}, kontrakt {un['contract_size']:g} ({un['source']}).", ""]
     if syn:
         s += ["> **To są dane syntetyczne z symulatora terminala.** Wynik sprawdza wyłącznie działanie potoku (sygnały, wykonanie, koszty, "
               "statystyki). Nie jest dowodem przewagi strategii ani podstawą do decyzji handlowych. Dla dowodu uruchom runner na eksporcie "

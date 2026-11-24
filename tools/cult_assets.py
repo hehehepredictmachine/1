@@ -10,7 +10,10 @@ Rules (no invented art, no invented numbers):
   stat panels, the few baked labels inside the menu scene (brand, slogan, bell / profile icons) are removed by inpainting and drawn
   live in HTML, and panel backgrounds are blurred until no text is legible;
 * the four texture images are the card art of the AI models (XGBoost, Random Forest, ML engine, Monte Carlo).
-Output: frontend/public/assets/cult/*.webp + zrodla.json (SHA-256 of the sources and the crop box of every layer)."""
+Output: frontend/public/assets/cult/*.webp + zrodla.json (SHA-256 of the sources and the crop box of every layer).
+
+1.46: ARCHIVAL - the CULT interface was removed in 1.42 (archive/ui_1_41/); nothing reads frontend/public/assets/cult any more. Kept only as
+the provenance record of those layers and for `_box_blur` (tools/neural_city_assets.py, also archival)."""
 from __future__ import annotations
 
 import argparse

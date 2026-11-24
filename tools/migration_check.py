@@ -61,6 +61,8 @@ def health(port: int) -> bool:
 
 
 class Bot:
+    START_TIMEOUT = 120.0          # seconds for /api/v1/health to answer
+
     def __init__(self, tree: Path, data: Path, port: int):
         self.tree, self.data, self.port = tree, data, port
         self.env = dict(os.environ, MASTERQUO_DATA_DIR=str(data), PYTHONPATH=str(tree / "backend"))
@@ -72,14 +74,27 @@ class Bot:
         self.proc = subprocess.Popen([sys.executable, "-m", "masterquo", "serve", "--demo", "--no-browser"], env=self.env,
                                      cwd=str(self.tree / "backend"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         t0 = time.time()
-        while time.time() - t0 < 120:
+        while time.time() - t0 < self.START_TIMEOUT:
+            if self.proc.poll() is not None:            # 1.46: the server already exited - no point waiting the full timeout
+                break
             try:
                 if health(self.port):
                     self.http = Http(self.port)
                     return self
             except Exception:
-                time.sleep(0.5)
-        raise RuntimeError(f"bot {self.tree.name} did not start on {self.port}")
+                time.sleep(0.5)                           # not up yet
+                continue
+            time.sleep(0.5)                               # 1.46: answered, but not 200 - no busy loop
+        # 1.46: __exit__ is not called when __enter__ raises - the server that did not answer is killed here, otherwise it kept the
+        # port and the temporary data folder (the "informational" checks catch this error and the run went on)
+        rc = self.proc.poll()
+        if rc is None:
+            self.proc.kill()
+            try:
+                self.proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
+        raise RuntimeError(f"bot {self.tree.name} did not start on {self.port}" + (f" (process exited with code {rc})" if rc is not None else ""))
 
     def __exit__(self, *exc):
         subprocess.run([sys.executable, "-m", "masterquo", "stop"], env=self.env, cwd=str(self.tree / "backend"), timeout=90,
