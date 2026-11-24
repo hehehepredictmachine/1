@@ -489,6 +489,14 @@ def vwap_reclaim(F, s, p, x):
         return None
     if p.get("max_crosses") is not None:
         cr = int(np.sum(np.diff(np.sign(cl - vw)) != 0))
+        # 1.46 (I0850): the catalog limit is "<= N crosses in 10 bars" - the 3 bars before the 7-bar reclaim window are added here; a bar
+        # whose VWAP is unknown (before the anchor / no volume) is skipped, so the count never drops below the 7-bar one
+        older = []
+        for k in range(max(0, i - 9), i - 6):
+            v_k, _ = F.vwap(k, a, use_tick_proxy=bool(p.get("tick_proxy")))
+            older.append(None if v_k is None else float(np.sign(F.c[k] - v_k)))
+        sg = older + [float(x) for x in np.sign(cl - vw)]
+        cr += sum(1 for u, w in zip(sg[:len(older)], sg[1:len(older) + 1]) if u is not None and w is not None and u != w)
         if cr > int(p["max_crosses"]):
             return None
     v = vw[6]

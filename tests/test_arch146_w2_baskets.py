@@ -554,5 +554,80 @@ class TestBasketPendingLimitSameCycle(_Svc):
         self.assertEqual(s._resolve(c, found, st, {}), 0)                               # same events again: idempotent, nothing new
 
 
+# ======================================================================================================================== I0850
+class _VwF:
+    """Feat double for vwap_reclaim: closes / VWAP per bar under test control (bar i = 12)."""
+
+    def __init__(self, signs, vw_none=(), how_none="INCOMPLETE_HISTORY"):
+        n = len(signs)
+        self.n, self.i = n, n - 1
+        self.t = np.array([1.79e9 + 3600 + k * 300 for k in range(n)], dtype=float)
+        self.vw = np.full(n, 100.0)
+        self.c = np.array([100.0 + 0.5 * sg for sg in signs])
+        self.o = self.c - 0.1
+        self.h, self.l = self.c + 0.6, self.c - 0.6
+        self.vw_none, self.how_none = set(vw_none), how_none
+
+    def b(self, i=None):
+        return 0.2
+
+    def vwap(self, k, anchor, use_tick_proxy=False):
+        if k in self.vw_none:
+            return None, self.how_none
+        return float(self.vw[k]), "REAL_VOLUME_VWAP"
+
+    def touched(self, k, lo, hi):
+        return self.l[k] <= hi and self.h[k] >= lo
+
+    def bull(self, k):
+        return self.c[k] > self.o[k]
+
+
+class TestVwapReclaimCrossWindow(unittest.TestCase):
+    # bars i-12 .. i: three extra crosses in i-9..i-6, then below VWAP x4 and the reclaim (1 cross in the last 7 bars)
+    SIGNS = [1, 1, 1, 1, -1, 1, -1, -1, -1, -1, 1, 1, 1]
+
+    def _p(self, sid):
+        from masterquo.baskets import catalog as CAT
+        return CAT.BY_ID[sid]["parameter_schema"]
+
+    def test_cp_scalp_03_counts_crosses_in_ten_bars(self):
+        from masterquo.baskets import rules as R
+        x = {"htf": _Up()}
+        self.assertIsNone(R.vwap_reclaim(_VwF(self.SIGNS), 1, self._p("CP_SCALP_03"), x))   # 4 crosses in 10 bars > 3
+        calm = [1, 1, 1, 1, 1, 1, -1, -1, -1, -1, 1, 1, 1]                              # 1 cross in 10 bars
+        r = R.vwap_reclaim(_VwF(calm), 1, self._p("CP_SCALP_03"), x)
+        self.assertIsNotNone(r)
+        self.assertEqual(r["event"]["type"], "VWAP_RECLAIM")
+
+    def test_missing_older_vwap_never_turns_a_rejection_into_a_setup(self):
+        from masterquo.baskets import rules as R
+        x = {"htf": _Up()}
+        n = len(self.SIGNS)
+        # VWAP unknown for the 3 older bars (before the UTC-day anchor / no volume): counted on the 7 bars as before, no Unavailable
+        for how in ("INCOMPLETE_HISTORY", "NO_VOLUME"):
+            r = R.vwap_reclaim(_VwF(self.SIGNS, vw_none=(n - 10, n - 9, n - 8), how_none=how), 1, self._p("CP_SCALP_03"), x)
+            self.assertIsNotNone(r, how)
+        busy7 = [1, 1, 1, 1, 1, 1, -1, 1, -1, -1, 1, 1, 1]                              # 3 crosses in the last 7 + more before
+        self.assertIsNotNone(R.vwap_reclaim(_VwF(busy7, vw_none=(n - 10, n - 9, n - 8)), 1, self._p("CP_SCALP_03"), x))
+        busy7b = [1, 1, -1, 1, 1, 1, -1, 1, -1, -1, 1, 1, 1]                            # one older cross available -> 4 > 3
+        self.assertIsNone(R.vwap_reclaim(_VwF(busy7b, vw_none=(n - 10,)), 1, self._p("CP_SCALP_03"), x))
+
+    def test_fx_scalp_03_unchanged(self):
+        from masterquo.baskets import rules as R
+        p = self._p("FX_SCALP_03")
+        self.assertIsNone(p.get("max_crosses"))
+        x = {"htf": _Up()}
+        r = R.vwap_reclaim(_VwF(self.SIGNS), 1, p, x)                                    # no cross limit on the FX variant: setup as before
+        self.assertIsNotNone(r)
+        n = len(self.SIGNS)
+        calls = []
+        f = _VwF(self.SIGNS)
+        orig = f.vwap
+        f.vwap = lambda k, a, use_tick_proxy=False: calls.append(k) or orig(k, a, use_tick_proxy)
+        R.vwap_reclaim(f, 1, p, x)
+        self.assertEqual(sorted(set(calls)), list(range(n - 7, n)))                      # only the 7 bars, as in 1.46.0
+
+
 if __name__ == "__main__":
     unittest.main()
