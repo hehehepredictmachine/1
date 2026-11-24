@@ -120,6 +120,11 @@ Brak historii = WARMUP (blokada). Skuteczność tego filtra sprawdza ablation EX
 - spread;
 - wielkość pozycji;
 - limity dzienny 1,5% i tygodniowy 4% (equity całego konta, punkt odniesienia zapisany na dysku – restart nie zeruje licznika);
+  odniesieniem dnia/tygodnia jest pierwsze equity zaobserwowane po 00:00 UTC (dzień) / w tygodniu ISO, a bramka bierze wyższe z niego
+  i equity pierwszego kandydata. **Start bota w trakcie dnia** (pierwsza obserwacja później niż 10 min po 00:00 UTC) oznacza
+  `NOT_VERIFIED` do końca dnia UTC: żaden kandydat nie dostaje READY_SHADOW (brak sygnału scalp i rozliczenia wyniku SHADOW). Bot, który
+  działa o 00:00–00:10 UTC, zapisuje odniesienie następnego dnia normalnie. Nieczytelny `risk_reference.json` = `UNAVAILABLE` do 00:00 UTC.
+  Odtworzenie odniesienia z historii transakcji MT5 nie jest zaimplementowane (1.46 arch I0810);
 - kalendarz makro (brak świeżego kalendarza = blokada nowych wejść);
 - jeden cykl / cooldown 5 min;
 - model (profil nie wymaga ML);

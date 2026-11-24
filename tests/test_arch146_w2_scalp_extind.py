@@ -866,6 +866,8 @@ class TestScalpLossReferenceAtDayStart(unittest.TestCase):
         ok, why = self.svc._loss_limits({"equity": 1000.0}, now=self.d0 + timedelta(hours=9))
         self.assertFalse(ok)
         self.assertIn("NOT_VERIFIED", why)
+        self.assertIn("do 00:00 UTC żaden kandydat nie dostanie READY_SHADOW", why)    # review: the whole-day effect is stated in the gate
+        self.assertIn("do 00:10", why)
         ok2, _ = self.svc._loss_limits({"equity": 1000.0}, now=self.d0 + timedelta(days=1, minutes=1))   # next day from 00:01: verified
         self.assertTrue(ok2)
 

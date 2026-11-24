@@ -344,8 +344,11 @@ class ScalpService:
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
         lag = (parse_iso(obs) - midnight).total_seconds() if obs else None
         if lag is None or lag > RISK_REF_MAX_LAG_S:                        # started during the day: the loss since 00:00 is unknown
+            # 1.46 arch (I0810, review): a bot started after 00:10 UTC has no READY_SHADOW (no scalp signal, no SHADOW settlement) until
+            # 00:00 UTC; reconstructing the day reference from the MT5 deal history is a separate item (not implemented)
             return False, (f"NOT_VERIFIED – brak equity z początku dnia (pierwsza obserwacja {obs[11:16] if obs else '?'} UTC, start w trakcie dnia); "
-                           + why)
+                           f"do 00:00 UTC żaden kandydat nie dostanie READY_SHADOW – bot działający o północy UTC (do 00:{RISK_REF_MAX_LAG_S // 60:02d}) "
+                           "zapisze odniesienie następnego dnia; " + why)
         return ok, why
 
     def _calendar(self) -> tuple[bool, str]:
