@@ -295,8 +295,12 @@ def train_markov(inst: str, dev: list[dict], point: float, tick: float, meta: di
     d.mkdir(parents=True)
     (d / "markov3.json").write_text(json.dumps(m3.to_dict(), default=float), encoding="utf-8")
     md.save(d / "diff")
+    role = "TEST_ONLY" if meta.get("data_kind") != "REAL_USER_DATA" else "RESEARCH"
+    # 1.46 arch: provenance stored next to the model and shown by the live SI cell (a TEST_ONLY fit on synthetic data was loaded without
+    # any marking). Loading TEST_ONLY models at all is unchanged (decision D23 in docs/arch146/ETAP2_PROJEKT.md).
+    (d / "meta.json").write_text(json.dumps({"data_kind": meta.get("data_kind"), "role": role}), encoding="utf-8")
     (FT.root(inst) / "markov" / "latest.txt").write_text(str(d), encoding="utf-8")
-    out.update(dir=str(d), data_kind=meta.get("data_kind"), role="TEST_ONLY" if meta.get("data_kind") != "REAL_USER_DATA" else "RESEARCH")
+    out.update(dir=str(d), data_kind=meta.get("data_kind"), role=role)
     return out
 
 

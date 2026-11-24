@@ -19,11 +19,18 @@
 * NLP_SENTIMENT family: headlines older than ~7 days made the decayed weights sum below 1e-12, the aggregate was divided by 1e-12 instead
   of the sum - the distribution did not sum to 1, the contract rejected it and the family published ERROR. A stale record is now a
   normalised distribution with its real (old) data time - stale downstream, as before; weights that underflow to 0 -> BLOCKED_DATA.
+* Native MiniRocket V2 feed (SHADOW_AUDIT): the indicator writes MQL5\\Files\\PMW\\PMW_MR2_RESULT.bin (InpOutDir "PMW"), the launchers set
+  MQ_MT5_FILES_DIR = MQL5\\Files (the same variable locates PMW\\native_status.json), but the importer read <dir>\\PMW_MR2_RESULT.bin -
+  /api/v1/structure-intelligence/native-status was always NATIVE_FEED_UNAVAILABLE.
+* Flow context Markov3 / MarkovDiff (models check --smoke, area lab): a model fitted on SYNTHETIC_TEST data (role TEST_ONLY) was loaded
+  into the Structure Intelligence M1 cell without any provenance. The run now stores its data kind / role and the cell shows it (panel
+  only - no decision reads Markov3). Whether TEST_ONLY should be loaded at all is decision D23 (loading unchanged).
 """
 from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import _env
@@ -239,6 +246,56 @@ class TestNlpStaleHeadlines(unittest.TestCase):
                 f.predict({}, items(400))                                      # weights underflow to exactly 0
             self.assertEqual(cm.exception.state, "BLOCKED_DATA")
 
+
+class TestMiniRocketNativeFeedPath(unittest.TestCase):
+    def test_result_written_by_the_indicator_is_found(self):
+        import os
+        import tempfile
+        import time as _time
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        import numpy as np
+        from masterquo.lab import minirocket_v2 as MR
+        from masterquo.lab.si_service import StructureIntelligenceService
+        with tempfile.TemporaryDirectory() as d:
+            files = Path(d) / "MQL5" / "Files"
+            (files / "PMW").mkdir(parents=True)
+            now = int(_time.time())
+            MR.write_result(files / "PMW" / MR.NativeResultImporter.NAME, 5, "ab" * 32, "XAUUSD-", "M1", now - 60, now, "UTC", np.zeros(3))
+            stub = SimpleNamespace(native_importer=None, cfg=SimpleNamespace(get=lambda: SimpleNamespace(assets=SimpleNamespace(symbols={}))))
+            with mock.patch.dict(os.environ, {"MQ_MT5_FILES_DIR": str(files), "MQ_MINIROCKET_EXPORT_DIR": str(Path(d) / "none")}):
+                res = StructureIntelligenceService.native_status(stub, "XAUUSD")
+            self.assertEqual(res["feed"]["status"], "IMPORTED", res["feed"])         # 1.46.0: NATIVE_FEED_UNAVAILABLE (wrong folder)
+            self.assertEqual(res["feed"]["seq"], 5)
+            self.assertEqual(res["feed"]["role"], "SHADOW_AUDIT")
+
+
+class TestMarkovProvenance(unittest.TestCase):
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_loaded_markov_carries_its_provenance(self):
+        from masterquo.lab.flow_context import cli as FC
+        from masterquo.lab.flow_context import service as FS
+        from masterquo.modelhub import smoke as S
+        dev = S.Ctx("XAUUSD").bars("M1", 2500, history_days=10)
+        out = FC.train_markov("XAUUSD", dev, 0.01, 0.01, {"data_kind": "SYNTHETIC_TEST"})
+        self.assertEqual(out["role"], "TEST_ONLY")
+        meta = json.loads((Path(out["dir"]) / "meta.json").read_text(encoding="utf-8"))   # 1.46.0: no provenance stored
+        self.assertEqual((meta["data_kind"], meta["role"]), ("SYNTHETIC_TEST", "TEST_ONLY"))
+        fs = FS.FlowSections()
+        k = fs.update("XAUUSD", "M1", dev[-900:], 0.01, 0.01)
+        self.assertIsNotNone(k.m3)                                              # loading unchanged (D23)
+        m3 = fs.summary(k)["markov3"]
+        self.assertEqual((m3.get("model_role"), m3.get("data_kind")), ("TEST_ONLY", "SYNTHETIC_TEST"))
+        (Path(out["dir"]) / "meta.json").unlink()                               # a run of 1.46.0: provenance unknown, still loaded
+        k = FS._Key("XAUUSD", "M1", 0.01, 0.01)
+        self.assertEqual(k.model_meta["role"], "UNKNOWN")
 
 if __name__ == "__main__":
     unittest.main()

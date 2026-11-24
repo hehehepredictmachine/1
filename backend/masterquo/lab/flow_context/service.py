@@ -35,6 +35,7 @@ class _Key:
         self.m3 = self.md = None
         self.m3_last = self.md_last = None
         self.model_dir = None
+        self.model_meta: dict | None = None
         self._load_models()
 
     def _load_models(self):
@@ -43,11 +44,13 @@ class _Key:
             return
         d = Path(p.read_text(encoding="utf-8").strip())
         try:
+            # 1.46 arch: provenance of the loaded model (meta.json; a 1.46.0 run has none -> UNKNOWN) - shown in the SI cell
+            meta = json.loads((d / "meta.json").read_text(encoding="utf-8")) if (d / "meta.json").exists() else {"role": "UNKNOWN", "data_kind": None}
             m3 = MK.Markov3.from_dict(json.loads((d / "markov3.json").read_text(encoding="utf-8")))
             md = MK.MarkovDiff.load(d / "diff")
             if abs(m3.point - self.point) > 1e-12:
                 return                                            # context mismatch (other point) -> model not used
-            self.m3, self.md, self.model_dir = m3, md, str(d)
+            self.m3, self.md, self.model_dir, self.model_meta = m3, md, str(d), meta
         except (OSError, ValueError):
             self.m3 = self.md = None
 
@@ -107,7 +110,8 @@ class FlowSections:
         if k.tf == "M1":
             if k.m3_last:
                 out["markov3"] = {"state": k.m3_last.get("state"), "next": k.m3_last.get("next"), "entropy": k.m3_last.get("entropy_next"),
-                                  "support": k.m3_last.get("support")}
+                                  "support": k.m3_last.get("support"), "model_role": (k.model_meta or {}).get("role"),
+                                  "data_kind": (k.model_meta or {}).get("data_kind")}
             else:
                 out["markov3"] = {"status": "MODEL_MISSING" if k.m3 is None else "WARMUP"}
             if k.md_last and k.md_last.get("projection"):

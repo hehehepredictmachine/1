@@ -227,8 +227,11 @@ class StructureIntelligenceService:
             sym = self.cfg.get().assets.symbols.get(instrument) if hasattr(self.cfg.get().assets, "symbols") else None
         except Exception:                                       # noqa: BLE001
             sym = None
-        if self.native_importer is None or self.native_importer.dir != (Path(files) if files else None):
-            self.native_importer = MR.NativeResultImporter(files, (man or {}).get("model_bin_sha256"), sym or "XAUUSD-", "M1")
+        # 1.46 arch: the indicator writes MQL5\\Files\\<InpOutDir = PMW>\\PMW_MR2_RESULT.bin and MQ_MT5_FILES_DIR is MQL5\\Files (the same
+        # variable locates PMW\\native_status.json below) - the importer looked in Files itself; Files used only when there is no PMW folder
+        mr_dir = (str(Path(files) / "PMW") if (Path(files) / "PMW").is_dir() else files) if files else None
+        if self.native_importer is None or self.native_importer.dir != (Path(mr_dir) if mr_dir else None):
+            self.native_importer = MR.NativeResultImporter(mr_dir, (man or {}).get("model_bin_sha256"), sym or "XAUUSD-", "M1")
         res = self.native_importer.poll() if poll else (self.native_importer.last or {"status": "NOT_POLLED"})
         st = MR.native_status(Path(files) / "PMW" / "native_status.json" if files else None)
         return {"export": {"status": "EXPORTED" if man else "NOT_EXPORTED", "model_bin_sha256": (man or {}).get("model_bin_sha256"),
