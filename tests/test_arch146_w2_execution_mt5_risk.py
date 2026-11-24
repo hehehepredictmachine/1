@@ -803,5 +803,48 @@ class TestAdoptManagedPosition(_MgrBase):
         self.assertIsNone(self.db.one("SELECT * FROM managed_positions WHERE position_ticket=3003"))
 
 
+# ------------------------------------------------------------------------------------------------ I0721 (noga hedge we wspólnym limicie)
+class TestHedgeLegCountsInSharedCap(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        self.cfg = ConfigStore()
+        self.cfg.update({"risk": {"max_open_positions": 2}})
+        self.db = Database()
+
+    def tearDown(self):
+        self.td.close()
+
+    def plan(self, pid, hedge_status=None, state="HEDGED", mode="AUTO_DEMO"):
+        fsm = {"type": "BASKET", "data": {"basket_id": pid, "state": state,
+                                          "hedge": ({"side": "SELL", "volume": 0.1, "entry": 2000.0, "opened_at": 1.0, "status": hedge_status}
+                                                    if hedge_status else None)}}
+        self.db.execute("""INSERT INTO sh_plans(plan_id, signal_id, strategy, instrument, symbol, side, exec_mode, account_key, state, config_hash, plan,
+                           fsm, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (pid, "SIG-" + pid, "HEDGING", "XAUUSD", "XAUUSD-", "BUY", mode, "srv:1", state, "h", "{}", json.dumps(fsm), 1.0, 1.0))
+
+    def reserve(self):
+        from masterquo.decision.ledger import RiskBook
+        return RiskBook(self.db, self.cfg, sh_limits=dict).reserve(path="ACTIVE", subject="MQO-new", mode="AUTO_DEMO",
+                                                                         account_key="srv:1", risk_money=10.0, equity=10000.0)
+
+    def test_open_hedge_leg_takes_a_slot(self):
+        self.plan("P1", hedge_status="OPEN")
+        r = self.reserve()
+        self.assertFalse(r["ok"])                                                     # przed: ok=True (plan liczony jako 1 pozycja)
+        self.assertIn("PORTFOLIO_MAX_OPEN_POSITIONS_RESERVED", r["reasons"])
+        from masterquo.risk import portfolio as PF
+        st = PF.state(self.db, "AUTO_DEMO", "srv:1", 0.0)
+        self.assertEqual((st["open_positions"], st["open_hedge_legs"]), (2, 1))
+        self.assertIn("PORTFOLIO_MAX_OPEN_POSITIONS", PF.check(st, equity=10000.0, legacy_limits=self.cfg.get().risk, sh_limits={}))
+
+    def test_closed_or_absent_hedge_and_closed_plan_do_not_count(self):
+        self.plan("P1", hedge_status="CLOSED", state="PRIMARY_OPEN")
+        self.plan("P2", hedge_status="OPEN", state="CLOSED")
+        self.plan("P3", hedge_status="OPEN", mode="PAPER")
+        self.assertTrue(self.reserve()["ok"])                                         # 1 otwarty plan (P1) + nowe wejście = 2
+
+
 if __name__ == "__main__":
     unittest.main()
