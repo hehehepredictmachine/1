@@ -5,7 +5,8 @@ every loaded TF (one shared configuration = the cross-chart view), read-only acc
 uses, Kalman state, breakout zones + latest-direction panel, robust volatility, Multi-Indicator decision trace, SMC continuation setups
 and a GP forecast (fitted transactionally on the current window; every forecast logged to the SHADOW ledger, matured from later closed
 bars). 1.46 arch (I0357): next to it the procedure the gpr job validated (walk_forward: grid search every retune_every bars) runs as a
-separate SHADOW track with its own ledger id; the Quant-facing forecast keeps its per-bar grid fit (MetaModel inputs unchanged). Trained artifacts are only LISTED here (_trained_models): the event engine is inferred in SHADOW by Quant (EventGRU) once a
+separate SHADOW track with its own ledger id; the Quant-facing forecast keeps its per-bar grid fit (MetaModel inputs unchanged).
+Trained artifacts are only LISTED here (_trained_models): the event engine is inferred in SHADOW by Quant (EventGRU) once a
 VALIDATED_SHADOW artifact is active; HDC / STE-FlowNet have no live inference even with a validated pointer; the live GP never loads
 the gpr_logret artifact (validation reference only). Nothing here can place, modify or close an order; execution_allowed is always False.
 """
