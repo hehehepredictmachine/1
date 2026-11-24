@@ -47,6 +47,15 @@ class MetaError(ValueError):
     pass
 
 
+# D21 (1.46, ETAP2 "(b) z retreningiem MetaModelu"): the gold_candles adapter (modelhub/adapters.py) no longer publishes READY for a horizon
+# REJECTED / INSUFFICIENT_DATA in validation or over the market break, so fc:forecast:gold_candles:* features are masked (mask 1) where the
+# ledger rows of a model trained before carry values. F.VERSION is NOT bumped on purpose: an INCOMPATIBLE active model would be skipped by
+# QuantService.validated_active(), ASSIST would switch off and every Quant HOLD would disappear (a looser entry gate). Such a model stays
+# active and is flagged in status / CLI (retrain_notices); a manifest written by save() records the input revisions it was trained under.
+INPUTS_REV = ("D21",)
+GOLD_FC_PREFIXES = ("fc:forecast:gold_candles:", "fc:gold_candles_")
+
+
 # ------------------------------------------------------------------------------------------------ data
 def matrix(rows: list[dict], names: list[str]) -> np.ndarray:
     out = []
@@ -428,7 +437,7 @@ def save(inst: str, res: dict, *, spec: dict) -> str:
     (d / "model.json").write_text(blob, encoding="utf-8")
     man = {"model": "quant:metamodel", "version": ver, "instrument": inst, "status": res["status"], "task_hash": th, "event_spec": spec,
            "feature_schema": res["model"]["feature_schema"], "sha256": hashlib.sha256(blob.encode()).hexdigest(), "created_at": time.time(),
-           "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}}
+           "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}, "inputs_rev": list(INPUTS_REV)}
     write_json_atomic(d / "manifest.json", man)
     return ver
 
@@ -509,6 +518,32 @@ def record_test(inst: str, task_hash: str, ids: list[str]) -> None:
         p = pointer(inst, strict=True)
         p.setdefault("seen_tests", {}).setdefault(task_hash, []).append(ids)
         write_json_atomic(_ptr(inst), p)
+
+
+def retrain_notices(inst: str) -> list[dict]:
+    """Active versions trained before D21 whose features include gold_candles forecasts -> 'wymaga retreningu/rewalidacji (D21)'.
+    Presentation only (Quant status, `quant status` / `quant list`): the model stays active and is used exactly as before."""
+    out: list[dict] = []
+    try:
+        act = pointer(inst).get("active") or {}
+    except (OSError, ValueError):
+        return out
+    for th, ver in sorted(act.items()):
+        try:
+            d = root(inst) / _part(th, "TASK_HASH") / _part(ver, "VERSION")
+            man = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+            names = json.loads((d / "model.json").read_text(encoding="utf-8")).get("feature_names") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        if "D21" in (man.get("inputs_rev") or []):
+            continue
+        gold = sorted(str(n) for n in names if str(n).startswith(GOLD_FC_PREFIXES))
+        if gold:
+            out.append({"task_hash": th, "version": ver, "reason": "RETRAIN_REQUIRED_D21", "features": gold,
+                        "message": "[UWAGA] wymaga retreningu/rewalidacji (D21): model wytrenowano, gdy prognozy gold_candles dla horyzontów "
+                                   "odrzuconych w walidacji i obejmujących przerwę rynku były READY; teraz te cechy są maskowane. Model pozostaje "
+                                   "aktywny. Retrening: quant train --instrument " + inst + ", potem quant activate (VALIDATED_SHADOW)."})
+    return out
 
 
 def list_versions(inst: str) -> list[dict]:

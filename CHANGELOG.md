@@ -24,6 +24,17 @@ identyczny z Etapem 0), `backend/vendor/` bez zmian, kontrakty publiczne bez zmi
   testy: `test_train_all` (/20), `test_families_u4` (ścieżka .venv_deep).
 * Testy architektury (`tests/test_arch146_architecture.py`): jeden wiersz na producenta, stare rejestry są widokami rejestru kanonicznego,
   adapter albo uzasadnienie dla każdego producenta, dokładnie jeden wpis smoke, brak cykli importów, `backend/vendor` bez zmian.
+* **D20/D21 – prognozy złota (gold_candles) i scalp**: ręczny `activate` i `rollback` odrzucają run z oceną walidacji REJECTED /
+  INSUFFICIENT_DATA / bez oceny (`registry_cli` – kod 1 z komunikatem na stderr, `scalp_registry` – kod 2); `list` pokazuje ocenę i znacznik
+  `[niezwalidowany – tylko ręcznie]` (SHADOW_UNVALIDATED – auto-aktywacja go nie wybiera), `validate` zapisuje w `revalidation.json` także
+  `admissible`. Adapter prognoz złota publikuje horyzont odrzucony w walidacji jako DISABLED, a horyzont obejmujący przerwę rynku jako
+  BLOCKED_DATA (wcześniej READY); horyzonty READY mają kalibrację CALIBRATED_DEV.
+  **Wymagany krok operacyjny – retrening MetaModelu Quant (D21):** cechy `fc:forecast:gold_candles:*` takich horyzontów są teraz maskowane,
+  a MetaModel wytrenowany wcześniej widział w nich wartości. Schemat cech celowo NIE jest podbijany (model INCOMPATIBLE wyłączyłby ASSIST
+  i wszystkie HOLD-y Quant) – aktywny model działa dalej, a `quant status` / `quant list` / `/api/v1/quant/status` (`metamodel.retrain_required`)
+  pokazują „wymaga retreningu/rewalidacji (D21)”. Retrening: `python -m masterquo quant train --instrument XAUUSD` (najlepiej po zebraniu
+  w ledgerze Quant wierszy zapisanych po tej zmianie), potem `quant list` i `quant activate --instrument XAUUSD --task <H> --version <V>`
+  dla wersji VALIDATED_SHADOW; ostrzeżenie znika dla modelu wytrenowanego po zmianie.
 * Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23.
 
 ## 1.46.0 – Apollo23: audyt całego kodu, naprawy z testami regresji, eksportery danych

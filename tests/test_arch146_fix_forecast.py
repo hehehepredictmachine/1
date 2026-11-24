@@ -339,5 +339,77 @@ class TestScalpGoldSmokeExpectsPerHorizonStates(unittest.TestCase):
         self.assertEqual(out["predict"]["status"], "FAIL", out["predict"])               # the old 3x READY check passed it
 
 
+# ----------------------------------------------------------------------------------------------- D21 -> MetaModel Quant (retraining)
+GOLD_FEAT = "fc:forecast:gold_candles:CANDLE_CLOSE_DIRECTION_H3_M5:M5:edge"
+
+
+def _meta(inst: str, names: list[str], *, pre_d21: bool) -> tuple[str, str]:
+    """A VALIDATED_SHADOW MetaModel artifact made active; pre_d21 = manifest written before D21 (no inputs revision)."""
+    from masterquo.quant import features as F
+    from masterquo.quant import metamodel as M
+    model = {"version": M.VERSION, "feature_names": names, "feature_schema": F.schema(names)}
+    import hashlib
+    th = "task" + ("a" if pre_d21 else "b") + hashlib.sha256("|".join(names).encode()).hexdigest()[:8]
+    ver = M.save(inst, {"model": model, "status": "VALIDATED_SHADOW", "report": {}}, spec={"task_hash": th})
+    if pre_d21:
+        mp = M.root(inst) / th / ver / "manifest.json"
+        man = json.loads(mp.read_text(encoding="utf-8"))
+        man.pop("inputs_rev", None)
+        mp.write_text(json.dumps(man), encoding="utf-8")
+    M.activate(inst, th, ver)
+    return th, ver
+
+
+class TestMetaModelRetrainNoticeAfterD21(unittest.TestCase):
+    """D21 masks fc:forecast:gold_candles:* for horizons REJECTED in validation / over the market break, while the ledger rows an existing
+    MetaModel was trained on carry values there. Not INCOMPATIBLE (validated_active() would drop it, ASSIST would stop and every Quant
+    HOLD would vanish - a looser entry gate, S0 b): the model stays active and status / CLI say it needs retraining / revalidation."""
+
+    def setUp(self):
+        self.td = _env.TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_active_pre_d21_model_with_gold_features_is_flagged_but_stays_active(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import metamodel as M
+        th, ver = _meta("XAUUSD", ["plan:gain_r", GOLD_FEAT], pre_d21=True)
+        _meta("XAUUSD", ["plan:gain_r", "ctx:spread_r"], pre_d21=True)                       # no gold_candles feature: nothing to say
+        n = M.retrain_notices("XAUUSD")
+        self.assertEqual([(x["task_hash"], x["version"]) for x in n], [(th, ver)])
+        self.assertIn("D21", n[0]["message"])
+        self.assertIn("retreningu", n[0]["message"])
+        self.assertEqual(n[0]["features"], [GOLD_FEAT])
+        self.assertEqual(F.VERSION, "PMW-QUANT-FEAT-1")                                     # schema NOT bumped on purpose
+        M.load("XAUUSD", th, ver)                                                            # still loads (not INCOMPATIBLE)
+
+    def test_model_trained_after_d21_is_not_flagged(self):
+        from masterquo.quant import metamodel as M
+        th, ver = _meta("XAUUSD", ["plan:gain_r", GOLD_FEAT], pre_d21=False)
+        man = json.loads((M.root("XAUUSD") / th / ver / "manifest.json").read_text(encoding="utf-8"))
+        self.assertIn("D21", man["inputs_rev"])
+        self.assertEqual(M.retrain_notices("XAUUSD"), [])
+
+    def test_status_and_cli_show_the_notice(self):
+        from types import SimpleNamespace
+
+        from masterquo.quant import cli
+        from masterquo.quant.service import QuantService
+        th, ver = _meta("XAUUSD", ["plan:gain_r", GOLD_FEAT], pre_d21=True)
+        q = QuantService(SimpleNamespace(sh=SimpleNamespace(instrument=lambda: "XAUUSD"), bridge=None))
+        st = q.status()["metamodel"]
+        self.assertEqual(st["validated_active"], {th: ver})                                  # unchanged: ASSIST keeps its model
+        self.assertEqual([x["version"] for x in st["retrain_required"]], [ver])
+        for argv in (["status", "--instrument", "XAUUSD"], ["list", "--instrument", "XAUUSD"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(cli.main(argv), 0)
+            got = json.loads(out.getvalue())
+            rr = got["retrain_required"]
+            rr = rr.get("XAUUSD", rr) if isinstance(rr, dict) else rr
+            self.assertEqual([x["version"] for x in rr], [ver], argv)
+
+
 if __name__ == "__main__":
     unittest.main()

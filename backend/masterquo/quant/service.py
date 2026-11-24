@@ -592,7 +592,8 @@ class QuantService:
                 "models": {"eligible": len(el), "excluded": len(ex), "excluded_by_reason": by_reason, "aliases_dropped": len(pub.get("aliases_dropped") or []),
                            "ready_ids": sorted({p.get("canonical_id") for p in el})},
                 "setup_scoped": _safe(lambda: A.setup_scoped(self.rt, inst), []),
-                "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:]},
+                "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:],
+                              "retrain_required": _safe(lambda: M.retrain_notices(inst), [])},          # D21: presentation only
                 "ledger": self.ledger.counts(inst), "loop": dict(self.loop), "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at",
                                                                                                           "error")} for j in self.jobs.values()][-10:],
                 "timings": percentiles(self.timings), "execution_allowed": False,
