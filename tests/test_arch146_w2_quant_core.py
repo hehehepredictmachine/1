@@ -571,5 +571,38 @@ class TestEventGruReadyPath(unittest.TestCase):
         self.assertEqual(p["state"], "BLOCKED_DATA")
 
 
+# ================================================================================================ I0548 / I0549 / I0550 NO_SPEC rows
+class TestNoSpecRows(unittest.TestCase):
+    """The NO_SPEC rows were checked only for mm:sdom / mm:quant_momentum / mm:renko; mm:head_shoulders, mm:data_grabber, mm:chart_sync
+    and extind:PAL02M were not. The list now comes from the source registries (mm/inventory.MODULES without a spec, quant.ids
+    EXTRA_PRODUCERS of category NO_SPEC): every such row is code_state NO_SPEC, runtime UNAVAILABLE, no adapter, models check NO_SPEC."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def _nospec_ids(self):
+        from masterquo.mm import inventory as MI
+        from masterquo.quant import ids as I
+        from masterquo.quant import inventory as QI
+        mm = [f"mm:{m['id']}" for m in MI.MODULES if not m.get("spec") and m["id"] not in QI._MM_TO_CANON]
+        return mm + [cid for cid, v in I.EXTRA_PRODUCERS.items() if v[1] == "NO_SPEC"]
+
+    def test_every_registry_no_spec_row(self):
+        from masterquo.modelhub import check as MC
+        from masterquo.quant import inventory as QI
+        ids = self._nospec_ids()
+        for must in ("mm:sdom", "mm:quant_momentum", "mm:renko", "mm:head_shoulders", "mm:data_grabber", "mm:chart_sync", "extind:PAL02M"):
+            self.assertIn(must, ids)
+        by = {e["id"]: e for e in QI.build(None, "XAUUSD")["entries"]}
+        for cid in ids:
+            self.assertEqual(by[cid]["code_state"], "NO_SPEC", cid)
+            self.assertEqual(by[cid]["runtime_state"], "UNAVAILABLE", cid)
+            self.assertFalse(by[cid].get("adapter"), cid)                            # never implemented by guessing from the name
+        prod = {p["id"]: p for p in MC.producers()}
+        for cid in ids:
+            self.assertEqual(prod[cid]["code_state"], "NO_SPEC", cid)
+
+
 if __name__ == "__main__":
     unittest.main()
