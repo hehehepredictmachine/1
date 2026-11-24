@@ -1,4 +1,4 @@
-"""Support / resistance zones from confirmed swings (MQ-SR-1.0.0) + W1 / MN1 from D1 with calendar boundaries.
+"""Support / resistance zones from confirmed swings (multi_tf: MQ-SR-1.1.0 BOUNDED; zone map: MQ-SR-1.0.0 CHAIN) + W1 / MN1 from D1.
 
 W1 / MN1: the bridge receives MT5 TFs M1..D1; weeks and months are AGGREGATED from closed D1 bars (source
 AGGREGATED_FROM_D1). The broker date of a D1 bar = calendar date of (open_utc + 12 h) - correct for any server offset in
@@ -16,7 +16,7 @@ different level types: their proximity is a confluence FEATURE, it never renames
 
 Clustering rule (1.46 arch, I0757), pivots sorted by price:
   BOUNDED (MQ-SR-1.1.0)  a pivot joins the cluster while price - LOWEST price of the cluster <= tol, so the raw width of a zone never
-                         exceeds the tolerance; used by multi_tf (chart, structure endpoint, agent tool).
+                         exceeds the tolerance; used by multi_tf (/api/v1/structure chart, agent tool get_walls_and_patterns).
   CHAIN   (MQ-SR-1.0.0)  single linkage (price - LAST pivot <= tol): a chain of pivots spaced < tol glues into a zone many times wider than
                          the tolerance. Kept as the zones_for_tf default ONLY because the zone map (zones/engine -> UZICE HTF overlap) feeds
                          the features of trained models (ML legacy zone_*, Quant analysis:zones) - old artifacts must keep exactly today's

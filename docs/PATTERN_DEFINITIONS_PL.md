@@ -81,10 +81,13 @@
 - **Zdarzenie dowodowe**: nazwy na tej samej świecy (lub ostatniej świecy) w tym samym kierunku to **jedno** `evidence_event` (`evidence_events()`).
 - Role w strategii: formacja wykresowa = struktura, świecowa = reakcja/trigger, walls i S/R = lokalizacja, ryzyko = osobne pozwolenie.
 
-## Strefy S/R (MQ-SR-1.0.0)
+## Strefy S/R (MQ-SR-1.1.0 i MQ-SR-1.0.0)
 
 **Budowa stref:**
-- Pivoty TF są klastrowane z tolerancją 0,25 ATR (≥ 2 punkty).
+- Pivoty TF (posortowane po cenie) są klastrowane z tolerancją `tol` = 0,25 ATR14 TF (≥ 2 punkty). Obowiązują dwie reguły klastra (`analysis/levels.py`, `cluster_pivots`), a wersja reguły jest zapisana w polu `version` strefy:
+  - **BOUNDED – MQ-SR-1.1.0** (`multi_tf` → `EngineService.structure()["sr"]`: `/api/v1/structure` (wykres) i narzędzie agenta `get_walls_and_patterns` (pole `sr_zones`); H1/H4/H8/D1 oraz W1/MN1): pivot dołącza do klastra, dopóki cena − NAJNIŻSZY pivot klastra ≤ `tol`. Surowa szerokość strefy nie przekracza więc tolerancji, a łańcuch równo rozłożonych pivotów daje kilka wąskich stref zamiast jednej szerokiej.
+  - **CHAIN – MQ-SR-1.0.0** (`zones_for_tf` domyślnie, czyli mapa stref `zones/engine` → zgodność z HTF S/R w ocenie UZICE): pojedyncze wiązanie, czyli cena − OSTATNI pivot klastra ≤ `tol`. Łańcuch pivotów rozstawionych co mniej niż `tol` skleja się w strefę wielokrotnie szerszą od tolerancji. Reguła zostaje bez zmian, bo z mapy stref liczone są cechy wytrenowanych modeli (ML legacy `zone_*`, Quant `analysis:zones`): stare artefakty dostają dokładnie dzisiejsze wejścia. Przejście mapy stref na BOUNDED wymaga nowej wersji schematu cech stref.
+- Strefa węższa od `tol` jest rozszerzana symetrycznie do szerokości `tol`.
 - Strefa zapisuje: TF pochodzenia, granice, liczbę **niezależnych** reakcji, pierwszą i ostatnią reakcję, wiek, świeżość (≤ 60 świec = FRESH), stan (INTACT / BROKEN_UP / BROKEN_DOWN / RECLAIMED) i `available_at`.
 
 **W1/MN1:**
