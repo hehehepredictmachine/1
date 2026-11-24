@@ -279,6 +279,26 @@ def verify_finetune(finetune_dir: str | None, run_id: str) -> tuple[Path, dict]:
     return d, {k: man.get(k) for k in ("run_id", "created_at", "data", "metrics", "base_fingerprint", "train")}
 
 
+def finetune_scope(ft: dict | None, *, instrument: str | None = None, timeframe: str | None = None, horizon: int | None = None) -> dict:
+    """1.46 (I0834 / I0844): is a request inside the scope a fine-tuned Granite TTM checkpoint was trained for (manifest: data.instrument,
+    data.timeframe, train.horizon)? The checkpoint is ONE instrument / timeframe / horizon; it was used for every pair. Checked only for
+    the given arguments (the engine does not know the instrument); an unknown trained value = out of scope. Information only - the
+    forecast is still computed; the bot then never lets it CONFIRM a REQUIRED role (masterquo/tsfm/predictions.py)."""
+    ft = ft or {}
+    data, train = ft.get("data") or {}, ft.get("train") or {}
+    trained = {"instrument": data.get("instrument"), "timeframe": data.get("timeframe"), "horizon": train.get("horizon")}
+    why = []
+    if instrument is not None and trained["instrument"] != instrument:
+        why.append(f"instrument {instrument} ≠ {trained['instrument'] or 'nieznany'} z treningu")
+    if timeframe is not None and trained["timeframe"] != timeframe:
+        why.append(f"interwał {timeframe} ≠ {trained['timeframe'] or 'nieznany'} z treningu")
+    if horizon is not None:
+        th = trained["horizon"]
+        if not isinstance(th, int) or isinstance(th, bool) or int(horizon) > th:
+            why.append(f"horyzont {int(horizon)} > {th if th is not None else 'nieznany'} świec z treningu")
+    return {"in_scope": not why, "reason": "; ".join(why) or None, "run_id": ft.get("run_id"), "trained": trained}
+
+
 def _ttm_class():
     """The official TinyTimeMixerForPrediction of granite-tsfm WITHOUT executing tsfm_public/__init__.py (which imports the whole toolkit:
     pandas, scikit-learn, datasets, pyarrow - measured +120 MB RSS that inference never uses). The package objects are registered with
@@ -374,8 +394,11 @@ class GraniteTTMEngine(BaseEngine):
         y = self._forward((x - mu) / sd)[:H] * sd + mu
         if not np.isfinite(y).all():
             raise EngineError("NON_FINITE", "model zwrócił NaN/Inf")
+        scope = None if (self.info.get("checkpoint") or "BASE") == "BASE" else \
+            finetune_scope(self.info.get("finetune"), timeframe=req.get("freq_tf"), horizon=H)          # 1.46 (I0844): information
         return {"point": [float(v) for v in y], "point_kind": "point", "median": None, "quantiles": None,
                 "ms": round((time.perf_counter() - t0) * 1000, 2), "device": self.device, "context_bars": ctx, "profile": "CLOSE_V1",
+                "finetune_scope": scope,
                 "input_hash": input_hash(req), "normalization": {"method": "zscore_context_window", "mean": mu, "std": sd},
                 "note": "prognoza punktowa close (model trenowany MSE) – bez kwantyli i bez świec OHLC; normalizacja tylko z okna kontekstu"}
 

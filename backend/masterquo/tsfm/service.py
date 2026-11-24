@@ -619,7 +619,7 @@ class TsfmService:
                 "freq_class": r.get("freq_class"), "quality": job["quality"], "calendar": cinfo, "state": "READY",
                 "calibration": {"status": "UNCALIBRATED", "note": "kwantyle modelu nie były kalibrowane na danych brokera" if r.get("quantiles")
                                 else "prognoza punktowa – brak kwantyli; nie jest prawdopodobieństwem"},
-                "mode": "SHADOW", "execution_permission": False,
+                "mode": "SHADOW", "execution_permission": False, "use_restriction": use_restriction(load, job["instrument"], tf, H),
                 "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem"}
 
     # ================================================================== ledger + settlement
@@ -1014,6 +1014,22 @@ class TsfmService:
                                                                "activation_policy": "VALIDATION", "activated_at": None}}}}})
         self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = {use} ({tf}), raporty {ids}.")
         return {"ok": True, "use": use, "reports": ids}
+
+
+def use_restriction(load: dict, inst: str, tf: str, H: int) -> dict | None:
+    """1.46: a forecast that may only HOLD an entry, never CONFIRM one (masterquo/tsfm/predictions.py: a REQUIRED role treats it as
+    unavailable; ASSIST / OBSERVE use it as before). None = no restriction.
+      CHECKPOINT_SCOPE (I0834 / I0844): a fine-tuned Granite TTM checkpoint outside the instrument / timeframe / horizon it was trained
+                       for (the checkpoint was used for every pair; the value is kept - Quant inputs and ASSIST holds stay as they were)."""
+    ck = load.get("checkpoint") or "BASE"
+    if ck == "BASE":
+        return None
+    from tsfm_runtime.engines import finetune_scope
+    sc = finetune_scope(load.get("finetune"), instrument=inst, timeframe=tf, horizon=H)
+    if sc["in_scope"]:
+        return None
+    return {"code": "CHECKPOINT_SCOPE", "scope": sc,
+            "reason": f"checkpoint Granite TTM {ck} poza zakresem dotrenowania ({sc['reason']}) – prognoza nie potwierdza roli REQUIRED"}
 
 
 def ledger_fingerprint(fingerprint: str, checkpoint: str | None) -> str:

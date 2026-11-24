@@ -542,6 +542,87 @@ class TestI0540TabiclEngine(unittest.TestCase):
         self.assertNotIn("_selftest", e.contexts)
 
 
+# ======================================================================================================== I0834 / I0844 checkpoint scope
+FT = {"run_id": "GTR-test01", "data": {"instrument": "XAUUSD", "timeframe": "M5"}, "train": {"horizon": 12}}
+
+
+class TestI0844FinetuneScope(unittest.TestCase):
+    def test_scope_function(self):
+        from tsfm_runtime import engines as E
+        self.assertTrue(E.finetune_scope(FT, instrument="XAUUSD", timeframe="M5", horizon=12)["in_scope"])
+        self.assertTrue(E.finetune_scope(FT, instrument="XAUUSD", timeframe="M5", horizon=6)["in_scope"])
+        for kw, word in (({"instrument": "BTC", "timeframe": "M5", "horizon": 12}, "BTC"), ({"instrument": "XAUUSD", "timeframe": "M15", "horizon": 8}, "M15"),
+                         ({"instrument": "XAUUSD", "timeframe": "M5", "horizon": 13}, "13")):
+            s = E.finetune_scope(FT, **kw)
+            self.assertFalse(s["in_scope"], kw)
+            self.assertIn(word, s["reason"])
+        self.assertFalse(E.finetune_scope({"run_id": "GTR-x"}, timeframe="M5", horizon=1)["in_scope"])   # unknown scope = out of scope
+        self.assertTrue(E.finetune_scope(FT, timeframe="M5", horizon=12)["in_scope"])                     # engine: no instrument in the request
+
+    def test_engine_reports_scope_without_refusing(self):
+        import numpy as np
+        from tsfm_runtime import engines as E
+        e = E.GraniteTTMEngine()
+        e.loaded, e.info = True, {"checkpoint": "GTR-test01", "finetune": FT}
+        e._forward = lambda z: np.zeros(96)
+        req = {"close": [2000.0 + (i % 7) for i in range(512)], "context_len": 512, "profile": "CLOSE_V1"}
+        r = e.predict({**req, "pred_len": 12, "freq_tf": "M5"})
+        self.assertTrue(r["finetune_scope"]["in_scope"])
+        for kw in ({"pred_len": 24, "freq_tf": "M5"}, {"pred_len": 6, "freq_tf": "M15"}):
+            r = e.predict({**req, **kw})
+            self.assertFalse(r["finetune_scope"]["in_scope"], kw)               # value still computed (ASSIST holds unchanged)
+            self.assertEqual(len(r["point"]), kw["pred_len"])
+        e.info = {"checkpoint": "BASE", "finetune": None}
+        self.assertIsNone(e.predict({**req, "pred_len": 12, "freq_tf": "M5"})["finetune_scope"])
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0834CheckpointScopeDecisions(_Svc):
+    def _svc(self):
+        svc = self.make(tfs=("M5", "M15"), granite_ttm={"checkpoint": "GTR-test01"})
+        w = svc.workers["granite_ttm"]
+        self.assertTrue(w.ensure())
+        w.load_info.update(checkpoint="GTR-test01", finetune=dict(FT))         # what the real engine reports for an activated fine-tune
+        svc.tick()
+        self.run_queue()
+        return svc
+
+    def test_out_of_scope_forecast_is_flagged(self):
+        svc = self._svc()
+        self.assertIsNone(svc.latest[("granite_ttm", "XAUUSD", "M5")]["use_restriction"])      # trained XAUUSD M5, H 12
+        r = svc.latest[("granite_ttm", "XAUUSD", "M15")]["use_restriction"]
+        self.assertEqual(r["code"], "CHECKPOINT_SCOPE")
+        self.assertIn("M15", r["reason"])
+        self.assertIsNone(svc.latest[("chronos2", "XAUUSD", "M15")]["use_restriction"])
+        svc.settings.update({"horizon_bars": {"M5": 20}})                       # horizon above the trained one (I0844)
+        svc.refresh("granite_ttm", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertEqual(svc.latest[("granite_ttm", "XAUUSD", "M5")]["use_restriction"]["code"], "CHECKPOINT_SCOPE")
+
+    def test_required_is_not_confirmed_assist_and_quant_unchanged(self):
+        from masterquo.tsfm import predictions as TP
+        svc = self._svc()
+        self.assertEqual(svc.latest[("granite_ttm", "XAUUSD", "M15")]["direction"], "UP")
+        self.approve("granite_ttm", "ACTIVE", "M15")
+        rows = [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:granite_ttm"]
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("REQUIRED", "STALE")])         # before: READY -> BUY passed
+        self.assertEqual(self.ev(rows, "BUY")[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:granite_ttm"])
+        self.approve("granite_ttm", "SCALPING", "M15")
+        ctx = TP.context(svc, "granite_ttm", "XAUUSD", "SCALPING", side="BUY")
+        self.assertEqual((ctx["available"], ctx["state"]), (False, "CHECKPOINT_SCOPE"))
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "WAIT")
+        self.approve("granite_ttm", "HEDGING", "M5")                                                # in scope: unchanged
+        ctx = TP.context(svc, "granite_ttm", "XAUUSD", "HEDGING", side="BUY")
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "READY")
+        self.assertTrue(svc.set_use("granite_ttm", "ACTIVE", "ASSIST", timeframe="M15", confirm=True)["ok"])
+        rows = [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:granite_ttm"]
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("ASSIST", "READY")])
+        self.assertEqual(self.ev(rows, "SELL")[1], ["MODEL_ASSIST_HOLD:tsfm:granite_ttm"])          # holds exactly as before
+        row = next(r for r in TP.contract_predictions(svc, "XAUUSD") if r["model_id"] == "tsfm:granite_ttm" and r["timeframe"] == "M15")
+        self.assertEqual(row["state"], "READY")                                                    # Quant FEAT-2 inputs unchanged
+        self.assertEqual(row["use_restriction"]["code"], "CHECKPOINT_SCOPE")
+
+
 # ======================================================================================================== I0835 approval per instrument
 @unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
 class TestI0835ApprovalRequiresInstrumentReport(_Svc):

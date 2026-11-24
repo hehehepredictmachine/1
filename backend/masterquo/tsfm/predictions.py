@@ -66,7 +66,20 @@ def _result(fc: dict) -> dict:
     return out
 
 
-def contract_predictions(svc, inst: str) -> list[dict]:
+def _restriction(fc: dict | None) -> dict | None:
+    """1.46: TsfmService.use_restriction of the forecast - it may only HOLD an entry (ASSIST / REQUIRED contrary), never CONFIRM a REQUIRED
+    role (I0834 / I0844 checkpoint out of its training scope)."""
+    return (fc or {}).get("use_restriction") or None
+
+
+# restrictions under which the contract row (Quant FEAT-2 inputs, model hub, presentation) stays UNAVAILABLE - exactly as during the
+# failure the restricted forecast replaced; the decision rows (coordinator_rows / context) still use it for holds only
+UNAVAILABLE_IN_CONTRACT: tuple[str, ...] = ()
+
+
+def contract_predictions(svc, inst: str, *, decisions: bool = False) -> list[dict]:
+    """Contract rows of every model / TF. `decisions=True` (coordinator_rows): a restricted forecast is READY with `use_restriction` (the
+    roles then use it for holds only); otherwise a restriction listed in UNAVAILABLE_IN_CONTRACT gives state STALE with its reason."""
     if svc is None:
         return []
     s = svc.settings.get()
@@ -79,6 +92,9 @@ def contract_predictions(svc, inst: str) -> list[dict]:
             if not c.enabled:
                 state, why = "DISABLED", f"{NAMES[mid]} wyłączony w ustawieniach"
             fc = svc.latest.get(k)
+            rx = _restriction(fc) if state == "READY" else None
+            if rx and rx.get("code") in UNAVAILABLE_IN_CONTRACT and not decisions:
+                state, why = "STALE", rx.get("reason")
             from tsfm_runtime import lock as L
             pin = L.model(mid)
             common = dict(instrument=inst, symbol=(fc or {}).get("symbol") or svc.target_view(k).get("symbol"), timeframe=tf, model_name=NAMES[mid],
@@ -92,6 +108,8 @@ def contract_predictions(svc, inst: str) -> list[dict]:
                 out.append(C.make(**common, state=state, unavailable_reason=why or state))
                 continue
             base_extra = common.pop("extra")
+            if rx:
+                base_extra["use_restriction"] = rx
             out.append(C.make(**common, state="READY", data_time=fc["last_bar_close_utc"], compute_ms=fc["compute_ms"], run_id=fc["id"],
                               data_quality={"OK": "OK", "DEGRADED": "DEGRADED"}.get(fc["quality"]["status"], fc["quality"]["status"]),
                               data_kind="SYNTHETIC" if fc["data_kind"] == "SYNTHETIC" else "REAL", available_at=fc["data_available_at"],
@@ -147,7 +165,7 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
     if svc is None:
         return []
     s = svc.settings.get()
-    preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst)}
+    preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst, decisions=True)}
     out = []
     for mid, c in s.models.items():
         u = c.use["ACTIVE"]
@@ -169,6 +187,10 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
                 use, note = "SHADOW", f"ASSIST nieaktywny – dopuszczenie nieaktualne ({why})"
             elif not ok:
                 p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"dopuszczenie REQUIRED nieaktualne ({why})"}
+        rx = p.get("use_restriction") if p.get("state") == "READY" else None
+        if use == "REQUIRED" and rx:
+            # 1.46 (I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed); ASSIST / OBSERVE rows keep it
+            p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"REQUIRED niepotwierdzony: {rx.get('reason')}"[:300]}
         out.append({**p, "family": f"tsfm:{mid}", "use": use if use != "OBSERVE" else "SHADOW", "max_age_s": TF_AGE(u.timeframe, s),
                     "unavailable_reason": p.get("unavailable_reason") or note})
     return out
@@ -228,6 +250,10 @@ def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None)
             else:
                 state, why = "STALE_APPROVAL", f"dopuszczenie REQUIRED nieaktualne ({aw}) – powtórz walidację albo przełącz na OBSERVE"
     fc = svc.latest.get(k) if state == "READY" else None
+    rx = _restriction(fc)
+    if use == "REQUIRED" and rx:
+        # 1.46 (I0834 / I0844): the restricted forecast may hold (ASSIST) but never CONFIRMS a REQUIRED condition -> READY -> WAIT
+        state, why, fc = rx.get("code") or "RESTRICTED", rx.get("reason"), None
     d = fc["direction"] if fc else None
     rel = "BRAK"
     if d and side in ("BUY", "SELL"):
