@@ -16,6 +16,7 @@ import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import _env  # noqa: F401
 from _env import TempData
@@ -268,6 +269,49 @@ class TestI0660ThDirectionName(unittest.TestCase):
             if mid != "TH_BASELINE":
                 self.assertIn(mid.removeprefix("TH_"), name, mid)
         self.assertIn("bazowy", name)
+
+
+# ================================================================================================ legacy replay SH (I0055) / kontekst (I0861)
+class TestI0055ReplaySnapshotCfg(unittest.TestCase):
+    def test_replay_uses_the_configured_age_limits(self):
+        from masterquo.sh import config as C
+        from masterquo.sh import replay as RP
+        from test_sh_pack import all_tfs, series
+        td = TempData()
+        self.addCleanup(td.close)
+        bars = all_tfs(series(n=1300))
+        seen = []
+
+        def fake_snapshot(w, q, **kw):
+            seen.append(kw.get("cfg"))
+            return {"data": {"status": "OK"}}
+        market = RP.Market({k: bars[k] for k in ("M1", "M5", "M15", "H1")}, spread_fallback=0.2)
+        prof = {"SCALPING": {"_instrument": {"max_spread_usd": 0.5}}}
+        with mock.patch.object(RP.CX, "snapshot", fake_snapshot), mock.patch.object(RP.SU, "evaluate", lambda *a, **k: {"status": "WAIT"}):
+            next(RP.scan(market, _spec(), prof))
+        risk = C.load()["risk"]
+        self.assertEqual(seen[0]["max_bar_age_s"], risk["max_bar_age_s"])
+        self.assertEqual(seen[0]["max_quote_age_s"], risk["max_quote_age_s"])
+        self.assertEqual(seen[0]["max_spread_usd"], 0.5)
+
+
+class TestI0861QuoteWithoutTime(unittest.TestCase):
+    def test_quote_without_time_is_blocked(self):
+        from masterquo.sh import context as CX
+        cfg = {"max_bar_age_s": {}, "max_quote_age_s": 5.0}
+        for q in ({"bid": 1.0, "ask": 1.1}, {"bid": 1.0, "ask": 1.1, "time": 0}, {"bid": 1.0, "ask": 1.1, "time": "x"}):
+            r = CX.data_quality({}, q, 1_760_000_000.0, cfg)
+            self.assertEqual(r["status"], "BLOCK", q)
+            self.assertIsNone(r["quote_age_s"])
+            self.assertIn("brak znacznika czasu notowania", r["issues"])
+        r = CX.data_quality({}, {"bid": 1.0, "ask": 1.1, "time": 1_760_000_000.0 - 1.0}, 1_760_000_000.0, cfg)
+        self.assertEqual((r["status"], r["quote_age_s"]), ("OK", 1.0))
+
+
+# ================================================================================================ pakiet SH (engine / policies)
+def _spec():
+    from masterquo.sh.units import SymbolSpec
+    return SymbolSpec("XAUUSD-", 0.01, 1.0, 100, 0.01, 0.01, 50, 2, "USD", point=0.01)
 
 if __name__ == "__main__":
     unittest.main()
