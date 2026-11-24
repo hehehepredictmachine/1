@@ -145,7 +145,9 @@ ROWS: list[dict] = [
      "io": "wyniki modułów → dziennik", "deps": "sqlite", "platform": "Python", "files": "lab/edge.py::RepaintInspector", "integration": "LabService, Dane i diagnostyka",
      "implementation_status": "verified", "availability": "available", "decision_role": "research", "evidence": f"{T}::TestEdge.test_repaint", "limits": "nie dowodzi braku repaintingu"},
     {"id": "M40", "element": "Edge Drift Detector", "source": "R34", "function": "CUSUM wyników netto vs wcześniej ustalona średnia, opóźnienie etykiet, OK/WARNING/DEGRADED",
-     "io": "wyniki → stan", "deps": "numpy", "platform": "Python", "files": "lab/edge.py::edge_drift", "integration": "Badania i walidacja",
+     "io": "wyniki → stan", "deps": "numpy", "platform": "Python", "files": "lab/edge.py::edge_drift",
+     # 1.46: no runtime caller (only the models-check smoke) - the row named an integration that does not exist
+     "integration": "NOT_INTEGRATED – funkcja biblioteczna, brak wywołania w runtime (monitoring dryfu edge nie jest uruchamiany)",
      "implementation_status": "verified", "availability": "missing_data", "decision_role": "research", "evidence": f"{T}::TestEdge", "limits": "wymaga dojrzałych wyników"},
     {"id": "M41", "element": "Edge or Luck / bootstrap", "source": "R35", "function": "bootstrap blokowy średniej (zależne transakcje)",
      "io": "R → CI", "deps": "numpy", "platform": "Python", "files": "lab/edge.py::block_bootstrap_mean", "integration": "protokół (kryteria promocji), Badania",
