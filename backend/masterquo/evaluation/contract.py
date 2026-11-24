@@ -196,6 +196,13 @@ def from_active_row(row: dict, *, symbol: str, instrument: str, quote: dict | No
         score=rec.get("setup_score"), source_ref={"tracker_setup_id": row["setup_id"], "event_id": rec.get("event_id")})
 
 
+def _sh_data_quality(su: dict) -> dict:
+    item = next((x for x in su.get("checklist") or [] if isinstance(x, dict) and x.get("id") == "data"), None)
+    if item is not None and item.get("status") == "FAIL":
+        return {"status": "INVALID", "data_as_of": None, "reasons": [str(item.get("detail") or "dane SH odrzucone")[:200]]}
+    return {"status": "OK", "data_as_of": None, "reasons": []}
+
+
 def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
     """SCALPING / HEDGING setup (status READY carries levels) -> candidate. Weights = the strategy's partial shares."""
     side = {"BUY": "LONG", "SELL": "SHORT"}.get(su.get("side"), su.get("side"))
@@ -214,7 +221,10 @@ def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
         market_regime={"state": (regime or {}).get("state"), "source": "sh.context (RegimeMachine v2)"},
         features={"net_rr": su.get("net_rr"), "mode": su.get("mode"), "model_mode": su.get("model_mode")},
         features_as_of=float(su.get("created_at") or 0.0),
-        data_quality={"status": "OK" if su.get("status") == "READY" else str(su.get("status")), "data_as_of": None, "reasons": []},
+        # 1.46 arch (I0052): data quality, not the setup status - a WAIT setup got "DATA_WAIT" (a data reason that does not concern the
+        # data); the setup status stays in `stage`. The SH data check is the setup's checklist item 'data' (sh/setup.py, FAIL -> INVALID
+        # in the modelhub.contract.DQ vocabulary); a READY setup had passed it - OK exactly as before.
+        data_quality=_sh_data_quality(su),
         execution_context={"spread": (su.get("costs") or {}).get("spread"), "cost_price": (su.get("costs") or {}).get("round_trip_price"),
                            "commission_known": (su.get("costs") or {}).get("commission_known"), "quote_age_s": None},
         score=(su.get("score") or {}).get("value"),
