@@ -541,6 +541,10 @@ class EngineService:
                "history": [{k: h.get(k) for k in ("setup_id", "created_at", "strategy_id", "profile", "direction", "state", "terminal_reason")} for h in hist if h],
                "lessons": lessons, "volatility": self.volatility(), "auto": self.active.status(compact=True) if self.cfg_store.get().active.profile == "ACTIVE" else None,
                "structure_fn": self.structure, "setup_row_fn": self.active.tracker.get,
+               # 1.46 arch (I0756, neutral variant): the view and the newest SI snapshot id AT this evaluation; the tools return them as
+               # the frozen view next to the newer data (after_as_of + NEWER_DATA_AVAILABLE) - nothing newer is withheld from the agent
+               "structure_as_of_fn": (lambda tf, _v=self.active.view: EngineService._structure_for(self, _v, tf)),
+               "si_as_of_id": (getattr(getattr(self, "si", None), "last", None) or {}).get("snapshot_id"),
                "indicator_context": self._indicator_context(full), "liquidity_context": self._liquidity_context(full),
                "structure_snapshot_fn": self._structure_snapshot, "master_models_fn": getattr(self, "mm_provider", None),
                "pmw_indicators": self._pmw_indicators(), "svp": self._svp_view()}
@@ -552,14 +556,24 @@ class EngineService:
                 self.contexts.popitem(last=False)
 
     def _pmw_indicators(self) -> dict | None:
-        """PMW-IND-1 snapshot frozen with the agent context (full results incl. DXY relation; the agent never recomputes)."""
+        """PMW-IND-1 snapshot frozen with the agent context (full results incl. DXY relation; the agent never recomputes).
+        1.46 arch (I0186): a COPY marked with the snapshot freshness (IndicatorService.freshness - the rule compact() applies for the
+        panel; the snapshot is refreshed only on a new closed M1 bar, so after a weekend / break it was READY for hours). The stored
+        snapshot is never mutated; a failed freshness check marks the copy STALE (FRESHNESS_ERROR) instead of dropping it."""
         ind = getattr(self, "indicators_provider", None)
         if ind is None:
             return None
         try:
-            return ind.current()
+            s = ind.current()
         except Exception:  # noqa: BLE001
             return None
+        if not isinstance(s, dict):
+            return s
+        try:
+            st, why, age = ind.freshness(s)
+        except Exception:  # noqa: BLE001 - the snapshot stays, marked as not fresh
+            st, why, age = "STALE", "FRESHNESS_ERROR", None
+        return dict(s, snapshot_status=st, snapshot_status_reason=why, snapshot_age_s=round(age, 1) if age is not None else None)
 
     def _svp_view(self) -> dict | None:
         """Latest stored SVP snapshots of the user's profiles + active zones (MANUAL / ALGORITHM / AI), frozen with the agent context."""
@@ -690,9 +704,13 @@ class EngineService:
         """Market structure for charts / agent / setup pages (read-only, from the SAME MarketView the last scan used):
         S/R zones (H1/H4/H8/D1 + W1/MN1 aggregated from D1), the frozen M5 range with M1 local zones, chart and candle
         patterns of `tf` with their states, confirmed pivots with the time they became known, and the walls snapshot."""
+        return EngineService._structure_for(self, self.active.view, tf)
+
+    def _structure_for(self, view, tf: str) -> dict:
+        """structure() of a GIVEN MarketView (1.46 arch, I0756: the agent context keeps the view of its evaluation; structure() = the
+        latest scan). Same computation and the same single-entry cache key (tf, view.as_of) as before."""
         from ..analysis import candles as CN, chart_patterns as CH, levels as LV, range_m5 as RG
-        from ..strategies import indicators as ind
-        view = self.active.view
+        from ..indicators import series as ind
         if view is None:
             return {"status": "NO_SCAN_YET", "tf": tf}
         cfg = self.cfg_store.get()
