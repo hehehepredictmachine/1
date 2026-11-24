@@ -92,7 +92,8 @@ def rules(rt, inst: str) -> list[dict]:
     res = {k: v for k, v in res.items() if v}
     out.append(_p(canonical_id="rule:structure_v2", instrument=inst, timeframe="M5", model_name="rule:structure_v2", task_type="STATE", task="STRUCTURE_V2",
                   horizon_bars=None, unit="state", state="READY" if res else "BLOCKED_DATA", result=res or None, data_time=dt,
-                  unavailable_reason=None if res else "struktura w rozgrzewaniu / błąd", source="sh.context", extra={"analytic_role": "CONTEXT_FEATURE"}))
+                  unavailable_reason=None if res else "struktura w rozgrzewaniu / błąd", source="sh.context",
+                  extra={"analytic_role": "CONTEXT_STATE"}))         # 1.46 arch (I0570): no feature is built from this STATE record
     news = getattr(rt, "news", None)
     if news is not None:
         try:
@@ -155,7 +156,8 @@ def analysis(rt, inst: str) -> list[dict]:
             body = clean({k: cp.get(k) for k in ("avwap", "semivar", "spread", "profile", "microstructure")}) or None
             out.append(_p(canonical_id="analysis:indicators", instrument=inst, timeframe="M1", model_name="analysis:indicators", task_type="STATE",
                           task="INDICATORS_PMW_IND_1", horizon_bars=None, unit="mixed", state="READY" if body else "BLOCKED_DATA", result=body, data_time=as_of,
-                          unavailable_reason=None if body else "migawka bez wartości", source="indicators", extra={"analytic_role": "CONTEXT_FEATURE"}))
+                          unavailable_reason=None if body else "migawka bez wartości", source="indicators",
+                          extra={"analytic_role": "CONTEXT_STATE"}))   # 1.46 arch (I0189): no feature is built from this STATE record
             dx = clean(cp.get("dxy"))
             out.append(_p(canonical_id="analysis:dxy_correlation", instrument=inst, timeframe="H1", model_name="analysis:dxy_correlation", task_type="STATE",
                           task="XAU_DXY_RELATION_H1", horizon_bars=None, unit="mixed", state="READY" if dx else "BLOCKED_DATA", result=dx or None, data_time=as_of,
@@ -176,7 +178,8 @@ def analysis(rt, inst: str) -> list[dict]:
             out.append(_p(canonical_id="analysis:zones", instrument=inst, timeframe="M5", model_name="analysis:zones", task_type="STATE", task="ZONE_MAP_SUMMARY",
                           horizon_bars=None, unit="state", state="READY" if ok else "BLOCKED_DATA", result=summ if ok else None,
                           data_time=(zm or {}).get("as_of") or (zm or {}).get("map_as_of"), source="zones",
-                          unavailable_reason=None if ok else "brak bieżącej mapy stref (lub mapa odtworzona – STALE)", extra={"analytic_role": "CONTEXT_FEATURE"}))
+                          unavailable_reason=None if ok else "brak bieżącej mapy stref (lub mapa odtworzona – STALE)",
+                          extra={"analytic_role": "CONTEXT_STATE"}))   # 1.46 arch (I0596): quant/features.py does not map zones
         except Exception as exc:  # noqa: BLE001
             out.append(_err("analysis:zones", inst, "M5", "STATE", "ZONE_MAP_SUMMARY", "state", exc))
     mc = getattr(rt, "montecarlo", None)
@@ -200,6 +203,7 @@ def analysis(rt, inst: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------------------------------------------- MM (read the MM loop cache)
+MM_UNITS = {"mm:align_mean": "mixed"}        # 1.46 arch (I0378): <TF>_dist_points / _dist_pct / _dist_atr (quant/inventory.py: unit 'mixed')
 def mm(rt, inst: str) -> list[dict]:
     svc = getattr(rt, "mm", None)
     if svc is None:
@@ -210,7 +214,8 @@ def mm(rt, inst: str) -> list[dict]:
     if not v or v.get("status") != "OK":
         why = (v or {}).get("reason") or "pętla MM nie policzyła jeszcze zamkniętej świecy M5 dla instrumentu"
         return [_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type="REGRESSION" if cid.endswith("gpr_logret") else "STATE",
-                   task=cid.split(":")[1].upper(), horizon_bars=3 if cid.endswith("gpr_logret") else None, unit="log_return" if cid.endswith("gpr_logret") else "state",
+                   task=cid.split(":")[1].upper(), horizon_bars=3 if cid.endswith("gpr_logret") else None,
+                   unit="log_return" if cid.endswith("gpr_logret") else MM_UNITS.get(cid, "state"),
                    state="BLOCKED_DATA", unavailable_reason=why[:200]) for cid in ids]
     dt = iso_ts(float(v["last_closed_m5"]))
     av = iso_ts(float(v["last_closed_m5"]) + 300)
@@ -221,9 +226,13 @@ def mm(rt, inst: str) -> list[dict]:
         ok = bool(res)
         if tt == "FILTER_STATE" and ok and not isinstance(res.get("state"), str):
             ok = False
-        out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type=tt, task=task, horizon_bars=None, unit="state",
+        # 1.46 arch (I0378 / I0379): the unit / role of the inventory row - a STATE record gives no MetaModel column (quant/features.py builds
+        # st:<cid>:aligned from FILTER_STATE only), so it is CONTEXT_STATE; align_mean holds points / % / ATR distances -> 'mixed'
+        role = "CONTEXT_FEATURE" if tt == "FILTER_STATE" else "CONTEXT_STATE"
+        out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type=tt, task=task, horizon_bars=None,
+                      unit=MM_UNITS.get(cid, "state"),
                       state="READY" if ok else "BLOCKED_DATA", result=res if ok else None, data_time=dt, available_at=av, data_kind=kind, source="mm.service",
-                      unavailable_reason=None if ok else why_missing, extra={"analytic_role": "CONTEXT_FEATURE"}))
+                      unavailable_reason=None if ok else why_missing, extra={"analytic_role": role}))
     try:
         k = v.get("kalman") or {}
         st("mm:kalman_cross", "KALMAN_CROSS_STATE", "FILTER_STATE", clean({k2: k.get(k2) for k2 in ("state", "fast", "slow", "K_fast", "K_slow", "events_in_window")}),
@@ -426,7 +435,8 @@ def lab(rt, inst: str) -> list[dict]:
         asset = inst
     st = (getattr(lb, "state", {}) or {}).get(asset) or (getattr(lb, "state", {}) or {}).get(inst)
     if not st:
-        return [_p(canonical_id="lab:models", instrument=inst, timeframe="M5", model_name="lab:models", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
+        # 1.46 arch (I0011): the placeholder id is the inventory group row group:lab ('lab:models' was in no registry); never READY
+        return [_p(canonical_id="group:lab", instrument=inst, timeframe="M5", model_name="group:lab", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
                    horizon_bars=None, unit="ratio", state="BLOCKED_DATA", unavailable_reason="pętla lab nie policzyła jeszcze instrumentu")]
     out = []
     for m in st.get("models") or []:
@@ -449,7 +459,7 @@ def lab(rt, inst: str) -> list[dict]:
                           unavailable_reason=f"{m.get('status')}: {m.get('reason') or ''}"[:200]))
     if not out:
         md = st.get("model") or {}
-        out.append(_p(canonical_id="lab:models", instrument=inst, timeframe="M5", model_name="lab:models", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
+        out.append(_p(canonical_id="group:lab", instrument=inst, timeframe="M5", model_name="group:lab", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
                       horizon_bars=None, unit="ratio", state="NOT_TRAINED" if md.get("status") == "no_model" else "BLOCKED_DATA",
                       unavailable_reason=str(md.get("reason") or md.get("status") or "brak modeli lab")[:200]))
     return out

@@ -60,10 +60,15 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "context_ind:context_move_m5": ("context_move", "CONTEXT_MOVE_M5_V1"),
     "agent:claude": ("agent",),
 }
-# rows that name a GROUP of producers (never a producer themselves)
+# rows that name a GROUP of producers (never a producer themselves). Written out here (this module stays import-free: the decision path
+# imports it) and pinned to the source lists by tests/test_arch146_w2_quant_inventory.py: th_direction = trainhub/learn.MODELS,
+# lab = lab/protocol.FAMILIES + EXPERIMENTS (1.46 arch I0270: the experiments are saved in the ALL mode of `training lab-offline`, run by
+# LabService and published by quant.adapters.lab like the families), si_move = lab/structure_nets.FAMILIES + lab/si_families.FAMILIES.
+# GROUPS is metadata of quant/inventory.py only - resolve() / canonical() / the Quant feature names never read it.
 GROUPS: dict[str, tuple[str, ...]] = {
     "th_direction": ("trainhub:TH_BASELINE", "trainhub:TH_LOGREG", "trainhub:TH_HGB", "trainhub:TH_XGB", "trainhub:TH_RF", "trainhub:TH_SVM"),
-    "lab": ("lab:DUMMY", "lab:RULE", "lab:LOGREG", "lab:TREE", "lab:MINIROCKET", "lab:XGB", "lab:RESNET1D", "lab:SEW_SNN"),
+    "lab": ("lab:DUMMY", "lab:RULE", "lab:LOGREG", "lab:TREE", "lab:MINIROCKET", "lab:XGB", "lab:RESNET1D", "lab:SEW_SNN",
+            "lab:LOGREG_PCA", "lab:LOGREG_GMM_AUG", "lab:LOGREG_NEUTRALIZED"),
     "si_move": ("si:MQ_RESNEXT1D_V2", "si:MQ_SEW_RESNET1D_V2", "si:MQ_SEW_RESNEXT_EB_V1", "si:MQ_MINIROCKET_RIDGE_V2", "si:MQ_SPIKE_BRAIN_FINANCE_V1"),
 }
 FAMILY_OWNED = ("TS_ARIMA", "TS_SARIMAX", "VOL_GARCH", "MICROSTRUCTURE", "PAIR_COINT", "STATARB", "KALMAN_LS", "BREAKOUT", "SEQ_LSTM", "SEQ_GRU",
@@ -71,9 +76,16 @@ FAMILY_OWNED = ("TS_ARIMA", "TS_SARIMAX", "VOL_GARCH", "MICROSTRUCTURE", "PAIR_C
 RULES = ("data_quality", "risk_engine", "news", "regime_v2", "structure_v2", "smc_pullback", "vamd", "fractal", "atr_vol", "candles_patterns",
          "liquidity", "flow_sr", "decomposition")
 
+# 1.46 arch (I0274): what a Structure Intelligence family really does live (the rows said "raport SI na żądanie panelu" - wrong)
+SI_LIVE = ("prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> "
+           "lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / "
+           "si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)")
+
 # 1.46 arch: producers present in the code but absent from every model registry until 1.46 (found by the model inventory of the
 # architecture task). Metadata only: they get a row in quant/inventory.py and in `models check`; resolve() / canonical() / dedup()
-# DO NOT see them (adding them there could rename Quant feature columns - quant/features.py names columns after the canonical id).
+# DO NOT see them (adding them there could rename Quant feature columns - quant/features.py names columns after the canonical id). The
+# prefix rule of resolve() returns an already prefixed name unchanged (lab: / si: / flow: / quant: ...) - no record that reaches the Quant
+# features carries such a name in a field canonical() reads instead of its explicit canonical_id (1.46 arch I0529: 'quant' added).
 # cid -> (name, category, env, files, quant role, adapter or None, reason when there is no adapter / note)
 EXTRA_PRODUCERS: dict[str, tuple] = {
     "tsfm:tirex2": ("TiRex-2 (TSFM, prognoza ceny M5/M15)", "MODEL_PRETRAINED", ".venv_tirex2", ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
@@ -84,9 +96,9 @@ EXTRA_PRODUCERS: dict[str, tuple] = {
     "flow:markov3": ("Markov3 / Markov-diff flow (MQ_MARKOV3_FLOW_V1)", "MODEL_TRAINED", ".venv", ["backend/masterquo/lab/flow_context/markov.py"],
                      "CONTEXT_FEATURE", None, "liczony w komórkach Structure Intelligence (panel) – bez adaptera Quant"),
     "si:LOGREG": ("Structure Intelligence LOGREG (FAMILIES_ALL)", "MODEL_TRAINED", ".venv", ["backend/masterquo/lab/structure_task.py"],
-                  "BASE_FORECAST", None, "rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji"),
+                  "BASE_FORECAST", None, "rodzina bazowa SI – " + SI_LIVE),
     "si:XGB": ("Structure Intelligence XGB (FAMILIES_ALL)", "MODEL_TRAINED", ".venv", ["backend/masterquo/lab/structure_task.py"],
-               "BASE_FORECAST", None, "rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji"),
+               "BASE_FORECAST", None, "rodzina bazowa SI – " + SI_LIVE),
     "quotes:MQ_NEWTONIAN_QUOTES_V2": ("QuoteEngine (kinematyka notowań)", "RULE_OR_MEASUREMENT", ".venv", ["backend/masterquo/lab/quotes.py"],
                                       "CONTEXT_FEATURE", None, "wątek si-quotes – stan panelu SI, bez adaptera Quant"),
     "lab:M29_fourier": ("Lab M29 Fourier (prognoza archiwizowana)", "RULE_OR_MEASUREMENT", ".venv", ["backend/masterquo/lab/service.py"],
@@ -158,6 +170,9 @@ for _f in FAMILY_OWNED:
 for _r in RULES:
     _ALIAS_TO[_r] = _ALIAS_TO[f"rule:{_r}"] = f"rule:{_r}"
 _TH_KEY = re.compile(r"^(TH_[A-Z]+)_(M\d+|H\d+|D1)_H\d+$")        # trainhub model_key  TH_LOGREG_M5_H6
+# owners whose 'owner:name' ids resolve to themselves (1.46 arch I0529: + 'quant' - quant:metamodel / quant:tabicl_v2 were 'unresolved:';
+# no prediction record of all_predictions / quant.adapters is named 'quant:*', the MetaModel entry of the coordinator is read by family)
+PREFIXES = ("trainhub", "mm", "family", "rule", "lab", "si", "flow", "forecast", "kronos", "tsfm", "scalp", "sh", "ml", "quant")
 
 
 def resolve(name: str | None) -> str | None:
@@ -171,7 +186,7 @@ def resolve(name: str | None) -> str | None:
         return f"trainhub:{m.group(1)}"
     if n.startswith("gold_candles_"):
         return "forecast:gold_candles"
-    if ":" in n and n.split(":")[0] in ("trainhub", "mm", "family", "rule", "lab", "si", "flow", "forecast", "kronos", "tsfm", "scalp", "sh", "ml"):
+    if ":" in n and n.split(":")[0] in PREFIXES:
         return n
     return None
 
@@ -212,3 +227,4 @@ def dedup(preds: list[dict]) -> tuple[list[dict], list[dict]]:
 
 def aliases_of(cid: str) -> list[str]:
     return sorted({a for a, c in _ALIAS_TO.items() if c == cid and a != cid})
+
