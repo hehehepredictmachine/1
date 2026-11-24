@@ -160,9 +160,11 @@ class AgentConfig(_Strict):
     ai_wait_seconds: float = Field(60.0, ge=0, le=900)
     decision_ttl_seconds: int = Field(900, ge=60, le=86400)
     use_refusal_fallback: bool = True
-    # Price table for *estimates* only (USD per 1M tokens), cached 2026-10-06.
+    # Price table for *estimates* only (USD per 1M tokens), cached 2026-10-06; claude-fable-5-2 (successor of 5-1) added 2026-11 (arch146 D13).
+    # A saved config.json keeps its own whole table (_deep_merge does not merge it) - the agent falls back to these defaults for a model
+    # missing from the saved table (agent/service.py _cost), so a new model is priced without rewriting the user's file.
     price_per_mtok: dict[str, tuple[float, float]] = Field(default_factory=lambda: {
-        "claude-fable-5-1": (10.0, 50.0), "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0),
+        "claude-fable-5-2": (8.0, 40.0), "claude-fable-5-1": (10.0, 50.0), "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0),
         "claude-sonnet-5-5": (2.0, 10.0), "claude-sonnet-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50),
     })
 
@@ -229,7 +231,14 @@ class ExecutionConfig(_Strict):
     # 1.39 (user decision): the bot STARTS in this mode on every launch (None = restore the last stored mode). With live_autobind, AUTO_LIVE
     # binds itself to the account the terminal reports as REAL when no account is confirmed yet (instead of typing "LIVE <login>"); a
     # DIFFERENT account later still blocks sending until re-confirmed. STOP, risk limits, spread, dedup and reconciliation stay active.
-    start_mode: OperatingMode | None = "AUTO_LIVE"
+    # arch146 D1 (decision (b), owner's principle 1): the start condition in runtime.py is never true (the MT5 factory is always set
+    # before it), so start_mode is NOT applied - the engine starts in the stored execution.mode. Deliberately left as is (applying it
+    # would start in AUTO_LIVE and bind a REAL account); the value is kept for config compatibility and the mode status reports
+    # start_mode_effective = NOT_APPLIED with the reason (execution/modes.py).
+    start_mode: OperatingMode | None = Field("AUTO_LIVE", description=(
+        "NIE jest stosowany przy starcie (arch146 D1): silnik startuje w ostatnio zapisanym trybie execution.mode; warunek startu w "
+        "runtime.py jest nieaktywny i celowo zostaje bez zmian. Wartość zachowana dla zgodności config.json; stan widoczny w statusie "
+        "trybu (start_mode_effective = NOT_APPLIED)."))
     live_autobind: bool = True
     # 1.20 (decision O1): ONE execution path opens new entries per instrument - ACTIVE (S01-S12) or SH (SCALPING/HEDGING);
     # the other path only analyses (as SIGNALS). Missing/UNSET = neither opens new entries until the user chooses. Open
