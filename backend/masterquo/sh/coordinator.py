@@ -61,7 +61,8 @@ def arbitrate(ready: list[dict], *, open_plans: list[dict], foreign_positions: i
     def key(s):
         cl = (s.get("pack") or {}).get("cluster")
         return (pri.index(s["strategy"]) if s["strategy"] in pri else 99, 0 if not s.get("strategy_id") else 1,
-                CLUSTER_PRIORITY.index(cl) if cl in CLUSTER_PRIORITY else 99, -float(s.get("net_rr") or 0.0), str(s.get("strategy_id") or ""),
+                CLUSTER_PRIORITY.index(cl) if cl in CLUSTER_PRIORITY else 99,
+                -float((s.get("rank_rr") if s.get("rank_rr") is not None else s.get("net_rr")) or 0.0), str(s.get("strategy_id") or ""),
                 str(s.get("signal_id")))
     cands.sort(key=key)
     for i, s in enumerate(cands):

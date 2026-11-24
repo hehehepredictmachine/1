@@ -464,7 +464,10 @@ class SHService:
                 status, reason = "INVALIDATED", "cena minęła TP1 planu koszyka przed wejściem – brak pogoni"
         spread = float((q or {}).get("spread") or 0.0)
         R = abs(entry - sl)
-        rr = round(abs(tg[0] - entry) / R, 3) if R > 0 else None
+        rr = round(abs(tg[0] - entry) / R, 3) if R > 0 else None          # gross RR of TP1 alone (before w2: shown as net_rr)
+        from .pack import solver as SV
+        # w2 (I0862): net RR of the plan as in the pack - both targets 50 / 50, cost = spread (economics.c_round_trip) on win and loss
+        net = round(SV.rr_plan_net(abs(tg[0] - entry), abs(tg[1] - entry), R, spread, spread, 0.5, 0.5), 3) if R > 0 else None
         mins = round(int(pl.get("timeout_bars") or 8) * {"M1": 1, "M3": 3, "M5": 5, "M15": 15, "M30": 30, "H1": 60}.get(sg.get("tf"), 5), 1)
         meta = BCAT.BY_ID.get(sg.get("strategy_id")) or {}
         sid = "SH-BK" + hashlib.sha256(str(sg["signal_id"]).encode()).hexdigest()[:20]
@@ -478,7 +481,9 @@ class SHService:
                 "tps": [{"name": "TP1", "price": tg[0], "share": 0.5}, {"name": "TP2", "price": tg[1], "share": 0.5}], "shares": [0.5, 0.5],
                 "horizon_minutes": mins, "position_max_minutes": mins, "be": None, "model_mode": "OGRANICZONA", "mode": "PACK",
                 "costs": {"round_trip_price": spread, "commission_known": False, "note": "koszt do sizingu = spread (prowizja wg ustawień instrumentu)"},
-                "net_rr": rr, "entry_zone": [entry, entry],
+                "net_rr": net, "gross_rr_tp1": rr, "entry_zone": [entry, entry],
+                # coordinator order key = the former value: a lower, true net RR would let another candidate enter instead (new entry)
+                "rank_rr": rr,
                 "basket": {"signal_id": sg["signal_id"], "basket_id": sg.get("basket_id"), "event_id": sg.get("event_id"), "tf": sg.get("tf")},
                 "pack": {"contract": "PMW-PLAN-2", "strategy_id": sg.get("strategy_id"), "name": meta.get("name") or sg.get("strategy_id"), "family": "SCALPING",
                          "cluster": sg.get("basket_id"), "setup_group_id": sg.get("event_id"), "signal_tf": sg.get("tf"), "context_tfs": meta.get("context_timeframes") or [],
