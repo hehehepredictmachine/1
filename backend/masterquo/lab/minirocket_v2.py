@@ -568,7 +568,8 @@ class NativeResultImporter:
 
 def write_result(path: Path, seq: int, model_sha: str, symbol: str, tf: str, bar_time_utc: int, computed_at_utc: int, clock_basis: str,
                  scores: np.ndarray) -> None:
-    """Python writer of the same binary record the MQL5 indicator writes (fixtures/tests)."""
+    """Python writer of the same binary record the MQL5 indicator writes (fixtures/tests). `bar_time_utc` is on the clock named by
+    `clock_basis` (the indicator: BROKER_WALL_TIME) and `tf` is the real chart period (the importer rejects anything but its own tf)."""
     s = np.ascontiguousarray(scores, dtype="<f8").ravel()
     body = (RESULT_MAGIC + struct.pack("<IQqq", 1, seq, bar_time_utc, computed_at_utc) + bytes.fromhex(model_sha)
             + symbol.encode()[:32].ljust(32, b"\0") + tf.encode()[:8].ljust(8, b"\0") + clock_basis.encode()[:24].ljust(24, b"\0")
@@ -605,8 +606,13 @@ def parse_result(raw: bytes) -> dict:
     sc = np.frombuffer(body, dtype="<f8", count=n, offset=o)
     if not np.isfinite(sc).all():
         raise MRError("RESULT_NON_FINITE")
-    return {"seq": seq, "bar_time_utc": bt, "computed_at_utc": ct, "model_sha256": sha, "symbol": sym, "tf": tf, "clock_basis": cb,
-            "scores": sc.tolist()}
+    # 1.46 arch (I0482): the key "bar_time_utc" stays (API contract), but the value is on the clock named by clock_basis - the MQL5
+    # indicator writes broker wall time (BROKER_WALL_TIME), so the record also carries it under an explicit alias
+    out = {"seq": seq, "bar_time_utc": bt, "computed_at_utc": ct, "model_sha256": sha, "symbol": sym, "tf": tf, "clock_basis": cb,
+           "scores": sc.tolist()}
+    if cb == "BROKER_WALL_TIME":
+        out["bar_time_broker"] = bt
+    return out
 
 
 # ===================================================================== benchmark
