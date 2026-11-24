@@ -38,13 +38,13 @@ log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
 FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
 
 
 def _default_prices() -> dict:
     """The default price table of AgentConfig (config.py is the single source of the prices)."""
     from ..config import AgentConfig
     return AgentConfig.model_fields["price_per_mtok"].default_factory()
-MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
 
 
 def load_prompt() -> tuple[str, str]:
@@ -130,7 +130,8 @@ class ClaudeAgent:
                 "spent_today_usd_estimate": round(self.spent_today(), 4), "daily_budget_usd": self.cfg.daily_budget_usd,
                 "required_for_entry": self.policy() == "REQUIRED", "gate_policy": self.policy(), "pending": list(self.pending.values()),
                 "backoff_seconds": max(0, round(self.backoff_until - time.monotonic(), 1)), "last_run": self.last_run_meta,
-                "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura."}
+                "cost_note": "Koszt to szacunek, nie faktura: z cennika w konfiguracji, a dla modeli spoza niej z domyślnego cennika "
+                             "programu (stan 2026-11)."}
 
     # ------------------------------------------------------------ scheduling (thread-safe entry points)
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:

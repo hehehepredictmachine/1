@@ -133,6 +133,13 @@ class TestAgentFable52Pricing(unittest.TestCase):
         self.assertEqual(rec.calls[-1][0], "messages")
         self.assertNotIn("fallbacks", rec.calls[-1][1])
 
+    def test_status_cost_note_names_default_price_table(self):
+        # przegląd D13: cena może pochodzić z domyślnej tabeli programu (stan 2026-11), nie tylko z konfiguracji (stan 2026-10-06)
+        note = self._agent().status()["cost_note"]
+        self.assertIn("domyślnego cennika", note)
+        self.assertIn("2026-11", note)
+        self.assertNotIn("2026-10-06", note)
+
     def test_every_fallback_model_is_priced(self):
         from masterquo.agent import service as AS
         from masterquo.config import AgentConfig
