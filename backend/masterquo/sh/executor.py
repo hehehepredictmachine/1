@@ -17,6 +17,34 @@ from types import SimpleNamespace
 OK_CODES = (10008, 10009, 10010)
 
 
+class TerminalDataUnavailable(RuntimeError):
+    """The terminal answered None (error) to a positions / deals query - 'no data' is NOT 'no positions': nothing may be settled on it."""
+
+
+def _listed(m, ps, total=None):
+    """MT5 list query result (runs on the terminal thread): a tuple, or None = error. None counts as an empty list only when the terminal
+    reports success (last_error 1) or, for positions, positions_total() == 0; otherwise a ("UNAVAILABLE", error) marker."""
+    if ps is not None:
+        return ps
+    try:
+        err = m.last_error() if hasattr(m, "last_error") else None
+    except Exception:  # noqa: BLE001 - unknown error state = unavailable
+        err = None
+    if isinstance(err, (tuple, list)) and err and err[0] == 1:
+        return ()
+    try:
+        none_open = total is not None and total() == 0
+    except Exception:  # noqa: BLE001 - unknown count = unavailable
+        none_open = False
+    return () if none_open else ("UNAVAILABLE", err)
+
+
+def _rows(res):
+    if isinstance(res, tuple) and len(res) == 2 and res[0] == "UNAVAILABLE":
+        raise TerminalDataUnavailable(f"MT5 zwrócił None ({res[1]})")
+    return res
+
+
 class SHExecutor:
     def __init__(self, store, *, terminal=None, account_key: str | None = None, magic: int = 41082100, comment_prefix: str = "SH",
                  deviation_points: int = 30, is_demo=lambda: True, is_live=lambda: False, live_check=None, symbol_info=None, log=None):
@@ -119,16 +147,25 @@ class SHExecutor:
         fm = int(self.symbol_info.get("filling_mode") or 0)
         return m.ORDER_FILLING_FOK if fm & 1 else (m.ORDER_FILLING_IOC if fm & 2 else m.ORDER_FILLING_RETURN)
 
-    def _result(self, r, req_volume: float) -> dict:
+    def _result(self, r, req_volume: float, deal: bool = True) -> dict:
+        """deal = TRADE_ACTION_DEAL (open / close): an OK retcode without an executed volume is UNKNOWN (the position may have changed -
+        reconciliation decides), never DONE; DONE only for an SL/TP modification (deal=False)."""
         if r is None:
             return {"status": "UNKNOWN", "reason": "ORDER_SEND_NONE"}
         rc = getattr(r, "retcode", None)
         if rc in OK_CODES and (getattr(r, "volume", 0) or 0) > 0:
             part = rc == 10010 or r.volume < req_volume - 1e-9
             return {"status": "PARTIAL" if part else "FILLED", "price": r.price, "volume": r.volume, "deal": r.deal, "order": r.order, "retcode": rc}
+        if rc in OK_CODES and deal:
+            return {"status": "UNKNOWN", "reason": "OK_BEZ_WOLUMENU", "retcode": rc}
         if rc in OK_CODES:                                                              # SLTP modification
             return {"status": "DONE", "retcode": rc}
         return {"status": "REJECTED", "retcode": rc, "reason": str(getattr(r, "comment", ""))}
+
+    def rest_cancelled(self) -> bool:
+        """The unfilled rest of a partially filled DEAL is cancelled by the terminal (FOK / IOC filling; PAPER fills completely): only
+        then may the rest of a partial close be requested again. RETURN filling may keep the rest working - no second request."""
+        return self.terminal is None or bool(int(self.symbol_info.get("filling_mode") or 0) & 3)
 
     def _mt5_open(self, plan, action, tag) -> dict:
         sym = plan["symbol"]
@@ -164,8 +201,10 @@ class SHExecutor:
         if not own or own["plan_id"] != plan["plan_id"]:
             return {"status": "REJECTED", "reason": "POZYCJA_NIE_NALEŻY_DO_PLANU"}
 
+        modify = action["kind"] in ("MODIFY_SL", "MODIFY_TP")
+
         def go(m):
-            if action["kind"] in ("MODIFY_SL", "MODIFY_TP"):
+            if modify:
                 p = (m.positions_get(ticket=ticket) or [None])[0]
                 if p is None:
                     return SimpleNamespace(retcode=-1, comment="POSITION_NOT_FOUND", volume=0)
@@ -180,20 +219,24 @@ class SHExecutor:
                                  "deviation": self.deviation, "magic": self.magic,
                                  "comment": self.comment(plan["plan_id"], action["action_id"].split(":")[-1]),
                                  "type_time": m.ORDER_TIME_GTC, "type_filling": self._filling(m)})
-        return self._result(self.terminal(go), float(action.get("volume") or 0))
+        return self._result(self.terminal(go), float(action.get("volume") or 0), deal=not modify)
 
     # ------------------------------------------------------------------ restart reconciliation
     def terminal_positions(self, symbol: str) -> list[dict]:
+        """Open positions of the symbol. Raises TerminalDataUnavailable when the terminal answers None without reporting success
+        (an error is not 'no positions' - a plan must never be settled as closed on it)."""
         if self.terminal is None:
             return []
-        ps = self.terminal(lambda m: m.positions_get(symbol=symbol)) or ()
+        ps = _rows(self.terminal(lambda m: _listed(m, m.positions_get(symbol=symbol), getattr(m, "positions_total", None))))
         return [{"ticket": int(p.ticket), "magic": int(p.magic), "volume": float(p.volume), "type": int(p.type), "price_open": float(p.price_open),
                  "sl": float(p.sl or 0), "tp": float(p.tp or 0), "comment": str(p.comment)} for p in ps]
 
     def closing_deals(self, ticket: int) -> list[dict]:
+        """Closing deals of a position: DEAL_ENTRY_OUT (1), INOUT (2, reversal) and OUT_BY (3, 'Close By' of the primary with the hedge on a
+        hedging account) - OUT only made a Close By look like 'no deal'. Raises TerminalDataUnavailable on a None without success."""
         if self.terminal is None:
             return []
-        ds = self.terminal(lambda m: m.history_deals_get(position=int(ticket))) or ()
+        ds = _rows(self.terminal(lambda m: _listed(m, m.history_deals_get(position=int(ticket)))))
         return [{"ticket": int(d.ticket), "entry": int(d.entry), "volume": float(d.volume), "price": float(d.price), "time": float(d.time),
-                 "comment": str(d.comment)} for d in ds if int(d.entry) == 1]
+                 "comment": str(d.comment)} for d in ds if int(d.entry) in (1, 2, 3)]
 
