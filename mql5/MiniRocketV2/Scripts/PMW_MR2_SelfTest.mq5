@@ -5,6 +5,10 @@
 //| "PMW_MR2_SELFTEST RESULT=PASS|FAIL".                             |
 //| Fixture: MQL5\Files\PMW\PMW_MR2_FIXTURE.bin exported by          |
 //|   python -m masterquo structure-intelligence minirocket export-fixture |
+//| 1.46 arch: the fixture layout is taken from DILS/CNTS/QUAN        |
+//| (SetLayout; Configure only for an old fixture, I0483) and the     |
+//| native Fit is checked against the Python biases BFIT of the       |
+//| frozen windows FIDX: line NATIVE_FIT_BIAS_PARITY (I0484).         |
 //+------------------------------------------------------------------+
 #property script_show_inputs
 #property strict
@@ -61,22 +65,48 @@ void OnStart()
          int sm = MR2Find(secs, "META"), sx = MR2Find(secs, "XWIN"), sb = MR2Find(secs, "BIAS"), sh = MR2Find(secs, "HITS");
          int L = MR2RdI4(buf, secs[sm].offset), F = MR2RdI4(buf, secs[sm].offset + 4), n = MR2RdI4(buf, secs[sm].offset + 8);
          CMiniRocketV2 mf;
-         mf.Configure(L, 10000, 32);
+         int fdil[], fcnt[]; float fq[];
+         bool carried = MR2ReadLayout(buf, secs, fdil, fcnt, fq);       // 1.46 arch (I0483): the Python layout, never re-guessed
+         if(carried) Check(mf.SetLayout(L, fdil, fcnt, fq) == MR2_OK, "fixture layout carried (DILS/CNTS/QUAN -> SetLayout)");
+         else { Log("INFO fixture without DILS/CNTS/QUAN (old export) - layout recomputed by Configure"); mf.Configure(L, 10000, 32); }
          Check(mf.m_F == F, "fixture layout F");
-         ArrayResize(mf.m_bias, F);
-         for(int i = 0; i < F; i++) mf.m_bias[i] = MR2RdF4(buf, secs[sb].offset + 4 * i);
-         mf.m_fitted = true;
-         int mism = 0, firstRow = -1, firstF = -1;
-         for(int w = 0; w < n; w++)
+         if(mf.m_F == F)
            {
-            float xw[]; ArrayResize(xw, L);
-            for(int t = 0; t < L; t++) xw[t] = MR2RdF4(buf, secs[sx].offset + 4 * (w * L + t));
-            int hits[], den[];
-            mf.Counts(xw, hits, den);
-            for(int f = 0; f < F; f++)
-               if(hits[f] != MR2RdI4(buf, secs[sh].offset + 4 * (w * F + f))) { mism++; if(firstRow < 0) { firstRow = w; firstF = f; } }
+            ArrayResize(mf.m_bias, F);
+            for(int i = 0; i < F; i++) mf.m_bias[i] = MR2RdF4(buf, secs[sb].offset + 4 * i);
+            mf.m_fitted = true;
+            int mism = 0, firstRow = -1, firstF = -1;
+            for(int w = 0; w < n; w++)
+              {
+               float xw[]; ArrayResize(xw, L);
+               for(int t = 0; t < L; t++) xw[t] = MR2RdF4(buf, secs[sx].offset + 4 * (w * L + t));
+               int hits[], den[];
+               mf.Counts(xw, hits, den);
+               for(int f = 0; f < F; f++)
+                  if(hits[f] != MR2RdI4(buf, secs[sh].offset + 4 * (w * F + f))) { mism++; if(firstRow < 0) { firstRow = w; firstF = f; } }
+              }
+            Check(mism == 0, StringFormat("FROZEN_STATE_PARITY hit counts (%d windows): mismatches=%d first=(%d,%d)", n, mism, firstRow, firstF));
+            // 1.46 arch (I0484): native Fit (frozen windows FIDX) against the Python biases BFIT, bit for bit (float equality)
+            int sfi = MR2Find(secs, "FIDX"), sbf = MR2Find(secs, "BFIT");
+            if(sfi < 0 || sbf < 0) Log("SKIP NATIVE_FIT_BIAS_PARITY: fixture without FIDX/BFIT (old export - run export-fixture again)");
+            else
+              {
+               float X[]; ArrayResize(X, n * L);
+               for(int i = 0; i < n * L; i++) X[i] = MR2RdF4(buf, secs[sx].offset + 4 * i);
+               int frozen[]; ArrayResize(frozen, (int)secs[sfi].count);
+               for(int i = 0; i < ArraySize(frozen); i++) frozen[i] = MR2RdI4(buf, secs[sfi].offset + 4 * i);
+               CMiniRocketV2 mfit;
+               if(carried) mfit.SetLayout(L, fdil, fcnt, fq); else mfit.Configure(L, 10000, 32);
+               int fe = mfit.Fit(X, n, 0, frozen);
+               bool shape = (fe == MR2_OK && (int)secs[sbf].count == mfit.m_F);
+               int bm = 0, firstB = -1;
+               if(shape)
+                  for(int f = 0; f < mfit.m_F; f++)
+                     if(mfit.m_bias[f] != MR2RdF4(buf, secs[sbf].offset + 4 * f)) { bm++; if(firstB < 0) firstB = f; }
+               Check(shape && bm == 0, StringFormat("NATIVE_FIT_BIAS_PARITY (frozen FIDX, %d biases): fit=%s mismatches=%d first=%d", mfit.m_F,
+                                                    MR2ErrorText(fe), bm, firstB));
+              }
            }
-         Check(mism == 0, StringFormat("FROZEN_STATE_PARITY hit counts (%d windows): mismatches=%d first=(%d,%d)", n, mism, firstRow, firstF));
         }
      }
    Log(StringFormat("PMW_MR2_SELFTEST RESULT=%s failures=%d build=%d", g_fail == 0 ? "PASS" : "FAIL", g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD)));
