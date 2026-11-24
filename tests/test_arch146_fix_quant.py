@@ -25,6 +25,25 @@ def iso(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).isoformat()
 
 
+# ================================================================================================ D11
+class TestMonteCarloAdapterD11(unittest.TestCase):
+    """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did
+    not say why, the real service state (calibration, runs, errors) invisible. The record stays DISABLED (no snapshot result exists)."""
+
+    def test_record_reports_the_real_service_state(self):
+        from masterquo.quant import adapters as A
+        st = {"version": "PMW-MC-1", "instrument": "XAUUSD", "variant": "GARCH_T", "calibrated": True, "active_calibration": "R1",
+              "validations": [], "synthetic": False, "runs": 3, "last_ms": 120.5, "last_error": None, "note": "..."}
+        rt = SimpleNamespace(montecarlo=SimpleNamespace(status=lambda: st))
+        rec = next(r for r in A.analysis(rt, "XAUUSD") if r["canonical_id"] == "analysis:montecarlo")
+        self.assertEqual(rec["state"], "DISABLED")
+        self.assertIsNone(rec["result"])
+        info = rec.get("service_status") or {}
+        self.assertEqual((info.get("calibrated"), info.get("active_calibration"), info.get("runs"), info.get("variant")), ("TAK", "R1", 3, "GARCH_T"))
+        self.assertIn("na żądanie", rec["unavailable_reason"])
+        self.assertIn("R1", rec["unavailable_reason"])
+
+
 # ================================================================================================ D21 (quant/adapters.py:352 only)
 class TestScalpACalibrationD21(unittest.TestCase):
     """scalp A records were UNCALIBRATED for every run, although the trainer stores a calibrator per horizon and the worker applies it."""

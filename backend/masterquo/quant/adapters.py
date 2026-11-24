@@ -146,16 +146,18 @@ def analysis(rt, inst: str) -> list[dict]:
     mc = getattr(rt, "montecarlo", None)
     if mc is not None:
         try:
+            # 1.46 (D11): MonteCarloService.status() has no 'last' / 'result' (its keys: variant, calibrated, active_calibration, runs,
+            # last_ms, last_error, ...) and compute() keeps no snapshot result - the old read was dead and the reason did not say why. A
+            # simulation exists per plan on request only (one plan's p_tp_first is not a state of the market for every candidate), so the
+            # record stays DISABLED with the real status of the service in `extra`; nothing reaches the meta-model features.
             st = mc.status() or {}
-            last = st.get("last") or st.get("result")
-            ok = isinstance(last, dict) and last.get("status") in ("OK", "READY", "DONE")
+            info = clean({k: st.get(k) for k in ("variant", "calibrated", "active_calibration", "runs", "last_ms", "last_error", "synthetic")}) or {}
+            cal = "kalibracja " + str(st.get("active_calibration")) if st.get("calibrated") else "bez aktywnej kalibracji (wariant BLOCK)"
             out.append(_p(canonical_id="analysis:montecarlo", instrument=inst, timeframe=None, model_name="analysis:montecarlo", task_type="STATE",
-                          task="PATH_SIMULATION_MODEL_SIMULATED", horizon_bars=None, unit="mixed", state="READY" if ok else "DISABLED",
-                          result=clean({k: last.get(k) for k in ("p_tp_first", "p_sl_first", "n_paths", "seed", "horizon_bars", "method")}) if ok else None,
-                          data_time=(last or {}).get("as_of") if ok else None,
-                          unavailable_reason=None if ok else "symulacja uruchamiana na żądanie (brak bieżącego wyniku); wynik MODEL_SIMULATED ≠ skalibrowane p",
-                          source="montecarlo", calibration={"method": None, "status": "UNCALIBRATED"} if ok else None,
-                          extra={"analytic_role": "SIMULATION", "probability_kind": "MODEL_SIMULATED"}))
+                          task="PATH_SIMULATION_MODEL_SIMULATED", horizon_bars=None, unit="mixed", state="DISABLED",
+                          unavailable_reason=f"symulacja liczona na żądanie dla konkretnego planu (panel / API) – brak stanu migawki dla Quant; "
+                                             f"{cal}; wynik MODEL_SIMULATED ≠ skalibrowane p",
+                          source="montecarlo", extra={"analytic_role": "SIMULATION", "probability_kind": "MODEL_SIMULATED", "service_status": info}))
         except Exception as exc:  # noqa: BLE001
             out.append(_err("analysis:montecarlo", inst, None, "STATE", "PATH_SIMULATION_MODEL_SIMULATED", "mixed", exc))
     return out
