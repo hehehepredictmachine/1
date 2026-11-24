@@ -14,7 +14,7 @@ SIGNAL_STATUSES = ("READY", "WAIT", "NO_TRADE", "EXPIRED", "INVALIDATED")
 
 # ---------------------------------------------------------------------------- state machine (de)serialization
 def pos_dump(p: Position) -> dict:
-    d = {k: v for k, v in p.__dict__.items() if k not in ("legs", "seen_events", "issued")}
+    d = {k: v for k, v in p.__dict__.items() if k not in ("legs", "seen_events", "issued", "_sh_retry")}
     d["legs"] = [vars(x) for x in p.legs]
     d["seen_events"], d["issued"] = sorted(p.seen_events), sorted(p.issued)
     return d
@@ -46,11 +46,17 @@ def basket_load(d: dict) -> Basket:
 
 
 def fsm_dump(obj) -> dict:
-    return {"type": "BASKET", "data": basket_dump(obj)} if isinstance(obj, Basket) else {"type": "POSITION", "data": pos_dump(obj)}
+    out = {"type": "BASKET", "data": basket_dump(obj)} if isinstance(obj, Basket) else {"type": "POSITION", "data": pos_dump(obj)}
+    retry = getattr(obj, "_sh_retry", None)
+    if retry:
+        out["retry"] = retry            # w2 (I0739): NOT_SENT actions to send again - outside "data" (older versions ignore the key)
+    return out
 
 
 def fsm_load(d: dict):
-    return basket_load(d["data"]) if d["type"] == "BASKET" else pos_load(d["data"])
+    obj = basket_load(d["data"]) if d["type"] == "BASKET" else pos_load(d["data"])
+    obj._sh_retry = list(d.get("retry") or [])
+    return obj
 
 
 # ---------------------------------------------------------------------------- store
@@ -211,15 +217,17 @@ class SHStore:
     # actions (idempotency) ----------------------------------------------------------------------------------------------
     def claim_action(self, action: dict, now: float | None = None) -> dict:
         """Claim an action id before touching the terminal. Returns {claimed: True} for a new id (or a retry of a REJECTED one),
-        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent (reconciliation decides)."""
+        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent (reconciliation decides).
+        w2 (I0739): a NOT_SENT management action (certainly not sent) may be claimed again like a REJECTED one - never an OPEN_* entry."""
         now = time.time() if now is None else now
         with self.db.tx() as c:
-            r = c.execute("SELECT status, attempts, result FROM sh_actions WHERE action_id=?", (action["action_id"],)).fetchone()
+            r = c.execute("SELECT status, attempts, result, kind FROM sh_actions WHERE action_id=?", (action["action_id"],)).fetchone()
             if r is None:
                 c.execute("INSERT INTO sh_actions(action_id, plan_id, kind, status, request, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
                           (action["action_id"], action.get("plan_id") or action.get("basket_id"), action["kind"], "SENT", dumps(action), now, now))
                 return {"claimed": True, "attempt": 1}
-            if r["status"] == "REJECTED":
+            resend = r["status"] == "REJECTED" or (r["status"] == "NOT_SENT" and not str(r["kind"] or action.get("kind") or "OPEN_").startswith("OPEN_"))
+            if resend:
                 c.execute("UPDATE sh_actions SET status='SENT', attempts=attempts+1, updated_at=? WHERE action_id=?", (now, action["action_id"]))
                 return {"claimed": True, "attempt": r["attempts"] + 1}
             return {"claimed": False, "status": r["status"], "result": json.loads(r["result"]) if r["result"] else None}

@@ -8,6 +8,9 @@ the same account the plan was opened on (the 1.14 Execution Lock is withdrawn, u
 
 Every action is claimed in sh_actions before the terminal is touched (idempotency): a repeated event reuses the stored result,
 an action whose outcome is unknown (timeout) is never resent - reconciliation with the terminal decides.
+w2 (I0739): a MANAGEMENT action (perform: CLOSE_* / MODIFY_*) that certainly did not reach the terminal (the worker refused it
+before submitting, the job was cancelled while queued, no tick before order_send) ends NOT_SENT instead of UNKNOWN - the service may
+send the same action again for a short time. Entries (open(): OPEN_P and OPEN_H) stay UNKNOWN exactly as before.
 Own magic number and comment `SH:<plan>:<leg>` so the legacy position manager never touches SH positions and vice versa.
 """
 from __future__ import annotations
@@ -72,10 +75,11 @@ class SHExecutor:
         """Execute one state-machine action (CLOSE_PARTIAL / CLOSE_RUNNER / CLOSE_PRIMARY / CLOSE_HEDGE / MODIFY_SL / MODIFY_TP)."""
         return self._run(plan, False, action, mode, quote, slippage, now,
                          lambda: self._paper_action(action, quote, side_of_position, slippage),
-                         lambda: self._mt5_action(plan, action, ticket, side_of_position))
+                         lambda: self._mt5_action(plan, action, ticket, side_of_position),
+                         retryable=not str(action.get("kind") or "").startswith("OPEN_"))
 
     # ------------------------------------------------------------------ core
-    def _run(self, plan, entry, action, mode, quote, slippage, now, paper, real) -> dict:
+    def _run(self, plan, entry, action, mode, quote, slippage, now, paper, real, *, retryable: bool = False) -> dict:
         g = self._gate(mode, plan or {}, entry=entry)
         if g:
             return {"status": "BLOCKED", "reason": g}
@@ -86,11 +90,16 @@ class SHExecutor:
             return {"status": "UNKNOWN", "reason": f"akcja {action['action_id']} w stanie {cl['status']} – bez ponownego wysłania"}
         try:
             res = paper() if mode == "PAPER" else real()
-        except TimeoutError:
-            res = {"status": "UNKNOWN", "reason": "TIMEOUT_ORDER_SEND"}
         except Exception as exc:  # noqa: BLE001 - outcome unknown, never retried blindly
-            res = {"status": "UNKNOWN", "reason": f"{type(exc).__name__}: {exc}"[:200]}
-        st = {"FILLED": "DONE", "PARTIAL": "DONE", "DONE": "DONE", "REJECTED": "REJECTED"}.get(res["status"], "UNKNOWN")
+            if retryable and getattr(exc, "not_submitted", False):
+                res = {"status": "NOT_SENT", "reason": f"{type(exc).__name__}: {exc}"[:200]}   # w2 (I0739): certainly not sent
+            elif isinstance(exc, TimeoutError):
+                res = {"status": "UNKNOWN", "reason": "TIMEOUT_ORDER_SEND"}
+            else:
+                res = {"status": "UNKNOWN", "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        if res.get("status") == "NOT_SENT" and not retryable:
+            res = dict(res, status="UNKNOWN")                                  # entries never become re-sendable
+        st = {"FILLED": "DONE", "PARTIAL": "DONE", "DONE": "DONE", "REJECTED": "REJECTED", "NOT_SENT": "NOT_SENT"}.get(res["status"], "UNKNOWN")
         self.store.finish_action(action["action_id"], st, res, now)
         self.store.event(action.get("plan_id") or action.get("basket_id"), "ACTION", {"action": action, "result": res}, now)
         return res
@@ -174,13 +183,18 @@ class SHExecutor:
                 return m.order_send({"action": m.TRADE_ACTION_SLTP, "symbol": sym, "position": int(ticket), "sl": sl, "tp": tp,
                                      "magic": self.magic})
             q = m.symbol_info_tick(sym)
+            if q is None:
+                return SimpleNamespace(not_sent="NO_TICK")             # w2 (I0739): nothing sent (was AttributeError -> UNKNOWN)
             buy = pos_side == "SELL"
             return m.order_send({"action": m.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(action["volume"]), "position": int(ticket),
                                  "type": m.ORDER_TYPE_BUY if buy else m.ORDER_TYPE_SELL, "price": q.ask if buy else q.bid,
                                  "deviation": self.deviation, "magic": self.magic,
                                  "comment": self.comment(plan["plan_id"], action["action_id"].split(":")[-1]),
                                  "type_time": m.ORDER_TIME_GTC, "type_filling": self._filling(m)})
-        return self._result(self.terminal(go), float(action.get("volume") or 0))
+        r = self.terminal(go)
+        if isinstance(getattr(r, "not_sent", None), str):
+            return {"status": "NOT_SENT", "reason": r.not_sent}
+        return self._result(r, float(action.get("volume") or 0))
 
     # ------------------------------------------------------------------ restart reconciliation
     def terminal_positions(self, symbol: str) -> list[dict]:

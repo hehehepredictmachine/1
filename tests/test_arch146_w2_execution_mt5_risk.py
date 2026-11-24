@@ -846,5 +846,229 @@ class TestHedgeLegCountsInSharedCap(unittest.TestCase):
         self.assertTrue(self.reserve()["ok"])                                         # 1 otwarty plan (P1) + nowe wejście = 2
 
 
+# ------------------------------------------------------------------------------------------------ I0739 (SH: błąd przed wysłaniem = NOT_SENT)
+class TestWorkerNotSubmitted(unittest.TestCase):
+    def test_refused_before_submit_is_marked(self):
+        import time as _t
+
+        from masterquo.mt5.worker import MT5Busy, MT5CallTimeout, MT5Worker
+        w = MT5Worker(lambda: SimpleNamespace())
+        w._busy_since = _t.monotonic() - 100                                          # zawieszony job: odmowa przed submit
+        with self.assertRaises(MT5CallTimeout) as cm:
+            w.call(lambda m: 1, timeout=1.0)
+        self.assertTrue(getattr(cm.exception, "not_submitted", False))
+        self.assertTrue(issubclass(MT5Busy, MT5CallTimeout))                          # hierarchia bez zmian
+
+    def test_unavailable_worker_is_marked_and_a_running_job_is_not(self):
+        import time as _t
+
+        from masterquo.mt5.worker import MT5CallTimeout, MT5Worker, MT5WorkerUnavailable
+        def boom():
+            raise ImportError("no MetaTrader5")
+        w = MT5Worker(boom)
+        w.start()
+        try:
+            with self.assertRaises(MT5WorkerUnavailable) as cm:
+                w.call(lambda m: 1, timeout=5.0)
+            self.assertTrue(getattr(cm.exception, "not_submitted", False))
+        finally:
+            w.stop()
+        w2 = MT5Worker(lambda: SimpleNamespace())
+        w2.start()
+        try:
+            with self.assertRaises(MT5CallTimeout) as cm:
+                w2.call(lambda m: _t.sleep(0.5), timeout=0.1)                         # job już wykonywany - mógł dotrzeć do terminala
+            self.assertFalse(getattr(cm.exception, "not_submitted", False))
+        finally:
+            w2.stop()
+
+
+def _not_submitted_exc():
+    from masterquo.mt5.worker import MT5CallTimeout
+    e = MT5CallTimeout("TERMINAL_UNRESPONSIVE")
+    e.not_submitted = True
+    return e
+
+
+class _FakeM:
+    TRADE_ACTION_DEAL, TRADE_ACTION_SLTP, ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TIME_GTC = 1, 6, 0, 1, 0
+    ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
+
+    def __init__(self, tick=True):
+        self.sent = []
+        self.tick = tick
+
+    def symbol_info_tick(self, s):
+        return SimpleNamespace(bid=2000.0, ask=2000.2) if self.tick else None
+
+    def order_check(self, r):
+        return SimpleNamespace(retcode=0)
+
+    def order_send(self, r):
+        self.sent.append(r)
+        return SimpleNamespace(retcode=10009, volume=r["volume"], price=r["price"], deal=0, order=555)
+
+    def positions_get(self, ticket=None, symbol=None):
+        return [SimpleNamespace(sl=1990.0, tp=2010.0)]
+
+
+class TestExecutorNotSent(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.db.database import Database
+        from masterquo.sh.store import SHStore
+        self.db = Database()
+        self.store = SHStore(self.db)
+        self.store.own("srv:1", 77, "PLAN-1", "OPEN_P")
+        self.plan = {"plan_id": "PLAN-1", "symbol": "XAUUSD-", "account_key": "srv:1"}
+        self.m = _FakeM()
+        self.refuse = True
+
+    def tearDown(self):
+        self.td.close()
+
+    def ex(self):
+        from masterquo.sh.executor import SHExecutor
+
+        def terminal(fn):
+            if self.refuse:
+                raise _not_submitted_exc()
+            return fn(self.m)
+        return SHExecutor(self.store, terminal=terminal, account_key="srv:1")
+
+    def perform(self, kind="CLOSE_PARTIAL"):
+        a = {"action_id": f"PLAN-1:{kind}:TP1", "plan_id": "PLAN-1", "kind": kind, "volume": 0.05, "sl": 1999.0}
+        return self.ex().perform(self.plan, a, mode="AUTO_DEMO", quote={"bid": 2000.0, "ask": 2000.2}, ticket=77, side_of_position="BUY", now=1.0)
+
+    def test_close_not_submitted_is_not_sent_then_sent_again(self):
+        r = self.perform()
+        self.assertEqual(r["status"], "NOT_SENT")                                     # przed: UNKNOWN
+        self.refuse = False
+        r = self.perform()
+        self.assertEqual(r["status"], "FILLED")                                       # przed: UNKNOWN '... bez ponownego wysłania'
+        self.assertEqual(len(self.m.sent), 1)
+
+    def test_no_tick_is_not_sent(self):
+        self.refuse, self.m.tick = False, False
+        self.assertEqual(self.perform()["status"], "NOT_SENT")                        # przed: AttributeError -> UNKNOWN
+        self.assertEqual(self.m.sent, [])
+
+    def test_entries_stay_unknown(self):
+        for role in ("P", "H"):                                                       # strażnik S0: OPEN_P i OPEN_H nigdy NOT_SENT
+            with self.subTest(role=role):
+                ex = self.ex()
+                kw = {"role": role, "side": "BUY", "volume": 0.1, "sl": 1990.0, "tp": 2010.0, "mode": "AUTO_DEMO",
+                      "quote": {"bid": 2000.0, "ask": 2000.2}, "tag": role + "1", "now": 1.0}
+                self.assertEqual(ex.open(self.plan, **kw)["status"], "UNKNOWN")
+                self.refuse = False
+                self.assertEqual(self.ex().open(self.plan, **kw)["status"], "UNKNOWN")   # nigdy ponownie wysłane
+                self.assertEqual(self.m.sent, [])
+                self.refuse = True
+
+    def test_after_submit_timeout_stays_unknown(self):
+        from masterquo.mt5.worker import MT5CallTimeout
+        from masterquo.sh.executor import SHExecutor
+
+        def terminal(fn):
+            raise MT5CallTimeout("MT5_CALL_TIMEOUT")                                  # po submit: mogło dotrzeć
+        a = {"action_id": "PLAN-1:CLOSE_RUNNER:X", "plan_id": "PLAN-1", "kind": "CLOSE_RUNNER", "volume": 0.05}
+        r = SHExecutor(self.store, terminal=terminal, account_key="srv:1").perform(self.plan, a, mode="AUTO_DEMO", quote={}, ticket=77,
+                                                                                    side_of_position="BUY", now=1.0)
+        self.assertEqual(r["status"], "UNKNOWN")
+
+
+class TestServiceNotSentRetry(unittest.TestCase):
+    """Ponowienie akcji NOT_SENT w SHService: ten sam action_id, ograniczone TTL, bez zmiany stanu automatu."""
+
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.db.database import Database
+        from masterquo.sh.lifecycle import Leg, Position
+        from masterquo.sh.service import SHService
+        from masterquo.sh.store import SHStore
+        self.db = Database()
+        self.svc = SHService.__new__(SHService)
+        self.svc.store = SHStore(self.db)
+        self.svc.finish = lambda *a, **k: None
+        self.pos = Position(plan_id="PLAN-1", side="BUY", entry=2000.0, volume=0.1, sl=1990.0,
+                            legs=[Leg("TP1", 2002.0, 0.05), Leg("TP2", 2004.0, 0.03), Leg("TP3", 2006.0, 0.02)])
+        self.row = {"plan_id": "PLAN-1", "exec_mode": "AUTO_DEMO", "primary_ticket": 77, "plan": {"instrument_profile": {}}}
+        self.results = []
+        self.calls = []
+
+    def tearDown(self):
+        self.td.close()
+
+    def perform(self, plan, a, **kw):
+        self.calls.append(a["action_id"])
+        return self.results.pop(0)
+
+    def run_tick(self, acts, now):
+        ex = SimpleNamespace(perform=self.perform)
+        acts = self.svc._retry_acts(self.row, self.pos, now) + acts
+        self.svc.process(ex, self.row, self.pos, acts, None, {"bid": 2003.0, "ask": 2003.2}, now)
+
+    def test_partial_retried_then_back_to_pending_after_ttl(self):
+        acts = self.pos.on_quote(2002.5, 2002.7)                                      # TP1 przekroczony -> CLOSE_PARTIAL
+        self.results = [{"status": "NOT_SENT", "reason": "x"}]
+        self.run_tick(acts, 100.0)
+        self.assertEqual(self.pos.legs[0].status, "REQUESTED")                        # bez zmiany stanu automatu
+        self.results = [{"status": "NOT_SENT", "reason": "x"}]
+        self.run_tick([], 120.0)
+        self.assertEqual(self.calls, ["PLAN-1:CLOSE_PARTIAL:TP1"] * 2)                # ten sam action_id
+        from masterquo.sh.store import fsm_dump, fsm_load
+        d = fsm_dump(self.pos)
+        self.assertIn("retry", d)
+        self.assertNotIn("_sh_retry", d["data"])                                      # dane automatu bez nowego pola
+        self.assertEqual(len(fsm_load(d)._sh_retry), 1)                               # przetrwa restart
+        self.run_tick([], 200.0)                                                      # po TTL: brak wysyłki, noga -> PENDING
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(self.pos.legs[0].status, "PENDING")
+        self.assertEqual(self.pos._sh_retry, [])
+
+    def test_retried_failure_changes_nothing(self):
+        a = {"action_id": "PLAN-1:MODIFY_SL:BE1", "plan_id": "PLAN-1", "kind": "MODIFY_SL", "sl": 2000.0}
+        self.pos.be_status = "REQUESTED"
+        self.results = [{"status": "NOT_SENT"}]
+        self.run_tick([a], 100.0)
+        self.results = [{"status": "REJECTED", "reason": "INVALID_STOPS"}]
+        self.run_tick([], 110.0)
+        self.assertEqual(self.pos.be_status, "REQUESTED")                             # bez BE_FALLBACK na ścieżce ponowienia
+        self.assertEqual(self.pos._sh_retry, [])
+        self.assertNotIn("PLAN-1:CLOSE_RUNNER:BE_FALLBACK", self.pos.issued)
+
+    def test_retried_success_feeds_the_state_machine(self):
+        acts = self.pos.on_quote(2002.5, 2002.7)
+        self.results = [{"status": "NOT_SENT"}, {"status": "FILLED", "volume": 0.05, "price": 2002.4}]
+        self.run_tick(acts, 100.0)
+        self.run_tick([], 105.0)
+        self.assertEqual(self.pos.legs[0].status, "DONE")
+        self.assertEqual(self.pos.state, "TP1_DONE")
+
+    def basket(self, state, hedge_status):
+        from masterquo.sh.hedge_fsm import Basket, HedgeConfig, Leg2
+        b = Basket("PLAN-1", self.pos, HedgeConfig(trigger_adverse_usd=1.0), 100.0, 0.0, state=state,
+                   hedge=Leg2(side="SELL", volume=0.05, entry=2000.0, opened_at=0.0, status=hedge_status), activations=1)
+        return b
+
+    def test_unwind_back_to_evaluation_and_exit_never_rolled_back(self):
+        b = self.basket("UNWINDING", "CLOSING")
+        aid = "PLAN-1:CLOSE_HEDGE:1"
+        b.issued.add(aid)
+        b._sh_retry = [{"action": {"action_id": aid, "basket_id": "PLAN-1", "kind": "CLOSE_HEDGE", "volume": 0.05}, "first_at": 0.0}]
+        self.assertEqual(self.svc._retry_acts(self.row, b, 100.0), [])                # po TTL: bez ślepej wysyłki
+        self.assertEqual((b.state, b.hedge.status), ("HEDGED", "OPEN"))              # ocena od nowa (noga hedge nadal otwarta)
+        self.assertNotIn(aid, b.issued)
+        x = self.basket("EXIT_PENDING", "CLOSING")
+        x._sh_retry = [{"action": {"action_id": "PLAN-1:CLOSE_PRIMARY:EXIT", "basket_id": "PLAN-1", "kind": "CLOSE_PRIMARY", "volume": 0.1},
+                        "first_at": 0.0}]
+        self.svc.store.claim_action({"action_id": "PLAN-1:CLOSE_PRIMARY:EXIT", "plan_id": "PLAN-1", "kind": "CLOSE_PRIMARY"}, 0.0)
+        self.svc.store.finish_action("PLAN-1:CLOSE_PRIMARY:EXIT", "NOT_SENT", {"status": "NOT_SENT"}, 0.0)
+        self.svc._retry_acts(self.row, x, 100.0)
+        self.assertEqual(x.state, "EXIT_PENDING")                                     # bez cofnięcia EXIT_PENDING -> HEDGED/PRIMARY_OPEN
+        cl = self.svc.store.claim_action({"action_id": "PLAN-1:CLOSE_PRIMARY:EXIT", "plan_id": "PLAN-1", "kind": "CLOSE_PRIMARY"}, 101.0)
+        self.assertFalse(cl["claimed"])                                               # po TTL nie jest już wysyłana ponownie
+
+
 if __name__ == "__main__":
     unittest.main()
