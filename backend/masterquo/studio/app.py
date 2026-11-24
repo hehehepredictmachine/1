@@ -264,10 +264,30 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
     return app
 
 
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
+
+
 def serve(port: int | None = None) -> int:
     import uvicorn
     s = S.load()
     p = int(port or s["port"])
-    print(f"[{DISPLAY_NAME}] http://127.0.0.1:{p}/  (dane: {S.data_dir()})", flush=True)
+    sd = S.data_dir()
+    # 1.46 (I0105): the bot's modules imported here (trainhub.registry, families.Store, ...) write to paths.data_dir() =
+    # MASTERQUO_DATA_DIR. create_app only set it with setdefault, so a manual `python -m masterquo studio` in a shell where it pointed
+    # at the BOT's data wrote Studio registries / logs into the bot's folder. The CLI entry now forces the Studio data dir; a Studio
+    # data dir that IS the bot's data dir is refused (Studio must never share the bot's registries).
+    if _same_dir(sd, S.bot_data_dir(s)):
+        print(f"[{DISPLAY_NAME}] BŁĄD: katalog danych Studio ({sd}) jest katalogiem danych bota – ustaw osobny MQ_STUDIO_DATA_DIR",
+              flush=True)
+        return 2
+    prev = os.environ.get("MASTERQUO_DATA_DIR")
+    if prev and not _same_dir(Path(prev), sd):
+        print(f"[{DISPLAY_NAME}] uwaga: MASTERQUO_DATA_DIR={prev} zastąpione katalogiem danych Studio {sd}", flush=True)
+    os.environ["MASTERQUO_DATA_DIR"] = str(sd)
+    print(f"[{DISPLAY_NAME}] http://127.0.0.1:{p}/  (dane: {sd})", flush=True)
     uvicorn.run(create_app(), host="127.0.0.1", port=p, log_level="warning")
     return 0
