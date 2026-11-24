@@ -774,9 +774,13 @@ class EngineService:
         if view.symbol != cfg.mt5.symbol:
             return {"status": "NO_SCAN_YET", "tf": tf, "symbol": cfg.mt5.symbol, "view_symbol": view.symbol}
         key = (tf, view.as_of)
+        # 1.46 arch (I0756, review): a few entries (an immutable tuple, replaced in one assignment) - the agent asks for the view of its
+        # evaluation and the latest scan in turn (and the chart for several TFs); a single entry was evicted by each of them
         cache = getattr(self, "_structure_cache", None)
-        if cache and cache[0] == key:
-            return cache[1]
+        entries = cache if isinstance(cache, tuple) and all(isinstance(e, tuple) and len(e) == 2 for e in cache) else ()
+        for k, v in entries:
+            if k == key:
+                return v
         out = {"status": "OK", "tf": tf, "as_of": view.as_of, "symbol": view.symbol, "synthetic": view.synthetic,
                "walls": {k: v for k, v in ((view.context or {}).get("walls") or {}).items() if not k.startswith("_")}}
         try:
@@ -797,7 +801,7 @@ class EngineService:
             out["pivots"] = [{"kind": x["kind"], "t": v.t[x["index"]], "price": x["price"],
                               "known_at": iso(parse_iso(v.t[x["confirmed_index"]]) + timedelta(seconds=sec))}
                              for x in ind.pivots(v.h, v.l, 3, 3)[-40:]]
-        self._structure_cache = (key, out)
+        self._structure_cache = (((key, out),) + tuple(e for e in entries if e[0] != key))[:4]
         return out
 
     def mark_entered(self, setup_id: str, reason: str) -> None:

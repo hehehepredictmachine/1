@@ -229,9 +229,10 @@ class Toolbox:
         newer = main is frozen and latest is not None and (latest.get("status") != "OK" or latest.get("as_of") != main.get("as_of"))
         out["NEWER_DATA_AVAILABLE"] = bool(newer)
         if newer:
-            out["after_as_of"] = (dict(self._walls_body(latest), view="LATEST_SCAN", view_as_of=latest.get("as_of"),
-                                       note="skan nowszy niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji")
-                                  if latest.get("status") == "OK" else {"status": latest.get("status"), "view": "LATEST_SCAN"})
+            # first in the answer (review): Toolbox.run truncates the text at its end - the newest state is never the part cut off
+            out = {"after_as_of": (dict(self._walls_body(latest), view="LATEST_SCAN", view_as_of=latest.get("as_of"),
+                                        note="skan nowszy niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji")
+                                   if latest.get("status") == "OK" else {"status": latest.get("status"), "view": "LATEST_SCAN"}), **out}
         setup = self.ctx.get("setup") or {}
         row = self.ctx.get("setup_row_fn")(setup["setup_id"]) if (setup.get("setup_id") and self.ctx.get("setup_row_fn")) else None
         if row and (row.get("record") or {}).get("strategy_id") == "S12":
@@ -332,9 +333,10 @@ class Toolbox:
             cur = fn("latest")
             newer = bool(cur) and cur.get("snapshot_id") != snap.get("snapshot_id")
             out["view"], out["NEWER_DATA_AVAILABLE"] = "AS_OF_EVALUATION", newer
-            if newer:
-                out["after_as_of"] = {"snapshot_id": cur.get("snapshot_id"), "as_of": cur.get("as_of"), "computed_at": cur.get("computed_at"),
-                                      "cells": self._si_cells(cur), "note": "migawka nowsza niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji"}
+            if newer:                                                # first in the answer: never the part truncated by Toolbox.run
+                out = {"after_as_of": {"snapshot_id": cur.get("snapshot_id"), "as_of": cur.get("as_of"), "computed_at": cur.get("computed_at"),
+                                       "cells": self._si_cells(cur), "note": "migawka nowsza niż chwila oceny (stan rynku teraz) – uwzględnij przy decyzji"},
+                       **out}
         elif self._after_as_of(snap.get("as_of")):
             out["NEWER_DATA_AVAILABLE"] = True                       # an explicit id newer than the evaluation: shown, labelled
             out["snapshot_after_as_of"] = True

@@ -403,6 +403,48 @@ class TestI0756FrozenViewNothingWithheld(unittest.TestCase):
         self.assertEqual(ctx["si_as_of_id"], "SIS-1")
 
 
+class TestI0756ReviewCacheAndOrder(unittest.TestCase):
+    """Review I0756: the frozen and the latest view evicted each other from the single-entry structure cache; after_as_of was the
+    last block of the answer, so Toolbox.run (truncation at 60000 characters) would cut the newest state first."""
+
+    def test_newest_block_is_first_in_the_answer(self):
+        from masterquo.agent import tools as AT
+        ctx = {"as_of": "2026-11-24T10:00:00+00:00", "structure_fn": lambda tf: _st("2026-11-24T10:02:00+00:00", "WS-NEW"),
+               "structure_as_of_fn": lambda tf: _st("2026-11-24T10:00:00+00:00", "WS-OLD")}
+        d = json.loads(AT.Toolbox(ctx, 3).run("get_walls_and_patterns", {"timeframe": "M5"})[0])
+        self.assertEqual(next(iter(d)), "after_as_of")
+        self.assertEqual((d["after_as_of"]["walls"]["snapshot_id"], d["walls"]["snapshot_id"]), ("WS-NEW", "WS-OLD"))   # content unchanged
+        snaps = {"SIS-A": {"snapshot_id": "SIS-A", "as_of": "2026-11-24T10:00:00+00:00", "cells": {}},
+                 "SIS-B": {"snapshot_id": "SIS-B", "as_of": "2026-11-24T10:05:00+00:00", "cells": {}}}
+        fn = lambda sid: snaps["SIS-B"] if sid == "latest" else snaps.get(sid)
+        si = json.loads(AT.Toolbox({"as_of": "2026-11-24T10:00:30+00:00", "structure_snapshot_fn": fn, "si_as_of_id": "SIS-A"}, 3)
+                        .run("get_structure_intelligence", {"snapshot_id": "latest"})[0])
+        self.assertEqual(next(iter(si)), "after_as_of")
+        self.assertEqual((si["after_as_of"]["snapshot_id"], si["view"]), ("SIS-B", "AS_OF_EVALUATION"))
+
+    def test_frozen_and_latest_views_share_the_cache(self):
+        from unittest import mock
+
+        from masterquo.analysis import levels as LV
+        from masterquo.config import AppConfig
+        from masterquo.engine.service import EngineService
+        cfg = AppConfig()
+        v1 = SimpleNamespace(symbol=cfg.mt5.symbol, as_of="2026-11-24T10:00:00+00:00", synthetic=True, context={"walls": {"id": 1}}, tfs={})
+        v2 = SimpleNamespace(symbol=cfg.mt5.symbol, as_of="2026-11-24T10:01:00+00:00", synthetic=True, context={"walls": {"id": 2}}, tfs={})
+        fake = SimpleNamespace(cfg_store=SimpleNamespace(get=lambda: cfg), bridge=SimpleNamespace(bars=lambda tf: [], symbol_info={}),
+                               _structure_cache=None)
+        calls = []
+        real = LV.multi_tf
+        with mock.patch.object(LV, "multi_tf", side_effect=lambda *a, **k: calls.append(1) or real(*a, **k)):
+            outs = [EngineService._structure_for(fake, v, "M5") for v in (v1, v2, v1, v2, v1)]
+        self.assertEqual(len(calls), 2)                                              # before: 5 (each view evicted the other)
+        self.assertEqual([o["walls"]["id"] for o in outs], [1, 2, 1, 2, 1])
+        self.assertIs(outs[0], outs[2])
+        for i, tf in enumerate(("M1", "M15", "H1", "H4", "D1")):                     # bounded: at most 4 entries
+            EngineService._structure_for(fake, v1, tf)
+            self.assertLessEqual(len(fake._structure_cache), 4, i)
+
+
 # ---------------------------------------------------------------------------------------------------------------- I0076 / I0083
 def _imports(path: Path) -> list[str]:
     out = []
