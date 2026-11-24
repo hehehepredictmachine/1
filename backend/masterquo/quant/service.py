@@ -160,14 +160,18 @@ class QuantService:
         mode = str(mode).upper()
         if mode not in MODES:
             return {"ok": False, "reason": f"nieznany tryb {mode}"}
+        act = None
+        if mode == "ASSIST":
+            # 1.46 arch (I0097, review): the MetaModel artifacts are loaded BEFORE taking settings.lock - every settings.get() (Quant loop,
+            # ASSIST reads in the decision path) waits on that lock. Same checks, same order of the two refusals, nothing written on refusal.
+            act = self.validated_active(self.instrument())
+            if not act:
+                return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
+            if not confirm:
+                return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
         with self.settings.lock:                        # 1.46 arch (I0097): read-modify-write never loses a concurrent change
             s = self.settings.get()
             if mode == "ASSIST":
-                act = self.validated_active(self.instrument())
-                if not act:
-                    return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
-                if not confirm:
-                    return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
                 s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
             else:
                 s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}

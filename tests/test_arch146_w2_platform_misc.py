@@ -486,6 +486,40 @@ class TestI0097SettingsStores(_DataDir):
         s = q.settings.get()
         self.assertEqual((s["mode"], s["estimator"]), ("OFF", "legacy_logistic"))   # 1.45: A's stale write lost B's mode change
 
+    def test_assist_artifact_check_runs_outside_the_settings_lock(self):
+        """Review: set_mode called validated_active() (MetaModel artifacts via M.load) under settings.lock - every settings.get() of
+        other threads (Quant loop, ASSIST reads in the decision path) waited for the artifact load."""
+        import threading
+        import time
+
+        from masterquo.quant import service as SV
+        q = SV.QuantService.__new__(SV.QuantService)
+        q.rt, q.clock, q.settings = None, time.time, SV.Settings(self.data / "quant_settings.json")
+        q.instrument = lambda: "XAUUSD"
+        seen = []
+
+        def probe():                                                                # another thread tries the lock meanwhile
+            ok = q.settings.lock.acquire(timeout=0.5)
+            seen.append(ok)
+            if ok:
+                q.settings.lock.release()
+
+        def active(inst):
+            t = threading.Thread(target=probe)
+            t.start()
+            t.join(2)
+            return {"h1": "v1"}
+        q.validated_active = active
+        self.assertEqual(q.set_mode("ASSIST", confirm=True, by="test")["ok"], True)
+        self.assertEqual(seen, [True])                                              # before: [False] (lock held by set_mode)
+        s = q.settings.get()
+        self.assertEqual((s["mode"], s["assist"]["activated"], s["assist"]["models"]), ("ASSIST", True, {"h1": "v1"}))
+        q.validated_active = lambda inst: {}                                        # refusals unchanged, nothing written
+        self.assertFalse(q.set_mode("ASSIST", confirm=True)["ok"])
+        q.validated_active = lambda inst: {"h1": "v1"}
+        self.assertIn("potwierdzenia", q.set_mode("ASSIST", confirm=False)["reason"])
+        self.assertEqual(q.settings.get()["assist"]["activated_by"], "test")
+
 
 # ------------------------------------------------------------------ I0338
 class TestI0338DtRankerStatus(unittest.TestCase):
