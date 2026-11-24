@@ -8,6 +8,15 @@ sources (e.g. the runner exporting into the marketdata Store) is a separate deci
 Fields: version, instrument, symbol, source (MT5_EXPORT_RUN | MARKETDATA_STORE | MT5_LIVE_BRIDGE | ...), location (folder / store), range_utc
 [first, last], sha256 (identity of the exact data: files / rows hash), data_kind (as the source names it: REAL_USER_DATA, REAL, SYNTHETIC,
 SYNTHETIC_TEST, MT5_LIVE_BRIDGE ...), quality {report, status} and optional rows / files. Pure functions over files already on disk.
+
+Coverage of this step (krok 1 - the rest is a separate item, not done here):
+  * runner (`masterquo training run`): the export task and every model task finished on that export carry `dataset_ref` in the RUN STATE
+    (training/runs/<run_id>/state.json) - NOT in the registries / manifests of the single trainers (forecast, scalp, lab, ...); the lineage of
+    such an artifact is reached through its run_id;
+  * trainhub: data_manifest.json of every package (the marketdata Store + quality_report.json; included in the package checksums);
+  * model families: manifest.json of every run (Store / live bot bars / sheet archive / NLP corpus);
+  * NOT covered yet: Legacy ML (snapshot in the bot), Quant (ledger), SDformer (live H1 context), Granite and the per-trainer manifests of the
+    runner tasks.
 """
 from __future__ import annotations
 
