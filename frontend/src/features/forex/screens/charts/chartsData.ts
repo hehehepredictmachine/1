@@ -41,6 +41,20 @@ function useBarCloses(barTick: any, tf: string): number {
   return r.current.st?.n ?? 0;
 }
 
+// 1.46: CZAS SERWERA na wykresie był stałym UTC+2 (renderer nie dostawał vm.serverOff) – teraz zmierzony offset zegara serwera MT5 z odpowiedzi
+// /api/v1/candles (clock z mt5/clock.py), wyłącznie gdy status = VERIFIED; inaczej null (renderer pokazuje UTC z dopiskiem NIEZWERYFIKOWANY)
+export function serverOffVM(cx: any): number | null {
+  const c = cx?.clock;
+  const sec = c?.offset_seconds == null ? NaN : Number(c.offset_seconds);
+  return c?.status === "VERIFIED" && Number.isFinite(sec) ? sec / 3600 : null;
+}
+// 1.46: profile SVP / etykieta binu zakładały tick 0.01 i 2 cyfry – tick_size i digits symbolu silnika (symbol.info ze store; jak svp/service._ctx:
+// trade_tick_size, potem point); brak = null (renderer: „tick 0.01 NIEZWERYFIKOWANY”), nigdy 0
+export function symbolSpecVM(info: any): { tick: number | null; digits: number | null } {
+  const tk = Number(info?.trade_tick_size || info?.point);
+  return { tick: Number.isFinite(tk) && tk > 0 ? tk : null, digits: Number.isInteger(info?.digits) && info.digits >= 0 ? info.digits : null };
+}
+
 /** 1.46: /market-zones/bars (świece BTC) przyjmuje tylko TF stref (400 INVALID_TF dla H1 i wyżej) – to nie jest rozłączenie terminala. */
 const tfUnsupported = (e: any) => e?.status === 400 && /INVALID_TF/.test(String(e?.message || ""));
 
@@ -86,7 +100,10 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
       if (r?.symbol && sel.asset === "BTC") { api.current?.setSymbol("BTC", r.symbol); btcSym.current = r.symbol; }
       const zt = zonesVM(z, sel.tf);                                   // K4: wyłącznie wybrany TF – nic z innego interwału
       const noTf = r?.status === "TIMEFRAME_NOT_SUPPORTED";
-      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, iprof: iprofVM(cx), ...B, zones: zt ? { [sel.tf]: zt } : {},
+      // 1.46: offset serwera (ten sam terminal MT5 dla XAUUSD i BTC) oraz tick / cyfry symbolu silnika – BTC (market-zones/bars) ich nie podaje -> null
+      const spec = symbolSpecVM(sel.asset === "XAUUSD" ? s?.symbol?.info : null);
+      api.current?.setVM({ asset: sel.asset, tf: sel.tf, candles, serverOff: serverOffVM(cx), tick: spec.tick, digits: spec.digits, iprof: iprofVM(cx), ...B,
+        zones: zt ? { [sel.tf]: zt } : {},
         zoneMsg: noTf ? `Świece ${sel.asset} ${sel.tf}: TIMEFRAME_NOT_SUPPORTED – API świec ${sel.asset} (market-zones/bars) obsługuje tylko interwały stref M1–M30. Wybierz M1, M5, M15 albo M30.`
           : zonesMsgVM(z, sel.tf),
         status: candles.length || noTf ? chartStatus(s) : (r?.status === "NO_SYMBOL" ? "offline" : "loading") });

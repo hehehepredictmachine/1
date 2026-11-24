@@ -3,6 +3,7 @@
 // sekcja „Inne rynki” (podgląd rynków starego UI, nie diagnostyka).
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "../../api";
+import { BRAND } from "../../brand";
 import { useStore } from "../../store";
 import { cls, fmtTime } from "../../util";
 
@@ -43,7 +44,8 @@ export default function DiagnosticsPanel() {
       <section data-testid="diag-resources"><h4>ZASOBY – MEMORY GOVERNOR</h4>
         {res ? (<>
           <p className="sys-note">Poziom: <span className={cls("sys-st", res.level === "OK" ? "ok" : res.level === "WARN" ? "warn" : "bad")}>{res.level}</span> {res.level_pl} ·
-            RAM {res.system?.used_pct ?? "—"} % z {res.system?.total_mb != null ? Math.round(res.system.total_mb / 1024) + " GB" : "—"} · procesy PMW {res.pmw_total_mb ?? "—"} MB</p>
+            RAM {res.system?.used_pct ?? "—"} % z {res.system?.total_mb != null ? Math.round(res.system.total_mb / 1024) + " GB" : "—"} · procesy {BRAND} {res.pmw_total_mb ?? "—"} MB</p>
+          {/* 1.46: marka Apollo23 w etykiecie zamiast „PMW” (pole API pmw_total_mb bez zmian) */}
           <div className="sys-row" role="group" aria-label="Profil pamięci">
             {Object.keys(res.profiles || {}).filter((k) => k !== "MANUAL").map((k) => (
               <button key={k} type="button" className={cls("act", res.profile === k && "on")} aria-pressed={res.profile === k} data-testid={"res-prof-" + k}

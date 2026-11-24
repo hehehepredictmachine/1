@@ -30,7 +30,6 @@ export const LEGACY_REDIRECTS: Record<string, { page: Page; params: Record<strin
   // 1.45 (TASK 020): OTC wycofane – stare linki do OTC wracają do menu (bez aktywnego selektora OTC)
   otc: R("menu", { retired: "otc" }), "otc-gold": R("menu", { retired: "otc" }),
 };
-const LAST = "mq.lastHash";
 
 export function parse(hash: string): Route & { redirect?: string } {
   const h = (hash || "").replace(/^#\/?/, "");
@@ -66,9 +65,8 @@ export function useRoute(): Route {
     window.addEventListener("hashchange", h);
     return () => window.removeEventListener("hashchange", h);
   }, []);
-  useEffect(() => {
-    try { if (r.page !== "system") localStorage.setItem(LAST, location.hash); } catch { /* brak pamięci */ }
-  }, [r]);
+  // 1.46: zapis localStorage „mq.lastHash” przy każdej zmianie trasy usunięty – nikt go nie czytał (pozostałość przywracania strony z 1.41);
+  // zapisana już wartość zostaje nietknięta
   return r;
 }
 

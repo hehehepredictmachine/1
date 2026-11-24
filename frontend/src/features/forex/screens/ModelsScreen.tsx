@@ -5,6 +5,7 @@
 // GET /api/v1/montecarlo/validations/{run_id}/report (1.42). Brak raportu -> NOT_RUN. Animacje lewego panelu: klasy REF_B 1:1.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiSend } from "../../../api";
+import { BRAND } from "../../../brand";
 import { ComponentsCards, ResearchModulesPanel, TabICLCard } from "../../../components/Pmw141Panels";
 import { fmt, fmtTime, usePoll } from "../data";
 import type { ScreenProps } from "../ForexScene";
@@ -55,7 +56,8 @@ export default function ModelsScreen({ engine, onSystem }: ScreenProps) {
           <button key={a} type="button" aria-pressed={inst === a} onClick={() => setInst(a)}>{a}</button>)}</div><span className="ch-sep" />
         <div id="mb-tabs" className="segb" role="group" aria-label="Widok">{[["obs", "OBSERWATORIUM"], ["train", "TRENING"], ["bt", "BACKTEST"], ["mc", "MONTE CARLO"]].map(([k, l]) =>
           <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} data-testid={"models-tab-" + k}>{l}</button>)}</div>
-        <button type="button" className="mb-ptc" data-testid="open-training-center" onClick={() => onSystem("training")}>CENTRUM TRENINGOWE PEPE</button>
+        <button type="button" className="mb-ptc" data-testid="open-training-center" onClick={() => onSystem("training")}>
+          {`CENTRUM TRENINGOWE ${BRAND.toUpperCase()}`}</button>{/* 1.46: marka Apollo23 zamiast starej „PEPE” (data-testid i panel „training” bez zmian) */}
         <div className="gates-sum"><span>HISTORIA MT5<b>{data?.timeframes && Object.keys(data.timeframes).length ? Object.keys(data.timeframes).join(" ") + " · " + (data.data_kind ?? "") : "BRAK EKSPORTU"}</b></span>
           <span>WORKER<b>{st.data?.queue?.running ? "PRACUJE" : (st.data?.queue?.queued ?? 0) + " W KOLEJCE"}</b></span><span>AKTYWACJA<b>RĘCZNA</b></span></div>
       </div>

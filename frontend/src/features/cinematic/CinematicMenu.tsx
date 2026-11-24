@@ -13,8 +13,8 @@ const SOUND_KEY = "pmw.intro.sound";
 const soundOn = () => { try { return localStorage.getItem(SOUND_KEY) !== "off"; } catch { return true; } };
 const saveSound = (on: boolean) => { try { localStorage.setItem(SOUND_KEY, on ? "on" : "off"); } catch { /* bez trwałości */ } };
 
+// 1.46: martwy prop ustawień usunięty (App.tsx już go nie przekazuje) – ustawienia otwiera pasek ikon systemowych (SystemIcons)
 type Props = {
-  onSettings?(): void;                                     // nieużywane – ustawienia otwiera pasek ikon systemowych (SystemIcons); App.tsx jeszcze je przekazuje
   onMenuReady?(): void;
   // 1.46: wymagane (App zawsze je przekazuje; zapasowy tekst „etap E2” usunięty). signal = przekazanie FOREX anulowane (POWRÓT, Esc, intro,
   // odmontowanie) – po sprawdzeniu licencji App nie nawiguje, gdy signal.aborted.
