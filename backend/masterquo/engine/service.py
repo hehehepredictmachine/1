@@ -633,6 +633,8 @@ class EngineService:
                 for a_ in ("IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M"):
                     snap = ext.as_of(a_, inst, t) if a_ != "PAL02M" else None
                     sources[a_] = {k: st[a_][k] for k in ("identity_status", "source_status", "mapping_status", "runtime_status")}
+                    if snap and snap.get("confirmed_at"):     # 1.46 arch (I0729): available_at = first read of identical content, confirmed_at = last
+                        sources[a_]["confirmed_at"] = snap["confirmed_at"]
                     if snap:
                         sources[a_].update(snapshot_id=snap["snapshot_id"], available_at=snap["available_at"], levels=snap["levels"][:20],
                                            windows=snap["windows"][:10])

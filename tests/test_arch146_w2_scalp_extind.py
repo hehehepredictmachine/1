@@ -410,6 +410,46 @@ class TestArchiveDeduplication(_ArchiveCase):
         self.assertEqual(self.rows(), 2)                                      # the next read after 30 min: a new row (gap)
 
 
+class TestAgentContextConfirmedAt(_ArchiveCase):
+    """I0729 (review): after the deduplication available_at is the FIRST read of identical content (maybe hours ago) - the agent context
+    and the adapters view also get confirmed_at (the last identical read), the explanation says 'znane od ..., potwierdzone ...'."""
+
+    def test_context_and_adapter_view_carry_confirmed_at(self):
+        from types import SimpleNamespace
+
+        from masterquo.engine.service import EngineService
+        from masterquo.scalp import adapters
+        from masterquo.timeutil import iso, utcnow
+        t0 = utcnow().replace(microsecond=0) - timedelta(seconds=40)
+        for k in range(10):
+            self.ing(t0 + timedelta(seconds=2 * k), seq=k + 1, cap=1_800_000_000 + 2 * k)
+        self.assertEqual(self.rows(), 1)
+        t = t0 + timedelta(seconds=19)
+
+        class Bridge:
+            def bars(self, *a, **kw):
+                return []
+        ctx = EngineService._indicator_context(SimpleNamespace(bridge=Bridge(), extind=self.svc, cfg_store=self.cfg), {"as_of": iso(t)})
+        src = ctx["sources"]["IQ_GOLD_GANN"]
+        snap = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t)
+        self.assertEqual(src["available_at"], snap["available_at"])
+        self.assertEqual(src["confirmed_at"], snap["confirmed_at"])
+        self.assertLess(datetime.fromisoformat(src["available_at"]), datetime.fromisoformat(src["confirmed_at"]))
+        self.assertEqual(src["source_status"], "RECEIVING")
+        self.assertIn(f"znane od {src['available_at']}, potwierdzone {src['confirmed_at']}", ctx["explanation_pl"])
+        row = adapters.extind_snapshot("IQ_GOLD_GANN", "XAUUSD-", self.svc, "XAUUSD", t)
+        self.assertEqual((row["known_at"], row["confirmed_at"]), (snap["available_at"], snap["confirmed_at"]))
+
+    def test_explain_pl_first_and_last_read(self):
+        from masterquo.extind import knowledge as K
+        both = K.explain_pl({"sar": {}, "sources": {"IQ_GOLD_GANN": {"source_status": "RECEIVING", "levels": [1], "available_at": "T0",
+                                                                       "confirmed_at": "T9"}}})
+        self.assertIn("1 poziomów z zatwierdzonego mappingu (znane od T0, potwierdzone T9)", both)
+        same = K.explain_pl({"sar": {}, "sources": {"IQ_GOLD_GANN": {"source_status": "RECEIVING", "levels": [1], "available_at": "T0",
+                                                                       "confirmed_at": "T0"}}})
+        self.assertIn("(odczyt T0)", same)
+
+
 class TestKnowledgeRules(unittest.TestCase):
     """I0182: applied_rules / explain_pl (IND-K01..K12) - regression cover (no defect in the functions)."""
 
