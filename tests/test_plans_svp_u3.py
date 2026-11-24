@@ -1,4 +1,4 @@
-"""1.33 U3 - PMW-PLAN-1 (Pepe Scalp Plan / Pepe Hedge Plan) and PMW-SVP-1 (interactive Session Volume Profile, zones MANUAL /
+"""1.33 U3 - PMW-PLAN-1 (Apollo23 Scalp Plan / Apollo23 Hedge Plan) and PMW-SVP-1 (interactive Session Volume Profile, zones MANUAL /
 ALGORITHM / AI, AI proposal validation, LIVE generation guard). Analytical only - no order path is touched."""
 import asyncio
 import math
@@ -44,7 +44,7 @@ class TestPlanContract(unittest.TestCase):
             else:
                 self.assertTrue(lv["SL"] > lv["ENTRY"] > lv["TP1"] > lv["TP2"])
             self.assertTrue(next(x for x in p["levels"] if x["name"] == "TP3")["optional"])
-            self.assertEqual(p["layer"], "Pepe Scalp Plan")
+            self.assertEqual(p["layer"], "Apollo23 Scalp Plan")
             self.assertEqual(p["levels"][0]["kind"], "PLAN")
 
     def test_wait_without_levels_shows_reason_and_expired(self):
@@ -81,7 +81,7 @@ class TestPlanContract(unittest.TestCase):
     def test_hedge_layer_netting_and_leg(self):
         s = su(strategy="HEDGING")
         net = self.PC.from_setup(s, account_margin_mode="RETAIL_NETTING")
-        self.assertEqual(net["layer"], "Pepe Hedge Plan")
+        self.assertEqual(net["layer"], "Apollo23 Hedge Plan")
         self.assertFalse(net["hedge"]["available"])
         self.assertIn("NETTING", net["hedge"]["reason"])
         row = {"plan_id": "PL-2", "primary_ticket": 5, "state": "HEDGED", "plan": {"profile": {"hedge": {"trigger_fraction_of_sl": 0.5},
