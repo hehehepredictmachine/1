@@ -3870,7 +3870,9 @@ def create_app(rt, port: int) -> FastAPI:
         if req.strategy_id not in _reg.STRATEGIES:
             raise HTTPException(400, "UNKNOWN_STRATEGY_ID")
         cur = rt.cfg.get().active.strategies.get(req.strategy_id)
-        patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else True}
+        # 1.46 (I0852): without a stored toggle the default trade flag is the registry default used by trade_allowed (engine/active.py) -
+        # signal-only S11/S12 no longer start trading when only 'scan' is switched; an explicit req.trade is still honoured
+        patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else (req.strategy_id not in _reg.DEFAULT_NO_TRADE)}
         if req.scan is not None:
             patch["scan"] = req.scan
         if req.trade is not None:
