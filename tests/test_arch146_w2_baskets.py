@@ -339,6 +339,61 @@ class TestFxHedgeLayers(_Svc):
         self.assertEqual(s.hedge_state["FX_HEDGE_03"]["state"], "HEDGE_PLAN")
 
 
+# ======================================================================================================================== I0764
+class TestCryptoHedgeQuantityBelowPrecision(unittest.TestCase):
+    """A quantity rounded to zero (szDecimals) -> NO_HEDGE with the reason, never a HEDGE_PLAN with size None."""
+
+    def _base(self, exposure, bars, **p):
+        return {"strategy": {"exit_policy_or_expiry_policy": "x"}, "p": {"ratio": 0.5, "timeout_bars": 6, **p}, "exposure": exposure,
+                "spec": {k: {"szDecimals": 0} for k in ("BTC", "ETH", "SOL", "BTC2")}, "bars": bars, "fees": {"taker": None}, "funding": {}}
+
+    def _check(self, r):
+        self.assertEqual(r["state"], "NO_HEDGE", r)
+        self.assertIn("precyzji", r["reason"])
+
+    def test_spot_inventory(self):
+        from masterquo.baskets import hedge as HG
+        self._check(HG.spot_inventory(self._base([{"kind": "SPOT", "instrument": "BTC", "size": 0.001}], {"BTC": {"M15": [{"t": 0, "c": 100.0}]}})))
+
+    def test_cross_market(self):
+        from masterquo.baskets import hedge as HG
+        ctx = self._base([{"kind": "PERP", "instrument": "BTC", "side": "LONG", "size": 0.001}],
+                         {"BTC": {"M15": [{"t": 0, "c": 100.0}]}, "BTC2": {"M15": [{"t": 0, "c": 100.0}]}})
+        ctx["same_underlying"] = {"BTC": "BTC2"}
+        self._check(HG.cross_market(ctx))
+
+    def test_stress_loss(self):
+        from masterquo.baskets import hedge as HG
+        self._check(HG.stress_loss(self._base([{"kind": "PERP", "instrument": "BTC", "side": "LONG", "size": 0.001}],
+                                              {"BTC": {"M15": [{"t": 0, "c": 100.0}]}}, loss_limit=0.0)))
+
+    def test_basket_beta(self):
+        from masterquo.baskets import hedge as HG
+        end = 1.79e9
+        bars = {k: {"M15": _walk(200, end_t=end, step=900, seed=sd, start=100.0, sd=0.3)} for k, sd in (("BTC", 1), ("ETH", 2), ("SOL", 3))}
+        exp = [{"kind": "PERP", "instrument": "ETH", "side": "LONG", "size": 0.001}, {"kind": "PERP", "instrument": "SOL", "side": "LONG", "size": 0.001}]
+        self._check(HG.basket_beta(self._base(exp, bars, limit_usd=0.0)))
+
+    def test_residual_pair(self):
+        from masterquo.baskets import hedge as HG
+        rng = np.random.default_rng(4)
+        end, n = 1.79e9, 200
+        le = np.log(100.0) + np.cumsum(rng.normal(0, 0.01, n))
+        ls = 0.3 + 0.8 * le + rng.normal(0, 0.001, n)
+        ls[-1] += 0.05                                                                  # SOL far above its relation: residual z >> 2
+        mk = lambda lg: [{"t": end - (n - 1 - k) * 900, "c": float(np.exp(lg[k]))} for k in range(n)]   # noqa: E731
+        ctx = self._base([{"kind": "PERP", "instrument": "SOL", "side": "LONG", "size": 0.001}], {"SOL": {"M15": mk(ls)}, "ETH": {"M15": mk(le)}},
+                         pairs={"SOL": "ETH"})
+        self._check(HG.residual_pair(ctx))
+
+    def test_a_real_quantity_is_unchanged(self):
+        from masterquo.baskets import hedge as HG
+        ctx = self._base([{"kind": "SPOT", "instrument": "BTC", "size": 10.0}], {"BTC": {"M15": [{"t": 0, "c": 100.0}]}})
+        r = HG.spot_inventory(ctx)
+        self.assertEqual(r["state"], "HEDGE_PLAN")
+        self.assertEqual(r["plan"]["legs"][0]["size"], 5.0)
+
+
 # ======================================================================================================================== I0769
 class TestBasketPendingLimitSameCycle(_Svc):
     def test_two_events_in_one_cycle_respect_max_pending_intents(self):

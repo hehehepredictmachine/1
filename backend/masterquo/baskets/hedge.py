@@ -462,6 +462,8 @@ def basket_beta(ctx):
         return {"state": "NO_HEDGE", "reason": "w paśmie", "beta_exposure_usd": tot}
     hn = -float(ctx["p"].get("ratio", 0.5)) * tot
     q = _cp_qty(ctx, "BTC", hn, float(fb[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"suma beta-exposure {tot:,.0f} USD",
             "plan": _plan({"basket": [e["instrument"] for e in exp]}, [{"instrument": "BTC", "side": "SHORT" if hn < 0 else "LONG", "size": q, "unit": "BTC"}],
                           ratio=float(ctx["p"].get("ratio", 0.5)), risk_before={"beta_usd": tot}, risk_after={"beta_usd": tot + hn}, cost=None, residual=None,
@@ -528,6 +530,8 @@ def residual_pair(ctx):
         return {"state": "NO_HEDGE", "reason": f"residual z = {z:.2f} poniżej progu", "z": z}
     pn = sgn * float(par["size"]) * float(a[-1]["c"])
     q = _cp_qty(ctx, other, beta_ * pn, float(b[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"residual z = {z:.2f}",
             "plan": _plan({"instrument": par["instrument"]}, [{"instrument": other, "side": "SHORT" if pn > 0 else "LONG", "size": q, "unit": other}],
                           ratio=1.0, risk_before={"z": z}, risk_after=None, cost=None, residual=None, exit_rule=f"residual z ≤ {ctx['p'].get('z_out', 0.5)} / rozpad / timeout",
@@ -563,6 +567,8 @@ def cross_market(ctx):
     if abs(basis) > float(ctx["p"].get("basis_limit_bps", 50)):
         return {"state": "NO_HEDGE", "reason": f"basis {basis:.1f} bps ponad limit"}
     q = _cp_qty(ctx, other, float(par["size"]) * pa, pb)
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"basis {basis:.1f} bps",
             "plan": _plan({"instrument": par["instrument"]}, [{"instrument": other, "side": "SHORT" if par["side"] == "LONG" else "LONG", "size": q}], ratio=1.0,
                           risk_before=None, risk_after=None, cost=None, residual={"basis_oracle_collateral": "osobne ryzyka"}, exit_rule="limit basis / koszt / timeout",
@@ -579,6 +585,8 @@ def spot_inventory(ctx):
         raise Unavailable(f"brak perpa {e['instrument']}")
     px = float(_cp_bars(ctx, e["instrument"])[-1]["c"])
     q = _cp_qty(ctx, e["instrument"], float(ctx["p"].get("ratio", 0.5)) * float(e["size"]) * px, px)
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": "ochrona części salda spot",
             "plan": _plan({"spot": e["instrument"], "size": e["size"]}, [{"instrument": e["instrument"], "side": "SHORT", "size": q}], ratio=float(ctx["p"].get("ratio", 0.5)),
                           risk_before={"spot_units": e["size"]}, risk_after={"net_units": float(e["size"]) - (q or 0)}, cost=None,
@@ -612,6 +620,8 @@ def stress_loss(ctx):
     grid = np.linspace(0, -expo, 21)
     h = max(grid, key=worst)
     q = _cp_qty(ctx, "BTC", h, float(fb[-1]["c"]))
+    if q is None:                                                  # 1.46 (I0764): quantity rounded to 0 -> no HEDGE_PLAN with size None
+        return {"state": "NO_HEDGE", "reason": "ilość poniżej precyzji kontraktu"}
     return {"state": "HEDGE_PLAN", "reason": f"strata scenariuszowa {w0:,.0f} > limit {lim}",
             "plan": _plan({"positions": [e["instrument"] for e in exp]}, [{"instrument": "BTC", "side": "SHORT" if h < 0 else "LONG", "size": q}], ratio=None,
                           risk_before={"worst_scenario_usd": w0}, risk_after={"worst_scenario_usd": worst(h)}, cost=None,
