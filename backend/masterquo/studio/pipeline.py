@@ -452,7 +452,9 @@ def _train_runner(ctx: Ctx) -> dict:
     meta = read_json(ctx.pkg.dir / RAW / "runner_dataset" / "source_metadata.json", {}) or {}
     if not meta.get("symbol") or meta.get("instrument") != task["instrument"]:
         raise Blocked("BLOCKED_DATA", "brak symbolu / instrumentu w metadanych eksportu runnera (raw/export/runner_dataset)")
-    plan, tasks = RN.build_plan(instruments=[task["instrument"]], profile="quick" if ctx.profile == "smoke" else "standard",
+    # 1.46 arch: the runner profiles are TEST_INSTALACJI / PELNY_TRENING (config/training_profiles_v1.json); 'quick' / 'standard' (the
+    # names the runner passes DOWN to its sub-tools) raised KeyError for every Studio runner-group task. Activation stays off below.
+    plan, tasks = RN.build_plan(instruments=[task["instrument"]], profile="TEST_INSTALACJI" if ctx.profile == "smoke" else "PELNY_TRENING",
                                 symbols={task["instrument"]: meta["symbol"]}, commissions={}, months=None,
                                 synthetic=ctx.source["mode"] == "SYNTHETIC", tasks=[kind],
                                 datasets={task["instrument"]: str(ctx.pkg.dir / RAW / "runner_dataset")}, origin="studio")

@@ -95,7 +95,7 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     atomic_json(d / "package_manifest.json", {"package_version": PACKAGE_VERSION, "instrument": inst, "model_key": key, "version": version,
                                               "created_at": iso(time.time()), "files": files})
     with reg_lock(inst):                          # 1.46: read-modify-write of registry.json under the shared registry lock
-        reg = _reg(inst)
+        reg = _reg(inst, strict=True)
         reg.setdefault("versions", {}).setdefault(key, []).append({"version": version, "created_at": iso(time.time()), "model_id": res["model_id"],
                                                                     "base_tf": cfg["base_tf"], "horizon": cfg["horizon"], "data_kind": store_manifest.get("data_kind"),
                                                                     "holdout": res["holdout"], "walk_forward": {k: v for k, v in res["walk_forward"].items() if k != "folds"},
@@ -119,13 +119,25 @@ def _reg_path(inst: str) -> Path:
     return root() / "models" / inst / "registry.json"
 
 
-def _reg(inst: str) -> dict:
-    return read_json(_reg_path(inst), None) or {"versions": {}, "active": {}, "history": []}
+def _reg(inst: str, *, strict: bool = False) -> dict:
+    """strict=True inside reg_lock for every writer (1.46 arch): an unreadable registry.json raised nothing and was rewritten with only
+    the new change (every version, the active packages and the history were lost) - masterquo/registry_io.py."""
+    from .. import registry_io as RIO
+    return RIO.read_json(_reg_path(inst), lambda: {"versions": {}, "active": {}, "history": []}, strict=strict)
 
 
 def _save_reg(inst: str, reg: dict) -> None:
     _reg_path(inst).parent.mkdir(parents=True, exist_ok=True)
     atomic_json(_reg_path(inst), reg)
+
+
+def register_imported_version(inst: str, key: str, entry: dict) -> None:
+    """1.46 arch: a version copied in from a Studio package - the same locked, strict read-modify-write as save_package (the importer
+    wrote registry.json through _reg/_save_reg without reg_lock: a concurrent training or activation lost its change)."""
+    with reg_lock(inst):
+        reg = _reg(inst, strict=True)
+        reg.setdefault("versions", {}).setdefault(key, []).append(dict(entry))
+        _save_reg(inst, reg)
 
 
 @contextmanager
@@ -234,7 +246,7 @@ def activate(inst: str, key: str, version: str, *, reason: str = "panel") -> dic
         return {"ok": False, "status": "INCOMPATIBLE", "compatibility": comp, "prediction_test": pt,
                 "reason": "test predykcji po wczytaniu nie przeszedł – aktywna wersja bez zmian"}
     with reg_lock(inst):
-        reg = _reg(inst)
+        reg = _reg(inst, strict=True)
         if not any(v["version"] == version for v in reg.get("versions", {}).get(key, [])):
             return {"ok": False, "status": "NOT_FOUND", "reason": f"wersja {version} modelu {key} usunięta w trakcie aktywacji"}
         prev = reg.setdefault("active", {}).get(key)
@@ -292,7 +304,7 @@ def rollback(inst: str, key: str) -> dict:
     if not comp["ok"]:
         return {"ok": False, "status": "INCOMPATIBLE", "reason": "poprzednia wersja niezgodna z bieżącym kodem", "compatibility": comp}
     with reg_lock(inst):
-        reg = _reg(inst)
+        reg = _reg(inst, strict=True)
         if (reg.get("active") or {}).get(key) != cur:
             return {"ok": False, "status": "CONFLICT", "active": (reg.get("active") or {}).get(key), "previous": None,
                     "reason": "aktywna wersja zmieniła się w trakcie – rollback nie wykonany, odśwież i ponów"}
@@ -304,7 +316,7 @@ def rollback(inst: str, key: str) -> dict:
 
 def deactivate(inst: str, key: str) -> dict:
     with reg_lock(inst):                          # 1.46: under the registry lock (see reg_lock)
-        reg = _reg(inst)
+        reg = _reg(inst, strict=True)
         cur = (reg.get("active") or {}).pop(key, None)
         reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "DEACTIVATE", "version": None, "previous": cur})
         _save_reg(inst, reg)
@@ -326,7 +338,7 @@ def export_zip(inst: str, key: str, version: str, out: Path) -> Path:
 
 def remove_version(inst: str, key: str, version: str) -> None:
     with reg_lock(inst):                          # 1.46: the active check and the write see the same registry (see reg_lock)
-        reg = _reg(inst)
+        reg = _reg(inst, strict=True)
         if (reg.get("active") or {}).get(key) == version:
             raise ValueError("nie można usunąć aktywnej wersji")
         reg.setdefault("versions", {})[key] = [v for v in reg.get("versions", {}).get(key, []) if v["version"] != version]

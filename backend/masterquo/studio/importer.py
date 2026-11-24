@@ -101,11 +101,9 @@ def import_package(pkg: str | Path) -> dict:
         tmp = dst.with_name(dst.name + ".importing")
         shutil.copytree(src, tmp)
         tmp.replace(dst)
-        reg = R._reg(inst)
         from ..marketdata.store import iso as _iso                     # 1.46: ISO text like native versions (a float broke summary() sorting)
-        reg.setdefault("versions", {}).setdefault(res["model_key"], []).append({"version": res["version"], "created_at": _iso(time.time()),
-                                                                                "source": "STUDIO", "import_id": iid, "package": str(pkg)})
-        R._save_reg(inst, reg)
+        R.register_imported_version(inst, res["model_key"], {"version": res["version"], "created_at": _iso(time.time()), "source": "STUDIO",
+                                                             "import_id": iid, "package": str(pkg)})   # 1.46 arch: under reg_lock
         rec = {"import_id": iid, "kind": "TRAINHUB", "instrument": inst, "model_key": res["model_key"], "version": res["version"]}
     elif res["kind"] == "FAMILY":
         from ..modelhub.families import base as FB
