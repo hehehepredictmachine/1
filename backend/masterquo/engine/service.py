@@ -698,7 +698,7 @@ class EngineService:
             digits = int((self.bridge.symbol_info or {}).get("digits") or 2)
             return volzones.compute(self.bridge.bars("D1"), self.cfg_store.get().volatility, digits=digits, quote=self.bridge.quote_status())
         except Exception as exc:  # never break the chart because of the reference levels
-            return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__}
+            return {"model": volzones.MODEL_VERSION, "status": "ERROR", "error": type(exc).__name__, "usage": "PANEL_REFERENCE"}
 
     def structure(self, tf: str) -> dict:
         """Market structure for charts / agent / setup pages (read-only, from the SAME MarketView the last scan used):

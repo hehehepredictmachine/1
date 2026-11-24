@@ -100,7 +100,10 @@ def compute(d1_bars: list[dict], cfg, digits: int = 2, quote: dict | None = None
     forming = bars[-1] if bars and not bars[-1].get("closed") else None
     out: dict = {"model": MODEL_VERSION, "enabled": bool(cfg.enabled), "estimator": cfg.estimator, "window": window,
                  "trading_days_per_year": tdy, "iv_source": cfg.iv_source, "walls_sigma": list(cfg.walls_sigma),
-                 "wall_band_sigma": cfg.wall_band_sigma, "closed_d1": len(closed), "required_d1": window + 1}
+                 "wall_band_sigma": cfg.wall_band_sigma, "closed_d1": len(closed), "required_d1": window + 1,
+                 # 1.46 arch (I0602, information only): these bands are the panel's model pricing (cfg.volatility); strategy S12 reads its own
+                 # walls snapshot (cfg.walls, /api/v1/walls) - the two sets of levels may differ
+                 "usage": "PANEL_REFERENCE", "strategy_walls_note": "S12 używa walls.* (snapshot /api/v1/walls), nie tych pasm σ panelu"}
     if not cfg.enabled:
         return {**out, "status": "DISABLED"}
     if len(closed) < 2:
