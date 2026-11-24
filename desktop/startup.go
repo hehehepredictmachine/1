@@ -67,14 +67,16 @@ func prepareData(l Layout, st *State, ui bootUI, importArg string, logf func(str
 			break
 		}
 	}
-	if !imported && st.LastVersion != version && exists(filepath.Join(l.DataDir, "config.json")) {
+	// 1.46: one copy per version change - LastVersion is saved only after a successful start, so every failed attempt / "Spróbuj ponownie"
+	// made another full copy; BackupVersion remembers that the copy for this version exists (cleared by boot after a successful start)
+	if !imported && st.LastVersion != version && st.BackupVersion != version && exists(filepath.Join(l.DataDir, "config.json")) {
 		ui.Status("Kopia danych przed uruchomieniem wersji " + version + "…")
 		dir, err := backupData(l.DataDir, l.BackupsDir, "przed_"+version)
 		if err != nil {
 			// a failed copy must not silently be treated as a rollback point - stop here, the data stays untouched
 			return fmt.Errorf("kopia danych przed aktualizacją nie powiodła się (%v) – dane nie zostały zmienione; zwolnij miejsce na dysku i uruchom ponownie", err)
 		}
-		st.LastBackup = dir
+		st.LastBackup, st.BackupVersion = dir, version
 		logf("dane: kopia przed aktualizacją " + dir)
 	}
 	return saveState(l.Home, *st)
@@ -89,13 +91,20 @@ type dataChoice struct {
 }
 
 func doImport(l Layout, st *State, src string, logf func(string)) error {
-	il, err := importOldData(src, l.DataDir)
+	// 1.46: the mode is neutralized in the complete staging copy, before anything reaches the data folder (importStaged)
+	prev := ""
+	il, err := importStaged(src, l.DataDir, func(stage string) error {
+		p, err := neutralizeImportedMode(stage)
+		if err != nil {
+			return fmt.Errorf("nie udało się ustawić trybu PAPER w kopii – import przerwany, dane bez zmian: %w", err)
+		}
+		prev = p
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	if prev, err := neutralizeImportedMode(l.DataDir); err != nil {
-		return fmt.Errorf("dane skopiowane, ale nie udało się ustawić trybu PAPER: %w", err)
-	} else if prev != "" {
+	if prev != "" {
 		logf("dane: zaimportowany tryb " + prev + " zamieniony na PAPER (nowa instalacja nie wykonuje zleceń bez ponownego wyboru)")
 	}
 	st.Import = &il
@@ -155,7 +164,7 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 			return err
 		}
 	}
-	st.LastVersion = version
+	st.LastVersion, st.BackupVersion = version, "" // 1.46: the next version change makes its own copy again
 	_ = saveState(l.Home, st)
 	return nil
 }

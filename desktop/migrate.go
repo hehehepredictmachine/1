@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -112,7 +113,13 @@ func resolveOldData(src string) (string, error) {
 }
 
 // importOldData copies a previous installation's data into an EMPTY data folder (never over existing data).
-func importOldData(src, dataDir string) (ImportLog, error) {
+func importOldData(src, dataDir string) (ImportLog, error) { return importStaged(src, dataDir, nil) }
+
+// importStaged (1.46): the copy goes into <data>.importing first, prepare (doImport: mode PAPER) runs on that COMPLETE copy, and only then
+// are its entries moved into the data folder - config.json, the marker of existing data, last. Before, copyTree wrote straight into the data
+// folder (config.json first): an interrupted copy left an un-neutralized config.json (e.g. AUTO_LIVE), the next import was refused ("nie
+// jest pusty") and "start bez importu" ran on the partial copy. A failed attempt removes only its own staging copy; the source stays as is.
+func importStaged(src, dataDir string, prepare func(stage string) error) (ImportLog, error) {
 	from, err := resolveOldData(src)
 	if err != nil {
 		return ImportLog{}, err
@@ -123,11 +130,82 @@ func importOldData(src, dataDir string) (ImportLog, error) {
 	if a, b := filepath.Clean(from), filepath.Clean(dataDir); strings.EqualFold(a, b) {
 		return ImportLog{}, errors.New("folder źródłowy jest folderem danych aplikacji")
 	}
-	r, err := copyTree(from, dataDir, func(top string) bool { return volatileDirs[top] }, 0)
+	stage := filepath.Clean(dataDir) + ".importing"
+	if within(from, stage) || within(stage, from) { // the source is never removed, and never copied into itself
+		return ImportLog{}, errors.New("folder źródłowy obejmuje folder tymczasowy importu " + stage)
+	}
+	if err := os.RemoveAll(stage); err != nil { // the staging copy of an interrupted attempt (never the source)
+		return ImportLog{}, fmt.Errorf("folder tymczasowy importu %s jest zablokowany: %w", stage, err)
+	}
+	r, err := copyTree(from, stage, func(top string) bool { return volatileDirs[top] }, 0)
 	if err != nil {
+		_ = os.RemoveAll(stage)
 		return ImportLog{}, fmt.Errorf("kopiowanie przerwane (%d plików skopiowanych, źródło bez zmian): %w", r.Files, err)
 	}
+	if prepare != nil {
+		if err := prepare(stage); err != nil {
+			_ = os.RemoveAll(stage)
+			return ImportLog{}, err
+		}
+	}
+	if err := moveInto(stage, dataDir); err != nil {
+		_ = os.RemoveAll(stage)
+		return ImportLog{}, fmt.Errorf("przenoszenie kopii do folderu danych przerwane (źródło bez zmian, import można powtórzyć): %w", err)
+	}
+	_ = os.RemoveAll(stage) // empty by now
 	return ImportLog{Source: from, At: nowISO(), Files: r.Files, Bytes: r.Bytes}, nil
+}
+
+// within: p is dir or a path inside it (case-insensitive like Windows paths).
+func within(p, dir string) bool {
+	p, dir = strings.ToLower(filepath.Clean(p)), strings.ToLower(filepath.Clean(dir))
+	return p == dir || strings.HasPrefix(p, strings.TrimSuffix(dir, string(filepath.Separator))+string(filepath.Separator))
+}
+
+// moveInto (1.46) moves the entries of src into dst (normally the same volume: a rename, no second copy). Folders that already exist in dst
+// are merged (logs\ - the shell writes launcher_crash.txt there before the import); a file replaces the one in dst as the direct copy did;
+// config.json goes last, so an interruption leaves no config.json and the import can be repeated.
+func moveInto(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Name() != "config.json" && entries[j].Name() == "config.json" })
+	for _, e := range entries {
+		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
+		if st, err := os.Stat(d); err == nil {
+			if st.IsDir() != e.IsDir() {
+				return fmt.Errorf("%s: w folderze danych jest już inny element o tej nazwie", d)
+			}
+			if st.IsDir() {
+				if err := moveInto(s, d); err != nil {
+					return err
+				}
+				continue
+			}
+		}
+		if os.Rename(s, d) == nil {
+			continue
+		}
+		// a data folder linked to another volume, or a file briefly locked by an antivirus scanner: copy instead of renaming
+		if e.IsDir() {
+			if _, err := copyTree(s, d, func(string) bool { return false }, 0); err != nil {
+				return err
+			}
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		if err := copyFile(s, d, info.Mode()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // findOldData lists folders that look like a previous installation's data, nearest first (prefill of the import field).
@@ -166,9 +244,15 @@ func backupData(dataDir, backupsDir, label string) (string, error) {
 		return "", nil // nothing to protect yet
 	}
 	dir := filepath.Join(backupsDir, time.Now().Format("20060102_150405")+"_"+sanitize(label))
+	for i := 2; exists(dir); i++ { // 1.46: never write into (or remove) an existing copy
+		dir = filepath.Join(backupsDir, fmt.Sprintf("%s_%s_%d", time.Now().Format("20060102_150405"), sanitize(label), i))
+	}
 	r, err := copyTree(dataDir, dir, func(top string) bool { return volatileDirs[top] || bulkyDirs[top] }, backupMaxFile)
 	if err != nil {
-		return dir, err
+		// 1.46: an incomplete copy is no rollback point and only takes the disk space the message asks to free - removed (only this
+		// folder, created by this call; the data folder itself is never touched)
+		_ = os.RemoveAll(dir)
+		return "", err
 	}
 	m := backupManifest{Label: label, CreatedAt: nowISO(), Source: dataDir, copyResult: r,
 		Note: "Kopia stanu (konfiguracja, baza, sekrety, modele, raporty). Pominięte: logi, archiwum ticków, pliki > 128 MB (lista wyżej). " +

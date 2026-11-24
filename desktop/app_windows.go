@@ -5,14 +5,13 @@ package main
 // The window: WebView2 with the start screen (setup, data choice, errors) and then the engine's panel. 1.32: the start screen is
 // the small launcher window "WEJDŹ" - when the engine is ready it waits for WEJDŹ, then the window grows to 85 % of
 // the monitor and loads the panel (main menu with the intro). One instance per Windows
-// session (a second start brings the window to the front). Closing the window follows the preference from Centrum sterowania →
-// Praca aplikacji: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
+// session (a second start brings the window to the front). Closing the window follows the preference close_action of
+// <data>\desktop_prefs.json: ask / keep working in the background (tray icon) / exit and stop the bot. The start screen talks to the shell
 // through one bound function that only works while the start screen is shown; the panel uses the engine's protected HTTP API.
 
 import (
 	"context"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,11 +33,8 @@ func init() { runtime.LockOSThread() } // the window, WebView2 and the message l
 //go:embed splash.html
 var splashHTML string
 
-//go:embed winres/icon256.png
-var iconPNG []byte
-
-//go:embed assets/launcher-speech.webp
-var launcherScene []byte // 1.34 TASK 001: Pepe speaking to the crowd - the full background of the launcher (tools/neural_city_assets.py)
+// 1.46: the launcher background (assets/launcher-speech.webp) and icon256.png are no longer embedded and sent with "state" - the
+// start screen (splash.html, "cinematic" without images since 1.42) never read the scene / icon fields.
 
 var (
 	user32                  = windows.NewLazySystemDLL("user32.dll")
@@ -101,9 +97,7 @@ const (
 	smCxScreen, smCyScreen = 0, 1
 
 	monitorDefaultToNearest           = 2
-	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10
-	swpFrameChanged, swpShowWindow    = 0x20, 0x40
-	wsPopup, wsVisible                = 0x80000000, 0x10000000
+	swpNoSize, swpNoZOrder, swpNoActv = 0x1, 0x4, 0x10 // swpFrameChanged, swpShowWindow, wsPopup, wsVisible: window.go
 	hwndTop                           = 0
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
@@ -165,8 +159,6 @@ type splashState struct {
 	LogPath    string   `json:"log_path"`
 	DataDir    string   `json:"data_dir"`
 	Version    string   `json:"version"`
-	Icon       string   `json:"icon,omitempty"`
-	Scene      string   `json:"scene,omitempty"` // data URL of the launcher background - only in the answer to "state"
 }
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -263,8 +255,6 @@ func (a *winApp) bridge(action, arg string) (any, error) {
 	}
 	switch action {
 	case "state":
-		st.Icon = "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
-		st.Scene = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(launcherScene)
 		return st, nil
 	case "join":
 		if st.Phase != "ready" {
@@ -367,12 +357,9 @@ func (a *winApp) showError(msg string) {
 	a.showWindow()
 }
 
-// readyMessage: the line under WEJDŹ while the engine runs.
+// readyMessage: the line under WEJDŹ while the engine runs (1.46: with the warning of an engine of another version - readyLine).
 func (a *winApp) readyMessage() string {
-	if a.eng.Owned() {
-		return fmt.Sprintf("silnik bota działa (port %d)", a.eng.Port())
-	}
-	return fmt.Sprintf("podłączono do działającego silnika (port %d)", a.eng.Port())
+	return readyLine(a.eng.Owned(), a.eng.Port(), a.eng.AttachWarning())
 }
 
 // awaitJoin: the engine is running - the launcher shows SYSTEM READY and waits for WEJDŹ (true), the engine failing
@@ -395,9 +382,13 @@ func (a *winApp) awaitJoin() bool {
 		}
 	}
 	a.push()
-	if loadPrefs(a.l.DataDir).AutoEnter { // 1.45 (TASK 013): the dashboard opens automatically once the engine is ready
+	warning := a.eng.AttachWarning()
+	if autoEnter(loadPrefs(a.l.DataDir), warning) { // 1.45 (TASK 013): the dashboard opens automatically once the engine is ready
 		a.logf("start: silnik gotowy – automatyczne wejście do panelu (auto_enter)")
 		return true
+	}
+	if warning != "" { // 1.46: an engine of another version - the user decides (the warning is on the start screen and in the tray tip)
+		a.logf("start: podłączono do silnika innej wersji – bez automatycznego wejścia: " + warning)
 	}
 	a.logf("start: silnik gotowy – oczekiwanie na WEJDŹ")
 	select {
@@ -471,9 +462,10 @@ func (a *winApp) borderlessFullscreen() {
 		return
 	}
 	r := mi.RcMonitor
-	_, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlStyle, wsPopup|wsVisible)
-	_, _, _ = pSetWindowPos.Call(a.hwnd, hwndTop, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top),
-		swpFrameChanged|swpShowWindow)
+	// 1.46: a window hidden at start (autostart + start_minimized) stays hidden - fullscreenFlags (window.go)
+	style, swp := fullscreenFlags(windows.IsWindowVisible(windows.HWND(a.hwnd)))
+	_, _, _ = pSetWindowLongPtrW.Call(a.hwnd, gwlStyle, style)
+	_, _, _ = pSetWindowPos.Call(a.hwnd, hwndTop, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swp)
 }
 
 func (a *winApp) onEngineState(s EngineState, detail string) {
@@ -482,7 +474,11 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 	case EngineRunning:
 		a.setTip(fmt.Sprintf(displayName+" – bot działa (port %d)", port))
 	case EngineExternal:
-		a.setTip(displayName + " – podłączono do działającego silnika")
+		if a.eng.AttachWarning() != "" { // 1.46: the detail of an engine of another version was never shown
+			a.setTip(displayName + " – UWAGA: podłączono do silnika innej wersji")
+		} else {
+			a.setTip(displayName + " – podłączono do działającego silnika")
+		}
 	case EngineStarting:
 		a.setTip(displayName + " – uruchamianie silnika…")
 	case EngineCrashed:
@@ -582,7 +578,8 @@ func (a *winApp) onClose() {
 			"Tak – okno zostanie ukryte, bot pracuje dalej (ikona przy zegarze; tam też „Zamknij aplikację”).\n" +
 			"Nie – zamknij aplikację i zatrzymaj bota.\n" +
 			"Anuluj – wróć do okna.\n\n" +
-			"Domyślne zachowanie ustawisz w Centrum sterowania → Praca aplikacji."
+			// 1.46: the panel has no "Praca aplikacji" card any more - the dialog pointed to a place that does not exist
+			"Domyślne zachowanie: close_action (ask / background / exit) w pliku desktop_prefs.json w folderze danych."
 		if external {
 			text = "Silnik bota został uruchomiony poza tą aplikacją i będzie działał dalej niezależnie od okna.\n\n" +
 				"Tak – ukryj okno (ikona przy zegarze).\nNie – zamknij okno aplikacji.\nAnuluj – wróć do okna."

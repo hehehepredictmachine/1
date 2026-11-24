@@ -171,6 +171,12 @@ func runLogged(ctx context.Context, exe string, args, env []string, progress fun
 			}
 			progress(line)
 		}
+		if err := sc.Err(); err != nil {
+			// 1.46: the scanner stops at a line > 1 MB - the rest is drained, otherwise the child blocks on the full pipe and cmd.Wait
+			// never returns (the start screen hung on "Instalacja składników…")
+			tail = append(tail, "(wyjście pominięte: "+err.Error()+")")
+			_, _ = io.Copy(io.Discard, pr)
+		}
 		close(done)
 	}()
 	err := cmd.Wait()

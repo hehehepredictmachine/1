@@ -53,7 +53,9 @@ type Engine struct {
 	exited   chan struct{}
 	starting *exec.Cmd // the process spawn() is still waiting for: its early exit is reported by spawn, not auto-restarted
 	client   *http.Client
-	extra    []string // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
+	extra    []string  // extra engine arguments (tests: --demo = simulator instead of MetaTrader5)
+	stopReq  *exec.Cmd // 1.46: the process Stop() asked to end - its exit during start is not a start failure
+	warning  string    // 1.46: attached to an engine of ANOTHER version - shown on the start screen, no automatic entry
 
 	restartMu sync.Mutex // 1.46: one Restart at a time (two quick tray clicks started two engines and the shell lost the running one)
 }
@@ -61,6 +63,13 @@ type Engine struct {
 // errNeedsEnv: the running engine is an outdated one of this folder and was stopped, but this supervisor has no Python package folder yet -
 // the caller prepares it (ensureEnv) and starts again (1.46; before, spawn ran without site-packages -> ModuleNotFoundError, bot stopped).
 var errNeedsEnv = errors.New("silnik do wymiany: najpierw przygotowanie środowiska Pythona")
+
+// errStopRequested (1.46): the engine was stopped by Stop() (restart from the tray, closing the app) while spawn() waited for it. Before, that
+// exit was reported as FAILED "silnik zakończył się podczas startu (kod -1)" next to the new engine Restart() was starting.
+var errStopRequested = errors.New("uruchamianie silnika przerwane – silnik zatrzymano na żądanie")
+
+// startTimeout: how long spawn() waits for the first answer of a started engine (the first start may migrate the database).
+var startTimeout = 120 * time.Second
 
 func newEngine(l Layout, site string, logf func(string), onState func(EngineState, string)) *Engine {
 	return &Engine{l: l, site: site, logf: logf, onState: onState, state: EngineStopped, client: &http.Client{Timeout: 3 * time.Second}}
@@ -80,6 +89,17 @@ func (e *Engine) State() (EngineState, string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.state, e.detail
+}
+
+// AttachWarning (1.46): non-empty while the shell is attached to an engine of ANOTHER version that it could not replace (another data
+// folder refused the token, or it did not stop in time). Before, this went only to desktop.log while auto_enter opened the old panel.
+func (e *Engine) AttachWarning() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state != EngineExternal {
+		return ""
+	}
+	return e.warning
 }
 
 // Port of the engine: data\config.json server.port, else the engine's default.
@@ -149,13 +169,26 @@ func (e *Engine) replaceOutdated(running string) bool {
 		return false // not our engine (another data folder) - never stopped
 	}
 	e.logf("silnik: działała wersja " + running + " – zatrzymano ją, uruchamiam " + version)
+	// 1.46: a free port is not the end of the old process: uvicorn closes its listener first, then stops the services (rt.stop) and only
+	// then deletes runtime\server.pid (its last step) and exits, releasing runtime\instance.lock. A new engine started on the free port
+	// alone ended with code 4 and the start screen showed FAILED after 60 s - so server.pid has to be gone as well.
+	pidFile := filepath.Join(e.l.RuntimeDir(), "server.pid")
+	free, sawPid := false, false
 	for i := 0; i < 75; i++ { // up to 30 s for its graceful stop (positions stay protected by SL/TP on the broker side)
 		time.Sleep(400 * time.Millisecond)
+		free = false
 		if ok, _ := e.health(); !ok && !e.portTakenByOther() {
-			return true
+			free = true
+			if !exists(pidFile) {
+				if sawPid {
+					time.Sleep(time.Second) // the interpreter ends right after deleting it (releases the lock)
+				}
+				return true
+			}
+			sawPid = true
 		}
 	}
-	return false
+	return free // the port is free but server.pid stayed (an engine that died without its cleanup) - start anyway
 }
 
 func healthPath() string {
@@ -224,6 +257,9 @@ func (e *Engine) consoleLog() (*os.File, error) {
 
 // Start attaches to a running engine or starts one and waits until it answers (first start may migrate the database).
 func (e *Engine) Start(ctx context.Context) error {
+	e.mu.Lock()
+	e.warning = ""
+	e.mu.Unlock()
 	if ok, running := e.health(); ok {
 		if e.Owned() { // our own process from an earlier attempt finished starting meanwhile
 			e.set(EngineRunning, "")
@@ -239,7 +275,11 @@ func (e *Engine) Start(ctx context.Context) error {
 				}
 				return e.spawn(ctx)
 			}
-			e.set(EngineExternal, "działa silnik w wersji "+running+" (ta aplikacja: "+version+") – podłączono; zamknij go, aby używać nowej wersji")
+			w := "działa silnik w wersji " + running + " (ta aplikacja: " + version + ") – podłączono; zamknij go, aby używać nowej wersji"
+			e.mu.Lock()
+			e.warning = w // 1.46: before the state change, so the window (onState) already sees it
+			e.mu.Unlock()
+			e.set(EngineExternal, w)
 			return nil
 		}
 		e.set(EngineExternal, "silnik działał już wcześniej – podłączono bez uruchamiania drugiej kopii")
@@ -257,6 +297,8 @@ func (e *Engine) spawn(ctx context.Context) error {
 	e.set(EngineStarting, "uruchamianie silnika…")
 	logFile, err := e.consoleLog()
 	if err != nil {
+		// 1.46: the state said STARTING forever (no error screen when called by the automatic restart)
+		e.set(EngineFailed, "nie można otworzyć logu silnika "+filepath.Join(e.l.LogsDir(), "engine_console.log")+": "+err.Error())
 		return err
 	}
 	cmd := exec.Command(e.l.Python, e.args()...)
@@ -295,10 +337,16 @@ func (e *Engine) spawn(ctx context.Context) error {
 		close(exited)
 		e.afterExit(ctx, cmd, werr)
 	}()
-	deadline := time.Now().Add(120 * time.Second)
+	deadline := time.Now().Add(startTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case <-exited:
+			e.mu.Lock()
+			requested := e.stopReq == cmd
+			e.mu.Unlock()
+			if requested { // 1.46: ended by Stop() (e.g. restart from the tray during STARTING) - not a start failure
+				return errStopRequested // e.starting stays: afterExit of this process only clears e.cmd (see earlyExit)
+			}
 			return e.earlyExit(ctx, cmd, logFrom)
 		case <-ctx.Done():
 			started()
@@ -312,7 +360,36 @@ func (e *Engine) spawn(ctx context.Context) error {
 		}
 	}
 	started()
-	return errors.New("silnik nie odpowiedział w ciągu 120 s – szczegóły: " + filepath.Join(e.l.LogsDir(), "engine_console.log"))
+	msg := fmt.Sprintf("silnik nie odpowiedział w ciągu %d s – szczegóły: %s", int(startTimeout.Seconds()), filepath.Join(e.l.LogsDir(), "engine_console.log"))
+	// 1.46: the state stayed STARTING forever (the automatic restart ignores the error: no error screen, no "Spróbuj ponownie"), and an
+	// engine answering later was never reported RUNNING. The process keeps running (a long migration is not killed) and is watched.
+	e.set(EngineFailed, msg)
+	go e.watchLateStart(ctx, cmd, exited)
+	return errors.New(msg)
+}
+
+// watchLateStart (1.46): an engine that missed startTimeout but is still running - RUNNING as soon as it answers (once; not after a
+// retry already reported it, which would reload the panel a second time).
+func (e *Engine) watchLateStart(ctx context.Context, cmd *exec.Cmd, exited chan struct{}) {
+	for {
+		select {
+		case <-exited:
+			return
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		e.mu.Lock()
+		current := e.cmd == cmd && e.state == EngineFailed // a retry (Start: Owned -> RUNNING) or Stop already took over
+		e.mu.Unlock()
+		if !current {
+			return
+		}
+		if e.healthy() {
+			e.set(EngineRunning, "")
+			return
+		}
+	}
 }
 
 // earlyExit: the engine ended before it answered. Exit codes of `masterquo serve`: 0 = an instance of the app already answers
@@ -324,11 +401,9 @@ func (e *Engine) earlyExit(ctx context.Context, cmd *exec.Cmd, logFrom int64) er
 		code = cmd.ProcessState.ExitCode()
 	}
 	logPath := filepath.Join(e.l.LogsDir(), "engine_console.log")
-	e.mu.Lock()
-	if e.starting == cmd {
-		e.starting = nil
-	}
-	e.mu.Unlock()
+	// 1.46: e.starting is NOT cleared here any more - afterExit runs concurrently (right after close(exited)) and, when this cleared it
+	// first, took the early exit for a crash: FAILED plus CRASHED and the restart loop (TestEarlyExitShowsLogTail failed 4 of 24 runs
+	// under -race). A stale e.starting of an ended process is harmless: only that process's own afterExit / started() compare with it.
 	if code == 0 || code == 4 { // another engine of this folder answers or is about to: attach instead of failing
 		for i := 0; i < 150; i++ {
 			if e.healthy() {
@@ -347,8 +422,9 @@ func (e *Engine) earlyExit(ctx context.Context, cmd *exec.Cmd, logFrom int64) er
 	case 3:
 		msg = fmt.Sprintf("port %d jest zajęty przez inny program – zmień server.port w %s", e.Port(), filepath.Join(e.l.DataDir, "config.json"))
 	case 4:
+		// 1.46: the user-visible product name (was the old name PepeMarketWizard)
 		msg = "inna kopia silnika trzyma ten folder danych, ale nie odpowiada (zawieszona po poprzednim uruchomieniu). " +
-			"Zamknij procesy python.exe PepeMarketWizard w Menedżerze zadań albo uruchom ponownie komputer i spróbuj jeszcze raz."
+			"Zamknij procesy python.exe silnika " + displayName + " w Menedżerze zadań albo uruchom ponownie komputer i spróbuj jeszcze raz."
 	default:
 		msg = fmt.Sprintf("silnik zakończył się podczas startu (kod %d)", code)
 	}
@@ -416,7 +492,9 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 	}
 	if e.restartRequested() {
 		e.logf("silnik: ponowne uruchomienie na żądanie panelu")
-		_ = e.spawn(ctx)
+		if err := e.spawn(ctx); err != nil && !errors.Is(err, errStopRequested) { // 1.46: spawn reports the state; the reason goes to desktop.log
+			e.logf("silnik: ponowne uruchomienie nieudane: " + err.Error())
+		}
 		return
 	}
 	if werr == nil {
@@ -452,7 +530,9 @@ func (e *Engine) afterExit(ctx context.Context, cmd *exec.Cmd, werr error) {
 	case <-ctx.Done():
 		return
 	}
-	_ = e.spawn(ctx)
+	if err := e.spawn(ctx); err != nil && !errors.Is(err, errStopRequested) { // 1.46: spawn reports the state; the reason goes to desktop.log
+		e.logf("silnik: ponowne uruchomienie nieudane: " + err.Error())
+	}
 }
 
 // Restart from the shell (tray / start screen): stop the owned engine and start it again.
@@ -482,7 +562,7 @@ func (e *Engine) Stop(timeout time.Duration) {
 		e.mu.Unlock()
 		return
 	}
-	e.stopping = true
+	e.stopping, e.stopReq = true, cmd
 	e.mu.Unlock()
 	if tok, err := os.ReadFile(filepath.Join(e.l.RuntimeDir(), "shutdown.token")); err == nil {
 		req, _ := http.NewRequest("POST", e.URL()+"api/v1/admin/shutdown", strings.NewReader("{}"))
