@@ -14,6 +14,9 @@ States: IDLE -> PRIMARY_OPEN -> HEDGE_PENDING -> HEDGED -> UNWINDING -> PRIMARY_
   HEDGE_CLOSE_MAX_TRIES times, then ERROR (HEDGE_CLOSE_FAILED). A close whose outcome is unknown (CLOSING) is never resent.
 * A rejected unwind of a hedge that must close (primary closed / after its TP2) is retried the same way; any other rejected unwind returns
   to HEDGED, where the unwind condition is evaluated again (spaced, bounded).
+* A close of the hedge leg that did not complete in one go (definitive rejection, partial fill; not the pack ratio-cap reduction) uses up
+  the activation budget: the retries still close the leg, but no new leg is opened afterwards (before 1.46 such a basket stayed UNWINDING /
+  ERROR and never hedged again - a retried close must not turn into a second hedge).
 """
 from __future__ import annotations
 
@@ -220,23 +223,25 @@ class Basket:
 
     def on_hedge_closed(self, event_id: str, t: float, volume: float, price: float, ok: bool = True, reason: str = "",
                         action_id: str | None = None) -> list[dict]:
-        """Confirmed close of (part of) the hedge leg, or its definitive rejection (ok=False). action_id = the rejected action, whose id is
-        released (without it: the unwind / exit id CLOSE_HEDGE:<activations>, as before)."""
+        """Confirmed close of (part of) the hedge leg, or its definitive rejection (ok=False). action_id = the action answered: a rejected id
+        is released (without it: the unwind / exit id CLOSE_HEDGE:<activations>, as before)."""
         if event_id in self.seen:
             return []
         self.seen.add(event_id)
         h = self.hedge
         if not h:
             return []
+        cap = ":CLOSE_HEDGE:CAP" in (action_id or event_id)
         if not ok:
             # closing the hedge failed: never reported as closed; the close is retried (spaced, bounded) - see on_quote
             aid = action_id or f"{self.basket_id}:CLOSE_HEDGE:{self.activations}"
             self.issued.discard(aid)
-            if ":CLOSE_HEDGE:CAP" in aid:                                 # ratio-cap reduction (pack): the service retries it, spaced
+            if cap:                                                       # ratio-cap reduction (pack): the service retries it, spaced
                 n = int(self.policy.get("cap_rejects") or 0) + 1
                 self.policy["cap_rejects"], self.policy["cap_last_reject"] = n, t
                 self._go(self.state, f"redukcja hedge (limit po częściowym zamknięciu bazy) odrzucona ({n}): {reason}", t)
                 return []
+            self._no_new_hedge(t, f"zamknięcie nogi hedge odrzucone: {reason}")
             self.exit_retries += 1
             self.last_exit_try = t
             n, mx = self.exit_retries, HEDGE_CLOSE_MAX_TRIES
@@ -254,6 +259,8 @@ class Basket:
         sign = 1 if h.side == "BUY" else -1
         self.hedge_realized_money += sign * (price - h.entry) * volume * self.money_per_price_per_lot
         h.volume = round(h.volume - volume, 8)
+        if h.volume > 1e-9 and not cap:
+            self._no_new_hedge(t, f"zamknięcie nogi hedge wykonane częściowo ({volume})")
         if h.volume <= 1e-9:
             h.status = "CLOSED"
             self.exit_retries = 0
@@ -273,6 +280,13 @@ class Basket:
             self._go("EXIT_PENDING", f"zamknięcie pozycji głównej odrzucone – ponowienie: {reason}", t)
 
     # ------------------------------------------------------------------ internal transitions
+    def _no_new_hedge(self, t: float, why: str) -> None:
+        """A close of the hedge leg needed a retry: the remaining activations are used up (no second leg after a retried close)."""
+        if self.activations < self.cfg.max_activations:
+            self.activations = self.cfg.max_activations
+            self.transitions.append({"t": t, "from": self.state, "to": self.state,
+                                     "why": f"limit aktywacji hedge wykorzystany – bez nowej nogi po ponawianym zamknięciu: {why}"})
+
     def _close_retry_ok(self, t: float) -> bool:
         """After a rejected close of the hedge: next attempt only EXIT_RETRY_SECONDS later and at most HEDGE_CLOSE_MAX_TRIES in total."""
         return not self.exit_retries or (self.exit_retries < HEDGE_CLOSE_MAX_TRIES and t - self.last_exit_try >= EXIT_RETRY_SECONDS)

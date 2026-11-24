@@ -1,16 +1,20 @@
 """Fala 2 (grupa sh_exec): wykonanie i zarządzanie planami SCALPING / HEDGING - state machines (lifecycle, hedge_fsm), executor,
 reconcile / recover. Each test fails on the code before the fix and documents one item:
 
-I0714 reconcile: None from MT5 / another account is not 'position closed'; the plan is frozen (no hedge, no action) and recovery retried.
-I0740 a rejected close of the hedge in EXIT_PENDING is retried (spaced, bounded, then ERROR); an exit decision is final (no new hedge).
+I0714 reconcile: None from MT5 / another account is not 'position closed'; the plan is frozen (no hedge, no action) and recovery retried;
+      a terminal not answering at all (timeout / busy) is signalled (RECONCILE_WAIT, alert after the wait) and never settled on.
+I0740 a rejected close of the hedge in EXIT_PENDING is retried (spaced, bounded, then ERROR); an exit decision is final (no new hedge);
+      a retried hedge close (rejected / partial) uses up the activations (no second leg); the working rest of a RETURN partial is not resent.
 I0741 a stored remaining 0.0 of a closed position stays 0.0 after a reload (no phantom primary).
-I0742 partial closes are capped to the volume the position still holds (after REDUCE / external partial close).
+I0742 partial closes are capped to the volume the position still holds (after REDUCE / external partial close) - also through
+      SHService.manage; a volume drop is first settled on the partial closes in flight (unknown outcome), so TP2 / BE still follow.
 I0812 an OK DEAL answer without volume is UNKNOWN (never DONE); process survives a DONE row without volume.
 I0813 closing deals include INOUT / OUT_BY; a vanished position without its deal is settled only after the wait (verified=False).
 I0814 a rejected CAP reduction releases its own id; the variant policy keeps running; no HEDGE intent next to an open leg.
 I0815 the rest of a partially filled TP leg is requested again (new attempt id); the runner counts only unfilled requests.
 I0816 the position state never goes back from TP2_DONE to TP1_DONE.
 """
+import json
 import types
 import unittest
 
@@ -129,6 +133,82 @@ class TestPartialCappedByRemaining(unittest.TestCase):
         p.on_closed("x", 0.55, 99.5, "EXTERNAL")                                     # 0.45 left
         acts = p.on_quote(101.1, 101.2, limits=(0.1, 0.1))
         self.assertEqual([a["volume"] for a in acts], [0.4])                         # floor(0.45 / 0.1) * 0.1, never above the rest
+
+
+class TestManageCapsPartials(TS.Base):
+    """SHService.manage passes the symbol's volume limits to the state machines (the cap is not only a property of on_quote)."""
+
+    def test_gap_after_external_close_never_requests_more_than_the_position(self):
+        self.open(volume=0.3)                                                    # legs 0.15 / 0.09 / runner 0.06
+        row = self.row()
+        pos = row["fsm_obj"]
+        pos.on_closed("ext", 0.1, pos.entry, "ZEWNĘTRZNE_ZAMKNIĘCIE_CZĘŚCI")     # 0.2 left
+        self.svc.store.update_plan(row["plan_id"], fsm=pos, now=self.t)
+        tp2 = pos.legs[1].price
+        row = self.step(tp2 + 0.1, dt=1)                                         # one gap over TP1 and TP2
+        req = [(json.loads(a["request"])["leg"], json.loads(a["request"])["volume"]) for a in self.svc.store.actions(row["plan_id"])
+               if a["kind"] == "CLOSE_PARTIAL"]
+        self.assertEqual(req, [("TP1", 0.15)])                                   # before (no limits in manage): TP1 0.15 + TP2 0.09 > 0.2
+        self.assertEqual(row["fsm_obj"].legs[1].status, "PENDING")               # TP2 waits for TP1's result (not SKIPPED)
+        row = self.step(tp2 + 0.1, dt=1)
+        p = row["fsm_obj"]
+        self.assertEqual((p.legs[1].status, row["state"]), ("DONE", "CLOSED"))   # TP2 capped to the 0.05 left: the position is closed
+        self.assertAlmostEqual(p.legs[1].fill_volume, 0.05)
+        self.assertAlmostEqual(p.remaining, 0.0)
+
+
+class TestUnknownPartialSettledByReconcile(TS.Base):
+    """A partial close executed by the terminal whose answer was lost (UNKNOWN): reconciliation books the volume drop on that leg first."""
+    mode = "AUTO_DEMO"
+
+    def _lose_next_answer(self):
+        orig, st = self.fake.order_send, {"n": 0}
+
+        def send(req):
+            r = orig(req)
+            if req.get("action") == self.fake.TRADE_ACTION_DEAL and st["n"] == 0:
+                st["n"] += 1
+                raise TimeoutError("executed, answer lost")
+            return r
+        self.fake.order_send = send
+
+    def test_tp2_and_be_follow_an_unknown_tp1(self):
+        self.open(volume=0.3)
+        pos = self.row()["fsm_obj"]
+        tp1, tp2 = pos.legs[0].price, pos.legs[1].price
+        self._lose_next_answer()
+        row = self.step(tp1 + 0.1, dt=1)                                         # TP1 executed, UNKNOWN for the bot
+        self.assertEqual(row["fsm_obj"].legs[0].status, "REQUESTED")
+        row = self.step(tp1 + 0.1, dt=1)                                         # reconcile: the drop is TP1's
+        p = row["fsm_obj"]
+        self.assertEqual((p.legs[0].status, p.state), ("DONE", "TP1_DONE"))
+        self.assertAlmostEqual(p.remaining, 0.15)
+        ev = next(x for x in self.svc.store.events(row["plan_id"]) if x["kind"] == "RECONCILED_PRIMARY")["payload"]
+        self.assertEqual(([x["leg"] for x in ev["legs_in_flight"]], ev["closed"], ev["closed_external"]), (["TP1"], 0.15, 0.0))
+        tp1_row = next(a for a in self.svc.store.actions(row["plan_id"]) if a["action_id"].endswith(":CLOSE_PARTIAL:TP1"))
+        self.assertEqual(tp1_row["status"], "DONE")                              # outcome no longer unknown
+        for _ in range(3):
+            row = self.step(tp2 + 0.1, dt=1)
+        acts = {a["action_id"].split(":", 1)[1]: a["status"] for a in self.svc.store.actions(row["plan_id"])}
+        self.assertEqual(acts.get("CLOSE_PARTIAL:TP2"), "DONE")                  # before: TP2 never requested (TP1 counted twice)
+        self.assertEqual(acts.get("MODIFY_SL:BE1"), "DONE")
+        self.assertEqual((row["fsm_obj"].state, row["fsm_obj"].be_status), ("TP2_DONE", "SET"))
+
+    def test_drop_beyond_the_partial_in_flight_is_booked_as_external(self):
+        self.open(volume=0.3)
+        row = self.row()
+        tp1 = row["fsm_obj"].legs[0].price
+        self._lose_next_answer()
+        self.step(tp1 + 0.1, dt=1)
+        tk = int(row["primary_ticket"])
+        self.fake.order_send({"action": self.fake.TRADE_ACTION_DEAL, "symbol": "XAUUSD-", "volume": 0.05, "position": tk,
+                              "type": self.fake.ORDER_TYPE_SELL, "price": self.fake.symbol_info_tick("XAUUSD-").bid, "comment": "manual"})
+        row = self.step(tp1 + 0.1, dt=1)
+        p = row["fsm_obj"]
+        self.assertEqual(p.legs[0].status, "DONE")
+        self.assertAlmostEqual(p.legs[0].fill_volume, 0.15)
+        self.assertAlmostEqual(p.remaining, 0.1)
+        self.assertEqual([r["leg"] for r in p.realized], ["TP1", "ZEWNĘTRZNE_ZAMKNIĘCIE_CZĘŚCI"])
 
 
 # ====================================================================================================================== I0815
@@ -370,6 +450,25 @@ class TestReconcileTerminalNone(TS.Base):
         self.assertEqual(self.svc.plan_view(row, None).get("flags"), ["INNY_RACHUNEK"])
         self.assertEqual(self.svc.store.actions(row["plan_id"])[-1]["kind"], "MODIFY_TP")   # nothing new sent
 
+    def test_terminal_error_is_signalled_and_never_settled(self):
+        self.open(volume=0.3)
+        row = self.row()
+        logged = []
+        self.svc.log = types.SimpleNamespace(warn=lambda *a, **k: logged.append(("warn", a[1])), error=lambda *a, **k: logged.append(("error", a[1])),
+                                             info=lambda *a, **k: None)
+
+        def busy(symbol=None, ticket=None, group=None):
+            raise RuntimeError("MT5Busy: worker not answering")
+        self.fake.positions_get = busy
+        e = row["fsm_obj"].entry
+        for _ in range(4):
+            row = self.step(e + 2.6, dt=25)
+        self.assertEqual(row["state"], "OPEN")                                  # nothing assumed, nothing settled
+        self.assertFalse(any(a["kind"] == "CLOSE_PARTIAL" for a in self.svc.store.actions(row["plan_id"])))
+        waits = [x["payload"] for x in self.svc.store.events(row["plan_id"]) if x["kind"] == "RECONCILE_WAIT"]
+        self.assertEqual([w["kind"] for w in waits], ["TERMINAL_ERROR", "TERMINAL_ERROR"])   # before: silent SKIP (no event, no alert)
+        self.assertEqual(logged, [("warn", "RECONCILE_WAIT"), ("error", "RECONCILE_TERMINAL_ERROR")])   # once per episode
+
     def test_recover_without_data_rejects_nothing_and_repeats(self):
         self.fake.hang_order_send = True
         self.open(volume=0.1)
@@ -456,6 +555,99 @@ class TestHedgeCloseRetry(unittest.TestCase):
         for k in ("exit_retries", "exit_round", "last_exit_try"):
             d.pop(k)
         self.assertEqual(basket_load(d).exit_retries, 0)                         # a record of the previous version
+
+
+class TestNoNewHedgeAfterRetriedClose(unittest.TestCase):
+    def _b(self):
+        b = hedged_basket()
+        b.cfg.max_activations = 2
+        return b
+
+    def test_rejected_unwind_uses_up_the_activations(self):
+        b = self._b()
+        a = b._unwind(2.0, "odbicie", gated=True)[0]
+        b.hedge.status = "OPEN"
+        b.on_hedge_closed(a["action_id"] + ":rej", 3.0, 0, 0, ok=False, reason="REQUOTE", action_id=a["action_id"])
+        self.assertEqual(b.activations, 2)                                       # before: 1 - a retried unwind led to OPEN_HEDGE H2
+        r = b._unwind(3.0 + EXIT_RETRY_SECONDS, "odbicie", gated=True)
+        b.hedge.status = "OPEN"
+        b.on_hedge_closed(r[0]["action_id"] + ":r", 9.0, 0.5, 99.6, action_id=r[0]["action_id"])
+        self.assertEqual(b.state, "PRIMARY_OPEN")
+        self.assertEqual(b.hedge_decision(98.0, 98.1, structure_valid=True, risk_ok=True, risk_reason="", hedge_cost_price=0.1,
+                                          reduce_cost_price=1.0)["decision"], "HOLD")
+
+    def test_partial_unwind_uses_up_the_activations_cap_does_not(self):
+        b = self._b()
+        a = b._unwind(2.0, "odbicie")[0]
+        b.hedge.status = "OPEN"
+        b.on_hedge_closed(a["action_id"] + ":r", 3.0, 0.2, 99.6, action_id=a["action_id"])
+        self.assertEqual(b.activations, 2)
+        c = self._b()
+        c.on_hedge_closed("B:CLOSE_HEDGE:CAP1:r", 3.0, 0.2, 99.6, action_id="B:CLOSE_HEDGE:CAP1")   # ratio-cap reduction (by design)
+        self.assertEqual(c.activations, 1)
+        d = self._b()
+        a = d._unwind(2.0, "odbicie")[0]
+        d.hedge.status = "OPEN"
+        d.on_hedge_closed(a["action_id"] + ":r", 3.0, 0.5, 99.6, action_id=a["action_id"])   # closed in one go: as before
+        self.assertEqual((d.activations, d.state), (1, "PRIMARY_OPEN"))
+
+
+class TestNoRehedgeOnService(TS.Base):
+    mode = "AUTO_DEMO"
+
+    def test_second_hedge_not_opened_after_rejected_unwind(self):
+        self.open("HEDGING", volume=0.4)
+        row = self.row()
+        b = row["fsm_obj"]
+        b.cfg.max_activations = 2
+        self.svc.store.update_plan(row["plan_id"], fsm=b, now=self.t)
+        e = b.primary.entry
+        row = self.step(e - 1.5, dt=1)
+        h = row["fsm_obj"].hedge
+        self.assertEqual((row["fsm_obj"].state, h.status), ("HEDGED", "OPEN"))
+        up = round(h.entry + b.cfg.unwind_recovery_usd + 0.1, 2)
+        self.fake.fail_next_order = 10004                                        # the unwind close is rejected once
+        row = self.step(up, dt=1)
+        self.assertEqual(row["fsm_obj"].state, "HEDGED")
+        row = self.step(up, dt=EXIT_RETRY_SECONDS + 1)                           # retried unwind succeeds
+        self.assertEqual((row["fsm_obj"].state, row["fsm_obj"].hedge.status), ("PRIMARY_OPEN", "CLOSED"))
+        for _ in range(2):
+            row = self.step(e - 1.5, dt=1)                                       # beyond the hedge trigger again
+        n_open_h = sum(1 for a in self.svc.store.actions(row["plan_id"]) if a["kind"] == "OPEN_H")
+        self.assertEqual(n_open_h, 1)                                            # before: 2 (OPEN:H2 the base code never sent)
+
+
+class TestReturnPartialRestNotResent(TS.Base):
+    def _basket(self):
+        self.open("HEDGING", volume=0.4)
+        row = self.row()
+        b = row["fsm_obj"]
+        b.hedge, b.state, b.activations = Leg2("SELL" if b.primary.side == "BUY" else "BUY", 0.2, b.primary.entry - 1.0, self.t), "HEDGED", 1
+        return row, b
+
+    def test_partial_hedge_close_at_return_stays_closing(self):
+        row, b = self._basket()
+        acts = b._exit_all(self.t, "x")
+        ans = [{"status": "FILLED", "volume": b.primary.remaining, "price": b.primary.entry} if a["kind"] == "CLOSE_PRIMARY" else
+               {"status": "PARTIAL", "volume": 0.1, "price": b.hedge.entry} for a in acts]
+        self.svc.process(_StubEx(ans, rest_cancelled=False), row, b, acts, self.spec, self.q(), self.t)
+        self.assertEqual((b.hedge.status, b.hedge.volume), ("CLOSING", 0.1))    # before: OPEN -> rest re-requested 5 s later
+        self.assertEqual(b.on_quote(self.t + 60, 1.0, 1.1, primary_close_ok=True), [])
+        row2, b2 = self._basket()
+        acts = [a for a in b2._exit_all(self.t, "x") if a["kind"] == "CLOSE_HEDGE"]
+        self.svc.process(_StubEx([{"status": "PARTIAL", "volume": 0.1, "price": b2.hedge.entry}], rest_cancelled=True), row2, b2, acts,
+                         self.spec, self.q(), self.t)
+        self.assertEqual(b2.hedge.status, "OPEN")                                # FOK / IOC: the rest is cancelled - retried
+        self.assertEqual([a["kind"] for a in b2.on_quote(self.t + 60, 1.0, 1.1)], ["CLOSE_HEDGE"])
+
+    def test_partial_primary_exit_at_return_is_a_close_in_flight(self):
+        row, b = self._basket()
+        b.state = "EXIT_PENDING"
+        aid = f"{row['plan_id']}:CLOSE_PRIMARY:EXIT"
+        self.svc.store.claim_action({"action_id": aid, "plan_id": row["plan_id"], "kind": "CLOSE_PRIMARY", "volume": 0.4}, self.t)
+        self.svc.store.finish_action(aid, "DONE", {"status": "PARTIAL", "volume": 0.2, "price": 1.0}, self.t)
+        self.assertFalse(self.svc._primary_close_free(row, b, _StubEx([], rest_cancelled=False)))   # before: True (EXIT_R sent)
+        self.assertTrue(self.svc._primary_close_free(row, b, _StubEx([], rest_cancelled=True)))
 
 
 class TestExitIsFinalOnService(TS.Base):
