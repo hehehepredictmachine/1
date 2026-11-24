@@ -760,14 +760,17 @@ class PepeTrainingCenter:
     def _load_history(self) -> list[dict]:
         """arch146 I0101 (wariant bezpieczny): history.json, który nie jest listą wpisów (np. '{}'), dawał KeyError / TypeError z konstruktora
         – wyjątek wychodził z Runtime() i bot kończył start kodem 5. Teraz: pusta historia, a nieczytelny plik zostaje zachowany jako
-        history.json.corrupt-<czas> (pierwszy _remember() go nie nadpisuje)."""
+        history.json.corrupt-<czas> (pierwszy _remember() go nie nadpisuje). Tak samo plik, który nie jest UTF-8 (np. zapisany
+        w Notatniku jako ANSI/cp1250) – UnicodeDecodeError nie wychodzi z konstruktora, jak w 1.46.0."""
         p = center_dir() / "history.json"
         try:
             raw = p.read_text(encoding="utf-8")
         except OSError:
             return []
+        except UnicodeDecodeError:                               # np. zapis w Notatniku jako ANSI/cp1250 – plik nieczytelny, nie błąd startu
+            raw = None
         try:
-            d = json.loads(raw)
+            d = json.loads(raw) if raw is not None else None
         except ValueError:
             d = None
         if isinstance(d, list):

@@ -438,6 +438,26 @@ class TestI0101PepeHistoryNotList(_Data):
         c._remember({"id": "x", "unit": "trainhub", "state": "DONE"})
         self.assertEqual(kept[0].read_text(encoding="utf-8"), "{}")
 
+    def _not_utf8(self, raw: bytes) -> None:
+        from masterquo.training import pepe_center as PC
+        (PC.center_dir() / "history.json").write_bytes(raw)
+        c = PC.PepeTrainingCenter(SimpleNamespace())                     # przed poprawką recenzji: UnicodeDecodeError -> Runtime() -> exit 5
+        self.assertEqual(c.history, [])
+        kept = list(PC.center_dir().glob("history.json.corrupt-*"))
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].read_bytes(), raw)                       # bajty użytkownika zachowane bez zmian
+        c._remember({"id": "x", "unit": "trainhub", "state": "DONE"})
+        self.assertEqual(kept[0].read_bytes(), raw)
+        self.assertEqual(json.loads((PC.center_dir() / "history.json").read_text(encoding="utf-8"))[0]["id"], "x")
+
+    def test_cp1250_history_does_not_stop_the_start(self):
+        # Notatnik „ANSI”: polski tekst z historii (przerwany zamknięciem…, Główny trening) zapisany w cp1250
+        items = [{"id": "q1", "unit": "runner", "name": "Główny trening", "state": "CANCELLED", "detail": "przerwany zamknięciem aplikacji"}]
+        self._not_utf8(json.dumps(items, ensure_ascii=False).encode("cp1250"))
+
+    def test_invalid_byte_history_does_not_stop_the_start(self):
+        self._not_utf8(b'[{"id": "q1", "name": "\xff"}]')
+
     def test_list_history_unchanged(self):
         from masterquo.training import pepe_center as PC
         items = [{"id": f"i{i}", "unit": "trainhub"} for i in range(130)]
