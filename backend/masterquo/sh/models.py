@@ -209,10 +209,16 @@ def probe(item: dict, rt, inst: str) -> dict:
                 return {"status": "SHADOW_ONLY", "reason": why, "detail": {"ml_mode": mode}}
             return {"status": "UNAVAILABLE", "reason": "instrument inny niż aktywny w bocie"}
         if mid == "lab":
-            ptr = _json(paths.data_dir() / "lab" / "models" / inst / "ACTIVE.json") or {}
-            act = {k: v for k, v in (ptr.get("active") or ptr).items() if v} if isinstance(ptr, dict) else {}
-            return {"status": "SHADOW_ONLY" if act else "NOT_TRAINED", "reason": "aktywne rodziny: " + (", ".join(act) if act else "brak") +
-                    " – score nieskalibrowany, zdarzenie 1.5 ATR LONG"}
+            # 1.46: the same rule as LabService (lab/protocol.effective_models): pinned per family, otherwise the latest - also without
+            # ACTIVE.json (API /api/v1/lab/train never pins; only reading the pointer showed NOT_TRAINED while Quant got READY lab:<FAMILY>)
+            from ..lab import protocol as LP
+            eff = LP.effective_models(paths.data_dir() / "lab", inst)
+            if not eff:
+                return {"status": "NOT_TRAINED", "reason": "brak artefaktu lab dla instrumentu – score nieskalibrowany, zdarzenie 1.5 ATR LONG"}
+            txt = ", ".join(f"{m['family']}={m['model_id']} ({'przypięty' if m['pinned'] else 'najnowszy, nieprzypięty'}; rola {m.get('role')})"
+                            for m in eff)
+            return {"status": "SHADOW_ONLY", "reason": f"aktywne rodziny: {txt} – score nieskalibrowany, zdarzenie 1.5 ATR LONG",
+                    "detail": {"models": [{k: m.get(k) for k in ("family", "model_id", "pinned", "role")} for m in eff]}}
         base = paths.data_dir()
         files = {"indicator_context": (base / "indicator_context" / inst / "registry.json", "active"),
                  "ml_scalp": (base / "ml_scalp" / inst / "registry.json", "selected"),

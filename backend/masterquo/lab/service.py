@@ -195,14 +195,11 @@ class LabService:
     # ------------------------------------------------------------------ models + telemetry
     def _active_models(self, asset: str) -> list[tuple]:
         """Active artefact of EVERY model family of this asset: the pinned one (ACTIVE.json - activation / rollback per family),
-        otherwise the latest. All of them run; one is shown as primary."""
-        from .protocol import read_pointer
-        pinned = read_pointer(self.trainer.root, asset)["active"]
-        out, seen, errors = [], set(), []
-        for m in self.trainer.models(asset):
-            if m.get("family") in seen or (m.get("family") in pinned and pinned[m["family"]] != m.get("model_id")):
-                continue
-            seen.add(m.get("family"))
+        otherwise the latest. All of them run; one is shown as primary. 1.46: the rule lives in protocol.effective_models (the SH matrix
+        row 'lab' reports the same set)."""
+        from .protocol import effective_models
+        out, errors = [], []
+        for m in effective_models(self.trainer.root, asset, self.trainer.models(asset)):
             path = str(self.trainer.root / "models" / asset / m["path"])
             cached = self._models.get(path)
             if cached is None:
@@ -283,11 +280,14 @@ class LabService:
                "latency_ms": round(lat, 2), "telemetry_overhead_ms": round(tel_ms, 2),
                "quality": "OK" if all(v == "OK" for v in fq.values()) else "DEGRADED",
                "warnings": (["MODEL_TECHNICZNY_NA_DANYCH_SYNTETYCZNYCH – nie do decyzji"] if man.get("role") == "fixture_only" else []) +
-                           ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]),
+                           ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]) +
+                           # 1.46: library versions differ from training (manifest / unpickling) - shown, never a refusal
+                           (["ZALEZNOSCI_INNE_NIZ_PRZY_TRENINGU: " + "; ".join(man["dependency_drift"])[:300]] if man.get("dependency_drift") else []),
                "expires_at": iso(ts(as_of) + TF_SEC["M5"])}
         return {"status": "ready", "model_id": man["model_id"], "family": fitted.family, "role": man.get("role"), "horizon": man["horizon"],
                 "side": side, "raw_score": round(p, 4), "probability": None, "calibration_ece": (man.get("metrics") or {}).get("ece_mean"),
                 "inference_id": inf_id, "event": tel["output_schema"]["event"], "data_source": man.get("data_source"),
+                "dependency_drift": man.get("dependency_drift") or [],
                 "nn_status": ("ACTIVE_" + str(man.get("role")).upper()) if is_nn else "INACTIVE",
                 "nn_reason": None if is_nn else f"championem jest {fitted.family} (nie sieć neuronowa) – pokazano jego rzeczywisty przepływ",
                 "telemetry": tel}

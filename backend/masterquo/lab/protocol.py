@@ -260,8 +260,11 @@ def save_artifact(root: Path, fitted: Fitted, manifest: dict) -> Path:
     blob = pickle.dumps({"family": fitted.family, "obj": fitted.obj, "cfg": fitted.cfg,
                          "prep": {k: v for k, v in fitted.prep.items() if k != "neut_fac"}})
     (tmp / "model.pkl").write_bytes(blob)
-    manifest = {**manifest, "sha256": hashlib.sha256(blob).hexdigest(),
-                "dependencies": {"python": platform.python_version(), "numpy": np.__version__, "scikit-learn": sklearn.__version__}}
+    deps = {"python": platform.python_version(), "numpy": np.__version__, "scikit-learn": sklearn.__version__}
+    xgb = _dist_version("xgboost")                       # 1.46: XGB pickles depend on it too (only when installed)
+    if xgb:
+        deps["xgboost"] = xgb
+    manifest = {**manifest, "sha256": hashlib.sha256(blob).hexdigest(), "dependencies": deps}
     (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
     final = root / mid
     if final.exists():
@@ -270,7 +273,35 @@ def save_artifact(root: Path, fitted: Fitted, manifest: dict) -> Path:
     return final
 
 
+def _dist_version(name: str) -> str | None:
+    from importlib import metadata
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+DRIFT_PACKAGES = ("numpy", "scikit-learn", "xgboost")
+
+
+def dependency_drift(deps: dict | None) -> list[str]:
+    """'package trained->now' for every package of the manifest whose installed major.minor differs (missing now = '-')."""
+    out = []
+    for name in DRIFT_PACKAGES:
+        was = (deps or {}).get(name)
+        if not was:
+            continue                                     # artefacts without the key (e.g. xgboost before 1.46) load as before
+        now_v = _dist_version(name)
+        if now_v is None or str(was).split(".")[:2] != now_v.split(".")[:2]:
+            out.append(f"{name} {was}->{now_v or '-'}")
+    return out
+
+
 def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, dict]:
+    """1.46: library versions recorded at training are compared with the installed ones (major.minor) and sklearn's
+    InconsistentVersionWarning from unpickling is captured - both go to man['dependency_drift'] (a signal, never a refusal: refusing
+    would change the set of live models)."""
+    import warnings
     man = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
     if man.get("asset") != asset:
         raise ArtifactMismatch(f"ASSET_MISMATCH:{man.get('asset')}!={asset}")
@@ -279,7 +310,16 @@ def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, 
     blob = (path / "model.pkl").read_bytes()
     if hashlib.sha256(blob).hexdigest() != man.get("sha256"):
         raise ArtifactMismatch("ARTIFACT_CHECKSUM_MISMATCH")
-    d = pickle.loads(blob)
+    drift = dependency_drift(man.get("dependencies"))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        d = pickle.loads(blob)
+    for w in caught:
+        if type(w.message).__name__ == "InconsistentVersionWarning":
+            drift.append(f"pickle: {w.message}"[:200])
+        else:                                            # anything else is shown as before
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+    man["dependency_drift"] = drift
     prep = d["prep"]
     if d["family"] == "LOGREG_NEUTRALIZED":
         prep["neut_fac"] = lambda X: np.column_stack([X[:, FE.FEATURES.index("ema_gap_50")], X[:, FE.FEATURES.index("atr_rel")]])
@@ -672,14 +712,34 @@ class LabTrainer:
         return [{k: v for k, v in j.items() if k != "cancel"} for j in sorted(self.jobs.values(), key=lambda j: j["started_at"], reverse=True)][:10]
 
     def models(self, asset: str) -> list[dict]:
-        d = self.root / "models" / asset
-        out = []
-        if d.exists():
-            for m in sorted(d.iterdir()):
-                f = m / "manifest.json"
-                if f.exists() and not m.name.endswith(".tmp"):
-                    man = json.loads(f.read_text(encoding="utf-8"))
-                    out.append({**{k: man.get(k) for k in ("model_id", "asset", "family", "horizon", "role", "verdict", "data_source", "trained_at",
-                                                            "cutoff", "protocol_id", "instrument_id")},
-                                "curve": (man.get("params") or {}).get("curve"), "metrics": man.get("metrics"), "path": m.name})
-        return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)
+        return list_models(self.root, asset)
+
+
+def list_models(root: Path, asset: str) -> list[dict]:
+    """Artefacts of `asset` (manifest summary), newest first by trained_at; *.tmp (unfinished save) skipped."""
+    d = Path(root) / "models" / asset
+    out = []
+    if d.exists():
+        for m in sorted(d.iterdir()):
+            f = m / "manifest.json"
+            if f.exists() and not m.name.endswith(".tmp"):
+                man = json.loads(f.read_text(encoding="utf-8"))
+                out.append({**{k: man.get(k) for k in ("model_id", "asset", "family", "horizon", "role", "verdict", "data_source", "trained_at",
+                                                        "cutoff", "protocol_id", "instrument_id")},
+                            "curve": (man.get("params") or {}).get("curve"), "metrics": man.get("metrics"), "path": m.name})
+    return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)
+
+
+def effective_models(root: Path, asset: str, models: list[dict] | None = None) -> list[dict]:
+    """1.46: THE rule of which artefact of every family runs (LabService) and what the SH matrix reports: the pinned one (ACTIVE.json,
+    activation / rollback per family), otherwise the latest by trained_at - also without any pointer (API /api/v1/lab/train never pins).
+    A family pinned to an artefact that is gone runs nothing. Each entry: the manifest summary + `pinned` (bool)."""
+    pinned = read_pointer(root, asset)["active"]
+    out, seen = [], set()
+    for m in list_models(root, asset) if models is None else models:
+        fam = m.get("family")
+        if fam in seen or (fam in pinned and pinned[fam] != m.get("model_id")):
+            continue
+        seen.add(fam)
+        out.append({**m, "pinned": fam in pinned})
+    return out
