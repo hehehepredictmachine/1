@@ -418,5 +418,58 @@ class TestFeatureDocstringsMatchConstants(unittest.TestCase):
         self.assertIn("F.build2", src)                                         # HEAD: the label / builder mismatch was undocumented
 
 
+
+# ============================================================================= I0326 (NIE_NAPRAWIONY, S0) - feature provenance only
+class _StubChampion:
+    family, meta = "XGBOOST", {"trained_at": "T", "threshold": 0.5, "base_rate": 0.5}
+
+    def __init__(self):
+        from types import SimpleNamespace
+
+        import numpy as np
+        self.np = np
+        self.prep = SimpleNamespace(numeric=[], cats={})
+        self.calib = SimpleNamespace(kind="ISOTONIC", apply=lambda a: a * 0 + 0.9)
+
+    def adapt(self, rows):
+        return rows
+
+    def raw(self, rows):
+        return self.np.array([0.9] * len(rows))
+
+
+class TestPredictionFeatureSource(unittest.TestCase):
+    def setUp(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.ml.service import MLService
+        self.td = TempData()
+        self.cfg = ConfigStore()
+        self.db = Database()
+        self.ml = MLService(self.cfg, self.db, None, _Bus(), None, root=Path(self.td.dir) / "ml")
+        self.ml.registry.champion, self.ml.registry.champion_id = _StubChampion(), "CH-1"
+
+    def tearDown(self):
+        self.db.close()
+        self.td.close()
+
+    def test_sample_vs_asof_now_and_rank_unchanged(self):
+        from masterquo.ml import features as fe
+        self.db.execute("""INSERT INTO ml_samples(sample_id, setup_id, setup_version, group_id, symbol, feed_id, strategy_id, strategy_version, direction,
+                           timeframe, asof_utc, feature_schema_version, features_json, entry_json, cost_model_version, label_policy_version, source,
+                           quality, status, synthetic, created_at, updated_at) VALUES ('C:1','C',1,'C','XAUUSD-','T','S01','1','LONG','M15',
+                           '2026-01-05T08:00:00Z','MQ-FEAT-1.3.0','{"M15_rsi": 50}','{}','c','l','LIVE','HIGH','PENDING',0,'t','t')""")
+        conf = {"setup_id": "C", "version": 1, "stage": "CONFIRMED", "record": {"strategy_id": "S01"}}
+        early = {"setup_id": "E", "version": 1, "stage": "EARLY", "record": {"strategy_id": "S01"}}
+        self.cfg.update({"ml": {"mode": "ASSIST"}})
+        with mock.patch.object(fe, "compute", return_value={"M15_rsi": 50.0}):
+            pc, pe = self.ml.predict(conf, object()), self.ml.predict(early, object())
+            self.assertEqual(pc["feature_source"], "SAMPLE")                 # HEAD: no such key
+            self.assertEqual(pe["feature_source"], "ASOF_NOW")
+            # the ASSIST rank bonus is NOT changed (S0: a ranking change can move the AUTO selection to another executable setup)
+            self.assertEqual(self.ml.rank_adjust(early, object()), self.ml.rank_adjust(conf, object()))
+            self.assertEqual(self.ml.rank_adjust(early, object()), 40.0)
+
+
 if __name__ == "__main__":
     unittest.main()

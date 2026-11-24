@@ -661,13 +661,18 @@ class MLService:
     # ------------------------------------------------------------ predictions
     def predict(self, setup_row: dict | None, view, *, role: str = "CHAMPION") -> dict:
         """Contract for one setup version. Cached per (setup_id, version, model_id); features are computed AS-OF the
-        setup's confirmation time when the sample exists (same values as training), else as-of now."""
+        setup's confirmation time when the sample exists (same values as training), else as-of now.
+
+        feature_source (1.46 w2, I0326 - information only): SAMPLE = the stored features of the CONFIRMED sample (the training
+        population), ASOF_NOW = computed now for a setup version without a sample (e.g. WATCH / EARLY rows ranked in ASSIST - a
+        population the model was never trained on). The rank bonus itself is unchanged (S0: any change of the ranking can move the
+        AUTO selection to another, executable setup)."""
         c = self.cfg
         base = {"contract": PRED_CONTRACT, "setup_id": (setup_row or {}).get("setup_id"), "setup_version": (setup_row or {}).get("version"),
                 "model_id": None, "model_family": None, "model_version": None, "feature_schema_version": fe.FEATURE_SCHEMA_VERSION,
                 "asof_utc": None, "raw_score": None, "calibrated_probability": None, "calibration_status": "NONE", "threshold": None,
                 "target_definition": "net_R > 0 wg planu setupu (MQ-LABEL-1.0.0)", "readiness": "NOT_READY", "uncertainty_reason": None,
-                "data_quality": None, "explanation_ref": None, "ml_mode": c.mode}
+                "data_quality": None, "explanation_ref": None, "ml_mode": c.mode, "feature_source": None}
         if setup_row is None:
             return dict(base, uncertainty_reason="NO_SETUP")
         bundle = self.registry.champion if role == "CHAMPION" else None
@@ -682,11 +687,13 @@ class MLService:
                            (f"{setup_row['setup_id']}:{setup_row['version']}",))
         if samp and samp["features_json"] not in (None, "{}"):
             feats, asof = fe.from_json(json.loads(samp["features_json"]), samp["feature_schema_version"]), samp["asof_utc"]
+            base["feature_source"] = "SAMPLE"
         else:
             if view is None:
                 return dict(base, model_id=mid, uncertainty_reason="NO_MARKET_VIEW")
             now = utcnow()
             feats, asof = fe.compute(view, dict(rec, symbol=setup_row.get("symbol")), now), iso(now)
+            base["feature_source"] = "ASOF_NOW"
         seen = bundle.adapt([feats])[0]          # 1.46: what THIS model sees (an old model: its own zone block) - also for the missing count
         missing = [k for k in bundle.prep.numeric if seen.get(k) is None or (isinstance(seen.get(k), float) and seen[k] != seen[k])]
         raw = float(bundle.raw([feats])[0])
