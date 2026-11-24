@@ -199,8 +199,16 @@ class LabService:
         from .protocol import read_pointer
         pinned = read_pointer(self.trainer.root, asset)["active"]
         out, seen, errors = [], set(), []
+        real = self._real_data()
         for m in self.trainer.models(asset):
             if m.get("family") in seen or (m.get("family") in pinned and pinned[m["family"]] != m.get("model_id")):
+                continue
+            if real and m.get("role") == "fixture_only":
+                # 1.46 arch I0072: a model trained on synthetic data (fixture_only) never runs on the bot's REAL data (it reached Quant as a
+                # REAL record). Unpinned family: the newest non-fixture model is used; a pinned one is skipped (no silent switch).
+                errors.append(f"{m.get('model_id')}: model techniczny na danych syntetycznych (fixture_only) – pominięty na danych REAL")
+                if m.get("family") in pinned:
+                    seen.add(m.get("family"))
                 continue
             seen.add(m.get("family"))
             path = str(self.trainer.root / "models" / asset / m["path"])
@@ -215,6 +223,13 @@ class LabService:
             out.append(cached)
         self._artifact_errors = errors
         return out
+
+    def _real_data(self) -> bool:
+        """The lab loop's data mode (tick: data_mode 'fixture' when the bridge is synthetic or synthetic_demo); unknown -> REAL (stricter)."""
+        try:
+            return not (getattr(self.bridge, "synthetic", False) or getattr(self.cfg_store.get(), "synthetic_demo", False))
+        except Exception:  # noqa: BLE001
+            return True
 
     @staticmethod
     def _primary(results: list[dict]) -> dict | None:

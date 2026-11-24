@@ -636,7 +636,10 @@ def t_master_models(run: Run, inst: str) -> None:
 
 
 def t_activate(run: Run, inst: str) -> None:
-    """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
+    """Atomic activation after a run. Forecasts / scalp: only ADMITTED (validated) runs; ML: the registry's promotion rules. Lab (policy,
+    1.46 arch I0072 docstring): a validated model (role shadow) is activated; an unvalidated research model is activated only as an
+    OBSERVATION when the family's active model is not a validated one, and never replaces a validated one. Synthetic data activates
+    nothing (plan['activate'] False); a fixture_only lab model is never run on REAL data (lab.service._active_models)."""
     tid, plan = f"{inst}:activate", run.state["plan"]
     run.set(tid, execution="W_TOKU", started_at=now())
     done, kept = [], []
