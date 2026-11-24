@@ -139,9 +139,6 @@ _OVR: dict[str, dict] = {
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},
 }
 
-_MM_TO_CANON = {"align_mean": "mm:align_mean", "hdc": "mm:hdc_dir3", "smc_fvg": "mm:smc_fvg", "event_engine": "mm:event_engine_dir3",
-                "ste_flownet": "mm:ste_flownet_ret", "gpr": "mm:gpr_logret", "kalman": "mm:kalman_cross", "breakout_zones": "mm:breakout_zones",
-                "multi_indicator": "mm:multi_indicator"}
 _MM_TOOL = {"buzoa": "TOOL", "sdom": "TOOL", "stfs": "TOOL", "quant_momentum": "NONE", "renko": "NONE", "head_shoulders": "NONE",
             "data_grabber": "TOOL", "tsvp": "TOOL", "mathbench": "TOOL", "chart_sync": "TOOL", "fusion_board": "TOOL"}
 
@@ -266,7 +263,7 @@ def _mm_rows() -> list[dict]:
     from ..mm import inventory as MI
     out = []
     for m in MI.MODULES:
-        cid = _MM_TO_CANON.get(m["id"])
+        cid = I.resolve(m["id"])                             # 1.46 arch (I0009): the alias table of quant/ids, not a copy of it
         if cid:
             out.append({"_merge": cid, "files": list(m.get("files") or []), "input": m.get("inputs"), "output_mm": m.get("outputs"),
                         "train": m.get("training"), "receivers": list(m.get("callers") or [])})

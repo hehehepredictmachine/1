@@ -174,6 +174,21 @@ _TH_KEY = re.compile(r"^(TH_[A-Z]+)_(M\d+|H\d+|D1)_H\d+$")        # trainhub mod
 # no prediction record of all_predictions / quant.adapters is named 'quant:*', the MetaModel entry of the coordinator is read by family)
 PREFIXES = ("trainhub", "mm", "family", "rule", "lab", "si", "flow", "forecast", "kronos", "tsfm", "scalp", "sh", "ml", "quant")
 
+# 1.46 arch (I0009): alias knowledge read from ALIASES instead of literals copied into the services (modelhub/families/service.py,
+# studio/registry.py, sh/models.py). Same values as the literals they replace (tests pin them).
+TRAINHUB_FAMILY_ALIASES: tuple[str, ...] = tuple(a.split(":", 1)[1] for _c, _al in ALIASES.items() if _c.startswith("trainhub:")
+                                                 for a in _al if a.startswith("family:"))      # TH_XGB / TH_RF / TH_SVM: no own vote, no own training
+EVENT_GRU_FAMILY: str = next(a.split(":", 1)[1] for a in ALIASES["mm:event_engine_dir3"] if a.startswith("family:"))   # SEQ_GRU_EVENT
+
+
+def mm_artifact_of(sh_row_id: str) -> str | None:
+    """MM artifact id (mm/artifacts pointer key) of an SH registry row: mm_gpr -> gpr_logret, mm_hdc -> hdc_dir3, mm_event_engine ->
+    event_engine_dir3, mm_ste_flownet -> ste_flownet_ret (the canonical 'mm:<artifact>' id). None for a row that is not an MM producer."""
+    if not str(sh_row_id or "").startswith("mm_"):
+        return None
+    c = _ALIAS_TO.get(str(sh_row_id))
+    return c.split(":", 1)[1] if c and c.startswith("mm:") else None
+
 
 def resolve(name: str | None) -> str | None:
     if not name:

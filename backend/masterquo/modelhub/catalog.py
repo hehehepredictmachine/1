@@ -112,6 +112,25 @@ def _use_note(pr: dict) -> str | None:
     return None
 
 
+_FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
+
+
+def canonical_row_id(r: dict) -> str | None:
+    """1.46 arch (I0009): canonical id of a catalog row in the canonical registry (quant/ids + quant/inventory): SH rows as the inventory
+    folds them (group:<id> for a group row, aliases resolved, else sh:<id>), MM modules mm:<module>, Training Center packages trainhub:<MODEL>.
+    Additive field - the row 'id' stays as it was (the panel matches predictions by canonical_id first)."""
+    from ..quant import ids as I
+    rid, src = str(r.get("id") or ""), r.get("source")
+    if src == "sh/models.REGISTRY":
+        return f"group:{rid}" if rid in I.GROUPS else (I.resolve(rid) or f"sh:{rid}")
+    if src == "mm/inventory.MODULES":
+        m = rid.removeprefix("mm_")
+        return I.resolve(m) or f"mm:{m}"
+    if src == "trainhub":
+        return I.resolve(rid.upper())
+    return _FIXED_CANON.get(rid)
+
+
 def build(rt, inst: str) -> dict:
     from ..sh import models as SM
     rows = []
@@ -161,6 +180,8 @@ def build(rt, inst: str) -> dict:
                  "output": "prawdopodobieństwo w modelu (kalibracja osobno)", "instruments": ["XAUUSD", "BTC"], "training": "kalibracja: montecarlo validate",
                  "state": "READY", "state_pl": C.STATES["READY"], "reason": "symulacja na żądanie", "source": "montecarlo"})
     rows += _th_entries(inst, rt)
+    for r in rows:
+        r["canonical_id"] = canonical_row_id(r)
     counts = {}
     for r in rows:
         counts.setdefault(r["category"], 0)

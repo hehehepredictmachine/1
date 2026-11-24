@@ -419,5 +419,69 @@ class TestCanonicalIds(unittest.TestCase):
                 if n and want:
                     self.assertEqual(I.canonical({"model_name": n}), want, n)
 
+    def test_I0009_alias_constants_single_source(self):
+        from masterquo.quant import ids as I
+        self.assertEqual(set(I.TRAINHUB_FAMILY_ALIASES), {"TH_RF", "TH_XGB", "TH_SVM"})     # pinned literally (safety condition 1)
+        self.assertEqual(I.EVENT_GRU_FAMILY, "SEQ_GRU_EVENT")
+        derived = {a.split(":", 1)[1] for c, al in I.ALIASES.items() if c.startswith("trainhub:") for a in al if a.startswith("family:")}
+        self.assertEqual(derived, set(I.TRAINHUB_FAMILY_ALIASES))
+        self.assertEqual({m: I.mm_artifact_of(m) for m in ("mm_gpr", "mm_hdc", "mm_event_engine", "mm_ste_flownet")},
+                         {"mm_gpr": "gpr_logret", "mm_hdc": "hdc_dir3", "mm_event_engine": "event_engine_dir3", "mm_ste_flownet": "ste_flownet_ret"})
+        self.assertIsNone(I.mm_artifact_of("lab"))
+        from masterquo.modelhub.families import service as FS
+        from masterquo.sh import models as SM
+        from masterquo.studio import registry as SR
+        for mod in (FS, SR):
+            src = inspect.getsource(mod)
+            self.assertNotIn('("TH_RF", "TH_XGB", "TH_SVM")', src, mod.__name__)
+            self.assertNotIn('== "SEQ_GRU_EVENT"', src, mod.__name__)
+        self.assertNotIn('"mm_gpr": "gpr_logret"', inspect.getsource(SM.probe))
+        self.assertIn("item[\"kind\"] == \"TRAINED\"", inspect.getsource(SM.probe))   # the TRAINED condition stays (safety condition 2)
+
+    def test_I0009_inventory_mm_rows_use_resolve(self):
+        from masterquo.quant import inventory as QI
+        self.assertFalse(hasattr(QI, "_MM_TO_CANON"))
+
+    def test_I0009_catalog_rows_carry_canonical_id(self):
+        td = TempData()
+        try:
+            from masterquo.modelhub import catalog as CT
+            from masterquo.quant import inventory as QI
+            cat = CT.build(None, INST)
+            inv_ids = {e["id"] for e in QI.build(None, INST)["entries"]}
+        finally:
+            td.close()
+        by = {r["id"]: r for r in cat["items"]}
+        self.assertEqual(by["mm_gpr"]["canonical_id"], "mm:gpr_logret")
+        self.assertEqual(by["lab"]["canonical_id"], "group:lab")
+        self.assertEqual(by["kronos"]["canonical_id"], "kronos:Kronos-small")
+        self.assertEqual(by["gold_forecast"]["canonical_id"], "forecast:gold_candles")
+        self.assertEqual(by["th_logreg"]["canonical_id"], "trainhub:TH_LOGREG")
+        self.assertEqual(by["chronos2"]["canonical_id"], "tsfm:chronos2")
+        missing = {r["id"]: r.get("canonical_id") for r in cat["items"] if r.get("canonical_id") not in inv_ids}
+        self.assertEqual(missing, {})                                         # one registry: every catalog row is an inventory row
+
+    def test_I0009_predictions_api_adds_canonical_id_on_a_copy(self):
+        td = TempData()
+        try:
+            from masterquo.api import app as A
+            rt = mock.MagicMock()
+            rt.license.locked = False
+            cached = [{"model_name": "Kronos-small", "model_key": "kronos_M5", "state": "READY"},
+                      {"model_key": "TH_XGB_M5_H6", "model_name": "TH_XGB_M5_H6", "state": "READY"},
+                      {"model_name": "research:graph50:TP1", "canonical_id": "research:graph50:TP1", "family": "research:graph50"}]
+            before = json.dumps(cached, sort_keys=True)
+            with mock.patch("masterquo.modelhub.adapters.all_predictions", return_value=cached):
+                app = A.create_app(rt, 18784)
+                fn = next(r.endpoint for r in app.routes if getattr(r, "path", None) == "/api/v1/models/predictions")
+                out = fn(instrument="XAUUSD")
+        finally:
+            td.close()
+        self.assertEqual([p["canonical_id"] for p in out["items"]], ["kronos:Kronos-small", "trainhub:TH_XGB", "research:graph50:TP1"])
+        self.assertEqual(json.dumps(cached, sort_keys=True), before)              # the cached records (SH / Quant / coordinator) untouched
+        self.assertEqual([{k: v for k, v in p.items() if k != "canonical_id"} for p in out["items"]],
+                         [{k: v for k, v in p.items() if k != "canonical_id"} for p in cached])
+
+
 if __name__ == "__main__":
     unittest.main()

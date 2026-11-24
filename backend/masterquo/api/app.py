@@ -2195,8 +2195,10 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/models/predictions")
     def models_predictions(instrument: str = Query("XAUUSD")):
         from ..modelhub import adapters as _AD
+        from ..quant import ids as _I
         i = _th_inst(instrument)
-        return {"instrument": i, "items": _AD.all_predictions(rt, i), "contract": "PMW-PRED-1"}
+        # 1.46 arch (I0009): + canonical_id (additive) on a COPY of each record - the cached dicts are shared with SH / Quant / the coordinator
+        return {"instrument": i, "items": [{**p, "canonical_id": _I.canonical(p)} for p in _AD.all_predictions(rt, i)], "contract": "PMW-PRED-1"}
 
     @app.get("/api/v1/models/evidence")
     def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
