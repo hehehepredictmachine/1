@@ -38,7 +38,7 @@ export default function ChartsScreen({ register, active, testMode }: { register:
       </div>
       <div className="cs-wrap">
         <div className="cs-win main ci"><i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
-          <div className="wh"><span className="ttl" id="mc-title">XAUUSD- · M15</span><span>WYKRES GŁÓWNY</span><span className="sp">PRZECIĄGNIJ · KÓŁKO = ZOOM · 2× KLIK = TERAZ</span></div>
+          <div className="wh"><span className="ttl" id="mc-title">XAUUSD- · M15</span><span id="mc-sub">WYKRES GŁÓWNY</span><div id="mc-view" className="segb" role="group" aria-label="Widok wykresu głównego" data-testid="charts-view" /><span className="sp" id="mc-hint">PRZECIĄGNIJ · KÓŁKO = ZOOM · 2× KLIK = TERAZ</span></div>
           <div id="mc-read" /><div id="sig-card" className="ci" aria-live="polite" /><div id="mc-plot" tabIndex={0} aria-label="Wykres główny. Strzałki przesuwają, plus i minus przybliżają." />
         </div>
         <div className="cs-side">

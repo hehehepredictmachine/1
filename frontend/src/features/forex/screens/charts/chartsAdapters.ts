@@ -239,3 +239,72 @@ export function svpVisibleVM(r: any): any | null {
   return { ...r, start: ms(r.start), end: ms(r.end), as_of: ms(r.as_of), known_at: ms(r.known_at),
     hist: r.histogram.map((h: any) => [Math.round(+h.lo / bin), +h.weight] as [number, number]) };
 }
+
+/* ---------- CHARTS · HEATMAPA (mapa płynności w stylu Bookmap) – model widoku; tylko GET, brak danych = stan pusty ---------- */
+export type HeatCol = { t: number; t1: number; n: number; bid: number | null; ask: number | null; cells: [number, number][] };
+export type HeatBubble = { t: number; p: number; q: number; side: "BUY" | "SELL" | "UNKNOWN" };
+export type HeatDom = { t: number; age: number | null; fresh: boolean; bids: [number, number][]; asks: [number, number][] };
+export type HeatVM = {
+  src: "MT5" | "CRYPTO"; status: "READY" | "STALE" | "NO_DATA" | "ERROR"; reason: string | null; symbol: string | null;
+  t0: number; t1: number; now: number; step: number; ncols: number; fill: number; row: number; cols: HeatCol[]; ref: number | null; snapshots: number;
+  dom: HeatDom | null; bars: Candle[]; bubbles: HeatBubble[]; trades: { status: string; reason: string | null }; source: string; quality: string;
+};
+const pairs = (a: any): [number, number][] => (Array.isArray(a) ? a : [])
+  .map((x: any) => [num(x?.[0]), num(x?.[1])] as [number | null, number | null])
+  .filter((x): x is [number, number] => x[0] != null && x[1] != null && x[1] > 0);
+/** Wartość odniesienia jasności: 97. percentyl wielkości komórek w oknie (jedna wielka ściana nie gasi reszty mapy). */
+export function heatRef(cols: HeatCol[]): number | null {
+  const v = cols.flatMap((c) => c.cells.map((x) => x[1])).sort((a, b) => a - b);
+  return v.length ? v[Math.floor(0.97 * (v.length - 1))] : null;
+}
+const domVM = (d: any): HeatDom | null => {
+  const bids = pairs(d?.bids).sort((a, b) => b[0] - a[0]), asks = pairs(d?.asks).sort((a, b) => a[0] - b[0]);
+  return bids.length || asks.length ? { t: ms(d?.t) ?? 0, age: num(d?.age_s), fresh: d?.fresh !== false, bids, asks } : null;
+};
+/** GET /api/v1/orderflow/mt5/heatmap – archiwum arkusza MT5 bota (czasy w s → ms). */
+export function heatVM(r: any): HeatVM {
+  const cols: HeatCol[] = (r?.columns || []).map((c: any) => ({ t: ms(c?.t), t1: ms(c?.t1), n: num(c?.n) ?? 0, bid: num(c?.bid), ask: num(c?.ask), cells: pairs(c?.cells) }))
+    .filter((c: any) => c.t != null && c.t1 != null && c.cells.length).sort((a: HeatCol, b: HeatCol) => a.t - b.t);
+  const st = ["READY", "STALE", "NO_DATA"].includes(r?.status) ? r.status : "NO_DATA";
+  return { src: "MT5", status: cols.length ? st : "NO_DATA", reason: r?.reason ?? (cols.length ? null : "Brak danych arkusza"), symbol: r?.symbol ?? null,
+    t0: ms(r?.t0) ?? 0, t1: ms(r?.t1) ?? 0, now: ms(r?.now ?? r?.t1) ?? 0, step: (num(r?.step_s) ?? 0) * 1000, ncols: num(r?.cols) ?? cols.length, fill: 1,
+    row: num(r?.row_size) ?? 0, cols, ref: heatRef(cols), snapshots: num(r?.snapshots) ?? 0, dom: domVM(r?.dom), bars: candlesVM({ bars: r?.bars }), bubbles: [],
+    trades: { status: r?.trades?.status || "NOT_AVAILABLE", reason: r?.trades?.reason ?? null }, source: r?.source || "MT5", quality: r?.quality || "" };
+}
+/** BTC: GET /api/v1/orderflow/CRYPTO/workspace daje JEDEN bieżący arkusz – kolumny składane w przeglądarce od otwarcia widoku
+ *  (kubełek siatki = średnia, brak archiwum), bąble z ledgera transakcji; strona agresora bez weryfikacji = UNKNOWN (neutralne). */
+export function heatFromWorkspace(prev: HeatVM | null, r: any, nowMs: number, winSec: number, maxCols = 240, pollMs = 2000): HeatVM {
+  const step = Math.max((winSec * 1000) / maxCols, pollMs), ncols = Math.round((winSec * 1000) / step);   // kubełek ≥ okres odpytywania
+  const row = num(r?.heatmap?.row_size) ?? 0, t0 = nowMs - winSec * 1000;
+  const keep = prev && prev.src === "CRYPTO" && prev.row === row && prev.step === step ? prev.cols.filter((c) => c.t1 > t0) : [];
+  const dom = domVM({ ...(r?.dom || {}), t: nowMs / 1000, age_s: 0 });
+  const raw = (r?.heatmap?.columns || [])[0]?.cells || {};
+  const cells = Object.entries(raw).map(([p, q]) => [num(p), num(q)] as [number | null, number | null])
+    .filter((x): x is [number, number] => x[0] != null && x[1] != null && x[1] > 0).sort((a, b) => a[0] - b[0]);
+  let cols = keep.slice();
+  if (cells.length && row > 0) {
+    const i = Math.floor(nowMs / step), last = cols[cols.length - 1];
+    const col: HeatCol = { t: i * step, t1: (i + 1) * step, n: 1, bid: dom?.bids[0]?.[0] ?? null, ask: dom?.asks[0]?.[0] ?? null, cells };
+    if (last && last.t === col.t) {                                       // ten sam kubełek: średnia (brak poziomu = 0)
+      const m = new Map<number, number>(last.cells.map(([p, q]) => [p, q * last.n]));
+      for (const [p, q] of cells) m.set(p, (m.get(p) ?? 0) + q);
+      cols[cols.length - 1] = { ...col, n: last.n + 1, cells: [...m.entries()].map(([p, s]) => [p, s / (last.n + 1)] as [number, number]).sort((a, b) => a[0] - b[0]) };
+    } else cols.push(col);
+  }
+  const verified = r?.side_semantics?.status === "VERIFIED";
+  const bubbles: HeatBubble[] = (r?.bubbles || []).map((b: any) => ({ t: ms(b?.ts), p: num(b?.price), q: num(b?.size),
+    side: verified && (b?.aggressor === "BUY" || b?.aggressor === "SELL") ? b.aggressor : "UNKNOWN" }))
+    .filter((b: any) => b.t != null && b.p != null && b.q != null && b.q > 0 && b.t >= t0);
+  return { src: "CRYPTO", status: cols.length ? "READY" : "NO_DATA", reason: cols.length ? null : "Brak arkusza dostawcy", symbol: r?.instrument_id ?? null,
+    t0, t1: nowMs + step, now: nowMs, step, ncols, fill: 2, row, cols, ref: heatRef(cols), snapshots: cols.reduce((a, c) => a + c.n, 0), dom, bars: [], bubbles,
+    trades: { status: bubbles.length ? (verified ? "READY" : "NEUTRAL") : "NO_DATA", reason: verified ? null : "strona agresora niezweryfikowana u dostawcy – bąble neutralne" },
+    source: "HYPERLIQUID · " + (r?.instrument_id || "BTC") + " (nie symbol MT5)", quality: "arkusz odpytywany co 2 s · historia od otwarcia widoku (bez archiwum)" };
+}
+/** Błąd GET → stan z powodem z API (detail), nigdy pusta mapa udająca brak płynności. */
+export function heatError(e: any, src: "MT5" | "CRYPTO"): HeatVM {
+  let reason = String(e?.message || e || "błąd");
+  try { const j = JSON.parse(reason); reason = j?.detail || j?.error || reason; } catch { /* tekst */ }
+  if (src === "CRYPTO") reason = "Hyperliquid: " + reason;
+  return { src, status: "ERROR", reason: reason.slice(0, 200), symbol: null, t0: 0, t1: 0, now: 0, step: 0, ncols: 0, fill: 1, row: 0, cols: [], ref: null, snapshots: 0,
+    dom: null, bars: [], bubbles: [], trades: { status: "NO_DATA", reason: null }, source: src, quality: "" };
+}

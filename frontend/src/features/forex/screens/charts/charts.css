@@ -115,3 +115,7 @@
 :where(.app-forex) #sig-card .dist{display:flex;height:4px;margin:4px 0 2px}
 :where(.app-forex) #sig-card .dist i{display:block;height:100%}
 :where(.app-forex) #sig-card .note{font-size:7.5px;letter-spacing:.1em;color:#5f6570;line-height:1.5;margin-top:6px}
+:where(.app-forex) #mc-view button{padding:4px 7px;font-size:9px;letter-spacing:.18em}
+:where(.app-forex) #mc-view .ch-sep{align-self:center;margin:0 6px}
+:where(.app-forex) #heat-info th{width:38%;border-bottom:1px solid #12161d;vertical-align:top}
+:where(.app-forex) #heat-info td{font-size:9px;letter-spacing:.04em;line-height:1.4}

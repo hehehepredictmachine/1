@@ -5,6 +5,7 @@
    Dane: model widoku (chartsData.ts → setVM) albo fixture testu 1:1 (load). Dodane wyłącznie ochrony stanu pustego (brak świec → BRAK
    rysowania, status z API). Ekran jest wpięty w silnik kuli FOREX jak SCREENS[0] we wzorcu (planet / draw / tick / open / close). */
 import { SVP_PROFILES, svpWindows, svpCompute } from './svpPort.js';
+import { drawHeat } from './chartsHeat';
 /** visible: GET /api/v1/svp/visible (tylko produkcja; instrument silnika). Brak → port (tryb testowy, BTC). */
 export type ChartsEnv = { announce?: (t: string) => void; visible?: (q: { tf: string; t0: number; t1: number; bin: number; va: number }) => Promise<any> };
 export function createCharts(env: ChartsEnv = {}) {
@@ -20,7 +21,7 @@ const PROBS0={win:{name:'Legacy ML · P(cel przed SL)',task:'—',v:null,state:'
 /* K3: włączniki warstw sygnałów i wybór strategii pamiętane lokalnie (bez zapisu w backendzie); tylko poza trybem testowym */
 const PKEY='pmw.charts.str.v1';let PROD=false;const seenSig=new Set();let lastAnn=0;
 function loadPref(){try{return JSON.parse(localStorage.getItem(PKEY)||'null');}catch(e){return null;}}
-function savePref(){if(!PROD)return;try{const all=Object.keys(SMETA);localStorage.setItem(PKEY,JSON.stringify({L:{strat:L.strat,plan:L.plan,card:L.card,stratLv:L.stratLv},off:all.filter(id=>!STR.on.has(id)),open:STR.open}));}catch(e){}}
+function savePref(){if(!PROD)return;try{const all=Object.keys(SMETA);localStorage.setItem(PKEY,JSON.stringify({L:{strat:L.strat,plan:L.plan,card:L.card,stratLv:L.stratLv,view:L.view,hwin:L.hwin,hpal:L.hpal,hgain:L.hgain,hcob:L.hcob,hbbo:L.hbbo,hbub:L.hbub,hvol:L.hvol},off:all.filter(id=>!STR.on.has(id)),open:STR.open}));}catch(e){}}
 const IPROF_REF={ema:[20,50],rsi:14,sig:'EMA'};   /* wzorzec (fixtures testu 1:1); produkcja: profil silnika z /api/v1/candles */                                // ostatni model widoku z API
 /* ---------- CHARTS — podgląd zgodny z architekturą PMW 1.41.0 (wartości DEMONSTRACYJNE) ----------
    Źródła w aplikacji (do podpięcia przez Claude Code): /api/v1/candles?tf, /api/v1/timeframes, /api/v1/structure, /api/v1/zones/map,
@@ -40,7 +41,8 @@ const CH={iprof:IPROF_REF,cv:$('#chart'),ctx:$('#chart').getContext('2d'),asset:
  kr:{tf:'M5',mode:'AUTO',on:{M1:true,M5:true,M15:true,M30:true,H1:true},onChart:true,data:[],fc:null,anim:1,state:'READY'},tz:'LOCAL',serverOff:2};
 const L={ema:true,avwap:true,rsi:true,macd:true,atr:true,sar:false,bb:false,vp:false,vpPoc:true,vpVa:true,vpAuto:false,strat:true,stratLv:'sel',mzHist:false,svpS:true,svpProf:'AUTO',svpBinX:50,svpBinB:2000,svpVa:.7,svpOff:{},vpHvn:true,vpLvn:true,vpTf:null,vpBars:200,vpMode:'AUTO',
  mz:true,fvg:false,ob:false,sd:false,sr:false,liq:false,zmap:false,svp:false,walls:false,structure:true,patterns:false,sessions:false,heat:false,iq:false,ai:false,
- kronos:true,granite:false,plan:true,sigs:true,sigHist:true,card:true,mcTp:true,scalp:false,hedge:false,grid:true,volume:true,labels:true,sync:true,ctype:'candles'};
+ kronos:true,granite:false,plan:true,sigs:true,sigHist:true,card:true,mcTp:true,scalp:false,hedge:false,grid:true,volume:true,labels:true,sync:true,ctype:'candles',
+ view:'chart',hwin:900,hpal:'classic',hgain:1,hcob:true,hbbo:true,hbub:true,hvol:true};   /* HEATMAPA: widok, okno (s), paleta, kontrast, warstwy */
 const UNAVAIL_PROD={granite:'Granite TTM: linia prognozy nie jest podłączona do API na tym ekranie (stan modelu – PLAN · MODELE / Modele)',mcTp:'Monte Carlo przy TP: wynik PMW-MC-1 nie jest podłączony do API na tym ekranie'};
 const UNAVAIL={bb:'BB na wykresie głównym: tylko w Chart Lab (silnik nie liczy tej linii)',iq:'IQ Gold Gann / IQ Star Lines: brak źródła – wymaga licencji MQL5 i mapowania eksportera',heat:'Heatmapa likwidacji: brak klucza dostawcy (CoinGlass) – nic nie jest symulowane'};
 /* ===================== CHARTS · warstwy bota (strategie z koszyków, strefy z wybranego TF, Session Volume Profile) =====================
@@ -310,16 +312,44 @@ function drawKronos(ctx,cms,dt,red){const R0=rectOf('#kr-plot');if(R0.w<40)retur
  $('#kr-delta').textContent=off?'—':`${fc.delta>=0?'+':''}${fmtP(fc.delta)} (${fc.delta_pct>=0?'+':''}${fc.delta_pct.toFixed(3)}%) → ${fmtP(fc.pred_close_h)}`;
  $('#kr-meta').textContent=`${fc.is_current?'AKTUALNA':'NIEAKTUALNA'} · ${fmtT(fc.created_at.getTime(),true,'M1')} · horyzont +${H} · ${K.role||'SHADOW, bez zleceń'} · Kronos nie podaje confidence score`;
 }
+/* ----- rysowanie: HEATMAPA (mapa płynności w stylu Bookmap, chartsHeat.ts) – dane: setHeat (chartsData.ts), tylko GET ----- */
+const HEAT={vm:null,st:{yMin:null,yMax:null,img:null,imgKey:null},zoom:1,pan:0,recv:0,geo:null};
+let T11=false;   /* tryb testu 1:1 (load): bez elementów HEATMAPY – zrzut zgodny ze wzorcem */
+const HWIN=[[300,'5 MIN'],[900,'15 MIN'],[3600,'1 H'],[14400,'4 H']],HSTAT={READY:'NA ŻYWO',STALE:'NIEAKTUALNY',NO_DATA:'BRAK DANYCH',ERROR:'BŁĄD ŹRÓDŁA'};
+function heatReset(){HEAT.vm=null;HEAT.st={yMin:null,yMax:null,img:null,imgKey:null};HEAT.zoom=1;HEAT.pan=0;}
+function heatSrc(){return CH.asset==='BTC'?'CRYPTO':'MT5';}
+function drawHeatMode(ctx,cms,dt,red){const R0=rectOf('#mc-plot');if(R0.w<40)return;const sc=$('#sig-card');if(sc)sc.hidden=true;
+ const uiA=red?smooth(SUB.p*2-1):smooth(seg(cms,1900,500)),H=HEAT.vm&&HEAT.vm.src===heatSrc()?HEAT.vm:null;
+ const g=drawHeat(ctx,R0,H,HEAT.st,{pal:L.hpal,gain:L.hgain,cob:L.hcob,bbo:L.hbbo,bub:L.hbub,vol:L.hvol,grid:L.grid,zoom:HEAT.zoom,pan:HEAT.pan,hover:SUB.state==='on'?CH.hover:null,uiA,dt,elapsed:performance.now()-HEAT.recv,asset:CH.asset},{fmtP,niceStep,tzShift});
+ HEAT.geo=g;const o=$('#mc-read'),f=v=>v==null?'—':fmtP(v),fq=v=>v==null?'—':v>=10?v.toFixed(1):v.toFixed(2);
+ if(!H||!H.cols.length)o.innerHTML=`<span>HEATMAPA<b>${H?HSTAT[H.status]:'ŁADOWANIE'}</b></span>${H&&H.reason?`<span>POWÓD<b>${H.reason}</b></span>`:''}`;
+ else if(g.hover){const h=g.hover;o.innerHTML=`<span>${h.cob?'ARKUSZ<b>TERAZ</b>':`CZAS<b>${g.fT(h.t,true)}</b>`}</span><span>WIERSZ<b>${f(h.row)}</b></span><span>PŁYNNOŚĆ<b>${fq(h.q)}</b></span><span>BID<b>${f(h.bid)}</b>ASK<b>${f(h.ask)}</b></span>${h.n!=null?`<span>SNAPSHOTY<b>${h.n}</b></span>`:''}`;}
+ else o.innerHTML=`<span>BID<b>${f(g.bid)}</b>ASK<b>${f(g.ask)}</b>SPREAD<b>${g.bid!=null&&g.ask!=null?fmtP(g.ask-g.bid):'—'}</b></span><span>ŹRÓDŁO<b>${H.src==='MT5'?'ARKUSZ BROKERA MT5':'HYPERLIQUID'}</b></span><span>STAN<b>${HSTAT[H.status]}</b></span><span>SNAPSHOTY<b>${H.snapshots}</b></span>`;
+ $('#mc-title').textContent=`${CH.asset==='BTC'?'BTC · HYPERLIQUID':ASSETS[CH.asset].sym} · ${(HWIN.find(w=>w[0]===L.hwin)||[0,''])[1]}`;}
+function syncView(emit=true){const heat=L.view==='heat'&&!T11,el=$('#mc-view');
+ if(el){if(T11)el.style.display='none';else{el.style.display='';el.innerHTML=`<button type="button" data-v="chart" aria-pressed="${!heat}" title="Świece / linia z wybranego interwału">WYKRES</button><button type="button" data-v="heat" aria-pressed="${heat}" title="Mapa płynności arkusza (styl Bookmap): historia DOM, bid / ask, COB">HEATMAPA</button>`+
+  (heat?`<span class="ch-sep"></span>`+HWIN.map(([w,l])=>`<button type="button" data-w="${w}" aria-pressed="${L.hwin===w}" title="Okno czasu mapy">${l}</button>`).join(''):'');
+  el.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>{if(L.view===b.dataset.v)return;L.view=b.dataset.v;HEAT.st.yMin=null;syncView();renderOpts();announce(L.view==='heat'?'Widok heatmapy płynności':'Widok wykresu');}));
+  el.querySelectorAll('[data-w]').forEach(b=>b.addEventListener('click',()=>{L.hwin=+b.dataset.w;HEAT.st.yMin=null;syncView();renderOpts();}));}}
+ const sub=$('#mc-sub'),hint=$('#mc-hint');if(sub)sub.textContent=heat?'MAPA PŁYNNOŚCI':'WYKRES GŁÓWNY';if(hint)hint.textContent=heat?'KÓŁKO = ZOOM · 2× KLIK = RESET':'PRZECIĄGNIJ · KÓŁKO = ZOOM · 2× KLIK = TERAZ';
+ if(emit)emitSel('heat');}
+function heatInfo(){const H=HEAT.vm&&HEAT.vm.src===heatSrc()?HEAT.vm:null;return `<tr><th>ŹRÓDŁO</th><td>${H?H.source:'—'}</td></tr><tr><th>JAKOŚĆ</th><td>${H?H.quality:'—'}</td></tr><tr><th>WIERSZ CENY</th><td>${H&&H.row?fmtP(H.row):'—'}</td></tr><tr><th>SNAPSHOTY</th><td>${H?H.snapshots:'—'}</td></tr><tr><th>TRANSAKCJE</th><td>${H?(H.trades.status==='NOT_AVAILABLE'?'brak taśmy (broker OTC)':H.trades.status==='NEUTRAL'?'bez strony agresora':H.trades.status==='READY'?'ze stroną agresora':'brak w oknie'):'—'}</td></tr><tr><th>STAN</th><td>${H?HSTAT[H.status]+(H.reason?' · '+H.reason:''):'ładowanie'}</td></tr>`;}
+function heatOpts(){const mt=CH.asset!=='BTC',bubDis=mt?'arkusz brokera MT5 (OTC) nie ma taśmy transakcji – bąble nie są szacowane z ticków ani świec':null;
+ return `<div class="row"><label>Widok</label>${SEG('view',[['chart','Wykres'],['heat','Heatmapa']])}</div><div class="row"><label>Okno</label>${SEG('hwin',HWIN)}</div>
+ <div class="row"><label>Paleta</label>${SEG('hpal',[['classic','Klasyczna'],['apollo','Apollo']])}</div><div class="row"><label>Kontrast</label>${SEG('hgain',[[.7,'Niski'],[1,'Średni'],[1.6,'Wysoki']])}</div>
+ <ul>${SW('hcob','Bieżący arkusz (COB) + suma','poziomy DOM teraz – kolumna po prawej')}${SW('hbbo','Najlepszy bid / ask','linie z ostatniego snapshotu kubełka')}${SW('hbub','Bąble transakcji','wielkość = suma wolumenu kubełka × wiersza ceny',{dis:!!bubDis,why:bubDis,note:bubDis?'BRAK TAŚMY':''})}${SW('hvol',mt?'Tick volume M1':'Wolumen transakcji','pasek na dole')}${SW('grid','Siatka','')}</ul>
+ <table class="svpt" id="heat-info">${heatInfo()}</table>
+ <div class="note">${mt?'Mapa pokazuje płynność oczekującą z arkusza kwotowań brokera (MT5 market depth), który bot zapisuje co sekundę (wskaźniki: book_record, 14 dni). To nie jest giełdowy L2 / MBO – broker może podawać tylko kilka poziomów. Komórka = średnia wielkość wiersza ceny w kubełku czasu; brak zapisu = przerwa, nie zero. Bąble transakcji wymagają taśmy z giełdy – dla XAUUSD u brokera jej nie ma.':'BTC: arkusz i transakcje z Hyperliquid (inny instrument niż symbol MT5). Historia zbierana od otwarcia widoku – bez archiwum. Strona agresora u dostawcy jest niezweryfikowana, więc bąble są neutralne (bez podziału kupno / sprzedaż).'} Widok tylko do odczytu – nie składa zleceń.</div>`;}
 function drawChart(cms,dt){const cv=CH.cv,ctx=CH.ctx,{w,h,dpr}=S.view;if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);}
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);if(SUB.p<=0)return;const red=S.reduced;
  const uiA=red?smooth(SUB.p*2-1):smooth(seg(cms,1900,500)),winA=red?smooth(SUB.p*2-1):easeOut3(seg(cms,1850,550));
  $('#ch-head').style.opacity=uiA;$('#mc-read').style.opacity=uiA;$$('.cs-win').forEach((el,i)=>{el.style.opacity=i===0?1:winA;el.style.setProperty('--k',winA);el.style.transform=i===0||winA>=1?'':`translateY(${(1-winA)*14}px)`;});
  $('.cs-win.main').style.setProperty('--k',uiA);
- drawMain(ctx,cms,dt,red);drawKronos(ctx,cms,dt,red);}
+ if(L.view==='heat'&&!T11)drawHeatMode(ctx,cms,dt,red);else drawMain(ctx,cms,dt,red);drawKronos(ctx,cms,dt,red);}
 /* ----- UI: nagłówek, okna, zakładki ----- */
 function buildChartUI(){
  $('#ch-asset').innerHTML=Object.keys(ASSETS).map(a=>`<button type="button" data-a="${a}" aria-pressed="${a===CH.asset}">${a}</button>`).join('');
- $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];applySeries(true);chartsConnect();emitSel();}));
+ $$('#ch-asset button').forEach(b=>b.addEventListener('click',()=>{CH.asset=b.dataset.a;heatReset();$$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];applySeries(true);chartsConnect();emitSel();}));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane OK"><i></i>${t}</button>`).join('');
  $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));applySeries(true);chartsConnect();renderOpts();}));
  $('#ch-tz').addEventListener('change',e=>{CH.tz=e.target.value;});
@@ -327,13 +357,13 @@ function buildChartUI(){
  $$('#kr-tf button').forEach(b=>b.addEventListener('click',()=>{CH.kr.tf=b.dataset.k;$$('#kr-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.kr.fc=null;CH.kr.data=[];renderOpts();emitSel('kronos');}));
  $('#kr-refresh').addEventListener('click',()=>{emitSel('kronos');});   /* PRZELICZ = ponowny GET (bez zapisu) */
  $$('#opt-tabs button').forEach(b=>b.addEventListener('click',()=>{$$('#opt-tabs button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));renderOpts();}));
- renderOpts();
+ renderOpts();syncView(false);
  const mp=$('#mc-plot');
- mp.addEventListener('pointermove',e=>{CH.hover={x:e.clientX,y:e.clientY};if(L.sync)CH.khover=null;const dr=CH.drag;if(dr&&CH.geo){CH.offset=clamp(Math.round(dr.off+(e.clientX-dr.x)/CH.geo.cw),0,CH.data.length-CH.view);}});
- mp.addEventListener('pointerleave',()=>{CH.hover=null;});mp.addEventListener('pointerdown',e=>{CH.drag={x:e.clientX,off:CH.offset};mp.setPointerCapture(e.pointerId);mp.style.cursor='grabbing';});
- const end=e=>{const dr=CH.drag;CH.drag=null;mp.style.cursor='crosshair';if(dr&&e&&e.clientX!=null&&Math.abs(e.clientX-dr.x)<4){const hs=hitSignal(e.clientX,e.clientY);if(hs){STR.sel=hs.key;pickPlan();announce(`Plan ${hs.sid} ${hs.sd>0?'LONG':'SHORT'}, wejście ${fmtP(hs.e)}, SL ${fmtP(hs.sl)}`);}}};mp.addEventListener('pointerup',end);mp.addEventListener('pointercancel',end);mp.addEventListener('dblclick',()=>{CH.offset=0;});
- mp.addEventListener('wheel',e=>{e.preventDefault();CH.view=clamp(Math.round(CH.view*(e.deltaY>0?1.12:1/1.12)),30,400);CH.offset=clamp(CH.offset,0,CH.data.length-CH.view);},{passive:false});
- mp.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')CH.offset=clamp(CH.offset+5,0,CH.data.length-CH.view);else if(e.key==='ArrowRight')CH.offset=clamp(CH.offset-5,0,CH.data.length-CH.view);else if(e.key==='+'||e.key==='=')CH.view=clamp(Math.round(CH.view/1.12),30,400);else if(e.key==='-'){CH.view=clamp(Math.round(CH.view*1.12),30,400);CH.offset=clamp(CH.offset,0,CH.data.length-CH.view);}});
+ mp.addEventListener('pointermove',e=>{CH.hover={x:e.clientX,y:e.clientY};if(L.sync)CH.khover=null;const dr=CH.drag;if(dr&&L.view==='heat'&&!T11){const g=HEAT.geo,st=HEAT.st;if(g&&st.yMax!=null)HEAT.pan=dr.pan+(e.clientY-dr.y)*(st.yMax-st.yMin)/Math.max(1,g.priceB-g.R.t);}else if(dr&&CH.geo){CH.offset=clamp(Math.round(dr.off+(e.clientX-dr.x)/CH.geo.cw),0,CH.data.length-CH.view);}});
+ mp.addEventListener('pointerleave',()=>{CH.hover=null;});mp.addEventListener('pointerdown',e=>{CH.drag={x:e.clientX,y:e.clientY,off:CH.offset,pan:HEAT.pan};mp.setPointerCapture(e.pointerId);mp.style.cursor='grabbing';});
+ const end=e=>{const dr=CH.drag;CH.drag=null;mp.style.cursor='crosshair';if(dr&&e&&e.clientX!=null&&Math.abs(e.clientX-dr.x)<4&&L.view!=='heat'){const hs=hitSignal(e.clientX,e.clientY);if(hs){STR.sel=hs.key;pickPlan();announce(`Plan ${hs.sid} ${hs.sd>0?'LONG':'SHORT'}, wejście ${fmtP(hs.e)}, SL ${fmtP(hs.sl)}`);}}};mp.addEventListener('pointerup',end);mp.addEventListener('pointercancel',end);mp.addEventListener('dblclick',()=>{if(L.view==='heat'){HEAT.zoom=1;HEAT.pan=0;}else CH.offset=0;});
+ mp.addEventListener('wheel',e=>{e.preventDefault();if(L.view==='heat'&&!T11){HEAT.zoom=clamp(HEAT.zoom*(e.deltaY>0?1.12:1/1.12),.15,8);return;}CH.view=clamp(Math.round(CH.view*(e.deltaY>0?1.12:1/1.12)),30,400);CH.offset=clamp(CH.offset,0,CH.data.length-CH.view);},{passive:false});
+ mp.addEventListener('keydown',e=>{if(L.view==='heat'&&!T11){const st=HEAT.st,r=st.yMax!=null?(st.yMax-st.yMin)*.1:0;if(e.key==='ArrowUp')HEAT.pan+=r;else if(e.key==='ArrowDown')HEAT.pan-=r;else if(e.key==='+'||e.key==='=')HEAT.zoom=clamp(HEAT.zoom/1.12,.15,8);else if(e.key==='-')HEAT.zoom=clamp(HEAT.zoom*1.12,.15,8);return;}if(e.key==='ArrowLeft')CH.offset=clamp(CH.offset+5,0,CH.data.length-CH.view);else if(e.key==='ArrowRight')CH.offset=clamp(CH.offset-5,0,CH.data.length-CH.view);else if(e.key==='+'||e.key==='=')CH.view=clamp(Math.round(CH.view/1.12),30,400);else if(e.key==='-'){CH.view=clamp(Math.round(CH.view*1.12),30,400);CH.offset=clamp(CH.offset,0,CH.data.length-CH.view);}});
  const kp=$('#kr-plot');kp.addEventListener('pointermove',e=>{CH.khover={x:e.clientX,y:e.clientY};});kp.addEventListener('pointerleave',()=>{CH.khover=null;});
  $$('#ctl-chart [data-cs]').forEach(b=>b.addEventListener('click',()=>{CH.token++;setChartStatus(b.dataset.cs);}));
 }
@@ -362,12 +392,13 @@ function renderOpts(){savePref();const tab=$('#opt-tabs [aria-selected="true"]')
   <div class="note">Algorytm 1:1 z svp/engine.py (histogram, VA, HVN/LVN) – zgodność sprawdzona na 44 profilach. Wolumen: TICK_VOLUME (aktywność brokera, nie wolumen transakcyjny); waga świecy rozkładana równomiernie w [low, high] – estymata, nie footprint. Sesje w strefach ${PR.sessions.map(x=>x[1]).join(', ')} z czasem letnim. Profil liczony ze świec wybranego TF (${CH.tf}).</div>`;}
  else if(tab==='models')h=`<ul>${SW('mcTp','Szansa Monte Carlo przy TP','PMW-MC-1: P(TP przed SL) w H świecach M1')}</ul><div class="row"><label>Kronos</label>${SEG('krMode',[['AUTO','AUTO'],['MANUAL','MANUAL'],['OFF','OFF']])}</div><ul>${KR_TFS.map(t=>SWK(t,'Kronos '+t)).join('')}${SWK('onChart','Prognoza na wykresie głównym')}
   <li><span>Stan inferencji</span><b class="okb">${K.state}</b></li>${SW('granite','Granite TTM','linia prognozy punktowej (bez świec)')}<li><span>Chronos-2</span><b class="dimb">porównanie w AI Consensus</b></li></ul>`;
- else h=`<div class="row"><label>Typ</label>${SEG('ctype',[['candles','Świece'],['hollow','Puste'],['heikin','Heikin Ashi'],['line','Linia'],['area','Obszar']])}</div><ul>${SW('grid','Siatka','')}${SW('volume','Wolumen (tick volume)','')}${SW('labels','Etykiety stref i poziomów','')}${SW('sync','Wspólny celownik','wykres główny + Kronos')}</ul>
+ else if(L.view==='heat'&&!T11)h=heatOpts();
+ else h=(T11?'':`<div class="row"><label>Widok</label>${SEG('view',[['chart','Wykres'],['heat','Heatmapa']])}</div>`)+`<div class="row"><label>Typ</label>${SEG('ctype',[['candles','Świece'],['hollow','Puste'],['heikin','Heikin Ashi'],['line','Linia'],['area','Obszar']])}</div><ul>${SW('grid','Siatka','')}${SW('volume','Wolumen (tick volume)','')}${SW('labels','Etykiety stref i poziomów','')}${SW('sync','Wspólny celownik','wykres główny + Kronos')}</ul>
   <div class="row"><label>Interwał</label><span class="dimb">${CH.tf} · rola ${TFR.find(r=>r[0]===CH.tf)[2]}</span></div>`;
  $('#opt-body').innerHTML=h;
  $$('#opt-body .sw[data-l]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.l;L[k]=!L[k];renderOpts();}));
  $$('#opt-body .sw[data-k]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;if(k==='onChart')CH.kr.onChart=!CH.kr.onChart;else CH.kr.on[k]=!CH.kr.on[k];renderOpts();}));
- $$('#opt-body [data-seg]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.seg,v=b.dataset.v;if(k==='krMode'){CH.kr.mode=v;$('#kr-mode').textContent=v;}else L[k]=isNaN(+v)?v:+v;if(k==='stratLv'&&v!=='sel')STR.sel=STR.sel;svpRecalc();renderOpts();}));
+ $$('#opt-body [data-seg]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.seg,v=b.dataset.v;if(k==='krMode'){CH.kr.mode=v;$('#kr-mode').textContent=v;}else L[k]=isNaN(+v)?v:+v;if(k==='stratLv'&&v!=='sel')STR.sel=STR.sel;if(k==='view'||k==='hwin'){HEAT.st.yMin=null;syncView();}svpRecalc();renderOpts();}));
  $$('#opt-body [data-sid]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.sid;STR.on.has(id)?STR.on.delete(id):STR.on.add(id);pickPlan();renderOpts();}));
  $$('#opt-body [data-bkall]').forEach(b=>b.addEventListener('click',()=>{const ms=BOTVM.meta[b.dataset.bkall].filter(m=>!stratAvail(m.id)),all=ms.every(m=>STR.on.has(m.id));ms.forEach(m=>all?STR.on.delete(m.id):STR.on.add(m.id));pickPlan();renderOpts();}));
  $$('#opt-body [data-bk]').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.bk;STR.open[k]=!STR.open[k];renderOpts();}));
@@ -380,7 +411,7 @@ function SWK(k,label){const dis=CH.kr.mode==='OFF',v=k==='onChart'?CH.kr.onChart
 
 buildChartUI();
 const listeners=[];
-function emitSel(what='series'){listeners.forEach(f=>{try{f({what,asset:CH.asset,tf:CH.tf,kr:CH.kr.tf});}catch(e){}});}
+function emitSel(what='series'){listeners.forEach(f=>{try{f({what,asset:CH.asset,tf:CH.tf,kr:CH.kr.tf,view:L.view==='heat'&&!T11?'heat':'chart',hw:L.hwin});}catch(e){}});}
 function setTfr(items){if(!items||!items.length)return;TFR=items.map(x=>[x.tf,x.seconds,x.role,x.core?1:0]);TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane ${(items.find(x=>x.tf===t)||{}).data||'—'}"><i></i>${t}</button>`).join('');
  $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>{CH.tf=b.dataset.tf;$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));CH.data=[];applySeries(true);emitSel();chartsConnect();renderOpts();}));}
@@ -403,12 +434,12 @@ const api={
  setQuote(q){if(CH.frozen||!q)return;$('#ch-quote').innerHTML=q.bid!=null?`BID <b>${fmtP(q.bid)}</b> ASK <b>${fmtP(q.ask)}</b> SPREAD <b>${fmtP(q.spread)}</b>`:'BRAK KWOTOWAŃ';},
  setStatus(st){if(!CH.frozen){const s2=CH.data.length||st==='offline'?st:'loading';VM.status=s2;setChartStatus(s2);}},
  setVM(vm,{keepView=true}={}){if(CH.frozen)return;const view=CH.view,off=CH.offset,sel=STR.sel;const first=!PROD&&!!vm.meta;applyVM(vm);
-  if(first){PROD=true;const P=loadPref()||{};if(P.L)Object.assign(L,P.L);if(P.open)STR.open={...STR.open,...P.open};const off=new Set(P.off||[]);STR.on=new Set(Object.keys(SMETA).filter(id=>!off.has(id)));}
+  if(first){PROD=true;const P=loadPref()||{};if(P.L)Object.assign(L,P.L);if(P.open)STR.open={...STR.open,...P.open};const off=new Set(P.off||[]);STR.on=new Set(Object.keys(SMETA).filter(id=>!off.has(id)));if(L.view==='heat')syncView();}
   {const A=CH.asset,k=x=>A+'|'+x.sid+'|'+x.t,fresh=(vm.signals||[]).filter(x=>!seenSig.has(k(x)));const boot=!seenSig.has(A);seenSig.add(A);fresh.forEach(x=>seenSig.add(k(x)));const nw=fresh[fresh.length-1],now=Date.now();
    if(!boot&&nw&&now-lastAnn>=5000){lastAnn=now;announce(`Nowy sygnał ${nw.sid} ${nw.sd>0?'LONG':'SHORT'} ${nw.tf}`);}}applySeries(false);if(keepView){CH.view=view;CH.offset=Math.min(off,Math.max(0,CH.data.length-CH.view));STR.sel=sel;pickPlan();}
   const sc=$('#sig-card');if(sc)sc.dataset.key='';svpRecalc();renderOpts();setChartStatus(VM.status);},
  /** tryb testowy 1:1 – odpowiednik PMW_PREVIEW._chartsLoad wzorca; fixture przez ten sam model widoku */
- load(fx){CH.token++;CH.asset=fx.asset;CH.tf=fx.tf;CH.tz=fx.tz;CH.serverOff=fx.serverOff;
+ load(fx){T11=true;syncView(false);CH.token++;CH.asset=fx.asset;CH.tf=fx.tf;CH.tz=fx.tz;CH.serverOff=fx.serverOff;
   $$('#ch-asset button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.a===fx.asset)));$$('#ch-tf button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.tf===fx.tf)));
   Object.keys(L).forEach(k=>delete L[k]);Object.assign(L,fx.L);
   applyVM({...fx,status:'live',kronos:null});
@@ -423,7 +454,9 @@ const api={
  liveBar(b){if(CH.frozen||!CH.data.length||!b)return;const t=b.t,d=CH.data,last=d[d.length-1];if(t==null||t<last.t)return;
   if(t===last.t){Object.assign(last,{o:b.o,h:b.h,l:b.l,c:b.c,v:b.v,closed:b.closed});}else{last.closed=true;d.push({...b});if(CH.offset>0)CH.offset++;}CH.flash=1;},
  setKronos(k){if(CH.frozen)return;VM.kronos=k;loadKronos();},
- sel:()=>({asset:CH.asset,tf:CH.tf,kr:CH.kr.tf}),
+ sel:()=>({asset:CH.asset,tf:CH.tf,kr:CH.kr.tf,view:L.view==='heat'&&!T11?'heat':'chart',hw:L.hwin}),
+ /** HEATMAPA: model widoku z chartsData.ts (archiwum arkusza MT5 / arkusz dostawcy BTC) */
+ setHeat(vm){if(CH.frozen)return;HEAT.vm=vm;HEAT.recv=performance.now();const hi=$('#heat-info');if(hi)hi.innerHTML=heatInfo();},
  perf:()=>{const r={frames:PERF.n,avgMs:PERF.n?+(PERF.sum/PERF.n).toFixed(3):null,maxMs:+PERF.max.toFixed(3)};PERF.n=0;PERF.sum=0;PERF.max=0;return r;},
  state:()=>({asset:CH.asset,tf:CH.tf,candles:CH.data.length,status:CH.status,sel:CH.sig?CH.sig.key:null,cardMin:!!CH.cardMin,
   markers:(CH.bsig||[]).filter(sigVisible).filter(s=>s._mx!=null).map(s=>({key:s.key,x:s._mx,y:s._my}))}),

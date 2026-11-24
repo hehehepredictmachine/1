@@ -310,6 +310,36 @@ def register(app, rt) -> None:
                 "footprint": OA.footprint(ev, tf_seconds, row) if ev else {"status": "NO_DATA"}, "cvd": OA.cvd(ev), "ledger": stats,
                 "side_semantics": SIDE_SEMANTICS.get("HYPERLIQUID"), "mode": "READ_ONLY"}
 
+    @app.get("/api/v1/orderflow/mt5/heatmap")
+    def mt5_heatmap(seconds: int = 900, cols: int = 240, row: float = 0.0):
+        """CHARTS · HEATMAPA: liquidity heatmap of the active MT5 symbol from the bot's book archive + current DOM + M1 tick volume."""
+        from ..orderflow import depth_history as DH
+        from ..timeutil import parse_iso
+        ind = getattr(rt, "indicators", None)
+        if ind is None:
+            raise HTTPException(503, "INDICATORS_UNAVAILABLE")
+        seconds, cols = max(60, min(int(seconds), 21600)), max(20, min(int(cols), 600))
+        icfg = rt.cfg.get().indicators
+        now = ind.clock()
+        _, cfg_sym, tick, _ = ind._inst()
+        sym = ind.book.symbol or cfg_sym
+        ref = ind.book_latest(sym)
+        row = row if row > 0 else (DH.auto_row(ref["bids"], ref["asks"], tick) if ref else tick)
+        t0, t1, step = DH.grid(now, seconds, cols)
+        cache = lazy("depth_cache", DH.ColumnCache)
+        cols_out = cache.build((sym, step, row), t0, step, cols, row, lambda a, b: ind.book_history(a, b, sym)[1],
+                               finished_before=now - 2 * icfg.book_period_s)
+        bars = []
+        try:
+            for b in rt.bridge.bars("M1"):
+                t = parse_iso(b["open_utc"]).timestamp() if b.get("open_utc") else None
+                if t is not None and t >= t0 - 60:
+                    bars.append({"open_utc": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"], "tv": b.get("tv"), "closed": b["closed"]})
+        except Exception:  # noqa: BLE001 - bars are an optional panel
+            bars = []
+        return DH.heatmap(cols_out, t0=t0, t1=t1, cols=cols, row=row, ref=ref, book={"status": ind.book.status, "reason": ind.book.reason},
+                          period_s=icfg.book_period_s, levels=20, now=now, max_age_s=icfg.book_max_gap_s, bars=bars, symbol=sym)
+
     # ------------------------------------------------------------------ TASK 005 / 006 / 010 / 011 / 016: model layers (OFF / OBSERVE / SHADOW)
     from ..evaluation import pt_skill as PT
     from ..ml import association_rules as AR

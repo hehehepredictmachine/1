@@ -3,8 +3,8 @@
 // Ten plik nie importuje Reacta w adapterach – testy w Node: tests/js/charts_adapters.test.mjs.
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { apiGet } from "../../../../api";
-import { basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM, statesVM, zonesMsgVM, zonesVM,
-  type Meta, type Sig } from "./chartsAdapters";
+import { basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, heatError, heatFromWorkspace, heatVM, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM,
+  shSignalVM, statesVM, zonesMsgVM, zonesVM, type HeatVM, type Meta, type Sig } from "./chartsAdapters";
 export * from "./chartsAdapters";
 
 /** Hook danych ekranu CHARTS (K2): świece + profil wskaźników silnika, tiki na żywo ze store, Kronos. Tylko GET; ponowne pobranie po
@@ -36,7 +36,7 @@ async function botLayers(asset: string, engineSymbol?: string, assetSymbol?: str
 export function useChartsData(api: MutableRefObject<any>, active: boolean, s: any) {
   const tfDone = useRef(false);
   const btcSym = useRef<string | null>(null);
-  const [sel, setSel] = useState<{ asset: string; tf: string; kr: string; n: number }>({ asset: "XAUUSD", tf: "M15", kr: "M5", n: 0 });
+  const [sel, setSel] = useState<{ asset: string; tf: string; kr: string; n: number; view: string; hw: number }>({ asset: "XAUUSD", tf: "M15", kr: "M5", n: 0, view: "chart", hw: 900 });
   const [krN, setKrN] = useState(0);
   useEffect(() => {
     if (!active) return;
@@ -44,7 +44,9 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     if (!a) return;
     const cur = a.sel();
     setSel((x) => ({ ...x, ...cur }));
-    a.onSelect((e: any) => { if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); } else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, n: x.n + 1 })); });
+    a.onSelect((e: any) => { if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); }
+      else if (e.what === "heat") setSel((x) => ({ ...x, view: e.view, hw: e.hw }));
+      else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, view: e.view ?? x.view, hw: e.hw ?? x.hw, n: x.n + 1 })); });
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!active || tfDone.current) return;
@@ -84,6 +86,24 @@ export function useChartsData(api: MutableRefObject<any>, active: boolean, s: an
     const b = candlesVM({ bars: [{ ...tick.bar, closed: false }] })[0];
     if (b) api.current?.liveBar(b);
   }, [active, tick?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
+  // HEATMAPA (styl Bookmap): XAUUSD = archiwum arkusza MT5 bota (GET co 2 s, okno ≥ 1 h co 5 s); BTC = bieżący arkusz + transakcje
+  // dostawcy (GET co 2 s), kolumny składane od otwarcia widoku. Tylko gdy widok HEATMAPA jest włączony i ekran aktywny.
+  useEffect(() => {
+    if (!active || sel.view !== "heat") return;
+    let alive = true, busy = false, prev: HeatVM | null = null;
+    const src = sel.asset === "BTC" ? "CRYPTO" : "MT5";
+    const run = () => {
+      if (busy) return;
+      busy = true;
+      const req = src === "MT5" ? apiGet<any>(`/api/v1/orderflow/mt5/heatmap?seconds=${sel.hw}&cols=240`).then(heatVM)
+        : apiGet<any>("/api/v1/orderflow/CRYPTO/workspace?instrument=BTC").then((r) => (prev = heatFromWorkspace(prev, r, Date.now(), sel.hw)));
+      req.then((vm) => { if (alive) api.current?.setHeat(vm); }).catch((e) => { if (alive) api.current?.setHeat(prev && prev.cols.length ? prev : heatError(e, src)); })
+        .finally(() => { busy = false; });
+    };
+    run();
+    const t = setInterval(run, src === "MT5" && sel.hw >= 3600 ? 5000 : 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, [active, sel.view, sel.hw, sel.asset]); // eslint-disable-line react-hooks/exhaustive-deps
   // Kronos: stan + prognoza wybranego TF Kronos (PRZELICZ = ponowny GET)
   const krClosed = s?.barTick?.[sel.kr]?.closed ? s.barTick[sel.kr].seq : null;
   useEffect(() => {

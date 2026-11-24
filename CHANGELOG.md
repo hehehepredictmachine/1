@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## Niewydane (na bazie 1.45.0) – CHARTS: widok HEATMAPA (mapa płynności w stylu Bookmap)
+Tylko odczyt: żadna nowa trasa nie wysyła, nie zmienia ani nie zamyka zleceń i nie zmienia STOP / ryzyka / trybu wykonania. Wersja bez zmian.
+* **Przełącznik WYKRES / HEATMAPA** w nagłówku wykresu głównego CHARTS (oraz w zakładce WYKRES) + okno 5 MIN / 15 MIN / 1 H / 4 H;
+  wybór pamiętany lokalnie jak inne ustawienia ekranu. Kółko = zoom ceny, przeciągnięcie = przesunięcie, 2× klik = reset.
+* **Warstwy:** heatmapa płynności oczekującej (paleta klasyczna lub Apollo, kontrast, skala do 97. percentyla okna), najlepszy bid / ask,
+  bieżący arkusz po prawej (COB + suma od najlepszej ceny, przedłużony za linią „teraz”), wolumen na dole, celownik z odczytem komórki.
+* **XAUUSD:** nowa trasa `GET /api/v1/orderflow/mt5/heatmap` (`orderflow/depth_history.py`) – archiwum arkusza MT5 bota
+  (`book_snapshots`, zapis co 1 s, 14 dni) w siatce czasu wyrównanej do epoki; skończone kubełki w pamięci podręcznej; kubełek bez zapisu =
+  przerwa, nie zero. Arkusz brokera OTC nie ma taśmy transakcji, więc bąble transakcji są wyłączone z opisem (nie są szacowane z ticków
+  ani świec); pasek na dole = tick volume M1 (aktywność kwotowań, nie wolumen transakcji).
+* **BTC:** `GET /api/v1/orderflow/CRYPTO/workspace` (Hyperliquid) – kolumny składane od otwarcia widoku (brak archiwum), bąble z ledgera
+  transakcji; strona agresora u dostawcy niezweryfikowana → bąble neutralne (BUY / SELL tylko przy zweryfikowanej semantyce).
+* **Testy:** `tests/test_charts_heatmap.py` (agregacja, pamięć kubełków, statusy, trasa na serwerze demo) + `tests/js/charts_heat.test.mjs`
+  (adaptery, skala kolorów); `tests/test_ui_142.py::test_h_charts_heatmap_toggle` (przeglądarka: przełącznik, mapa, tylko GET). Test 1:1
+  CHARTS 8/8 – w trybie testowym widok HEATMAPA jest ukryty, zrzuty identyczne jak w 1.45.0 (0 pikseli różnych powyżej progu).
+
 ## 1.45.0 – Apollo23: workflow v3.2 (TASK 001–025)
 Wszystkie nowe moduły są domyślnie **OFF / SHADOW / tylko do odczytu**; żaden nie ma ścieżki zleceń i żaden nie zmienia STOP, SL, limitów
 ryzyka, dźwigni ani trybu wykonania. Projektowanie interfejsu pominięte (zgodnie z poleceniem) – moduły mają API, a gra prostą stronę.

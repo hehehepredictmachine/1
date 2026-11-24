@@ -139,6 +139,35 @@ class TestUI142(unittest.TestCase):
         self.assertEqual(p.sent, [])                                    # opening screens = GET only
         self.assertEqual(p.errors, [])
 
+    # CHARTS · HEATMAPA (styl Bookmap): przełącznik w nagłówku wykresu, mapa z archiwum arkusza MT5, powrót do świec; tylko GET
+    def test_h_charts_heatmap_toggle(self):
+        p = self.page()
+        self.forex(p)
+        p.click("[data-testid=planet-charts]")
+        p.wait_for_function("() => window.__PMW_E2E__.forex.state().sub === 'on'", timeout=90000)
+        p.wait_for_selector("[data-testid=charts-view] [data-v=heat]", timeout=30000)
+        x = p.query_selector(".sys-x")                                              # pierwszy start: panel ustawień zakrywa ekran
+        if x and x.is_visible():
+            x.click()
+        p.click("[data-testid=charts-view] [data-v=heat]")
+        p.wait_for_function("() => /ARKUSZ BROKERA MT5/.test(document.querySelector('#mc-read').innerText)", timeout=90000)
+        self.assertEqual(p.inner_text("#mc-sub"), "MAPA PŁYNNOŚCI")
+        self.assertEqual(p.locator("[data-testid=charts-view] [data-w]").count(), 4)      # okna 5 MIN / 15 MIN / 1 H / 4 H
+        colourful = p.evaluate("""() => { const c = document.getElementById('chart'), r = document.getElementById('mc-plot').getBoundingClientRect(), k = c.width / innerWidth;
+            const d = c.getContext('2d').getImageData(r.left * k, r.top * k, r.width * 0.75 * k, r.height * k).data; let n = 0;
+            for (let i = 0; i < d.length; i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 60) n++; return n; }""")
+        self.assertGreater(colourful, 200)                                          # paleta klasyczna narysowana (wykres świecowy jest szary)
+        p.click("#opt-tabs [data-t=chart]")
+        info = p.inner_text("#heat-info")
+        self.assertIn("MT5_MARKET_BOOK", info)
+        self.assertIn("brak taśmy", info)
+        self.assertTrue(p.is_disabled("#opt-body .sw[data-l=hbub]"))                # bąble: brak taśmy transakcji u brokera
+        p.click("[data-testid=charts-view] [data-v=chart]")
+        p.wait_for_function("() => document.querySelector('#mc-sub').textContent === 'WYKRES GŁÓWNY'", timeout=30000)
+        self.assertEqual(p.locator("[data-testid=charts-view] [data-w]").count(), 0)
+        self.assertEqual(p.sent, [])
+        self.assertEqual(p.errors, [])
+
     # (f)
     def test_c_system_panels_from_menu_and_forex(self):
         p = self.page()

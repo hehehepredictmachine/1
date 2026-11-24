@@ -325,6 +325,22 @@ class IndicatorService:
                 "algorithms": {"avwap": AV.VERSION, "spread": SP.VERSION, "semivar": SV.VERSION, "dxy": DX.VERSION, "profile": PF.VERSION,
                                "ofi": OF.VERSION}}
 
+    def book_history(self, t0: float, t1: float, symbol: str | None = None, limit: int = 60000) -> tuple[str, list[tuple]]:
+        """Archived book snapshots of `symbol` (default: the subscribed / configured MT5 symbol) in [t0, t1] - CHARTS heatmap (read-only)."""
+        sym = symbol or self.book.symbol or self.cfg_store.get().mt5.symbol
+        with self._lock:
+            rows = self.db.execute("SELECT t, bids, asks FROM book_snapshots WHERE symbol=? AND t>=? AND t<=? ORDER BY t LIMIT ?",
+                                   (sym, t0, t1, limit)).fetchall()
+        return sym, [(r["t"], json.loads(r["bids"]), json.loads(r["asks"])) for r in rows]
+
+    def book_latest(self, symbol: str) -> dict | None:
+        """The current book of `symbol`: the live poll when it is that symbol, else the newest archived snapshot (age is reported)."""
+        if self.book.symbol == symbol and self.book.last:
+            return self.book.last
+        with self._lock:
+            r = self.db.execute("SELECT t, bids, asks FROM book_snapshots WHERE symbol=? ORDER BY t DESC LIMIT 1", (symbol,)).fetchone()
+        return {"t": r["t"], "bids": json.loads(r["bids"]), "asks": json.loads(r["asks"])} if r else None
+
     def prune(self, keep_days: int | None = None) -> None:
         cut = self.clock() - 86400 * (keep_days or self._cfg().book_keep_days)
         with self._lock:
