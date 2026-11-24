@@ -5,6 +5,12 @@
   runner-group tasks (the existing tests mocked build_plan). Studio still never activates and never reloads the bot.
 * trainhub registry.json (same defect as registry_io, diagnoza trening#0): every writer re-read an unreadable registry as EMPTY under
   reg_lock and saved it back - all versions, active packages and the history were lost; the Studio importer wrote it without reg_lock.
+* TSFM worker failure (Chronos-2 / Granite TTM / TiRex-2) was never written to the event log: tsfm/service.ModelWorker.fail called
+  applog.warning(), AppLog only has warn() - the AttributeError was swallowed by the surrounding except.
+* Kronos ledger (diagnoza ledgery, W): a re-forecast of the same bar got a new random forecast_id, INSERT OR IGNORE kept the first row,
+  but `latest`, the PMW-PRED-2 record (result.forecast_id) and the listeners carried the new id that is in no table. Now the same as TSFM
+  (1.46): an identical re-forecast takes the stored id (SAME_AS_RECORDED), a different one is marked REFORECAST_NOT_RECORDED. Forecast
+  values, direction and publication order are unchanged.
 """
 from __future__ import annotations
 
@@ -93,6 +99,60 @@ class TestTrainhubRegistryStrict(unittest.TestCase):
         self.assertEqual([v["version"] for v in R._reg("XAUUSD")["versions"]["TH_LOGREG_M5_H6"]], ["v1"])
         src = (_env.ROOT / "backend" / "masterquo" / "studio" / "importer.py").read_text(encoding="utf-8")
         self.assertNotIn("R._save_reg(", src)                                    # 1.46.0: read-modify-write without reg_lock
+
+
+class TestTsfmFailureIsLogged(unittest.TestCase):
+    def test_worker_failure_reaches_the_event_log(self):
+        from types import SimpleNamespace
+
+        from masterquo.events import AppLog
+        from masterquo.tsfm import service as TS
+        log = mock.create_autospec(AppLog, instance=True)                      # only the real AppLog methods exist
+        w = TS.ModelWorker(SimpleNamespace(applog=log), "chronos2")
+        self.assertFalse(w.fail("WORKER_START_FAILED", "brak środowiska"))
+        log.warn.assert_called_once()
+        self.assertEqual(log.warn.call_args.args[:2], ("TSFM", "WORKER_START_FAILED"))
+        self.assertEqual(w.state["status"], "ERROR")
+
+
+def _kronos_fc(fid: str, pred_c: float) -> dict:
+    return {"id": fid, "created_at": "2026-03-04T08:00:00Z", "instrument": "XAUUSD", "symbol": "XAUUSD-", "timeframe": "M5", "horizon_bars": 1,
+            "last_bar_open_utc": "2026-03-04T07:55:00Z", "last_close": 2650.0, "pred_close_h": pred_c, "delta_price": pred_c - 2650.0,
+            "direction": "UP" if pred_c > 2650.2 else "FLAT", "neutral_band": 0.2, "pred": [{"t_utc": "2026-03-04T08:00:00Z", "c": pred_c}],
+            "uncertainty": None, "model": {"revision": "r1"}, "tokenizer": {"revision": "t1"}, "device": "cpu", "compute_ms": 5,
+            "data_kind": "SYNTHETIC_TEST", "quality": {"volume_source": "tick", "status": "OK"}, "sampling": {"T": 1.0}, "timestamp_basis": "UTC"}
+
+
+class TestKronosReforecastId(unittest.TestCase):
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_reforecast_of_the_same_bar_resolves_to_the_stored_row(self):
+        from types import SimpleNamespace
+
+        from masterquo.db.database import Database
+        from masterquo.kronos.service import KronosService
+        db = Database()
+        svc = SimpleNamespace(db=db)
+        rec = KronosService.record.__get__(svc)
+        first = _kronos_fc("KR-1", 2651.0)
+        rec(first)
+        same = _kronos_fc("KR-2", 2651.0)                                     # restart / refresh: the same forecast of the same bar
+        rec(same)
+        ids = {r["forecast_id"] for r in db.query("SELECT forecast_id FROM kronos_forecasts")}
+        self.assertEqual(ids, {"KR-1"})
+        self.assertEqual(same["id"], "KR-1")                                  # 1.46.0: 'KR-2' - in no table
+        self.assertEqual(same["ledger"]["status"], "SAME_AS_RECORDED")
+        diff = _kronos_fc("KR-3", 2649.0)                                     # a DIFFERENT re-forecast of the same bar
+        rec(diff)
+        self.assertEqual(diff["ledger"]["status"], "REFORECAST_NOT_RECORDED")
+        self.assertEqual(diff["ledger"]["recorded_forecast_id"], "KR-1")
+        self.assertEqual((diff["pred_close_h"], diff["direction"]), (2649.0, "FLAT"))   # the forecast itself is untouched
+        self.assertEqual(first["ledger"]["status"], "RECORDED")
 
 
 if __name__ == "__main__":

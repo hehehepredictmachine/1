@@ -526,7 +526,13 @@ class KronosService:
                 "note": "pojedyncza próbkowana ścieżka modelu (sample_count=1) – nie jest pewnością ani skalibrowanym prawdopodobieństwem"}
 
     # ================================================================== ledger + settlement
-    def record(self, fc: dict) -> None:
+    def record(self, fc: dict) -> bool:
+        """Stored BEFORE the outcome. 1.46 arch (as TSFM 1.46): the ledger key (instrument, TF, last bar, horizon, settings) keeps the FIRST
+        forecast of a bar (INSERT OR IGNORE); a re-forecast of the same bar used to keep its new random id in `latest`, the PMW-PRED-2
+        record and the listeners although no table has it. Now an identical re-forecast takes the stored id (SAME_AS_RECORDED); a
+        different one is marked REFORECAST_NOT_RECORDED with the stored id. Values, direction and publication are unchanged."""
+        path_json = json.dumps([{"t_utc": x["t_utc"], "c": x["c"]} for x in fc["pred"]])
+        settings_json = json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"], "model": (fc.get("model") or {}).get("revision")})
         self.db.execute(
             """INSERT OR IGNORE INTO kronos_forecasts(forecast_id, created_at, instrument, symbol, timeframe, horizon_bars, last_bar_open_utc,
                last_close, pred_close_h, delta_price, direction, neutral_band, path_json, uncertainty_json, model_revision, tokenizer_revision,
@@ -534,9 +540,23 @@ class KronosService:
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (fc["id"], fc["created_at"], fc["instrument"], fc["symbol"], fc["timeframe"], fc["horizon_bars"], fc["last_bar_open_utc"], fc["last_close"],
              fc["pred_close_h"], fc["delta_price"], fc["direction"], fc["neutral_band"],
-             json.dumps([{"t_utc": x["t_utc"], "c": x["c"]} for x in fc["pred"]]), json.dumps(fc["uncertainty"]) if fc["uncertainty"] else None,
+             path_json, json.dumps(fc["uncertainty"]) if fc["uncertainty"] else None,
              (fc.get("model") or {}).get("revision"), (fc.get("tokenizer") or {}).get("revision"), fc["device"], fc["compute_ms"], fc["data_kind"],
-             fc["quality"]["volume_source"], fc["quality"]["status"], json.dumps({"sampling": fc["sampling"], "basis": fc["timestamp_basis"], "model": (fc.get("model") or {}).get("revision")}), "PENDING"))
+             fc["quality"]["volume_source"], fc["quality"]["status"], settings_json, "PENDING"))
+        if self.db.query("SELECT 1 FROM kronos_forecasts WHERE forecast_id=?", (fc["id"],)):
+            fc["ledger"] = {"status": "RECORDED", "forecast_id": fc["id"]}
+            return True
+        rows = self.db.query("""SELECT forecast_id, created_at, path_json, direction FROM kronos_forecasts WHERE instrument=? AND timeframe=?
+                                AND last_bar_open_utc=? AND horizon_bars=? AND settings_json=?""",
+                             (fc["instrument"], fc["timeframe"], fc["last_bar_open_utc"], fc["horizon_bars"], settings_json))
+        row = rows[0] if rows else None
+        if row and row["path_json"] == path_json and row["direction"] == fc["direction"]:
+            fc["id"] = row["forecast_id"]                                  # the same forecast: every reference resolves to the stored row
+            fc["ledger"] = {"status": "SAME_AS_RECORDED", "forecast_id": row["forecast_id"], "recorded_at": row["created_at"]}
+            return True
+        fc["ledger"] = {"status": "REFORECAST_NOT_RECORDED", "forecast_id": None, "recorded_forecast_id": row["forecast_id"] if row else None,
+                        "reason": "ponowna prognoza tej samej świecy różni się od zapisanej w księdze (zapisana przed wynikiem) – nie jest rozliczana"}
+        return False
 
     def settle(self, inst: str, tf: str, closed_bars: list[dict]) -> int:
         """Settle PENDING forecasts whose last target bar is already closed: per-step actual closes from REAL closed bars of exactly

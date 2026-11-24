@@ -191,7 +191,7 @@ class ModelWorker:
         self.backoff = min(1800.0, self.backoff * 2)
         self.set_state("ERROR", f"{code}: {detail}"[:400] if detail else code, code)
         try:
-            self.svc.applog.warning("TSFM", code, f"{NAMES[self.mid]} niedostępny: {detail}"[:300])
+            self.svc.applog.warn("TSFM", code, f"{NAMES[self.mid]} niedostępny: {detail}"[:300])   # 1.46 arch: was .warning() (no such method)
         except Exception:  # noqa: BLE001
             pass
         return False
