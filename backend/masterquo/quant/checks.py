@@ -18,6 +18,10 @@ from ..timeutil import TF_SECONDS
 from . import ids as I
 
 VERSION = "PMW-QUANT-CHECK-1"
+# 1.46 arch (I0642): the trainhub baseline (class frequencies of the training rows, skill ~0 by construction) is a point of reference for
+# the panel, not a forecast - once activated it was eligible (a near-constant fc:trainhub:TH_BASELINE:*:edge column and a pseudo-vote in
+# conflict.agree / disagree). It stays in /models/predictions; Quant excludes it with this reason.
+REFERENCE_BASELINES = ("trainhub:TH_BASELINE",)
 CLOCK_TOLERANCE_S = 5.0
 DEFAULT_TTL_BARS = 2                 # a candle model is stale after 2 bars of its TF beyond its data bar close
 STATE_TTL_S = 900.0                  # measurements / states without a TF
@@ -50,6 +54,8 @@ def check(p: dict, *, now: float | None = None, snapshot_kind: str | None = None
         C.validate(p)
     except C.ContractError as exc:
         return {"eligible": False, "reason": f"CONTRACT_ERROR:{exc}", "age_s": None}
+    if I.canonical(p) in REFERENCE_BASELINES:
+        return {"eligible": False, "reason": "REFERENCE_BASELINE", "age_s": None}
     if p.get("state") != "READY":
         return {"eligible": False, "reason": f"STATE_{p.get('state')}:{p.get('unavailable_reason') or ''}"[:200], "age_s": None}
     dt = ts(p.get("data_time"))
