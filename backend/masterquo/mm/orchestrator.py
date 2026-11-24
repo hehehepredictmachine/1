@@ -45,9 +45,11 @@ PROFILES = {"quick": {"m5_bars": 6000, "m1_bars": 24000, "epochs": 3, "gpr_step"
 
 
 class Ctx:
-    def __init__(self, inst: str, snap: data.Snapshot, out: Path, profile: str, seed: int, cancel_file: Path | None):
+    def __init__(self, inst: str, snap: data.Snapshot, out: Path, profile: str, seed: int, cancel_file: Path | None, activate: bool = True):
         self.inst, self.snap, self.out, self.profile, self.prof, self.seed = inst, snap, out, profile, PROFILES[profile], seed
         self.cancel_file = cancel_file
+        self.activate = activate                 # 1.46 D7: False (mm train --no-activate, TEST_INSTALACJI) - the SHADOW pointer never moves
+        self.promoted: list[str] = []            # model ids whose SHADOW pointer this run moved
         self.results: dict = {}
         self.synthetic = snap.data_kind != "REAL_USER_DATA"
         self.lines: list[str] = []
@@ -85,7 +87,7 @@ def _jsonable(o):
 
 
 def run(dataset_dir: str, inst: str, out_dir: str, profile: str = "standard", only: list[str] | None = None, seed: int = 20261025,
-        cancel_file: str | None = None) -> dict:
+        cancel_file: str | None = None, activate: bool = True) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     run_id = contracts.new_id("MMRUN")
@@ -93,10 +95,10 @@ def run(dataset_dir: str, inst: str, out_dir: str, profile: str = "standard", on
     try:
         snap = data.open_snapshot(dataset_dir, ("M1", "M5", "M15", "M30"))
     except Exception as exc:  # noqa: BLE001
-        rep = {"run_id": run_id, "status": "BLOCKED_DATA_QUALITY", "reason": f"{type(exc).__name__}: {exc}"[:300], "jobs": {}}
+        rep = {"run_id": run_id, "status": "BLOCKED_DATA_QUALITY", "reason": f"{type(exc).__name__}: {exc}"[:300], "jobs": {}, "activate": activate}
         _write(out / "REPORT.json", rep)
         return rep
-    ctx = Ctx(inst, snap, out, profile, seed, Path(cancel_file) if cancel_file else None)
+    ctx = Ctx(inst, snap, out, profile, seed, Path(cancel_file) if cancel_file else None, activate)
     status: dict[str, dict] = {}
     for jid, title, cat, deps in GRAPH:
         status[jid] = {"id": jid, "title": title, "category": cat, "deps": deps, "status": "QUEUED"}
@@ -127,10 +129,12 @@ def run(dataset_dir: str, inst: str, out_dir: str, profile: str = "standard", on
         _write(out / f"{jid}.json", res)
         ctx.log(f"[{jid}] -> {res['status']}" + (f" ({res.get('reason')})" if res.get("reason") else ""))
     rep = {"run_id": run_id, "version": VERSION, "instrument": inst, "profile": profile, "seed": seed, "started_at": t0, "finished_at": time.time(),
-           "snapshot": snap.lineage(), "jobs": status, "status": _run_status(status, ctx.cancel()),
+           "snapshot": snap.lineage(), "jobs": status, "status": _run_status(status, ctx.cancel()), "activate": activate,
+           "shadow_promoted": list(ctx.promoted),
            "environment": {"python": platform.python_version(), "numpy": np.__version__, "platform": platform.platform()},
            "safety": {"orders_sent": 0, "execution_paths_imported": False, "shadow_only": True,
-                      "promotion": "tylko VALIDATED_SHADOW na REAL_USER_DATA przesuwa wskaźnik SHADOW; brak wskaźnika LIVE"},
+                      "promotion": ("tylko VALIDATED_SHADOW na REAL_USER_DATA przesuwa wskaźnik SHADOW; brak wskaźnika LIVE" if activate else
+                                    "bez aktywacji (--no-activate): wskaźnik SHADOW bez zmian; brak wskaźnika LIVE")},
            "log": ctx.lines[-400:]}
     _write(out / "REPORT.json", rep)
     (out / "REPORT.md").write_text(markdown(rep), encoding="utf-8")

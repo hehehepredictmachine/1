@@ -76,8 +76,17 @@ class Registry:
         return max(ends) if ends else None
 
     # ------------------------------------------------------------ register + promote
-    def register(self, result: dict, snapshot_id: str, promotion_cfg: dict, allow_promotion: bool = True) -> dict:
-        """allow_promotion=False (e.g. a model trained on APPROX backfill labels): evaluated and stored, never champion."""
+    def register(self, result: dict, snapshot_id: str, promotion_cfg: dict, allow_promotion: bool = True, policy: dict | None = None) -> dict:
+        """allow_promotion=False (e.g. a model trained on APPROX backfill labels): evaluated and stored, never champion.
+        policy (1.46 D6): the result of training/promotion.ml_champion_policy - the one rule of the bot's job and of the offline training;
+        its event / reason name the real cause of a blocked promotion (APPROX, synthetic, no activation, unknown provenance)."""
+        block = None
+        if policy is not None and not policy.get("allow_promotion", False):
+            allow_promotion = False
+            block = {"role": policy.get("role"), "reason": policy.get("reason")}
+        elif not allow_promotion:
+            block = {"role": "RESEARCH_APPROX", "reason": "trening na etykietach APPROX (backfill OHLC) – tylko do badań"}
+        block_event = (policy or {}).get("event") or "NOT_PROMOTED_APPROX"
         decisions = {}
         version = (self.db.one("SELECT MAX(version) AS v FROM ml_models") or {}).get("v") or 0
         cand = []
@@ -109,13 +118,15 @@ class Registry:
             status = "REJECTED" if not d["passed"] else ("CHALLENGER" if not best or mid != best[1] else "CANDIDATE")
             if d["passed"] and not allow_promotion:
                 status = "RESEARCH_APPROX"     # 1.46: only the best APPROX model was RESEARCH_APPROX - the others became CHALLENGER (shadow-scored)
-            self.db.execute("UPDATE ml_models SET status=?, promotion_json=? WHERE model_id=?",
-                            (status, dumps({"passed": d["passed"], "reasons": d["reasons"], "rules": promotion_cfg}), mid))
+            pj = {"passed": d["passed"], "reasons": d["reasons"], "rules": promotion_cfg}
+            if d["passed"] and block:
+                pj["not_promoted"] = block
+            self.db.execute("UPDATE ml_models SET status=?, promotion_json=? WHERE model_id=?", (status, dumps(pj), mid))
             self.event("REJECT" if status == "REJECTED" else "EVALUATED", mid, d)
         if not allow_promotion:
             for mid, d in decisions.items():
                 if d["passed"]:
-                    self.event("NOT_PROMOTED_APPROX", mid, {"reason": "trening na etykietach APPROX (backfill OHLC) – tylko do badań"})
+                    self.event(block_event, mid, {"reason": block["reason"], "role": block["role"]})
             best = None
         if best:
             self.promote(best[1], "PASSED_RULES_AND_BEAT_CHAMPION" if self.champion else "PASSED_RULES_FIRST_CHAMPION")

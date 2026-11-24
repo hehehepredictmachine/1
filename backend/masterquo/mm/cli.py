@@ -1,7 +1,7 @@
 """`python -m masterquo mm ...` - master models CLI (SHADOW / OBSERVE; no command here can send, modify or close an order).
 
   mm inventory --instrument XAUUSD [--json]          module inventory with evidence-based statuses (latest run merged)
-  mm train --dataset DIR --instrument XAUUSD --out DIR [--profile quick|standard] [--only a,b] [--cancel-file F]
+  mm train --dataset DIR --instrument XAUUSD --out DIR [--profile quick|standard] [--only a,b] [--cancel-file F] [--no-activate]
   mm status --instrument XAUUSD                      latest run summary + artifacts + SHADOW pointer
   mm buzoa-bench [--budget N]                        BUZOA vs PSO/DE/Random on the benchmark functions
   mm mathbench-export --out DIR                      float64 MLP weights / vectors / float32 ONNX + Python checks (copy to MQL5\\Files\\PMW_MathFidelity)
@@ -33,6 +33,8 @@ def main(argv: list[str]) -> int:
     t.add_argument("--only", default="")
     t.add_argument("--seed", type=int, default=20261025)
     t.add_argument("--cancel-file")
+    t.add_argument("--no-activate", action="store_true",
+                   help="1.46: artefakty VALIDATED_SHADOW zapisane bez przesuwania wskaźnika SHADOW (profil TEST_INSTALACJI)")
     s = sub.add_parser("status")
     s.add_argument("--instrument", choices=INSTR, required=True)
     b = sub.add_parser("buzoa-bench")
@@ -57,7 +59,8 @@ def main(argv: list[str]) -> int:
         return 0
     if a.cmd == "train":
         from . import orchestrator
-        rep = orchestrator.run(a.dataset, a.instrument, a.out, a.profile, [x for x in a.only.split(",") if x] or None, a.seed, a.cancel_file)
+        rep = orchestrator.run(a.dataset, a.instrument, a.out, a.profile, [x for x in a.only.split(",") if x] or None, a.seed, a.cancel_file,
+                               activate=not a.no_activate)
         print(json.dumps({"run_id": rep.get("run_id"), "status": rep.get("status"), "jobs": {k: v["status"] for k, v in (rep.get("jobs") or {}).items()}},
                          ensure_ascii=False))
         return 0 if rep.get("status") == "FINISHED" else 1

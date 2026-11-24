@@ -3,7 +3,8 @@
 dataset (M1/M5/M15/H1/H4/D1 CSV of the exact broker symbol) -> backfill replay of S01-S12 with the instrument's symbol
 (APPROX labels, own database of the instrument) -> immutable snapshot -> DT + XGBoost trainer (same code as the bot's job)
 -> registry of that instrument. include_approx is a parameter of THIS job only (config ml.use_backfill_approx is never
-written). Models trained on APPROX labels are stored and evaluated but never promoted to champion (RESEARCH_APPROX).
+written). Models trained on APPROX labels are stored and evaluated but never promoted to champion (RESEARCH_APPROX); the rule is
+training/promotion.ml_champion_policy, shared with the bot's own training job (1.46 D6).
 """
 from __future__ import annotations
 
@@ -65,9 +66,12 @@ def cost_of(meta: dict, commission: float | None) -> dict:
 
 
 def train(inst: str, dataset: Path, *, include_approx: bool = True, days: int = 180, commission: float | None = None, threads: int = 2,
-          log=print) -> dict:
+          log=print, activate: bool = True) -> dict:
+    """activate=False (1.46 D7: `training ml-offline --no-activate`, profile TEST_INSTALACJI): models are evaluated and stored, the current
+    champion stays. The champion rule is the one shared with the bot's job (training/promotion.ml_champion_policy)."""
     import mq_instruments
     from ..config import ConfigStore
+    from ..training.promotion import approx_rows_in_snapshot, ml_champion_policy
     from . import backfill, trainer
     from .dataset import SampleStore
     from .registry import Registry
@@ -119,12 +123,14 @@ def train(inst: str, dataset: Path, *, include_approx: bool = True, days: int = 
         db.execute("UPDATE ml_jobs SET status=?, finished_at=? WHERE job_id=?", (res.get("status") or "FAILED", iso(utcnow()), job_id))
         out.update(status=res.get("status") or "FAILED", reason=res.get("reason") or res.get("reasons"), job_id=job_id)
         return out
-    approx_used = include_approx and snap["rows"] > 0
-    decisions = reg.register(res, snap["snapshot_id"], jcfg["promotion"], allow_promotion=not approx_used and not synthetic)
+    # 1.46 D6: APPROX = the snapshot really holds APPROX labels (was: include_approx and any row - the same in practice, the backfill
+    # writes APPROX samples); one policy with the bot's job; D7: activate=False keeps the champion
+    approx_used = approx_rows_in_snapshot(db, snap) > 0
+    pol = ml_champion_policy(approx=approx_used, synthetic=synthetic, activate=activate)
+    decisions = reg.register(res, snap["snapshot_id"], jcfg["promotion"], policy=pol)
     db.execute("UPDATE ml_jobs SET status='DONE', finished_at=?, detail_json=? WHERE job_id=?",
-               (iso(utcnow()), dumps({"decisions": decisions, "instrument": inst, "include_approx": include_approx}), job_id))
+               (iso(utcnow()), dumps({"decisions": decisions, "instrument": inst, "include_approx": include_approx, "promotion_policy": pol}), job_id))
     out.update(status="DONE", job_id=job_id, snapshot=snap, decisions=decisions, champion=reg.champion_id,
                models={m: {"family": d["family"], "passed_rules": d["passed"], "reasons": d["reasons"]} for m, d in decisions.items()},
-               elapsed_s=round(time.time() - t0, 1),
-               role=("FIXTURE_ONLY" if synthetic else "RESEARCH_APPROX" if approx_used else "ELIGIBLE_FOR_CHAMPION"))
+               elapsed_s=round(time.time() - t0, 1), role=pol["role"], activate=activate, promotion_policy=pol)
     return out

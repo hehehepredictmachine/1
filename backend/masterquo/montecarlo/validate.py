@@ -303,9 +303,10 @@ def _write(p: Path, obj) -> None:
     os.replace(tmp, p)
 
 
-def save(inst: str, rep: dict) -> dict:
+def save(inst: str, rep: dict, activate: bool = True) -> dict:
     """Run folder + registry. Only REAL_USER_DATA with an edge over the baseline becomes the ACTIVE calibrator; the previous one stays
-    in history (rollback). Synthetic / no edge -> saved for research."""
+    in history (rollback). Synthetic / no edge -> saved for research. activate=False (1.46 D7: `montecarlo validate --no-activate`,
+    profile TEST_INSTALACJI): the run is recorded, the active calibrator stays (an eligible run is marked NOT_ACTIVATED_BY_PLAN)."""
     rid = "MC-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + hashlib.sha256(json.dumps(rep, default=str).encode()).hexdigest()[:6]
     d = root(inst) / "runs" / rid
     _write(d / "report.json", rep)
@@ -314,23 +315,26 @@ def save(inst: str, rep: dict) -> dict:
     with RIO.file_lock(RIO.lock_for(reg_p)):
         # 1.46 arch: strict - an unreadable registry.json was replaced by an empty one (active calibrator + every run lost)
         reg = RIO.read_json(reg_p, lambda: {"active": None, "history": [], "runs": {}}, strict=True)
-        return _save_locked(rep, rid, d, reg_p, reg)
+        return _save_locked(rep, rid, d, reg_p, reg, activate)
 
 
-def _save_locked(rep: dict, rid: str, d: Path, reg_p: Path, reg: dict) -> dict:
+def _save_locked(rep: dict, rid: str, d: Path, reg_p: Path, reg: dict, allow_activation: bool = True) -> dict:
     reg.setdefault("runs", {})
     reg.setdefault("history", [])
-    activate = rep.get("status") == "DONE" and rep.get("data_kind") == "REAL_USER_DATA" and rep.get("verdict") == "PRZEWAGA_NAD_BAZOWYM"
+    eligible = rep.get("status") == "DONE" and rep.get("data_kind") == "REAL_USER_DATA" and rep.get("verdict") == "PRZEWAGA_NAD_BAZOWYM"
+    activate = eligible and allow_activation
     reg["runs"][rid] = {"created_at": datetime.now(timezone.utc).isoformat(), "status": rep.get("status"), "verdict": rep.get("verdict"),
                         "variant": rep.get("chosen_variant"), "data_kind": rep.get("data_kind"), "dataset_id": rep.get("dataset_id"),
                         "report": str(d / "report.json"), "report_sha256": hashlib.sha256((d / "report.json").read_bytes()).hexdigest()}
+    if eligible and not allow_activation:
+        reg["runs"][rid]["activation"] = "NOT_ACTIVATED_BY_PLAN"
     if activate:
         _write(d / "calibrator.json", dict(rep["calibrator"], run_id=rid, status="ACTIVE"))
         if reg.get("active"):
             reg["history"].append(reg["active"])
         reg["active"] = rid
     _write(reg_p, reg)
-    return {"run_id": rid, "activated": activate, "dir": str(d)}
+    return {"run_id": rid, "activated": activate, "eligible": eligible, "dir": str(d)}
 
 
 def active_calibrator(inst: str) -> dict | None:
