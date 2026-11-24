@@ -101,8 +101,6 @@ const (
 	hwndTop                           = 0
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
-	mutexName      = `Local\PepeMarketWizardDesktop`
-	showEventName  = `Local\PepeMarketWizardDesktop.show`
 	webview2URL    = "https://developer.microsoft.com/microsoft-edge/webview2/"
 )
 
@@ -766,6 +764,7 @@ func (a *winApp) trayMenu() {
 // ---------------------------------------------------------------- single instance
 
 func singleInstance() (windows.Handle, bool) {
+	mutexName, showEventName := instanceNames() // 1.46 arch (I0846): Studio has its own names (the bot's are unchanged)
 	m, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(mutexName))
 	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if ev, e := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, windows.StringToUTF16Ptr(showEventName)); e == nil {
@@ -781,6 +780,7 @@ func singleInstance() (windows.Handle, bool) {
 }
 
 func (a *winApp) watchShowRequests() {
+	_, showEventName := instanceNames()
 	ev, err := windows.CreateEvent(nil, 0, 0, windows.StringToUTF16Ptr(showEventName))
 	if err != nil {
 		return

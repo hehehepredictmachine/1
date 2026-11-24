@@ -931,5 +931,63 @@ class TestChartWallsSource(_Base):
         self.assertTrue("tylko wykres" in dlg)
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0846
+class TestStudioLaunchVerified(_Base):
+    """I0846 (część Python): POST /api/v1/studio/launch nie zgłasza started:true, gdy Studio zakończyło się od razu; endpoint zostaje
+    synchroniczny (def), czeka maks. STUDIO_LAUNCH_WAIT_S, nie zabija procesu, pola odpowiedzi zgodne wstecz (started, pid, job_breakaway)."""
+
+    class _Resp:
+        def __init__(self, body: bytes):
+            self.body = body
+
+        def read(self):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _launch(self, proc, urlopen, wait=0.6):
+        from masterquo.api import app as A
+        rt = make_rt()
+        fn = ep(A.create_app(rt, PORT), "POST", "/api/v1/studio/launch")
+        with mock.patch("subprocess.Popen", mock.MagicMock(return_value=proc)), mock.patch("urllib.request.urlopen", urlopen), \
+                mock.patch.object(A, "STUDIO_LAUNCH_WAIT_S", wait):
+            return fn(), rt
+
+    def test_route_stays_sync(self):
+        import inspect
+
+        from masterquo.api import app as A
+        fn = ep(A.create_app(make_rt(), PORT), "POST", "/api/v1/studio/launch")
+        self.assertFalse(inspect.iscoroutinefunction(fn))                     # time.sleep never runs in the event loop
+
+    def test_studio_exiting_at_once_is_not_started(self):
+        proc = types.SimpleNamespace(pid=9, poll=lambda: 0)
+        r, rt = self._launch(proc, mock.MagicMock(side_effect=OSError("not running")))
+        self.assertEqual((r["started"], r["reason"], r["pid"]), (False, "STUDIO_EXITED:0", 9))          # HEAD: started True
+        self.assertEqual(rt.log.write.call_args.args[:3], ("WARNING", "STUDIO", "LAUNCH_EXITED"))
+
+    def test_alive_but_not_answering_is_starting(self):
+        killed = []
+        proc = types.SimpleNamespace(pid=10, poll=lambda: None, kill=lambda: killed.append(1), terminate=lambda: killed.append(1))
+        r, _ = self._launch(proc, mock.MagicMock(side_effect=OSError("not running")))
+        self.assertEqual((r["started"], r["starting"], r["pid"]), (True, True, 10))
+        self.assertEqual(killed, [])                                                                     # nic nie jest zabijane
+
+    def test_answering_studio_is_started(self):
+        calls = {"n": 0}
+
+        def urlopen(*a, **k):
+            calls["n"] += 1
+            if calls["n"] == 1:                                                                          # sonda przed startem: nie działa
+                raise OSError("not running")
+            return self._Resp(json.dumps({"app": "PepeTrainingStudio", "studio": True}).encode())
+        r, _ = self._launch(types.SimpleNamespace(pid=11, poll=lambda: None), urlopen)
+        self.assertEqual((r["started"], r["starting"]), (True, False))
+
+
 if __name__ == "__main__":
     unittest.main()

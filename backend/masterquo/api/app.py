@@ -96,6 +96,7 @@ class CloseReq(BaseModel):
 
 
 SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
+STUDIO_LAUNCH_WAIT_S = 5.0     # 1.46 arch (I0846): how long POST /api/v1/studio/launch checks that Studio really started
 
 
 class AskReq(BaseModel):
@@ -2594,9 +2595,29 @@ def create_app(rt, port: int) -> FastAPI:
                 p, broke_away = start(flags), False       # ERROR_ACCESS_DENIED: this job does not allow breakaway (any other error repeats)
         except OSError as exc:
             raise HTTPException(500, f"STUDIO_START_FAILED:{type(exc).__name__}") from None
+        # 1.46 arch (I0846): started:true was returned right after Popen - an Studio that ended at once (e.g. the single-instance check
+        # of the launcher) was reported as started. Wait up to STUDIO_LAUNCH_WAIT_S (this route is a sync def - a threadpool thread, the
+        # event loop is not blocked): an exit before Studio answers -> started False, reason STUDIO_EXITED:<code>; alive but not yet
+        # answering (first start) -> started True, starting True. Nothing is killed; the bot and MT5 are not touched.
+        poll = getattr(p, "poll", None)
+        rc, starting = None, True
+        if callable(poll):
+            import time as _time
+            end = _time.monotonic() + STUDIO_LAUNCH_WAIT_S
+            while True:
+                if _studio_probe()["running"]:
+                    starting = False
+                    break
+                rc = poll()
+                if rc is not None or _time.monotonic() >= end:
+                    break
+                _time.sleep(0.5)
+        if rc is not None and starting:
+            rt.log.write("WARNING", "STUDIO", "LAUNCH_EXITED", f"Pepe Training Studio zakończyło się od razu (kod {rc}) – nie uruchomiono")
+            return {**st, "started": False, "starting": False, "pid": p.pid, "job_breakaway": broke_away, "reason": f"STUDIO_EXITED:{rc}"}
         rt.log.info("STUDIO", "LAUNCH", f"Uruchomiono Pepe Training Studio ({st['launcher']}, pid {p.pid}, port {st['port']}"
                     + (", w zadaniu silnika – zamknie się razem z nim" if broke_away is False else "") + ")")
-        return {**st, "started": True, "pid": p.pid, "job_breakaway": broke_away}
+        return {**st, "started": True, "starting": starting, "pid": p.pid, "job_breakaway": broke_away}
 
     # ---------------------------------------------------------------- Pepe Data & Training Studio import (1.33) - candidates only
     @app.post("/api/v1/studio/import")
