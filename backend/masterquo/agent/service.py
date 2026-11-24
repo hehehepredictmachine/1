@@ -36,21 +36,9 @@ from .tools import TOOL_DEFS, Toolbox
 
 log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
-FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
-# Cache read price as a fraction of the model's input price (claude-api reference, cache 2026-11-03): claude-fable-5-2 $0.20 / $8 = 0.025.
-# Every other model keeps the 1.46 estimate 0.1 although some are billed lower (claude-fable-5-1 0.025, claude-opus-5-5 and
-# claude-sonnet-5-5 0.05): a lower estimate makes agent.daily_budget_usd last longer, and under gate_policy=REQUIRED that lets
-# AI-approved entries through that today stop at DAILY_BUDGET_EXHAUSTED - an owner decision (arch146 review, S0(b)), not made here.
-CACHE_READ_MULT = {"claude-fable-5-2": 0.025}
-CACHE_READ_MULT_DEFAULT = 0.1
-
-
-def _default_prices() -> dict:
-    """The default price table of AgentConfig (config.py is the single source of the prices)."""
-    from ..config import AgentConfig
-    return AgentConfig.model_fields["price_per_mtok"].default_factory()
 
 
 def load_prompt() -> tuple[str, str]:
@@ -96,7 +84,6 @@ class ClaudeAgent:
         self.pending: dict[str, dict] = {}
         self.last_result: dict | None = None
         self.last_run_meta: dict | None = None
-        self._unpriced_logged: set[str] = set()   # models already reported as missing from the price table (one warning per model)
 
     # ------------------------------------------------------------ config
     @property
@@ -137,8 +124,7 @@ class ClaudeAgent:
                 "spent_today_usd_estimate": round(self.spent_today(), 4), "daily_budget_usd": self.cfg.daily_budget_usd,
                 "required_for_entry": self.policy() == "REQUIRED", "gate_policy": self.policy(), "pending": list(self.pending.values()),
                 "backoff_seconds": max(0, round(self.backoff_until - time.monotonic(), 1)), "last_run": self.last_run_meta,
-                "cost_note": "Koszt to szacunek, nie faktura: z cennika w konfiguracji, a dla modeli spoza niej z domyślnego cennika "
-                             "programu (stan 2026-11)."}
+                "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura."}
 
     # ------------------------------------------------------------ scheduling (thread-safe entry points)
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -353,14 +339,12 @@ class ClaudeAgent:
                              "promotion_rule": "Wymaga testu M06R/M06T na danych OOS + forward DEMO i zatwierdzenia użytkownika; nie zmienia LIVE."})))
 
     def _cost(self, model: str, usage: dict) -> float | None:
-        # the saved table wins; a model missing from it (a table saved before the model was added) is priced from the defaults
-        price = self.cfg.price_per_mtok.get(model) or _default_prices().get(model)
+        price = self.cfg.price_per_mtok.get(model)
         if not price:
             return None
         pin, pout = price
         cost = (usage.get("input_tokens", 0) * pin + usage.get("cache_creation_input_tokens", 0) * pin * 1.25 +
-                usage.get("cache_read_input_tokens", 0) * pin * CACHE_READ_MULT.get(model, CACHE_READ_MULT_DEFAULT) +
-                usage.get("output_tokens", 0) * pout) / 1_000_000
+                usage.get("cache_read_input_tokens", 0) * pin * 0.1 + usage.get("output_tokens", 0) * pout) / 1_000_000
         return round(cost, 6)
 
     def _user_message(self, req: dict, ctx: dict) -> str:
@@ -471,15 +455,6 @@ class ClaudeAgent:
             status, error, unexpected = "INTERNAL_ERROR", f"{type(e).__name__}: {e}"[:200], e
         latency = int((time.monotonic() - t0) * 1000)
         cost = None if unexpected is not None else self._cost(served_model or model, usage_total)
-        price_missing = (served_model or model) if unexpected is None and cost is None else None
-        if price_missing and price_missing not in self._unpriced_logged:
-            # arch146 review (S1, visibility only): a model missing from the price table (e.g. one the server-side fallback answered with)
-            # gives no estimate, so spent_today() / the daily budget count the run as 0 - unchanged, but no longer silent
-            self._unpriced_logged.add(price_missing)
-            self.log.write("WARNING", "AGENT", "COST_PRICE_MISSING",
-                           f"Agent Claude: brak ceny modelu {price_missing} w cenniku (agent.price_per_mtok) – koszt jego przebiegów nie "
-                           "jest szacowany i nie wlicza się do budżetu dziennego.",
-                           {"model_id": price_missing, "model_requested": model, "run_id": run_id})
         now = utcnow()
         rec = None
         if status == "OK" and assessment is not None:
@@ -498,8 +473,7 @@ class ClaudeAgent:
                   "tool_calls": toolbox.log, "finished_at": iso(now), "question": req.get("question"), "decision_id": (rec or {}).get("decision_id")}
         self.last_run_meta = {"run_id": run_id, "status": status, "model_id": served_model or model, "latency_ms": latency,
                               "finished_at": iso(now), "est_cost_usd": cost, "trigger": req["trigger"], "error": error,
-                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"],
-                              "price_missing_for": price_missing}
+                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"]}
         self.db.execute("""INSERT INTO agent_runs(run_id, started_at, finished_at, trigger, snapshot_id, setup_id, model_requested, model_id,
                            prompt_version, status, error_code, latency_ms, input_tokens, output_tokens, cache_read_tokens, est_cost_usd,
                            tool_calls, output_json, question) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
