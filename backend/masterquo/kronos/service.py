@@ -180,6 +180,8 @@ class KronosService:
         self._set_state("STARTING", STATUS_PL["STARTING"])
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
                    HF_HUB_DISABLE_TELEMETRY="1", MASTERQUO_DATA_DIR=str(paths.data_dir()))
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.applog, "KRONOS", env)              # arch 1.46 I0116: information only (env unchanged)
         errlog = open(paths.logs_dir() / "kronos_worker.log", "a", encoding="utf-8")       # library warnings / tracebacks
         try:
             self.proc = subprocess.Popen([py, "-m", "kronos_runtime.worker"], cwd=str(paths.ROOT_DIR / "backend"), env=env, text=True,

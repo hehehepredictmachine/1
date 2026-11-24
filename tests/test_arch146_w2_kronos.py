@@ -812,6 +812,37 @@ class TestI0127ResearchScriptsPortable(unittest.TestCase):
             eval_kronos.main([])                                                       # --data / --weights są wymagane
 
 
+class TestI0116TestHooksWarnedOnly(_SvcCase):
+    """I0116: usunięcie haków testowych z env procesów modeli w paczce klienta = S0 (model fixture / syntetyczny działający dziś jako
+    wstrzymanie ASSIST przestałby wstrzymywać). Wdrożony wyłącznie wariant neutralny: ostrzeżenie w dzienniku, środowisko bez zmian."""
+
+    def test_client_edition_lists_hooks_owner_does_not(self):
+        from masterquo.licensing import edition as ED
+        env = {"MQ_KRONOS_ALLOW_FIXTURE": "1", "MQ_TSFM_ALLOW_FIXTURE": "0", "MQ_FORECAST_TEST_ALLOW_SYNTHETIC": "1"}
+        with mock.patch.object(ED, "_client_marked", return_value=True):
+            self.assertEqual(ED.model_test_hooks(env), ["MQ_KRONOS_ALLOW_FIXTURE", "MQ_FORECAST_TEST_ALLOW_SYNTHETIC"])
+        with mock.patch.object(ED, "_client_marked", return_value=False), mock.patch.object(ED, "_OWNER_FILE", Path(__file__)):
+            self.assertEqual(ED.model_test_hooks(env), [])
+
+    def test_kronos_worker_start_warns_and_keeps_the_environment(self):
+        from masterquo.licensing import edition as ED
+        svc = self.make(python_path=sys.executable, weights_dir=str(self.dir / "w"))
+        K.fixture_weights(self.dir / "w")
+        seen = {}
+
+        def popen(*a, **kw):
+            seen["env"] = kw.get("env")
+            raise OSError("test: bez procesu")
+        with mock.patch.dict(os.environ, {"MQ_KRONOS_ALLOW_FIXTURE": "1"}), mock.patch.object(ED, "_client_marked", return_value=True), \
+                mock.patch("masterquo.kronos.service.find_python", return_value=sys.executable), \
+                mock.patch("masterquo.kronos.service.subprocess.Popen", side_effect=popen):
+            self.assertFalse(svc.ensure_worker())
+        self.assertEqual(seen["env"].get("MQ_KRONOS_ALLOW_FIXTURE"), "1")                    # S0: środowisko bez zmian
+        warns = [x for x in svc.applog.lines if x[0] == "WARN" and x[2] == "TEST_HOOK_ACTIVE"]
+        self.assertEqual(len(warns), 1)
+        self.assertIn("MQ_KRONOS_ALLOW_FIXTURE", warns[0][3])
+
+
 class TestI0197KronosDocs(unittest.TestCase):
     def test_installer_and_runtime_test_describe_the_pinned_pair(self):
         from kronos_runtime import install as I

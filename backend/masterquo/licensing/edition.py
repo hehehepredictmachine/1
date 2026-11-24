@@ -10,6 +10,7 @@ zmienić ręcznie – edycja chroni przed przypadkiem i prostym dopisaniem pliku
 """
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -38,3 +39,28 @@ def dev_overrides() -> bool:
     """Zmienne testowe (podmiana klucza publicznego, pliku licencji, czasu z internetu) działają tylko w repozytorium / wersji właściciela –
     w paczce klienta (bez generatora albo ze znacznikiem edycji klienta) są ignorowane."""
     return _OWNER_FILE.exists() and not _client_marked()
+
+
+# Haki testowe runtime'ów prognoz (manifest / wagi fixture, model SYNTHETIC_TEST). Arch 1.46 I0116: w paczce klienta NIE są usuwane
+# (S0 – model testowy działający dziś jako wstrzymanie ASSIST przestałby wstrzymywać), tylko zgłaszane jako ostrzeżenie (informacja).
+MODEL_TEST_HOOKS = ("MQ_KRONOS_ALLOW_FIXTURE", "MQ_TSFM_ALLOW_FIXTURE", "MQ_FORECAST_TEST_ALLOW_SYNTHETIC")
+
+
+def model_test_hooks(env=None) -> list[str]:
+    """Nazwy haków testowych ustawionych (=1) w `env` (domyślnie os.environ) w paczce KLIENTA; w repozytorium / wersji właściciela
+    (dev_overrides) – pusta lista. Tylko informacja – niczego nie zmienia."""
+    if dev_overrides():
+        return []
+    e = os.environ if env is None else env
+    return [k for k in MODEL_TEST_HOOKS if str(e.get(k, "")).strip() == "1"]
+
+
+def warn_model_test_hooks(applog, category: str, env=None) -> list[str]:
+    """Ostrzeżenie w dzienniku zdarzeń przy starcie procesu modelu, gdy w paczce klienta ustawiono hak testowy (I0116, informacja)."""
+    hooks = model_test_hooks(env)
+    fn = getattr(applog, "warn", None) or getattr(applog, "warning", None)
+    if hooks and fn is not None:
+        with contextlib.suppress(Exception):          # a log failure never stops a model process
+            fn(category, "TEST_HOOK_ACTIVE", f"Paczka klienta: ustawiona zmienna testowa {', '.join(hooks)} – proces modelu może przyjąć wagi "
+                                             "testowe / model syntetyczny. Usuń zmienną ze środowiska Windows i uruchom program ponownie.")
+    return hooks

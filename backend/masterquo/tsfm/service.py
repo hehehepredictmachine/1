@@ -152,6 +152,8 @@ class ModelWorker:
         self.set_state("STARTING", STATUS_PL["STARTING"])
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
                    HF_HUB_DISABLE_TELEMETRY="1", MASTERQUO_DATA_DIR=str(paths.data_dir()))
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.svc.applog, "TSFM", env)            # arch 1.46 I0116: information only (env unchanged)
         errlog = self.errlog = open(paths.logs_dir() / f"tsfm_{self.mid}_worker.log", "a", encoding="utf-8")
         try:
             self.proc = subprocess.Popen([py, "-m", "tsfm_runtime.worker", "--model", self.mid], cwd=str(paths.ROOT_DIR / "backend"), env=env,
