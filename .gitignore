@@ -26,3 +26,6 @@ private.key
 private.key.bak-*
 *.key
 licenses.db
+
+# git worktrees of parallel agent work (Claude Code) - separate checkouts, never committed
+/.claude/worktrees/
