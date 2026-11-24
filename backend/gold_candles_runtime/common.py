@@ -174,6 +174,21 @@ def admissible(entry: dict) -> tuple[bool, str | None]:
     return verdict_admissible(entry.get("overall_status"), entry)
 
 
+# Auto-activation (plan_train / scalp_train / training runner) takes only TRAINED_SHADOW / PARTIAL_VALIDATION; manual activate / rollback
+# also admit SHADOW_UNVALIDATED (D20 (b)) - `list` marks such runs so that a rollback to them is not mistaken for a validated model.
+MANUAL_ONLY_NOTE = "[niezwalidowany – tylko ręcznie]"
+
+
+def list_note(status: str | None, ok: bool) -> str:
+    """Suffix of a `list` row: admitted runs that auto-activation would never pick (SHADOW_UNVALIDATED) are marked."""
+    return f" {MANUAL_ONLY_NOTE}" if ok and status == "SHADOW_UNVALIDATED" else ""
+
+
+def skipped_text(skipped: list[tuple[str, str | None]]) -> str:
+    """'RUN_A (VALIDATION_REJECTED), RUN_B (CONTRACT_MISMATCH)' - runs rollback passed over in the history."""
+    return ", ".join(f"{rid} ({why or 'brak w rejestrze'})" for rid, why in skipped)
+
+
 def current_contract(entry: dict) -> str:
     """Contract hash of the CURRENT code for a registry entry, computed exactly like the worker (_active_model): the instrument
     profile's grid_step, never the value stored in the entry (a model trained with another grid_step is CONTRACT_MISMATCH)."""
@@ -191,6 +206,8 @@ def activate(run_id: str, *, reason: str) -> dict:
     if ok:
         ok, why = admissible(entry)            # D20: was accepted with overall_status REJECTED (only data / checksum / contract checked)
     if not ok:
+        # a refusal is SystemExit with this message: exit code 1 and the text on stderr for `registry_cli activate` (runner t_activate
+        # checks returncode != 0 and keeps stdout / stderr); scalp_registry activate prints [BLAD] and returns 2
         raise SystemExit(f"[BLAD] Model {run_id} nie może być aktywny: {why}")
     if reg.get("active") and reg["active"] != run_id:
         reg["history"].append(reg["active"])

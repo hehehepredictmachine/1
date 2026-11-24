@@ -10,7 +10,7 @@ import time
 import numpy as np
 
 from . import scalp_features as SF
-from .common import use_instrument, write_json_atomic
+from .common import list_note, skipped_text, use_instrument, write_json_atomic
 from .scalp_infer import (
     ScalpModel,
     activatable,
@@ -56,13 +56,14 @@ def main(argv=None) -> int:
         for rid, e in sorted(reg["runs"].items()):
             ok, why = check(e)
             print(f"  {rid}  {e.get('data_kind')}  A={e.get('task_a_status')} {e.get('horizon_status')}  B={e.get('task_b_status')}  "
-                  f"C={e.get('task_c_status')}  {'może być aktywny' if ok else 'NIE: ' + str(why)}")
+                  f"C={e.get('task_c_status')}  {'może być aktywny' if ok else 'NIE: ' + str(why)}{list_note(e.get('task_a_status'), ok)}")
         return 0
     if args.cmd == "validate":
         rc = 0
         for rid, e in sorted(reg["runs"].items()):
             ok, why = activatable(e, contract(e))
-            line = f"{rid}: {'OK' if ok else why}"
+            adm, adm_why = admissible(e)            # D20: like 'list' / activate - the verdict of task A, not only the worker's gate
+            line = f"{rid}: {'OK' if ok else why}, aktywacja {'możliwa' if ok and adm else 'NIE: ' + str(why if not ok else adm_why)}"
             try:
                 m = ScalpModel(e)
                 p = m.predict(np.zeros((1, len(SF.FEATURES))))
@@ -90,15 +91,22 @@ def main(argv=None) -> int:
         return 0
     if args.cmd == "rollback":
         hist = reg.get("history") or []
+        skipped: list[tuple[str, str | None]] = []
         while hist:
             prev = hist.pop()
-            if prev in reg["runs"] and check(reg["runs"][prev])[0]:
+            ok, why = check(reg["runs"][prev]) if prev in reg["runs"] else (False, None)
+            if ok:
                 _ev(reg, action="ROLLBACK", **{"from": reg.get("active"), "to": prev})
                 reg["active"] = prev
                 write_json_atomic(registry_path(), reg)
                 print(f"Rollback -> {prev}")
+                if skipped:
+                    print(f"Pominięte w historii (zostają w rejestrze, 'list'): {skipped_text(skipped)}")
                 return 0
-        print("[BLAD] brak wcześniejszego zgodnego modelu – użyj 'deactivate' (NO_MODEL).")
+            skipped.append((prev, why))
+        # D20: the cause can be the validation verdict of task A (VALIDATION_REJECTED), not only the contract - the skipped runs are named
+        print("[BLAD] brak wcześniejszego zgodnego i dopuszczonego w walidacji modelu – użyj 'deactivate' (NO_MODEL)."
+              + (f" Pominięte: {skipped_text(skipped)}." if skipped else ""))
         return 2
     _ev(reg, action="DEACTIVATE", **{"from": reg.get("active")})
     if reg.get("active"):

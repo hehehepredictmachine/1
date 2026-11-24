@@ -411,5 +411,152 @@ class TestMetaModelRetrainNoticeAfterD21(unittest.TestCase):
             self.assertEqual([x["version"] for x in rr], [ver], argv)
 
 
+def _write_validation(e: dict) -> dict:
+    from pathlib import Path
+    vp = Path(e["model_path"]).parent / "forecast_validation.json"
+    vp.write_text(json.dumps({"run_id": e["run_id"], "horizons": {}}), encoding="utf-8")
+    return dict(e, validation_path=str(vp))
+
+
+class TestValidateReportMatchesTheActivationGate(_Case):
+    """13_WALIDACJA_MODELI_XAUUSD.bat (gold_candles_runtime.validate) wrote "activatable": true into revalidation.json for a run REJECTED in
+    validation, which activate / rollback refuse since D20."""
+
+    def validate(self, overall: str) -> dict:
+        from gold_candles_runtime import validate
+        from gold_candles_runtime.common import forecast_dir, write_registry
+        e = _write_validation(_gold_entry("RUN_V", overall))
+        write_registry({"schema": "masterquo-forecast-registry-1", "active": None, "history": [], "runs": {"RUN_V": e}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = validate.main(["--run-id", "RUN_V"])
+        self.assertEqual(rc, 0, out.getvalue())
+        return json.loads((forecast_dir() / "runs" / "RUN_V" / "revalidation.json").read_text(encoding="utf-8")), out.getvalue()
+
+    def test_rejected_run_is_not_reported_activatable(self):
+        res, printed = self.validate("REJECTED")
+        self.assertIs(res["activatable"], False)                                            # was True
+        self.assertEqual(res["not_activatable_reason"], "VALIDATION_REJECTED")
+        self.assertIs(res["admissible"], False)
+        self.assertEqual(res["not_admissible_reason"], "VALIDATION_REJECTED")
+        self.assertTrue(res["checksum_ok"])
+        self.assertIn("VALIDATION_REJECTED", printed)
+
+    def test_admitted_run_stays_activatable(self):
+        res, _ = self.validate("PARTIAL_VALIDATION")
+        self.assertEqual((res["activatable"], res["not_activatable_reason"], res["admissible"], res["not_admissible_reason"]),
+                         (True, None, True, None))
+
+    def test_scalp_validate_names_the_verdict(self):
+        # 18_WALIDACJA_SCALP.bat: the same report without the verdict ('OK' for a REJECTED task A that activate refuses)
+        from gold_candles_runtime import scalp_registry
+        from gold_candles_runtime.common import write_json_atomic
+        from gold_candles_runtime.scalp_infer import registry_path
+        write_json_atomic(registry_path(), {"schema": "masterquo-scalp-registry-1", "active": None, "history": [],
+                                            "runs": {"S_REJ": _scalp_entry("S_REJ", "REJECTED"), "S_V": _scalp_entry("S_V", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            scalp_registry.main(["validate"])
+        lines = out.getvalue().splitlines()
+        self.assertIn("aktywacja NIE: VALIDATION_REJECTED", next(x for x in lines if x.startswith("S_REJ")))
+        self.assertIn("aktywacja możliwa", next(x for x in lines if x.startswith("S_V")))
+
+
+class TestRollbackExplainsSkippedRuns(_Case):
+    """rollback without an admitted earlier run said only 'brak wcześniejszego zgodnego modelu' (suggests a contract problem although the
+    cause can be VALIDATION_REJECTED); the skipped runs were not named."""
+
+    def test_gold_rollback_names_the_validation_gate_and_skipped_runs(self):
+        from gold_candles_runtime import registry_cli
+        from gold_candles_runtime.common import read_registry, write_registry
+        write_registry({"schema": "masterquo-forecast-registry-1", "active": "RUN_C", "history": ["RUN_REJ"],
+                        "runs": {"RUN_REJ": _gold_entry("RUN_REJ", "REJECTED"), "RUN_C": _gold_entry("RUN_C", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = registry_cli.main(["rollback"])
+        self.assertEqual(rc, 2)
+        self.assertIn("dopuszczonego w walidacji", out.getvalue())
+        self.assertIn("RUN_REJ", out.getvalue())
+        self.assertIn("VALIDATION_REJECTED", out.getvalue())
+        self.assertEqual(read_registry()["active"], "RUN_C")
+
+    def test_gold_successful_rollback_names_the_skipped_runs(self):
+        from gold_candles_runtime import registry_cli
+        from gold_candles_runtime.common import write_registry
+        write_registry({"schema": "masterquo-forecast-registry-1", "active": "RUN_C", "history": ["RUN_GOOD", "RUN_REJ"],
+                        "runs": {"RUN_GOOD": _gold_entry("RUN_GOOD", "TRAINED_SHADOW"), "RUN_REJ": _gold_entry("RUN_REJ", "REJECTED"),
+                                 "RUN_C": _gold_entry("RUN_C", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(registry_cli.main(["rollback"]), 0)
+        self.assertIn("RUN_REJ", out.getvalue())
+        self.assertIn("VALIDATION_REJECTED", out.getvalue())
+
+    def test_scalp_rollback_names_the_validation_gate_and_skipped_runs(self):
+        from gold_candles_runtime import scalp_registry
+        from gold_candles_runtime.common import write_json_atomic
+        from gold_candles_runtime.scalp_infer import read_registry, registry_path
+        write_json_atomic(registry_path(), {"schema": "masterquo-scalp-registry-1", "active": "S_C", "history": ["S_REJ"],
+                                            "runs": {"S_REJ": _scalp_entry("S_REJ", "REJECTED"), "S_C": _scalp_entry("S_C", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = scalp_registry.main(["rollback"])
+        self.assertEqual(rc, 2)
+        self.assertIn("dopuszczonego w walidacji", out.getvalue())
+        self.assertIn("S_REJ", out.getvalue())
+        self.assertIn("VALIDATION_REJECTED", out.getvalue())
+        self.assertEqual(read_registry()["active"], "S_C")
+
+
+class TestRefusedActivationExitCode(_Case):
+    """Commit 1db19ab described the refusal as 'kod 2 / SystemExit': for registry_cli activate (runner t_activate, .bat) it is SystemExit
+    with a message - exit code 1, message on stderr; only scalp_registry returns 2. Guard of the documented behaviour."""
+
+    def test_registry_cli_refusal_is_exit_code_1_with_message_on_stderr(self):
+        import subprocess
+        import sys
+
+        from gold_candles_runtime.common import write_registry
+        write_registry({"schema": "masterquo-forecast-registry-1", "active": None, "history": [],
+                        "runs": {"RUN_REJ": _gold_entry("RUN_REJ", "REJECTED")}})
+        env = dict(os.environ, PYTHONPATH=str(_env.ROOT / "backend"), PYTHONIOENCODING="utf-8")
+        p = subprocess.run([sys.executable, "-m", "gold_candles_runtime.registry_cli", "activate", "RUN_REJ"], cwd=str(_env.ROOT / "backend"),
+                           env=env, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("VALIDATION_REJECTED", p.stderr)
+
+
+class TestListMarksManualOnlyUnvalidatedRuns(_Case):
+    """Manual activate / rollback admit SHADOW_UNVALIDATED (D20 (b)); auto-activation (plan_train, scalp_train, runner) only
+    TRAINED_SHADOW / PARTIAL_VALIDATION - `list` did not say so."""
+
+    def test_gold_list(self):
+        from gold_candles_runtime import registry_cli
+        from gold_candles_runtime.common import write_registry
+        write_registry({"schema": "masterquo-forecast-registry-1", "active": None, "history": [],
+                        "runs": {"RUN_U": _gold_entry("RUN_U", "SHADOW_UNVALIDATED"), "RUN_V": _gold_entry("RUN_V", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(registry_cli.main(["list"]), 0)
+        lines = out.getvalue().splitlines()
+        u = next(x for x in lines if "RUN_U" in x)
+        self.assertIn("może być aktywny", u)
+        self.assertIn("[niezwalidowany – tylko ręcznie]", u)
+        self.assertNotIn("niezwalidowany", next(x for x in lines if "RUN_V" in x))
+
+    def test_scalp_list(self):
+        from gold_candles_runtime import scalp_registry
+        from gold_candles_runtime.common import write_json_atomic
+        from gold_candles_runtime.scalp_infer import registry_path
+        write_json_atomic(registry_path(), {"schema": "masterquo-scalp-registry-1", "active": None, "history": [],
+                                            "runs": {"S_U": _scalp_entry("S_U", "SHADOW_UNVALIDATED"), "S_V": _scalp_entry("S_V", "TRAINED_SHADOW")}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(scalp_registry.main(["list"]), 0)
+        lines = out.getvalue().splitlines()
+        self.assertIn("[niezwalidowany – tylko ręcznie]", next(x for x in lines if "S_U" in x))
+        self.assertNotIn("niezwalidowany", next(x for x in lines if "S_V" in x))
+
+
 if __name__ == "__main__":
     unittest.main()
