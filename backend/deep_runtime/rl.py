@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+SAMPLE_BARS = 100          # bars of the activation sample (the bot passes the last 200 closed bars; obs needs k + 1)
+
 
 def _env_cls():
     import gymnasium as gym
@@ -83,8 +85,14 @@ def train(req):
     venv.save(str(d / "ppo_vecnorm.pkl"))
     test = _eval(model, venv, bars, va, n, kw)
     (d / "rl_config.json").write_text(json.dumps({"env": kw, "seed": s, "obs_dim": int(Env(bars, 0, 100, kw).core.obs_dim)}), encoding="utf-8")
+    # 1.46 (I0466): deterministic inference sample - the last SAMPLE_BARS bars of the validation segment, FLAT position, read back through
+    # predict() (the runtime path: saved policy + frozen VecNormalize). Activation re-runs it, so a broken / swapped policy or normaliser
+    # file no longer passes (sample.expected was None - only rl_config.json was read).
+    tail = bars[max(0, va - SAMPLE_BARS):va]
+    smp = predict({"dir": str(d), "bars": tail, "position": 0.0})
     return {"ok": True, "seeds": runs, "chosen_seed": s, "test": test,
-            "val_ppo_minus_flat": ev["ppo"]["net_pnl"] - ev["flat"]["net_pnl"], "val_ppo_minus_momentum": ev["ppo"]["net_pnl"] - ev["momentum"]["net_pnl"]}
+            "val_ppo_minus_flat": ev["ppo"]["net_pnl"] - ev["flat"]["net_pnl"], "val_ppo_minus_momentum": ev["ppo"]["net_pnl"] - ev["momentum"]["net_pnl"],
+            "sample_bars": tail, "sample_probs": smp["probs"]}
 
 
 def predict(req):

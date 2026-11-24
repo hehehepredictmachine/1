@@ -353,6 +353,12 @@ class FamilyService:
             if not r.get("ok"):
                 return {"ok": False, "reason": f"próbka inferencji: {r.get('error')}"}
             got = r["p"]
+        elif fid == "RL_PPO":                               # 1.46 (I0466): action probabilities of the saved policy on the stored bars
+            from . import deep as D
+            r = D.call("predict_ppo", {"dir": str(d), "bars": smp["bars_tail"], "position": float(smp.get("position") or 0.0)}, timeout=120)
+            if not r.get("ok"):
+                return {"ok": False, "reason": f"próbka inferencji: {r.get('error')}"}
+            got = r["probs"]
         else:
             return {"ok": True, "checked": False}
         diff = _maxdiff(got, exp)
