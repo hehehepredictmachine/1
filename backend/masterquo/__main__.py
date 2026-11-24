@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import paths
+from . import localapi, paths
 
 
 def _rt_dir() -> Path:
@@ -30,20 +30,13 @@ def _rt_dir() -> Path:
     return d
 
 
-def _port() -> int:
-    try:
-        from .config import ConfigStore
-        return ConfigStore().get().server.port
-    except Exception:
-        return 8765
+# 1.46 arch (I0080): the local-API client helpers live in the leaf masterquo/localapi.py (other modules import them from there, not from
+# this entry point); the old names stay as aliases with the former defaults (here: health timeout 1.5 s)
+_port = localapi.port
 
 
 def _health(port: int, timeout: float = 1.5) -> dict | None:
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/health", headers={"Host": f"127.0.0.1:{port}"}), timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+    return localapi.health(port, timeout)
 
 
 def _setup_logging() -> None:

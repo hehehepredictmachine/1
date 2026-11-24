@@ -54,9 +54,9 @@ def _print_manifest(man: dict, where: str) -> None:
 
 def _via_app(name: str, params: dict, fmt: str) -> dict | None:
     """Ask the running app to export (it owns the in-memory source). None = app not running."""
-    from ..__main__ import _health, _port
-    port = _port()
-    h = _health(port)
+    from .. import localapi
+    port = localapi.port()
+    h = localapi.health(port, 1.5)
     if not h:
         return None
     base = f"http://127.0.0.1:{port}"

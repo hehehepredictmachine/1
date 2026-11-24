@@ -685,11 +685,10 @@ def t_activate(run: Run, inst: str) -> None:
 def t_bot(run: Run, inst: str) -> None:
     """Reload in a running bot (identity checked via /api/v1/health, session + CSRF). Never starts a second bot."""
     tid = f"{inst}:bot"
-    from ..train_all import Bot, _health
+    from ..localapi import Bot, health, port as _local_port
     from ..version import APP_NAME
-    from ..__main__ import _port
-    port = _port()
-    h = _health(port)
+    port = _local_port()
+    h = health(port, 3)
     if not h:
         return run.set(tid, execution="POMINIETE", detail="bot nie działa – modele z rejestru załadują się przy starcie (03_START_MASTERQUO.bat)")
     if h.get("app") != APP_NAME:

@@ -3,6 +3,7 @@
 Testy bez sieci, bez MT5 (FakeMT5 albo atrapy), osobny folder danych na test. Każda klasa odpowiada pozycji (klucz w nazwie/docstringu)."""
 from __future__ import annotations
 
+import ast
 import json
 import unittest
 from pathlib import Path
@@ -114,6 +115,103 @@ class TestStrategyToggleDefaultTrade(_Base):
         self.assertEqual((tg.scan, tg.trade, allowed), (True, True, True))                 # jawne trade=True honorowane
         tg, _ = self._call({"S12": {"scan": False, "trade": True}}, {"strategy_id": "S12", "scan": True})
         self.assertEqual((tg.scan, tg.trade), (True, True))                                # zapisany przełącznik bez zmian
+
+
+# ------------------------------------------------------------------------------------------------------------------- I0080 / I0075
+def _imports(path: Path) -> list[tuple[str, tuple[str, ...]]]:
+    """(resolved module, imported names) of every import in a backend module (relative imports resolved to masterquo.*)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    pkg_parts = list(path.relative_to(PKG.parent).with_suffix("").parts[:-1])
+    out = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom):
+            if n.level:
+                base = pkg_parts[: len(pkg_parts) - (n.level - 1)]
+                mod = ".".join(base + ([n.module] if n.module else []))
+            else:
+                mod = n.module or ""
+            out.append((mod, tuple(a.name for a in n.names)))
+        elif isinstance(n, ast.Import):
+            out.extend((a.name, ()) for a in n.names)
+    return out
+
+
+class TestLocalApiLeaf(unittest.TestCase):
+    """I0080: pomocniki lokalnego API w jednym liściu masterquo/localapi.py; punkty wejścia nie importują się nawzajem.
+    I0075: runner/diagnostyka nie importują klienta HTTP z modułu zgodności train_all; poprawione docstringi."""
+
+    def test_no_entry_point_imports_entry_points(self):
+        bad = []
+        for f in PKG.rglob("*.py"):
+            if f.name == "__main__.py" and f.parent == PKG:
+                continue
+            for mod, names in _imports(f):
+                if mod == "masterquo.__main__":
+                    bad.append(f"{f.relative_to(PKG)}: {mod} {names}")
+                if mod == "masterquo.train_all" and set(names) & {"Bot", "_health"}:
+                    bad.append(f"{f.relative_to(PKG)}: {mod} {names}")
+        self.assertEqual(bad, [])
+
+    def test_leaf_has_only_stdlib_at_module_level(self):
+        tree = ast.parse((PKG / "localapi.py").read_text(encoding="utf-8"))
+        for n in tree.body:
+            if isinstance(n, ast.ImportFrom):
+                self.assertTrue(n.level == 0 and not (n.module or "").startswith("masterquo"), n.module)
+            elif isinstance(n, ast.Import):
+                self.assertFalse(any(a.name.startswith("masterquo") for a in n.names))
+
+    def test_old_names_are_aliases(self):
+        from masterquo import __main__ as M
+        from masterquo import localapi, train_all
+        self.assertIs(M._port, localapi.port)
+        self.assertIs(train_all.Bot, localapi.Bot)
+
+    def test_callers_keep_their_timeouts(self):
+        from masterquo import __main__ as M
+        from masterquo import localapi, train_all
+        from masterquo.studio import app as studio_app
+        seen = []
+
+        def fake_urlopen(req, timeout=None):
+            seen.append(timeout)
+            raise OSError("refused")
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            self.assertIsNone(M._health(1))
+            self.assertIsNone(M._health(1, 0.8))
+            self.assertIsNone(train_all._health(1))
+            self.assertIsNone(studio_app._bot_health(1))
+            self.assertIsNone(localapi.health(1))
+        self.assertEqual(seen, [1.5, 0.8, 3, 2, 1.5])
+
+    def test_health_none_on_any_failure_and_dict_on_success(self):
+        import http.client
+        import io
+
+        from masterquo import localapi
+
+        class Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        for exc in (OSError("x"), ValueError("x"), http.client.IncompleteRead(b"")):
+            with mock.patch("urllib.request.urlopen", side_effect=exc):
+                self.assertIsNone(localapi.health(1))
+        with mock.patch("urllib.request.urlopen", return_value=Resp(b"<html>")):
+            self.assertIsNone(localapi.health(1))
+        with mock.patch("urllib.request.urlopen", return_value=Resp(b'{"app": "x"}')) as m:
+            self.assertEqual(localapi.health(5, 0.5), {"app": "x"})
+        req = m.call_args[0][0]
+        self.assertEqual((req.full_url, req.get_header("Host")), ("http://127.0.0.1:5/api/v1/health", "127.0.0.1:5"))
+
+    def test_docstrings_fixed(self):
+        from masterquo import train_all
+        from masterquo.training import cli
+        self.assertNotIn("DYAGNOSTYKA", cli.__doc__)
+        self.assertIn("DIAGNOSTYKA_TRENINGU.bat", cli.__doc__)
+        self.assertIn("indicator_context", train_all.__doc__)
+        self.assertNotIn("(22_TRENUJ_WSZYSTKIE_MODELE.bat) - compatibility", train_all.__doc__)
 
 
 if __name__ == "__main__":
