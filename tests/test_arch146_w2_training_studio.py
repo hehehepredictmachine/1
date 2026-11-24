@@ -765,6 +765,61 @@ class TestI0069QuantTrainOutOfProcess(_Data):
         self.assertEqual(rc, 2)
         self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["results"][0]["task_hash"], "t")
 
+    def test_cli_job_result_carries_the_training_log(self):
+        # recenzja: przy treningu w procesie potomnym job['log'] był pusty (logi tylko w jobs/<jid>.log)
+        from masterquo.quant import cli
+
+        def fake_train(led, inst, task, log=print, crit=None):
+            log(f"[QUANT] {inst}: brak oznaczonych wierszy w ledgerze")
+            return [{"task_hash": "t", "status": "INSUFFICIENT_EVIDENCE"}]
+        out = self.data / "job_out.json"
+        buf = io.StringIO()
+        with mock.patch("masterquo.quant.service.train_from_ledger", side_effect=fake_train), mock.patch("sys.stdout", buf):
+            cli.main(["train", "--instrument", "XAUUSD", "--job-out", str(out)])
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["log"], ["[QUANT] XAUUSD: brak oznaczonych wierszy w ledgerze"])
+        self.assertIn("[QUANT] XAUUSD: brak oznaczonych wierszy", buf.getvalue())     # stdout (jobs/<jid>.log) as before
+
+    def _run_child(self, write_out, log_text=""):
+        import time as _t
+
+        from masterquo.quant import service as QS
+        from test_quant_core import StubRt
+        q = QS.QuantService(StubRt())
+
+        class FakeProc:
+            pid = 4343
+
+            def __init__(self, cmd, **kw):
+                self.returncode = 0 if write_out else 1
+                if log_text:
+                    kw["stdout"].write(log_text)
+                    kw["stdout"].flush()
+                if write_out:
+                    Path(cmd[cmd.index("--job-out") + 1]).write_text(json.dumps(write_out), encoding="utf-8")
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def poll(self):
+                return self.returncode
+        with mock.patch.object(QS.subprocess, "Popen", FakeProc):
+            job = q.train("XAUUSD", background=True)
+            for _ in range(100):
+                if q.jobs[job["job_id"]]["state"] != "RUNNING":
+                    break
+                _t.sleep(0.05)
+        return q.jobs[job["job_id"]]
+
+    def test_child_log_lines_reach_the_job(self):
+        j = self._run_child({"results": [{"task_hash": "t", "status": "INSUFFICIENT_EVIDENCE"}], "log": ["[QUANT] XAUUSD: 12 wierszy"]})
+        self.assertEqual(j["state"], "DONE")
+        self.assertEqual(j["log"], ["[QUANT] XAUUSD: 12 wierszy"])         # przed poprawką recenzji: []
+
+    def test_child_crash_log_tail_reaches_the_job(self):
+        j = self._run_child(None, "Traceback (most recent call last):\nMemoryError\n")
+        self.assertEqual(j["state"], "FAILED")
+        self.assertEqual(j["log"][-1], "MemoryError")                       # przed poprawką recenzji: []
+
 class TestI0064TrainhubPipelineLineage(unittest.TestCase):
     def setUp(self):
         self.td = TempData()

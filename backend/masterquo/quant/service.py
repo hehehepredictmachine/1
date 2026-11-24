@@ -619,6 +619,10 @@ class QuantService:
                 res = json.loads(out.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 res = None
+            # job['log'] of /api/v1/quant/jobs as with the in-process training: the child's log lines (result file), else the tail of
+            # jobs/<jid>.log (a crash without a result: the traceback)
+            lines = res.get("log") if isinstance(res, dict) else None
+            job["log"] = [str(x) for x in lines][-200:] if isinstance(lines, list) else _log_tail(logp)
             if isinstance(res, dict) and isinstance(res.get("results"), list):
                 job["results"], job["state"] = res["results"], "DONE"
             else:
@@ -670,6 +674,15 @@ def _safe(fn, default):
         return fn()
     except Exception:  # noqa: BLE001
         return default
+
+
+def _log_tail(p: Path, n: int = 40) -> list[str]:
+    """Last non-empty lines of a training child's log file (arch146 I0069: job['log'] when the child left no result)."""
+    try:
+        lines = [x for x in p.read_text(encoding="utf-8", errors="replace").splitlines() if x.strip()]
+    except OSError:
+        return []
+    return [x[:500] for x in lines[-n:]]
 
 
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:
