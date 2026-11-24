@@ -14,7 +14,8 @@ Per accepted event e (features use events <= e only):
   act_log  = log1p(activity)                          ACTIVITY   (tick count of a bar for BAR_CLOSE_EVENTS, 1 for quote ticks)
   spread_ok                                           QUALITY
 Scaler: per-feature median / IQR fitted on TRAINING units only.
-Units: count-based blocks of `n` consecutive events inside one segment; a unit is available at its last event time.
+Units: count-based blocks of `n` consecutive events inside one segment; a unit is available at its last event time. Training cuts the
+blocks from the start of a run, live inference (1.46) from its end - see units(align=...).
 """
 from __future__ import annotations
 
@@ -124,24 +125,47 @@ class Scaler:
         return np.clip((X - self.med) / self.iqr, -10, 10)
 
 
-def units(acc: dict, feats: dict, n: int) -> dict:
-    """Count-based unit sequences of n consecutive valid events inside one segment."""
+def units(acc: dict, feats: dict, n: int, *, align: str = "start") -> dict:
+    """Count-based unit sequences of n consecutive valid events inside one segment.
+
+    align="start" (training, replay - unchanged): blocks are cut from the first valid event of every run of consecutive valid events;
+    the remainder (< n events) at the END of the run is left out. align="end" (1.46, live inference only - quant/adapters.EventGRU): the
+    blocks of every run are cut so that the last one ENDS on the run's last valid event; the remainder is left out at the START. With
+    "start" the newest full unit of the live window ended 0..n-1 events before the newest event (BAR_CLOSE_EVENTS: up to 15 minutes), so
+    the record's data_time lagged and it turned STALE periodically; the phase of the cut was already arbitrary in the sliding live window.
+    Same unit type either way: n consecutive valid events of one segment, the same features."""
+    if align not in ("start", "end"):
+        raise ValueError(f"align {align!r}: 'start' albo 'end'")
     F, valid, seg, t, mid = feats["F"], feats["valid"], acc["segment"], acc["t"], acc["mid"]
     idx = np.where(valid)[0]
     out_X, ts, te, mend, useg, first = [], [], [], [], [], []
-    k = 0
-    while k + n <= len(idx):
-        blk = idx[k:k + n]
-        if seg[blk[0]] != seg[blk[-1]] or np.any(np.diff(blk) != 1):
-            k += 1                                                   # never across a segment boundary / invalid event
-            continue
+
+    def take(blk):
         out_X.append(F[blk])
         ts.append(t[blk[0]])
         te.append(t[blk[-1]])
         mend.append(mid[blk[-1]])
         useg.append(seg[blk[0]])
         first.append(blk[0])
-        k += n
+    if align == "end":
+        i = 0
+        while i < len(idx):                                          # runs: consecutive valid events of one segment
+            j = i
+            while j + 1 < len(idx) and idx[j + 1] == idx[j] + 1 and seg[idx[j + 1]] == seg[idx[i]]:
+                j += 1
+            run = idx[i:j + 1]
+            for s in range(len(run) % n, len(run) - n + 1, n):
+                take(run[s:s + n])
+            i = j + 1
+    else:
+        k = 0
+        while k + n <= len(idx):
+            blk = idx[k:k + n]
+            if seg[blk[0]] != seg[blk[-1]] or np.any(np.diff(blk) != 1):
+                k += 1                                                   # never across a segment boundary / invalid event
+                continue
+            take(blk)
+            k += n
     return {"X": np.asarray(out_X), "t_start": np.asarray(ts), "t_end": np.asarray(te), "mid_end": np.asarray(mend), "segment": np.asarray(useg),
             "first_event": np.asarray(first), "n": n, "available_at": np.asarray(te)}
 

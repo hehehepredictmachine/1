@@ -290,7 +290,9 @@ class EventGRU:
                 pt = float((getattr(br, "symbol_info", None) or {}).get("point") or 0.01)
                 ev = D.events_from_bars(b1, pt)
             acc = EV.from_arrays(ev, inst, 900)
-            u = EV.units(acc, EV.featurize(acc), 16)
+            # 1.46 (D22): units aligned to the END of the run - the last unit ends on the newest valid event (cut from the start it ended
+            # 0-15 events earlier: data_time up to 15 min old with BAR_CLOSE_EVENTS, the record turned STALE periodically). Training unchanged.
+            u = EV.units(acc, EV.featurize(acc), 16, align="end")
             if not len(u["X"]):
                 raise LookupError("brak pełnej jednostki 16 zdarzeń")
             P = EE.predict(m, sc.transform(u["X"]), u["segment"])[-1]
