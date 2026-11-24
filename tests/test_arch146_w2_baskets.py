@@ -394,6 +394,129 @@ class TestCryptoHedgeQuantityBelowPrecision(unittest.TestCase):
         self.assertEqual(r["plan"]["legs"][0]["size"], 5.0)
 
 
+# ======================================================================================================================== I0765
+class _MitF:
+    """Feat double that reaches the OI branch of second_mitigation: BOS + displacement at 16, OB 99-100 (k=15), one retest at 17,
+    fresh BOS at 18, confirmed retest at the signal bar 20."""
+
+    def __init__(self, t_open_last, step):
+        self.n, self.i = 21, 20
+        self.t = np.array([t_open_last - (20 - k) * step for k in range(21)], dtype=float)
+        self.c = np.full(21, 100.5)
+        self.h, self.l, self.o = self.c + 0.5, self.c - 0.5, self.c - 0.2
+
+    def b(self, i=None):
+        return 0.1
+
+    def structure_break(self, k, s):
+        return k in (16, 18)
+
+    def displacement(self, k, s, *a):
+        return k in (16, 18)
+
+    def order_block(self, k, s):
+        return {"k": 15, "lo": 99.0, "hi": 100.0, "mid": 99.5, "side": s}
+
+    def touched(self, k, lo, hi):
+        return k == 17
+
+    def confirmed_retest(self, k, lo, hi, s, inval):
+        return True
+
+
+class _ExpF:
+    """Feat double for oi_expansion: close 101 above HH20 = 100 + b, RVOL 2."""
+
+    def __init__(self, t_open_last, step):
+        self.n, self.i = 30, 29
+        self.t = np.array([t_open_last - (29 - k) * step for k in range(30)], dtype=float)
+        self.c = np.full(30, 101.0)
+        self.h, self.l = self.c + 0.5, np.full(30, 100.0)
+
+    def b(self, i=None):
+        return 0.1
+
+    def HH(self, n, i=None):
+        return 100.0
+
+    def LL(self, n, i=None):
+        return 90.0
+
+    def rvol(self, i):
+        return 2.0
+
+
+class _Up:
+    def trend(self, i=None):
+        return 1, "test"
+
+
+class TestOiDeltaAtSignalClose(_Svc):
+    T = 1.79e9
+
+    def test_second_mitigation_uses_the_close_of_the_m15_candle(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import rules as R
+        T = self.T
+        p = CAT.BY_ID["CP_SMC_06"]["parameter_schema"]
+        oi = [(T - 600, 100.0), (T - 300, 100.0), (T, 100.0), (T + 600, 105.0), (T + 900, 110.0)]   # OI rises inside the signal candle
+        r = R.second_mitigation(_MitF(T, 900), 1, p, {"oi": oi, "now": T + 905, "tf_s": 900})
+        self.assertIsNotNone(r)                                                            # ΔOI(close) = 110 - 105 > 0 (was ΔOI(open) = 0)
+        self.assertEqual(r["event"]["type"], "MITIGATION_2")
+        # no look-ahead: an OI sample later than "now" is never used
+        oi2 = [(T - 300, 100.0), (T, 100.0), (T + 600, 100.0), (T + 900, 120.0)]
+        self.assertIsNone(R.second_mitigation(_MitF(T, 900), 1, p, {"oi": oi2, "now": T + 700, "tf_s": 900}))
+        # without the candle length (direct caller) the 1.46.0 reference time is kept (open of the candle)
+        self.assertIsNone(R.second_mitigation(_MitF(T, 900), 1, p, {"oi": oi, "now": T + 905}))
+
+    def test_oi_expansion_uses_the_close_of_the_m5_candle(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import rules as R
+        T = self.T
+        p = CAT.BY_ID["CP_SCALP_10"]["parameter_schema"]
+        oi = [(T - 300, 100.0), (T, 100.0), (T + 60, 100.0), (T + 240, 104.0), (T + 300, 108.0)]
+        r = R.oi_expansion(_ExpF(T, 300), 1, p, {"htf": _Up(), "oi": oi, "now": T + 305, "tf_s": 300})
+        self.assertIsNotNone(r)
+        self.assertEqual(r["conditions"]["d_oi_5m_contracts"], 8.0)                      # 108 (close) - 100 (close - 5 min)
+        self.assertIsNone(R.oi_expansion(_ExpF(T, 300), 1, p, {"htf": _Up(), "oi": oi, "now": T + 305}))   # legacy +60 s without tf_s
+
+    def test_fx_smc_06_path_is_unchanged(self):
+        """FX_SMC_06 shares second_mitigation but has no oi_delta: the OI branch is never entered, with or without tf_s."""
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import rules as R
+        p = CAT.BY_ID["FX_SMC_06"]["parameter_schema"]
+        self.assertFalse(p.get("oi_delta"))
+
+        def boom(*a, **k):
+            raise AssertionError("oi_delta called on the FX path")
+        with mock.patch.object(R, "oi_delta", boom):
+            for seed in range(25):
+                F = D.build(_walk(400, end_t=self.T, step=900, seed=seed), 0.01)
+                for side in (1, -1):
+                    a = R.second_mitigation(F, side, p, {"oi": [], "now": self.T + 900})
+                    b = R.second_mitigation(F, side, p, {"oi": [], "now": self.T + 900, "tf_s": 900})
+                    self.assertEqual(a, b)
+            self.assertEqual(R.second_mitigation(_MitF(self.T, 900), 1, p, {"tf_s": 900})["event"]["type"], "MITIGATION_2")
+
+    def test_service_passes_the_signal_candle_length(self):
+        from masterquo.baskets import rules as R
+        self.write("settings.json", {"profiles": {"CRYPTO_FOMO_PERPS": {"instruments": ["BTC"], "selection": "MANUAL_SELECT"}},
+                                     "manual_select": {"CRYPTO_FOMO_PERPS": ["CP_SMC_06", "CP_SCALP_10"]}})
+        s = self.svc()
+        seen = {}
+
+        def spy(name):
+            def fam(F, side, p, x):
+                seen[name] = x.get("tf_s")
+            return fam
+        with mock.patch.dict(R.FAMILIES, {"second_mitigation": spy("second_mitigation"), "oi_expansion": spy("oi_expansion")}), \
+                mock.patch.dict(os.environ):
+            os.environ.pop("MQ_BASKETS_OFFLINE", None)
+            s._crypto(s.settings())
+        self.assertEqual(seen, {"second_mitigation": 900, "oi_expansion": 300})
+
+
 # ======================================================================================================================== I0769
 class TestBasketPendingLimitSameCycle(_Svc):
     def test_two_events_in_one_cycle_respect_max_pending_intents(self):

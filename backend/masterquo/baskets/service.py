@@ -769,7 +769,8 @@ class BasketService:
                 continue
             x = {"htf": c.feats.get(s["context_timeframes"][0]) if s["context_timeframes"] else None,
                  "htf2": c.feats.get(s["context_timeframes"][1]) if len(s["context_timeframes"]) > 1 else None,
-                 "bench": extra.get("bench"), "oi": c.oi, "flow": c.flow, "now": time.time()}
+                 "bench": extra.get("bench"), "oi": c.oi, "flow": c.flow, "now": time.time(),
+                 "tf_s": TF_S[tf]}                     # 1.46 (I0765): signal candle length - the OI rules read ΔOI at the candle close
             p = self.params(s, st)
             fam = RL.FAMILIES[s["family_id"]]
             hit = None

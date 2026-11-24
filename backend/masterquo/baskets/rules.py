@@ -205,7 +205,7 @@ def second_mitigation(F, s, p, x):
         if k1 is None or any(F.touched(m, ob["lo"], ob["hi"]) for m in range(k1 + 1, i)) or len([m for m in touches if m < k1]) > 1:
             return None
         if p.get("oi_delta"):
-            d = oi_delta(x, F.t[i], 300)
+            d = oi_delta(x, _oi_ref_t(F, i, x, F.t[i]), 300)               # 1.46 (I0765): at the close of the signal candle
             if d is None:
                 raise Unavailable("brak historii OI – wariant z udziałem OI niedostępny")
             if d <= 0:
@@ -717,6 +717,18 @@ def l2_aggressor(F, s, p, x):
     return _setup(F, s, ext - s * b, ext, "L2_AGGRESSOR", lvl, i, {"flow": ok[-2:]})
 
 
+def _oi_ref_t(F, i, x, legacy: float) -> float:
+    """1.46 (I0765): the 5-min OI change is read at the CLOSE of the signal candle (its open + the catalog TF length x['tf_s'], supplied
+    by the basket service), never later than x['now'] (no look-ahead). It was read at the candle OPEN (second_mitigation: 15 min early
+    on M15) or open + 60 s (oi_expansion: 4 min early on M5). Without x['tf_s'] (a direct caller) the 1.46.0 time `legacy` is kept."""
+    tf_s = x.get("tf_s")
+    if not tf_s:
+        return legacy
+    t = float(F.t[i]) + float(tf_s)
+    now = x.get("now")
+    return min(t, float(now)) if now is not None else t
+
+
 def oi_delta(x, t, window_s):
     oi = x.get("oi") or []
     if len(oi) < 2:
@@ -741,7 +753,7 @@ def oi_expansion(F, s, p, x):
     rv = F.rvol(i)
     if rv is None:
         raise Unavailable("brak rzeczywistego wolumenu")
-    d = oi_delta(x, F.t[i] + 60, 300)
+    d = oi_delta(x, _oi_ref_t(F, i, x, F.t[i] + 60), 300)                  # 1.46 (I0765): at the close of the signal candle
     if d is None:
         raise Unavailable("brak historii OI (zbierana od startu – WARMUP 5 min)")
     if rv < 1.5 or d <= 0:
