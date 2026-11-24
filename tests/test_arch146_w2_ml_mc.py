@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import math
 import unittest
+from datetime import UTC
 from pathlib import Path
 from unittest import mock
 
@@ -251,6 +252,148 @@ class TestScalpLiveMetrics(_ScalpBase):
         m = self.ml.scalp_status("XAUUSD")["live_metrics"]["BUY"]["MH1"]
         self.assertEqual(m["n"], 1)
         self.assertAlmostEqual(m["brier"], (0.9 - 1) ** 2, places=9)       # the FIRST prediction of S0 (0.9), not the re-evaluation (0.1)
+
+
+
+# ============================================================================= Monte Carlo: no guessed point (I0681 runtime, I0687 validation)
+def _mc_bars(n=600, spread=20):
+    from datetime import datetime
+
+    import numpy as np
+    r = np.random.default_rng(5)
+    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
+    out, c = [], 2400.0
+    for i in range(n):
+        o = c
+        c = o + r.normal(0, 0.3)
+        out.append({"open_utc": datetime.fromtimestamp(t0 + i * 60, UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "o": o,
+                    "h": max(o, c) + abs(r.normal(0, 0.3)), "l": min(o, c) - abs(r.normal(0, 0.3)), "c": c, "spread": spread})
+    return out
+
+
+class _MCBridge:
+    def __init__(self, b, symbol_info=None):
+        self.b, self.symbol_info = b, symbol_info
+
+    def bars(self, tf, limit=None, include_forming=True):
+        return self.b
+
+    def quote_status(self):
+        return {"bid": self.b[-1]["c"], "ask": self.b[-1]["c"] + 0.2}
+
+
+class TestMCNoGuessedPoint(unittest.TestCase):
+    """I0681: MonteCarloService._ctx used point 0.01 when the bridge had no symbol_info (symbol not selected yet, bars already buffered)
+    - the bars' spread in POINTS became a price spread with a guessed point (a broker with point 0.001: Ask 10x too far, SELL P wrong)."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def _svc(self, info):
+        from masterquo.config import ConfigStore
+        from masterquo.montecarlo.service import MonteCarloService
+        return MonteCarloService(ConfigStore(), _MCBridge(_mc_bars(), info), synthetic=True, n_paths=300)
+
+    def test_unknown_point_sell_not_verified(self):
+        from masterquo.montecarlo import engine as E
+        svc = self._svc(None)
+        try:
+            last = _mc_bars()[-1]["c"]
+            r = svc.compute([E.Plan("SELL", last, last + 3.0, [last - 2.5], 60), E.Plan("BUY", last + 0.2, last - 2.8, [last + 2.7], 60)])
+            self.assertEqual(r["status"], "OK", r)
+            self.assertIn("NO_SPREAD_DATA", r["data"]["flags"])                 # HEAD: no flag, spread = 20 x 0.01 (guessed)
+            self.assertIn("POINT_UNKNOWN", r["data"]["flags"])
+            self.assertEqual(r["plans"][0]["status"], "NOT_VERIFIED")           # HEAD: OK with a guessed spread 0.2
+            self.assertEqual(r["plans"][1]["status"], "OK")                     # BUY closes on Bid: still evaluated
+        finally:
+            svc.stop()
+
+    def test_known_point_and_tick_size_fallback(self):
+        from masterquo.montecarlo import engine as E
+        for info in ({"point": 0.01}, {"trade_tick_size": 0.01}):
+            svc = self._svc(info)
+            try:
+                last = _mc_bars()[-1]["c"]
+                r = svc.compute([E.Plan("SELL", last, last + 3.0, [last - 2.5], 60)])
+                self.assertEqual(r["plans"][0]["status"], "OK", info)
+                self.assertNotIn("NO_SPREAD_DATA", r["data"]["flags"])
+            finally:
+                svc.stop()
+
+    def test_engine_history_point_none(self):
+        import math as _m
+
+        from masterquo.montecarlo import engine as E
+        b = _mc_bars(10)
+        as_of = E._ts(b[-1]["open_utc"]) + 60
+        h = E.history(b, as_of, "M1", None)
+        self.assertTrue(all(_m.isnan(x) for x in h.spread))
+        h2 = E.history([dict(x, spread_price=0.15) for x in b], as_of, "M1", None)      # a price spread needs no point
+        self.assertTrue(all(abs(x - 0.15) < 1e-12 for x in h2.spread))
+        self.assertAlmostEqual(float(E.history(b, as_of, "M1", 0.001).spread[0]), 0.02)
+
+    def test_calibrator_match_without_point(self):
+        from masterquo.montecarlo import engine as E
+        cal = {"events": [{"side": "BUY", "tp": 2.5, "sl": 3.0}], "horizon_bars": 60}
+        plan = E.Plan("BUY", 100.0, 97.0, [102.5], 60)
+        self.assertTrue(E._calibrator_event_match(cal, plan, 102.5, 60, None))
+
+
+class TestMonteCarloPointUnknown(unittest.TestCase):
+    """I0687: validate.load_dataset / validate used point 0.01 when the export metadata had neither spec.point nor tick_size."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.ds = Path(self.td.dir) / "ds"
+        self.ds.mkdir()
+
+    def tearDown(self):
+        self.td.close()
+
+    def _write(self, meta):
+        (self.ds / "source_metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+        rows = ["time_open_utc,open,high,low,close,tick_volume,spread_points"]
+        for b in _mc_bars(50):
+            rows.append(f"{b['open_utc']},{b['o']},{b['h']},{b['l']},{b['c']},10,20")
+        (self.ds / "XAUUSD_M1.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    def _usable(self):
+        from masterquo.forecast import export
+        return mock.patch.object(export, "dataset_state", return_value={"usable": True, "state": "COMPLETE"})
+
+    def test_load_dataset_refuses_unknown_point(self):
+        from masterquo.montecarlo import validate as V
+        self._write({"instrument": "XAUUSD", "file_prefix": "XAUUSD", "data_kind": "REAL_USER_DATA", "spec": {}})
+        with self._usable(), self.assertRaises(ValueError) as cm:
+            V.load_dataset(self.ds)                                            # HEAD: spread_price = 20 x 0.01
+        self.assertIn("DATASET_POINT_UNKNOWN", str(cm.exception))
+
+    def test_validate_reports_blocked_data(self):
+        from masterquo.montecarlo import validate as V
+        self._write({"instrument": "XAUUSD", "file_prefix": "XAUUSD", "data_kind": "REAL_USER_DATA", "spec": {}, "dataset_id": "D1"})
+        with self._usable():
+            rep = V.validate(self.ds, log=lambda m: None)
+        self.assertEqual(rep["status"], "BLOCKED_DATA")
+        self.assertIn("point", rep["reason"])
+        self.assertEqual(rep["dataset_id"], "D1")
+        saved = V.save("XAUUSD", rep)                                          # recorded for research, never the active calibrator
+        self.assertFalse(saved["activated"] or saved["eligible"])
+        self.assertIsNone(V.active_calibrator("XAUUSD"))
+
+    def test_point_order_spec_point_tick_size(self):
+        from masterquo.montecarlo import validate as V
+        self.assertEqual(V._point({"spec": {"point": 0.001, "trade_tick_size": 0.01}, "tick_size": 0.1}), 0.001)
+        self.assertEqual(V._point({"spec": {"trade_tick_size": 0.01}, "tick_size": 0.1}), 0.01)
+        self.assertEqual(V._point({"spec": {}, "tick_size": 0.1}), 0.1)
+        self.assertIsNone(V._point({"spec": {}}))
+        self.assertIsNone(V._point({}))
+        self._write({"instrument": "XAUUSD", "file_prefix": "XAUUSD", "data_kind": "REAL_USER_DATA", "spec": {"point": 0.001}})
+        with self._usable():
+            rows, _meta = V.load_dataset(self.ds)
+        self.assertAlmostEqual(rows[0]["spread_price"], 0.02)
 
 
 if __name__ == "__main__":
