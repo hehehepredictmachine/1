@@ -52,10 +52,12 @@ class FamilyService:
         impl, why = f.implementation()
         if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
             th = f.trainhub_state(inst)
-            return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th}
+            return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th,
+                    "assist_gate_violation": None}                     # trainhub owns the role (no family gate here)
         if fid == "SEQ_GRU_EVENT":
             ev = f.status_from_mm(inst)
-            return {"implementation": "AVAILABLE", "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF", "mm": ev}
+            return {"implementation": "AVAILABLE", "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF", "mm": ev,
+                    "assist_gate_violation": None}
         st = self.store.state(fid, inst)
         runs = self.store.runs(fid, inst)
         active = next((r for r in runs if r["run_id"] == st.get("active")), None)
@@ -69,9 +71,14 @@ class FamilyService:
             art = "CANDIDATE"
         else:
             art = "NOT_TRAINED"
-        return {"implementation": impl, "implementation_reason": why, "artifact": art, "use": st.get("use", "OFF") if active else "OFF",
+        use = st.get("use", "OFF") if active else "OFF"
+        # 1.46 D5: a role ASSIST saved before the gate covered activate / rollback may sit on an artifact that would not get it today -
+        # shown (reason), never lowered here
+        gate = self.store.assist_ok(fid, inst, st.get("active"))[1] if use == "ASSIST" else None
+        return {"implementation": impl, "implementation_reason": why, "artifact": art, "use": use,
                 "active_run": st.get("active"), "runs": len(runs), "last_run": runs[-1]["run_id"] if runs else None,
-                "last_validation": (runs[-1].get("validation") or {}).get("status") if runs else None, "job": job}
+                "last_validation": (runs[-1].get("validation") or {}).get("status") if runs else None, "job": job,
+                "assist_gate_violation": gate}
 
     def catalog(self, inst: str) -> list[dict]:
         out = []
@@ -79,7 +86,8 @@ class FamilyService:
             try:
                 st = self.status(fid, inst)
             except Exception as exc:  # noqa: BLE001
-                st = {"implementation": "ERROR", "implementation_reason": str(exc)[:200], "artifact": "NOT_TRAINED", "use": "OFF"}
+                st = {"implementation": "ERROR", "implementation_reason": str(exc)[:200], "artifact": "NOT_TRAINED", "use": "OFF",
+                      "assist_gate_violation": None}
             out.append({**f.capabilities(), "status": st, "data_requirements": f.data_requirements()})
         return out
 
@@ -302,13 +310,20 @@ class FamilyService:
         if not ok:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": why}
         try:
+            self.store.assist_guard(fid, inst, rid, f"aktywowanie artefaktu {rid}")   # 1.46 D5: before the (costly) load + sample
+        except B.AssistGate as exc:
+            return {"ok": False, "status": "ASSIST_GATE", "reason": str(exc)}
+        try:
             art = self.fams[fid].load(self.store.run_dir(fid, inst, rid))
             chk = self._sample_check(fid, art, self.store.run_dir(fid, inst, rid))
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "status": "INCOMPATIBLE", "reason": f"wczytanie / próbka inferencji: {type(exc).__name__}: {exc}"[:300]}
         if not chk["ok"]:
             return {"ok": False, "status": "INCOMPATIBLE", "reason": chk["reason"]}
-        st = self.store.set_active(fid, inst, rid, "panel")
+        try:
+            st = self.store.set_active(fid, inst, rid, "panel")
+        except B.AssistGate as exc:                              # the role was set to ASSIST meanwhile
+            return {"ok": False, "status": "ASSIST_GATE", "reason": str(exc)}
         self.invalidate(fid, inst)
         return {"ok": True, "status": "ACTIVE", "state": st, "sample_check": chk}
 
@@ -482,7 +497,14 @@ class FamilyService:
             if ck in self._cache and (bar_t is not None or self.clock() - self._cache[ck]["at"] < 5):
                 return self._cache[ck]["pred"]
         man = B._read(self.store.run_dir(fid, inst, rid) / "manifest.json", {}) if rid else {}
-        kind = man.get("data_kind") if man.get("data_kind") in ("REAL", "SYNTHETIC") else None
+        # 1.46 D18: the marketdata Store / live bridge write REAL_USER_DATA / SYNTHETIC_TEST / MT5_LIVE_BRIDGE - only the literal 'REAL' /
+        # 'SYNTHETIC' were kept, so every record had data_kind None and Quant let a family fitted on synthetic data into a REAL snapshot
+        kind = B.kind_class(man.get("data_kind"))
+        if kind == "SYNTHETIC" and use == "ASSIST" and man.get("data_kind") != "SYNTHETIC":
+            # S0(b) guard: a role ASSIST saved before the gate (status.assist_gate_violation) on a SYNTHETIC_TEST artifact keeps the 1.45
+            # value (None) - in a REAL snapshot it stays eligible, so the coordinator with Quant in ASSIST (pub['eligible']) keeps its
+            # MODEL_ASSIST_HOLD on the ACTIVE path. The literal 'SYNTHETIC' stays excluded as in 1.45 (REQUIRED never turns MISSING -> PASS).
+            kind = None
         impl, why = f.implementation()
         t0 = time.perf_counter()
         try:
