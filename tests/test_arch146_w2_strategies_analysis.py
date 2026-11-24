@@ -293,5 +293,32 @@ class TestSelectorConflictSuspendsSelection(_SelectorCase):
         self.assertEqual([x[2] for x in self.log()], ["FIRST_SELECTION"])
 
 
+class TestWallsStoreRestart(unittest.TestCase):
+    """I0868 (łata 783a153): odcisk zawierał krotkę; po rundzie przez JSON (pierwsze freeze po restarcie) był listą -> nigdy równy -> każdy
+    restart tworzył wersję N+1 z nowym snapshot_id dla tych samych danych (a S12 nową tożsamość setupu dla tego samego zdarzenia)."""
+
+    def test_same_input_after_restart_keeps_snapshot_id(self):
+        from _env import TempData
+        from masterquo.analysis.walls import WallsStore
+        from masterquo.db.database import Database
+        td = TempData()
+        try:
+            db = Database()
+            snap = {"status": "OK", "symbol": "XAUUSD-", "anchor_time": "2026-11-20T00:00:00Z", "source_type": "HV_PROXY", "sigma_annual": 0.18,
+                    "obs_id": None, "band_sigma": 0.15, "available_at": "2026-11-20T00:05:00Z",
+                    "walls": [{"k": 1.0, "side": "UPPER", "level": 2410.0}, {"k": 2.0, "side": "UPPER", "level": 2430.0},
+                              {"k": 1.0, "side": "LOWER", "level": 2390.0}]}
+            a = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))
+            b = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))     # new store = application restart
+            self.assertEqual((b["snapshot_id"], b["snapshot_version"]), (a["snapshot_id"], 1))
+            self.assertEqual(db.one("SELECT COUNT(*) n FROM walls_snapshots")["n"], 1)
+            st = WallsStore(db)
+            c = st.freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))   # a real change -> next version
+            self.assertEqual(c["snapshot_version"], 2)
+            self.assertEqual(st.freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))["snapshot_id"], c["snapshot_id"])
+        finally:
+            td.close()
+
+
 if __name__ == "__main__":
     unittest.main()

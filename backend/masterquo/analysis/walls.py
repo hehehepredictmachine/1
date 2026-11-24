@@ -140,11 +140,14 @@ class WallsStore:
             hist = [json.loads(x["json"]) for x in rows]
             self._mem[key] = hist
         hist = self._mem.setdefault(key, hist or [])
+        # 1.46 arch (I0868, patch 783a153): compared in JSON form - a stored _fp (read back after a restart) holds lists, never the tuple,
+        # so every restart created version N+1 with a new snapshot_id for the same input (and S12 a new setup identity for the same event)
+        fpj = json.loads(json.dumps(list(fp)))
         for h in hist:
-            if h.get("_fp") == list(fp):
+            if h.get("_fp") == fpj:
                 return h
         ver = len(hist) + 1
-        out = dict(snap, snapshot_version=ver, _fp=list(fp))
+        out = dict(snap, snapshot_version=ver, _fp=fpj)
         out["snapshot_id"] = _sid(snap["symbol"], snap["anchor_time"], ver, *fp)
         for w in out["walls"]:
             w["snapshot_id"] = out["snapshot_id"]
