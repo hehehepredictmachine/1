@@ -841,6 +841,8 @@ class KronosService:
         for i, r in reps.items():                    # 1.33: the approval must match the CURRENT symbol / horizon / settings / weights
             d = V.binding_diff(r.get("binding"), V.binding(self, i, tf))
             k = ((r.get("dev") or {}).get("chosen_band_k"))
+            # arch 1.46 I0786: new reports bind the validated band k itself (validation.run), so setting it satisfies both checks; this
+            # explicit check stays for reports from before the fix (their binding holds the settings band of the validation time)
             if k is not None and abs(float(k) - float(s.direction_band_atr)) > 1e-9:
                 d.append(f"pasmo neutralne: zwalidowano k={k}, w ustawieniach {s.direction_band_atr} – ustaw zwalidowane pasmo albo powtórz walidację")
             if d:

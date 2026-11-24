@@ -306,6 +306,64 @@ class TestI0785RequiredMissingReport(_SvcCase):
         self.assertEqual(KP.context(svc, "XAUUSD", "SCALPING", side="BUY")["state"], "STALE_APPROVAL")
 
 
+class _InProcStub:
+    """Dubler workera do mechaniki walk-forward: prognoza = ostatnia cena + 0,01 (bez modelu)."""
+    def ask(self, req, timeout):
+        if req["cmd"] == "load":
+            return {"ok": True, "info": {"device": "cpu"}}
+        if req["cmd"] == "predict":
+            last = req["candles"]["close"][-1]
+            return {"ok": True, "pred": {"close": [last + 0.01] * req["pred_len"]}, "ms": 1.0}
+        return {"ok": True}
+
+    def close(self):
+        pass
+
+
+class TestI0786ValidatedBandBinding(_SvcCase):
+    """Dziś binding raportu zapisywał pasmo z ustawień z chwili walidacji, a test walidacji liczył z k wybranym na DEV; set_strategy_use
+    wymaga k == pasmo w ustawieniach -> po ustawieniu zwalidowanego pasma binding_diff zgłaszał zmianę (VALIDATION_STALE) i REQUIRED nie
+    dawał się włączyć. Teraz binding = zatwierdzone pasmo k (pole informacyjne: pasmo ustawień w chwili walidacji)."""
+
+    def setUp(self):
+        super().setUp()
+        self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, WED_1200, 20)
+
+    def test_binding_holds_the_validated_band_and_required_can_be_enabled(self):
+        from masterquo.kronos import validation as V
+        svc = self.make(direction_band_atr=0.25)
+        rep = V.run(svc, "XAUUSD", "M5", max_origins=60, client_factory=_InProcStub)
+        self.assertEqual(rep["status"], "DONE")
+        k = rep["dev"]["chosen_band_k"]
+        self.assertNotEqual(k, 0.25)
+        self.assertEqual(rep["binding"]["direction_band_atr"], k)
+        self.assertEqual(rep["binding_settings_band_at_validation"], 0.25)
+        # pozytywny werdykt (tylko na potrzeby testu mechaniki dopuszczenia) - zapis jak raport z rynku
+        f = V.reports_dir() / f"{rep['report_id']}.json"
+        saved = json.loads(f.read_text(encoding="utf-8"))
+        saved["verdict"] = {"positive": True, "reason": "test"}
+        f.write_text(json.dumps(saved), encoding="utf-8")
+        r = svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)                # pasmo w ustawieniach ≠ zwalidowane
+        self.assertFalse(r["ok"])
+        self.assertIn("pasmo neutralne", r["reason"])
+        svc.settings.update({"direction_band_atr": k})                                # „ustaw zwalidowane pasmo”
+        r = svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(V.binding_diff(saved["binding"], V.binding(svc, "XAUUSD", "M5")), [])
+
+    def test_old_report_with_settings_band_keeps_todays_rule(self):
+        """Raport sprzed poprawki (binding = pasmo ustawień b0, zwalidowane k ≠ b0): REQUIRED dalej się nie włącza - ani przy b0, ani przy k."""
+        from masterquo.kronos import validation as V
+        svc = self.make(direction_band_atr=0.25)
+        b0 = V.binding(svc, "XAUUSD", "M5")
+        rep = {"report_id": "XAUUSD_M5_old", "instrument": "XAUUSD", "timeframe": "M5", "data_kind": "MT5_DEMO", "verdict": {"positive": True},
+               "binding": b0, "dev": {"chosen_band_k": 0.5}}
+        (V.reports_dir() / "XAUUSD_M5_20260103T000000Z.json").write_text(json.dumps(rep), encoding="utf-8")
+        self.assertFalse(svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)["ok"])
+        svc.settings.update({"direction_band_atr": 0.5})
+        self.assertFalse(svc.set_strategy_use("SCALPING", "REQUIRED", confirm=True)["ok"])
+
+
 class TestI0785ValidationSaveAtomic(unittest.TestCase):
     def setUp(self):
         self.td = TempData()

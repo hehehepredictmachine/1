@@ -247,6 +247,11 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
         reasons.append("trafność kierunku nie przewyższa bazowego momentum")
     if p is None or p >= 0.05:
         reasons.append(f"trafność kierunku nieistotna statystycznie (p = {p if p is None else round(p, 4)})")
+    # arch 1.46 I0786: the approval is for the band the TEST was evaluated with (k chosen on DEV), not for the band that happened to be in
+    # the settings - before, a user who set the validated band got VALIDATION_STALE (binding: settings band -> k) and REQUIRED could be
+    # enabled only when k equalled the old setting by chance. The settings band at validation time stays as information.
+    base["binding"] = {**base["binding"], "direction_band_atr": k_best}
+    base["binding_settings_band_at_validation"] = s.direction_band_atr
     rep = {**base, "status": "DONE", "finished_at": iso(utcnow()), "duration_s": round(time.time() - t0, 1), "horizon_bars": H, "lookback": L,
            "calendar": {"source": cal_src, "coverage_days": round(cal.coverage_days, 1)},
            "bars_used": len(bars), "first_bar": bars[0]["open_utc"], "last_bar": bars[-1]["open_utc"], "origins": len(origins),
