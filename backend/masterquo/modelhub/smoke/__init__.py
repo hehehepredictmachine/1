@@ -107,8 +107,10 @@ class Ctx:
     def env_python(self, venv: str) -> str | None:
         """Python of a separate model environment (.venv_deep, .venv_kronos, .venv_candles, ...) - the env variable the bot reads first
         (MQ_DEEP_PYTHON, MQ_KRONOS_PYTHON, MQ_CANDLES_PYTHON, MQ_TABICL_PYTHON ...), then <program>/<venv>. None = not installed."""
+        # the same variables the bot reads first (tsfm/settings.python_candidates: MQ_<MODEL ID>_PYTHON; kronos/settings; quant/tabicl ...)
         var = {".venv_deep": "MQ_DEEP_PYTHON", ".venv_kronos": "MQ_KRONOS_PYTHON", ".venv_candles": "MQ_CANDLES_PYTHON",
-               ".venv_tabicl": "MQ_TABICL_PYTHON"}.get(venv)
+               ".venv_tabicl": "MQ_TABICL_PYTHON", ".venv_chronos2": "MQ_CHRONOS2_PYTHON", ".venv_granite": "MQ_GRANITE_TTM_PYTHON",
+               ".venv_tirex2": "MQ_TIREX2_PYTHON"}.get(venv)
         cands = [os.environ.get(var)] if var else []
         cands += [str(self.root / venv / "Scripts" / "python.exe"), str(self.root / venv / "bin" / "python")]
         for c in cands:

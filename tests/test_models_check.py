@@ -72,6 +72,22 @@ class TestModelsCheckCli(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stderr)
 
 
+class TestEnvDiscovery(unittest.TestCase):
+    def test_model_environments_are_found_through_the_bots_variables(self):
+        import stat
+
+        from masterquo.modelhub import smoke as S
+        with tempfile.TemporaryDirectory() as d, unittest.mock.patch.dict(os.environ, {"MASTERQUO_DATA_DIR": d}):
+            fake = Path(d) / "python"
+            fake.write_text("#!/bin/sh\n", encoding="utf-8")
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            ctx = S.Ctx("XAUUSD")
+            for venv, var in ((".venv_chronos2", "MQ_CHRONOS2_PYTHON"), (".venv_granite", "MQ_GRANITE_TTM_PYTHON"), (".venv_tirex2", "MQ_TIREX2_PYTHON"),
+                              (".venv_deep", "MQ_DEEP_PYTHON"), (".venv_kronos", "MQ_KRONOS_PYTHON"), (".venv_tabicl", "MQ_TABICL_PYTHON")):
+                with unittest.mock.patch.dict(os.environ, {var: str(fake)}):
+                    self.assertEqual(ctx.env_python(venv), str(fake), var)      # 1.46 arch: chronos2/granite/tirex2 were not mapped
+
+
 class TestVerdict(unittest.TestCase):
     def _p(self, **kw):
         return {"id": "x:y", "code_state": "IMPLEMENTED", "registry_state": "NOT_TRAINED", "registry_reason": None, **kw}
