@@ -2,7 +2,7 @@
 
 I0866  agent: an answer to a USER_QUESTION can only make the AI gate stricter (never replaces the setup assessment)
 I0867  agent: model without a price -> warning BUDGET_NOT_ENFORCEABLE_UNKNOWN_PRICE (budget / preflight unchanged)
-I0152  agent: claude-fable-5-2 in FALLBACK_MODELS, no server-side fallback under REQUIRED, cost shown as an estimate only
+I0152  agent: (S0, not implemented) claude-fable-5-2 NOT in FALLBACK_MODELS (budget / REQUIRED as 1.45); cost estimate only
 I0094  _port() never writes config.json; `profile` refuses while the bot runs
 I0125  one DEFAULT_PORT; Studio follows the bot's server.port
 I0097  settings stores: inventory reads the Runtime's stores, Quant read-modify-write under one RLock
@@ -155,36 +155,69 @@ class TestI0867UnknownPriceWarning(_AgentBase):
 
 
 # ------------------------------------------------------------------ I0152
-class TestI0152Fable52SafeVariant(_AgentBase):
-    def _refusal_then(self, ans):
+class TestI0152Fable52NoFallbackEstimateOnly(_AgentBase):
+    """I0152 / D13 = S0, NOT implemented: claude-fable-5-2 gets NO server-side refusal fallback (a fallback answer names another model -
+    e.g. claude-opus-5, priced -> the run is costed into the daily budget, an exhausted budget under VETO = AI_NO_VETO; and an agreeing
+    fallback answer stored under VETO passes after a switch to REQUIRED). Only the informational cost estimate (S1) stays."""
+
+    def _server(self, ans):
+        """Emulates the API for a refusing claude-fable-5-2: without `fallbacks` the refusal comes back (model claude-fable-5-2); with
+        `fallbacks="default"` the server answers from the fallback model, and the response's `model` names it (claude-opus-5, priced)."""
         TA = self.TA
-        refusal = TA.NS(content=[], stop_reason="refusal", stop_details=TA.NS(category="cyber"), model="claude-fable-5-2",
-                        usage=TA.NS(input_tokens=100, output_tokens=0, cache_read_input_tokens=0, cache_creation_input_tokens=0))
-        return [refusal, TA.msg([TA.text(json.dumps(ans))], "end_turn")]
+        usage = TA.NS(input_tokens=200_000, output_tokens=20_000, cache_read_input_tokens=0, cache_creation_input_tokens=0)
 
-    def test_fable_52_is_a_fallback_model(self):
+        class Server(TA.ScriptedClient):
+            async def create(self, **kw):
+                self.calls.append({**kw, "messages": list(kw["messages"])})
+                if kw.get("fallbacks"):
+                    return TA.NS(content=[TA.text(json.dumps(ans))], stop_reason="end_turn", stop_details=None, model="claude-opus-5",
+                                 usage=usage)
+                return TA.NS(content=[], stop_reason="refusal", stop_details=TA.NS(category="cyber"), model="claude-fable-5-2", usage=usage)
+        c = Server([])
+        self.agent._client_get = lambda: c
+        self.agent.last_auto_run = self.agent.last_user_run = 0
+        req = {"trigger": "SETUP_CONFIRMED", "snapshot_id": "SNP-1", "setup_id": "MQS-1", "setup_state": "CONFIRMED", "question": None,
+               "key": "SETUP_CONFIRMED"}
+        asyncio.run(self.agent._handle(req))
+        return c
+
+    def test_fable_52_is_not_a_fallback_model(self):
         from masterquo.agent import service as AS
-        self.assertIn("claude-fable-5-2", AS.FALLBACK_MODELS)
+        self.assertNotIn("claude-fable-5-2", AS.FALLBACK_MODELS)                    # wave 2 first variant: in the list (S0 in review)
+        self.assertEqual(AS.FALLBACK_MODELS, {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"})   # = 1.45
 
-    def test_required_never_uses_server_side_fallback(self):
-        self.cfg.update({"agent": {"model": "claude-fable-5-2", "gate_policy": "REQUIRED"}})
-        c = self.handle("SETUP_CONFIRMED", script=self._refusal_then(self.TA.answer()))
-        self.assertNotIn("fallbacks", c.calls[0])
-        self.assertNotIn("betas", c.calls[0])
-        self.assertEqual(self.agent.by_setup["MQS-1"]["status"], "REFUSED")
-        g = self.gate()
-        self.assertEqual((g["status"], g["reason_codes"]), ("FAIL", ["AI_RUN_REFUSED"]))    # refusal keeps blocking under REQUIRED
-
-    def test_required_no_fallback_for_older_models_either(self):
-        self.cfg.update({"agent": {"model": "claude-fable-5-1", "gate_policy": "REQUIRED"}})
-        c = self.handle("SETUP_CONFIRMED", self.TA.answer())
-        self.assertNotIn("fallbacks", c.calls[0])                                  # 1.45: fallback also under REQUIRED (can pass)
-
-    def test_veto_uses_fallback_and_its_disagree_blocks(self):
+    def test_fable_52_refusal_never_reaches_a_priced_model_or_the_budget(self):
+        """Reviewer probe: fable-5-2 + default VETO; with the fallback the refusal was answered by claude-opus-5 (priced 5/25), the run
+        cost 1.5 USD, two runs exhausted the 3 USD budget and the gate became NOT_REQUIRED AI_NO_VETO_AI_RUN_DAILY_BUDGET_EXHAUSTED."""
         self.cfg.update({"agent": {"model": "claude-fable-5-2"}})                   # default VETO
-        c = self.handle("SETUP_CONFIRMED", self.TA.answer(proposed_action="WAIT"))
-        self.assertEqual(c.calls[0].get("fallbacks"), "default")
-        self.assertEqual(self.gate()["status"], "DISAGREE")
+        for _ in range(3):
+            c = self._server(self.TA.answer())
+            self.assertNotIn("fallbacks", c.calls[0])                               # no fallback model can answer (= 1.45)
+            self.assertNotIn("betas", c.calls[0])
+            self.assertEqual(self.agent.by_setup["MQS-1"]["status"], "REFUSED")
+            self.assertEqual(self.agent.by_setup["MQS-1"]["model_id"], "claude-fable-5-2")
+            self.assertIsNone(self.agent.by_setup["MQS-1"]["est_cost_usd"])
+        self.assertEqual(self.agent.spent_today(), 0.0)                             # the daily budget never runs out (= 1.45)
+        self.assertIsNone(self.agent._preflight({"trigger": "SETUP_CONFIRMED"}))
+        self.handle("SETUP_CONFIRMED", self.TA.answer(proposed_action="WAIT"))
+        self.assertEqual(self.gate()["status"], "DISAGREE")                         # the AI veto still works
+
+    def test_veto_refusal_stays_refused_after_switch_to_required(self):
+        self.cfg.update({"agent": {"model": "claude-fable-5-2"}})                   # VETO: refusal -> no veto (as 1.45)
+        self._server(self.TA.answer())                                               # the fallback model would agree (SELL)
+        self.assertEqual(self.gate("2026-10-08T12:00:30Z")["reason_codes"], ["AI_NO_VETO_AI_RUN_REFUSED"])
+        self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})                     # switch within decision_ttl_seconds
+        g = self.gate()
+        self.assertEqual((g["status"], g["reason_codes"]), ("FAIL", ["AI_RUN_REFUSED"]))   # first variant: PASS (fallback answer)
+
+    def test_fallback_for_other_models_as_in_145(self):
+        for pol in ("REQUIRED", "VETO", "ADVISORY"):
+            self.cfg.update({"agent": {"model": "claude-fable-5-1", "gate_policy": pol}})
+            c = self.handle("SETUP_CONFIRMED", self.TA.answer())
+            self.assertEqual(c.calls[0].get("fallbacks"), "default", pol)           # unchanged: fallback under every policy
+            self.cfg.update({"agent": {"model": "claude-fable-5-2"}})
+            c = self.handle("SETUP_CONFIRMED", self.TA.answer())
+            self.assertNotIn("fallbacks", c.calls[0], pol)
 
     def test_cost_is_estimate_only(self):
         TA = self.TA

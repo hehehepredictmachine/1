@@ -36,12 +36,15 @@ from .tools import TOOL_DEFS, Toolbox
 
 log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
-# 1.46 arch (I0152 / D13, safe variant): claude-fable-5-2 accepts the server-side refusal fallback like its predecessor. _create uses the
-# fallback only OUTSIDE gate_policy REQUIRED (see _create).
-FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
-# 1.46 arch (I0152 / D13, safe variant): models WITHOUT an entry in the budget table agent.price_per_mtok whose cost is shown ONLY as an
-# estimate (status() / last_run). Never written to agent_runs.est_cost_usd, so spent_today() and the daily budget (_preflight) stay exactly
-# as before for them: an enforced budget exhausted under the default VETO policy turns the AI veto into AI_NO_VETO (S0 - more entries).
+# 1.46 arch (I0152 / D13): claude-fable-5-2 is deliberately NOT on this list (S0, not implemented). With a server-side fallback a refusal
+# of fable-5-2 is answered by another model: (1) the response then names that model (e.g. claude-opus-5, priced in agent.price_per_mtok), so
+# the run is costed into the daily budget, and an exhausted budget under the default VETO policy turns the AI veto into AI_NO_VETO for the
+# rest of the day; (2) an agreeing fallback answer stored under VETO passes the gate after a switch to REQUIRED within decision_ttl_seconds.
+# Without the fallback (1.45) the refusal stays REFUSED with model claude-fable-5-2 and est_cost_usd NULL. Needs an owner decision.
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+# 1.46 arch (I0152 / D13, informational S1 subset only): models WITHOUT an entry in the budget table agent.price_per_mtok whose cost is shown
+# ONLY as an estimate (status() / last_run). Never written to agent_runs.est_cost_usd, so spent_today() and the daily budget (_preflight) stay
+# exactly as before for them: an enforced budget exhausted under the default VETO policy turns the AI veto into AI_NO_VETO (S0 - more entries).
 # USD per 1M tokens, Anthropic price list cached 2026-11-03 (cache read has its own rate, not 0.1 x input).
 ESTIMATE_ONLY_PRICES: dict[str, dict[str, float]] = {"claude-fable-5-2": {"input": 8.0, "output": 40.0, "cache_read": 0.20}}
 ESTIMATE_ONLY_NOTE = ("Szacunek wg cennika 2026-11-03 – NIE jest wliczany do dziennego budżetu agenta (model spoza tabeli "
@@ -576,11 +579,7 @@ class ClaudeAgent:
                   cache_control={"type": "ephemeral"})
         if oc:
             kw["output_config"] = oc
-        # 1.46 arch (I0152 / D13, safe variant): no server-side fallback under gate_policy REQUIRED - there a refusal must stay a failed
-        # assessment (AI_RUN_REFUSED blocks the entry); a fallback model's agreeing answer would pass a setup that is blocked without it.
-        # Under VETO / ADVISORY a refusal never blocks, so the fallback can only add a DISAGREE (stricter).
-        use_fb = (self.cfg.use_refusal_fallback and not self.disable_fallback and model in FALLBACK_MODELS
-                  and self.policy() != "REQUIRED")
+        use_fb = self.cfg.use_refusal_fallback and not self.disable_fallback and model in FALLBACK_MODELS
         try:
             if use_fb:
                 return await client.beta.messages.create(**kw, betas=[FALLBACK_BETA], fallbacks="default")
