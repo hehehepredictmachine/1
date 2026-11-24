@@ -246,6 +246,63 @@ class TestStartModeNotApplied(unittest.TestCase):
 
 
 
+class TestAgentUnpricedModelVisible(unittest.TestCase):
+    """Przegląd D13 (S1): przebieg modelu spoza cennika (np. odpowiedź modelu zapasowego server-side fallback) nadal liczy się w budżecie
+    jako 0 (bez zmian), ale nie po cichu: ostrzeżenie w dzienniku (raz na model) i pole last_run.price_missing_for."""
+
+    def setUp(self):
+        import os
+        self.td = TempData()
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
+        import test_agent as TA
+        from masterquo.agent.service import ClaudeAgent
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.events import AppLog, EventBus
+        from masterquo.secrets_store import SecretStore
+        self.TA = TA
+        cfg = ConfigStore()
+        cfg.update({"agent": {"model": "claude-opus-5-5"}})
+        self.db = Database()
+        bus = EventBus()
+        self.agent = ClaudeAgent(cfg, SecretStore(), self.db, bus, AppLog(self.db, bus), lambda sid: TA.CTX)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        self.td.close()
+
+    def _run(self, served: str) -> dict:
+        TA = self.TA
+        resp = TA.msg([TA.text(json.dumps(TA.answer()))], "end_turn")
+        resp.model = served
+        client = TA.ScriptedClient([resp])
+        self.agent._client_get = lambda: client
+        req = {"trigger": "SETUP_CONFIRMED", "snapshot_id": "SNP-1", "setup_id": "MQS-1", "setup_state": "CONFIRMED", "question": None,
+               "key": "k"}
+        return asyncio.run(self.agent.run_once(req, TA.CTX))
+
+    def _warnings(self) -> list:
+        return self.db.query("SELECT message FROM app_events WHERE code='COST_PRICE_MISSING'")
+
+    def test_unpriced_served_model_is_reported(self):
+        r = self._run("claude-opus-4-8")                                          # model zapasowy spoza cennika
+        self.assertEqual(r["status"], "OK")
+        self.assertIsNone(r["est_cost_usd"])                                     # budżet: bez zmian (0)
+        self.assertEqual(self.agent.spent_today(), 0.0)
+        self.assertEqual(self.agent.status()["last_run"]["price_missing_for"], "claude-opus-4-8")
+        self.assertEqual(len(self._warnings()), 1)
+        self.assertIn("claude-opus-4-8", self._warnings()[0]["message"])
+        self._run("claude-opus-4-8")
+        self.assertEqual(len(self._warnings()), 1)                                # raz na model, bez zalewania dziennika
+
+    def test_priced_model_not_reported(self):
+        r = self._run("claude-opus-5-5")
+        self.assertIsNotNone(r["est_cost_usd"])
+        self.assertIsNone(self.agent.status()["last_run"]["price_missing_for"])
+        self.assertEqual(self._warnings(), [])
+
+
 D1_OLD_DOC_RECIPES = {   # dawne zdania, które obiecywały działający start_mode jako wyłącznik LIVE
     "START_TUTAJ_PL.md": ("**Bot startuje w AUTO LIVE**", "Wyłączenie: STOP albo"),
     "ROLLBACK.md": ("przycisk STOP, potem w `data/config.json`",),

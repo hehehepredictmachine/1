@@ -96,6 +96,7 @@ class ClaudeAgent:
         self.pending: dict[str, dict] = {}
         self.last_result: dict | None = None
         self.last_run_meta: dict | None = None
+        self._unpriced_logged: set[str] = set()   # models already reported as missing from the price table (one warning per model)
 
     # ------------------------------------------------------------ config
     @property
@@ -470,6 +471,15 @@ class ClaudeAgent:
             status, error, unexpected = "INTERNAL_ERROR", f"{type(e).__name__}: {e}"[:200], e
         latency = int((time.monotonic() - t0) * 1000)
         cost = None if unexpected is not None else self._cost(served_model or model, usage_total)
+        price_missing = (served_model or model) if unexpected is None and cost is None else None
+        if price_missing and price_missing not in self._unpriced_logged:
+            # arch146 review (S1, visibility only): a model missing from the price table (e.g. one the server-side fallback answered with)
+            # gives no estimate, so spent_today() / the daily budget count the run as 0 - unchanged, but no longer silent
+            self._unpriced_logged.add(price_missing)
+            self.log.write("WARNING", "AGENT", "COST_PRICE_MISSING",
+                           f"Agent Claude: brak ceny modelu {price_missing} w cenniku (agent.price_per_mtok) – koszt jego przebiegów nie "
+                           "jest szacowany i nie wlicza się do budżetu dziennego.",
+                           {"model_id": price_missing, "model_requested": model, "run_id": run_id})
         now = utcnow()
         rec = None
         if status == "OK" and assessment is not None:
@@ -488,7 +498,8 @@ class ClaudeAgent:
                   "tool_calls": toolbox.log, "finished_at": iso(now), "question": req.get("question"), "decision_id": (rec or {}).get("decision_id")}
         self.last_run_meta = {"run_id": run_id, "status": status, "model_id": served_model or model, "latency_ms": latency,
                               "finished_at": iso(now), "est_cost_usd": cost, "trigger": req["trigger"], "error": error,
-                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"]}
+                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"],
+                              "price_missing_for": price_missing}
         self.db.execute("""INSERT INTO agent_runs(run_id, started_at, finished_at, trigger, snapshot_id, setup_id, model_requested, model_id,
                            prompt_version, status, error_code, latency_ms, input_tokens, output_tokens, cache_read_tokens, est_cost_usd,
                            tool_calls, output_json, question) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
