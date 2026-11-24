@@ -25,7 +25,10 @@ def main(argv: list[str]) -> int:
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--symbol")
     s.add_argument("--source", choices=("bridge", "import"), default="bridge")
-    s = sub.add_parser("export", help="eksport historii (wykonuje działający runtime/bridge) albo jawny import katalogu")
+    # 1.46 arch (I0135): --source bridge is informational (never exports, exit code 2 kept for the .bat launchers); the help says so
+    _exp = ("--source bridge: polecenie informacyjne – NIE eksportuje (kod 2), eksport wykonuje działający bot (00_TRENING_START.bat → "
+            "Eksport albo `python -m masterquo training export`); --source import: weryfikacja katalogu eksportu (bez kopiowania)")
+    s = sub.add_parser("export", help=_exp, description=_exp)
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--symbol")
     s.add_argument("--months", type=int, default=12)
@@ -134,8 +137,8 @@ def main(argv: list[str]) -> int:
             return 0 if ds else 2
         if a.c == "export":
             if a.source == "bridge":
-                print("[INFO] Eksport historii wykonuje działający bot/bridge MT5: 00_TRENING_START.bat (lub menu treningu → Eksport). "
-                      "To polecenie nie łączy się z terminalem samo.")
+                print("[INFO] Polecenie informacyjne. Eksport historii wykonuje działający bot/bridge MT5: 00_TRENING_START.bat (lub menu "
+                      "treningu → Eksport) albo `python -m masterquo training export`. To polecenie nie łączy się z terminalem samo.")
                 return 2
             if not a.path or not (Path(a.path) / "source_metadata.json").exists():
                 print("[BLAD] --source import wymaga --path z source_metadata.json")
