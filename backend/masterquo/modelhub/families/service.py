@@ -191,6 +191,15 @@ class FamilyService:
             raise KeyError("FAMILY_UNKNOWN")
         if profile not in ("smoke", "research", "full"):
             raise ValueError("PROFILE_INVALID")
+        from . import run as RUN
+        why_d = RUN.delegated(fid, inst, profile)
+        if why_d:
+            # 1.46 (I0475): a family trained elsewhere (trainhub TH_*, MM SEQ_GRU_EVENT) starts no process - the answer run.train would
+            # give, at once (as train_all reports it); SEQ_GRU_EVENT ended FAILED NotImplementedError
+            impl, why = self.fams[fid].implementation()
+            res = {"state": "DELEGATED", "reason": why_d} if impl == "AVAILABLE" else {"state": "BLOCKED", "reason": why}
+            B._atomic_json(self._job_file(fid, inst), {**res, "family": fid, "instrument": inst, "profile": profile, "updated_at": self.clock()})
+            return {"ok": False, "status": res["state"], "reason": res["reason"]}
         key = f"{fid}__{inst}"
         with self._lock:
             j = self.job(fid, inst)

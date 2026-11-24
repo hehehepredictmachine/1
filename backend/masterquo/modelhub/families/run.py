@@ -137,6 +137,17 @@ def books_from_archive(db_path, symbol, limit: int | None = None, levels: int | 
     return out
 
 
+def delegated(fid: str, inst: str, profile: str) -> str | None:
+    """The reason a family is trained OUTSIDE the family store (None = trained here). 1.46 (I0475): SEQ_GRU_EVENT (adapter of the MM
+    event model) was missing - `families train --family SEQ_GRU_EVENT` / POST /api/v1/families/SEQ_GRU_EVENT/train ended FAILED
+    NotImplementedError (EventGRU has no fit) after creating a .tmp-run directory; train_all and the CLI train-all already skipped it."""
+    if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+        return f"trening w trainhub: python -m masterquo trainhub train --instrument {inst} --models {fid} --profile {profile}"
+    if fid == "SEQ_GRU_EVENT":
+        return "trening w Centrum MM (mm/event_engine) – adapter istniejącego modelu zdarzeń, nie jest trenowany w magazynie rodzin"
+    return None
+
+
 def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None,
           bars_file: str | None = None) -> dict:
     from . import registry
@@ -150,9 +161,9 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         if sf:
             _status(sf, **res)
         return res
-    if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
-        res = {"state": "DELEGATED", "reason": "trening w trainhub: python -m masterquo trainhub train --instrument "
-                                              f"{inst} --models {fid} --profile {profile}", "family": fid}
+    why_d = delegated(fid, inst, profile)
+    if why_d:                                            # before load_data / new_run: no data read, no .tmp-run directory
+        res = {"state": "DELEGATED", "reason": why_d, "family": fid}
         if sf:
             _status(sf, **res)
         return res
