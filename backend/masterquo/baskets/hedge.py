@@ -46,6 +46,27 @@ def _fx_parent(ctx, side_needed: str | None = None):
     return own[0]
 
 
+def _layers_used(ctx, parent) -> int:
+    """1.46 (I0763): protection layers the parent already has - open HEDGE legs of the same plan id in the exposure (SH hedge legs carry
+    the parent's plan id) + recent PROPOSED hedge plans for it: ctx['layers_used'] = {parent_id: n}, counted read-only by the basket
+    service (an int from a direct caller = the count of this parent)."""
+    pid = parent.get("id")
+    legs = sum(1 for e in ctx.get("exposure") or [] if e.get("leg") == "HEDGE" and pid is not None and e.get("id") == pid)
+    lu = ctx.get("layers_used")
+    proposed = lu.get(pid, 0) if isinstance(lu, dict) else (lu or 0)
+    return legs + int(proposed)
+
+
+def _layers_full(ctx, parent, reason_trigger: str):
+    """NO_HEDGE when the parent's protection layers reached p['max_layers'] (catalog default 1) - checked only where a HEDGE_PLAN would
+    be returned (the triggers and the other NO_HEDGE answers are unchanged)."""
+    mx = int(ctx["p"].get("max_layers", 1))
+    n = _layers_used(ctx, parent)
+    if n >= mx:
+        return {"state": "NO_HEDGE", "reason": f"{reason_trigger}; limit warstw ochrony (max_layers={mx}) wyczerpany – rodzic ma już {n}"}
+    return None
+
+
 def _fx_same_symbol(ctx, parent, reason_trigger: str, extra=None):
     acc = ctx.get("account") or {}
     spec = (ctx.get("spec") or {}).get(parent["symbol"]) or {}
@@ -80,6 +101,9 @@ def _fx_same_symbol(ctx, parent, reason_trigger: str, extra=None):
         plan["action_type"] = "REDUCE"
         return {"state": "NO_HEDGE", "reason": f"{reason_trigger}; rachunek {acc.get('margin_mode') or 'nieznany'} – przeciwna transakcja zmniejszy pozycję "
                 "(alternatywa REDUCE, nie hedge)", "alternative": plan}
+    full = _layers_full(ctx, parent, reason_trigger)              # 1.46 (I0763): max_layers was never checked by the FX planners
+    if full:
+        return full
     return {"state": "HEDGE_PLAN", "reason": reason_trigger, "plan": plan}
 
 
@@ -134,8 +158,8 @@ def vol_shock(ctx):
         return {"state": "NO_HEDGE", "reason": "zakres M1 poniżej 95. percentyla 200 poprzednich"}
     if not (F.bear(F.i) if s > 0 else F.bull(F.i)):
         return {"state": "NO_HEDGE", "reason": "zamknięcie nie jest przeciw rodzicowi"}
-    if ctx.get("layers_used", 0) >= 1:
-        return {"state": "NO_HEDGE", "reason": "jednorazowy hedge już przygotowany – bez kolejnej warstwy"}
+    if _layers_used(ctx, par) >= 1:                                # 1.46 (I0763): layers_used was never supplied - counted per parent now
+        return {"state": "NO_HEDGE", "reason": "jednorazowy hedge już przygotowany – bez kolejnej warstwy (max_layers)"}
     return _fx_same_symbol(ctx, par, "szok zmienności przeciw rodzicowi")
 
 
@@ -285,6 +309,9 @@ def _beta_hedge(ctx, partner: str | None):
     # without an FX conversion (different quote currencies -> DIFFERENT_NOT_CONVERTED; the conversion itself is an owner decision)
     qc_p, qc_h = (spec.get(par["symbol"]) or {}).get("currency_profit"), hs.get("currency_profit")
     qc = {"parent": qc_p, "partner": qc_h, "status": ("SAME" if qc_p == qc_h else "DIFFERENT_NOT_CONVERTED") if qc_p and qc_h else "NOT_VERIFIED"}
+    full = _layers_full(ctx, par, f"beta {b1['beta']:.3f} (120) / {b2['beta']:.3f} (60)")      # 1.46 (I0763)
+    if full:
+        return full
     return {"state": "HEDGE_PLAN", "reason": f"beta {b1['beta']:.3f} (120) / {b2['beta']:.3f} (60), korelacja {b1['corr']:.2f}",
             "plan": _plan({"id": par["id"], "symbol": par["symbol"], "side": par["side"], "volume": par["volume"]}, [leg], ratio=ratio,
                           risk_before={"factor_notional": b1["beta"] * parent_notional},

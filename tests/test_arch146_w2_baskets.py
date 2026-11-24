@@ -265,6 +265,80 @@ class TestFxParentOwnSymbolOnly(unittest.TestCase):
         self.assertEqual(HG.vol_shock(ctx)["state"], "HEDGE_PLAN")                     # trigger fires on the bot's own symbol as before
 
 
+# ======================================================================================================================== I0763
+class TestFxHedgeLayers(_Svc):
+    PRIMARY = {"leg": "PRIMARY", "symbol": "XAUUSD", "side": "LONG", "volume": 1.0, "id": "P1", "entry": 100.0}
+    HEDGE = {"leg": "HEDGE", "symbol": "XAUUSD", "side": "SHORT", "volume": 0.5, "id": "P1", "entry": 100.0}
+
+    def test_open_hedge_leg_of_the_parent_uses_the_single_layer(self):
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import hedge as HG
+        F = D.build(_shock_bars(), 0.01)
+        ctx = _fx_ctx(F, None, [dict(self.PRIMARY), dict(self.HEDGE)])
+        r = HG.vol_shock(ctx)
+        self.assertEqual(r["state"], "NO_HEDGE", r)
+        r = HG._fx_same_symbol(ctx, dict(self.PRIMARY), "test")                         # common point of the same-symbol FX planners
+        self.assertEqual(r["state"], "NO_HEDGE", r)
+        self.assertIn("max_layers", r["reason"])
+        ctx["p"]["max_layers"] = 2                                                       # the parameter is respected (2nd layer allowed) ...
+        self.assertEqual(HG._fx_same_symbol(ctx, dict(self.PRIMARY), "test")["state"], "HEDGE_PLAN")
+        self.assertEqual(HG.vol_shock(ctx)["state"], "NO_HEDGE")                        # ... the volatility shield stays one-time (catalog)
+        ctx = _fx_ctx(F, None, [dict(self.PRIMARY), {**self.HEDGE, "id": "OTHER"}])     # a hedge leg of ANOTHER parent does not count
+        self.assertEqual(HG.vol_shock(ctx)["state"], "HEDGE_PLAN")
+
+    def test_beta_pair_respects_the_layer_limit(self):
+        from masterquo.baskets import hedge as HG
+        rng = np.random.default_rng(7)
+        n, t0 = 200, 1.79e9
+        rh = rng.normal(0, 0.004, n)
+        rp = 1.5 * rh + rng.normal(0, 0.0002, n)
+        ph, pp = 25.0 * np.exp(np.cumsum(rh)), 2000.0 * np.exp(np.cumsum(rp))
+        bars = {"XAUUSD": {"M15": [{"t": t0 + k * 900, "c": float(pp[k])} for k in range(n)]},
+                "XAGUSD": {"M15": [{"t": t0 + k * 900, "c": float(ph[k])} for k in range(n)]}}
+        spec = {"XAUUSD": {"trade_contract_size": 100, "volume_step": 0.01, "volume_min": 0.01},
+                "XAGUSD": {"trade_contract_size": 5000, "volume_step": 0.01, "volume_min": 0.01}}
+        ctx = {"strategy": {"exit_policy_or_expiry_policy": "x"}, "p": {"partner": "XAGUSD", "ratio": 0.5, "max_layers": 1}, "symbol": "XAUUSD",
+               "exposure": [dict(self.PRIMARY)], "bars": bars, "spec": spec}
+        self.assertEqual(HG.beta_pair(ctx)["state"], "HEDGE_PLAN")
+        ctx["exposure"].append(dict(self.HEDGE))
+        r = HG.beta_pair(ctx)
+        self.assertEqual(r["state"], "NO_HEDGE", r)
+        self.assertIn("max_layers", r["reason"])
+
+    def test_layers_used_as_dict_per_parent_no_type_error(self):
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import hedge as HG
+        F = D.build(_shock_bars(), 0.01)
+        ctx = _fx_ctx(F, None, [dict(self.PRIMARY)], layers_used={"P1": 1})
+        self.assertEqual(HG.vol_shock(ctx)["state"], "NO_HEDGE")
+        ctx = _fx_ctx(F, None, [dict(self.PRIMARY)], layers_used={"OTHER": 3})
+        self.assertEqual(HG.vol_shock(ctx)["state"], "HEDGE_PLAN")
+
+    def test_recent_proposal_for_the_parent_blocks_the_next_one(self):
+        from masterquo.baskets import catalog as CAT
+        from masterquo.baskets import detectors as D
+        s = self.svc()
+        st = s.settings()
+        strat = CAT.BY_ID["FX_HEDGE_03"]                                                # vol_shock, M1
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        extra = {"account": {"margin_mode": "HEDGING", "currency": "USD"}, "spec": _fx_ctx(None, None, [])["spec"],
+                 "exposure": [dict(self.PRIMARY)], "fx_pairs": [], "pair_map": {}, "symbol": "XAUUSD", "events": None}
+        c.feats["M1"] = D.build(_shock_bars(end_t=time.time()), 0.01)
+        s._hedge(c, strat, st, extra)
+        self.assertEqual(s.hedge_state["FX_HEDGE_03"]["state"], "HEDGE_PLAN")
+        c.feats["M1"] = D.build(_shock_bars(end_t=time.time() + 60, extra=1), 0.01)  # next bar: the shock goes on
+        s._hedge(c, strat, st, extra)
+        self.assertEqual(s.hedge_state["FX_HEDGE_03"]["state"], "NO_HEDGE", s.hedge_state["FX_HEDGE_03"])
+        with sqlite3.connect(s.ledger.path) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM hedge_plans").fetchone()[0], 1)
+            # outside the plan window (timeout_bars x TF) the old proposal no longer counts as a used layer
+            db.execute("UPDATE hedge_plans SET created_at = created_at - 3600")
+        db.close()
+        c.feats["M1"] = D.build(_shock_bars(end_t=time.time() + 120, extra=2), 0.01)
+        s._hedge(c, strat, st, extra)
+        self.assertEqual(s.hedge_state["FX_HEDGE_03"]["state"], "HEDGE_PLAN")
+
+
 # ======================================================================================================================== I0769
 class TestBasketPendingLimitSameCycle(_Svc):
     def test_two_events_in_one_cycle_respect_max_pending_intents(self):

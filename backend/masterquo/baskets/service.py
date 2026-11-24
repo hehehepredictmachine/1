@@ -279,6 +279,19 @@ class Ledger:
             c.execute("INSERT OR REPLACE INTO hedge_plans VALUES(?,?,?,?,?,?,?,?)", (row["plan_id"], row["strategy_id"], row["basket_id"], row["profile_id"],
                                                                                    row["created_at"], row["state"], row.get("reason"), json.dumps(row.get("plan"), default=str)))
 
+    def proposed_hedges(self, profile: str, since: float) -> list[dict]:
+        """1.46 (I0763): plans of the PROPOSED hedge proposals of a profile created at / after `since` (read-only)."""
+        out = []
+        with self._c() as c:
+            for r in c.execute("SELECT plan FROM hedge_plans WHERE profile_id=? AND state='PROPOSED' AND created_at>=?", (profile, float(since))):
+                try:
+                    pl = json.loads(r["plan"]) if r["plan"] else None
+                except ValueError:
+                    continue
+                if isinstance(pl, dict):
+                    out.append(pl)
+        return out
+
     def declared(self, profile: str) -> list[dict]:
         with self._c() as c:
             return [{**json.loads(r["data"]), "id": r["id"], "status": r["status"]} for r in      # 1.46: the row id wins over an "id" in the payload
@@ -1022,6 +1035,8 @@ class BasketService:
         ctx = {"strategy": s, "p": self.params(s, st), "F": F, "htf": c.feats.get(s["context_timeframes"][0]) if s["context_timeframes"] else None,
                "now": time.time(), **extra}
         try:
+            if s["profile_id"] == "FOREX_MT5":
+                ctx["layers_used"] = self._fx_layers(s, ctx["p"])
             r = HG.PLANNERS[s["family_id"]](ctx)
         except RL.Unavailable as exc:
             why = self._unsupplied_input(s, ctx)
@@ -1039,6 +1054,18 @@ class BasketService:
             pid = "HP-" + hashlib.sha256(f"{sid}|{json.dumps(r.get('plan'), sort_keys=True, default=str)}".encode()).hexdigest()[:14]
             self.ledger.add_hedge({"plan_id": pid, "strategy_id": sid, "basket_id": s["basket_id"], "profile_id": s["profile_id"], "created_at": time.time(),
                                    "state": "PROPOSED", "reason": r.get("reason"), "plan": r.get("plan")})
+
+    def _fx_layers(self, s: dict, p: dict) -> dict:
+        """1.46 (I0763): protection layers already proposed per parent id - PROPOSED FX hedge plans of the last timeout_bars x signal TF
+        (read-only; open HEDGE legs of the exposure are counted by the planner). The FX planners compare it with p['max_layers']."""
+        since = time.time() - float(p.get("timeout_bars", 6)) * TF_S[s["signal_timeframe"]]
+        out: dict = {}
+        for pl in self.ledger.proposed_hedges(s["profile_id"], since):
+            par = pl.get("parent")
+            pid = par.get("id") if isinstance(par, dict) else None
+            if pid is not None:
+                out[pid] = out.get(pid, 0) + 1
+        return out
 
     @staticmethod
     def _unsupplied_input(s: dict, ctx: dict) -> str | None:
