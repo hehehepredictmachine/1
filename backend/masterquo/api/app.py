@@ -20,13 +20,15 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import desktop, paths, presets, stats, sysres
+from ..config import ALLOWED_ASSETS
 from ..execution.modes import ModeError
 from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
+from ..stats import deals_coverage_from_utc  # noqa: F401 - 1.46 arch I0081: old name kept
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION, DISPLAY_NAME
-from ..stats import deals_coverage_from_utc  # noqa: F401 - 1.46 arch (I0081): moved to stats.py; old name kept
-from .common import body_num  # 1.46 arch (I0081): shared request helper (api/common.py); old name kept
+from . import deps as _deps  # 1.46 arch I0087: one instrument validator
+from .common import body_num  # 1.46 arch I0081: old name kept
 from .security import SESSION_COOKIE, LocalSecurity
 
 log = logging.getLogger("masterquo.api")
@@ -349,7 +351,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     def _asset(asset: str | None) -> str:
         a = asset or rt.cfg.get().assets.active
-        if a not in ("XAUUSD", "BTC"):
+        if a not in ALLOWED_ASSETS:
             raise HTTPException(403, f"ASSET_NOT_ALLOWED:{a}")
         return a
 
@@ -486,7 +488,7 @@ def create_app(rt, port: int) -> FastAPI:
         """Separate process (never in the bot); POST returns at once, the result is in the registry/report."""
         import subprocess
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI
         from ..training import core as tc
@@ -1322,7 +1324,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/sh/validation")
     def sh_validation(instrument: str = Query("XAUUSD")):
         """Validation reports of the SH strategies on REAL exported data (written by `sh train`); absent = not run yet."""
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         out = {}
         for strat in ("SCALPING", "HEDGING"):
@@ -1845,15 +1847,13 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/training/models")
     def training_models(instrument: str = Query(...)):
         from ..training import panel as tp
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return tp.models(rt, instrument)
 
     # ---------------------------------------------------------------- PMW-MM master models (inventory, SHADOW live view, ledger, rollback)
     def _mm_inst(instrument: str) -> str:
-        if instrument not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
-        return instrument
+        return _deps.instrument(instrument, error_code="UNKNOWN_INSTRUMENT")      # 1.46 arch (I0087): as given (no upper), as before
 
     @app.get("/api/v1/mm/status")
     def mm_status(instrument: str = Query("XAUUSD")):
@@ -1954,10 +1954,8 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ---------------------------------------------------------------- 1.28 Centrum treningu + rejestr modeli (wspólny kontrakt)
     def _th_inst(x: str) -> str:
-        x = x.upper() if isinstance(x, str) else ""          # 1.46: a number / object was an AttributeError (.upper) -> 500
-        if x not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "INSTRUMENT_NOT_ALLOWED")
-        return x
+        # 1.46: a number / object was an AttributeError (.upper) -> 500; 1.46 arch (I0087): one validator, same code / normalisation
+        return _deps.instrument(x, normalize=True, error_code="INSTRUMENT_NOT_ALLOWED")
 
     _SAFE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
@@ -2048,7 +2046,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..trainhub import pipeline as _P
         st = Store()
         data = {}
-        for i in ("XAUUSD", "BTC"):
+        for i in ALLOWED_ASSETS:
             man = st.manifest(i)
             data[i] = {"symbol": man.get("symbol") or rt.market_zones.symbol_for(i), "data_kind": man.get("data_kind"),
                        "timeframes": man.get("timeframes") or {}, "last_export": man.get("last_export"), "costs": man.get("costs"),
@@ -2617,10 +2615,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ---------------------------------------------------------------- PMW-FAM-1 model families (1.33)
     def _fam_inst(instrument):
-        i = str(instrument or rt.cfg.get().assets.active).upper()
-        if i not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "INSTRUMENT_INVALID")
-        return i
+        return _deps.instrument(instrument, normalize=True, default=lambda: rt.cfg.get().assets.active, error_code="INSTRUMENT_INVALID")
 
     def _fam(fn, *a, **k):
         try:
@@ -3129,7 +3124,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/training/readiness")
     def training_readiness(instrument: str = Query(...)):
         from ..training import panel as tp
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return tp.readiness(rt, instrument)
 
@@ -3193,7 +3188,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_export(body: dict = Body(...)):
         from ..training import panel as tp
         inst = body.get("instrument")
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         try:
             r = tp.export_package(inst, str(body.get("scope") or "all"), body.get("run_id"))
@@ -3230,7 +3225,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_sh_promote(body: dict = Body(...)):
         from ..sh import tpmodel as TM
         inst, strat, rid = body.get("instrument"), body.get("strategy"), body.get("run_id")
-        if inst not in ("XAUUSD", "BTC") or strat not in ("SCALPING", "HEDGING") or not rid:
+        if inst not in ALLOWED_ASSETS or strat not in ("SCALPING", "HEDGING") or not rid:
             raise HTTPException(400, "BAD_REQUEST")
         try:
             r = TM.promote(inst, strat, str(rid))
@@ -3244,7 +3239,7 @@ def create_app(rt, port: int) -> FastAPI:
         """Starts `masterquo training run` as a separate process (never inside the bot process; no orders, execution mode untouched)."""
         import subprocess
         from ..training import core as tc
-        insts = ",".join(i for i in ("XAUUSD", "BTC") if i in (body.get("instruments") or []))
+        insts = ",".join(i for i in ALLOWED_ASSETS if i in (body.get("instruments") or []))
         if not insts:
             raise HTTPException(400, "NO_INSTRUMENT")
         prof = body.get("profile") or "PELNY_TRENING"
@@ -3380,7 +3375,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/export/datasets")
     def export_datasets(instrument: str = Query(...)):
         from ..training import export_job as EJ
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return {"instrument": instrument, "datasets": EJ.datasets(instrument), "default_symbol": _default_symbol(instrument)}
 
@@ -3487,7 +3482,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_rollback(body: dict):
         import subprocess
         inst, fam = body.get("instrument"), str(body.get("family") or "")
-        if inst not in ("XAUUSD", "BTC") or not (fam in ("forecast", "scalp", "ml") or fam.startswith(("lab:", "sh:"))):
+        if inst not in ALLOWED_ASSETS or not (fam in ("forecast", "scalp", "ml") or fam.startswith(("lab:", "sh:"))):
             raise HTTPException(400, "BAD_REQUEST")
         if fam.startswith("sh:"):
             from ..sh import tpmodel as TM
@@ -3703,7 +3698,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/ml/scalp")
     def ml_scalp_status(asset: str | None = Query(None)):
         inst = asset or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")              # 1.46: was ValueError UNKNOWN_INSTRUMENT -> 500
         if inst != rt.ml.inst:
             from types import SimpleNamespace
@@ -3736,14 +3731,14 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/ml/scalp/prepare")
     def ml_scalp_prepare(body: dict):
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return _ml_scalp_job(["prepare", "--asset", inst])
 
     @app.post("/api/v1/ml/scalp/train")
     def ml_scalp_train(body: dict):
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         args = ["train", "--asset", inst, "--activate", "none"]
         comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI

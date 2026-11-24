@@ -491,5 +491,66 @@ class TestApiUsesPublicServiceInterface(_Base):
         self.assertEqual(s._pred_cache, {})
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0087
+def _asset_tuple_literals(path: Path) -> list[int]:
+    """Lines with a tuple/list/set literal of exactly the canonical instruments ('XAUUSD', 'BTC') in any order."""
+    out = []
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    literal_args = {id(n.slice) for n in ast.walk(tree) if isinstance(n, ast.Subscript) and getattr(n.value, "id", None) == "Literal"}
+    for n in ast.walk(tree):
+        if id(n) in literal_args:                       # the definition CanonicalAsset = Literal["XAUUSD", "BTC"] is the source itself
+            continue
+        if isinstance(n, (ast.Tuple, ast.List, ast.Set)) and len(n.elts) == 2 and all(isinstance(e, ast.Constant) for e in n.elts) \
+                and {e.value for e in n.elts} == {"XAUUSD", "BTC"}:
+            out.append(n.lineno)
+    return out
+
+
+class TestInstrumentSingleSource(_Base):
+    """I0087: jedna lista instrumentów handlowych w KODZIE (config.ALLOWED_ASSETS = get_args(CanonicalAsset)), zgodna z
+    config/instruments_v1.json (test, nie wyliczenie w runtime); jeden walidator API zachowujący kody błędów per domena."""
+
+    def test_allowed_assets_from_code_and_equal_to_profiles(self):
+        import typing
+
+        import mq_instruments
+        from masterquo import config
+        self.assertEqual(config.ALLOWED_ASSETS, typing.get_args(config.CanonicalAsset))
+        self.assertEqual(config.ALLOWED_ASSETS, tuple(mq_instruments.profiles()))
+        self.assertNotIn("mq_instruments", (PKG / "config.py").read_text(encoding="utf-8"))   # nie z pliku danych (fail-closed)
+
+    def test_no_literal_lists_in_group_files(self):
+        files = {"config.py": [], "api/app.py": [], "api/deps.py": [], "execution/modes.py": []}
+        got = {f: _asset_tuple_literals(PKG / f) for f in files}
+        self.assertEqual(got, files)
+
+    def test_one_helper_keeps_codes_per_domain(self):
+        from fastapi import HTTPException
+        from masterquo.api import deps
+        self.assertEqual(deps.instrument("BTC", error_code="UNKNOWN_INSTRUMENT"), "BTC")
+        for bad, code, kw in (("xauusd", "UNKNOWN_INSTRUMENT", {}), ("ETH", "INSTRUMENT_NOT_ALLOWED", {"normalize": True}),
+                              (5, "INSTRUMENT_NOT_ALLOWED", {"normalize": True}), (None, "UNKNOWN_INSTRUMENT", {})):
+            with self.assertRaises(HTTPException) as cm:
+                deps.instrument(bad, error_code=code, **kw)
+            self.assertEqual((cm.exception.status_code, cm.exception.detail), (400, code))
+        self.assertEqual(deps.instrument("btc", normalize=True, error_code="X"), "BTC")
+        self.assertEqual(deps.instrument("", normalize=True, default=lambda: "xauusd", error_code="X"), "XAUUSD")
+
+    def test_routes_keep_todays_behaviour(self):
+        from fastapi import HTTPException
+        from masterquo.api import app as A
+        rt = make_rt()
+        app = A.create_app(rt, PORT)
+        with self.assertRaises(HTTPException) as cm:
+            ep(app, "GET", "/api/v1/mm/status")(instrument="xauusd")
+        self.assertEqual((cm.exception.status_code, cm.exception.detail), (400, "UNKNOWN_INSTRUMENT"))      # /mm: bez upper, jak dziś
+        ep(app, "GET", "/api/v1/mm/status")(instrument="XAUUSD")
+        self.assertEqual(ep(app, "GET", "/api/v1/families")(instrument="xauusd")["instrument"], "XAUUSD")   # /families: upper, jak dziś
+        self.assertEqual(ep(app, "GET", "/api/v1/families")(instrument=None)["instrument"], "XAUUSD")       # domyślnie aktywny
+        with self.assertRaises(HTTPException) as cm:
+            ep(app, "GET", "/api/v1/families")(instrument="ETH")
+        self.assertEqual(cm.exception.detail, "INSTRUMENT_INVALID")
+
+
 if __name__ == "__main__":
     unittest.main()

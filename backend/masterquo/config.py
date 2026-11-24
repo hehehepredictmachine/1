@@ -17,7 +17,7 @@ import json
 import re
 import threading
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -246,7 +246,7 @@ class ExecutionConfig(_Strict):
     @field_validator("primary_path")
     @classmethod
     def _primary_keys(cls, v: dict) -> dict:
-        bad = [k for k in v if k not in ("XAUUSD", "BTC")]
+        bad = [k for k in v if k not in ALLOWED_ASSETS]
         if bad:
             raise ValueError("ASSET_NOT_ALLOWED:" + ",".join(bad))
         return v
@@ -530,7 +530,9 @@ class LiquidityConfig(_Strict):
 
 
 CanonicalAsset = Literal["XAUUSD", "BTC"]
-ALLOWED_ASSETS: tuple[str, ...] = ("XAUUSD", "BTC")
+# 1.46 arch (I0087): THE list of trading instruments - defined in code (the Literal above), never derived at runtime from a data file
+# (config/instruments_v1.json is also read by training; a test keeps both equal). Every validator uses this tuple, not a literal copy.
+ALLOWED_ASSETS: tuple[str, ...] = get_args(CanonicalAsset)
 
 
 class AssetMapping(_Strict):
