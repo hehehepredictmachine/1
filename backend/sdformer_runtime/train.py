@@ -78,7 +78,7 @@ def main(argv=None) -> int:
     import numpy as np
     import torch
     from . import data as D
-    from .model import SDformerFlow, n_params
+    from .model import SDformerFlow, load_checkpoint, n_params
     torch.set_num_threads(int(a.threads))
     t_start = time.time()
     bars = json.loads(Path(a.data).read_text(encoding="utf-8"))
@@ -106,7 +106,7 @@ def main(argv=None) -> int:
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     epoch0, step, best = 0, 0, float("inf")
     if a.op in ("fine_tune", "resume"):
-        ck = torch.load(Path(a.checkpoint) / "last.pt", map_location="cpu", weights_only=True)   # 1.46: no pickle code execution (imported ZIP)
+        ck = load_checkpoint(Path(a.checkpoint) / "last.pt")                 # weights_only (1.46) + TorchVersion of 1.46.0 checkpoints
         if ck.get("implementation_id") != IMPLEMENTATION_ID or ck.get("arch") != model.arch:
             print("RESULT " + json.dumps({"ok": False, "code": "INCOMPATIBLE", "error": "checkpoint innej implementacji / architektury"}))
             return 1
@@ -178,7 +178,7 @@ def main(argv=None) -> int:
                  "optimizer": opt.state_dict(), "epoch": ep + 1, "step": step, "rng": {"torch": torch.get_rng_state(), "numpy": rng.bit_generator.state},
                  "normalizer": {"mu": mu.tolist(), "sd": sd.tolist(), "fitted_on": "training rows"}, "dataset_hash": dh, "run_id": run_id,
                  "schema": {"descriptor": list(D.NAMES), "history": D.HISTORY, "forecast": D.FORECAST, "order": "OLDEST_TO_NEWEST"},
-                 "target": "STFS_NEXT24_DESCRIPTORS", "context": a.context, "deps": {"torch": torch.__version__, "numpy": np.__version__},
+                 "target": "STFS_NEXT24_DESCRIPTORS", "context": a.context, "deps": {"torch": str(torch.__version__), "numpy": str(np.__version__)},
                  "trained_until": trained_until, "best_training_loss": min(best, tr_loss), "history": history, "saved_at": _now(),
                  "resumed_from": resumed_from, "partial_epoch": partial}
         _atomic_save(torch, state, out / "last.pt")

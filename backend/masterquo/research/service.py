@@ -574,6 +574,8 @@ class ResearchModulesService:
             line = (r.stdout.strip().splitlines() or [""])[-1]
             res = json.loads(line[7:]) if line.startswith("RESULT ") else {}
             ok = isinstance(res, dict) and bool(res.get("ok"))
+            if not line.startswith("RESULT "):            # 1.46 arch: a crash goes to stderr - the reason was lost (detail '')
+                line = " | ".join((r.stderr or "").strip().splitlines()[-2:]) or f"kod wyjścia {r.returncode}"
         except subprocess.TimeoutExpired:
             ok, line = False, "TIMEOUT 300 s – proces przerwany"
         except (OSError, ValueError) as exc:

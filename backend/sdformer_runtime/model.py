@@ -164,3 +164,13 @@ class SDformerFlow(nn.Module):
 
 def n_params(m: nn.Module) -> int:
     return sum(p.numel() for p in m.parameters())
+
+
+def load_checkpoint(path):
+    """torch.load(weights_only=True) of last.pt (1.46: no pickle code execution for imported ZIPs). 1.46 arch: checkpoints written by
+    1.46.0 carry deps.torch = torch.__version__ (a TorchVersion, a str subclass) - weights_only refused every one of them
+    ("Unsupported global"), so no trained SDformerFlow could ever be activated. Only that type is allowed in addition; new checkpoints
+    store a plain str."""
+    from torch.torch_version import TorchVersion
+    with torch.serialization.safe_globals([TorchVersion]):
+        return torch.load(path, map_location="cpu", weights_only=True)

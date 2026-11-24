@@ -25,9 +25,9 @@ def main(argv=None) -> int:
     import numpy as np
     import torch
     from . import data as D
-    from .model import SDformerFlow
+    from .model import SDformerFlow, load_checkpoint
     torch.set_num_threads(a.threads)
-    ck = torch.load(Path(a.checkpoint) / "last.pt", map_location="cpu", weights_only=True)   # 1.46: no pickle code execution (imported ZIP)
+    ck = load_checkpoint(Path(a.checkpoint) / "last.pt")                     # weights_only (1.46) + TorchVersion of 1.46.0 checkpoints
     m = SDformerFlow()
     if ck.get("implementation_id") != IMPLEMENTATION_ID or ck.get("arch") != m.arch:
         print("RESULT " + json.dumps({"ok": False, "code": "INCOMPATIBLE", "error": "checkpoint innej implementacji / architektury"}))
