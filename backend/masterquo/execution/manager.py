@@ -40,6 +40,8 @@ class PositionManager:
         self.paper = paper
         self.reconciled_epoch = -1
         self._be_tries: dict = {}           # position_key -> BE retry state (F-06)
+        self._unsettled_seen = None         # w2 (I0712): (account_key, deals_loaded_at) of the last CLOSED_UNSETTLED scan
+        self._unsettled_alerted: set = set()
         self._stop = threading.Event()
         self._last_equity = 0.0
         self.last_error: str | None = None
@@ -167,19 +169,31 @@ class PositionManager:
     # ------------------------------------------------------------ MT5 positions
     def _manage_mt5_positions(self) -> None:
         b = self.bridge
+        acct = b.account_key
         rows = self.db.query("SELECT * FROM managed_positions WHERE state='OPEN' AND mode IN ('AUTO_DEMO','AUTO_LIVE') AND account_key=?",
-                             (b.account_key,))
-        if not rows:
-            return
+                             (acct,))
         with b._lock:
+            if b.account_key != acct:
+                return                                      # w2: account switched meanwhile - the lists below are another account's
             positions = {p["ticket"]: p for p in b.positions}
             deals = list(b.deals)
+            deals_at = b.deals_loaded_at
+        self._settle_unsettled(acct, positions, deals, deals_at)
+        if not rows:
+            return
         q = b.quote_status()
         for mp in rows:
             p = positions.get(mp["position_ticket"])
             if p is None:
-                self._settle_mt5(mp, deals)
+                # w2 (I0711/I0793, hunk f2ed7c2): no settlement before the deal history of THIS account is loaded (after an account
+                # switch / at start the lists were empty or another account's and an open position was marked CLOSED_UNSETTLED)
+                if deals_at is not None:
+                    self._settle_mt5(mp, deals, deals_at)
                 continue
+            if "missing" in self._note(mp):                 # w2 (I0711): the position is back in the terminal - the wait starts over
+                note = self._note(mp)
+                note.pop("missing", None)
+                self._save_note(mp, note)
             vol_now = float(p.get("volume") or 0)
             self._reconcile_partial(mp, vol_now)
             if abs(vol_now - mp["volume_open"]) > 1e-9:
@@ -388,22 +402,85 @@ class PositionManager:
         except Exception as exc:  # noqa: BLE001 - Lock flipped / worker down: nothing sent, retried with back-off
             self.log.warn("EXECUTION", "SL_TO_BE_REFUSED", f"Przesunięcie SL na BE nie wysłane: {type(exc).__name__}")
 
-    def _settle_mt5(self, mp: dict, deals: list[dict]) -> None:
+    # ------------------------------------------------------------ settlement (w2: I0711 / I0712 / I0726 / I0793)
+    SETTLE_LIMIT = timedelta(minutes=10)        # incomplete history / no deal at all: decided only this long after the position vanished
+    OFFSET_WAIT = timedelta(minutes=5)          # unknown server offset: closed_at = observed disappearance after this long
+    UNSETTLED_RELOAD = timedelta(seconds=60)    # CLOSED_UNSETTLED needs a deal reload at least this long after the disappearance
+
+    def _bridge_now(self):
+        fn = getattr(self.bridge, "now", None)
+        return fn() if callable(fn) else utcnow()
+
+    def _settle_mt5(self, mp: dict, deals: list[dict], deals_at=None, *, unsettled: bool = False) -> None:
+        """Settle a position that is no longer in the terminal - only from a deal history loaded AFTER it vanished.
+
+        w2: (I0711) the moment it vanished (`missing.first_missing_at`, bridge clock = the clock of deals_loaded_at) is stored in
+        exit_note and a deal reload is requested (neutral: only the history poll timer); settlement needs deals_loaded_at > that
+        moment and the closing volume >= the opening volume (IN deals of the position, else volume_initial). Past SETTLE_LIMIT and
+        >= 2 reloads the available closing deals are settled anyway (HISTORY_INCOMPLETE). (I0712) CLOSED_UNSETTLED only when there
+        is no closing deal at all SETTLE_LIMIT after the disappearance and a reload >= 60 s after it (was: 10 min after opened_at).
+        (I0726) an unknown server offset is never taken as 0: the settlement waits up to OFFSET_WAIT, then closed_at = the observed
+        disappearance (CLOSED_AT_OBSERVED). Nothing is sent to MT5; while waiting the row stays OPEN and is not managed."""
+        now = self._bridge_now()
+        note = self._note(mp)
+        miss = note.get("missing") or {}
+        if not miss.get("first_missing_at"):
+            if unsettled:                               # rows marked CLOSED_UNSETTLED before w2: the marking time is the observation
+                miss = {"first_missing_at": mp.get("closed_at") or iso(now), "reloads": 2, "last_deals_at": None}
+            else:
+                note["missing"] = {"first_missing_at": iso(now), "reloads": 0, "last_deals_at": iso(deals_at) if deals_at else None}
+                self._save_note(mp, note)
+                req = getattr(self.bridge, "request_deals_reload", None)
+                if callable(req):
+                    req()
+                self.log.write("INFO", "EXECUTION", "POSITION_GONE_WAITING_FOR_HISTORY",
+                               f"Pozycja {mp['position_ticket']} zniknęła z terminala – rozliczenie po wczytaniu historii transakcji.")
+                return
+        first = parse_iso(miss["first_missing_at"])
+        if deals_at is None or deals_at <= first:
+            return                                      # the deal list may predate the closing deal
+        if not unsettled and miss.get("last_deals_at") != iso(deals_at):
+            miss["reloads"] = int(miss.get("reloads") or 0) + 1
+            miss["last_deals_at"] = iso(deals_at)
+            note["missing"] = miss
+            self._save_note(mp, note)
+        late = now - first >= self.SETTLE_LIMIT
         mine = [d for d in deals if d.get("position_id") == mp["position_ticket"]]
         outs = [d for d in mine if d.get("entry") in (1, 2, 3)]
         if not outs:
-            if parse_iso(mp["opened_at"]) < utcnow() - timedelta(minutes=10):
+            if not unsettled and late and deals_at > first + self.UNSETTLED_RELOAD:
                 self.db.execute("UPDATE managed_positions SET state='CLOSED_UNSETTLED', closed_at=? WHERE position_key=?", (iso(utcnow()), mp["position_key"]))
                 self.log.warn("EXECUTION", "CLOSED_UNSETTLED", f"Pozycja {mp['position_ticket']} zniknęła, brak transakcji w historii – sprawdź historię w terminalu.")
             return
-        off = self.bridge.clock.offset or 0
+        flags = []
+        vol_in = sum(float(d.get("volume") or 0) for d in mine if d.get("entry") == 0) or float(mp.get("volume_initial") or 0)
+        vol = sum(float(d.get("volume") or 0) for d in outs)
+        if vol < vol_in - 1e-9:
+            if not (late and (unsettled or int(miss.get("reloads") or 0) >= 2)):
+                return                                  # e.g. only the TP1 partial is in the list - the final close is not loaded yet
+            flags.append("HISTORY_INCOMPLETE")
+        off = self.bridge.clock.offset
+        if off is None:
+            if now - first < self.OFFSET_WAIT:
+                if not miss.get("offset_wait_logged"):
+                    miss["offset_wait_logged"] = True
+                    note["missing"] = miss
+                    self._save_note(mp, note)
+                    self.log.write("WARNING", "EXECUTION", "SETTLE_WAITS_FOR_SERVER_OFFSET",
+                                   f"Pozycja {mp['position_ticket']}: rozliczenie czeka na pomiar przesunięcia czasu serwera.")
+                return
+            closed = first
+            flags.append("CLOSED_AT_OBSERVED")
+        else:
+            closed = from_epoch(max(d["time"] for d in outs) - off)
+        trade_id = f"{mp['mode']}-{mp['account_key']}-{mp['position_ticket']}"
+        if unsettled and self.db.one("SELECT 1 AS x FROM trades WHERE trade_id=?", (trade_id,)):
+            return                                      # w2 (I0712): an existing trades row is never overwritten (skipped)
         gross = sum(float(d.get("profit") or 0) for d in mine)
         comm = sum(float(d.get("commission") or 0) for d in mine)
         swap = sum(float(d.get("swap") or 0) for d in mine)
         fee = sum(float(d.get("fee") or 0) for d in mine)
-        vol = sum(float(d.get("volume") or 0) for d in outs)
         avg = sum(float(d["volume"]) * float(d["price"]) for d in outs) / vol if vol else None
-        closed = from_epoch(max(d["time"] for d in outs) - off)
         net = gross + comm + swap + fee
         cur = (self.bridge.account_status() or {}).get("currency")
         risk = mp.get("planned_risk_money")
@@ -411,13 +488,36 @@ class PositionManager:
         self.db.execute("""INSERT OR REPLACE INTO trades(trade_id, mode, source, account_key, position_ticket, decision_id, setup_id, strategy_id, symbol, side,
                            volume, entry_price, exit_price_avg, opened_at, closed_at, gross_pnl, commission, swap, fee, net_pnl, currency, planned_risk_money,
                            r_multiple, deals_json, status, exit_policy_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (f"{mp['mode']}-{mp['account_key']}-{mp['position_ticket']}", mp["mode"], "BOT" if not mp["adopted"] else "ADOPTED",
+                        (trade_id, mp["mode"], "BOT" if not mp["adopted"] else "ADOPTED",
                          mp["account_key"], mp["position_ticket"], mp["decision_id"], mp["setup_id"], mp["strategy_id"], mp["symbol"], mp["side"],
                          vol, mp["entry_price"], avg, mp["opened_at"], iso(closed), round(gross, 2), round(comm, 2), round(swap, 2), round(fee, 2),
                          round(net, 2), cur, risk, round(net / risk, 3) if risk else None, dumps(mine), "CLOSED", pol.get("version")))
+        if flags:                                       # trades.deals_json keeps its list format; the flags live in the position note
+            miss["settle_flags"] = flags
+            note["missing"] = miss
+            self._save_note(mp, note)
         self.db.execute("UPDATE managed_positions SET state='CLOSED', volume_open=0, closed_at=? WHERE position_key=?", (iso(closed), mp["position_key"]))
-        self.log.info("EXECUTION", "SETTLED", f"Pozycja {mp['position_ticket']} rozliczona: netto {round(net, 2)} {cur or ''}")
+        self.log.info("EXECUTION", "SETTLED", f"Pozycja {mp['position_ticket']} rozliczona: netto {round(net, 2)} {cur or ''}"
+                      + (f" ({', '.join(flags)})" if flags else ""))
         self.bus.publish("trade_settled", {"position": mp["position_ticket"], "net": round(net, 2)})
+
+    def _settle_unsettled(self, acct: str | None, positions: dict, deals: list[dict], deals_at) -> None:
+        """w2 (I0712): CLOSED_UNSETTLED rows of this account are settled when their closing deals appear in a NEW deal history (same
+        rules as _settle_mt5). Never restored to OPEN, never managed, nothing sent; a ticket back in the terminal is only reported."""
+        if deals_at is None or acct is None or self._unsettled_seen == (acct, deals_at):
+            return
+        self._unsettled_seen = (acct, deals_at)
+        rows = self.db.query("SELECT * FROM managed_positions WHERE state='CLOSED_UNSETTLED' AND mode IN ('AUTO_DEMO','AUTO_LIVE') AND account_key=?",
+                             (acct,))
+        for mp in rows:
+            if mp["position_ticket"] in positions:
+                if mp["position_key"] not in self._unsettled_alerted:
+                    self._unsettled_alerted.add(mp["position_key"])
+                    self.log.write("WARNING", "EXECUTION", "CLOSED_UNSETTLED_TICKET_IN_TERMINAL",
+                                   f"Pozycja {mp['position_ticket']} oznaczona jako zamknięta bez rozliczenia jest znów widoczna w terminalu – "
+                                   "nie jest zarządzana przez bota, sprawdź ją ręcznie.")
+                continue
+            self._settle_mt5(mp, deals, deals_at, unsettled=True)
 
     # ------------------------------------------------------------ PAPER
     def _manage_paper(self) -> None:
