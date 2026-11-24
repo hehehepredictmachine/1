@@ -579,6 +579,18 @@ func (e *Engine) Stop(timeout time.Duration) {
 		_ = cmd.Process.Kill()
 		<-exited
 	}
+	// 1.46: exited is closed right BEFORE afterExit releases the process (e.cmd = nil). Stop() returned in between, so Owned() could still
+	// be true right after it (TestEngineSupervisorIntegration "engine still running after Stop" in about 1 of 3 runs). Wait (bounded) until
+	// this process is no longer the owned engine; a newer engine started meanwhile (restart) also ends the wait.
+	for i := 0; i < 250; i++ {
+		e.mu.Lock()
+		still := e.cmd == cmd
+		e.mu.Unlock()
+		if !still {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func (e *Engine) Owned() bool {
