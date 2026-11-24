@@ -35,7 +35,7 @@ class SampleStore:
                cost: dict, synthetic: bool) -> bool:
         """Idempotent: a (setup_id, version) is stored once. Returns True when a new sample was created."""
         sid = f"{setup_id}:{version}"
-        if {"COMMISSION_UNKNOWN", "SPREAD_UNKNOWN"} & set(cost.get("flags") or []):     # 1.46: unknown spread too (was labelled as spread 0)
+        if {"COMMISSION_UNKNOWN", "SPREAD_UNKNOWN", "SLIPPAGE_POINT_UNKNOWN"} & set(cost.get("flags") or []):     # 1.46: unknown spread too
             quality = "COST_UNKNOWN"                   # the net label cannot be computed honestly -> never trained on
         if self.db.one("SELECT 1 AS x FROM ml_samples WHERE sample_id=?", (sid,)):
             return False
@@ -89,45 +89,107 @@ class SampleStore:
         return n
 
     # ------------------------------------------------------------ stats & snapshots
-    def counts(self, include_approx: bool, synthetic: bool) -> dict:
-        q = (" AND synthetic=1" if synthetic else " AND synthetic=0") + ("" if include_approx else " AND quality='HIGH'") + " AND quality!='COST_UNKNOWN'"
-        rows = self.db.query(f"SELECT status, label, COUNT(*) AS n FROM ml_samples WHERE 1=1{q} GROUP BY status, label")
+    @staticmethod
+    def _scope_sql(feed_ids=None, since: str | None = None, until: str | None = None) -> tuple[str, list]:
+        """1.46 w2 (I0061): optional scope of a selection - feed ids (e.g. the offline run's own BACKFILL:OFFLINE_<dataset_id>) and a
+        window of the decision time asof_utc (ISO UTC strings, inclusive). None = no restriction (the bot's own job)."""
+        q, args = "", []
+        if feed_ids is not None:
+            ids = [str(x) for x in feed_ids]
+            q += f" AND feed_id IN ({','.join('?' * len(ids))})" if ids else " AND 0"
+            args += ids
+        if since:
+            q += " AND asof_utc >= ?"
+            args.append(since)
+        if until:
+            q += " AND asof_utc <= ?"
+            args.append(until)
+        return q, args
+
+    # 1.46 w2 (I0048): labels of the old offline cost basis (labels.LEGACY_OFFLINE_COST_MODELS: slippage 0, commission / contract size)
+    _LEGACY_PRED = (f"(substr(source, 1, {len(lb.LEGACY_OFFLINE_SOURCE_PREFIX)}) = '{lb.LEGACY_OFFLINE_SOURCE_PREFIX}'"
+                    f" AND cost_model_version IN ({','.join(repr(v) for v in lb.LEGACY_OFFLINE_COST_MODELS)}))")
+    _LEGACY_COST = " AND NOT " + _LEGACY_PRED
+
+    def counts(self, include_approx: bool, synthetic: bool, *, feed_ids=None, since: str | None = None, until: str | None = None) -> dict:
+        sq, sa = self._scope_sql(feed_ids, since, until)
+        q = (" AND synthetic=1" if synthetic else " AND synthetic=0") + ("" if include_approx else " AND quality='HIGH'") + " AND quality!='COST_UNKNOWN'" \
+            + self._LEGACY_COST + sq
+        rows = self.db.query(f"SELECT status, label, COUNT(*) AS n FROM ml_samples WHERE 1=1{q} GROUP BY status, label", tuple(sa))
         out = {"by_status": {}, "labeled": 0, "pos": 0, "neg": 0}
         for r in rows:
             out["by_status"][r["status"]] = out["by_status"].get(r["status"], 0) + r["n"]
             if r["status"] == "LABELED":
                 out["labeled"] += r["n"]
                 out["pos" if r["label"] == 1 else "neg"] += r["n"]
-        out["unique_setups"] = (self.db.one(f"SELECT COUNT(DISTINCT setup_id) AS n FROM ml_samples WHERE status='LABELED'{q}") or {}).get("n", 0)
+        out["unique_setups"] = (self.db.one(f"SELECT COUNT(DISTINCT setup_id) AS n FROM ml_samples WHERE status='LABELED'{q}", tuple(sa)) or {}).get("n", 0)
         out["samples"] = sum(out["by_status"].values())
         world = " AND synthetic=1" if synthetic else " AND synthetic=0"      # 1.46: the excluded counts mixed the synthetic and the real world
         out["approx_excluded"] = 0 if include_approx else (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality NOT IN ('HIGH','COST_UNKNOWN') AND status='LABELED'"
-                                                                       + world) or {}).get("n", 0)
-        out["cost_unknown_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality='COST_UNKNOWN'" + world) or {}).get("n", 0)
+                                                                       + world + sq, tuple(sa)) or {}).get("n", 0)
+        out["cost_unknown_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE quality='COST_UNKNOWN'" + world + sq, tuple(sa)) or {}).get("n", 0)
+        legacy = " AND quality!='COST_UNKNOWN' AND status='LABELED'" + ("" if include_approx else " AND quality='HIGH'") + world + sq
+        out["legacy_cost_basis_excluded"] = (self.db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE " + self._LEGACY_PRED + legacy, tuple(sa))
+                                             or {}).get("n", 0)
         return out
 
-    def eligible(self, include_approx: bool, cutoff: datetime, synthetic: bool) -> list[dict]:
-        """Synthetic and real samples are never mixed: `synthetic` selects exactly one of the two worlds."""
+    def eligible(self, include_approx: bool, cutoff: datetime, synthetic: bool, *, feed_ids=None, since: str | None = None,
+                 until: str | None = None, report: dict | None = None) -> list[dict]:
+        """Synthetic and real samples are never mixed: `synthetic` selects exactly one of the two worlds. 1.46 w2: samples of the old
+        offline cost basis are never selected (I0048); feed_ids / since / until restrict the selection (I0061); one market event replayed
+        by several backfill feeds (overlapping exports: setup_id BF-<feed>-<tracker setup id>, the same tracker id and decision time) is
+        kept once - the first in time order (I0061). `report` (a dict) receives duplicates_dropped."""
+        sq, sa = self._scope_sql(feed_ids, since, until)
         q = "status='LABELED' AND label_known_utc <= ? AND quality!='COST_UNKNOWN' AND synthetic=" + ("1" if synthetic else "0")
         if not include_approx:
             q += " AND quality='HIGH'"
-        return self.db.query(f"""SELECT sample_id, setup_id, group_id, event_id, strategy_id, direction, timeframe, asof_utc, label_end_utc, label_known_utc,
-                                 features_json, label, outcome_r, quality, source, feature_schema_version FROM ml_samples WHERE {q} ORDER BY asof_utc""", (iso(cutoff),))
+        rows = self.db.query(f"""SELECT sample_id, setup_id, group_id, event_id, strategy_id, direction, timeframe, asof_utc, label_end_utc, label_known_utc,
+                                 features_json, label, outcome_r, quality, source, feature_schema_version, feed_id FROM ml_samples
+                                 WHERE {q}{self._LEGACY_COST}{sq} ORDER BY asof_utc""", (iso(cutoff), *sa))
+        rows, dropped = _drop_cross_feed_duplicates(rows)
+        if report is not None:
+            report["duplicates_dropped"] = dropped
+        return rows
 
-    def snapshot(self, out_dir: Path, *, include_approx: bool, synthetic: bool) -> dict:
+    def snapshot(self, out_dir: Path, *, include_approx: bool, synthetic: bool, feed_ids=None, since: str | None = None,
+                 until: str | None = None) -> dict:
         cutoff = utcnow()
-        rows = self.eligible(include_approx, cutoff, synthetic)
+        rep: dict = {}
+        rows = self.eligible(include_approx, cutoff, synthetic, feed_ids=feed_ids, since=since, until=until, report=rep)
         sid = "SNAP-" + cutoff.strftime("%Y%m%dT%H%M%SZ") + "-" + hashlib.sha256(str(len(rows)).encode() + cutoff.isoformat().encode()).hexdigest()[:6]
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f"{sid}.jsonl.gz"
         with gzip.open(path, "wt", encoding="utf-8") as fh:
             for r in rows:
                 fh.write(json.dumps(r) + "\n")
+        comp: dict = {"by_feed": {}, "by_source": {}, "by_quality": {}, "duplicates_dropped": rep.get("duplicates_dropped", 0)}
+        for r in rows:                                   # 1.46 w2 (I0061): what the model is trained on, stated in the manifest
+            for k, col in (("by_feed", "feed_id"), ("by_source", "source"), ("by_quality", "quality")):
+                comp[k][r.get(col)] = comp[k].get(r.get(col), 0) + 1
         manifest = {"snapshot_id": sid, "cutoff_utc": iso(cutoff), "rows": len(rows), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                     "include_approx": include_approx, "synthetic": synthetic, "feature_schema_version": fe.FEATURE_SCHEMA_VERSION,
-                    "label_policy_version": lb.LABEL_POLICY_VERSION, "path": str(path)}
+                    "label_policy_version": lb.LABEL_POLICY_VERSION, "cost_model_version": lb.COST_MODEL_VERSION, "path": str(path),
+                    "scope": {"feed_ids": None if feed_ids is None else list(feed_ids), "since": since, "until": until}, "composition": comp}
         (out_dir / f"{sid}.manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         return manifest
+
+
+def _drop_cross_feed_duplicates(rows: list[dict]) -> tuple[list[dict], int]:
+    """Backfill samples (source BACKFILL_<feed>, setup_id BF-<feed>-<tracker setup id>) of different feeds that are the same market event:
+    the tracker setup id (hash of symbol / strategy / direction / TF / structure, account 'backfill') and the decision time are equal.
+    The first in the given order is kept; live samples are never touched."""
+    seen, out, dropped = set(), [], 0
+    for r in rows:
+        src = r.get("source") or ""
+        if src.startswith("BACKFILL_"):
+            pre = "BF-" + src.removeprefix("BACKFILL_") + "-"
+            key = ((r.get("setup_id") or "").removeprefix(pre), r.get("asof_utc"))
+            if key in seen:
+                dropped += 1
+                continue
+            seen.add(key)
+        out.append(r)
+    return out, dropped
 
 
 def load_snapshot(path: str) -> list[dict]:

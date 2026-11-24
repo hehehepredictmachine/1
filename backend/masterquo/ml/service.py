@@ -31,6 +31,7 @@ from .. import paths
 from ..db.database import dumps
 from ..timeutil import iso, parse_iso, utcnow
 from . import features as fe
+from . import labels as lb
 from .dataset import SampleStore
 from .registry import Registry
 
@@ -188,7 +189,6 @@ class MLService:
             else:                               # 1.46: no spread in the quote nor in symbol_info was a spread of 0 with quality HIGH
                 spread = 0.0                    # placeholder only: SPREAD_UNKNOWN -> the sample is COST_UNKNOWN (never trained on)
                 flags.append("SPREAD_UNKNOWN")
-        slip = (cfg.costs.slippage_stress_points or 0) * point
         with self.bridge._lock:
             deals = list(getattr(self.bridge, "deals", []) or [])
         res = resolve_commission(cfg.costs, deals, cfg.mt5.symbol)
@@ -202,14 +202,10 @@ class MLService:
             value_1 = None
         if not value_1:
             value_1 = float(info.get("trade_contract_size") or 0) or None
-            flags.append("PRICE_VALUE_FROM_CONTRACT_SIZE_ASSUMES_ACCOUNT_CCY_EQ_QUOTE_CCY")
-        if per_lot is None or not value_1:
-            flags.append("COMMISSION_UNKNOWN")
-            comm = 0.0
-        else:
-            comm = float(per_lot) / float(value_1)
-        return {"spread": float(spread), "slippage": float(slip), "commission": comm, "flags": flags,
-                "commission_source": res.get("source"), "commission_per_lot_per_side": per_lot}
+            flags.append(lb.PRICE_VALUE_FLAG_CONTRACT)
+        # 1.46 w2 (I0048): the one label-cost function shared with the offline backfill (ml/offline.cost_of) - same values as before here
+        return lb.label_cost(spread=spread, point=point, slippage_points=cfg.costs.slippage_stress_points, per_lot=per_lot, value_1=value_1,
+                             flags=flags, commission_source=res.get("source"))
 
     # ------------------------------------------------------------ quotes (for ambiguous bars)
     def _tick_loop(self) -> None:
