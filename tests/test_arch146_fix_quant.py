@@ -504,6 +504,41 @@ class TestD4RegimeOnlyTightens(AssessFixture, unittest.TestCase):
         self.assertIsNone(a["would_hold"])
 
 
+# ================================================================================================ review: versions after the update
+def ledger_with_versions(path, versions, *, labelled=True):
+    """Labelled SH rows of one task: versions[i] = the feature_version of row i (features.LEGACY_ROWS = a row from before 1.46)."""
+    from masterquo.evaluation import contract as EK
+    from masterquo.quant import events as QE
+    from masterquo.quant.ledger import QuantLedger
+    led = QuantLedger(path)
+    spec = QE.spec_from_candidate(EK.sh_candidate(su_ready(), regime={"state": "TREND"}).to_dict())
+    for i, fv in enumerate(versions):
+        led.add_row({"row_id": f"r{i}", "instrument": "XAUUSD", "engine": "SH_SCALPING", "strategy": "SCALPING", "direction": "LONG",
+                     "decision_ts": 1e9 + i, "task_hash": spec.task_hash(), "event_id": spec.event_id, "spec": spec.to_dict(),
+                     "features": {"plan:gain_r": 1.5}, "data_kind": "REAL", "matures_at": 1e9 + i, "feature_version": fv})
+        if labelled:
+            led.label(f"r{i}", "LABELLED", {"y_event": bool(i % 2), "net_r": 1.0}, 1e9 + i + 60)
+    return led, spec
+
+
+class TestTabICLReferenceRowsOneVersion(unittest.TestCase):
+    """The TabICL candidate gets FEAT-3 features, but its live reference rows mixed FEAT-1 and FEAT-3 rows (st:mm:kalman_cross:aligned and
+    ctx:dxy_* mean different things there). Confidence is RANKING_AND_PRESENTATION only (outside the verdict and the DecisionRecord hash)."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_live_rows_are_of_the_current_feature_version(self):
+        from masterquo.quant import features as F
+        from masterquo.quant import tabicl as T
+        led, spec = ledger_with_versions(Path(self.td.dir) / "l.sqlite", [F.LEGACY_ROWS, F.CURRENT, F.LEGACY_ROWS, F.CURRENT, F.CURRENT])
+        rows = T.live_rows(led, "XAUUSD", T.event_key(spec), 2e9)
+        self.assertEqual(sorted(r["id"] for r in rows), ["r1", "r3", "r4"])
+        ctx = T.build_context(led, "XAUUSD", T.event_key(spec), 2e9)
+        self.assertEqual(ctx["live_rows"], 3)
+
+
 # ================================================================================================ D11
 class TestMonteCarloAdapterD11(unittest.TestCase):
     """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did

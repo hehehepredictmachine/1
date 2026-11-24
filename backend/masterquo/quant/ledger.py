@@ -69,7 +69,7 @@ class QuantLedger:
 
     def training_rows(self, instrument: str, task_hash: str | None = None, *, feature_version: str | None = None) -> list[dict]:
         """Labelled rows; each carries its feature_version (NULL of a pre-1.46 row -> features.LEGACY_ROWS). feature_version=... keeps
-        only that version (MetaModel training); None = every row (TabICL reference rows, unchanged)."""
+        only that version (MetaModel training); None = every row with its version (TabICL keeps the CURRENT ones - tabicl.live_rows)."""
         q = "SELECT * FROM rows WHERE status='LABELLED' AND instrument=? AND y IS NOT NULL" + (" AND task_hash=?" if task_hash else "")
         with self._lock:
             rs = [dict(x) for x in self.c.execute(q, (instrument, task_hash) if task_hash else (instrument,)).fetchall()]
