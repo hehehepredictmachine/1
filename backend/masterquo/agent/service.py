@@ -36,7 +36,17 @@ from .tools import TOOL_DEFS, Toolbox
 
 log = logging.getLogger("masterquo.agent")
 PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / "MASTERQUO_AGENT_SYSTEM_PROMPT.md"
-FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+# 1.46 arch (I0152 / D13, safe variant): claude-fable-5-2 accepts the server-side refusal fallback like its predecessor. _create uses the
+# fallback only OUTSIDE gate_policy REQUIRED (see _create).
+FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+# 1.46 arch (I0152 / D13, safe variant): models WITHOUT an entry in the budget table agent.price_per_mtok whose cost is shown ONLY as an
+# estimate (status() / last_run). Never written to agent_runs.est_cost_usd, so spent_today() and the daily budget (_preflight) stay exactly
+# as before for them: an enforced budget exhausted under the default VETO policy turns the AI veto into AI_NO_VETO (S0 - more entries).
+# USD per 1M tokens, Anthropic price list cached 2026-11-03 (cache read has its own rate, not 0.1 x input).
+ESTIMATE_ONLY_PRICES: dict[str, dict[str, float]] = {"claude-fable-5-2": {"input": 8.0, "output": 40.0, "cache_read": 0.20}}
+ESTIMATE_ONLY_NOTE = ("Szacunek wg cennika 2026-11-03 – NIE jest wliczany do dziennego budżetu agenta (model spoza tabeli "
+                      "agent.price_per_mtok; budżet tego modelu nie jest egzekwowany).")
+_GATE_RANK = {"PASS": 0, "PENDING": 1, "FAIL": 2, "DISAGREE": 3}   # I0866: a user question can only make the AI gate stricter
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TRACKED_SETUPS = 2000   # 1.46: by_setup / _started_seq bound (assessments expire after decision_ttl_seconds anyway)
 
@@ -78,8 +88,11 @@ class ClaudeAgent:
         self.disable_fallback = False
         self.no_structured: set[str] = set()
         self.no_effort: set[str] = set()
-        self.by_setup: dict[str, dict] = {}       # setup_id -> latest applied result (bounded, see _track)
-        self._started_seq: dict[str, int] = {}     # setup_id -> latest started run seq (bounded, see _track)
+        self.by_setup: dict[str, dict] = {}       # setup_id -> latest applied ASSESSMENT result (bounded, see _track)
+        self._started_seq: dict[str, int] = {}     # setup_id -> latest started assessment run seq (bounded, see _track)
+        # 1.46 arch (I0866): answers to USER_QUESTION are kept apart from the gate assessment (they can only block, see _strict_gate)
+        self.by_question: dict[str, dict] = {}     # setup_id -> latest applied USER_QUESTION result (bounded, see _track)
+        self._started_q_seq: dict[str, int] = {}   # setup_id -> latest started USER_QUESTION run seq (bounded, see _track)
         self._seq = 0
         self.pending: dict[str, dict] = {}
         self.last_result: dict | None = None
@@ -124,7 +137,29 @@ class ClaudeAgent:
                 "spent_today_usd_estimate": round(self.spent_today(), 4), "daily_budget_usd": self.cfg.daily_budget_usd,
                 "required_for_entry": self.policy() == "REQUIRED", "gate_policy": self.policy(), "pending": list(self.pending.values()),
                 "backoff_seconds": max(0, round(self.backoff_until - time.monotonic(), 1)), "last_run": self.last_run_meta,
-                "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura."}
+                "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura.",
+                "warnings": self.cost_warnings(), "cost_estimate_only": self._estimate_only_info(self.model())}
+
+    def cost_warnings(self) -> list[dict]:
+        """1.46 arch (I0867, S1 subset): a model without a price in agent.price_per_mtok stores est_cost_usd = NULL and spent_today() counts
+        it as 0, so the daily budget never stops it. Shown as a warning only - spent_today() / _preflight are unchanged (enforcing the budget
+        under the default VETO policy would turn vetoes into AI_NO_VETO_DAILY_BUDGET_EXHAUSTED = more entries; that needs an owner decision)."""
+        table = self.cfg.price_per_mtok or {}
+        lm = self.last_run_meta or {}
+        out: list[dict] = []
+        for m in (self.model(), lm.get("cost_model") if lm.get("cost_status") == "UNKNOWN_PRICE" else None):
+            if m and not table.get(m) and all(w["model"] != m for w in out):
+                out.append({"code": "BUDGET_NOT_ENFORCEABLE_UNKNOWN_PRICE", "model": m,
+                            "message_pl": f"Model {m} nie ma ceny w tabeli agent.price_per_mtok: koszt jego przebiegów zapisywany jest jako "
+                                          f"nieznany (liczony w budżecie jako 0), więc dzienny budżet {self.cfg.daily_budget_usd} USD go nie "
+                                          "ogranicza."})
+        return out
+
+    def _estimate_only_info(self, model: str | None) -> dict | None:
+        p = ESTIMATE_ONLY_PRICES.get(model or "")
+        if not p or (self.cfg.price_per_mtok or {}).get(model):     # a price the user put into the table is the real (budgeted) one
+            return None
+        return {"model": model, "usd_per_mtok": dict(p), "counted_in_budget": False, "note": ESTIMATE_ONLY_NOTE}
 
     # ------------------------------------------------------------ scheduling (thread-safe entry points)
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -253,7 +288,26 @@ class ClaudeAgent:
             # 1.46: snapshot first - this runs in the engine thread while the loop / API threads add and pop entries
             # (iterating the live dict raised 'dictionary changed size during iteration' in the decision path)
             busy = any(p.get("setup_id") == setup["setup_id"] for p in list(self.pending.values()))
-            return {"status": "PENDING", "reason_codes": ["AI_ASSESSMENT_RUNNING" if busy else "AI_ASSESSMENT_MISSING"]}
+            g = {"status": "PENDING", "reason_codes": ["AI_ASSESSMENT_RUNNING" if busy else "AI_ASSESSMENT_MISSING"]}
+        else:
+            g = self._judge(res, setup, session_epoch=session_epoch, account_key=account_key, now_iso=now_iso)
+        # 1.46 arch (I0866): an answer to a user question ("nie zmienia blokad") newer than the assessment can only make the gate STRICTER
+        # (order DISAGREE > FAIL > PENDING > PASS). Its PASS never replaces a missing / failed / vetoing assessment. In 1.45 the answer simply
+        # replaced the assessment: a BUY answer lifted a veto, a WAIT answer vetoed - the second stays (same block as before).
+        q = self.by_question.get(setup["setup_id"])
+        if q and q.get("run_seq", -1) > (res or {}).get("run_seq", -1):
+            gq = self._judge(q, setup, session_epoch=session_epoch, account_key=account_key, now_iso=now_iso)
+            if gq["status"] != "PASS":
+                if _GATE_RANK[gq["status"]] > _GATE_RANK[g["status"]]:
+                    g = {**gq, "reason_codes": list(gq.get("reason_codes") or []) + ["AI_USER_QUESTION_ANSWER"]}
+                elif gq["status"] == g["status"] == "PENDING":
+                    g = {**g, "reason_codes": list(g.get("reason_codes") or []) + [c for c in gq.get("reason_codes") or []
+                                                                                    if c not in (g.get("reason_codes") or [])]}
+        return g
+
+    @staticmethod
+    def _judge(res: dict, setup: dict, *, session_epoch: int, account_key: str | None, now_iso: str) -> dict:
+        """Gate verdict of one stored run result for a CONFIRMED setup (the 1.45 rules, unchanged)."""
         codes = []
         if res["status"] != "OK":
             return {"status": "FAIL", "reason_codes": ["AI_RUN_" + res["status"]], "agent_decision_id": res.get("decision_id")}
@@ -282,8 +336,8 @@ class ClaudeAgent:
             if req["trigger"] in ("USER_QUESTION", "SETUP_CONFIRMED") or why not in ("MIN_INTERVAL",):
                 self.state_detail = why
             if req["trigger"] == "SETUP_CONFIRMED" and req["setup_id"]:
-                # the gate must show why the confirmed setup has no AI assessment
-                self._track(self.by_setup, req["setup_id"], {"status": why, "decision_id": None})
+                # the gate must show why the confirmed setup has no AI assessment (run_seq: newer than every earlier question, I0866)
+                self._track(self.by_setup, req["setup_id"], {"status": why, "decision_id": None, "run_seq": self._seq})
             self._store_skipped(req, why)
             return
         ctx = self.context_provider(req["snapshot_id"]) or self.context_provider(None)
@@ -292,8 +346,11 @@ class ClaudeAgent:
             return
         self._seq += 1
         seq = self._seq
+        # 1.46 arch (I0866): only runs that ASSESS the setup feed by_setup. A USER_QUESTION run neither replaces the assessment nor marks a
+        # running assessment as superseded; its answer goes to by_question and can only make the gate stricter (_strict_gate).
+        assesses = req["trigger"] != "USER_QUESTION"
         if req["setup_id"]:
-            self._track(self._started_seq, req["setup_id"], seq)
+            self._track(self._started_seq if assesses else self._started_q_seq, req["setup_id"], seq)
         if req["trigger"] == "USER_QUESTION":
             self.last_user_run = time.monotonic()
         else:
@@ -301,9 +358,14 @@ class ClaudeAgent:
         self.state, self.state_detail = "RUNNING", req["trigger"]
         self.bus.publish("agent", self.status())
         result = await self.run_once(req, ctx)
-        # A late answer never overrides a newer run for the same setup.
-        if req["setup_id"] and self._started_seq.get(req["setup_id"]) != seq:
+        result["run_seq"] = seq
+        # A late answer never overrides a newer run (of the same kind) for the same setup.
+        started = self._started_seq if assesses else self._started_q_seq
+        if req["setup_id"] and started.get(req["setup_id"]) != seq:
             result["status_note"] = "SUPERSEDED_BY_NEWER_RUN"
+        elif req["setup_id"] and not assesses:
+            result["status_note"] = "USER_QUESTION_ANSWER_CAN_ONLY_BLOCK"
+            self._track(self.by_question, req["setup_id"], result)
         elif req["setup_id"]:
             self._track(self.by_setup, req["setup_id"], result)
         if result["status"] == "OK":
@@ -345,6 +407,16 @@ class ClaudeAgent:
         pin, pout = price
         cost = (usage.get("input_tokens", 0) * pin + usage.get("cache_creation_input_tokens", 0) * pin * 1.25 +
                 usage.get("cache_read_input_tokens", 0) * pin * 0.1 + usage.get("output_tokens", 0) * pout) / 1_000_000
+        return round(cost, 6)
+
+    def _estimate_only_cost(self, model: str | None, usage: dict) -> float | None:
+        """I0152: display-only estimate for a model from ESTIMATE_ONLY_PRICES (never stored as est_cost_usd, never in the budget)."""
+        info = self._estimate_only_info(model)
+        if not info:
+            return None
+        p = info["usd_per_mtok"]
+        cost = (usage.get("input_tokens", 0) * p["input"] + usage.get("cache_creation_input_tokens", 0) * p["input"] * 1.25 +
+                usage.get("cache_read_input_tokens", 0) * p["cache_read"] + usage.get("output_tokens", 0) * p["output"]) / 1_000_000
         return round(cost, 6)
 
     def _user_message(self, req: dict, ctx: dict) -> str:
@@ -455,6 +527,9 @@ class ClaudeAgent:
             status, error, unexpected = "INTERNAL_ERROR", f"{type(e).__name__}: {e}"[:200], e
         latency = int((time.monotonic() - t0) * 1000)
         cost = None if unexpected is not None else self._cost(served_model or model, usage_total)
+        # 1.46 arch (I0867 / I0152): why the cost is NULL + an estimate-only figure; neither is written to est_cost_usd (budget unchanged)
+        cost_status = "PRICED" if cost is not None else ("NOT_COMPUTED" if unexpected is not None else "UNKNOWN_PRICE")
+        est_display = self._estimate_only_cost(served_model or model, usage_total) if cost_status == "UNKNOWN_PRICE" else None
         now = utcnow()
         rec = None
         if status == "OK" and assessment is not None:
@@ -473,7 +548,9 @@ class ClaudeAgent:
                   "tool_calls": toolbox.log, "finished_at": iso(now), "question": req.get("question"), "decision_id": (rec or {}).get("decision_id")}
         self.last_run_meta = {"run_id": run_id, "status": status, "model_id": served_model or model, "latency_ms": latency,
                               "finished_at": iso(now), "est_cost_usd": cost, "trigger": req["trigger"], "error": error,
-                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"]}
+                              "input_tokens": usage_total["input_tokens"], "output_tokens": usage_total["output_tokens"],
+                              "cost_status": cost_status, "cost_model": served_model or model, "est_cost_usd_display": est_display,
+                              "cost_display_note": ESTIMATE_ONLY_NOTE if est_display is not None else None}
         self.db.execute("""INSERT INTO agent_runs(run_id, started_at, finished_at, trigger, snapshot_id, setup_id, model_requested, model_id,
                            prompt_version, status, error_code, latency_ms, input_tokens, output_tokens, cache_read_tokens, est_cost_usd,
                            tool_calls, output_json, question) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -499,7 +576,11 @@ class ClaudeAgent:
                   cache_control={"type": "ephemeral"})
         if oc:
             kw["output_config"] = oc
-        use_fb = self.cfg.use_refusal_fallback and not self.disable_fallback and model in FALLBACK_MODELS
+        # 1.46 arch (I0152 / D13, safe variant): no server-side fallback under gate_policy REQUIRED - there a refusal must stay a failed
+        # assessment (AI_RUN_REFUSED blocks the entry); a fallback model's agreeing answer would pass a setup that is blocked without it.
+        # Under VETO / ADVISORY a refusal never blocks, so the fallback can only add a DISAGREE (stricter).
+        use_fb = (self.cfg.use_refusal_fallback and not self.disable_fallback and model in FALLBACK_MODELS
+                  and self.policy() != "REQUIRED")
         try:
             if use_fb:
                 return await client.beta.messages.create(**kw, betas=[FALLBACK_BETA], fallbacks="default")
