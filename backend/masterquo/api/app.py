@@ -2732,7 +2732,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/quant/assessment")
     def quant_assessments(limit: int = Query(30, ge=1, le=200)):
         q = _quant()
-        return {"items": q.ledger.assessments(limit), "mode": q.mode(),
+        from ..quant.service import with_label_policy
+        return {"items": with_label_policy(q.ledger.assessments(limit)), "mode": q.mode(),
                 "note": "brak skalibrowanego wyniku = brak wytrenowanego modelu dla tego zdarzenia (nie 0 %, nie 50 %)"}
 
     @app.post("/api/v1/quant/assessment")

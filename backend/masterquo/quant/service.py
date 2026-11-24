@@ -60,6 +60,12 @@ def qdir() -> Path:
     return p
 
 
+def with_label_policy(items: list[dict]) -> list[dict]:
+    """w2 (I0031): the outcome definition of Quant ledger rows in the API view (never stored): the EventSpec simulation of the
+    assessment's task (quant/events.simulate - BE after TP2, candle spread), named by its task hash."""
+    return [{**x, "label_policy": "QUANT_EVENTSPEC" + (f"/{x['task_hash']}" if x.get("task_hash") else "")} for x in items]
+
+
 class Settings:
     def __init__(self, path: Path):
         self.path = path

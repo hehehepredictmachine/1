@@ -22,6 +22,11 @@ from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions,
 TFS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
 
 
+# w2 (I0031): the outcome definition of scalp_shadow rows (_outcome / replay.walk on M1, net of costs, full TP1/TP2/BE cycle) - the same
+# label ML scalp samples and NSS reuse; shown in the views next to the other ledgers' policies, never stored
+LABEL_POLICY = "SCALP_REPLAY_NET_V1"
+
+
 class ScalpService:
     def __init__(self, cfg_store, bridge, db, bus, log, news=None, forecast=None):
         self.cfg_store, self.bridge, self.db, self.bus, self.log, self.news, self.forecast = cfg_store, bridge, db, bus, log, news, forecast
@@ -434,6 +439,7 @@ class ScalpService:
             for k in ("reasons", "plan", "gates", "hedge", "outcome"):
                 if r.get(k):
                     r[k] = json.loads(r[k])
+            r["label_policy"] = LABEL_POLICY          # w2 (I0031): view field only (the stored row is unchanged)
         return rows
 
     def summary(self) -> dict:
