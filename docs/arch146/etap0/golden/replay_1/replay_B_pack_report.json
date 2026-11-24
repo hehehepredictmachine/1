@@ -1,0 +1,887 @@
+{
+ "schema": "PMW-SH-PACK-REPLAY-1",
+ "created_at": "2026-03-04T08:00:06.863879Z",
+ "dataset": "SYNTH-7-6000",
+ "data_kind": "SYNTHETIC_TEST",
+ "instrument": "XAUUSD",
+ "symbol": "XAUUSD-",
+ "tf_sources": {
+  "M1": "NATIVE",
+  "M5": "NATIVE",
+  "M15": "NATIVE",
+  "H1": "NATIVE",
+  "M3": "RESAMPLED_FROM_M1"
+ },
+ "m1_bars": 6000,
+ "first": "2026-02-26T00:00:00Z",
+ "last": "2026-03-04T07:59:00Z",
+ "pack_version": "PMW-SH-PACK-2.0.0",
+ "pack_hash": "8e0a7b4ee569c6b8",
+ "costs": {
+  "c_round_trip_price": 0.2,
+  "commission": "scenariusz (nieznana)",
+  "slippage_price": 0.05,
+  "spread": "z kolumny spread świecy",
+  "stress": {
+   "extra_spread": 0.2,
+   "extra_slippage": 0.1
+  }
+ },
+ "ambiguous_policy": "STOP_FIRST (wrażliwość: wynik bez niejednoznacznych świec w statystykach)",
+ "fill_rule": "następne otwarcie M1 po zamknięciu triggera; BUY po Ask (Bid + spread), SELL po Bid",
+ "multiple_testing": "20 wariantów × TF – wszystkie raportowane; DSR/PBO wymagają większej liczby niezależnych prób",
+ "seconds": 5.6,
+ "variants": {
+  "PMW_HG01|M5": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 338,
+    "WAIT:WARMING_UP": 621
+   },
+   "config_hash": "a1b832ebfa2882ee",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG01|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "a1b832ebfa2882ee",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG02|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "0c1031b814d6424e",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG02|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "0c1031b814d6424e",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG03|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "99a0258f908a5442",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG04|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "9e289cf500790dab",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG05|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "51fcb6c0387fb449",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG05|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "51fcb6c0387fb449",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG06|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "66201c0d1af4ae98",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG07|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "00049ff78068f3fd",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG07|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "00049ff78068f3fd",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG08|M5": {
+   "counts": {
+    "WAIT:REGIME_NOT_RANGE": 740,
+    "WAIT:WARMING_UP": 219
+   },
+   "config_hash": "a058f0095aac0de8",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG09|M5": {
+   "counts": {
+    "WAIT:WARMING_UP": 959
+   },
+   "config_hash": "3f4ba49c0116d3bb",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG09|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "3f4ba49c0116d3bb",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG10|M5": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 338,
+    "WAIT:WARMING_UP": 621
+   },
+   "config_hash": "a4d9dc621e28e736",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_HG10|M15": {
+   "counts": {
+    "WAIT:WARMING_UP": 319
+   },
+   "config_hash": "a4d9dc621e28e736",
+   "modes": {
+    "HEDGE": {
+     "n": 0
+    },
+    "NO_HEDGE": {
+     "n": 0
+    },
+    "REDUCE": {
+     "n": 0
+    }
+   },
+   "hedge_comparison": {
+    "expectancy": {
+     "HEDGE": null,
+     "NO_HEDGE": null,
+     "REDUCE": null
+    },
+    "dominated_by": null,
+    "activations": 0,
+    "hedge_pnl_price": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC01|M1": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 2704,
+    "NO_TRADE:TARGET_UNREACHABLE": 304,
+    "WAIT:NO_TRIGGER": 575,
+    "WAIT:SWING_BROKEN": 402,
+    "WAIT:NO_PULLBACK": 814
+   },
+   "config_hash": "f2d0e09579e82ddf",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC01|M3": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 900,
+    "NO_TRADE:TARGET_UNREACHABLE": 90,
+    "WAIT:NO_TRIGGER": 213,
+    "WAIT:SWING_BROKEN": 66,
+    "WAIT:NO_PULLBACK": 330
+   },
+   "config_hash": "f2d0e09579e82ddf",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC02|M1": {
+   "counts": {
+    "WAIT:NO_RECLAIM_RETEST": 4658,
+    "WAIT:NO_VOLUME": 4,
+    "WAIT:WARMING_UP": 60,
+    "NO_TRADE:TARGET_UNREACHABLE": 34,
+    "WAIT:VWAP_CHOP": 43
+   },
+   "config_hash": "c152551e8ec44cc6",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC02|M3": {
+   "counts": {
+    "WAIT:NO_RECLAIM_RETEST": 1509,
+    "WAIT:NO_VOLUME": 4,
+    "WAIT:WARMING_UP": 60,
+    "WAIT:VWAP_CHOP": 13,
+    "NO_TRADE:TARGET_UNREACHABLE": 13
+   },
+   "config_hash": "c152551e8ec44cc6",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC03|M1": {
+   "counts": {
+    "WAIT:NO_OPENING_RANGE": 4433,
+    "WAIT:NO_BREAK_RETEST": 362,
+    "NO_TRADE:TARGET_UNREACHABLE": 4
+   },
+   "config_hash": "44f1125a684ddb04",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC03|M3": {
+   "counts": {
+    "WAIT:NO_OPENING_RANGE": 1476,
+    "WAIT:NO_BREAK_RETEST": 120,
+    "NO_TRADE:TARGET_UNREACHABLE": 3
+   },
+   "config_hash": "44f1125a684ddb04",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC03|M5": {
+   "counts": {
+    "WAIT:NO_OPENING_RANGE": 881,
+    "WAIT:NO_BREAK_RETEST": 76,
+    "NO_TRADE:TARGET_UNREACHABLE": 2
+   },
+   "config_hash": "44f1125a684ddb04",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC04|M3": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 564,
+    "WAIT:NO_BREAK_RETEST": 427,
+    "WAIT:ADX_LOW": 603,
+    "NO_TRADE:TARGET_UNREACHABLE": 5
+   },
+   "config_hash": "3a2477bd29174f44",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC04|M5": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 338,
+    "WAIT:NO_BREAK_RETEST": 254,
+    "WAIT:ADX_LOW": 363,
+    "NO_TRADE:TARGET_UNREACHABLE": 4
+   },
+   "config_hash": "3a2477bd29174f44",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC05|M1": {
+   "counts": {
+    "WAIT:NO_SQUEEZE": 3724,
+    "WAIT:NO_TRIGGER": 955,
+    "NO_TRADE:TARGET_UNREACHABLE": 79,
+    "WAIT:CONTEXT_NOT_ALIGNED": 35,
+    "READY:OK": 1
+   },
+   "config_hash": "69bebc172e8bddca",
+   "metrics": {
+    "n": 1,
+    "expectancy_r": 2.1751,
+    "profit_factor": null,
+    "win_rate": 1.0,
+    "win_rate_ci95": [
+     0.2065,
+     1.0
+    ],
+    "avg_win_r": 2.1751,
+    "avg_loss_r": null,
+    "max_drawdown_r": 0.0,
+    "expectancy_ci95_day_block": null,
+    "avg_minutes": 5.0,
+    "ambiguous_stop_first": 0,
+    "expectancy_ex_ambiguous": 2.1751,
+    "mae_r_avg": 0.301,
+    "mfe_r_avg": 2.504,
+    "paths": {
+     "TP2": 1
+    },
+    "segments": [],
+    "days": 1
+   },
+   "stress_expectancy_r": 1.6927,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC05|M3": {
+   "counts": {
+    "WAIT:NO_SQUEEZE": 1273,
+    "WAIT:NO_TRIGGER": 290,
+    "NO_TRADE:TARGET_UNREACHABLE": 26,
+    "WAIT:CONTEXT_NOT_ALIGNED": 10
+   },
+   "config_hash": "69bebc172e8bddca",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC05|M5": {
+   "counts": {
+    "WAIT:NO_SQUEEZE": 767,
+    "WAIT:NO_TRIGGER": 169,
+    "NO_TRADE:TARGET_UNREACHABLE": 23
+   },
+   "config_hash": "69bebc172e8bddca",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC06|M1": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 1019,
+    "WAIT:NO_SWEEP_RECLAIM": 3761,
+    "NO_TRADE:TARGET_UNREACHABLE": 19
+   },
+   "config_hash": "a7488da694410e0c",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC06|M3": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 339,
+    "WAIT:NO_SWEEP_RECLAIM": 1239,
+    "NO_TRADE:TARGET_UNREACHABLE": 21
+   },
+   "config_hash": "a7488da694410e0c",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC07|M1": {
+   "counts": {
+    "WAIT:REGIME_NOT_RANGE": 3704,
+    "WAIT:NO_TRIGGER": 947,
+    "WAIT:ADX_HIGH": 140,
+    "NO_TRADE:TARGET_UNREACHABLE": 8
+   },
+   "config_hash": "18b7feea8c37fc4f",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC07|M3": {
+   "counts": {
+    "WAIT:REGIME_NOT_RANGE": 1234,
+    "WAIT:NO_TRIGGER": 319,
+    "WAIT:ADX_HIGH": 45,
+    "NO_TRADE:TARGET_UNREACHABLE": 1
+   },
+   "config_hash": "18b7feea8c37fc4f",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC08|M1": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 2704,
+    "WAIT:NO_TRIGGER": 2054,
+    "NO_TRADE:TARGET_UNREACHABLE": 36,
+    "READY:OK": 1
+   },
+   "config_hash": "a4ff04f1c154410c",
+   "metrics": {
+    "n": 1,
+    "expectancy_r": -1.0,
+    "profit_factor": 0.0,
+    "win_rate": 0.0,
+    "win_rate_ci95": [
+     0.0,
+     0.7935
+    ],
+    "avg_win_r": null,
+    "avg_loss_r": -1.0,
+    "max_drawdown_r": -1.0,
+    "expectancy_ci95_day_block": null,
+    "avg_minutes": 4.0,
+    "ambiguous_stop_first": 0,
+    "expectancy_ex_ambiguous": -1.0,
+    "mae_r_avg": 2.048,
+    "mfe_r_avg": 0.0,
+    "paths": {
+     "SL": 1
+    },
+    "segments": [],
+    "days": 1
+   },
+   "stress_expectancy_r": -1.0,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC08|M3": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 900,
+    "WAIT:NO_TRIGGER": 693,
+    "NO_TRADE:TARGET_UNREACHABLE": 6
+   },
+   "config_hash": "a4ff04f1c154410c",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC09|M3": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 564,
+    "WAIT:NO_TRIGGER": 1017,
+    "NO_TRADE:TARGET_UNREACHABLE": 18
+   },
+   "config_hash": "9a37657347a93c63",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC09|M5": {
+   "counts": {
+    "WAIT:CONTEXT_NOT_ALIGNED": 338,
+    "NO_TRADE:TARGET_UNREACHABLE": 14,
+    "WAIT:NO_TRIGGER": 607
+   },
+   "config_hash": "9a37657347a93c63",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC10|M1": {
+   "counts": {
+    "WAIT:REGIME_NOT_RANGE": 3704,
+    "WAIT:NO_REJECTION": 945,
+    "WAIT:NO_PROFILE": 150
+   },
+   "config_hash": "1c877e531bfce52e",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  },
+  "PMW_SC10|M5": {
+   "counts": {
+    "WAIT:REGIME_NOT_RANGE": 740,
+    "WAIT:NO_REJECTION": 188,
+    "NO_TRADE:TARGET_UNREACHABLE": 1,
+    "WAIT:NO_PROFILE": 30
+   },
+   "config_hash": "1c877e531bfce52e",
+   "metrics": {
+    "n": 0
+   },
+   "stress_expectancy_r": null,
+   "verdict": "NOT_VALIDATED",
+   "verdict_reason": "dane nie są historią MT5 użytkownika (REAL_USER_DATA) – wynik wyłącznie techniczny"
+  }
+ },
+ "report_id": "PKR-37af67bf2e28"
+}

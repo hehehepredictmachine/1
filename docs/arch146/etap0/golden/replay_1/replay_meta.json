@@ -1,0 +1,17 @@
+{
+ "A": {
+  "rc": 0,
+  "s": 132.8,
+  "tail": "s\": 0}\nZdarzenia opisane przez kilka strategii jednocze\u015bnie: 676 (maks. 4 strategie/zdarzenie).\nZmiany wyboru AUTO: 1106 \u2013 przyczyny: {\"FIRST_SELECTION\": 1, \"CHALLENGER_LEADS\": 35, \"PREVIOUS_SETUP_NO_LONGER_VALID\": 982, \"NEW_CANDIDATE\": 88}. Re\u017cimy: {\"TRANSITION\": 1040, \"EXHAUSTION_OR_REVERSAL_CANDIDATE\": 108, \"TREND_UP\": 254, \"COMPRESSION\": 225, \"RANGE\": 245, \"EXPANSION\": 44, \"TREND_DOWN\": 336}\n\n"
+ },
+ "B": {
+  "dataset_rc": 0,
+  "rc": 0,
+  "s": 8.1,
+  "tail": ""
+ },
+ "days_A": 20,
+ "m1_bars_B": 6000,
+ "seed": 7,
+ "start_virtual": "2026-03-04T08:00:00"
+}

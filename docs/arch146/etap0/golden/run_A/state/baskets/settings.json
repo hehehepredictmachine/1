@@ -1,0 +1,7 @@
+{
+ "profiles": {
+  "FOREX_MT5": {
+   "execution": "AUTO_SH"
+  }
+ }
+}

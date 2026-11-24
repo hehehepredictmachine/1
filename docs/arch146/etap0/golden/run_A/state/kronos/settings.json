@@ -1,0 +1,52 @@
+{
+  "enabled": true,
+  "instruments": [
+    "XAUUSD",
+    "BTC"
+  ],
+  "timeframes": [
+    "M5",
+    "M15"
+  ],
+  "horizon_bars": {
+    "M1": 15,
+    "M3": 10,
+    "M5": 12,
+    "M15": 8,
+    "M30": 8,
+    "H1": 6
+  },
+  "lookback": 400,
+  "max_context": 512,
+  "min_context": 128,
+  "temperature": 1.0,
+  "top_k": 0,
+  "top_p": 0.9,
+  "paths": 0,
+  "direction_band_atr": 0.25,
+  "direction_band_min_points": 0.0,
+  "volume_source": "AUTO",
+  "timestamp_basis": "SERVER",
+  "device": "AUTO",
+  "cpu_threads": null,
+  "request_timeout_s": 120.0,
+  "load_timeout_s": 300.0,
+  "queue_max": 8,
+  "max_staleness_bars": 2.0,
+  "weights_dir": null,
+  "python_path": null,
+  "strategy_use": {
+    "SCALPING": {
+      "use": "ASSIST",
+      "timeframe": "M5",
+      "validation_report": null,
+      "confirmed_at": "2026-03-04T08:00:03.860797Z"
+    },
+    "HEDGING": {
+      "use": "ASSIST",
+      "timeframe": "M15",
+      "validation_report": null,
+      "confirmed_at": "2026-03-04T08:00:03.873569Z"
+    }
+  }
+}

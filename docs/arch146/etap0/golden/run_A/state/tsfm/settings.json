@@ -1,0 +1,157 @@
+{
+  "models": {
+    "chronos2": {
+      "enabled": true,
+      "instruments": [
+        "XAUUSD"
+      ],
+      "timeframes": [
+        "M5",
+        "M15"
+      ],
+      "context_len": 512,
+      "profile": "CLOSE_V1",
+      "device": "AUTO",
+      "cpu_threads": null,
+      "request_timeout_s": 120.0,
+      "load_timeout_s": 900.0,
+      "use": {
+        "ACTIVE": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.591004Z"
+        },
+        "SCALPING": {
+          "use": "ASSIST",
+          "timeframe": "M5",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.615385Z"
+        },
+        "HEDGING": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.640518Z"
+        }
+      },
+      "python_path": null,
+      "checkpoint": "BASE"
+    },
+    "granite_ttm": {
+      "enabled": true,
+      "instruments": [
+        "XAUUSD"
+      ],
+      "timeframes": [
+        "M5",
+        "M15"
+      ],
+      "context_len": 512,
+      "profile": "CLOSE_V1",
+      "device": "AUTO",
+      "cpu_threads": null,
+      "request_timeout_s": 120.0,
+      "load_timeout_s": 900.0,
+      "use": {
+        "ACTIVE": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.664850Z"
+        },
+        "SCALPING": {
+          "use": "ASSIST",
+          "timeframe": "M5",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.693719Z"
+        },
+        "HEDGING": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.729231Z"
+        }
+      },
+      "python_path": null,
+      "checkpoint": "BASE"
+    },
+    "tirex2": {
+      "enabled": true,
+      "instruments": [
+        "XAUUSD"
+      ],
+      "timeframes": [
+        "M5",
+        "M15"
+      ],
+      "context_len": 512,
+      "profile": "CLOSE_V1",
+      "device": "CPU",
+      "cpu_threads": 2,
+      "request_timeout_s": 120.0,
+      "load_timeout_s": 900.0,
+      "use": {
+        "ACTIVE": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.762006Z"
+        },
+        "SCALPING": {
+          "use": "ASSIST",
+          "timeframe": "M5",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.796566Z"
+        },
+        "HEDGING": {
+          "use": "ASSIST",
+          "timeframe": "M15",
+          "validation_report": null,
+          "confirmed_at": null,
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "activated_at": "2026-03-04T08:00:03.822914Z"
+        }
+      },
+      "python_path": null,
+      "checkpoint": "BASE"
+    }
+  },
+  "retired": {},
+  "horizon_bars": {
+    "M1": 15,
+    "M3": 10,
+    "M5": 12,
+    "M15": 8,
+    "M30": 8,
+    "H1": 6
+  },
+  "quantiles": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "lookback": 560,
+  "min_context": 128,
+  "direction_band_atr": 0.25,
+  "direction_band_min_points": 0.0,
+  "max_staleness_bars": 2.0,
+  "queue_max": 16,
+  "weights_root": null
+}

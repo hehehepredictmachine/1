@@ -1,0 +1,7003 @@
+{
+ "/api/v1/baskets/signals": {
+  "body": {
+   "signals": [
+    {
+     "bar_t": 1772611560.0,
+     "basket_id": "FX_SCALP",
+     "context_key": "FOREX_MT5|MT5|SYNTHETIC|5550001|CFD|XAUUSD-",
+     "created_at": 1772611746.2940412,
+     "event_id": "EV-77a2a67baa59c7c0",
+     "instrument": "XAUUSD-",
+     "outcome": null,
+     "outcome_at": null,
+     "outcome_kind": null,
+     "plan": {
+      "be_trailing": "tylko wg jawnej konfiguracji",
+      "entry_basis": "close potwierdzającej świecy; wykonanie po bieżącej cenie",
+      "entry_ref": 3457.8309451029872,
+      "execution": "AUTO_VIA_SH_PATH",
+      "execution_status": "PRZEKAZANY DO ŚCIEŻKI SH (zlecenie wg trybu wykonania, ryzyka i STOP)",
+      "partials": "50% / 50%",
+      "plan_type": "PositionPlan",
+      "quantity": null,
+      "quantity_reason": "brak skonfigurowanego kapitału / ryzyka profilu – ilość nie jest zgadywana",
+      "risk_per_unit": 2.2000860468192514,
+      "side": "SHORT",
+      "sl": 3460.0310311498065,
+      "targets": [
+       {
+        "price": 3455.630859056168,
+        "weight": 0.5
+       },
+       {
+        "price": 3453.4307730093487,
+        "weight": 0.5
+       }
+      ],
+      "timeframe": "M3",
+      "timeout_bars": 8,
+      "unit": null,
+      "version": 1
+     },
+     "profile_id": "FOREX_MT5",
+     "role": "PRIMARY",
+     "scores": {
+      "calibration_status": "UNCALIBRATED",
+      "confidence_source": "TabICLv2 (Quant)",
+      "confidence_state": "QUEUED",
+      "model_agreement": null,
+      "p_event": "TP2_BEFORE_STOP",
+      "p_event_calibrated": null,
+      "p_event_raw": null,
+      "setup_components": {
+       "confirmation": 25,
+       "data": 25,
+       "htf_alignment": 25,
+       "room": 12.5
+      },
+      "setup_score": 87.5
+     },
+     "setup": {
+      "conditions": {
+       "ema21": 3460.870299774917,
+       "ema9": 3459.197803099947
+      },
+      "entry": 3457.8309451029872,
+      "event": {
+       "level": 3459.197803099947,
+       "t": 1772611560.0,
+       "type": "EMA_PULLBACK"
+      },
+      "invalidation": 3459.8959531201217,
+      "justifications": [],
+      "regime": {
+       "adx": 30.756283529289387,
+       "bandwidth": 0.002713053990433385,
+       "regime": "TREND",
+       "trend": -1,
+       "trend_basis": "SWINGS_LH_LL"
+      },
+      "routed_auto": true,
+      "sl": 3460.0310311498065
+     },
+     "side": "SHORT",
+     "signal_id": "EV-77a2a67baa59c7c0|FX_SCALP_01",
+     "status": "ACTIVE",
+     "strategy_id": "FX_SCALP_01",
+     "tf": "M3"
+    },
+    {
+     "bar_t": 1772611620.0,
+     "basket_id": "FX_SCALP",
+     "context_key": "FOREX_MT5|MT5|SYNTHETIC|5550001|CFD|XAUUSD-",
+     "created_at": 1772611686.8384502,
+     "event_id": "EV-52b3362d1057b6f5",
+     "instrument": "XAUUSD-",
+     "outcome": null,
+     "outcome_at": null,
+     "outcome_kind": null,
+     "plan": {
+      "be_trailing": "tylko wg jawnej konfiguracji",
+      "entry_basis": "close potwierdzającej świecy; wykonanie po bieżącej cenie",
+      "entry_ref": 3456.8011528122383,
+      "execution": "AUTO_VIA_SH_PATH",
+      "execution_status": "PRZEKAZANY DO ŚCIEŻKI SH (zlecenie wg trybu wykonania, ryzyka i STOP)",
+      "partials": "50% / 50%",
+      "plan_type": "PositionPlan",
+      "quantity": null,
+      "quantity_reason": "brak skonfigurowanego kapitału / ryzyka profilu – ilość nie jest zgadywana",
+      "risk_per_unit": 2.228946241270023,
+      "side": "SHORT",
+      "sl": 3459.0300990535084,
+      "targets": [
+       {
+        "price": 3454.5722065709683,
+        "weight": 0.5
+       },
+       {
+        "price": 3452.3432603296983,
+        "weight": 0.5
+       }
+      ],
+      "timeframe": "M1",
+      "timeout_bars": 4,
+      "unit": null,
+      "version": 1
+     },
+     "profile_id": "FOREX_MT5",
+     "role": "PRIMARY",
+     "scores": {
+      "calibration_status": "UNCALIBRATED",
+      "confidence_source": "TabICLv2 (Quant)",
+      "confidence_state": "QUEUED",
+      "model_agreement": null,
+      "p_event": "TP2_BEFORE_STOP",
+      "p_event_calibrated": null,
+      "p_event_raw": null,
+      "setup_components": {
+       "confirmation": 25,
+       "data": 25,
+       "htf_alignment": 25,
+       "room": 12.5
+      },
+      "setup_score": 87.5
+     },
+     "setup": {
+      "conditions": {
+       "bodies_atr": [
+        1.1090706555452825,
+        1.9172160857317984
+       ]
+      },
+      "entry": 3456.8011528122383,
+      "event": {
+       "level": null,
+       "t": 1772611560.0,
+       "type": "TWO_BAR"
+      },
+      "invalidation": 3458.9635640890824,
+      "justifications": [],
+      "regime": {
+       "adx": 30.756283529289387,
+       "bandwidth": 0.002713053990433385,
+       "regime": "TREND",
+       "trend": -1,
+       "trend_basis": "SWINGS_LH_LL"
+      },
+      "routed_auto": true,
+      "sl": 3459.0300990535084,
+      "timeout_bars": 4
+     },
+     "side": "SHORT",
+     "signal_id": "EV-52b3362d1057b6f5|FX_SCALP_10",
+     "status": "ACTIVE",
+     "strategy_id": "FX_SCALP_10",
+     "tf": "M1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ "/api/v1/bot-signals": {
+  "body": {
+   "ai_note": "Porównanie: wyniki sygnałów strategii, z którymi AI się zgodziło / nie zgodziło / których nie oceniło. Mała liczba sygnałów = brak wniosku.",
+   "enabled": true,
+   "items": [
+    {
+     "account_key": "Synthetic-Demo:5550001",
+     "action": "SELL",
+     "ai_verdict": null,
+     "closed_at": null,
+     "created_at": "2026-03-04T08:09:00.857505Z",
+     "detail": {
+      "anchor_time": null,
+      "countertrend": null,
+      "entry_plan": {},
+      "exit_rules": null,
+      "facts": {
+       "net_rr": 1.0,
+       "score": 87.5
+      },
+      "family": null,
+      "horizon": "SCALP",
+      "invalidation_level": null,
+      "invalidation_rule": null,
+      "missing_confirmations": null,
+      "phase": null,
+      "reason_codes": null,
+      "regime": null,
+      "score": null,
+      "source_time": null,
+      "strategy_version": null,
+      "validation": {
+       "entry": 3457.83,
+       "ok": true,
+       "reasons": [],
+       "risk": 1.2000990535084384,
+       "rr": [
+        2.71,
+        4.57
+       ],
+       "rr_weighted": 3.64
+      },
+      "validation_status": "OGRANICZONA"
+     },
+     "entry_price": 3457.83,
+     "entry_type": "MARKET",
+     "error": null,
+     "event_id": null,
+     "exit_price": null,
+     "fill_price": 3457.83,
+     "filled_at": "2026-03-04T08:09:00.857505Z",
+     "horizon": "SCALP",
+     "outcome_r": null,
+     "price_at_signal": 3457.83,
+     "rr1": 3.64,
+     "setup_id": "SH:SH-BK1856f25e4cf0212e99ad",
+     "setup_score": null,
+     "signal_id": "BOT-e7af0535cf184b",
+     "source": "BOT",
+     "status": "OPEN",
+     "stop_loss": 3459.0300990535084,
+     "strategy_id": "FX_SCALP_10",
+     "strategy_name": "Two-Bar Momentum Continuation (FX_SCALP_10, XAUUSD)",
+     "symbol": "XAUUSD-",
+     "synthetic": true,
+     "take_profits": [
+      3454.5722065709683,
+      3452.3432603296983
+     ],
+     "timeframe": "M1",
+     "tp_hit": null,
+     "trigger": "SH",
+     "updated_at": "2026-03-04T08:09:00.857505Z",
+     "validation": {
+      "entry": 3457.83,
+      "ok": true,
+      "reasons": [],
+      "risk": 1.2000990535084384,
+      "rr": [
+       2.71,
+       4.57
+      ],
+      "rr_weighted": 3.64
+     }
+    },
+    {
+     "account_key": "Synthetic-Demo:5550001",
+     "action": "SELL",
+     "ai_verdict": null,
+     "closed_at": null,
+     "created_at": "2026-03-04T08:05:28.759511Z",
+     "detail": {
+      "anchor_time": "2026-03-04T07:45:00Z",
+      "countertrend": true,
+      "entry_plan": {
+       "kind": "RECLAIM",
+       "max_distance_atr": 1.0,
+       "max_wait_bars": 3,
+       "order_type": "MARKET_ON_CONFIRMATION",
+       "reference_price": 1.06888,
+       "send_when": "po zamknięciu świecy wyzwalającej, jeśli cena nie odjechała dalej niż max_distance_atr od poziomu",
+       "trigger": "zamknięcie z powrotem poniżej poziomu + bufor (≤ 3 świece od wyjścia)",
+       "trigger_level": 1.06888,
+       "zone": [
+        1.06888,
+        1.0688900000000001
+       ]
+      },
+      "exit_rules": {
+       "be_after_tp1": true,
+       "time_exit_bars": 24,
+       "trailing": null
+      },
+      "facts": {
+       "excursion_bar": "2026-03-04T07:45:00Z",
+       "excursion_low_px": 1.06876,
+       "level_px": 1.06876,
+       "range_bottom_px": 1.06876
+      },
+      "family": "REVERSION",
+      "horizon": "SCALP",
+      "invalidation_level": 1.06896,
+      "invalidation_rule": "CLOSE_BEYOND",
+      "missing_confirmations": [
+       "EXTRA_CONFIRMATION_UNAVAILABLE"
+      ],
+      "phase": "TRIGGER",
+      "reason_codes": [
+       "EXCURSION_ABOVE_RANGE",
+       "DEPTH_1.00ATR",
+       "COUNTERTREND"
+      ],
+      "regime": "TRANSITION",
+      "score": {
+       "completeness": 0.95,
+       "htf": {
+        "H1": "UP",
+        "H4": "UP"
+       },
+       "htf_countertrend": true,
+       "momentum": {
+        "ema20_slope_atr": 0.102,
+        "known": true,
+        "macd_hist": 0.0,
+        "rsi": 50.4,
+        "votes": [
+         0.0,
+         0.5,
+         1.0
+        ]
+       },
+       "points": {
+        "extra": 0.0,
+        "formation": 25.0,
+        "htf": 0.0,
+        "momentum": 10.0,
+        "structure": 25.0,
+        "trigger": 15.0
+       },
+       "scale": "ACTIVE-0-100 (heurystyka, nie prawdopodobieństwo)",
+       "total": 75.0,
+       "weights": {
+        "extra": 5,
+        "formation": 25,
+        "htf": 10,
+        "momentum": 20,
+        "structure": 25,
+        "trigger": 15
+       }
+      },
+      "source_time": "2026-03-04T08:00:00Z",
+      "strategy_version": "1.0.0-EXPERIMENTAL",
+      "validation": {
+       "entry": 1.06889,
+       "ok": true,
+       "reasons": [],
+       "risk": 0.0001640660049777587,
+       "rr": [
+        1.34,
+        2.68
+       ],
+       "rr_weighted": 2.01
+      },
+      "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN"
+     },
+     "entry_price": 1.06889,
+     "entry_type": "MARKET",
+     "error": null,
+     "event_id": "EV-8eb34f186b97",
+     "exit_price": null,
+     "fill_price": 1.06889,
+     "filled_at": "2026-03-04T08:05:28.759511Z",
+     "horizon": "SCALP",
+     "outcome_r": null,
+     "price_at_signal": 1.06889,
+     "rr1": 2.01,
+     "setup_id": "MQA-f248a666da4f6202",
+     "setup_score": 75.0,
+     "signal_id": "BOT-57017a2cbd0f4b",
+     "source": "BOT",
+     "status": "OPEN",
+     "stop_loss": 1.0690540660049777,
+     "strategy_id": "S07",
+     "strategy_name": "FAILED_BREAKOUT_RECLAIM",
+     "symbol": "EURUSD-",
+     "synthetic": true,
+     "take_profits": [
+      1.06867,
+      1.0684500000000001
+     ],
+     "timeframe": "M5",
+     "tp_hit": null,
+     "trigger": "SCANNER",
+     "updated_at": "2026-03-04T08:05:28.759511Z",
+     "validation": {
+      "entry": 1.06889,
+      "ok": true,
+      "reasons": [],
+      "risk": 0.0001640660049777587,
+      "rr": [
+       1.34,
+       2.68
+      ],
+      "rr_weighted": 2.01
+     }
+    },
+    {
+     "account_key": "Synthetic-Demo:5550001",
+     "action": "BUY",
+     "ai_verdict": null,
+     "closed_at": null,
+     "created_at": "2026-03-04T08:00:32.185941Z",
+     "detail": {
+      "anchor_time": "2026-03-04T07:00:00Z",
+      "countertrend": false,
+      "entry_plan": {
+       "kind": "EMA20_PULLBACK_CONFIRM",
+       "max_distance_atr": 0.5,
+       "max_wait_bars": 1,
+       "order_type": "MARKET_ON_CONFIRMATION",
+       "reference_price": 1.06894,
+       "send_when": "po zamknięciu świecy wyzwalającej, jeśli cena nie odjechała dalej niż max_distance_atr od poziomu",
+       "trigger": "zamknięcie świecy powyżej EMA20 na świecy PÓŹNIEJSZEJ niż dotknięcie, trend EMA20>EMA50 nadal ważny",
+       "trigger_level": 1.0688,
+       "zone": [
+        1.06827,
+        1.06934
+       ]
+      },
+      "exit_rules": {
+       "be_after_tp1": false,
+       "rr": 2.5,
+       "time_exit_bars": null,
+       "tp_rule": "RR_FROM_FILL",
+       "trailing": null
+      },
+      "facts": {
+       "adx": 41.59,
+       "atr": 0.0003,
+       "confirm_bar": "2026-03-04T07:30:00Z",
+       "core": "MQ-EMA-PULLBACK-CORE-1.0.0",
+       "ema20_px": 1.0688,
+       "ema50_px": 1.06785,
+       "rr": 2.5,
+       "touch_bar": "2026-03-04T07:00:00Z"
+      },
+      "family": "TREND",
+      "horizon": "INTRADAY",
+      "invalidation_level": 1.0684202628577049,
+      "invalidation_rule": "CLOSE_BEYOND",
+      "missing_confirmations": [
+       "EXTRA_CONFIRMATION_UNAVAILABLE"
+      ],
+      "phase": "TRIGGER",
+      "reason_codes": [
+       "EMA20>EMA50",
+       "ADX_42",
+       "SETUP_2026-03-04T07:00:00Z"
+      ],
+      "regime": "TRANSITION",
+      "score": {
+       "completeness": 0.95,
+       "htf": {
+        "H1": "UP",
+        "H4": "UP"
+       },
+       "htf_countertrend": false,
+       "momentum": {
+        "ema20_slope_atr": 0.018,
+        "known": true,
+        "macd_hist": -0.0001,
+        "rsi": 56.2,
+        "votes": [
+         0.0,
+         0.5,
+         1.0
+        ]
+       },
+       "points": {
+        "extra": 0.0,
+        "formation": 25.0,
+        "htf": 10.0,
+        "momentum": 10.0,
+        "structure": 25.0,
+        "trigger": 15.0
+       },
+       "scale": "ACTIVE-0-100 (heurystyka, nie prawdopodobieństwo)",
+       "total": 85.0,
+       "weights": {
+        "extra": 5,
+        "formation": 25,
+        "htf": 10,
+        "momentum": 20,
+        "structure": 25,
+        "trigger": 15
+       }
+      },
+      "source_time": "2026-03-04T07:30:00Z",
+      "strategy_version": "1.1.0-FIXED-EXPERIMENTAL",
+      "validation": {
+       "entry": 1.06901,
+       "ok": false,
+       "reasons": [
+        "PRICE_RAN_AWAY_FROM_TRIGGER"
+       ],
+       "risk": 0.0005897371422951547,
+       "rr": [
+        2.08
+       ],
+       "rr_weighted": 2.08
+      },
+      "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN"
+     },
+     "entry_price": 1.06901,
+     "entry_type": "MARKET",
+     "error": null,
+     "event_id": "EV-b8053ad2ee30",
+     "exit_price": null,
+     "fill_price": null,
+     "filled_at": null,
+     "horizon": "INTRADAY",
+     "outcome_r": null,
+     "price_at_signal": 1.06893,
+     "rr1": 2.08,
+     "setup_id": "MQA-1245da16eaf29762",
+     "setup_score": 85.0,
+     "signal_id": "BOT-5a5c37ff88fd43",
+     "source": "BOT",
+     "status": "REJECTED",
+     "stop_loss": 1.0684202628577049,
+     "strategy_id": "S11",
+     "strategy_name": "EMA20_PULLBACK_2_5R",
+     "symbol": "EURUSD-",
+     "synthetic": true,
+     "take_profits": [
+      1.070239342855738
+     ],
+     "timeframe": "M30",
+     "tp_hit": null,
+     "trigger": "SCANNER",
+     "updated_at": "2026-03-04T08:00:32.185941Z",
+     "validation": {
+      "entry": 1.06901,
+      "ok": false,
+      "reasons": [
+       "PRICE_RAN_AWAY_FROM_TRIGGER"
+      ],
+      "risk": 0.0005897371422951547,
+      "rr": [
+       2.08
+      ],
+      "rr_weighted": 2.08
+     }
+    }
+   ],
+   "max_hold_hours": 72,
+   "rr_limit": 1.0,
+   "scan_other_markets": true,
+   "stats": {
+    "avg_r": null,
+    "basis": "BRUTTO_R",
+    "breakeven": 0,
+    "closed": 0,
+    "losses": 0,
+    "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+    "open": 2,
+    "profit_factor_r": null,
+    "rejected": 1,
+    "signals": 3,
+    "total_r": null,
+    "win_rate_pct": null,
+    "wins": 0
+   },
+   "stats_by_ai": {
+    "BRAK_OCENY": {
+     "avg_r": null,
+     "basis": "BRUTTO_R",
+     "breakeven": 0,
+     "closed": 0,
+     "losses": 0,
+     "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+     "open": 2,
+     "profit_factor_r": null,
+     "rejected": 1,
+     "signals": 3,
+     "total_r": null,
+     "win_rate_pct": null,
+     "wins": 0
+    },
+    "BRAK_ZGODY": {
+     "avg_r": null,
+     "basis": "BRUTTO_R",
+     "breakeven": 0,
+     "closed": 0,
+     "losses": 0,
+     "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+     "open": 0,
+     "profit_factor_r": null,
+     "rejected": 0,
+     "signals": 0,
+     "total_r": null,
+     "win_rate_pct": null,
+     "wins": 0
+    },
+    "ZGODA": {
+     "avg_r": null,
+     "basis": "BRUTTO_R",
+     "breakeven": 0,
+     "closed": 0,
+     "losses": 0,
+     "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+     "open": 0,
+     "profit_factor_r": null,
+     "rejected": 0,
+     "signals": 0,
+     "total_r": null,
+     "win_rate_pct": null,
+     "wins": 0
+    }
+   },
+   "strategies": [
+    "S01-S12 (silnik + skaner)",
+    "SCALPING",
+    "HEDGING",
+    "RANGE_SWEEP_RETEST",
+    "DOUBLE_RETEST_V2"
+   ],
+   "strategy_sources": {
+    "double_retest": true,
+    "hedging": true,
+    "range_sweep_retest": true,
+    "scalping": true
+   }
+  },
+  "status": 200
+ },
+ "/api/v1/decision": {
+  "body": null,
+  "status": 200
+ },
+ "/api/v1/decision/status": {
+  "body": {
+   "enabled": true,
+   "intents": [],
+   "last": {
+    "SH": {
+     "created_at": "2026-03-04T08:09:00.841359Z",
+     "final_verdict": "ENTER",
+     "reason_codes": [],
+     "record_id": "DR-58dab20cac364a6e"
+    }
+   },
+   "records": [
+    {
+     "base_verdict": "ENTER",
+     "created_at": "2026-03-04T08:09:00.841359Z",
+     "direction": "SELL",
+     "final_verdict": "ENTER",
+     "path": "SH",
+     "reason_codes": "[]",
+     "record_id": "DR-58dab20cac364a6e",
+     "source_id": "SH-BK1856f25e4cf0212e99ad",
+     "strategy_id": "FX_SCALP_10"
+    },
+    {
+     "base_verdict": "WAIT",
+     "created_at": "2026-03-04T08:02:16.880570Z",
+     "direction": "NONE",
+     "final_verdict": "WAIT",
+     "path": "SH",
+     "reason_codes": "[\"sprzeczne interwa\\u0142y (H1/M15 przeciw trendowi M5)\"]",
+     "record_id": "DR-077dea5cf72a4e99",
+     "source_id": "SH-fb3eb2fc857bc8",
+     "strategy_id": "HEDGING"
+    },
+    {
+     "base_verdict": "WAIT",
+     "created_at": "2026-03-04T08:02:16.878876Z",
+     "direction": "NONE",
+     "final_verdict": "WAIT",
+     "path": "SH",
+     "reason_codes": "[\"sprzeczne interwa\\u0142y (H1/M15 przeciw trendowi M5)\"]",
+     "record_id": "DR-fad6de179efa4deb",
+     "source_id": "SH-59f9c924eebf48",
+     "strategy_id": "SCALPING"
+    },
+    {
+     "base_verdict": "NO_TRADE",
+     "created_at": "2026-03-04T08:02:12.060850Z",
+     "direction": "NONE",
+     "final_verdict": "NO_TRADE",
+     "path": "SH",
+     "reason_codes": "[\"dane: notowanie nieaktualne (13.9 s)\"]",
+     "record_id": "DR-39b5ef6398154da7",
+     "source_id": "SH-fb3eb2fc857bc8",
+     "strategy_id": "HEDGING"
+    },
+    {
+     "base_verdict": "NO_TRADE",
+     "created_at": "2026-03-04T08:02:11.890479Z",
+     "direction": "NONE",
+     "final_verdict": "NO_TRADE",
+     "path": "SH",
+     "reason_codes": "[\"dane: notowanie nieaktualne (13.9 s)\"]",
+     "record_id": "DR-9d4ccd0d228f45b5",
+     "source_id": "SH-59f9c924eebf48",
+     "strategy_id": "SCALPING"
+    },
+    {
+     "base_verdict": "WAIT",
+     "created_at": "2026-03-04T08:01:14.661900Z",
+     "direction": "NONE",
+     "final_verdict": "WAIT",
+     "path": "SH",
+     "reason_codes": "[\"sprzeczne interwa\\u0142y (H1/M15 przeciw trendowi M5)\"]",
+     "record_id": "DR-d0ec5ef5af434edb",
+     "source_id": "SH-5c5744faedbc74",
+     "strategy_id": "HEDGING"
+    },
+    {
+     "base_verdict": "WAIT",
+     "created_at": "2026-03-04T08:01:14.569051Z",
+     "direction": "NONE",
+     "final_verdict": "WAIT",
+     "path": "SH",
+     "reason_codes": "[\"sprzeczne interwa\\u0142y (H1/M15 przeciw trendowi M5)\"]",
+     "record_id": "DR-522fdb211eb840cc",
+     "source_id": "SH-1b73bdc1486407",
+     "strategy_id": "SCALPING"
+    }
+   ],
+   "reservations_live": [],
+   "version": "PMW-ARC-1"
+  },
+  "status": 200
+ },
+ "/api/v1/eval/assessments": {
+  "body": {
+   "items": [
+    {
+     "break_even_probability": 0.4215,
+     "cost_r": 0.0538,
+     "decision": "DEFER",
+     "decision_ts": 1772611686.8384502,
+     "direction": "SHORT",
+     "engine": "SH_SCALPING",
+     "entry": 3456.8011528122383,
+     "event": "TP2 przed SL w horyzoncie",
+     "execution": "DEGRADED",
+     "expected_value_interval_r": null,
+     "expected_value_r": null,
+     "gain_r": 1.4462,
+     "horizon_s": 240.0,
+     "loss_r": 1.0538,
+     "notes": [
+      "setup wymaga P > 0.421 dla dodatniego EV (próg z kosztów i R:R, nie arbitralny)"
+     ],
+     "outcome": null,
+     "portfolio": "OK",
+     "probability": null,
+     "probability_status": "NO_MODEL",
+     "reasons": [
+      "INSUFFICIENT_EVIDENCE_NO_CALIBRATED_PROBABILITY"
+     ],
+     "setup_id": "SH-BK1856f25e4cf0212e99ad",
+     "sl": 3459.0300990535084,
+     "strategy_id": "SCALPING",
+     "targets": [
+      {
+       "basis": "TP1",
+       "price": 3454.5722065709683,
+       "weight": 0.5
+      },
+      {
+       "basis": "TP2",
+       "price": 3452.3432603296983,
+       "weight": 0.5
+      }
+     ],
+     "zone_context": {
+      "data_state": "OK",
+      "flags": [],
+      "map_as_of": "2026-03-04T08:05:05.660987Z",
+      "map_id": "ZM-06fbc544ed674842",
+      "opposing_zone": {
+       "confluence_score": 18.2,
+       "flags": [],
+       "lower_price": 3454.05,
+       "status": "TESTED",
+       "upper_price": 3454.96,
+       "zone_id": "UZ-46b6284a3991",
+       "zone_type": "EQUAL_LOWS"
+      },
+      "room_after_costs_r": 0.772,
+      "supporting_zone": {
+       "confluence_score": 51.0,
+       "lower_price": 3457.05,
+       "status": "PROVISIONAL",
+       "upper_price": 3457.16,
+       "zone_id": "UZ-d097427ba93e",
+       "zone_type": "SWING_LOW"
+      }
+     }
+    }
+   ],
+   "mode": "SHADOW"
+  },
+  "status": 200
+ },
+ "/api/v1/eval/report": {
+  "body": {
+   "assist_readiness": {},
+   "groups": [],
+   "matured": 0,
+   "mode": "SHADOW",
+   "note": "wynik planu bez BE i bez realnego wypełnienia (BINARY_PLAN_APPROX); mała próba nie pozwala wnioskować o skuteczności",
+   "outcome_distribution": {},
+   "outcome_note": "TP_FIRST = pierwszy cel przed SL; SL_FIRST = SL przed jakimkolwiek celem; NEITHER = żaden poziom w horyzoncie (empiryczne częstości z przedziałem Wilsona 90 %, nie prognoza modelu)",
+   "regimes": [
+    {
+     "active_regime": null,
+     "matured": 0,
+     "mean_plan_r_net": null,
+     "n": 1,
+     "sh_regime": "TREND_DOWN"
+    }
+   ],
+   "regimes_note": "reżim obu definicji w chwili oceny (O4); wybór kanonicznego reżimu po zebraniu danych"
+  },
+  "status": 200
+ },
+ "/api/v1/eval/status": {
+  "body": {
+   "contract": "PMW-EVAL-CONTRACT-1",
+   "counters": {
+    "duplicates": 0,
+    "errors": 0,
+    "invalid": 0,
+    "logged": 1,
+    "matured": 0
+   },
+   "engine": "PMW-EVAL-ENGINE-2",
+   "last_error": null,
+   "ledger": "/tmp/pmw_golden_mxwa9_et/evaluation/ledger.sqlite",
+   "mode": "SHADOW",
+   "note": "ocena każdego setupu obu ścieżek; nie blokuje ani nie wysyła zleceń",
+   "pending": 1,
+   "version": "PMW-EVAL-SERVICE-2"
+  },
+  "status": 200
+ },
+ "/api/v1/forecast/shadow": {
+  "body": {
+   "items": []
+  },
+  "status": 200
+ },
+ "/api/v1/health": {
+  "body": {
+   "app": "PepeMarketWizard",
+   "boot_id": "20260304080001885137",
+   "contract": "1.0.0",
+   "display_name": "Apollo23",
+   "mt5_state": "CONNECTED",
+   "ok": true,
+   "start_failures": [],
+   "synthetic": true,
+   "time": "2026-03-04T08:10:06.179567Z",
+   "version": "1.46.0"
+  },
+  "status": 200
+ },
+ "/api/v1/kronos": {
+  "body": {
+   "code": "NOT_INSTALLED",
+   "counters": {
+    "deduplicated": 0,
+    "done": 0,
+    "dropped_queue_full": 0,
+    "enqueued": 0,
+    "errors": 0,
+    "timeouts": 0,
+    "worker_starts": 0
+   },
+   "data_kind": "SYNTHETIC",
+   "data_source": "SYNTETYCZNE (symulator terminala – nie notowania rynku)",
+   "decision_use": {
+    "HEDGING": "ASSIST",
+    "SCALPING": "ASSIST"
+   },
+   "env": {
+    "installed_at": null,
+    "manifest_components": null,
+    "pinned": [
+     {
+      "kind": "model",
+      "repo": "NeoQuasar/Kronos-small",
+      "revision": "901c26c1332695a2a8f243eb2f37243a37bea320"
+     },
+     {
+      "kind": "tokenizer",
+      "repo": "NeoQuasar/Kronos-Tokenizer-base",
+      "revision": "0e0117387f39004a9016484a186a908917e22426"
+     }
+    ],
+    "python": null,
+    "python_found": false,
+    "weights_dir": "/tmp/pmw_golden_mxwa9_et/kronos/models",
+    "weights_installed": false,
+    "weights_reason": "brak kronos_manifest.json w /tmp/pmw_golden_mxwa9_et/kronos/models – model nie został zainstalowany"
+   },
+   "execution_permission": false,
+   "jobs": {
+    "install": null,
+    "validation": null,
+    "verify": null
+   },
+   "license": "MIT (kod Kronos, Copyright (c) 2025 ShiYu); wagi: licencja MIT wg kart modeli NeoQuasar na Hugging Face",
+   "load": null,
+   "mode": "SHADOW",
+   "model": {
+    "max_context": 512,
+    "repo": "NeoQuasar/Kronos-small",
+    "revision": "901c26c1332695a2a8f243eb2f37243a37bea320"
+   },
+   "queue": [],
+   "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+   "running": null,
+   "settings": {
+    "cpu_threads": null,
+    "device": "AUTO",
+    "direction_band_atr": 0.25,
+    "direction_band_min_points": 0.0,
+    "enabled": true,
+    "horizon_bars": {
+     "H1": 6,
+     "M1": 15,
+     "M15": 8,
+     "M3": 10,
+     "M30": 8,
+     "M5": 12
+    },
+    "instruments": [
+     "XAUUSD",
+     "BTC"
+    ],
+    "load_timeout_s": 300.0,
+    "lookback": 400,
+    "max_context": 512,
+    "max_staleness_bars": 2.0,
+    "min_context": 128,
+    "paths": 0,
+    "python_path": null,
+    "queue_max": 8,
+    "request_timeout_s": 120.0,
+    "strategy_use": {
+     "HEDGING": {
+      "confirmed_at": "2026-03-04T08:00:03.873569Z",
+      "timeframe": "M15",
+      "use": "ASSIST",
+      "validation_report": null
+     },
+     "SCALPING": {
+      "confirmed_at": "2026-03-04T08:00:03.860797Z",
+      "timeframe": "M5",
+      "use": "ASSIST",
+      "validation_report": null
+     }
+    },
+    "temperature": 1.0,
+    "timeframes": [
+     "M5",
+     "M15"
+    ],
+    "timestamp_basis": "SERVER",
+    "top_k": 0,
+    "top_p": 0.9,
+    "volume_source": "AUTO",
+    "weights_dir": null
+   },
+   "settings_error": null,
+   "status": "NOT_INSTALLED",
+   "status_pl": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+   "targets": [
+    {
+     "checked_at": null,
+     "forecast_current": false,
+     "forecast_id": null,
+     "instrument": "BTC",
+     "quality": null,
+     "queued": false,
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "running": false,
+     "state": "MODEL_UNAVAILABLE",
+     "state_pl": "model niedostępny",
+     "symbol": null,
+     "timeframe": "M15"
+    },
+    {
+     "checked_at": null,
+     "forecast_current": false,
+     "forecast_id": null,
+     "instrument": "BTC",
+     "quality": null,
+     "queued": false,
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "running": false,
+     "state": "MODEL_UNAVAILABLE",
+     "state_pl": "model niedostępny",
+     "symbol": null,
+     "timeframe": "M5"
+    },
+    {
+     "checked_at": null,
+     "forecast_current": false,
+     "forecast_id": null,
+     "instrument": "XAUUSD",
+     "quality": null,
+     "queued": false,
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "running": false,
+     "state": "MODEL_UNAVAILABLE",
+     "state_pl": "model niedostępny",
+     "symbol": null,
+     "timeframe": "M15"
+    },
+    {
+     "checked_at": null,
+     "forecast_current": false,
+     "forecast_id": null,
+     "instrument": "XAUUSD",
+     "quality": null,
+     "queued": false,
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "running": false,
+     "state": "MODEL_UNAVAILABLE",
+     "state_pl": "model niedostępny",
+     "symbol": null,
+     "timeframe": "M5"
+    }
+   ],
+   "tokenizer": {
+    "repo": "NeoQuasar/Kronos-Tokenizer-base",
+    "revision": "0e0117387f39004a9016484a186a908917e22426"
+   },
+   "updated_at": "2026-03-04T08:10:21.070947Z",
+   "worker": null
+  },
+  "status": 200
+ },
+ "/api/v1/ml/status": {
+  "body": {
+   "backfill": {
+    "status": "IDLE"
+   },
+   "challenger_errors": {},
+   "challengers": [],
+   "champion": null,
+   "champion_family": null,
+   "collect": true,
+   "counts": {
+    "approx_excluded": 0,
+    "by_status": {},
+    "cost_unknown_excluded": 0,
+    "labeled": 0,
+    "neg": 0,
+    "pos": 0,
+    "samples": 0,
+    "unique_setups": 0
+   },
+   "drift": {
+    "reason": "NO_CHAMPION",
+    "status": "NOT_EVALUATED"
+   },
+   "events": [],
+   "job": null,
+   "jobs": [],
+   "last_check": "2026-03-04T08:10:09.408973Z",
+   "last_error": null,
+   "last_label_run": "2026-03-04T08:10:16.874057Z",
+   "last_tick_age_s": 14.563,
+   "mode": "SHADOW",
+   "models": [],
+   "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą.",
+   "phase": null,
+   "progress": 0.0,
+   "readiness": {
+    "checked_at": "2026-03-04T08:10:09.487546Z",
+    "counts": {
+     "approx_excluded": 0,
+     "by_status": {},
+     "cost_unknown_excluded": 0,
+     "labeled": 0,
+     "neg": 0,
+     "pos": 0,
+     "samples": 0,
+     "unique_setups": 0
+    },
+    "note": "Gotowość do nauki oznacza tylko spełnione progi danych - nie wytrenowany model.",
+    "ready": false,
+    "reasons": [
+     "ETYKIETY_0/1000_UNIKALNYCH_SETUPOW",
+     "KLASA_1_0/100",
+     "KLASA_0_0/100"
+    ]
+   },
+   "report": null,
+   "required": {
+    "min_hours_between_trainings": 6.0,
+    "min_labeled_setups": 1000,
+    "min_per_class": 100,
+    "retrain_after_new_labels": 250
+   },
+   "status": "COLLECTING",
+   "synthetic": true,
+   "ticks_buffered": 489,
+   "training_paused": false
+  },
+  "status": 200
+ },
+ "/api/v1/models/evidence": {
+  "body": {
+   "excluded": [
+    {
+     "model": "kronos_M5",
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "kronos_M15",
+     "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "chronos2_M5",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "chronos2_M15",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "granite_ttm_M5",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "granite_ttm_M15",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "tirex2_M5",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "tirex2_M15",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "state": "DISABLED"
+    },
+    {
+     "model": "research:graph50:NEXT_BAR_DIRECTION",
+     "reason": "brak jawnego mapowania zadania na rolę strategii",
+     "state": "READY"
+    },
+    {
+     "model": "research:graph50:BPC10",
+     "reason": "brak jawnego mapowania zadania na rolę strategii",
+     "state": "READY"
+    },
+    {
+     "model": "research:g7_smc_radar",
+     "reason": "brak jawnego mapowania zadania na rolę strategii",
+     "state": "READY"
+    },
+    {
+     "model": "MICROSTRUCTURE",
+     "reason": "brak jawnego mapowania zadania na rolę strategii",
+     "state": "READY"
+    },
+    {
+     "model": "gold_candles",
+     "reason": "brak środowiska .venv_candles (uruchom 10_PROGNOZY_INSTALUJ.bat)",
+     "state": "DISABLED"
+    }
+   ],
+   "groups": [],
+   "instrument": "XAUUSD",
+   "rules": "jedna grupa korelacji = jeden głos; wagi z walidacji walk-forward (bez zbioru końcowego); różne zadania/horyzonty/jednostki nie są łączone; modele Centrum treningu = OBSERVATION do czasu walidacji SHADOW na danych rzeczywistych",
+   "strategy": "SCALPING"
+  },
+  "status": 200
+ },
+ "/api/v1/models/foundation": {
+  "body": {
+   "counters": {
+    "deduplicated": 0,
+    "done": 0,
+    "dropped_queue_full": 0,
+    "enqueued": 0,
+    "errors": 0,
+    "superseded": 0,
+    "timeouts": 0
+   },
+   "data_kind": "SYNTHETIC",
+   "data_source": "SYNTETYCZNE (symulator terminala – nie notowania rynku)",
+   "execution_permission": false,
+   "horizon_bars": {
+    "H1": 6,
+    "M1": 15,
+    "M15": 8,
+    "M3": 10,
+    "M30": 8,
+    "M5": 12
+   },
+   "jobs": {
+    "validation": null
+   },
+   "kronos": {
+    "largest_public_note": "1.42.8: używany Kronos-small (24,7M, ok. 0,5 GB RAM) – prognoza dostępna także przy małej ilości wolnej pamięci; Kronos-base (102,3M) – historia 1.37–1.42.7",
+    "legacy": [
+     {
+      "name": "Kronos-base",
+      "params_upstream": "102.3M",
+      "repo": "NeoQuasar/Kronos-base",
+      "revision": "2b554741eca47781b64468546e77fef3e85130e6",
+      "used_until": "1.42.7"
+     }
+    ],
+    "load": null,
+    "name": "Kronos-small",
+    "params_upstream": "24.7M",
+    "reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+    "repo": "NeoQuasar/Kronos-small",
+    "revision": "901c26c1332695a2a8f243eb2f37243a37bea320",
+    "status": "NOT_INSTALLED"
+   },
+   "memory_note": "pomiar procesów modeli: panel Zasoby (Memory Governor); Granite TTM ok. 0,35 GB, Chronos-2 ok. 1 GB, Kronos-small ok. 0,5 GB",
+   "mode": "SHADOW",
+   "models": {
+    "chronos2": {
+     "code": "NOT_INSTALLED",
+     "context_len": 512,
+     "device": "AUTO",
+     "enabled": true,
+     "env": {
+      "fingerprint": "chronos2|amazon/chronos-2@29ec3766d36d6f73f0696f85560a422f50e8498c|chronos-forecasting@2.3.2",
+      "installed_at": null,
+      "pinned": {
+       "code": {
+        "commit": "0aba28e9360b6355d5a919596c90b16c25939f02",
+        "kind": "pypi",
+        "package": "chronos-forecasting",
+        "repo": "https://github.com/amazon-science/chronos-forecasting",
+        "tag": "v2.3.2",
+        "version": "2.3.2"
+       },
+       "license": "Apache-2.0",
+       "params_upstream": "120M",
+       "repo": "amazon/chronos-2",
+       "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+       "variant": "amazon/chronos-2",
+       "venv": ".venv_chronos2"
+      },
+      "python": null,
+      "python_found": false,
+      "weights_installed": false,
+      "weights_reason": "brak tsfm_manifest.json – Chronos-2 nie został zainstalowany (instalator pobiera wagi)",
+      "weights_root": "/tmp/pmw_golden_mxwa9_et/tsfm/models"
+     },
+     "instruments": [
+      "XAUUSD"
+     ],
+     "jobs": {},
+     "license": "Apache-2.0",
+     "load": null,
+     "model_id": "chronos2",
+     "name": "Chronos-2",
+     "params_upstream": "120M",
+     "profile": "CLOSE_V1",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "repo": "amazon/chronos-2",
+     "restarts": 0,
+     "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+     "status": "NOT_INSTALLED",
+     "status_pl": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "targets": [
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "chronos2",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M5"
+      },
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "chronos2",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M15"
+      }
+     ],
+     "timeframes": [
+      "M5",
+      "M15"
+     ],
+     "timing": {
+      "n": 0
+     },
+     "updated_at": "2026-03-04T08:10:21.144319Z",
+     "use": {
+      "ACTIVE": {
+       "activated_at": "2026-03-04T08:00:03.591004Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "HEDGING": {
+       "activated_at": "2026-03-04T08:00:03.640518Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "SCALPING": {
+       "activated_at": "2026-03-04T08:00:03.615385Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M5",
+       "use": "ASSIST",
+       "validation_report": null
+      }
+     },
+     "variant": "amazon/chronos-2",
+     "worker": null
+    },
+    "granite_ttm": {
+     "code": "NOT_INSTALLED",
+     "context_len": 512,
+     "device": "AUTO",
+     "enabled": true,
+     "env": {
+      "fingerprint": "granite_ttm|ibm-granite/granite-timeseries-ttm-r2@d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f|granite-tsfm@0.3.11",
+      "installed_at": null,
+      "pinned": {
+       "code": {
+        "kind": "pypi",
+        "package": "granite-tsfm",
+        "repo": "https://github.com/ibm-granite/granite-tsfm",
+        "version": "0.3.11"
+       },
+       "license": "Apache-2.0",
+       "params_upstream": "0.8M",
+       "repo": "ibm-granite/granite-timeseries-ttm-r2",
+       "revision": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+       "variant": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96-r2)",
+       "venv": ".venv_granite"
+      },
+      "python": null,
+      "python_found": false,
+      "weights_installed": false,
+      "weights_reason": "brak tsfm_manifest.json – Granite TTM nie został zainstalowany (instalator pobiera wagi)",
+      "weights_root": "/tmp/pmw_golden_mxwa9_et/tsfm/models"
+     },
+     "instruments": [
+      "XAUUSD"
+     ],
+     "jobs": {},
+     "license": "Apache-2.0",
+     "load": null,
+     "model_id": "granite_ttm",
+     "name": "Granite TTM",
+     "params_upstream": "0.8M",
+     "profile": "CLOSE_V1",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "repo": "ibm-granite/granite-timeseries-ttm-r2",
+     "restarts": 0,
+     "revision": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+     "status": "NOT_INSTALLED",
+     "status_pl": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "targets": [
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "granite_ttm",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M5"
+      },
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "granite_ttm",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M15"
+      }
+     ],
+     "timeframes": [
+      "M5",
+      "M15"
+     ],
+     "timing": {
+      "n": 0
+     },
+     "updated_at": "2026-03-04T08:10:21.166895Z",
+     "use": {
+      "ACTIVE": {
+       "activated_at": "2026-03-04T08:00:03.664850Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "HEDGING": {
+       "activated_at": "2026-03-04T08:00:03.729231Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "SCALPING": {
+       "activated_at": "2026-03-04T08:00:03.693719Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M5",
+       "use": "ASSIST",
+       "validation_report": null
+      }
+     },
+     "variant": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96-r2)",
+     "worker": null
+    },
+    "tirex2": {
+     "code": "NOT_INSTALLED",
+     "context_len": 512,
+     "device": "CPU",
+     "enabled": true,
+     "env": {
+      "fingerprint": "tirex2|NX-AI/TiRex-2@352636173653592b6dceb3fbeee9224ca97952a9|tirex-2@0.5.0",
+      "installed_at": null,
+      "pinned": {
+       "code": {
+        "kind": "pypi",
+        "package": "tirex-2",
+        "repo": "https://github.com/NX-AI/tirex-2",
+        "version": "0.5.0"
+       },
+       "license": "Apache-2.0",
+       "params_upstream": "~80M",
+       "repo": "NX-AI/TiRex-2",
+       "revision": "352636173653592b6dceb3fbeee9224ca97952a9",
+       "variant": "NX-AI/TiRex-2 (xLSTM, safetensors, tirex-2 0.5.0)",
+       "venv": ".venv_tirex2"
+      },
+      "python": null,
+      "python_found": false,
+      "weights_installed": false,
+      "weights_reason": "brak tsfm_manifest.json – TiRex-2 nie został zainstalowany (instalator pobiera wagi)",
+      "weights_root": "/tmp/pmw_golden_mxwa9_et/tsfm/models"
+     },
+     "instruments": [
+      "XAUUSD"
+     ],
+     "jobs": {},
+     "license": "Apache-2.0",
+     "load": null,
+     "model_id": "tirex2",
+     "name": "TiRex-2",
+     "params_upstream": "~80M",
+     "profile": "CLOSE_V1",
+     "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "repo": "NX-AI/TiRex-2",
+     "restarts": 0,
+     "revision": "352636173653592b6dceb3fbeee9224ca97952a9",
+     "status": "NOT_INSTALLED",
+     "status_pl": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "targets": [
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "tirex2",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M5"
+      },
+      {
+       "checked_at": null,
+       "forecast_current": false,
+       "forecast_id": null,
+       "instrument": "XAUUSD",
+       "model": "tirex2",
+       "quality": null,
+       "queued": false,
+       "reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+       "running": false,
+       "snapshot_id": null,
+       "state": "MODEL_UNAVAILABLE",
+       "state_pl": "model niedostępny",
+       "symbol": null,
+       "timeframe": "M15"
+      }
+     ],
+     "timeframes": [
+      "M5",
+      "M15"
+     ],
+     "timing": {
+      "n": 0
+     },
+     "updated_at": "2026-03-04T08:10:21.175104Z",
+     "use": {
+      "ACTIVE": {
+       "activated_at": "2026-03-04T08:00:03.762006Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "HEDGING": {
+       "activated_at": "2026-03-04T08:00:03.822914Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M15",
+       "use": "ASSIST",
+       "validation_report": null
+      },
+      "SCALPING": {
+       "activated_at": "2026-03-04T08:00:03.796566Z",
+       "activation_policy": "DIRECT_USER_REQUEST",
+       "confirmed_at": null,
+       "timeframe": "M5",
+       "use": "ASSIST",
+       "validation_report": null
+      }
+     },
+     "variant": "NX-AI/TiRex-2 (xLSTM, safetensors, tirex-2 0.5.0)",
+     "worker": null
+    }
+   },
+   "quantiles": [
+    0.1,
+    0.5,
+    0.9
+   ],
+   "queue": [],
+   "retired": {
+    "fincast": {
+     "history_count": 0,
+     "name": "FinCast (wycofany)",
+     "settings": null,
+     "status": "RETIRED",
+     "status_pl": "wycofany w 1.40 – zastąpiony przez Granite TTM; historia prognoz zachowana, model nie jest uruchamiany"
+    }
+   },
+   "running": null,
+   "settings": {
+    "direction_band_atr": 0.25,
+    "direction_band_min_points": 0.0,
+    "horizon_bars": {
+     "H1": 6,
+     "M1": 15,
+     "M15": 8,
+     "M3": 10,
+     "M30": 8,
+     "M5": 12
+    },
+    "lookback": 560,
+    "max_staleness_bars": 2.0,
+    "min_context": 128,
+    "models": {
+     "chronos2": {
+      "checkpoint": "BASE",
+      "context_len": 512,
+      "cpu_threads": null,
+      "device": "AUTO",
+      "enabled": true,
+      "instruments": [
+       "XAUUSD"
+      ],
+      "load_timeout_s": 900.0,
+      "profile": "CLOSE_V1",
+      "python_path": null,
+      "request_timeout_s": 120.0,
+      "timeframes": [
+       "M5",
+       "M15"
+      ],
+      "use": {
+       "ACTIVE": {
+        "activated_at": "2026-03-04T08:00:03.591004Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "HEDGING": {
+        "activated_at": "2026-03-04T08:00:03.640518Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "SCALPING": {
+        "activated_at": "2026-03-04T08:00:03.615385Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M5",
+        "use": "ASSIST",
+        "validation_report": null
+       }
+      }
+     },
+     "granite_ttm": {
+      "checkpoint": "BASE",
+      "context_len": 512,
+      "cpu_threads": null,
+      "device": "AUTO",
+      "enabled": true,
+      "instruments": [
+       "XAUUSD"
+      ],
+      "load_timeout_s": 900.0,
+      "profile": "CLOSE_V1",
+      "python_path": null,
+      "request_timeout_s": 120.0,
+      "timeframes": [
+       "M5",
+       "M15"
+      ],
+      "use": {
+       "ACTIVE": {
+        "activated_at": "2026-03-04T08:00:03.664850Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "HEDGING": {
+        "activated_at": "2026-03-04T08:00:03.729231Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "SCALPING": {
+        "activated_at": "2026-03-04T08:00:03.693719Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M5",
+        "use": "ASSIST",
+        "validation_report": null
+       }
+      }
+     },
+     "tirex2": {
+      "checkpoint": "BASE",
+      "context_len": 512,
+      "cpu_threads": 2,
+      "device": "CPU",
+      "enabled": true,
+      "instruments": [
+       "XAUUSD"
+      ],
+      "load_timeout_s": 900.0,
+      "profile": "CLOSE_V1",
+      "python_path": null,
+      "request_timeout_s": 120.0,
+      "timeframes": [
+       "M5",
+       "M15"
+      ],
+      "use": {
+       "ACTIVE": {
+        "activated_at": "2026-03-04T08:00:03.762006Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "HEDGING": {
+        "activated_at": "2026-03-04T08:00:03.822914Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M15",
+        "use": "ASSIST",
+        "validation_report": null
+       },
+       "SCALPING": {
+        "activated_at": "2026-03-04T08:00:03.796566Z",
+        "activation_policy": "DIRECT_USER_REQUEST",
+        "confirmed_at": null,
+        "timeframe": "M5",
+        "use": "ASSIST",
+        "validation_report": null
+       }
+      }
+     }
+    },
+    "quantiles": [
+     0.1,
+     0.5,
+     0.9
+    ],
+    "queue_max": 16,
+    "retired": {},
+    "weights_root": null
+   },
+   "settings_error": null,
+   "settings_history": [
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "chronos2": {
+        "use": {
+         "ACTIVE": {
+          "activated_at": "2026-03-04T08:00:03.591004Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "chronos2": {
+        "use": {
+         "SCALPING": {
+          "activated_at": "2026-03-04T08:00:03.615385Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M5",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "chronos2": {
+        "use": {
+         "HEDGING": {
+          "activated_at": "2026-03-04T08:00:03.640518Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "granite_ttm": {
+        "use": {
+         "ACTIVE": {
+          "activated_at": "2026-03-04T08:00:03.664850Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "granite_ttm": {
+        "use": {
+         "SCALPING": {
+          "activated_at": "2026-03-04T08:00:03.693719Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M5",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "granite_ttm": {
+        "use": {
+         "HEDGING": {
+          "activated_at": "2026-03-04T08:00:03.729231Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "tirex2": {
+        "use": {
+         "ACTIVE": {
+          "activated_at": "2026-03-04T08:00:03.762006Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "tirex2": {
+        "use": {
+         "SCALPING": {
+          "activated_at": "2026-03-04T08:00:03.796566Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M5",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    },
+    {
+     "at": "2026-03-04T08:00:03+00:00",
+     "change": {
+      "models": {
+       "tirex2": {
+        "use": {
+         "HEDGING": {
+          "activated_at": "2026-03-04T08:00:03.822914Z",
+          "activation_policy": "DIRECT_USER_REQUEST",
+          "confirmed_at": null,
+          "timeframe": "M15",
+          "use": "ASSIST",
+          "validation_report": null
+         }
+        }
+       }
+      }
+     },
+     "who": "DIRECT_USER_REQUEST"
+    }
+   ],
+   "version": "PMW-TSFM-1"
+  },
+  "status": 200
+ },
+ "/api/v1/models/predictions": {
+  "body": {
+   "contract": "PMW-PRED-1",
+   "instrument": "XAUUSD",
+   "items": [
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "NOT_APPLICABLE"
+     },
+     "compute_ms": null,
+     "computed_at": 1772611817.8463123,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.846382,
+     "data_kind": null,
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "KRONOS_OHLCV_TIME_V1",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 12,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_key": "kronos_M5",
+     "model_name": "Kronos-small",
+     "model_version": null,
+     "result": null,
+     "role": "tylko obserwacja (SHADOW) – nie wpływa na decyzje ani zlecenia",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "KRONOS_CLOSE_PATH_H12_M5",
+     "task_type": "REGRESSION",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "unit": "price"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "NOT_APPLICABLE"
+     },
+     "compute_ms": null,
+     "computed_at": 1772611817.8475513,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.8475516,
+     "data_kind": null,
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "KRONOS_OHLCV_TIME_V1",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 8,
+      "seconds": null,
+      "timeframe": "M15"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_key": "kronos_M15",
+     "model_name": "Kronos-small",
+     "model_version": null,
+     "result": null,
+     "role": "tylko obserwacja (SHADOW) – nie wpływa na decyzje ani zlecenia",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "KRONOS_CLOSE_PATH_H8_M15",
+     "task_type": "REGRESSION",
+     "timeframe": "M15",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska .venv_kronos (przycisk „Zainstaluj model Kronos” albo 33_KRONOS_INSTALUJ.bat)",
+     "unit": "price"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+     "compute_ms": null,
+     "computed_at": 1772611817.8693933,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.8695552,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "chronos2|amazon/chronos-2@29ec3766d36d6f73f0696f85560a422f50e8498c|chronos-forecasting@2.3.2",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 12,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:chronos2",
+     "model_key": "chronos2_M5",
+     "model_name": "Chronos-2",
+     "model_version": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H12_M5",
+     "task_type": "REGRESSION",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+     "compute_ms": null,
+     "computed_at": 1772611817.874698,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.8746986,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "chronos2|amazon/chronos-2@29ec3766d36d6f73f0696f85560a422f50e8498c|chronos-forecasting@2.3.2",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 8,
+      "seconds": null,
+      "timeframe": "M15"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:chronos2",
+     "model_key": "chronos2_M15",
+     "model_name": "Chronos-2",
+     "model_version": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H8_M15",
+     "task_type": "REGRESSION",
+     "timeframe": "M15",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+     "compute_ms": null,
+     "computed_at": 1772611817.8846476,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.8846486,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "granite_ttm|ibm-granite/granite-timeseries-ttm-r2@d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f|granite-tsfm@0.3.11",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 12,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:granite_ttm",
+     "model_key": "granite_ttm_M5",
+     "model_name": "Granite TTM",
+     "model_version": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H12_M5",
+     "task_type": "REGRESSION",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+     "compute_ms": null,
+     "computed_at": 1772611817.8925555,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.8925562,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "granite_ttm|ibm-granite/granite-timeseries-ttm-r2@d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f|granite-tsfm@0.3.11",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 8,
+      "seconds": null,
+      "timeframe": "M15"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:granite_ttm",
+     "model_key": "granite_ttm_M15",
+     "model_name": "Granite TTM",
+     "model_version": "d6a79570cac0f33d526601cd3a0fc7c80a8f9a2f",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H8_M15",
+     "task_type": "REGRESSION",
+     "timeframe": "M15",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "352636173653592b6dceb3fbeee9224ca97952a9",
+     "compute_ms": null,
+     "computed_at": 1772611817.9116197,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.911668,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "tirex2|NX-AI/TiRex-2@352636173653592b6dceb3fbeee9224ca97952a9|tirex-2@0.5.0",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 12,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:tirex2",
+     "model_key": "tirex2_M5",
+     "model_name": "TiRex-2",
+     "model_version": "352636173653592b6dceb3fbeee9224ca97952a9",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H12_M5",
+     "task_type": "REGRESSION",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "checkpoint_revision": "352636173653592b6dceb3fbeee9224ca97952a9",
+     "compute_ms": null,
+     "computed_at": 1772611817.925391,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611817.9253912,
+     "data_kind": null,
+     "data_profile": "CLOSE_V1",
+     "data_quality": "OK",
+     "data_time": null,
+     "decision_use": {
+      "ACTIVE": "ASSIST",
+      "HEDGING": "ASSIST",
+      "SCALPING": "ASSIST"
+     },
+     "feature_schema": "TSFM_CLOSE_V1",
+     "fingerprint": "tirex2|NX-AI/TiRex-2@352636173653592b6dceb3fbeee9224ca97952a9|tirex-2@0.5.0",
+     "freshness_s": null,
+     "horizon": {
+      "bars": 8,
+      "seconds": null,
+      "timeframe": "M15"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_id": "tsfm:tirex2",
+     "model_key": "tirex2_M15",
+     "model_name": "TiRex-2",
+     "model_version": "352636173653592b6dceb3fbeee9224ca97952a9",
+     "result": null,
+     "role": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "TSFM_CLOSE_H8_M15",
+     "task_type": "REGRESSION",
+     "timeframe": "M15",
+     "ttl_s": null,
+     "unavailable_reason": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
+     "unit": "price",
+     "validation_status": "NOT_VALIDATED"
+    },
+    {
+     "available_at": "2026-03-04T08:05:00+00:00",
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "canonical_id": "research:graph50:NEXT_BAR_DIRECTION",
+     "compute_ms": null,
+     "computed_at": 1772611818.1134691,
+     "contract": "PMW-PRED-2",
+     "correlation_group": "RESEARCH_GRAPH",
+     "created_at": 1772611818.1134698,
+     "data_kind": "SYNTHETIC",
+     "data_quality": "OK",
+     "data_time": "2026-03-04T08:05:00+00:00",
+     "family": "research:graph50",
+     "feature_schema": null,
+     "freshness_s": null,
+     "horizon": {
+      "bars": 1,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_name": "research:graph50:NEXT_BAR_DIRECTION",
+     "model_version": "PMW-RESEARCH-1",
+     "result": {
+      "raw_score": -0.6502449129850407
+     },
+     "run_id": null,
+     "source": null,
+     "state": "READY",
+     "state_pl": "gotowy",
+     "symbol": null,
+     "task": "GRAPH50_NEXT_BAR_DIRECTION",
+     "task_type": "SCORE",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": null,
+     "unit": "ratio"
+    },
+    {
+     "available_at": "2026-03-04T08:05:00+00:00",
+     "calibration": {
+      "method": null,
+      "status": "UNCALIBRATED"
+     },
+     "canonical_id": "research:graph50:BPC10",
+     "compute_ms": null,
+     "computed_at": 1772611818.118627,
+     "contract": "PMW-PRED-2",
+     "correlation_group": "RESEARCH_GRAPH",
+     "created_at": 1772611818.1186278,
+     "data_kind": "SYNTHETIC",
+     "data_quality": "OK",
+     "data_time": "2026-03-04T08:05:00+00:00",
+     "family": "research:graph50",
+     "feature_schema": null,
+     "freshness_s": null,
+     "horizon": {
+      "bars": 10,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_name": "research:graph50:BPC10",
+     "model_version": "PMW-RESEARCH-1",
+     "result": {
+      "raw_score": -0.747716822956588
+     },
+     "run_id": null,
+     "source": null,
+     "state": "READY",
+     "state_pl": "gotowy",
+     "symbol": null,
+     "task": "GRAPH50_BPC10",
+     "task_type": "SCORE",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": null,
+     "unit": "ratio"
+    },
+    {
+     "available_at": "2026-03-04T08:05:00+00:00",
+     "calibration": {
+      "method": null,
+      "status": "NOT_APPLICABLE"
+     },
+     "canonical_id": "research:g7_smc_radar",
+     "compute_ms": null,
+     "computed_at": 1772611818.1244497,
+     "contract": "PMW-PRED-2",
+     "correlation_group": "STRUCTURE_FVG_OB",
+     "created_at": 1772611818.1244502,
+     "data_kind": "SYNTHETIC",
+     "data_quality": "OK",
+     "data_time": "2026-03-04T08:05:00+00:00",
+     "family": "research:g7",
+     "feature_schema": null,
+     "freshness_s": null,
+     "horizon": {
+      "bars": null,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_name": "research:g7_smc_radar",
+     "model_version": "PMW-RESEARCH-1",
+     "result": {
+      "coverage": 0.75,
+      "raw_score": -70.0
+     },
+     "run_id": null,
+     "source": null,
+     "state": "READY",
+     "state_pl": "gotowy",
+     "symbol": null,
+     "task": "G7_RULE_CONFLUENCE",
+     "task_type": "SCORE",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": null,
+     "unit": "score_0_100"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "NOT_APPLICABLE"
+     },
+     "compute_ms": 2.25,
+     "computed_at": 1772611818.2813292,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611818.2813294,
+     "data_kind": null,
+     "data_quality": "OK",
+     "data_time": "2026-03-04T08:09:01.491909Z",
+     "family": "MICROSTRUCTURE",
+     "feature_schema": null,
+     "freshness_s": null,
+     "horizon": {
+      "bars": null,
+      "seconds": null,
+      "timeframe": null
+     },
+     "instrument": "XAUUSD",
+     "kind": "MEASUREMENT",
+     "label_version": null,
+     "model_name": "MICROSTRUCTURE",
+     "model_version": null,
+     "receivers": [
+      "SH_CONTEXT:entry_quality",
+      "RISK:execution_conditions",
+      "PANEL:microstructure"
+     ],
+     "result": {
+      "best_imbalance": 0.5,
+      "capability": "L2_BOOK",
+      "depth_imbalance": -0.030303030303,
+      "microprice_dev": 0.0299999999997,
+      "mid": 3457.88,
+      "ofi_mode": "SAMPLED(1s)",
+      "ofi_window": 354.5
+     },
+     "run_id": null,
+     "source": "family:MICROSTRUCTURE",
+     "state": "READY",
+     "state_pl": "gotowy",
+     "symbol": "XAUUSD-",
+     "task": "BOOK_STATE_AND_REACTION_10S",
+     "task_type": "MICROSTRUCTURE",
+     "timeframe": null,
+     "ttl_s": null,
+     "unavailable_reason": null,
+     "unit": "mixed",
+     "use": "SHADOW"
+    },
+    {
+     "available_at": null,
+     "calibration": {
+      "method": null,
+      "status": "NOT_APPLICABLE"
+     },
+     "compute_ms": null,
+     "computed_at": 1772611818.7451527,
+     "contract": "PMW-PRED-2",
+     "created_at": 1772611818.7451532,
+     "data_kind": null,
+     "data_quality": "OK",
+     "data_time": null,
+     "feature_schema": null,
+     "freshness_s": null,
+     "horizon": {
+      "bars": 1,
+      "seconds": null,
+      "timeframe": "M5"
+     },
+     "instrument": "XAUUSD",
+     "label_version": null,
+     "model_name": "gold_candles",
+     "model_version": null,
+     "result": null,
+     "run_id": null,
+     "source": null,
+     "state": "DISABLED",
+     "state_pl": "wyłączony",
+     "symbol": null,
+     "task": "CANDLE_CLOSE_DIRECTION_H1_M5",
+     "task_type": "CLASS_PROBABILITIES",
+     "timeframe": "M5",
+     "ttl_s": null,
+     "unavailable_reason": "brak środowiska .venv_candles (uruchom 10_PROGNOZY_INSTALUJ.bat)",
+     "unit": "probability"
+    }
+   ]
+  },
+  "status": 200
+ },
+ "/api/v1/quant/assessment": {
+  "body": {
+   "items": [
+    {
+     "assessment_id": "QA-becd0e0a06154a",
+     "candidate_key": "b9fbe53918310d9b6dc7",
+     "confidence": {
+      "calibration_status": "UNCALIBRATED",
+      "computed_at": null,
+      "confidence_score": null,
+      "context_id": null,
+      "estimator_kind": "tabicl_v2",
+      "event_id": "TP2_BEFORE_STOP",
+      "heuristic_score": 87.5,
+      "influence": "NONE",
+      "note": "surowy wynik modelu (nie zmierzony win rate); bez stałych premii; brak wyniku ≠ 50 %",
+      "p_event_raw": null,
+      "plan_hash": "b2680c237daee17e",
+      "reason": "ocena TabICLv2 w kolejce (asynchronicznie)",
+      "state": "QUEUED",
+      "task_hash": "1b23184c4f19a69c"
+     },
+     "conflict": {
+      "agree": 0,
+      "disagree": 0,
+      "note": "zgodność modeli z tego samego feedu nie jest niezależnym potwierdzeniem"
+     },
+     "costs": {
+      "basis": "koszt odjęty raz w etykiecie net R; brak drugiego odjęcia",
+      "cost_price": null,
+      "spread": "W CENACH (bid/ask)",
+      "status": "UNKNOWN"
+     },
+     "created_at": 1772611740.8459687,
+     "data_quality": {
+      "data_as_of": null,
+      "reasons": [],
+      "status": "OK"
+     },
+     "decision_ts": 1772611686.8384502,
+     "direction": "SHORT",
+     "engine": "SH_SCALPING",
+     "ev": null,
+     "event": {
+      "ambiguity": "SL_FIRST",
+      "be_after": "TP2",
+      "entry_rule": "MARKET",
+      "event_id": "TP2_BEFORE_STOP",
+      "horizon_s": 240.0,
+      "instrument": "XAUUSD",
+      "label_version": "QEV1",
+      "spread_in_prices": true,
+      "strategy": "SH_SCALPING/SCALPING",
+      "targets_r": [
+       1.0,
+       2.0
+      ],
+      "timeout_rule": "CLOSE_AT_LAST_CLOSE",
+      "weights": [
+       0.5,
+       0.5
+      ]
+     },
+     "event_id": "TP2_BEFORE_STOP",
+     "evidence": {
+      "ledger_rows_for_task": {},
+      "positives": null
+     },
+     "execution_allowed": false,
+     "heuristic_score": 87.5,
+     "mode": "SHADOW",
+     "plan": {
+      "entry": 3456.8011528122383,
+      "sl": 3459.0300990535084,
+      "targets": [
+       [
+        3454.5722065709683,
+        0.5
+       ],
+       [
+        3452.3432603296983,
+        0.5
+       ]
+      ]
+     },
+     "plan_hash": "b2680c237daee17e",
+     "probability": null,
+     "reason": "brak wytrenowanego modelu dla tego zdarzenia",
+     "row_id": "b9fbe53918310d9b6dc7:1b23184c4f19a69c",
+     "sources": {
+      "eligible": 17,
+      "excluded": 13,
+      "features": 43,
+      "generation": 71,
+      "snapshot_status": "OK"
+     },
+     "status": "NOT_TRAINED",
+     "strategy": "SCALPING",
+     "tabicl": {
+      "decision_ts": 1772611686.8384502,
+      "engine": "SH_SCALPING",
+      "event_id": "TP2_BEFORE_STOP",
+      "event_key": "XAUUSD|TP2_BEFORE_STOP|QEV1|SL_FIRST|TP2|CLOSE_AT_LAST_CLOSE",
+      "generation": 71,
+      "plan_hash": "b2680c237daee17e",
+      "reason": "ocena TabICLv2 w kolejce (asynchronicznie)",
+      "state": "QUEUED",
+      "strategy": "SCALPING",
+      "task_hash": "1b23184c4f19a69c"
+     },
+     "task_hash": "1b23184c4f19a69c"
+    }
+   ],
+   "mode": "SHADOW",
+   "note": "brak skalibrowanego wyniku = brak wytrenowanego modelu dla tego zdarzenia (nie 0 %, nie 50 %)"
+  },
+  "status": 200
+ },
+ "/api/v1/quant/predictions": {
+  "body": {
+   "aliases_dropped": [],
+   "computed_at": 1772611810.8905094,
+   "eligible": [],
+   "excluded": [],
+   "generation": 82,
+   "instrument": "XAUUSD"
+  },
+  "status": 200
+ },
+ "/api/v1/quant/status": {
+  "body": {
+   "assist": {
+    "activated": false,
+    "activated_at": null,
+    "activated_by": null
+   },
+   "assist_active": false,
+   "complete": false,
+   "computed_at": 1772611810.8905094,
+   "cycle_ms": 5002.536,
+   "estimator": "tabicl_v2",
+   "execution_allowed": false,
+   "generation": 82,
+   "instrument": "XAUUSD",
+   "jobs": [],
+   "ledger": {
+    "tasks": [
+     {
+      "by_status": {
+       "PENDING": 1
+      },
+      "engine": "SH_SCALPING",
+      "event_id": "TP2_BEFORE_STOP",
+      "from": 1772611686.8384502,
+      "positives": 0,
+      "task_hash": "1b23184c4f19a69c",
+      "to": 1772611686.8384502
+     }
+    ],
+    "total": 1
+   },
+   "loop": {
+    "cycles": 82,
+    "errors": 0,
+    "last_cycle_at": 1772611810.8905094,
+    "last_error": null,
+    "matured": 0,
+    "rows_logged": 1,
+    "rows_skipped": 0
+   },
+   "metamodel": {
+    "active": {},
+    "validated_active": {},
+    "versions": []
+   },
+   "mode": "SHADOW",
+   "models": {
+    "aliases_dropped": 0,
+    "eligible": 0,
+    "excluded": 0,
+    "excluded_by_reason": {},
+    "ready_ids": []
+   },
+   "settings_error": null,
+   "setup_scoped": [
+    {
+     "canonical_id": "sh:tp_model",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "skalibrowane P dokładnie zdarzenia strategii",
+     "reason": "SCALPING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner); HEDGING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner)",
+     "receiver": "evaluation (prawdopodobieństwo per kandydat)",
+     "sh_id": "sh_tp_model",
+     "status": "NOT_TRAINED"
+    },
+    {
+     "canonical_id": "scalp:B_setup_quality",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "P(TP1 przed SL) INNEGO setupu (score)",
+     "reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+     "receiver": "scalp (per plan)",
+     "sh_id": "scalp_B",
+     "status": "NOT_TRAINED"
+    },
+    {
+     "canonical_id": "ml:legacy_s01_s12",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "P(net R > 0) setupu S01–S12",
+     "reason": "brak championa",
+     "receiver": "evaluation (prawdopodobieństwo per kandydat)",
+     "sh_id": "legacy_ml",
+     "status": "NOT_TRAINED"
+    },
+    {
+     "canonical_id": "extind:indicator_context",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "P(TP1 przed SL) polityki scalp (score)",
+     "reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+     "receiver": "scalp (per plan)",
+     "sh_id": "indicator_context",
+     "status": "NOT_TRAINED"
+    },
+    {
+     "canonical_id": "ml_scalp:xgb_net_r",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "P(net_R > 0), E[net_R] innego cyklu",
+     "reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+     "receiver": "scalp (per plan)",
+     "sh_id": "ml_scalp",
+     "status": "NOT_TRAINED"
+    },
+    {
+     "canonical_id": "nss:tcn",
+     "note": "wynik istnieje tylko dla konkretnego kandydata setupu – brak samodzielnej predykcji",
+     "output": "P(TP1_FIRST/SL_FIRST/TIMEOUT) innego setupu",
+     "reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
+     "receiver": "scalp (per plan)",
+     "sh_id": "nss",
+     "status": "NOT_TRAINED"
+    }
+   ],
+   "snapshot": null,
+   "tabicl": {
+    "activation_policy": "DIRECT_USER_REQUEST",
+    "active": true,
+    "contexts": {},
+    "estimator": "tabicl_v2",
+    "last_error": null,
+    "last_results": [
+     {
+      "computed_at": 1772611746.4003737,
+      "decision_ts": 1772611746.2950342,
+      "engine": "BASKET_FX_SCALP",
+      "event_id": "TP2_BEFORE_STOP",
+      "event_key": "XAUUSD|TP2_BEFORE_STOP|QEV1|SL_FIRST|None|CLOSE_AT_LAST_CLOSE",
+      "generation": 72,
+      "plan_hash": "99beebd46503c9f6",
+      "reason": "TabICLv2 nie jest zainstalowany (.venv_tabicl + wagi) – 41_AI_TABICL_TIREX_INSTALUJ.bat",
+      "state": "NOT_INSTALLED",
+      "strategy": "FX_SCALP_01",
+      "task_hash": "dd0fb9d1c482210b"
+     },
+     {
+      "computed_at": 1772611740.8497758,
+      "decision_ts": 1772611686.8384502,
+      "engine": "SH_SCALPING",
+      "event_id": "TP2_BEFORE_STOP",
+      "event_key": "XAUUSD|TP2_BEFORE_STOP|QEV1|SL_FIRST|TP2|CLOSE_AT_LAST_CLOSE",
+      "generation": 71,
+      "plan_hash": "b2680c237daee17e",
+      "reason": "TabICLv2 nie jest zainstalowany (.venv_tabicl + wagi) – 41_AI_TABICL_TIREX_INSTALUJ.bat",
+      "state": "NOT_INSTALLED",
+      "strategy": "SCALPING",
+      "task_hash": "1b23184c4f19a69c"
+     },
+     {
+      "computed_at": 1772611686.9686346,
+      "decision_ts": 1772611686.8765485,
+      "engine": "BASKET_FX_SCALP",
+      "event_id": "TP2_BEFORE_STOP",
+      "event_key": "XAUUSD|TP2_BEFORE_STOP|QEV1|SL_FIRST|None|CLOSE_AT_LAST_CLOSE",
+      "generation": 61,
+      "plan_hash": "5bf9f3fbd5a9ba2e",
+      "reason": "TabICLv2 nie jest zainstalowany (.venv_tabicl + wagi) – 41_AI_TABICL_TIREX_INSTALUJ.bat",
+      "state": "NOT_INSTALLED",
+      "strategy": "FX_SCALP_10",
+      "task_hash": "c01267ee64199a52"
+     }
+    ],
+    "queue": 0,
+    "reconstruction": {
+     "finished_at": 1772611209.1704693,
+     "result": {
+      "code": "NO_HISTORY",
+      "ok": false,
+      "reason": "brak zamkniętej historii M1 XAUUSD w magazynie danych (min. ~3000 świec)"
+     },
+     "started_at": 1772611209.1077259,
+     "state": "FAILED"
+    },
+    "semantics": "confidence_score = 100 × p_event_raw (surowa estymata TabICLv2 dla zdarzenia planu, NIESKALIBROWANA – nie jest zmierzonym win rate); brak wyniku ≠ 50 %",
+    "version": "PMW-QUANT-TABICL-1",
+    "weights": {
+     "installed": false,
+     "problems": [
+      "tabicl-classifier-v2-20260212.ckpt: brak pliku",
+      "brak manifestu instalacji"
+     ],
+     "python": null
+    },
+    "worker": {
+     "context_in_process": null,
+     "info": null,
+     "loaded": false,
+     "restarts": 0,
+     "running": false
+    }
+   },
+   "tasks": {
+    "base_predictions": {
+     "ms": 0.0,
+     "owner": "modelhub.adapters",
+     "reason": "snapshot",
+     "status": "BLOCKED_DEPENDENCY"
+    },
+    "contract_checks": {
+     "ms": 0.0,
+     "owner": "quant.checks",
+     "reason": "snapshot,base_predictions,extended_predictions",
+     "status": "BLOCKED_DEPENDENCY"
+    },
+    "extended_predictions": {
+     "ms": 0.0,
+     "owner": "quant.adapters",
+     "reason": "snapshot",
+     "status": "BLOCKED_DEPENDENCY"
+    },
+    "snapshot": {
+     "ms": 5001.621,
+     "owner": "quant.snapshot",
+     "reason": "deadline 5.0s",
+     "status": "TIMEOUT"
+    }
+   },
+   "timings": {
+    "_cycle": {
+     "max_ms": 18404.542,
+     "n": 82,
+     "p50_ms": 1530.265,
+     "p95_ms": 5064.366,
+     "p99_ms": 8078.076
+    },
+    "base_predictions": {
+     "max_ms": 16584.738,
+     "n": 82,
+     "p50_ms": 13.133,
+     "p95_ms": 500.24,
+     "p99_ms": 4073.31
+    },
+    "contract_checks": {
+     "max_ms": 83.473,
+     "n": 82,
+     "p50_ms": 1.285,
+     "p95_ms": 41.264,
+     "p99_ms": 78.619
+    },
+    "extended_predictions": {
+     "max_ms": 397.043,
+     "n": 82,
+     "p50_ms": 6.21,
+     "p95_ms": 256.419,
+     "p99_ms": 364.099
+    },
+    "snapshot": {
+     "max_ms": 5027.202,
+     "n": 82,
+     "p50_ms": 1198.22,
+     "p95_ms": 5005.255,
+     "p99_ms": 5012.284
+    }
+   },
+   "version": "PMW-QUANT-SERVICE-1"
+  },
+  "status": 200
+ },
+ "/api/v1/scalp/shadow": {
+  "body": {
+   "items": [],
+   "summary": {
+    "by_status": {},
+    "days": 0,
+    "mean_r_after_costs": null,
+    "note": "SHADOW na żywo – za mało cykli to INSUFFICIENT_EVIDENCE, nie wynik",
+    "settled": 0,
+    "win_rate": null
+   }
+  },
+  "status": 200
+ },
+ "/api/v1/setups": {
+  "body": {
+   "engine_selected": null,
+   "items": [],
+   "schema": "MQ-SETUP-DETAILS-1.1.0",
+   "setup_view": {
+    "focus_setup_id": null,
+    "mode": "AUTO",
+    "strategy_id": null
+   },
+   "strategies": [
+    {
+     "name": "TREND_PULLBACK",
+     "strategy_id": "S01"
+    },
+    {
+     "name": "ADAPTIVE_TREND",
+     "strategy_id": "S02"
+    },
+    {
+     "name": "CHANNEL_BREAKOUT",
+     "strategy_id": "S03"
+    },
+    {
+     "name": "VOLATILITY_COMPRESSION_BREAKOUT",
+     "strategy_id": "S04"
+    },
+    {
+     "name": "SESSION_RANGE_BREAKOUT",
+     "strategy_id": "S05"
+    },
+    {
+     "name": "BREAKOUT_RETEST",
+     "strategy_id": "S06"
+    },
+    {
+     "name": "FAILED_BREAKOUT_RECLAIM",
+     "strategy_id": "S07"
+    },
+    {
+     "name": "RANGE_EDGE_REVERSION",
+     "strategy_id": "S08"
+    },
+    {
+     "name": "STATISTICAL_MEAN_REVERSION",
+     "strategy_id": "S09"
+    },
+    {
+     "name": "EXHAUSTION_STRUCTURE_REVERSAL",
+     "strategy_id": "S10"
+    },
+    {
+     "name": "EMA20_PULLBACK_2_5R",
+     "strategy_id": "S11"
+    },
+    {
+     "name": "WALLS_RANGE_FAMILY",
+     "strategy_id": "S12"
+    }
+   ]
+  },
+  "status": 200
+ },
+ "/api/v1/sh/plans": {
+  "body": {
+   "items": []
+  },
+  "status": 200
+ },
+ "/api/v1/sh/signals": {
+  "body": {
+   "items": [
+    {
+     "created_at": 1772611686.8384502,
+     "instrument": "XAUUSD",
+     "levels": {
+      "be_after": null,
+      "entry": 3456.8011528122383,
+      "horizon_minutes": 4,
+      "invalidation": 3459.0300990535084,
+      "net_rr": 1.0,
+      "position_max_minutes": 4,
+      "side": "SELL",
+      "sl": 3459.0300990535084,
+      "targets": [
+       {
+        "name": "TP1",
+        "price": 3454.5722065709683,
+        "share": 0.5
+       },
+       {
+        "name": "TP2",
+        "price": 3452.3432603296983,
+        "share": 0.5
+       }
+      ]
+     },
+     "plan": null,
+     "side": "SELL",
+     "signal_id": "SH-BK1856f25e4cf0212e99ad",
+     "signal_tf": "M1",
+     "status": "READY",
+     "status_reason": "nowe wejścia zablokowane: PRIMARY_PATH_NOT_SELECTED",
+     "strategy": "SCALPING",
+     "strategy_id": "FX_SCALP_10",
+     "symbol": "XAUUSD-",
+     "valid_until": 1772611866.8384502
+    },
+    {
+     "created_at": 1772611325.4508994,
+     "instrument": "XAUUSD",
+     "levels": null,
+     "plan": null,
+     "side": null,
+     "signal_id": "SH-59f9c924eebf48",
+     "signal_tf": null,
+     "status": "WAIT",
+     "status_reason": "sprzeczne interwały (H1/M15 przeciw trendowi M5)",
+     "strategy": "SCALPING",
+     "strategy_id": "LEGACY_SCALPING",
+     "symbol": "XAUUSD-",
+     "valid_until": null
+    },
+    {
+     "created_at": 1772611325.4508994,
+     "instrument": "XAUUSD",
+     "levels": null,
+     "plan": null,
+     "side": null,
+     "signal_id": "SH-fb3eb2fc857bc8",
+     "signal_tf": null,
+     "status": "WAIT",
+     "status_reason": "sprzeczne interwały (H1/M15 przeciw trendowi M5)",
+     "strategy": "HEDGING",
+     "strategy_id": "LEGACY_HEDGING",
+     "symbol": "XAUUSD-",
+     "valid_until": null
+    },
+    {
+     "created_at": 1772611219.9212852,
+     "instrument": "XAUUSD",
+     "levels": null,
+     "plan": null,
+     "side": null,
+     "signal_id": "SH-1b73bdc1486407",
+     "signal_tf": null,
+     "status": "WAIT",
+     "status_reason": "sprzeczne interwały (H1/M15 przeciw trendowi M5)",
+     "strategy": "SCALPING",
+     "strategy_id": "LEGACY_SCALPING",
+     "symbol": "XAUUSD-",
+     "valid_until": null
+    },
+    {
+     "created_at": 1772611219.9212852,
+     "instrument": "XAUUSD",
+     "levels": null,
+     "plan": null,
+     "side": null,
+     "signal_id": "SH-5c5744faedbc74",
+     "signal_tf": null,
+     "status": "WAIT",
+     "status_reason": "sprzeczne interwały (H1/M15 przeciw trendowi M5)",
+     "strategy": "HEDGING",
+     "strategy_id": "LEGACY_HEDGING",
+     "symbol": "XAUUSD-",
+     "valid_until": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "/api/v1/sh/strategies": {
+  "body": {
+   "common": {
+    "b_atr_mult": 0.1,
+    "b_tick_mult": 2.0,
+    "commission_scenario_price_rt": 0.1,
+    "max_entry_departure_atr": 0.25,
+    "or_windows": [
+     {
+      "end": "08:15",
+      "id": "LONDON",
+      "start": "08:00",
+      "tz": "Europe/London"
+     },
+     {
+      "end": "08:35",
+      "id": "NEW_YORK",
+      "start": "08:20",
+      "tz": "America/New_York"
+     }
+    ],
+    "pivot_left": 2,
+    "pivot_right": 2,
+    "reach_factor": 1.0,
+    "retest_max_bars": 3,
+    "stress_extra_slippage_price": 0.2,
+    "stress_gap_price": 1.0,
+    "trading_day": {
+     "note": "doba handlowa XAUUSD = 17:00–17:00 America/New_York (rollover); kotwica VWAP sesji i profil poprzedniej sesji",
+     "start": "17:00",
+     "tz": "America/New_York"
+    },
+    "warmup": {
+     "ema_mult": 5,
+     "note": "wymagany zapas historii = 5 × najdłuższy okres EMA danego TF (H1: EMA200 → 1000 świec)"
+    }
+   },
+   "count": 20,
+   "errors": [],
+   "families": {
+    "HEDGING": 10,
+    "SCALPING": 10
+   },
+   "family_rules": {
+    "HEDGING": {
+     "basket_loss_limit_x_risk": 1.0,
+     "hedge": true,
+     "hedge_cost_cap_fraction_of_r": 0.25,
+     "max_activations": 1,
+     "max_ratio": 0.5,
+     "netting_alternative": "BLOCK",
+     "rr_min": 3.0,
+     "scenario_unwind_overshoot_r": 0.25,
+     "shares": [
+      0.5,
+      0.5
+     ],
+     "tp1_min_pips": 40,
+     "tp1_r_mult": 2.0,
+     "tp2_r_mult": 5.0,
+     "ttl_bars": 3,
+     "ttl_max_minutes": 30
+    },
+    "SCALPING": {
+     "hedge": false,
+     "rr_min": 2.0,
+     "shares": [
+      0.5,
+      0.5
+     ],
+     "tp1_min_pips": 25,
+     "tp1_r_mult": 1.5,
+     "tp2_r_mult": 3.0,
+     "ttl_bars": 3,
+     "ttl_max_minutes": 10
+    }
+   },
+   "garch": {
+    "status": "NOT_TRAINED"
+   },
+   "hash": "8e0a7b4ee569c6b8",
+   "items": [
+    {
+     "cluster": "TREND_PULLBACK",
+     "config_hash": "a1b832ebfa2882ee",
+     "context_tfs": [
+      "M15",
+      "H1"
+     ],
+     "description": "Korekta do EMA20±b w trendzie M15/H1, zamknięcie nad EMA20+b i nad high[t-1]; hedge 0,50 po dwóch zamknięciach M5 pod EMA20−b.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "adverse_min_r": 0.5,
+      "confirm_closes": 2,
+      "max_hedge_minutes": 30,
+      "ratio": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_CORRECTION_EMA20",
+     "name": "MTF EMA Pullback / Correction Hedge",
+     "params": {},
+     "position_max_minutes": 240.0,
+     "reuse": "wspólny detektor pullbacku EMA (S01/S11 – ta sama zasada, czyste funkcje)",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B02",
+      "B06"
+     ],
+     "strategy_id": "PMW_HG01",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG01",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "STRUCTURE_BREAKOUT",
+     "config_hash": "0c1031b814d6424e",
+     "context_tfs": [
+      "H1"
+     ],
+     "description": "Wybicie potwierdzonego oporu L zamrożonego przed wybiciem, retest w 3 świecach; hedge 0,50 po utracie L−b i potwierdzeniu pod L.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "max_hedge_minutes": 20,
+      "ratio": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_LEVEL_FAILURE",
+     "name": "Breakout–Retest / Level Failure Hedge",
+     "params": {},
+     "position_max_minutes": 180.0,
+     "reuse": "S06 (wybicie–retest) – poziom z potwierdzonych pivotów",
+     "setup_group_id": "BREAKOUT_RETEST",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B02",
+      "B06"
+     ],
+     "strategy_id": "PMW_HG02",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG02",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "CHANNEL_TREND",
+     "config_hash": "99a0258f908a5442",
+     "context_tfs": [
+      "H1"
+     ],
+     "description": "Zamknięcie M15 nad maksimum 20 poprzednich świec przy ADX≥25 i trendzie H1, wejście po retescie; hedge 0,25 po dwóch M5 pod środkiem kanału.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "confirm_closes": 2,
+      "max_hedge_minutes": 45,
+      "ratio": 0.25
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_MIDCHANNEL",
+     "name": "Donchian Trend / Midchannel Hedge",
+     "params": {
+      "adx_min": 25,
+      "channel": 20
+     },
+     "position_max_minutes": 360.0,
+     "reuse": "S03 (kanał Donchiana bez bieżącej świecy)",
+     "setup_group_id": "CHANNEL_BREAKOUT",
+     "signal_tfs": [
+      "M15"
+     ],
+     "sources": [
+      "B09",
+      "B11",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG03",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG03",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "SESSION_BREAKOUT",
+     "config_hash": "9e289cf500790dab",
+     "context_tfs": [
+      "M15",
+      "H1"
+     ],
+     "description": "OR 15 min (Londyn 08:00, Nowy Jork 08:20, IANA/DST), wybicie i retest granicy; hedge 0,50 po powrocie pod OR_high−b i pod środek OR.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "max_hedge_minutes": 20,
+      "ratio": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5"
+     ],
+     "management_policy_id": "HEDGE_RANGE_RETURN",
+     "name": "Session Opening Range / Range Return Hedge",
+     "params": {
+      "entry_window_minutes": 90
+     },
+     "position_max_minutes": 180.0,
+     "reuse": "S05 (sesje z DST)",
+     "setup_group_id": "OPENING_RANGE",
+     "signal_tfs": [
+      "M5"
+     ],
+     "sources": [
+      "B10",
+      "B06",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG04",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG04",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VWAP_TREND",
+     "config_hash": "51fcb6c0387fb449",
+     "context_tfs": [
+      "H1"
+     ],
+     "description": "AVWAP od początku doby handlowej (tick volume = aktywność feedu), korekta do AVWAP±b i powrót nad; hedge 0,50 po dwóch M5 pod AVWAP−b.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "confirm_closes": 2,
+      "max_hedge_minutes": 30,
+      "ratio": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_AVWAP_LOSS",
+     "name": "Anchored VWAP Trend / AVWAP Loss Hedge",
+     "params": {
+      "anchor": "TRADING_DAY"
+     },
+     "position_max_minutes": 240.0,
+     "reuse": "PMW-IND-1 AVWAP (ta sama definicja ważenia tick volume)",
+     "setup_group_id": "VWAP",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B07",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG05",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG05",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VOLATILITY_BREAKOUT",
+     "config_hash": "66201c0d1af4ae98",
+     "context_tfs": [
+      "M15",
+      "H1"
+     ],
+     "description": "BandWidth BB(20,2) < 20. percentyl ze 120, wybicie nad pasmo i maksimum 10 świec, retest; hedge 0,50 po dwóch M5 pod poziomem wybicia z korpusem > 0,8 ATR.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "body_atr": 0.8,
+      "max_hedge_minutes": 15,
+      "ratio": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5"
+     ],
+     "management_policy_id": "HEDGE_IMPULSE_EXHAUSTION",
+     "name": "Volatility Squeeze / Impulse Exhaustion Hedge",
+     "params": {
+      "bb_k": 2.0,
+      "bb_n": 20,
+      "break_lookback": 10,
+      "bw_lookback": 120,
+      "bw_pct": 0.2,
+      "sl_anchor": "RETEST"
+     },
+     "position_max_minutes": 180.0,
+     "reuse": "S04 (kompresja zmienności)",
+     "setup_group_id": "SQUEEZE_BREAKOUT",
+     "signal_tfs": [
+      "M5"
+     ],
+     "sources": [
+      "B12",
+      "B13",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG06",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG06",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "FAILED_BREAKOUT",
+     "config_hash": "00049ff78068f3fd",
+     "context_tfs": [
+      "H1"
+     ],
+     "description": "Zejście pod wsparcie L o b i powrót nad L+b, potwierdzone przebiciem high świecy reclaim; hedge 0,25 po ponownej utracie L.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "max_hedge_minutes": 15,
+      "ratio": 0.25
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_RECLAIM_LOSS",
+     "name": "Failed Breakout Reclaim / Reclaim Loss Hedge",
+     "params": {},
+     "position_max_minutes": 120.0,
+     "reuse": "S07/S12 (geometria ceny – bez deklarowania stopów uczestników)",
+     "setup_group_id": "SWEEP_RECLAIM",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B06",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG07",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG07",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VALUE_REVERSION",
+     "config_hash": "a058f0095aac0de8",
+     "context_tfs": [
+      "M15",
+      "H1"
+     ],
+     "description": "Profil zakończonej poprzedniej sesji (PMW-SVP-1, tick activity), odrzucenie VAL, cele POC/VAH; hedge 0,25 po dwóch M5 pod VAL−b.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "confirm_closes": 2,
+      "max_hedge_minutes": 15,
+      "ratio": 0.25
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5"
+     ],
+     "management_policy_id": "HEDGE_VALUE_ACCEPTANCE",
+     "name": "Value Area Rotation / Acceptance Hedge",
+     "params": {
+      "bin_ticks": 10,
+      "value_area_pct": 0.7
+     },
+     "position_max_minutes": 120.0,
+     "reuse": "PMW-SVP-1 (te same funkcje histogramu i value area)",
+     "setup_group_id": "VALUE_AREA",
+     "signal_tfs": [
+      "M5"
+     ],
+     "sources": [
+      "B08",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG08",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG08",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VOLATILITY_CONTROL",
+     "config_hash": "3f4ba49c0116d3bb",
+     "context_tfs": [
+      "H1"
+     ],
+     "description": "EMA20>EMA50, korekta 2–5 świec, wybicie maksimum dwóch świec; hedge jednorazowo ratio=clip(1−σ_wejście/σ_teraz; 0,25–0,50) przy σ×1,5.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "max_hedge_minutes": 30,
+      "move_atr": 0.5,
+      "off_bars": 3,
+      "ratio_max": 0.5,
+      "ratio_min": 0.25,
+      "scenario_unwind_gap_r": 0.5,
+      "sigma_ratio_off": 1.2,
+      "sigma_ratio_on": 1.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_VOLATILITY_BUDGET",
+     "name": "Adaptive Trend / Volatility Budget Hedge",
+     "params": {
+      "sigma_extreme_pct": 0.95,
+      "sigma_window": 60,
+      "volatility_method": "STD_LOGRET_60_M5"
+     },
+     "position_max_minutes": 240.0,
+     "reuse": "S02 (trend adaptacyjny); wariant GARCH – osobny, nie jest podmieniany",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B11",
+      "B13",
+      "B02"
+     ],
+     "strategy_id": "PMW_HG09",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG09",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "PROFIT_PROTECTION",
+     "config_hash": "a4d9dc621e28e736",
+     "context_tfs": [
+      "M15",
+      "H1"
+     ],
+     "description": "Wejście jak HG01 (ten sam detektor – nie drugi głos); hedge 0,50 po MFE ≥ 1,5r i oddaniu ≥ 0,5r z zamknięciem M5 pod EMA9.",
+     "enabled": true,
+     "family": "HEDGING",
+     "hedge": {
+      "giveback_r": 0.5,
+      "max_hedge_minutes": 20,
+      "mfe_min_r": 1.5,
+      "ratio": 0.5,
+      "scenario_unwind_gap_r": 0.5
+     },
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M5",
+      "M15"
+     ],
+     "management_policy_id": "HEDGE_PROFIT_GIVEBACK",
+     "name": "Trend Continuation / Profit Giveback Hedge",
+     "params": {},
+     "position_max_minutes": 240.0,
+     "reuse": "detektor HG01, osobna polityka zarządzania",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M5",
+      "M15"
+     ],
+     "sources": [
+      "B02",
+      "B06"
+     ],
+     "strategy_id": "PMW_HG10",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_HG10",
+     "targets": {
+      "rr_min": 3.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 40
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "TREND_PULLBACK",
+     "config_hash": "f2d0e09579e82ddf",
+     "context_tfs": [
+      "M5",
+      "M15"
+     ],
+     "description": "Korekta do EMA20±b przy trendzie M5 i M15, zamknięcie nad EMA20+b i high[t-1]; SL pod minimum korekty.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "EMA20 Trend Pullback",
+     "params": {},
+     "position_max_minutes": 30.0,
+     "reuse": "wspólny detektor pullbacku EMA (S01/S11)",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M1",
+      "M3"
+     ],
+     "sources": [
+      "B06",
+      "B14"
+     ],
+     "strategy_id": "PMW_SC01",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC01",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VWAP_RECLAIM",
+     "config_hash": "c152551e8ec44cc6",
+     "context_tfs": [
+      "M15"
+     ],
+     "description": "Dwa zamknięcia pod VWAP sesji, przebicie VWAP+b i retest VWAP±b zakończony wzrostowo; > 4 przecięcia w 10 świecach odrzuca setup.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Session VWAP Reclaim–Retest",
+     "params": {
+      "max_crosses_10": 4
+     },
+     "position_max_minutes": 30.0,
+     "reuse": "AVWAP sesji PMW-IND-1",
+     "setup_group_id": "VWAP",
+     "signal_tfs": [
+      "M1",
+      "M3"
+     ],
+     "sources": [
+      "B07",
+      "B14"
+     ],
+     "strategy_id": "PMW_SC02",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC02",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "SESSION_BREAKOUT",
+     "config_hash": "44f1125a684ddb04",
+     "context_tfs": [
+      "M15"
+     ],
+     "description": "Zamrożony OR 15 min, zamknięcie nad OR_high+b, retest w 3 świecach; jedno wejście na kierunek i sesję, do 60 min po OR.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3",
+      "M5"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Opening Range Breakout–Retest",
+     "params": {
+      "entry_window_minutes": 60
+     },
+     "position_max_minutes": 30.0,
+     "reuse": "S05 (sesje z DST)",
+     "setup_group_id": "OPENING_RANGE",
+     "signal_tfs": [
+      "M1",
+      "M3",
+      "M5"
+     ],
+     "sources": [
+      "B10"
+     ],
+     "strategy_id": "PMW_SC03",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC03",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "CHANNEL_BREAKOUT",
+     "config_hash": "3a2477bd29174f44",
+     "context_tfs": [
+      "M15"
+     ],
+     "description": "Zamknięcie nad maksimum 20 poprzednich świec+b przy ADX≥25 i rosnącym ATR, retest wybitego poziomu.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M3",
+      "M5"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Donchian20 Micro Breakout",
+     "params": {
+      "adx_min": 25,
+      "channel": 20
+     },
+     "position_max_minutes": 45.0,
+     "reuse": "S03 (kanał bez bieżącej świecy)",
+     "setup_group_id": "CHANNEL_BREAKOUT",
+     "signal_tfs": [
+      "M3",
+      "M5"
+     ],
+     "sources": [
+      "B09",
+      "B11"
+     ],
+     "strategy_id": "PMW_SC04",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC04",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VOLATILITY_BREAKOUT",
+     "config_hash": "69bebc172e8bddca",
+     "context_tfs": [
+      "M5",
+      "M15"
+     ],
+     "description": "BandWidth < 20. percentyl przez ≥3 z 5 świec, zamknięcie nad górnym pasmem t-1 i maksimum 10 świec+b, rosnący ATR.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3",
+      "M5"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Bollinger Squeeze Breakout",
+     "params": {
+      "bb_k": 2.0,
+      "bb_n": 20,
+      "break_lookback": 10,
+      "bw_lookback": 120,
+      "bw_pct": 0.2,
+      "squeeze_min_of_5": 3
+     },
+     "position_max_minutes": 30.0,
+     "reuse": "S04 (kompresja)",
+     "setup_group_id": "SQUEEZE_BREAKOUT",
+     "signal_tfs": [
+      "M1",
+      "M3",
+      "M5"
+     ],
+     "sources": [
+      "B12",
+      "B13"
+     ],
+     "strategy_id": "PMW_SC05",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC05",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "FAILED_BREAKOUT",
+     "config_hash": "a7488da694410e0c",
+     "context_tfs": [
+      "M5",
+      "M15"
+     ],
+     "description": "Low pod swing low M5 − b, zamknięcie nad L+b, kolejna świeca zamyka się nad high świecy reclaim (maks. 2 świece).",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Sweep / Failed Breakout Reclaim",
+     "params": {},
+     "position_max_minutes": 20.0,
+     "reuse": "S07/S12 (geometria ceny)",
+     "setup_group_id": "SWEEP_RECLAIM",
+     "signal_tfs": [
+      "M1",
+      "M3"
+     ],
+     "sources": [
+      "B06"
+     ],
+     "strategy_id": "PMW_SC06",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC06",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "RANGE_REVERSION",
+     "config_hash": "18b7feea8c37fc4f",
+     "context_tfs": [
+      "M5",
+      "M15"
+     ],
+     "description": "Zakres M15 (ADX<20), ADX M5<20; low t-1 pod dolnym pasmem, t wraca do pasm nad high[t-1], RSI z ≤30 na >30; cele środek i górne pasmo.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Bollinger Range Reversion + RSI",
+     "params": {
+      "adx_m5_max": 20,
+      "rsi_level": 30
+     },
+     "position_max_minutes": 20.0,
+     "reuse": "S08/S09 (RSI, BB)",
+     "setup_group_id": "RANGE_REVERSION",
+     "signal_tfs": [
+      "M1",
+      "M3"
+     ],
+     "sources": [
+      "B12",
+      "B14"
+     ],
+     "strategy_id": "PMW_SC07",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC07",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "TREND_PULLBACK",
+     "config_hash": "a4ff04f1c154410c",
+     "context_tfs": [
+      "M5",
+      "M15"
+     ],
+     "description": "Trend M5/M15, %K<20 w korekcie, przecięcie %K nad %D z zamknięciem nad high[t-1] i nad EMA50 (ta sama grupa co SC01 – nie niezależny głos).",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M3"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Stochastic Trend Pullback",
+     "params": {
+      "lookback": 6,
+      "stoch_low": 20
+     },
+     "position_max_minutes": 30.0,
+     "reuse": "wspólny detektor pullbacku, osobny trigger",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M1",
+      "M3"
+     ],
+     "sources": [
+      "B15",
+      "B14"
+     ],
+     "strategy_id": "PMW_SC08",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC08",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "MOMENTUM_CONTINUATION",
+     "config_hash": "9a37657347a93c63",
+     "context_tfs": [
+      "M15"
+     ],
+     "description": "Linia MACD > 0 przez 3 świece, histogram ≤ 0 w korekcie i przejście > 0 na t, zamknięcie nad high[t-1] i EMA20.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M3",
+      "M5"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "MACD Momentum Reset",
+     "params": {},
+     "position_max_minutes": 45.0,
+     "reuse": "istniejący MACD (powiązany z EMA/Stochastic – nie trzy niezależne modele)",
+     "setup_group_id": "TREND_PULLBACK_EMA",
+     "signal_tfs": [
+      "M3",
+      "M5"
+     ],
+     "sources": [
+      "B17"
+     ],
+     "strategy_id": "PMW_SC09",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC09",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    },
+    {
+     "cluster": "VALUE_REVERSION",
+     "config_hash": "1c877e531bfce52e",
+     "context_tfs": [
+      "M15"
+     ],
+     "description": "Profil zakończonej poprzedniej sesji, low pod VAL−b i powrót nad VAL+b, następna świeca nad high; cele POC i VAH.",
+     "enabled": true,
+     "family": "SCALPING",
+     "hedge": null,
+     "implementation": "IMPLEMENTED",
+     "implemented_tfs": [
+      "M1",
+      "M5"
+     ],
+     "management_policy_id": "SCALP_TWO_TP",
+     "name": "Session Value Area Rejection",
+     "params": {
+      "bin_ticks": 10,
+      "value_area_pct": 0.7
+     },
+     "position_max_minutes": 30.0,
+     "reuse": "PMW-SVP-1",
+     "setup_group_id": "VALUE_AREA",
+     "signal_tfs": [
+      "M1",
+      "M5"
+     ],
+     "sources": [
+      "B08"
+     ],
+     "strategy_id": "PMW_SC10",
+     "strategy_version": "PMW-SH-PACK-2.0.0/PMW_SC10",
+     "targets": {
+      "rr_min": 2.0,
+      "shares": [
+       0.5,
+       0.5
+      ],
+      "tp1_min_pips": 25
+     },
+     "validation": {
+      "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)",
+      "status": "NOT_VALIDATED"
+     }
+    }
+   ],
+   "legacy": {
+    "HEDGING": "LEGACY_HEDGING",
+    "SCALPING": "LEGACY_SCALPING"
+   },
+   "live": {
+    "config_hash": "8e0a7b4ee569c6b8",
+    "contract": "PMW-PLAN-2",
+    "items": [
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG01",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG01",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG02",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG02",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG03",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "brak aktywnego okna OR",
+      "reason_code": "NO_OPENING_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG04",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG05",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG05",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "brak wybicia z kompresji z retestem",
+      "reason_code": "NO_BREAK_RETEST",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG06",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "brak sweep–reclaim z przebiciem high świecy reclaim",
+      "reason_code": "NO_SWEEP_RECLAIM",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG07",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "brak sweep–reclaim z przebiciem high świecy reclaim",
+      "reason_code": "NO_SWEEP_RECLAIM",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG07",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "M15 nie jest w zakresie",
+      "reason_code": "REGIME_NOT_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG08",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG09",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG09",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M15",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG10",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "HEDGING",
+      "reason": "H1: kontekst niezgodny z kierunkiem",
+      "reason_code": "CONTEXT_NOT_ALIGNED",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_HG10",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak triggera",
+      "reason_code": "NO_TRIGGER",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC01",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak korekty do EMA20",
+      "reason_code": "NO_PULLBACK",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC01",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak sekwencji reclaim–retest VWAP",
+      "reason_code": "NO_RECLAIM_RETEST",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC02",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak sekwencji reclaim–retest VWAP",
+      "reason_code": "NO_RECLAIM_RETEST",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC02",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak aktywnego okna OR",
+      "reason_code": "NO_OPENING_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC03",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak aktywnego okna OR",
+      "reason_code": "NO_OPENING_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC03",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak aktywnego okna OR",
+      "reason_code": "NO_OPENING_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC03",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak wybicia kanału z retestem",
+      "reason_code": "NO_BREAK_RETEST",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC04",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak wybicia kanału z retestem",
+      "reason_code": "NO_BREAK_RETEST",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC04",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak kompresji",
+      "reason_code": "NO_SQUEEZE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC05",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak kompresji",
+      "reason_code": "NO_SQUEEZE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC05",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak kompresji",
+      "reason_code": "NO_SQUEEZE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC05",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak zejścia pod L i odzyskania z potwierdzeniem",
+      "reason_code": "NO_SWEEP_RECLAIM",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC06",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak zejścia pod L i odzyskania z potwierdzeniem",
+      "reason_code": "NO_SWEEP_RECLAIM",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC06",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "M15 nie jest w zakresie",
+      "reason_code": "REGIME_NOT_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC07",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "M15 nie jest w zakresie",
+      "reason_code": "REGIME_NOT_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC07",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak %K<20 i przecięcia %K/%D z potwierdzeniem ceny nad EMA50",
+      "reason_code": "NO_TRIGGER",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC08",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak %K<20 i przecięcia %K/%D z potwierdzeniem ceny nad EMA50",
+      "reason_code": "NO_TRIGGER",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC08",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak resetu histogramu MACD przy linii > 0 z potwierdzeniem ceny",
+      "reason_code": "NO_TRIGGER",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M3",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC09",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "brak resetu histogramu MACD przy linii > 0 z potwierdzeniem ceny",
+      "reason_code": "NO_TRIGGER",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC09",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "M15 nie jest w zakresie",
+      "reason_code": "REGIME_NOT_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M1",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC10",
+      "updated_at": 1772611740.6614504
+     },
+     {
+      "family": "SCALPING",
+      "reason": "M15 nie jest w zakresie",
+      "reason_code": "REGIME_NOT_RANGE",
+      "side": null,
+      "signal_id": null,
+      "signal_tf": "M5",
+      "status": "WAIT",
+      "strategy_id": "PMW_SC10",
+      "updated_at": 1772611740.6614504
+     }
+    ],
+    "timing": {
+     "max_ms": 6872.5,
+     "n": 10,
+     "p50_ms": 601.04,
+     "p95_ms": 6872.5
+    }
+   },
+   "note": "numeracja jest identyfikatorem, nie rankingiem wyników; parametry to punkty startowe badania PMW",
+   "pack_version": "PMW-SH-PACK-2.0.0",
+   "pip": {
+    "XAUUSD": {
+     "pip_definition": "PMW_XAU_PRICE_0_10_V1",
+     "pip_note": "konwencja produktu PMW: 1 pip XAUUSD = 0,10 USD/oz zmiany ceny; to NIE jest punkt ani tick MT5 (te pochodzą z terminala)",
+     "pip_size": 0.1
+    }
+   }
+  },
+  "status": 200
+ },
+ "/api/v1/signal-history": {
+  "body": {
+   "items": []
+  },
+  "status": 200
+ },
+ "/api/v1/signals": {
+  "body": {
+   "attempts": [],
+   "decisions": [],
+   "setups": [],
+   "trades": []
+  },
+  "status": 200
+ },
+ "/api/v1/state": {
+  "body": {
+   "account": {
+    "balance": 10000.0,
+    "company": "Apollo23 Synthetic Ltd",
+    "currency": "USD",
+    "equity": 10000.0,
+    "free_margin": 10000.0,
+    "leverage": 100,
+    "login": 5550001,
+    "margin": 0,
+    "margin_level": 0.0,
+    "margin_mode": "HEDGING",
+    "name": "Synthetic",
+    "profit": 0,
+    "server": "Synthetic-Demo",
+    "trade_allowed": true,
+    "trade_expert": true,
+    "trade_mode": "DEMO"
+   },
+   "active_config": {
+    "cancel_after_misses": 3,
+    "confirmed_window_bars": 3,
+    "conflict_margin": 5.0,
+    "downgrade_confirm_updates": 2,
+    "manual_strategy_id": null,
+    "min_selection_hold_seconds": 60.0,
+    "min_switch_margin": 8.0,
+    "params": {},
+    "profile": "ACTIVE",
+    "regime": {},
+    "scan_min_interval_seconds": 2.0,
+    "strategies": {
+     "S11": {
+      "scan": true,
+      "trade": false
+     },
+     "S12": {
+      "scan": true,
+      "trade": false
+     }
+    },
+    "strategy_mode": "AUTO",
+    "switch_confirm_updates": 2,
+    "thresholds": {
+     "confirmed": 70.0,
+     "early": 55.0,
+     "watch": 40.0
+    }
+   },
+   "agent": {
+    "backoff_seconds": 0,
+    "cost_note": "Koszt to szacunek z cennika zapisanego w konfiguracji (stan 2026-10-06), nie faktura.",
+    "daily_budget_usd": 3.0,
+    "detail": null,
+    "effort": "medium",
+    "gate_policy": "VETO",
+    "key_masked": null,
+    "key_source": "MISSING",
+    "last_run": null,
+    "model": null,
+    "pending": [],
+    "required_for_entry": false,
+    "spent_today_usd_estimate": 0.0,
+    "state": "AI_UNAVAILABLE_NO_KEY"
+   },
+   "agent_last": null,
+   "analysis": null,
+   "app_version": "1.46.0",
+   "assets": {
+    "active": "XAUUSD",
+    "allowed": [
+     "XAUUSD",
+     "BTC"
+    ],
+    "assets": {
+     "BTC": {
+      "blocked_reason": null,
+      "broker_symbol": "BTCUSD-",
+      "canonical_asset": "BTC",
+      "confirmed_at": null,
+      "instrument": {
+       "asset_class": "CRYPTO",
+       "broker_symbol": "BTCUSD-",
+       "canonical_asset": "BTC",
+       "contract_size": null,
+       "digits": null,
+       "instrument_id": "BTC:Synthetic-Demo:BTCUSD-",
+       "instrument_type": null,
+       "point": null,
+       "price_unit": "USD za 1 BTC × contract_size (z terminala)",
+       "quote_currency": null,
+       "sessions_policy": "dostępność CFD/venue sprawdzana z notowań (także weekend) - nie zakładana",
+       "venue": "Synthetic-Demo"
+      },
+      "mapping_status": "AUTO_DETECTED",
+      "metadata_check": {
+       "reasons": [],
+       "status": "UNVERIFIED"
+      },
+      "usable": true
+     },
+     "XAUUSD": {
+      "blocked_reason": null,
+      "broker_symbol": "XAUUSD-",
+      "canonical_asset": "XAUUSD",
+      "confirmed_at": null,
+      "instrument": {
+       "asset_class": "METAL",
+       "broker_symbol": "XAUUSD-",
+       "canonical_asset": "XAUUSD",
+       "contract_size": 100.0,
+       "digits": 2,
+       "instrument_id": "XAUUSD:Synthetic-Demo:XAUUSD-",
+       "instrument_type": "UNKNOWN_CALC_MODE",
+       "point": 0.01,
+       "price_unit": "USD za uncję trojańską × contract_size (z terminala)",
+       "quote_currency": "USD",
+       "sessions_policy": "przerwy wg sesji brokera (symbol_info_session_* / brak notowań w weekend)",
+       "venue": "Synthetic-Demo"
+      },
+      "mapping_status": "USER_SPECIFIED",
+      "metadata_check": {
+       "at": "2026-03-04T08:00:05+00:00",
+       "classification": {
+        "asset": "XAUUSD",
+        "base": "XAU",
+        "conflicts": [],
+        "instrument_type": "UNKNOWN_CALC_MODE",
+        "notes": [],
+        "profit": "USD"
+       },
+       "reasons": [],
+       "status": "OK"
+      },
+      "usable": true
+     }
+    },
+    "max_joint_exposure_pct": 2.0,
+    "rejections": []
+   },
+   "attempts": [],
+   "auto": {
+    "alternative": null,
+    "candidate_ranking": [],
+    "contract": "mq-auto-1.0.0",
+    "data_status": "UNKNOWN",
+    "last_change": null,
+    "last_evaluated_at": null,
+    "manual_fit": null,
+    "manual_strategy_id": null,
+    "per_strategy": {},
+    "profile": "ACTIVE",
+    "regime": null,
+    "scan_ms": null,
+    "scans": 0,
+    "selected": null,
+    "selected_at": null,
+    "selected_strategy_id": null,
+    "selected_strategy_version": null,
+    "selection_reason_codes": [
+     "NO_SCAN_YET"
+    ],
+    "setup_view": {
+     "focus_setup_id": null,
+     "mode": "AUTO",
+     "strategy_id": null
+    },
+    "snapshot_id": null,
+    "strategy_mode": "AUTO",
+    "system_state": "STARTING"
+   },
+   "boot_id": "20260304080001885137",
+   "bot_signals": {
+    "ai_note": "Porównanie: wyniki sygnałów strategii, z którymi AI się zgodziło / nie zgodziło / których nie oceniło. Mała liczba sygnałów = brak wniosku.",
+    "enabled": true,
+    "items": [
+     {
+      "account_key": "Synthetic-Demo:5550001",
+      "action": "SELL",
+      "ai_verdict": null,
+      "closed_at": null,
+      "created_at": "2026-03-04T08:09:00.857505Z",
+      "detail": {
+       "anchor_time": null,
+       "countertrend": null,
+       "entry_plan": {},
+       "exit_rules": null,
+       "facts": {
+        "net_rr": 1.0,
+        "score": 87.5
+       },
+       "family": null,
+       "horizon": "SCALP",
+       "invalidation_level": null,
+       "invalidation_rule": null,
+       "missing_confirmations": null,
+       "phase": null,
+       "reason_codes": null,
+       "regime": null,
+       "score": null,
+       "source_time": null,
+       "strategy_version": null,
+       "validation": {
+        "entry": 3457.83,
+        "ok": true,
+        "reasons": [],
+        "risk": 1.2000990535084384,
+        "rr": [
+         2.71,
+         4.57
+        ],
+        "rr_weighted": 3.64
+       },
+       "validation_status": "OGRANICZONA"
+      },
+      "entry_price": 3457.83,
+      "entry_type": "MARKET",
+      "error": null,
+      "event_id": null,
+      "exit_price": null,
+      "fill_price": 3457.83,
+      "filled_at": "2026-03-04T08:09:00.857505Z",
+      "horizon": "SCALP",
+      "outcome_r": null,
+      "price_at_signal": 3457.83,
+      "rr1": 3.64,
+      "setup_id": "SH:SH-BK1856f25e4cf0212e99ad",
+      "setup_score": null,
+      "signal_id": "BOT-e7af0535cf184b",
+      "source": "BOT",
+      "status": "OPEN",
+      "stop_loss": 3459.0300990535084,
+      "strategy_id": "FX_SCALP_10",
+      "strategy_name": "Two-Bar Momentum Continuation (FX_SCALP_10, XAUUSD)",
+      "symbol": "XAUUSD-",
+      "synthetic": true,
+      "take_profits": [
+       3454.5722065709683,
+       3452.3432603296983
+      ],
+      "timeframe": "M1",
+      "tp_hit": null,
+      "trigger": "SH",
+      "updated_at": "2026-03-04T08:09:00.857505Z",
+      "validation": {
+       "entry": 3457.83,
+       "ok": true,
+       "reasons": [],
+       "risk": 1.2000990535084384,
+       "rr": [
+        2.71,
+        4.57
+       ],
+       "rr_weighted": 3.64
+      }
+     },
+     {
+      "account_key": "Synthetic-Demo:5550001",
+      "action": "SELL",
+      "ai_verdict": null,
+      "closed_at": null,
+      "created_at": "2026-03-04T08:05:28.759511Z",
+      "detail": {
+       "anchor_time": "2026-03-04T07:45:00Z",
+       "countertrend": true,
+       "entry_plan": {
+        "kind": "RECLAIM",
+        "max_distance_atr": 1.0,
+        "max_wait_bars": 3,
+        "order_type": "MARKET_ON_CONFIRMATION",
+        "reference_price": 1.06888,
+        "send_when": "po zamknięciu świecy wyzwalającej, jeśli cena nie odjechała dalej niż max_distance_atr od poziomu",
+        "trigger": "zamknięcie z powrotem poniżej poziomu + bufor (≤ 3 świece od wyjścia)",
+        "trigger_level": 1.06888,
+        "zone": [
+         1.06888,
+         1.0688900000000001
+        ]
+       },
+       "exit_rules": {
+        "be_after_tp1": true,
+        "time_exit_bars": 24,
+        "trailing": null
+       },
+       "facts": {
+        "excursion_bar": "2026-03-04T07:45:00Z",
+        "excursion_low_px": 1.06876,
+        "level_px": 1.06876,
+        "range_bottom_px": 1.06876
+       },
+       "family": "REVERSION",
+       "horizon": "SCALP",
+       "invalidation_level": 1.06896,
+       "invalidation_rule": "CLOSE_BEYOND",
+       "missing_confirmations": [
+        "EXTRA_CONFIRMATION_UNAVAILABLE"
+       ],
+       "phase": "TRIGGER",
+       "reason_codes": [
+        "EXCURSION_ABOVE_RANGE",
+        "DEPTH_1.00ATR",
+        "COUNTERTREND"
+       ],
+       "regime": "TRANSITION",
+       "score": {
+        "completeness": 0.95,
+        "htf": {
+         "H1": "UP",
+         "H4": "UP"
+        },
+        "htf_countertrend": true,
+        "momentum": {
+         "ema20_slope_atr": 0.102,
+         "known": true,
+         "macd_hist": 0.0,
+         "rsi": 50.4,
+         "votes": [
+          0.0,
+          0.5,
+          1.0
+         ]
+        },
+        "points": {
+         "extra": 0.0,
+         "formation": 25.0,
+         "htf": 0.0,
+         "momentum": 10.0,
+         "structure": 25.0,
+         "trigger": 15.0
+        },
+        "scale": "ACTIVE-0-100 (heurystyka, nie prawdopodobieństwo)",
+        "total": 75.0,
+        "weights": {
+         "extra": 5,
+         "formation": 25,
+         "htf": 10,
+         "momentum": 20,
+         "structure": 25,
+         "trigger": 15
+        }
+       },
+       "source_time": "2026-03-04T08:00:00Z",
+       "strategy_version": "1.0.0-EXPERIMENTAL",
+       "validation": {
+        "entry": 1.06889,
+        "ok": true,
+        "reasons": [],
+        "risk": 0.0001640660049777587,
+        "rr": [
+         1.34,
+         2.68
+        ],
+        "rr_weighted": 2.01
+       },
+       "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN"
+      },
+      "entry_price": 1.06889,
+      "entry_type": "MARKET",
+      "error": null,
+      "event_id": "EV-8eb34f186b97",
+      "exit_price": null,
+      "fill_price": 1.06889,
+      "filled_at": "2026-03-04T08:05:28.759511Z",
+      "horizon": "SCALP",
+      "outcome_r": null,
+      "price_at_signal": 1.06889,
+      "rr1": 2.01,
+      "setup_id": "MQA-f248a666da4f6202",
+      "setup_score": 75.0,
+      "signal_id": "BOT-57017a2cbd0f4b",
+      "source": "BOT",
+      "status": "OPEN",
+      "stop_loss": 1.0690540660049777,
+      "strategy_id": "S07",
+      "strategy_name": "FAILED_BREAKOUT_RECLAIM",
+      "symbol": "EURUSD-",
+      "synthetic": true,
+      "take_profits": [
+       1.06867,
+       1.0684500000000001
+      ],
+      "timeframe": "M5",
+      "tp_hit": null,
+      "trigger": "SCANNER",
+      "updated_at": "2026-03-04T08:05:28.759511Z",
+      "validation": {
+       "entry": 1.06889,
+       "ok": true,
+       "reasons": [],
+       "risk": 0.0001640660049777587,
+       "rr": [
+        1.34,
+        2.68
+       ],
+       "rr_weighted": 2.01
+      }
+     },
+     {
+      "account_key": "Synthetic-Demo:5550001",
+      "action": "BUY",
+      "ai_verdict": null,
+      "closed_at": null,
+      "created_at": "2026-03-04T08:00:32.185941Z",
+      "detail": {
+       "anchor_time": "2026-03-04T07:00:00Z",
+       "countertrend": false,
+       "entry_plan": {
+        "kind": "EMA20_PULLBACK_CONFIRM",
+        "max_distance_atr": 0.5,
+        "max_wait_bars": 1,
+        "order_type": "MARKET_ON_CONFIRMATION",
+        "reference_price": 1.06894,
+        "send_when": "po zamknięciu świecy wyzwalającej, jeśli cena nie odjechała dalej niż max_distance_atr od poziomu",
+        "trigger": "zamknięcie świecy powyżej EMA20 na świecy PÓŹNIEJSZEJ niż dotknięcie, trend EMA20>EMA50 nadal ważny",
+        "trigger_level": 1.0688,
+        "zone": [
+         1.06827,
+         1.06934
+        ]
+       },
+       "exit_rules": {
+        "be_after_tp1": false,
+        "rr": 2.5,
+        "time_exit_bars": null,
+        "tp_rule": "RR_FROM_FILL",
+        "trailing": null
+       },
+       "facts": {
+        "adx": 41.59,
+        "atr": 0.0003,
+        "confirm_bar": "2026-03-04T07:30:00Z",
+        "core": "MQ-EMA-PULLBACK-CORE-1.0.0",
+        "ema20_px": 1.0688,
+        "ema50_px": 1.06785,
+        "rr": 2.5,
+        "touch_bar": "2026-03-04T07:00:00Z"
+       },
+       "family": "TREND",
+       "horizon": "INTRADAY",
+       "invalidation_level": 1.0684202628577049,
+       "invalidation_rule": "CLOSE_BEYOND",
+       "missing_confirmations": [
+        "EXTRA_CONFIRMATION_UNAVAILABLE"
+       ],
+       "phase": "TRIGGER",
+       "reason_codes": [
+        "EMA20>EMA50",
+        "ADX_42",
+        "SETUP_2026-03-04T07:00:00Z"
+       ],
+       "regime": "TRANSITION",
+       "score": {
+        "completeness": 0.95,
+        "htf": {
+         "H1": "UP",
+         "H4": "UP"
+        },
+        "htf_countertrend": false,
+        "momentum": {
+         "ema20_slope_atr": 0.018,
+         "known": true,
+         "macd_hist": -0.0001,
+         "rsi": 56.2,
+         "votes": [
+          0.0,
+          0.5,
+          1.0
+         ]
+        },
+        "points": {
+         "extra": 0.0,
+         "formation": 25.0,
+         "htf": 10.0,
+         "momentum": 10.0,
+         "structure": 25.0,
+         "trigger": 15.0
+        },
+        "scale": "ACTIVE-0-100 (heurystyka, nie prawdopodobieństwo)",
+        "total": 85.0,
+        "weights": {
+         "extra": 5,
+         "formation": 25,
+         "htf": 10,
+         "momentum": 20,
+         "structure": 25,
+         "trigger": 15
+        }
+       },
+       "source_time": "2026-03-04T07:30:00Z",
+       "strategy_version": "1.1.0-FIXED-EXPERIMENTAL",
+       "validation": {
+        "entry": 1.06901,
+        "ok": false,
+        "reasons": [
+         "PRICE_RAN_AWAY_FROM_TRIGGER"
+        ],
+        "risk": 0.0005897371422951547,
+        "rr": [
+         2.08
+        ],
+        "rr_weighted": 2.08
+       },
+       "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN"
+      },
+      "entry_price": 1.06901,
+      "entry_type": "MARKET",
+      "error": null,
+      "event_id": "EV-b8053ad2ee30",
+      "exit_price": null,
+      "fill_price": null,
+      "filled_at": null,
+      "horizon": "INTRADAY",
+      "outcome_r": null,
+      "price_at_signal": 1.06893,
+      "rr1": 2.08,
+      "setup_id": "MQA-1245da16eaf29762",
+      "setup_score": 85.0,
+      "signal_id": "BOT-5a5c37ff88fd43",
+      "source": "BOT",
+      "status": "REJECTED",
+      "stop_loss": 1.0684202628577049,
+      "strategy_id": "S11",
+      "strategy_name": "EMA20_PULLBACK_2_5R",
+      "symbol": "EURUSD-",
+      "synthetic": true,
+      "take_profits": [
+       1.070239342855738
+      ],
+      "timeframe": "M30",
+      "tp_hit": null,
+      "trigger": "SCANNER",
+      "updated_at": "2026-03-04T08:00:32.185941Z",
+      "validation": {
+       "entry": 1.06901,
+       "ok": false,
+       "reasons": [
+        "PRICE_RAN_AWAY_FROM_TRIGGER"
+       ],
+       "risk": 0.0005897371422951547,
+       "rr": [
+        2.08
+       ],
+       "rr_weighted": 2.08
+      }
+     }
+    ],
+    "max_hold_hours": 72,
+    "rr_limit": 1.0,
+    "scan_other_markets": true,
+    "stats": {
+     "avg_r": null,
+     "basis": "BRUTTO_R",
+     "breakeven": 0,
+     "closed": 0,
+     "losses": 0,
+     "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+     "open": 2,
+     "profit_factor_r": null,
+     "rejected": 1,
+     "signals": 3,
+     "total_r": null,
+     "win_rate_pct": null,
+     "wins": 0
+    },
+    "stats_by_ai": {
+     "BRAK_OCENY": {
+      "avg_r": null,
+      "basis": "BRUTTO_R",
+      "breakeven": 0,
+      "closed": 0,
+      "losses": 0,
+      "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+      "open": 2,
+      "profit_factor_r": null,
+      "rejected": 1,
+      "signals": 3,
+      "total_r": null,
+      "win_rate_pct": null,
+      "wins": 0
+     },
+     "BRAK_ZGODY": {
+      "avg_r": null,
+      "basis": "BRUTTO_R",
+      "breakeven": 0,
+      "closed": 0,
+      "losses": 0,
+      "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+      "open": 0,
+      "profit_factor_r": null,
+      "rejected": 0,
+      "signals": 0,
+      "total_r": null,
+      "win_rate_pct": null,
+      "wins": 0
+     },
+     "ZGODA": {
+      "avg_r": null,
+      "basis": "BRUTTO_R",
+      "breakeven": 0,
+      "closed": 0,
+      "losses": 0,
+      "note": "Wynik BRUTTO w R liczony na świecach M15 (Bid), bez spreadu i prowizji; SL i TP w tej samej świecy = strata; |R| ≤ 0,05 = breakeven (osobno). Wynik po kosztach – statystyki bota (PAPER/DEMO/LIVE).",
+      "open": 0,
+      "profit_factor_r": null,
+      "rejected": 0,
+      "signals": 0,
+      "total_r": null,
+      "win_rate_pct": null,
+      "wins": 0
+     }
+    },
+    "strategies": [
+     "S01-S12 (silnik + skaner)",
+     "SCALPING",
+     "HEDGING",
+     "RANGE_SWEEP_RETEST",
+     "DOUBLE_RETEST_V2"
+    ],
+    "strategy_sources": {
+     "double_retest": true,
+     "hedging": true,
+     "range_sweep_retest": true,
+     "scalping": true
+    }
+   },
+   "connection": {
+    "account_key": "Synthetic-Demo:5550001",
+    "attempts": 0,
+    "busy_waits": 0,
+    "clock": {
+     "last_raw_delta_seconds": 10799.994,
+     "measured_at": "2026-03-04T08:10:07.225907Z",
+     "offset_hours": 3.0,
+     "offset_seconds": 10800,
+     "reasons": [],
+     "residual_seconds": -0.001,
+     "samples": 30,
+     "status": "VERIFIED"
+    },
+    "connected_since": "2026-03-04T08:00:13.266625Z",
+    "errors": [],
+    "last_heartbeat": "2026-03-04T08:10:07.192484Z",
+    "login": {
+     "credentials_rejected": false,
+     "hint": null,
+     "mode": "TERMINAL_SESSION",
+     "running_terminals": [],
+     "terminal_path": null
+    },
+    "module_error": null,
+    "reason": null,
+    "session_epoch": 1,
+    "state": "CONNECTED",
+    "synthetic": true,
+    "terminal": {
+     "build": 9999,
+     "company": "Apollo23 synthetic",
+     "connected": true,
+     "name": "Synthetic MT5",
+     "path": "SYNTHETIC",
+     "ping_last": 25000,
+     "trade_allowed": true,
+     "tradeapi_disabled": false
+    },
+    "worker_wedged_seconds": 0.0
+   },
+   "contract": "1.0.0",
+   "costs_config": {
+    "account_profile": "ZERO_DECLARED_COSTS_UNVERIFIED",
+    "commission_mode": "FROM_DEAL_HISTORY",
+    "commission_per_lot_per_side": null,
+    "slippage_stress_points": 20.0,
+    "spread_40pct_rule": "REQUIRES_DEFINITION"
+   },
+   "decision": null,
+   "engine": {
+    "cycle_ms": null,
+    "full_cycles": 0,
+    "last_error": "OSError: [Errno 22] Invalid argument"
+   },
+   "first_run_completed": true,
+   "lab": {
+    "as_of": "2026-03-04T08:05:00Z",
+    "asset": "XAUUSD",
+    "model_status": "no_model",
+    "scenarios": 2,
+    "seq": 2,
+    "trace_id": "LTR-23d3a36a41184370"
+   },
+   "lab_neural": null,
+   "logs": [
+    {
+     "category": "SIGNAL",
+     "code": "OPEN",
+     "id": 24,
+     "level": "INFO",
+     "message": "Sygnał bota XAUUSD-: SELL FX_SCALP_10 M1 wejście 3457.83 SL 3459.0300990535084 TP [3454.5722065709683, 3452.3432603296983]",
+     "ts": "2026-03-04T08:09:00.858017Z"
+    },
+    {
+     "category": "MARKETS",
+     "code": "SCAN",
+     "id": 23,
+     "level": "INFO",
+     "message": "Skaner rynków: 5 symboli przeanalizowanych, 0 błędów (8772 ms, źródło MARKET_WATCH).",
+     "ts": "2026-03-04T08:07:56.513120Z"
+    },
+    {
+     "category": "MARKETS",
+     "code": "SCAN",
+     "id": 22,
+     "level": "INFO",
+     "message": "Skaner rynków: 5 symboli przeanalizowanych, 0 błędów (22883 ms, źródło MARKET_WATCH).",
+     "ts": "2026-03-04T08:05:46.248971Z"
+    },
+    {
+     "category": "SIGNAL",
+     "code": "OPEN",
+     "id": 21,
+     "level": "INFO",
+     "message": "Sygnał bota EURUSD-: SELL S07 M5 wejście 1.06889 SL 1.0690540660049777 TP [1.06867, 1.0684500000000001]",
+     "ts": "2026-03-04T08:05:28.765656Z"
+    },
+    {
+     "category": "MARKETS",
+     "code": "SCAN",
+     "id": 20,
+     "level": "INFO",
+     "message": "Skaner rynków: 5 symboli przeanalizowanych, 0 błędów (13359 ms, źródło MARKET_WATCH).",
+     "ts": "2026-03-04T08:03:21.702257Z"
+    },
+    {
+     "category": "MARKETS",
+     "code": "SCAN",
+     "id": 19,
+     "level": "INFO",
+     "message": "Skaner rynków: 5 symboli przeanalizowanych, 0 błędów (46302 ms, źródło MARKET_WATCH).",
+     "ts": "2026-03-04T08:01:06.386603Z"
+    },
+    {
+     "category": "SIGNAL",
+     "code": "REJECTED",
+     "id": 18,
+     "level": "INFO",
+     "message": "Sygnał bota EURUSD-: BUY S11 M30 wejście 1.06901 SL 1.0684202628577049 TP [1.070239342855738] – odrzucony (PRICE_RAN_AWAY_FROM_TRIGGER)",
+     "ts": "2026-03-04T08:00:32.214438Z"
+    },
+    {
+     "category": "EXECUTION",
+     "code": "RECONCILED",
+     "id": 17,
+     "level": "INFO",
+     "message": "Stan pozycji uzgodniony z terminalem po połączeniu.",
+     "ts": "2026-03-04T08:00:15.550767Z"
+    },
+    {
+     "category": "MT5",
+     "code": "CONNECTED",
+     "id": 16,
+     "level": "INFO",
+     "message": "MT5: CONNECTED",
+     "ts": "2026-03-04T08:00:13.269737Z"
+    },
+    {
+     "category": "ASSETS",
+     "code": "AUTO_DETECTED",
+     "id": 15,
+     "level": "INFO",
+     "message": "BTC: używam symbolu z rachunku – BTCUSD-",
+     "ts": "2026-03-04T08:00:07.960741Z"
+    },
+    {
+     "category": "UPGRADE",
+     "code": "1_42_ASSIST",
+     "id": 14,
+     "level": "INFO",
+     "message": "1.42: modele ASSIST + zlecenia koszyków FX przez ścieżkę SH (12 zmian, 0 błędów)",
+     "ts": "2026-03-04T08:00:03.918246Z"
+    },
+    {
+     "category": "KRONOS",
+     "code": "STRATEGY_USE",
+     "id": 13,
+     "level": "INFO",
+     "message": "HEDGING: Kronos M15 = ASSIST (decyzja użytkownika 1.42, bez raportu walidacji).",
+     "ts": "2026-03-04T08:00:03.883605Z"
+    },
+    {
+     "category": "KRONOS",
+     "code": "STRATEGY_USE",
+     "id": 12,
+     "level": "INFO",
+     "message": "SCALPING: Kronos M5 = ASSIST (decyzja użytkownika 1.42, bez raportu walidacji).",
+     "ts": "2026-03-04T08:00:03.868538Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 11,
+     "level": "INFO",
+     "message": "TiRex-2: HEDGING = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.839469Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 10,
+     "level": "INFO",
+     "message": "TiRex-2: SCALPING = ASSIST (M5) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.810469Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 9,
+     "level": "INFO",
+     "message": "TiRex-2: ACTIVE = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.782508Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 8,
+     "level": "INFO",
+     "message": "Granite TTM: HEDGING = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.744264Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 7,
+     "level": "INFO",
+     "message": "Granite TTM: SCALPING = ASSIST (M5) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.710498Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 6,
+     "level": "INFO",
+     "message": "Granite TTM: ACTIVE = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.680947Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 5,
+     "level": "INFO",
+     "message": "Chronos-2: HEDGING = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.654917Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 4,
+     "level": "INFO",
+     "message": "Chronos-2: SCALPING = ASSIST (M5) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.628178Z"
+    },
+    {
+     "category": "TSFM",
+     "code": "USE",
+     "id": 3,
+     "level": "INFO",
+     "message": "Chronos-2: ACTIVE = ASSIST (M15) – polityka DIRECT_USER_REQUEST (bez raportu walidacji, wynik nieskalibrowany).",
+     "ts": "2026-03-04T08:00:03.602585Z"
+    },
+    {
+     "category": "MT5",
+     "code": "CONNECTING",
+     "id": 2,
+     "level": "WARNING",
+     "message": "MT5: CONNECTING",
+     "ts": "2026-03-04T08:00:03.452672Z"
+    },
+    {
+     "category": "APP",
+     "code": "START",
+     "id": 1,
+     "level": "INFO",
+     "message": "Apollo23 start (DANE SYNTETYCZNE), tryb wykonania PAPER",
+     "ts": "2026-03-04T08:00:03.448457Z"
+    }
+   ],
+   "managed": [],
+   "manager": {
+    "last_error": null,
+    "reconciled_epoch": 1
+   },
+   "markets": {
+    "count": 5,
+    "duration_ms": 15502.8,
+    "enabled": true,
+    "errors": {},
+    "interval_seconds": 120,
+    "items": [
+     {
+      "adx_h4": 33.9,
+      "atr_d1_pct": 0.35,
+      "bias": "UP",
+      "bot": {
+       "regime": "TRANSITION",
+       "setups": [
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-b828eaf1dc255e7f",
+         "setup_score": 77.5,
+         "stage": "EARLY",
+         "strategy_id": "S06",
+         "strategy_name": "BREAKOUT_RETEST",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-5c2e7bf24745084a",
+         "setup_score": 74.7,
+         "stage": "EARLY",
+         "strategy_id": "S03",
+         "strategy_name": "CHANNEL_BREAKOUT",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-78fbc784aeb67504",
+         "setup_score": 55.0,
+         "stage": "EARLY",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M30"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-f931ad5b1c50d88f",
+         "setup_score": 53.7,
+         "stage": "WATCH",
+         "strategy_id": "S10",
+         "strategy_name": "EXHAUSTION_STRUCTURE_REVERSAL",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-d56cce50c416bfb0",
+         "setup_score": 51.9,
+         "stage": "WATCH",
+         "strategy_id": "S08",
+         "strategy_name": "RANGE_EDGE_REVERSION",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-ff38507815650dac",
+         "setup_score": 41.2,
+         "stage": "WATCH",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M15"
+        }
+       ],
+       "status": "OK",
+       "strategies_ok": 11
+      },
+      "change_5d_pct": 0.64,
+      "change_d1_pct": -0.03,
+      "description": "US Dollar vs Japanese Yen (synthetic)",
+      "digits": 3,
+      "hv": 4.61,
+      "hv_pct": 84.0,
+      "observations": [],
+      "price": 150.783,
+      "regime": "TREND_UP",
+      "rsi_h1": 51.0,
+      "scanned_at": "2026-03-04T08:10:12.917875Z",
+      "score": 53.0,
+      "sigma_position": -0.1,
+      "spread_atr_h1_pct": 11.6,
+      "status": "OK",
+      "symbol": "USDJPY-",
+      "synthetic": true,
+      "trend": {
+       "D1": "UP",
+       "H1": "UP",
+       "H4": "UP"
+      }
+     },
+     {
+      "adx_h4": 33.1,
+      "atr_d1_pct": 0.28,
+      "bias": "NEUTRAL",
+      "bot": {
+       "regime": "TRANSITION",
+       "setups": [
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-1245da16eaf29762",
+         "setup_score": 85.0,
+         "stage": "CONFIRMED",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M30"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-f248a666da4f6202",
+         "setup_score": 75.0,
+         "stage": "CONFIRMED",
+         "strategy_id": "S07",
+         "strategy_name": "FAILED_BREAKOUT_RECLAIM",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-38dec8147d28e8b1",
+         "setup_score": 70.0,
+         "stage": "EARLY",
+         "strategy_id": "S06",
+         "strategy_name": "BREAKOUT_RETEST",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-26a12a8811cae3fb",
+         "setup_score": 62.5,
+         "stage": "WATCH",
+         "strategy_id": "S10",
+         "strategy_name": "EXHAUSTION_STRUCTURE_REVERSAL",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-e45da55c8fd1237a",
+         "setup_score": 54.2,
+         "stage": "WATCH",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-4efeac0a3e959728",
+         "setup_score": 42.8,
+         "stage": "WATCH",
+         "strategy_id": "S02",
+         "strategy_name": "ADAPTIVE_TREND",
+         "timeframe": "M15"
+        }
+       ],
+       "status": "OK",
+       "strategies_ok": 11
+      },
+      "change_5d_pct": 0.43,
+      "change_d1_pct": 0.13,
+      "description": "Euro vs US Dollar (synthetic)",
+      "digits": 5,
+      "hv": 3.28,
+      "hv_pct": 77.7,
+      "observations": [
+       "H4_CLOSE_ABOVE_DONCHIAN20"
+      ],
+      "price": 1.06888,
+      "regime": "MIXED",
+      "rsi_h1": 66.0,
+      "scanned_at": "2026-03-04T08:09:58.061913Z",
+      "score": 39.5,
+      "sigma_position": 0.64,
+      "spread_atr_h1_pct": 17.0,
+      "status": "OK",
+      "symbol": "EURUSD-",
+      "synthetic": true,
+      "trend": {
+       "D1": "DOWN",
+       "H1": "UP",
+       "H4": "UP"
+      }
+     },
+     {
+      "adx_h4": 34.6,
+      "atr_d1_pct": 0.36,
+      "bias": "NEUTRAL",
+      "bot": {
+       "regime": "RANGE",
+       "setups": [
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-eb38d2161bc3599c",
+         "setup_score": 69.0,
+         "stage": "EARLY",
+         "strategy_id": "S08",
+         "strategy_name": "RANGE_EDGE_REVERSION",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-141006745b781274",
+         "setup_score": 65.0,
+         "stage": "WATCH",
+         "strategy_id": "S10",
+         "strategy_name": "EXHAUSTION_STRUCTURE_REVERSAL",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-3e8e629d92148f02",
+         "setup_score": 51.6,
+         "stage": "WATCH",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M30"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-be762382f3f3865b",
+         "setup_score": 50.0,
+         "stage": "WATCH",
+         "strategy_id": "S06",
+         "strategy_name": "BREAKOUT_RETEST",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-07fc1f63e51bb993",
+         "setup_score": 43.5,
+         "stage": "WATCH",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M15"
+        }
+       ],
+       "status": "OK",
+       "strategies_ok": 11
+      },
+      "change_5d_pct": -0.64,
+      "change_d1_pct": 0.11,
+      "description": "Dow Jones 30 CFD (synthetic)",
+      "digits": 1,
+      "hv": 4.37,
+      "hv_pct": 100.0,
+      "observations": [],
+      "price": 44034.0,
+      "regime": "HIGH_VOLATILITY",
+      "rsi_h1": 51.7,
+      "scanned_at": "2026-03-04T08:10:07.802248Z",
+      "score": 35.2,
+      "sigma_position": 0.39,
+      "spread_atr_h1_pct": 8.0,
+      "status": "OK",
+      "symbol": "US30-",
+      "synthetic": true,
+      "trend": {
+       "D1": "UP",
+       "H1": "DOWN",
+       "H4": "DOWN"
+      }
+     },
+     {
+      "adx_h4": 22.3,
+      "atr_d1_pct": 1.28,
+      "bias": "NEUTRAL",
+      "bot": {
+       "status": "MAIN_ENGINE"
+      },
+      "change_5d_pct": 0.57,
+      "change_d1_pct": -0.64,
+      "description": "Gold vs USD (synthetic)",
+      "digits": 2,
+      "hv": 14.9,
+      "hv_pct": 17.9,
+      "observations": [],
+      "price": 3457.39,
+      "regime": "MIXED",
+      "rsi_h1": 29.2,
+      "scanned_at": "2026-03-04T08:09:57.542600Z",
+      "score": 25.8,
+      "sigma_position": -0.68,
+      "spread_atr_h1_pct": 1.6,
+      "status": "OK",
+      "symbol": "XAUUSD-",
+      "synthetic": true,
+      "trend": {
+       "D1": "MIXED",
+       "H1": "DOWN",
+       "H4": "MIXED"
+      }
+     },
+     {
+      "adx_h4": 26.0,
+      "atr_d1_pct": 0.33,
+      "bias": "NEUTRAL",
+      "bot": {
+       "regime": "RANGE",
+       "setups": [
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-2da0d99ad5af16cf",
+         "setup_score": 66.2,
+         "stage": "EARLY",
+         "strategy_id": "S02",
+         "strategy_name": "ADAPTIVE_TREND",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-0510529329378041",
+         "setup_score": 65.9,
+         "stage": "EARLY",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-a2b574cb03e062ce",
+         "setup_score": 60.3,
+         "stage": "EARLY",
+         "strategy_id": "S11",
+         "strategy_name": "EMA20_PULLBACK_2_5R",
+         "timeframe": "M30"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-086a8958257a1ab5",
+         "setup_score": 57.5,
+         "stage": "EARLY",
+         "strategy_id": "S06",
+         "strategy_name": "BREAKOUT_RETEST",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-e58d8c371cdd0660",
+         "setup_score": 55.7,
+         "stage": "EARLY",
+         "strategy_id": "S02",
+         "strategy_name": "ADAPTIVE_TREND",
+         "timeframe": "H1"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-a97bda4443c71013",
+         "setup_score": 65.0,
+         "stage": "WATCH",
+         "strategy_id": "S10",
+         "strategy_name": "EXHAUSTION_STRUCTURE_REVERSAL",
+         "timeframe": "M15"
+        },
+        {
+         "direction": "LONG",
+         "setup_id": "MQA-23fd4a56dcaceee9",
+         "setup_score": 60.0,
+         "stage": "WATCH",
+         "strategy_id": "S03",
+         "strategy_name": "CHANNEL_BREAKOUT",
+         "timeframe": "M5"
+        },
+        {
+         "direction": "SHORT",
+         "setup_id": "MQA-78f06699478e51a5",
+         "setup_score": 50.0,
+         "stage": "WATCH",
+         "strategy_id": "S10",
+         "strategy_name": "EXHAUSTION_STRUCTURE_REVERSAL",
+         "timeframe": "M5"
+        }
+       ],
+       "status": "OK",
+       "strategies_ok": 11
+      },
+      "change_5d_pct": -0.09,
+      "change_d1_pct": -0.09,
+      "description": "British Pound vs US Dollar (synthetic)",
+      "digits": 5,
+      "hv": 4.02,
+      "hv_pct": 88.3,
+      "observations": [],
+      "price": 1.26001,
+      "regime": "HIGH_VOLATILITY",
+      "rsi_h1": 51.4,
+      "scanned_at": "2026-03-04T08:10:02.262281Z",
+      "score": 21.5,
+      "sigma_position": -0.36,
+      "spread_atr_h1_pct": 16.2,
+      "status": "OK",
+      "symbol": "GBPUSD-",
+      "synthetic": true,
+      "trend": {
+       "D1": "DOWN",
+       "H1": "MIXED",
+       "H4": "MIXED"
+      }
+     }
+    ],
+    "last_scan_at": "2026-03-04T08:10:12.922661Z",
+    "model": "MQ-MARKETSCAN-1.0.0",
+    "source": "MARKET_WATCH",
+    "state": "OK",
+    "symbols_total": 5
+   },
+   "ml": {
+    "backfill": {
+     "status": "IDLE"
+    },
+    "challenger_errors": {},
+    "challengers": [],
+    "champion": null,
+    "champion_family": null,
+    "collect": true,
+    "counts": {
+     "approx_excluded": 0,
+     "by_status": {},
+     "cost_unknown_excluded": 0,
+     "labeled": 0,
+     "neg": 0,
+     "pos": 0,
+     "samples": 0,
+     "unique_setups": 0
+    },
+    "drift": {
+     "reason": "NO_CHAMPION",
+     "status": "NOT_EVALUATED"
+    },
+    "job": null,
+    "last_check": "2026-03-04T08:10:09.408973Z",
+    "last_error": null,
+    "last_label_run": "2026-03-04T08:09:46.851826Z",
+    "last_tick_age_s": 6.419,
+    "mode": "SHADOW",
+    "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą.",
+    "phase": null,
+    "progress": 0.0,
+    "readiness": {
+     "checked_at": "2026-03-04T08:10:09.487546Z",
+     "counts": {
+      "approx_excluded": 0,
+      "by_status": {},
+      "cost_unknown_excluded": 0,
+      "labeled": 0,
+      "neg": 0,
+      "pos": 0,
+      "samples": 0,
+      "unique_setups": 0
+     },
+     "note": "Gotowość do nauki oznacza tylko spełnione progi danych - nie wytrenowany model.",
+     "ready": false,
+     "reasons": [
+      "ETYKIETY_0/1000_UNIKALNYCH_SETUPOW",
+      "KLASA_1_0/100",
+      "KLASA_0_0/100"
+     ]
+    },
+    "required": {
+     "min_hours_between_trainings": 6.0,
+     "min_labeled_setups": 1000,
+     "min_per_class": 100,
+     "retrain_after_new_labels": 250
+    },
+    "status": "COLLECTING",
+    "synthetic": true,
+    "ticks_buffered": 489,
+    "training_paused": false
+   },
+   "mode": {
+    "auto_trading": true,
+    "bound_account": null,
+    "changed_at": "2026-03-04T08:00:02.181770Z",
+    "instrument": "XAUUSD",
+    "kill_reason": null,
+    "kill_switch": false,
+    "ml_mode": "SHADOW",
+    "mode": "PAPER",
+    "mode_label": "PAPER (symulacja)",
+    "mode_note": null,
+    "primary_path": "UNSET",
+    "primary_path_label": "nie wybrano",
+    "primary_paths": {
+     "BTC": "UNSET",
+     "XAUUSD": "UNSET"
+    },
+    "strategy_mode": "AUTO"
+   },
+   "news": {
+    "as_of": null,
+    "calendar": [],
+    "enabled": false,
+    "error": null,
+    "failed_sources": [],
+    "last_run": null,
+    "macro": {
+     "events": [],
+     "risk_level": "UNKNOWN",
+     "status": "DISABLED"
+    },
+    "news": [],
+    "risk_advisory": null,
+    "sentiment": {
+     "note": "Brak zweryfikowanego źródła sentymentu – nie jest wyliczany ani zgadywany.",
+     "status": "NOT_AVAILABLE"
+    },
+    "source_health": {},
+    "status": "NOT_LOADED"
+   },
+   "paper": {
+    "balance": 10000.0,
+    "currency": "USD",
+    "equity": 10000.0,
+    "floating": 0.0,
+    "floating_unknown_positions": 0,
+    "mode": "PAPER",
+    "started_at": "2026-03-04T08:10:11.159408Z",
+    "starting_balance": 10000.0,
+    "valuation": "OK"
+   },
+   "pc_clock": {
+    "checked_at": null,
+    "skew_seconds": null,
+    "source": null,
+    "status": "DISABLED"
+   },
+   "positions": {
+    "orders": [],
+    "positions": []
+   },
+   "prefs": {
+    "account_key": "Synthetic-Demo:5550001",
+    "exposure": {
+     "account_leverage": 100,
+     "limit": 100,
+     "mode": "AUTO",
+     "note": "dźwignia rachunku z MT5",
+     "user_limit": null
+    },
+    "leverage": {
+     "limit": null,
+     "mode": "AUTO"
+    },
+    "settings_version": "SV-c15c75cc5c34",
+    "setup_view": {
+     "focus_setup_id": null,
+     "mode": "AUTO",
+     "strategy_id": null
+    }
+   },
+   "quote": {
+    "age_seconds": 1.467,
+    "ask": 3457.54,
+    "bid": 3457.42,
+    "received_at": "2026-03-04T08:10:07.225907Z",
+    "source": "MT5",
+    "source_age_seconds": 1.473,
+    "spread": 0.12,
+    "spread_points": 12.0,
+    "symbol": "XAUUSD-",
+    "time_msc": 1772622607220,
+    "time_raw": 1772622607,
+    "time_utc": "2026-03-04T08:10:07.220000Z"
+   },
+   "risk_config": {
+    "conditional_risk_factor": 0.5,
+    "conditional_rr_executes": true,
+    "cooldown_minutes_after_loss": null,
+    "daily_loss_limit_pct": null,
+    "daily_reset": "BROKER_SERVER_MIDNIGHT",
+    "macro_block_high_impact": true,
+    "macro_calendar_required": false,
+    "max_drawdown_pct": null,
+    "max_open_positions": null,
+    "max_spread_points": null,
+    "max_total_open_risk_pct": null,
+    "min_free_margin_buffer_pct": null,
+    "risk_per_trade_pct": null,
+    "rr_block_below": 1.0,
+    "rr_pass_from": 1.5
+   },
+   "seq": 3497,
+   "server_time": "2026-03-04T08:10:07.919622Z",
+   "strategy_config": {
+    "confirmed_window_bars": 3,
+    "d1_conflict_blocks_entry": false,
+    "min_target_distance_atr": 0.5,
+    "mode": "AUTO",
+    "move_sl_to_breakeven_after_tp1": true,
+    "setup_ttl_bars": 24,
+    "strategies_requiring_dxy": [],
+    "structure_policy": "H1_LEAD",
+    "tp1_weight": 0.5
+   },
+   "symbol": {
+    "candidates": [],
+    "dxy_status": "NOT_CONFIGURED",
+    "dxy_symbol": null,
+    "info": {
+     "currency_base": "XAU",
+     "currency_margin": "USD",
+     "currency_profit": "USD",
+     "description": "Gold vs USD (synthetic)",
+     "digits": 2,
+     "filling_mode": 3,
+     "name": "XAUUSD-",
+     "path": "Synthetic\\Metals",
+     "point": 0.01,
+     "spread": 12,
+     "spread_float": true,
+     "trade_contract_size": 100.0,
+     "trade_freeze_level": 5,
+     "trade_mode": 4,
+     "trade_stops_level": 10,
+     "trade_tick_size": 0.01,
+     "trade_tick_value": 1.0,
+     "volume_max": 100.0,
+     "volume_min": 0.01,
+     "volume_step": 0.01
+    },
+    "status": "OK",
+    "symbol": "XAUUSD-"
+   },
+   "synthetic": true,
+   "tf_meta": {
+    "D1": {
+     "bars": 308,
+     "buffer": 500,
+     "closed": 307,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 230,
+     "revisions": 0
+    },
+    "H1": {
+     "bars": 1111,
+     "buffer": 1110,
+     "closed": 1110,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 1050,
+     "revisions": 0
+    },
+    "H4": {
+     "bars": 501,
+     "buffer": 500,
+     "closed": 500,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 90,
+     "revisions": 0
+    },
+    "H8": {
+     "bars": 501,
+     "buffer": 500,
+     "closed": 500,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 230,
+     "revisions": 0
+    },
+    "M1": {
+     "bars": 961,
+     "buffer": 960,
+     "closed": 960,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 900,
+     "revisions": 0
+    },
+    "M15": {
+     "bars": 501,
+     "buffer": 500,
+     "closed": 500,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 400,
+     "revisions": 0
+    },
+    "M3": {
+     "bars": 561,
+     "buffer": 560,
+     "closed": 560,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 500,
+     "revisions": 0
+    },
+    "M30": {
+     "bars": 501,
+     "buffer": 500,
+     "closed": 500,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 230,
+     "revisions": 0
+    },
+    "M5": {
+     "bars": 761,
+     "buffer": 760,
+     "closed": 760,
+     "gap_fills": 0,
+     "loaded": true,
+     "required": 700,
+     "revisions": 0
+    }
+   }
+  },
+  "status": 200
+ },
+ "/api/v1/stats": {
+  "body": {
+   "account": {
+    "balance_operations": 0,
+    "balance_operations_count": 0,
+    "commission_deals": 0,
+    "commission_deals_count": 0,
+    "credit_bonus_other_flows": 0,
+    "deals": 0,
+    "deposits": 0,
+    "note": "Wpłaty/wypłaty (operacje balance) są wykazane osobno i nie są zyskiem strategii.",
+    "trading_net_all_symbols": 0,
+    "trading_net_symbol": 0,
+    "trading_net_today": 0,
+    "withdrawals": 0
+   },
+   "account_roi": {
+    "deals_coverage": "VERIFIED",
+    "deals_coverage_from": "2026-02-02T08:09:39.912584Z",
+    "end_equity": 10000.0,
+    "flows_count": 0,
+    "method": "modified Dietz – wpłaty/wypłaty, credit/bonus i korekty jako przepływy zewnętrzne, nie zysk",
+    "net_flows": 0,
+    "period_clipped_to_deal_history": false,
+    "period_from": "2026-03-04T08:01:04.137776Z",
+    "period_to": "2026-03-04T08:10:07.485193Z",
+    "roi_pct": 0.0,
+    "sampling_note": "equity próbkowane co 60 s podczas pracy programu – głębsze obsunięcia wewnątrz minuty i poza pracą programu nie są widoczne",
+    "scope": "cały rachunek (także transakcje ręczne) – to nie jest ROI samego bota",
+    "snapshots": 10,
+    "start_equity": 10000.0,
+    "status": "OK"
+   },
+   "bot": {
+    "all": {
+     "avg_r": null,
+     "expectancy_r": null,
+     "net": 0.0,
+     "profit_factor": null,
+     "status": "NO_DATA",
+     "trades": 0,
+     "win_rate": null
+    },
+    "commission_unknown_trades": 0,
+    "currency": null,
+    "day": {
+     "avg_r": null,
+     "expectancy_r": null,
+     "net": 0.0,
+     "profit_factor": null,
+     "status": "NO_DATA",
+     "trades": 0,
+     "win_rate": null
+    },
+    "mode": "PAPER",
+    "month": {
+     "avg_r": null,
+     "expectancy_r": null,
+     "net": 0.0,
+     "profit_factor": null,
+     "status": "NO_DATA",
+     "trades": 0,
+     "win_rate": null
+    },
+    "note": "Wyniki z rozliczonych transakcji bota w tym trybie. Mała próba nie pozwala wnioskować o skuteczności.",
+    "open_partial_positions": 0,
+    "recent": [],
+    "unsettled_positions": 0,
+    "week": {
+     "avg_r": null,
+     "expectancy_r": null,
+     "net": 0.0,
+     "profit_factor": null,
+     "status": "NO_DATA",
+     "trades": 0,
+     "win_rate": null
+    }
+   },
+   "engines": {
+    "combined": {
+     "avg_r": null,
+     "expectancy_r": null,
+     "net": 0.0,
+     "profit_factor": null,
+     "status": "NO_DATA",
+     "trades": 0,
+     "win_rate": null
+    },
+    "mode": "PAPER",
+    "note": "S01–S12 z tabeli trades, SCALPING/HEDGING z zamkniętych planów sh_plans (cały cykl = jeden wynik). Mała próba nie pozwala wnioskować o skuteczności.",
+    "per_engine": {
+     "ACTIVE_S01_S12": {
+      "avg_r": null,
+      "expectancy_r": null,
+      "net": 0.0,
+      "profit_factor": null,
+      "status": "NO_DATA",
+      "trades": 0,
+      "win_rate": null
+     },
+     "SH_HEDGING": {
+      "avg_r": null,
+      "expectancy_r": null,
+      "net": 0.0,
+      "profit_factor": null,
+      "status": "NO_DATA",
+      "trades": 0,
+      "win_rate": null
+     },
+     "SH_SCALPING": {
+      "avg_r": null,
+      "expectancy_r": null,
+      "net": 0.0,
+      "profit_factor": null,
+      "status": "NO_DATA",
+      "trades": 0,
+      "win_rate": null
+     }
+    },
+    "per_month": {},
+    "per_strategy": {},
+    "per_symbol": {},
+    "sh_commission_unknown_plans": 0,
+    "sh_unsettled_or_error_closed": 0
+   },
+   "equity": {
+    "first_snapshot": null,
+    "label": "Equity z zapisanych snapshotów (co 60 s, od —)",
+    "mode": "PAPER",
+    "points": [],
+    "status": "NO_DATA"
+   }
+  },
+  "status": 200
+ },
+ "/api/v1/strategy/auto": {
+  "body": {
+   "alternative": null,
+   "candidate_ranking": [],
+   "contract": "mq-auto-1.0.0",
+   "data_status": "UNKNOWN",
+   "funnel": {},
+   "last_change": null,
+   "last_evaluated_at": null,
+   "manual_fit": null,
+   "manual_strategy_id": null,
+   "per_strategy": {},
+   "profile": "ACTIVE",
+   "regime": null,
+   "scan_ms": null,
+   "scans": 0,
+   "selected": null,
+   "selected_at": null,
+   "selected_strategy_id": null,
+   "selected_strategy_version": null,
+   "selection_reason_codes": [
+    "NO_SCAN_YET"
+   ],
+   "setup_view": {
+    "focus_setup_id": null,
+    "mode": "AUTO",
+    "strategy_id": null
+   },
+   "setups": [],
+   "snapshot_id": null,
+   "strategies": [
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "TREND",
+     "implemented": true,
+     "min_bars": 80,
+     "name": "TREND_PULLBACK",
+     "params": {
+      "deep_close_atr": 0.5,
+      "expires_bars": 12,
+      "max_depth_atr": 3.5,
+      "min_depth_atr": 1.0,
+      "min_er": 0.25,
+      "min_slope": 0.02,
+      "sl_buffer_atr": 0.2,
+      "swing_lookback": 30,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 36,
+      "zone_bars": 3
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.2,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.2,
+      "EXPANSION": 0.4,
+      "RANGE": 0.1,
+      "TRANSITION": 0.5,
+      "TREND_DOWN": 1.0,
+      "TREND_UP": 1.0
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S01",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H4",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "TREND",
+     "implemented": true,
+     "min_bars": 60,
+     "name": "ADAPTIVE_TREND",
+     "params": {
+      "band_atr": 0.3,
+      "er_n": 10,
+      "expires_bars": 4,
+      "fast": 2,
+      "min_er": 0.3,
+      "slow": 30,
+      "tfs": [
+       "M15",
+       "H1"
+      ],
+      "time_exit_bars": 48
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.3,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.1,
+      "EXPANSION": 0.6,
+      "RANGE": 0.1,
+      "TRANSITION": 0.7,
+      "TREND_DOWN": 0.9,
+      "TREND_UP": 0.9
+     },
+     "required_tfs": [
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M15",
+      "H1"
+     ],
+     "strategy_id": "S02",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "BREAKOUT",
+     "implemented": true,
+     "min_bars": 60,
+     "name": "CHANNEL_BREAKOUT",
+     "params": {
+      "buffer_atr": 0.1,
+      "expires_bars": 4,
+      "max_bar_atr": 2.5,
+      "min_width_atr": 2.0,
+      "n": 20,
+      "sl_atr": 1.0,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 30,
+      "watch_dist_atr": 0.5
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.6,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.1,
+      "EXPANSION": 1.0,
+      "RANGE": 0.3,
+      "TRANSITION": 0.5,
+      "TREND_DOWN": 0.6,
+      "TREND_UP": 0.6
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S03",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "BREAKOUT",
+     "implemented": true,
+     "min_bars": 150,
+     "name": "VOLATILITY_COMPRESSION_BREAKOUT",
+     "params": {
+      "buffer_atr": 0.15,
+      "expires_bars": 3,
+      "max_box_age": 6,
+      "max_box_atr": 3.0,
+      "max_entry_atr": 1.0,
+      "max_pct": 0.15,
+      "min_bars_in_box": 5,
+      "pct_lookback": 120,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 24
+     },
+     "regime_fit": {
+      "COMPRESSION": 1.0,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.1,
+      "EXPANSION": 0.8,
+      "RANGE": 0.5,
+      "TRANSITION": 0.5,
+      "TREND_DOWN": 0.3,
+      "TREND_UP": 0.3
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S04",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "BREAKOUT",
+     "implemented": true,
+     "min_bars": 40,
+     "name": "SESSION_RANGE_BREAKOUT",
+     "params": {
+      "buffer_atr": 0.1,
+      "min_coverage": 0.8,
+      "sessions": [
+       {
+        "name": "LONDON",
+        "range_minutes": 60,
+        "start": "08:00",
+        "trade_minutes": 180,
+        "tz": "Europe/London"
+       },
+       {
+        "name": "NEW_YORK",
+        "range_minutes": 30,
+        "start": "08:30",
+        "trade_minutes": 150,
+        "tz": "America/New_York"
+       }
+      ],
+      "time_exit_bars": 36
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.7,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.1,
+      "EXPANSION": 1.0,
+      "RANGE": 0.4,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 0.5,
+      "TREND_UP": 0.5
+     },
+     "required_tfs": [
+      "M5"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5"
+     ],
+     "strategy_id": "S05",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "BREAKOUT",
+     "implemented": true,
+     "min_bars": 80,
+     "name": "BREAKOUT_RETEST",
+     "params": {
+      "buffer_atr": 0.1,
+      "expires_bars": 6,
+      "fail_atr": 0.5,
+      "level_age": 60,
+      "max_since_break": 20,
+      "retest_tol_atr": 0.3,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 30,
+      "watch_dist_atr": 2.0
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.4,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.1,
+      "EXPANSION": 0.8,
+      "RANGE": 0.3,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 0.8,
+      "TREND_UP": 0.8
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S06",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "REVERSION",
+     "implemented": true,
+     "min_bars": 60,
+     "name": "FAILED_BREAKOUT_RECLAIM",
+     "params": {
+      "buffer_atr": 0.1,
+      "expires_bars": 4,
+      "max_bars_out": 3,
+      "min_width_atr": 1.5,
+      "n": 20,
+      "out_atr": 0.1,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 24
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.5,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.8,
+      "EXPANSION": 0.4,
+      "RANGE": 0.9,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 0.3,
+      "TREND_UP": 0.3
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S07",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "REVERSION",
+     "implemented": true,
+     "min_bars": 70,
+     "name": "RANGE_EDGE_REVERSION",
+     "params": {
+      "edge_frac": 0.15,
+      "expires_bars": 6,
+      "lookback": 40,
+      "max_er": 0.25,
+      "max_h_atr": 8.0,
+      "min_h_atr": 2.0,
+      "min_touches": 2,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 24,
+      "watch_frac": 0.3
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.4,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.4,
+      "EXPANSION": 0.1,
+      "RANGE": 1.0,
+      "TRANSITION": 0.5,
+      "TREND_DOWN": 0.1,
+      "TREND_UP": 0.1
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S08",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "REVERSION",
+     "implemented": true,
+     "min_bars": 60,
+     "name": "STATISTICAL_MEAN_REVERSION",
+     "params": {
+      "entry_z": -2.0,
+      "expires_bars": 4,
+      "max_er": 0.35,
+      "n": 40,
+      "stop_z": -3.5,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 20,
+      "watch_z": -1.5
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.3,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.7,
+      "EXPANSION": 0.3,
+      "RANGE": 1.0,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 0.1,
+      "TREND_UP": 0.1
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S09",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "REVERSAL",
+     "implemented": true,
+     "min_bars": 80,
+     "name": "EXHAUSTION_STRUCTURE_REVERSAL",
+     "params": {
+      "buffer_atr": 0.1,
+      "expires_bars": 8,
+      "lookback": 30,
+      "max_extreme_age": 12,
+      "min_impulse_atr": 3.0,
+      "stretch_atr": 2.5,
+      "tfs": [
+       "M5",
+       "M15"
+      ],
+      "time_exit_bars": 30
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.1,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 1.0,
+      "EXPANSION": 0.4,
+      "RANGE": 0.4,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 0.3,
+      "TREND_UP": 0.3
+     },
+     "required_tfs": [
+      "M5",
+      "M15"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M5",
+      "M15"
+     ],
+     "strategy_id": "S10",
+     "trade": true,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H8",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "TREND",
+     "implemented": true,
+     "min_bars": 160,
+     "name": "EMA20_PULLBACK_2_5R",
+     "params": {
+      "adx_len": 14,
+      "adx_smoothing": 14,
+      "adx_threshold": 20.0,
+      "atr_buffer_mult": 0.1,
+      "atr_len": 14,
+      "confirm_mode": "CLOSE_BEYOND",
+      "expires_bars": 2,
+      "h8_trend_filter": false,
+      "len_ema20": 20,
+      "len_ema50": 50,
+      "max_depth_atr": null,
+      "max_pullback_bars": 20,
+      "min_ema_sep_atr": null,
+      "require_approach": false,
+      "require_green_red": false,
+      "rr": 2.5,
+      "swing_lookback": 10,
+      "tfs": [
+       "M15",
+       "M30"
+      ],
+      "touch_mode": "PCT",
+      "touch_tol_atr": 0.1,
+      "touch_tolerance_pct": 0.05,
+      "use_adx": true,
+      "window": 400
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.3,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.2,
+      "EXPANSION": 0.5,
+      "RANGE": 0.1,
+      "TRANSITION": 0.6,
+      "TREND_DOWN": 1.0,
+      "TREND_UP": 1.0
+     },
+     "required_tfs": [
+      "M15",
+      "M30"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M15",
+      "M30"
+     ],
+     "strategy_id": "S11",
+     "trade": false,
+     "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.1.0-FIXED-EXPERIMENTAL"
+    },
+    {
+     "context_tf": "H1",
+     "contract": "MQ-STRATEGY-CONTRACT-1.0.0",
+     "family": "RANGE_WALLS",
+     "implemented": true,
+     "min_bars": 80,
+     "name": "WALLS_RANGE_FAMILY",
+     "params": {
+      "activity_filter": "REQUIRED",
+      "activity_median_n": 30,
+      "activity_ratio": 1.2,
+      "body_ratio": 0.45,
+      "buffer_atr": 0.05,
+      "clv_long": 0.65,
+      "expires_bars": 3,
+      "fail_atr": 0.25,
+      "max_entry_atr": 0.5,
+      "max_expansion_atr": 2.5,
+      "range_edge_frac": 0.2,
+      "range_lookbacks": [
+       18,
+       12,
+       24
+      ],
+      "range_max_age": 48,
+      "range_max_er": 0.35,
+      "range_max_h_atr": 6.0,
+      "range_min_h_atr": 1.0,
+      "range_min_touches": 2,
+      "rejection_lookback_m5": 6,
+      "retest_tol_atr": 0.25,
+      "retest_window_m5": 12,
+      "rr_min_gross": 1.2,
+      "sl_buffer_atr": 0.15,
+      "time_exit_breakout_m1": 120,
+      "time_exit_m1": 90,
+      "time_exit_m5": 36,
+      "trigger_window_m1": 20,
+      "use_walls": true,
+      "variants": [
+       "RANGE_RECLAIM",
+       "WALL_REJECTION",
+       "BREAKOUT_RETEST"
+      ],
+      "wall_proximity_atr": 0.5,
+      "zone_max_atr": 0.6
+     },
+     "regime_fit": {
+      "COMPRESSION": 0.8,
+      "EXHAUSTION_OR_REVERSAL_CANDIDATE": 0.6,
+      "EXPANSION": 0.6,
+      "RANGE": 1.0,
+      "TRANSITION": 0.7,
+      "TREND_DOWN": 0.5,
+      "TREND_UP": 0.5
+     },
+     "required_tfs": [
+      "M1",
+      "M5"
+     ],
+     "scan": true,
+     "setup_tfs": [
+      "M1",
+      "M5"
+     ],
+     "strategy_id": "S12",
+     "trade": false,
+     "validation_status": "CANDIDATE_FUNCTIONAL_ONLY_OOS_NOT_RUN",
+     "version": "1.0.0-CANDIDATE"
+    }
+   ],
+   "strategy_mode": "AUTO",
+   "system_state": "STARTING",
+   "why_no_setup": [
+    "Dane: UNKNOWN – nowe setupy nie są tworzone",
+    "Selektor: NO_SCAN_YET"
+   ]
+  },
+  "status": 200
+ },
+ "/api/v1/strategy/selection-log": {
+  "body": {
+   "log": []
+  },
+  "status": 200
+ }
+}

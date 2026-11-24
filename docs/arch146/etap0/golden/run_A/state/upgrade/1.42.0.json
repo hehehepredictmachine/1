@@ -1,0 +1,28 @@
+{
+  "version": "1.42.0",
+  "models_assist_done": true,
+  "at": "2026-03-04T08:00:03+00:00",
+  "activation_policy": "DIRECT_USER_REQUEST",
+  "applied": [
+    "tsfm:chronos2:ACTIVE:M15:ASSIST",
+    "tsfm:chronos2:SCALPING:M5:ASSIST",
+    "tsfm:chronos2:HEDGING:M15:ASSIST",
+    "tsfm:granite_ttm:ACTIVE:M15:ASSIST",
+    "tsfm:granite_ttm:SCALPING:M5:ASSIST",
+    "tsfm:granite_ttm:HEDGING:M15:ASSIST",
+    "tsfm:tirex2:ACTIVE:M15:ASSIST",
+    "tsfm:tirex2:SCALPING:M5:ASSIST",
+    "tsfm:tirex2:HEDGING:M15:ASSIST",
+    "kronos:SCALPING:ASSIST",
+    "kronos:HEDGING:ASSIST",
+    "baskets:FOREX_MT5:AUTO_SH"
+  ],
+  "errors": [],
+  "not_changed": [
+    "account execution mode",
+    "STOP",
+    "risk limits / stakes / leverage / SL",
+    "CRYPTO (manual)",
+    "OTC retired (history only)"
+  ]
+}
