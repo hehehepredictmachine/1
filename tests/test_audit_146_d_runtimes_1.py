@@ -318,6 +318,22 @@ class TestUnreadableRegistryNeverOverwritten(_RegistryCase):
         self.assertEqual(p.read_bytes(), raw)
 
 
+    def test_scalp_registry_cli_leaves_an_unreadable_registry(self):
+        # chunk_40#1 (rest): scalp_registry rollback / deactivate wrote the empty view back, validate returned 0
+        from gold_candles_runtime import scalp_registry
+        from gold_candles_runtime.scalp_infer import registry_path
+        p = registry_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b'{"active": "S1", "history": ["S0"], "runs": {"S1": ')
+        raw = p.read_bytes()
+        for cmd in ("deactivate", "rollback", "validate", "list"):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = scalp_registry.main([cmd])
+            self.assertEqual(rc, 2, cmd)
+            self.assertIn("REGISTRY_UNREADABLE", out.getvalue(), cmd)
+            self.assertEqual(p.read_bytes(), raw, cmd)
+
 # ===================================================================================================== chunk_40#3 registry_cli contract
 class TestRegistryCliContract(_RegistryCase):
     def test_rollback_skips_contract_mismatch_and_list_shows_it(self):

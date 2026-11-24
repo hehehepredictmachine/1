@@ -30,6 +30,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     use_instrument(args.instrument)
     reg = read_registry()
+    if reg.get("error"):   # 1.46: rollback / deactivate wrote the empty view of an unreadable registry back (all runs lost); validate returned 0
+        print(f"[BLAD] {reg['error']}: rejestr scalp nieczytelny (zablokowany lub uszkodzony) – plik zostaje bez zmian.")
+        return 2
     contract = lambda e: SF.contract_hash(e["symbol"], e["tick_size"])  # noqa: E731
     if args.cmd == "list":
         print(f"Aktywny: {reg.get('active') or 'brak'}")
