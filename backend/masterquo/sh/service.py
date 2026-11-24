@@ -790,6 +790,8 @@ class SHService:
         return b.request_hedge(now, hv, dec["reason"])
 
     # ------------------------------------------------------------------ management (every tick)
+    NOT_SENT_TTL_S = 60.0                      # w2 (I0739): a NOT_SENT management action is sent again for at most this long
+
     def manage(self, ex, spec, q, now, shc) -> None:
         for row in self.store.open_plans(spec.symbol):
             obj = row.get("fsm_obj")
@@ -800,7 +802,7 @@ class SHService:
                 self.reconcile(ex, row, obj, spec, now)
             elif mode == "PAPER":
                 self.paper_stops(ex, row, obj, spec, q, now)
-            acts = []
+            acts = self._retry_acts(row, obj, now)
             if isinstance(obj, Basket):
                 inval = row["plan"]["setup"].get("invalidation")
                 p = obj.primary
@@ -817,7 +819,61 @@ class SHService:
                 if maxm and now - row["created_at"] >= 60 * maxm and obj.remaining > 1e-9:
                     acts.append({"action_id": f"{row['plan_id']}:CLOSE_RUNNER:TIME", "plan_id": row["plan_id"], "kind": "CLOSE_RUNNER",
                                  "volume": obj.remaining, "reason": "TIME_LIMIT"})
+            seen_ids: set = set()
+            acts = [a for a in acts if not (a["action_id"] in seen_ids or seen_ids.add(a["action_id"]))]   # a retried id once per tick
             self.process(ex, row, obj, acts, spec, q, now)
+
+    def _retry_acts(self, row, obj, now) -> list[dict]:
+        """w2 (I0739): NOT_SENT management actions of this plan, sent again with the SAME id / volume / level (flag _retry) within
+        NOT_SENT_TTL_S. After it the action goes back to the normal evaluation - never a blind send: a partial-close leg returns to
+        PENDING (requested again only when its price is crossed again), an unwind (UNWINDING) returns to HEDGED with the leg OPEN;
+        every other action stays where it was (as an UNKNOWN one today: no EXIT_PENDING rollback, no BE fallback)."""
+        lst = getattr(obj, "_sh_retry", None) or []
+        out, keep = [], []
+        for ent in lst:
+            a = ent.get("action") or {}
+            first = ent.get("first_at")
+            if now - float(now if first is None else first) <= self.NOT_SENT_TTL_S:
+                keep.append(ent)
+                out.append(dict(a, _retry=True))
+                continue
+            self._retry_expired(row, obj, a, now)
+        obj._sh_retry = keep
+        return out
+
+    def _retry_expired(self, row, obj, a, now) -> None:
+        b = obj if isinstance(obj, Basket) else None
+        pos = b.primary if b else obj
+        k, aid = a.get("kind"), a.get("action_id")
+        back = False
+        if k == "CLOSE_PARTIAL":
+            pos.on_partial_rejected(f"{aid}:ns{now}", aid.split(":")[-1], "NOT_SENT_TTL")
+            back = True
+        elif k == "CLOSE_HEDGE" and b and b.state == "UNWINDING" and b.hedge and b.hedge.status == "CLOSING":
+            b.hedge.status = "OPEN"
+            b.issued.discard(aid)
+            b._go("HEDGED", "zamknięcie hedge nie wysłane do terminala – ocena od nowa", now)
+            back = True
+        if not back:
+            self.store.finish_action(aid, "NOT_SENT_EXPIRED", {"status": "NOT_SENT_EXPIRED", "reason": "NOT_SENT_TTL"}, now)
+        self.store.event(row["plan_id"], "ACTION_NOT_SENT_EXPIRED", {"action": aid, "kind": k, "back_to_evaluation": back}, now)
+
+    def _not_sent(self, row, obj, a, res, now) -> bool:
+        """True = the result is fully handled here (no state-machine feedback): NOT_SENT keeps / adds the retry entry; a retried
+        action that still fails is dropped without any state change (no rollback of EXIT_PENDING, no BE fallback)."""
+        lst = getattr(obj, "_sh_retry", None)
+        if lst is None:
+            lst = obj._sh_retry = []
+        aid = a["action_id"]
+        ent = next((e for e in lst if (e.get("action") or {}).get("action_id") == aid), None)
+        if res.get("status") == "NOT_SENT":
+            if ent is None:
+                lst.append({"action": {k: v for k, v in a.items() if k != "_retry"}, "first_at": now})
+                self.store.event(row["plan_id"], "ACTION_NOT_SENT", {"action": aid, "reason": res.get("reason")}, now)
+            return True
+        if ent is not None:
+            lst.remove(ent)
+        return bool(a.get("_retry")) and res.get("status") not in ("FILLED", "PARTIAL", "DONE")
 
     def hedge_step(self, row, b: Basket, spec, q, now, structure_valid) -> list[dict]:
         prof = row["plan"]["profile"]
@@ -964,6 +1020,8 @@ class SHService:
             if k == "CLOSE_HEDGE":
                 hs = b.hedge.side if b and b.hedge else ("SELL" if pos.side == "BUY" else "BUY")
                 res = ex.perform(row["plan"], a, mode=mode, quote=q, ticket=row.get("hedge_ticket"), side_of_position=hs, slippage=slip, now=now)
+                if self._not_sent(row, obj, a, res, now):
+                    continue
                 if res["status"] in ("FILLED", "PARTIAL"):
                     b.hedge.status = "OPEN"
                     queue += b.on_hedge_closed(a["action_id"] + ":r", now, float(res["volume"]), float(res["price"]))
@@ -972,6 +1030,8 @@ class SHService:
                     queue += b.on_hedge_closed(a["action_id"] + f":rej{now}", now, 0, 0, ok=False, reason=str(res.get("reason")))
                 continue
             res = ex.perform(row["plan"], a, mode=mode, quote=q, ticket=row.get("primary_ticket"), side_of_position=pos.side, slippage=slip, now=now)
+            if self._not_sent(row, obj, a, res, now):
+                continue
             st = res["status"]
             done = st in ("FILLED", "PARTIAL", "DONE")
             if k == "MODIFY_TP":

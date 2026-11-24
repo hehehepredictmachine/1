@@ -54,8 +54,26 @@ def state(db, mode: str, account_key: str | None, now: float) -> dict:
         q += " AND account_key=?"
         args.append(account_key)
     open_sh = int(db.query(q, args)[0]["n"])
+    hedge_legs = 0
+    for r in db.query(q.replace("SELECT COUNT(*) AS n", "SELECT fsm") + " AND fsm IS NOT NULL", args):
+        hedge_legs += _hedge_leg_open(r["fsm"])
     return {"realized_today": round(active_today + sh_today, 2), "realized_by_path": {"ACTIVE": round(active_today, 2), "SH": round(sh_today, 2)},
-            "open_positions": open_active + open_sh, "open_by_path": {"ACTIVE": open_active, "SH": open_sh}, "day_start_utc": day0_iso}
+            "open_positions": open_active + open_sh + hedge_legs, "open_by_path": {"ACTIVE": open_active, "SH": open_sh},
+            "open_hedge_legs": hedge_legs, "day_start_utc": day0_iso}
+
+
+def _hedge_leg_open(fsm: str | None) -> int:
+    """w2 (I0721): the hedge leg of an SH basket is a second position in the terminal - it counts in the shared max_open_positions while
+    it is OPEN or CLOSING (its risk reservation is consumed at the fill, and the plan row counts once). Unreadable state: not counted
+    (as before)."""
+    try:
+        d = json.loads(fsm) if fsm else None
+    except (TypeError, ValueError):
+        return 0
+    if not isinstance(d, dict) or d.get("type") != "BASKET":
+        return 0
+    h = (d.get("data") or {}).get("hedge")
+    return 1 if isinstance(h, dict) and h.get("status") in ("OPEN", "CLOSING") else 0
 
 
 def check(st: dict, *, equity: float | None, legacy_limits, sh_limits: dict | None) -> list[str]:

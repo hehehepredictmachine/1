@@ -40,6 +40,14 @@ class MT5WorkerUnavailable(RuntimeError):
     pass
 
 
+def _not_submitted(exc: BaseException, flag: bool = True) -> BaseException:
+    """w2 (I0739): mark an exception raised when the job certainly did NOT reach the terminal (refused before submit, cancelled
+    while still queued, worker without the MT5 module). An attribute on the instance - the class hierarchy is unchanged (MT5Busy is
+    still an MT5CallTimeout, callers that do not know the flag see the same exceptions as before)."""
+    exc.not_submitted = bool(flag)
+    return exc
+
+
 class MT5Worker:
     def __init__(self, module_factory: Callable[[], Any], name: str = "mt5-worker"):
         self._factory = module_factory
@@ -85,7 +93,7 @@ class MT5Worker:
                 self._busy_prio = prio
             try:
                 if self.module is None:
-                    raise MT5WorkerUnavailable(self.module_error or "MT5_MODULE_UNAVAILABLE")
+                    raise _not_submitted(MT5WorkerUnavailable(self.module_error or "MT5_MODULE_UNAVAILABLE"))
                 fut.set_result(fn(self.module))
             except BaseException as exc:
                 self.failures += 1
@@ -109,13 +117,13 @@ class MT5Worker:
     def call(self, fn: Callable[[Any], Any], priority: int = PRIO_QUOTE, timeout: float = 15.0) -> Any:
         if self.wedged_seconds > timeout:
             if self.busy_with_history():
-                raise MT5Busy("MT5_BUSY_HISTORY")
-            raise MT5CallTimeout("TERMINAL_UNRESPONSIVE")
+                raise _not_submitted(MT5Busy("MT5_BUSY_HISTORY"))           # refused before submit: nothing reached the terminal
+            raise _not_submitted(MT5CallTimeout("TERMINAL_UNRESPONSIVE"))
         fut = self.submit(fn, priority)
         try:
             return fut.result(timeout=timeout)
         except TimeoutError as exc:
-            fut.cancel()
+            never_ran = fut.cancel()                                        # True only while the job was still queued
             if self.busy_with_history():
-                raise MT5Busy("MT5_BUSY_HISTORY") from exc
-            raise MT5CallTimeout("MT5_CALL_TIMEOUT") from exc
+                raise _not_submitted(MT5Busy("MT5_BUSY_HISTORY"), never_ran) from exc
+            raise _not_submitted(MT5CallTimeout("MT5_CALL_TIMEOUT"), never_ran) from exc
