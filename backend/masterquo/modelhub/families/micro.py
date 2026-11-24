@@ -154,9 +154,14 @@ class Micro(B.Family):
                 m.update(classifier_state="INCOMPATIBLE", classifier_reason=why)
                 return m
             v = live["micro"]["values"]
-            spr = live.get("spread")
-            if not spr or spr <= 0:
+            qspr = live.get("spread")
+            if not qspr or qspr <= 0:                                # kept from 1.46 (only tightening): no quote -> no classifier record
                 raise B.Unavailable("BLOCKED_DATA", "brak spreadu kwotowania do normalizacji microprice")
+            # 1.46 arch (I0192): normalised by the spread of the SAME book (as in training, features_from_books) - the bridge quote spread
+            # is from another moment; a book without its spread is not served (training skips spread <= 0 too)
+            spr = v.get("book_spread")
+            if not B.finite(spr) or spr <= 0:
+                raise B.Unavailable("BLOCKED_DATA", "brak spreadu arkusza do normalizacji microprice")
             x = np.asarray([[v.get("best_imbalance") or 0.0, v.get("depth_imbalance") or 0.0, v.get("ofi_window") or 0.0,
                              (v.get("microprice_dev") or 0.0) / spr]])
             p = self._proba(art, x)[0]

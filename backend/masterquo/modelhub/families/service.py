@@ -374,7 +374,17 @@ class FamilyService:
             live["bars"] = B.bars_from_bridge(self.bridge.bars(tf, include_forming=False))
         if f.ID == "MICROSTRUCTURE" and self.indicators is not None:
             s = self.indicators.current() or {}
-            live["micro"] = s.get("microstructure")
+            live["micro_snapshot"] = s.get("microstructure")
+            # 1.46 arch (I0191): the CURRENT book (polled every book_period_s) - the snapshot is recomputed only per closed M1 bar (up to
+            # ~60 s old for a 10 s classifier); without microstructure_now() (stand-ins, old services) the snapshot as before
+            now_fn = getattr(self.indicators, "microstructure_now", None)
+            fresh = None
+            if now_fn is not None:
+                try:
+                    fresh = now_fn()
+                except Exception:  # noqa: BLE001 - the snapshot measurement is used instead
+                    fresh = None
+            live["micro"] = fresh if fresh is not None else live["micro_snapshot"]
             q = getattr(self.bridge, "quote", None) or {}
             if q.get("ask") is not None and q.get("bid") is not None:
                 live["spread"] = float(q["ask"]) - float(q["bid"])
@@ -384,6 +394,36 @@ class FamilyService:
             except Exception:  # noqa: BLE001
                 live["news"] = []
         return live
+
+    def _micro_ttl_s(self) -> float:
+        """1.46 arch (I0191): a book measurement is a state of seconds - its record carries its own TTL (Quant / coordinator exclude it as
+        STALE afterwards; without it the state default was 900 s)."""
+        try:
+            period = float(self.cfg_store.get().indicators.book_period_s)
+        except (AttributeError, TypeError, ValueError):
+            period = 1.0
+        return max(10.0, 5.0 * period)
+
+    def _micro_snapshot_guard(self, live) -> tuple[str, str] | None:
+        """1.46 arch (I0191, only tightening): the record reads the CURRENT book, but it is never READY where the record of the snapshot
+        measurement (1.46 input) was not - the snapshot measurement must be READY and not older than the REQUIRED-model age limit
+        (decision.required_max_age_s) nor the Quant state TTL (900 s). With the snapshot refreshed every closed M1 bar this is inert;
+        it keeps every block of a REQUIRED MICROSTRUCTURE model of today (a fresher book never lifts one)."""
+        if "micro_snapshot" not in live:
+            return None
+        snap = live.get("micro_snapshot") or {}
+        if snap.get("status") != "READY":                          # exactly the 1.46 record of a snapshot without a READY book
+            return "BLOCKED_DATA", snap.get("reason") or "Brak danych arkusza"
+        from ...quant import checks as QC
+        t = QC.ts(snap.get("data_time"))
+        try:
+            lim = float(getattr(getattr(self.cfg_store.get(), "decision", None), "required_max_age_s", QC.STATE_TTL_S))
+        except (TypeError, ValueError):
+            lim = QC.STATE_TTL_S
+        lim = min(lim, QC.STATE_TTL_S)
+        if t is None or self.clock() - t > lim:
+            return "STALE", f"migawka arkusza PMW-IND-1 starsza niż {lim:.0f} s"
+        return None
 
     def _artifact(self, fid, inst, rid):
         key = (fid, inst, rid)
@@ -423,8 +463,10 @@ class FamilyService:
         live = self._live(f, inst)
         bar_t = (live.get("bars") or [{}])[-1].get("t") if live.get("bars") else None
         data_t = bar_t
+        ttl = None
         if fid == "MICROSTRUCTURE":
             data_t = (live.get("micro") or {}).get("data_time")
+            ttl = self._micro_ttl_s()
         elif fid == "NLP_SENTIMENT":
             data_t = max((n.get("first_seen_at") or n.get("published_at") or "" for n in live.get("news") or []), default=None) or None
         ck = (fid, inst, rid, bar_t, use)
@@ -438,11 +480,15 @@ class FamilyService:
         try:
             if impl != "AVAILABLE":
                 raise B.Unavailable("BLOCKED_DATA", why)
+            if fid == "MICROSTRUCTURE":
+                guard = self._micro_snapshot_guard(live)
+                if guard:
+                    raise B.Unavailable(*guard)
             art = self._artifact(fid, inst, rid) if rid else None
             res = f.predict(art, live)
             calib = {"method": "temperature (walidacja)", "status": "CALIBRATED_DEV"} if f.TASK_TYPE == "CLASS_PROBABILITIES" else None
             pred = f.pred(inst=inst, symbol=symbol, state="READY", result=res, run_id=rid, data_time=data_t, data_kind=kind, calibration=calib,
-                          extra={"use": use, "compute_ms": None})
+                          extra={"use": use, "compute_ms": None}, ttl_s=ttl)
         except B.Unavailable as u:
             state = u.state if u.state in ("BLOCKED_DATA", "ERROR", "NOT_TRAINED", "STALE", "INCOMPATIBLE") else "BLOCKED_DATA"
             pred = f.pred(inst=inst, symbol=symbol, state=state, reason=u.reason, run_id=rid, data_time=bar_t, extra={"use": use})
