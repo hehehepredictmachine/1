@@ -308,7 +308,8 @@ class QuantService:
         """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot.
         1.46: features of the CURRENT semantics (features.CURRENT) go to the ledger row / TabICL; a MetaModel gets the input of ITS feature
         version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input. legacy_without_regime (coordinator SH candidate):
-        before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to FEAT-3 only)."""
+        before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to FEAT-3 only); a FEAT-3
+        artifact gets it with the regime AND is evaluated without it too - HOLD when either evaluation holds (the regime only tightens)."""
         mode = mode or self.mode()
         now = self.clock()
         inst = str(cd.get("instrument") or self.instrument())
@@ -357,13 +358,20 @@ class QuantService:
                      probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives")})
         else:
             fv = F.version_of(model.get("feature_schema")) or F.VERSION
+            nfeats = None
             if fv == F.CURRENT:
                 mfeats = feats
+                if legacy_without_regime and (cd.get("market_regime") or {}).get("state") is not None:
+                    # 1.46 D4, tightening only (safety verdicts I0015 / I0143): the regime of the coordinator SH candidate may ADD a HOLD,
+                    # never remove one - the same artifact is also evaluated on that candidate without the regime (no ledger row, no
+                    # self.recent, no TabICL submit) and the entry is held when EITHER evaluation holds
+                    nfeats = F.build_for(fv, {**cd, "market_regime": {**(cd.get("market_regime") or {}), "state": None}}, preds)
             else:                                       # an artifact of an older feature version: its own input, never the new meaning
                 lcd = {**cd, "market_regime": {**(cd.get("market_regime") or {}), "state": None}} if legacy_without_regime else cd
                 mfeats = F.build_for(fv, lcd, preds)
             try:
                 out = M.predict(model, mfeats)
+                out_nr = M.predict(model, nfeats) if nfeats is not None else None
             except M.MetaError as exc:
                 a.update(status="ERROR", reason=str(exc), probability=None, ev=None)
                 out = None
@@ -390,13 +398,23 @@ class QuantService:
                 if not cost_known and ev["e_net_r"] is not None:
                     ev["status"] = "SCENARIO_UNKNOWN_COSTS"
                 a["ev"] = ev
-                hold = None
-                if not cost_known:
-                    hold = None                                       # unknown costs: never a validated net gate
-                elif ev["e_net_r"] is not None and ev["e_net_r"] <= 0:
-                    hold = f"Quant: E[net R] = {ev['e_net_r']:.3f} ≤ 0 (model {ver})"
-                elif (ev.get("binary") or {}).get("break_even_p") is not None and out["p_event"] < ev["binary"]["break_even_p"]:
-                    hold = f"Quant: P({spec.event_id}) = {out['p_event']:.3f} < próg {ev['binary']['break_even_p']:.3f}"
+                be_p = (ev.get("binary") or {}).get("break_even_p")    # depends on the plan only (G, L), not on p
+
+                def hold_of(o: dict) -> str | None:
+                    if not cost_known:
+                        return None                                   # unknown costs: never a validated net gate
+                    if o["e_net_r"] is not None and o["e_net_r"] <= 0:
+                        return f"Quant: E[net R] = {o['e_net_r']:.3f} ≤ 0 (model {ver})"
+                    if be_p is not None and o["p_event"] < be_p:
+                        return f"Quant: P({spec.event_id}) = {o['p_event']:.3f} < próg {be_p:.3f}"
+                    return None
+                hold = hold_of(out)
+                if out_nr is not None:
+                    hold_nr = hold_of(out_nr)
+                    a["without_regime"] = {"p": out_nr["p_event"], "e_net_r": out_nr["e_net_r"], "would_hold": hold_nr,
+                                           "rule": "D4: reżim w kandydacie SH tylko zaostrza – HOLD, gdy wstrzymuje którakolwiek ocena"}
+                    if hold is None and hold_nr:
+                        hold = f"{hold_nr} – ocena bez reżimu (D4: reżim tylko zaostrza)"
                 a["would_hold"] = hold
                 a["influence"] = "HOLD" if (mode == "ASSIST" and hold) else "NONE"
                 a["contributions"] = M.contributions(model, mfeats)

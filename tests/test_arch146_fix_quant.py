@@ -357,9 +357,8 @@ class StubRt:
         self.bridge = StubBridge()
 
 
-class TestAssessFeatureVersions(unittest.TestCase):
-    """The live assessment: ledger row = FEAT-3 (with its version); a FEAT-1 artifact gets exactly the pre-1.46 input, a FEAT-3 artifact the
-    new one - for the coordinator SH candidate too (D4 regime only for FEAT-3)."""
+class AssessFixture:
+    """QuantService on a stub runtime with a frozen published snapshot and an activated (FEAT-1 or FEAT-3) MetaModel."""
 
     def setUp(self):
         self.td = TempData()
@@ -385,6 +384,11 @@ class TestAssessFeatureVersions(unittest.TestCase):
         from masterquo.evaluation import contract as EK
         return EK.sh_candidate(su_ready(), regime=regime).to_dict()
 
+
+class TestAssessFeatureVersions(AssessFixture, unittest.TestCase):
+    """The live assessment: ledger row = FEAT-3 (with its version); a FEAT-1 artifact gets exactly the pre-1.46 input, a FEAT-3 artifact the
+    new one - for the coordinator SH candidate too (D4 regime only for FEAT-3)."""
+
     def run_assess(self, legacy: bool, *, via_coordinator: bool):
         from masterquo.quant import events as QE
         from masterquo.quant import metamodel as M
@@ -392,6 +396,7 @@ class TestAssessFeatureVersions(unittest.TestCase):
         cd = self.cand_dict({"state": "TREND"})
         th = QE.spec_from_candidate(cd).task_hash()
         self.activate(th, legacy)
+        self.assertIsNotNone(q._model("XAUUSD", th)[1])        # loaded first: the spy sees the assessment calls only (not the reproduction)
         seen = []
         real = M.predict
 
@@ -405,12 +410,14 @@ class TestAssessFeatureVersions(unittest.TestCase):
             else:
                 a = q.assess(cd, log_row=True)
                 self.assertEqual(a["status"], "READY", a)
-        return q, cd, seen[-1]
+        self.seen = seen
+        return q, cd, seen[0]                                  # the evaluation that sets p / e_net_r (FEAT-3 SH: + one without regime)
 
     def test_feat1_artifact_gets_the_pre_146_input(self):
         from masterquo.quant import features as F
         _, cd, feats = self.run_assess(True, via_coordinator=True)
         before = dict(cd, market_regime={"state": None, "source": "sh.context (RegimeMachine v2)"})      # EK.from_sh_setup(su) before 1.46
+        self.assertEqual(len(self.seen), 1)
         self.assertEqual(feats, F.build2(before, frozen_preds()[:7]))
         self.assertNotIn("ctx:regime=TREND", feats)
         self.assertEqual(feats["st:mm:kalman_cross:aligned"], 1.0)
@@ -425,11 +432,76 @@ class TestAssessFeatureVersions(unittest.TestCase):
         self.assertEqual(feats["ctx:regime=TREND"], 1.0)
         self.assertEqual(feats["st:mm:kalman_cross:aligned"], 0.0)
         self.assertNotIn("ctx:dxy_corr_72", feats)
+        self.assertEqual(len(self.seen), 2)                    # D4 tightening only: the same candidate without the regime is evaluated too
+        self.assertEqual(self.seen[1], F.build3(dict(cd, market_regime=dict(cd["market_regime"], state=None)), frozen_preds()[:7]))
         q, cd, feats = self.run_assess(False, via_coordinator=False)
+        self.assertEqual(len(self.seen), 1)
         with q.ledger._lock:
             row = q.ledger.c.execute("SELECT feature_version, features_json FROM rows").fetchone()
         self.assertEqual(row[0], F.CURRENT)
         self.assertEqual(json.loads(row[1]), F.build3(cd, frozen_preds()[:7]))
+
+
+class TestD4RegimeOnlyTightens(AssessFixture, unittest.TestCase):
+    """Review of D4 (safety verdicts I0015 / I0143 / I0562): a FEAT-3 MetaModel gets the SH cycle regime in the coordinator SH candidate, so
+    its HOLD could disappear because of the regime columns alone. Tightening-only variant: in the coordinator SH path a FEAT-3 artifact is
+    also evaluated on the same candidate WITHOUT the regime and HOLDs when EITHER evaluation holds; the second evaluation logs nothing
+    (no ledger row, no self.recent, no second TabICL submit). FEAT-1 artifacts and the ledger / ACTIVE path are untouched (one evaluation)."""
+
+    def entry(self, legacy: bool, out_with: dict, out_without: dict, *, via_coordinator: bool = True):
+        from masterquo.quant import events as QE
+        from masterquo.quant import metamodel as M
+        q = self.service()
+        submits = []
+        q.tabicl.submit = lambda *a, **k: submits.append(a) or {"state": "DISABLED", "reason": "test"}
+        cd = self.cand_dict({"state": "TREND"})
+        th = QE.spec_from_candidate(cd).task_hash()
+        self.activate(th, legacy)
+        self.assertIsNotNone(q._model("XAUUSD", th)[1])                        # loaded (reproduction check) before predict is faked
+        calls = []
+
+        def fake(model, feats):
+            calls.append("ctx:regime=TREND" in feats)
+            o = out_with if "ctx:regime=TREND" in feats else out_without
+            return {"p_event": o["p"], "e_net_r": o["e"], "coverage": 1.0, "missing_features": [], "outcome_interval_80": None}
+        with mock.patch.object(M, "predict", side_effect=fake):
+            if via_coordinator:
+                res = q.coordinator_entry("SH", cand=cd)
+                self.assertEqual(res["state"], "READY", res)
+            else:
+                res = q.assess(cd, mode="ASSIST", log_row=True)
+        return q, res, calls, submits
+
+    def test_feat3_holds_when_the_evaluation_without_regime_holds(self):
+        q, e, calls, submits = self.entry(False, {"p": 0.7, "e": 0.25}, {"p": 0.4, "e": -0.1})
+        self.assertEqual(calls, [True, False])
+        self.assertIsNotNone(e["quant_hold"])
+        self.assertIn("E[net R] = -0.100", e["quant_hold"])
+        self.assertIn("bez reżimu", e["quant_hold"])
+        self.assertEqual(e["result"], {"p": 0.7, "e_net_r": 0.25})            # reported values: the evaluation with the regime
+        self.assertEqual(len(submits), 1)                                       # one TabICL submit (the regime feature vector)
+        self.assertEqual(q.recent, [])
+        with q.ledger._lock:
+            self.assertEqual(q.ledger.c.execute("SELECT COUNT(*) FROM rows").fetchone()[0], 0)
+
+    def test_feat3_hold_with_regime_is_kept_unchanged(self):
+        _, e, _, _ = self.entry(False, {"p": 0.4, "e": -0.2}, {"p": 0.7, "e": 0.3})
+        self.assertTrue(e["quant_hold"].startswith("Quant: E[net R] = -0.200 ≤ 0 (model "), e["quant_hold"])
+        self.assertNotIn("bez reżimu", e["quant_hold"])
+
+    def test_feat3_no_hold_when_neither_evaluation_holds(self):
+        _, e, calls, _ = self.entry(False, {"p": 0.7, "e": 0.2}, {"p": 0.6, "e": 0.1})
+        self.assertEqual(calls, [True, False])
+        self.assertIsNone(e["quant_hold"])
+
+    def test_feat1_and_the_ledger_path_evaluate_once(self):
+        _, e, calls, _ = self.entry(True, {"p": 0.7, "e": 0.25}, {"p": 0.4, "e": -0.1})
+        self.assertEqual(calls, [False])                                        # FEAT-1: the pre-1.46 input only (no regime)
+        self.assertIn("E[net R] = -0.100", e["quant_hold"])
+        self.assertNotIn("bez reżimu", e["quant_hold"])
+        _, a, calls, _ = self.entry(False, {"p": 0.7, "e": 0.25}, {"p": 0.4, "e": -0.1}, via_coordinator=False)
+        self.assertEqual(calls, [True])                                         # ledger path: as before, one evaluation
+        self.assertIsNone(a["would_hold"])
 
 
 # ================================================================================================ D11
