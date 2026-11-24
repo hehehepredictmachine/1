@@ -340,5 +340,62 @@ class TestI0125DefaultPortSingleSource(_DataDir):
         self.assertEqual(cfg.read_bytes(), before)                                  # 1.45: ConfigStore() migrated and rewrote it
 
 
+# ------------------------------------------------------------------ I0097
+class TestI0097SettingsStores(_DataDir):
+    def test_inventory_uses_runtime_stores(self):
+        from types import SimpleNamespace as NS
+        from unittest import mock
+
+        from masterquo.kronos import settings as KS
+        from masterquo.tsfm import settings as TS
+        from masterquo.upgrade import inventory as INV
+        rt = NS(tsfm=NS(settings=TS.SettingsStore(self.data / "ts.json")), kronos=NS(settings=KS.SettingsStore(self.data / "ks.json")))
+
+        def boom(*a, **k):
+            raise AssertionError("separate settings store built next to the Runtime's one")
+        with mock.patch.object(TS, "SettingsStore", boom), mock.patch.object(KS, "SettingsStore", boom):
+            rows = INV.models(None, rt=rt)                                          # 1.45: no rt parameter (TypeError)
+        errs = [r for r in rows if r.get("error")]
+        self.assertFalse([r for r in errs if r["model_id"] in ("tsfm", "kronos")], errs)
+        self.assertTrue(any(r["model_id"].startswith("tsfm:") for r in rows))
+        self.assertIn("kronos", [r["model_id"] for r in rows])
+        with mock.patch.object(TS, "SettingsStore", boom), mock.patch.object(KS, "SettingsStore", boom):
+            rep = INV.write_reports("after", None, out_dir=self.data / "rep", rt=rt)
+        from pathlib import Path
+        doc = json.loads(Path(rep["model_inventory"]).read_text(encoding="utf-8"))
+        self.assertFalse([r for r in doc["items"] if r.get("model_id") in ("tsfm", "kronos") and r.get("error")])
+
+    def test_quant_settings_read_modify_write_is_serialised(self):
+        import threading
+        import time
+        from unittest import mock
+
+        from masterquo.quant import service as SV
+        q = SV.QuantService.__new__(SV.QuantService)
+        q.rt, q.clock, q.settings = None, time.time, SV.Settings(self.data / "quant_settings.json")
+        self.assertEqual(q.settings.policy, "RELOAD_ALWAYS")
+        a_in, a_go = threading.Event(), threading.Event()
+        real_get = SV.Settings.get
+
+        def slow_get(self_):
+            d = real_get(self_)
+            if threading.current_thread().name == "A":
+                a_in.set()
+                a_go.wait(5)
+            return d
+        with mock.patch.object(SV.Settings, "get", slow_get):
+            ta = threading.Thread(target=q.set_estimator, args=("legacy_logistic",), name="A")
+            ta.start()
+            self.assertTrue(a_in.wait(5))
+            tb = threading.Thread(target=q.set_mode, args=("OFF",), name="B")
+            tb.start()
+            time.sleep(0.2)                                                         # B runs (1.45) or waits for A's write (now)
+            a_go.set()
+            ta.join(5)
+            tb.join(5)
+        s = q.settings.get()
+        self.assertEqual((s["mode"], s["estimator"]), ("OFF", "legacy_logistic"))   # 1.45: A's stale write lost B's mode change
+
+
 if __name__ == "__main__":
     unittest.main()

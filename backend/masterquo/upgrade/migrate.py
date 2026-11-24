@@ -91,7 +91,7 @@ def before() -> dict:
 def after(rt) -> dict:
     st = state()
     try:
-        rep = INV.write_reports("after", rt.cfg)
+        rep = INV.write_reports("after", rt.cfg, rt=rt)          # 1.46 arch (I0097): the Runtime's settings stores, not new instances
         from . import preservation as P
         catalog = []
         try:

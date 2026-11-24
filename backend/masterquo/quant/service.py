@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import paths
+from ..settings_store import RELOAD_ALWAYS, JsonSettingsStore
 from ..timeutil import from_epoch, iso
 from . import adapters as A
 from . import checks as CK
@@ -60,14 +61,20 @@ def qdir() -> Path:
     return p
 
 
-class Settings:
+class Settings(JsonSettingsStore):
+    """data/quant/settings.json - policy RELOAD_ALWAYS (settings_store.py): every get() reads the disk, so `quant mode` from the CLI (another
+    process) is seen by the running bot at once. 1.46 arch (I0097): reads / writes and the read-modify-write sequences of set_mode /
+    set_estimator run under self.lock (RLock) - before, two threads could lose each other's change."""
+
+    policy = RELOAD_ALWAYS
+
     def __init__(self, path: Path):
-        self.path = path
+        super().__init__(path)
         self.error = None
 
     def get(self) -> dict:
         try:
-            d = json.loads(self.path.read_text(encoding="utf-8"))
+            d = self.read_raw()
         except FileNotFoundError:
             return json.loads(json.dumps(DEFAULT_SETTINGS))
         except (OSError, ValueError) as exc:
@@ -95,7 +102,7 @@ class Settings:
         return out
 
     def put(self, d: dict) -> None:
-        write_json_atomic(self.path, d)
+        self.write_raw(d)                     # same bytes as scheduler.write_json_atomic (tmp + os.replace), under self.lock
 
 
 class QuantService:
@@ -153,18 +160,19 @@ class QuantService:
         mode = str(mode).upper()
         if mode not in MODES:
             return {"ok": False, "reason": f"nieznany tryb {mode}"}
-        s = self.settings.get()
-        if mode == "ASSIST":
-            act = self.validated_active(self.instrument())
-            if not act:
-                return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
-            if not confirm:
-                return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
-            s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
-        else:
-            s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
-        s["mode"] = mode
-        self.settings.put(s)
+        with self.settings.lock:                        # 1.46 arch (I0097): read-modify-write never loses a concurrent change
+            s = self.settings.get()
+            if mode == "ASSIST":
+                act = self.validated_active(self.instrument())
+                if not act:
+                    return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
+                if not confirm:
+                    return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
+                s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
+            else:
+                s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
+            s["mode"] = mode
+            self.settings.put(s)
         return {"ok": True, "mode": mode, "assist": s["assist"]}
 
     def set_estimator(self, kind: str, *, by: str = "panel") -> dict:
@@ -172,11 +180,12 @@ class QuantService:
         the rollback to the previous estimator. Stored in settings.json; the upgrade never overwrites a stored choice."""
         if kind not in ("tabicl_v2", "legacy_logistic"):
             return {"ok": False, "reason": f"nieznany estymator {kind}"}
-        s = self.settings.get()
-        hist = list(s.get("estimator_history") or [])[-49:]
-        hist.append({"at": iso_ts(self.clock()), "from": s.get("estimator"), "to": kind, "by": by})
-        s.update(estimator=kind, estimator_history=hist)
-        self.settings.put(s)
+        with self.settings.lock:                        # 1.46 arch (I0097): read-modify-write never loses a concurrent change
+            s = self.settings.get()
+            hist = list(s.get("estimator_history") or [])[-49:]
+            hist.append({"at": iso_ts(self.clock()), "from": s.get("estimator"), "to": kind, "by": by})
+            s.update(estimator=kind, estimator_history=hist)
+            self.settings.put(s)
         if kind == "tabicl_v2":
             self.tabicl.start()
         return {"ok": True, "estimator": kind}
