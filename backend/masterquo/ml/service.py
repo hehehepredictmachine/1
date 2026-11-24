@@ -31,6 +31,7 @@ from ..db.database import dumps
 from ..timeutil import iso, parse_iso, utcnow
 from . import features as fe
 from .dataset import SampleStore
+from .labels import LABEL_POLICY_VERSION
 from .registry import Registry
 
 log = logging.getLogger("masterquo.ml")
@@ -598,7 +599,8 @@ class MLService:
         base = {"contract": PRED_CONTRACT, "setup_id": (setup_row or {}).get("setup_id"), "setup_version": (setup_row or {}).get("version"),
                 "model_id": None, "model_family": None, "model_version": None, "feature_schema_version": fe.FEATURE_SCHEMA_VERSION,
                 "asof_utc": None, "raw_score": None, "calibrated_probability": None, "calibration_status": "NONE", "threshold": None,
-                "target_definition": "net_R > 0 wg planu setupu (MQ-LABEL-1.0.0)", "readiness": "NOT_READY", "uncertainty_reason": None,
+                # 1.46 arch (I0329): the label policy version from labels.py (was the literal MQ-LABEL-1.0.0 after the 1.1.0 cost labels)
+                "target_definition": f"net_R > 0 wg planu setupu ({LABEL_POLICY_VERSION})", "readiness": "NOT_READY", "uncertainty_reason": None,
                 "data_quality": None, "explanation_ref": None, "ml_mode": c.mode}
         if setup_row is None:
             return dict(base, uncertainty_reason="NO_SETUP")
