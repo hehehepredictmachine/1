@@ -70,8 +70,10 @@ Meta-model uczy się na wierszach ledgera Quant, które zbierają się w SHADOW 
 - Wynik `VALIDATED_SHADOW` oznacza, że artefakt można aktywować (SHADOW):
 
 ```bat
-..\.venv\Scripts\python.exe -m masterquo quant activate --instrument XAUUSD --task <task_hash> --version <wersja>
+..\.venv\Scripts\python.exe -m masterquo quant activate --instrument XAUUSD --task <klucz> --version <wersja>
 ```
+
+`<klucz>` to pole `task_hash` z wyniku treningu – od 1.46 arch klucz grupy zadania (`G…`), bo model uczy się na wszystkich kandydatach grupy (I0528/I0798).
 
 Po aktywacji oceny setupów tego zadania pokazują P(zdarzenia), E[net R] i ewentualne „wstrzymałby”. W SHADOW nadal nie mają wpływu na decyzje.
 

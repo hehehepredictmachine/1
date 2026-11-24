@@ -76,6 +76,12 @@ trening **nie filtruje wersji**. Nauczyłby więc model na mieszance wierszy, w 
 Sam reżim w kandydacie SH tylko zaostrza: model FEAT-3 jest oceniany z reżimem i bez niego, HOLD, gdy wstrzymuje którakolwiek ocena.
 Cofnięcie aktywacji: rollback jak wyżej.
 
+**QFENCE (1.46 arch, fala 2b).** Artefakt bez `producer_semantics = PMW-QUANT-PRODUCERS-2` w manifeście (każdy wytrenowany przed
+poprawkami producentów, także FEAT-3 z fali 1) w aktywnym Quant ASSIST wstrzymuje każde nowe wejście SH i ACTIVE
+(`MODEL_QUANT_HOLD`, powód `QUANT_REVALIDATION_REQUIRED`); w SHADOW działa jak dotąd. Rollback do takiego artefaktu przywraca to
+wstrzymanie (fail-closed, nie fail-open). Zdjęcie bez retreningu: `quant mode SHADOW`. Nowe modele trenują się per grupa zadania
+(`task_group`, klucz `G…`) – rollback / aktywacja podaje ten klucz w `--task`.
+
 **Licznik wierszy.** Do czasu zebrania wierszy FEAT-3 (co najmniej DEV 300 + CAL 100 + TEST 100 na zadanie) trening odpowiada
 INSUFFICIENT_EVIDENCE, a działa dotychczasowy artefakt FEAT-1. Stan: pole `training_evidence` w `GET /api/v1/quant/status` i
 `python -m masterquo quant status`.
