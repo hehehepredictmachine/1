@@ -17,20 +17,18 @@ import sys
 import tempfile
 import types
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
+import _env
 import numpy as np
 import pandas as pd
-
-import _env
 from _env import TempData
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import kronos_testkit as K  # noqa: E402
+import kronos_testkit as K
 
-UTC = timezone.utc
 ROOT = _env.ROOT
 WED_1200 = datetime(2026, 10, 28, 12, 0, 30, tzinfo=UTC).timestamp()
 
@@ -180,7 +178,7 @@ class _SvcCase(unittest.TestCase):
         bars = [b for b in self.m5 if b["closed"]][-200:]
         H = int(s.horizon_bars["M5"])
         last = bars[-1]
-        off = int(last["t_raw"]) - int(datetime.fromisoformat(last["open_utc"].replace("Z", "+00:00")).timestamp())
+        off = int(last["t_raw"]) - int(datetime.fromisoformat(last["open_utc"]).timestamp())
         y_raw = [int(last["t_raw"]) + 300 * (i + 1) for i in range(H)]
         cl = [float(last["c"]) + delta * (i + 1) / H for i in range(H)]
         r = {"ok": True, "pred": {"open": cl, "high": [c + 0.1 for c in cl], "low": [c - 0.1 for c in cl], "close": cl, "volume": None},
@@ -418,7 +416,7 @@ class TestI0853CalendarFirstPartialDay(unittest.TestCase):
             cal = self.CAL.Calendar(keep, 3600)
             for back in range(0, 72, 5):
                 last = keep[-1] - back * 3600
-                a, ia = cal.future(last, 3600, 6)
+                a, _ia = cal.future(last, 3600, 6)
                 b, ib = cal.future(last, 3600, 6, resolve_first_day=True)
                 if a is not None:
                     checked += 1
@@ -488,6 +486,7 @@ class TestI0854UnusableCalendarCache(_FakeWorkerSvcCase):
         self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 2)
         cal, err = svc._calendar("XAUUSD-", "M5")
         self.assertFalse(cal.usable()[0])
+        self.assertIsNone(err)
         n0 = len(self.bridge.calls)
         self.now[0] += 120
         svc._calendar("XAUUSD-", "M5")
@@ -495,6 +494,7 @@ class TestI0854UnusableCalendarCache(_FakeWorkerSvcCase):
         self.bridge.bars_by[("XAUUSD-", "M5")] = K.make_bars(300, self.now[0], 30)
         self.now[0] += 200
         cal, err = svc._calendar("XAUUSD-", "M5")
+        self.assertIsNone(err)
         self.assertEqual(len(self.bridge.calls), n0 + 1)
         self.assertTrue(cal.usable()[0])
         self.assertTrue(svc._calendar_limited("XAUUSD-", "M5"))
@@ -607,7 +607,8 @@ class TestI0035ScorecardHorizonFilter(_SvcCase):
 class _HubCase(unittest.TestCase):
     """Dubler huggingface_hub (moduł w sys.modules) + _fetch zapisujący bajty - kronos_runtime.install.download bez sieci."""
 
-    CONTENT = {"config.json": b'{"d_model": 1}', "model.safetensors": b"\x01" * 4096, "README.md": b"---\nlicense: mit\n---\n"}
+    CONTENT = types.MappingProxyType({"config.json": b'{"d_model": 1}', "model.safetensors": b"\x01" * 4096,
+                                      "README.md": b"---\nlicense: mit\n---\n"})
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="kr_pin_"))
@@ -704,6 +705,7 @@ class TestP003KronosNetworkHost(_HubCase):
 
     def test_download_reports_the_redirect_host(self):
         import urllib.error
+
         from kronos_runtime import install as I
 
         def blocked(url, part, size, label, rep, step, retries=4):
@@ -719,6 +721,7 @@ class TestP003KronosNetworkHost(_HubCase):
 
     def test_redirect_probe_reads_the_location(self):
         import urllib.error
+
         from kronos_runtime import install as I
         url = "https://huggingface.co/NeoQuasar/Kronos-small/resolve/x/model.safetensors"
         err = urllib.error.HTTPError(url, 302, "Found", {"Location": "https://us.aws.cdn.hf.co/repos/ab/cd/file?x=1"}, None)
@@ -764,7 +767,7 @@ class TestI0127ResearchScriptsPortable(unittest.TestCase):
         import subprocess
         try:
             r = subprocess.run([sys.executable, "-m", "ruff", "check", "--select", "F", "--output-format", "concise", str(self.RESEARCH)],
-                               capture_output=True, text=True, timeout=120)
+                               capture_output=True, text=True, timeout=120, check=False)
         except (OSError, subprocess.TimeoutExpired):
             self.skipTest("ruff niedostępny")
         if r.returncode not in (0, 1) or ("No module named ruff" in r.stderr and not shutil.which("ruff")):
@@ -790,7 +793,7 @@ class TestI0127ResearchScriptsPortable(unittest.TestCase):
             csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             with contextlib.redirect_stdout(io.StringIO()):
                 prep.main(["--csv", str(csv_path), "--out", d])
-            t, o, h, low, c = common.load(d, "M5")
+            t, _o, h, low, c = common.load(d, "M5")
             self.assertEqual(len(t), 3 * 24 * 12)
             orig = common.origins(t, 12, ctx=100)
             r = common.score("naive", [c[i] for i in orig], orig, h, low, c, 12)
