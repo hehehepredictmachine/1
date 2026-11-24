@@ -1,8 +1,9 @@
 """Full inventory of the computational components of the bot (PMW-QUANT-INV-1) -> docs/quant/INVENTORY.md / INVENTORY.json.
 
-Sources (read from the code at generation time, nothing typed by hand twice): sh/models.REGISTRY (37 rows), modelhub/families registry
-(15 + SEQ_GRU_EVENT adapter), trainhub/learn.MODELS (6), mm/inventory.MODULES (20), lab/protocol.FAMILIES + EXPERIMENTS,
-lab/structure_nets.FAMILIES, lab/si_families.FAMILIES, lab/flow_context/task.FAMILIES, plus the analysis services wired in runtime.py.
+Sources (read from the code at generation time, nothing typed by hand twice - the row counts are in the generated coverage, not here):
+sh/models.REGISTRY, modelhub/families registry (with the SEQ_GRU_EVENT adapter), trainhub/learn.MODELS, mm/inventory.MODULES,
+lab/protocol.FAMILIES + EXPERIMENTS, lab/structure_nets.FAMILIES, lab/si_families.FAMILIES, lab/flow_context/task.FAMILIES,
+quant/ids.EXTRA_PRODUCERS, plus the analysis services wired in runtime.py.
 Group rows (lab, si_move, th_direction) are expanded to their real families; aliases are folded into ONE canonical entry (quant/ids.py).
 
 Three separate axes per entry (never merged into one "ready" flag):
@@ -28,6 +29,8 @@ OPERATIONAL = ("READY", "SHADOW_ONLY", "DETERMINISTIC_OK")
 
 # quant roles (how Quant Core uses the output)
 ROLE_PL = {"GATE_EXISTING": "istniejąca bramka (bez zmian)", "CONTEXT_FEATURE": "cecha kontekstu meta-modelu (z maską braku)",
+           # 1.46 arch (I0189): a context record no feature is built from (quant/features.py) - panel / agent / REQUIRED only
+           "CONTEXT_STATE": "stan kontekstu (panel / agent) – bez cech meta-modelu",
            "BASE_FORECAST": "prognoza bazowa – cecha meta-modelu pod własną nazwą", "SETUP_EVENT": "prawdopodobieństwo zdarzenia setupu (ewaluacja)",
            "TOOL": "narzędzie / proces uczenia / optymalizacja – nie głos", "NOT_A_VOTE": "opis / opinia – bez p(win)",
            "META_MODEL": "Quant MetaModel", "SIMULATION": "symulacja (MODEL_SIMULATED) – nie skalibrowane p", "NONE": "brak (nie istnieje)"}
@@ -37,6 +40,7 @@ A_EXISTING = "modelhub.adapters.all_predictions"
 A_FAM = "modelhub.families.service.predictions"
 A_EXT = "quant.adapters.extended"
 A_SETUP = "evaluation.service (prawdopodobieństwo per kandydat setupu)"
+VALIDATION_CATEGORIES = ("MODEL_TRAINED", "MODEL_PRETRAINED", "TRAINABLE")      # validation axis NOT_VALIDATED / VALIDATED, never NOT_APPLICABLE
 
 _OVR: dict[str, dict] = {
     # --- rules / measurements (SH deterministic rows) -------------------------------------------------------------
@@ -49,14 +53,34 @@ _OVR: dict[str, dict] = {
                          "files": ["backend/masterquo/sh/risk.py", "backend/masterquo/risk/portfolio.py"], "unit": "state", "task_type": "STATE"},
     "rule:news": {"role": "GATE_EXISTING", "adapter": A_EXT, "files": ["backend/masterquo/news/"], "unit": "state", "task_type": "STATE",
                   "data": "kalendarz makro (czas pierwszego odbioru)"},
-    "rule:regime_v2": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"]},
-    "rule:structure_v2": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"]},
-    "rule:smc_pullback": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "stan SMC w context_ind – brak stabilnego akcesora poza panelem; cecha strukturalna z structure_v2"},
-    "rule:vamd": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "VAMD liczony per wykres w context_ind (panel); bez akcesora snapshotu – nie jest modelem „Quant Ultimate Momentum Pro”"},
-    "rule:fractal": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "Katz FD liczony per wykres w context_ind; bez akcesora snapshotu"},
-    "rule:atr_vol": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "price", "task_type": "STATE", "tfs": ["M1", "M5"]},
+    # 1.46 arch (I0570): the STATE records of regime / ATR give no column (quant/features.py) - the same information enters the MetaModel
+    # through the candidate (feature_via); structure_v2 has no such path -> CONTEXT_STATE (published record, not a feature)
+    "rule:regime_v2": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"],
+                       "feature_via": "reżim kandydata (market_regime) -> ctx:regime=* (quant/features.context_features) – nie z rekordu STATE"},
+    "rule:structure_v2": {"role": "CONTEXT_STATE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"],
+                          "notes": "rekord STATE w migawce Quant (panel / agent / REQUIRED); quant/features.py nie buduje z niego cech – struktura "
+                                   "nie jest wejściem MetaModelu (nowa cecha = osobna decyzja z nową wersją schematu cech)"},
+    # 1.46 arch (I0571 / I0313): the SH snapshot (sh/context.py, every SH cycle) carries these values - they are SH inputs, not panel-only
+    "rule:smc_pullback": {"role": "CONTEXT_FEATURE", "adapter": None,
+                          "na": "akcesor istnieje: migawka SH sh.snapshot['ctx'] w każdym cyklu SH (smc_trend_m5, smc_high_m5 / smc_low_m5, "
+                                "pb_last_high_m5 / pb_last_low_m5, smc_trend_m1 / smc_last_m1); brak adaptera Quant – nie jest cechą MetaModelu (PMW-PRED-2)",
+                          "receivers": ["sh.setup (potwierdzenie odwrócenia: CHoCH M1 smc_last_m1)",
+                                        "sh.context.obstacles (aktywne poziomy SMC M5 jako przeszkody przed TP)", "context_ind (panel)"]},
+    "rule:vamd": {"role": "CONTEXT_FEATURE", "adapter": None,
+                  "na": "VAMD liczony na żywo w migawce SH (sh.context: ctx.vamd_m5 / ctx.vamd_m1) i per wykres w context_ind (panel); bez adaptera "
+                        "Quant (PMW-PRED-2) – nie jest modelem „Quant Ultimate Momentum Pro”",
+                  "receivers": ["sh.setup (warunek potwierdzenia CONTINUATION: znak vamd_m5)", "sh.tpmodel (cechy vamd_m5 / vamd_m1)", "context_ind (panel)"]},
+    "rule:fractal": {"role": "CONTEXT_FEATURE", "adapter": None,
+                     "na": "Katz FD liczony na żywo w migawce SH (sh.context: ctx.fd_zone_m5) i per wykres w context_ind; bez adaptera Quant (PMW-PRED-2)",
+                     "receivers": ["sh.setup (warunek potwierdzenia CONTINUATION: fd_zone_m5 ≠ CHOP)", "sh.tpmodel (cechy fd_trend / fd_chop z fd_zone_m5)",
+                                   "context_ind (panel)"]},
+    "rule:atr_vol": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "price", "task_type": "STATE", "tfs": ["M1", "M5"],
+                     "feature_via": "ATR kandydata (features.atr_m5) -> ctx:risk_atr, fcp:*:d_atr / band_atr (quant/features.py) – nie z rekordu STATE"},
     "rule:candles_patterns": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "formacje opisowe (role świec) – kontekst panelu, bez liczbowego wyjścia"},
-    "rule:liquidity": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "poziomy płynności (strefy) – w mapie stref; cecha odległości dostępna przez quant.snapshot"},
+    # 1.46 arch (I0587): neither quant/snapshot.py nor quant/features.py computes liquidity - no distance feature exists
+    "rule:liquidity": {"role": "CONTEXT_FEATURE", "adapter": None,
+                       "na": "poziomy płynności (boksy sesji / sweep – analytics.session_engine, heatmapa likwidacji – analytics.liquidation) w polityce "
+                             "OBSERVE analytics.liquidity_context (panel, kontekst silnika, agent); brak adaptera Quant i brak cechy MetaModelu"},
     "rule:flow_sr": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "pasma S/R flow_context per wykres – bez akcesora snapshotu"},
     "rule:decomposition": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "obserwacja cyklu (FFT/EMD/VMD) – brak zadania predykcyjnego"},
     # --- older services ---------------------------------------------------------------------------------------------
@@ -73,24 +97,35 @@ _OVR: dict[str, dict] = {
     "extind:indicator_context": {"role": "SETUP_EVENT", "adapter": None, "na": "score polityki scalp (TP1 przed SL innego planu) – liczony per plan w scalp.indicator_context",
                                  "unit": "probability", "task_type": "SCORE", "files": ["backend/masterquo/extind/"]},
     "ml_scalp:xgb_net_r": {"role": "SETUP_EVENT", "adapter": None, "na": "P(net R>0) innego cyklu scalp – liczony per plan w scalp.ml_scalp", "unit": "probability",
-                           "task_type": "EVENT_PROBABILITY", "files": ["backend/masterquo/scalp/service.py"]},
+                           # 1.46 arch (I0336): owner = ml/scalp_task.py (dataset / training / selection / bundle), inference ml/service.py
+                           "task_type": "EVENT_PROBABILITY", "files": ["backend/masterquo/ml/scalp_task.py", "backend/masterquo/ml/service.py",
+                                                                       "backend/masterquo/scalp/service.py"],
+                           "train": "ml/scalp_task.py (training ml_scalp)", "infer": "ml.service.MLService.on_scalp_candidate (scalp.service)"},
     "nss:tcn": {"role": "SETUP_EVENT", "adapter": None, "na": "P(TP1_FIRST/SL_FIRST/TIMEOUT) innego setupu – liczony per plan w scalp.neural", "unit": "probability",
                 "task_type": "CLASS_PROBABILITIES", "files": ["backend/masterquo/lab/nss_service.py"]},
-    "flow:reaction_m1": {"role": "BASE_FORECAST", "adapter": None, "na": "model reakcji M1 liczony per wykres w flow_context (panel) – bez akcesora snapshotu poza panelem",
+    "flow:reaction_m1": {"role": "BASE_FORECAST", "adapter": None,
+                         # 1.46 arch (I0302): FlowSections (panel / SI cells) loads only markov/latest.txt; the reaction candidate is replay-only
+                         "na": "NOT_CONNECTED: model reakcji FLOW_CONTEXT_MOVE_M1_V1 trenowany (LOGREG / XGB), bez ścieżki inferencji na żywo – "
+                               "FlowSections liczy tylko Heikin / S-R / StopDistance i Markov3 (flow:markov3); replay tylko z CLI (F-17)",
                          "unit": "probability", "task_type": "CLASS_PROBABILITIES", "tfs": ["M1"], "files": ["backend/masterquo/lab/flow_context/"],
                          "variants": ["flow:LOGREG", "flow:XGB"]},
     "context_ind:context_move_m5": {"role": "BASE_FORECAST", "adapter": None, "na": "NOT_CONNECTED: model badawczy bez ścieżki inferencji na żywo (F-17)",
                                     "unit": "probability", "task_type": "CLASS_PROBABILITIES", "tfs": ["M5"], "files": ["backend/masterquo/lab/context_ind/"]},
     # --- MM ---------------------------------------------------------------------------------------------------------
-    "mm:align_mean": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "atr", "task_type": "STATE"},
+    # 1.46 arch (I0378 / I0379): STATE records - quant/features.py builds no column from them (only FILTER_STATE / dxy STATE) -> CONTEXT_STATE;
+    # align_mean carries distances in points, % and ATR per TF -> unit 'mixed' (the adapter record says the same)
+    "mm:align_mean": {"role": "CONTEXT_STATE", "adapter": A_EXT, "unit": "mixed", "task_type": "STATE",
+                      "notes": "odległości od średniej per TF (<TF>_dist_points / _dist_pct / _dist_atr: punkty, %, ATR) – rekord STATE bez cech MetaModelu"},
     "mm:kalman_cross": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "FILTER_STATE", "tfs": ["M5"]},
     "mm:breakout_zones": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "FILTER_STATE", "tfs": ["M5"]},
-    "mm:multi_indicator": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5"]},
-    "mm:smc_fvg": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5"]},
+    "mm:multi_indicator": {"role": "CONTEXT_STATE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5"]},
+    "mm:smc_fvg": {"role": "CONTEXT_STATE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5"]},
     "mm:gpr_logret": {"role": "BASE_FORECAST", "adapter": A_EXT, "unit": "log_return", "task_type": "REGRESSION", "task": "LOG_RETURN_H3_M5", "tfs": ["M5"],
                       "horizon": "3 świece M5"},
     "mm:hdc_dir3": {"role": "BASE_FORECAST", "adapter": None, "na": "margines HDC (nie prawdopodobieństwo); brak ścieżki na żywo bez artefaktu VALIDATED_SHADOW",
-                    "unit": "score_0_100", "task_type": "SCORE", "tfs": ["M5"]},
+                    # 1.46 arch (I0353): HDCClassifier.predict returns s[top1] - s[top2] of the similarities 1 - 2H/D (mm/hdc.py), not 0-100
+                    "unit": "ratio", "task_type": "SCORE", "tfs": ["M5"],
+                    "notes": "margines podobieństwa: różnica podobieństw (1 − 2H/D) dwóch najlepszych klas, zakres 0..2 – nie skala 0–100, nie prawdopodobieństwo"},
     "mm:event_engine_dir3": {"role": "BASE_FORECAST", "adapter": A_EXT, "unit": "probability", "task_type": "CLASS_PROBABILITIES", "task": "EVENT_UNITS_DIR3",
                              "tfs": ["EVENT"], "horizon": "2 jednostki zdarzeń (16 zdarzeń/jednostka)"},
     "mm:ste_flownet_ret": {"role": "BASE_FORECAST", "adapter": None, "na": "brak ścieżki na żywo (tylko artefakt badawczy); log-zwrot h zdarzeń",
@@ -112,9 +147,6 @@ _OVR: dict[str, dict] = {
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},
 }
 
-_MM_TO_CANON = {"align_mean": "mm:align_mean", "hdc": "mm:hdc_dir3", "smc_fvg": "mm:smc_fvg", "event_engine": "mm:event_engine_dir3",
-                "ste_flownet": "mm:ste_flownet_ret", "gpr": "mm:gpr_logret", "kalman": "mm:kalman_cross", "breakout_zones": "mm:breakout_zones",
-                "multi_indicator": "mm:multi_indicator"}
 _MM_TOOL = {"buzoa": "TOOL", "sdom": "TOOL", "stfs": "TOOL", "quant_momentum": "NONE", "renko": "NONE", "head_shoulders": "NONE",
             "data_grabber": "TOOL", "tsvp": "TOOL", "mathbench": "TOOL", "chart_sync": "TOOL", "fusion_board": "TOOL"}
 
@@ -124,13 +156,13 @@ def _e(cid: str, **kw) -> dict:
             "task_type": None, "task": None, "horizon": None, "timeframes": [], "data_required": None, "features": None, "owner_train": None,
             "owner_infer": None, "env": ".venv", "artifact": None, "dependencies": [], "code_state": "IMPLEMENTED", "runtime_state": "NOT_EVALUATED",
             "state_reason": None, "validation": "NOT_APPLICABLE", "receivers": [], "quant_role": "CONTEXT_FEATURE", "adapter": None,
-            "not_applicable_reason": None, "variants": [], "source_registry": [], "notes": None}
+            "not_applicable_reason": None, "variants": [], "source_registry": [], "notes": None, "feature_via": None}
     base.update({k: v for k, v in kw.items() if v is not None})
     o = _OVR.get(cid) or {}
     for k_src, k_dst in (("role", "quant_role"), ("adapter", "adapter"), ("na", "not_applicable_reason"), ("files", "files"), ("unit", "unit"),
                          ("task_type", "task_type"), ("task", "task"), ("tfs", "timeframes"), ("horizon", "horizon"), ("env", "env"),
                          ("train", "owner_train"), ("infer", "owner_infer"), ("data", "data_required"), ("receivers", "receivers"),
-                         ("variants", "variants"), ("notes", "notes")):
+                         ("variants", "variants"), ("notes", "notes"), ("feature_via", "feature_via")):
         if k_src in o:
             base[k_dst] = o[k_src]
     return base
@@ -150,7 +182,9 @@ def _sh_rows() -> list[dict]:
         cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
         if sid in ("kronos", "chronos2", "granite_ttm"):
             cat = "MODEL_PRETRAINED"
+        # 1.46 arch (I0544): a trained / pretrained producer needs a validation for its role (was the NOT_APPLICABLE default of _e)
         out.append(_e(cid, name=it["name"], category=cat, output=it["output"], owner_train=it.get("train"), source_registry=["sh.models.REGISTRY"],
+                      validation="NOT_VALIDATED" if cat in VALIDATION_CATEGORIES else None,
                       receivers=[f"SH:{it['roles']['SCALPING']}/{it['roles']['HEDGING']}"], dependencies=[f"grupa korelacji {it['group']}"],
                       _sh=it))
     return out
@@ -172,7 +206,7 @@ def _family_rows() -> list[dict]:
                       task=f.TASK, timeframes=[f.TF] if f.TF else [], horizon=(f"{list(f.HORIZONS)} świec {f.TF}" if f.HORIZONS else "brak (pomiar stanu)"),
                       data_required=(getattr(f, "DATA", None) or {}).get("note") if isinstance(getattr(f, "DATA", None), dict) else None,
                       owner_train="modelhub.families.service (proces obok)", owner_infer="modelhub.families.service", env=env,
-                      artifact=f"<data>/families/{fid}/<instrument>/runs/<run_id>",
+                      artifact=f"<data>/model_families/{fid}/<instrument>/<run_id>",            # 1.46 arch (I0401): families/base.Store.run_dir
                       code_state="IMPLEMENTED", runtime_state="MISSING_DEPENDENCY" if impl == "MISSING_DEPENDENCY" else "NOT_EVALUATED",
                       state_reason=why, validation="NOT_VALIDATED", receivers=list(getattr(f, "RECEIVERS", ()) or ()), quant_role=role,
                       adapter=A_FAM, source_registry=["modelhub.families.registry"],
@@ -189,7 +223,8 @@ def _trainhub_rows() -> list[dict]:
         out.append(_e(cid, name=m.get("name") or mid, category="MODEL_TRAINED", files=["backend/masterquo/trainhub/learn.py", "backend/masterquo/trainhub/inference.py"],
                       unit="probability", task_type="CLASS_PROBABILITIES", task="DIRECTION_H<h>_<TF> po kosztach", timeframes=["M1", "M5", "M15", "M30"],
                       horizon="h świec (per paczka)", features="trainhub.features.FEATURE_SCHEMA (wspólna implementacja trening/inferencja)",
-                      owner_train="trainhub.jobs.TrainingCenter", owner_infer="trainhub.inference.TrainhubInference", artifact="<data>/trainhub/<instrument>/<model_key>/<version>",
+                      owner_train="trainhub.jobs.TrainingCenter", owner_infer="trainhub.inference.TrainhubInference",
+                      artifact="<data>/trainhub/models/<instrument>/<model_key>/<version>",     # 1.46 arch (I0442): trainhub/registry.package_dir
                       validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if mid != "TH_BASELINE" else "TOOL", adapter=A_EXISTING,
                       source_registry=["trainhub.learn.MODELS"] + (["modelhub.families (alias)"] if fam else []),
                       notes=("alias rodziny " + ", ".join(fam) + " – jeden artefakt, jeden trening, jeden głos") if fam else
@@ -210,16 +245,24 @@ def _lab_rows() -> list[dict]:
                       artifact="<data>/lab/models/<asset>/", validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if f not in ("DUMMY", "RULE") else "TOOL",
                       adapter=A_EXT, source_registry=["lab.protocol.FAMILIES"], notes="score innego zdarzenia niż TP setupu – cecha pod własną nazwą"))
     for x in getattr(P, "EXPERIMENTS", ()):
-        out.append(_e(f"lab:{x}", name=f"Eksperyment lab {x}", category="RESEARCH", files=["backend/masterquo/lab/protocol.py"], quant_role="TOOL",
-                      not_applicable_reason="eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
-                      source_registry=["lab.protocol.EXPERIMENTS"], validation="NOT_VALIDATED"))
+        # 1.46 arch (I0269): an experiment is saved like a family (artifact_family ALL of `training lab-offline`, or when it wins the
+        # selection), runs in LabService and is published by quant.adapters.lab as lab:<X> READY - it was declared "bez ścieżki na żywo"
+        out.append(_e(f"lab:{x}", name=f"Eksperyment lab {x}", category="RESEARCH",
+                      files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="ratio", task_type="SCORE",
+                      task="TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)", timeframes=["M5"], owner_train="lab (training: lab)",
+                      owner_infer="lab.service", artifact="<data>/lab/models/<asset>/", quant_role="BASE_FORECAST", adapter=A_EXT,
+                      source_registry=["lab.protocol.EXPERIMENTS"], validation="NOT_VALIDATED",
+                      notes="eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie "
+                            "ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant"))
     for f in tuple(SN.FAMILIES) + tuple(SF.FAMILIES):
         out.append(_e(f"si:{f}", name=f"Structure Intelligence {f}", category="MODEL_TRAINED",
                       files=["backend/masterquo/lab/structure_nets.py" if f in SN.FAMILIES else "backend/masterquo/lab/si_families.py", "backend/masterquo/lab/si_service.py"],
                       unit="probability", task_type="CLASS_PROBABILITIES", task="M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR)", timeframes=["M1"],
                       owner_train="training (structure_intelligence)", owner_infer="lab.si_service", artifact="<data>/structure_intelligence/<instrument>/",
                       validation="NOT_VALIDATED", quant_role="BASE_FORECAST", adapter=None,
-                      not_applicable_reason="wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+                      not_applicable_reason=I.SI_LIVE,                 # 1.46 arch (I0274): live SHADOW forecast, not a report on request
+                      receivers=["scalp.dashboard (migawka MTF, prognoza SHADOW)", "agent.tools get_structure_intelligence",
+                                 "archiwum si_forecasts / si_outcomes"],
                       source_registry=["lab.structure_nets.FAMILIES" if f in SN.FAMILIES else "lab.si_families.FAMILIES"]))
     return out
 
@@ -228,7 +271,7 @@ def _mm_rows() -> list[dict]:
     from ..mm import inventory as MI
     out = []
     for m in MI.MODULES:
-        cid = _MM_TO_CANON.get(m["id"])
+        cid = I.resolve(m["id"])                             # 1.46 arch (I0009): the alias table of quant/ids, not a copy of it
         if cid:
             out.append({"_merge": cid, "files": list(m.get("files") or []), "input": m.get("inputs"), "output_mm": m.get("outputs"),
                         "train": m.get("training"), "receivers": list(m.get("callers") or [])})
@@ -241,7 +284,8 @@ def _mm_rows() -> list[dict]:
                       not_applicable_reason=("brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy" if nospec else
                                              "narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu"),
                       runtime_state="UNAVAILABLE" if nospec else "NOT_EVALUATED",
-                      state_reason="NO_SPEC" if nospec else None))
+                      state_reason="NO_SPEC" if nospec else None,
+                      validation="NOT_VALIDATED" if m["category"] in VALIDATION_CATEGORIES and not nospec else None))
     return out
 
 
@@ -249,26 +293,44 @@ def _analysis_rows() -> list[dict]:
     rows = [
         ("analysis:montecarlo", "Monte Carlo (PMW-MC-1) – symulacja ścieżek", "SIMULATION", ["backend/masterquo/montecarlo/"], "SIMULATION",
          "MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach"),
-        ("analysis:zones", "Mapa stref (PMW-ZONES)", "ANALYSIS", ["backend/masterquo/zones/"], "CONTEXT_FEATURE", None),
-        ("analysis:market_zones", "Strefy rynkowe M1/M5/M15/M30 (1.28)", "ANALYSIS", ["backend/masterquo/zones/market_service.py"], "CONTEXT_FEATURE",
-         "liczone na żądanie panelu (job) – brak cyklu niezależnego od panelu"),
-        ("analysis:indicators", "Wskaźniki PMW-IND-1 (EMA/VWAP/RSI/MACD/BB, mikrostruktura, DXY)", "ANALYSIS", ["backend/masterquo/indicators/"],
-         "CONTEXT_FEATURE", None),
-        ("analysis:svp", "Session Volume Profile (PMW-SVP-1)", "ANALYSIS", ["backend/masterquo/svp/"], "CONTEXT_FEATURE",
-         "profile użytkownika (tick volume = aktywność feedu, nie wolumen obrotu) – kontekst panelu"),
+        # 1.46 arch (I0596): the zone record is a STATE summary quant/features.py does not map - the zone_* features reach the candidate
+        # and the evaluation ledger (evaluation.zone_context), not the MetaModel
+        ("analysis:zones", "Mapa stref (PMW-ZONES)", "ANALYSIS", ["backend/masterquo/zones/"], "CONTEXT_STATE",
+         ("rekord STATE (ZONE_MAP_SUMMARY) w migawce Quant bez cech MetaModelu – quant/features.py nie mapuje stref; cechy zone_* trafiają do "
+          "kandydata i ledgera oceny (evaluation.zone_context)")),
+        # 1.46 arch (I0598): panel visualisation (job on request), no adapter and no feature consumer
+        ("analysis:market_zones", "Strefy rynkowe M1/M5/M15/M30 (1.28)", "ANALYSIS", ["backend/masterquo/zones/market_service.py"], "NOT_A_VOTE",
+         "wizualizacja panelu Strefy rynkowe – liczone na żądanie (job) / w panelu, brak cyklu niezależnego od panelu; bez adaptera Quant i konsumenta cech"),
+        # 1.46 arch (I0187): the modules indicators/ really computes (no EMA / RSI / MACD / BB there); I0189: no feature -> CONTEXT_STATE
+        ("analysis:indicators", ("Wskaźniki PMW-IND-1 (AVWAP sesja/zdarzenie/manualny, semiwariancja, percentyl spreadu, cechy profilu sesji, "
+                                 "mikrostruktura arkusza/OFI, relacja DXY)"), "ANALYSIS", ["backend/masterquo/indicators/"], "CONTEXT_STATE", None),
+        # 1.46 arch (I0604): the previous-session profile is an entry condition of the SH pack variants PMW_HG08 / PMW_SC10
+        ("analysis:svp", "Session Volume Profile (PMW-SVP-1)", "ANALYSIS", ["backend/masterquo/svp/", "backend/masterquo/sh/pack/features.py"],
+         "GATE_EXISTING",
+         ("profil poprzedniej sesji (svp.engine.compute na zamkniętych M5, tick volume = aktywność feedu, nie wolumen obrotu) jest warunkiem wejścia "
+          "wariantów pakietu SH PMW_HG08 / PMW_SC10 (value_area_rejection: brak profilu = NO_DATA, bez setupu); profile użytkownika – panel; "
+          "Quant nie dubluje bramki")),
         ("analysis:dxy_correlation", "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)", "ANALYSIS", ["backend/masterquo/indicators/"], "CONTEXT_FEATURE", None),
-        ("analysis:walls", "Opcje / walls / IV (opcjonalne źródło)", "ANALYSIS", ["backend/masterquo/analysis/"], "CONTEXT_FEATURE",
-         "wymaga importu IV (import-iv); brak źródła = stan danych, nie zero"),
+        # 1.46 arch (I0600): AUTO without an IV import computes the walls from the historical volatility of D1 (analysis/walls.choose_source)
+        ("analysis:walls", "Walls D1 (σ: import IV → IV ręczna → HV_PROXY domyślnie)", "ANALYSIS",
+         ["backend/masterquo/analysis/walls.py", "backend/masterquo/analysis/iv_import.py"], "GATE_EXISTING",
+         ("bez importu IV źródłem σ jest zmienność historyczna D1 (HV_PROXY, close-to-close), nie rynek opcji; IV_SOURCED niezaimplementowane "
+          "(NOT_CONFIGURED); brak źródła = UNAVAILABLE, nie zero; poziomy ścian są wejściem strategii S12 (ścieżka A) – Quant ich nie dubluje")),
         ("analysis:evaluation", "AI Setup Probability Engine (PMW-EVAL)", "ANALYSIS", ["backend/masterquo/evaluation/"], "SETUP_EVENT", None),
         ("quant:metamodel", "PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)", "META_MODEL", ["backend/masterquo/quant/metamodel.py"],
          "META_MODEL", None),
     ]
+    recv = {"analysis:svp": ["SH pack PMW_HG08 / PMW_SC10 (sh/pack/detectors.value_area_rejection – profil poprzedniej sesji)",
+                             "panel SVP (profile użytkownika)"],
+            "analysis:walls": ["strategies.s12_walls_range (ścieżka A, S12)", "panel / API ścian zmienności"],
+            "analysis:zones": ["evaluation.service (zone_context kandydata)", "migawka Quant (rekord STATE)"]}
     out = []
     for cid, name, cat, files, role, na in rows:
         ad = {"analysis:indicators": A_EXT, "analysis:dxy_correlation": A_EXT, "analysis:zones": A_EXT, "analysis:montecarlo": A_EXT,
               "analysis:evaluation": "evaluation.service (ledger)", "quant:metamodel": "quant.service (assessment)"}.get(cid)
         out.append(_e(cid, name=name, category=cat, files=files, quant_role=role, adapter=ad, not_applicable_reason=na if not ad else None,
-                      notes=na if ad else None, source_registry=["runtime.py"], validation="NOT_VALIDATED" if cat in ("META_MODEL", "SIMULATION") else "NOT_APPLICABLE"))
+                      notes=na if ad else None, source_registry=["runtime.py"], receivers=recv.get(cid),
+                      validation="NOT_VALIDATED" if cat in ("META_MODEL", "SIMULATION") else "NOT_APPLICABLE"))
     out.append(_e("ext:catboost", name="CatBoost", category="NOT_IMPLEMENTED", code_state="NOT_IMPLEMENTED", quant_role="NONE", runtime_state="UNAVAILABLE",
                   state_reason="wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
                   not_applicable_reason="nie istnieje w kodzie – nie dodano fikcyjnego adaptera", source_registry=["lab/traceability.py (wzmianka)"]))
@@ -284,7 +346,7 @@ def _extra_rows() -> list[dict]:
                       not_applicable_reason=None if adapter else why, notes=why if adapter else None,
                       code_state="NO_SPEC" if nospec else "IMPLEMENTED", runtime_state="UNAVAILABLE" if nospec else "NOT_EVALUATED",
                       state_reason="NO_SPEC" if nospec else None, source_registry=["quant.ids.EXTRA_PRODUCERS (1.46)"],
-                      validation="NOT_VALIDATED" if cat in ("MODEL_TRAINED", "MODEL_PRETRAINED", "TRAINABLE") else "NOT_APPLICABLE"))
+                      validation="NOT_VALIDATED" if cat in VALIDATION_CATEGORIES else "NOT_APPLICABLE"))
     return out
 
 

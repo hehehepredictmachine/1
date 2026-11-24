@@ -112,8 +112,12 @@ _FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:z
 
 
 def _canonical_of(r: dict) -> str:
-    """Canonical id (quant/ids) of an existing catalog row - the same id the inventory gives its producer."""
+    """Canonical id (quant/ids) of an existing catalog row - the same id the inventory gives its producer. One source: canonical_row_id
+    (I0009); the rules below only name rows it leaves without an id (e.g. TH_BASELINE, plain SH rows)."""
     from ..quant import ids as I
+    cid = canonical_row_id(r)
+    if cid:
+        return cid
     rid, src = r["id"], r.get("source")
     if src == "trainhub":
         return "trainhub:" + rid.upper()
@@ -212,6 +216,25 @@ def _use_note(pr: dict) -> str | None:
     return None
 
 
+_FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
+
+
+def canonical_row_id(r: dict) -> str | None:
+    """1.46 arch (I0009): canonical id of a catalog row in the canonical registry (quant/ids + quant/inventory): SH rows as the inventory
+    folds them (group:<id> for a group row, aliases resolved, else sh:<id>), MM modules mm:<module>, Training Center packages trainhub:<MODEL>.
+    Additive field - the row 'id' stays as it was (the panel matches predictions by canonical_id first)."""
+    from ..quant import ids as I
+    rid, src = str(r.get("id") or ""), r.get("source")
+    if src == "sh/models.REGISTRY":
+        return f"group:{rid}" if rid in I.GROUPS else (I.resolve(rid) or f"sh:{rid}")
+    if src == "mm/inventory.MODULES":
+        m = rid.removeprefix("mm_")
+        return I.resolve(m) or f"mm:{m}"
+    if src == "trainhub":
+        return I.resolve(rid.upper())
+    return _FIXED_CANON.get(rid)
+
+
 def build(rt, inst: str) -> dict:
     from ..sh import models as SM
     rows = []
@@ -266,6 +289,8 @@ def build(rt, inst: str) -> dict:
     except Exception as exc:  # noqa: BLE001 - the canonical view never breaks the catalog the panel already shows
         import logging
         logging.getLogger(__name__).warning("catalog: canonical registry rows unavailable: %s: %s", type(exc).__name__, exc)
+        for r in rows:
+            r.setdefault("canonical_id", canonical_row_id(r))
     counts = {}
     for r in rows:
         counts.setdefault(r["category"], 0)

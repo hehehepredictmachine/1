@@ -22,6 +22,8 @@ import threading
 import time
 from pathlib import Path
 
+# 1.46 arch (I0009): alias knowledge from the canonical registry (an import-free module)
+from ...quant import ids as I
 from . import base as B
 from . import registry
 
@@ -89,13 +91,13 @@ class FamilyService:
     def status(self, fid: str, inst: str) -> dict:
         f = self.fams[fid]
         eff = self.assist_effect(fid)
-        if fid == "SEQ_GRU_EVENT":
+        if fid == I.EVENT_GRU_FAMILY:
             ev = f.status_from_mm(inst)
             impl, why = self._event_gru_impl()
             return {"implementation": impl, "implementation_reason": why, "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF",
                     "mm": ev, "assist_gate_violation": None, "assist_effect": eff}
         impl, why = f.implementation()
-        if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+        if fid in I.TRAINHUB_FAMILY_ALIASES:
             th = f.trainhub_state(inst)
             return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th,
                     "assist_gate_violation": None, "assist_effect": eff}   # trainhub owns the role (no family gate here)
@@ -302,10 +304,10 @@ class FamilyService:
         out = {"started": [], "queued": [], "blocked": [], "delegated": []}
         todo = []
         for fid, f in self.fams.items():
-            if fid == "SEQ_GRU_EVENT":
+            if fid == I.EVENT_GRU_FAMILY:
                 out["delegated"].append({"family": fid, "reason": "trening w Centrum MM (mm/event_engine)"})
                 continue
-            if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+            if fid in I.TRAINHUB_FAMILY_ALIASES:
                 out["delegated"].append({"family": fid, "reason": "trainhub (Centrum treningu)"})
                 continue
             impl, why = f.implementation()
@@ -563,9 +565,9 @@ class FamilyService:
 
     def predict(self, fid: str, inst: str, *, background: bool = False) -> dict | None:
         f = self.fams[fid]
-        if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+        if fid in I.TRAINHUB_FAMILY_ALIASES:
             return None                                          # aliases of trainhub TH_*: the trainhub inference publishes them (one vote)
-        if fid == "SEQ_GRU_EVENT":
+        if fid == I.EVENT_GRU_FAMILY:
             # 1.35: the Event GRU had no live path (MM only listed its artifact). The Quant scheduler owns its inference; here only the
             # cached READY result is read (no computation in the decision path); nothing READY -> no record, as before.
             prov = getattr(self, "event_gru_provider", None)
