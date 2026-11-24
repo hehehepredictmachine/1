@@ -1,6 +1,7 @@
 """RL_PPO family: PPO (Stable-Baselines3, .venv_deep) on the Gymnasium replay environment (rl_core). Output = PROPOSED target exposure
 (SHORT / FLAT / LONG) with the policy's action probabilities - an action probability is not a probability of profit. The proposal is
-read by the panel / risk context only; it never calls order_send and the existing risk engine and execution mode keep control."""
+read by the panel only (the risk context receiver is PLANNED, not connected in 1.46); it never calls order_send and the existing risk
+engine and execution mode keep control."""
 from __future__ import annotations
 
 import json
@@ -23,7 +24,8 @@ class PPO(B.Family):
     RUNTIME = "DEEP"
     TF = "M5"
     HORIZONS = ()
-    RECEIVERS = ("RISK:exposure_proposal (OBSERVE)", "PANEL:model_status")
+    RECEIVERS = ("PANEL:model_status",)
+    PLANNED_RECEIVERS = ("RISK:exposure_proposal (OBSERVE)",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 3000}
     NEEDS_POINT = True                                               # 1.46: the replay spread = median bar spread x point
 

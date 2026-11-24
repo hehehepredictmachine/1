@@ -7,8 +7,11 @@ Receivers (documented path source -> features -> model -> contract -> receiver -
     rules (one task / horizon / unit per group, no averaging of z-scores with probabilities).
   * SH setup (sh/service.cycle) - `family_context` for every evaluation (observation). In ASSIST only direction families
     (CLASS_PROBABILITIES) may HOLD a READY setup (READY -> WAIT) when P(opposite side) >= assist_hold_threshold; they never create or
-    enlarge an entry. VOL_GARCH in ASSIST adds a volatility scenario to the risk view (sigma move over H bars); limits stay as configured.
-  * panel / agent - catalog, status, last predictions.
+    enlarge an entry. VOL_GARCH in ASSIST only fills `family_context.vol` (sigma move over H bars - information; no risk receiver reads
+    it in 1.46, limits / sizing / stops never use it).
+  * decision coordinator (decision/coordinator) - roles of the records (OBSERVE / ASSIST / REQUIRED) on the ACTIVE path and the SH record.
+  * panel - catalog, status, last predictions (/api/v1/families). The agent does not read family predictions; declared but unconnected
+    receivers (AGENT / RISK / STRATEGY / PORTFOLIO) are Family.PLANNED_RECEIVERS, never Family.RECEIVERS (1.46, I0400 / I0468).
 """
 from __future__ import annotations
 

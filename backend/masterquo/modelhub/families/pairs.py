@@ -8,7 +8,8 @@ Leg conversion: beta is a ratio of LOG prices; the lots of leg B for 1 lot of A 
 rounded to the broker volume step - never "beta = number of lots".
 STATARB: basket of >= 3 configured series: PCA factors fitted on train returns, residual = return - factor projection, cumulative residual
 s-score per asset; weights = -s-score normalised to gross 1 with a net-exposure check. Without the universe -> NOT_CONFIGURED.
-Both are analytical: a proposed basket goes through the existing risk / gateway (all legs costed) - nothing is sent from here.
+Both are analytical: nothing is sent from here. A basket proposal through the risk / gateway (all legs costed) is PLANNED, not
+connected in 1.46 (PORTFOLIO receiver without a reader); live both are DISABLED (service.NO_LIVE_PATH).
 """
 from __future__ import annotations
 
@@ -55,7 +56,8 @@ class PairCoint(B.Family):
     TASK = "PAIR_SPREAD_Z"
     DEPS = ("statsmodels",)
     TF = "H1"
-    RECEIVERS = ("PANEL:pair_relation", "AGENT:context", "PORTFOLIO:basket_proposal (via risk/gateway)")
+    RECEIVERS = ("PANEL:pair_relation",)
+    PLANNED_RECEIVERS = ("AGENT:context", "PORTFOLIO:basket_proposal (via risk/gateway)")
     DATA = {"kind": "MULTI_SERIES", "tf": "H1", "min_bars": 500, "config": "families.pairs = [[symbolA, symbolB]]"}
     P_MAX = 0.05
 
@@ -114,7 +116,8 @@ class StatArb(B.Family):
     TASK = "BASKET_RESIDUAL_S"
     DEPS = ("sklearn",)
     TF = "H1"
-    RECEIVERS = ("PANEL:basket", "PORTFOLIO:basket_proposal (via risk/gateway)")
+    RECEIVERS = ("PANEL:basket",)
+    PLANNED_RECEIVERS = ("PORTFOLIO:basket_proposal (via risk/gateway)",)
     DATA = {"kind": "MULTI_SERIES", "tf": "H1", "min_bars": 500, "min_assets": 3, "config": "families.basket = [s1, s2, s3, ...]"}
 
     def validate_data(self, data):

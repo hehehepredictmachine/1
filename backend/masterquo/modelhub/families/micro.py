@@ -65,7 +65,8 @@ class Micro(B.Family):
     DEPS = ("sklearn",)
     TF = None
     HORIZONS = ()
-    RECEIVERS = ("SH_CONTEXT:entry_quality", "RISK:execution_conditions", "PANEL:microstructure")
+    RECEIVERS = ("SH_CONTEXT:entry_quality", "PANEL:microstructure")
+    PLANNED_RECEIVERS = ("RISK:execution_conditions",)
     DATA = {"kind": "L2_BOOK", "source": "IndicatorService.book_snapshots (market_book_get)", "min_snapshots": MIN_SNAPSHOTS}
 
     def validate_data(self, data):

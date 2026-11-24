@@ -133,7 +133,8 @@ class ARIMA(B.Family):
     DEPS = ("statsmodels", "pandas", "scipy")
     TF = "M5"
     HORIZONS = (1, 3, 5)
-    RECEIVERS = ("SH_CONTEXT:expected_move", "PANEL:model_status", "AGENT:context")
+    RECEIVERS = ("SH_CONTEXT:expected_move", "DECISION:coordinator (REQUIRED / ASSIST – kierunek UP/FLAT/DOWN)", "PANEL:model_status")
+    PLANNED_RECEIVERS = ("AGENT:context",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 800, "source": "eksport MT5 (marketdata Store) / bridge na żywo"}
 
     def fit(self, data, cfg, tmp, budget):
@@ -228,7 +229,8 @@ class SARIMAX(ARIMA):
     TF = "H1"
     HORIZONS = (1, 3, 5)
     DATA = {"kind": "BARS", "tf": "H1", "min_bars": 600, "exog": "kalendarz sesji (znany z góry)"}
-    RECEIVERS = ("SH_CONTEXT:expected_move_h1", "PANEL:model_status", "AGENT:context")
+    RECEIVERS = ("SH_CONTEXT:expected_move_h1", "DECISION:coordinator (REQUIRED / ASSIST – kierunek UP/FLAT/DOWN)", "PANEL:model_status")
+    PLANNED_RECEIVERS = ("AGENT:context",)
 
     def _profile(self, inst):
         return {"XAUUSD": "LAB_XAU_REFERENCE_V1", "BTC": "LAB_BTC_REFERENCE_V1"}.get(inst, "LAB_XAU_REFERENCE_V1")

@@ -100,7 +100,8 @@ class NLP(B.Family):
     DEPS = ("sklearn",)
     TF = None
     HORIZONS = ()
-    RECEIVERS = ("AGENT:news_context", "PANEL:news_sentiment", "RISK:information_context (OBSERVE)")
+    RECEIVERS = ("PANEL:news_sentiment",)
+    PLANNED_RECEIVERS = ("AGENT:news_context", "RISK:information_context (OBSERVE)")
     DATA = {"kind": "TEXT", "source": "import JSONL/CSV (oznaczony korpus) + nagłówki z news/", "min_records": 300}
 
     def validate_data(self, data):

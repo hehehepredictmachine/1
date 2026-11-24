@@ -45,6 +45,12 @@ def _req(d: dict | None) -> str:
     return ", ".join(parts)
 
 
+def _planned(f: dict, sep: str) -> str:
+    """1.46 (I0400 / I0468): declared receivers without a reader in the code - shown apart, never as receivers."""
+    pl = f.get("planned_receivers") or []
+    return f"{sep}planowani, niepodłączeni: {', '.join(pl)}" if pl else ""
+
+
 def main() -> int:
     from masterquo.studio import registry as REG
     mat = REG.matrix()
@@ -55,14 +61,15 @@ def main() -> int:
          f"Role: {ROLE_RULES}", "", "| Rodzina | Nazwa | Zadanie / jednostka | TF / horyzonty | Środowisko | Zależności | Odbiorcy |", "|---|---|---|---|---|---|---|"]
     for f in cat:
         L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or '–'} | "
-                 f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])} |")
+                 f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])}{_planned(f, '<br>')} |")
     L += ["", "## Gdzie prognozy trafiają w działającym bocie", "",
           "* **SCALPING / HEDGING** – `SHService.evaluate` → `FamilyService.setup_context` (kontekst w setupie, `family_context`) i "
           "`apply_to_setup` (ASSIST: READY→WAIT z powodem w checklistcie); koordynator PMW-ARC-1 zapisuje DecisionRecord i stosuje REQUIRED.",
           "* **ACTIVE (S01–S12)** – `engine.light_cycle` → `DecisionCoordinator.model_gate_active` → węzeł `MODELS` drzewa decyzji (przed hashem "
           "decyzji), więc karta sygnału i bramka wykonania widzą ten sam werdykt.",
           "* **Panel** – Centrum treningu → „Rodziny modeli 1.33” (`/api/v1/families`, `/api/v1/families/predictions`); Koordynator decyzji (`#/decyzje`).",
-          "* **Agent** – `modelhub.adapters.all_predictions` (kontekst rozmowy, zamrożony snapshot).",
+          ("* **Quant / API** – `modelhub.adapters.all_predictions` (migawka Quant, `/api/v1/models/predictions`, `/api/v1/models/evidence`). "
+           "Agent nie czyta prognoz rodzin – odbiorcy AGENT / RISK / STRATEGY / PORTFOLIO są tylko planowani (niepodłączeni w 1.46)."),
           "* **TH_RF / TH_SVM / TH_XGB** – przez trainhub (Centrum treningu, paczki aktywowane ręcznie); **SEQ_GRU_EVENT** – adapter modelu zdarzeń MM.", ""]
     (ROOT / "docs" / "MAPA_INTEGRACJI_MODELI.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     # ---------------------------------------------------------------- data requirements
@@ -93,6 +100,8 @@ def main() -> int:
              f"| Interwał / horyzonty | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or 'brak (pomiar stanu)'} |",
              f"| Środowisko | {f['runtime']} ({', '.join(f.get('deps') or []) or 'bez dodatkowych bibliotek'}) |",
              f"| Dane | {_req(f.get('data_requirements'))} |", f"| Odbiorcy | {', '.join(f.get('receivers') or [])} |",
+             *([f"| Odbiorcy planowani | {', '.join(f['planned_receivers'])} – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |"]
+               if f.get('planned_receivers') else []),
              f"| Role | {ROLE_RULES} |", "",
              "## Walidacja", "",
              "Bramka promocji liczona wyłącznie na części rozwojowej (walidacja), holdout raportowany osobno; kryteria muszą być spełnione, "
