@@ -298,13 +298,15 @@ class MLService:
             if cnt["labeled"] < 4 * c.min_block_samples:
                 return {"started": False, "reason": f"ZA_MALO_ETYKIET_{cnt['labeled']}_POTRZEBA_CO_NAJMNIEJ_{4 * c.min_block_samples}"}
             snap = self.store.snapshot(self.root / "snapshots", include_approx=approx, synthetic=self.synthetic)
+            from ..training.promotion import approx_rows_in_snapshot
+            approx_rows = approx_rows_in_snapshot(self.db, snap)        # 1.46 D6: provenance for the one promotion policy (_handle_result)
             job_id = "JOB-" + utcnow().strftime("%Y%m%dT%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
             jcfg = {k: getattr(c, k) for k in ("embargo_minutes", "min_block_samples", "min_block_per_class", "dt_tuning_budget", "xgb_tuning_budget",
                                                "xgb_max_trees", "xgb_threads", "xgb_device", "random_state")}
             jcfg["promotion"] = c.promotion.model_dump()
             job = {"job_id": job_id, "snapshot": snap["path"], "snapshot_id": snap["snapshot_id"], "cfg": jcfg, "out_dir": str(self.root / "models"),
                    "prior_test_end": self.registry.last_test_end(), "labeled_at_start": cnt["labeled"], "initiated_by": initiated_by,
-                   "manifest": snap}
+                   "manifest": snap, "approx_labels": approx_rows > 0, "approx_rows": approx_rows, "synthetic": self.synthetic}
             job_file = self.root / "jobs" / f"{job_id}.json"
             job_file.write_text(json.dumps(job, default=str), encoding="utf-8")
             self.db.execute("INSERT INTO ml_jobs(job_id, kind, status, created_at, started_at, snapshot_id, detail_json) VALUES (?,?,?,?,?,?,?)",
@@ -359,21 +361,39 @@ class MLService:
                 proc.kill()
             self._finish_job("FAILED", {"reason": "TIMEOUT"})
 
+    @staticmethod
+    def _promotion_policy(job: dict) -> dict:
+        """1.46 D6: the same champion rule as the offline training (training/promotion.ml_champion_policy) - a model trained on APPROX
+        labels or on the simulator's samples is evaluated and stored, never the champion. Was: register() with promotion always allowed.
+        A job file of an older version has no approx_labels / synthetic: the include flag and world of its snapshot manifest decide
+        (conservative); nothing known -> PROVENANCE_UNKNOWN (not promoted)."""
+        from ..training.promotion import ml_champion_policy
+        man = job.get("manifest") or {}
+        approx = job.get("approx_labels")
+        if approx is None:
+            approx = man.get("include_approx")
+        synthetic = job.get("synthetic")
+        if synthetic is None:
+            synthetic = man.get("synthetic")
+        return ml_champion_policy(approx=approx, synthetic=synthetic)
+
     def _handle_result(self, job: dict, res: dict) -> None:
         st = res.get("status")
         if st == "DONE":
+            pol = self._promotion_policy(job)
             try:
-                decisions = self.registry.register(res, job["snapshot_id"], job["cfg"]["promotion"])
+                decisions = self.registry.register(res, job["snapshot_id"], job["cfg"]["promotion"], policy=pol)
             except Exception as exc:
                 self._finish_job("FAILED", {"reason": f"REGISTER:{type(exc).__name__}:{exc}"})
                 return
             self._pred_cache.clear()
             (self.root / "jobs" / f"{job['job_id']}.report.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
             self._finish_job("DONE", {"decisions": decisions, "validation": res.get("validation"), "baselines": res.get("baselines"),
-                                      "elapsed_s": res.get("elapsed_s")})
-            promoted = [m for m, d in decisions.items() if d["passed"]]
+                                      "elapsed_s": res.get("elapsed_s"), "promotion_policy": pol})
+            promoted = [m for m, d in decisions.items() if d["passed"]] if pol["allow_promotion"] else []
             self.log.info("ML", "TRAIN_DONE", f"Trening zakończony. Kandydaci: {', '.join(f'{m}:{"OK" if d["passed"] else "ODRZUCONY"}' for m, d in decisions.items())}"
-                          + (f"; champion: {self.registry.champion_id}" if promoted else "; champion bez zmian"))
+                          + (f"; champion: {self.registry.champion_id}" if promoted else "; champion bez zmian")
+                          + ("" if pol["allow_promotion"] else f" ({pol['reason']})"))
         elif st == "NOT_READY":
             self._finish_job("NOT_READY", {"reasons": res.get("reasons")})
         else:
