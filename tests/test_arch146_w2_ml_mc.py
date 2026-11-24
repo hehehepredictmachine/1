@@ -414,7 +414,11 @@ class TestFeatureDocstringsMatchConstants(unittest.TestCase):
         from masterquo.quant import metamodel as M
         self.assertTrue(F.schema(["a"]).startswith(F.VERSION))
         src = inspect.getsource(M)
-        self.assertIn("startswith(F.VERSION)", src)
+        # after the merge with wave 1 (arch146 D8/D9) load() accepts the versioned schemas F.ARTIFACT_VERSIONS (FEAT-1 and FEAT-3); the FEAT-1
+        # label still has to load - checked on the contract, not on a source string
+        self.assertIn(F.VERSION, F.ARTIFACT_VERSIONS)
+        self.assertEqual(F.schema_for(F.VERSION, ["a"]), F.schema(["a"]))
+        self.assertIn("F.ARTIFACT_VERSIONS", src)
         self.assertIn("F.build2", src)                                         # HEAD: the label / builder mismatch was undocumented
 
 
