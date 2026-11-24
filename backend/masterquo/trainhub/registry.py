@@ -55,7 +55,7 @@ def _mm(v: str | None) -> str | None:
     return ".".join(str(v).split(".")[:2]) if v else None
 
 
-def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manifest: dict) -> dict:
+def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manifest: dict, dataset_ref: dict | None = None) -> dict:
     import joblib
     res = trained["result"]
     key = model_key(res["model_id"], cfg["base_tf"], cfg["horizon"])
@@ -85,9 +85,14 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     atomic_json(d / "config.json", conf)
     metrics = {k: v for k, v in res.items() if k != "sample"}
     atomic_json(d / "metrics.json", metrics)
+    if dataset_ref is None:                       # arch146 I0064: lineage of the training set (training/dataset_ref.py)
+        from ..training import dataset_ref as DR
+        dataset_ref = DR.from_store(inst, store_manifest, sha256=ds_desc.get("hash"), range_utc=ds_desc.get("range_utc"),
+                                    rows=ds_desc.get("rows_usable"))
     atomic_json(d / "data_manifest.json", {"instrument": inst, "symbol": store_manifest.get("symbol"), "data_kind": store_manifest.get("data_kind"),
                                            "dataset": ds_desc, "time_model": store_manifest.get("time_model"),
-                                           "costs": store_manifest.get("costs"), "store_schema": store_manifest.get("schema_version")})
+                                           "costs": store_manifest.get("costs"), "store_schema": store_manifest.get("schema_version"),
+                                           "dataset_ref": dataset_ref})
     atomic_json(d / "deps.json", deps())
     atomic_json(d / "inference_sample.json", res["sample"])
     atomic_bytes(d / "REPRODUCE.md", _reproduce(inst, conf, ds_desc).encode("utf-8"))

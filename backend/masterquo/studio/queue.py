@@ -181,6 +181,11 @@ class Queue:
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0),
                                          start_new_session=os.name != "nt")
+            try:
+                from ..training.core import limit_child
+                limit_child(self.proc)                           # arch146 I0069: the one RAM budget (Studio jobs had no cap)
+            except Exception:  # noqa: BLE001, S110 - the cap is best effort
+                pass
             self.current = j["job_id"]
             self.db.execute("UPDATE jobs SET pid=? WHERE job_id=?", (self.proc.pid, j["job_id"]))
             return "STARTED"

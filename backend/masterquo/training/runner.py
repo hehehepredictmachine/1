@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .. import paths
 from . import core
+from . import dataset_ref as DR
 from . import profiles as PR
 from . import tasks as T
 from .core import Run, now
@@ -63,6 +64,23 @@ def build_plan(*, instruments: list[str], profile: str, symbols: dict, commissio
                 t.update(execution="POMINIETE", quality="NIE_DOTYCZY", detail=why, reasons=[why], not_applicable=True)
             tasks_out.append(t)
     return plan, tasks_out
+
+
+def _lineage(run: Run, inst: str, kind: str) -> None:
+    """arch146 I0064: every model task that ran on this run's export records the DatasetRef of that export (training/dataset_ref.py) -
+    instrument, source, UTC range, sha256 of the files, data kind and the quality report - next to its result in the run state."""
+    if kind in T.ALWAYS:
+        return
+    ex = run.task(f"{inst}:export")
+    if ex.get("execution") != "UKONCZONE":
+        return
+    ref = ex.get("dataset_ref") or (DR.from_export_dir(Path(ex["dataset_dir"])) if ex.get("dataset_dir") else None)
+    if not ref:
+        return
+    for k in (SCALP_UNITS if kind == "scalp_A" else (kind,)):
+        t = run.task(f"{inst}:{k}")
+        if t.get("execution") == "UKONCZONE" and not t.get("dataset_ref"):
+            run.set(t["id"], dataset_ref=ref)
 
 
 def exit_code(state: dict) -> int:
@@ -137,7 +155,7 @@ def t_export(run: Run, inst: str) -> None:
             f"{(meta.get('costs') or {}).get('commission_per_lot_side', 'nieznana')} ({(meta.get('costs') or {}).get('source')})",
             dataset_dir=str(out), dataset_id=meta.get("dataset_id"), data_kind=meta["data_kind"],
             received_range_utc=meta["range_utc"], requested_months=plan["months"], quote_currency=meta.get("quote_currency"),
-            files_sha256=meta.get("files_sha256"), artifacts=[str(out / "source_metadata.json")])
+            files_sha256=meta.get("files_sha256"), artifacts=[str(out / "source_metadata.json")], dataset_ref=DR.from_export_dir(out))
 
 
 def t_quality(run: Run, inst: str) -> None:
@@ -799,6 +817,7 @@ def execute(run: Run) -> int:
                 except Exception as exc:  # noqa: BLE001 - one task never stops the next one
                     import traceback
                     _fail(run, t["id"], f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1200:]}")
+                _lineage(run, inst, kind)
                 if run.task(t["id"])["execution"] == "ANULOWANE":
                     raise KeyboardInterrupt
         run.state["status"] = "FINISHED"

@@ -241,12 +241,31 @@ def free_ram_mb() -> float | None:
     return None
 
 
-def ram_budget_mb(plan: dict) -> int:
-    """Memory one training child may use (user setting; default 8 GB). MQ_RAM_BUDGET_MB overrides the profile."""
+def ram_budget_mb(plan: dict | None = None) -> int:
+    """Memory one training child may use (user setting; default 8 GB). MQ_RAM_BUDGET_MB overrides the profile.
+    arch146 I0069: ONE source for every training child of the bot - runner steps (the plan's profile), TrainHub (was a literal 6144),
+    model families, the ML trainer and Studio jobs (no cap before): MQ_RAM_BUDGET_MB -> the plan's profile -> profile PELNY_TRENING -> 8192."""
     try:
-        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or 8192))
-    except ValueError:
+        env = os.environ.get("MQ_RAM_BUDGET_MB")
+        if env:
+            return max(512, int(env))
+        if plan is not None:
+            v = (plan.get("profile_params") or {}).get("ram_budget_mb")
+        else:
+            try:
+                v = (profiles().get("PELNY_TRENING") or {}).get("ram_budget_mb")
+            except (OSError, ValueError, KeyError):
+                v = None
+        return max(512, int(v or 8192))
+    except (ValueError, TypeError):
         return 8192
+
+
+def limit_child(proc: subprocess.Popen, plan: dict | None = None) -> None:
+    """arch146 I0069: the per-process memory cap of the one RAM budget (ram_budget_mb) for a training child that had none (model families,
+    ML trainer, Studio jobs). Memory cap ONLY: the Job Object handle is closed at once (no KILL_ON_JOB_CLOSE) - the child's lifetime and
+    its cancel / stop paths are unchanged. Windows only (best effort, never fatal); elsewhere nothing."""
+    _job_limit(proc, ram_budget_mb(plan), kill_on_close=False)
 
 
 def ram_gate(plan: dict, wait_s: float = 180.0, step_s: float = 10.0, sleep=time.sleep) -> tuple[float, str | None]:
@@ -269,8 +288,9 @@ def ram_gate(plan: dict, wait_s: float = 180.0, step_s: float = 10.0, sleep=time
     return scale, f"mniej wolnej pamięci ({ram} MB < {want} MB) – zadanie na {scale:.0%} danych"
 
 
-def _job_limit(proc: subprocess.Popen, mb: int) -> None:
-    """Windows: put the child in a Job Object with a per-process memory cap (the user's RAM budget). Best effort, never fatal."""
+def _job_limit(proc: subprocess.Popen, mb: int, *, kill_on_close: bool = True) -> None:
+    """Windows: put the child in a Job Object with a per-process memory cap (the user's RAM budget). Best effort, never fatal.
+    kill_on_close=False (arch146 I0069, limit_child): memory cap only - the handle is closed right away, the job lives with its processes."""
     if os.name != "nt":
         return
     try:
@@ -293,14 +313,17 @@ def _job_limit(proc: subprocess.Popen, mb: int) -> None:
         k.OpenProcess.restype = wintypes.HANDLE
         job = k.CreateJobObjectW(None, None)
         info = EXT()
-        info.Basic.LimitFlags = 0x100 | 0x2000                      # PROCESS_MEMORY | KILL_ON_JOB_CLOSE
+        info.Basic.LimitFlags = 0x100 | (0x2000 if kill_on_close else 0)   # PROCESS_MEMORY | KILL_ON_JOB_CLOSE
         info.ProcessMemoryLimit = mb * 1024 * 1024
         k.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
         h = k.OpenProcess(0x1F0FFF, False, proc.pid)
         k.AssignProcessToJobObject(wintypes.HANDLE(job), wintypes.HANDLE(h))
         if h:
             k.CloseHandle(wintypes.HANDLE(h))                      # 1.46: the process handle leaked (one per child, also in the bot - TrainHub)
-        proc._mq_job = job                                         # keep the handle alive as long as the child (close_job after it ended)
+        if kill_on_close:
+            proc._mq_job = job                                     # keep the handle alive as long as the child (close_job after it ended)
+        elif job:
+            k.CloseHandle(wintypes.HANDLE(job))                    # the job object stays while it has processes; the cap stays with it
     except Exception:  # noqa: BLE001
         pass
 

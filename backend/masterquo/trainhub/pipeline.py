@@ -173,7 +173,11 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
             out["skipped"].append({"model": mid, "reason": f"budżet czasu profilu {cfg.get('profile')} wyczerpany ({cfg['time_budget_s']} s)"})
             continue
         tr = L.train_one(mid, ds, sp, seed=int(cfg["seed"]), progress=progress, cancel=cancel, grid_limit=cfg.get("grid_limit"))
-        pkg = R.save_package(inst, cfg, tr, desc, man)
+        # arch146 I0064: the store this training read, with its quality report
+        from ..training import dataset_ref as DR
+        ref = DR.from_store(inst, man, sha256=desc.get("hash"), quality_path=store.inst_dir(inst) / "quality_report.json",
+                            range_utc=desc.get("range_utc"), rows=desc.get("rows_usable"))
+        pkg = R.save_package(inst, cfg, tr, desc, man, dataset_ref=ref)
         out["packages"].append({**pkg, "holdout": tr["result"]["holdout"], "walk_forward": {k: v for k, v in tr["result"]["walk_forward"].items()
                                                                                            if k != "folds"},
                                 "trading_eval_holdout": tr["result"]["trading_eval_holdout"], "data_kind": man.get("data_kind")})

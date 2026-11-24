@@ -18,6 +18,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest import mock
 
 import _env
@@ -565,6 +566,182 @@ class TestI0100ProcessRegistry(unittest.TestCase):
         self.assertIn('REGISTRY.register(f"api:{kind}", train_procs[kind], "training")', api)
         ex = (_env.ROOT / "backend" / "masterquo" / "training" / "export_job.py").read_text(encoding="utf-8")
         self.assertIn('REGISTRY.register(f"export:{p.pid}", p, "export")', ex)
+
+# ================================================================================================ I0064 DatasetRef w manifestach
+class TestI0064DatasetRefLineage(_Data):
+    def test_runner_task_records_the_export_it_trained_on(self):
+        from masterquo.training import core, report, runner
+        run = self.plan_run(tasks=["forecast"])
+        ds = self.data / "ds"
+        ds.mkdir()
+        meta = {"dataset_id": "D1", "instrument": "XAUUSD", "symbol": "XAUUSD-", "data_kind": "SYNTHETIC_TEST", "costs": {},
+                "range_utc": ["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"], "files_sha256": {"XAUUSD_M5.csv": "aa", "XAUUSD_M30.csv": "bb"}}
+        (ds / "source_metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+        (ds / "DATA_QUALITY_REPORT.json").write_text(json.dumps({"sufficiency": {"status": "OK"}}), encoding="utf-8")
+        run.set("XAUUSD:export", execution="UKONCZONE", dataset_dir=str(ds), data_kind="SYNTHETIC_TEST")
+        run.set("XAUUSD:quality", execution="UKONCZONE", quality="NIE_DOTYCZY")
+
+        def fake_forecast(r, inst):
+            r.set(f"{inst}:forecast", execution="UKONCZONE", quality="TEST_TECHNICZNY")
+        steps = {k: (lambda r, inst: None) for k in runner.STEPS}
+        steps["forecast"] = fake_forecast
+        with mock.patch.dict(runner.STEPS, steps), mock.patch.object(core, "acquire_lock", lambda rid: None), \
+                mock.patch.object(core, "release_lock", lambda rid: None), mock.patch.object(report, "write", lambda r: None), \
+                mock.patch("sys.stdout", io.StringIO()):
+            runner.execute(run)
+        ref = run.task("XAUUSD:forecast").get("dataset_ref")                # HEAD: None - no lineage of the training set
+        self.assertIsNotNone(ref)
+        self.assertEqual((ref["source"], ref["data_kind"], ref["instrument"]), ("MT5_EXPORT_RUN", "SYNTHETIC_TEST", "XAUUSD"))
+        self.assertEqual(len(ref["sha256"]), 64)
+        self.assertEqual(ref["range_utc"], meta["range_utc"])
+        self.assertEqual(ref["quality"]["status"], "OK")
+        self.assertIsNone(run.task("XAUUSD:ml").get("dataset_ref"))       # a task that did not train gets nothing
+
+    def test_trainhub_package_manifest(self):
+        from masterquo.trainhub import registry as R
+        res = {"model_id": "TH_BASELINE", "params": {}, "temperature": 1.0, "decision_threshold": None, "holdout": {"log_loss": 1.0},
+               "walk_forward": {"dev_skill_vs_baseline": 0.0, "folds": []}, "trading_eval_holdout": {}, "sample": {"X": [], "p_raw": []}}
+        cfg = {"base_tf": "M5", "horizon": 6, "k_atr": 0.25}
+        desc = {"hash": "f" * 64, "range_utc": ["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"], "rows_usable": 100, "data_kind": "SYNTHETIC"}
+        out = R.save_package("XAUUSD", cfg, {"model": {"m": 1}, "result": res}, desc, {"data_kind": "SYNTHETIC", "symbol": "XAUUSD-"})
+        dm = json.loads((Path(out["path"]) / "data_manifest.json").read_text(encoding="utf-8"))
+        ref = dm.get("dataset_ref")                                         # HEAD: missing
+        self.assertIsNotNone(ref)
+        self.assertEqual((ref["source"], ref["sha256"], ref["data_kind"], ref["rows"]), ("MARKETDATA_STORE", "f" * 64, "SYNTHETIC", 100))
+        self.assertTrue(R.verify_package("XAUUSD", out["model_key"], out["version"])["ok"])   # checksums cover the new field
+
+    def test_family_run_manifest(self):
+        from masterquo.modelhub.families import base as FB
+        from masterquo.modelhub.families import run as RUN
+
+        class Fake(FB.Family):
+            ID, NAME, TF = "FAKE", "fake", "M5"
+            DATA: ClassVar[dict] = {"kind": "BARS", "tf": "M5", "min_bars": 5}
+
+            def fit(self, data, cfg, tmp, budget):
+                (tmp / "model.json").write_text("{}", encoding="utf-8")
+                return {"metrics": {}, "validation": {"status": "CANDIDATE"}}
+        bars = [{"t": 1_767_225_600 + 300 * i, "o": 1.0, "h": 1.1, "l": 0.9, "c": 1.0 + i * 1e-3, "v": 1} for i in range(10)]
+        data = {"instrument": "XAUUSD", "bars": bars, "data_kind": "SYNTHETIC_TEST", "symbol": "XAUUSD-", "source": "MT5_LIVE_BRIDGE"}
+        with mock.patch("masterquo.modelhub.families.registry", lambda: {"FAKE": Fake()}):
+            r = RUN.train("FAKE", "XAUUSD", "smoke", {}, data=data, store=FB.Store(self.data / "fam"))
+        self.assertEqual(r["state"], "DONE", r)
+        man = json.loads((Path(r["dir"]) / "manifest.json").read_text(encoding="utf-8"))
+        ref = man.get("dataset_ref")                                        # HEAD: missing
+        self.assertIsNotNone(ref)
+        self.assertEqual((ref["source"], ref["data_kind"], ref["sha256"], ref["rows"]), ("MT5_LIVE_BRIDGE", "SYNTHETIC_TEST", man["data"]["hash"], 10))
+        self.assertEqual(ref["range_utc"][0], "2026-01-01T00:00:00Z")
+
+
+# ================================================================================================ I0069 nadzór procesów treningu
+class TestI0069OneRamBudget(_Data):
+    def test_budget_has_one_source(self):
+        from masterquo.training import core
+        prof = core.profiles()["PELNY_TRENING"]["ram_budget_mb"]
+        with mock.patch.dict(os.environ, {"MQ_RAM_BUDGET_MB": ""}):
+            self.assertEqual(core.ram_budget_mb(), prof)                    # HEAD: TypeError (plan required) - TrainHub used 6144
+        with mock.patch.dict(os.environ, {"MQ_RAM_BUDGET_MB": "5000"}):
+            self.assertEqual(core.ram_budget_mb(), 5000)
+            self.assertEqual(core.ram_budget_mb({"profile_params": {"ram_budget_mb": 9000}}), 5000)
+        src = (_env.ROOT / "backend" / "masterquo" / "trainhub" / "jobs.py").read_text(encoding="utf-8")
+        self.assertNotIn("6144", src)
+
+    def test_family_and_ml_children_get_the_same_memory_cap(self):
+        from masterquo.ml import service as MS
+        from masterquo.modelhub.families import service as FS
+        from masterquo.training import core
+        seen = []
+        fake = SimpleNamespace(pid=4242, poll=lambda: None)
+        with mock.patch.object(core, "limit_child", side_effect=lambda p, **k: seen.append(p)), \
+                mock.patch.object(MS.subprocess, "Popen", return_value=fake):
+            MS.MLService._spawn_process(SimpleNamespace(cfg=SimpleNamespace(xgb_threads=1)), self.data / "job.json")
+        self.assertEqual(seen, [fake])                                      # HEAD: no memory cap for the ML trainer
+        svc = FS.FamilyService(SimpleNamespace(get=lambda: SimpleNamespace(families=SimpleNamespace(pairs=[], basket=[], nlp_transformer_path=None))))
+        with mock.patch.object(core, "limit_child", side_effect=lambda p, **k: seen.append(p)), \
+                mock.patch.object(FS.subprocess, "Popen", return_value=fake), mock.patch.object(svc, "_live_bars_file", lambda f, i: None):
+            r = svc.submit("KALMAN_LS", "XAUUSD")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(seen, [fake, fake])                                # HEAD: no memory cap for family processes
+        st = (_env.ROOT / "backend" / "masterquo" / "studio" / "queue.py").read_text(encoding="utf-8")
+        self.assertIn("limit_child(self.proc", st)
+
+
+class TestI0069QuantTrainOutOfProcess(_Data):
+    def test_training_runs_in_a_child_process(self):
+        import threading
+        import time as _t
+
+        from masterquo.quant import service as QS
+        from test_quant_core import StubRt
+        q = QS.QuantService(StubRt())
+        calls = []
+
+        class FakeProc:
+            pid, returncode = 4343, 0
+
+            def __init__(self, cmd, **kw):
+                calls.append(cmd)
+                out = Path(cmd[cmd.index("--job-out") + 1])
+                out.write_text(json.dumps({"results": [{"task_hash": "t", "status": "INSUFFICIENT_EVIDENCE"}]}), encoding="utf-8")
+
+            def wait(self, timeout=None):
+                return 0
+
+            def poll(self):
+                return 0
+        before = {t.name for t in threading.enumerate()}
+        with mock.patch.object(QS.subprocess, "Popen", FakeProc):
+            job = q.train("XAUUSD", background=True)
+            for _ in range(100):
+                if q.jobs[job["job_id"]]["state"] != "RUNNING":
+                    break
+                _t.sleep(0.05)
+        self.assertEqual(len(calls), 1)                                     # HEAD: no process - training in a bot thread
+        self.assertEqual(calls[0][1:5], ["-m", "masterquo", "quant", "train"])
+        self.assertIn("--instrument", calls[0])
+        self.assertNotIn("quant-train", {t.name for t in threading.enumerate()} - before)
+        j = q.jobs[job["job_id"]]
+        self.assertEqual(j["state"], "DONE")
+        self.assertEqual(j["results"][0]["status"], "INSUFFICIENT_EVIDENCE")
+        self.assertTrue((q.base / "jobs" / f"{job['job_id']}.json").exists())
+
+    def test_cli_writes_the_job_result(self):
+        from masterquo.quant import cli
+        out = self.data / "job_out.json"
+        with mock.patch("masterquo.quant.service.train_from_ledger", return_value=[{"task_hash": "t", "status": "INSUFFICIENT_EVIDENCE"}]), \
+                mock.patch("sys.stdout", io.StringIO()):
+            rc = cli.main(["train", "--instrument", "XAUUSD", "--job-out", str(out)])
+        self.assertEqual(rc, 2)
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["results"][0]["task_hash"], "t")
+
+class TestI0064TrainhubPipelineLineage(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_stage_train_records_the_store_and_its_quality_report(self):
+        from masterquo.marketdata import export as EX
+        from masterquo.marketdata.sources import DirectSource
+        from masterquo.marketdata.store import Store
+        from masterquo.mt5.fake import FakeMT5
+        from masterquo.trainhub import pipeline as P
+        f = FakeMT5(history_days=40)
+        f.initialize()
+        st = Store()
+        EX.run(DirectSource(f, offset=3 * 3600, offset_basis="TEST"), st, "XAUUSD", "XAUUSD-", timeframes=("M5", "M15", "M30"),
+               lookback_days=30, sleep=lambda s: None)
+        cfg = P.config({"models": ["TH_BASELINE"]}, st.manifest("XAUUSD"))
+        out = P.stage_train(st, "XAUUSD", cfg)
+        pk = out["packages"][0]
+        dm = json.loads((Path(pk["path"]) / "data_manifest.json").read_text(encoding="utf-8"))
+        ref = dm["dataset_ref"]                                             # HEAD: KeyError
+        self.assertEqual((ref["source"], ref["data_kind"]), ("MARKETDATA_STORE", "SYNTHETIC_TEST"))
+        self.assertEqual(ref["quality"]["report"], str(st.inst_dir("XAUUSD") / "quality_report.json"))
+        self.assertTrue(ref["quality"]["status"])
+        self.assertEqual(ref["sha256"], dm["dataset"]["hash"])              # the dataset hash of exactly this training set
+        self.assertTrue(ref["sha256"])
 
 if __name__ == "__main__":
     unittest.main()

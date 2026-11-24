@@ -50,7 +50,8 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
     # 1.46: the point size comes from the broker's symbol spec written by the export (symbol_spec / costs.spread.point) or by the live
     # bars file; missing = None (the families that convert the spread refuse to train) - 1.45.0 assumed 0.01
     point = _pos((man.get("symbol_spec") or {}).get("point")) or _pos(((man.get("costs") or {}).get("spread") or {}).get("point"))
-    out = {"instrument": inst, "point": point, "data_kind": man.get("data_kind") or "UNKNOWN", "symbol": man.get("symbol")}
+    out = {"instrument": inst, "point": point, "data_kind": man.get("data_kind") or "UNKNOWN", "symbol": man.get("symbol"),
+           "source": "MARKETDATA_STORE", "quality_path": str(st.inst_dir(inst) / "quality_report.json")}
     kind = fam.DATA.get("kind")
     if kind == "BARS":
         try:
@@ -65,7 +66,8 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             if len(live.get("bars") or []) > len(out["bars"]):
                 # 1.46: the demo simulator (MarketBridge.synthetic = True) is SYNTHETIC_TEST - it was labelled MT5_LIVE_BRIDGE (= REAL for ASSIST)
                 out.update(bars=live["bars"], data_kind="SYNTHETIC_TEST" if live.get("synthetic") is True else "MT5_LIVE_BRIDGE",
-                           symbol=live.get("symbol") or out.get("symbol"), point=_pos(live.get("point")) or out.get("point"))
+                           symbol=live.get("symbol") or out.get("symbol"), point=_pos(live.get("point")) or out.get("point"),
+                           source="MT5_LIVE_BRIDGE", quality_path=None)
     elif kind == "MULTI_SERIES":
         if fam.ID == "PAIR_COINT":
             pair = (cfg.get("pairs") or [None])[0]
@@ -78,6 +80,7 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             if len(uni) >= 3:
                 out["basket_bars"] = [B.bars_from_store(st, s, fam.TF) for s in uni]
     elif kind == "L2_BOOK":
+        out["source"], out["quality_path"] = "BOOK_ARCHIVE", None
         # 1.46: without the instrument's broker symbol the query had no WHERE - snapshots of every symbol (XAUUSD and BTC after an
         # instrument switch) were mixed and the label mid_j - mid_i crossed instruments. Symbol: store manifest -> job config ->
         # assets.mappings; none -> no books (BLOCKED with the reason). Only the newest rows within the budget are read (1.45.0 loaded the
@@ -92,6 +95,7 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             lim = max(int(max_rows or BUDGETS["smoke"]["max_rows"]), 4 * MIN_SNAPSHOTS)
             out["books"] = books_from_archive(cfg.get("indicators_db"), sym, limit=lim, levels=BOOK_LEVELS)
     elif kind == "TEXT":
+        out["source"], out["quality_path"] = "TEXT_CORPUS", None
         from .nlp import load_corpus
         out["corpus"] = load_corpus()
     return out
@@ -115,6 +119,20 @@ def books_from_archive(db_path, symbol, limit: int | None = None, levels: int | 
     if limit:
         out.reverse()
     return out
+
+
+def _dataset_ref(inst: str, data: dict, dm: dict, bars: list) -> dict:
+    """arch146 I0064: DatasetRef (training/dataset_ref.py) of the data this run fitted on - source as load_data read it (Store archive,
+    live bot bars, book archive, text corpus), hash / range / rows of the fitted slice, data kind and the Store quality report."""
+    from ...marketdata.store import iso
+    from ...training import dataset_ref as DR
+    rng = dm.get("range")
+    if rng and all(isinstance(x, (int, float)) for x in rng):
+        rng = [iso(float(x)) for x in rng]
+    qp = data.get("quality_path")
+    return DR.from_bars(inst, source=data.get("source") or ("MARKETDATA_STORE" if bars else "UNKNOWN"), symbol=data.get("symbol"),
+                        data_kind=data.get("data_kind"), sha256=dm.get("hash"), range_utc=rng, rows=dm.get("rows"),
+                        quality_path=Path(qp) if qp else None)
 
 
 def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None,
@@ -178,6 +196,7 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
            "metrics": parts.get("metrics"), "validation": parts.get("validation"), "sample": parts.get("sample"),
            "model_card": {"purpose": fam.TASK, "receivers": list(fam.RECEIVERS), "limits": "ocena na danych historycznych; nie jest obietnicą wyniku",
                           "status": (parts.get("validation") or {}).get("status")}}
+    man["dataset_ref"] = _dataset_ref(inst, data, man["data"], bars)    # arch146 I0064: lineage of the exact training slice
     final = store.commit(fid, inst, rid, tmp, man)
     res = {"state": "DONE", "family": fid, "run_id": rid, "dir": str(final), "validation": (parts.get("validation") or {}).get("status")}
     if sf:

@@ -246,6 +246,8 @@ class FamilyService:
                     return {"ok": False, "status": "FAILED", "reason": str(exc)[:300]}
                 log.close()
                 self.procs[key] = p
+                from ...training import core as _tcore
+                _tcore.limit_child(p)                            # arch146 I0069: the one RAM budget (no cap before)
                 from ... import procs as PR
                 PR.REGISTRY.register(f"families:{key}", p, "training")   # arch146 I0100: one registry of the server's training children
                 return {"ok": True, "status": "STARTED", "pid": p.pid}
