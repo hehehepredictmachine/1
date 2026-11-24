@@ -122,16 +122,22 @@ def approval_ok(svc, mid: str, inst: str, path: str) -> tuple[bool, str | None]:
         return True, None                                   # 1.41: explicit user instruction (TiRex-2), not a validation claim
     if not u.validation_report:
         return False, "brak raportu dopuszczenia"
-    bad = []
+    bad, matched = [], 0
     try:
         cur = V.binding(svc, mid, inst, u.timeframe)
         for rid in str(u.validation_report).split(","):
             r = V.report_by_id(rid) if rid else None
             if r is None or r.get("instrument") != inst:
                 continue
+            matched += 1
             bad += V.binding_diff((r.get("bindings") or {}).get(mid), cur)
     except Exception as exc:  # noqa: BLE001 - an approval that cannot be checked is not valid
         return False, f"nie można sprawdzić dopuszczenia: {type(exc).__name__}"
+    if u.use == "REQUIRED" and not matched:
+        # 1.46 (I0835): the approval reports were checked only when one belonged to `inst` - an instrument added after the approval (or a
+        # removed report) had none and passed (fail-open). REQUIRED now needs a report of THIS instrument (fail-closed: the entry waits).
+        # ASSIST keeps the previous rule: a stale ASSIST is demoted to OBSERVE, which would REMOVE its possible holds (more entries).
+        return False, f"brak raportu dopuszczenia dla {inst} ({u.timeframe}) – REQUIRED wymaga walidacji walk-forward tego instrumentu"
     return (not bad), ("; ".join(bad)[:220] if bad else None)
 
 
@@ -144,11 +150,17 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
     preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst)}
     out = []
     for mid, c in s.models.items():
-        if not c.enabled or inst not in c.instruments:
-            continue
         u = c.use["ACTIVE"]
-        p = preds.get((f"tsfm:{mid}", u.timeframe))
+        off = (f"{NAMES[mid]} wyłączony w ustawieniach" if not c.enabled else
+               f"{NAMES[mid]} nie liczy {inst}" if inst not in c.instruments else
+               f"{NAMES[mid]} nie liczy {u.timeframe} (interwał roli ACTIVE)" if u.timeframe not in c.timeframes else None)
+        p = None if off else preds.get((f"tsfm:{mid}", u.timeframe))
         if p is None:
+            if u.use == "REQUIRED":
+                # 1.46 (I0836): the ACTIVE path skipped a REQUIRED model that is disabled / does not compute the instrument or the TF of
+                # its role (no row = no gate), while the SH receiver holds the entry in the same case - now a REQUIRED row without a
+                # result -> MODEL_REQUIRED_UNAVAILABLE (fail-closed, as SH) until the role is switched to OBSERVE
+                out.append(_required_unavailable(s, mid, inst, u.timeframe, off or "brak wiersza prognozy dla interwału roli ACTIVE"))
             continue
         use, note = u.use, None
         if use in ("ASSIST", "REQUIRED"):
@@ -160,6 +172,16 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
         out.append({**p, "family": f"tsfm:{mid}", "use": use if use != "OBSERVE" else "SHADOW", "max_age_s": TF_AGE(u.timeframe, s),
                     "unavailable_reason": p.get("unavailable_reason") or note})
     return out
+
+
+def _required_unavailable(s, mid: str, inst: str, tf: str, why: str) -> dict:
+    from tsfm_runtime import lock as L
+    H = int(s.horizon_bars[tf])
+    row = C.make(instrument=inst, symbol=None, timeframe=tf, model_name=NAMES[mid], model_version=L.model(mid)["revision"],
+                 feature_schema=f"TSFM_{s.models[mid].profile}", task_type="REGRESSION", task=f"TSFM_CLOSE_H{H}_{tf}", horizon_bars=H,
+                 unit="price", calibration={"method": None, "status": "UNCALIBRATED"}, state="DISABLED", unavailable_reason=why,
+                 extra={"model_key": f"{mid}_{tf}", "model_id": f"tsfm:{mid}", "fingerprint": L.fingerprint(mid)})
+    return {**row, "family": f"tsfm:{mid}", "use": "REQUIRED", "max_age_s": TF_AGE(tf, s)}
 
 
 def TF_AGE(tf: str, s) -> float:

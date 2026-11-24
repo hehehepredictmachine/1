@@ -542,6 +542,66 @@ class TestI0540TabiclEngine(unittest.TestCase):
         self.assertNotIn("_selftest", e.contexts)
 
 
+# ======================================================================================================== I0835 approval per instrument
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0835ApprovalRequiresInstrumentReport(_Svc):
+    def test_required_without_report_of_the_instrument(self):
+        from masterquo.tsfm import predictions as TP
+        svc = self.make()
+        self.approve("chronos2", "SCALPING", "M5")                        # report of XAUUSD only
+        self.assertEqual(TP.approval_ok(svc, "chronos2", "XAUUSD", "SCALPING"), (True, None))
+        ok, why = TP.approval_ok(svc, "chronos2", "BTC", "SCALPING")       # before: (True, None) - no report for BTC was skipped
+        self.assertFalse(ok)
+        self.assertIn("BTC", why)
+        self.approve("chronos2", "HEDGING", "M5", use="ASSIST")            # ASSIST (VALIDATION): unchanged - a stale ASSIST would drop holds
+        self.assertEqual(TP.approval_ok(svc, "chronos2", "BTC", "HEDGING"), (True, None))
+        svc.settings.update({"models": {"chronos2": {"instruments": ["XAUUSD", "BTC"]}}})
+        ctx = TP.context(svc, "chronos2", "BTC", "SCALPING", side="BUY")
+        self.assertEqual(ctx["state"], "STALE_APPROVAL")
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "BUY"}, ctx)["status"], "WAIT")
+
+
+# ======================================================================================================== I0836 REQUIRED rows on ACTIVE
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0836RequiredRowsActive(_Svc):
+    def _rows(self, svc, inst="XAUUSD"):
+        from masterquo.tsfm import predictions as TP
+        return [r for r in TP.coordinator_rows(svc, inst) if r["family"] == "tsfm:chronos2"]
+
+    def test_required_disabled_model_blocks_like_sh(self):
+        svc = self.make(tfs=("M5", "M15"))
+        svc.tick()
+        self.run_queue()
+        self.approve("chronos2", "ACTIVE", "M15")
+        self.assertEqual([(r["use"], r["state"]) for r in self._rows(svc)], [("REQUIRED", "READY")])
+        svc.settings.update({"models": {"chronos2": {"enabled": False}}})
+        rows = self._rows(svc)                                               # before: [] -> nothing blocked the ACTIVE entry
+        self.assertEqual([(r["use"], r["state"], r["result"]) for r in rows], [("REQUIRED", "DISABLED", None)])
+        self.assertIn("wyłączony", rows[0]["unavailable_reason"])
+        self.assertEqual(self.ev(rows, "BUY")[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:chronos2"])
+
+    def test_required_instrument_or_timeframe_not_computed(self):
+        svc = self.make(tfs=("M5", "M15"))
+        svc.tick()
+        self.run_queue()
+        self.approve("chronos2", "ACTIVE", "M15")
+        rows = self._rows(svc, "BTC")
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("REQUIRED", "DISABLED")])
+        self.assertEqual(self.ev(rows, "SELL")[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:chronos2"])
+        svc.settings.update({"models": {"chronos2": {"timeframes": ["M5"]}}})
+        rows = self._rows(svc)
+        self.assertEqual([(r["use"], r["state"]) for r in rows], [("REQUIRED", "DISABLED")])
+        self.assertIn("M15", rows[0]["unavailable_reason"])
+
+    def test_observe_and_assist_unchanged(self):
+        svc = self.make(tfs=("M5", "M15"))
+        svc.settings.update({"models": {"chronos2": {"enabled": False}}})
+        self.assertEqual(self._rows(svc), [])
+        self.assertTrue(svc.set_use("chronos2", "ACTIVE", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        self.assertEqual(self._rows(svc), [])
+        self.assertEqual(self._rows(svc, "BTC"), [])
+
+
 # ======================================================================================================== I0845 verdict minimum sample
 class TestI0845VerdictMinSample(unittest.TestCase):
     def test_verdict(self):
