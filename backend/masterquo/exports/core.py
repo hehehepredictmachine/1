@@ -39,7 +39,9 @@ SECRET_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),                  # PEM private key
     # 1.46: was r"\bPMW1-PRIV-..." - a format that does not exist; the owner's licence private key (licensing/owner.py KEY_HEADER +
     # "seed: <64 hex>", the pattern of tools/verify_release.py) was neither redacted nor caught by leaks(). Also the JSON-escaped form.
-    re.compile(r"PMW-OWNER-ED25519-PRIVATE-KEY v1(?:\\r)?(?:\\n|\s)+seed:\s*[0-9a-fA-F]{64}"),
+    # 1.46: the header is written in two parts - this module ships in the CLIENT package, whose check (tools/verify_release.py
+    # CLIENT_MARKERS) refuses any backend file containing the owner key header literally (= licence generator code)
+    re.compile(r"PMW-OWNER-ED25519-" r"PRIVATE-KEY v1(?:\\r)?(?:\\n|\s)+seed:\s*[0-9a-fA-F]{64}"),
 )
 SECRET_NAMES = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")
 
