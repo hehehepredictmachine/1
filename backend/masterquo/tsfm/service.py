@@ -555,6 +555,11 @@ class TsfmService:
         pt, digits = self._point(job["symbol"])
         a = Q.atr(bars, 14)
         band = neutral_band(s, a, pt)
+        # 1.46 arch I0864 (safe variant): a band component that the settings require but is unknown (point / ATR counted as 0 by the
+        # unchanged rule) is only MARKED - band, direction, ledger and settlement stay exactly as before; a REQUIRED role does not take
+        # such a forecast as confirmation (tsfm.predictions.coordinator_rows / apply_to_setup, decision.coordinator.evaluate_models)
+        band_missing = [x for x, bad in (("POINT_MISSING", pt is None and s.direction_band_min_points > 0),
+                                         ("ATR_MISSING", a is None and s.direction_band_atr > 0)) if bad]
         last_close = float(last["c"])
         point = [float(x) for x in r["point"]]
         pc = point[-1]
@@ -591,7 +596,8 @@ class TsfmService:
                 "calibration": {"status": "UNCALIBRATED", "note": "kwantyle modelu nie były kalibrowane na danych brokera" if r.get("quantiles")
                                 else "prognoza punktowa – brak kwantyli; nie jest prawdopodobieństwem"},
                 "mode": "SHADOW", "execution_permission": False,
-                "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem"}
+                "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem",
+                **({"band_incomplete_reason": "+".join(band_missing)} if band_missing else {})}
 
     # ================================================================== ledger + settlement
     def record(self, fc: dict) -> bool:

@@ -128,6 +128,11 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
             elif rdir == "FLAT" or (rdir is not None and side not in ("BUY", "SELL")):
                 influence, why = "BLOCK", "prognoza bocznie – nie potwierdza strony" if rdir == "FLAT" else "brak strony setupu"
                 reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
+            elif rdir is not None and p.get("band_incomplete_reason"):
+                # 1.46 arch I0864: a direction from a neutral band with an unknown required component (TSFM point / ATR counted as 0) never
+                # confirms a REQUIRED condition; records without the field (older rows, replay, golden) keep today's result
+                influence, why = "BLOCK", f"pasmo neutralne niepełne ({p['band_incomplete_reason']}) – nie potwierdza strony"
+                reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
             else:
                 influence = "PASS"
         out.append(K.make("ModelForecast", model_id=mid, role=role, state=str(p.get("state")), task_type=str(p.get("task_type")),
