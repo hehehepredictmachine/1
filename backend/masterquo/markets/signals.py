@@ -299,6 +299,8 @@ class BotSignalService:
         Only setups completed in the last `max_age_minutes` (a restart replays old ones - they are not re-announced)."""
         if not setup_v2 or not self.cfg.strategy_sources.double_retest:
             return 0
+        if setup_v2.get("status") == "UNSUPPORTED_INSTRUMENT":     # 1.46 (I0638): 5 USD grid of gold - no signal for another instrument
+            return 0
         n = 0
         cutoff = utcnow() - timedelta(minutes=max_age_minutes)
         for side, st in (setup_v2.get("states") or {}).items():
