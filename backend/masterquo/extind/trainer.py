@@ -103,18 +103,24 @@ def build_dataset(inst: str, ds: Path, commission: float | None = None, db=None,
     res = replay.run(rb, prof, tick, costs)
     log(f"replay {inst}: {len(res['cycles'])} cykli ({time.time() - t0:.0f}s)")
     ext = ExtIndService(None, db) if db is not None else None
-    rows = []
+    rows, legacy_atr = [], 0
     for c in res["cycles"]:
         t = parse_iso(c["decision_time"])
-        b5 = [b for b in bars["M5"] if parse_iso(b["open_utc"]) <= t - timedelta(minutes=5)][-40:]
-        atr = ind_atr(b5) if len(b5) >= 15 else None
+        # 1.46 arch I0163 (SCALP_INDICATOR_CONTEXT_V2): the ATR denominator of the SAR / IQ features is the range ATR frozen at
+        # RANGE_ARMED - the value the live model gets (scalp/service.indicator_context: plan['range']['atr_m5']); it was ATR14 of the
+        # 40 M5 bars closed at the decision. A cycle without the field (replay before 1.46 arch) keeps the old ATR, counted explicitly.
+        atr = c.get("range_atr_m5")
+        if atr is None:
+            b5 = [b for b in bars["M5"] if parse_iso(b["open_utc"]) <= t - timedelta(minutes=5)][-40:]
+            atr = ind_atr(b5) if len(b5) >= 15 else None
+            legacy_atr += 1
         rows.append({"setup_id": c["setup_id"], "range_id": c.get("range_id"), "side": c["direction"], "decision_time": c["decision_time"],
                      "fill_time": c["fill_time"], "exit_time": c["exits"][-1]["time"], "price": c["fill"], "atr_m5": atr, "base": c.get("features") or {},
                      "y": 1 if c["tp1_before_sl"] else 0, "net_r": c["net_r"], "ambiguous": bool(c.get("ambiguous")),
                      "ext": {a: (ext.as_of(a, inst, t) if ext else None) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}})
     return {"instrument": inst, "symbol": meta["symbol"], "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
             "rows": rows, "bars": bars, "costs": {"commission_per_lot_side": com, **costs}, "profile_id": prof["profile_id"],
-            "files_sha256": meta.get("files_sha256")}
+            "files_sha256": meta.get("files_sha256"), "legacy_atr_rows": legacy_atr}
 
 
 def ind_atr(b: list[dict], n: int = 14) -> float | None:
@@ -300,6 +306,7 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_
             "label": "y=1 gdy replay zamrożonej polityki rozliczył TP1 przed SL; net_R raportowane obok (to nie P(net_R>0))"}
     (rd / "plan.json").write_text(json.dumps(plan, indent=1), encoding="utf-8")
     rep = {"run_id": rid, "instrument": inst, "dataset_id": data["dataset_id"], "data_kind": data["data_kind"], "cycles": len(data["rows"]),
+           "feature_schema": F.FEATURE_SCHEMA, "legacy_atr_rows": data.get("legacy_atr_rows"),
            "plan": plan, "costs": data["costs"], "profile_id": data["profile_id"], "variants": {}, "role": "fixture_only" if synthetic else "shadow_candidate"}
     if len(data["rows"]) < MIN_CYCLES and not synthetic:
         rep.update(status="INSUFFICIENT_DATA", reason=f"cykli {len(data['rows'])} < {MIN_CYCLES}")
@@ -362,6 +369,10 @@ class ContextModel:
     def predict(self, snap: dict, instrument: str) -> dict:
         if instrument != self.man["instrument"]:
             return {"status": "ABSTAIN", "reason": f"INSTRUMENT_MISMATCH:{self.man['instrument']}"}
+        if self.man.get("feature_schema") != F.FEATURE_SCHEMA:
+            # 1.46 arch I0163 / I0180: an artefact of another feature schema (V1: ATR of 40 M5 bars, IQ only with a verified clock) is
+            # never fed the new inputs - ABSTAIN before any computation (SHADOW observation; retrain + activate)
+            return {"status": "ABSTAIN", "reason": f"FEATURE_SCHEMA_MISMATCH:{self.man.get('feature_schema')}"}
         f = F.build_indicator_context_features(snap, self.man["spec"])
         if list(f["features"]) != self.man["feature_order"]:
             return {"status": "ABSTAIN", "reason": "FEATURE_SCHEMA_MISMATCH"}
@@ -402,6 +413,8 @@ def activate(inst: str, run_id: str, variant: str) -> dict:
         if not e or f"model_{variant}.json" not in e["artifacts"]:
             raise ValueError("UNKNOWN_RUN_OR_VARIANT")
         man = json.loads((Path(e["run_dir"]) / f"model_{variant}.json").read_text(encoding="utf-8"))
+        if man.get("feature_schema") != F.FEATURE_SCHEMA:          # 1.46 arch I0163: checked before any registry write
+            raise ValueError(f"NOT_ACTIVATABLE_SCHEMA:{man.get('feature_schema')} (wymagany {F.FEATURE_SCHEMA} – ponowny indicator-context train)")
         if man["role"] == "fixture_only" or man["parity"]["status"] != "OK":
             raise ValueError("NOT_ACTIVATABLE_FIXTURE_OR_PARITY")
         reg.setdefault("history", []).append(reg.get("active"))

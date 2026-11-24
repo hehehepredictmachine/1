@@ -446,6 +446,7 @@ def create_app(rt, port: int) -> FastAPI:
     # ------------------------------------------------------------ PMW-UPD-02: IQ Gold Gann / IQ Star Lines / PAL02M / SAR
     @app.get("/api/v1/indicator-context")
     def indicator_context_status():
+        from ..extind import features as icf
         from ..extind import trainer as ict
         inst = rt.cfg.get().assets.active
         reg_p = ict.root(inst) / "registry.json"
@@ -454,7 +455,7 @@ def create_app(rt, port: int) -> FastAPI:
         return {"instrument": inst, "sources": rt.extind.status(inst), "sar": {"profile": "MQ_SAR_WILDER_PROFILE_V1", "live_params": {"step": 0.02, "max": 0.2},
                 "implementation_status": "VERIFIED_REFERENCE_TESTS", "weights_training": "NOT_APPLICABLE", "calibration": "GRID_ON_TRAIN_FOLD (indicator-context calibrate-sar)",
                 "mt5_parity": "MT5_PARITY_NOT_RUN"}, "model": {"active": reg.get("active"), "runs": runs,
-                "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1", "schema": "SCALP_INDICATOR_CONTEXT_V1"}}
+                "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1", "schema": icf.FEATURE_SCHEMA}}       # 1.46 arch I0163: the current schema
 
     @app.get("/api/v1/indicator-context/chart")
     def indicator_context_chart(tf: str = Query("M5")):

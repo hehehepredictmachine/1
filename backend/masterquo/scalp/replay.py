@@ -242,7 +242,9 @@ def run(m1: list[dict], prof: dict, tick: float, costs: dict, m5: list[dict] | N
                        exits=[{"vol": v, "price": round(px, 5), "time": iso_ts(t), "reason": r} for (v, px, t, r) in res["exits"]],
                        net_price=net, risk_price=risk, net_r=net / risk, tp1_before_sl=first == "TP1", ambiguous=res["ambiguous"],
                        mfe_r=res["mfe"] / risk, mae_r=res["mae"] / risk, hold_min=(res["exits"][-1][2] - P.t[i]) / 60 if res["exits"] else None, win=net > 0,
-                       economics=eco, precision="OHLC_APPROX", confirmation=plan["confirmation"]["family"])
+                       economics=eco, precision="OHLC_APPROX", confirmation=plan["confirmation"]["family"],
+                       # 1.46 arch (I0163 / I0164): decision-time inputs the live indicator-context model gets (scalp/service.py)
+                       ref_close_bid=plan["ref_close_bid"], range_atr_m5=plan["range"]["atr_m5"])
             cycles.append(cyc)
             end_t = res["exits"][-1][2]
             busy_until = end_t + V(prof, "risk", "cooldown_after_cycle_min") * 60

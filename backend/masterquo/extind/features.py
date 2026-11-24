@@ -1,6 +1,6 @@
 """build_indicator_context_features(decision_snapshot, feature_spec) - ONE function for dataset, training, replay and live.
 
-Groups (stable registry, SCALP_INDICATOR_CONTEXT_V1):
+Groups (stable registry, SCALP_INDICATOR_CONTEXT_V2 - see FEATURE_SCHEMA):
   BASE           the existing setup features (scalp.strategy.SETUP_FEATURES), unchanged
   SAR            per TF (M5, M15): direction-normalised distance to SAR in ATR, SAR with/against side, bars since flip,
                  flips in the last 50 closed bars, AF, degenerate flag - profile MQ_SAR_WILDER_PROFILE_V1 with the given params
@@ -19,7 +19,10 @@ from ..scalp import indicators as ind
 from ..scalp.strategy import SETUP_FEATURES
 from ..timeutil import parse_iso
 
-FEATURE_SCHEMA = "SCALP_INDICATOR_CONTEXT_V1"
+# V2 (1.46 arch I0163 / I0180): the ATR denominator in training = the frozen range ATR the live model gets (was ATR14 of 40 M5 bars);
+# IQ snapshots read without a verified server offset (TIME_BASIS_UNVERIFIED) give their price LEVELs, the Star schedule features are
+# then NaN (unknown, never 0). V1 artefacts ABSTAIN (FEATURE_SCHEMA_MISMATCH) and are not activatable - retrain + activate.
+FEATURE_SCHEMA = "SCALP_INDICATOR_CONTEXT_V2"
 TASK_ID = "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1"
 GROUPS = ("BASE", "SAR", "IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M")
 TF_S = {"M5": 300, "M15": 900}
@@ -104,6 +107,10 @@ def build_indicator_context_features(snap: dict, spec: dict) -> dict:
         elif g == "IQ_STAR_LINES":
             s = (snap.get("ext") or {}).get("IQ_STAR_LINES")
             _levels(s, price, atr, t, "star", out, groups, g)
+            if s and s.get("time_status", "OK") != "OK":
+                # 1.46 arch I0180: read without a verified server offset - only the price levels are trusted; the schedule is unknown
+                out["star_min_to_start"] = out["star_min_to_end"] = out["star_in_window"] = NAN
+                continue
             ts = t.timestamp()
             wins = [w for w in (s or {}).get("windows") or [] if w.get("scheduled_start_utc") is not None and w.get("scheduled_end_utc") is not None]
             nxt = min((w["scheduled_start_utc"] for w in wins if w["scheduled_start_utc"] > ts), default=None)
