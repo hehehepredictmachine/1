@@ -389,6 +389,15 @@ class SHService:
         rid = st.get("active_run")
         if st.get("artifact") != "APPROVED" or not rid:
             return {"status": st.get("artifact") or "NOT_TRAINED"}
+        if st.get("use", "OFF") == "OFF":
+            return {"status": "OFF", "run_id": rid, "reason": "rodzina VOL_GARCH ma rolę OFF – parametry GARCH nie są używane przez HG09"}
+        store = getattr(fam, "store", None)
+        try:
+            ok, why = store.assist_ok("VOL_GARCH", inst, rid) if store is not None else (False, "brak magazynu rodzin – bramka REAL niesprawdzalna")
+        except Exception as exc:  # noqa: BLE001 - unknown gate state = not READY
+            ok, why = False, f"bramka REAL/APPROVED: {type(exc).__name__}: {exc}"[:200]
+        if not ok:
+            return {"status": "NOT_REAL_OR_NOT_APPROVED", "run_id": rid, "reason": why}
         art = fam._artifact("VOL_GARCH", inst, rid)
         return {"status": "READY", "run_id": rid, "omega": art["omega"], "alpha": art["alpha"], "beta": art["beta"], "dist": art.get("dist")}
 
@@ -482,7 +491,7 @@ class SHService:
         if su.get("basket"):
             return {"ok": False, "reason": f"koszyk {su['basket'].get('basket_id')}: brak walidacji OOS na danych MT5 użytkownika"}
         from .pack import catalog as CAT
-        v = CAT.validation_status(su.get("strategy_id"))
+        v = CAT.validation_status(su.get("strategy_id"), config_hash=(su.get("pack") or {}).get("config_hash"))   # w2 (I0817)
         if v.get("status") == "VALIDATED" and v.get("data_kind") == "REAL_USER_DATA":
             return {"ok": True, "source": f"walidacja wariantu {su.get('strategy_id')} {v.get('report_id')}"}
         return {"ok": False, "reason": f"{su.get('strategy_id')}: {v.get('status')} – {v.get('reason') or 'brak walidacji OOS na danych MT5 użytkownika'}"}
