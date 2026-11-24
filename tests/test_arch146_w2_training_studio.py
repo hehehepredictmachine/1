@@ -61,6 +61,9 @@ FROZEN_RUNNER_GROUPS_H = "3b326216aa5fa344"
 FROZEN_RUNNER_GROUP_KEYS = ("forecast", "scalp_A", "ml", "lab", "indicator_context", "ml_scalp", "neural_scalp", "structure_intelligence",
                             "flow_context", "context_indicators", "sh_models", "sh_pack", "monte_carlo", "master_models")
 FROZEN_REQUIREMENTS_H = "7edfb2447aedf71a"
+# row order of check_dataset() in 1.46.0 (API data readiness, export report) - NOT the runner order (master_models before monte_carlo)
+FROZEN_REQUIREMENTS_KEYS = ("forecast", "scalp", "ml", "lab", "indicator_context", "ml_scalp", "neural_scalp", "structure_intelligence",
+                            "flow_context", "context_indicators", "sh_models", "sh_pack", "master_models", "monte_carlo")
 FROZEN_TRAIN_ALL = (("forecast", "skip_candles"), ("scalp_A", "skip_candles"), ("ml", "skip_ml"), ("lab", "skip_lab"),
                     ("indicator_context", "skip_candles"), ("ml_scalp", "skip_ml"), ("neural_scalp", "skip_lab"),
                     ("structure_intelligence", "skip_lab"), ("flow_context", "skip_lab"), ("context_indicators", "skip_lab"))
@@ -116,6 +119,13 @@ class TestI0131TrainingTaskRegistry(unittest.TestCase):
         with mock.patch("masterquo.training.cli.main", side_effect=lambda argv: seen.append(argv) or 0), mock.patch("sys.stdout", io.StringIO()):
             TA.train_all(a)
         self.assertEqual(seen[1][seen[1].index("--tasks") + 1], "none")
+
+    def test_readiness_row_order_identical_to_head(self):
+        # recenzja: sort_keys w hashu nie widzi kolejności – po refaktorze wiersze szły w kolejności runnera (monte_carlo przed master_models)
+        from masterquo.training import requirements as RQ
+        self.assertEqual(tuple(RQ.REQUIREMENTS), FROZEN_REQUIREMENTS_KEYS)
+        rows = RQ.check_dataset(Path(_env.ROOT / "tests"))["models"]
+        self.assertEqual(tuple(r["kind"] for r in rows), FROZEN_REQUIREMENTS_KEYS)
 
     def test_readiness_alias_on_input_only(self):
         from masterquo.training import requirements as RQ

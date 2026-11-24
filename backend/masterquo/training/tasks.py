@@ -11,7 +11,7 @@ Per task (the ORDER of SPECS is the order of execution of the runner: 'activate'
   studio              - (category, title, venv, timeframes) of the Studio runner group (studio/registry.RUNNER_GROUPS) or None; the Studio
                         timeframes are the Studio export of the task and stay a field of their own (they are NOT the readiness timeframes);
   requirements        - readiness of one export (training/requirements.REQUIREMENTS) under `requirements_key` ('scalp' for the A/B/C unit,
-                        the key the readiness report has always shown);
+                        the key the readiness report has always shown); the ROW ORDER of that report is REQUIREMENTS_ORDER (1.46.0);
   train_all           - the skip flag of `masterquo train-all` (skip_candles / skip_ml / skip_lab) or None = never part of train-all
                         (sh_models, sh_pack, monte_carlo, master_models write live gates / pointers - never in train-all);
   instruments         - instruments the task applies to (None = every instrument); outside them the task is NOT APPLICABLE, not skipped.
@@ -138,9 +138,18 @@ def studio_runner_groups() -> dict[str, tuple]:
     return {s["id"]: (s["studio"][0], s["studio"][1], s["studio"][2], list(s["studio"][3])) for s in SPECS if s.get("studio")}
 
 
+# Row order of the readiness report (check_dataset: /api/v1 data readiness, export report) exactly as in 1.46.0 - it differs from the runner
+# order (master_models before monte_carlo). Only the ORDER lives here; a readiness key missing from this tuple is appended in runner order.
+REQUIREMENTS_ORDER: tuple[str, ...] = ("forecast", "scalp", "ml", "lab", "indicator_context", "ml_scalp", "neural_scalp", "structure_intelligence",
+                                       "flow_context", "context_indicators", "sh_models", "sh_pack", "master_models", "monte_carlo")
+
+
 def requirements() -> dict[str, dict]:
-    """training/requirements.REQUIREMENTS: readiness key ('scalp' for the A/B/C unit) -> required / optional data of one export."""
-    return {s.get("requirements_key", s["id"]): dict(s["requirements"]) for s in SPECS if s.get("requirements")}
+    """training/requirements.REQUIREMENTS: readiness key ('scalp' for the A/B/C unit) -> required / optional data of one export, in the row
+    order of the readiness report (REQUIREMENTS_ORDER, as in 1.46.0)."""
+    rq = {s.get("requirements_key", s["id"]): dict(s["requirements"]) for s in SPECS if s.get("requirements")}
+    rank = {k: i for i, k in enumerate(REQUIREMENTS_ORDER)}
+    return dict(sorted(rq.items(), key=lambda kv: rank.get(kv[0], len(rank))))     # stable: unknown keys keep the runner order at the end
 
 
 def requirements_kind(task_id: str) -> str | None:

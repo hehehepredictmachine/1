@@ -16,7 +16,8 @@ from . import tasks as _T
 BAR_COLUMNS = ("time_open_utc", "open", "high", "low", "close", "tick_volume")
 
 # kind -> (title, required TFs, optional TFs, reader in code, recommended rows of the first required TF). arch146 I0131: derived from the one
-# task registry (training/tasks.py) - the readiness keys are unchanged ('scalp' for the A/B/C unit); the rows follow the runner order.
+# task registry (training/tasks.py) - the readiness keys are unchanged ('scalp' for the A/B/C unit); the row order is the one of 1.46.0
+# (tasks.REQUIREMENTS_ORDER: master_models before monte_carlo), not the runner order.
 REQUIREMENTS: dict[str, dict] = _T.requirements()
 
 
