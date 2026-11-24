@@ -2200,6 +2200,8 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/models/evidence")
     def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
+        """Diagnostic view (no consumer in the panels): evidence groups per correlation group of modelhub.aggregate.ROUTES (per TF); the
+        SH matrix shows the Training Center models as the summary row th_direction with these groups in group_by_tf (w2 I0006)."""
         from ..modelhub import aggregate as _AG
         i = _th_inst(instrument)
         if strategy not in ("SCALPING", "HEDGING"):
