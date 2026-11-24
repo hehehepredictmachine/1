@@ -13,6 +13,12 @@
   values, direction and publication order are unchanged.
 * Model catalog of the panel (/api/v1/models/catalog, diagnoza rejestry_modeli W): the MM module rows were joined to the SH rows by the
   'mm_' prefix, so breakout appeared twice - mm_breakout READY and mm_breakout_zones DISABLED. Rows are now joined by canonical id.
+* STE-FlowNet artifact (models check --smoke, area mm): when VAL picked the no_temporal_weighting variant, the artifact stored the
+  normalisation of the WEIGHTED samples - reloading it did not reproduce the evaluated model. Now the picked variant's normalisation and
+  the sample weighting are stored. (No live path - training / artifact only.)
+* NLP_SENTIMENT family: headlines older than ~7 days made the decayed weights sum below 1e-12, the aggregate was divided by 1e-12 instead
+  of the sum - the distribution did not sum to 1, the contract rejected it and the family published ERROR. A stale record is now a
+  normalised distribution with its real (old) data time - stale downstream, as before; weights that underflow to 0 -> BLOCKED_DATA.
 """
 from __future__ import annotations
 
@@ -176,6 +182,62 @@ class TestCatalogOneRowPerProducer(unittest.TestCase):
         self.assertEqual(dup, {})                                              # 1.46.0: mm:breakout_zones -> mm_breakout + mm_breakout_zones
         by = {r["id"]: r for r in rows}
         self.assertEqual(by["mm_breakout"]["source"], "sh/models.REGISTRY")    # the SH row (live state) stays, ids unchanged
+
+
+class TestSteFlownetArtifactRoundtrip(unittest.TestCase):
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_picked_unweighted_variant_is_reproduced_from_the_artifact(self):
+        import numpy as np
+        from masterquo.mm import artifacts as AR
+        from masterquo.mm import jobs as J
+        from masterquo.mm import splits
+        from masterquo.mm import ste_flownet as SF
+        from masterquo.modelhub import smoke as S
+        from masterquo.modelhub.smoke import mm as SM
+        ctx = S.Ctx("XAUUSD")
+        oc = SM._orch(ctx)
+        with mock.patch.object(J, "min", create=True, new=lambda res, key: "no_temporal_weighting"):
+            r = J.job_ste_flownet(oc)
+        self.assertEqual(r["picked"], "no_temporal_weighting")
+        st, man = AR.load("XAUUSD", "ste_flownet_ret", r["artifact_id"])
+        self.assertIs(man.get("sample_weighting"), False)                      # 1.46.0: no flag - the loader could not know
+        acc, fe, _, _ = J._events(oc)
+        smp = SF.build_samples(acc, fe, 8, 16, 32, weighting=False)
+        ref = SF.build_samples(acc, fe, 8, 16, 32)
+        okk = np.where(np.isfinite(ref["y"]))[0]
+        sp = splits.chrono_split(ref["t_obs"][okk], ref["t_label"][okk], (0.6, 0.2, 0.2), 0.0)
+        ts = okk[sp["test"]]
+        X = (smp["X"] - np.asarray(st["x_mu"], float)) / np.asarray(st["x_sd"], float)
+        fresh = SF.reg_metrics(SF.STEModel.from_state(st).predict(X[ts]), ref["y"][ts])
+        rec = man["metrics"]["test_once"]
+        self.assertLessEqual(max(abs(float(fresh[k]) - float(rec[k])) for k in rec if isinstance(rec[k], (int, float))), 1e-9)
+
+
+class TestNlpStaleHeadlines(unittest.TestCase):
+    def test_old_headlines_give_a_normalised_distribution_or_blocked_data(self):
+        import time as _time
+
+        import numpy as np
+        from masterquo.modelhub.families import base as B
+        from masterquo.modelhub.families import registry
+        f = registry()["NLP_SENTIMENT"]
+
+        def items(age_days):
+            t = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_time.time() - age_days * 86400))
+            return {"news": [{"headline": f"gold headline {i}", "first_seen_at": t} for i in range(3)]}
+        P = np.array([[0.2, 0.3, 0.5], [0.1, 0.6, 0.3], [0.3, 0.3, 0.4]])
+        with mock.patch.object(type(f), "score", return_value=P):
+            out = f.predict({}, items(8))                                      # 1.46.0: sums to ~0.7 -> DISTRIBUTION_NOT_NORMALISED -> ERROR
+            self.assertAlmostEqual(sum(out["sentiment"].values()), 1.0, places=9)
+            with self.assertRaises(B.Unavailable) as cm:
+                f.predict({}, items(400))                                      # weights underflow to exactly 0
+            self.assertEqual(cm.exception.state, "BLOCKED_DATA")
 
 
 if __name__ == "__main__":

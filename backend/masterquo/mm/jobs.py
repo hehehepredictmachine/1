@@ -544,7 +544,7 @@ def job_ste_flownet(ctx) -> dict:
         mu, sd = Xs[tr].reshape(-1, Xs.shape[2]).mean(0), Xs[tr].reshape(-1, Xs.shape[2]).std(0) + 1e-12
         return (Xs - mu) / sd, mu, sd
     XS, mu, sd = norm(smp["X"])
-    XN, _, _ = norm(smp_nw["X"])
+    XN, mu_n, sd_n = norm(smp_nw["X"])
     y = smp["y"]
     ep = ctx.prof["epochs"]
     variants = {"full": (XS, {}), "no_temporal_weighting": (XN, {}), "no_recurrence": (XS, {"recurrence": False}),
@@ -567,9 +567,12 @@ def job_ste_flownet(ctx) -> dict:
     g = GATES["ste_flownet"]
     gates = {"n_test>=min": len(ts) >= g["min_test"], "mae_gain_vs_zero": test["mae"] < zero["mae"] * (1 - g["mae_gain_vs_zero"])}
     passed = all(gates.values()) and not ctx.synthetic
-    st = {**m.state(), "x_mu": mu, "x_sd": sd}
+    # 1.46 arch: the normalisation (and sample weighting) of the PICKED variant - the weighted statistics were stored for every pick, so the
+    # no_temporal_weighting model could not be reproduced from its artifact
+    weighted = pick != "no_temporal_weighting"
+    st = {**m.state(), "x_mu": mu if weighted else mu_n, "x_sd": sd if weighted else sd_n}
     aid, ast = _save(ctx, "ste_flownet_ret", st, {"model_type": "STE_FLOWNET_FIN_ADAPT", "feature_schema": "STE-SPLITS-8x16:" + ",".join(SF.CHANNELS),
-                                                   "target": "ln(mid[e+32]/mid[e])", "event_source": src, "pick": pick,
+                                                   "target": "ln(mid[e+32]/mid[e])", "event_source": src, "pick": pick, "sample_weighting": weighted,
                                                    "metrics": {"val": res[pick]["val"], "test_once": test}, "gates": gates}, passed)
     return {"event_source": src, "event_source_fallback": src_why, "samples": {"train": int(len(tr)), "val": int(len(va)), "test": int(len(ts))},
             "ablations_val": {k: v["val"] for k, v in res.items()},

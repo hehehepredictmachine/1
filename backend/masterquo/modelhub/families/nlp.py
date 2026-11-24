@@ -168,7 +168,11 @@ class NLP(B.Family):
                 age = 86400.0
             w.append(math.exp(-age / (6 * 3600)))
         w = np.asarray(w)
-        agg = (P * w[:, None]).sum(0) / max(w.sum(), 1e-12)
+        ws = float(w.sum())
+        if not ws > 0.0:          # 1.46 arch: weights underflow to 0 (headlines months old) - no data, not a value
+            raise B.Unavailable("BLOCKED_DATA", "brak aktualnych nagłówków (wagi zaniku = 0)")
+        # 1.46 arch: divided by max(sum, 1e-12) - headlines older than ~7 days gave a distribution that did not sum to 1 -> contract ERROR
+        agg = (P * w[:, None]).sum(0) / ws
         top = {k: float(np.mean([topics(n["headline"])[k] for n in items])) for k in TOPICS}
         return {"sentiment": {LABELS[i]: float(agg[i]) for i in range(3)}, "texts": len(items), "decay_half_life_h": 6 * math.log(2),
                 "topic_share": top, "input": "nagłówki (bez pełnej treści)"}
