@@ -80,7 +80,8 @@ class StructureIntelligenceService:
         except Exception as exc:                                # noqa: BLE001
             flow = {"status": "ERROR", "error": type(exc).__name__}
         try:
-            context = self.ctx.summary(self.ctx.update(instrument or "XAUUSD", tf, bars, tick))
+            # 1.46: an unsupported TF (M30) is reported NOT_SUPPORTED_TF - it was WARMING_UP forever
+            context = self.ctx.summary(self.ctx.update(instrument or "XAUUSD", tf, bars, tick), tf=tf)
         except Exception as exc:                                # noqa: BLE001
             context = {"status": "ERROR", "error": type(exc).__name__}
         t, o, h, lo, c = [x["open_utc"] for x in b], [x["o"] for x in b], [x["h"] for x in b], [x["l"] for x in b], [x["c"] for x in b]
@@ -462,7 +463,7 @@ class StructureIntelligenceService:
                 point = float((meta.get("spec") or {}).get("point") or tick)
                 if job["kind"] in ("flow_calibrate", "flow_markov"):
                     m1 = _bars(ds, meta.get("file_prefix") or "XAUUSD", "M1")
-                    dev = m1[: int(0.8 * len(m1))]
+                    dev = FT.dev_bars(m1)   # 1.46: time-based DEV cut (same rule as structure_task.split); count-based 80 % reached into the holdout
                     job["result"] = (FCLI.calibrate(inst, dev, point, tick, ["heikin", "sr-channels", "stopdistance"], meta) if job["kind"] == "flow_calibrate"
                                      else FCLI.train_markov(inst, dev, point, tick, meta))
                 elif job["kind"] == "flow_dataset":

@@ -18,12 +18,14 @@ def main(argv=None) -> int:
     db.row_factory = sqlite3.Row
     j = dict(db.execute("SELECT * FROM jobs WHERE job_id=?", (jid,)).fetchone())
     db.execute("UPDATE jobs SET pid=? WHERE job_id=?", (os.getpid(), jid))
-    from ..config import ConfigStore
     from . import pipeline as P
     from . import registry as R
     from . import settings as S
     from .package import Package
-    cfg = ConfigStore()
+    # 1.46: the BOT's config read-only (broker symbols, MT5 terminal, family pairs); None = UNAVAILABLE. 1.45.0 built ConfigStore() here in
+    # the Studio data dir: a default <studio>/config.json was created and the user's mappings were ignored ('XAUUSD-' instead of 'GOLD.pro').
+    # Task keys do not depend on cfg, so jobs queued earlier still resolve.
+    cfg = S.bot_config()
     task = R.by_key(cfg).get(j["task_key"])
     if task is None:
         db.execute("UPDATE jobs SET state='FAILED', error=?, finished_at=? WHERE job_id=?", ("nieznane zadanie (zmiana rejestru)", time.time(), jid))

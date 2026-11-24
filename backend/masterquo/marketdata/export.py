@@ -40,6 +40,13 @@ class ExportCancelled(RuntimeError):
     pass
 
 
+def _owner_name(app) -> str:
+    """1.46: display name of a lock owner (ids 'PepeMarketWizard-export' / 'PepeTrainingStudio' are identifiers and stay as they are)."""
+    from ..version import DISPLAY_NAME
+    names = {"PepeMarketWizard-export": f"eksport danych {DISPLAY_NAME}", "PepeTrainingStudio": f"{DISPLAY_NAME} Data & Training Studio"}
+    return names.get(app) or str(app or "nieznany proces")
+
+
 def _now() -> float:
     return time.time()
 
@@ -116,7 +123,9 @@ def run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPORT
     lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
     ok, owner = lk.acquire(f"export:{instrument}")
     if not ok:
-        raise ExportBusy(f"trwa inny eksport ({(owner or {}).get('app')}: {(owner or {}).get('job')}) – np. Pepe Data & Training Studio; spróbuj później")
+        # 1.46: the user sees display names (was the raw lock id 'PepeMarketWizard-export' + the old brand); lock app ids stay unchanged
+        app = (owner or {}).get("app")
+        raise ExportBusy(f"trwa inny eksport ({_owner_name(app)}: {(owner or {}).get('job')}) – spróbuj później")
     try:
         return _run(source, store, instrument, symbol, timeframes=timeframes, mode=mode, start=start, end=end, lookback_days=lookback_days,
                     cfg=cfg, progress=lambda d: (lk.heartbeat(), progress(d) if progress else None), cancel=cancel, sleep=sleep, now=now)
@@ -255,6 +264,14 @@ def _finish(source, store: Store, inst: str, symbol: str, tfs, frozen: dict, sum
         point = None
     costs_cfg = getattr(cfg, "costs", None) if cfg is not None else None
     man = store.manifest(inst)
+    if man.get("symbol") == symbol:
+        # 1.46: a failed / empty symbol_info at the end of the export overwrote the measured point / contract size / spec of THIS symbol
+        # with None / {} (family fits and inference then had no point). Kept from the manifest; never taken from another symbol.
+        prev = (man.get("costs") or {}).get("spread") or {}
+        point = point or prev.get("point")
+        contract = contract or prev.get("contract_size")
+        if not any(v is not None for v in spec.values()):
+            spec = man.get("symbol_spec") or spec
     entry = {k: v for k, v in summary.items() if k != "source"} | {"finished_at": iso(_now())}
     entry["timeframes"] = {tf: {k: v for k, v in acc.items() if k not in ("conflict_list", "invalid_list")}
                            for tf, acc in (summary.get("timeframes") or {}).items()}
