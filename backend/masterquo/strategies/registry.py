@@ -2,6 +2,7 @@
 Lists of strategies elsewhere (config validators, API, UI) are derived from STRATEGIES - adding a file is not enough."""
 from __future__ import annotations
 
+import copy
 import hashlib
 
 from . import base
@@ -28,18 +29,21 @@ DEFAULT_NO_TRADE = {"S11", "S12"}
 
 
 def params_for(sid: str, overrides: dict | None) -> dict:
+    """1.46 arch: a DEEP copy - the instances are shared by the live scan, the 'ml-backfill' thread and the API; the shallow copy left the
+    nested lists (e.g. 'tfs') shared with the class attribute and the user's override, so a mutation in one consumer changed the live scan."""
     s = STRATEGIES[sid]
-    p = dict(s.params)
+    p = copy.deepcopy(s.params)
     for k, v in (overrides or {}).items():
         if k in p:
-            p[k] = v
+            p[k] = copy.deepcopy(v)
     return p
 
 
 def describe() -> list[dict]:
+    # 1.46 arch: copies of params / regime_fit (the API used to receive the live class attributes of the shared instances)
     return [{"strategy_id": s.id, "name": s.name, "version": s.version, "family": s.family, "setup_tfs": list(s.setup_tfs),
-             "context_tf": s.context_tf, "required_tfs": list(s.required_tfs), "min_bars": s.min_bars, "regime_fit": s.regime_fit,
-             "params": s.params, "implemented": True, "validation_status": s.validation_status, "contract": base.CONTRACT_VERSION}
+             "context_tf": s.context_tf, "required_tfs": list(s.required_tfs), "min_bars": s.min_bars, "regime_fit": dict(s.regime_fit),
+             "params": copy.deepcopy(s.params), "implemented": True, "validation_status": s.validation_status, "contract": base.CONTRACT_VERSION}
             for s in STRATEGIES.values()]
 
 
