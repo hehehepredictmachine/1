@@ -167,10 +167,15 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
                positions_count=len(positions), margin_mode=margin_mode)
     if open_risk_info.get("positions_without_sl"):
         reasons.append("OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED")
-    pend_risk = float(portfolio.get("pending_risk") or 0.0)
+    # 1.46 arch (I0723): a pending order whose broker calculation failed is UNKNOWN (portfolio_snapshot: pending_unknown + the total
+    # = None) - it blocks and is never summed as 0 (a missing key keeps the old meaning: no pending orders computed)
+    pend_risk_unknown = _unknown(portfolio, "pending_risk")
+    if portfolio.get("pending_unknown") or pend_risk_unknown or _unknown(portfolio, "pending_margin") or _unknown(portfolio, "pending_notional"):
+        reasons.append("PENDING_ORDER_RISK_UNKNOWN")
+    pend_risk = None if pend_risk_unknown else float(portfolio.get("pending_risk") or 0.0)
     if portfolio.get("pending_without_sl"):
         reasons.append("PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED")
-    total_open_risk = open_risk_info["open_risk"] + pend_risk
+    total_open_risk = None if pend_risk is None else open_risk_info["open_risk"] + pend_risk
     if margin_mode in ("NETTING", "EXCHANGE") and any(p.get("symbol") == symbol for p in positions):   # EXCHANGE nets too
         reasons.append("NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL")
     if res["limits_missing"]:
@@ -187,7 +192,7 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
     day_base = equity - daily["floating"] - daily["realized_today"] if daily["status"] == "OK" else None
     daily_cap = day_base * limits.daily_loss_limit_pct / 100.0 if day_base else None
     portfolio_cap = equity * limits.max_total_open_risk_pct / 100.0
-    avail = [budget, portfolio_cap - total_open_risk]
+    avail = [budget, 0.0 if total_open_risk is None else portfolio_cap - total_open_risk]
     if daily_cap is None:
         reasons.append("DAILY_LOSS_STATE_UNKNOWN")
     else:
@@ -205,8 +210,9 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         reasons.append("COOLDOWN_AFTER_LOSS")
     available = min(avail)
     res.update(trade_budget=round(budget, 2), daily_cap=None if daily_cap is None else round(daily_cap, 2),
-               portfolio_cap=round(portfolio_cap, 2), available_budget=round(available, 2), pending_risk=round(pend_risk, 2),
-               total_open_risk=round(total_open_risk, 2))
+               portfolio_cap=round(portfolio_cap, 2), available_budget=round(available, 2),
+               pending_risk=None if pend_risk is None else round(pend_risk, 2),
+               total_open_risk=None if total_open_risk is None else round(total_open_risk, 2))
     if available <= 0:
         reasons.append("NO_RISK_BUDGET_AVAILABLE")
     vmin, vmax, step = float(symbol_info["volume_min"]), float(symbol_info["volume_max"]), float(symbol_info["volume_step"])
@@ -227,6 +233,25 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
     return res
 
 
+def _unknown(portfolio: dict, key: str) -> bool:
+    """1.46 arch (I0723): the key is present and None = the broker calculation failed (unknown, blocks); absent = not computed (old 0)."""
+    return key in portfolio and portfolio[key] is None
+
+
+def capital_flow_note(deals: list[dict], peak_raw: float | None) -> str | None:
+    """1.46 arch (I0808, informational only): the drawdown peak is MAX(equity) of the account snapshots without capital flows, so a
+    withdrawal (balance deal, type 2, negative amount) after the peak keeps DRAWDOWN_BREACH for good. Returns the note shown next to
+    DRAWDOWN_BREACH; never a reason code, never a change of the gate (correcting the peak would lift a block - owner decision).
+    peak_raw = time of the peak in the deal clock (broker server seconds); None = unknown -> any withdrawal in the history counts."""
+    for d in deals or ():
+        try:
+            if d.get("type") == 2 and float(d.get("profit") or 0) < 0 and (peak_raw is None or float(d.get("time") or 0) >= peak_raw):
+                return "PEAK_INCLUDES_CAPITAL_FLOWS"
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def notional_per_lot(profit_fn: ProfitFn, order_side: str, price: float) -> float | None:
     """Nominal value of 1 lot in ACCOUNT currency from the broker calculator: a 1% price move x 100."""
     v = profit_fn(order_side, 1.0, price, price * 1.01 if order_side == "BUY" else price * 0.99)
@@ -240,13 +265,15 @@ def size_volume(*, order_side, entry, sl, targets, available, cost_1, stop_gross
     reasons: list[str] = []
     out: dict = {"volume_min": vmin, "volume_step": step, "volume_max": vmax, "lots": 0.0}
     buf = (limits.min_free_margin_buffer_pct or 0) / 100.0
-    pend_margin = float(portfolio.get("pending_margin") or 0.0)
-    usable_margin = max(0.0, (free_margin - pend_margin) * (1 - buf))
+    # 1.46 arch (I0723): unknown margin / notional of pending orders (None) -> no usable margin / exposure not computable (never 0)
+    pend_margin_unknown, pend_notional_unknown = _unknown(portfolio, "pending_margin"), _unknown(portfolio, "pending_notional")
+    pend_margin = 0.0 if pend_margin_unknown else float(portfolio.get("pending_margin") or 0.0)
+    usable_margin = 0.0 if pend_margin_unknown else max(0.0, (free_margin - pend_margin) * (1 - buf))
     margin_1 = margin_fn(order_side, 1.0, entry)
     notional_1 = notional_per_lot(profit_fn, order_side, entry)
     lim = (exposure or {}).get("limit")
-    pos_notional = portfolio.get("positions_notional")
-    pend_notional = float(portfolio.get("pending_notional") or 0.0)
+    pos_notional = None if pend_notional_unknown else portfolio.get("positions_notional")
+    pend_notional = 0.0 if pend_notional_unknown else float(portfolio.get("pending_notional") or 0.0)
     caps = {"risk": available / (stop_gross_1 + cost_1) if available > 0 else 0.0, "volume_max": vmax}
     if margin_1 is None or margin_1 <= 0:
         reasons.append("BROKER_MARGIN_CALC_UNAVAILABLE")
@@ -267,7 +294,7 @@ def size_volume(*, order_side, entry, sl, targets, available, cost_1, stop_gross
     lots = floor_to_step(raw, step, vmin)
     out.update(raw_lots=round(caps["risk"], 6), max_lots_by={k: round(v, 6) for k, v in caps.items()}, binding_constraint=binding,
                margin_per_lot=None if margin_1 is None else round(margin_1, 2), notional_per_lot=None if notional_1 is None else round(notional_1, 2),
-               usable_free_margin=round(usable_margin, 2), pending_margin=round(pend_margin, 2))
+               usable_free_margin=round(usable_margin, 2), pending_margin=None if pend_margin_unknown else round(pend_margin, 2))
     # re-verify after rounding with the broker calculators; step down while anything is violated
     checked = None
     for _ in range(200):

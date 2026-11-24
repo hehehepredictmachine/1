@@ -450,9 +450,21 @@ class EngineService:
 
         def pos_risk(p):
             try:
-                return b.calc_profit(p["side"], p["volume"], p["price_current"], p["sl"])
+                r_cfg = b.calc_profit(p["side"], p["volume"], p["price_current"], p["sl"])
             except Exception:
                 return None
+            # 1.46 arch (I0709, ONLY the tightening variant): a position on ANOTHER symbol was valued with the calculator of the configured
+            # symbol (e.g. a BTCUSD position with the XAUUSD contract). The value of 1.46 stays a floor: risk = max(today's, the position's
+            # own symbol calculator) and a failed own-symbol calculation = unknown risk (blocks, as a position without SL) - a block or a
+            # smaller budget of today never disappears; a lower own-symbol risk does not enlarge the budget (owner decision, S0 otherwise)
+            sym = p.get("symbol")
+            if r_cfg is None or not sym or sym == cfg.mt5.symbol:
+                return r_cfg
+            try:
+                r_own = b.calc_profit_sym(sym, p["side"], p["volume"], p["price_current"], p["sl"])
+            except Exception:  # noqa: BLE001 - terminal call failed -> unknown risk (blocks)
+                return None
+            return None if r_own is None else min(r_cfg, r_own)   # profit at SL: the more negative = the larger risk (max(0, -r))
         try:
             portfolio = self.portfolio_snapshot(positions, orders)
         except Exception:                            # terminal call failed -> exposure unknown (blocks when a limit is set)
@@ -473,6 +485,23 @@ class EngineService:
                                        portfolio=portfolio, settings_version=self.prefs.settings_version() if self.prefs is not None else None)
         except Exception as exc:  # terminal call failure etc. -> blocked, never guessed
             res = {"risk_gate": "BLOCKED", "reason_codes": ["RISK_EVALUATION_FAILED:" + type(exc).__name__]}
+        if "DRAWDOWN_BREACH" in (res.get("reason_codes") or []):
+            # 1.46 arch (I0808, informational only): the peak is MAX(equity) without capital flows - a withdrawal after the peak keeps
+            # DRAWDOWN_BREACH for good. The block itself is unchanged (S0: correcting the peak would lift it); the status says so.
+            try:
+                pk = self.db.one("SELECT ts FROM equity_snapshots WHERE account_key=? AND mode='ACCOUNT' ORDER BY equity DESC, ts ASC LIMIT 1",
+                                 (b.account_key,))
+                peak_raw = (parse_iso(pk["ts"]).timestamp() + b.clock.offset) if (pk and pk.get("ts") and b.clock.offset is not None) else None
+                note = risk_engine.capital_flow_note(deals, peak_raw)
+                if note:
+                    res["drawdown_note"] = note
+            except Exception:  # noqa: BLE001, S110 - a note never changes or breaks the risk result
+                pass
+        # 1.46 arch (I0107): risk.daily_reset is validated and saved, but the daily-loss day always starts at the broker server midnight
+        # (b.server_day_start_utc above) - UTC_MIDNIGHT was ignored silently. Reported only (separate fields, never a reason code).
+        res["daily_reset_effective"] = "BROKER_SERVER_MIDNIGHT"
+        if getattr(cfg.risk, "daily_reset", "BROKER_SERVER_MIDNIGHT") != "BROKER_SERVER_MIDNIGHT":
+            res["warnings"] = list(res.get("warnings") or []) + ["DAILY_RESET_UTC_MIDNIGHT_NOT_APPLIED"]
         res["entry_basis"] = basis
         if not live:
             res["risk_gate"] = "BLOCKED" if res.get("risk_gate") == "BLOCKED" else "PREVIEW"
@@ -500,6 +529,11 @@ class EngineService:
             pos_notional += abs(v) * 100.0
         pend_notional = pend_margin = pend_risk = 0.0
         without_sl, count = [], 0
+        # 1.46 arch (I0723): a failed broker calculation for a pending order was summed as 0 (margin, notional, risk) and the risk gate
+        # took the totals as known. Now the affected total is None and the ticket is listed in pending_unknown (the gate blocks:
+        # PENDING_ORDER_RISK_UNKNOWN); with every calculation known the totals are identical.
+        unknown: list = []
+        miss = {"margin": False, "notional": False, "risk": False}
         for o in orders:
             t = o.get("type")
             if t not in self.PENDING_BUY and t not in self.PENDING_SELL:
@@ -509,16 +543,25 @@ class EngineService:
             vol, px, sym = float(o.get("volume_current") or 0), float(o.get("price_open") or 0), o.get("symbol")
             m = b.calc_margin_sym(sym, side, vol, px) if px else None
             n = b.calc_profit_sym(sym, side, vol, px, px * 1.01 if side == "BUY" else px * 0.99) if px else None
+            bad = m is None or n is None
+            miss["margin"] |= m is None
+            miss["notional"] |= n is None
             pend_margin += m or 0.0
             pend_notional += abs(n or 0.0) * 100.0
             if o.get("sl"):
                 r = b.calc_profit_sym(sym, side, vol, px, float(o["sl"]))
+                bad |= r is None
+                miss["risk"] |= r is None
                 pend_risk += max(0.0, -(r or 0.0))
             else:
                 without_sl.append(o.get("ticket"))
-        return {"positions_notional": None if pos_notional is None else round(pos_notional, 2), "pending_notional": round(pend_notional, 2),
-                "pending_margin": round(pend_margin, 2), "pending_risk": round(pend_risk, 2), "pending_count": count,
-                "pending_without_sl": without_sl, "margin_mode": (b.account or {}).get("margin_mode")}
+            if bad:
+                unknown.append(o.get("ticket"))
+        return {"positions_notional": None if pos_notional is None else round(pos_notional, 2),
+                "pending_notional": None if miss["notional"] else round(pend_notional, 2),
+                "pending_margin": None if miss["margin"] else round(pend_margin, 2), "pending_risk": None if miss["risk"] else round(pend_risk, 2),
+                "pending_count": count, "pending_without_sl": without_sl, "pending_unknown": unknown,
+                "margin_mode": (b.account or {}).get("margin_mode")}
 
     def recheck_risk(self, d: dict) -> dict:
         """Fresh risk evaluation for an existing decision (gateway, right before sending): current price, account,

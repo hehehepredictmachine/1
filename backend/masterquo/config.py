@@ -121,7 +121,10 @@ class RiskLimits(_Strict):
     conditional_rr_executes: bool = True
     conditional_risk_factor: float = Field(0.5, gt=0, le=1)
     # Day boundary for the daily loss limit: broker server midnight (documented in docs).
-    daily_reset: Literal["BROKER_SERVER_MIDNIGHT", "UTC_MIDNIGHT"] = "BROKER_SERVER_MIDNIGHT"
+    # 1.46 arch (I0107): INFORMATIONAL - the engine always uses the broker server midnight; UTC_MIDNIGHT is accepted (config contract)
+    # but not applied, reported as daily_reset_effective + warning DAILY_RESET_UTC_MIDNIGHT_NOT_APPLIED in the risk result
+    daily_reset: Literal["BROKER_SERVER_MIDNIGHT", "UTC_MIDNIGHT"] = Field(
+        "BROKER_SERVER_MIDNIGHT", description="INFORMATIONAL: the daily-loss day always starts at the broker server midnight")
     max_spread_points: float | None = Field(None, gt=0)
     macro_block_high_impact: bool = True  # blocks only inside a known high-impact event window
     macro_calendar_required: bool = False  # True: a missing/unavailable calendar blocks entries
