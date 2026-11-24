@@ -10,8 +10,8 @@ import threading
 import time
 
 STARTED_AT = time.time()            # first import = start of the bot process (imported by the API module at start-up)
-_lock = threading.Lock()
-_last: tuple[float, float] | None = None   # (busy, total) of the previous CPU sample
+# Process caches of this module (1.46 arch I0104): STARTED_AT (by design, once per process) and the CPU samplers below - each consumer owns
+# one (API snapshot -> API_SAMPLER, Memory Governor -> its own instance); reset_cpu_samplers() is the test hook.
 
 
 def _cpu_times() -> tuple[float, float] | None:
@@ -35,21 +35,63 @@ def _cpu_times() -> tuple[float, float] | None:
         return None
 
 
+class CpuSampler:
+    """Whole-computer CPU load since this sampler's previous call (first call: a 0.25 s sample).
+
+    1.46 arch (I0104): 1.45 kept ONE module-level previous sample for every caller - the API snapshot and the Memory Governor
+    (resources/governor.py public()) moved each other's measuring window; two calls a few ms apart measured a random few-ms window or
+    nothing at all (None = 'brak pomiaru'). Now each consumer has its own sampler, and a call within MIN_WINDOW_S of the previous sample
+    returns the last value of THIS sampler without moving its window. Display only - no decision reads it."""
+
+    MIN_WINDOW_S = 0.5
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._prev: tuple[float, float] | None = None     # (busy, total) of the previous sample
+        self._prev_at: float | None = None
+        self._value: float | None = None
+
+    def reset(self) -> None:
+        with self._lock:
+            self._prev, self._prev_at, self._value = None, None, None
+
+    def percent(self) -> float | None:
+        with self._lock:
+            now = self._clock()
+            if self._prev is not None and self._value is not None and self._prev_at is not None and now - self._prev_at < self.MIN_WINDOW_S:
+                return self._value
+            a = self._prev or _cpu_times()
+            if a is None:
+                return None
+            if self._prev is None:
+                time.sleep(0.25)
+            b = _cpu_times()
+            if b is None:
+                return None
+            busy, total = b[0] - a[0], b[1] - a[1]
+            if total <= 0:                       # no CPU time elapsed: keep the window (and the last value of this sampler)
+                if self._prev is None:
+                    self._prev, self._prev_at = b, self._clock()
+                return self._value
+            self._prev, self._prev_at = b, self._clock()
+            self._value = round(100.0 * busy / total, 1)
+            return self._value
+
+
+API_SAMPLER = CpuSampler()          # the API snapshot (/api/v1/system/resources)
+_DEFAULT_SAMPLER = CpuSampler()     # cpu_percent() of any other caller
+
+
+def reset_cpu_samplers() -> None:
+    """Test hook: forget the previous samples of the module's samplers."""
+    API_SAMPLER.reset()
+    _DEFAULT_SAMPLER.reset()
+
+
 def cpu_percent() -> float | None:
-    """Whole-computer CPU load since the previous call (first call: a 0.25 s sample)."""
-    global _last
-    with _lock:
-        a = _last or _cpu_times()
-        if a is None:
-            return None
-        if _last is None:
-            time.sleep(0.25)
-        b = _cpu_times()
-        if b is None:
-            return None
-        _last = b
-    busy, total = b[0] - a[0], b[1] - a[1]
-    return round(100.0 * busy / total, 1) if total > 0 else None
+    """Whole-computer CPU load since the previous call of THIS module-level sampler (kept for compatibility; consumers own a CpuSampler)."""
+    return _DEFAULT_SAMPLER.percent()
 
 
 def memory() -> dict:
@@ -97,6 +139,6 @@ def memory() -> dict:
 
 def snapshot() -> dict:
     now = time.time()
-    return {"cpu_pct": cpu_percent(), "memory": memory(), "started_at": STARTED_AT, "uptime_s": round(now - STARTED_AT, 1),
+    return {"cpu_pct": API_SAMPLER.percent(), "memory": memory(), "started_at": STARTED_AT, "uptime_s": round(now - STARTED_AT, 1),
             "pid": os.getpid(), "platform": sys.platform, "measured_at": now,
             "note": "CPU i RAM całego komputera; pamięć procesu = proces silnika bota. Brak wartości = system jej nie podał."}

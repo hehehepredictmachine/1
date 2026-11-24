@@ -10,7 +10,12 @@ import tempfile
 import time
 from pathlib import Path
 
-_HEALTH: dict = {}
+_HEALTH: dict = {}     # process cache (TTL 600 s) of the deep worker health; reset_health_cache() is the hook (1.46 arch I0104)
+
+
+def reset_health_cache() -> None:
+    """Forget the cached worker health (tests; after a reinstall of the deep environment)."""
+    _HEALTH.clear()
 
 
 def python() -> str | None:

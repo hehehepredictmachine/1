@@ -397,5 +397,125 @@ class TestI0097SettingsStores(_DataDir):
         self.assertEqual((s["mode"], s["estimator"]), ("OFF", "legacy_logistic"))   # 1.45: A's stale write lost B's mode change
 
 
+# ------------------------------------------------------------------ I0338
+class TestI0338DtRankerStatus(unittest.TestCase):
+    def test_status_says_training_not_implemented(self):
+        import threading
+        from types import SimpleNamespace as NS
+
+        from masterquo.api import wf32_routes
+
+        class App:                                                                   # stand-in app (as modelhub/smoke/ml.py)
+            def __init__(self):
+                self.routes = {}
+
+            def __getattr__(self, method):
+                def deco(path, *a, **k):
+                    def wrap(fn):
+                        self.routes[(method, path)] = fn
+                        return fn
+                    return wrap
+                return deco
+
+        class Bridge:
+            def bars(self, tf, count=None, include_forming=False):
+                return []
+        app = App()
+        wf32_routes.register(app, NS(bridge=Bridge(), db=None, _acct_thread=True, _stop=threading.Event()))
+        st = app.routes[("get", "/api/v1/models/dt-ranker/status")]()
+        self.assertEqual(st["training_path"], "NOT_IMPLEMENTED")                    # 1.45: no such field
+        self.assertFalse(st["ready"])
+        self.assertIn("FALLBACK_BASELINE", st["training_note"])
+
+
+# ------------------------------------------------------------------ I0079
+class TestI0079AnalysisLayerHasNoLabOrAgentImport(unittest.TestCase):
+    def test_analysis_imports(self):
+        import ast
+        from pathlib import Path
+        pkg = Path(_env.ROOT) / "backend" / "masterquo" / "analysis"
+        bad = []
+        for p in sorted(pkg.rglob("*.py")):
+            for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+                mods = []
+                if isinstance(node, ast.ImportFrom):
+                    mods = [("." * node.level) + (node.module or "")]
+                elif isinstance(node, ast.Import):
+                    mods = [a.name for a in node.names]
+                for m in mods:
+                    if m.startswith(("..lab", "..agent", "masterquo.lab", "masterquo.agent")):
+                        bad.append(f"{p.name}:{node.lineno} {m}")
+        self.assertEqual(bad, [])                                                   # 1.45: structure_knowledge.py:122-123 ..lab
+
+    def test_shim_is_the_same_module(self):
+        from masterquo.agent import structure_knowledge as new
+        from masterquo.analysis import structure_knowledge as old
+        self.assertIs(old.explain, new.explain)
+        self.assertEqual(old.KNOWLEDGE_VERSION, new.KNOWLEDGE_VERSION)
+        self.assertEqual(old.prompt_section(), new.prompt_section())
+        from masterquo.analysis.structure_knowledge import RULES
+        self.assertIs(RULES, new.RULES)
+
+
+# ------------------------------------------------------------------ I0135
+class TestI0135ExportStubsAreInformational(unittest.TestCase):
+    def _help(self, main, argv):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            main(argv)
+        return out.getvalue()
+
+    def test_help_names_the_stub(self):
+        from masterquo.lab.flow_context.cli import main as fc
+        from masterquo.lab.structure_cli import main as si
+        self.assertIn("informacyjne", self._help(fc, ["export", "--help"]))       # 1.45: no description at all
+        self.assertIn("informacyjne", self._help(fc, ["--help"]))
+        self.assertIn("informacyjne", self._help(si, ["--help"]))
+        self.assertIn("training export", self._help(si, ["export", "--help"]))
+
+
+# ------------------------------------------------------------------ I0104
+class TestI0104CpuSamplerIsolation(_DataDir):
+    def test_two_consumers_keep_their_own_window(self):
+        from unittest import mock
+
+        from masterquo import sysres
+        T = [0.0]
+
+        def times():                                                                # /proc/stat-like: 10 ms ticks, 50 % busy
+            tot = int(T[0] * 100) / 100.0
+            return tot * 0.5, tot
+
+        def sleep(s):
+            T[0] += s
+
+        def clock():
+            return T[0]
+        with mock.patch.object(sysres, "_cpu_times", times), mock.patch.object(sysres.time, "sleep", sleep):
+            api, gov = sysres.CpuSampler(clock=clock), sysres.CpuSampler(clock=clock)
+            self.assertEqual(api.percent(), 50.0)
+            T[0] += 0.003
+            self.assertEqual(gov.percent(), 50.0)
+            T[0] = 10.0
+            self.assertEqual(api.percent(), 50.0)
+            T[0] = 10.002                                                           # same 10 ms tick: 1.45 shared window -> None
+            self.assertEqual(gov.percent(), 50.0)
+            self.assertEqual(api.percent(), 50.0)                                   # < MIN_WINDOW_S: last value, window kept
+
+    def test_governor_and_api_use_different_samplers(self):
+        from masterquo import sysres
+        from masterquo.config import ConfigStore
+        from masterquo.resources.governor import Governor
+        g = Governor(ConfigStore())
+        self.assertIsInstance(g._cpu, sysres.CpuSampler)
+        self.assertIsNot(g._cpu, sysres.API_SAMPLER)
+        for hook in ("masterquo.modelhub.families.deep:reset_health_cache", "masterquo.quant.tabicl:reset_install_cache",
+                     "masterquo.training.core:reset_candles_cache", "masterquo.sysres:reset_cpu_samplers"):
+            mod, fn = hook.split(":")
+            __import__(mod, fromlist=[fn]).__dict__[fn]()                           # process-cache hooks exist and run
+
+
 if __name__ == "__main__":
     unittest.main()
